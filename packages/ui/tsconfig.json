@@ -1,0 +1,9 @@
+{
+  "extends": "@ced/config/typescript/base",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "noEmit": true
+  },
+  "include": ["src"]
+}

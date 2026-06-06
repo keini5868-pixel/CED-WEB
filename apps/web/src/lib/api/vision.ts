@@ -1,0 +1,85 @@
+import { apiUrl } from "@/lib/env";
+import { createClient } from "@/lib/supabase/client";
+
+export type VisionSearchResult =
+  | { ok: true; summary: string; query?: string; subject?: string }
+  | { ok: false; error: string; code?: string };
+
+async function authFetch(path: string, body: object, timeoutMs = 28000): Promise<Response> {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error("Inicia sesión");
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(`${apiUrl()}${path}`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${session.access_token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function fetchVisionWebSearch(
+  imageDataUrl: string,
+  question = "",
+): Promise<VisionSearchResult> {
+  try {
+    const res = await authFetch("/v1/vision/search-web", {
+      image: imageDataUrl,
+      question,
+    });
+    const data = (await res.json()) as Record<string, unknown>;
+    if (!res.ok || data.ok !== true) {
+      return {
+        ok: false,
+        error: String(data.error || data.detail || "Error en búsqueda visual"),
+        code: typeof data.code === "string" ? data.code : undefined,
+      };
+    }
+    return {
+      ok: true,
+      summary: String(data.summary || ""),
+      query: typeof data.query === "string" ? data.query : undefined,
+      subject: typeof data.subject === "string" ? data.subject : undefined,
+    };
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return { ok: false, error: "La búsqueda visual tardó demasiado", code: "timeout" };
+    }
+    return { ok: false, error: "No se pudo contactar la API" };
+  }
+}
+
+export async function fetchVisionAnalyze(
+  imageDataUrl: string,
+  question = "",
+): Promise<VisionSearchResult> {
+  try {
+    const res = await authFetch("/v1/vision/analyze", {
+      image: imageDataUrl,
+      question,
+    }, 20000);
+    const data = (await res.json()) as Record<string, unknown>;
+    if (!res.ok || data.ok !== true) {
+      return { ok: false, error: String(data.error || "Error al analizar imagen") };
+    }
+    return {
+      ok: true,
+      summary: String(data.summary || ""),
+      subject: typeof data.subject === "string" ? data.subject : undefined,
+    };
+  } catch {
+    return { ok: false, error: "No se pudo contactar la API" };
+  }
+}

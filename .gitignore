@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build
+.next/
+out/
+dist/
+build/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Env — NUNCA subir secretos
+.env
+.env.local
+.env.*.local
+apps/api/.env
+apps/web/.env.local
+!.env.example
+!.env.production.example
+
+# TypeScript cache
+*.tsbuildinfo
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Turbo
+.turbo/
+
+# Python venv
+.venv/
+venv/
+
+# Logs
+*.log
+logs/
+
+# Vercel
+.vercel

@@ -1,0 +1,227 @@
+@import "tailwindcss";
+@import "@ced/ui/tokens.css";
+
+@theme inline {
+  --color-ced-bg: var(--ced-bg);
+  --color-ced-cyan: var(--ced-cyan);
+  --font-sans: var(--font-inter);
+  --font-display: var(--font-orbitron);
+}
+
+html,
+body {
+  min-height: 100%;
+  background: var(--ced-bg);
+  color: var(--ced-text);
+  font-family: var(--font-inter), system-ui, sans-serif;
+}
+
+/* Glow — auth cards / botones (no usar en paneles con texto) */
+.ced-glow {
+  box-shadow: 0 0 20px var(--ced-cyan-glow), inset 0 0 8px rgba(0, 229, 255, 0.05);
+}
+
+.ced-glow-text {
+  text-shadow: 0 0 12px var(--ced-cyan-glow);
+}
+
+/* Glow solo en borde exterior del panel */
+.ced-panel-glow {
+  box-shadow:
+    0 0 16px rgba(0, 229, 255, 0.22),
+    0 0 2px rgba(0, 229, 255, 0.45);
+}
+
+/* Patrón decorativo SOLO en fondo de página (entre paneles) */
+.ced-hud-page-bg {
+  background-color: var(--ced-bg);
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(0, 229, 255, 0.07) 0%, transparent 50%),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 56px,
+      rgba(0, 229, 255, 0.025) 56px,
+      rgba(0, 229, 255, 0.025) 57px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 56px,
+      rgba(0, 229, 255, 0.025) 56px,
+      rgba(0, 229, 255, 0.025) 57px
+    );
+}
+
+/* Jerarquía de texto HUD — WCAG AA sobre #0a0a0a */
+.ced-hud-text-primary {
+  color: var(--ced-text-primary);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.ced-hud-text-body {
+  color: var(--ced-text);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.ced-hud-text-secondary {
+  color: var(--ced-cyan-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.ced-hud-text-muted {
+  color: var(--ced-text-muted);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+.ced-hud-text-accent {
+  color: var(--ced-cyan);
+  font-size: 0.875rem;
+}
+
+/* Badge fijo «CED te escuchó» — sesión de voz */
+.ced-voice-heard-badge__inner {
+  border-color: rgba(0, 229, 255, 0.35);
+  background: linear-gradient(
+    180deg,
+    rgba(0, 20, 28, 0.95) 0%,
+    rgba(0, 8, 12, 0.98) 100%
+  );
+  box-shadow:
+    0 0 20px rgba(0, 229, 255, 0.08),
+    inset 0 1px 0 rgba(0, 229, 255, 0.12);
+}
+
+.ced-voice-heard-badge__dot--pulse {
+  background: #00e5ff;
+  animation: ced-voice-heard-pulse 1.4s ease-in-out infinite;
+}
+
+.ced-voice-heard-badge__dot--ok {
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52, 211, 153, 0.55);
+}
+
+@keyframes ced-voice-heard-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+/* Paneles: capa opaca — el patrón de página no cruza el texto */
+.ced-hud-panel header,
+.ced-hud-panel .ced-hud-panel-body {
+  background-color: #000000;
+}
+
+.ced-hud-panel header {
+  background-color: #0a0a0a;
+}
+
+/* Carrusel 3D — evita que Html de drei expanda el layout de la página */
+.ced-carousel-stage {
+  contain: strict;
+  isolation: isolate;
+}
+
+.ced-carousel-canvas {
+  max-height: 100% !important;
+  overflow: hidden !important;
+}
+
+.ced-carousel-html-wrap {
+  overflow: hidden !important;
+  contain: layout style paint;
+  pointer-events: none !important;
+}
+
+@keyframes ced-border-pulse {
+  0%,
+  100% {
+    border-color: rgba(0, 229, 255, 0.35);
+    box-shadow: 0 0 0 rgba(0, 229, 255, 0);
+  }
+  50% {
+    border-color: rgba(0, 229, 255, 0.85);
+    box-shadow: 0 0 14px rgba(0, 229, 255, 0.22);
+  }
+}
+
+.ced-input-animated {
+  animation: ced-border-pulse 2.8s ease-in-out infinite;
+}
+
+.ced-input-animated:focus {
+  animation: none;
+  border-color: var(--ced-cyan);
+  box-shadow: 0 0 16px var(--ced-cyan-glow);
+}
+
+/* DRONES — ticker y radar */
+.ced-hud-marquee {
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.ced-hud-marquee-track {
+  display: inline-block;
+  padding-right: 3rem;
+  animation: ced-hud-marquee 55s linear infinite;
+}
+
+@keyframes ced-hud-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.ced-hud-radar-ring {
+  animation: ced-hud-radar-spin 14s linear infinite;
+}
+
+.ced-hud-radar-ring-reverse {
+  animation: ced-hud-radar-spin 9s linear infinite reverse;
+}
+
+@keyframes ced-hud-radar-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Orbe — destellos estilo algoritmo (capa HTML) */
+.ced-orb-spark {
+  animation: ced-orb-spark-pulse 2s ease-in-out infinite;
+  box-shadow: 0 0 6px currentColor;
+}
+
+@keyframes ced-orb-spark-pulse {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  12% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  28% {
+    opacity: 0.15;
+    transform: scale(0.6);
+  }
+}

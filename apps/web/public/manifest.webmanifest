@@ -1,0 +1,11 @@
+{
+  "name": "CED — Castillo de la Evolución Digital",
+  "short_name": "CED",
+  "description": "Asistente de voz holográfico con IA",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#00e5ff",
+  "orientation": "portrait-primary",
+  "lang": "es"
+}
