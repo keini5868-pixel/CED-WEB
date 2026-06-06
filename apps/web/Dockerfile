@@ -8,13 +8,13 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
 COPY apps/web/package.json ./apps/web/
 COPY packages/types/package.json ./packages/types/
 COPY packages/ui/package.json ./packages/ui/
-COPY packages/config/package.json ./packages/config/
-COPY packages/config/typescript ./packages/config/typescript
+COPY packages/config ./packages/config/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+# Copiar todo el workspace de deps (incluye symlinks de pnpm por paquete)
+COPY --from=deps /app ./
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 ARG NEXT_PUBLIC_SUPABASE_URL
