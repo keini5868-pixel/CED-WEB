@@ -1,22 +1,14 @@
-# Next.js @ced/web — Railway (next start + pnpm en runtime)
+# Next.js @ced/web — Railway
 FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
-FROM base AS deps
-WORKDIR /app
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
-COPY apps/web/package.json ./apps/web/
-COPY packages/types/package.json ./packages/types/
-COPY packages/ui/package.json ./packages/ui/
-COPY packages/config ./packages/config/
-RUN pnpm install --frozen-lockfile
-
 FROM base AS builder
 WORKDIR /app
-# Copiar todo el workspace de deps (incluye symlinks de pnpm por paquete)
-COPY --from=deps /app ./
-COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json ./
+COPY apps/web ./apps/web
+COPY packages ./packages
+
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_APP_URL
@@ -27,13 +19,16 @@ ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
 ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=$NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
-RUN pnpm --filter @ced/web build
+ENV NEXT_TELEMETRY_DISABLED=1
+
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @ced/web exec next build
 
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
 ENV HOSTNAME=0.0.0.0
+ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY --from=builder /app ./
 
