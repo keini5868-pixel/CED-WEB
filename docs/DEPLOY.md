@@ -22,7 +22,8 @@ Documento maestro para las 7 fases. **Fase 1 completada en código.**
 | OpenAPI off en prod | `docs_url=None` si `APP_ENV=production` |
 | Headers Next.js | `apps/web/next.config.ts` |
 | Vercel monorepo | `vercel.json` |
-| Railway Docker | `apps/api/Dockerfile` + `railway.toml` |
+| Railway Docker API | `apps/api/Dockerfile` + `railway.toml` |
+| Railway Docker Web | `apps/web/Dockerfile` + `railway.web.toml` (fix: pnpm no está en runtime Railpack) |
 
 ### Validar localmente
 
@@ -138,18 +139,42 @@ Migración a live cuando:
 
 ---
 
-## Fase 2 — Railway (próximo paso)
+## Fase 2 — Railway
+
+### Servicio API (`@ced/api`)
 
 1. Push repo a GitHub
 2. Railway → New Project → Deploy from GitHub
 3. Root: repo root; Dockerfile path: `apps/api/Dockerfile`
-4. Variables: copiar de `.env.production.example`
+4. Variables: copiar de `.env.production.example` (secretos Meta, Stripe, Anthropic, etc.)
 5. Dominio custom: `api.tudominio.com` → CNAME Railway
 6. Validar: `curl https://api.tudominio.com/health`
 
+### Servicio Web en Railway (alternativa a Vercel)
+
+Si despliegas `@ced/web` en Railway **no uses Railpack** con `pnpm start` — el runtime no incluye pnpm y falla con *"The executable pnpm could not be found"*.
+
+1. En el servicio `@ced/web` → **Settings** → **Build** → Builder: **Dockerfile**
+2. Dockerfile path: `apps/web/Dockerfile` (contexto: raíz del repo)
+3. Opcional: config file `railway.web.toml` en la raíz
+4. **Variables solo de frontend** (no pongas secretos de API aquí):
+
+   | Variable | Ejemplo |
+   |----------|---------|
+   | `NEXT_PUBLIC_APP_URL` | `https://app.tudominio.com` |
+   | `NEXT_PUBLIC_API_URL` | `https://api.tudominio.com` |
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Settings → API |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+   | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | `pk_test_...` o `pk_live_...` |
+   | `SUPER_ADMIN_EMAILS` | `keini5868@gmail.com` |
+
+5. Redeploy y validar `GET /login` responde 200
+
+**Recomendación:** Vercel sigue siendo mejor para Next.js (Fase 3). Usa Railway solo para la API.
+
 ---
 
-## Fase 3 — Vercel (después de API)
+## Fase 3 — Vercel (recomendado para Web)
 
 1. Import repo → Framework Next.js
 2. Root Directory: `apps/web` **o** usar `vercel.json` en raíz

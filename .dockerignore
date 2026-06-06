@@ -1,0 +1,9 @@
+node_modules
+.next
+.turbo
+.git
+apps/api/.venv
+**/.env
+**/.env.local
+apps/web/.next
+*.log
