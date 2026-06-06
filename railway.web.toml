@@ -5,7 +5,7 @@ dockerfilePath = "apps/web/Dockerfile"
 watchPatterns = ["apps/web/**", "packages/**"]
 
 [deploy]
-healthcheckPath = "/login"
+healthcheckPath = "/health"
 healthcheckTimeout = 180
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5

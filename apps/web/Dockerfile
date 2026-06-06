@@ -35,4 +35,4 @@ COPY --from=builder --chown=nextjs:nodejs /app/apps/web/.next/static ./apps/web/
 
 USER nextjs
 EXPOSE 8080
-CMD ["node", "apps/web/server.js"]
+CMD ["sh", "-c", "echo \"ced-web listening on 0.0.0.0:${PORT:-8080}\" && exec node apps/web/server.js"]

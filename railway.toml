@@ -1,3 +1,4 @@
+# Railway — servicio @ced/api (FastAPI)
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "apps/api/Dockerfile"
