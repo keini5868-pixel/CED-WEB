@@ -156,11 +156,14 @@ export function ConnectNetworksButton() {
 
     try {
 
-      const url = await fetchMetaOAuthUrl();
+      const { url, error: oauthError } = await fetchMetaOAuthUrl();
 
       if (!url) {
 
-        setError("No se pudo iniciar OAuth. ¿API activa y META configurado?");
+        setError(
+          oauthError ||
+            "No se pudo iniciar OAuth. ¿API activa y META configurado?",
+        );
 
         return;
 

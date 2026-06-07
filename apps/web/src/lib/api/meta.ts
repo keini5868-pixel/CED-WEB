@@ -1,17 +1,5 @@
-import { apiUrl } from "@/lib/env";
-import { createClient } from "@/lib/supabase/client";
-
-async function authHeaders(): Promise<HeadersInit | null> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) return null;
-  return {
-    Authorization: `Bearer ${session.access_token}`,
-    "Content-Type": "application/json",
-  };
-}
+import { cedApiPath } from "@/lib/api/ced-proxy";
+import { parseApiJson } from "@/lib/api/http";
 
 export type MetaConnectionStatus = {
   connected: boolean;
@@ -19,11 +7,17 @@ export type MetaConnectionStatus = {
   followers_count?: number | null;
 };
 
+export type MetaOAuthResult = {
+  url: string | null;
+  error?: string;
+};
+
+const proxyFetch = (path: string) =>
+  fetch(cedApiPath(path), { credentials: "same-origin" });
+
 export async function fetchMetaStatus(): Promise<MetaConnectionStatus | null> {
-  const headers = await authHeaders();
-  if (!headers) return null;
   try {
-    const res = await fetch(`${apiUrl()}/v1/meta/status`, { headers });
+    const res = await proxyFetch("meta/status");
     if (!res.ok) return null;
     return (await res.json()) as MetaConnectionStatus;
   } catch {
@@ -31,15 +25,33 @@ export async function fetchMetaStatus(): Promise<MetaConnectionStatus | null> {
   }
 }
 
-export async function fetchMetaOAuthUrl(): Promise<string | null> {
-  const headers = await authHeaders();
-  if (!headers) return null;
+export async function fetchMetaOAuthUrl(): Promise<MetaOAuthResult> {
   try {
-    const res = await fetch(`${apiUrl()}/v1/meta/oauth/url`, { headers });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { url?: string; detail?: string };
-    return data.url ?? null;
+    const res = await proxyFetch("meta/oauth/url");
+    const data = await parseApiJson<{ url?: string; detail?: string }>(res);
+    if (!res.ok) {
+      if (res.status === 401) {
+        return {
+          url: null,
+          error:
+            data.detail ||
+            "Sesión inválida en la API. Revisa SUPABASE_* en Railway (servicio CED-WEB).",
+        };
+      }
+      if (res.status === 503 && data.detail?.includes("META")) {
+        return {
+          url: null,
+          error: "META no configurado en la API (META_APP_ID, META_APP_SECRET).",
+        };
+      }
+      return {
+        url: null,
+        error: data.detail || "No se pudo iniciar OAuth con Meta.",
+      };
+    }
+    return { url: data.url ?? null };
   } catch {
-    return null;
+    return { url: null, error: "Error de red al contactar la API." };
   }
 }
+

@@ -1,5 +1,6 @@
 import type { UsageBalance } from "@ced/types";
 
+import { cedApiPath } from "@/lib/api/ced-proxy";
 import { apiUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/client";
 
@@ -30,16 +31,20 @@ export type UsageBalanceApi = UsageBalance & {
 };
 
 export async function fetchUsageBalance(): Promise<UsageBalanceApi | null> {
-  const res = await apiFetch("/v1/usage/balance", {
-    headers: await authHeaders(),
-  });
-  if (!res?.ok) return null;
-  const raw = await res.json();
-  return {
-    ...raw,
-    planMinutesDaily: raw.plan_minutes_daily ?? raw.planMinutesDaily,
-    usedMinutesToday: raw.used_minutes_today ?? raw.usedMinutesToday,
-  };
+  try {
+    const res = await fetch(cedApiPath("usage/balance"), {
+      credentials: "same-origin",
+    });
+    if (!res.ok) return null;
+    const raw = await res.json();
+    return {
+      ...raw,
+      planMinutesDaily: raw.plan_minutes_daily ?? raw.planMinutesDaily,
+      usedMinutesToday: raw.used_minutes_today ?? raw.usedMinutesToday,
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function startVoiceSession(): Promise<{

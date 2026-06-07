@@ -12,6 +12,7 @@ from app.services.integrations import (
     check_stripe,
     check_supabase,
     check_supabase_auth,
+    check_supabase_auth_api_key,
 )
 from app.domain.plans import (
     CED_ELITE,
@@ -40,15 +41,48 @@ def health(_request: Request) -> dict[str, str]:
     }
 
 
+@router.get("/v1/auth/diagnostics")
+@limiter.exempt
+def auth_diagnostics(_request: Request) -> dict:
+    """Diagnóstico público de config Supabase (sin secretos)."""
+    settings = get_settings()
+    supabase_auth = check_supabase_auth_api_key()
+    url = settings.supabase_url.strip()
+    project_ref = (
+        url.replace("https://", "").split(".")[0] if url else None
+    )
+    expected_ref = "foscutjtuscqrduugklm"
+    return {
+        "expected_supabase_project": expected_ref,
+        "configured_project_ref": project_ref,
+        "project_match": project_ref == expected_ref,
+        "has_supabase_url": bool(url),
+        "has_service_role_key": bool(settings.supabase_service_role_key.strip()),
+        "has_anon_key": bool(settings.supabase_anon_key.strip()),
+        "has_jwt_secret": bool(settings.supabase_jwt_secret.strip()),
+        "supabase_api_key_valid": supabase_auth.get("ok"),
+        "supabase_auth_error": supabase_auth.get("error"),
+        "super_admin_emails_set": bool(settings.super_admin_emails.strip()),
+        "hint": (
+            "Si project_match=false o supabase_api_key_valid=false, "
+            "corrige variables en Railway servicio CED-WEB y redeploy."
+        ),
+    }
+
+
 @router.get("/v1/meta")
 def meta() -> dict:
     """Metadatos públicos — producto único + recargas flexibles."""
     settings = get_settings()
+    supabase_auth = check_supabase_auth_api_key()
     return {
         "app": "ced-web",
         "product": "CED Élite",
         "phase": 1,
         "web_url": settings.web_public_url,
+        "supabase_project_ref": supabase_auth.get("project_ref"),
+        "supabase_auth_api_ok": supabase_auth.get("ok"),
+        "supabase_auth_error": supabase_auth.get("error"),
         "trial_days": TRIAL_DAYS,
         "usage_warning_percent": USAGE_WARNING_PERCENT,
         "founding": {

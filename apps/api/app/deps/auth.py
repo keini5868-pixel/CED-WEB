@@ -6,8 +6,109 @@ from typing import Any
 
 import httpx
 from fastapi import Header, HTTPException
+from jose import JWTError, jwt
 
 from app.config import get_settings
+
+
+def _user_from_jwt_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    app_meta = payload.get("app_metadata") or {}
+    email = payload.get("email")
+    if not email:
+        user_meta = payload.get("user_metadata") or {}
+        email = user_meta.get("email")
+    return {
+        "id": str(user_id),
+        "email": email,
+        "role": app_meta.get("role"),
+    }
+
+
+def _verify_jwt_locally(token: str, jwt_secret: str) -> dict[str, Any] | None:
+    secret = jwt_secret.strip()
+    if not secret:
+        return None
+    try:
+        payload = jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
+    except JWTError:
+        return None
+    return _user_from_jwt_payload(payload)
+
+
+async def _verify_jwt_with_supabase(token: str) -> dict[str, Any] | None:
+    settings = get_settings()
+    if not settings.supabase_url:
+        return None
+
+    user = _verify_jwt_with_supabase_sdk(token)
+    if user:
+        return user
+
+    api_keys = [
+        settings.supabase_service_role_key.strip(),
+        settings.supabase_anon_key.strip(),
+    ]
+    seen: set[str] = set()
+    url = f"{settings.supabase_url.rstrip('/')}/auth/v1/user"
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        for api_key in api_keys:
+            if not api_key or api_key in seen:
+                continue
+            seen.add(api_key)
+            response = await client.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "apikey": api_key,
+                },
+            )
+            if response.status_code == 200:
+                data = response.json()
+                user_id = data.get("id")
+                if user_id:
+                    app_meta = data.get("app_metadata") or {}
+                    return {
+                        "id": str(user_id),
+                        "email": data.get("email"),
+                        "role": app_meta.get("role"),
+                    }
+    return None
+
+
+def _verify_jwt_with_supabase_sdk(token: str) -> dict[str, Any] | None:
+    settings = get_settings()
+    url = settings.supabase_url.strip()
+    api_key = (
+        settings.supabase_service_role_key.strip()
+        or settings.supabase_anon_key.strip()
+    )
+    if not url or not api_key:
+        return None
+    try:
+        from supabase import create_client
+
+        client = create_client(url, api_key)
+        result = client.auth.get_user(token)
+        user = result.user if result else None
+        if not user or not user.id:
+            return None
+        app_meta = user.app_metadata or {}
+        return {
+            "id": str(user.id),
+            "email": user.email,
+            "role": app_meta.get("role"),
+        }
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def is_super_admin(email: str | None, metadata_role: str | None = None) -> bool:
@@ -34,30 +135,37 @@ async def require_auth_user(
     token = authorization.split(" ", 1)[1].strip()
     settings = get_settings()
 
-    if settings.supabase_url and settings.supabase_service_role_key:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{settings.supabase_url.rstrip('/')}/auth/v1/user",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "apikey": settings.supabase_service_role_key,
-                },
-            )
-        if response.status_code == 200:
-            data = response.json()
-            user_id = data.get("id")
-            if user_id:
-                app_meta = data.get("app_metadata") or {}
-                return {
-                    "id": str(user_id),
-                    "email": data.get("email"),
-                    "role": app_meta.get("role"),
-                }
-        raise HTTPException(status_code=401, detail="Sesión inválida")
+    if not settings.supabase_url:
+        raise HTTPException(
+            status_code=503,
+            detail="Auth no configurado en API",
+        )
 
+    user = _verify_jwt_locally(token, settings.supabase_jwt_secret)
+    if user is None:
+        user = await _verify_jwt_with_supabase(token)
+    if user:
+        return user
+
+    if not settings.supabase_service_role_key.strip() and not settings.supabase_jwt_secret.strip():
+        raise HTTPException(
+            status_code=503,
+            detail="Auth no configurado en API (falta SUPABASE_JWT_SECRET o SERVICE_ROLE)",
+        )
+
+    project_ref = (
+        settings.supabase_url.strip()
+        .replace("https://", "")
+        .split(".")[0]
+        or "?"
+    )
     raise HTTPException(
-        status_code=503,
-        detail="Auth no configurado en API",
+        status_code=401,
+        detail=(
+            f"Sesión inválida. La API usa Supabase '{project_ref}' — "
+            "debe ser foscutjtuscqrduugklm. Revisa SUPABASE_URL, "
+            "SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET en Railway (CED-WEB)."
+        ),
     )
 
 
