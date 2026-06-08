@@ -43,7 +43,7 @@ async def ephemeral_token(
 ) -> dict:
     """Token de un solo uso para Live API (nunca expone GOOGLE_API_KEY)."""
     voice = body.voice_name if body else None
-    result = create_ephemeral_token(voice_name=voice)
+    result = create_ephemeral_token(voice_name=voice, user_id=user_id)
     if result.get("ok"):
         result["userId"] = user_id
     return result

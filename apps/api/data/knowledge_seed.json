@@ -1,0 +1,122 @@
+[
+  {
+    "domain": "marketing",
+    "title": "Embudo de ventas digital",
+    "keywords": ["embudo", "funnel", "conversión", "leads", "ventas"],
+    "summary": "Un embudo de ventas digital guía a una persona desde el descubrimiento hasta la compra: atracción (contenido o ads), interés (lead magnet o landing), consideración (email, prueba social), decisión (oferta clara y CTA) y retención (seguimiento). CED ayuda a diseñar mensajes, contenido y publicaciones para cada etapa."
+  },
+  {
+    "domain": "marketing",
+    "title": "SEO básico para negocios",
+    "keywords": ["seo", "google", "posicionamiento", "keywords", "tráfico"],
+    "summary": "SEO (Search Engine Optimization) mejora la visibilidad orgánica en buscadores. Pilares: investigación de palabras clave, contenido útil alineado a intención de búsqueda, estructura técnica (velocidad, móvil, URLs), autoridad (enlaces y menciones) y experiencia del usuario. Es estrategia de mediano plazo, no resultados instantáneos."
+  },
+  {
+    "domain": "negocios",
+    "title": "Modelo de propuesta de valor",
+    "keywords": ["propuesta", "valor", "cliente", "problema", "solución"],
+    "summary": "La propuesta de valor explica qué problema resuelves, para quién, cómo lo haces diferente y por qué deberían elegirte. Un buen negocio digital la expresa en una frase clara y la valida con conversaciones reales con clientes antes de escalar inversión en ads o producto."
+  },
+  {
+    "domain": "inteligencia_artificial",
+    "title": "Qué es un LLM",
+    "keywords": ["llm", "ia", "modelo", "lenguaje", "chatgpt"],
+    "summary": "Un LLM (Large Language Model) es un modelo entrenado con enormes cantidades de texto para predecir y generar lenguaje natural. Sirve para redactar, resumir, clasificar, programar y asistir — pero puede alucinar datos. Por eso CED combina memoria interna, búsqueda web y sistema avanzado según el tipo de pregunta."
+  },
+  {
+    "domain": "finanzas",
+    "title": "Flujo de caja para emprendedores",
+    "keywords": ["flujo", "caja", "efectivo", "finanzas", "negocio"],
+    "summary": "El flujo de caja mide entradas y salidas reales de dinero en un periodo. Un negocio puede ser rentable en papel pero quebrar por falta de liquidez. Buenas prácticas: separar finanzas personales y del negocio, reservar impuestos, cobrar pronto, negociar plazos con proveedores y revisar caja semanalmente."
+  },
+  {
+    "domain": "redes_sociales",
+    "title": "Estrategia de contenido en Instagram",
+    "keywords": ["instagram", "contenido", "reels", "historias", "engagement"],
+    "summary": "Instagram premia consistencia, retención y relevancia. Mezcla formatos: Reels para alcance, carruseles para educar, Stories para cercanía. Publica con hook claro en los primeros segundos, CTA específico y analiza qué contenido genera guardados y compartidos, no solo likes."
+  },
+  {
+    "domain": "productividad",
+    "title": "Método Pomodoro",
+    "keywords": ["pomodoro", "productividad", "enfoque", "tiempo"],
+    "summary": "El método Pomodoro alterna bloques de trabajo enfocado (típicamente 25 minutos) con pausas cortas (5 min). Reduce procrastinación y fatiga mental. Tras cuatro ciclos, toma una pausa larga. Funciona bien para tareas con inicio difícil o muchas interrupciones."
+  },
+  {
+    "domain": "psicologia",
+    "title": "Hábitos y neuroplasticidad",
+    "keywords": ["hábito", "conducta", "motivación", "rutina"],
+    "summary": "Los hábitos se forman con bucle: señal, rutina, recompensa. La repetición en contexto estable refuerza conexiones neuronales. Para crear un hábito, reduce fricción, empieza pequeño, ancla a una rutina existente y celebra victorias mínimas. La motivación fluctúa; el sistema sostiene."
+  },
+  {
+    "domain": "nutricion",
+    "title": "Macronutrientes básicos",
+    "keywords": ["proteína", "carbohidrato", "grasa", "dieta", "calorías"],
+    "summary": "Los macronutrientes son proteínas (construcción y reparación), carbohidratos (energía preferente) y grasas (hormonas, cerebro, saciedad). Una dieta equilibrada depende de objetivos, actividad y salud individual. Para recomendaciones personalizadas de salud, consulta a un profesional."
+  },
+  {
+    "domain": "derecho",
+    "title": "Contratos básicos en negocios",
+    "keywords": ["contrato", "acuerdo", "legal", "cláusula"],
+    "summary": "Un contrato válido requiere consentimiento, objeto lícito y causa. En negocios digitales conviene definir alcance, plazos, pagos, propiedad intelectual, confidencialidad, terminación y jurisdicción. CED no sustituye asesoría legal; ante dudas importantes, consulta a un abogado."
+  },
+  {
+    "domain": "tecnologia",
+    "title": "API REST explicada",
+    "keywords": ["api", "rest", "endpoint", "http", "json"],
+    "summary": "Una API REST permite que aplicaciones se comuniquen vía HTTP usando recursos (URLs) y métodos (GET leer, POST crear, PUT/PATCH actualizar, DELETE borrar). Los datos suelen intercambiarse en JSON. Es la base de integraciones como pagos, redes sociales y asistentes como CED."
+  },
+  {
+    "domain": "ecommerce",
+    "title": "Checkout optimizado",
+    "keywords": ["checkout", "carrito", "conversión", "tienda", "pago"],
+    "summary": "Un checkout eficiente reduce pasos, muestra costos totales pronto, ofrece pagos confiables, evita registro obligatorio al inicio y genera confianza (sellos, políticas claras). Cada campo extra puede reducir conversión; prueba A/B en botones, copy y métodos de pago."
+  },
+  {
+    "domain": "comunicacion",
+    "title": "Estructura pirámide invertida",
+    "keywords": ["comunicación", "mensaje", "claro", "resumen"],
+    "summary": "La pirámide invertida presenta primero la conclusión o dato clave, luego detalles de mayor a menor importancia. Es ideal para emails, pitches y respuestas de voz breves: el receptor entiende lo esencial aunque deje de leer o escuchar."
+  },
+  {
+    "domain": "historia",
+    "title": "Revolución Industrial — impacto",
+    "keywords": ["revolución industrial", "historia", "fábrica", "modernización"],
+    "summary": "La Revolución Industrial (siglo XVIII-XIX) transformó producción agrícola artesanal a manufactura mecanizada, urbanización y nuevas clases sociales. Impulsó transporte, energía de vapor y posteriormente electricidad. Sentó bases del mundo moderno de consumo, trabajo asalariado y globalización."
+  },
+  {
+    "domain": "filosofia",
+    "title": "Estoicismo aplicado",
+    "keywords": ["estoicismo", "filosofía", "control", "resiliencia"],
+    "summary": "El estoicismo enseña a distinguir lo controlable de lo que no. Prácticas: reflexión diaria, enfoque en virtud (sabiduría, justicia, templanza, coraje) y aceptación serena de lo inevitable. Útil para emprendedores bajo presión: actúa con excelencia en tu esfera de influencia."
+  },
+  {
+    "domain": "medio_ambiente",
+    "title": "Huella de carbono",
+    "keywords": ["carbono", "sostenible", "emisiones", "medio ambiente"],
+    "summary": "La huella de carbono mide gases de efecto invernadero emitidos por actividades humanas (transporte, energía, consumo). Reducirla implica eficiencia energética, energías limpias, consumo responsable y diseño circular. Datos de emisiones actuales requieren fuentes recientes — CED puede verificarlas en web si lo pides."
+  },
+  {
+    "domain": "educacion",
+    "title": "Aprendizaje activo",
+    "keywords": ["aprendizaje", "estudio", "memoria", "práctica"],
+    "summary": "El aprendizaje activo retiene mejor que la lectura pasiva: resume con tus palabras, enseña a otro, haz preguntas, practica espaciadamente y aplica en proyectos reales. La curva del olvido se combate repitiendo en intervalos crecientes (repaso espaciado)."
+  },
+  {
+    "domain": "recursos_humanos",
+    "title": "Onboarding efectivo",
+    "keywords": ["onboarding", "equipo", "contratación", "integración"],
+    "summary": "Un buen onboarding acelera productividad y retención: expectativas claras día 1, mentor asignado, accesos listos, cultura explícita, metas de 30-60-90 días y feedback temprano. La primera semana define gran parte de la percepción del nuevo colaborador."
+  },
+  {
+    "domain": "logistica",
+    "title": "Cadena de suministro",
+    "keywords": ["logística", "inventario", "proveedor", "distribución"],
+    "summary": "La cadena de suministro conecta proveedores, producción, almacén y entrega al cliente. Objetivos: disponibilidad, costo y velocidad. E-commerce exige pronóstico de demanda, stock de seguridad, fulfillment confiable y visibilidad en tiempo real del pedido."
+  },
+  {
+    "domain": "ciberseguridad",
+    "title": "Autenticación multifactor (MFA)",
+    "keywords": ["mfa", "2fa", "seguridad", "contraseña", "phishing"],
+    "summary": "MFA exige dos o más pruebas de identidad (algo que sabes, tienes o eres). Reduce drásticamente accesos no autorizados aunque roben una contraseña. Actívalo en email, banca, redes sociales y panel admin. Evita SMS si puedes usar app autenticadora o llaves hardware."
+  }
+]

@@ -1,0 +1,254 @@
+"""Clasificación de intenciones — compartida voz + chat + router."""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from enum import Enum
+
+
+def normalize_text(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+class CognitiveIntent(str, Enum):
+    DIRECT_REPLY = "direct_reply"
+    INTERNAL_KNOWLEDGE = "internal_knowledge"
+    WEB_SEARCH = "web_search"
+    ADVANCED_ANALYSIS = "advanced_analysis"
+    MEMORY_SAVE = "memory_save"
+    MEMORY_RECALL = "memory_recall"
+    META_PUBLISH = "meta_publish"
+    VISUAL_SEARCH = "visual_search"
+    PROSPECTION = "prospection"
+
+
+WEATHER_PATTERNS = [
+    r"\bclima\b",
+    r"\btemperatura",
+    r"\bpron[oó]stico",
+    r"\bqu[eé]\s+tiempo\s+hace\b",
+    r"\bc[oó]mo\s+est[aá]\s+el\s+(tiempo|clima)\b",
+    r"\btiempo\s+(de|en|hoy|actual)",
+    r"\bllueve\b",
+    r"\bgrados\b",
+    r"\bweather\b",
+]
+
+NEWS_PATTERNS = [
+    r"\bnoticias?\b",
+    r"\búltima\s+hora\b",
+    r"\bactualidad\b",
+    r"\bhoy\s+en\s+",
+    r"\bqu[eé]\s+pas[oó]\b",
+    r"\bqu[eé]\s+pasa\s+con\b",
+]
+
+WEB_PATTERNS = [
+    r"\binvestig",
+    r"\bb[uú]sca(r|me|lo|rlo)?\b",
+    r"\bb[uú]scame\b",
+    r"\bbusca(r|me)?\b.*\b(internet|web|google|l[ií]nea)\b",
+    r"\b(informaci[oó]n|datos)\s+(sobre|de|acerca)\b",
+    r"\binformaci[oó]n actualizada\b",
+    r"\bdatos actuales\b",
+    r"\bprecio\b.*\bhoy\b",
+    r"\bc[uú]anto cuesta hoy\b",
+]
+
+VOLATILE_PATTERNS = [
+    r"\bhoy\b",
+    r"\bahora\b",
+    r"\bactual(mente)?\b",
+    r"\b202[4-9]\b",
+    r"\b2026\b",
+    r"\bprecio\b",
+    r"\bcotizaci[oó]n\b",
+    r"\btendencia\b",
+    r"\bnoticia",
+]
+
+ADVANCED_PATTERNS = [
+    r"\bsistema avanzado\b",
+    r"\ban[aá]lisis profundo\b",
+    r"\banaliza(r|me)?\s+(en detalle|a fondo|profundo)\b",
+    r"\bestrategia\b",
+    r"\bplan de acci[oó]n\b",
+    r"\bcompar(a|ar|me)\b.*\b(opciones|alternativas)\b",
+]
+
+MEMORY_SAVE_PATTERNS = [
+    r"\brecuerda\b",
+    r"\bguarda(r)?\s+(que|esto|en memoria)\b",
+    r"\bno olvides\b",
+    r"\bapunta\b",
+]
+
+MEMORY_RECALL_PATTERNS = [
+    r"\bqu[eé] recuerdas\b",
+    r"\bqu[eé] guardaste\b",
+    r"\brecupera\b.*\bmemoria\b",
+    r"\bbusca(r)?\s+en memoria\b",
+]
+
+META_PATTERNS = [
+    r"\bpublica(r|me)?\b.*\b(instagram|facebook|ig|fb|redes)\b",
+    r"\bpostea(r|me)?\b",
+    r"\bsube(r)?\b.*\b(instagram|historia|reel)\b",
+]
+
+ADVANCED_CONFIRM_PATTERNS = [
+    r"\b(s[ií]|ok|vale|dale|adelante)\b",
+    r"\bconfirma(do)?\b",
+    r"\bhazlo\b",
+    r"\bde acuerdo\b",
+    r"\bconsulta(lo|me)?\b",
+]
+
+
+@dataclass
+class IntentAnalysis:
+    primary: CognitiveIntent
+    web_kind: str  # news | weather | general
+    needs_web: bool
+    needs_advanced: bool
+    needs_advanced_confirm: bool
+    has_advanced_confirm: bool
+    is_volatile: bool
+    memory_save_text: str | None = None
+    memory_recall_query: str | None = None
+
+
+def _matches(text: str, patterns: list[str]) -> bool:
+    return any(re.search(p, text, re.I) for p in patterns)
+
+
+def is_weather_intent(text: str) -> bool:
+    t = normalize_text(text)
+    return len(t) >= 6 and _matches(t, WEATHER_PATTERNS)
+
+
+def is_news_intent(text: str) -> bool:
+    t = normalize_text(text)
+    return _matches(t, NEWS_PATTERNS)
+
+
+def is_web_research_intent(text: str) -> bool:
+    if is_news_intent(text) or is_weather_intent(text):
+        return True
+    t = normalize_text(text)
+    if len(t) < 8:
+        return False
+    return _matches(t, WEB_PATTERNS)
+
+
+def is_volatile_query(text: str) -> bool:
+    t = normalize_text(text)
+    return _matches(t, VOLATILE_PATTERNS) or is_weather_intent(text) or is_news_intent(text)
+
+
+def is_advanced_request(text: str) -> bool:
+    return _matches(normalize_text(text), ADVANCED_PATTERNS)
+
+
+def has_advanced_confirmation(text: str) -> bool:
+    return _matches(normalize_text(text), ADVANCED_CONFIRM_PATTERNS)
+
+
+def parse_memory_save(text: str) -> str | None:
+    t = (text or "").strip()
+    if not _matches(normalize_text(t), MEMORY_SAVE_PATTERNS):
+        return None
+    for pat in (
+        r"recuerda\s+que\s+(.+)",
+        r"guarda\s+que\s+(.+)",
+        r"no olvides\s+(.+)",
+        r"apunta\s+(.+)",
+    ):
+        m = re.search(pat, t, re.I)
+        if m:
+            return m.group(1).strip()[:4000]
+    return t[:4000]
+
+
+def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysis:
+    t = normalize_text(text)
+    raw = (text or "").strip()
+
+    mem_save = parse_memory_save(raw)
+    if mem_save:
+        return IntentAnalysis(
+            primary=CognitiveIntent.MEMORY_SAVE,
+            web_kind="general",
+            needs_web=False,
+            needs_advanced=False,
+            needs_advanced_confirm=False,
+            has_advanced_confirm=False,
+            is_volatile=False,
+            memory_save_text=mem_save,
+        )
+
+    if _matches(t, MEMORY_RECALL_PATTERNS):
+        return IntentAnalysis(
+            primary=CognitiveIntent.MEMORY_RECALL,
+            web_kind="general",
+            needs_web=False,
+            needs_advanced=False,
+            needs_advanced_confirm=False,
+            has_advanced_confirm=False,
+            is_volatile=False,
+            memory_recall_query=raw,
+        )
+
+    if _matches(t, META_PATTERNS):
+        return IntentAnalysis(
+            primary=CognitiveIntent.META_PUBLISH,
+            web_kind="general",
+            needs_web=False,
+            needs_advanced=False,
+            needs_advanced_confirm=False,
+            has_advanced_confirm=False,
+            is_volatile=False,
+        )
+
+    volatile = is_volatile_query(raw)
+    web = is_web_research_intent(raw)
+    advanced = is_advanced_request(raw)
+    confirmed = has_advanced_confirmation(raw) or (confirm_pending and has_advanced_confirmation(raw))
+
+    if web or volatile:
+        kind = "weather" if is_weather_intent(raw) else "news" if is_news_intent(raw) else "general"
+        return IntentAnalysis(
+            primary=CognitiveIntent.WEB_SEARCH,
+            web_kind=kind,
+            needs_web=True,
+            needs_advanced=False,
+            needs_advanced_confirm=False,
+            has_advanced_confirm=confirmed,
+            is_volatile=True,
+        )
+
+    if advanced:
+        return IntentAnalysis(
+            primary=CognitiveIntent.ADVANCED_ANALYSIS,
+            web_kind="general",
+            needs_web=False,
+            needs_advanced=True,
+            needs_advanced_confirm=not confirmed and not is_explicit_advanced(raw),
+            has_advanced_confirm=confirmed,
+            is_volatile=False,
+        )
+
+    return IntentAnalysis(
+        primary=CognitiveIntent.INTERNAL_KNOWLEDGE,
+        web_kind="general",
+        needs_web=False,
+        needs_advanced=False,
+        needs_advanced_confirm=False,
+        has_advanced_confirm=confirmed,
+        is_volatile=volatile,
+    )
+
+
+def is_explicit_advanced(text: str) -> bool:
+    return _matches(normalize_text(text), [r"\bsistema avanzado\b", r"\bmodo avanzado\b"])

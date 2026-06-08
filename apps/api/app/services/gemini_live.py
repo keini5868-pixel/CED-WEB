@@ -31,7 +31,7 @@ DEFAULT_LIVE_MODEL = RECOMMENDED_LIVE_MODEL
 
 
 
-def create_ephemeral_token(voice_name: str | None = None) -> dict[str, Any]:
+def create_ephemeral_token(voice_name: str | None = None, *, user_id: str | None = None) -> dict[str, Any]:
 
     settings = get_settings()
 
@@ -109,6 +109,15 @@ def create_ephemeral_token(voice_name: str | None = None) -> dict[str, Any]:
 
 
     logger.info("[GEMINI:4] Token generado voice=%s", voice)
+
+    system_instruction = CED_LIVE_VOICE_SYSTEM_PROMPT
+    if user_id:
+        from app.services.cognitive_router import build_voice_system_extras
+
+        extras = build_voice_system_extras(user_id)
+        if extras:
+            system_instruction = f"{system_instruction}\n\n{extras}"
+
     return {
 
         "ok": True,
@@ -119,7 +128,7 @@ def create_ephemeral_token(voice_name: str | None = None) -> dict[str, Any]:
 
         "voiceName": voice,
 
-        "systemInstruction": CED_LIVE_VOICE_SYSTEM_PROMPT,
+        "systemInstruction": system_instruction,
 
         "expiresInSeconds": 120,
 

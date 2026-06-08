@@ -12,6 +12,7 @@ import httpx
 from app.config import get_settings
 from app.domain.plans import get_plan_limits, normalize_plan_id
 from app.services import supabase_db
+from app.services.cognitive_router import build_chat_system_extras, route_message
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 
 logger = logging.getLogger(__name__)
@@ -59,6 +60,11 @@ CHAT_TOOLS: list[dict[str, Any]] = [
 CHAT_SYSTEM_BASE = """Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
 Español latinoamericano natural, cálido y directo. NO uses "señor/señora" ni tono de mayordomo.
 Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude, Gemini ni APIs internas.
+
+IMPORTANTE — cerebro híbrido CED:
+- Primero usa conocimiento interno estable (conceptos, negocio, ciencia, cultura) cuando viene en el contexto.
+- Solo afirma datos de hoy (clima, precios, noticias) si hay contexto web inyectado abajo.
+- Sistema avanzado: si el contexto indica confirmación pendiente, pregunta antes de profundizar.
 
 IMPORTANTE — capacidades REALES de esta plataforma:
 - CED puede publicar en Facebook e Instagram cuando el usuario conectó Meta (dashboard → Conectar Redes).
@@ -310,9 +316,32 @@ def send_message(
     history = supabase_db.get_conversation_messages(conversation_id, user_id, limit=30)
     supabase_db.append_message(conversation_id, user_id, "user", text)
 
+    route = route_message(user_id, text, channel="text")
+
+    def _finish(reply: str, *, route_meta: dict | None = None) -> dict[str, Any]:
+        supabase_db.append_message(conversation_id, user_id, "model", reply)
+        updated_status = chat_status(user_id)
+        out: dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "reply": reply,
+            "usage": updated_status,
+        }
+        if route_meta:
+            out["cognitive"] = route_meta
+        return out
+
+    if route.intent == "memory_save" and route.speakable:
+        return _finish(route.speakable, route_meta=route.to_dict())
+
+    if route.needs_advanced_confirm and route.speakable:
+        return _finish(route.speakable, route_meta=route.to_dict())
+
+    if route.intent == "advanced_analysis" and route.speakable:
+        return _finish(route.speakable, route_meta=route.to_dict())
+
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
-    system = _chat_system_for_user(user_id)
+    system = _chat_system_for_user(user_id) + "\n\n" + build_chat_system_extras(user_id, route)
 
     try:
         reply = _complete_chat_with_tools(
@@ -340,11 +369,4 @@ def send_message(
         logger.exception("[CHAT] anthropic failed")
         raise TextChatError("Error de conexión con el asistente.") from exc
 
-    supabase_db.append_message(conversation_id, user_id, "model", reply)
-    updated_status = chat_status(user_id)
-
-    return {
-        "conversation_id": conversation_id,
-        "reply": reply,
-        "usage": updated_status,
-    }
+    return _finish(reply, route_meta=route.to_dict())
