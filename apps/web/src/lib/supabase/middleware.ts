@@ -84,8 +84,14 @@ export async function updateSession(request: NextRequest) {
   }
 
   if (user && pathname.startsWith(ADMIN_PATH)) {
-    const role = user.app_metadata?.role as string | undefined;
-    if (!isSuperAdmin(user.email, role)) {
+    const metadataRole = user.app_metadata?.role as string | undefined;
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    const profileRole = profile?.role as string | undefined;
+    if (!isSuperAdmin(user.email, metadataRole, profileRole)) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = DASHBOARD_PATH;
       return NextResponse.redirect(redirectUrl);

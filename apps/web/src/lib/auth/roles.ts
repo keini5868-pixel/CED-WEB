@@ -1,5 +1,9 @@
 import type { UserRole } from "@ced/types";
 
+function normalizeAdminEmail(value: string): string {
+  return value.trim().replace(/^["']+|["']+$/g, "").toLowerCase();
+}
+
 /** Emails con acceso al panel admin (servidor). */
 export function getSuperAdminEmails(): string[] {
   const raw =
@@ -8,16 +12,17 @@ export function getSuperAdminEmails(): string[] {
     "";
   return raw
     .split(",")
-    .map((e) => e.trim().toLowerCase())
+    .map(normalizeAdminEmail)
     .filter(Boolean);
 }
 
 export function resolveUserRole(
   email: string | undefined | null,
   metadataRole?: string | null,
+  profileRole?: string | null,
 ): UserRole {
-  const normalized = (email || "").trim().toLowerCase();
-  if (metadataRole === "super_admin") {
+  const normalized = normalizeAdminEmail(email || "");
+  if (metadataRole === "super_admin" || profileRole === "super_admin") {
     return "super_admin";
   }
   if (normalized && getSuperAdminEmails().includes(normalized)) {
@@ -29,6 +34,7 @@ export function resolveUserRole(
 export function isSuperAdmin(
   email: string | undefined | null,
   metadataRole?: string | null,
+  profileRole?: string | null,
 ): boolean {
-  return resolveUserRole(email, metadataRole) === "super_admin";
+  return resolveUserRole(email, metadataRole, profileRole) === "super_admin";
 }

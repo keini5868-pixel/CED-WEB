@@ -1,6 +1,6 @@
 import type { User } from "@supabase/supabase-js";
 
-import { isSuperAdmin, resolveUserRole } from "@/lib/auth/roles";
+import { resolveUserRole } from "@/lib/auth/roles";
 import { isSupabaseConfigured } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
@@ -25,11 +25,19 @@ export async function getSession(): Promise<SessionInfo> {
   }
 
   const metadataRole = user.app_metadata?.role as string | undefined;
-  const role = resolveUserRole(user.email, metadataRole);
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const profileRole = profile?.role as string | undefined;
+  const role = resolveUserRole(user.email, metadataRole, profileRole);
 
   return {
     user,
     role,
-    isSuperAdmin: isSuperAdmin(user.email, metadataRole),
+    isSuperAdmin: role === "super_admin",
   };
 }
