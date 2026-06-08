@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AdminPanelButton } from "@/components/hud/AdminPanelButton";
 import { ConnectNetworksButton } from "@/components/hud/ConnectNetworksButton";
 import { SignOutButton } from "@/components/auth/SignOutButton";
-import { DRIVE_PATH } from "@/lib/auth/paths";
+import { DriveModeLink } from "@/components/navigation/DriveModeLink";
 
 interface HudShellProps {
   children: React.ReactNode;
@@ -26,13 +26,8 @@ export function HudShell({ children, email, isSuperAdmin }: HudShellProps) {
             SYS: ONLINE
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <Link
-            href={DRIVE_PATH}
-            className="hidden rounded border border-cyan-700/60 px-2 py-1 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-400 hover:border-cyan-500 sm:inline"
-          >
-            CONDUCIR
-          </Link>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <DriveModeLink compact />
           <ConnectNetworksButton />
           <AdminPanelButton visible={isSuperAdmin} />
           {email ? (

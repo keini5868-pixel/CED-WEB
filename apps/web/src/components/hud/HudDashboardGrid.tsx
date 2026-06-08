@@ -19,6 +19,7 @@ import {
 } from "@/components/hud/HudLivePanels";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import { CedVoiceHub } from "@/components/voice/CedVoiceHub";
+import { DriveModeLink } from "@/components/navigation/DriveModeLink";
 import { HudFeedProvider } from "@/contexts/HudFeedContext";
 import { HudPanelProvider } from "@/contexts/HudPanelContext";
 import { UsageBalanceProvider } from "@/hooks/useUsageBalance";
@@ -53,7 +54,8 @@ export function HudDashboardGrid() {
             </HudPanel>
           </div>
           </div>
-          <div className="col-span-4 flex flex-col items-center justify-center py-2">
+          <div className="col-span-4 flex flex-col items-center justify-center gap-3 py-2">
+            <DriveModeLink />
             <CedVoiceHub />
           </div>
           <div className="col-span-4">
@@ -87,6 +89,7 @@ export function HudDashboardGrid() {
           <Suspense fallback={null}>
             <MetaOAuthCallbackBanner />
           </Suspense>
+          <DriveModeLink />
           <CedVoiceHub />
           <HudCollapsible title="CASTILLO" defaultOpen>
             <LeftPanel3DCarousel />
