@@ -355,6 +355,11 @@ export function useCedVoiceSession(
                 "Has alcanzado tu límite diario de voz. Recarga o continúa mañana.",
               );
               await stopSession();
+            } else if (data.access_denied) {
+              setErrorMessage(
+                "Tu suscripción no está activa. Renueva en Precios para usar la voz.",
+              );
+              await stopSession();
             }
           } catch {
             /* ignore */
@@ -1047,6 +1052,12 @@ export function useCedVoiceSession(
     },
     [micOn],
   );
+
+  const clearError = useCallback(() => {
+    setErrorMessage(null);
+    setOrbState((s) => (s === "error" ? "idle" : s));
+    setStatusLabel(ORB_STATE_LABELS.idle);
+  }, []);
 
   return {
     orbState,

@@ -14,7 +14,7 @@ from app.services import supabase_db
 
 logger = logging.getLogger(__name__)
 
-CHAT_MODEL = "claude-sonnet-4-20250514"
+CHAT_MODEL = "claude-sonnet-4-6"
 CHAT_SYSTEM = """Eres CED (Castillo de la Evolución Digital), asistente inteligente en chat de texto.
 Español latinoamericano natural, cálido y directo. NO uses "señor/señora" ni tono de mayordomo.
 Responde con markdown cuando ayude (listas, negritas). Sé útil y conciso.
@@ -161,8 +161,20 @@ def send_message(
             res.raise_for_status()
             data = res.json()
     except httpx.HTTPStatusError as exc:
-        logger.error("[CHAT] anthropic %s", exc.response.text[:200])
-        raise TextChatError("No pude obtener respuesta del asistente.") from exc
+        status = exc.response.status_code
+        body = exc.response.text[:300]
+        logger.error("[CHAT] anthropic %s %s", status, body)
+        if status in (401, 403):
+            raise TextChatError(
+                "Chat no configurado: revisa ANTHROPIC_API_KEY en Railway (servicio CED-WEB)."
+            ) from exc
+        if status == 404:
+            raise TextChatError(
+                f"Modelo de chat no disponible ({CHAT_MODEL}). Contacta soporte."
+            ) from exc
+        raise TextChatError(
+            "No pude obtener respuesta del asistente. Intenta de nuevo en un momento."
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("[CHAT] anthropic failed")
         raise TextChatError("Error de conexión con el asistente.") from exc

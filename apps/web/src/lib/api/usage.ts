@@ -45,6 +45,7 @@ export async function startVoiceSession(): Promise<{
 export type VoiceSessionTick = {
   used_minutes_today: number;
   blocked: boolean;
+  access_denied?: boolean;
   usage_percent: number;
 };
 

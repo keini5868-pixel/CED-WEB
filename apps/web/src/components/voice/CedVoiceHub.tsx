@@ -37,7 +37,7 @@ const JarvisOrbScene = dynamic(
 /** Centro del dashboard — orbe JARVIS + controles + Gemini Live. */
 export function CedVoiceHub() {
   const [chatOpen, setChatOpen] = useState(false);
-  const { refresh: refreshUsage } = useUsageBalance(5000);
+  const { balance, loaded, refresh: refreshUsage } = useUsageBalance(5000);
   const { pushLine } = useHudFeed();
 
   useEffect(() => {
@@ -49,6 +49,28 @@ export function CedVoiceHub() {
       pushLine(text, role === "user" ? "voice" : "report");
     },
   });
+  const { errorMessage, clearError } = voice;
+
+  useEffect(() => {
+    if (!loaded || !errorMessage) return;
+    const limitMsg = errorMessage.includes("límite diario");
+    const subMsg =
+      errorMessage.includes("suscripción") ||
+      errorMessage.includes("prueba");
+    if (limitMsg && !balance.blocked && !balance.accessDenied) {
+      clearError();
+    }
+    if (subMsg && !balance.accessDenied && balance.plan > 0) {
+      clearError();
+    }
+  }, [
+    loaded,
+    balance.blocked,
+    balance.accessDenied,
+    balance.plan,
+    errorMessage,
+    clearError,
+  ]);
 
   return (
     <div className="flex w-full flex-col items-center px-2 py-4">

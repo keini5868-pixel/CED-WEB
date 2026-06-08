@@ -34,6 +34,44 @@ def check_gemini() -> dict[str, Any]:
     }
 
 
+def check_anthropic() -> dict[str, Any]:
+    from app.services.text_chat import CHAT_MODEL
+
+    settings = get_settings()
+    api_key = settings.anthropic_api_key.strip()
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "missing_anthropic_api_key",
+            "hint": "Añade ANTHROPIC_API_KEY en Railway (servicio CED-WEB).",
+        }
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            res = client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": CHAT_MODEL,
+                    "max_tokens": 8,
+                    "messages": [{"role": "user", "content": "ping"}],
+                },
+            )
+        if res.status_code == 200:
+            return {"ok": True, "model": CHAT_MODEL}
+        return {
+            "ok": False,
+            "error": f"anthropic_http_{res.status_code}",
+            "detail": res.text[:200],
+            "model": CHAT_MODEL,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:200], "model": CHAT_MODEL}
+
+
 def check_supabase() -> dict[str, Any]:
     settings = get_settings()
     if not settings.supabase_url or not settings.supabase_service_role_key:

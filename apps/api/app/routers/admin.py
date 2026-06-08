@@ -11,6 +11,7 @@ from app.deps.auth import require_super_admin
 from app.domain.plans import PlanId, plan_minutes_daily
 from app.services import supabase_db
 from app.services.admin_users import AdminUserError, create_manual_user, list_admin_users
+from app.services.voice_usage import voice_access_state
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
 
@@ -45,18 +46,19 @@ def reset_my_daily_usage(user_id: str = Depends(require_super_admin)) -> dict:
     """Renueva el cupo diario de voz del admin autenticado (solo para ti)."""
     try:
         reset_minutes = supabase_db.reset_usage_minutes_today(user_id)
-        used = supabase_db.get_usage_minutes_today(user_id)
     except RuntimeError as exc:
         return {"ok": False, "error": str(exc)}
 
-    plan_minutes = supabase_db.get_usage_limit_minutes(user_id)
+    state = voice_access_state(user_id)
     return {
         "ok": True,
         "reset_minutes": round(reset_minutes, 2),
-        "used_minutes_today": round(used, 2),
-        "plan_minutes_daily": plan_minutes,
-        "blocked": used >= plan_minutes,
-        "usage_percent": round(used / plan_minutes * 100, 1) if plan_minutes else 0,
+        "used_minutes_today": state["used_minutes_today"],
+        "plan_minutes_daily": state["plan_minutes_daily"],
+        "blocked": state["blocked"],
+        "access_denied": state["access_denied"],
+        "access_message": state.get("access_message"),
+        "usage_percent": state["usage_percent"],
     }
 
 

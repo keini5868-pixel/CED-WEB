@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.deps.auth import require_super_admin
 from app.rate_limit import limiter
 from app.services.integrations import (
+    check_anthropic,
     check_gemini,
     check_stripe,
     check_supabase,
@@ -65,6 +66,7 @@ def auth_diagnostics(_request: Request) -> dict:
         "supabase_keys_valid": supabase_auth.get("keys_valid"),
         "supabase_auth_error": supabase_auth.get("error"),
         "super_admin_emails_set": bool(settings.super_admin_emails.strip()),
+        "has_anthropic_api_key": bool(settings.anthropic_api_key.strip()),
         "hint": (
             "Si project_match=false o supabase_api_key_valid=false, "
             "corrige variables en Railway servicio CED-WEB y redeploy."
@@ -126,15 +128,18 @@ def integrations_status(
     supabase_auth = check_supabase_auth()
     stripe_status = check_stripe()
     gemini_status = check_gemini()
+    anthropic_status = check_anthropic()
     return {
         "phase": 1,
         "supabase_db": supabase_db,
         "supabase_auth": supabase_auth,
         "stripe": stripe_status,
         "gemini": gemini_status,
+        "anthropic": anthropic_status,
         "ready": supabase_db.get("ok")
         and stripe_status.get("ok")
-        and gemini_status.get("ok"),
+        and gemini_status.get("ok")
+        and anthropic_status.get("ok"),
     }
 
 
