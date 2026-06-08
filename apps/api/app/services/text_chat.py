@@ -1,7 +1,8 @@
-"""Chat de texto con Claude — límites por plan."""
+"""Chat de texto con Claude — límites por plan + herramientas Meta."""
 
 from __future__ import annotations
 
+import json
 import logging
 from datetime import date, datetime, timezone
 from typing import Any
@@ -11,14 +12,82 @@ import httpx
 from app.config import get_settings
 from app.domain.plans import get_plan_limits, normalize_plan_id
 from app.services import supabase_db
+from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 
 logger = logging.getLogger(__name__)
 
 CHAT_MODEL = "claude-sonnet-4-6"
-CHAT_SYSTEM = """Eres CED (Castillo de la Evolución Digital), asistente inteligente en chat de texto.
+
+CHAT_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "consultar_redes_conectadas",
+        "description": "Consulta si Facebook/Instagram están conectados a CED para este usuario.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "publicar_facebook",
+        "description": "Publica un post en la página de Facebook conectada del usuario.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "message": {"type": "string", "description": "Texto del post"},
+                "image_url": {
+                    "type": "string",
+                    "description": "URL HTTPS pública de imagen opcional",
+                },
+            },
+            "required": ["message"],
+        },
+    },
+    {
+        "name": "publicar_instagram",
+        "description": "Publica en Instagram Business conectado. Requiere imagen con URL HTTPS pública.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "caption": {"type": "string", "description": "Caption del post"},
+                "image_url": {
+                    "type": "string",
+                    "description": "URL HTTPS pública de la imagen (obligatoria en IG)",
+                },
+            },
+            "required": ["caption", "image_url"],
+        },
+    },
+]
+
+CHAT_SYSTEM_BASE = """Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
 Español latinoamericano natural, cálido y directo. NO uses "señor/señora" ni tono de mayordomo.
-Responde con markdown cuando ayude (listas, negritas). Sé útil y conciso.
-Nunca menciones Claude, Gemini ni APIs internas."""
+Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude, Gemini ni APIs internas.
+
+IMPORTANTE — capacidades REALES de esta plataforma:
+- CED puede publicar en Facebook e Instagram cuando el usuario conectó Meta (dashboard → Conectar Redes).
+- Usa las herramientas publicar_facebook / publicar_instagram cuando el usuario pida publicar y tengas los datos.
+- Si falta caption o image_url (Instagram), pídelos antes de invocar la herramienta.
+- Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
+
+PROHIBIDO (respuestas de chatbot genérico):
+- "No tengo acceso a internet en tiempo real" — CED tiene búsqueda y herramientas en voz; en chat puedes preparar contenido y publicar vía Meta.
+- "No me puedo conectar a tus cuentas" — sí puedes vía Meta OAuth cuando está conectado.
+- Recomendar Buffer/Hootsuite como única opción si el usuario ya tiene CED con redes conectadas.
+
+Cuando prepares contenido para redes, entrégalo listo y ofrece publicarlo con CED si aplica."""
+
+
+def _chat_system_for_user(user_id: str) -> str:
+    conn = supabase_db.get_meta_connection(user_id)
+    if conn and conn.get("access_token"):
+        username = conn.get("ig_username") or "Instagram"
+        return (
+            f"{CHAT_SYSTEM_BASE}\n\n"
+            f"Estado Meta del usuario: CONECTADO (@{username}). "
+            "Puedes publicar con las herramientas cuando confirme el texto."
+        )
+    return (
+        f"{CHAT_SYSTEM_BASE}\n\n"
+        "Estado Meta del usuario: NO conectado. "
+        "Para publicar directo, debe usar Conectar Redes en el dashboard."
+    )
 
 
 class TextChatError(ValueError):
@@ -104,6 +173,108 @@ def _anthropic_messages(history: list[dict[str, str]]) -> list[dict[str, str]]:
     return out[-20:]
 
 
+def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
+    try:
+        if name == "consultar_redes_conectadas":
+            conn = supabase_db.get_meta_connection(user_id)
+            if not conn or not conn.get("access_token"):
+                return json.dumps({"connected": False})
+            return json.dumps(
+                {
+                    "connected": True,
+                    "instagram_username": conn.get("ig_username"),
+                    "page_id": conn.get("page_id"),
+                }
+            )
+        if name == "publicar_facebook":
+            result = publish_facebook(
+                user_id,
+                str(tool_input.get("message") or ""),
+                image_url=tool_input.get("image_url"),
+            )
+            return json.dumps(result)
+        if name == "publicar_instagram":
+            result = publish_instagram(
+                user_id,
+                str(tool_input.get("caption") or ""),
+                image_url=str(tool_input.get("image_url") or ""),
+            )
+            return json.dumps(result)
+        return json.dumps({"error": f"Herramienta desconocida: {name}"})
+    except MetaSocialError as exc:
+        return json.dumps({"ok": False, "error": str(exc)})
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[CHAT] tool %s failed", name)
+        return json.dumps({"ok": False, "error": str(exc)[:200]})
+
+
+def _anthropic_request(
+    *,
+    api_key: str,
+    system: str,
+    messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    with httpx.Client(timeout=90.0) as client:
+        res = client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": CHAT_MODEL,
+                "max_tokens": 1200,
+                "system": system,
+                "messages": messages,
+                "tools": CHAT_TOOLS,
+            },
+        )
+        res.raise_for_status()
+        return res.json()
+
+
+def _final_text_from_response(data: dict[str, Any]) -> str:
+    blocks = data.get("content") or []
+    return "".join(
+        b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
+    ).strip()
+
+
+def _complete_chat_with_tools(
+    user_id: str,
+    *,
+    api_key: str,
+    system: str,
+    messages: list[dict[str, Any]],
+) -> str:
+    for _ in range(4):
+        data = _anthropic_request(api_key=api_key, system=system, messages=messages)
+        blocks = data.get("content") or []
+        tool_uses = [b for b in blocks if isinstance(b, dict) and b.get("type") == "tool_use"]
+        if not tool_uses:
+            reply = _final_text_from_response(data)
+            if reply:
+                return reply
+            raise TextChatError("Respuesta vacía del asistente.")
+
+        messages.append({"role": "assistant", "content": blocks})
+        tool_results: list[dict[str, Any]] = []
+        for tool in tool_uses:
+            tool_input = tool.get("input") if isinstance(tool.get("input"), dict) else {}
+            result = _run_chat_tool(user_id, str(tool.get("name") or ""), tool_input)
+            tool_results.append(
+                {
+                    "type": "tool_result",
+                    "tool_use_id": tool.get("id"),
+                    "content": result,
+                }
+            )
+        messages.append({"role": "user", "content": tool_results})
+
+    raise TextChatError("Demasiados pasos de herramientas. Intenta con un pedido más simple.")
+
+
 def send_message(
     user_id: str,
     *,
@@ -141,25 +312,15 @@ def send_message(
 
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
+    system = _chat_system_for_user(user_id)
 
     try:
-        with httpx.Client(timeout=90.0) as client:
-            res = client.post(
-                "https://api.anthropic.com/v1/messages",
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json",
-                },
-                json={
-                    "model": CHAT_MODEL,
-                    "max_tokens": 1200,
-                    "system": CHAT_SYSTEM,
-                    "messages": messages,
-                },
-            )
-            res.raise_for_status()
-            data = res.json()
+        reply = _complete_chat_with_tools(
+            user_id,
+            api_key=api_key,
+            system=system,
+            messages=messages,
+        )
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         body = exc.response.text[:300]
@@ -178,13 +339,6 @@ def send_message(
     except Exception as exc:  # noqa: BLE001
         logger.exception("[CHAT] anthropic failed")
         raise TextChatError("Error de conexión con el asistente.") from exc
-
-    blocks = data.get("content") or []
-    reply = "".join(
-        b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text"
-    ).strip()
-    if not reply:
-        raise TextChatError("Respuesta vacía del asistente.")
 
     supabase_db.append_message(conversation_id, user_id, "model", reply)
     updated_status = chat_status(user_id)

@@ -367,6 +367,12 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
     role = (profile or {}).get("role")
     if is_super_admin(email, role if role == "super_admin" else None):
         minutes = supabase_db.get_usage_limit_minutes(user_id)
+        if minutes <= 0:
+            sub = supabase_db.get_subscription(user_id)
+            plan_id = normalize_plan_id((sub or {}).get("plan_id")) if sub else PlanId.ELITE.value
+            minutes = plan_minutes_daily(plan_id)
+            if minutes <= 0:
+                minutes = 120
         return True, "ok", minutes
 
     supabase_db.expire_trial_if_needed(user_id)
@@ -416,6 +422,8 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
             minutes = plan_minutes_daily(plan_id)
         if not limits.voice_enabled:
             return True, "free_basic", 0
+        if minutes <= 0 and st in ("active", "past_due"):
+            minutes = plan_minutes_daily(plan_id)
         return True, "ok", minutes
 
     return False, "Suscripción inactiva", 0
