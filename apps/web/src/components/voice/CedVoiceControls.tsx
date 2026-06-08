@@ -4,6 +4,7 @@ import {
   Camera,
   FolderOpen,
   History,
+  MessageCircle,
   Mic,
   MicOff,
   Pause,
@@ -26,6 +27,7 @@ interface CedVoiceControlsProps {
   onPause: () => void;
   onStop: () => void;
   onHistory: () => void;
+  onChat: () => void;
   onSettings: () => void;
   onFiles: () => void;
 }
@@ -91,6 +93,10 @@ export function CedVoiceControls(props: CedVoiceControlsProps) {
       >
         <Camera className="h-5 w-5" />
         <span className="mt-0.5 hidden sm:inline">CAM</span>
+      </ControlBtn>
+      <ControlBtn label="Chat de texto" onClick={props.onChat}>
+        <MessageCircle className="h-5 w-5" />
+        <span className="mt-0.5 hidden sm:inline">CHAT</span>
       </ControlBtn>
       <ControlBtn
         active={props.muted}

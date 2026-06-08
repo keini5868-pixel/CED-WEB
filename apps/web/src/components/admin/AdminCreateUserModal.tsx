@@ -33,7 +33,7 @@ export function AdminCreateUserModal({ open, onClose, onCreated }: Props) {
   const [plan, setPlan] =
     useState<CreateAdminUserPayload["plan"]>("elite_founding");
   const [duration, setDuration] = useState<number | "indefinite">(30);
-  const [minutesDaily, setMinutesDaily] = useState(120);
+  const [minutesDaily, setMinutesDaily] = useState(45);
   const [initialBalance, setInitialBalance] = useState("0");
   const [passwordMode, setPasswordMode] = useState<"auto" | "manual">("manual");
   const [password, setPassword] = useState("");
@@ -52,7 +52,7 @@ export function AdminCreateUserModal({ open, onClose, onCreated }: Props) {
     setAccessType("beta");
     setPlan("elite_founding");
     setDuration(30);
-    setMinutesDaily(120);
+    setMinutesDaily(45);
     setInitialBalance("0");
     setPasswordMode("manual");
     setPassword("");
@@ -220,7 +220,7 @@ export function AdminCreateUserModal({ open, onClose, onCreated }: Props) {
               value={minutesDaily}
               onChange={(e) => setMinutesDaily(Number(e.target.value))}
             >
-              {[60, 90, 120, 180, 240].map((m) => (
+              {[45, 60, 90, 120, 180].map((m) => (
                 <option key={m} value={m}>
                   {m} min
                 </option>

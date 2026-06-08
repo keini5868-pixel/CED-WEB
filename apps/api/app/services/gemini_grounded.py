@@ -57,12 +57,6 @@ def _spoken_fallback(raw: str) -> str:
     text = re.sub(r"\s+", " ", raw).strip()
     if not text:
         return ""
-    if not text.lower().startswith("señor"):
-        text = (
-            f"Señor, {text[0].lower()}{text[1:]}"
-            if len(text) > 1
-            else f"Señor, {text}"
-        )
     return text[:420]
 
 
@@ -77,19 +71,19 @@ def _gemini_prompt(topic: str, kind: str) -> str:
             f"Fecha: {today}. Pregunta: {topic}\n\n"
             "Busca el clima ACTUAL en internet. Responde en 2 oraciones cortas "
             "en español latinoamericano para narración por VOZ. "
-            "Empieza con 'Señor,'. Sin markdown, URLs ni listas."
+            "Sin markdown, URLs ni listas."
         )
     if kind == "news":
         return (
             f"Fecha: {today}. Pregunta: {topic}\n\n"
             "Busca noticias de HOY en internet. Responde en 2 oraciones cortas "
             "en español latinoamericano para narración por VOZ. "
-            "Empieza con 'Señor,'. Sin markdown, URLs ni listas."
+            "Sin markdown, URLs ni listas."
         )
     return (
         f"Pregunta: {topic}\n\n"
         "Busca en internet y responde en 2-3 oraciones cortas en español "
-        "latinoamericano para narración por VOZ. Empieza con 'Señor,'. "
+        "latinoamericano para narración por VOZ. "
         "Sin markdown, URLs ni listas."
     )
 

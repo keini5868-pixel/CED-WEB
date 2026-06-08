@@ -1,62 +1,50 @@
-/** Plan único premium CED */
-export type SubscriptionPlanId = "elite_founding" | "elite_regular";
+/** Planes de suscripción CED */
+export type SubscriptionPlanId =
+  | "starter"
+  | "pro"
+  | "elite"
+  | "founding"
+  | "free_basic"
+  | "elite_founding"
+  | "elite_regular";
 
 export type UserRole = "client" | "super_admin";
 
-/** Características del producto único CED Élite */
-export interface CedEliteFeatures {
-  geminiLiveMinutesPerDay: number;
-  videoAllowed: boolean;
-  claudeTextUnlimited: boolean;
+export interface PlanFeatures {
+  geminiMinutesPerDay: number;
+  webSearchesPerDay: number;
   aiImagesPerMonth: number;
-  ttsElevenLabs: boolean;
-  whisperTranscription: boolean;
-  memoryUnlimited: boolean;
-  foldersUnlimited: boolean;
-  pdfsUnlimited: boolean;
-  hudPanelsLive: boolean;
-  pwaMobile: boolean;
-  prioritySupport: boolean;
-  earlyAccessFeatures: boolean;
+  voiceEnabled: boolean;
+  cameraEnabled: boolean;
+  metaSocialEnabled: boolean;
+  prospectionEnabled: boolean;
 }
 
-export const CED_ELITE_FEATURES: CedEliteFeatures = {
-  geminiLiveMinutesPerDay: 120,
-  videoAllowed: true,
-  claudeTextUnlimited: true,
-  aiImagesPerMonth: 100,
-  ttsElevenLabs: true,
-  whisperTranscription: true,
-  memoryUnlimited: true,
-  foldersUnlimited: true,
-  pdfsUnlimited: true,
-  hudPanelsLive: true,
-  pwaMobile: true,
-  prioritySupport: true,
-  earlyAccessFeatures: true,
-};
-
 export const FOUNDING_MEMBER_MAX_SLOTS = 50;
+export const TRIAL_DAYS = 7;
 
-export const PLAN_PRICES_USD: Record<SubscriptionPlanId, number> = {
-  elite_founding: 149,
-  elite_regular: 249,
+export const PLAN_PRICES_USD: Record<
+  "starter" | "pro" | "elite" | "founding",
+  number
+> = {
+  starter: 30,
+  pro: 59,
+  elite: 99,
+  founding: 149,
 };
 
-/** Recarga flexible — saldo en USD de uso (60% del pago va al cliente) */
 export const RECHARGE_MARGIN_KEINI = 0.4;
 export const RECHARGE_CLIENT_SHARE = 0.6;
 export const GEMINI_COST_PER_HOUR_USD = 1.5;
-export const RECHARGE_MIN_USD = 5;
+export const RECHARGE_MIN_USD = 10;
 export const RECHARGE_MAX_USD = 500;
-export const RECHARGE_QUICK_AMOUNTS_USD = [10, 25, 50, 100] as const;
+export const RECHARGE_QUICK_AMOUNTS_USD = [10, 20, 40, 50, 100] as const;
 
 export interface RechargeQuote {
   amountPaidUsd: number;
   clientBalanceUsd: number;
   estimatedExtraHours: number;
   marginKeiniUsd: number;
-  /** El saldo de recarga no expira */
   neverExpires: true;
 }
 
@@ -76,6 +64,60 @@ export function quoteRecharge(amountUsd: number): RechargeQuote {
     neverExpires: true,
   };
 }
+
+export const PUBLIC_PLANS = [
+  {
+    id: "starter" as const,
+    label: "CED Starter",
+    priceUsd: 30,
+    minutesPerDay: 30,
+    highlights: [
+      "Chat texto ilimitado",
+      "30 min/día voz JARVIS",
+      "50 búsquedas web/día",
+      "20 imágenes IA/mes",
+    ],
+  },
+  {
+    id: "pro" as const,
+    label: "CED Pro",
+    priceUsd: 59,
+    minutesPerDay: 60,
+    highlights: [
+      "Todo Starter +",
+      "60 min/día voz",
+      "Cámara por voz",
+      "Búsquedas ilimitadas",
+      "50 imágenes IA/mes",
+    ],
+  },
+  {
+    id: "elite" as const,
+    label: "CED Élite",
+    priceUsd: 99,
+    minutesPerDay: 120,
+    highlights: [
+      "Todo Pro +",
+      "120 min/día voz",
+      "Instagram/Facebook",
+      "Modo prospección",
+      "Reportes PDF",
+    ],
+  },
+  {
+    id: "founding" as const,
+    label: "CED Founding",
+    priceUsd: 149,
+    minutesPerDay: -1,
+    highlights: [
+      "Todo Élite +",
+      "Voz ilimitada",
+      "Precio bloqueado de por vida",
+      "Soporte directo",
+      "Cupos limitados (50)",
+    ],
+  },
+] as const;
 
 /** Estados del orbe central JARVIS (Fase 2) */
 export type OrbState =
@@ -97,13 +139,11 @@ export const ORB_STATE_LABELS: Record<OrbState, string> = {
 
 export type VoicePaletteId = "cyan" | "gold" | "matrix" | "iron";
 
-/** Nombre PrebuiltVoiceConfig de Gemini Live (ej. Aoede, Charon). */
 export type GeminiVoiceId = string;
 
 export interface VoiceSessionPreferences {
   language: "es" | "en" | "pt";
   responseSpeed: "fast" | "balanced" | "thoughtful";
-  /** Voz Gemini Live — se aplica al abrir/reabrir sesión. */
   voiceName: GeminiVoiceId;
   palette: VoicePaletteId;
 }
@@ -115,9 +155,7 @@ export const DEFAULT_VOICE_PREFERENCES: VoiceSessionPreferences = {
   palette: "cyan",
 };
 
-/** Eventos SSE para paneles HUD */
 export type HudPanelId = "city" | "global" | "drones" | "waves" | "summary";
-
 export type HudState = "idle" | "searching" | "receiving" | "complete";
 
 export type PanelEvent =
@@ -131,18 +169,18 @@ export type PanelEvent =
   | { type: "summary_chunk"; text: string }
   | { type: "search_complete" };
 
-/** Uso de voz en tiempo real (barra HUD) */
 export interface UsageBalance {
   planMinutesDaily: number;
   usedMinutesToday: number;
-  /** Saldo USD de recargas (no expira) convertido a minutos disponibles */
   rechargeBalanceUsd: number;
   bonusMinutesFromBalance: number;
   totalAvailableMinutes: number;
   warningAtPercent: number;
   blocked: boolean;
-  timezone: string;
-  planId: SubscriptionPlanId;
+  needsRecharge?: boolean;
+  planId?: SubscriptionPlanId;
+  subscriptionStatus?: string;
+  trialEndsAt?: string | null;
   isFoundingMember: boolean;
   priceLockedForLife: boolean;
 }

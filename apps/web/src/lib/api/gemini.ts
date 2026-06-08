@@ -1,5 +1,5 @@
-import { apiUrl } from "@/lib/env";
-import { createClient } from "@/lib/supabase/client";
+import { parseApiJson } from "@/lib/api/http";
+import { proxyFetch } from "@/lib/api/ced-proxy";
 
 export type EphemeralTokenResponse =
   | {
@@ -15,35 +15,23 @@ export type EphemeralTokenResponse =
 export async function fetchEphemeralToken(
   voiceName?: string,
 ): Promise<EphemeralTokenResponse> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    return { ok: false, error: "Inicia sesión para usar la voz de CED" };
-  }
-
   let response: Response;
   try {
-    response = await fetch(`${apiUrl()}/v1/gemini/ephemeral-token`, {
+    response = await proxyFetch("gemini/ephemeral-token", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(voiceName ? { voiceName } : {}),
     });
   } catch {
     return {
       ok: false,
-      error: `No se pudo contactar la API en ${apiUrl()}. ¿Está corriendo pnpm dev:api?`,
+      error: "No se pudo contactar la API. ¿Está activa en Railway?",
     };
   }
 
-  const data = (await response.json()) as EphemeralTokenResponse & {
-    detail?: string;
-  };
+  const data = await parseApiJson<EphemeralTokenResponse & { detail?: string }>(
+    response,
+  );
   if (!response.ok) {
     const apiError =
       data.detail ||
@@ -66,26 +54,14 @@ export async function fetchDeepAnalysis(
   prompt: string,
   timeoutMs = 30000,
 ): Promise<{ ok: true; result: string } | { ok: false; error: string }> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    return { ok: false, error: "Inicia sesión para usar el sistema avanzado" };
-  }
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
-    response = await fetch(`${apiUrl()}/v1/gemini/deep-analysis`, {
+    response = await proxyFetch("gemini/deep-analysis", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt }),
       signal: controller.signal,
     });
@@ -98,9 +74,10 @@ export async function fetchDeepAnalysis(
   }
   clearTimeout(timer);
 
-  const data = (await response.json()) as
+  const data = await parseApiJson<
     | { ok: true; result: string }
-    | { ok: false; error: string; detail?: string };
+    | { ok: false; error: string; detail?: string }
+  >(response);
 
   if (!response.ok || !data.ok) {
     return {
@@ -119,26 +96,14 @@ export async function fetchVoiceBrief(
   kind: "news" | "weather" | "general" = "news",
   timeoutMs = 24000,
 ): Promise<VoiceBriefResponse> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session?.access_token) {
-    return { ok: false, error: "Inicia sesión para consultar noticias" };
-  }
-
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   let response: Response;
   try {
-    response = await fetch(`${apiUrl()}/v1/gemini/voice-brief`, {
+    response = await proxyFetch("gemini/voice-brief", {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query, kind }),
       signal: controller.signal,
     });
@@ -155,7 +120,9 @@ export async function fetchVoiceBrief(
   }
   clearTimeout(timer);
 
-  const data = (await response.json()) as VoiceBriefResponse & { detail?: string };
+  const data = await parseApiJson<VoiceBriefResponse & { detail?: string }>(
+    response,
+  );
   if (!response.ok || !data.ok) {
     return {
       ok: false,

@@ -46,6 +46,16 @@ class Settings(BaseSettings):
 
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_price_starter: str = ""
+    stripe_price_pro: str = ""
+    stripe_price_elite: str = ""
+    stripe_price_founding: str = ""
+    stripe_price_recharge_10: str = ""
+    stripe_price_recharge_20: str = ""
+    stripe_price_recharge_40: str = ""
+    stripe_price_recharge_50: str = ""
+    stripe_price_recharge_100: str = ""
+    # Legacy aliases
     stripe_price_elite_founding: str = ""
     stripe_price_elite_regular: str = ""
 

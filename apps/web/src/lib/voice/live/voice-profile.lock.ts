@@ -52,14 +52,14 @@ export const CED_VOICE_PROFILE_LOCK = {
   webSearch: {
     briefTimeoutMs: 10000,
     ackInstruction:
-      '[CED_ACK] Di EXACTAMENTE una sola vez: "De acuerdo, señor. Busco en internet." Luego CALLA hasta [CED_BRIEF]. No digas "sí señor" aparte.',
+      '[CED_ACK] Di EXACTAMENTE una sola vez: "Buscando en internet." Luego CALLA hasta [CED_BRIEF]. No repitas confirmaciones.',
   },
 
   advancedSystem: {
     fetchTimeoutMs: 30000,
     maxSpokenChars: 520,
     ackInstruction:
-      '[CED_ACK] Di EXACTAMENTE: "De acuerdo, señor. Consulto el sistema avanzado." Una sola frase. No digas nada más hasta [CED_BRIEF].',
+      '[CED_ACK] Di EXACTAMENTE: "Consulto el sistema avanzado." Una sola frase. CALLA hasta [CED_BRIEF].',
   },
 
   backend: {

@@ -8,6 +8,7 @@ import { CAROUSEL_PANEL_HEIGHT_PX } from "@/components/dashboard/carousel/carous
 import { LeftPanel3DCarousel } from "@/components/dashboard/LeftPanel3DCarousel";
 import { HudCollapsible } from "@/components/hud/HudCollapsible";
 import { MetaOAuthCallbackBanner } from "@/components/hud/ConnectNetworksButton";
+import { TrialExpiredBanner } from "@/components/billing/TrialExpiredBanner";
 import { HudDronesPanel } from "@/components/hud/HudDronesPanel";
 import {
   HudGlobalPanel,
@@ -30,6 +31,7 @@ export function HudDashboardGrid() {
           <div className="col-span-12">
             <Suspense fallback={null}>
               <MetaOAuthCallbackBanner />
+              <TrialExpiredBanner />
             </Suspense>
           </div>
           <div className="col-span-4">

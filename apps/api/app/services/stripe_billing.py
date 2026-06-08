@@ -1,0 +1,407 @@
+"""Stripe Checkout, webhooks y portal."""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Any
+
+import stripe
+
+from app.config import Settings, get_settings
+from app.domain.plans import (
+    FOUNDING_MEMBER_MAX_SLOTS,
+    PLAN_PRICES_USD,
+    RECHARGE_CLIENT_SHARE,
+    RECHARGE_QUICK_AMOUNTS_USD,
+    STRIPE_CHECKOUT_PLANS,
+    PlanId,
+    get_plan_limits,
+    normalize_plan_id,
+    plan_minutes_daily,
+    quote_recharge,
+)
+from app.services import supabase_db
+
+logger = logging.getLogger(__name__)
+
+_ACTIVE_STRIPE_STATUSES = frozenset({"active", "trialing", "past_due"})
+
+
+def _stripe_enabled(settings: Settings | None = None) -> bool:
+    s = settings or get_settings()
+    return bool(s.stripe_secret_key.strip())
+
+
+def _configure_stripe(settings: Settings | None = None) -> None:
+    s = settings or get_settings()
+    stripe.api_key = s.stripe_secret_key.strip()
+
+
+def price_id_for_plan(plan_id: str, settings: Settings | None = None) -> str | None:
+    s = settings or get_settings()
+    pid = normalize_plan_id(plan_id)
+    mapping = {
+        PlanId.STARTER.value: s.stripe_price_starter.strip(),
+        PlanId.PRO.value: s.stripe_price_pro.strip(),
+        PlanId.ELITE.value: s.stripe_price_elite.strip(),
+        PlanId.FOUNDING.value: (
+            s.stripe_price_founding.strip() or s.stripe_price_elite_founding.strip()
+        ),
+    }
+    return mapping.get(pid) or None
+
+
+def price_id_for_recharge(amount_usd: float, settings: Settings | None = None) -> str | None:
+    s = settings or get_settings()
+    amount = int(round(float(amount_usd)))
+    mapping = {
+        10: s.stripe_price_recharge_10.strip(),
+        20: s.stripe_price_recharge_20.strip(),
+        40: s.stripe_price_recharge_40.strip(),
+        50: s.stripe_price_recharge_50.strip(),
+        100: s.stripe_price_recharge_100.strip(),
+    }
+    return mapping.get(amount) or None
+
+
+def founding_slots_available(settings: Settings | None = None) -> tuple[int, int]:
+    s = settings or get_settings()
+    used, max_slots = supabase_db.get_founding_slots()
+    cap = s.founding_slots_max or max_slots or FOUNDING_MEMBER_MAX_SLOTS
+    return used, cap
+
+
+def create_subscription_checkout(user_id: str, email: str, plan_id: str) -> dict[str, str]:
+    settings = get_settings()
+    if not _stripe_enabled(settings):
+        raise ValueError("Stripe no configurado (STRIPE_SECRET_KEY).")
+
+    pid = normalize_plan_id(plan_id)
+    if pid not in STRIPE_CHECKOUT_PLANS:
+        raise ValueError(f"Plan no válido para checkout: {plan_id}")
+
+    if pid == PlanId.FOUNDING.value:
+        used, cap = founding_slots_available(settings)
+        if used >= cap:
+            raise ValueError("Cupos Founding agotados.")
+
+    price_id = price_id_for_plan(pid, settings)
+    if not price_id:
+        raise ValueError(f"Price ID Stripe no configurado para plan {pid}.")
+
+    _configure_stripe(settings)
+    web = settings.web_public_url.rstrip("/")
+    sub = supabase_db.get_subscription(user_id) or {}
+    customer_id = sub.get("stripe_customer_id")
+
+    params: dict[str, Any] = {
+        "mode": "subscription",
+        "line_items": [{"price": price_id, "quantity": 1}],
+        "success_url": f"{web}/dashboard?billing=success&plan={pid}",
+        "cancel_url": f"{web}/pricing?billing=cancelled",
+        "client_reference_id": user_id,
+        "metadata": {"user_id": user_id, "plan_id": pid, "checkout_type": "subscription"},
+        "subscription_data": {"metadata": {"user_id": user_id, "plan_id": pid}},
+    }
+    if customer_id:
+        params["customer"] = customer_id
+    elif email:
+        params["customer_email"] = email
+
+    session = stripe.checkout.Session.create(**params)
+    if not session.url:
+        raise ValueError("Stripe no devolvió URL de checkout.")
+    return {"url": session.url, "session_id": session.id}
+
+
+def create_recharge_checkout(user_id: str, email: str, amount_usd: float) -> dict[str, str]:
+    settings = get_settings()
+    if not _stripe_enabled(settings):
+        raise ValueError("Stripe no configurado (STRIPE_SECRET_KEY).")
+
+    quote = quote_recharge(amount_usd)
+    paid = float(quote["amount_paid_usd"])
+    _configure_stripe(settings)
+    web = settings.web_public_url.rstrip("/")
+    sub = supabase_db.get_subscription(user_id) or {}
+    customer_id = sub.get("stripe_customer_id")
+
+    price_id = price_id_for_recharge(paid, settings)
+    if price_id:
+        line_items = [{"price": price_id, "quantity": 1}]
+    else:
+        line_items = [
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(round(paid * 100)),
+                    "product_data": {"name": f"CED Recarga ${paid:.0f}"},
+                },
+                "quantity": 1,
+            }
+        ]
+
+    params: dict[str, Any] = {
+        "mode": "payment",
+        "line_items": line_items,
+        "success_url": f"{web}/dashboard?billing=recharge_success&amount={paid:.0f}",
+        "cancel_url": f"{web}/dashboard?billing=recharge_cancelled",
+        "client_reference_id": user_id,
+        "metadata": {
+            "user_id": user_id,
+            "checkout_type": "recharge",
+            "amount_paid_usd": str(paid),
+            "client_balance_usd": str(quote["client_balance_usd"]),
+        },
+    }
+    if customer_id:
+        params["customer"] = customer_id
+    elif email:
+        params["customer_email"] = email
+
+    session = stripe.checkout.Session.create(**params)
+    if not session.url:
+        raise ValueError("Stripe no devolvió URL de checkout.")
+    return {"url": session.url, "session_id": session.id}
+
+
+def create_portal_session(user_id: str) -> dict[str, str]:
+    settings = get_settings()
+    if not _stripe_enabled(settings):
+        raise ValueError("Stripe no configurado.")
+    sub = supabase_db.get_subscription(user_id) or {}
+    customer_id = sub.get("stripe_customer_id")
+    if not customer_id:
+        raise ValueError("No hay cliente Stripe asociado.")
+
+    _configure_stripe(settings)
+    web = settings.web_public_url.rstrip("/")
+    session = stripe.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=f"{web}/dashboard",
+    )
+    return {"url": session.url}
+
+
+def verify_webhook(payload: bytes, sig_header: str | None) -> dict[str, Any]:
+    settings = get_settings()
+    secret = settings.stripe_webhook_secret.strip()
+    if not secret:
+        raise ValueError("STRIPE_WEBHOOK_SECRET no configurado.")
+    return stripe.Webhook.construct_event(payload, sig_header or "", secret)
+
+
+def _period_end_iso(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    try:
+        return datetime.fromtimestamp(int(raw), tz=timezone.utc).isoformat()
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_user_id(metadata: dict[str, Any], client_ref: str | None) -> str | None:
+    uid = (metadata.get("user_id") or client_ref or "").strip()
+    return uid or None
+
+
+def handle_stripe_event(event: dict[str, Any]) -> None:
+    event_id = str(event.get("id") or "")
+    if event_id and supabase_db.stripe_event_processed(event_id):
+        logger.info("[STRIPE] evento duplicado ignorado %s", event_id)
+        return
+
+    event_type = event.get("type", "")
+    data = (event.get("data") or {}).get("object") or {}
+
+    if event_type == "checkout.session.completed":
+        _handle_checkout_completed(data, event_id)
+    elif event_type in ("customer.subscription.created", "customer.subscription.updated"):
+        _handle_subscription_updated(data, event_id)
+    elif event_type == "customer.subscription.deleted":
+        _handle_subscription_deleted(data, event_id)
+    elif event_type == "invoice.payment_failed":
+        _handle_payment_failed(data, event_id)
+    elif event_type == "charge.refunded":
+        _handle_charge_refunded(data, event_id)
+    else:
+        logger.debug("[STRIPE] evento ignorado: %s", event_type)
+
+
+def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
+    metadata = session.get("metadata") or {}
+    checkout_type = metadata.get("checkout_type", "")
+    user_id = _resolve_user_id(metadata, session.get("client_reference_id"))
+    customer_id = session.get("customer")
+
+    if checkout_type == "recharge" and user_id:
+        paid = float(metadata.get("amount_paid_usd") or 0)
+        if paid <= 0 and session.get("amount_total"):
+            paid = float(session["amount_total"]) / 100.0
+        q = quote_recharge(paid)
+        supabase_db.credit_recharge_balance(
+            user_id,
+            amount_paid_usd=float(q["amount_paid_usd"]),
+            client_balance_usd=float(q["client_balance_usd"]),
+            margin_keini_usd=float(q["margin_keini_usd"]),
+            stripe_payment_intent_id=session.get("payment_intent"),
+            stripe_event_id=event_id,
+        )
+        if customer_id:
+            supabase_db.update_subscription_stripe_customer(user_id, str(customer_id))
+        return
+
+    subscription_id = session.get("subscription")
+    plan_id = normalize_plan_id(metadata.get("plan_id"))
+    if user_id and subscription_id:
+        if customer_id:
+            supabase_db.update_subscription_stripe_customer(user_id, str(customer_id))
+        _sync_stripe_subscription(user_id, str(subscription_id), plan_id_hint=plan_id)
+        supabase_db.record_transaction(
+            user_id=user_id,
+            tx_type="subscription",
+            amount_usd=float(PLAN_PRICES_USD.get(plan_id, 0)),
+            stripe_event_id=event_id,
+            metadata={"checkout_session": session.get("id"), "plan_id": plan_id},
+        )
+
+
+def _plan_from_stripe_subscription(sub: dict[str, Any], hint: str | None) -> str:
+    if hint and hint in STRIPE_CHECKOUT_PLANS:
+        return normalize_plan_id(hint)
+    meta = sub.get("metadata") or {}
+    if meta.get("plan_id"):
+        return normalize_plan_id(str(meta["plan_id"]))
+    items = (sub.get("items") or {}).get("data") or []
+    if items:
+        price_id = ((items[0].get("price") or {}).get("id") or "").strip()
+        settings = get_settings()
+        for pid in STRIPE_CHECKOUT_PLANS:
+            if price_id_for_plan(pid, settings) == price_id:
+                return pid
+    return PlanId.ELITE.value
+
+
+def _sync_stripe_subscription(
+    user_id: str,
+    stripe_subscription_id: str,
+    *,
+    plan_id_hint: str | None = None,
+) -> None:
+    _configure_stripe()
+    sub = stripe.Subscription.retrieve(stripe_subscription_id)
+    plan_id = _plan_from_stripe_subscription(sub, plan_id_hint)
+    status = str(sub.get("status") or "active")
+    is_founding = plan_id == PlanId.FOUNDING.value
+
+    if is_founding:
+        supabase_db.claim_founding_slot(user_id)
+
+    minutes = plan_minutes_daily(plan_id)
+    supabase_db.upsert_paid_subscription(
+        user_id=user_id,
+        plan_id=plan_id,
+        status=status if status in _ACTIVE_STRIPE_STATUSES else status,
+        stripe_subscription_id=stripe_subscription_id,
+        stripe_customer_id=str(sub.get("customer") or "") or None,
+        current_period_end=_period_end_iso(sub.get("current_period_end")),
+        price_locked_for_life=is_founding,
+        minutes_daily=minutes,
+    )
+    if is_founding:
+        supabase_db.mark_founding_profile(user_id, PLAN_PRICES_USD[PlanId.FOUNDING.value])
+
+
+def _handle_subscription_updated(subscription: dict[str, Any], event_id: str) -> None:
+    customer_id = subscription.get("customer")
+    if not customer_id:
+        return
+    user_id = supabase_db.get_user_id_by_stripe_customer(str(customer_id))
+    if not user_id:
+        meta = subscription.get("metadata") or {}
+        user_id = meta.get("user_id")
+    if not user_id:
+        logger.warning("[STRIPE] subscription.updated sin user_id")
+        return
+
+    plan_id = _plan_from_stripe_subscription(subscription, None)
+    status = str(subscription.get("status") or "inactive")
+    is_founding = plan_id == PlanId.FOUNDING.value
+
+    supabase_db.upsert_paid_subscription(
+        user_id=str(user_id),
+        plan_id=plan_id,
+        status=status,
+        stripe_subscription_id=str(subscription.get("id") or ""),
+        stripe_customer_id=str(customer_id),
+        current_period_end=_period_end_iso(subscription.get("current_period_end")),
+        price_locked_for_life=is_founding,
+        minutes_daily=plan_minutes_daily(plan_id),
+    )
+    supabase_db.record_transaction(
+        user_id=str(user_id),
+        tx_type="subscription",
+        amount_usd=float(PLAN_PRICES_USD.get(plan_id, 0)),
+        stripe_event_id=event_id,
+        metadata={"subscription_id": subscription.get("id"), "status": status},
+    )
+
+
+def _handle_subscription_deleted(subscription: dict[str, Any], event_id: str) -> None:
+    customer_id = subscription.get("customer")
+    if not customer_id:
+        return
+    user_id = supabase_db.get_user_id_by_stripe_customer(str(customer_id))
+    if not user_id:
+        return
+    supabase_db.downgrade_to_free_basic(str(user_id))
+    supabase_db.record_transaction(
+        user_id=str(user_id),
+        tx_type="subscription",
+        amount_usd=0,
+        stripe_event_id=event_id,
+        metadata={"event": "subscription_deleted"},
+    )
+
+
+def _handle_payment_failed(invoice: dict[str, Any], event_id: str) -> None:
+    customer_id = invoice.get("customer")
+    if not customer_id:
+        return
+    user_id = supabase_db.get_user_id_by_stripe_customer(str(customer_id))
+    if not user_id:
+        return
+    supabase_db.update_subscription_status(str(user_id), "past_due")
+
+
+def _handle_charge_refunded(charge: dict[str, Any], event_id: str) -> None:
+    metadata = charge.get("metadata") or {}
+    user_id = metadata.get("user_id")
+    if not user_id:
+        return
+    amount = float(charge.get("amount_refunded") or 0) / 100.0
+    if amount > 0:
+        supabase_db.debit_recharge_balance(str(user_id), amount * RECHARGE_CLIENT_SHARE)
+        supabase_db.record_transaction(
+            user_id=str(user_id),
+            tx_type="refund",
+            amount_usd=amount,
+            stripe_event_id=event_id,
+            metadata={"charge_id": charge.get("id")},
+        )
+
+
+def recharge_catalog(settings: Settings | None = None) -> list[dict[str, Any]]:
+    s = settings or get_settings()
+    out = []
+    for amount in RECHARGE_QUICK_AMOUNTS_USD:
+        q = quote_recharge(amount)
+        out.append(
+            {
+                "amount_usd": amount,
+                "price_id": price_id_for_recharge(amount, s),
+                **q,
+            }
+        )
+    return out

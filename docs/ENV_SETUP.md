@@ -15,8 +15,9 @@
 
 1. https://dashboard.stripe.com/test/apikeys  
 2. Crear **2** productos recurrentes:
-   - CED Élite Founding — **$149/mes** (máx 50 clientes; contador en `founding_registry`)
-   - CED Élite Regular — **$249/mes**
+   - CED Pro Founding — **$35/mes** (máx 50 clientes; contador en `founding_registry`)
+   - CED Pro Regular — **$49/mes**
+   - Incluye **45 min/día** voz; recargas flexibles si pasan el cupo
 3. Copiar `price_...` IDs → `STRIPE_PRICE_ELITE_FOUNDING` y `STRIPE_PRICE_ELITE_REGULAR`
 4. Recargas: productos one-time o Payment Intents dinámicos ($5–$500)  
 4. Webhooks (Fase 7): endpoint `https://api.castillodigital.com/v1/billing/webhooks/stripe`  

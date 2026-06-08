@@ -420,22 +420,22 @@ export function useCedVoiceSession(
               });
               const spoken =
                 result.code === "missing_tavily"
-                  ? "Señor, la búsqueda web requiere configurar Tavily en el servidor. Contacte al administrador."
+                  ? "la búsqueda web requiere configurar Tavily en el servidor. Contacte al administrador."
                   : result.code === "client_timeout"
-                    ? "Señor, la búsqueda tardó demasiado. Inténtelo de nuevo."
+                    ? "la búsqueda tardó demasiado. Inténtelo de nuevo."
                     : result.error?.includes("Sesión") || result.error?.includes("sesión")
-                      ? "Señor, inicie sesión de nuevo para buscar en internet."
-                      : `Señor, no pude obtener la información. ${result.error || "Inténtelo de nuevo."}`;
+                      ? "inicie sesión de nuevo para buscar en internet."
+                      : `no pude obtener la información. ${result.error || "Inténtelo de nuevo."}`;
               narrate(spoken);
             }
           } catch (err) {
             cedVoiceLog(4, "Web search network error", { err: String(err) });
             narrate(
-              "Señor, no pude contactar el buscador. Verifique que la API esté corriendo con pnpm dev:api.",
+              "no pude contactar el buscador. Verifique que la API esté corriendo con pnpm dev:api.",
             );
           } finally {
             if (!narrated && !isStale()) {
-              narrate("Señor, no obtuve respuesta del buscador.");
+              narrate("no obtuve respuesta del buscador.");
             }
             webFetchRef.current = false;
             webAckSentRef.current = false;
@@ -474,7 +474,7 @@ export function useCedVoiceSession(
           return;
         }
         client.sendNarrationBrief(
-          "Señor, indíqueme qué desea buscar y lo consulto en internet.",
+          "indíqueme qué desea buscar y lo consulto en internet.",
         );
       };
 
@@ -483,7 +483,7 @@ export function useCedVoiceSession(
         if (!frame || webFetchRef.current || isStale()) {
           if (!frame) {
             client.sendNarrationBrief(
-              "Señor, active la cámara primero para buscar lo que veo.",
+              "active la cámara primero para buscar lo que veo.",
             );
           }
           return;
@@ -505,13 +505,13 @@ export function useCedVoiceSession(
             } else {
               client.sendNarrationBrief(
                 result.code === "missing_tavily"
-                  ? "Señor, configure Tavily en el servidor para buscar lo que veo."
-                  : `Señor, no pude buscar en internet: ${result.error}`,
+                  ? "configure Tavily en el servidor para buscar lo que veo."
+                  : `no pude buscar en internet: ${result.error}`,
               );
             }
           } catch {
             client.sendNarrationBrief(
-              "Señor, falló la búsqueda visual. Inténtelo de nuevo.",
+              "falló la búsqueda visual. Inténtelo de nuevo.",
             );
           } finally {
             webFetchRef.current = false;
@@ -535,8 +535,8 @@ export function useCedVoiceSession(
               if (!isStale()) {
                 client.sendNarrationBrief(
                   r.ok
-                    ? "Señor, lo guardé en memoria cognitiva."
-                    : "Señor, no pude guardar en memoria.",
+                    ? "lo guardé en memoria cognitiva."
+                    : "no pude guardar en memoria.",
                 );
               }
             });
@@ -547,14 +547,14 @@ export function useCedVoiceSession(
           void searchMemory(t).then((r) => {
             if (isStale()) return;
             if (!r.ok || !r.results.length) {
-              client.sendNarrationBrief("Señor, no encontré memorias sobre eso.");
+              client.sendNarrationBrief("no encontré memorias sobre eso.");
               return;
             }
             const lines = r.results
               .slice(0, 3)
               .map((m) => `${m.key}: ${m.content}`)
               .join(". ");
-            client.sendNarrationBrief(`Señor, recuerdo lo siguiente. ${lines}`);
+            client.sendNarrationBrief(`recuerdo lo siguiente. ${lines}`);
           });
           return;
         }
@@ -695,7 +695,7 @@ export function useCedVoiceSession(
           }
           if (!webFetchRef.current && !hasAdvancedSystemConfirmation(lastUserUtteranceRef.current)) {
             client.sendNarrationBrief(
-              "Señor, ¿desea que consulte al sistema avanzado? Confirme con un sí, por favor.",
+              "¿Quieres que consulte al sistema avanzado? Confirma con un sí.",
             );
           }
         },
@@ -704,47 +704,47 @@ export function useCedVoiceSession(
             const key = String(args.clave ?? args.key ?? "nota").trim();
             const content = String(args.contenido ?? args.content ?? "").trim();
             if (!content) {
-              return { spoken: "Señor, no recibí qué guardar en memoria." };
+              return { spoken: "no recibí qué guardar en memoria." };
             }
             const r = await saveMemory(key, content, String(args.categoria ?? ""));
             return {
               spoken: r.ok
-                ? "Señor, guardado en memoria cognitiva."
-                : "Señor, no pude guardar en memoria.",
+                ? "guardado en memoria cognitiva."
+                : "no pude guardar en memoria.",
             };
           }
           if (name === BUSCAR_MEMORIA) {
             const q = String(args.consulta ?? args.query ?? "").trim();
             const r = await searchMemory(q);
             if (!r.ok || !r.results.length) {
-              return { spoken: "Señor, no encontré memorias sobre eso." };
+              return { spoken: "no encontré memorias sobre eso." };
             }
             const lines = r.results
               .slice(0, 3)
               .map((m) => `${m.key}: ${m.content}`)
               .join(". ");
-            return { spoken: `Señor, recuerdo: ${lines}` };
+            return { spoken: `recuerdo: ${lines}` };
           }
           if (name === ACTIVAR_PROSPECCION) {
             const r = await enableProspection();
             return {
               spoken: r.ok
-                ? "Señor, modo prospección activado. Escaneo comentarios en segundo plano."
-                : "Señor, no pude activar prospección.",
+                ? "modo prospección activado. Escaneo comentarios en segundo plano."
+                : "no pude activar prospección.",
             };
           }
           if (name === DESACTIVAR_PROSPECCION) {
             const r = await disableProspection();
             return {
               spoken: r.ok
-                ? "Señor, prospección desactivada."
-                : "Señor, no pude desactivar prospección.",
+                ? "prospección desactivada."
+                : "no pude desactivar prospección.",
             };
           }
           if (name === REPORTE_PROSPECCION) {
             const r = await fetchProspectionReport();
             return {
-              spoken: r.ok ? r.spoken : "Señor, no pude obtener el reporte.",
+              spoken: r.ok ? r.spoken : "no pude obtener el reporte.",
             };
           }
           if (name === PUBLICAR_FACEBOOK) {
@@ -755,12 +755,12 @@ export function useCedVoiceSession(
             if (!message) {
               return {
                 spoken:
-                  "Señor, indíqueme el texto que desea publicar en Facebook.",
+                  "indíqueme el texto que desea publicar en Facebook.",
               };
             }
             const r = await publishFacebook(message, imageUrl || undefined);
             return {
-              spoken: r.ok ? r.spoken : `Señor, ${r.error}`,
+              spoken: r.ok ? r.spoken : `${r.error}`,
             };
           }
           if (name === PUBLICAR_INSTAGRAM) {
@@ -771,19 +771,19 @@ export function useCedVoiceSession(
             if (!caption || !imageUrl) {
               return {
                 spoken:
-                  "Señor, para Instagram necesito el texto y una URL pública HTTPS de la imagen.",
+                  "para Instagram necesito el texto y una URL pública HTTPS de la imagen.",
               };
             }
             const r = await publishInstagram(caption, imageUrl);
             return {
-              spoken: r.ok ? r.spoken : `Señor, ${r.error}`,
+              spoken: r.ok ? r.spoken : `${r.error}`,
             };
           }
           if (name === BUSCAR_LO_VISIBLE) {
             const frame = cameraPreviewRef.current;
             if (!frame) {
               return {
-                spoken: "Señor, active la cámara para buscar lo que veo.",
+                spoken: "active la cámara para buscar lo que veo.",
               };
             }
             const pregunta = String(args.pregunta ?? args.question ?? "").trim();
@@ -795,11 +795,11 @@ export function useCedVoiceSession(
             return {
               spoken:
                 result.code === "missing_tavily"
-                  ? "Señor, configure Tavily para búsqueda visual."
-                  : `Señor, no pude buscar: ${result.error}`,
+                  ? "configure Tavily para búsqueda visual."
+                  : `no pude buscar: ${result.error}`,
             };
           }
-          return { spoken: "Señor, herramienta no reconocida." };
+          return { spoken: "herramienta no reconocida." };
         },
         onAudio: (buffer) => {
           if (isStale()) return;

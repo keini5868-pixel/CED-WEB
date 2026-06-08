@@ -54,4 +54,4 @@ export async function fetchMetaOAuthUrl(): Promise<MetaOAuthResult> {
     return { url: null, error: "Error de red al contactar la API." };
   }
 }
-
+

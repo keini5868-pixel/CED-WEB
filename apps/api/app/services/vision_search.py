@@ -67,8 +67,6 @@ def _spoken(text: str) -> str:
     t = re.sub(r"\s+", " ", text).strip()
     if not t:
         return ""
-    if not t.lower().startswith("señor"):
-        t = f"Señor, {t[0].lower()}{t[1:]}" if len(t) > 1 else f"Señor, {t}"
     return t[:420]
 
 

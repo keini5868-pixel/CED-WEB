@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 from typing import Any
 from uuid import uuid4
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 
 def _client():
@@ -89,14 +92,34 @@ def add_usage_minutes(
     return get_usage_minutes_today(user_id)
 
 
-def create_conversation(user_id: str, title: str = "Conversación CED") -> dict[str, Any]:
+def create_conversation(
+    user_id: str,
+    title: str = "Conversación CED",
+    *,
+    channel: str = "voice",
+) -> dict[str, Any]:
     client = _client()
     row = {
         "user_id": user_id,
         "title": title,
+        "channel": channel,
     }
     result = client.table("voice_conversations").insert(row).execute()
     return (result.data or [{}])[0]
+
+
+def get_conversation(conversation_id: str, user_id: str) -> dict[str, Any] | None:
+    client = _client()
+    result = (
+        client.table("voice_conversations")
+        .select("id, title, channel, created_at, updated_at")
+        .eq("id", conversation_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    rows = result.data or []
+    return rows[0] if rows else None
 
 
 def append_message(
@@ -130,16 +153,21 @@ def append_message(
     ).eq("id", conversation_id).execute()
 
 
-def list_conversations(user_id: str, limit: int = 30) -> list[dict[str, Any]]:
+def list_conversations(
+    user_id: str,
+    limit: int = 30,
+    *,
+    channel: str | None = None,
+) -> list[dict[str, Any]]:
     client = _client()
-    result = (
+    q = (
         client.table("voice_conversations")
-        .select("id, title, created_at, updated_at")
+        .select("id, title, channel, created_at, updated_at")
         .eq("user_id", user_id)
-        .order("updated_at", desc=True)
-        .limit(limit)
-        .execute()
     )
+    if channel:
+        q = q.eq("channel", channel)
+    result = q.order("updated_at", desc=True).limit(limit).execute()
     return result.data or []
 
 
@@ -341,7 +369,7 @@ def get_subscription(user_id: str) -> dict[str, Any] | None:
 
 
 def get_usage_limit_minutes(user_id: str) -> int:
-    from app.domain.plans import CED_ELITE
+    from app.domain.plans import plan_minutes_daily, normalize_plan_id
 
     try:
         client = _client()
@@ -353,11 +381,30 @@ def get_usage_limit_minutes(user_id: str) -> int:
             .execute()
         )
         rows = result.data or []
-        if rows and rows[0].get("minutes_daily"):
+        if rows and rows[0].get("minutes_daily") is not None:
             return int(rows[0]["minutes_daily"])
     except Exception:  # noqa: BLE001
         pass
-    return CED_ELITE.gemini_minutes_per_day
+    sub = get_subscription(user_id)
+    return plan_minutes_daily(normalize_plan_id((sub or {}).get("plan_id")))
+
+
+def get_recharge_balance_usd(user_id: str) -> float:
+    try:
+        client = _client()
+        result = (
+            client.table("recharge_balances")
+            .select("balance_usd")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        if rows and rows[0].get("balance_usd") is not None:
+            return float(rows[0]["balance_usd"])
+    except Exception:  # noqa: BLE001
+        pass
+    return 0.0
 
 
 def log_admin_audit(
@@ -381,5 +428,290 @@ def log_admin_audit(
                 "user_agent": user_agent,
             }
         ).execute()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def stripe_event_processed(event_id: str) -> bool:
+    if not event_id:
+        return False
+    try:
+        client = _client()
+        result = (
+            client.table("transactions")
+            .select("id")
+            .eq("stripe_event_id", event_id)
+            .limit(1)
+            .execute()
+        )
+        return bool(result.data)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def record_transaction(
+    *,
+    user_id: str,
+    tx_type: str,
+    amount_usd: float,
+    stripe_event_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    try:
+        client = _client()
+        client.table("transactions").insert(
+            {
+                "user_id": user_id,
+                "type": tx_type,
+                "amount_usd": round(amount_usd, 2),
+                "stripe_event_id": stripe_event_id,
+                "metadata": metadata or {},
+            }
+        ).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] record_transaction failed")
+
+
+def get_user_id_by_stripe_customer(customer_id: str) -> str | None:
+    try:
+        client = _client()
+        result = (
+            client.table("subscriptions")
+            .select("user_id")
+            .eq("stripe_customer_id", customer_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return str(rows[0]["user_id"]) if rows else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def update_subscription_stripe_customer(user_id: str, customer_id: str) -> None:
+    try:
+        client = _client()
+        result = (
+            client.table("subscriptions")
+            .update(
+                {
+                    "stripe_customer_id": customer_id,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if not result.data:
+            client.table("subscriptions").upsert(
+                {
+                    "user_id": user_id,
+                    "plan_id": "free_basic",
+                    "status": "active",
+                    "stripe_customer_id": customer_id,
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                },
+                on_conflict="user_id",
+            ).execute()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def upsert_paid_subscription(
+    *,
+    user_id: str,
+    plan_id: str,
+    status: str,
+    stripe_subscription_id: str | None = None,
+    stripe_customer_id: str | None = None,
+    current_period_end: str | None = None,
+    price_locked_for_life: bool = False,
+    minutes_daily: int | None = None,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    row: dict[str, Any] = {
+        "user_id": user_id,
+        "plan_id": plan_id,
+        "status": status,
+        "access_type": "paid",
+        "trial_ends_at": None,
+        "updated_at": now,
+        "price_locked_for_life": price_locked_for_life,
+    }
+    if stripe_subscription_id:
+        row["stripe_subscription_id"] = stripe_subscription_id
+    if stripe_customer_id:
+        row["stripe_customer_id"] = stripe_customer_id
+    if current_period_end:
+        row["current_period_end"] = current_period_end
+    try:
+        client = _client()
+        client.table("subscriptions").upsert(row, on_conflict="user_id").execute()
+        if minutes_daily is not None:
+            client.table("usage_limits").upsert(
+                {
+                    "user_id": user_id,
+                    "minutes_daily": minutes_daily,
+                    "updated_at": now,
+                },
+                on_conflict="user_id",
+            ).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] upsert_paid_subscription failed user=%s", user_id)
+
+
+def update_subscription_status(user_id: str, status: str) -> None:
+    try:
+        client = _client()
+        client.table("subscriptions").update(
+            {
+                "status": status,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("user_id", user_id).execute()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def downgrade_to_free_basic(user_id: str) -> None:
+    from app.domain.plans import PlanId, plan_minutes_daily
+
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        client = _client()
+        client.table("subscriptions").upsert(
+            {
+                "user_id": user_id,
+                "plan_id": PlanId.FREE_BASIC.value,
+                "status": "active",
+                "access_type": "paid",
+                "stripe_subscription_id": None,
+                "trial_ends_at": None,
+                "updated_at": now,
+            },
+            on_conflict="user_id",
+        ).execute()
+        client.table("usage_limits").upsert(
+            {
+                "user_id": user_id,
+                "minutes_daily": plan_minutes_daily(PlanId.FREE_BASIC.value),
+                "updated_at": now,
+            },
+            on_conflict="user_id",
+        ).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] downgrade_to_free_basic failed")
+
+
+def expire_trial_if_needed(user_id: str) -> bool:
+    """Retorna True si el trial ya expiró (sin auto-downgrade)."""
+    sub = get_subscription(user_id)
+    if not sub or str(sub.get("status")) != "trialing":
+        return False
+    trial_end = sub.get("trial_ends_at")
+    if not trial_end:
+        return False
+    try:
+        end = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return end <= datetime.now(timezone.utc)
+
+
+def credit_recharge_balance(
+    user_id: str,
+    *,
+    amount_paid_usd: float,
+    client_balance_usd: float,
+    margin_keini_usd: float,
+    stripe_payment_intent_id: str | None = None,
+    stripe_event_id: str | None = None,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        client = _client()
+        current = get_recharge_balance_usd(user_id)
+        new_balance = round(current + client_balance_usd, 2)
+        client.table("recharge_balances").upsert(
+            {"user_id": user_id, "balance_usd": new_balance, "updated_at": now},
+            on_conflict="user_id",
+        ).execute()
+        client.table("recharges").insert(
+            {
+                "user_id": user_id,
+                "amount_paid_usd": round(amount_paid_usd, 2),
+                "client_balance_usd": round(client_balance_usd, 2),
+                "margin_keini_usd": round(margin_keini_usd, 2),
+                "estimated_hours": round(client_balance_usd / 1.5, 2) if client_balance_usd else 0,
+                "stripe_payment_intent_id": stripe_payment_intent_id,
+            }
+        ).execute()
+        record_transaction(
+            user_id=user_id,
+            tx_type="recharge",
+            amount_usd=amount_paid_usd,
+            stripe_event_id=stripe_event_id,
+            metadata={"client_balance_usd": client_balance_usd},
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] credit_recharge_balance failed")
+
+
+def debit_recharge_balance(user_id: str, amount_usd: float) -> None:
+    try:
+        client = _client()
+        current = get_recharge_balance_usd(user_id)
+        new_balance = max(0.0, round(current - amount_usd, 2))
+        client.table("recharge_balances").upsert(
+            {
+                "user_id": user_id,
+                "balance_usd": new_balance,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            on_conflict="user_id",
+        ).execute()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def get_founding_slots() -> tuple[int, int]:
+    try:
+        client = _client()
+        result = client.table("founding_registry").select("slots_used, slots_max").eq("id", 1).execute()
+        row = (result.data or [{}])[0]
+        return int(row.get("slots_used") or 0), int(row.get("slots_max") or 50)
+    except Exception:  # noqa: BLE001
+        return 0, 50
+
+
+def claim_founding_slot(user_id: str) -> None:
+    try:
+        client = _client()
+        used, cap = get_founding_slots()
+        if used >= cap:
+            return
+        client.table("founding_registry").update(
+            {
+                "slots_used": used + 1,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", 1).execute()
+        mark_founding_profile(user_id, 149)
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] claim_founding_slot failed")
+
+
+def mark_founding_profile(user_id: str, price_locked_usd: int) -> None:
+    try:
+        client = _client()
+        used, _ = get_founding_slots()
+        client.table("profiles").update(
+            {
+                "is_founding_member": True,
+                "founding_slot_number": used,
+                "price_locked_usd": price_locked_usd,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        ).eq("id", user_id).execute()
     except Exception:  # noqa: BLE001
         pass

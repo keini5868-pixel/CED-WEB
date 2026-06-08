@@ -1,8 +1,10 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+
+import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
 
 import { CedOrbOverlay } from "@/components/orb/CedOrbOverlay";
 import { useHudFeed } from "@/contexts/HudFeedContext";
@@ -34,6 +36,7 @@ const JarvisOrbScene = dynamic(
 
 /** Centro del dashboard — orbe JARVIS + controles + Gemini Live. */
 export function CedVoiceHub() {
+  const [chatOpen, setChatOpen] = useState(false);
   const { refresh: refreshUsage } = useUsageBalance(5000);
   const { pushLine } = useHudFeed();
 
@@ -120,6 +123,7 @@ export function CedVoiceHub() {
         onPause={voice.togglePause}
         onStop={() => voice.setStopConfirmOpen(true)}
         onHistory={() => voice.setHistoryOpen(true)}
+        onChat={() => setChatOpen(true)}
         onSettings={() => voice.setSettingsOpen(true)}
         onFiles={() => {
           /* Fase 5 — upload */
@@ -146,6 +150,8 @@ export function CedVoiceHub() {
         open={voice.historyOpen}
         onClose={() => voice.setHistoryOpen(false)}
       />
+
+      <CedTextChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
 
       <CedVoiceDebugPanel />
     </div>

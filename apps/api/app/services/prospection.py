@@ -77,7 +77,7 @@ def get_prospection_report(user_id: str) -> dict[str, Any]:
         intent = lead.get("intent") or "interés"
         hot = " 🔥" if lead.get("is_hot") else ""
         lines.append(f"{handle} score {score} — {intent}{hot}")
-    spoken = "Señor, " + " ".join(lines) if lines else "Señor, no hay leads hoy."
+    spoken = " ".join(lines) if lines else "No hay leads hoy."
     return {"ok": True, "report": lines, "spoken": spoken[:480]}
 
 

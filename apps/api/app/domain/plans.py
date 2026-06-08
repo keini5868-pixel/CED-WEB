@@ -1,4 +1,4 @@
-"""Producto único CED Élite — planes y límites."""
+"""Planes CED — suscripciones + recargas."""
 
 from __future__ import annotations
 
@@ -7,51 +7,168 @@ from enum import StrEnum
 
 
 class PlanId(StrEnum):
+    STARTER = "starter"
+    PRO = "pro"
+    ELITE = "elite"
+    FOUNDING = "founding"
+    FREE_BASIC = "free_basic"
+    # Legacy (compat)
     ELITE_FOUNDING = "elite_founding"
     ELITE_REGULAR = "elite_regular"
 
 
 FOUNDING_MEMBER_MAX_SLOTS = 50
 TRIAL_DAYS = 7
+TRIAL_VOICE_MINUTES_PER_DAY = 30
 USAGE_WARNING_PERCENT = 80
 
 GEMINI_COST_PER_HOUR_USD = 1.50
 RECHARGE_MARGIN_KEINI = 0.40
 RECHARGE_CLIENT_SHARE = 0.60
-RECHARGE_MIN_USD = 5
+RECHARGE_MIN_USD = 10
 RECHARGE_MAX_USD = 500
-RECHARGE_QUICK_AMOUNTS_USD = (10, 25, 50, 100)
+RECHARGE_QUICK_AMOUNTS_USD = (10, 20, 40, 50, 100)
+
+# Minutos “ilimitados” Founding (display + límite técnico alto)
+FOUNDING_UNLIMITED_MINUTES = 9999
+
+PLAN_PRICES_USD: dict[str, int] = {
+    PlanId.STARTER.value: 30,
+    PlanId.PRO.value: 59,
+    PlanId.ELITE.value: 99,
+    PlanId.FOUNDING.value: 149,
+    PlanId.FREE_BASIC.value: 0,
+    PlanId.ELITE_FOUNDING.value: 149,
+    PlanId.ELITE_REGULAR.value: 99,
+}
+
+STRIPE_CHECKOUT_PLANS = frozenset(
+    {
+        PlanId.STARTER.value,
+        PlanId.PRO.value,
+        PlanId.ELITE.value,
+        PlanId.FOUNDING.value,
+    }
+)
 
 
 @dataclass(frozen=True)
-class CedEliteProduct:
-    """Un solo producto; dos fases de precio."""
-
-    gemini_minutes_per_day: int = 120
-    video_allowed: bool = True
-    claude_text_unlimited: bool = True
-    ai_images_per_month: int = 100
-    tts_elevenlabs: bool = True
-    whisper_transcription: bool = True
-    memory_unlimited: bool = True
-    folders_unlimited: bool = True
-    pdfs_unlimited: bool = True
-    hud_panels_live: bool = True
-    pwa_mobile: bool = True
-    priority_support: bool = True
-    early_access_features: bool = True
+class PlanLimits:
+    gemini_minutes_per_day: int
+    web_searches_per_day: int  # -1 = ilimitado
+    ai_images_per_month: int
+    voice_enabled: bool
+    camera_enabled: bool
+    meta_social_enabled: bool
+    prospection_enabled: bool
+    pdf_reports: bool
+    claude_messages_per_day: int  # -1 = ilimitado
 
 
-CED_ELITE = CedEliteProduct()
+PLAN_LIMITS: dict[str, PlanLimits] = {
+    PlanId.STARTER.value: PlanLimits(
+        gemini_minutes_per_day=30,
+        web_searches_per_day=50,
+        ai_images_per_month=20,
+        voice_enabled=True,
+        camera_enabled=False,
+        meta_social_enabled=False,
+        prospection_enabled=False,
+        pdf_reports=False,
+        claude_messages_per_day=-1,
+    ),
+    PlanId.PRO.value: PlanLimits(
+        gemini_minutes_per_day=60,
+        web_searches_per_day=-1,
+        ai_images_per_month=50,
+        voice_enabled=True,
+        camera_enabled=True,
+        meta_social_enabled=False,
+        prospection_enabled=False,
+        pdf_reports=False,
+        claude_messages_per_day=-1,
+    ),
+    PlanId.ELITE.value: PlanLimits(
+        gemini_minutes_per_day=120,
+        web_searches_per_day=-1,
+        ai_images_per_month=100,
+        voice_enabled=True,
+        camera_enabled=True,
+        meta_social_enabled=True,
+        prospection_enabled=True,
+        pdf_reports=True,
+        claude_messages_per_day=-1,
+    ),
+    PlanId.FOUNDING.value: PlanLimits(
+        gemini_minutes_per_day=FOUNDING_UNLIMITED_MINUTES,
+        web_searches_per_day=-1,
+        ai_images_per_month=-1,
+        voice_enabled=True,
+        camera_enabled=True,
+        meta_social_enabled=True,
+        prospection_enabled=True,
+        pdf_reports=True,
+        claude_messages_per_day=-1,
+    ),
+    PlanId.FREE_BASIC.value: PlanLimits(
+        gemini_minutes_per_day=0,
+        web_searches_per_day=0,
+        ai_images_per_month=0,
+        voice_enabled=False,
+        camera_enabled=False,
+        meta_social_enabled=False,
+        prospection_enabled=False,
+        pdf_reports=False,
+        claude_messages_per_day=50,
+    ),
+}
 
-PLAN_PRICES_USD: dict[PlanId, int] = {
-    PlanId.ELITE_FOUNDING: 149,
-    PlanId.ELITE_REGULAR: 249,
+PLAN_LIMITS[PlanId.ELITE_FOUNDING.value] = PLAN_LIMITS[PlanId.FOUNDING.value]
+PLAN_LIMITS[PlanId.ELITE_REGULAR.value] = PLAN_LIMITS[PlanId.ELITE.value]
+
+PLAN_LABELS: dict[str, str] = {
+    PlanId.STARTER.value: "CED Starter",
+    PlanId.PRO.value: "CED Pro",
+    PlanId.ELITE.value: "CED Élite",
+    PlanId.FOUNDING.value: "CED Founding",
+    PlanId.FREE_BASIC.value: "CED Básico Gratis",
+    PlanId.ELITE_FOUNDING.value: "CED Founding",
+    PlanId.ELITE_REGULAR.value: "CED Élite",
 }
 
 
+def normalize_plan_id(plan_id: str | None) -> str:
+    pid = (plan_id or PlanId.FREE_BASIC.value).strip()
+    if pid == PlanId.ELITE_FOUNDING.value:
+        return PlanId.FOUNDING.value
+    if pid == PlanId.ELITE_REGULAR.value:
+        return PlanId.ELITE.value
+    if pid in PLAN_LIMITS:
+        return pid
+    return PlanId.FREE_BASIC.value
+
+
+def get_plan_limits(plan_id: str | None) -> PlanLimits:
+    return PLAN_LIMITS[normalize_plan_id(plan_id)]
+
+
+def plan_minutes_daily(plan_id: str | None) -> int:
+    return get_plan_limits(plan_id).gemini_minutes_per_day
+
+
+# Alias legacy
+CED_ELITE = get_plan_limits(PlanId.ELITE.value)
+
+
+def recharge_balance_to_bonus_minutes(balance_usd: float) -> float:
+    if balance_usd <= 0:
+        return 0.0
+    client_share = balance_usd * RECHARGE_CLIENT_SHARE
+    hours = client_share / GEMINI_COST_PER_HOUR_USD if GEMINI_COST_PER_HOUR_USD else 0.0
+    return round(hours * 60, 2)
+
+
 def quote_recharge(amount_usd: float) -> dict[str, float | bool]:
-    """Calcula saldo de uso y horas extra para una recarga flexible."""
     paid = max(RECHARGE_MIN_USD, min(RECHARGE_MAX_USD, float(amount_usd)))
     client_balance = paid * RECHARGE_CLIENT_SHARE
     margin_keini = paid * RECHARGE_MARGIN_KEINI
@@ -64,3 +181,25 @@ def quote_recharge(amount_usd: float) -> dict[str, float | bool]:
         "never_expires": True,
         "margin_percent_keini": RECHARGE_MARGIN_KEINI * 100,
     }
+
+
+def public_plans_catalog() -> list[dict]:
+    order = (PlanId.STARTER, PlanId.PRO, PlanId.ELITE, PlanId.FOUNDING)
+    out: list[dict] = []
+    for pid in order:
+        limits = PLAN_LIMITS[pid.value]
+        out.append(
+            {
+                "id": pid.value,
+                "label": PLAN_LABELS[pid.value],
+                "price_usd": PLAN_PRICES_USD[pid.value],
+                "minutes_per_day": limits.gemini_minutes_per_day,
+                "web_searches_per_day": limits.web_searches_per_day,
+                "ai_images_per_month": limits.ai_images_per_month,
+                "voice_enabled": limits.voice_enabled,
+                "camera_enabled": limits.camera_enabled,
+                "meta_social_enabled": limits.meta_social_enabled,
+                "prospection_enabled": limits.prospection_enabled,
+            }
+        )
+    return out

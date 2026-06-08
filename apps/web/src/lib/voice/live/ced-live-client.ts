@@ -84,6 +84,8 @@ export class CedLiveClient {
   private userTranscriptAcc = "";
   private modelTranscriptAcc = "";
   private processedToolIds = new Set<string>();
+  private recentToolAt = new Map<string, number>();
+  private static TOOL_COOLDOWN_MS = 2000;
   private handlers: CedLiveHandlers = {};
   private turnCompletePending = false;
   private turnCompleteTimer: ReturnType<typeof setTimeout> | null = null;
@@ -123,6 +125,7 @@ export class CedLiveClient {
     this.userTranscriptAcc = "";
     this.modelTranscriptAcc = "";
     this.processedToolIds.clear();
+    this.recentToolAt.clear();
 
     const generation = this.connectGen;
     const isStale = () => generation !== this.connectGen;
@@ -360,6 +363,8 @@ export class CedLiveClient {
       voiceTelemetry.markInterrupted();
       this.userTranscriptAcc = "";
       this.modelTranscriptAcc = "";
+      this.processedToolIds.clear();
+      this.recentToolAt.clear();
       h.onInterrupted?.();
     }
 
@@ -418,6 +423,10 @@ export class CedLiveClient {
       if (!LIVE_TOOL_NAMES.has(name)) return false;
       const id = call.id ?? `${name}:${JSON.stringify(call.args)}`;
       if (this.processedToolIds.has(id)) return false;
+      const dedupeKey = `${name}:${JSON.stringify(call.args ?? {})}`;
+      const lastAt = this.recentToolAt.get(dedupeKey) ?? 0;
+      if (Date.now() - lastAt < CedLiveClient.TOOL_COOLDOWN_MS) return false;
+      this.recentToolAt.set(dedupeKey, Date.now());
       this.processedToolIds.add(id);
       return true;
     });
@@ -461,7 +470,7 @@ export class CedLiveClient {
                 0,
                 CED_VOICE_PROFILE_LOCK.advancedSystem.maxSpokenChars,
               )
-            : `Señor, no pude completar la consulta: ${result.error}`;
+            : `No pude completar la consulta: ${result.error}`;
           responses.push({ id: call.id, name: call.name, response: { status: "ok" } });
           if (spoken && this.session && this.sessionReady && !this.sendBlocked) {
             window.setTimeout(() => {
@@ -480,7 +489,7 @@ export class CedLiveClient {
           spoken = out?.spoken;
         } catch (err) {
           cedVoiceError(`tool ${name} failed`, err);
-          spoken = "Señor, hubo un error al ejecutar la herramienta.";
+          spoken = "Hubo un error al ejecutar la herramienta.";
         }
         responses.push({
           id: call.id,

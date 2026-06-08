@@ -54,7 +54,7 @@ def publish_facebook(
             raise MetaSocialError(f"Facebook: {err}")
 
     supabase_db.log_ced_activity(user_id, "facebook_post", detail=text[:120])
-    return {"ok": True, "platform": "facebook", "post_id": data.get("id"), "spoken": "Señor, publicación enviada a Facebook."}
+    return {"ok": True, "platform": "facebook", "post_id": data.get("id"), "spoken": "Publicado en Facebook."}
 
 
 def publish_instagram(
@@ -105,5 +105,5 @@ def publish_instagram(
         "ok": True,
         "platform": "instagram",
         "media_id": published.get("id"),
-        "spoken": "Señor, publicación enviada a Instagram.",
+        "spoken": "Publicado en Instagram.",
     }

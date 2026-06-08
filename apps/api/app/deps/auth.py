@@ -87,28 +87,35 @@ async def _verify_jwt_with_supabase(token: str) -> dict[str, Any] | None:
 def _verify_jwt_with_supabase_sdk(token: str) -> dict[str, Any] | None:
     settings = get_settings()
     url = settings.supabase_url.strip()
-    api_key = (
-        settings.supabase_service_role_key.strip()
-        or settings.supabase_anon_key.strip()
-    )
-    if not url or not api_key:
+    if not url:
         return None
-    try:
-        from supabase import create_client
 
-        client = create_client(url, api_key)
-        result = client.auth.get_user(token)
-        user = result.user if result else None
-        if not user or not user.id:
-            return None
-        app_meta = user.app_metadata or {}
-        return {
-            "id": str(user.id),
-            "email": user.email,
-            "role": app_meta.get("role"),
-        }
-    except Exception:  # noqa: BLE001
-        return None
+    api_keys = [
+        settings.supabase_service_role_key.strip(),
+        settings.supabase_anon_key.strip(),
+    ]
+    seen: set[str] = set()
+    for api_key in api_keys:
+        if not api_key or api_key in seen:
+            continue
+        seen.add(api_key)
+        try:
+            from supabase import create_client
+
+            client = create_client(url, api_key)
+            result = client.auth.get_user(token)
+            user = result.user if result else None
+            if not user or not user.id:
+                continue
+            app_meta = user.app_metadata or {}
+            return {
+                "id": str(user.id),
+                "email": user.email,
+                "role": app_meta.get("role"),
+            }
+        except Exception:  # noqa: BLE001
+            continue
+    return None
 
 
 def is_super_admin(email: str | None, metadata_role: str | None = None) -> bool:

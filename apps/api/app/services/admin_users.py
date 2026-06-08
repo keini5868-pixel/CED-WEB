@@ -8,17 +8,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.config import get_settings
-from app.domain.plans import CED_ELITE, PLAN_PRICES_USD, PlanId
+from app.domain.plans import PLAN_LABELS, PLAN_PRICES_USD, PlanId, normalize_plan_id, plan_minutes_daily
 from app.services import supabase_db
 from app.services.email_welcome import send_welcome_email
 
 logger = logging.getLogger(__name__)
 
 ACCESS_TYPES = frozenset({"paid", "beta", "founding_gift", "coadmin"})
-PLAN_LABELS = {
-    PlanId.ELITE_FOUNDING.value: "CED Élite Founding",
-    PlanId.ELITE_REGULAR.value: "CED Élite Regular",
-}
 MAX_CREATIONS_PER_DAY = 10
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
@@ -106,10 +102,19 @@ def create_manual_user(
         raise AdminUserError("Contraseña mínimo 8 caracteres.")
     if access_type not in ACCESS_TYPES:
         raise AdminUserError("Tipo de acceso inválido.")
-    if plan not in (PlanId.ELITE_FOUNDING.value, PlanId.ELITE_REGULAR.value):
+    valid_plans = {
+        PlanId.STARTER.value,
+        PlanId.PRO.value,
+        PlanId.ELITE.value,
+        PlanId.FOUNDING.value,
+        PlanId.ELITE_FOUNDING.value,
+        PlanId.ELITE_REGULAR.value,
+    }
+    if plan not in valid_plans:
         raise AdminUserError("Plan inválido.")
-    if minutes_daily < 1 or minutes_daily > 480:
-        raise AdminUserError("Minutos diarios entre 1 y 480.")
+    plan = normalize_plan_id(plan)
+    if minutes_daily < 0 or minutes_daily > 9999:
+        raise AdminUserError("Minutos diarios entre 0 y 9999.")
     if initial_balance < 0:
         raise AdminUserError("Saldo inicial no puede ser negativo.")
     if email_exists(email):
@@ -117,7 +122,7 @@ def create_manual_user(
 
     expires_at = _parse_expires(duration_days)
     status = _subscription_status(access_type, expires_at)
-    is_founding = plan == PlanId.ELITE_FOUNDING.value
+    is_founding = plan == PlanId.FOUNDING.value
     profile_role = "coadmin" if access_type == "coadmin" else "client"
 
     client = _client()
@@ -159,10 +164,7 @@ def create_manual_user(
                 "phone": phone,
                 "role": profile_role,
                 "is_founding_member": is_founding,
-                "price_locked_usd": PLAN_PRICES_USD.get(
-                    PlanId.ELITE_FOUNDING if is_founding else PlanId.ELITE_REGULAR,
-                    35 if is_founding else 49,
-                ),
+                "price_locked_usd": PLAN_PRICES_USD.get(plan, 99),
                 "admin_notes": admin_notes,
                 "updated_at": now,
             }
@@ -335,7 +337,7 @@ def list_admin_users(search: str = "", limit: int = 100) -> dict[str, Any]:
                 "plan": (sub or {}).get("plan_id"),
                 "status": status,
                 "expires_at": (sub or {}).get("expires_at"),
-                "minutes_daily": (lim or {}).get("minutes_daily") or CED_ELITE.gemini_minutes_per_day,
+                "minutes_daily": (lim or {}).get("minutes_daily") or plan_minutes_daily((sub or {}).get("plan_id")),
                 "created_at": row.get("created_at"),
                 "is_founding_member": row.get("is_founding_member"),
             }
@@ -352,6 +354,13 @@ def list_admin_users(search: str = "", limit: int = 100) -> dict[str, Any]:
 def get_user_access(user_id: str) -> tuple[bool, str, int]:
     """Acceso activo + minutos diarios del plan."""
     from app.deps.auth import is_super_admin
+    from app.domain.plans import (
+        TRIAL_VOICE_MINUTES_PER_DAY,
+        PlanId,
+        get_plan_limits,
+        normalize_plan_id,
+        plan_minutes_daily,
+    )
 
     profile = supabase_db.get_profile(user_id)
     email = (profile or {}).get("email")
@@ -360,21 +369,53 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
         minutes = supabase_db.get_usage_limit_minutes(user_id)
         return True, "ok", minutes
 
+    supabase_db.expire_trial_if_needed(user_id)
     sub = supabase_db.get_subscription(user_id)
     if not sub:
-        return False, "Sin suscripción activa", CED_ELITE.gemini_minutes_per_day
+        return False, "Sin suscripción activa", 0
+
     if sub.get("paused_at"):
-        return False, "Cuenta pausada por administrador", CED_ELITE.gemini_minutes_per_day
+        return False, "Cuenta pausada por administrador", 0
+
+    plan_id = normalize_plan_id(sub.get("plan_id"))
+    limits = get_plan_limits(plan_id)
     st = str(sub.get("status") or "")
-    if st in ("expired", "cancelled"):
-        return False, "Suscripción inactiva", CED_ELITE.gemini_minutes_per_day
+
+    if st == "trialing":
+        trial_end = sub.get("trial_ends_at")
+        if trial_end:
+            try:
+                exp_dt = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
+                if exp_dt > datetime.now(timezone.utc):
+                    return True, "trial", TRIAL_VOICE_MINUTES_PER_DAY
+                return False, "trial_expired", 0
+            except ValueError:
+                pass
+        return False, "trial_expired", 0
+
+    if st in ("expired", "cancelled", "canceled"):
+        return True, "free_basic", 0
+
+    if plan_id == PlanId.FREE_BASIC.value:
+        if not limits.voice_enabled:
+            return True, "free_basic", 0
+        return True, "ok", limits.gemini_minutes_per_day
+
     exp = sub.get("expires_at")
     if exp:
         try:
             exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
             if exp_dt <= datetime.now(timezone.utc):
-                return False, "Acceso expirado", CED_ELITE.gemini_minutes_per_day
+                return True, "free_basic", 0
         except ValueError:
             pass
-    minutes = supabase_db.get_usage_limit_minutes(user_id)
-    return True, "ok", minutes
+
+    if st in ("active", "past_due", "trialing"):
+        minutes = supabase_db.get_usage_limit_minutes(user_id)
+        if minutes <= 0:
+            minutes = plan_minutes_daily(plan_id)
+        if not limits.voice_enabled:
+            return True, "free_basic", 0
+        return True, "ok", minutes
+
+    return False, "Suscripción inactiva", 0

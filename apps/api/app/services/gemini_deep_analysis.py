@@ -41,7 +41,7 @@ def consultar_sistema_avanzado(prompt: str) -> dict[str, Any]:
         f"Consulta del usuario: {topic}\n\n"
         "Responde en español latinoamericano para NARRACIÓN POR VOZ. "
         "Máximo 4 oraciones claras. Sin markdown, URLs ni listas con guiones. "
-        "Empieza con 'Señor,' si encaja. Sé preciso y directo."
+        "Sé preciso y directo. Español latinoamericano natural."
     )
 
     try:

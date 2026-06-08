@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr, Field
 
 from app.deps.auth import require_super_admin
-from app.domain.plans import CED_ELITE
+from app.domain.plans import PlanId, plan_minutes_daily
 from app.services import supabase_db
 from app.services.admin_users import AdminUserError, create_manual_user, list_admin_users
 
@@ -29,9 +29,9 @@ class CreateUserBody(BaseModel):
     email: EmailStr
     phone: str | None = Field(default=None, max_length=32)
     access_type: Literal["paid", "beta", "founding_gift", "coadmin"] = "beta"
-    plan: Literal["elite_founding", "elite_regular"] = "elite_founding"
+    plan: Literal["starter", "pro", "elite", "founding", "elite_founding", "elite_regular"] = "elite"
     duration_days: int | Literal["indefinite"] = 30
-    minutes_daily: int = Field(default=120, ge=1, le=480)
+    minutes_daily: int = Field(default=120, ge=0, le=9999)
     initial_balance: float = Field(default=0, ge=0, le=10000)
     password: str = Field(min_length=8, max_length=128)
     send_welcome_email: bool = True
@@ -105,7 +105,7 @@ def admin_create_user(
 @router.get("/users/defaults")
 def admin_user_defaults(_admin_id: str = Depends(require_super_admin)) -> dict:
     return {
-        "default_minutes_daily": CED_ELITE.gemini_minutes_per_day,
+        "default_minutes_daily": plan_minutes_daily(PlanId.ELITE.value),
         "duration_options": [7, 14, 30, 60, 90, 365, "indefinite"],
         "max_creations_per_day": 10,
     }

@@ -104,46 +104,54 @@ def check_supabase_auth() -> dict[str, Any]:
 
 
 def check_supabase_auth_api_key() -> dict[str, Any]:
-    """Comprueba que la API key (service role o anon) pertenece al proyecto."""
+    """Comprueba que al menos una API key (service role o anon) es válida."""
     settings = get_settings()
     url = settings.supabase_url.strip().rstrip("/")
     if not url:
         return {"ok": False, "error": "missing_url", "project_ref": None}
 
     project_ref = url.replace("https://", "").split(".")[0]
-    api_key = (
-        settings.supabase_service_role_key.strip()
-        or settings.supabase_anon_key.strip()
-    )
-    if not api_key:
-        return {
-            "ok": False,
-            "error": "missing_api_key",
-            "project_ref": project_ref,
-        }
+    keys = {
+        "service_role": settings.supabase_service_role_key.strip(),
+        "anon": settings.supabase_anon_key.strip(),
+    }
 
+    results: dict[str, bool] = {}
     try:
         with httpx.Client(timeout=10.0) as client:
-            response = client.get(
-                f"{url}/auth/v1/user",
-                headers={
-                    "apikey": api_key,
-                    "Authorization": "Bearer invalid.test-token",
-                },
-            )
-        body = response.text
-        if response.status_code == 403 and "bad_jwt" in body:
-            return {"ok": True, "project_ref": project_ref}
-        if response.status_code == 401 and "Invalid API key" in body:
+            for name, api_key in keys.items():
+                if not api_key:
+                    results[name] = False
+                    continue
+                response = client.get(
+                    f"{url}/auth/v1/user",
+                    headers={
+                        "apikey": api_key,
+                        "Authorization": "Bearer invalid.test-token",
+                    },
+                )
+                body = response.text
+                results[name] = response.status_code == 403 and "bad_jwt" in body
+
+        any_ok = any(results.values())
+        if any_ok:
+            return {
+                "ok": True,
+                "project_ref": project_ref,
+                "keys_valid": results,
+            }
+        if not any(keys.values()):
             return {
                 "ok": False,
-                "error": "invalid_api_key",
+                "error": "missing_api_key",
                 "project_ref": project_ref,
+                "keys_valid": results,
             }
         return {
             "ok": False,
-            "error": f"unexpected_status_{response.status_code}",
+            "error": "invalid_api_key",
             "project_ref": project_ref,
+            "keys_valid": results,
         }
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:200], "project_ref": project_ref}

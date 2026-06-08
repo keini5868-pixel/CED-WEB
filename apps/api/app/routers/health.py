@@ -24,6 +24,7 @@ from app.domain.plans import (
     RECHARGE_QUICK_AMOUNTS_USD,
     TRIAL_DAYS,
     USAGE_WARNING_PERCENT,
+    public_plans_catalog,
     quote_recharge,
 )
 
@@ -61,6 +62,7 @@ def auth_diagnostics(_request: Request) -> dict:
         "has_anon_key": bool(settings.supabase_anon_key.strip()),
         "has_jwt_secret": bool(settings.supabase_jwt_secret.strip()),
         "supabase_api_key_valid": supabase_auth.get("ok"),
+        "supabase_keys_valid": supabase_auth.get("keys_valid"),
         "supabase_auth_error": supabase_auth.get("error"),
         "super_admin_emails_set": bool(settings.super_admin_emails.strip()),
         "hint": (
@@ -77,38 +79,26 @@ def meta() -> dict:
     supabase_auth = check_supabase_auth_api_key()
     return {
         "app": "ced-web",
-        "product": "CED Élite",
-        "phase": 1,
+        "product": "CED",
+        "phase": 7,
         "web_url": settings.web_public_url,
         "supabase_project_ref": supabase_auth.get("project_ref"),
         "supabase_auth_api_ok": supabase_auth.get("ok"),
         "supabase_auth_error": supabase_auth.get("error"),
         "trial_days": TRIAL_DAYS,
         "usage_warning_percent": USAGE_WARNING_PERCENT,
+        "plans": public_plans_catalog(),
         "founding": {
             "max_slots": FOUNDING_MEMBER_MAX_SLOTS,
-            "price_usd_month": PLAN_PRICES_USD[PlanId.ELITE_FOUNDING],
+            "price_usd_month": PLAN_PRICES_USD[PlanId.FOUNDING.value],
             "price_locked_for_life": True,
-            "certificate_pdf": True,
         },
-        "launch": {
-            "price_usd_month": PLAN_PRICES_USD[PlanId.ELITE_REGULAR],
-            "from_slot": FOUNDING_MEMBER_MAX_SLOTS + 1,
-        },
-        "features": {
+        "features_elite": {
             "gemini_minutes_per_day": CED_ELITE.gemini_minutes_per_day,
-            "video_allowed": CED_ELITE.video_allowed,
-            "claude_text_unlimited": CED_ELITE.claude_text_unlimited,
             "ai_images_per_month": CED_ELITE.ai_images_per_month,
-            "tts_elevenlabs": CED_ELITE.tts_elevenlabs,
-            "whisper_transcription": CED_ELITE.whisper_transcription,
-            "memory_unlimited": CED_ELITE.memory_unlimited,
-            "folders_unlimited": CED_ELITE.folders_unlimited,
-            "pdfs_unlimited": CED_ELITE.pdfs_unlimited,
-            "hud_panels_live": CED_ELITE.hud_panels_live,
-            "pwa_mobile": CED_ELITE.pwa_mobile,
-            "priority_support": CED_ELITE.priority_support,
-            "early_access_features": CED_ELITE.early_access_features,
+            "voice_enabled": CED_ELITE.voice_enabled,
+            "camera_enabled": CED_ELITE.camera_enabled,
+            "meta_social_enabled": CED_ELITE.meta_social_enabled,
         },
         "recharge": {
             "model": "flexible_amount",
