@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.config import get_settings
-from app.domain.plans import CED_ELITE, PlanId
+from app.domain.plans import CED_ELITE, PLAN_PRICES_USD, PlanId
 from app.services import supabase_db
 from app.services.email_welcome import send_welcome_email
 
@@ -159,7 +159,10 @@ def create_manual_user(
                 "phone": phone,
                 "role": profile_role,
                 "is_founding_member": is_founding,
-                "price_locked_usd": 149 if is_founding else 249,
+                "price_locked_usd": PLAN_PRICES_USD.get(
+                    PlanId.ELITE_FOUNDING if is_founding else PlanId.ELITE_REGULAR,
+                    35 if is_founding else 49,
+                ),
                 "admin_notes": admin_notes,
                 "updated_at": now,
             }
@@ -348,6 +351,15 @@ def list_admin_users(search: str = "", limit: int = 100) -> dict[str, Any]:
 
 def get_user_access(user_id: str) -> tuple[bool, str, int]:
     """Acceso activo + minutos diarios del plan."""
+    from app.deps.auth import is_super_admin
+
+    profile = supabase_db.get_profile(user_id)
+    email = (profile or {}).get("email")
+    role = (profile or {}).get("role")
+    if is_super_admin(email, role if role == "super_admin" else None):
+        minutes = supabase_db.get_usage_limit_minutes(user_id)
+        return True, "ok", minutes
+
     sub = supabase_db.get_subscription(user_id)
     if not sub:
         return False, "Sin suscripción activa", CED_ELITE.gemini_minutes_per_day

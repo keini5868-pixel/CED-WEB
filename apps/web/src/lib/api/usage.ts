@@ -1,28 +1,9 @@
 import type { UsageBalance } from "@ced/types";
 
 import { cedApiPath } from "@/lib/api/ced-proxy";
-import { apiUrl } from "@/lib/env";
-import { createClient } from "@/lib/supabase/client";
 
-async function authHeaders(): Promise<HeadersInit> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Sin sesión");
-  return {
-    Authorization: `Bearer ${session.access_token}`,
-    "Content-Type": "application/json",
-  };
-}
-
-async function apiFetch(path: string, init?: RequestInit): Promise<Response | null> {
-  try {
-    return await fetch(`${apiUrl()}${path}`, init);
-  } catch {
-    return null;
-  }
-}
+const proxyFetch = (path: string, init?: RequestInit) =>
+  fetch(cedApiPath(path), { credentials: "same-origin", ...init });
 
 export type UsageBalanceApi = UsageBalance & {
   usage_percent?: number;
@@ -51,15 +32,7 @@ export async function startVoiceSession(): Promise<{
   session_id: string;
   conversation_id: string | null;
 }> {
-  const res = await apiFetch("/v1/usage/session/start", {
-    method: "POST",
-    headers: await authHeaders(),
-  });
-  if (!res) {
-    throw new Error(
-      `No se pudo contactar la API en ${apiUrl()}. Ejecuta: pnpm dev:api`,
-    );
-  }
+  const res = await proxyFetch("usage/session/start", { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(
@@ -80,22 +53,21 @@ export async function tickVoiceSession(
   sessionId: string,
   seconds: number,
 ): Promise<VoiceSessionTick | null> {
-  const res = await apiFetch("/v1/usage/session/tick", {
+  const res = await proxyFetch("usage/session/tick", {
     method: "POST",
-    headers: await authHeaders(),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, seconds }),
   });
-  if (!res?.ok) return null;
+  if (!res.ok) return null;
   return res.json();
 }
 
 export async function endVoiceSession(sessionId: string): Promise<void> {
-  const res = await apiFetch("/v1/usage/session/end", {
+  const res = await proxyFetch("usage/session/end", {
     method: "POST",
-    headers: await authHeaders(),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId }),
   });
-  if (!res) return;
   if (res.status === 404) return;
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
