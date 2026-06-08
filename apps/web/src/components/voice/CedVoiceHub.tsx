@@ -37,7 +37,7 @@ const JarvisOrbScene = dynamic(
 /** Centro del dashboard — orbe JARVIS + controles + Gemini Live. */
 export function CedVoiceHub() {
   const [chatOpen, setChatOpen] = useState(false);
-  const { balance, loaded, refresh: refreshUsage } = useUsageBalance(5000);
+  const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushLine } = useHudFeed();
 
   useEffect(() => {

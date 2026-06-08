@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 
 import type { UsageBalance } from "@ced/types";
 
@@ -16,6 +23,12 @@ export type UsageBalanceState = {
   subscriptionStatus: string | null;
 };
 
+type UsageBalanceValue = {
+  balance: UsageBalanceState;
+  loaded: boolean;
+  refresh: () => Promise<void>;
+};
+
 const EMPTY_BALANCE: UsageBalanceState = {
   used: 0,
   plan: 0,
@@ -26,11 +39,17 @@ const EMPTY_BALANCE: UsageBalanceState = {
   subscriptionStatus: null,
 };
 
-export function useUsageBalance(pollMs = 8000) {
+const UsageBalanceContext = createContext<UsageBalanceValue | null>(null);
+
+function useUsageBalancePoll(
+  pollMs: number,
+  enabled = true,
+): UsageBalanceValue {
   const [balance, setBalance] = useState<UsageBalanceState>(EMPTY_BALANCE);
   const [loaded, setLoaded] = useState(false);
 
   const refresh = useCallback(async () => {
+    if (!enabled) return;
     try {
       const data = (await fetchUsageBalance()) as
         | (UsageBalance & {
@@ -66,13 +85,31 @@ export function useUsageBalance(pollMs = 8000) {
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     void refresh();
     const id = setInterval(() => void refresh(), pollMs);
     return () => clearInterval(id);
-  }, [refresh, pollMs]);
+  }, [enabled, refresh, pollMs]);
 
   return { balance, loaded, refresh };
+}
+
+/** Un solo poll compartido en el dashboard. */
+export function UsageBalanceProvider({ children }: { children: ReactNode }) {
+  const value = useUsageBalancePoll(8000);
+  return (
+    <UsageBalanceContext.Provider value={value}>
+      {children}
+    </UsageBalanceContext.Provider>
+  );
+}
+
+/** Usa el contexto del dashboard si existe; si no, poll local (p. ej. /admin). */
+export function useUsageBalance(pollMs = 8000) {
+  const shared = useContext(UsageBalanceContext);
+  const local = useUsageBalancePoll(pollMs, !shared);
+  return shared ?? local;
 }

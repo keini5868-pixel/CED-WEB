@@ -292,6 +292,11 @@ export class CedLiveClient {
     this.sendClientTurn(CED_VOICE_PROFILE_LOCK.webSearch.ackInstruction);
   }
 
+  /** ACK corto mientras el backend consulta Gemini Flash (sistema avanzado). */
+  sendAdvancedSystemAck(): void {
+    this.sendClientTurn(CED_VOICE_PROFILE_LOCK.advancedSystem.ackInstruction);
+  }
+
   private sendClientTurn(turns: string): void {
     if (!this.session || !this.sessionReady || this.sendBlocked) return;
     try {
@@ -461,6 +466,7 @@ export class CedLiveClient {
           }
 
           this.handlers.onToolStart?.(name);
+          this.sendAdvancedSystemAck();
           const result = await fetchDeepAnalysis(
             prompt || "consulta general",
             CED_VOICE_PROFILE_LOCK.advancedSystem.fetchTimeoutMs,

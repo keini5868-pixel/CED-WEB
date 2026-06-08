@@ -7,7 +7,7 @@ import { useUsageBalance } from "@/hooks/useUsageBalance";
 import { RechargeModal } from "@/components/billing/RechargeModal";
 
 export function HudUsageBar() {
-  const { balance, loaded } = useUsageBalance(5000);
+  const { balance, loaded } = useUsageBalance();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const pct = Math.min(
     100,

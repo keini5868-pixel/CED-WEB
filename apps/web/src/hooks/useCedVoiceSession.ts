@@ -130,6 +130,7 @@ export function useCedVoiceSession(
   const webAckSentRef = useRef(false);
   const lastWebQueryRef = useRef("");
   const lastUserUtteranceRef = useRef("");
+  const advancedConfirmPendingRef = useRef(false);
   const webSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraPreviewRef = useRef<string | null>(null);
 
@@ -660,6 +661,9 @@ export function useCedVoiceSession(
         },
         onToolStart: (toolName) => {
           if (isStale()) return;
+          if (toolName === CONSULTAR_SISTEMA_AVANZADO) {
+            advancedConfirmPendingRef.current = false;
+          }
           modelSpeakingRef.current = true;
           setOrbState("processing");
           const labels: Record<string, string> = {
@@ -684,6 +688,7 @@ export function useCedVoiceSession(
             lastUserUtteranceRef.current,
             toolPrompt,
             webFetchRef.current,
+            advancedConfirmPendingRef.current,
           ),
         onAdvancedToolBlocked: (toolPrompt) => {
           const q = toolPrompt.trim() || lastUserUtteranceRef.current.trim();
@@ -699,6 +704,7 @@ export function useCedVoiceSession(
             return;
           }
           if (!webFetchRef.current && !hasAdvancedSystemConfirmation(lastUserUtteranceRef.current)) {
+            advancedConfirmPendingRef.current = true;
             client.sendNarrationBrief(
               "¿Quieres que consulte al sistema avanzado? Confirma con un sí.",
             );

@@ -14,10 +14,15 @@ async function forward(request: NextRequest, pathSegments: string[]) {
     return NextResponse.json({ detail: "Sin sesión" }, { status: 401 });
   }
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const token = session?.access_token;
+  let token: string | undefined;
+  const { data: sessionData } = await supabase.auth.getSession();
+  token = sessionData.session?.access_token;
+
+  if (!token) {
+    const { data: refreshed } = await supabase.auth.refreshSession();
+    token = refreshed.session?.access_token;
+  }
+
   if (!token) {
     return NextResponse.json({ detail: "Sin sesión" }, { status: 401 });
   }

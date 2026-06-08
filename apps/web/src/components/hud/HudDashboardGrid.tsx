@@ -21,12 +21,14 @@ import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import { CedVoiceHub } from "@/components/voice/CedVoiceHub";
 import { HudFeedProvider } from "@/contexts/HudFeedContext";
 import { HudPanelProvider } from "@/contexts/HudPanelContext";
+import { UsageBalanceProvider } from "@/hooks/useUsageBalance";
 
 /** HUD — 3 columnas desktop; móvil con paneles colapsables. */
 export function HudDashboardGrid() {
   return (
     <HudFeedProvider>
       <HudPanelProvider>
+        <UsageBalanceProvider>
         <div className="hidden grid-cols-12 gap-4 p-4 lg:grid lg:items-start">
           <div className="col-span-12">
             <Suspense fallback={null}>
@@ -105,6 +107,7 @@ export function HudDashboardGrid() {
             <HudUsageBar />
           </HudCollapsible>
         </div>
+        </UsageBalanceProvider>
       </HudPanelProvider>
     </HudFeedProvider>
   );

@@ -92,6 +92,17 @@ const ADVANCED_CONFIRM_PATTERNS = [
   /\bconfirma(do)?\b/i,
   /\bhazlo\b/i,
   /\bde acuerdo\b/i,
+  /\bok\b/i,
+  /\bvale\b/i,
+  /\bdale\b/i,
+];
+
+const EXPLICIT_ADVANCED_PATTERNS = [
+  /\bsistema avanzado\b/i,
+  /\ban[aá]lisis profundo\b/i,
+  /\banaliza(r|me)?\s+(en detalle|a fondo|profundo)\b/i,
+  /\bconsulta(r|me)?\s+al sistema\b/i,
+  /\bmodo (profundo|avanzado)\b/i,
 ];
 
 /** Usuario confirmó explícitamente consultar al sistema avanzado. */
@@ -100,15 +111,31 @@ export function hasAdvancedSystemConfirmation(text: string): boolean {
   return ADVANCED_CONFIRM_PATTERNS.some((p) => p.test(t));
 }
 
+export function isExplicitAdvancedRequest(text: string): boolean {
+  const t = normalizeTranscript(text);
+  return EXPLICIT_ADVANCED_PATTERNS.some((p) => p.test(t));
+}
+
 export function shouldAllowAdvancedTool(
   userText: string,
   toolPrompt: string,
   webFetchActive: boolean,
+  confirmPending = false,
 ): boolean {
   if (webFetchActive) return false;
   if (isWebResearchIntent(userText) || isWebResearchIntent(toolPrompt)) {
     return false;
   }
   if (isWeatherIntent(userText) || isWeatherIntent(toolPrompt)) return false;
-  return hasAdvancedSystemConfirmation(userText);
+  if (
+    hasAdvancedSystemConfirmation(userText) ||
+    hasAdvancedSystemConfirmation(toolPrompt)
+  ) {
+    return true;
+  }
+  if (confirmPending && hasAdvancedSystemConfirmation(userText)) return true;
+  if (isExplicitAdvancedRequest(userText) || isExplicitAdvancedRequest(toolPrompt)) {
+    return true;
+  }
+  return false;
 }

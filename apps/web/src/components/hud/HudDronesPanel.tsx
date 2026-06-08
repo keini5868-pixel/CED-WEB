@@ -38,7 +38,7 @@ export function HudDronesPanel() {
   useHudIntelStream(!streamConnected);
   const { items, marqueeText } = useHudFeed();
   const { drones } = useHudPanels();
-  const { balance } = useUsageBalance(5000);
+  const { balance } = useUsageBalance();
   const [cardIndex, setCardIndex] = useState(0);
 
   const cards = useMemo(() => {
