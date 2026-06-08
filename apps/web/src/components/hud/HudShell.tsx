@@ -26,10 +26,10 @@ export function HudShell({ children, email, isSuperAdmin }: HudShellProps) {
             SYS: ONLINE
           </span>
         </div>
-        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           <DriveModeLink compact />
-          <ConnectNetworksButton />
           <AdminPanelButton visible={isSuperAdmin} />
+          <ConnectNetworksButton />
           {email ? (
             <span className="ced-hud-text-body max-w-[180px] truncate text-xs">
               {email}
