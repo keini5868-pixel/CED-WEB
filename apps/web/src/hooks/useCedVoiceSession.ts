@@ -58,6 +58,9 @@ import {
 } from "@/lib/voice/preferences";
 
 const CAMERA_IDLE_MS = 5 * 60 * 1000;
+const VIDEO_SEND_INTERVAL_MS = 1500;
+const VIDEO_CAPTURE_WIDTH = 640;
+const VIDEO_CAPTURE_HEIGHT = 480;
 const USAGE_TICK_SECONDS = 15;
 const MAX_WS_RECONNECT = 3;
 
@@ -98,7 +101,7 @@ export function useCedVoiceSession(
   const [historyOpen, setHistoryOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
-  const [cameraPreview, setCameraPreview] = useState<string | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [heardIndicator, setHeardIndicator] =
     useState<VoiceHeardIndicator>(INITIAL_HEARD);
@@ -133,6 +136,9 @@ export function useCedVoiceSession(
   const advancedConfirmPendingRef = useRef(false);
   const webSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraPreviewRef = useRef<string | null>(null);
+  const cameraCaptureVideoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraCaptureCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const micOnRef = useRef(micOn);
 
   useEffect(() => {
     prefsRef.current = prefs;
@@ -146,6 +152,26 @@ export function useCedVoiceSession(
   useEffect(() => {
     pausedRef.current = paused;
   }, [paused]);
+  useEffect(() => {
+    micOnRef.current = micOn;
+  }, [micOn]);
+
+  const captureCameraJpeg = useCallback((): string | null => {
+    const video = cameraCaptureVideoRef.current;
+    if (!video || video.videoWidth === 0) return cameraPreviewRef.current;
+    let canvas = cameraCaptureCanvasRef.current;
+    if (!canvas) {
+      canvas = document.createElement("canvas");
+      cameraCaptureCanvasRef.current = canvas;
+    }
+    canvas.width = VIDEO_CAPTURE_WIDTH;
+    canvas.height = VIDEO_CAPTURE_HEIGHT;
+    const ctx = canvas.getContext("2d");
+    ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+    cameraPreviewRef.current = dataUrl;
+    return dataUrl;
+  }, []);
 
   const inputLevel = useAudioAnalyser(micStream, micOn && !paused);
   const audioLevel =
@@ -182,7 +208,8 @@ export function useCedVoiceSession(
     if (!cameraOn) return;
     cameraIdleTimerRef.current = setTimeout(() => {
       setCameraOn(false);
-      setCameraPreview(null);
+      setCameraStream(null);
+      cameraPreviewRef.current = null;
       cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
       cameraStreamRef.current = null;
     }, CAMERA_IDLE_MS);
@@ -230,7 +257,8 @@ export function useCedVoiceSession(
     cameraStreamRef.current = null;
     setMicOn(false);
     setCameraOn(false);
-    setCameraPreview(null);
+    setCameraStream(null);
+    cameraPreviewRef.current = null;
     setHeardIndicator(INITIAL_HEARD);
     modelRepliedTurnRef.current = false;
     modelSpeakingRef.current = false;
@@ -261,14 +289,21 @@ export function useCedVoiceSession(
         cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
         cameraStreamRef.current = null;
         setCameraOn(false);
-        setCameraPreview(null);
+        setCameraStream(null);
+        cameraPreviewRef.current = null;
         return;
       }
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: 640, height: 480 },
+          video: {
+            facingMode: "user",
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 24, max: 30 },
+          },
         });
         cameraStreamRef.current = stream;
+        setCameraStream(stream);
         setCameraOn(true);
         setStatusLabel("Activando cámara…");
         resetCameraIdleTimer();
@@ -485,7 +520,7 @@ export function useCedVoiceSession(
       };
 
       const runVisualSearch = (question = "") => {
-        const frame = cameraPreviewRef.current;
+        const frame = captureCameraJpeg();
         if (!frame || webFetchRef.current || isStale()) {
           if (!frame) {
             client.sendNarrationBrief(
@@ -791,7 +826,7 @@ export function useCedVoiceSession(
             };
           }
           if (name === BUSCAR_LO_VISIBLE) {
-            const frame = cameraPreviewRef.current;
+            const frame = captureCameraJpeg();
             if (!frame) {
               return {
                 spoken: "active la cámara para buscar lo que veo.",
@@ -983,29 +1018,58 @@ export function useCedVoiceSession(
   }, [clearUsageInterval]);
 
   useEffect(() => {
-    if (!cameraOn || !cameraStreamRef.current || !micOn) return;
+    if (!cameraOn || !cameraStreamRef.current) return;
+
     const video = document.createElement("video");
     video.srcObject = cameraStreamRef.current;
     video.muted = true;
-    void video.play();
-    const canvas = document.createElement("canvas");
-    const interval = setInterval(() => {
-      if (video.videoWidth === 0 || paused) return;
+    video.playsInline = true;
+    cameraCaptureVideoRef.current = video;
+
+    let cancelled = false;
+    let frameCallbackId = 0;
+    let fallbackTimer: ReturnType<typeof setInterval> | null = null;
+
+    const maybeSendFrame = () => {
+      if (cancelled || pausedRef.current || !micOnRef.current) return;
       const now = Date.now();
-      if (now - lastVideoSentRef.current < 2000) return;
+      if (now - lastVideoSentRef.current < VIDEO_SEND_INTERVAL_MS) return;
+      const dataUrl = captureCameraJpeg();
+      if (!dataUrl) return;
       lastVideoSentRef.current = now;
-      canvas.width = 640;
-      canvas.height = 480;
-      const ctx = canvas.getContext("2d");
-      ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.65);
-      cameraPreviewRef.current = dataUrl;
-      setCameraPreview(dataUrl);
       clientRef.current?.sendVideoJpeg(dataUrl);
       resetCameraIdleTimer();
-    }, 500);
-    return () => clearInterval(interval);
-  }, [cameraOn, micOn, paused, resetCameraIdleTimer]);
+    };
+
+    const onVideoFrame = () => {
+      if (cancelled) return;
+      maybeSendFrame();
+      if ("requestVideoFrameCallback" in video) {
+        frameCallbackId = video.requestVideoFrameCallback(onVideoFrame);
+      }
+    };
+
+    void video.play().then(() => {
+      if (cancelled) return;
+      if ("requestVideoFrameCallback" in video) {
+        frameCallbackId = video.requestVideoFrameCallback(onVideoFrame);
+      } else {
+        fallbackTimer = setInterval(maybeSendFrame, VIDEO_SEND_INTERVAL_MS);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      if (fallbackTimer) clearInterval(fallbackTimer);
+      if (frameCallbackId && "cancelVideoFrameCallback" in video) {
+        video.cancelVideoFrameCallback(frameCallbackId);
+      }
+      video.srcObject = null;
+      if (cameraCaptureVideoRef.current === video) {
+        cameraCaptureVideoRef.current = null;
+      }
+    };
+  }, [cameraOn, captureCameraJpeg, resetCameraIdleTimer]);
 
   const togglePause = useCallback(() => {
     setPaused((p) => {
@@ -1080,7 +1144,7 @@ export function useCedVoiceSession(
     setSettingsOpen,
     stopConfirmOpen,
     setStopConfirmOpen,
-    cameraPreview,
+    cameraStream,
     errorMessage,
     heardIndicator,
     micBusy,
@@ -1092,5 +1156,6 @@ export function useCedVoiceSession(
     stopSession,
     updatePrefs,
     applyVoiceChange,
+    clearError,
   };
 }

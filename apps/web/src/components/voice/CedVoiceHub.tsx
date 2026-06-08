@@ -14,6 +14,7 @@ import { useUsageBalance } from "@/hooks/useUsageBalance";
 import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
+import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
 import {
   CedHistoryPanel,
   CedSettingsModal,
@@ -85,14 +86,9 @@ export function CedVoiceHub() {
           audioLevel={voice.audioLevel}
           palette={voice.prefs.palette}
         />
-        {voice.cameraOn && voice.cameraPreview ? (
-          <img
-            src={voice.cameraPreview}
-            alt="Vista cámara"
-            className="absolute -right-2 -top-2 h-16 w-20 rounded border border-cyan-400/60 object-cover ced-panel-glow sm:h-20 sm:w-24"
-          />
-        ) : null}
       </div>
+
+      <CedCameraPreview stream={voice.cameraStream} active={voice.cameraOn} />
 
       <AnimatePresence mode="wait">
         <motion.p
