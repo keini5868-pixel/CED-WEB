@@ -1,6 +1,7 @@
 /** Rutas canónicas de auth y app (Fase 1). */
 
 export const DASHBOARD_PATH = "/dashboard";
+export const DRIVE_PATH = "/drive";
 export const ADMIN_PATH = "/admin";
 export const LOGIN_PATH = "/login";
 export const SIGNUP_PATH = "/signup";
@@ -18,4 +19,4 @@ export const PUBLIC_AUTH_PREFIXES = [
   "/auth",
 ] as const;
 
-export const PROTECTED_PREFIXES = [DASHBOARD_PATH, ADMIN_PATH, "/app"] as const;
+export const PROTECTED_PREFIXES = [DASHBOARD_PATH, DRIVE_PATH, ADMIN_PATH, "/app"] as const;

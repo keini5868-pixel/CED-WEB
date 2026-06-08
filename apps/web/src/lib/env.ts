@@ -13,3 +13,7 @@ export function appUrl(): string {
 export function apiUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL?.trim() || "http://localhost:8000";
 }
+
+export function googleMapsKey(): string {
+  return process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY?.trim() || "";
+}
