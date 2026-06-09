@@ -414,7 +414,31 @@ export function useCedVoiceSession(
       const micActiveRef = { current: true };
       const greetingSentRef = { current: false };
       const greetingTurnPendingRef = { current: true };
+      const greetingAudioReceivedRef = { current: false };
       const setupTimerRef = { current: null as ReturnType<typeof setTimeout> | null };
+      const micUplinkFallbackRef = { current: null as ReturnType<typeof setTimeout> | null };
+
+      const enableMicUplink = () => {
+        if (isStale() || !micActiveRef.current) return;
+        micUplinkEnabledRef.current = true;
+        if (!webFetchRef.current && !modelSpeakingRef.current) {
+          setOrbState("listening");
+          setStatusLabel(ORB_STATE_LABELS.listening);
+        }
+      };
+
+      const scheduleMicUplinkFallback = (delayMs = 4500) => {
+        if (micUplinkFallbackRef.current) {
+          clearTimeout(micUplinkFallbackRef.current);
+        }
+        micUplinkFallbackRef.current = window.setTimeout(() => {
+          micUplinkFallbackRef.current = null;
+          if (!micUplinkEnabledRef.current) {
+            cedVoiceLog(4, "Mic uplink fallback activado");
+            enableMicUplink();
+          }
+        }, delayMs);
+      };
 
       const sendWebSearchAckOnce = () => {
         if (webAckSentRef.current) return;
@@ -619,7 +643,9 @@ export function useCedVoiceSession(
           onData: (base64) => client.sendAudioPcm(base64),
           shouldSend: () => {
             if (!micUplinkEnabledRef.current) return false;
-            if (streamerRef.current?.isActive()) return false;
+            if (modelSpeakingRef.current && streamerRef.current?.isActive()) {
+              return false;
+            }
             return (
               !isStale() &&
               !pausedRef.current &&
@@ -649,11 +675,22 @@ export function useCedVoiceSession(
             setupTimerRef.current = null;
           }
           micUplinkEnabledRef.current = false;
+          greetingAudioReceivedRef.current = false;
+          void (async () => {
+            await streamerRef.current?.warmup();
+            const out = await getAudioContext({
+              id: "ced-out",
+              sampleRate: 24000,
+              latencyHint: "playback",
+            });
+            if (out.state === "suspended") await out.resume();
+          })();
           if (!greetingSentRef.current) {
             greetingSentRef.current = true;
             setStatusLabel("CED te saluda…");
             client.sendSessionGreeting();
           }
+          scheduleMicUplinkFallback(4500);
           void startMic();
         },
         onTranscriptUpdate: (text, role) => {
@@ -872,8 +909,10 @@ export function useCedVoiceSession(
         },
         onAudio: (buffer) => {
           if (isStale()) return;
+          greetingAudioReceivedRef.current = true;
           modelSpeakingRef.current = true;
           modelRepliedTurnRef.current = true;
+          void streamerRef.current?.warmup();
           if (!mutedRef.current) {
             streamerRef.current?.addPCM16(new Uint8Array(buffer));
           }
@@ -896,13 +935,20 @@ export function useCedVoiceSession(
         },
         onTurnComplete: () => {
           void (async () => {
+            if (micUplinkFallbackRef.current) {
+              clearTimeout(micUplinkFallbackRef.current);
+              micUplinkFallbackRef.current = null;
+            }
             streamerRef.current?.markInputComplete();
-            const drainMs = greetingTurnPendingRef.current
-              ? 700
-              : CED_VOICE_PROFILE_LOCK.live.playbackDrainMaxMs;
+            const drainMs =
+              greetingTurnPendingRef.current && !greetingAudioReceivedRef.current
+                ? 200
+                : greetingTurnPendingRef.current
+                  ? 700
+                  : CED_VOICE_PROFILE_LOCK.live.playbackDrainMaxMs;
             greetingTurnPendingRef.current = false;
             await streamerRef.current?.waitForDrain(drainMs);
-            micUplinkEnabledRef.current = true;
+            enableMicUplink();
             modelSpeakingRef.current = false;
             setHeardIndicator((prev) => {
               if (prev.status === "hidden") return prev;
