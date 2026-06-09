@@ -15,6 +15,7 @@ export type ChatMessage = {
 export type ChatPdfAttachment = {
   file_id: string;
   filename: string;
+  title?: string;
   download_path?: string | null;
 };
 

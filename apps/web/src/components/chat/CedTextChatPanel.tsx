@@ -34,9 +34,10 @@ function stripPdfLinks(content: string): string {
 
 function extractPdfFromContent(content: string): ChatPdfAttachment | null {
   const match = content.match(/\/v1\/pdf\/download\/([a-f0-9]+)/i);
-  if (!match) return null;
+  const fileId = match?.[1];
+  if (!fileId) return null;
   return {
-    file_id: match[1],
+    file_id: fileId,
     filename: "documento-ced.pdf",
     title: "Documento CED",
   };
