@@ -9,6 +9,21 @@ export function base64ToArrayBuffer(base64: string): ArrayBuffer {
   return bytes.buffer;
 }
 
+/** iOS suele ignorar sampleRate:16000 — re-muestrea a 16 kHz para Gemini Live. */
+export function downsampleInt16To16k(
+  pcm: Int16Array,
+  inputSampleRate: number,
+): Int16Array {
+  if (inputSampleRate <= 16000) return pcm;
+  const ratio = inputSampleRate / 16000;
+  const outLen = Math.floor(pcm.length / ratio);
+  const out = new Int16Array(outLen);
+  for (let i = 0; i < outLen; i += 1) {
+    out[i] = pcm[Math.floor(i * ratio)] ?? 0;
+  }
+  return out;
+}
+
 export function arrayBufferToBase64(buffer: ArrayBuffer): string {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 8192;

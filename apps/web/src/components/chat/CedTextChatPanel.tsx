@@ -10,7 +10,7 @@ import {
   type ChatPdfAttachment,
   type ChatStatus,
 } from "@/lib/api/chat";
-import { cedApiPath } from "@/lib/api/ced-proxy";
+import { downloadPdfBlob } from "@/lib/api/pdf";
 
 type CedTextChatPanelProps = {
   open: boolean;
@@ -44,17 +44,35 @@ function extractPdfFromContent(content: string): ChatPdfAttachment | null {
 }
 
 function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
-  const href = cedApiPath(`pdf/download/${pdf.file_id}`);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDownload = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await downloadPdfBlob(pdf.file_id, pdf.filename || "documento-ced.pdf");
+    } catch {
+      setError(
+        "No se pudo descargar. Confirma el SQL de ced_pdf_artifacts en Supabase.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <a
-      href={href}
-      download={pdf.filename || "documento-ced.pdf"}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="mt-3 inline-flex items-center gap-1.5 rounded border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-[11px] font-semibold tracking-wide text-cyan-200 hover:bg-cyan-400/20"
-    >
-      📄 Descargar PDF{pdf.title ? `: ${pdf.title}` : ""}
-    </a>
+    <div className="mt-3">
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => void handleDownload()}
+        className="inline-flex items-center gap-1.5 rounded border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-[11px] font-semibold tracking-wide text-cyan-200 hover:bg-cyan-400/20 disabled:opacity-60"
+      >
+        {busy ? "Descargando…" : `📄 Descargar PDF${pdf.title ? `: ${pdf.title}` : ""}`}
+      </button>
+      {error ? <p className="mt-1 text-[10px] text-red-400">{error}</p> : null}
+    </div>
   );
 }
 

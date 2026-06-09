@@ -415,8 +415,8 @@ export function useCedVoiceSession(
       const greetingSentRef = { current: false };
       const greetingTurnPendingRef = { current: true };
       const greetingAudioReceivedRef = { current: false };
-      const setupTimerRef = { current: null as ReturnType<typeof setTimeout> | null };
-      const micUplinkFallbackRef = { current: null as ReturnType<typeof setTimeout> | null };
+      const setupTimerRef = { current: null as number | null };
+      const micUplinkFallbackRef = { current: null as number | null };
 
       const enableMicUplink = () => {
         if (isStale() || !micActiveRef.current) return;
@@ -690,7 +690,7 @@ export function useCedVoiceSession(
             setStatusLabel("CED te saluda…");
             client.sendSessionGreeting();
           }
-          scheduleMicUplinkFallback(4500);
+          scheduleMicUplinkFallback(2000);
           void startMic();
         },
         onTranscriptUpdate: (text, role) => {
@@ -1036,7 +1036,7 @@ export function useCedVoiceSession(
       if (!ok) await stopSession();
       else {
         reconnectAttemptRef.current = 0;
-        setupTimerRef.current = setTimeout(() => {
+        setupTimerRef.current = window.setTimeout(() => {
           if (isStale() || greetingSentRef.current) return;
           setErrorMessage(
             "Gemini no respondió a tiempo. Desactiva el micrófono y vuelve a intentar.",

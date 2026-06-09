@@ -47,3 +47,25 @@ export async function listSessionPdfs(): Promise<PdfArtifact[]> {
 export function pdfDownloadUrl(fileId: string): string {
   return cedApiPath(`pdf/download/${fileId}`);
 }
+
+export async function downloadPdfBlob(
+  fileId: string,
+  filename = "documento-ced.pdf",
+): Promise<void> {
+  const res = await fetch(pdfDownloadUrl(fileId), { credentials: "same-origin" });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  if (blob.size < 100) {
+    throw new Error("PDF vacío");
+  }
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}

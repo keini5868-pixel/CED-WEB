@@ -9,7 +9,7 @@ import {
   listConversations,
   type ConversationRow,
 } from "@/lib/api/conversations";
-import { listSessionPdfs, pdfDownloadUrl, type PdfArtifact } from "@/lib/api/pdf";
+import { downloadPdfBlob, listSessionPdfs, type PdfArtifact } from "@/lib/api/pdf";
 import { GEMINI_VOICE_OPTIONS } from "@/lib/voice/geminiVoices";
 
 export function CedStopConfirmModal({
@@ -255,13 +255,19 @@ export function CedHistoryPanel({
                       ? new Date(pdf.created_at).toLocaleString("es-MX")
                       : "Reciente"}
                   </p>
-                  <a
-                    href={pdfDownloadUrl(pdf.file_id)}
-                    download={pdf.filename}
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void downloadPdfBlob(pdf.file_id, pdf.filename).catch(() =>
+                        alert(
+                          "No se pudo descargar el PDF. Confirma el SQL de ced_pdf_artifacts en Supabase.",
+                        ),
+                      )
+                    }
                     className="mt-2 inline-flex text-xs font-semibold text-cyan-400 hover:text-cyan-200"
                   >
                     📄 Descargar PDF
-                  </a>
+                  </button>
                 </li>
               ))
             )}
