@@ -9,6 +9,7 @@ import {
   listConversations,
   type ConversationRow,
 } from "@/lib/api/conversations";
+import { listSessionPdfs, pdfDownloadUrl, type PdfArtifact } from "@/lib/api/pdf";
 import { GEMINI_VOICE_OPTIONS } from "@/lib/voice/geminiVoices";
 
 export function CedStopConfirmModal({
@@ -209,10 +210,12 @@ export function CedHistoryPanel({
   onClose: () => void;
 }) {
   const [items, setItems] = useState<ConversationRow[]>([]);
+  const [pdfs, setPdfs] = useState<PdfArtifact[]>([]);
 
   useEffect(() => {
     if (!open) return;
     void listConversations().then(setItems);
+    void listSessionPdfs().then(setPdfs);
   }, [open]);
 
   if (!open) return null;
@@ -230,29 +233,68 @@ export function CedHistoryPanel({
           ✕
         </button>
       </header>
-      <div className="p-4">
-        <p className="ced-hud-text-muted text-sm">
-          Conversaciones guardadas en Supabase.
-        </p>
-        <ul className="mt-4 max-h-[60vh] space-y-2 overflow-y-auto text-sm text-[#e0e0e0]">
-          {items.length === 0 ? (
-            <li className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3">
-              Sin conversaciones aún. Activa el micrófono para empezar.
-            </li>
-          ) : (
-            items.map((c) => (
-              <li
-                key={c.id}
-                className="rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
-              >
-                <p className="font-medium text-[#00e5ff]">{c.title}</p>
-                <p className="ced-hud-text-muted mt-1 text-xs">
-                  {new Date(c.updated_at).toLocaleString("es-MX")}
-                </p>
+      <div className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-4">
+        <section>
+          <h3 className="ced-hud-text-muted mb-2 text-[10px] uppercase tracking-widest">
+            PDFs de sesión
+          </h3>
+          <ul className="space-y-2 text-sm">
+            {pdfs.length === 0 ? (
+              <li className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3 text-xs">
+                Sin PDFs aún. Pide a CED: &quot;convierte esto a PDF&quot; por voz o chat.
               </li>
-            ))
-          )}
-        </ul>
+            ) : (
+              pdfs.map((pdf) => (
+                <li
+                  key={pdf.file_id}
+                  className="rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
+                >
+                  <p className="font-medium text-cyan-200">{pdf.title}</p>
+                  <p className="ced-hud-text-muted mt-1 text-xs">
+                    {pdf.created_at
+                      ? new Date(pdf.created_at).toLocaleString("es-MX")
+                      : "Reciente"}
+                  </p>
+                  <a
+                    href={pdfDownloadUrl(pdf.file_id)}
+                    download={pdf.filename}
+                    className="mt-2 inline-flex text-xs font-semibold text-cyan-400 hover:text-cyan-200"
+                  >
+                    📄 Descargar PDF
+                  </a>
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
+
+        <section className="mt-6">
+          <h3 className="ced-hud-text-muted mb-2 text-[10px] uppercase tracking-widest">
+            Conversaciones
+          </h3>
+          <p className="ced-hud-text-muted text-xs">
+            Guardadas en Supabase.
+          </p>
+          <ul className="mt-3 space-y-2 text-sm text-[#e0e0e0]">
+            {items.length === 0 ? (
+              <li className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3">
+                Sin conversaciones aún. Activa el asistente para empezar.
+              </li>
+            ) : (
+              items.map((c) => (
+                <li
+                  key={c.id}
+                  className="rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
+                >
+                  <p className="font-medium text-[#00e5ff]">{c.title}</p>
+                  <p className="ced-hud-text-muted mt-1 text-xs">
+                    {new Date(c.updated_at).toLocaleString("es-MX")}
+                  </p>
+                </li>
+              ))
+            )}
+          </ul>
+        </section>
       </div>
     </aside>
   );

@@ -34,9 +34,9 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   const headers: HeadersInit = {
     Authorization: `Bearer ${token}`,
   };
-  const contentType = request.headers.get("content-type");
-  if (contentType) {
-    headers["Content-Type"] = contentType;
+  const requestContentType = request.headers.get("content-type");
+  if (requestContentType) {
+    headers["Content-Type"] = requestContentType;
   }
 
   let body: string | undefined;
@@ -61,12 +61,27 @@ async function forward(request: NextRequest, pathSegments: string[]) {
     );
   }
 
+  const contentType = upstream.headers.get("content-type") || "application/json";
+  const isBinary =
+    contentType.includes("application/pdf") ||
+    contentType.includes("application/octet-stream");
+
+  if (isBinary) {
+    const buffer = await upstream.arrayBuffer();
+    return new NextResponse(buffer, {
+      status: upstream.status,
+      headers: {
+        "Content-Type": contentType,
+        "Content-Disposition":
+          upstream.headers.get("content-disposition") || "attachment",
+      },
+    });
+  }
+
   const responseBody = await upstream.text();
   return new NextResponse(responseBody, {
     status: upstream.status,
-    headers: {
-      "Content-Type": upstream.headers.get("content-type") || "application/json",
-    },
+    headers: { "Content-Type": contentType },
   });
 }
 

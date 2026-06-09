@@ -6,6 +6,7 @@ import type { OrbState, VoiceSessionPreferences } from "@ced/types";
 import { ORB_STATE_LABELS } from "@ced/types";
 
 import { appendConversationMessage } from "@/lib/api/conversations";
+import { generatePdf } from "@/lib/api/pdf";
 import { fetchVoiceBrief } from "@/lib/api/gemini";
 import { saveMemory, searchMemory } from "@/lib/api/memory";
 import { schedulePanelSearch } from "@/lib/api/panels";
@@ -46,6 +47,7 @@ import {
   REPORTE_PROSPECCION,
   PUBLICAR_FACEBOOK,
   PUBLICAR_INSTAGRAM,
+  GENERAR_PDF,
 } from "@/lib/voice/liveTools";
 import { hasAdvancedSystemConfirmation, isSearchStatusIntent, isWeatherIntent, isWebResearchIntent, shouldAllowAdvancedTool, webBriefKind, webBriefTimeoutMs } from "@/lib/voice/webResearchIntent";
 import {
@@ -717,6 +719,7 @@ export function useCedVoiceSession(
             [PUBLICAR_FACEBOOK]: "Publicando en Facebook…",
             [PUBLICAR_INSTAGRAM]: "Publicando en Instagram…",
             [BUSCAR_LO_VISIBLE]: "Buscando lo que veo…",
+            [GENERAR_PDF]: "Generando PDF…",
           };
           setStatusLabel(labels[toolName] ?? "Consultando…");
         },
@@ -850,6 +853,20 @@ export function useCedVoiceSession(
                   ? "configure Tavily para búsqueda visual."
                   : `no pude buscar: ${result.error}`,
             };
+          }
+          if (name === GENERAR_PDF) {
+            const title = String(args.titulo ?? args.title ?? "Documento CED").trim();
+            let content = String(args.contenido ?? args.content ?? "").trim();
+            if (!content) content = title;
+            const cid = conversationRef.current;
+            try {
+              const pdf = await generatePdf(title, content, cid);
+              return {
+                spoken: `Listo. PDF "${pdf.title}" guardado en tu historial.`,
+              };
+            } catch {
+              return { spoken: "no pude generar el PDF. Intenta de nuevo." };
+            }
           }
           return { spoken: "herramienta no reconocida." };
         },

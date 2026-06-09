@@ -1,6 +1,11 @@
 [
   {
-    "domain": "marketing",
+    "domain": "ced_plataforma",
+    "title": "Creador y propósito de CED",
+    "keywords": ["creador", "keini", "castillo", "quien te hizo", "autor", "por que existes"],
+    "summary": "CED fue creado por Keini Castillo, fundador de Castillo Digital. Su propósito es ayudar a las personas a desarrollar sus ideas y evolucionar con el tiempo, con el apoyo de una herramienta inteligente, cercana y confiable. Keini Castillo es el creador — no inventar otros nombres."
+  },
+  {
     "title": "Embudo de ventas digital",
     "keywords": ["embudo", "funnel", "conversión", "leads", "ventas"],
     "summary": "Un embudo de ventas digital guía a una persona desde el descubrimiento hasta la compra: atracción (contenido o ads), interés (lead magnet o landing), consideración (email, prueba social), decisión (oferta clara y CTA) y retención (seguimiento). CED ayuda a diseñar mensajes, contenido y publicaciones para cada etapa."

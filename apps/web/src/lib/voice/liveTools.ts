@@ -11,6 +11,7 @@ export const REPORTE_PROSPECCION = "reporte_prospeccion";
 export const BUSCAR_LO_VISIBLE = "buscar_lo_visible";
 export const PUBLICAR_FACEBOOK = "publicar_facebook";
 export const PUBLICAR_INSTAGRAM = "publicar_instagram";
+export const GENERAR_PDF = "generar_pdf";
 
 export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
@@ -125,6 +126,25 @@ export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
         },
       },
       required: ["caption", "image_url"],
+    },
+  },
+  {
+    name: GENERAR_PDF,
+    description:
+      "Genera un PDF con el contenido indicado y lo guarda en el historial de la sesión para descarga.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        titulo: {
+          type: Type.STRING,
+          description: "Título del documento PDF.",
+        },
+        contenido: {
+          type: Type.STRING,
+          description: "Texto COMPLETO del cuerpo del PDF — toda la información a exportar.",
+        },
+      },
+      required: ["titulo", "contenido"],
     },
   },
 ];

@@ -13,6 +13,7 @@ from app.config import get_settings
 from app.domain.plans import get_plan_limits, normalize_plan_id
 from app.services import supabase_db
 from app.services.cognitive_router import build_chat_system_extras, route_message
+from app.domain.ced_identity import CED_CREATOR_IDENTITY, CED_HUMAN_VOICE_STYLE
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.pdf_report import store_pdf
 
@@ -59,7 +60,9 @@ CHAT_TOOLS: list[dict[str, Any]] = [
     {
         "name": "generar_pdf",
         "description": (
-            "Genera un PDF descargable con el contenido indicado (informes, resúmenes, listas, etc.)."
+            "Genera un PDF descargable. OBLIGATORIO: el campo content debe contener "
+            "TODO el texto del documento (resumen, lista, informe completo). "
+            "Nunca dejes content vacío ni solo con el título."
         ),
         "input_schema": {
             "type": "object",
@@ -67,7 +70,7 @@ CHAT_TOOLS: list[dict[str, Any]] = [
                 "title": {"type": "string", "description": "Título del documento PDF"},
                 "content": {
                     "type": "string",
-                    "description": "Texto completo del cuerpo del PDF en markdown o texto plano",
+                    "description": "Cuerpo COMPLETO del PDF — todo el texto que el usuario quiere guardar",
                 },
             },
             "required": ["title", "content"],
@@ -75,9 +78,13 @@ CHAT_TOOLS: list[dict[str, Any]] = [
     },
 ]
 
-CHAT_SYSTEM_BASE = """Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
+CHAT_SYSTEM_BASE = f"""Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
 Español latinoamericano natural, cálido y directo. NO uses "señor/señora" ni tono de mayordomo.
 Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude, Gemini ni APIs internas.
+
+{CED_CREATOR_IDENTITY}
+
+{CED_HUMAN_VOICE_STYLE}
 
 IMPORTANTE — cerebro híbrido CED:
 - Primero usa conocimiento interno estable (conceptos, negocio, ciencia, cultura) cuando viene en el contexto.
@@ -89,7 +96,7 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Usa las herramientas publicar_facebook / publicar_instagram cuando el usuario pida publicar y tengas los datos.
 - Si falta caption o image_url (Instagram), pídelos antes de invocar la herramienta.
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
-- Puedes generar PDFs descargables con la herramienta generar_pdf cuando el usuario pida exportar, guardar o convertir información a PDF.
+- Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
 
 PROHIBIDO (respuestas de chatbot genérico):
 - "No tengo acceso a internet en tiempo real" — CED tiene búsqueda y herramientas en voz; en chat puedes preparar contenido y publicar vía Meta.
@@ -228,8 +235,8 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
         if name == "generar_pdf":
             title = str(tool_input.get("title") or "Documento CED").strip()
             content = str(tool_input.get("content") or "").strip()
-            if not content:
-                return json.dumps({"ok": False, "error": "Contenido vacío para el PDF."})
+            if not content or len(content) < 3:
+                content = title
             artifact = store_pdf(user_id=user_id, title=title, content=content)
             return json.dumps(
                 {
