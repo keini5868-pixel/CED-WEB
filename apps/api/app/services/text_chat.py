@@ -11,7 +11,6 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
-from app.domain.plans import get_plan_limits, normalize_plan_id
 from app.services import supabase_db
 from app.services.cognitive_router import build_chat_system_extras, route_message
 from app.domain.ced_identity import CED_CREATOR_IDENTITY, CED_HUMAN_VOICE_STYLE
@@ -129,26 +128,9 @@ class TextChatError(ValueError):
 
 
 def _message_limit_for_user(user_id: str) -> int:
-    from app.deps.auth import is_super_admin
+    from app.deps.plan_access import chat_message_limit
 
-    profile = supabase_db.get_profile(user_id) or {}
-    if is_super_admin(profile.get("email"), profile.get("role")):
-        return -1
-
-    sub = supabase_db.get_subscription(user_id) or {}
-    st = str(sub.get("status") or "")
-    if st == "trialing":
-        trial_end = sub.get("trial_ends_at")
-        if trial_end:
-            try:
-                end = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
-                if end > datetime.now(timezone.utc):
-                    return -1
-            except ValueError:
-                pass
-
-    plan_id = normalize_plan_id(sub.get("plan_id"))
-    return get_plan_limits(plan_id).claude_messages_per_day
+    return chat_message_limit(user_id)
 
 
 def count_user_messages_today(user_id: str, *, channel: str = "text") -> int:
@@ -179,6 +161,20 @@ def count_user_messages_today(user_id: str, *, channel: str = "text") -> int:
 
 
 def chat_status(user_id: str) -> dict[str, Any]:
+    from app.services.admin_users import get_user_access
+
+    allowed, reason, _ = get_user_access(user_id)
+    if not allowed and reason == "trial_expired":
+        used = count_user_messages_today(user_id)
+        return {
+            "messages_used_today": used,
+            "messages_limit_daily": 0,
+            "unlimited": False,
+            "remaining_today": 0,
+            "blocked": True,
+            "trial_expired": True,
+        }
+
     limit = _message_limit_for_user(user_id)
     used = count_user_messages_today(user_id)
     unlimited = limit < 0
@@ -235,6 +231,20 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
             )
             return json.dumps(result)
         if name == "generar_pdf":
+            from app.deps.plan_access import effective_plan_limits
+
+            limits, reason, _ = effective_plan_limits(user_id)
+            if reason == "trial_expired":
+                return json.dumps(
+                    {"ok": False, "error": "Tu prueba terminó. Elige un plan en Precios."},
+                )
+            if not limits.pdf_reports:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "Los PDFs requieren plan Élite o Founding. Mejora en /pricing.",
+                    },
+                )
             title = str(tool_input.get("title") or "Documento CED").strip()
             content = str(tool_input.get("content") or "").strip()
             if not content or len(content) < 3:
@@ -381,6 +391,10 @@ def send_message(
         raise TextChatError("Mensaje demasiado largo.")
 
     status = chat_status(user_id)
+    if status.get("trial_expired"):
+        raise TextChatError(
+            "Tu prueba terminó. Elige un plan en Precios o continúa con el plan Básico gratis."
+        )
     if status["blocked"]:
         raise TextChatError(
             "Alcanzaste el límite de mensajes de hoy. Mejora tu plan o vuelve mañana."

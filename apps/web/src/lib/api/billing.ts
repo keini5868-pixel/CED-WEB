@@ -4,6 +4,15 @@ import { parseApiJson } from "@/lib/api/http";
 const proxyFetch = (path: string, init?: RequestInit) =>
   fetch(cedApiPath(path), { credentials: "same-origin", ...init });
 
+function billingErrorMessage(status: number, detail?: string): string {
+  if (status === 401) return "Debes iniciar sesión para pagar.";
+  if (status === 400 && detail) return detail;
+  if (status === 503) {
+    return detail || "Pagos no disponibles. Revisa STRIPE_SECRET_KEY en Railway.";
+  }
+  return detail || "No se pudo iniciar el pago.";
+}
+
 export async function startSubscriptionCheckout(planId: string): Promise<string | null> {
   const res = await proxyFetch("billing/checkout/subscription", {
     method: "POST",
@@ -12,7 +21,7 @@ export async function startSubscriptionCheckout(planId: string): Promise<string 
   });
   const data = await parseApiJson<{ url?: string; detail?: string }>(res);
   if (!res.ok) {
-    throw new Error(data.detail || "No se pudo iniciar el checkout.");
+    throw new Error(billingErrorMessage(res.status, data.detail));
   }
   return data.url ?? null;
 }
@@ -25,7 +34,7 @@ export async function startRechargeCheckout(amountUsd: number): Promise<string |
   });
   const data = await parseApiJson<{ url?: string; detail?: string }>(res);
   if (!res.ok) {
-    throw new Error(data.detail || "No se pudo iniciar la recarga.");
+    throw new Error(billingErrorMessage(res.status, data.detail));
   }
   return data.url ?? null;
 }

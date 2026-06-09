@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
+from app.deps.plan_access import require_pdf_reports
 from app.services.pdf_report import get_pdf, list_pdfs_for_user, store_pdf
 
 router = APIRouter(prefix="/v1/pdf", tags=["pdf"])
@@ -23,6 +24,7 @@ def post_generate_pdf(
     body: GeneratePdfBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
+    require_pdf_reports(user_id)
     artifact = store_pdf(
         user_id=user_id,
         title=body.title.strip(),

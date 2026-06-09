@@ -5,17 +5,18 @@ import { useState } from "react";
 
 import { useUsageBalance } from "@/hooks/useUsageBalance";
 import { RechargeModal } from "@/components/billing/RechargeModal";
+import { openBillingPortal } from "@/lib/api/billing";
 
 export function HudUsageBar() {
   const { balance, loaded } = useUsageBalance();
   const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [portalBusy, setPortalBusy] = useState(false);
   const pct = Math.min(
     100,
     balance.plan > 0 ? (balance.used / balance.plan) * 100 : 0,
   );
   const warn = pct >= 80;
   const critical = balance.blocked || balance.accessDenied || pct >= 95;
-
   const statusLabel = !loaded
     ? "Cargando…"
     : balance.accessDenied
@@ -114,6 +115,26 @@ export function HudUsageBar() {
             Mejora aquí
           </Link>
         </p>
+      )}
+      {balance.hasStripeCustomer && !balance.accessDenied && (
+        <button
+          type="button"
+          disabled={portalBusy}
+          onClick={() => {
+            setPortalBusy(true);
+            void openBillingPortal()
+              .then((url) => {
+                if (url) window.location.href = url;
+              })
+              .catch(() => {
+                /* portal opcional */
+              })
+              .finally(() => setPortalBusy(false));
+          }}
+          className="ced-hud-text-muted mt-2 text-xs underline hover:text-cyan-300 disabled:opacity-50"
+        >
+          {portalBusy ? "Abriendo portal…" : "Gestionar suscripción en Stripe"}
+        </button>
       )}
       <RechargeModal
         open={rechargeOpen}

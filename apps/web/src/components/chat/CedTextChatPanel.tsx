@@ -177,7 +177,17 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
           </div>
         </header>
 
-        {status && !status.unlimited && status.messages_limit_daily != null && (
+        {status?.trial_expired && (
+          <p className="shrink-0 border-b border-amber-900/40 px-4 py-2 text-[10px] text-amber-400">
+            Tu prueba terminó.{" "}
+            <a href="/pricing" className="underline">
+              Elige un plan
+            </a>{" "}
+            para seguir chateando.
+          </p>
+        )}
+
+        {status && !status.unlimited && status.messages_limit_daily != null && !status.trial_expired && (
           <p className="shrink-0 border-b border-cyan-900/40 px-4 py-1.5 text-[10px] text-cyan-600">
             Mensajes hoy: {status.messages_used_today}/{status.messages_limit_daily}
           </p>

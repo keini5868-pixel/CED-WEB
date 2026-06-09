@@ -21,6 +21,7 @@ export type UsageBalanceState = {
   accessDenied: boolean;
   accessMessage: string | null;
   subscriptionStatus: string | null;
+  hasStripeCustomer: boolean;
 };
 
 type UsageBalanceValue = {
@@ -37,6 +38,7 @@ const EMPTY_BALANCE: UsageBalanceState = {
   accessDenied: false,
   accessMessage: null,
   subscriptionStatus: null,
+  hasStripeCustomer: false,
 };
 
 const UsageBalanceContext = createContext<UsageBalanceValue | null>(null);
@@ -80,6 +82,9 @@ function useUsageBalancePoll(
           (data as { subscription_status?: string | null }).subscription_status ??
           data.subscriptionStatus ??
           null,
+        hasStripeCustomer: Boolean(
+          (data as { has_stripe_customer?: boolean }).has_stripe_customer,
+        ),
       });
       setLoaded(true);
     } catch {

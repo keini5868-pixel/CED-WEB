@@ -9,6 +9,7 @@ import { LeftPanel3DCarousel } from "@/components/dashboard/LeftPanel3DCarousel"
 import { HudCollapsible } from "@/components/hud/HudCollapsible";
 import { MetaOAuthCallbackBanner } from "@/components/hud/ConnectNetworksButton";
 import { TrialExpiredBanner } from "@/components/billing/TrialExpiredBanner";
+import { BillingFeedback } from "@/components/billing/BillingFeedback";
 import { HudDronesPanel } from "@/components/hud/HudDronesPanel";
 import {
   HudGlobalPanel,
@@ -33,6 +34,7 @@ export function HudDashboardGrid() {
         <div className="hidden grid-cols-12 gap-4 p-4 lg:grid lg:items-start">
           <div className="col-span-12">
             <Suspense fallback={null}>
+              <BillingFeedback />
               <MetaOAuthCallbackBanner />
               <TrialExpiredBanner />
             </Suspense>
@@ -87,7 +89,9 @@ export function HudDashboardGrid() {
 
         <div className="flex flex-col gap-2 p-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:hidden">
           <Suspense fallback={null}>
+            <BillingFeedback />
             <MetaOAuthCallbackBanner />
+            <TrialExpiredBanner />
           </Suspense>
           <DriveModeLink />
           <CedVoiceHub />

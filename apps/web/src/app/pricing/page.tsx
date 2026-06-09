@@ -1,28 +1,70 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 
 import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS } from "@ced/types";
 
 import { startSubscriptionCheckout } from "@/lib/api/billing";
+import { createClient } from "@/lib/supabase/client";
+import { isSupabaseConfigured } from "@/lib/env";
 
-export default function PricingPage() {
+function PricingContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const pendingPlan = searchParams.get("plan");
+  const cancelled = searchParams.get("billing") === "cancelled";
+
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
 
-  const subscribe = async (planId: string) => {
-    setBusy(planId);
-    setError(null);
-    try {
-      const url = await startSubscriptionCheckout(planId);
-      if (url) window.location.href = url;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al iniciar pago.");
-    } finally {
-      setBusy(null);
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setLoggedIn(false);
+      return;
     }
-  };
+    void createClient()
+      .auth.getUser()
+      .then(({ data }) => setLoggedIn(Boolean(data.user)));
+  }, []);
+
+  const subscribe = useCallback(
+    async (planId: string) => {
+      setBusy(planId);
+      setError(null);
+      try {
+        if (!isSupabaseConfigured()) {
+          setError("Supabase no configurado.");
+          return;
+        }
+        const supabase = createClient();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) {
+          router.push(`/login?next=${encodeURIComponent(`/pricing?plan=${planId}`)}`);
+          return;
+        }
+        const url = await startSubscriptionCheckout(planId);
+        if (url) window.location.href = url;
+        else setError("Stripe no devolvió la página de pago. Revisa la configuración.");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error al iniciar pago.");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [router],
+  );
+
+  useEffect(() => {
+    if (!pendingPlan || loggedIn !== true || busy) return;
+    const valid = PUBLIC_PLANS.some((p) => p.id === pendingPlan);
+    if (!valid) return;
+    void subscribe(pendingPlan);
+  }, [pendingPlan, loggedIn, busy, subscribe]);
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-black text-cyan-100">
@@ -41,9 +83,15 @@ export default function PricingPage() {
         <h1 className="font-[family-name:var(--font-orbitron)] text-sm tracking-[0.25em] text-cyan-300">
           PLANES CED
         </h1>
-        <Link href="/login" className="text-xs text-cyan-500 hover:text-cyan-300">
-          LOGIN
-        </Link>
+        {loggedIn ? (
+          <Link href="/dashboard" className="text-xs text-cyan-500 hover:text-cyan-300">
+            DASHBOARD
+          </Link>
+        ) : (
+          <Link href="/login?next=%2Fpricing" className="text-xs text-cyan-500 hover:text-cyan-300">
+            LOGIN
+          </Link>
+        )}
       </header>
 
       <section className="relative z-10 mx-auto max-w-5xl px-6 py-12">
@@ -53,6 +101,26 @@ export default function PricingPage() {
         <h2 className="mt-2 text-center font-[family-name:var(--font-orbitron)] text-2xl text-cyan-300">
           Elige tu plan
         </h2>
+
+        {cancelled && (
+          <p className="mt-4 rounded border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-center text-sm text-amber-200">
+            Pago cancelado. Puedes elegir otro plan cuando quieras.
+          </p>
+        )}
+
+        {!loggedIn && loggedIn !== null && (
+          <p className="mt-4 text-center text-xs text-cyan-400">
+            Debes{" "}
+            <Link href="/login?next=%2Fpricing" className="underline hover:text-cyan-200">
+              iniciar sesión
+            </Link>{" "}
+            para pagar. Si no tienes cuenta,{" "}
+            <Link href="/signup" className="underline hover:text-cyan-200">
+              regístrate gratis
+            </Link>
+            .
+          </p>
+        )}
 
         <div className="mt-10 grid gap-6 md:grid-cols-2">
           {PUBLIC_PLANS.map((plan) => (
@@ -87,20 +155,32 @@ export default function PricingPage() {
                 onClick={() => void subscribe(plan.id)}
                 className="mt-6 w-full rounded border border-cyan-400 py-3 font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-50"
               >
-                {busy === plan.id ? "REDIRIGIENDO…" : "SUSCRIBIRME"}
+                {busy === plan.id ? "REDIRIGIENDO A STRIPE…" : "SUSCRIBIRME"}
               </button>
             </div>
           ))}
         </div>
 
-        {error && (
-          <p className="mt-6 text-center text-sm text-red-400">{error}</p>
-        )}
+        {error && <p className="mt-6 text-center text-sm text-red-400">{error}</p>}
 
         <p className="mt-10 text-center text-xs text-cyan-600">
           Las recargas de voz extra solo aparecen cuando agotas tu cupo diario — no expiran.
         </p>
       </section>
     </main>
+  );
+}
+
+export default function PricingPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen items-center justify-center bg-black text-cyan-500">
+          Cargando planes…
+        </main>
+      }
+    >
+      <PricingContent />
+    </Suspense>
   );
 }

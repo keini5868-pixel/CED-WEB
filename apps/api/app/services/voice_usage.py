@@ -65,4 +65,5 @@ def voice_access_state(user_id: str) -> dict:
         "usage_percent": round(pct, 1),
         "timezone": "America/Mexico_City",
         "allowed": allowed,
+        "has_stripe_customer": bool((sub or {}).get("stripe_customer_id")),
     }
