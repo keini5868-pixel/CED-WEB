@@ -24,16 +24,19 @@ function formatTime(iso?: string) {
   return new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 }
 
+const PDF_FILE_ID_RE = /\/(?:v1\/pdf|api\/ced\/pdf)\/download\/([a-f0-9]+)/i;
+
 function stripPdfLinks(content: string): string {
   return content
-    .replace(/\[([^\]]*)\]\(\/v1\/pdf\/download\/[a-f0-9]+\)/gi, "")
-    .replace(/\/v1\/pdf\/download\/[a-f0-9]+/gi, "")
+    .replace(/\[([^\]]*)\]\([^)]*\/pdf\/download\/[a-f0-9]+[^)]*\)/gi, "")
+    .replace(/https?:\/\/[^\s)]+(?:\/v1\/pdf|\/api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
+    .replace(/\/(?:v1\/pdf|api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
 function extractPdfFromContent(content: string): ChatPdfAttachment | null {
-  const match = content.match(/\/v1\/pdf\/download\/([a-f0-9]+)/i);
+  const match = content.match(PDF_FILE_ID_RE);
   const fileId = match?.[1];
   if (!fileId) return null;
   return {
@@ -52,9 +55,11 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
     setError(null);
     try {
       await downloadPdfBlob(pdf.file_id, pdf.filename || "documento-ced.pdf");
-    } catch {
+    } catch (e) {
       setError(
-        "No se pudo descargar. Confirma el SQL de ced_pdf_artifacts en Supabase.",
+        e instanceof Error
+          ? e.message
+          : "No se pudo descargar el PDF.",
       );
     } finally {
       setBusy(false);

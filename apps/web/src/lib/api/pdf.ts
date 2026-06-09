@@ -48,24 +48,48 @@ export function pdfDownloadUrl(fileId: string): string {
   return cedApiPath(`pdf/download/${fileId}`);
 }
 
+function pdfDownloadError(status: number, detail?: string): string {
+  if (status === 401) return "Sesión expirada. Cierra sesión y vuelve a entrar.";
+  if (status === 404) return "PDF no encontrado. Genera uno nuevo o revisa Supabase.";
+  if (status === 502) return "La API no responde. Revisa Railway (servicio CED-WEB).";
+  return detail || `No se pudo descargar (error ${status}).`;
+}
+
+/** Descarga PDF autenticado vía proxy same-origin (/api/ced/...). */
 export async function downloadPdfBlob(
   fileId: string,
   filename = "documento-ced.pdf",
 ): Promise<void> {
-  const res = await fetch(pdfDownloadUrl(fileId), { credentials: "same-origin" });
+  const url = pdfDownloadUrl(fileId);
+  const res = await fetch(url, { credentials: "same-origin" });
   if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
+    let detail: string | undefined;
+    try {
+      const data = (await res.json()) as { detail?: string };
+      detail = data.detail;
+    } catch {
+      /* respuesta no JSON */
+    }
+    throw new Error(pdfDownloadError(res.status, detail));
   }
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("pdf") && !contentType.includes("octet-stream")) {
+    throw new Error("El servidor no devolvió un PDF válido.");
+  }
+
   const blob = await res.blob();
   if (blob.size < 100) {
-    throw new Error("PDF vacío");
+    throw new Error("El PDF está vacío o corrupto.");
   }
-  const url = URL.createObjectURL(blob);
+
+  const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
-  anchor.href = url;
+  anchor.href = objectUrl;
   anchor.download = filename;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  URL.revokeObjectURL(url);
+  // Revocar tarde: Chrome cancela la descarga si el blob desaparece al instante.
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }

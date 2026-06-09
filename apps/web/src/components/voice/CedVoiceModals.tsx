@@ -258,9 +258,11 @@ export function CedHistoryPanel({
                   <button
                     type="button"
                     onClick={() =>
-                      void downloadPdfBlob(pdf.file_id, pdf.filename).catch(() =>
+                      void downloadPdfBlob(pdf.file_id, pdf.filename).catch((e) =>
                         alert(
-                          "No se pudo descargar el PDF. Confirma el SQL de ced_pdf_artifacts en Supabase.",
+                          e instanceof Error
+                            ? e.message
+                            : "No se pudo descargar el PDF.",
                         ),
                       )
                     }

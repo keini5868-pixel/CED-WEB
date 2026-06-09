@@ -26,6 +26,14 @@ const nextConfig: NextConfig = {
       { source: "/register", destination: "/signup", permanent: false },
     ];
   },
+  async rewrites() {
+    return [
+      {
+        source: "/v1/pdf/download/:fileId",
+        destination: "/api/ced/pdf/download/:fileId",
+      },
+    ];
+  },
 };
 
 export default nextConfig;

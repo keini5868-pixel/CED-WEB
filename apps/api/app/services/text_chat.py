@@ -292,13 +292,23 @@ def _final_text_from_response(data: dict[str, Any]) -> str:
 
 def _strip_pdf_markdown_links(text: str) -> str:
     cleaned = re.sub(
-        r"\[([^\]]*)\]\(/v1/pdf/download/[a-f0-9]+\)",
+        r"\[([^\]]*)\]\([^)]*\/pdf\/download\/[a-f0-9]+[^)]*\)",
         "",
         text,
         flags=re.IGNORECASE,
     )
-    cleaned = re.sub(r"https?://[^\s)]+/v1/pdf/download/[a-f0-9]+", "", cleaned, flags=re.IGNORECASE)
-    cleaned = re.sub(r"/v1/pdf/download/[a-f0-9]+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(
+        r"https?://[^\s)]+(?:/v1/pdf|/api/ced/pdf)/download/[a-f0-9]+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(
+        r"/(?:v1/pdf|api/ced/pdf)/download/[a-f0-9]+",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
