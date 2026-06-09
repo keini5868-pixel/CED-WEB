@@ -2,6 +2,7 @@
 
 import { CedButton } from "@ced/ui";
 
+import { AdminModalPortal } from "@/components/admin/AdminModalPortal";
 import type { CreateAdminUserResult } from "@/lib/api/admin";
 
 type Props = {
@@ -42,8 +43,9 @@ export function AdminUserSuccessModal({ result, onClose }: Props) {
   };
 
   return (
+    <AdminModalPortal>
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
     >
@@ -113,5 +115,6 @@ export function AdminUserSuccessModal({ result, onClose }: Props) {
         </div>
       </div>
     </div>
+    </AdminModalPortal>
   );
 }

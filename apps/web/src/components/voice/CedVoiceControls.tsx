@@ -30,6 +30,8 @@ interface CedVoiceControlsProps {
   onChat: () => void;
   onSettings: () => void;
   onFiles: () => void;
+  /** Oculta el botón MIC cuando el lanzador ASISTENTE está activo. */
+  hideMicLaunch?: boolean;
 }
 
 function ControlBtn({
@@ -75,17 +77,21 @@ function ControlBtn({
 }
 
 export function CedVoiceControls(props: CedVoiceControlsProps) {
+  const showMic = props.micOn || !props.hideMicLaunch;
+
   return (
-    <div className="mt-4 flex max-w-lg flex-wrap items-center justify-center gap-2 sm:gap-3">
+    <div className="mt-4 flex w-full max-w-lg flex-wrap items-center justify-center gap-2 px-1 sm:gap-3">
+      {showMic ? (
       <ControlBtn
         active={props.micOn}
         disabled={props.micBusy}
-        label={props.micBusy ? "Conectando…" : "Micrófono"}
+        label={props.micBusy ? "Conectando…" : props.micOn ? "Detener asistente" : "Micrófono"}
         onClick={props.onMic}
       >
         {props.micOn ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
-        <span className="mt-0.5 hidden sm:inline">MIC</span>
+        <span className="mt-0.5 hidden sm:inline">{props.micOn ? "LIVE" : "MIC"}</span>
       </ControlBtn>
+      ) : null}
       <ControlBtn
         active={props.cameraOn}
         label="Cámara"

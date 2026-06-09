@@ -5,12 +5,16 @@ import { AdminUsersPanel } from "@/components/admin/AdminUsersPanel";
 
 export default function AdminPage() {
   return (
-    <div className="space-y-4 p-4">
+    <div className="space-y-6 p-4">
       <HudPanel title="USUARIOS REGISTRADOS" className="col-span-full">
         <AdminUsersPanel />
       </HudPanel>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <section aria-label="Herramientas admin" className="space-y-4 border-t border-cyan-500/15 pt-6">
+        <p className="ced-hud-text-muted px-1 text-[10px] uppercase tracking-[0.2em]">
+          Cupos y configuración
+        </p>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         <HudPanel title="MI CUPO DE VOZ" className="md:col-span-2">
           <AdminMyUsageReset />
         </HudPanel>
@@ -29,7 +33,8 @@ export default function AdminPage() {
             webhooks.
           </p>
         </HudPanel>
-      </div>
+        </div>
+      </section>
     </div>
   );
 }

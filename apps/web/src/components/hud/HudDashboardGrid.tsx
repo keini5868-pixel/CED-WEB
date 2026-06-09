@@ -85,7 +85,7 @@ export function HudDashboardGrid() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 p-3 pb-6 lg:hidden">
+        <div className="flex flex-col gap-2 p-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:hidden">
           <Suspense fallback={null}>
             <MetaOAuthCallbackBanner />
           </Suspense>

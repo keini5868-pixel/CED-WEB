@@ -7,8 +7,10 @@ import {
   fetchChatStatus,
   sendChatMessage,
   type ChatMessage,
+  type ChatPdfAttachment,
   type ChatStatus,
 } from "@/lib/api/chat";
+import { cedApiPath } from "@/lib/api/ced-proxy";
 
 type CedTextChatPanelProps = {
   open: boolean;
@@ -20,6 +22,19 @@ function formatTime(iso?: string) {
     return new Date().toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
   }
   return new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
+}
+
+function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
+  const href = cedApiPath(`pdf/download/${pdf.file_id}`);
+  return (
+    <a
+      href={href}
+      download={pdf.filename}
+      className="mt-2 inline-flex items-center gap-1.5 rounded border border-cyan-400/50 bg-cyan-400/10 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-cyan-200 hover:bg-cyan-400/20"
+    >
+      📄 Descargar PDF
+    </a>
+  );
 }
 
 export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
@@ -45,7 +60,7 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
         {
           role: "model",
           content:
-            "Hola, soy CED. Puedes escribirme aquí o usar el micrófono cuando quieras voz en vivo.",
+            "Hola, soy CED. Escríbeme aquí o usa ASISTENTE CED para voz en vivo. También puedo convertir info a PDF.",
         },
       ]);
     }
@@ -70,7 +85,12 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
       setConversationId(result.conversation_id);
       setMessages((prev) => [
         ...prev,
-        { role: "model", content: result.reply, created_at: new Date().toISOString() },
+        {
+          role: "model",
+          content: result.reply,
+          created_at: new Date().toISOString(),
+          pdf: result.pdf ?? null,
+        },
       ]);
       setStatus(result.usage);
     } catch (e) {
@@ -84,9 +104,9 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex justify-end bg-black/40 backdrop-blur-[1px]">
-      <div className="flex h-full w-full max-w-md flex-col border-l border-cyan-500/30 bg-[#060a0f] shadow-2xl">
-        <header className="flex items-center justify-between border-b border-cyan-500/20 px-4 py-3">
+    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+      <div className="flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:rounded-2xl sm:border">
+        <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/20 px-4 py-3">
           <div className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4 text-cyan-400" />
             <span className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-300">
@@ -114,12 +134,12 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
         </header>
 
         {status && !status.unlimited && status.messages_limit_daily != null && (
-          <p className="border-b border-cyan-900/40 px-4 py-1.5 text-[10px] text-cyan-600">
+          <p className="shrink-0 border-b border-cyan-900/40 px-4 py-1.5 text-[10px] text-cyan-600">
             Mensajes hoy: {status.messages_used_today}/{status.messages_limit_daily}
           </p>
         )}
 
-        <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
             return (
@@ -128,7 +148,7 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
                 className={`flex ${isUser ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[85%] rounded-lg px-3 py-2 text-sm ${
+                  className={`max-w-[88%] rounded-lg px-3 py-2 text-sm ${
                     isUser
                       ? "bg-cyan-500/15 text-cyan-50"
                       : "border border-cyan-500/25 bg-black/60 text-cyan-100/90"
@@ -140,6 +160,7 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
                     </div>
                   )}
                   <p className="whitespace-pre-wrap break-words">{msg.content}</p>
+                  {msg.pdf ? <PdfDownloadButton pdf={msg.pdf} /> : null}
                   <p className="mt-1 text-[9px] opacity-50">{formatTime(msg.created_at)}</p>
                 </div>
               </div>
@@ -150,10 +171,10 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
           )}
         </div>
 
-        {error && <p className="px-4 pb-1 text-xs text-red-400">{error}</p>}
+        {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className="border-t border-cyan-500/20 p-3">
-          <div className="flex gap-2">
+        <footer className="shrink-0 border-t border-cyan-500/20 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex items-end gap-2">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -166,19 +187,21 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
               rows={2}
               placeholder="Escribe a CED…"
               disabled={busy || status?.blocked}
-              className="flex-1 resize-none rounded border border-cyan-800/50 bg-black/50 px-3 py-2 text-sm text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50"
+              className="min-h-[44px] flex-1 resize-none rounded border border-cyan-800/50 bg-black/50 px-3 py-2 text-sm text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50"
             />
             <button
               type="button"
               disabled={busy || !input.trim() || status?.blocked}
               onClick={() => void submit()}
-              className="flex h-auto items-center justify-center rounded border border-cyan-400/60 px-3 text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-40"
+              className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded border border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-40"
               aria-label="Enviar"
             >
               <Send className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-1 text-[9px] text-cyan-700">Enter envía · Shift+Enter nueva línea</p>
+          <p className="mt-1 text-center text-[9px] text-cyan-700">
+            Enter envía · Pide &quot;convierte esto a PDF&quot;
+          </p>
         </footer>
       </div>
     </div>

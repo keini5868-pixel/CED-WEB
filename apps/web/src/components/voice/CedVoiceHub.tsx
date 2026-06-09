@@ -10,9 +10,11 @@ import { CedOrbOverlay } from "@/components/orb/CedOrbOverlay";
 import { useHudFeed } from "@/contexts/HudFeedContext";
 import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
+import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
 import { useUsageBalance } from "@/hooks/useUsageBalance";
 import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
+import { CedAssistantButton } from "@/components/voice/CedAssistantButton";
 import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
 import {
@@ -74,7 +76,7 @@ export function CedVoiceHub() {
   ]);
 
   return (
-    <div className="flex w-full flex-col items-center px-2 py-4">
+    <div className="mx-auto flex w-full max-w-md flex-col items-center px-3 py-4 sm:max-w-lg sm:px-2">
       <div className="relative h-[min(52vw,280px)] w-[min(52vw,280px)] max-h-[320px] max-w-[320px] md:h-[300px] md:w-[300px]">
         <JarvisOrbScene
           orbState={voice.orbState}
@@ -114,6 +116,15 @@ export function CedVoiceHub() {
         paused={voice.paused}
       />
 
+      <CedAssistantButton
+        active={voice.micOn}
+        busy={voice.micBusy}
+        onActivate={() => {
+          unlockVoiceAudioOnGesture();
+          void voice.toggleMic();
+        }}
+      />
+
       {voice.micOn && !voice.paused ? (
         <div className="mt-3 flex h-8 items-end gap-1">
           {Array.from({ length: 12 }).map((_, i) => (
@@ -132,6 +143,7 @@ export function CedVoiceHub() {
       <CedVoiceControls
         micOn={voice.micOn}
         micBusy={voice.micBusy}
+        hideMicLaunch
         cameraOn={voice.cameraOn}
         muted={voice.muted}
         paused={voice.paused}

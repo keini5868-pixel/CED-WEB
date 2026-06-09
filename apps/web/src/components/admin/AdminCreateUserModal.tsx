@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { CedButton } from "@ced/ui";
 
+import { AdminModalPortal } from "@/components/admin/AdminModalPortal";
+
 import {
   createAdminUser,
   type CreateAdminUserPayload,
@@ -113,13 +115,17 @@ export function AdminCreateUserModal({ open, onClose, onCreated }: Props) {
   };
 
   return (
+    <AdminModalPortal>
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/85 p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="admin-create-user-title"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-lg border border-cyan-500/50 bg-[#0a0f14] p-5 shadow-[0_0_40px_rgba(0,229,255,0.15)]">
+      <div className="my-auto w-full max-w-lg overflow-y-auto rounded-lg border border-cyan-500/50 bg-[#0a0f14] p-5 shadow-[0_0_40px_rgba(0,229,255,0.15)]">
         <h2
           id="admin-create-user-title"
           className="font-[family-name:var(--font-orbitron)] text-base font-bold tracking-wider text-cyan-300"
@@ -339,5 +345,6 @@ export function AdminCreateUserModal({ open, onClose, onCreated }: Props) {
         </div>
       </div>
     </div>
+    </AdminModalPortal>
   );
 }

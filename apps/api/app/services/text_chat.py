@@ -14,6 +14,7 @@ from app.domain.plans import get_plan_limits, normalize_plan_id
 from app.services import supabase_db
 from app.services.cognitive_router import build_chat_system_extras, route_message
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
+from app.services.pdf_report import store_pdf
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,23 @@ CHAT_TOOLS: list[dict[str, Any]] = [
             "required": ["caption", "image_url"],
         },
     },
+    {
+        "name": "generar_pdf",
+        "description": (
+            "Genera un PDF descargable con el contenido indicado (informes, resúmenes, listas, etc.)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string", "description": "Título del documento PDF"},
+                "content": {
+                    "type": "string",
+                    "description": "Texto completo del cuerpo del PDF en markdown o texto plano",
+                },
+            },
+            "required": ["title", "content"],
+        },
+    },
 ]
 
 CHAT_SYSTEM_BASE = """Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
@@ -71,6 +89,7 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Usa las herramientas publicar_facebook / publicar_instagram cuando el usuario pida publicar y tengas los datos.
 - Si falta caption o image_url (Instagram), pídelos antes de invocar la herramienta.
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
+- Puedes generar PDFs descargables con la herramienta generar_pdf cuando el usuario pida exportar, guardar o convertir información a PDF.
 
 PROHIBIDO (respuestas de chatbot genérico):
 - "No tengo acceso a internet en tiempo real" — CED tiene búsqueda y herramientas en voz; en chat puedes preparar contenido y publicar vía Meta.
@@ -206,6 +225,20 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
                 image_url=str(tool_input.get("image_url") or ""),
             )
             return json.dumps(result)
+        if name == "generar_pdf":
+            title = str(tool_input.get("title") or "Documento CED").strip()
+            content = str(tool_input.get("content") or "").strip()
+            if not content:
+                return json.dumps({"ok": False, "error": "Contenido vacío para el PDF."})
+            artifact = store_pdf(user_id=user_id, title=title, content=content)
+            return json.dumps(
+                {
+                    "ok": True,
+                    "file_id": artifact.file_id,
+                    "filename": artifact.filename,
+                    "download_path": f"/v1/pdf/download/{artifact.file_id}",
+                }
+            )
         return json.dumps({"error": f"Herramienta desconocida: {name}"})
     except MetaSocialError as exc:
         return json.dumps({"ok": False, "error": str(exc)})
@@ -247,13 +280,28 @@ def _final_text_from_response(data: dict[str, Any]) -> str:
     ).strip()
 
 
+def _extract_pdf_from_tool_result(result: str) -> dict[str, Any] | None:
+    try:
+        data = json.loads(result)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict) and data.get("ok") and data.get("file_id"):
+        return {
+            "file_id": data["file_id"],
+            "filename": data.get("filename") or "documento.pdf",
+            "download_path": data.get("download_path"),
+        }
+    return None
+
+
 def _complete_chat_with_tools(
     user_id: str,
     *,
     api_key: str,
     system: str,
     messages: list[dict[str, Any]],
-) -> str:
+) -> tuple[str, dict[str, Any] | None]:
+    pdf_attachment: dict[str, Any] | None = None
     for _ in range(4):
         data = _anthropic_request(api_key=api_key, system=system, messages=messages)
         blocks = data.get("content") or []
@@ -261,7 +309,7 @@ def _complete_chat_with_tools(
         if not tool_uses:
             reply = _final_text_from_response(data)
             if reply:
-                return reply
+                return reply, pdf_attachment
             raise TextChatError("Respuesta vacía del asistente.")
 
         messages.append({"role": "assistant", "content": blocks})
@@ -269,6 +317,9 @@ def _complete_chat_with_tools(
         for tool in tool_uses:
             tool_input = tool.get("input") if isinstance(tool.get("input"), dict) else {}
             result = _run_chat_tool(user_id, str(tool.get("name") or ""), tool_input)
+            maybe_pdf = _extract_pdf_from_tool_result(result)
+            if maybe_pdf:
+                pdf_attachment = maybe_pdf
             tool_results.append(
                 {
                     "type": "tool_result",
@@ -318,7 +369,12 @@ def send_message(
 
     route = route_message(user_id, text, channel="text")
 
-    def _finish(reply: str, *, route_meta: dict | None = None) -> dict[str, Any]:
+    def _finish(
+        reply: str,
+        *,
+        route_meta: dict | None = None,
+        pdf: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         supabase_db.append_message(conversation_id, user_id, "model", reply)
         updated_status = chat_status(user_id)
         out: dict[str, Any] = {
@@ -328,6 +384,8 @@ def send_message(
         }
         if route_meta:
             out["cognitive"] = route_meta
+        if pdf:
+            out["pdf"] = pdf
         return out
 
     if route.intent == "memory_save" and route.speakable:
@@ -344,7 +402,7 @@ def send_message(
     system = _chat_system_for_user(user_id) + "\n\n" + build_chat_system_extras(user_id, route)
 
     try:
-        reply = _complete_chat_with_tools(
+        reply, pdf_attachment = _complete_chat_with_tools(
             user_id,
             api_key=api_key,
             system=system,
@@ -369,4 +427,4 @@ def send_message(
         logger.exception("[CHAT] anthropic failed")
         raise TextChatError("Error de conexión con el asistente.") from exc
 
-    return _finish(reply, route_meta=route.to_dict())
+    return _finish(reply, route_meta=route.to_dict(), pdf=pdf_attachment)

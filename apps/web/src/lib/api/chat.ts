@@ -9,6 +9,13 @@ export type ChatMessage = {
   role: "user" | "model" | "system";
   content: string;
   created_at?: string;
+  pdf?: ChatPdfAttachment | null;
+};
+
+export type ChatPdfAttachment = {
+  file_id: string;
+  filename: string;
+  download_path?: string | null;
 };
 
 export type ChatStatus = {
@@ -39,7 +46,12 @@ export async function fetchChatMessages(conversationId: string): Promise<ChatMes
 export async function sendChatMessage(
   content: string,
   conversationId?: string | null,
-): Promise<{ conversation_id: string; reply: string; usage: ChatStatus }> {
+): Promise<{
+  conversation_id: string;
+  reply: string;
+  usage: ChatStatus;
+  pdf?: ChatPdfAttachment | null;
+}> {
   const res = await proxyFetch("chat/send", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -52,6 +64,7 @@ export async function sendChatMessage(
     conversation_id?: string;
     reply?: string;
     usage?: ChatStatus;
+    pdf?: ChatPdfAttachment;
     detail?: string;
   }>(res);
   if (!res.ok) {
@@ -61,5 +74,6 @@ export async function sendChatMessage(
     conversation_id: data.conversation_id!,
     reply: data.reply!,
     usage: data.usage!,
+    pdf: data.pdf ?? null,
   };
 }

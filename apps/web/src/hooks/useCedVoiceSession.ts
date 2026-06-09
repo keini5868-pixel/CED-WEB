@@ -22,7 +22,11 @@ import {
   tickVoiceSession,
 } from "@/lib/api/usage";
 import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
-import { closeAudioContext, getAudioContext } from "@/lib/voice/live/audio-context";
+import {
+  closeAudioContext,
+  getAudioContext,
+  unlockVoiceAudioOnGesture,
+} from "@/lib/voice/live/audio-context";
 import { AudioRecorder } from "@/lib/voice/live/audio-recorder";
 import { AudioStreamer } from "@/lib/voice/live/audio-streamer";
 import {
@@ -323,6 +327,8 @@ export function useCedVoiceSession(
       await stopSession();
       return;
     }
+
+    unlockVoiceAudioOnGesture();
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setErrorMessage("Tu navegador no soporta captura de micrófono.");
