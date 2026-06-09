@@ -1,10 +1,11 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 /** Modales admin sobre todo el HUD (evita que MI CUPO tape el formulario). */
-export function AdminModalPortal({ children }: { children: React.ReactNode }) {
+export function AdminModalPortal({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
