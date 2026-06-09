@@ -24,15 +24,35 @@ function formatTime(iso?: string) {
   return new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 }
 
+function stripPdfLinks(content: string): string {
+  return content
+    .replace(/\[([^\]]*)\]\(\/v1\/pdf\/download\/[a-f0-9]+\)/gi, "")
+    .replace(/\/v1\/pdf\/download\/[a-f0-9]+/gi, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function extractPdfFromContent(content: string): ChatPdfAttachment | null {
+  const match = content.match(/\/v1\/pdf\/download\/([a-f0-9]+)/i);
+  if (!match) return null;
+  return {
+    file_id: match[1],
+    filename: "documento-ced.pdf",
+    title: "Documento CED",
+  };
+}
+
 function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
   const href = cedApiPath(`pdf/download/${pdf.file_id}`);
   return (
     <a
       href={href}
-      download={pdf.filename}
-      className="mt-2 inline-flex items-center gap-1.5 rounded border border-cyan-400/50 bg-cyan-400/10 px-3 py-1.5 text-[11px] font-semibold tracking-wide text-cyan-200 hover:bg-cyan-400/20"
+      download={pdf.filename || "documento-ced.pdf"}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mt-3 inline-flex items-center gap-1.5 rounded border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-[11px] font-semibold tracking-wide text-cyan-200 hover:bg-cyan-400/20"
     >
-      📄 Descargar PDF
+      📄 Descargar PDF{pdf.title ? `: ${pdf.title}` : ""}
     </a>
   );
 }
@@ -89,7 +109,7 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
           role: "model",
           content: result.reply,
           created_at: new Date().toISOString(),
-          pdf: result.pdf ?? null,
+          pdf: result.pdf ?? extractPdfFromContent(result.reply),
         },
       ]);
       setStatus(result.usage);
@@ -142,6 +162,8 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
         <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
+            const pdfAttachment = msg.pdf ?? extractPdfFromContent(msg.content);
+            const displayContent = isUser ? msg.content : stripPdfLinks(msg.content);
             return (
               <div
                 key={`${msg.role}-${i}`}
@@ -159,8 +181,8 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
                       CED
                     </div>
                   )}
-                  <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                  {msg.pdf ? <PdfDownloadButton pdf={msg.pdf} /> : null}
+                  <p className="whitespace-pre-wrap break-words">{displayContent}</p>
+                  {pdfAttachment ? <PdfDownloadButton pdf={pdfAttachment} /> : null}
                   <p className="mt-1 text-[9px] opacity-50">{formatTime(msg.created_at)}</p>
                 </div>
               </div>

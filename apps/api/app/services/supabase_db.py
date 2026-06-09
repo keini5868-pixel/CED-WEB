@@ -715,3 +715,76 @@ def mark_founding_profile(user_id: str, price_locked_usd: int) -> None:
         ).eq("id", user_id).execute()
     except Exception:  # noqa: BLE001
         pass
+
+
+def save_pdf_artifact(
+    *,
+    file_id: str,
+    user_id: str,
+    title: str,
+    filename: str,
+    pdf_bytes: bytes,
+    conversation_id: str | None = None,
+) -> bool:
+    import base64
+
+    try:
+        client = _client()
+        row: dict[str, Any] = {
+            "file_id": file_id,
+            "user_id": user_id,
+            "title": title,
+            "filename": filename,
+            "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
+        }
+        if conversation_id:
+            row["conversation_id"] = conversation_id
+        client.table("ced_pdf_artifacts").upsert(row).execute()
+        return True
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] save_pdf_artifact failed file_id=%s", file_id)
+        return False
+
+
+def get_pdf_artifact(file_id: str, user_id: str) -> tuple[bytes, str, str] | None:
+    import base64
+
+    try:
+        client = _client()
+        result = (
+            client.table("ced_pdf_artifacts")
+            .select("filename, title, pdf_base64")
+            .eq("file_id", file_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            return None
+        row = rows[0]
+        raw = base64.b64decode(str(row.get("pdf_base64") or ""))
+        if not raw:
+            return None
+        return raw, str(row.get("filename") or "documento.pdf"), str(row.get("title") or "Documento")
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] get_pdf_artifact failed file_id=%s", file_id)
+        return None
+
+
+def list_pdf_artifacts(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
+    try:
+        client = _client()
+        result = (
+            client.table("ced_pdf_artifacts")
+            .select("file_id, title, filename, conversation_id, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception:  # noqa: BLE001
+        logger.warning("[DB] list_pdf_artifacts failed — tabla puede no existir aún")
+        return []
+

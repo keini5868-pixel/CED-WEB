@@ -13,6 +13,7 @@ from fpdf import FPDF
 
 logger = logging.getLogger(__name__)
 
+# Caché en memoria (L1) — Supabase es la fuente de verdad en producción.
 _STORE: dict[str, tuple[bytes, str, datetime, str]] = {}
 _USER_INDEX: dict[str, list[dict[str, str]]] = {}
 _TTL = timedelta(hours=48)
@@ -114,6 +115,20 @@ def store_pdf(
     _USER_INDEX.setdefault(user_id, []).insert(0, meta)
     _USER_INDEX[user_id] = _USER_INDEX[user_id][:100]
 
+    try:
+        from app.services import supabase_db
+
+        supabase_db.save_pdf_artifact(
+            file_id=file_id,
+            user_id=user_id,
+            title=safe_title,
+            filename=filename,
+            pdf_bytes=data,
+            conversation_id=conversation_id,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("PDF guardado solo en memoria (Supabase no disponible)")
+
     if conversation_id:
         try:
             from app.services import supabase_db
@@ -142,16 +157,45 @@ def store_pdf(
 def get_pdf(file_id: str, user_id: str) -> tuple[bytes, str] | None:
     _purge_expired()
     row = _STORE.get(file_id)
-    if not row:
-        return None
-    data, filename, _, owner = row
-    if owner != user_id:
-        return None
-    return data, filename
+    if row:
+        data, filename, _, owner = row
+        if owner == user_id:
+            return data, filename
+
+    try:
+        from app.services import supabase_db
+
+        db_row = supabase_db.get_pdf_artifact(file_id, user_id)
+        if db_row:
+            data, filename, _title = db_row
+            _STORE[file_id] = (data, filename, datetime.now(timezone.utc), user_id)
+            return data, filename
+    except Exception:  # noqa: BLE001
+        logger.warning("Fallo lectura PDF desde Supabase file_id=%s", file_id)
+
+    return None
 
 
 def list_pdfs_for_user(user_id: str, *, limit: int = 40) -> list[dict[str, str]]:
     _purge_expired()
+    try:
+        from app.services import supabase_db
+
+        db_rows = supabase_db.list_pdf_artifacts(user_id, limit=limit)
+        if db_rows:
+            return [
+                {
+                    "file_id": str(r.get("file_id") or ""),
+                    "filename": str(r.get("filename") or "documento.pdf"),
+                    "title": str(r.get("title") or "Documento CED"),
+                    "conversation_id": str(r.get("conversation_id") or ""),
+                    "created_at": str(r.get("created_at") or ""),
+                }
+                for r in db_rows
+                if r.get("file_id")
+            ]
+    except Exception:  # noqa: BLE001
+        pass
     return list(_USER_INDEX.get(user_id, [])[:limit])
 
 

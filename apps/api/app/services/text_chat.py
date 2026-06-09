@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -97,6 +98,7 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Si falta caption o image_url (Instagram), pídelos antes de invocar la herramienta.
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
 - Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
+- NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
 PROHIBIDO (respuestas de chatbot genérico):
 - "No tengo acceso a internet en tiempo real" — CED tiene búsqueda y herramientas en voz; en chat puedes preparar contenido y publicar vía Meta.
@@ -243,6 +245,7 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
                     "ok": True,
                     "file_id": artifact.file_id,
                     "filename": artifact.filename,
+                    "title": artifact.title,
                     "download_path": f"/v1/pdf/download/{artifact.file_id}",
                 }
             )
@@ -287,6 +290,19 @@ def _final_text_from_response(data: dict[str, Any]) -> str:
     ).strip()
 
 
+def _strip_pdf_markdown_links(text: str) -> str:
+    cleaned = re.sub(
+        r"\[([^\]]*)\]\(/v1/pdf/download/[a-f0-9]+\)",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"https?://[^\s)]+/v1/pdf/download/[a-f0-9]+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"/v1/pdf/download/[a-f0-9]+", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
 def _extract_pdf_from_tool_result(result: str) -> dict[str, Any] | None:
     try:
         data = json.loads(result)
@@ -296,6 +312,7 @@ def _extract_pdf_from_tool_result(result: str) -> dict[str, Any] | None:
         return {
             "file_id": data["file_id"],
             "filename": data.get("filename") or "documento.pdf",
+            "title": data.get("title") or "Documento CED",
             "download_path": data.get("download_path"),
         }
     return None
@@ -316,6 +333,8 @@ def _complete_chat_with_tools(
         if not tool_uses:
             reply = _final_text_from_response(data)
             if reply:
+                if pdf_attachment:
+                    reply = _strip_pdf_markdown_links(reply)
                 return reply, pdf_attachment
             raise TextChatError("Respuesta vacía del asistente.")
 
