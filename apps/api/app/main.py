@@ -33,7 +33,7 @@ async def lifespan(_app: FastAPI):
             "CED API production",
             extra={"web_url": settings.web_public_url, "api_url": settings.api_public_url},
         )
-    elif not settings.openai_api_key.strip():
+    if not settings.openai_api_key.strip():
         logger.warning("OPENAI_API_KEY vacía — voz Realtime no funcionará")
     elif not settings.tavily_api_key.strip():
         logger.warning("TAVILY_API_KEY vacía — búsqueda web en voz fallará")

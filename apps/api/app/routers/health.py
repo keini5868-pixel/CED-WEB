@@ -67,6 +67,12 @@ def auth_diagnostics(_request: Request) -> dict:
         "supabase_auth_error": supabase_auth.get("error"),
         "super_admin_emails_set": bool(settings.super_admin_emails.strip()),
         "has_anthropic_api_key": bool(settings.anthropic_api_key.strip()),
+        "has_openai_api_key": bool(settings.openai_api_key.strip()),
+        "openai_key_prefix": (
+            settings.openai_api_key.strip()[:7] + "…"
+            if settings.openai_api_key.strip().startswith("sk-")
+            else None
+        ),
         "hint": (
             "Si project_match=false o supabase_api_key_valid=false, "
             "corrige variables en Railway servicio CED-WEB y redeploy."
