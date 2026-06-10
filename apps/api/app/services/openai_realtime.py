@@ -18,33 +18,68 @@ from app.services.openai_voice_tools import OPENAI_REALTIME_TOOLS
 
 logger = logging.getLogger(__name__)
 
-OPENAI_REALTIME_SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions"
+OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets"
+OPENAI_LEGACY_SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions"
+
+DEFAULT_REALTIME_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17"
+FALLBACK_REALTIME_MODEL = "gpt-4o-realtime-preview-2024-12-17"
 
 
-def create_realtime_session(
+def _resolve_model(settings_model: str) -> str:
+    model = (settings_model or DEFAULT_REALTIME_MODEL).strip()
+    if model == "gpt-4o-mini-realtime-preview":
+        return DEFAULT_REALTIME_MODEL
+    if model == "gpt-4o-realtime-preview":
+        return FALLBACK_REALTIME_MODEL
+    return model
+
+
+def _build_ga_payload(
     *,
-    user_id: str,
-    voice_name: str | None = None,
+    model: str,
+    voice: str,
+    instructions: str,
 ) -> dict[str, Any]:
-    settings = get_settings()
-    api_key = settings.openai_api_key.strip()
-    if not api_key:
-        return {"ok": False, "error": "OPENAI_API_KEY no configurada en Railway (CED-WEB)."}
+    return {
+        "expires_after": {"seconds": 600},
+        "session": {
+            "type": "realtime",
+            "model": model,
+            "instructions": instructions[:8000],
+            "output_modalities": ["audio"],
+            "audio": {
+                "input": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "transcription": {"model": "whisper-1"},
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.45,
+                        "prefix_padding_ms": 200,
+                        "silence_duration_ms": 400,
+                        "create_response": True,
+                        "interrupt_response": True,
+                    },
+                },
+                "output": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "voice": voice,
+                },
+            },
+            "tools": OPENAI_REALTIME_TOOLS,
+            "tool_choice": "auto",
+            "max_output_tokens": REALTIME_MAX_OUTPUT_TOKENS,
+            "temperature": REALTIME_TEMPERATURE,
+        },
+    }
 
-    voice = normalize_openai_voice(voice_name)
-    model = settings.openai_model_voice.strip() or "gpt-4o-mini-realtime-preview"
 
-    instructions = OPENAI_REALTIME_SYSTEM_PROMPT
-    try:
-        from app.services.cognitive_router import build_voice_system_extras
-
-        extras = build_voice_system_extras(user_id)
-        if extras:
-            instructions = f"{instructions}\n\n{extras}"
-    except Exception:  # noqa: BLE001
-        pass
-
-    payload: dict[str, Any] = {
+def _build_legacy_payload(
+    *,
+    model: str,
+    voice: str,
+    instructions: str,
+) -> dict[str, Any]:
+    return {
         "model": model,
         "voice": voice,
         "instructions": instructions[:8000],
@@ -63,39 +98,118 @@ def create_realtime_session(
         "max_response_output_tokens": REALTIME_MAX_OUTPUT_TOKENS,
     }
 
+
+def _extract_client_secret(data: dict[str, Any]) -> str | None:
+    if data.get("value"):
+        return str(data["value"])
+    cs = data.get("client_secret")
+    if isinstance(cs, dict) and cs.get("value"):
+        return str(cs["value"])
+    if isinstance(cs, str) and cs:
+        return cs
+    return None
+
+
+def _post_session(
+    client: httpx.Client,
+    *,
+    api_key: str,
+    url: str,
+    payload: dict[str, Any],
+) -> httpx.Response:
+    return client.post(
+        url,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json=payload,
+    )
+
+
+def create_realtime_session(
+    *,
+    user_id: str,
+    voice_name: str | None = None,
+) -> dict[str, Any]:
+    settings = get_settings()
+    api_key = settings.openai_api_key.strip()
+    if not api_key:
+        return {"ok": False, "error": "OPENAI_API_KEY no configurada en Railway (CED-WEB)."}
+
+    voice = normalize_openai_voice(voice_name)
+    model = _resolve_model(settings.openai_model_voice)
+
+    instructions = OPENAI_REALTIME_SYSTEM_PROMPT
+    try:
+        from app.services.cognitive_router import build_voice_system_extras
+
+        extras = build_voice_system_extras(user_id)
+        if extras:
+            instructions = f"{instructions}\n\n{extras}"
+    except Exception:  # noqa: BLE001
+        pass
+
+    attempts: list[tuple[str, str, dict[str, Any]]] = [
+        ("ga", OPENAI_CLIENT_SECRETS_URL, _build_ga_payload(model=model, voice=voice, instructions=instructions)),
+        (
+            "legacy",
+            OPENAI_LEGACY_SESSIONS_URL,
+            _build_legacy_payload(model=model, voice=voice, instructions=instructions),
+        ),
+    ]
+
+    if model != FALLBACK_REALTIME_MODEL:
+        attempts.append(
+            (
+                "ga-fallback-model",
+                OPENAI_CLIENT_SECRETS_URL,
+                _build_ga_payload(
+                    model=FALLBACK_REALTIME_MODEL,
+                    voice=voice,
+                    instructions=instructions,
+                ),
+            ),
+        )
+
+    last_error = "OpenAI rechazó la sesión."
     try:
         with httpx.Client(timeout=30.0) as client:
-            res = client.post(
-                OPENAI_REALTIME_SESSIONS_URL,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
-            )
-            if res.status_code >= 400:
+            for label, url, payload in attempts:
+                res = _post_session(client, api_key=api_key, url=url, payload=payload)
+                if res.status_code < 400:
+                    data = res.json()
+                    client_secret = _extract_client_secret(data)
+                    if not client_secret:
+                        last_error = "OpenAI no devolvió client_secret."
+                        continue
+                    used_model = (
+                        payload.get("session", {}).get("model")
+                        or payload.get("model")
+                        or model
+                    )
+                    logger.info(
+                        "[OPENAI] session ok via=%s model=%s voice=%s user=%s",
+                        label,
+                        used_model,
+                        voice,
+                        user_id[:8],
+                    )
+                    return {
+                        "ok": True,
+                        "clientSecret": client_secret,
+                        "model": used_model,
+                        "voiceName": voice,
+                        "systemInstruction": instructions,
+                        "expiresInSeconds": 600,
+                        "sampleRate": 24000,
+                    }
+
                 detail = res.text[:400]
-                logger.error("[OPENAI] session create %s: %s", res.status_code, detail)
-                return {
-                    "ok": False,
-                    "error": f"OpenAI rechazó la sesión ({res.status_code}). Revisa OPENAI_API_KEY y saldo.",
-                }
-            data = res.json()
+                logger.error("[OPENAI] session create %s %s: %s", label, res.status_code, detail)
+                last_error = f"OpenAI rechazó la sesión ({res.status_code}). Revisa modelo y saldo."
     except Exception as exc:  # noqa: BLE001
         logger.exception("[OPENAI] session create failed")
         return {"ok": False, "error": f"No se pudo contactar OpenAI: {exc}"}
 
-    client_secret = (data.get("client_secret") or {}).get("value")
-    if not client_secret:
-        return {"ok": False, "error": "OpenAI no devolvió client_secret."}
-
-    logger.info("[OPENAI] session ok model=%s voice=%s user=%s", model, voice, user_id[:8])
-    return {
-        "ok": True,
-        "clientSecret": client_secret,
-        "model": model,
-        "voiceName": voice,
-        "systemInstruction": instructions,
-        "expiresInSeconds": 600,
-        "sampleRate": 24000,
-    }
+    return {"ok": False, "error": last_error}

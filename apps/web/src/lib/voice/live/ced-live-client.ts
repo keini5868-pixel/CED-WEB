@@ -165,7 +165,6 @@ export class CedLiveClient {
       const ws = new WebSocket(url, [
         "realtime",
         `openai-insecure-api-key.${tokenRes.clientSecret}`,
-        "openai-beta.realtime-v1",
       ]);
       this.ws = ws;
 
