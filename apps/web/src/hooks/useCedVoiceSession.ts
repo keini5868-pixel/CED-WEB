@@ -973,6 +973,14 @@ export function useCedVoiceSession(
           void toggleCameraRef.current(intent === "activate");
         },
         onError: (msg) => {
+          const normalized = msg.toLowerCase();
+          if (
+            normalized.includes("no active response") ||
+            normalized.includes("cancellation failed") ||
+            normalized.includes("response_cancel_not_active")
+          ) {
+            return;
+          }
           setErrorMessage(msg);
           setOrbState("error");
           setStatusLabel(ORB_STATE_LABELS.error);
