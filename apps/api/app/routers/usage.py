@@ -99,13 +99,26 @@ def session_tick(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     state = voice_access_state(user_id)
+    warning = _usage_warning(state.get("usage_percent", 0), state.get("blocked", False))
     return {
         "used_minutes_today": round(used, 2),
         "plan_minutes_daily": state["plan_minutes_daily"],
         "blocked": state["blocked"],
         "access_denied": state["access_denied"],
         "usage_percent": state["usage_percent"],
+        "warning_level": warning,
+        "should_disconnect": warning == "blocked" or state["blocked"],
     }
+
+
+def _usage_warning(pct: float, blocked: bool) -> str | None:
+    if blocked or pct >= 100:
+        return "blocked"
+    if pct >= 95:
+        return "critical"
+    if pct >= 80:
+        return "warn"
+    return None
 
 
 @router.post("/session/end")

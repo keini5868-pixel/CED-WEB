@@ -47,6 +47,8 @@ export type VoiceSessionTick = {
   blocked: boolean;
   access_denied?: boolean;
   usage_percent: number;
+  warning_level?: "warn" | "critical" | "blocked" | null;
+  should_disconnect?: boolean;
 };
 
 /** Registra uso; null si la API no responde (no debe tumbar la voz). */

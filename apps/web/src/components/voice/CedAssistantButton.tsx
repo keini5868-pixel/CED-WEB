@@ -57,7 +57,7 @@ export function CedAssistantButton({
           </span>
         ) : (
           <span className="text-[9px] font-normal tracking-wider text-cyan-500/70">
-            Permiso mic · Gemini Live
+            Permiso mic · CED Voice
           </span>
         )}
       </span>

@@ -9,29 +9,34 @@ import stripe
 from supabase import create_client
 
 from app.config import get_settings
-from app.services.gemini_live import create_ephemeral_token
+from app.services.openai_realtime import create_realtime_session
 
 
-def check_gemini() -> dict[str, Any]:
+def check_openai() -> dict[str, Any]:
     settings = get_settings()
-    if not settings.google_api_key.strip():
+    if not settings.openai_api_key.strip():
         return {
             "ok": False,
-            "error": "missing_google_api_key",
-            "hint": "Añade GOOGLE_API_KEY en apps/api/.env y reinicia pnpm dev:api",
+            "error": "missing_openai_api_key",
+            "hint": "Añade OPENAI_API_KEY en Railway (servicio CED-WEB).",
         }
-    result = create_ephemeral_token()
+    result = create_realtime_session(user_id="health-check", voice_name=None)
     if not result.get("ok"):
         return {
             "ok": False,
-            "error": result.get("error", "token_failed"),
-            "model": settings.gemini_live_model,
+            "error": result.get("error", "session_failed"),
+            "model": settings.openai_model_voice,
         }
     return {
         "ok": True,
         "model": result.get("model"),
-        "ephemeral_token": True,
+        "realtime_session": True,
     }
+
+
+def check_gemini() -> dict[str, Any]:
+    """Legacy alias — OpenAI Realtime reemplazó Gemini Live."""
+    return check_openai()
 
 
 def check_anthropic() -> dict[str, Any]:

@@ -61,6 +61,20 @@ class Settings(BaseSettings):
 
     redis_url: str = "redis://localhost:6379/0"
 
+    openai_api_key: str = ""
+    openai_model_chat: str = "gpt-4o"
+    openai_model_chat_lite: str = "gpt-4o-mini"
+    openai_model_voice: str = "gpt-4o-mini-realtime-preview"
+    openai_model_image: str = "gpt-image-1"
+    openai_default_voice: str = "alloy"
+    cost_tracking_enabled: bool = True
+    cost_alert_threshold_usd: float = 200.0
+    cost_alert_email: str = ""
+    cache_enabled: bool = True
+    cache_ttl_weather: int = 1800
+    cache_ttl_news: int = 900
+    cache_ttl_static: int = 86400
+
     google_api_key: str = ""
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     anthropic_api_key: str = ""

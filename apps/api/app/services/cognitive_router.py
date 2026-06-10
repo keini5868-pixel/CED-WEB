@@ -13,7 +13,7 @@ from app.services.cognitive_intents import (
     is_volatile_query,
 )
 from app.services.cognitive_memory import memory_context_for_voice, save_memory, search_memory
-from app.services.gemini_deep_analysis import consultar_sistema_avanzado
+from app.services.claude_deep_analysis import consultar_sistema_avanzado
 from app.services.gemini_grounded import fetch_voice_brief
 from app.services.internal_knowledge import (
     format_hits_for_prompt,

@@ -19,18 +19,21 @@ class PlanId(StrEnum):
 
 FOUNDING_MEMBER_MAX_SLOTS = 50
 TRIAL_DAYS = 7
-TRIAL_VOICE_MINUTES_PER_DAY = 30
+TRIAL_VOICE_MINUTES_PER_DAY = 15
 USAGE_WARNING_PERCENT = 80
 
-GEMINI_COST_PER_HOUR_USD = 1.50
+# Costo referencia voz OpenAI Realtime Mini (~$0.20/min sesión activa)
+OPENAI_VOICE_COST_PER_HOUR_USD = 12.0
+# Legacy alias recargas
+GEMINI_COST_PER_HOUR_USD = OPENAI_VOICE_COST_PER_HOUR_USD
 RECHARGE_MARGIN_KEINI = 0.40
 RECHARGE_CLIENT_SHARE = 0.60
 RECHARGE_MIN_USD = 10
 RECHARGE_MAX_USD = 500
 RECHARGE_QUICK_AMOUNTS_USD = (10, 20, 40, 50, 100)
 
-# Minutos “ilimitados” Founding (display + límite técnico alto)
-FOUNDING_UNLIMITED_MINUTES = 9999
+# Minutos diarios Founding (cap margen)
+FOUNDING_VOICE_CAP_MINUTES = 90
 
 PLAN_PRICES_USD: dict[str, int] = {
     PlanId.STARTER.value: 30,
@@ -54,9 +57,10 @@ STRIPE_CHECKOUT_PLANS = frozenset(
 
 @dataclass(frozen=True)
 class PlanLimits:
-    gemini_minutes_per_day: int
+    voice_minutes_per_day: int
     web_searches_per_day: int  # -1 = ilimitado
-    ai_images_per_month: int
+    ai_images_standard_per_month: int
+    ai_images_hd_per_month: int
     voice_enabled: bool
     camera_enabled: bool
     meta_social_enabled: bool
@@ -64,12 +68,25 @@ class PlanLimits:
     pdf_reports: bool
     claude_messages_per_day: int  # -1 = ilimitado
 
+    @property
+    def gemini_minutes_per_day(self) -> int:
+        return self.voice_minutes_per_day
+
+    @property
+    def ai_images_per_month(self) -> int:
+        std = self.ai_images_standard_per_month
+        hd = self.ai_images_hd_per_month
+        if std < 0 or hd < 0:
+            return -1
+        return std + hd
+
 
 PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.STARTER.value: PlanLimits(
-        gemini_minutes_per_day=30,
-        web_searches_per_day=50,
-        ai_images_per_month=20,
+        voice_minutes_per_day=15,
+        web_searches_per_day=30,
+        ai_images_standard_per_month=3,
+        ai_images_hd_per_month=0,
         voice_enabled=True,
         camera_enabled=False,
         meta_social_enabled=False,
@@ -78,9 +95,10 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         claude_messages_per_day=-1,
     ),
     PlanId.PRO.value: PlanLimits(
-        gemini_minutes_per_day=60,
+        voice_minutes_per_day=30,
         web_searches_per_day=-1,
-        ai_images_per_month=50,
+        ai_images_standard_per_month=10,
+        ai_images_hd_per_month=3,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=False,
@@ -89,9 +107,10 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         claude_messages_per_day=-1,
     ),
     PlanId.ELITE.value: PlanLimits(
-        gemini_minutes_per_day=120,
+        voice_minutes_per_day=60,
         web_searches_per_day=-1,
-        ai_images_per_month=100,
+        ai_images_standard_per_month=20,
+        ai_images_hd_per_month=8,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
@@ -100,9 +119,10 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         claude_messages_per_day=-1,
     ),
     PlanId.FOUNDING.value: PlanLimits(
-        gemini_minutes_per_day=FOUNDING_UNLIMITED_MINUTES,
+        voice_minutes_per_day=FOUNDING_VOICE_CAP_MINUTES,
         web_searches_per_day=-1,
-        ai_images_per_month=-1,
+        ai_images_standard_per_month=40,
+        ai_images_hd_per_month=15,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
@@ -111,9 +131,10 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         claude_messages_per_day=-1,
     ),
     PlanId.FREE_BASIC.value: PlanLimits(
-        gemini_minutes_per_day=0,
+        voice_minutes_per_day=0,
         web_searches_per_day=0,
-        ai_images_per_month=0,
+        ai_images_standard_per_month=0,
+        ai_images_hd_per_month=0,
         voice_enabled=False,
         camera_enabled=False,
         meta_social_enabled=False,
@@ -153,7 +174,7 @@ def get_plan_limits(plan_id: str | None) -> PlanLimits:
 
 
 def plan_minutes_daily(plan_id: str | None) -> int:
-    return get_plan_limits(plan_id).gemini_minutes_per_day
+    return get_plan_limits(plan_id).voice_minutes_per_day
 
 
 # Alias legacy
@@ -193,9 +214,10 @@ def public_plans_catalog() -> list[dict]:
                 "id": pid.value,
                 "label": PLAN_LABELS[pid.value],
                 "price_usd": PLAN_PRICES_USD[pid.value],
-                "minutes_per_day": limits.gemini_minutes_per_day,
+                "minutes_per_day": limits.voice_minutes_per_day,
                 "web_searches_per_day": limits.web_searches_per_day,
-                "ai_images_per_month": limits.ai_images_per_month,
+                "ai_images_standard_per_month": limits.ai_images_standard_per_month,
+                "ai_images_hd_per_month": limits.ai_images_hd_per_month,
                 "voice_enabled": limits.voice_enabled,
                 "camera_enabled": limits.camera_enabled,
                 "meta_social_enabled": limits.meta_social_enabled,

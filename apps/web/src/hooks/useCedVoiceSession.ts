@@ -7,7 +7,7 @@ import { ORB_STATE_LABELS } from "@ced/types";
 
 import { appendConversationMessage } from "@/lib/api/conversations";
 import { generatePdf } from "@/lib/api/pdf";
-import { fetchVoiceBrief } from "@/lib/api/gemini";
+import { fetchVoiceBrief } from "@/lib/api/openai";
 import { saveMemory, searchMemory } from "@/lib/api/memory";
 import { schedulePanelSearch } from "@/lib/api/panels";
 import {
@@ -36,7 +36,7 @@ import {
 } from "@/lib/voice/live/ced-live-client";
 import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
-import { normalizeVoiceName } from "@/lib/voice/geminiVoices";
+import { normalizeVoiceName } from "@/lib/voice/openaiVoices";
 import {
   ACTIVAR_PROSPECCION,
   BUSCAR_LO_VISIBLE,
@@ -394,11 +394,15 @@ export function useCedVoiceSession(
             const data = await tickVoiceSession(sid, USAGE_TICK_SECONDS);
             if (!data) return;
             onUsageRefresh?.();
-            if (data.blocked) {
+            if (data.blocked || data.should_disconnect) {
               setErrorMessage(
                 "Has alcanzado tu límite diario de voz. Recarga o continúa mañana.",
               );
               await stopSession();
+            } else if (data.warning_level === "critical") {
+              setStatusLabel("Queda poco tiempo de voz hoy (95%)…");
+            } else if (data.warning_level === "warn") {
+              setStatusLabel("Has usado el 80% de tu voz diaria…");
             } else if (data.access_denied) {
               setErrorMessage(
                 "Tu suscripción no está activa. Renueva en Precios para usar la voz.",
@@ -980,7 +984,7 @@ export function useCedVoiceSession(
           if (!info.recoverable) {
             setErrorMessage(
               info.userMessage ??
-                "Gemini cerró la sesión. Revisa tu cuenta en AI Studio.",
+                "OpenAI cerró la sesión. Revisa tu API key y saldo.",
             );
             setOrbState("error");
             void stopSession();
@@ -1039,7 +1043,7 @@ export function useCedVoiceSession(
         setupTimerRef.current = window.setTimeout(() => {
           if (isStale() || greetingSentRef.current) return;
           setErrorMessage(
-            "Gemini no respondió a tiempo. Desactiva el micrófono y vuelve a intentar.",
+            "OpenAI no respondió a tiempo. Desactiva el micrófono y vuelve a intentar.",
           );
           setOrbState("error");
           void stopSession();

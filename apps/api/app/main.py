@@ -17,7 +17,7 @@ from app.logging_setup import configure_logging
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
 from app.rate_limit import limiter
-from app.routers import admin, billing, chat, cognitive, conversations, gemini, health, hud, memory, meta, panels, pdf, prospection, usage, vision
+from app.routers import admin, billing, chat, cognitive, conversations, health, hud, memory, meta, openai, panels, pdf, prospection, usage, vision
 
 logger = logging.getLogger("ced.api")
 
@@ -33,8 +33,8 @@ async def lifespan(_app: FastAPI):
             "CED API production",
             extra={"web_url": settings.web_public_url, "api_url": settings.api_public_url},
         )
-    elif not settings.google_api_key.strip():
-        logger.warning("GOOGLE_API_KEY vacía — revisa apps/api/.env")
+    elif not settings.openai_api_key.strip():
+        logger.warning("OPENAI_API_KEY vacía — voz Realtime no funcionará")
     elif not settings.tavily_api_key.strip():
         logger.warning("TAVILY_API_KEY vacía — búsqueda web en voz fallará")
     yield
@@ -77,7 +77,7 @@ def create_app() -> FastAPI:
     application.include_router(hud.router)
     application.include_router(panels.router)
     application.include_router(meta.router)
-    application.include_router(gemini.router)
+    application.include_router(openai.router)
     application.include_router(memory.router)
     application.include_router(prospection.router)
     application.include_router(vision.router)

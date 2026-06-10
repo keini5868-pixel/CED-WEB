@@ -59,7 +59,7 @@ export function HudUsageBar() {
         />
       </div>
       <p className="ced-hud-text-muted mt-2">
-        Uso diario Gemini Live · {pct.toFixed(0)}% del cupo incluido
+        Uso diario de voz CED · {pct.toFixed(0)}% del cupo incluido
       </p>
       {(balance.accessDenied || balance.blocked || warn) && loaded && (
         <div

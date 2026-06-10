@@ -788,3 +788,45 @@ def list_pdf_artifacts(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]
         logger.warning("[DB] list_pdf_artifacts failed — tabla puede no existir aún")
         return []
 
+
+def count_generated_images_this_month(user_id: str) -> tuple[int, int]:
+    """Cuenta imágenes standard y HD del mes actual."""
+    try:
+        client = _client()
+        start = today_utc().replace(day=1).isoformat()
+        result = (
+            client.table("generated_images")
+            .select("quality")
+            .eq("user_id", user_id)
+            .gte("created_at", start)
+            .execute()
+        )
+        rows = result.data or []
+        std = sum(1 for r in rows if (r.get("quality") or "standard") != "hd")
+        hd = sum(1 for r in rows if (r.get("quality") or "") == "hd")
+        return std, hd
+    except Exception:  # noqa: BLE001
+        return 0, 0
+
+
+def insert_generated_image(
+    *,
+    user_id: str,
+    prompt: str,
+    quality: str,
+    model: str,
+    public_url: str,
+    estimated_cost_usd: float,
+) -> None:
+    client = _client()
+    client.table("generated_images").insert(
+        {
+            "user_id": user_id,
+            "prompt": prompt[:4000],
+            "quality": quality,
+            "model": model,
+            "public_url": public_url[:8000] if public_url else None,
+            "estimated_cost_usd": estimated_cost_usd,
+        }
+    ).execute()
+

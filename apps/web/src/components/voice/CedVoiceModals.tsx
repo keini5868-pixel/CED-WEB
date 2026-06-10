@@ -38,7 +38,7 @@ export function CedStopConfirmModal({
       }
     >
       <p className="ced-hud-text-body">
-        ¿Cerrar la sesión Gemini Live? Perderás el contexto de voz actual.
+        ¿Cerrar la sesión de voz CED? Perderás el contexto de voz actual.
       </p>
     </CedModal>
   );
@@ -92,7 +92,7 @@ export function CedSettingsModal({
       <div className="space-y-4">
         <div>
           <span className="ced-hud-text-muted text-xs">
-            Voz Gemini Live (requiere reiniciar sesión)
+            Voz OpenAI Realtime (requiere reiniciar sesión)
           </span>
           <p className="ced-hud-text-muted mt-1 text-[10px]">
             Activa: <strong className="text-cyan-400">{prefs.voiceName}</strong>

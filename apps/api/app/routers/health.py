@@ -9,7 +9,7 @@ from app.deps.auth import require_super_admin
 from app.rate_limit import limiter
 from app.services.integrations import (
     check_anthropic,
-    check_gemini,
+    check_openai,
     check_stripe,
     check_supabase,
     check_supabase_auth,
@@ -96,7 +96,7 @@ def meta() -> dict:
             "price_locked_for_life": True,
         },
         "features_elite": {
-            "gemini_minutes_per_day": CED_ELITE.gemini_minutes_per_day,
+            "voice_minutes_per_day": CED_ELITE.voice_minutes_per_day,
             "ai_images_per_month": CED_ELITE.ai_images_per_month,
             "voice_enabled": CED_ELITE.voice_enabled,
             "camera_enabled": CED_ELITE.camera_enabled,
@@ -110,7 +110,7 @@ def meta() -> dict:
             "max_usd": RECHARGE_MAX_USD,
             "quick_amounts_usd": list(RECHARGE_QUICK_AMOUNTS_USD),
             "balance_never_expires": True,
-            "gemini_cost_per_hour_usd": 1.5,
+            "openai_voice_cost_per_hour_usd": 12.0,
             "example_quotes": {
                 str(amount): quote_recharge(amount)
                 for amount in RECHARGE_QUICK_AMOUNTS_USD
@@ -127,18 +127,19 @@ def integrations_status(
     supabase_db = check_supabase()
     supabase_auth = check_supabase_auth()
     stripe_status = check_stripe()
-    gemini_status = check_gemini()
+    openai_status = check_openai()
     anthropic_status = check_anthropic()
     return {
         "phase": 1,
         "supabase_db": supabase_db,
         "supabase_auth": supabase_auth,
         "stripe": stripe_status,
-        "gemini": gemini_status,
+        "openai": openai_status,
+        "gemini": openai_status,
         "anthropic": anthropic_status,
         "ready": supabase_db.get("ok")
         and stripe_status.get("ok")
-        and gemini_status.get("ok")
+        and openai_status.get("ok")
         and anthropic_status.get("ok"),
     }
 
