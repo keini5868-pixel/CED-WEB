@@ -9,6 +9,7 @@ import httpx
 
 from app.config import get_settings
 from app.domain.openai_voice_prompt import OPENAI_REALTIME_SYSTEM_PROMPT
+from app.services.openai_key_utils import openai_api_key_looks_valid, sanitize_openai_api_key
 from app.services.openai_voice_config import (
     REALTIME_MAX_OUTPUT_TOKENS,
     REALTIME_TEMPERATURE,
@@ -23,6 +24,12 @@ OPENAI_LEGACY_SESSIONS_URL = "https://api.openai.com/v1/realtime/sessions"
 
 DEFAULT_REALTIME_MODEL = "gpt-4o-mini-realtime-preview-2024-12-17"
 FALLBACK_REALTIME_MODEL = "gpt-4o-realtime-preview-2024-12-17"
+GA_MODELS = (
+    "gpt-realtime-mini",
+    "gpt-4o-mini-realtime-preview-2024-12-17",
+    "gpt-4o-realtime-preview-2024-12-17",
+    "gpt-realtime",
+)
 
 
 def _resolve_model(settings_model: str) -> str:
@@ -99,6 +106,21 @@ def _build_legacy_payload(
     }
 
 
+def _parse_openai_error(res: httpx.Response) -> str:
+    try:
+        body = res.json()
+        err = body.get("error") or {}
+        msg = err.get("message") or body.get("message")
+        code = err.get("code")
+        if msg:
+            if code == "invalid_api_key":
+                return "API key inválida. Crea una nueva en platform.openai.com/api-keys (permiso All)."
+            return str(msg)[:200]
+    except Exception:  # noqa: BLE001
+        pass
+    return f"HTTP {res.status_code}"
+
+
 def _extract_client_secret(data: dict[str, Any]) -> str | None:
     if data.get("value"):
         return str(data["value"])
@@ -133,9 +155,18 @@ def create_realtime_session(
     voice_name: str | None = None,
 ) -> dict[str, Any]:
     settings = get_settings()
-    api_key = settings.openai_api_key.strip()
+    api_key = sanitize_openai_api_key(settings.openai_api_key)
     if not api_key:
         return {"ok": False, "error": "OPENAI_API_KEY no configurada en Railway (CED-WEB)."}
+    if not openai_api_key_looks_valid(api_key):
+        return {
+            "ok": False,
+            "error": (
+                "OPENAI_API_KEY tiene formato inválido. Debe empezar con sk-proj- o sk- "
+                "y pegarse sin comillas en Railway (CED-WEB)."
+            ),
+            "code": "invalid_api_key_format",
+        }
 
     voice = normalize_openai_voice(voice_name)
     model = _resolve_model(settings.openai_model_voice)
@@ -150,27 +181,15 @@ def create_realtime_session(
     except Exception:  # noqa: BLE001
         pass
 
-    attempts: list[tuple[str, str, dict[str, Any]]] = [
-        ("ga", OPENAI_CLIENT_SECRETS_URL, _build_ga_payload(model=model, voice=voice, instructions=instructions)),
-        (
-            "legacy",
-            OPENAI_LEGACY_SESSIONS_URL,
-            _build_legacy_payload(model=model, voice=voice, instructions=instructions),
-        ),
-    ]
-
-    if model != FALLBACK_REALTIME_MODEL:
+    attempts: list[tuple[str, str, dict[str, Any]]] = []
+    models_to_try = [model] + [m for m in GA_MODELS if m != model]
+    for m in models_to_try:
         attempts.append(
-            (
-                "ga-fallback-model",
-                OPENAI_CLIENT_SECRETS_URL,
-                _build_ga_payload(
-                    model=FALLBACK_REALTIME_MODEL,
-                    voice=voice,
-                    instructions=instructions,
-                ),
-            ),
+            ("ga-minimal-" + m, OPENAI_CLIENT_SECRETS_URL, _build_ga_payload(model=m, voice=voice, instructions=instructions)),
         )
+    attempts.append(
+        ("legacy", OPENAI_LEGACY_SESSIONS_URL, _build_legacy_payload(model=model, voice=voice, instructions=instructions)),
+    )
 
     last_error = "OpenAI rechazó la sesión."
     try:
@@ -206,8 +225,9 @@ def create_realtime_session(
                     }
 
                 detail = res.text[:400]
+                parsed = _parse_openai_error(res)
                 logger.error("[OPENAI] session create %s %s: %s", label, res.status_code, detail)
-                last_error = f"OpenAI rechazó la sesión ({res.status_code}). Revisa modelo y saldo."
+                last_error = parsed if res.status_code == 401 else f"OpenAI rechazó la sesión ({res.status_code}): {parsed}"
     except Exception as exc:  # noqa: BLE001
         logger.exception("[OPENAI] session create failed")
         return {"ok": False, "error": f"No se pudo contactar OpenAI: {exc}"}

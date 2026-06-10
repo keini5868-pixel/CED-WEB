@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.config import get_settings
 from app.deps.auth import require_super_admin
 from app.rate_limit import limiter
+from app.services.openai_key_utils import openai_api_key_looks_valid
 from app.services.integrations import (
     check_anthropic,
     check_openai,
@@ -75,14 +76,16 @@ def auth_diagnostics(_request: Request) -> dict:
         "openai_api_key_length": len(settings.openai_api_key.strip()),
         "openai_env_var_names": openai_env_names,
         "openai_env_has_raw_key": bool(raw_openai.strip()),
+        "openai_key_looks_valid": openai_api_key_looks_valid(settings.openai_api_key),
         "openai_key_prefix": (
             settings.openai_api_key.strip()[:7] + "…"
             if settings.openai_api_key.strip().startswith("sk-")
             else None
         ),
         "hint": (
-            "Si project_match=false o supabase_api_key_valid=false, "
-            "corrige variables en Railway servicio CED-WEB y redeploy."
+            "Si has_openai_api_key=false: en Railway servicio CED-WEB agrega "
+            "OPENAI_API_KEY=sk-proj-... (sin comillas) y Redeploy. "
+            "Revisa openai_env_var_names por typos (ej. OPENAI_KEY)."
         ),
     }
 

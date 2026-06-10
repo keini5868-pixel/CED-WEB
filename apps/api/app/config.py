@@ -6,6 +6,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
+from app.services.openai_key_utils import sanitize_openai_api_key
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -98,10 +99,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:
-        if self.openai_api_key.strip():
+        self.openai_api_key = sanitize_openai_api_key(self.openai_api_key)
+        if self.openai_api_key:
             return self
         for alt in ("OPENAI_KEY", "OPENAI_SECRET", "OPENAI_SECRET_KEY"):
-            val = os.environ.get(alt, "").strip()
+            val = sanitize_openai_api_key(os.environ.get(alt, ""))
             if val:
                 self.openai_api_key = val
                 break
