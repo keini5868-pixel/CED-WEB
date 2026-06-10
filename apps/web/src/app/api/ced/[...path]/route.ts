@@ -1,30 +1,82 @@
+import { createServerClient } from "@supabase/ssr";
 import { type NextRequest, NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
-import { createClient } from "@/lib/supabase/server";
 
-async function forward(request: NextRequest, pathSegments: string[]) {
-  const supabase = await createClient();
+type CookieToSet = {
+  name: string;
+  value: string;
+  options?: Record<string, unknown>;
+};
+
+function createClientFromRequest(
+  request: NextRequest,
+  response: NextResponse,
+) {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+  return createServerClient(url, key, {
+    cookies: {
+      getAll() {
+        return request.cookies.getAll();
+      },
+      setAll(cookiesToSet: CookieToSet[]) {
+        cookiesToSet.forEach(({ name, value, options }) =>
+          response.cookies.set(name, value, options),
+        );
+      },
+    },
+  });
+}
+
+async function resolveAccessToken(
+  request: NextRequest,
+): Promise<{ token: string | null; authResponse: NextResponse }> {
+  const authResponse = new NextResponse();
+  const supabase = createClientFromRequest(request, authResponse);
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData.session?.access_token) {
+    return { token: sessionData.session.access_token, authResponse };
+  }
+
+  const { data: refreshed } = await supabase.auth.refreshSession();
+  if (refreshed.session?.access_token) {
+    return { token: refreshed.session.access_token, authResponse };
+  }
+
   const {
     data: { user },
-    error: userError,
   } = await supabase.auth.getUser();
-
-  if (userError || !user) {
-    return NextResponse.json({ detail: "Sin sesión" }, { status: 401 });
+  if (!user) {
+    return { token: null, authResponse };
   }
 
-  let token: string | undefined;
-  const { data: sessionData } = await supabase.auth.getSession();
-  token = sessionData.session?.access_token;
+  const { data: retry } = await supabase.auth.getSession();
+  return {
+    token: retry.session?.access_token ?? null,
+    authResponse,
+  };
+}
+
+function mergeAuthCookies(
+  target: NextResponse,
+  authResponse: NextResponse,
+): NextResponse {
+  authResponse.cookies.getAll().forEach((cookie) => {
+    target.cookies.set(cookie);
+  });
+  return target;
+}
+
+async function forward(request: NextRequest, pathSegments: string[]) {
+  const { token, authResponse } = await resolveAccessToken(request);
 
   if (!token) {
-    const { data: refreshed } = await supabase.auth.refreshSession();
-    token = refreshed.session?.access_token;
-  }
-
-  if (!token) {
-    return NextResponse.json({ detail: "Sin sesión" }, { status: 401 });
+    return mergeAuthCookies(
+      NextResponse.json({ detail: "Sin sesión" }, { status: 401 }),
+      authResponse,
+    );
   }
 
   const path = pathSegments.map(encodeURIComponent).join("/");
@@ -53,11 +105,14 @@ async function forward(request: NextRequest, pathSegments: string[]) {
       cache: "no-store",
     });
   } catch {
-    return NextResponse.json(
-      {
-        detail: `No se pudo contactar la API en ${apiUrl()}. ¿Está activa en Railway?`,
-      },
-      { status: 502 },
+    return mergeAuthCookies(
+      NextResponse.json(
+        {
+          detail: `No se pudo contactar la API en ${apiUrl()}. ¿Está activa en Railway?`,
+        },
+        { status: 502 },
+      ),
+      authResponse,
     );
   }
 
@@ -68,21 +123,27 @@ async function forward(request: NextRequest, pathSegments: string[]) {
 
   if (isBinary) {
     const buffer = await upstream.arrayBuffer();
-    return new NextResponse(buffer, {
-      status: upstream.status,
-      headers: {
-        "Content-Type": contentType,
-        "Content-Disposition":
-          upstream.headers.get("content-disposition") || "attachment",
-      },
-    });
+    return mergeAuthCookies(
+      new NextResponse(buffer, {
+        status: upstream.status,
+        headers: {
+          "Content-Type": contentType,
+          "Content-Disposition":
+            upstream.headers.get("content-disposition") || "attachment",
+        },
+      }),
+      authResponse,
+    );
   }
 
   const responseBody = await upstream.text();
-  return new NextResponse(responseBody, {
-    status: upstream.status,
-    headers: { "Content-Type": contentType },
-  });
+  return mergeAuthCookies(
+    new NextResponse(responseBody, {
+      status: upstream.status,
+      headers: { "Content-Type": contentType },
+    }),
+    authResponse,
+  );
 }
 
 type RouteContext = { params: Promise<{ path: string[] }> };
