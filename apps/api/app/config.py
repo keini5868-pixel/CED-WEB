@@ -65,9 +65,10 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
 
     openai_api_key: str = ""
+    openai_project_id: str = ""
     openai_model_chat: str = "gpt-4o"
     openai_model_chat_lite: str = "gpt-4o-mini"
-    openai_model_voice: str = "gpt-4o-mini-realtime-preview-2024-12-17"
+    openai_model_voice: str = "gpt-realtime-mini"
     openai_model_image: str = "gpt-image-1"
     openai_default_voice: str = "alloy"
     cost_tracking_enabled: bool = True
