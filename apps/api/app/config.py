@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Siempre apps/api/.env (aunque uvicorn se lance desde otra carpeta)
@@ -93,6 +95,17 @@ class Settings(BaseSettings):
     email_from: str = "CED <noreply@castillodigital.com>"
 
     founding_slots_max: int = 50
+
+    @model_validator(mode="after")
+    def resolve_openai_key_aliases(self) -> Settings:
+        if self.openai_api_key.strip():
+            return self
+        for alt in ("OPENAI_KEY", "OPENAI_SECRET", "OPENAI_SECRET_KEY"):
+            val = os.environ.get(alt, "").strip()
+            if val:
+                self.openai_api_key = val
+                break
+        return self
 
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == "production"

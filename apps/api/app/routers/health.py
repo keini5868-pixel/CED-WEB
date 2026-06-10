@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, Query, Request
 
 from app.config import get_settings
@@ -54,6 +56,8 @@ def auth_diagnostics(_request: Request) -> dict:
         url.replace("https://", "").split(".")[0] if url else None
     )
     expected_ref = "foscutjtuscqrduugklm"
+    openai_env_names = sorted(k for k in os.environ if "OPENAI" in k.upper())
+    raw_openai = os.environ.get("OPENAI_API_KEY", "")
     return {
         "expected_supabase_project": expected_ref,
         "configured_project_ref": project_ref,
@@ -68,6 +72,9 @@ def auth_diagnostics(_request: Request) -> dict:
         "super_admin_emails_set": bool(settings.super_admin_emails.strip()),
         "has_anthropic_api_key": bool(settings.anthropic_api_key.strip()),
         "has_openai_api_key": bool(settings.openai_api_key.strip()),
+        "openai_api_key_length": len(settings.openai_api_key.strip()),
+        "openai_env_var_names": openai_env_names,
+        "openai_env_has_raw_key": bool(raw_openai.strip()),
         "openai_key_prefix": (
             settings.openai_api_key.strip()[:7] + "…"
             if settings.openai_api_key.strip().startswith("sk-")
