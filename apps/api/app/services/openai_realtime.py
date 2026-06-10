@@ -65,6 +65,16 @@ def _build_minimal_ga_payload(
             "model": model,
             "instructions": instructions[:8000],
             "audio": {
+                "input": {
+                    "turn_detection": {
+                        "type": "server_vad",
+                        "threshold": 0.5,
+                        "prefix_padding_ms": 300,
+                        "silence_duration_ms": 500,
+                        "create_response": True,
+                        "interrupt_response": False,
+                    },
+                },
                 "output": {"voice": voice},
             },
         },
@@ -187,9 +197,9 @@ def create_realtime_session(
 
     attempts: list[tuple[str, dict[str, Any]]] = []
     for m in _models_to_try(model):
-        attempts.append((f"minimal:{m}", _build_minimal_ga_payload(model=m, voice=voice, instructions=instructions)))
-        attempts.append((f"full:{m}", _build_full_ga_payload(model=m, voice=voice, instructions=instructions, with_tools=False)))
         attempts.append((f"tools:{m}", _build_full_ga_payload(model=m, voice=voice, instructions=instructions, with_tools=True)))
+        attempts.append((f"full:{m}", _build_full_ga_payload(model=m, voice=voice, instructions=instructions, with_tools=False)))
+        attempts.append((f"minimal:{m}", _build_minimal_ga_payload(model=m, voice=voice, instructions=instructions)))
 
     last_error = "OpenAI rechazó la sesión Realtime."
     try:

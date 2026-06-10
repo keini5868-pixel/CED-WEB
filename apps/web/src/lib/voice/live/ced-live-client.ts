@@ -17,6 +17,7 @@ import {
   LIVE_TOOL_NAMES,
 } from "@/lib/voice/liveTools";
 import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
+import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 
 const OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime";
@@ -288,6 +289,10 @@ export class CedLiveClient {
         }
 
         if (type === "response.done") {
+          const response = msg.response as { status?: string } | undefined;
+          if (response?.status === "cancelled") {
+            cedVoiceLog(5, "OpenAI response cancelled (server VAD)");
+          }
           if (this.modelTranscriptAcc.trim()) {
             handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
             this.modelTranscriptAcc = "";
@@ -318,10 +323,11 @@ export class CedLiveClient {
         if (type === "error") {
           const err = msg.error as { message?: string; code?: string } | undefined;
           const message = err?.message ?? "Realtime error";
-          if (this.isBenignRealtimeError(message)) {
+          if (isBenignRealtimeError(message)) {
             cedVoiceLog(5, "OpenAI benign error ignored", { message });
             return;
           }
+          voiceTelemetry.setWsState("error", message);
           handlers.onError?.(message);
         }
       };
@@ -389,15 +395,6 @@ export class CedLiveClient {
   private send(payload: Record<string, unknown>): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     this.ws.send(JSON.stringify(payload));
-  }
-
-  private isBenignRealtimeError(message: string): boolean {
-    const normalized = message.toLowerCase();
-    return (
-      normalized.includes("no active response") ||
-      normalized.includes("cancellation failed") ||
-      normalized.includes("response_cancel_not_active")
-    );
   }
 
   private async dispatchTool(

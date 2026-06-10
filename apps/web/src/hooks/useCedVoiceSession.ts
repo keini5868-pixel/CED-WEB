@@ -36,6 +36,7 @@ import {
 } from "@/lib/voice/live/ced-live-client";
 import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
+import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import { normalizeVoiceName } from "@/lib/voice/openaiVoices";
 import {
   ACTIVAR_PROSPECCION,
@@ -694,7 +695,7 @@ export function useCedVoiceSession(
             setStatusLabel("CED te saluda…");
             client.sendSessionGreeting();
           }
-          scheduleMicUplinkFallback(2000);
+          scheduleMicUplinkFallback(12000);
           void startMic();
         },
         onTranscriptUpdate: (text, role) => {
@@ -929,9 +930,12 @@ export function useCedVoiceSession(
           );
         },
         onInterrupted: () => {
-          cedVoiceLog(5, "Gemini interrupted");
+          cedVoiceLog(5, "OpenAI interrupted");
           modelSpeakingRef.current = false;
           streamerRef.current?.stop();
+          setErrorMessage((prev) =>
+            prev && isBenignRealtimeError(prev) ? null : prev,
+          );
           if (micActiveRef.current) {
             setOrbState("listening");
             setStatusLabel(ORB_STATE_LABELS.listening);
@@ -973,14 +977,7 @@ export function useCedVoiceSession(
           void toggleCameraRef.current(intent === "activate");
         },
         onError: (msg) => {
-          const normalized = msg.toLowerCase();
-          if (
-            normalized.includes("no active response") ||
-            normalized.includes("cancellation failed") ||
-            normalized.includes("response_cancel_not_active")
-          ) {
-            return;
-          }
+          if (isBenignRealtimeError(msg)) return;
           setErrorMessage(msg);
           setOrbState("error");
           setStatusLabel(ORB_STATE_LABELS.error);

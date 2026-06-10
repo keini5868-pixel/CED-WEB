@@ -1,5 +1,7 @@
 /** Telemetría en vivo del pipeline Gemini Live (dev / debug). */
 
+import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
+
 export type WsState = "disconnected" | "connecting" | "connected" | "closed" | "error";
 
 export type VoiceTurnLogEntry = {
@@ -143,7 +145,9 @@ class VoiceTelemetryStore {
 
   setWsState(state: WsState, detail?: string) {
     this.wsState = state;
-    if (state === "error" && detail) this.lastError = detail;
+    if (state === "error" && detail && !isBenignRealtimeError(detail)) {
+      this.lastError = detail;
+    }
     const kind =
       state === "connecting"
         ? "session_connect"
