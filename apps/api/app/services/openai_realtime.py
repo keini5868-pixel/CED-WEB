@@ -74,7 +74,6 @@ def _build_full_ga_payload(
     model: str,
     voice: str,
     instructions: str,
-    *,
     with_tools: bool,
 ) -> dict[str, Any]:
     session: dict[str, Any] = {
