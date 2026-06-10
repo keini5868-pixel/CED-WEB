@@ -29,6 +29,8 @@ FALLBACK_MODELS = (
     "gpt-4o-realtime-preview-2024-12-17",
 )
 
+EXPIRES_AFTER = {"anchor": "created_at", "seconds": 600}
+
 
 def _resolve_model(settings_model: str) -> str:
     model = (settings_model or DEFAULT_REALTIME_MODEL).strip()
@@ -57,7 +59,7 @@ def _build_minimal_ga_payload(
     instructions: str,
 ) -> dict[str, Any]:
     return {
-        "expires_after": {"seconds": 600},
+        "expires_after": EXPIRES_AFTER,
         "session": {
             "type": "realtime",
             "model": model,
@@ -105,7 +107,7 @@ def _build_full_ga_payload(
     if with_tools:
         session["tools"] = OPENAI_REALTIME_TOOLS
         session["tool_choice"] = "auto"
-    return {"expires_after": {"seconds": 600}, "session": session}
+    return {"expires_after": EXPIRES_AFTER, "session": session}
 
 
 def _parse_openai_error(res: httpx.Response) -> str:
