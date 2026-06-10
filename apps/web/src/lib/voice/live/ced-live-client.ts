@@ -89,6 +89,7 @@ export class CedLiveClient {
   private modelTranscriptAcc = "";
   private processedCallIds = new Set<string>();
   private recentToolAt = new Map<string, number>();
+  private responseActive = false;
   private static TOOL_COOLDOWN_MS = 2000;
   private handlers: CedLiveHandlers = {};
 
@@ -128,6 +129,7 @@ export class CedLiveClient {
     this.modelTranscriptAcc = "";
     this.processedCallIds.clear();
     this.recentToolAt.clear();
+    this.responseActive = false;
 
     const generation = this.connectGen;
     const isStale = () => generation !== this.connectGen;
@@ -249,6 +251,11 @@ export class CedLiveClient {
           return;
         }
 
+        if (type === "response.created") {
+          this.responseActive = true;
+          return;
+        }
+
         if (type === "response.audio.delta") {
           const delta = String(msg.delta ?? "");
           if (delta) {
@@ -281,7 +288,9 @@ export class CedLiveClient {
 
         if (type === "input_audio_buffer.speech_started") {
           voiceTelemetry.markInterrupted();
-          this.send({ type: "response.cancel" });
+          if (this.responseActive) {
+            this.send({ type: "response.cancel" });
+          }
           this.userTranscriptAcc = "";
           this.modelTranscriptAcc = "";
           handlers.onInterrupted?.();
@@ -289,6 +298,7 @@ export class CedLiveClient {
         }
 
         if (type === "response.done") {
+          this.responseActive = false;
           if (this.modelTranscriptAcc.trim()) {
             handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
             this.modelTranscriptAcc = "";
@@ -317,8 +327,13 @@ export class CedLiveClient {
         }
 
         if (type === "error") {
-          const err = msg.error as { message?: string } | undefined;
-          handlers.onError?.(err?.message ?? "Realtime error");
+          const err = msg.error as { message?: string; code?: string } | undefined;
+          const message = err?.message ?? "Realtime error";
+          if (this.isBenignRealtimeError(message)) {
+            cedVoiceLog(5, "OpenAI benign error ignored", { message });
+            return;
+          }
+          handlers.onError?.(message);
         }
       };
     });
@@ -384,7 +399,18 @@ export class CedLiveClient {
 
   private send(payload: Record<string, unknown>): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (payload.type === "response.create") {
+      this.responseActive = true;
+    }
     this.ws.send(JSON.stringify(payload));
+  }
+
+  private isBenignRealtimeError(message: string): boolean {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes("no active response") ||
+      normalized.includes("cancellation failed")
+    );
   }
 
   private async dispatchTool(
