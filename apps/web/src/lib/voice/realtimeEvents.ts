@@ -4,6 +4,10 @@ export function isResponseAudioDelta(type: string): boolean {
   return type === "response.audio.delta" || type === "response.output_audio.delta";
 }
 
+export function isResponseAudioDone(type: string): boolean {
+  return type === "response.audio.done" || type === "response.output_audio.done";
+}
+
 export function isResponseAudioTranscriptDelta(type: string): boolean {
   return (
     type === "response.audio_transcript.delta" ||

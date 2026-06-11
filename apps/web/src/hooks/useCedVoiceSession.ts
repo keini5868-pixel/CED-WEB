@@ -423,6 +423,15 @@ export function useCedVoiceSession(
       const setupTimerRef = { current: null as number | null };
       const micUplinkFallbackRef = { current: null as number | null };
       const greetingUplinkTimerRef = { current: null as number | null };
+      const turnCompleteGenRef = { current: 0 };
+      const responseWatchdogRef = { current: null as number | null };
+
+      const clearResponseWatchdog = () => {
+        if (responseWatchdogRef.current) {
+          clearTimeout(responseWatchdogRef.current);
+          responseWatchdogRef.current = null;
+        }
+      };
 
       const enableMicUplink = () => {
         if (isStale() || !micActiveRef.current) return;
@@ -652,17 +661,11 @@ export function useCedVoiceSession(
         }
         recorder.setHandlers({
           onData: (base64) => client.sendAudioPcm(base64),
-          shouldSend: () => {
-            if (!micUplinkEnabledRef.current) return false;
-            if (modelSpeakingRef.current && streamerRef.current?.isActive()) {
-              return false;
-            }
-            return (
-              !isStale() &&
-              !pausedRef.current &&
-              client.isOpen()
-            );
-          },
+          shouldSend: () =>
+            micUplinkEnabledRef.current &&
+            !isStale() &&
+            !pausedRef.current &&
+            client.isOpen(),
         });
         await recorder.start(micStreamRef.current);
         if (micUplinkEnabledRef.current) {
@@ -779,10 +782,6 @@ export function useCedVoiceSession(
             [GENERAR_PDF]: "Generando PDF…",
           };
           setStatusLabel(labels[toolName] ?? "Consultando…");
-        },
-        onToolComplete: () => {
-          if (isStale()) return;
-          streamerRef.current?.stop();
         },
         shouldAllowAdvancedTool: (toolPrompt) =>
           shouldAllowAdvancedTool(
@@ -929,6 +928,10 @@ export function useCedVoiceSession(
         },
         onAudio: (buffer) => {
           if (isStale()) return;
+          if (!modelSpeakingRef.current) {
+            turnCompleteGenRef.current += 1;
+          }
+          clearResponseWatchdog();
           greetingAudioReceivedRef.current = true;
           modelSpeakingRef.current = true;
           modelRepliedTurnRef.current = true;
@@ -944,8 +947,13 @@ export function useCedVoiceSession(
               : { ...prev, status: "responding" },
           );
         },
+        onModelAudioDone: () => {
+          streamerRef.current?.markInputComplete();
+        },
         onInterrupted: () => {
           cedVoiceLog(5, "OpenAI interrupted");
+          turnCompleteGenRef.current += 1;
+          clearResponseWatchdog();
           modelSpeakingRef.current = false;
           streamerRef.current?.stop();
           setErrorMessage((prev) =>
@@ -958,31 +966,48 @@ export function useCedVoiceSession(
         },
         onSpeechStopped: () => {
           if (isStale() || !micUplinkEnabledRef.current) return;
+          clearResponseWatchdog();
+          responseWatchdogRef.current = window.setTimeout(() => {
+            responseWatchdogRef.current = null;
+            if (isStale() || !micActiveRef.current) return;
+            modelSpeakingRef.current = false;
+            setOrbState("listening");
+            setStatusLabel(ORB_STATE_LABELS.listening);
+            setHeardIndicator((prev) =>
+              prev.status === "hidden" ? prev : { ...prev, status: "listening" },
+            );
+            cedVoiceLog(4, "Watchdog: reactivando escucha tras timeout");
+          }, 16000);
           setHeardIndicator((prev) =>
             prev.status === "hidden"
               ? prev
               : { ...prev, status: "heard", heardAt: Date.now() },
           );
-          setOrbState("processing");
-          setStatusLabel(ORB_STATE_LABELS.processing);
+          if (!modelSpeakingRef.current) {
+            setOrbState("processing");
+            setStatusLabel(ORB_STATE_LABELS.processing);
+          }
         },
         onTurnComplete: () => {
+          const gen = ++turnCompleteGenRef.current;
           void (async () => {
             if (micUplinkFallbackRef.current) {
               clearTimeout(micUplinkFallbackRef.current);
               micUplinkFallbackRef.current = null;
             }
+            clearResponseWatchdog();
             streamerRef.current?.markInputComplete();
+            modelSpeakingRef.current = false;
             const drainMs =
               greetingTurnPendingRef.current && !greetingAudioReceivedRef.current
                 ? 200
                 : greetingTurnPendingRef.current
-                  ? 700
-                  : CED_VOICE_PROFILE_LOCK.live.playbackDrainMaxMs;
+                  ? 450
+                  : 900;
             greetingTurnPendingRef.current = false;
             await streamerRef.current?.waitForDrain(drainMs);
+            if (gen !== turnCompleteGenRef.current || isStale()) return;
             enableMicUplink();
-            modelSpeakingRef.current = false;
             setHeardIndicator((prev) => {
               if (prev.status === "hidden") return prev;
               if (!modelRepliedTurnRef.current && prev.userText) {

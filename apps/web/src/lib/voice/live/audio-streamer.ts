@@ -121,6 +121,11 @@ export class AudioStreamer {
     this.scheduledTime = this.context.currentTime;
     this.endOfQueueSource = null;
 
+    if (this.checkInterval) {
+      clearInterval(this.checkInterval);
+      this.checkInterval = null;
+    }
+
     for (const source of this.activeSources) {
       try {
         source.stop();
@@ -130,11 +135,6 @@ export class AudioStreamer {
       source.disconnect();
     }
     this.activeSources.clear();
-
-    if (this.checkInterval) {
-      clearInterval(this.checkInterval);
-      this.checkInterval = null;
-    }
   }
 
   /** Gemini no enviará más audio en este turno — libera el mic tras drenar cola. */

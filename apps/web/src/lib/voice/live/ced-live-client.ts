@@ -21,6 +21,7 @@ import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import {
   isInputTranscriptionCompleted,
   isResponseAudioDelta,
+  isResponseAudioDone,
   isResponseAudioTranscriptDelta,
 } from "@/lib/voice/realtimeEvents";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
@@ -54,6 +55,7 @@ export type CedLiveHandlers = {
   onTranscript?: (text: string, role: "user" | "model") => void;
   onAudio?: (buffer: ArrayBuffer) => void;
   onTurnComplete?: () => void;
+  onModelAudioDone?: () => void;
   onInterrupted?: () => void;
   onSpeechStopped?: () => void;
   onToolStart?: (toolName: string) => void;
@@ -272,6 +274,11 @@ export class CedLiveClient {
           return;
         }
 
+        if (isResponseAudioDone(type)) {
+          handlers.onModelAudioDone?.();
+          return;
+        }
+
         if (isInputTranscriptionCompleted(type)) {
           const transcript = String(msg.transcript ?? "");
           if (transcript.trim()) {
@@ -311,7 +318,6 @@ export class CedLiveClient {
           }
           voiceTelemetry.markTurnComplete();
           handlers.onTurnComplete?.();
-          handlers.onToolComplete?.();
           return;
         }
 
