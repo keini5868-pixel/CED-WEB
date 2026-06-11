@@ -1,5 +1,6 @@
 import { parseApiJson } from "@/lib/api/http";
 import { proxyFetch } from "@/lib/api/ced-proxy";
+import type { VoiceSessionPreferences } from "@ced/types";
 
 export type RealtimeSessionResponse =
   | {
@@ -58,15 +59,28 @@ export async function negotiateRealtimeCall(
   return { ok: true, sdpAnswer };
 }
 
+export type RealtimeSessionOptions = Pick<
+  VoiceSessionPreferences,
+  "language" | "responseSpeed" | "voicePace" | "voiceWarmth" | "voiceEnergy"
+>;
+
 export async function fetchRealtimeSession(
   voiceName?: string,
+  options?: Partial<RealtimeSessionOptions>,
 ): Promise<RealtimeSessionResponse> {
   let response: Response;
+  const body: Record<string, string | number> = {};
+  if (voiceName) body.voiceName = voiceName;
+  if (options?.language) body.language = options.language;
+  if (options?.responseSpeed) body.responseSpeed = options.responseSpeed;
+  if (options?.voicePace !== undefined) body.voicePace = options.voicePace;
+  if (options?.voiceWarmth !== undefined) body.voiceWarmth = options.voiceWarmth;
+  if (options?.voiceEnergy !== undefined) body.voiceEnergy = options.voiceEnergy;
   try {
     response = await proxyFetch("openai/realtime/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(voiceName ? { voiceName } : {}),
+      body: JSON.stringify(Object.keys(body).length ? body : {}),
     });
   } catch {
     return {
@@ -186,4 +200,46 @@ export async function fetchDeepAnalysis(
     };
   }
   return { ok: true, result: data.result ?? data.text ?? "" };
+}
+
+export type GenerateImageResponse =
+  | { ok: true; url: string; quality?: string }
+  | { ok: false; error: string; code?: string };
+
+export async function fetchGenerateImage(
+  prompt: string,
+  quality: "auto" | "standard" | "hd" = "auto",
+  timeoutMs = 90000,
+): Promise<GenerateImageResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await proxyFetch("openai/images/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, quality }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const data = await parseApiJson<
+      GenerateImageResponse & { detail?: string; url?: string }
+    >(response);
+    if (!response.ok || !data.ok) {
+      return {
+        ok: false,
+        error:
+          ("detail" in data ? data.detail : undefined) ||
+          ("error" in data ? data.error : undefined) ||
+          "No se pudo generar la imagen",
+        code: "code" in data ? data.code : undefined,
+      };
+    }
+    return { ok: true, url: data.url, quality: data.quality };
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof Error && err.name === "AbortError") {
+      return { ok: false, error: "La generación de imagen tardó demasiado", code: "timeout" };
+    }
+    return { ok: false, error: "No se pudo contactar la API" };
+  }
 }

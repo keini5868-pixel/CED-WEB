@@ -8,7 +8,7 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
-from app.domain.openai_voice_prompt import OPENAI_REALTIME_SYSTEM_PROMPT
+from app.domain.openai_voice_prompt import build_realtime_instructions
 from app.services.openai_key_utils import openai_api_key_looks_valid, sanitize_openai_api_key
 from app.services.openai_voice_config import (
     REALTIME_MAX_OUTPUT_TOKENS,
@@ -17,6 +17,7 @@ from app.services.openai_voice_config import (
     REALTIME_TURN_DETECTION,
     REALTIME_TURN_DETECTION_FALLBACK,
     normalize_openai_voice,
+    profile_for_response_speed,
 )
 from app.services.openai_voice_tools import OPENAI_REALTIME_TOOLS
 
@@ -56,9 +57,12 @@ def _models_to_try(primary: str) -> list[str]:
     return out
 
 
-def _audio_input(turn_detection: dict[str, Any]) -> dict[str, Any]:
+def _audio_input(turn_detection: dict[str, Any], *, language: str = "es") -> dict[str, Any]:
+    transcription: dict[str, str] = {"model": "whisper-1"}
+    if language in ("es", "en", "pt"):
+        transcription["language"] = language
     return {
-        "transcription": {"model": "whisper-1"},
+        "transcription": transcription,
         "noise_reduction": REALTIME_NOISE_REDUCTION,
         "turn_detection": turn_detection,
     }
@@ -71,6 +75,8 @@ def _build_session_payload(
     instructions: str,
     with_tools: bool,
     turn_detection: dict[str, Any],
+    language: str = "es",
+    temperature: float | None = None,
 ) -> dict[str, Any]:
     session: dict[str, Any] = {
         "type": "realtime",
@@ -78,13 +84,13 @@ def _build_session_payload(
         "instructions": instructions[:8000],
         "output_modalities": ["audio"],
         "audio": {
-            "input": _audio_input(turn_detection),
+            "input": _audio_input(turn_detection, language=language),
             "output": {
                 "voice": voice,
             },
         },
         "max_output_tokens": REALTIME_MAX_OUTPUT_TOKENS,
-        "temperature": REALTIME_TEMPERATURE,
+        "temperature": temperature if temperature is not None else REALTIME_TEMPERATURE,
     }
     if with_tools:
         session["tools"] = OPENAI_REALTIME_TOOLS
@@ -98,6 +104,7 @@ def _build_minimal_payload(
     voice: str,
     instructions: str,
     turn_detection: dict[str, Any],
+    language: str = "es",
 ) -> dict[str, Any]:
     return {
         "expires_after": EXPIRES_AFTER,
@@ -106,7 +113,7 @@ def _build_minimal_payload(
             "model": model,
             "instructions": instructions[:8000],
             "audio": {
-                "input": _audio_input(turn_detection),
+                "input": _audio_input(turn_detection, language=language),
                 "output": {"voice": voice},
             },
         },
@@ -159,6 +166,11 @@ def create_realtime_session(
     *,
     user_id: str,
     voice_name: str | None = None,
+    language: str = "es",
+    response_speed: str = "balanced",
+    voice_pace: int = 50,
+    voice_warmth: int = 55,
+    voice_energy: int = 50,
 ) -> dict[str, Any]:
     settings = get_settings()
     api_key = sanitize_openai_api_key(settings.openai_api_key)
@@ -178,7 +190,15 @@ def create_realtime_session(
     model = _resolve_model(settings.openai_model_voice)
     project_id = getattr(settings, "openai_project_id", "") or ""
 
-    instructions = OPENAI_REALTIME_SYSTEM_PROMPT
+    instructions = build_realtime_instructions(
+        language=language or "es",
+        voice_pace=voice_pace,
+        voice_warmth=voice_warmth,
+        voice_energy=voice_energy,
+        response_speed=response_speed or "balanced",
+    )
+    lang = language or "es"
+    temperature, preferred_turn = profile_for_response_speed(response_speed)
     try:
         from app.services.cognitive_router import build_voice_system_extras
 
@@ -191,7 +211,8 @@ def create_realtime_session(
     attempts: list[tuple[str, dict[str, Any]]] = []
     for m in _models_to_try(model):
         for td_label, td in (
-            ("semantic", REALTIME_TURN_DETECTION),
+            ("semantic", preferred_turn),
+            ("semantic_default", REALTIME_TURN_DETECTION),
             ("server_vad", REALTIME_TURN_DETECTION_FALLBACK),
         ):
             attempts.append(
@@ -203,6 +224,8 @@ def create_realtime_session(
                         instructions=instructions,
                         with_tools=True,
                         turn_detection=td,
+                        language=lang,
+                        temperature=temperature,
                     ),
                 )
             )
@@ -215,6 +238,8 @@ def create_realtime_session(
                         instructions=instructions,
                         with_tools=False,
                         turn_detection=td,
+                        language=lang,
+                        temperature=temperature,
                     ),
                 )
             )
@@ -226,6 +251,7 @@ def create_realtime_session(
                         voice=voice,
                         instructions=instructions,
                         turn_detection=td,
+                        language=lang,
                     ),
                 )
             )

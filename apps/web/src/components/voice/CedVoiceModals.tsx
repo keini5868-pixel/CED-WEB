@@ -10,7 +10,7 @@ import {
   type ConversationRow,
 } from "@/lib/api/conversations";
 import { downloadPdfBlob, listSessionPdfs, type PdfArtifact } from "@/lib/api/pdf";
-import { GEMINI_VOICE_OPTIONS } from "@/lib/voice/geminiVoices";
+import { OPENAI_VOICE_OPTIONS } from "@/lib/voice/openaiVoices";
 
 export function CedStopConfirmModal({
   open,
@@ -101,7 +101,7 @@ export function CedSettingsModal({
               : " · Se aplicará al activar MIC"}
           </p>
           <div className="mt-2 grid max-h-48 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
-            {GEMINI_VOICE_OPTIONS.map((voice) => (
+            {OPENAI_VOICE_OPTIONS.map((voice) => (
               <button
                 key={voice.id}
                 type="button"
@@ -161,6 +161,77 @@ export function CedSettingsModal({
             <option value="pt">Português</option>
           </select>
         </label>
+
+        <div className="space-y-3 rounded border border-cyan-900/40 bg-black/40 p-3">
+          <p className="ced-hud-text-muted text-xs font-medium uppercase tracking-wider">
+            Ajuste fino de voz
+          </p>
+          <p className="ced-hud-text-muted text-[10px]">
+            OpenAI no permite cambiar tono en tiempo real como un ecualizador; estos controles
+            guían el estilo de CED en la próxima sesión (ritmo, calidez y expresividad).
+          </p>
+          <label className="block">
+            <span className="ced-hud-text-muted flex justify-between text-xs">
+              <span>Ritmo</span>
+              <span>{draft.voicePace}%</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={draft.voicePace}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, voicePace: Number(e.target.value) }))
+              }
+              className="mt-1 w-full accent-cyan-400"
+            />
+            <span className="ced-hud-text-muted flex justify-between text-[10px]">
+              <span>Pausado</span>
+              <span>Ágil</span>
+            </span>
+          </label>
+          <label className="block">
+            <span className="ced-hud-text-muted flex justify-between text-xs">
+              <span>Calidez</span>
+              <span>{draft.voiceWarmth}%</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={draft.voiceWarmth}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, voiceWarmth: Number(e.target.value) }))
+              }
+              className="mt-1 w-full accent-cyan-400"
+            />
+            <span className="ced-hud-text-muted flex justify-between text-[10px]">
+              <span>Formal</span>
+              <span>Cálido</span>
+            </span>
+          </label>
+          <label className="block">
+            <span className="ced-hud-text-muted flex justify-between text-xs">
+              <span>Expresividad</span>
+              <span>{draft.voiceEnergy}%</span>
+            </span>
+            <input
+              type="range"
+              min={0}
+              max={100}
+              value={draft.voiceEnergy}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, voiceEnergy: Number(e.target.value) }))
+              }
+              className="mt-1 w-full accent-cyan-400"
+            />
+            <span className="ced-hud-text-muted flex justify-between text-[10px]">
+              <span>Calma</span>
+              <span>Energía</span>
+            </span>
+          </label>
+        </div>
+
         <label className="block">
           <span className="ced-hud-text-muted text-xs">Velocidad</span>
           <select

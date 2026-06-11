@@ -5,11 +5,12 @@
 
 import type { VoiceSessionPreferences } from "@ced/types";
 
-import { fetchDeepAnalysis, fetchVoiceBrief, negotiateRealtimeCall } from "@/lib/api/openai";
+import { fetchDeepAnalysis, fetchGenerateImage, fetchVoiceBrief, negotiateRealtimeCall } from "@/lib/api/openai";
 import { fetchEphemeralTokenCached } from "@/lib/voice/ephemeralTokenCache";
 import { parseCameraIntent } from "@/lib/voice/cameraIntents";
 import { cedVoiceError, cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
 import {
+  ANALIZAR_CAMARA,
   BUSCAR_MEMORIA,
   CONSULTAR_SISTEMA_AVANZADO,
   GENERAR_PDF,
@@ -34,6 +35,7 @@ const TOOL_ALIAS: Record<string, string> = {
   recall_memory: BUSCAR_MEMORIA,
   generar_pdf: GENERAR_PDF,
   consultar_claude: CONSULTAR_SISTEMA_AVANZADO,
+  analyze_camera_frame: ANALIZAR_CAMARA,
 };
 
 export type GeminiCloseInfo = {
@@ -47,6 +49,9 @@ export type CedLiveConnectOptions = {
   voiceName?: string;
   language?: VoiceSessionPreferences["language"];
   responseSpeed?: VoiceSessionPreferences["responseSpeed"];
+  voicePace?: VoiceSessionPreferences["voicePace"];
+  voiceWarmth?: VoiceSessionPreferences["voiceWarmth"];
+  voiceEnergy?: VoiceSessionPreferences["voiceEnergy"];
   /** Stream de micrófono con echoCancellation (WebRTC uplink). */
   micStream: MediaStream;
 };
@@ -74,6 +79,7 @@ export type CedLiveHandlers = {
     name: string,
     args: Record<string, unknown>,
   ) => Promise<{ spoken?: string } | void>;
+  onGeneratedImage?: (url: string) => void;
 };
 
 function classifyPeerClose(unexpected: boolean): GeminiCloseInfo {
@@ -198,7 +204,13 @@ export class CedLiveClient {
     voiceTelemetry.setWsState("connecting");
     voiceTelemetry.setSessionId(`openai-webrtc-${Date.now()}`);
 
-    const tokenRes = await fetchEphemeralTokenCached(options.voiceName);
+    const tokenRes = await fetchEphemeralTokenCached(options.voiceName, {
+      language: options.language,
+      responseSpeed: options.responseSpeed,
+      voicePace: options.voicePace,
+      voiceWarmth: options.voiceWarmth,
+      voiceEnergy: options.voiceEnergy,
+    });
     if (isStale()) {
       this.connectInFlight = false;
       return false;
@@ -549,6 +561,31 @@ export class CedLiveClient {
         return;
       }
 
+      if (rawName === "generate_image") {
+        const prompt = String(args.prompt ?? "").trim();
+        const quality = String(args.quality ?? "auto");
+        h.onToolStart?.("generate_image");
+        const result = await fetchGenerateImage(
+          prompt || "imagen creativa",
+          quality as "auto" | "standard" | "hd",
+        );
+        if (result.ok) {
+          h.onGeneratedImage?.(result.url);
+          await this.submitToolOutput(callId, {
+            status: "ok",
+            spoken:
+              "Imagen generada. Puedo publicarla en Facebook o Instagram si quieres.",
+            image_url: result.url,
+          });
+        } else {
+          await this.submitToolOutput(callId, {
+            status: "error",
+            spoken: result.error || "No pude generar la imagen.",
+          });
+        }
+        return;
+      }
+
       if (name === CONSULTAR_SISTEMA_AVANZADO) {
         const prompt = String(args.prompt ?? args.query ?? "").trim();
         const allowed = h.shouldAllowAdvancedTool?.(prompt) ?? false;
@@ -557,7 +594,7 @@ export class CedLiveClient {
           await this.submitToolOutput(callId, {
             status: "needs_confirmation",
             message:
-              "Pregunta UNA sola vez si desea consultar al sistema avanzado. No repitas la pregunta.",
+              "Di EXACTAMENTE: 'Es complejo. ¿Lo investigamos con el sistema avanzado?' — una sola vez y espera respuesta.",
             prompt,
           });
           return;

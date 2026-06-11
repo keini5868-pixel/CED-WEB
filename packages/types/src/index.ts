@@ -146,6 +146,12 @@ export interface VoiceSessionPreferences {
   responseSpeed: "fast" | "balanced" | "thoughtful";
   voiceName: GeminiVoiceId;
   palette: VoicePaletteId;
+  /** 0 = más lento/pausado, 100 = más ágil */
+  voicePace: number;
+  /** 0 = más formal, 100 = más cálido/cercano */
+  voiceWarmth: number;
+  /** 0 = más calmada, 100 = más expresiva/energética */
+  voiceEnergy: number;
 }
 
 export const DEFAULT_VOICE_PREFERENCES: VoiceSessionPreferences = {
@@ -153,6 +159,9 @@ export const DEFAULT_VOICE_PREFERENCES: VoiceSessionPreferences = {
   responseSpeed: "fast",
   voiceName: "alloy",
   palette: "cyan",
+  voicePace: 50,
+  voiceWarmth: 55,
+  voiceEnergy: 50,
 };
 
 export type HudPanelId = "city" | "global" | "drones" | "waves" | "summary";

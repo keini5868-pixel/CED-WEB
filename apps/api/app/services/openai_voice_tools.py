@@ -8,7 +8,7 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "search_web",
-        "description": "Busca información actual en internet (clima, noticias, precios).",
+        "description": "Busca información actual en internet (clima, noticias, precios). NO usar para análisis profundo.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -25,7 +25,12 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "consultar_claude",
-        "description": "Análisis profundo. Invocar solo si el usuario confirmó o pidió explícitamente el sistema avanzado. No invocar para clima/noticias.",
+        "description": (
+            "Sistema avanzado para análisis profundo. "
+            "SOLO tras confirmación del usuario o petición explícita. "
+            "Si la pregunta es compleja y no confirmó: NO invocar — pregunta primero. "
+            "NUNCA para clima, noticias ni búsquedas web."
+        ),
         "parameters": {
             "type": "object",
             "properties": {"prompt": {"type": "string"}},
@@ -35,11 +40,15 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "generate_image",
-        "description": "Genera imagen con IA. quality: auto|standard|hd.",
+        "description": (
+            "Genera imagen con IA a partir de una descripción. "
+            "Usar cuando pidan crear/diseñar/generar una imagen. "
+            "Tras generar, la imagen queda lista para publicar en redes."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "prompt": {"type": "string"},
+                "prompt": {"type": "string", "description": "Descripción detallada de la imagen."},
                 "quality": {"type": "string", "enum": ["auto", "standard", "hd"]},
             },
             "required": ["prompt"],
@@ -72,10 +81,19 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "analyze_camera_frame",
-        "description": "Analiza lo visible en cámara (Pro+). Requiere cámara activa.",
+        "description": (
+            "OBLIGATORIO cuando el usuario pregunta qué ves en cámara o qué hay frente a la cámara. "
+            "Captura y analiza el frame actual. Requiere cámara activa (activarla si hace falta). "
+            "PROHIBIDO decir que no puedes ver sin invocar esta herramienta."
+        ),
         "parameters": {
             "type": "object",
-            "properties": {"pregunta": {"type": "string"}},
+            "properties": {
+                "pregunta": {
+                    "type": "string",
+                    "description": "Pregunta del usuario sobre lo visible, ej: '¿qué es esto?'",
+                },
+            },
         },
     },
     {
@@ -94,7 +112,10 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "activar_prospeccion",
-        "description": "Activa modo prospección Instagram (Élite+).",
+        "description": (
+            "Activa modo prospección / perspective mode (Élite+). "
+            "Usar cuando digan 'activa modo prospección', 'modo perspectiva' o 'perspective mode'."
+        ),
         "parameters": {"type": "object", "properties": {}},
     },
     {
@@ -112,12 +133,25 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "publicar_facebook",
-        "description": "Publica en Facebook conectado.",
+        "description": (
+            "OBLIGATORIO para publicar en Facebook. "
+            "Acepta texto + imagen opcional (image_data base64, cámara o imagen generada). "
+            "NO pidas URL al usuario — usa image_data o from_camera=true."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "mensaje": {"type": "string"},
-                "image_url": {"type": "string"},
+                "image_url": {"type": "string", "description": "Opcional si hay URL http"},
+                "image_data": {"type": "string", "description": "Data URL o base64 — preferido"},
+                "from_camera": {
+                    "type": "boolean",
+                    "description": "True para usar lo que muestra la cámara ahora",
+                },
+                "use_last_image": {
+                    "type": "boolean",
+                    "description": "True para usar la última imagen generada",
+                },
             },
             "required": ["mensaje"],
         },
@@ -125,14 +159,21 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "publicar_instagram",
-        "description": "Publica en Instagram con imagen URL.",
+        "description": (
+            "OBLIGATORIO para publicar en Instagram. "
+            "Requiere caption e imagen (image_data, from_camera o use_last_image). "
+            "NO pidas URL HTTPS al usuario."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
                 "caption": {"type": "string"},
                 "image_url": {"type": "string"},
+                "image_data": {"type": "string"},
+                "from_camera": {"type": "boolean"},
+                "use_last_image": {"type": "boolean"},
             },
-            "required": ["caption", "image_url"],
+            "required": ["caption"],
         },
     },
 ]

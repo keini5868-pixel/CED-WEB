@@ -7,7 +7,7 @@ import { ORB_STATE_LABELS } from "@ced/types";
 
 import { appendConversationMessage } from "@/lib/api/conversations";
 import { generatePdf } from "@/lib/api/pdf";
-import { fetchVoiceBrief } from "@/lib/api/openai";
+import { fetchVoiceBrief, fetchGenerateImage } from "@/lib/api/openai";
 import { saveMemory, searchMemory } from "@/lib/api/memory";
 import { schedulePanelSearch } from "@/lib/api/panels";
 import {
@@ -16,7 +16,7 @@ import {
   fetchProspectionReport,
 } from "@/lib/api/prospection";
 import { publishFacebook, publishInstagram } from "@/lib/api/social";
-import { fetchVisionWebSearch } from "@/lib/api/vision";
+import { fetchVisionAnalyze, fetchVisionWebSearch } from "@/lib/api/vision";
 import {
   endVoiceSession,
   startVoiceSession,
@@ -34,6 +34,7 @@ import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import { normalizeVoiceName } from "@/lib/voice/openaiVoices";
 import {
   ACTIVAR_PROSPECCION,
+  ANALIZAR_CAMARA,
   BUSCAR_LO_VISIBLE,
   BUSCAR_MEMORIA,
   CONSULTAR_SISTEMA_AVANZADO,
@@ -51,6 +52,20 @@ import {
   isVisualSearchIntent,
   parseRememberContent,
 } from "@/lib/voice/visualSearchIntent";
+import {
+  cameraAnalyzeQuestion,
+  isCameraAnalyzeIntent,
+} from "@/lib/voice/cameraAnalyzeIntent";
+import {
+  parseFacebookPublishMessage,
+  parseInstagramPublishRequest,
+} from "@/lib/voice/socialPublishIntent";
+import {
+  isGenerateImageIntent,
+  parseGenerateImagePrompt,
+  wantsCameraImageForPublish,
+  wantsLastImageForPublish,
+} from "@/lib/voice/imageIntents";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   loadVoicePreferences,
@@ -138,6 +153,7 @@ export function useCedVoiceSession(
   const pendingAdvancedPromptRef = useRef("");
   const webSearchDebounceRef = useRef<number | null>(null);
   const cameraPreviewRef = useRef<string | null>(null);
+  const lastPublishableImageRef = useRef<string | null>(null);
   const cameraCaptureVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCaptureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const micOnRef = useRef(micOn);
@@ -174,6 +190,66 @@ export function useCedVoiceSession(
     cameraPreviewRef.current = dataUrl;
     return dataUrl;
   }, []);
+
+  const waitForCameraFrame = useCallback(async (maxMs = 2400): Promise<string | null> => {
+    const started = Date.now();
+    while (Date.now() - started < maxMs) {
+      const frame = captureCameraJpeg();
+      if (frame) return frame;
+      await new Promise((r) => window.setTimeout(r, 120));
+    }
+    return captureCameraJpeg();
+  }, [captureCameraJpeg]);
+
+  const resolvePublishImage = useCallback(
+    async (
+      args: Record<string, unknown>,
+      userText = "",
+    ): Promise<{ imageUrl?: string; imageData?: string }> => {
+      const explicitData = String(args.image_data ?? args.imageData ?? "").trim();
+      if (explicitData) {
+        if (explicitData.startsWith("http")) return { imageUrl: explicitData };
+        return { imageData: explicitData };
+      }
+
+      const useCamera =
+        args.from_camera === true ||
+        args.fromCamera === true ||
+        wantsCameraImageForPublish(userText);
+      if (useCamera) {
+        if (!cameraStreamRef.current) {
+          await toggleCameraRef.current(true);
+        }
+        const frame = await waitForCameraFrame();
+        if (frame) return { imageData: frame };
+      }
+
+      const useLast =
+        args.use_last_image === true ||
+        args.useLastImage === true ||
+        wantsLastImageForPublish(userText);
+      if (useLast && lastPublishableImageRef.current) {
+        const last = lastPublishableImageRef.current;
+        if (last.startsWith("http")) return { imageUrl: last };
+        return { imageData: last };
+      }
+
+      const url = String(args.image_url ?? args.imagen ?? "").trim();
+      if (url) {
+        if (url.startsWith("http")) return { imageUrl: url };
+        return { imageData: url };
+      }
+
+      if (lastPublishableImageRef.current) {
+        const last = lastPublishableImageRef.current;
+        if (last.startsWith("http")) return { imageUrl: last };
+        return { imageData: last };
+      }
+
+      return {};
+    },
+    [waitForCameraFrame],
+  );
 
   const inputLevel = useAudioAnalyser(micStream, micOn && !paused);
   const inputLevelRef = useRef(0);
@@ -570,12 +646,102 @@ export function useCedVoiceSession(
         })();
       };
 
+      const runCameraAnalyze = (text: string) => {
+        if (webFetchRef.current) return;
+        webFetchRef.current = true;
+        setOrbState("processing");
+        setStatusLabel("Analizando cámara…");
+        void (async () => {
+          try {
+            if (!cameraStreamRef.current) {
+              await toggleCameraRef.current(true);
+            }
+            const frame = await waitForCameraFrame();
+            if (!frame) {
+              client.sendNarrationBrief(
+                "activa la cámara y muéstrame qué quieres que identifique.",
+              );
+              return;
+            }
+            lastPublishableImageRef.current = frame;
+            const question = cameraAnalyzeQuestion(text);
+            const result = await fetchVisionAnalyze(frame, question);
+            if (result.ok) {
+              client.sendNarrationBrief(result.summary);
+            } else {
+              client.sendNarrationBrief(`no pude analizar la cámara: ${result.error}`);
+            }
+          } catch {
+            client.sendNarrationBrief("falló el análisis de cámara. Inténtalo de nuevo.");
+          } finally {
+            webFetchRef.current = false;
+          }
+        })();
+      };
+
       const handleClientVoiceIntents = (text: string) => {
         const t = text.trim();
         if (!t) return;
 
-        if (isVisualSearchIntent(t) && cameraStreamRef.current) {
-          runVisualSearch(t);
+        const fbMessage = parseFacebookPublishMessage(t);
+        if (fbMessage) {
+          setOrbState("processing");
+          setStatusLabel("Publicando en Facebook…");
+          void (async () => {
+            const image = await resolvePublishImage({}, t);
+            const r = await publishFacebook(fbMessage, image);
+            if (isStale()) return;
+            client.sendNarrationBrief(r.ok ? r.spoken : r.error);
+          })();
+          return;
+        }
+
+        const igRequest = parseInstagramPublishRequest(t);
+        if (igRequest?.caption) {
+          setOrbState("processing");
+          setStatusLabel("Publicando en Instagram…");
+          void (async () => {
+            const image =
+              igRequest.imageUrl != null
+                ? { imageUrl: igRequest.imageUrl }
+                : await resolvePublishImage({}, t);
+            const r = await publishInstagram(igRequest.caption, image);
+            if (isStale()) return;
+            client.sendNarrationBrief(r.ok ? r.spoken : r.error);
+          })();
+          return;
+        }
+
+        const imagePrompt = parseGenerateImagePrompt(t);
+        if (imagePrompt && isGenerateImageIntent(t)) {
+          setOrbState("processing");
+          setStatusLabel("Generando imagen…");
+          void (async () => {
+            const r = await fetchGenerateImage(imagePrompt);
+            if (isStale()) return;
+            if (r.ok) {
+              lastPublishableImageRef.current = r.url;
+              client.sendNarrationBrief(
+                "Imagen generada. ¿La publico en Facebook o Instagram?",
+              );
+            } else {
+              client.sendNarrationBrief(r.error);
+            }
+          })();
+          return;
+        }
+
+        if (isCameraAnalyzeIntent(t)) {
+          runCameraAnalyze(t);
+          return;
+        }
+
+        if (isVisualSearchIntent(t)) {
+          if (!cameraStreamRef.current) {
+            void toggleCameraRef.current(true).then(() => runVisualSearch(t));
+          } else {
+            runVisualSearch(t);
+          }
           return;
         }
         if (isRememberIntent(t)) {
@@ -714,10 +880,15 @@ export function useCedVoiceSession(
             [PUBLICAR_FACEBOOK]: "Publicando en Facebook…",
             [PUBLICAR_INSTAGRAM]: "Publicando en Instagram…",
             [BUSCAR_LO_VISIBLE]: "Buscando lo que veo…",
+            [ANALIZAR_CAMARA]: "Analizando cámara…",
+            generate_image: "Generando imagen con IA…",
             [GENERAR_PDF]: "Generando PDF…",
           };
           setStatusLabel(labels[toolName] ?? "Consultando…");
           scheduleResponseWatchdog();
+        },
+        onGeneratedImage: (url) => {
+          lastPublishableImageRef.current = url;
         },
         onToolComplete: () => {
           if (isStale()) return;
@@ -785,7 +956,7 @@ export function useCedVoiceSession(
             const r = await enableProspection();
             return {
               spoken: r.ok
-                ? "modo prospección activado. Escaneo comentarios en segundo plano."
+                ? "Modo prospección activado."
                 : "no pude activar prospección.",
             };
           }
@@ -807,14 +978,16 @@ export function useCedVoiceSession(
             const message = String(
               args.mensaje ?? args.message ?? args.texto ?? "",
             ).trim();
-            const imageUrl = String(args.image_url ?? args.imagen ?? "").trim();
             if (!message) {
               return {
-                spoken:
-                  "indíqueme el texto que desea publicar en Facebook.",
+                spoken: "indícame el texto que deseas publicar en Facebook.",
               };
             }
-            const r = await publishFacebook(message, imageUrl || undefined);
+            const image = await resolvePublishImage(
+              args,
+              lastUserUtteranceRef.current,
+            );
+            const r = await publishFacebook(message, image);
             return {
               spoken: r.ok ? r.spoken : `${r.error}`,
             };
@@ -823,20 +996,31 @@ export function useCedVoiceSession(
             const caption = String(
               args.caption ?? args.mensaje ?? args.texto ?? "",
             ).trim();
-            const imageUrl = String(args.image_url ?? args.imagen ?? "").trim();
-            if (!caption || !imageUrl) {
+            if (!caption) {
               return {
-                spoken:
-                  "para Instagram necesito el texto y una URL pública HTTPS de la imagen.",
+                spoken: "indícame el texto del post de Instagram.",
               };
             }
-            const r = await publishInstagram(caption, imageUrl);
+            const image = await resolvePublishImage(
+              args,
+              lastUserUtteranceRef.current,
+            );
+            if (!image.imageUrl && !image.imageData) {
+              return {
+                spoken:
+                  "necesito una imagen: muéstrame en cámara, genera una con IA o pásame la foto.",
+              };
+            }
+            const r = await publishInstagram(caption, image);
             return {
               spoken: r.ok ? r.spoken : `${r.error}`,
             };
           }
           if (name === BUSCAR_LO_VISIBLE) {
-            const frame = captureCameraJpeg();
+            if (!cameraStreamRef.current) {
+              await toggleCameraRef.current(true);
+            }
+            const frame = await waitForCameraFrame();
             if (!frame) {
               return {
                 spoken: "active la cámara para buscar lo que veo.",
@@ -854,6 +1038,25 @@ export function useCedVoiceSession(
                   ? "configure Tavily para búsqueda visual."
                   : `no pude buscar: ${result.error}`,
             };
+          }
+          if (name === ANALIZAR_CAMARA) {
+            if (!cameraStreamRef.current) {
+              await toggleCameraRef.current(true);
+            }
+            const frame = await waitForCameraFrame();
+            if (!frame) {
+              return {
+                spoken: "no pude capturar la cámara. Actívala y vuelve a intentar.",
+              };
+            }
+            const pregunta = String(
+              args.pregunta ?? args.question ?? "¿Qué ves en la imagen?",
+            ).trim();
+            const result = await fetchVisionAnalyze(frame, pregunta);
+            if (result.ok) {
+              return { spoken: result.summary };
+            }
+            return { spoken: `no pude analizar la cámara: ${result.error}` };
           }
           if (name === GENERAR_PDF) {
             const title = String(args.titulo ?? args.title ?? "Documento CED").trim();
@@ -984,6 +1187,9 @@ export function useCedVoiceSession(
                 voiceName: prefsRef.current.voiceName,
                 language: prefsRef.current.language,
                 responseSpeed: prefsRef.current.responseSpeed,
+                voicePace: prefsRef.current.voicePace,
+                voiceWarmth: prefsRef.current.voiceWarmth,
+                voiceEnergy: prefsRef.current.voiceEnergy,
                 micStream: stream,
               });
               if (ok) {
@@ -1008,6 +1214,9 @@ export function useCedVoiceSession(
         voiceName: prefsRef.current.voiceName,
         language: prefsRef.current.language,
         responseSpeed: prefsRef.current.responseSpeed,
+        voicePace: prefsRef.current.voicePace,
+        voiceWarmth: prefsRef.current.voiceWarmth,
+        voiceEnergy: prefsRef.current.voiceEnergy,
         micStream: stream,
       });
 
@@ -1160,6 +1369,9 @@ export function useCedVoiceSession(
         voiceName: normalized,
         language: prefsRef.current.language,
         responseSpeed: prefsRef.current.responseSpeed,
+        voicePace: prefsRef.current.voicePace,
+        voiceWarmth: prefsRef.current.voiceWarmth,
+        voiceEnergy: prefsRef.current.voiceEnergy,
         micStream: stream,
       });
 

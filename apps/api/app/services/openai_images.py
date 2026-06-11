@@ -106,7 +106,16 @@ def generate_image(
     b64 = items[0].get("b64_json")
     public_url = url
     if not public_url and b64:
-        public_url = f"data:image/png;base64,{b64}"
+        from app.services.publish_media import decode_image_data, store_publish_image
+
+        data_url = f"data:image/png;base64,{b64}"
+        raw, mime = decode_image_data(data_url)
+        public_url = store_publish_image(user_id, raw, mime)
+    elif public_url.startswith("data:"):
+        from app.services.publish_media import decode_image_data, store_publish_image
+
+        raw, mime = decode_image_data(public_url)
+        public_url = store_publish_image(user_id, raw, mime)
 
     cost = HD_COST_USD if picked == "hd" else STD_COST_USD
     try:

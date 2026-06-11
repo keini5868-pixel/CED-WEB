@@ -9,6 +9,7 @@ const ACTIVATE_PATTERNS = [
   /\bmira\s+esta\s+imagen\b/i,
   /\bven[,]?\s*mira\b/i,
   /\bactiva(r)?\s+la\s+c[aá]mara\b/i,
+  /\bactivate\s+the\s+camera\b/i,
   /\benciende\s+la\s+c[aá]mara\b/i,
   /\bquiero\s+que\s+veas\b/i,
 ];

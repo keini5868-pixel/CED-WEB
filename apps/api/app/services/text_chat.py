@@ -221,13 +221,15 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
                 user_id,
                 str(tool_input.get("message") or ""),
                 image_url=tool_input.get("image_url"),
+                image_data=tool_input.get("image_data"),
             )
             return json.dumps(result)
         if name == "publicar_instagram":
             result = publish_instagram(
                 user_id,
                 str(tool_input.get("caption") or ""),
-                image_url=str(tool_input.get("image_url") or ""),
+                image_url=tool_input.get("image_url"),
+                image_data=tool_input.get("image_data"),
             )
             return json.dumps(result)
         if name == "generar_pdf":

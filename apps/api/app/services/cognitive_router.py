@@ -237,7 +237,9 @@ def route_message(
 
 
 def build_voice_system_extras(user_id: str) -> str:
-    """Inyectar al token Live: memoria + política del cerebro híbrido."""
+    """Inyectar al token Live: memoria + política + estado Meta."""
+    from app.services import supabase_db
+
     mem = memory_context_for_voice(user_id)
     policy = (
         "Política CED: responde directo si el tema es estable (conceptos, historia, negocio general). "
@@ -245,7 +247,21 @@ def build_voice_system_extras(user_id: str) -> str:
         "Sistema avanzado solo tras UNA confirmación del usuario para análisis profundo. "
         "Si ya confirmó, ejecuta sin volver a preguntar."
     )
-    parts = [policy]
+    conn = supabase_db.get_meta_connection(user_id)
+    if conn and conn.get("access_token"):
+        username = conn.get("ig_username") or "Meta"
+        meta = (
+            f"Estado Meta del usuario: CONECTADO (@{username}). "
+            "Puedes publicar en Facebook e Instagram con publicar_facebook / publicar_instagram. "
+            "Cuando confirmen el texto del post, INVOCA la herramienta de inmediato — no simules."
+        )
+    else:
+        meta = (
+            "Estado Meta del usuario: NO conectado. "
+            "Puedes redactar posts pero NO digas que publicaste. "
+            "Indica conectar Meta en el dashboard → Conectar Redes."
+        )
+    parts = [policy, meta]
     if mem:
         parts.append(mem)
     return "\n\n".join(parts)

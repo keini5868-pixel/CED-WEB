@@ -161,11 +161,17 @@ def meta_oauth_callback(
 class FacebookPublishBody(BaseModel):
     message: str = Field(min_length=1, max_length=5000)
     image_url: str | None = None
+    image_data: str | None = Field(default=None, alias="imageData")
+
+    model_config = {"populate_by_name": True}
 
 
 class InstagramPublishBody(BaseModel):
     caption: str = Field(min_length=1, max_length=2200)
-    image_url: str = Field(min_length=8)
+    image_url: str | None = None
+    image_data: str | None = Field(default=None, alias="imageData")
+
+    model_config = {"populate_by_name": True}
 
 
 @router.post("/publish/facebook")
@@ -174,7 +180,12 @@ def meta_publish_facebook(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     try:
-        return publish_facebook(user_id, body.message, image_url=body.image_url)
+        return publish_facebook(
+            user_id,
+            body.message,
+            image_url=body.image_url,
+            image_data=body.image_data,
+        )
     except MetaSocialError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -185,7 +196,12 @@ def meta_publish_instagram(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     try:
-        return publish_instagram(user_id, body.caption, image_url=body.image_url)
+        return publish_instagram(
+            user_id,
+            body.caption,
+            image_url=body.image_url,
+            image_data=body.image_data,
+        )
     except MetaSocialError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

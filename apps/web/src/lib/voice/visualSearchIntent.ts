@@ -28,6 +28,8 @@ const MEMORY_RECALL_PATTERNS = [
 const PROSPECTION_ON = [
   /\bactiva(r)?\s+prospecci[oó]n\b/i,
   /\bmodo\s+prospecci[oó]n\b/i,
+  /\bmodo\s+perspectiva\b/i,
+  /\bperspective\s+mode\b/i,
   /\bencender\s+prospecci[oó]n\b/i,
 ];
 

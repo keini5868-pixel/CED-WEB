@@ -36,8 +36,8 @@ apps/web/.env.local
 .DS_Store
 Thumbs.db
 
-# Turbo
-.turbo/
+# Imágenes temporales Meta (API)
+apps/api/data/publish_media/
 
 # Python venv
 .venv/

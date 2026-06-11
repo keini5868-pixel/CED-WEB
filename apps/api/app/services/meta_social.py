@@ -9,6 +9,7 @@ import httpx
 
 from app.config import get_settings
 from app.services import supabase_db
+from app.services.publish_media import resolve_image_input
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ def publish_facebook(
     message: str,
     *,
     image_url: str | None = None,
+    image_data: str | None = None,
 ) -> dict[str, Any]:
     text = (message or "").strip()
     if not text:
@@ -39,15 +41,31 @@ def publish_facebook(
     token = str(conn["access_token"])
     api_version = get_settings().meta_api_version.strip() or "v21.0"
 
-    if image_url and image_url.strip():
-        path = f"https://graph.facebook.com/{api_version}/{page_id}/photos"
-        payload = {"caption": text, "url": image_url.strip(), "access_token": token}
-    else:
-        path = f"https://graph.facebook.com/{api_version}/{page_id}/feed"
-        payload = {"message": text, "access_token": token}
+    public_url, image_bytes, mime = resolve_image_input(
+        user_id=user_id,
+        image_url=image_url,
+        image_data=image_data,
+    )
 
-    with httpx.Client(timeout=20.0) as client:
-        res = client.post(path, data=payload)
+    with httpx.Client(timeout=30.0) as client:
+        if image_bytes:
+            ext = "jpg" if "jpeg" in mime else "png"
+            path = f"https://graph.facebook.com/{api_version}/{page_id}/photos"
+            res = client.post(
+                path,
+                data={"caption": text, "access_token": token},
+                files={"source": (f"photo.{ext}", image_bytes, mime)},
+            )
+        elif public_url:
+            path = f"https://graph.facebook.com/{api_version}/{page_id}/photos"
+            res = client.post(
+                path,
+                data={"caption": text, "url": public_url, "access_token": token},
+            )
+        else:
+            path = f"https://graph.facebook.com/{api_version}/{page_id}/feed"
+            res = client.post(path, data={"message": text, "access_token": token})
+
         data = res.json()
         if res.status_code >= 400 or data.get("error"):
             err = data.get("error", {}).get("message") or str(data)
@@ -62,13 +80,20 @@ def publish_instagram(
     caption: str,
     *,
     image_url: str | None = None,
+    image_data: str | None = None,
 ) -> dict[str, Any]:
     text = (caption or "").strip()
     if not text:
         raise MetaSocialError("El caption de Instagram no puede estar vacío.")
-    if not image_url or not image_url.strip():
+
+    public_url, _, _ = resolve_image_input(
+        user_id=user_id,
+        image_url=image_url,
+        image_data=image_data,
+    )
+    if not public_url:
         raise MetaSocialError(
-            "Instagram requiere una URL pública de imagen. Indique image_url HTTPS."
+            "Instagram requiere una imagen. Muéstrame la foto, genera una con IA o pásame la imagen."
         )
 
     conn = _connection(user_id)
@@ -83,7 +108,7 @@ def publish_instagram(
             f"https://graph.facebook.com/{api_version}/{ig_id}/media",
             data={
                 "caption": text,
-                "image_url": image_url.strip(),
+                "image_url": public_url,
                 "access_token": token,
             },
         ).json()

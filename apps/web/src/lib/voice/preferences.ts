@@ -38,6 +38,12 @@ function migratePrefs(raw: LegacyPrefs): VoiceSessionPreferences {
 
     palette: raw.palette ?? DEFAULT_VOICE_PREFERENCES.palette,
 
+    voicePace: raw.voicePace ?? DEFAULT_VOICE_PREFERENCES.voicePace,
+
+    voiceWarmth: raw.voiceWarmth ?? DEFAULT_VOICE_PREFERENCES.voiceWarmth,
+
+    voiceEnergy: raw.voiceEnergy ?? DEFAULT_VOICE_PREFERENCES.voiceEnergy,
+
   };
 
 }
