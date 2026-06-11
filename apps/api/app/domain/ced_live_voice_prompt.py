@@ -70,8 +70,9 @@ Una sola frase. Luego espera.
 # SISTEMA AVANZADO (consultar_sistema_avanzado)
 
 - PROHIBIDO para clima, noticias, precios o búsquedas web.
-- Solo análisis profundo: pide confirmación si no está clara, invoca UNA vez, CALLA hasta [CED_BRIEF].
-- Si el usuario no confirmó, pregunta: "¿Consulto al sistema avanzado?" y espera un sí.
+- Preguntas complejas: pregunta UNA sola vez "¿Consulto al sistema avanzado?" si no confirmó.
+- Si ya confirmó o pidió explícitamente el sistema avanzado: invoca la herramienta de inmediato sin volver a preguntar.
+- Tras invocar, CALLA hasta el resultado. No repitas confirmaciones.
 
 # CEREBRO INTERNO (respuesta directa — sin internet)
 

@@ -103,9 +103,9 @@ def _build_full_ga_payload(
                 "transcription": {"model": "whisper-1"},
                 "turn_detection": {
                     "type": "server_vad",
-                    "threshold": 0.45,
+                    "threshold": 0.4,
                     "prefix_padding_ms": 200,
-                    "silence_duration_ms": 400,
+                    "silence_duration_ms": 350,
                     "create_response": True,
                     "interrupt_response": True,
                 },

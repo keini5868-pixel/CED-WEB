@@ -98,6 +98,9 @@ export class CedLiveClient {
   private modelTranscriptAcc = "";
   private processedCallIds = new Set<string>();
   private recentToolAt = new Map<string, number>();
+  private activeResponseId: string | null = null;
+  private responseInProgress = false;
+  private modelAudioActive = false;
   private static TOOL_COOLDOWN_MS = 2000;
   private handlers: CedLiveHandlers = {};
 
@@ -137,6 +140,9 @@ export class CedLiveClient {
     this.modelTranscriptAcc = "";
     this.processedCallIds.clear();
     this.recentToolAt.clear();
+    this.activeResponseId = null;
+    this.responseInProgress = false;
+    this.modelAudioActive = false;
 
     const generation = this.connectGen;
     const isStale = () => generation !== this.connectGen;
@@ -258,9 +264,17 @@ export class CedLiveClient {
           return;
         }
 
+        if (type === "response.created") {
+          const response = msg.response as { id?: string } | undefined;
+          this.activeResponseId = response?.id ?? null;
+          this.responseInProgress = true;
+          return;
+        }
+
         if (isResponseAudioDelta(type)) {
           const delta = String(msg.delta ?? "");
           if (delta) {
+            this.modelAudioActive = true;
             voiceTelemetry.markPcmReceived(`pcm16 · ${delta.length}b`);
             handlers.onAudio?.(base64ToArrayBuffer(delta));
           }
@@ -297,17 +311,34 @@ export class CedLiveClient {
 
         if (type === "input_audio_buffer.speech_started") {
           voiceTelemetry.markInterrupted();
+          if (this.responseInProgress || this.modelAudioActive) {
+            const cancel: Record<string, unknown> = { type: "response.cancel" };
+            if (this.activeResponseId) cancel.response_id = this.activeResponseId;
+            this.send(cancel);
+          }
+          this.modelAudioActive = false;
           this.userTranscriptAcc = "";
           this.modelTranscriptAcc = "";
           handlers.onInterrupted?.();
           return;
         }
 
+        if (type === "response.cancelled") {
+          this.activeResponseId = null;
+          this.responseInProgress = false;
+          this.modelAudioActive = false;
+          handlers.onInterrupted?.();
+          return;
+        }
+
         if (type === "response.done") {
-          const response = msg.response as { status?: string } | undefined;
+          const response = msg.response as { status?: string; id?: string } | undefined;
           if (response?.status === "cancelled") {
             cedVoiceLog(5, "OpenAI response cancelled (server VAD)");
           }
+          this.activeResponseId = null;
+          this.responseInProgress = false;
+          this.modelAudioActive = false;
           if (this.modelTranscriptAcc.trim()) {
             handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
             this.modelTranscriptAcc = "";
@@ -441,13 +472,14 @@ export class CedLiveClient {
       if (!allowed) {
         h.onAdvancedToolBlocked?.(prompt);
         this.submitToolOutput(callId, {
-          status: "blocked",
-          reason: "Requiere confirmación.",
+          status: "needs_confirmation",
+          message:
+            "Pregunta UNA sola vez si desea consultar al sistema avanzado. No repitas la pregunta.",
+          prompt,
         });
         return;
       }
       h.onToolStart?.(name);
-      this.sendAdvancedSystemAck();
       const result = await fetchDeepAnalysis(
         prompt || "consulta general",
         CED_VOICE_PROFILE_LOCK.advancedSystem.fetchTimeoutMs,

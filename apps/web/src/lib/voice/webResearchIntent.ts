@@ -84,18 +84,7 @@ export function webBriefTimeoutMs(kind: WebBriefKind): number {
   return 24000;
 }
 
-const ADVANCED_CONFIRM_PATTERNS = [
-  /\b(s[ií]|s[ií]\s+se[nñ]or|si\s+se[nñ]or)\b/i,
-  /\badelante\b/i,
-  /\bconsulta(lo|me|lo)?\b/i,
-  /\bpor favor\b/i,
-  /\bconfirma(do)?\b/i,
-  /\bhazlo\b/i,
-  /\bde acuerdo\b/i,
-  /\bok\b/i,
-  /\bvale\b/i,
-  /\bdale\b/i,
-];
+const ADVANCED_CONFIRM_ANSWER = /^(s[ií]|s[ií]\s+se[nñ]or|si\s+se[nñ]or|adelante|ok|vale|dale|de acuerdo|hazlo|confirmado|por favor|claro|exacto|correcto|bueno)[\s.!?,]*$/i;
 
 const EXPLICIT_ADVANCED_PATTERNS = [
   /\bsistema avanzado\b/i,
@@ -103,17 +92,51 @@ const EXPLICIT_ADVANCED_PATTERNS = [
   /\banaliza(r|me)?\s+(en detalle|a fondo|profundo)\b/i,
   /\bconsulta(r|me)?\s+al sistema\b/i,
   /\bmodo (profundo|avanzado)\b/i,
+  /\bactiva(r)?\s+el sistema avanzado\b/i,
 ];
 
-/** Usuario confirmó explícitamente consultar al sistema avanzado. */
+const COMPLEX_ANALYSIS_PATTERNS = [
+  /\ban[aá]lisis profundo\b/i,
+  /\banaliza(r|me)?\s+(en detalle|a fondo|profundo)\b/i,
+  /\bestrategia\b/i,
+  /\bplan de acci[oó]n\b/i,
+  /\bcompar(a|ar|me)\b.*\b(opciones|alternativas|pros y contras)\b/i,
+  /\bventajas y desventajas\b/i,
+  /\bimplicaciones\b/i,
+  /\bescenarios\b/i,
+  /\bpros y contras\b/i,
+  /\broadmap\b/i,
+  /\bframework\b/i,
+];
+
+/** Respuesta corta de confirmación (sí, adelante, ok). */
+export function isAdvancedConfirmAnswer(text: string): boolean {
+  const t = normalizeTranscript(text).trim();
+  if (!t || t.length > 36) return false;
+  if (ADVANCED_CONFIRM_ANSWER.test(t)) return true;
+  const words = t.split(/\s+/);
+  if (words.length <= 4 && /^(s[ií]|adelante|claro|dale|vale|ok)\b/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/** @deprecated Usar isAdvancedConfirmAnswer */
 export function hasAdvancedSystemConfirmation(text: string): boolean {
-  const t = normalizeTranscript(text);
-  return ADVANCED_CONFIRM_PATTERNS.some((p) => p.test(t));
+  return isAdvancedConfirmAnswer(text);
 }
 
 export function isExplicitAdvancedRequest(text: string): boolean {
   const t = normalizeTranscript(text);
   return EXPLICIT_ADVANCED_PATTERNS.some((p) => p.test(t));
+}
+
+/** Pregunta compleja que amerita sistema avanzado (no clima/noticias). */
+export function isComplexAnalysisRequest(text: string): boolean {
+  const t = normalizeTranscript(text);
+  if (t.length < 12) return false;
+  if (isWebResearchIntent(t) || isWeatherIntent(t) || isNewsIntent(t)) return false;
+  return COMPLEX_ANALYSIS_PATTERNS.some((p) => p.test(t));
 }
 
 export function shouldAllowAdvancedTool(
@@ -123,19 +146,16 @@ export function shouldAllowAdvancedTool(
   confirmPending = false,
 ): boolean {
   if (webFetchActive) return false;
-  if (isWebResearchIntent(userText) || isWebResearchIntent(toolPrompt)) {
-    return false;
-  }
+  if (isWebResearchIntent(userText) || isWebResearchIntent(toolPrompt)) return false;
   if (isWeatherIntent(userText) || isWeatherIntent(toolPrompt)) return false;
-  if (
-    hasAdvancedSystemConfirmation(userText) ||
-    hasAdvancedSystemConfirmation(toolPrompt)
-  ) {
-    return true;
-  }
-  if (confirmPending && hasAdvancedSystemConfirmation(userText)) return true;
+
   if (isExplicitAdvancedRequest(userText) || isExplicitAdvancedRequest(toolPrompt)) {
     return true;
   }
+
+  if (confirmPending && isAdvancedConfirmAnswer(userText)) {
+    return true;
+  }
+
   return false;
 }

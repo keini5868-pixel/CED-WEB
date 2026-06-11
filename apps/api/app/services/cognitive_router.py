@@ -242,7 +242,8 @@ def build_voice_system_extras(user_id: str) -> str:
     policy = (
         "Política CED: responde directo si el tema es estable (conceptos, historia, negocio general). "
         "Usa búsqueda web solo para clima, noticias, precios o datos de hoy. "
-        "Sistema avanzado solo tras confirmación del usuario para análisis profundo."
+        "Sistema avanzado solo tras UNA confirmación del usuario para análisis profundo. "
+        "Si ya confirmó, ejecuta sin volver a preguntar."
     )
     parts = [policy]
     if mem:

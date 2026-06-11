@@ -25,7 +25,7 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "consultar_claude",
-        "description": "Análisis profundo. Solo tras confirmación del usuario.",
+        "description": "Análisis profundo. Invocar solo si el usuario confirmó o pidió explícitamente el sistema avanzado. No invocar para clima/noticias.",
         "parameters": {
             "type": "object",
             "properties": {"prompt": {"type": "string"}},

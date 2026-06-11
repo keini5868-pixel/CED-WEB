@@ -50,7 +50,7 @@ import {
   PUBLICAR_INSTAGRAM,
   GENERAR_PDF,
 } from "@/lib/voice/liveTools";
-import { hasAdvancedSystemConfirmation, isSearchStatusIntent, isWeatherIntent, isWebResearchIntent, shouldAllowAdvancedTool, webBriefKind, webBriefTimeoutMs } from "@/lib/voice/webResearchIntent";
+import { isAdvancedConfirmAnswer, isComplexAnalysisRequest, isExplicitAdvancedRequest, isSearchStatusIntent, isWeatherIntent, isWebResearchIntent, shouldAllowAdvancedTool, webBriefKind, webBriefTimeoutMs } from "@/lib/voice/webResearchIntent";
 import {
   isMemoryRecallIntent,
   isRememberIntent,
@@ -141,6 +141,8 @@ export function useCedVoiceSession(
   const lastWebQueryRef = useRef("");
   const lastUserUtteranceRef = useRef("");
   const advancedConfirmPendingRef = useRef(false);
+  const advancedConfirmAskedRef = useRef(false);
+  const pendingAdvancedPromptRef = useRef("");
   const webSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraPreviewRef = useRef<string | null>(null);
   const cameraCaptureVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -278,6 +280,9 @@ export function useCedVoiceSession(
       webSearchDebounceRef.current = null;
     }
     reconnectAttemptRef.current = 0;
+    advancedConfirmPendingRef.current = false;
+    advancedConfirmAskedRef.current = false;
+    pendingAdvancedPromptRef.current = "";
     setPaused(false);
     setOrbState("idle");
     setStatusLabel(ORB_STATE_LABELS.idle);
@@ -738,7 +743,21 @@ export function useCedVoiceSession(
           void persistMessage(role, text);
           if (role === "user") {
             modelRepliedTurnRef.current = false;
-            lastUserUtteranceRef.current = text.trim();
+            const trimmed = text.trim();
+            lastUserUtteranceRef.current = trimmed;
+            if (isAdvancedConfirmAnswer(trimmed) && advancedConfirmPendingRef.current) {
+              /* esperando que el modelo invoque la herramienta */
+            } else if (
+              isComplexAnalysisRequest(trimmed) ||
+              isExplicitAdvancedRequest(trimmed)
+            ) {
+              advancedConfirmAskedRef.current = false;
+              advancedConfirmPendingRef.current = false;
+              pendingAdvancedPromptRef.current = "";
+            } else if (!advancedConfirmPendingRef.current) {
+              advancedConfirmAskedRef.current = false;
+              pendingAdvancedPromptRef.current = "";
+            }
             if (isSearchStatusIntent(text)) {
               handleSearchStatus(text.trim());
             } else if (isWebResearchIntent(text) && !webFetchRef.current) {
@@ -766,6 +785,8 @@ export function useCedVoiceSession(
           if (isStale()) return;
           if (toolName === CONSULTAR_SISTEMA_AVANZADO) {
             advancedConfirmPendingRef.current = false;
+            advancedConfirmAskedRef.current = false;
+            pendingAdvancedPromptRef.current = "";
           }
           modelSpeakingRef.current = true;
           setOrbState("processing");
@@ -803,12 +824,17 @@ export function useCedVoiceSession(
             runWebSearch(q);
             return;
           }
-          if (!webFetchRef.current && !hasAdvancedSystemConfirmation(lastUserUtteranceRef.current)) {
-            advancedConfirmPendingRef.current = true;
-            client.sendNarrationBrief(
-              "¿Quieres que consulte al sistema avanzado? Confirma con un sí.",
-            );
+          if (webFetchRef.current || advancedConfirmAskedRef.current) return;
+          if (
+            isExplicitAdvancedRequest(lastUserUtteranceRef.current) ||
+            isExplicitAdvancedRequest(q)
+          ) {
+            return;
           }
+          advancedConfirmAskedRef.current = true;
+          advancedConfirmPendingRef.current = true;
+          pendingAdvancedPromptRef.current = q;
+          cedVoiceLog(5, "Sistema avanzado: esperando confirmación del usuario");
         },
         onLiveTool: async (name, args) => {
           if (name === GUARDAR_MEMORIA) {
