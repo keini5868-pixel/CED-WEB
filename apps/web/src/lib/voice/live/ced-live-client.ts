@@ -20,6 +20,7 @@ import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import {
   isInputTranscriptionCompleted,
+  isResponseAudioDone,
   isResponseAudioTranscriptDelta,
 } from "@/lib/voice/realtimeEvents";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
@@ -57,6 +58,8 @@ export type CedLiveHandlers = {
   onTranscript?: (text: string, role: "user" | "model") => void;
   /** WebRTC reproduce audio remoto; callback opcional para UI (inicio de respuesta). */
   onResponseStart?: () => void;
+  /** Audio remoto terminó de transmitirse (antes de response.done). */
+  onModelAudioDone?: () => void;
   onTurnComplete?: () => void;
   onInterrupted?: () => void;
   onSpeechStopped?: () => void;
@@ -107,6 +110,19 @@ export class CedLiveClient {
 
   isOpen(): boolean {
     return Boolean(this.pc && this.sessionReady && !this.sendBlocked);
+  }
+
+  isResponseActive(): boolean {
+    return this.responseInProgress;
+  }
+
+  /** Libera estado colgado si response.done no llegó (WebRTC). */
+  forceReleaseTurn(): void {
+    if (!this.responseInProgress && !this.activeResponseId) return;
+    cedVoiceLog(4, "forceReleaseTurn — liberando respuesta colgada");
+    this.activeResponseId = null;
+    this.responseInProgress = false;
+    this.flushInputAudioBuffer();
   }
 
   /** Compat — WebRTC maneja half-duplex con AEC nativo. */
@@ -360,6 +376,11 @@ export class CedLiveClient {
       return;
     }
 
+    if (isResponseAudioDone(type)) {
+      handlers.onModelAudioDone?.();
+      return;
+    }
+
     if (isInputTranscriptionCompleted(type)) {
       const transcript = String(msg.transcript ?? "");
       if (transcript.trim()) {
@@ -464,6 +485,9 @@ export class CedLiveClient {
       const start = performance.now();
       const tick = () => {
         if (!this.responseInProgress || performance.now() - start > maxMs) {
+          if (this.responseInProgress && performance.now() - start > maxMs) {
+            this.forceReleaseTurn();
+          }
           resolve();
           return;
         }
@@ -515,47 +539,51 @@ export class CedLiveClient {
     const h = this.handlers;
     const name = TOOL_ALIAS[rawName] ?? rawName;
 
-    if (rawName === "search_web") {
-      const query = String(args.query ?? "").trim();
-      h.onToolStart?.("search_web");
-      const brief = await fetchVoiceBrief(query || "noticias hoy", "news");
-      const spoken = brief.ok ? brief.summary : "No pude buscar en internet.";
-      await this.submitToolOutput(callId, { status: "ok", spoken });
-      return;
-    }
-
-    if (name === CONSULTAR_SISTEMA_AVANZADO) {
-      const prompt = String(args.prompt ?? args.query ?? "").trim();
-      const allowed = h.shouldAllowAdvancedTool?.(prompt) ?? false;
-      if (!allowed) {
-        h.onAdvancedToolBlocked?.(prompt);
-        await this.submitToolOutput(callId, {
-          status: "needs_confirmation",
-          message:
-            "Pregunta UNA sola vez si desea consultar al sistema avanzado. No repitas la pregunta.",
-          prompt,
-        });
+    try {
+      if (rawName === "search_web") {
+        const query = String(args.query ?? "").trim();
+        h.onToolStart?.("search_web");
+        const brief = await fetchVoiceBrief(query || "noticias hoy", "news");
+        const spoken = brief.ok ? brief.summary : "No pude buscar en internet.";
+        await this.submitToolOutput(callId, { status: "ok", spoken });
         return;
       }
-      h.onToolStart?.(name);
-      const result = await fetchDeepAnalysis(
-        prompt || "consulta general",
-        CED_VOICE_PROFILE_LOCK.advancedSystem.fetchTimeoutMs,
-      );
-      const spoken = result.ok ? result.result : "No pude completar el análisis.";
-      await this.submitToolOutput(callId, { status: result.ok ? "ok" : "error", spoken });
-      return;
-    }
 
-    if (LIVE_TOOL_NAMES.has(name) && h.onLiveTool) {
-      h.onToolStart?.(name);
-      const result = await h.onLiveTool(name, args);
-      const spoken = result?.spoken ?? "Listo.";
-      await this.submitToolOutput(callId, { status: "ok", spoken });
-      return;
-    }
+      if (name === CONSULTAR_SISTEMA_AVANZADO) {
+        const prompt = String(args.prompt ?? args.query ?? "").trim();
+        const allowed = h.shouldAllowAdvancedTool?.(prompt) ?? false;
+        if (!allowed) {
+          h.onAdvancedToolBlocked?.(prompt);
+          await this.submitToolOutput(callId, {
+            status: "needs_confirmation",
+            message:
+              "Pregunta UNA sola vez si desea consultar al sistema avanzado. No repitas la pregunta.",
+            prompt,
+          });
+          return;
+        }
+        h.onToolStart?.(name);
+        const result = await fetchDeepAnalysis(
+          prompt || "consulta general",
+          CED_VOICE_PROFILE_LOCK.advancedSystem.fetchTimeoutMs,
+        );
+        const spoken = result.ok ? result.result : "No pude completar el análisis.";
+        await this.submitToolOutput(callId, { status: result.ok ? "ok" : "error", spoken });
+        return;
+      }
 
-    await this.submitToolOutput(callId, { status: "unknown_tool", name: rawName });
+      if (LIVE_TOOL_NAMES.has(name) && h.onLiveTool) {
+        h.onToolStart?.(name);
+        const result = await h.onLiveTool(name, args);
+        const spoken = result?.spoken ?? "Listo.";
+        await this.submitToolOutput(callId, { status: "ok", spoken });
+        return;
+      }
+
+      await this.submitToolOutput(callId, { status: "unknown_tool", name: rawName });
+    } finally {
+      h.onToolComplete?.();
+    }
   }
 
   private async submitToolOutput(

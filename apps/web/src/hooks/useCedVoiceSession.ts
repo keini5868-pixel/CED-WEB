@@ -64,6 +64,9 @@ const VIDEO_CAPTURE_WIDTH = 640;
 const VIDEO_CAPTURE_HEIGHT = 480;
 const USAGE_TICK_SECONDS = 15;
 const MAX_WS_RECONNECT = 3;
+/** Si el turno no cierra, liberar mic/UI (WebRTC). */
+const TURN_STUCK_MS = 16000;
+const PROCESSING_STUCK_MS = 10000;
 
 export interface CedVoiceSessionCallbacks {
   onTranscript?: (text: string, role: "user" | "model") => void;
@@ -126,7 +129,7 @@ export function useCedVoiceSession(
   const reconnectAttemptRef = useRef(0);
   const prefsRef = useRef(prefs);
   const modelSpeakingRef = useRef(false);
-  const micGateOpenRef = useRef(false);
+  const clientWebSearchRef = useRef(false);
   const webFetchRef = useRef(false);
   const lastWebQueryRef = useRef("");
   const lastUserUtteranceRef = useRef("");
@@ -246,7 +249,7 @@ export function useCedVoiceSession(
     setHeardIndicator(INITIAL_HEARD);
     modelRepliedTurnRef.current = false;
     modelSpeakingRef.current = false;
-    micGateOpenRef.current = false;
+    clientWebSearchRef.current = false;
     webFetchRef.current = false;
     lastWebQueryRef.current = "";
     if (webSearchDebounceRef.current) {
@@ -358,8 +361,7 @@ export function useCedVoiceSession(
       const client = new CedLiveClient();
       clientRef.current = client;
       client.setRemoteMuted(mutedRef.current);
-      client.setMicTrackEnabled(false);
-      micGateOpenRef.current = false;
+      client.setMicTrackEnabled(!pausedRef.current);
 
       usageIntervalRef.current = setInterval(() => {
         const sid = usageSessionRef.current;
@@ -392,13 +394,52 @@ export function useCedVoiceSession(
 
       const micActiveRef = { current: true };
       const greetingSentRef = { current: false };
-      const greetingTurnPendingRef = { current: true };
       const setupTimerRef = { current: null as number | null };
+      const responseWatchdogRef = { current: null as number | null };
+      const lastResponseStartRef = { current: 0 };
+
+      const clearResponseWatchdog = () => {
+        if (responseWatchdogRef.current) {
+          clearTimeout(responseWatchdogRef.current);
+          responseWatchdogRef.current = null;
+        }
+      };
+
+      const releaseStuckConversation = (reason: string) => {
+        cedVoiceLog(4, "Watchdog conversación", { reason });
+        clearResponseWatchdog();
+        modelSpeakingRef.current = false;
+        if (!clientWebSearchRef.current) {
+          webFetchRef.current = false;
+        }
+        client.forceReleaseTurn();
+        client.setMicTrackEnabled(!pausedRef.current);
+        client.flushInputAudioBuffer();
+        if (micActiveRef.current && !clientWebSearchRef.current) {
+          enableListeningUi();
+        }
+      };
+
+      const scheduleResponseWatchdog = () => {
+        clearResponseWatchdog();
+        responseWatchdogRef.current = window.setTimeout(() => {
+          responseWatchdogRef.current = null;
+          if (isStale() || !micActiveRef.current) return;
+          if (
+            modelSpeakingRef.current ||
+            client.isResponseActive() ||
+            orbStateRef.current === "processing" ||
+            orbStateRef.current === "speaking"
+          ) {
+            releaseStuckConversation("turn_timeout");
+          }
+        }, TURN_STUCK_MS);
+      };
 
       const enableListeningUi = () => {
         if (isStale() || !micActiveRef.current) return;
         setHeardIndicator({ status: "listening", userText: null, heardAt: null });
-        if (!webFetchRef.current && !modelSpeakingRef.current) {
+        if (!webFetchRef.current && !modelSpeakingRef.current && !clientWebSearchRef.current) {
           setOrbState("listening");
           setStatusLabel(ORB_STATE_LABELS.listening);
         }
@@ -413,6 +454,7 @@ export function useCedVoiceSession(
         }
         cedVoiceLog(5, "Web search", { q: q.slice(0, 80), kind: webBriefKind(q) });
         webFetchRef.current = true;
+        clientWebSearchRef.current = true;
         lastWebQueryRef.current = q;
         setOrbState("processing");
         setStatusLabel("Buscando en internet…");
@@ -469,6 +511,7 @@ export function useCedVoiceSession(
               narrate("no obtuve respuesta del buscador.");
             }
             webFetchRef.current = false;
+            clientWebSearchRef.current = false;
             if (!succeeded) lastWebQueryRef.current = "";
           }
         })();
@@ -653,15 +696,6 @@ export function useCedVoiceSession(
         },
         onToolStart: (toolName) => {
           if (isStale()) return;
-          if (toolName === "search_web") {
-            webFetchRef.current = true;
-            if (webSearchDebounceRef.current) {
-              clearTimeout(webSearchDebounceRef.current);
-              webSearchDebounceRef.current = null;
-            }
-            setOrbState("processing");
-            setStatusLabel("Buscando en internet…");
-          }
           if (toolName === CONSULTAR_SISTEMA_AVANZADO) {
             advancedConfirmPendingRef.current = false;
             advancedConfirmAskedRef.current = false;
@@ -670,6 +704,7 @@ export function useCedVoiceSession(
           modelSpeakingRef.current = true;
           setOrbState("processing");
           const labels: Record<string, string> = {
+            search_web: "Buscando en internet…",
             [CONSULTAR_SISTEMA_AVANZADO]: "Consultando sistema avanzado…",
             [GUARDAR_MEMORIA]: "Guardando en memoria…",
             [BUSCAR_MEMORIA]: "Consultando memoria…",
@@ -682,6 +717,11 @@ export function useCedVoiceSession(
             [GENERAR_PDF]: "Generando PDF…",
           };
           setStatusLabel(labels[toolName] ?? "Consultando…");
+          scheduleResponseWatchdog();
+        },
+        onToolComplete: () => {
+          if (isStale()) return;
+          scheduleResponseWatchdog();
         },
         shouldAllowAdvancedTool: (toolPrompt) =>
           shouldAllowAdvancedTool(
@@ -833,8 +873,11 @@ export function useCedVoiceSession(
         },
         onResponseStart: () => {
           if (isStale()) return;
+          lastResponseStartRef.current = Date.now();
           modelSpeakingRef.current = true;
           modelRepliedTurnRef.current = true;
+          clearResponseWatchdog();
+          scheduleResponseWatchdog();
           setOrbState("speaking");
           setStatusLabel(ORB_STATE_LABELS.speaking);
           setHeardIndicator((prev) =>
@@ -845,8 +888,9 @@ export function useCedVoiceSession(
         },
         onInterrupted: () => {
           cedVoiceLog(5, "OpenAI interrupted");
+          clearResponseWatchdog();
           modelSpeakingRef.current = false;
-          client.setMicTrackEnabled(true);
+          client.setMicTrackEnabled(!pausedRef.current);
           setErrorMessage((prev) =>
             prev && isBenignRealtimeError(prev) ? null : prev,
           );
@@ -864,12 +908,19 @@ export function useCedVoiceSession(
           if (!modelSpeakingRef.current) {
             setOrbState("processing");
             setStatusLabel(ORB_STATE_LABELS.processing);
+            clearResponseWatchdog();
+            responseWatchdogRef.current = window.setTimeout(() => {
+              responseWatchdogRef.current = null;
+              if (isStale() || !micActiveRef.current) return;
+              if (!modelSpeakingRef.current && !client.isResponseActive()) {
+                enableListeningUi();
+              }
+            }, PROCESSING_STUCK_MS);
           }
         },
         onTurnComplete: () => {
+          clearResponseWatchdog();
           modelSpeakingRef.current = false;
-          greetingTurnPendingRef.current = false;
-          micGateOpenRef.current = true;
           if (!pausedRef.current) {
             client.setMicTrackEnabled(true);
           }
@@ -883,7 +934,7 @@ export function useCedVoiceSession(
             return { ...prev, status: "listening" };
           });
           modelRepliedTurnRef.current = false;
-          if (micActiveRef.current && !webFetchRef.current) {
+          if (micActiveRef.current) {
             enableListeningUi();
           }
         },
@@ -938,9 +989,7 @@ export function useCedVoiceSession(
               if (ok) {
                 reconnectAttemptRef.current = 0;
                 client.setRemoteMuted(mutedRef.current);
-                if (greetingTurnPendingRef.current) {
-                  client.setMicTrackEnabled(false);
-                }
+                client.setMicTrackEnabled(!pausedRef.current);
               } else if (reconnectAttemptRef.current >= MAX_WS_RECONNECT) {
                 setErrorMessage("No se pudo reconectar con CED.");
                 setOrbState("error");
@@ -1007,7 +1056,7 @@ export function useCedVoiceSession(
 
   useEffect(() => {
     if (!micOn) return;
-    clientRef.current?.setMicTrackEnabled(micGateOpenRef.current && !paused);
+    clientRef.current?.setMicTrackEnabled(!paused);
   }, [micOn, paused]);
 
   useEffect(() => {
@@ -1075,7 +1124,7 @@ export function useCedVoiceSession(
   const togglePause = useCallback(() => {
     setPaused((p) => {
       const next = !p;
-      clientRef.current?.setMicTrackEnabled(micGateOpenRef.current && !next);
+      clientRef.current?.setMicTrackEnabled(!next);
       setOrbState(next ? "paused" : micOn ? "listening" : "idle");
       setStatusLabel(
         next ? ORB_STATE_LABELS.paused : ORB_STATE_LABELS.listening,
