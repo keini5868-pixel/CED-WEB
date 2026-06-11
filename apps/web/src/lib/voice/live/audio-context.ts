@@ -32,7 +32,7 @@ export function unlockVoiceAudioOnGesture(): void {
 
   for (const spec of [
     { id: "ced-out", sampleRate: 24000, latencyHint: "playback" as const },
-    { id: "ced-mic", latencyHint: "interactive" as const },
+    { id: "ced-mic", sampleRate: 24000, latencyHint: "interactive" as const },
   ]) {
     const { id, ...opts } = spec;
     if (!contexts.has(id)) {

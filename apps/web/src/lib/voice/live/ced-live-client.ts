@@ -310,16 +310,7 @@ export class CedLiveClient {
         }
 
         if (type === "input_audio_buffer.speech_started") {
-          voiceTelemetry.markInterrupted();
-          if (this.responseInProgress || this.modelAudioActive) {
-            const cancel: Record<string, unknown> = { type: "response.cancel" };
-            if (this.activeResponseId) cancel.response_id = this.activeResponseId;
-            this.send(cancel);
-          }
-          this.modelAudioActive = false;
-          this.userTranscriptAcc = "";
-          this.modelTranscriptAcc = "";
-          handlers.onInterrupted?.();
+          this.handleUserInterrupt();
           return;
         }
 
@@ -435,6 +426,23 @@ export class CedLiveClient {
     } catch (err) {
       cedVoiceError("sendClientTurn failed", err);
     }
+  }
+
+  triggerBargeIn(): void {
+    this.handleUserInterrupt();
+  }
+
+  private handleUserInterrupt(): void {
+    voiceTelemetry.markInterrupted();
+    if (this.responseInProgress || this.modelAudioActive) {
+      const cancel: Record<string, unknown> = { type: "response.cancel" };
+      if (this.activeResponseId) cancel.response_id = this.activeResponseId;
+      this.send(cancel);
+    }
+    this.modelAudioActive = false;
+    this.userTranscriptAcc = "";
+    this.modelTranscriptAcc = "";
+    this.handlers.onInterrupted?.();
   }
 
   private send(payload: Record<string, unknown>): void {

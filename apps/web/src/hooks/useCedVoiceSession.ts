@@ -183,6 +183,10 @@ export function useCedVoiceSession(
   }, []);
 
   const inputLevel = useAudioAnalyser(micStream, micOn && !paused);
+  const inputLevelRef = useRef(0);
+  useEffect(() => {
+    inputLevelRef.current = inputLevel;
+  }, [inputLevel]);
   const audioLevel =
     orbState === "listening"
       ? inputLevel
@@ -364,6 +368,7 @@ export function useCedVoiceSession(
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
+          sampleRate: { ideal: 24000 },
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
@@ -666,11 +671,12 @@ export function useCedVoiceSession(
         }
         recorder.setHandlers({
           onData: (base64) => client.sendAudioPcm(base64),
-          shouldSend: () =>
-            micUplinkEnabledRef.current &&
-            !isStale() &&
-            !pausedRef.current &&
-            client.isOpen(),
+          shouldSend: () => {
+            if (!micUplinkEnabledRef.current) return false;
+            // Half-duplex (OpenAI cookbook): no enviar mic mientras CED habla → evita eco
+            if (streamerRef.current?.isActive()) return false;
+            return !isStale() && !pausedRef.current && client.isOpen();
+          },
         });
         await recorder.start(micStreamRef.current);
         if (micUplinkEnabledRef.current) {
@@ -1161,6 +1167,28 @@ export function useCedVoiceSession(
   useEffect(() => {
     streamerRef.current?.setMuted(muted);
   }, [muted]);
+
+  /** Barge-in local: si hablas encima mientras CED habla, interrumpe (mic en half-duplex). */
+  useEffect(() => {
+    if (!micOn || paused) return;
+    let loudMs = 0;
+    const id = window.setInterval(() => {
+      if (!streamerRef.current?.isActive()) {
+        loudMs = 0;
+        return;
+      }
+      if (inputLevelRef.current >= 0.24) {
+        loudMs += 120;
+        if (loudMs >= 360) {
+          clientRef.current?.triggerBargeIn();
+          loudMs = 0;
+        }
+      } else {
+        loudMs = Math.max(0, loudMs - 120);
+      }
+    }, 120);
+    return () => clearInterval(id);
+  }, [micOn, paused]);
 
   useEffect(() => {
     return () => {

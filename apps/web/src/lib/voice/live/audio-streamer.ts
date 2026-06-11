@@ -5,13 +5,14 @@
 
 export class AudioStreamer {
   private sampleRate = 24000;
-  private bufferSize = 7680;
+  /** ~80 ms @ 24 kHz — chunks más pequeños = reproducción más fluida */
+  private bufferSize = 1920;
   private audioQueue: Float32Array[] = [];
   private isPlaying = false;
   private isStreamComplete = false;
   private checkInterval: ReturnType<typeof setInterval> | null = null;
   private scheduledTime = 0;
-  private initialBufferTime = 0.1;
+  private initialBufferTime = 0.05;
   private gainNode: GainNode;
   private endOfQueueSource: AudioBufferSourceNode | null = null;
   private activeSources = new Set<AudioBufferSourceNode>();
@@ -61,7 +62,7 @@ export class AudioStreamer {
   }
 
   private scheduleNextBuffer() {
-    const SCHEDULE_AHEAD = 0.2;
+    const SCHEDULE_AHEAD = 0.12;
 
     while (
       this.audioQueue.length > 0 &&

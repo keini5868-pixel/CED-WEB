@@ -1,6 +1,6 @@
 /**
- * Captura mic → PCM16 16 kHz vía worklet inline.
- * @see https://github.com/google-gemini/live-api-web-console
+ * Captura mic → PCM16 24 kHz (OpenAI Realtime GA).
+ * Half-duplex: el hook decide cuándo enviar (no mientras CED habla).
  */
 
 import {
@@ -8,11 +8,11 @@ import {
   resampleInt16,
 } from "@/lib/audio/pcmUtils";
 import { getAudioContext } from "@/lib/voice/live/audio-context";
-import { createWorkletFromSrc } from "@/lib/voice/live/worklet-loader";
+import { ensureAudioWorkletModule } from "@/lib/voice/live/worklet-registry";
 import AudioRecordingWorklet from "@/lib/voice/live/worklets/audio-recording";
 
 const WORKLET_NAME = "ced-audio-recorder";
-const OPENAI_UPLINK_SAMPLE_RATE = 24000;
+export const OPENAI_UPLINK_SAMPLE_RATE = 24000;
 
 export class AudioRecorder {
   private stream: MediaStream | null = null;
@@ -35,69 +35,71 @@ export class AudioRecorder {
   async start(stream: MediaStream): Promise<void> {
     if (this.starting) return this.starting;
 
-    this.starting = new Promise<void>(async (resolve, reject) => {
-      try {
-        this.stream = stream;
-        this.audioContext = await getAudioContext({
-          id: "ced-mic",
-          sampleRate: OPENAI_UPLINK_SAMPLE_RATE,
-          latencyHint: "interactive",
-        });
-        if (this.audioContext.state === "suspended") {
-          await this.audioContext.resume();
-        }
-        this.captureSampleRate = this.audioContext.sampleRate;
+    this.starting = (async () => {
+      this.cleanupGraph();
 
-        this.source = this.audioContext.createMediaStreamSource(stream);
-        const src = createWorkletFromSrc(WORKLET_NAME, AudioRecordingWorklet);
-        await this.audioContext.audioWorklet.addModule(src);
-        URL.revokeObjectURL(src);
-
-        this.worklet = new AudioWorkletNode(this.audioContext, WORKLET_NAME);
-        this.worklet.port.onmessage = (ev: MessageEvent) => {
-          const arrayBuffer = ev.data?.data?.int16arrayBuffer as
-            | ArrayBuffer
-            | undefined;
-          if (!arrayBuffer || !this.onData || !this.shouldSend?.()) return;
-          const raw = new Int16Array(arrayBuffer);
-          const pcm = resampleInt16(
-            raw,
-            this.captureSampleRate,
-            OPENAI_UPLINK_SAMPLE_RATE,
-          );
-          this.onData(arrayBufferToBase64(pcm.buffer as ArrayBuffer));
-        };
-
-        this.source.connect(this.worklet);
-        const mute = this.audioContext.createGain();
-        mute.gain.value = 0;
-        this.worklet.connect(mute);
-        mute.connect(this.audioContext.destination);
-
-        resolve();
-      } catch (err) {
-        reject(err);
-      } finally {
-        this.starting = null;
+      this.stream = stream;
+      this.audioContext = await getAudioContext({
+        id: "ced-mic",
+        sampleRate: OPENAI_UPLINK_SAMPLE_RATE,
+        latencyHint: "interactive",
+      });
+      if (this.audioContext.state === "suspended") {
+        await this.audioContext.resume();
       }
-    });
+      this.captureSampleRate = this.audioContext.sampleRate;
 
-    return this.starting;
+      await ensureAudioWorkletModule(
+        this.audioContext,
+        WORKLET_NAME,
+        AudioRecordingWorklet,
+      );
+
+      this.source = this.audioContext.createMediaStreamSource(stream);
+      this.worklet = new AudioWorkletNode(this.audioContext, WORKLET_NAME);
+      this.worklet.port.onmessage = (ev: MessageEvent) => {
+        const arrayBuffer = ev.data?.data?.int16arrayBuffer as
+          | ArrayBuffer
+          | undefined;
+        if (!arrayBuffer || !this.onData || !this.shouldSend?.()) return;
+        const raw = new Int16Array(arrayBuffer);
+        const pcm = resampleInt16(
+          raw,
+          this.captureSampleRate,
+          OPENAI_UPLINK_SAMPLE_RATE,
+        );
+        this.onData(arrayBufferToBase64(pcm.buffer as ArrayBuffer));
+      };
+
+      this.source.connect(this.worklet);
+      // Mantener el grafo activo sin reproducir al altavoz (evita eco).
+      const silent = this.audioContext.createGain();
+      silent.gain.value = 0;
+      this.worklet.connect(silent);
+      silent.connect(this.audioContext.destination);
+    })();
+
+    try {
+      await this.starting;
+    } finally {
+      this.starting = null;
+    }
   }
 
   stop() {
-    const cleanup = () => {
-      this.source?.disconnect();
-      this.worklet?.disconnect();
-      this.worklet = null;
-      this.source = null;
-      this.audioContext = null;
-      this.stream = null;
-    };
     if (this.starting) {
-      void this.starting.then(cleanup);
+      void this.starting.finally(() => this.cleanupGraph());
       return;
     }
-    cleanup();
+    this.cleanupGraph();
+  }
+
+  private cleanupGraph() {
+    this.worklet?.port.close();
+    this.source?.disconnect();
+    this.worklet?.disconnect();
+    this.worklet = null;
+    this.source = null;
+    this.stream = null;
   }
 }
