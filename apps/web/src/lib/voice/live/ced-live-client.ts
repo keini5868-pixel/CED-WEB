@@ -23,6 +23,10 @@ import {
   isResponseAudioTranscriptDelta,
 } from "@/lib/voice/realtimeEvents";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
+import {
+  cedBriefTurn,
+  cedGreetingTurn,
+} from "@/lib/voice/live/ced-brief-messages";
 
 const TOOL_ALIAS: Record<string, string> = {
   save_memory: GUARDAR_MEMORIA,
@@ -98,6 +102,7 @@ export class CedLiveClient {
   private activeResponseId: string | null = null;
   private responseInProgress = false;
   private static TOOL_COOLDOWN_MS = 2000;
+  private static RESPONSE_IDLE_MS = 2800;
   private handlers: CedLiveHandlers = {};
 
   isOpen(): boolean {
@@ -201,6 +206,7 @@ export class CedLiveClient {
       const remoteAudio = document.createElement("audio");
       remoteAudio.autoplay = true;
       remoteAudio.setAttribute("playsinline", "true");
+      remoteAudio.preload = "auto";
       this.remoteAudio = remoteAudio;
 
       pc.ontrack = (ev) => {
@@ -428,21 +434,21 @@ export class CedLiveClient {
   }
 
   sendAdvancedSystemAck(): void {
-    this.sendClientTurn(CED_VOICE_PROFILE_LOCK.advancedSystem.ackInstruction);
+    void this.sendClientTurn(CED_VOICE_PROFILE_LOCK.advancedSystem.ackInstruction);
   }
 
   sendSessionGreeting(): void {
-    this.sendClientTurn("inicia");
+    void this.sendClientTurn(cedGreetingTurn());
   }
 
   sendNarrationBrief(summary: string): void {
     const text = summary.trim();
     if (!text) return;
-    this.sendClientTurn(`[CED_BRIEF]\n${text}`);
+    void this.sendClientTurn(cedBriefTurn(text));
   }
 
   sendWebSearchAck(): void {
-    this.sendClientTurn(CED_VOICE_PROFILE_LOCK.webSearch.ackInstruction);
+    /* Obsoleto — provocaba doble respuesta (ack + brief). Usar solo sendNarrationBrief. */
   }
 
   triggerBargeIn(): void {
@@ -452,8 +458,28 @@ export class CedLiveClient {
     this.send(cancel);
   }
 
-  private sendClientTurn(text: string): void {
+  private waitForResponseIdle(maxMs = CedLiveClient.RESPONSE_IDLE_MS): Promise<void> {
+    if (!this.responseInProgress) return Promise.resolve();
+    return new Promise((resolve) => {
+      const start = performance.now();
+      const tick = () => {
+        if (!this.responseInProgress || performance.now() - start > maxMs) {
+          resolve();
+          return;
+        }
+        setTimeout(tick, 40);
+      };
+      tick();
+    });
+  }
+
+  private async sendClientTurn(text: string): Promise<void> {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
+    if (this.responseInProgress) {
+      cedVoiceLog(5, "Cancelando respuesta previa antes de nuevo turno CED");
+      this.triggerBargeIn();
+      await this.waitForResponseIdle();
+    }
     try {
       this.send({
         type: "conversation.item.create",
@@ -494,7 +520,7 @@ export class CedLiveClient {
       h.onToolStart?.("search_web");
       const brief = await fetchVoiceBrief(query || "noticias hoy", "news");
       const spoken = brief.ok ? brief.summary : "No pude buscar en internet.";
-      this.submitToolOutput(callId, { status: "ok", spoken });
+      await this.submitToolOutput(callId, { status: "ok", spoken });
       return;
     }
 
@@ -503,7 +529,7 @@ export class CedLiveClient {
       const allowed = h.shouldAllowAdvancedTool?.(prompt) ?? false;
       if (!allowed) {
         h.onAdvancedToolBlocked?.(prompt);
-        this.submitToolOutput(callId, {
+        await this.submitToolOutput(callId, {
           status: "needs_confirmation",
           message:
             "Pregunta UNA sola vez si desea consultar al sistema avanzado. No repitas la pregunta.",
@@ -517,7 +543,7 @@ export class CedLiveClient {
         CED_VOICE_PROFILE_LOCK.advancedSystem.fetchTimeoutMs,
       );
       const spoken = result.ok ? result.result : "No pude completar el análisis.";
-      this.submitToolOutput(callId, { status: result.ok ? "ok" : "error", spoken });
+      await this.submitToolOutput(callId, { status: result.ok ? "ok" : "error", spoken });
       return;
     }
 
@@ -525,20 +551,29 @@ export class CedLiveClient {
       h.onToolStart?.(name);
       const result = await h.onLiveTool(name, args);
       const spoken = result?.spoken ?? "Listo.";
-      this.submitToolOutput(callId, { status: "ok", spoken });
+      await this.submitToolOutput(callId, { status: "ok", spoken });
       return;
     }
 
-    this.submitToolOutput(callId, { status: "unknown_tool", name: rawName });
+    await this.submitToolOutput(callId, { status: "unknown_tool", name: rawName });
   }
 
-  private submitToolOutput(callId: string, output: Record<string, unknown>): void {
+  private async submitToolOutput(
+    callId: string,
+    output: Record<string, unknown>,
+  ): Promise<void> {
+    if (this.responseInProgress) {
+      await this.waitForResponseIdle();
+    }
     this.send({
       type: "conversation.item.create",
       item: {
         type: "function_call_output",
         call_id: callId,
-        output: JSON.stringify(output),
+        output: JSON.stringify({
+          ...output,
+          delivery: "Di SOLO el campo spoken una vez. Sin muletillas ni repetir.",
+        }),
       },
     });
     this.send({ type: "response.create" });

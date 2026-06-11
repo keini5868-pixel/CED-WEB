@@ -7,22 +7,22 @@ from typing import Any
 OPENAI_VOICES = frozenset({"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"})
 DEFAULT_OPENAI_VOICE = "alloy"
 
-REALTIME_MAX_OUTPUT_TOKENS = 200
-REALTIME_TEMPERATURE = 0.8
+REALTIME_MAX_OUTPUT_TOKENS = 120
+REALTIME_TEMPERATURE = 0.72
 
-# WebRTC + semantic VAD (docs OpenAI Realtime VAD guide)
+# semantic_vad high = respuesta más rápida (menos espera al usuario)
 REALTIME_TURN_DETECTION: dict[str, Any] = {
     "type": "semantic_vad",
-    "eagerness": "medium",
+    "eagerness": "high",
     "create_response": True,
     "interrupt_response": True,
 }
 
 REALTIME_TURN_DETECTION_FALLBACK: dict[str, Any] = {
     "type": "server_vad",
-    "threshold": 0.6,
-    "prefix_padding_ms": 300,
-    "silence_duration_ms": 800,
+    "threshold": 0.55,
+    "prefix_padding_ms": 200,
+    "silence_duration_ms": 500,
     "create_response": True,
     "interrupt_response": True,
 }

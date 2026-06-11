@@ -128,13 +128,12 @@ export function useCedVoiceSession(
   const modelSpeakingRef = useRef(false);
   const micGateOpenRef = useRef(false);
   const webFetchRef = useRef(false);
-  const webAckSentRef = useRef(false);
   const lastWebQueryRef = useRef("");
   const lastUserUtteranceRef = useRef("");
   const advancedConfirmPendingRef = useRef(false);
   const advancedConfirmAskedRef = useRef(false);
   const pendingAdvancedPromptRef = useRef("");
-  const webSearchDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const webSearchDebounceRef = useRef<number | null>(null);
   const cameraPreviewRef = useRef<string | null>(null);
   const cameraCaptureVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCaptureCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -249,7 +248,6 @@ export function useCedVoiceSession(
     modelSpeakingRef.current = false;
     micGateOpenRef.current = false;
     webFetchRef.current = false;
-    webAckSentRef.current = false;
     lastWebQueryRef.current = "";
     if (webSearchDebounceRef.current) {
       clearTimeout(webSearchDebounceRef.current);
@@ -406,22 +404,18 @@ export function useCedVoiceSession(
         }
       };
 
-      const sendWebSearchAckOnce = () => {
-        if (webAckSentRef.current) return;
-        webAckSentRef.current = true;
-        modelSpeakingRef.current = false;
-        client.sendWebSearchAck();
-        setOrbState("processing");
-        setStatusLabel("Buscando en internet…");
-      };
-
       const runWebSearch = (query: string) => {
         const q = query.trim();
         if (!q || webFetchRef.current || isStale()) return;
+        if (modelSpeakingRef.current) {
+          cedVoiceLog(5, "Web search diferido — CED ya está respondiendo");
+          return;
+        }
         cedVoiceLog(5, "Web search", { q: q.slice(0, 80), kind: webBriefKind(q) });
         webFetchRef.current = true;
         lastWebQueryRef.current = q;
-        sendWebSearchAckOnce();
+        setOrbState("processing");
+        setStatusLabel("Buscando en internet…");
 
         const kind = webBriefKind(q);
         schedulePanelSearch(q, kind);
@@ -475,35 +469,12 @@ export function useCedVoiceSession(
               narrate("no obtuve respuesta del buscador.");
             }
             webFetchRef.current = false;
-            webAckSentRef.current = false;
             if (!succeeded) lastWebQueryRef.current = "";
           }
         })();
       };
 
-      const scheduleWebSearchFromPartial = (text: string) => {
-        const trimmed = text.trim();
-        if (!trimmed || !isWebResearchIntent(trimmed) || webFetchRef.current) {
-          return;
-        }
-        if (webSearchDebounceRef.current) {
-          clearTimeout(webSearchDebounceRef.current);
-        }
-        webSearchDebounceRef.current = setTimeout(() => {
-          webSearchDebounceRef.current = null;
-          const latest = lastUserUtteranceRef.current.trim();
-          if (
-            !webFetchRef.current &&
-            !isStale() &&
-            latest &&
-            isWebResearchIntent(latest)
-          ) {
-            runWebSearch(latest);
-          }
-        }, 900);
-      };
-
-      const handleSearchStatus = (text: string) => {
+      const handleSearchStatus = (_text: string) => {
         if (webFetchRef.current) return;
         const retry = lastWebQueryRef.current.trim();
         if (retry && isWebResearchIntent(retry)) {
@@ -511,7 +482,7 @@ export function useCedVoiceSession(
           return;
         }
         client.sendNarrationBrief(
-          "indíqueme qué desea buscar y lo consulto en internet.",
+          "Indícame qué quieres buscar y lo consulto en internet.",
         );
       };
 
@@ -527,7 +498,8 @@ export function useCedVoiceSession(
         }
         cedVoiceLog(5, "Visual web search", { q: question.slice(0, 60) });
         webFetchRef.current = true;
-        sendWebSearchAckOnce();
+        setOrbState("processing");
+        setStatusLabel("Buscando en internet…");
         void (async () => {
           try {
             const result = await fetchVisionWebSearch(frame, question);
@@ -551,7 +523,6 @@ export function useCedVoiceSession(
             );
           } finally {
             webFetchRef.current = false;
-            webAckSentRef.current = false;
           }
         })();
       };
@@ -621,7 +592,6 @@ export function useCedVoiceSession(
           const trimmed = text.trim();
           if (!trimmed || /^<noise>$/i.test(trimmed)) return;
           lastUserUtteranceRef.current = trimmed;
-          scheduleWebSearchFromPartial(trimmed);
           if (webFetchRef.current) {
             setOrbState("processing");
             setStatusLabel("Buscando en internet…");
@@ -656,11 +626,16 @@ export function useCedVoiceSession(
             if (isSearchStatusIntent(text)) {
               handleSearchStatus(text.trim());
             } else if (isWebResearchIntent(text) && !webFetchRef.current) {
+              const q = text.trim();
               if (webSearchDebounceRef.current) {
                 clearTimeout(webSearchDebounceRef.current);
-                webSearchDebounceRef.current = null;
               }
-              runWebSearch(text.trim());
+              webSearchDebounceRef.current = window.setTimeout(() => {
+                webSearchDebounceRef.current = null;
+                if (webFetchRef.current || isStale()) return;
+                if (lastUserUtteranceRef.current.trim() !== q) return;
+                runWebSearch(q);
+              }, 2600);
             } else {
               handleClientVoiceIntents(text.trim());
             }
@@ -678,6 +653,15 @@ export function useCedVoiceSession(
         },
         onToolStart: (toolName) => {
           if (isStale()) return;
+          if (toolName === "search_web") {
+            webFetchRef.current = true;
+            if (webSearchDebounceRef.current) {
+              clearTimeout(webSearchDebounceRef.current);
+              webSearchDebounceRef.current = null;
+            }
+            setOrbState("processing");
+            setStatusLabel("Buscando en internet…");
+          }
           if (toolName === CONSULTAR_SISTEMA_AVANZADO) {
             advancedConfirmPendingRef.current = false;
             advancedConfirmAskedRef.current = false;
