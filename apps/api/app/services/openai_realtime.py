@@ -67,14 +67,14 @@ def _build_minimal_ga_payload(
             "audio": {
                 "input": {
                     "format": {"type": "audio/pcm", "rate": 24000},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "threshold": 0.5,
-                        "prefix_padding_ms": 300,
-                        "silence_duration_ms": 500,
-                        "create_response": True,
-                        "interrupt_response": False,
-                    },
+                "turn_detection": {
+                    "type": "server_vad",
+                    "threshold": 0.6,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 800,
+                    "create_response": True,
+                    "interrupt_response": False,
+                },
                 },
                 "output": {
                     "format": {"type": "audio/pcm", "rate": 24000},
@@ -103,11 +103,11 @@ def _build_full_ga_payload(
                 "transcription": {"model": "whisper-1"},
                 "turn_detection": {
                     "type": "server_vad",
-                    "threshold": 0.4,
-                    "prefix_padding_ms": 200,
-                    "silence_duration_ms": 350,
+                    "threshold": 0.6,
+                    "prefix_padding_ms": 300,
+                    "silence_duration_ms": 800,
                     "create_response": True,
-                    "interrupt_response": True,
+                    "interrupt_response": False,
                 },
             },
             "output": {

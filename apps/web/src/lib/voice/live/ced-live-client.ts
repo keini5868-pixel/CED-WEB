@@ -25,6 +25,7 @@ import {
   isResponseAudioTranscriptDelta,
 } from "@/lib/voice/realtimeEvents";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
+import { buildSessionUpdatePayload } from "@/lib/voice/live/realtime-session-tuning";
 
 const OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime";
 
@@ -101,11 +102,17 @@ export class CedLiveClient {
   private activeResponseId: string | null = null;
   private responseInProgress = false;
   private modelAudioActive = false;
+  private blockServerVad = false;
   private static TOOL_COOLDOWN_MS = 2000;
   private handlers: CedLiveHandlers = {};
 
   isOpen(): boolean {
     return Boolean(this.ws && this.sessionReady && !this.sendBlocked);
+  }
+
+  /** Half-duplex: ignorar VAD del servidor mientras CED reproduce (anti-eco). */
+  setBlockServerVad(block: boolean): void {
+    this.blockServerVad = block;
   }
 
   disconnect(): void {
@@ -143,6 +150,7 @@ export class CedLiveClient {
     this.activeResponseId = null;
     this.responseInProgress = false;
     this.modelAudioActive = false;
+    this.blockServerVad = false;
 
     const generation = this.connectGen;
     const isStale = () => generation !== this.connectGen;
@@ -260,6 +268,9 @@ export class CedLiveClient {
         const type = String(msg.type ?? "");
 
         if (type === "session.created" || type === "session.updated") {
+          if (type === "session.created") {
+            this.send(buildSessionUpdatePayload());
+          }
           markReady();
           return;
         }
@@ -268,6 +279,8 @@ export class CedLiveClient {
           const response = msg.response as { id?: string } | undefined;
           this.activeResponseId = response?.id ?? null;
           this.responseInProgress = true;
+          this.blockServerVad = true;
+          this.clearInputAudioBuffer();
           return;
         }
 
@@ -310,7 +323,13 @@ export class CedLiveClient {
         }
 
         if (type === "input_audio_buffer.speech_started") {
-          this.handleUserInterrupt();
+          if (this.blockServerVad) {
+            cedVoiceLog(5, "speech_started ignorado (CED hablando / anti-eco)");
+            return;
+          }
+          if (this.responseInProgress || this.modelAudioActive) {
+            this.handleUserInterrupt();
+          }
           return;
         }
 
@@ -318,6 +337,8 @@ export class CedLiveClient {
           this.activeResponseId = null;
           this.responseInProgress = false;
           this.modelAudioActive = false;
+          this.blockServerVad = false;
+          this.clearInputAudioBuffer();
           handlers.onInterrupted?.();
           return;
         }
@@ -330,6 +351,8 @@ export class CedLiveClient {
           this.activeResponseId = null;
           this.responseInProgress = false;
           this.modelAudioActive = false;
+          this.blockServerVad = false;
+          this.clearInputAudioBuffer();
           if (this.modelTranscriptAcc.trim()) {
             handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
             this.modelTranscriptAcc = "";
@@ -374,7 +397,15 @@ export class CedLiveClient {
     async () => {};
 
   sendAudioPcm(base64Pcm: string): void {
-    if (!this.ws || !base64Pcm || !this.sessionReady || this.sendBlocked) return;
+    if (
+      !this.ws ||
+      !base64Pcm ||
+      !this.sessionReady ||
+      this.sendBlocked ||
+      this.blockServerVad
+    ) {
+      return;
+    }
     try {
       this.send({
         type: "input_audio_buffer.append",
@@ -428,6 +459,10 @@ export class CedLiveClient {
     }
   }
 
+  private clearInputAudioBuffer(): void {
+    this.send({ type: "input_audio_buffer.clear" });
+  }
+
   triggerBargeIn(): void {
     this.handleUserInterrupt();
   }
@@ -439,7 +474,10 @@ export class CedLiveClient {
       if (this.activeResponseId) cancel.response_id = this.activeResponseId;
       this.send(cancel);
     }
+    this.clearInputAudioBuffer();
     this.modelAudioActive = false;
+    this.responseInProgress = false;
+    this.blockServerVad = false;
     this.userTranscriptAcc = "";
     this.modelTranscriptAcc = "";
     this.handlers.onInterrupted?.();

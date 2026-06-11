@@ -371,9 +371,9 @@ export function useCedVoiceSession(
         audio: {
           channelCount: 1,
           sampleRate: { ideal: 24000 },
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
         },
       });
       micStreamRef.current = stream;
@@ -439,6 +439,7 @@ export function useCedVoiceSession(
 
       const releasePlaybackGate = () => {
         playbackGateRef.current = false;
+        client.setBlockServerVad(false);
         if (streamerRef.current?.isActive()) {
           streamerRef.current.forceIdle();
         }
@@ -960,6 +961,7 @@ export function useCedVoiceSession(
             turnCompleteGenRef.current += 1;
           }
           playbackGateRef.current = true;
+          client.setBlockServerVad(true);
           clearResponseWatchdog();
           greetingAudioReceivedRef.current = true;
           modelSpeakingRef.current = true;
