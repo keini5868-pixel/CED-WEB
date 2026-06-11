@@ -6,7 +6,7 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, Header, Request
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
@@ -73,17 +73,17 @@ async def realtime_session(
     return result
 
 
-@router.post("/realtime/calls")
+@router.post("/realtime/calls", response_model=None)
 async def realtime_calls(
     request: Request,
     x_openai_ephemeral_key: str = Header(..., alias="X-OpenAI-Ephemeral-Key"),
     _user_id: str = Depends(require_user_id),
-) -> PlainTextResponse | dict:
+):
     """Negocia WebRTC SDP con OpenAI usando token efímero (proxy anti-CORS)."""
     sdp_offer = (await request.body()).decode("utf-8", errors="replace")
     result = negotiate_realtime_call(client_secret=x_openai_ephemeral_key, sdp_offer=sdp_offer)
     if not result.get("ok"):
-        return result
+        return JSONResponse(status_code=400, content=result)
     return PlainTextResponse(content=str(result["sdpAnswer"]), media_type="application/sdp")
 
 
