@@ -71,9 +71,9 @@ class VoiceTelemetryStore {
   wsState: WsState = "disconnected";
   sessionId: string | null = null;
   activeVoice = "Aoede";
-  captureFormat = "16 kHz · PCM16 · mono";
+  captureFormat = "24 kHz · PCM16 · mono";
   captureEngine = "AudioWorklet";
-  inputSampleRate = 16000;
+  inputSampleRate = 24000;
   chunkMs = 30;
   chunksSent = 0;
   chunksReceived = 0;

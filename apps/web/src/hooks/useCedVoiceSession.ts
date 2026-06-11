@@ -422,17 +422,23 @@ export function useCedVoiceSession(
       const greetingAudioReceivedRef = { current: false };
       const setupTimerRef = { current: null as number | null };
       const micUplinkFallbackRef = { current: null as number | null };
+      const greetingUplinkTimerRef = { current: null as number | null };
 
       const enableMicUplink = () => {
         if (isStale() || !micActiveRef.current) return;
         micUplinkEnabledRef.current = true;
+        if (greetingUplinkTimerRef.current) {
+          clearTimeout(greetingUplinkTimerRef.current);
+          greetingUplinkTimerRef.current = null;
+        }
+        setHeardIndicator({ status: "listening", userText: null, heardAt: null });
         if (!webFetchRef.current && !modelSpeakingRef.current) {
           setOrbState("listening");
           setStatusLabel(ORB_STATE_LABELS.listening);
         }
       };
 
-      const scheduleMicUplinkFallback = (delayMs = 4500) => {
+      const scheduleMicUplinkFallback = (delayMs = 5000) => {
         if (micUplinkFallbackRef.current) {
           clearTimeout(micUplinkFallbackRef.current);
         }
@@ -659,9 +665,11 @@ export function useCedVoiceSession(
           },
         });
         await recorder.start(micStreamRef.current);
-        setHeardIndicator({ status: "listening", userText: null, heardAt: null });
-        setOrbState("listening");
-        setStatusLabel("Escuchando…");
+        if (micUplinkEnabledRef.current) {
+          setHeardIndicator({ status: "listening", userText: null, heardAt: null });
+          setOrbState("listening");
+          setStatusLabel(ORB_STATE_LABELS.listening);
+        }
       };
       startMicRef.current = startMic;
 
@@ -694,8 +702,15 @@ export function useCedVoiceSession(
             greetingSentRef.current = true;
             setStatusLabel("CED te saluda…");
             client.sendSessionGreeting();
+            greetingUplinkTimerRef.current = window.setTimeout(() => {
+              greetingUplinkTimerRef.current = null;
+              if (!micUplinkEnabledRef.current) {
+                cedVoiceLog(4, "Mic uplink activado tras saludo (timeout corto)");
+                enableMicUplink();
+              }
+            }, 3500);
           }
-          scheduleMicUplinkFallback(12000);
+          scheduleMicUplinkFallback(5000);
           void startMic();
         },
         onTranscriptUpdate: (text, role) => {
@@ -940,6 +955,16 @@ export function useCedVoiceSession(
             setOrbState("listening");
             setStatusLabel(ORB_STATE_LABELS.listening);
           }
+        },
+        onSpeechStopped: () => {
+          if (isStale() || !micUplinkEnabledRef.current) return;
+          setHeardIndicator((prev) =>
+            prev.status === "hidden"
+              ? prev
+              : { ...prev, status: "heard", heardAt: Date.now() },
+          );
+          setOrbState("processing");
+          setStatusLabel(ORB_STATE_LABELS.processing);
         },
         onTurnComplete: () => {
           void (async () => {

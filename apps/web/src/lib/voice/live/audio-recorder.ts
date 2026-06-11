@@ -5,13 +5,14 @@
 
 import {
   arrayBufferToBase64,
-  downsampleInt16To16k,
+  resampleInt16,
 } from "@/lib/audio/pcmUtils";
 import { getAudioContext } from "@/lib/voice/live/audio-context";
 import { createWorkletFromSrc } from "@/lib/voice/live/worklet-loader";
 import AudioRecordingWorklet from "@/lib/voice/live/worklets/audio-recording";
 
 const WORKLET_NAME = "ced-audio-recorder";
+const OPENAI_UPLINK_SAMPLE_RATE = 24000;
 
 export class AudioRecorder {
   private stream: MediaStream | null = null;
@@ -21,7 +22,7 @@ export class AudioRecorder {
   private starting: Promise<void> | null = null;
   private onData: ((base64: string) => void) | null = null;
   private shouldSend: (() => boolean) | null = null;
-  private captureSampleRate = 16000;
+  private captureSampleRate = OPENAI_UPLINK_SAMPLE_RATE;
 
   setHandlers(handlers: {
     onData: (base64: string) => void;
@@ -39,7 +40,7 @@ export class AudioRecorder {
         this.stream = stream;
         this.audioContext = await getAudioContext({
           id: "ced-mic",
-          sampleRate: 16000,
+          sampleRate: OPENAI_UPLINK_SAMPLE_RATE,
           latencyHint: "interactive",
         });
         if (this.audioContext.state === "suspended") {
@@ -59,10 +60,11 @@ export class AudioRecorder {
             | undefined;
           if (!arrayBuffer || !this.onData || !this.shouldSend?.()) return;
           const raw = new Int16Array(arrayBuffer);
-          const pcm =
-            this.captureSampleRate > 16000
-              ? downsampleInt16To16k(raw, this.captureSampleRate)
-              : raw;
+          const pcm = resampleInt16(
+            raw,
+            this.captureSampleRate,
+            OPENAI_UPLINK_SAMPLE_RATE,
+          );
           this.onData(arrayBufferToBase64(pcm.buffer as ArrayBuffer));
         };
 

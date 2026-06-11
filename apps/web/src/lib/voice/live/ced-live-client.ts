@@ -18,6 +18,11 @@ import {
 } from "@/lib/voice/liveTools";
 import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
+import {
+  isInputTranscriptionCompleted,
+  isResponseAudioDelta,
+  isResponseAudioTranscriptDelta,
+} from "@/lib/voice/realtimeEvents";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 
 const OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime";
@@ -50,6 +55,7 @@ export type CedLiveHandlers = {
   onAudio?: (buffer: ArrayBuffer) => void;
   onTurnComplete?: () => void;
   onInterrupted?: () => void;
+  onSpeechStopped?: () => void;
   onToolStart?: (toolName: string) => void;
   onToolComplete?: () => void;
   onCameraIntent?: (intent: "activate" | "deactivate") => void;
@@ -250,7 +256,7 @@ export class CedLiveClient {
           return;
         }
 
-        if (type === "response.audio.delta") {
+        if (isResponseAudioDelta(type)) {
           const delta = String(msg.delta ?? "");
           if (delta) {
             voiceTelemetry.markPcmReceived(`pcm16 · ${delta.length}b`);
@@ -259,17 +265,14 @@ export class CedLiveClient {
           return;
         }
 
-        if (type === "response.audio_transcript.delta") {
+        if (isResponseAudioTranscriptDelta(type)) {
           const delta = String(msg.delta ?? "");
           this.modelTranscriptAcc += delta;
           if (delta) handlers.onTranscriptUpdate?.(this.modelTranscriptAcc, "model");
           return;
         }
 
-        if (
-          type === "conversation.item.input_audio_transcription.completed" ||
-          type === "input_audio_buffer.transcription.completed"
-        ) {
+        if (isInputTranscriptionCompleted(type)) {
           const transcript = String(msg.transcript ?? "");
           if (transcript.trim()) {
             this.userTranscriptAcc = transcript.trim();
@@ -277,6 +280,11 @@ export class CedLiveClient {
             const intent = parseCameraIntent(transcript.trim());
             if (intent) handlers.onCameraIntent?.(intent);
           }
+          return;
+        }
+
+        if (type === "input_audio_buffer.speech_stopped") {
+          handlers.onSpeechStopped?.();
           return;
         }
 

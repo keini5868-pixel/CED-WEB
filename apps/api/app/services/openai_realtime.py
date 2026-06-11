@@ -66,6 +66,7 @@ def _build_minimal_ga_payload(
             "instructions": instructions[:8000],
             "audio": {
                 "input": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
                     "turn_detection": {
                         "type": "server_vad",
                         "threshold": 0.5,
@@ -75,7 +76,10 @@ def _build_minimal_ga_payload(
                         "interrupt_response": False,
                     },
                 },
-                "output": {"voice": voice},
+                "output": {
+                    "format": {"type": "audio/pcm", "rate": 24000},
+                    "voice": voice,
+                },
             },
         },
     }
