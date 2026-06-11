@@ -7,7 +7,7 @@ import { ORB_STATE_LABELS } from "@ced/types";
 
 import { appendConversationMessage } from "@/lib/api/conversations";
 import { generatePdf } from "@/lib/api/pdf";
-import { fetchVoiceBrief, fetchGenerateImage } from "@/lib/api/openai";
+import { fetchVoiceBrief, fetchGenerateImage, fetchDeepAnalysis } from "@/lib/api/openai";
 import { saveMemory, searchMemory } from "@/lib/api/memory";
 import { schedulePanelSearch } from "@/lib/api/panels";
 import {
@@ -56,6 +56,7 @@ import {
   cameraAnalyzeQuestion,
   isCameraAnalyzeIntent,
 } from "@/lib/voice/cameraAnalyzeIntent";
+import { parseCameraIntent } from "@/lib/voice/cameraIntents";
 import {
   parseFacebookPublishMessage,
   parseInstagramPublishRequest,
@@ -74,7 +75,9 @@ import {
 } from "@/lib/voice/preferences";
 
 const CAMERA_IDLE_MS = 5 * 60 * 1000;
-const VIDEO_SEND_INTERVAL_MS = 1500;
+const CAMERA_FRAME_WARM_MS = 4500;
+const CAMERA_FRAME_READY_MS = 2800;
+const VIDEO_SEND_INTERVAL_MS = 2000;
 const VIDEO_CAPTURE_WIDTH = 640;
 const VIDEO_CAPTURE_HEIGHT = 480;
 const USAGE_TICK_SECONDS = 15;
@@ -85,6 +88,8 @@ const PROCESSING_STUCK_MS = 10000;
 
 export interface CedVoiceSessionCallbacks {
   onTranscript?: (text: string, role: "user" | "model") => void;
+  /** Imagen generada (voz) — abrir chat / preview */
+  onGeneratedImage?: (url: string, prompt?: string) => void;
 }
 
 export type VoiceHeardStatus =
@@ -220,7 +225,7 @@ export function useCedVoiceSession(
         if (!cameraStreamRef.current) {
           await toggleCameraRef.current(true);
         }
-        const frame = await waitForCameraFrame();
+        const frame = await waitForCameraFrame(CAMERA_FRAME_WARM_MS);
         if (frame) return { imageData: frame };
       }
 
@@ -351,6 +356,7 @@ export function useCedVoiceSession(
     async (force?: boolean) => {
       const next = force ?? !cameraOn;
       if (!next) {
+        clientRef.current?.detachCameraStream();
         cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
         cameraStreamRef.current = null;
         setCameraOn(false);
@@ -362,9 +368,9 @@ export function useCedVoiceSession(
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "user",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            frameRate: { ideal: 24, max: 30 },
+            width: { ideal: 640 },
+            height: { ideal: 360 },
+            frameRate: { ideal: 1, max: 2 },
           },
         });
         cameraStreamRef.current = stream;
@@ -372,6 +378,9 @@ export function useCedVoiceSession(
         setCameraOn(true);
         setStatusLabel("Activando cámara…");
         resetCameraIdleTimer();
+        if (clientRef.current?.isOpen()) {
+          await clientRef.current.attachCameraStream(stream);
+        }
       } catch {
         setErrorMessage(
           "Por favor permite el acceso a la cámara para que CED pueda ver.",
@@ -593,6 +602,63 @@ export function useCedVoiceSession(
         })();
       };
 
+      const notifyGeneratedImage = (url: string, prompt?: string) => {
+        lastPublishableImageRef.current = url;
+        callbacks?.onGeneratedImage?.(url, prompt);
+      };
+
+      const runAdvancedAnalysis = (prompt: string) => {
+        const q = prompt.trim();
+        if (!q || webFetchRef.current) return;
+        webFetchRef.current = true;
+        advancedConfirmPendingRef.current = false;
+        advancedConfirmAskedRef.current = false;
+        setOrbState("processing");
+        setStatusLabel("Consultando sistema avanzado…");
+        void (async () => {
+          try {
+            const r = await fetchDeepAnalysis(
+              q,
+              CED_VOICE_PROFILE_LOCK.advancedSystem.fetchTimeoutMs,
+            );
+            if (isStale()) return;
+            client.sendNarrationBrief(
+              r.ok ? r.result : r.error || "No pude completar el análisis.",
+            );
+          } catch {
+            if (!isStale()) {
+              client.sendNarrationBrief("Falló la consulta al sistema avanzado.");
+            }
+          } finally {
+            webFetchRef.current = false;
+            pendingAdvancedPromptRef.current = "";
+          }
+        })();
+      };
+
+      const runGenerateImage = (prompt: string) => {
+        if (webFetchRef.current) return;
+        webFetchRef.current = true;
+        setOrbState("processing");
+        setStatusLabel("Generando imagen…");
+        void (async () => {
+          try {
+            const r = await fetchGenerateImage(prompt);
+            if (isStale()) return;
+            if (r.ok) {
+              notifyGeneratedImage(r.url, prompt);
+              client.sendNarrationBrief(
+                "Imagen generada. La abrí en el chat para que la veas.",
+              );
+            } else {
+              client.sendNarrationBrief(r.error);
+            }
+          } finally {
+            webFetchRef.current = false;
+          }
+        })();
+      };
+
       const handleSearchStatus = (_text: string) => {
         if (webFetchRef.current) return;
         const retry = lastWebQueryRef.current.trim();
@@ -606,21 +672,26 @@ export function useCedVoiceSession(
       };
 
       const runVisualSearch = (question = "") => {
-        const frame = captureCameraJpeg();
-        if (!frame || webFetchRef.current || isStale()) {
-          if (!frame) {
-            client.sendNarrationBrief(
-              "active la cámara primero para buscar lo que veo.",
-            );
-          }
-          return;
-        }
-        cedVoiceLog(5, "Visual web search", { q: question.slice(0, 60) });
+        if (webFetchRef.current || isStale()) return;
         webFetchRef.current = true;
         setOrbState("processing");
         setStatusLabel("Buscando en internet…");
         void (async () => {
           try {
+            const hadStream = !!cameraStreamRef.current;
+            if (!hadStream) {
+              await toggleCameraRef.current(true);
+            }
+            const frame = await waitForCameraFrame(
+              hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
+            );
+            if (!frame) {
+              client.sendNarrationBrief(
+                "active la cámara primero para buscar lo que veo.",
+              );
+              return;
+            }
+            cedVoiceLog(5, "Visual web search", { q: question.slice(0, 60) });
             const result = await fetchVisionWebSearch(frame, question);
             if (isStale()) return;
             if (result.ok) {
@@ -653,10 +724,13 @@ export function useCedVoiceSession(
         setStatusLabel("Analizando cámara…");
         void (async () => {
           try {
-            if (!cameraStreamRef.current) {
+            const hadStream = !!cameraStreamRef.current;
+            if (!hadStream) {
               await toggleCameraRef.current(true);
             }
-            const frame = await waitForCameraFrame();
+            const frame = await waitForCameraFrame(
+              hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
+            );
             if (!frame) {
               client.sendNarrationBrief(
                 "activa la cámara y muéstrame qué quieres que identifique.",
@@ -676,6 +750,29 @@ export function useCedVoiceSession(
           } finally {
             webFetchRef.current = false;
           }
+        })();
+      };
+
+      const handleCameraActivate = (text: string) => {
+        void (async () => {
+          const hadStream = !!cameraStreamRef.current;
+          if (!hadStream) {
+            await toggleCameraRef.current(true);
+          }
+          if (isCameraAnalyzeIntent(text)) {
+            runCameraAnalyze(text);
+            return;
+          }
+          if (isVisualSearchIntent(text)) {
+            if (!hadStream) {
+              await new Promise((r) => window.setTimeout(r, 500));
+            }
+            runVisualSearch(text);
+            return;
+          }
+          client.sendNarrationBrief(
+            "Cámara activa. Muéstrame qué quieres que identifique.",
+          );
         })();
       };
 
@@ -714,20 +811,17 @@ export function useCedVoiceSession(
 
         const imagePrompt = parseGenerateImagePrompt(t);
         if (imagePrompt && isGenerateImageIntent(t)) {
-          setOrbState("processing");
-          setStatusLabel("Generando imagen…");
-          void (async () => {
-            const r = await fetchGenerateImage(imagePrompt);
-            if (isStale()) return;
-            if (r.ok) {
-              lastPublishableImageRef.current = r.url;
-              client.sendNarrationBrief(
-                "Imagen generada. ¿La publico en Facebook o Instagram?",
-              );
-            } else {
-              client.sendNarrationBrief(r.error);
-            }
-          })();
+          runGenerateImage(imagePrompt);
+          return;
+        }
+
+        const camIntent = parseCameraIntent(t);
+        if (camIntent === "activate") {
+          handleCameraActivate(t);
+          return;
+        }
+        if (camIntent === "deactivate") {
+          void toggleCameraRef.current(false);
           return;
         }
 
@@ -737,11 +831,7 @@ export function useCedVoiceSession(
         }
 
         if (isVisualSearchIntent(t)) {
-          if (!cameraStreamRef.current) {
-            void toggleCameraRef.current(true).then(() => runVisualSearch(t));
-          } else {
-            runVisualSearch(t);
-          }
+          runVisualSearch(t);
           return;
         }
         if (isRememberIntent(t)) {
@@ -790,6 +880,9 @@ export function useCedVoiceSession(
             clearTimeout(setupTimerRef.current);
             setupTimerRef.current = null;
           }
+          if (cameraStreamRef.current) {
+            void client.attachCameraStream(cameraStreamRef.current);
+          }
           if (!greetingSentRef.current) {
             greetingSentRef.current = true;
             setStatusLabel("CED te saluda…");
@@ -820,7 +913,13 @@ export function useCedVoiceSession(
             const trimmed = text.trim();
             lastUserUtteranceRef.current = trimmed;
             if (isAdvancedConfirmAnswer(trimmed) && advancedConfirmPendingRef.current) {
-              /* esperando que el modelo invoque la herramienta */
+              const q =
+                pendingAdvancedPromptRef.current.trim() ||
+                lastUserUtteranceRef.current.trim();
+              if (q) {
+                runAdvancedAnalysis(q);
+                return;
+              }
             } else if (
               isComplexAnalysisRequest(trimmed) ||
               isExplicitAdvancedRequest(trimmed)
@@ -881,14 +980,16 @@ export function useCedVoiceSession(
             [PUBLICAR_INSTAGRAM]: "Publicando en Instagram…",
             [BUSCAR_LO_VISIBLE]: "Buscando lo que veo…",
             [ANALIZAR_CAMARA]: "Analizando cámara…",
+            request_camera_activation: "Activando cámara…",
+            request_camera_deactivation: "Apagando cámara…",
             generate_image: "Generando imagen con IA…",
             [GENERAR_PDF]: "Generando PDF…",
           };
           setStatusLabel(labels[toolName] ?? "Consultando…");
           scheduleResponseWatchdog();
         },
-        onGeneratedImage: (url) => {
-          lastPublishableImageRef.current = url;
+        onGeneratedImage: (url, prompt) => {
+          notifyGeneratedImage(url, prompt);
         },
         onToolComplete: () => {
           if (isStale()) return;
@@ -1017,10 +1118,13 @@ export function useCedVoiceSession(
             };
           }
           if (name === BUSCAR_LO_VISIBLE) {
-            if (!cameraStreamRef.current) {
+            const hadStream = !!cameraStreamRef.current;
+            if (!hadStream) {
               await toggleCameraRef.current(true);
             }
-            const frame = await waitForCameraFrame();
+            const frame = await waitForCameraFrame(
+              hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
+            );
             if (!frame) {
               return {
                 spoken: "active la cámara para buscar lo que veo.",
@@ -1040,10 +1144,13 @@ export function useCedVoiceSession(
             };
           }
           if (name === ANALIZAR_CAMARA) {
-            if (!cameraStreamRef.current) {
+            const hadStream = !!cameraStreamRef.current;
+            if (!hadStream) {
               await toggleCameraRef.current(true);
             }
-            const frame = await waitForCameraFrame();
+            const frame = await waitForCameraFrame(
+              hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
+            );
             if (!frame) {
               return {
                 spoken: "no pude capturar la cámara. Actívala y vuelve a intentar.",
@@ -1143,6 +1250,19 @@ export function useCedVoiceSession(
         },
         onCameraIntent: (intent) => {
           void toggleCameraRef.current(intent === "activate");
+        },
+        onCameraTool: async (intent) => {
+          if (intent === "activate") {
+            if (!cameraStreamRef.current) {
+              await toggleCameraRef.current(true);
+            } else if (client.isOpen()) {
+              await client.attachCameraStream(cameraStreamRef.current);
+            }
+            return Boolean(cameraStreamRef.current);
+          }
+          await toggleCameraRef.current(false);
+          client.detachCameraStream();
+          return true;
         },
         onError: (msg) => {
           if (isBenignRealtimeError(msg)) return;

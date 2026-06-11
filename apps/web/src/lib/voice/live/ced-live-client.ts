@@ -71,6 +71,8 @@ export type CedLiveHandlers = {
   onToolStart?: (toolName: string) => void;
   onToolComplete?: () => void;
   onCameraIntent?: (intent: "activate" | "deactivate") => void;
+  /** Tool request_camera_activation / deactivation desde OpenAI. */
+  onCameraTool?: (intent: "activate" | "deactivate") => Promise<boolean>;
   onError?: (message: string) => void;
   onClose?: (info: GeminiCloseInfo) => void;
   shouldAllowAdvancedTool?: (toolPrompt: string) => boolean;
@@ -79,7 +81,7 @@ export type CedLiveHandlers = {
     name: string,
     args: Record<string, unknown>,
   ) => Promise<{ spoken?: string } | void>;
-  onGeneratedImage?: (url: string) => void;
+  onGeneratedImage?: (url: string, prompt?: string) => void;
 };
 
 function classifyPeerClose(unexpected: boolean): GeminiCloseInfo {
@@ -110,8 +112,12 @@ export class CedLiveClient {
   private recentToolAt = new Map<string, number>();
   private activeResponseId: string | null = null;
   private responseInProgress = false;
+  private videoStream: MediaStream | null = null;
+  private videoSender: RTCRtpSender | null = null;
+  private lastVideoFrameAt = 0;
   private static TOOL_COOLDOWN_MS = 2000;
   private static RESPONSE_IDLE_MS = 2800;
+  private static VIDEO_FRAME_MIN_MS = 2000;
   private handlers: CedLiveHandlers = {};
 
   isOpen(): boolean {
@@ -159,6 +165,7 @@ export class CedLiveClient {
     this.dc?.close();
     this.dc = null;
 
+    this.detachCameraStream();
     if (this.pc) {
       this.pc.close();
       this.pc = null;
@@ -171,6 +178,66 @@ export class CedLiveClient {
 
     voiceTelemetry.setWsState("disconnected");
     voiceTelemetry.setSessionId(null);
+  }
+
+  isCameraAttached(): boolean {
+    return Boolean(this.videoSender && this.videoStream);
+  }
+
+  /** Agrega track de video al peer WebRTC (visión nativa Realtime). */
+  async attachCameraStream(stream: MediaStream): Promise<boolean> {
+    if (!this.pc || !stream.getVideoTracks().length) return false;
+    const track = stream.getVideoTracks()[0];
+    if (!track) return false;
+    if ("contentHint" in track) {
+      track.contentHint = "detail";
+    }
+    try {
+      if (this.videoSender) {
+        await this.videoSender.replaceTrack(track);
+      } else {
+        this.videoSender = this.pc.addTrack(track, stream);
+      }
+      this.videoStream = stream;
+      this.notifyCameraContext(true);
+      cedVoiceLog(5, "WebRTC video track attached");
+      return true;
+    } catch (err) {
+      cedVoiceError("attachCameraStream failed", err);
+      return false;
+    }
+  }
+
+  /** Quita el track de video del peer WebRTC. */
+  detachCameraStream(): void {
+    const hadVideo = Boolean(this.videoSender);
+    if (this.videoSender && this.pc) {
+      try {
+        this.pc.removeTrack(this.videoSender);
+      } catch {
+        /* ignore */
+      }
+    }
+    this.videoSender = null;
+    this.videoStream = null;
+    if (hadVideo) {
+      this.notifyCameraContext(false);
+    }
+  }
+
+  private notifyCameraContext(active: boolean): void {
+    if (!this.dc || !this.sessionReady || this.sendBlocked) return;
+    const text = active
+      ? "La cámara del usuario está ACTIVA. Recibes frames de video. Describe lo que ves cuando te pregunten."
+      : "La cámara del usuario está DESACTIVADA.";
+    this.send({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: `[CED sistema] ${text}` }],
+      },
+    });
   }
 
   async connect(
@@ -462,8 +529,24 @@ export class CedLiveClient {
     }
   }
 
-  sendVideoJpeg(_base64Jpeg: string): void {
-    /* OpenAI Realtime no soporta video uplink */
+  sendVideoJpeg(base64Jpeg: string): void {
+    if (!this.dc || !this.sessionReady || this.sendBlocked) return;
+    const now = Date.now();
+    if (now - this.lastVideoFrameAt < CedLiveClient.VIDEO_FRAME_MIN_MS) return;
+    const trimmed = base64Jpeg.trim();
+    if (!trimmed) return;
+    this.lastVideoFrameAt = now;
+    const url = trimmed.startsWith("data:")
+      ? trimmed
+      : `data:image/jpeg;base64,${trimmed}`;
+    this.send({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_image", image_url: url }],
+      },
+    });
   }
 
   sendAdvancedSystemAck(): void {
@@ -561,6 +644,28 @@ export class CedLiveClient {
         return;
       }
 
+      if (rawName === "request_camera_activation") {
+        h.onToolStart?.("request_camera_activation");
+        const ok = (await h.onCameraTool?.("activate")) ?? false;
+        await this.submitToolOutput(callId, {
+          status: ok ? "ok" : "error",
+          spoken: ok
+            ? "Cámara activa. Ya puedo ver lo que me muestras."
+            : "No pude activar la cámara. Revisa permisos del navegador.",
+        });
+        return;
+      }
+
+      if (rawName === "request_camera_deactivation") {
+        h.onToolStart?.("request_camera_deactivation");
+        await h.onCameraTool?.("deactivate");
+        await this.submitToolOutput(callId, {
+          status: "ok",
+          spoken: "Cámara apagada.",
+        });
+        return;
+      }
+
       if (rawName === "generate_image") {
         const prompt = String(args.prompt ?? "").trim();
         const quality = String(args.quality ?? "auto");
@@ -570,7 +675,7 @@ export class CedLiveClient {
           quality as "auto" | "standard" | "hd",
         );
         if (result.ok) {
-          h.onGeneratedImage?.(result.url);
+          h.onGeneratedImage?.(result.url, prompt);
           await this.submitToolOutput(callId, {
             status: "ok",
             spoken:

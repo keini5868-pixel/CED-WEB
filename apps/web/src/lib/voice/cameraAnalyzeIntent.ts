@@ -8,6 +8,10 @@ const CAMERA_ANALYZE_PATTERNS = [
   /\b(qu[eé]|que)\s+estoy\s+mostrando\b/i,
   /\b(qu[eé]|que)\s+ves\s+(ah[ií]|en\s+pantalla)\b/i,
   /\b(dime|cu[eé]ntame)\s+(qu[eé]|que)\s+(ves|es)\b/i,
+  /\b(mira|ven)\s+(esto|eso|lo\s+que\s+(tengo|tienes))\b/i,
+  /\bquiero\s+que\s+veas\b/i,
+  /\b(mira|ven)\s+.*\b(qu[eé]|que)\s+(es|ves|hay)\b/i,
+  /\bactiva(r)?\s+la\s+c[aá]mara\b.*\b(qu[eé]|que|mira|identifica|ves)\b/i,
   /\bwhat\s+(is\s+this|do\s+you\s+see)\b/i,
 ];
 

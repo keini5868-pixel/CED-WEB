@@ -40,6 +40,10 @@ const JarvisOrbScene = dynamic(
 /** Centro del dashboard — orbe JARVIS + controles + Gemini Live. */
 export function CedVoiceHub() {
   const [chatOpen, setChatOpen] = useState(false);
+  const [chatSeedImage, setChatSeedImage] = useState<{
+    url: string;
+    prompt?: string;
+  } | null>(null);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushLine } = useHudFeed();
 
@@ -50,6 +54,10 @@ export function CedVoiceHub() {
   const voice = useCedVoiceSession(refreshUsage, {
     onTranscript: (text, role) => {
       pushLine(text, role === "user" ? "voice" : "report");
+    },
+    onGeneratedImage: (url, prompt) => {
+      setChatSeedImage({ url, prompt });
+      setChatOpen(true);
     },
   });
   const { errorMessage, clearError } = voice;
@@ -181,7 +189,12 @@ export function CedVoiceHub() {
         onClose={() => voice.setHistoryOpen(false)}
       />
 
-      <CedTextChatPanel open={chatOpen} onClose={() => setChatOpen(false)} />
+      <CedTextChatPanel
+        open={chatOpen}
+        onClose={() => setChatOpen(false)}
+        seedImage={chatSeedImage}
+        onSeedConsumed={() => setChatSeedImage(null)}
+      />
 
       <CedVoiceDebugPanel />
     </div>

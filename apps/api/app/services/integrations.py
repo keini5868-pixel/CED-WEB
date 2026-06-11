@@ -45,10 +45,18 @@ def check_anthropic() -> dict[str, Any]:
     settings = get_settings()
     api_key = settings.anthropic_api_key.strip()
     if not api_key:
+        openai_key = settings.openai_api_key.strip()
+        if openai_key:
+            return {
+                "ok": True,
+                "model": settings.openai_model_chat,
+                "provider": "openai_fallback",
+                "hint": "Chat usa OpenAI (OPENAI_API_KEY) — Anthropic no configurada.",
+            }
         return {
             "ok": False,
             "error": "missing_anthropic_api_key",
-            "hint": "Añade ANTHROPIC_API_KEY en Railway (servicio CED-WEB).",
+            "hint": "Añade ANTHROPIC_API_KEY u OPENAI_API_KEY en Railway (CED-WEB).",
         }
     try:
         with httpx.Client(timeout=15.0) as client:

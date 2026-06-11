@@ -1,27 +1,17 @@
-import { apiUrl } from "@/lib/env";
-import { createClient } from "@/lib/supabase/client";
+import { cedApiPath } from "@/lib/api/ced-proxy";
 
 export type VisionSearchResult =
   | { ok: true; summary: string; query?: string; subject?: string }
   | { ok: false; error: string; code?: string };
 
-async function authFetch(path: string, body: object, timeoutMs = 28000): Promise<Response> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) {
-    throw new Error("Inicia sesión");
-  }
+async function proxyPost(path: string, body: object, timeoutMs = 28000): Promise<Response> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(`${apiUrl()}${path}`, {
+    return await fetch(cedApiPath(path), {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${session.access_token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -35,7 +25,7 @@ export async function fetchVisionWebSearch(
   question = "",
 ): Promise<VisionSearchResult> {
   try {
-    const res = await authFetch("/v1/vision/search-web", {
+    const res = await proxyPost("vision/search-web", {
       image: imageDataUrl,
       question,
     });
@@ -66,10 +56,14 @@ export async function fetchVisionAnalyze(
   question = "",
 ): Promise<VisionSearchResult> {
   try {
-    const res = await authFetch("/v1/vision/analyze", {
-      image: imageDataUrl,
-      question,
-    }, 20000);
+    const res = await proxyPost(
+      "vision/analyze",
+      {
+        image: imageDataUrl,
+        question,
+      },
+      22000,
+    );
     const data = (await res.json()) as Record<string, unknown>;
     if (!res.ok || data.ok !== true) {
       return { ok: false, error: String(data.error || "Error al analizar imagen") };

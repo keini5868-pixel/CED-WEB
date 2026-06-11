@@ -12,7 +12,9 @@ import httpx
 
 from app.config import get_settings
 from app.services import supabase_db
+from app.services.cognitive_intents import has_advanced_confirmation
 from app.services.cognitive_router import build_chat_system_extras, route_message
+from app.services.claude_deep_analysis import consultar_sistema_avanzado
 from app.domain.ced_identity import CED_CREATOR_IDENTITY, CED_HUMAN_VOICE_STYLE
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.pdf_report import store_pdf
@@ -76,6 +78,25 @@ CHAT_TOOLS: list[dict[str, Any]] = [
             "required": ["title", "content"],
         },
     },
+    {
+        "name": "generate_image",
+        "description": (
+            "Genera una imagen con IA. Usar cuando pidan crear, diseñar o generar una imagen. "
+            "Tras generar, confirma brevemente; la app muestra la imagen automáticamente."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "prompt": {"type": "string", "description": "Descripción detallada de la imagen"},
+                "quality": {
+                    "type": "string",
+                    "enum": ["auto", "standard", "hd"],
+                    "description": "Calidad opcional",
+                },
+            },
+            "required": ["prompt"],
+        },
+    },
 ]
 
 CHAT_SYSTEM_BASE = f"""Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
@@ -97,6 +118,7 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Si falta caption o image_url (Instagram), pídelos antes de invocar la herramienta.
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
 - Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
+- Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
 PROHIBIDO (respuestas de chatbot genérico):
@@ -124,6 +146,11 @@ def _chat_system_for_user(user_id: str) -> str:
 
 
 class TextChatError(ValueError):
+    """Error de chat con código HTTP sugerido para la API."""
+
+    def __init__(self, message: str, *, http_status: int = 400) -> None:
+        super().__init__(message)
+        self.http_status = http_status
     pass
 
 
@@ -261,6 +288,26 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
                     "download_path": f"/v1/pdf/download/{artifact.file_id}",
                 }
             )
+        if name == "generate_image":
+            from app.services.openai_images import generate_image
+
+            plan_id = None
+            try:
+                sub = supabase_db.get_subscription(user_id)
+                plan_id = sub.get("plan_id") if sub else None
+            except Exception:  # noqa: BLE001
+                pass
+            prompt = str(tool_input.get("prompt") or "").strip()
+            quality = str(tool_input.get("quality") or "auto")
+            result = generate_image(
+                user_id=user_id,
+                plan_id=plan_id,
+                prompt=prompt,
+                quality=quality,
+            )
+            if result.get("ok") and result.get("url"):
+                result["prompt"] = prompt
+            return json.dumps(result)
         return json.dumps({"error": f"Herramienta desconocida: {name}"})
     except MetaSocialError as exc:
         return json.dumps({"ok": False, "error": str(exc)})
@@ -340,14 +387,151 @@ def _extract_pdf_from_tool_result(result: str) -> dict[str, Any] | None:
     return None
 
 
+def _extract_image_from_tool_result(result: str) -> dict[str, Any] | None:
+    try:
+        data = json.loads(result)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, dict) and data.get("ok") and data.get("url"):
+        return {
+            "url": str(data["url"]),
+            "prompt": data.get("prompt"),
+            "quality": data.get("quality"),
+        }
+    return None
+
+
+def _advanced_confirm_followup(history: list[dict[str, str]], user_reply: str) -> str | None:
+    """Si el usuario confirmó sistema avanzado, devuelve la pregunta original."""
+    if not has_advanced_confirmation(user_reply):
+        return None
+    last_model: str | None = None
+    for row in reversed(history):
+        if row.get("role") == "model":
+            last_model = (row.get("content") or "").strip()
+            break
+    if not last_model or not re.search(r"sistema avanzado|confirma", last_model, re.I):
+        return None
+    seen_model = False
+    for row in reversed(history):
+        role = row.get("role")
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "model" and content == last_model:
+            seen_model = True
+            continue
+        if seen_model and role == "user":
+            return content
+    return None
+
+
+def _openai_tools_format() -> list[dict[str, Any]]:
+    return [
+        {
+            "type": "function",
+            "function": {
+                "name": tool["name"],
+                "description": tool["description"],
+                "parameters": tool["input_schema"],
+            },
+        }
+        for tool in CHAT_TOOLS
+    ]
+
+
+def _openai_request(
+    *,
+    api_key: str,
+    model: str,
+    system: str,
+    messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    with httpx.Client(timeout=90.0) as client:
+        res = client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": 1200,
+                "messages": [{"role": "system", "content": system}, *messages],
+                "tools": _openai_tools_format(),
+            },
+        )
+        res.raise_for_status()
+        return res.json()
+
+
+def _complete_chat_with_tools_openai(
+    user_id: str,
+    *,
+    api_key: str,
+    model: str,
+    system: str,
+    messages: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+    pdf_attachment: dict[str, Any] | None = None
+    image_attachment: dict[str, Any] | None = None
+    working = list(messages)
+    for _ in range(4):
+        data = _openai_request(
+            api_key=api_key,
+            model=model,
+            system=system,
+            messages=working,
+        )
+        choice = (data.get("choices") or [{}])[0]
+        message = choice.get("message") or {}
+        tool_calls = message.get("tool_calls") or []
+        if not tool_calls:
+            reply = str(message.get("content") or "").strip()
+            if reply:
+                if pdf_attachment:
+                    reply = _strip_pdf_markdown_links(reply)
+                return reply, pdf_attachment, image_attachment
+            raise TextChatError("Respuesta vacía del asistente.")
+
+        working.append(message)
+        for tool in tool_calls:
+            fn = tool.get("function") or {}
+            name = str(fn.get("name") or "")
+            raw_args = fn.get("arguments") or "{}"
+            try:
+                tool_input = json.loads(raw_args) if isinstance(raw_args, str) else {}
+            except json.JSONDecodeError:
+                tool_input = {}
+            if not isinstance(tool_input, dict):
+                tool_input = {}
+            result = _run_chat_tool(user_id, name, tool_input)
+            maybe_pdf = _extract_pdf_from_tool_result(result)
+            if maybe_pdf:
+                pdf_attachment = maybe_pdf
+            maybe_img = _extract_image_from_tool_result(result)
+            if maybe_img:
+                image_attachment = maybe_img
+            working.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tool.get("id"),
+                    "content": result,
+                }
+            )
+
+    raise TextChatError("Demasiados pasos de herramientas. Intenta con un pedido más simple.")
+
+
 def _complete_chat_with_tools(
     user_id: str,
     *,
     api_key: str,
     system: str,
     messages: list[dict[str, Any]],
-) -> tuple[str, dict[str, Any] | None]:
+) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
     pdf_attachment: dict[str, Any] | None = None
+    image_attachment: dict[str, Any] | None = None
     for _ in range(4):
         data = _anthropic_request(api_key=api_key, system=system, messages=messages)
         blocks = data.get("content") or []
@@ -357,7 +541,7 @@ def _complete_chat_with_tools(
             if reply:
                 if pdf_attachment:
                     reply = _strip_pdf_markdown_links(reply)
-                return reply, pdf_attachment
+                return reply, pdf_attachment, image_attachment
             raise TextChatError("Respuesta vacía del asistente.")
 
         messages.append({"role": "assistant", "content": blocks})
@@ -368,6 +552,9 @@ def _complete_chat_with_tools(
             maybe_pdf = _extract_pdf_from_tool_result(result)
             if maybe_pdf:
                 pdf_attachment = maybe_pdf
+            maybe_img = _extract_image_from_tool_result(result)
+            if maybe_img:
+                image_attachment = maybe_img
             tool_results.append(
                 {
                     "type": "tool_result",
@@ -378,6 +565,43 @@ def _complete_chat_with_tools(
         messages.append({"role": "user", "content": tool_results})
 
     raise TextChatError("Demasiados pasos de herramientas. Intenta con un pedido más simple.")
+
+
+def _complete_chat_resilient(
+    user_id: str,
+    *,
+    anthropic_key: str,
+    openai_key: str,
+    openai_model: str,
+    system: str,
+    messages: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+    """Anthropic primero si hay key; fallback OpenAI si falla auth o no hay Anthropic."""
+    if anthropic_key:
+        try:
+            return _complete_chat_with_tools(
+                user_id,
+                api_key=anthropic_key,
+                system=system,
+                messages=messages,
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (401, 403) and openai_key:
+                logger.warning("[CHAT] Anthropic auth failed — fallback OpenAI")
+            else:
+                raise
+    if openai_key:
+        return _complete_chat_with_tools_openai(
+            user_id,
+            api_key=openai_key,
+            model=openai_model,
+            system=system,
+            messages=messages,
+        )
+    raise TextChatError(
+        "Servicio de chat temporalmente no disponible. Intenta de nuevo en unos minutos.",
+        http_status=503,
+    )
 
 
 def send_message(
@@ -399,13 +623,18 @@ def send_message(
         )
     if status["blocked"]:
         raise TextChatError(
-            "Alcanzaste el límite de mensajes de hoy. Mejora tu plan o vuelve mañana."
+            "Alcanzaste el límite de mensajes de hoy. Mejora tu plan o vuelve mañana.",
+            http_status=429,
         )
 
     settings = get_settings()
-    api_key = settings.anthropic_api_key.strip()
-    if not api_key:
-        raise TextChatError("Chat no configurado (ANTHROPIC_API_KEY).")
+    anthropic_key = settings.anthropic_api_key.strip()
+    openai_key = settings.openai_api_key.strip()
+    if not anthropic_key and not openai_key:
+        raise TextChatError(
+            "Servicio de chat temporalmente no disponible. Intenta de nuevo en unos minutos.",
+            http_status=503,
+        )
 
     if conversation_id:
         conv = supabase_db.get_conversation(conversation_id, user_id)
@@ -419,13 +648,12 @@ def send_message(
     history = supabase_db.get_conversation_messages(conversation_id, user_id, limit=30)
     supabase_db.append_message(conversation_id, user_id, "user", text)
 
-    route = route_message(user_id, text, channel="text")
-
     def _finish(
         reply: str,
         *,
         route_meta: dict | None = None,
         pdf: dict[str, Any] | None = None,
+        image: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         supabase_db.append_message(conversation_id, user_id, "model", reply)
         updated_status = chat_status(user_id)
@@ -438,7 +666,23 @@ def send_message(
             out["cognitive"] = route_meta
         if pdf:
             out["pdf"] = pdf
+        if image:
+            out["image"] = image
         return out
+
+    followup_prompt = _advanced_confirm_followup(history, text)
+    if followup_prompt:
+        deep = consultar_sistema_avanzado(followup_prompt)
+        if deep.get("ok"):
+            reply = str(deep.get("result") or "").strip() or "Listo."
+        else:
+            reply = str(deep.get("error") or "El sistema avanzado no respondió.")
+        return _finish(
+            reply,
+            route_meta={"intent": "advanced_analysis", "source": "confirm_followup"},
+        )
+
+    route = route_message(user_id, text, channel="text")
 
     if route.intent == "memory_save" and route.speakable:
         return _finish(route.speakable, route_meta=route.to_dict())
@@ -454,29 +698,47 @@ def send_message(
     system = _chat_system_for_user(user_id) + "\n\n" + build_chat_system_extras(user_id, route)
 
     try:
-        reply, pdf_attachment = _complete_chat_with_tools(
+        reply, pdf_attachment, image_attachment = _complete_chat_resilient(
             user_id,
-            api_key=api_key,
+            anthropic_key=anthropic_key,
+            openai_key=openai_key,
+            openai_model=settings.openai_model_chat,
             system=system,
             messages=messages,
         )
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         body = exc.response.text[:300]
-        logger.error("[CHAT] anthropic %s %s", status, body)
+        logger.error("[CHAT] provider %s %s", status, body)
         if status in (401, 403):
             raise TextChatError(
-                "Chat no configurado: revisa ANTHROPIC_API_KEY en Railway (servicio CED-WEB)."
+                "Servicio de chat temporalmente no disponible. Intenta de nuevo en unos minutos.",
+                http_status=503,
             ) from exc
         if status == 404:
             raise TextChatError(
-                f"Modelo de chat no disponible ({CHAT_MODEL}). Contacta soporte."
+                "Modelo de chat no disponible. Contacta soporte.",
+                http_status=503,
+            ) from exc
+        if status == 429:
+            raise TextChatError(
+                "Demasiadas solicitudes. Espera un momento e intenta de nuevo.",
+                http_status=429,
             ) from exc
         raise TextChatError(
-            "No pude obtener respuesta del asistente. Intenta de nuevo en un momento."
+            "No pude obtener respuesta del asistente. Intenta de nuevo en un momento.",
+            http_status=503,
         ) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[CHAT] anthropic failed")
-        raise TextChatError("Error de conexión con el asistente.") from exc
+        logger.exception("[CHAT] provider failed")
+        raise TextChatError(
+            "Error de conexión con el asistente.",
+            http_status=503,
+        ) from exc
 
-    return _finish(reply, route_meta=route.to_dict(), pdf=pdf_attachment)
+    return _finish(
+        reply,
+        route_meta=route.to_dict(),
+        pdf=pdf_attachment,
+        image=image_attachment,
+    )

@@ -10,6 +10,8 @@ export const DESACTIVAR_PROSPECCION = "desactivar_prospeccion";
 export const REPORTE_PROSPECCION = "reporte_prospeccion";
 export const BUSCAR_LO_VISIBLE = "buscar_lo_visible";
 export const ANALIZAR_CAMARA = "analyze_camera_frame";
+export const REQUEST_CAMERA_ACTIVATION = "request_camera_activation";
+export const REQUEST_CAMERA_DEACTIVATION = "request_camera_deactivation";
 export const PUBLICAR_FACEBOOK = "publicar_facebook";
 export const PUBLICAR_INSTAGRAM = "publicar_instagram";
 export const GENERAR_PDF = "generar_pdf";
@@ -153,4 +155,6 @@ export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
 export const LIVE_TOOL_NAMES = new Set([
   ...(LIVE_FUNCTION_DECLARATIONS.map((d) => d.name).filter(Boolean) as string[]),
   ANALIZAR_CAMARA,
+  REQUEST_CAMERA_ACTIVATION,
+  REQUEST_CAMERA_DEACTIVATION,
 ]);

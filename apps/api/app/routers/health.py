@@ -157,6 +157,7 @@ def integrations_status(
         and stripe_status.get("ok")
         and openai_status.get("ok")
         and anthropic_status.get("ok"),
+        "chat_ready": anthropic_status.get("ok") or openai_status.get("ok"),
     }
 
 

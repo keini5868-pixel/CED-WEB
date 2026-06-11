@@ -14,6 +14,15 @@ logger = logging.getLogger(__name__)
 
 VISION_MODEL = "gemini-2.5-flash"
 
+ANALYZE_PROMPT_DEFAULT = (
+    "Eres la visión de CED para Keini Castillo. Mira la imagen con atención.\n"
+    "Responde en español latinoamericano, claro y directo (máx. 4 oraciones cortas):\n"
+    "1) QUÉ ES — nombre concreto del objeto, producto, persona, texto o escena principal.\n"
+    "2) DETALLE RELEVANTE — color, marca, texto legible, cantidad, acción o contexto útil.\n"
+    "3) Si hay texto visible, transcríbelo entre comillas.\n"
+    "PROHIBIDO: 'parece que', 'no estoy seguro', 'podría ser'. Di lo que SÍ ves."
+)
+
 
 def _decode_image(image_b64: str) -> bytes:
     raw = image_b64.strip()
@@ -22,18 +31,11 @@ def _decode_image(image_b64: str) -> bytes:
     return base64.b64decode(raw)
 
 
-def _identify_subject(image_bytes: bytes, question: str = "") -> str:
+def _gemini_vision(image_bytes: bytes, prompt: str, *, max_tokens: int = 320) -> str:
     settings = get_settings()
     api_key = settings.google_api_key.strip()
     if not api_key:
         return ""
-
-    prompt = (
-        question.strip()
-        or "Identifica el objeto, producto, marca o texto principal en esta imagen. "
-        "Responde en UNA frase corta en español, ideal para buscar en Google. "
-        "Ejemplo: 'procesador AMD Ryzen' o 'logo Nike'. Sin markdown."
-    )
     try:
         from google import genai
         from google.genai import types
@@ -51,23 +53,33 @@ def _identify_subject(image_bytes: bytes, question: str = "") -> str:
                 )
             ],
             config=types.GenerateContentConfig(
-                temperature=0.2,
-                max_output_tokens=128,
+                temperature=0.12,
+                max_output_tokens=max_tokens,
             ),
         )
-        text = (getattr(response, "text", None) or "").strip()
-        text = re.sub(r"^(es|se ve|parece)\s+(un|una)\s+", "", text, flags=re.I)
-        return text[:200]
+        return (getattr(response, "text", None) or "").strip()
     except Exception as exc:  # noqa: BLE001
-        logger.error("[VISION] identify %s", exc)
+        logger.error("[VISION] gemini %s", exc)
         return ""
 
 
-def _spoken(text: str) -> str:
+def _identify_subject(image_bytes: bytes, question: str = "") -> str:
+    prompt = (
+        question.strip()
+        or "Identifica el objeto, producto, marca o texto principal en esta imagen. "
+        "Responde en UNA frase corta en español, ideal para buscar en Google. "
+        "Ejemplo: 'procesador AMD Ryzen' o 'logo Nike'. Sin markdown."
+    )
+    text = _gemini_vision(image_bytes, prompt, max_tokens=128)
+    text = re.sub(r"^(es|se ve|parece)\s+(un|una)\s+", "", text, flags=re.I)
+    return text[:200]
+
+
+def _spoken(text: str, limit: int = 420) -> str:
     t = re.sub(r"\s+", " ", text).strip()
     if not t:
         return ""
-    return t[:420]
+    return t[:limit]
 
 
 def analyze_image(
@@ -75,19 +87,22 @@ def analyze_image(
     *,
     question: str = "",
 ) -> dict[str, Any]:
-    """Describe lo visible sin buscar en internet."""
+    """Describe lo visible con precisión — sin buscar en internet."""
     try:
         image_bytes = _decode_image(image_b64)
     except Exception:
         return {"ok": False, "error": "Imagen inválida"}
 
-    subject = _identify_subject(
-        image_bytes,
-        question or "Describe brevemente lo que ves en esta imagen para narración por voz en español.",
-    )
+    user_q = question.strip()
+    prompt = ANALYZE_PROMPT_DEFAULT
+    if user_q and len(user_q) > 8:
+        prompt = f"{ANALYZE_PROMPT_DEFAULT}\n\nPregunta de Keini: {user_q}"
+
+    subject = _gemini_vision(image_bytes, prompt, max_tokens=380)
     if not subject:
         return {"ok": False, "error": "No pude analizar la imagen"}
-    return {"ok": True, "summary": _spoken(subject), "subject": subject}
+    summary = _spoken(subject, limit=580)
+    return {"ok": True, "summary": summary, "subject": summary[:200]}
 
 
 def vision_search_web(

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   fetchChatStatus,
   sendChatMessage,
+  type ChatImageAttachment,
   type ChatMessage,
   type ChatPdfAttachment,
   type ChatStatus,
@@ -15,6 +16,9 @@ import { downloadPdfBlob } from "@/lib/api/pdf";
 type CedTextChatPanelProps = {
   open: boolean;
   onClose: () => void;
+  /** Imagen generada por voz — se muestra al abrir el chat */
+  seedImage?: ChatImageAttachment | null;
+  onSeedConsumed?: () => void;
 };
 
 function formatTime(iso?: string) {
@@ -81,7 +85,30 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
   );
 }
 
-export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
+function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
+  return (
+    <div className="mt-3 overflow-hidden rounded-lg border border-cyan-500/30 bg-black/40">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={image.url}
+        alt={image.prompt || "Imagen generada por CED"}
+        className="max-h-64 w-full object-contain"
+      />
+      {image.prompt ? (
+        <p className="border-t border-cyan-900/40 px-2 py-1.5 text-[10px] text-cyan-600">
+          {image.prompt}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+export function CedTextChatPanel({
+  open,
+  onClose,
+  seedImage,
+  onSeedConsumed,
+}: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -104,11 +131,29 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
         {
           role: "model",
           content:
-            "Hola, soy CED. Escríbeme aquí o usa ASISTENTE CED para voz en vivo. También puedo convertir info a PDF.",
+            "Hola, soy CED. Escríbeme aquí o usa ASISTENTE CED para voz en vivo. Puedo generar imágenes, PDFs y publicar en redes.",
         },
       ]);
     }
   }, [open, messages.length, refreshStatus]);
+
+  useEffect(() => {
+    if (!open || !seedImage?.url) return;
+    const seed = seedImage;
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "model",
+        content: seed.prompt
+          ? `Imagen generada: ${seed.prompt}`
+          : "Imagen generada con IA.",
+        created_at: new Date().toISOString(),
+        image: seed,
+      },
+    ]);
+    onSeedConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- consumir seed una vez por URL
+  }, [seedImage?.url, open]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -134,6 +179,7 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
           content: result.reply,
           created_at: new Date().toISOString(),
           pdf: result.pdf ?? extractPdfFromContent(result.reply),
+          image: result.image ?? null,
         },
       ]);
       setStatus(result.usage);
@@ -197,6 +243,7 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
             const pdfAttachment = msg.pdf ?? extractPdfFromContent(msg.content);
+            const imageAttachment = msg.image ?? null;
             const displayContent = isUser ? msg.content : stripPdfLinks(msg.content);
             return (
               <div
@@ -216,6 +263,7 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
                     </div>
                   )}
                   <p className="whitespace-pre-wrap break-words">{displayContent}</p>
+                  {imageAttachment ? <ChatImagePreview image={imageAttachment} /> : null}
                   {pdfAttachment ? <PdfDownloadButton pdf={pdfAttachment} /> : null}
                   <p className="mt-1 text-[9px] opacity-50">{formatTime(msg.created_at)}</p>
                 </div>
@@ -256,7 +304,7 @@ export function CedTextChatPanel({ open, onClose }: CedTextChatPanelProps) {
             </button>
           </div>
           <p className="mt-1 text-center text-[9px] text-cyan-700">
-            Enter envía · Pide &quot;convierte esto a PDF&quot;
+            Enter envía · Pide &quot;genera una imagen de…&quot; o &quot;convierte esto a PDF&quot;
           </p>
         </footer>
       </div>

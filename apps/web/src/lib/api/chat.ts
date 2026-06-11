@@ -4,19 +4,26 @@ import { parseApiJson } from "@/lib/api/http";
 const proxyFetch = (path: string, init?: RequestInit) =>
   fetch(cedApiPath(path), { credentials: "same-origin", ...init });
 
+export type ChatPdfAttachment = {
+  file_id: string;
+  filename: string;
+  title?: string;
+  download_path?: string | null;
+};
+
+export type ChatImageAttachment = {
+  url: string;
+  prompt?: string;
+  quality?: string;
+};
+
 export type ChatMessage = {
   id?: string;
   role: "user" | "model" | "system";
   content: string;
   created_at?: string;
   pdf?: ChatPdfAttachment | null;
-};
-
-export type ChatPdfAttachment = {
-  file_id: string;
-  filename: string;
-  title?: string;
-  download_path?: string | null;
+  image?: ChatImageAttachment | null;
 };
 
 export type ChatStatus = {
@@ -53,6 +60,7 @@ export async function sendChatMessage(
   reply: string;
   usage: ChatStatus;
   pdf?: ChatPdfAttachment | null;
+  image?: ChatImageAttachment | null;
 }> {
   const res = await proxyFetch("chat/send", {
     method: "POST",
@@ -67,6 +75,7 @@ export async function sendChatMessage(
     reply?: string;
     usage?: ChatStatus;
     pdf?: ChatPdfAttachment;
+    image?: ChatImageAttachment;
     detail?: string;
   }>(res);
   if (!res.ok) {
@@ -77,5 +86,6 @@ export async function sendChatMessage(
     reply: data.reply!,
     usage: data.usage!,
     pdf: data.pdf ?? null,
+    image: data.image ?? null,
   };
 }

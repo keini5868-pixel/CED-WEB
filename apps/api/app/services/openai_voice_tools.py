@@ -80,6 +80,34 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "request_camera_activation",
+        "description": (
+            "Activa la cámara del usuario para que puedas VER lo que muestra. "
+            "Usar cuando diga 'activa la cámara', 'enciende la cámara', "
+            "'quiero mostrarte algo', 'mira esto', 'puedes ver esto'. "
+            "El cliente enciende la cámara y envía frames — NO simules encender."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "reason": {
+                    "type": "string",
+                    "description": "Motivo breve de activación",
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "name": "request_camera_deactivation",
+        "description": (
+            "Desactiva la cámara cuando el usuario diga 'apaga la cámara', "
+            "'desactiva la cámara' o 'deja de mirar'."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
         "name": "analyze_camera_frame",
         "description": (
             "OBLIGATORIO cuando el usuario pregunta qué ves en cámara o qué hay frente a la cámara. "

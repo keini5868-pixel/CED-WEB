@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services import supabase_db
 from app.services.text_chat import TextChatError, chat_status, send_message
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
 
@@ -61,6 +65,10 @@ def post_chat_message(
             conversation_id=body.conversation_id,
         )
     except TextChatError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=503, detail="Error en chat.") from exc
+        logger.exception("[CHAT] unexpected error")
+        raise HTTPException(
+            status_code=503,
+            detail="Error procesando mensaje. Reintenta.",
+        ) from exc
