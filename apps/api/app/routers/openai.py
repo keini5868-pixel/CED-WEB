@@ -5,14 +5,15 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header, Request
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.domain.openai_voice_prompt import OPENAI_REALTIME_SYSTEM_PROMPT
 from app.services.claude_deep_analysis import consultar_sistema_avanzado
 from app.services.gemini_grounded import fetch_voice_brief
-from app.services.openai_realtime import create_realtime_session
+from app.services.openai_realtime import create_realtime_session, negotiate_realtime_call
 from app.services.openai_voice_config import OPENAI_VOICES, normalize_openai_voice
 from app.services.voice_usage import voice_access_state
 
@@ -70,6 +71,20 @@ async def realtime_session(
         result["usagePercent"] = balance.get("usage_percent", 0)
         result["warningLevel"] = _warning_level(balance.get("usage_percent", 0))
     return result
+
+
+@router.post("/realtime/calls")
+async def realtime_calls(
+    request: Request,
+    x_openai_ephemeral_key: str = Header(..., alias="X-OpenAI-Ephemeral-Key"),
+    _user_id: str = Depends(require_user_id),
+) -> PlainTextResponse | dict:
+    """Negocia WebRTC SDP con OpenAI usando token efímero (proxy anti-CORS)."""
+    sdp_offer = (await request.body()).decode("utf-8", errors="replace")
+    result = negotiate_realtime_call(client_secret=x_openai_ephemeral_key, sdp_offer=sdp_offer)
+    if not result.get("ok"):
+        return result
+    return PlainTextResponse(content=str(result["sdpAnswer"]), media_type="application/sdp")
 
 
 def _warning_level(pct: float) -> str | None:

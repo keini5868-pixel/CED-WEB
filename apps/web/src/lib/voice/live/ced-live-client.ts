@@ -1,12 +1,12 @@
 /**
- * Cliente OpenAI Realtime — misma interfaz que el antiguo CedLiveClient (Gemini).
+ * Cliente OpenAI Realtime vía WebRTC (recomendado por OpenAI para navegadores).
+ * Audio in/out por RTCPeerConnection; eventos y tools por data channel oai-events.
  */
 
 import type { VoiceSessionPreferences } from "@ced/types";
 
-import { fetchDeepAnalysis, fetchVoiceBrief } from "@/lib/api/openai";
+import { fetchDeepAnalysis, fetchVoiceBrief, negotiateRealtimeCall } from "@/lib/api/openai";
 import { fetchEphemeralTokenCached } from "@/lib/voice/ephemeralTokenCache";
-import { base64ToArrayBuffer } from "@/lib/audio/pcmUtils";
 import { parseCameraIntent } from "@/lib/voice/cameraIntents";
 import { cedVoiceError, cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
 import {
@@ -20,14 +20,9 @@ import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import {
   isInputTranscriptionCompleted,
-  isResponseAudioDelta,
-  isResponseAudioDone,
   isResponseAudioTranscriptDelta,
 } from "@/lib/voice/realtimeEvents";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
-import { buildSessionUpdatePayload } from "@/lib/voice/live/realtime-session-tuning";
-
-const OPENAI_REALTIME_URL = "wss://api.openai.com/v1/realtime";
 
 const TOOL_ALIAS: Record<string, string> = {
   save_memory: GUARDAR_MEMORIA,
@@ -47,6 +42,8 @@ export type CedLiveConnectOptions = {
   voiceName?: string;
   language?: VoiceSessionPreferences["language"];
   responseSpeed?: VoiceSessionPreferences["responseSpeed"];
+  /** Stream de micrófono con echoCancellation (WebRTC uplink). */
+  micStream: MediaStream;
 };
 
 export type CedLiveHandlers = {
@@ -54,9 +51,9 @@ export type CedLiveHandlers = {
   onSessionReady?: () => void;
   onTranscriptUpdate?: (text: string, role: "user" | "model") => void;
   onTranscript?: (text: string, role: "user" | "model") => void;
-  onAudio?: (buffer: ArrayBuffer) => void;
+  /** WebRTC reproduce audio remoto; callback opcional para UI (inicio de respuesta). */
+  onResponseStart?: () => void;
   onTurnComplete?: () => void;
-  onModelAudioDone?: () => void;
   onInterrupted?: () => void;
   onSpeechStopped?: () => void;
   onToolStart?: (toolName: string) => void;
@@ -72,23 +69,22 @@ export type CedLiveHandlers = {
   ) => Promise<{ spoken?: string } | void>;
 };
 
-function classifyOpenAIClose(unexpected: boolean, code: number): GeminiCloseInfo {
+function classifyPeerClose(unexpected: boolean): GeminiCloseInfo {
   if (!unexpected) {
     return { unexpected: false, recoverable: false };
   }
-  const recoverable = code === 1006 || code === 1011 || code >= 4000;
   return {
     unexpected: true,
-    recoverable,
-    userMessage: recoverable
-      ? undefined
-      : "OpenAI cerró la sesión. Revisa tu API key y saldo en platform.openai.com.",
-    code,
+    recoverable: true,
+    userMessage: undefined,
   };
 }
 
 export class CedLiveClient {
-  private ws: WebSocket | null = null;
+  private pc: RTCPeerConnection | null = null;
+  private dc: RTCDataChannel | null = null;
+  private remoteAudio: HTMLAudioElement | null = null;
+  private micStream: MediaStream | null = null;
   private sessionReady = false;
   private connectGen = 0;
   private connectInFlight = false;
@@ -101,18 +97,30 @@ export class CedLiveClient {
   private recentToolAt = new Map<string, number>();
   private activeResponseId: string | null = null;
   private responseInProgress = false;
-  private modelAudioActive = false;
-  private blockServerVad = false;
   private static TOOL_COOLDOWN_MS = 2000;
   private handlers: CedLiveHandlers = {};
 
   isOpen(): boolean {
-    return Boolean(this.ws && this.sessionReady && !this.sendBlocked);
+    return Boolean(this.pc && this.sessionReady && !this.sendBlocked);
   }
 
-  /** Half-duplex: ignorar VAD del servidor mientras CED reproduce (anti-eco). */
-  setBlockServerVad(block: boolean): void {
-    this.blockServerVad = block;
+  /** Compat — WebRTC maneja half-duplex con AEC nativo. */
+  setBlockServerVad(_block: boolean): void {}
+
+  setMicTrackEnabled(enabled: boolean): void {
+    this.micStream?.getAudioTracks().forEach((t) => {
+      t.enabled = enabled;
+    });
+  }
+
+  setRemoteMuted(muted: boolean): void {
+    if (this.remoteAudio) {
+      this.remoteAudio.muted = muted;
+    }
+  }
+
+  flushInputAudioBuffer(): void {
+    this.send({ type: "input_audio_buffer.clear" });
   }
 
   disconnect(): void {
@@ -120,37 +128,46 @@ export class CedLiveClient {
     this.sessionReady = false;
     this.sendBlocked = true;
     this.connectGen += 1;
-    if (this.ws) {
-      try {
-        this.ws.close(1000, "client disconnect");
-      } catch {
-        /* ignore */
-      }
-      this.ws = null;
+
+    this.dc?.close();
+    this.dc = null;
+
+    if (this.pc) {
+      this.pc.close();
+      this.pc = null;
     }
+
+    if (this.remoteAudio) {
+      this.remoteAudio.srcObject = null;
+      this.remoteAudio = null;
+    }
+
     voiceTelemetry.setWsState("disconnected");
     voiceTelemetry.setSessionId(null);
   }
 
   async connect(
     handlers: CedLiveHandlers,
-    options: CedLiveConnectOptions = {},
+    options: CedLiveConnectOptions,
   ): Promise<boolean> {
     if (this.connectInFlight) return false;
+    if (!options.micStream?.getAudioTracks().length) {
+      handlers.onError?.("Micrófono no disponible para WebRTC.");
+      return false;
+    }
 
     this.connectInFlight = true;
     this.handlers = handlers;
     this.sendBlocked = true;
     this.disconnect();
     this.intentionalClose = false;
+    this.micStream = options.micStream;
     this.userTranscriptAcc = "";
     this.modelTranscriptAcc = "";
     this.processedCallIds.clear();
     this.recentToolAt.clear();
     this.activeResponseId = null;
     this.responseInProgress = false;
-    this.modelAudioActive = false;
-    this.blockServerVad = false;
 
     const generation = this.connectGen;
     const isStale = () => generation !== this.connectGen;
@@ -158,7 +175,7 @@ export class CedLiveClient {
     handlers.onState?.("connecting");
     voiceTelemetry.reset();
     voiceTelemetry.setWsState("connecting");
-    voiceTelemetry.setSessionId(`openai-${Date.now()}`);
+    voiceTelemetry.setSessionId(`openai-webrtc-${Date.now()}`);
 
     const tokenRes = await fetchEphemeralTokenCached(options.voiceName);
     if (isStale()) {
@@ -177,259 +194,237 @@ export class CedLiveClient {
     this.model = tokenRes.model;
     voiceTelemetry.setActiveVoice(voiceName);
 
-    return new Promise<boolean>((resolve) => {
+    try {
+      const pc = new RTCPeerConnection();
+      this.pc = pc;
+
+      const remoteAudio = document.createElement("audio");
+      remoteAudio.autoplay = true;
+      remoteAudio.setAttribute("playsinline", "true");
+      this.remoteAudio = remoteAudio;
+
+      pc.ontrack = (ev) => {
+        const [stream] = ev.streams;
+        if (stream && this.remoteAudio) {
+          this.remoteAudio.srcObject = stream;
+          void this.remoteAudio.play().catch(() => undefined);
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        if (isStale() || !this.pc) return;
+        const state = this.pc.connectionState;
+        cedVoiceLog(5, "WebRTC connection state", { state });
+        if (state === "failed") {
+          this.sessionReady = false;
+          this.sendBlocked = true;
+          handlers.onState?.("error");
+          handlers.onError?.("Conexión WebRTC falló.");
+          voiceTelemetry.setWsState("error", "webrtc failed");
+          handlers.onClose?.(classifyPeerClose(true));
+        }
+        if (state === "disconnected" || state === "closed") {
+          if (!this.intentionalClose) {
+            this.sessionReady = false;
+            this.sendBlocked = true;
+            voiceTelemetry.setWsState("closed");
+            handlers.onState?.("closed");
+            handlers.onClose?.(classifyPeerClose(true));
+          }
+        }
+      };
+
+      options.micStream.getAudioTracks().forEach((track) => {
+        pc.addTrack(track, options.micStream);
+      });
+
+      const dc = pc.createDataChannel("oai-events");
+      this.dc = dc;
+
+      const readyPromise = new Promise<boolean>((resolve) => {
+        const readyTimeout = window.setTimeout(() => {
+          if (!this.sessionReady && !isStale()) {
+            handlers.onError?.("OpenAI no respondió a tiempo (WebRTC).");
+            handlers.onState?.("error");
+            resolve(false);
+          }
+        }, 20000);
+
+        const markReady = () => {
+          if (this.sessionReady || isStale()) return;
+          window.clearTimeout(readyTimeout);
+          this.sessionReady = true;
+          this.sendBlocked = false;
+          voiceTelemetry.markSetupComplete();
+          handlers.onState?.("connected");
+          handlers.onSessionReady?.();
+          cedVoiceLog(6, "OpenAI WebRTC session ready");
+          this.connectInFlight = false;
+          resolve(true);
+        };
+
+        dc.onopen = () => {
+          cedVoiceLog(5, "WebRTC data channel open");
+        };
+
+        dc.onmessage = (ev) => {
+          if (isStale()) return;
+          try {
+            const msg = JSON.parse(String(ev.data)) as Record<string, unknown>;
+            void this.handleServerEvent(msg, markReady);
+          } catch {
+            /* ignore */
+          }
+        };
+
+        dc.onclose = () => {
+          if (!this.intentionalClose && !isStale()) {
+            this.sessionReady = false;
+            this.sendBlocked = true;
+            voiceTelemetry.setWsState("closed");
+            handlers.onState?.("closed");
+            handlers.onClose?.(classifyPeerClose(true));
+          }
+        };
+      });
+
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      const negotiate = await negotiateRealtimeCall(
+        offer.sdp ?? "",
+        tokenRes.clientSecret,
+      );
       if (isStale()) {
         this.connectInFlight = false;
-        resolve(false);
-        return;
+        return false;
+      }
+      if (!negotiate.ok) {
+        handlers.onState?.("error");
+        handlers.onError?.(negotiate.error);
+        voiceTelemetry.setWsState("error", negotiate.error);
+        this.connectInFlight = false;
+        return false;
       }
 
-      const url = `${OPENAI_REALTIME_URL}?model=${encodeURIComponent(this.model)}`;
-      const ws = new WebSocket(url, [
-        "realtime",
-        `openai-insecure-api-key.${tokenRes.clientSecret}`,
-      ]);
-      this.ws = ws;
+      await pc.setRemoteDescription({
+        type: "answer",
+        sdp: negotiate.sdpAnswer,
+      });
 
-      ws.onopen = () => {
-        if (isStale()) return;
-        voiceTelemetry.setWsState("connected");
-        cedVoiceLog(5, "Conectando OpenAI Realtime", {
-          model: this.model,
-          voice: voiceName,
-        });
-      };
+      voiceTelemetry.setWsState("connected");
+      cedVoiceLog(5, "WebRTC negociado", { model: this.model, voice: voiceName });
 
-      ws.onmessage = (ev) => {
-        if (isStale()) return;
-        try {
-          const msg = JSON.parse(String(ev.data)) as Record<string, unknown>;
-          void this.handleServerEvent(msg);
-        } catch {
-          /* ignore */
-        }
-      };
-
-      ws.onerror = () => {
-        if (isStale()) return;
-        const msg = "Error en OpenAI Realtime";
-        this.sessionReady = false;
-        this.sendBlocked = true;
-        this.ws = null;
-        cedVoiceError("[OPENAI:ERROR]", msg);
-        handlers.onState?.("error");
-        handlers.onError?.(msg);
-        voiceTelemetry.setWsState("error", msg);
-        this.connectInFlight = false;
-        resolve(false);
-      };
-
-      ws.onclose = (event) => {
-        if (isStale()) return;
-        const unexpected = !this.intentionalClose;
-        this.sessionReady = false;
-        this.sendBlocked = true;
-        this.ws = null;
-        voiceTelemetry.setWsState("closed");
-        const closeInfo = classifyOpenAIClose(unexpected, event.code);
-        handlers.onState?.("closed");
-        if (!closeInfo.recoverable && closeInfo.userMessage) {
-          handlers.onError?.(closeInfo.userMessage);
-          handlers.onState?.("error");
-        }
-        handlers.onClose?.(closeInfo);
-        this.connectInFlight = false;
-        if (!this.sessionReady) resolve(false);
-      };
-
-      const readyTimeout = window.setTimeout(() => {
-        if (!this.sessionReady && !isStale()) {
-          handlers.onError?.("OpenAI no respondió a tiempo.");
-          handlers.onState?.("error");
-          this.connectInFlight = false;
-          resolve(false);
-        }
-      }, 15000);
-
-      const markReady = () => {
-        if (this.sessionReady || isStale()) return;
-        window.clearTimeout(readyTimeout);
-        this.sessionReady = true;
-        this.sendBlocked = false;
-        voiceTelemetry.markSetupComplete();
-        handlers.onState?.("connected");
-        handlers.onSessionReady?.();
-        cedVoiceLog(6, "OpenAI session ready");
-        this.connectInFlight = false;
-        resolve(true);
-      };
-
-      this.handleServerEvent = async (msg: Record<string, unknown>) => {
-        const type = String(msg.type ?? "");
-
-        if (type === "session.created" || type === "session.updated") {
-          if (type === "session.created") {
-            this.send(buildSessionUpdatePayload());
-          }
-          markReady();
-          return;
-        }
-
-        if (type === "response.created") {
-          const response = msg.response as { id?: string } | undefined;
-          this.activeResponseId = response?.id ?? null;
-          this.responseInProgress = true;
-          this.blockServerVad = true;
-          this.clearInputAudioBuffer();
-          return;
-        }
-
-        if (isResponseAudioDelta(type)) {
-          const delta = String(msg.delta ?? "");
-          if (delta) {
-            this.modelAudioActive = true;
-            voiceTelemetry.markPcmReceived(`pcm16 · ${delta.length}b`);
-            handlers.onAudio?.(base64ToArrayBuffer(delta));
-          }
-          return;
-        }
-
-        if (isResponseAudioTranscriptDelta(type)) {
-          const delta = String(msg.delta ?? "");
-          this.modelTranscriptAcc += delta;
-          if (delta) handlers.onTranscriptUpdate?.(this.modelTranscriptAcc, "model");
-          return;
-        }
-
-        if (isResponseAudioDone(type)) {
-          handlers.onModelAudioDone?.();
-          return;
-        }
-
-        if (isInputTranscriptionCompleted(type)) {
-          const transcript = String(msg.transcript ?? "");
-          if (transcript.trim()) {
-            this.userTranscriptAcc = transcript.trim();
-            handlers.onTranscriptUpdate?.(transcript.trim(), "user");
-            const intent = parseCameraIntent(transcript.trim());
-            if (intent) handlers.onCameraIntent?.(intent);
-          }
-          return;
-        }
-
-        if (type === "input_audio_buffer.speech_stopped") {
-          if (this.blockServerVad) {
-            cedVoiceLog(5, "speech_stopped ignorado (anti-eco), limpiando buffer");
-            this.clearInputAudioBuffer();
-            return;
-          }
-          handlers.onSpeechStopped?.();
-          if (!this.responseInProgress && !this.modelAudioActive && !this.sendBlocked) {
-            this.send({ type: "response.create" });
-          }
-          return;
-        }
-
-        if (type === "input_audio_buffer.speech_started") {
-          if (this.blockServerVad) {
-            cedVoiceLog(5, "speech_started ignorado (CED hablando / anti-eco)");
-            return;
-          }
-          if (this.responseInProgress || this.modelAudioActive) {
-            this.handleUserInterrupt();
-          }
-          return;
-        }
-
-        if (type === "response.cancelled") {
-          this.activeResponseId = null;
-          this.responseInProgress = false;
-          this.modelAudioActive = false;
-          this.blockServerVad = false;
-          this.clearInputAudioBuffer();
-          handlers.onInterrupted?.();
-          return;
-        }
-
-        if (type === "response.done") {
-          const response = msg.response as { status?: string; id?: string } | undefined;
-          if (response?.status === "cancelled") {
-            cedVoiceLog(5, "OpenAI response cancelled (server VAD)");
-          }
-          this.activeResponseId = null;
-          this.responseInProgress = false;
-          this.modelAudioActive = false;
-          /* blockServerVad: lo libera el hook tras drenar playback (anti-eco) */
-          this.clearInputAudioBuffer();
-          if (this.modelTranscriptAcc.trim()) {
-            handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
-            this.modelTranscriptAcc = "";
-          }
-          if (this.userTranscriptAcc.trim()) {
-            handlers.onTranscript?.(this.userTranscriptAcc.trim(), "user");
-            this.userTranscriptAcc = "";
-          }
-          voiceTelemetry.markTurnComplete();
-          handlers.onTurnComplete?.();
-          return;
-        }
-
-        if (type === "response.function_call_arguments.done") {
-          const callId = String(msg.call_id ?? "");
-          const name = String(msg.name ?? "");
-          let args: Record<string, unknown> = {};
-          try {
-            args = JSON.parse(String(msg.arguments ?? "{}")) as Record<string, unknown>;
-          } catch {
-            args = {};
-          }
-          await this.dispatchTool(name, callId, args);
-          return;
-        }
-
-        if (type === "error") {
-          const err = msg.error as { message?: string; code?: string } | undefined;
-          const message = err?.message ?? "Realtime error";
-          if (isBenignRealtimeError(message)) {
-            cedVoiceLog(5, "OpenAI benign error ignored", { message });
-            return;
-          }
-          voiceTelemetry.setWsState("error", message);
-          handlers.onError?.(message);
-        }
-      };
-    });
+      return await readyPromise;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Error WebRTC";
+      cedVoiceError("[OPENAI:WebRTC]", msg);
+      handlers.onState?.("error");
+      handlers.onError?.(msg);
+      voiceTelemetry.setWsState("error", msg);
+      this.connectInFlight = false;
+      return false;
+    }
   }
 
-  private handleServerEvent: (msg: Record<string, unknown>) => Promise<void> =
-    async () => {};
+  private async handleServerEvent(
+    msg: Record<string, unknown>,
+    markReady: () => void,
+  ): Promise<void> {
+    const handlers = this.handlers;
+    const type = String(msg.type ?? "");
 
-  sendAudioPcm(base64Pcm: string): void {
-    if (
-      !this.ws ||
-      !base64Pcm ||
-      !this.sessionReady ||
-      this.sendBlocked ||
-      this.blockServerVad
-    ) {
+    if (type === "session.created" || type === "session.updated") {
+      markReady();
       return;
     }
-    try {
-      this.send({
-        type: "input_audio_buffer.append",
-        audio: base64Pcm,
-      });
-      voiceTelemetry.markPcmSent();
-    } catch (err) {
-      cedVoiceError("sendAudioPcm failed", err);
-      this.sessionReady = false;
-      this.sendBlocked = true;
-      this.ws = null;
+
+    if (type === "response.created") {
+      const response = msg.response as { id?: string } | undefined;
+      this.activeResponseId = response?.id ?? null;
+      this.responseInProgress = true;
+      handlers.onResponseStart?.();
+      return;
+    }
+
+    if (isResponseAudioTranscriptDelta(type)) {
+      const delta = String(msg.delta ?? "");
+      this.modelTranscriptAcc += delta;
+      if (delta) handlers.onTranscriptUpdate?.(this.modelTranscriptAcc, "model");
+      return;
+    }
+
+    if (isInputTranscriptionCompleted(type)) {
+      const transcript = String(msg.transcript ?? "");
+      if (transcript.trim()) {
+        this.userTranscriptAcc = transcript.trim();
+        handlers.onTranscriptUpdate?.(transcript.trim(), "user");
+        const intent = parseCameraIntent(transcript.trim());
+        if (intent) handlers.onCameraIntent?.(intent);
+      }
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_stopped") {
+      handlers.onSpeechStopped?.();
+      return;
+    }
+
+    if (type === "response.cancelled") {
+      this.activeResponseId = null;
+      this.responseInProgress = false;
+      this.flushInputAudioBuffer();
+      handlers.onInterrupted?.();
+      return;
+    }
+
+    if (type === "response.done") {
+      const response = msg.response as { status?: string } | undefined;
+      if (response?.status === "cancelled") {
+        cedVoiceLog(5, "OpenAI response cancelled");
+      }
+      this.activeResponseId = null;
+      this.responseInProgress = false;
+      if (this.modelTranscriptAcc.trim()) {
+        handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
+        this.modelTranscriptAcc = "";
+      }
+      if (this.userTranscriptAcc.trim()) {
+        handlers.onTranscript?.(this.userTranscriptAcc.trim(), "user");
+        this.userTranscriptAcc = "";
+      }
+      voiceTelemetry.markTurnComplete();
+      handlers.onTurnComplete?.();
+      return;
+    }
+
+    if (type === "response.function_call_arguments.done") {
+      const callId = String(msg.call_id ?? "");
+      const name = String(msg.name ?? "");
+      let args: Record<string, unknown> = {};
+      try {
+        args = JSON.parse(String(msg.arguments ?? "{}")) as Record<string, unknown>;
+      } catch {
+        args = {};
+      }
+      await this.dispatchTool(name, callId, args);
+      return;
+    }
+
+    if (type === "error") {
+      const err = msg.error as { message?: string } | undefined;
+      const message = err?.message ?? "Realtime error";
+      if (isBenignRealtimeError(message)) {
+        cedVoiceLog(5, "OpenAI benign error ignored", { message });
+        return;
+      }
+      voiceTelemetry.setWsState("error", message);
+      handlers.onError?.(message);
     }
   }
 
   sendVideoJpeg(_base64Jpeg: string): void {
-    /* OpenAI Realtime no soporta video uplink — visión vía analyze_camera_frame tool */
+    /* OpenAI Realtime no soporta video uplink */
   }
 
   sendAdvancedSystemAck(): void {
@@ -450,8 +445,15 @@ export class CedLiveClient {
     this.sendClientTurn(CED_VOICE_PROFILE_LOCK.webSearch.ackInstruction);
   }
 
+  triggerBargeIn(): void {
+    if (!this.responseInProgress) return;
+    const cancel: Record<string, unknown> = { type: "response.cancel" };
+    if (this.activeResponseId) cancel.response_id = this.activeResponseId;
+    this.send(cancel);
+  }
+
   private sendClientTurn(text: string): void {
-    if (!this.ws || !this.sessionReady || this.sendBlocked) return;
+    if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     try {
       this.send({
         type: "conversation.item.create",
@@ -467,38 +469,9 @@ export class CedLiveClient {
     }
   }
 
-  /** Descarta audio captado en el servidor (eco / fin de turno). */
-  flushInputAudioBuffer(): void {
-    this.clearInputAudioBuffer();
-  }
-
-  private clearInputAudioBuffer(): void {
-    this.send({ type: "input_audio_buffer.clear" });
-  }
-
-  triggerBargeIn(): void {
-    this.handleUserInterrupt();
-  }
-
-  private handleUserInterrupt(): void {
-    voiceTelemetry.markInterrupted();
-    if (this.responseInProgress || this.modelAudioActive) {
-      const cancel: Record<string, unknown> = { type: "response.cancel" };
-      if (this.activeResponseId) cancel.response_id = this.activeResponseId;
-      this.send(cancel);
-    }
-    this.clearInputAudioBuffer();
-    this.modelAudioActive = false;
-    this.responseInProgress = false;
-    this.blockServerVad = false;
-    this.userTranscriptAcc = "";
-    this.modelTranscriptAcc = "";
-    this.handlers.onInterrupted?.();
-  }
-
   private send(payload: Record<string, unknown>): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify(payload));
+    if (!this.dc || this.dc.readyState !== "open") return;
+    this.dc.send(JSON.stringify(payload));
   }
 
   private async dispatchTool(

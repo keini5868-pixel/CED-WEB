@@ -9,11 +9,54 @@ export type RealtimeSessionResponse =
       voiceName: string;
       systemInstruction: string;
       expiresInSeconds: number;
+      transport?: string;
       sampleRate?: number;
       usagePercent?: number;
       warningLevel?: string | null;
     }
   | { ok: false; error: string; code?: string; usagePercent?: number; blocked?: boolean };
+
+export type RealtimeCallResponse =
+  | { ok: true; sdpAnswer: string }
+  | { ok: false; error: string };
+
+export async function negotiateRealtimeCall(
+  sdpOffer: string,
+  clientSecret: string,
+): Promise<RealtimeCallResponse> {
+  let response: Response;
+  try {
+    response = await proxyFetch("openai/realtime/calls", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/sdp",
+        "X-OpenAI-Ephemeral-Key": clientSecret,
+      },
+      body: sdpOffer,
+    });
+  } catch {
+    return {
+      ok: false,
+      error: "No se pudo negociar WebRTC con la API.",
+    };
+  }
+
+  if (!response.ok) {
+    const data = (await parseApiJson<{ error?: string; detail?: string }>(response).catch(
+      () => ({ error: `Error ${response.status}` }),
+    )) as { error?: string; detail?: string };
+    return {
+      ok: false,
+      error: data.detail || data.error || `Error ${response.status} en WebRTC`,
+    };
+  }
+
+  const sdpAnswer = await response.text();
+  if (!sdpAnswer.trim()) {
+    return { ok: false, error: "OpenAI no devolvió SDP answer." };
+  }
+  return { ok: true, sdpAnswer };
+}
 
 export async function fetchRealtimeSession(
   voiceName?: string,

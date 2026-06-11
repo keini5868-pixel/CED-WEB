@@ -90,6 +90,10 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   if (requestContentType) {
     headers["Content-Type"] = requestContentType;
   }
+  const ephemeralKey = request.headers.get("x-openai-ephemeral-key");
+  if (ephemeralKey) {
+    headers["X-OpenAI-Ephemeral-Key"] = ephemeralKey;
+  }
 
   let body: string | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -119,7 +123,8 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   const contentType = upstream.headers.get("content-type") || "application/json";
   const isBinary =
     contentType.includes("application/pdf") ||
-    contentType.includes("application/octet-stream");
+    contentType.includes("application/octet-stream") ||
+    contentType.includes("application/sdp");
 
   if (isBinary) {
     const buffer = await upstream.arrayBuffer();

@@ -23,13 +23,7 @@ import {
   tickVoiceSession,
 } from "@/lib/api/usage";
 import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
-import {
-  closeAudioContext,
-  getAudioContext,
-  unlockVoiceAudioOnGesture,
-} from "@/lib/voice/live/audio-context";
-import { AudioRecorder } from "@/lib/voice/live/audio-recorder";
-import { AudioStreamer } from "@/lib/voice/live/audio-streamer";
+import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
 import {
   CedLiveClient,
   type CedLiveHandlers,
@@ -70,8 +64,6 @@ const VIDEO_CAPTURE_WIDTH = 640;
 const VIDEO_CAPTURE_HEIGHT = 480;
 const USAGE_TICK_SECONDS = 15;
 const MAX_WS_RECONNECT = 3;
-/** Espera extra tras drenar playback antes de reabrir mic (anti-eco). */
-const POST_PLAYBACK_TAIL_MS = 500;
 
 export interface CedVoiceSessionCallbacks {
   onTranscript?: (text: string, role: "user" | "model") => void;
@@ -121,8 +113,6 @@ export function useCedVoiceSession(
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clientRef = useRef<CedLiveClient | null>(null);
-  const recorderRef = useRef<AudioRecorder | null>(null);
-  const streamerRef = useRef<AudioStreamer | null>(null);
   const usageSessionRef = useRef<string | null>(null);
   const conversationRef = useRef<string | null>(null);
   const usageIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -133,12 +123,10 @@ export function useCedVoiceSession(
   const orbStateRef = useRef<OrbState>(orbState);
   const voiceSessionGenRef = useRef(0);
   const handlersRef = useRef<CedLiveHandlers | null>(null);
-  const startMicRef = useRef<(() => Promise<void>) | null>(null);
   const reconnectAttemptRef = useRef(0);
   const prefsRef = useRef(prefs);
   const modelSpeakingRef = useRef(false);
-  const micUplinkEnabledRef = useRef(false);
-  const playbackGateRef = useRef(false);
+  const micGateOpenRef = useRef(false);
   const webFetchRef = useRef(false);
   const webAckSentRef = useRef(false);
   const lastWebQueryRef = useRef("");
@@ -231,31 +219,12 @@ export function useCedVoiceSession(
     }, CAMERA_IDLE_MS);
   }, [cameraOn]);
 
-  const ensureStreamer = useCallback(async (): Promise<AudioStreamer> => {
-    if (streamerRef.current) return streamerRef.current;
-    const ctx = await getAudioContext({
-      id: "ced-out",
-      sampleRate: 24000,
-      latencyHint: "playback",
-    });
-    const streamer = new AudioStreamer(ctx);
-    streamerRef.current = streamer;
-    return streamer;
-  }, []);
-
   const stopSession = useCallback(async () => {
     voiceSessionGenRef.current += 1;
     clearUsageInterval();
-    recorderRef.current?.stop();
-    recorderRef.current = null;
-    streamerRef.current?.stop();
-    streamerRef.current = null;
     clientRef.current?.disconnect();
     clientRef.current = null;
     handlersRef.current = null;
-    startMicRef.current = null;
-    void closeAudioContext("ced-mic");
-    void closeAudioContext("ced-out");
 
     if (usageSessionRef.current) {
       try {
@@ -278,8 +247,7 @@ export function useCedVoiceSession(
     setHeardIndicator(INITIAL_HEARD);
     modelRepliedTurnRef.current = false;
     modelSpeakingRef.current = false;
-    micUplinkEnabledRef.current = false;
-    playbackGateRef.current = false;
+    micGateOpenRef.current = false;
     webFetchRef.current = false;
     webAckSentRef.current = false;
     lastWebQueryRef.current = "";
@@ -384,22 +352,16 @@ export function useCedVoiceSession(
       setMicOn(true);
       saveMicPreference(true);
 
-      const [voiceSession, streamer] = await Promise.all([
-        startVoiceSession(),
-        ensureStreamer(),
-      ]);
-      await streamer.warmup();
+      const voiceSession = await startVoiceSession();
       usageSessionRef.current = voiceSession.session_id;
       conversationRef.current = voiceSession.conversation_id;
       onUsageRefresh?.();
 
       const client = new CedLiveClient();
       clientRef.current = client;
-      streamerRef.current = streamer;
-      streamer.setMuted(mutedRef.current);
-
-      const recorder = new AudioRecorder();
-      recorderRef.current = recorder;
+      client.setRemoteMuted(mutedRef.current);
+      client.setMicTrackEnabled(false);
+      micGateOpenRef.current = false;
 
       usageIntervalRef.current = setInterval(() => {
         const sid = usageSessionRef.current;
@@ -433,34 +395,10 @@ export function useCedVoiceSession(
       const micActiveRef = { current: true };
       const greetingSentRef = { current: false };
       const greetingTurnPendingRef = { current: true };
-      const greetingAudioReceivedRef = { current: false };
       const setupTimerRef = { current: null as number | null };
-      const micUplinkFallbackRef = { current: null as number | null };
-      const turnCompleteGenRef = { current: 0 };
-      const responseWatchdogRef = { current: null as number | null };
 
-      const releasePlaybackGate = () => {
-        playbackGateRef.current = false;
-        if (streamerRef.current?.isActive()) {
-          streamerRef.current.forceIdle();
-        }
-      };
-
-      const openMicAfterPlayback = () => {
-        client.flushInputAudioBuffer();
-        client.setBlockServerVad(false);
-      };
-
-      const clearResponseWatchdog = () => {
-        if (responseWatchdogRef.current) {
-          clearTimeout(responseWatchdogRef.current);
-          responseWatchdogRef.current = null;
-        }
-      };
-
-      const enableMicUplink = () => {
+      const enableListeningUi = () => {
         if (isStale() || !micActiveRef.current) return;
-        micUplinkEnabledRef.current = true;
         setHeardIndicator({ status: "listening", userText: null, heardAt: null });
         if (!webFetchRef.current && !modelSpeakingRef.current) {
           setOrbState("listening");
@@ -468,23 +406,9 @@ export function useCedVoiceSession(
         }
       };
 
-      const scheduleMicUplinkFallback = (delayMs = 5000) => {
-        if (micUplinkFallbackRef.current) {
-          clearTimeout(micUplinkFallbackRef.current);
-        }
-        micUplinkFallbackRef.current = window.setTimeout(() => {
-          micUplinkFallbackRef.current = null;
-          if (!micUplinkEnabledRef.current) {
-            cedVoiceLog(4, "Mic uplink fallback activado");
-            enableMicUplink();
-          }
-        }, delayMs);
-      };
-
       const sendWebSearchAckOnce = () => {
         if (webAckSentRef.current) return;
         webAckSentRef.current = true;
-        streamerRef.current?.stop();
         modelSpeakingRef.current = false;
         client.sendWebSearchAck();
         setOrbState("processing");
@@ -509,7 +433,6 @@ export function useCedVoiceSession(
           const narrate = (text: string) => {
             if (isStale() || narrated) return;
             narrated = true;
-            streamerRef.current?.stop();
             client.sendNarrationBrief(text.trim());
           };
 
@@ -609,7 +532,6 @@ export function useCedVoiceSession(
           try {
             const result = await fetchVisionWebSearch(frame, question);
             if (isStale()) return;
-            streamerRef.current?.stop();
             if (result.ok) {
               cedVoiceLog(6, "Visual search ok", { len: result.summary.length });
               client.sendNarrationBrief(result.summary);
@@ -674,29 +596,6 @@ export function useCedVoiceSession(
         }
       };
 
-      const startMic = async () => {
-        if (isStale() || !micStreamRef.current) return;
-        if (setupTimerRef.current) {
-          clearTimeout(setupTimerRef.current);
-          setupTimerRef.current = null;
-        }
-        recorder.setHandlers({
-          onData: (base64) => client.sendAudioPcm(base64),
-          shouldSend: () => {
-            if (!micUplinkEnabledRef.current) return false;
-            if (playbackGateRef.current) return false;
-            return !isStale() && !pausedRef.current && client.isOpen();
-          },
-        });
-        await recorder.start(micStreamRef.current);
-        if (micUplinkEnabledRef.current) {
-          setHeardIndicator({ status: "listening", userText: null, heardAt: null });
-          setOrbState("listening");
-          setStatusLabel(ORB_STATE_LABELS.listening);
-        }
-      };
-      startMicRef.current = startMic;
-
       const handlers: CedLiveHandlers = {
         onState: (s) => {
           if (isStale()) return;
@@ -711,24 +610,11 @@ export function useCedVoiceSession(
             clearTimeout(setupTimerRef.current);
             setupTimerRef.current = null;
           }
-          micUplinkEnabledRef.current = false;
-          greetingAudioReceivedRef.current = false;
-          void (async () => {
-            await streamerRef.current?.warmup();
-            const out = await getAudioContext({
-              id: "ced-out",
-              sampleRate: 24000,
-              latencyHint: "playback",
-            });
-            if (out.state === "suspended") await out.resume();
-          })();
           if (!greetingSentRef.current) {
             greetingSentRef.current = true;
             setStatusLabel("CED te saluda…");
             client.sendSessionGreeting();
           }
-          scheduleMicUplinkFallback(8000);
-          void startMic();
         },
         onTranscriptUpdate: (text, role) => {
           if (isStale() || role !== "user") return;
@@ -961,21 +847,10 @@ export function useCedVoiceSession(
           }
           return { spoken: "herramienta no reconocida." };
         },
-        onAudio: (buffer) => {
+        onResponseStart: () => {
           if (isStale()) return;
-          if (!modelSpeakingRef.current) {
-            turnCompleteGenRef.current += 1;
-          }
-          playbackGateRef.current = true;
-          client.setBlockServerVad(true);
-          clearResponseWatchdog();
-          greetingAudioReceivedRef.current = true;
           modelSpeakingRef.current = true;
           modelRepliedTurnRef.current = true;
-          void streamerRef.current?.warmup();
-          if (!mutedRef.current) {
-            streamerRef.current?.addPCM16(new Uint8Array(buffer));
-          }
           setOrbState("speaking");
           setStatusLabel(ORB_STATE_LABELS.speaking);
           setHeardIndicator((prev) =>
@@ -984,39 +859,19 @@ export function useCedVoiceSession(
               : { ...prev, status: "responding" },
           );
         },
-        onModelAudioDone: () => {
-          streamerRef.current?.markInputComplete();
-        },
         onInterrupted: () => {
           cedVoiceLog(5, "OpenAI interrupted");
-          turnCompleteGenRef.current += 1;
-          clearResponseWatchdog();
-          releasePlaybackGate();
-          openMicAfterPlayback();
           modelSpeakingRef.current = false;
-          streamerRef.current?.stop();
+          client.setMicTrackEnabled(true);
           setErrorMessage((prev) =>
             prev && isBenignRealtimeError(prev) ? null : prev,
           );
           if (micActiveRef.current) {
-            setOrbState("listening");
-            setStatusLabel(ORB_STATE_LABELS.listening);
+            enableListeningUi();
           }
         },
         onSpeechStopped: () => {
-          if (isStale() || !micUplinkEnabledRef.current) return;
-          clearResponseWatchdog();
-          responseWatchdogRef.current = window.setTimeout(() => {
-            responseWatchdogRef.current = null;
-            if (isStale() || !micActiveRef.current) return;
-            modelSpeakingRef.current = false;
-            setOrbState("listening");
-            setStatusLabel(ORB_STATE_LABELS.listening);
-            setHeardIndicator((prev) =>
-              prev.status === "hidden" ? prev : { ...prev, status: "listening" },
-            );
-            cedVoiceLog(4, "Watchdog: reactivando escucha tras timeout");
-          }, 16000);
+          if (isStale() || pausedRef.current) return;
           setHeardIndicator((prev) =>
             prev.status === "hidden"
               ? prev
@@ -1028,42 +883,25 @@ export function useCedVoiceSession(
           }
         },
         onTurnComplete: () => {
-          const gen = ++turnCompleteGenRef.current;
-          void (async () => {
-            if (micUplinkFallbackRef.current) {
-              clearTimeout(micUplinkFallbackRef.current);
-              micUplinkFallbackRef.current = null;
+          modelSpeakingRef.current = false;
+          greetingTurnPendingRef.current = false;
+          micGateOpenRef.current = true;
+          if (!pausedRef.current) {
+            client.setMicTrackEnabled(true);
+          }
+          client.flushInputAudioBuffer();
+          setHeardIndicator((prev) => {
+            if (prev.status === "hidden") return prev;
+            if (!modelRepliedTurnRef.current && prev.userText) {
+              return { ...prev, status: "no_voice_reply" };
             }
-            clearResponseWatchdog();
-            streamerRef.current?.markInputComplete();
-            modelSpeakingRef.current = false;
-            const drainMs =
-              greetingTurnPendingRef.current && !greetingAudioReceivedRef.current
-                ? 200
-                : greetingTurnPendingRef.current
-                  ? 450
-                  : 900;
-            greetingTurnPendingRef.current = false;
-            await streamerRef.current?.waitForDrain(drainMs);
-            releasePlaybackGate();
-            await new Promise((r) => setTimeout(r, POST_PLAYBACK_TAIL_MS));
-            if (gen !== turnCompleteGenRef.current || isStale()) return;
-            openMicAfterPlayback();
-            enableMicUplink();
-            setHeardIndicator((prev) => {
-              if (prev.status === "hidden") return prev;
-              if (!modelRepliedTurnRef.current && prev.userText) {
-                return { ...prev, status: "no_voice_reply" };
-              }
-              if (prev.userText) return { ...prev, status: "heard" };
-              return { ...prev, status: "listening" };
-            });
-            modelRepliedTurnRef.current = false;
-            if (micActiveRef.current && !webFetchRef.current) {
-              setOrbState("listening");
-              setStatusLabel(ORB_STATE_LABELS.listening);
-            }
-          })();
+            if (prev.userText) return { ...prev, status: "heard" };
+            return { ...prev, status: "listening" };
+          });
+          modelRepliedTurnRef.current = false;
+          if (micActiveRef.current && !webFetchRef.current) {
+            enableListeningUi();
+          }
         },
         onCameraIntent: (intent) => {
           void toggleCameraRef.current(intent === "activate");
@@ -1076,7 +914,6 @@ export function useCedVoiceSession(
         },
         onClose: (info) => {
           if (isStale() || !info.unexpected || !micActiveRef.current) return;
-          recorderRef.current?.stop();
 
           if (!info.recoverable) {
             setErrorMessage(
@@ -1106,14 +943,20 @@ export function useCedVoiceSession(
             const h = handlersRef.current;
             if (!h) return;
             void (async () => {
+              const stream = micStreamRef.current;
+              if (!stream) return;
               const ok = await client.connect(h, {
                 voiceName: prefsRef.current.voiceName,
                 language: prefsRef.current.language,
                 responseSpeed: prefsRef.current.responseSpeed,
+                micStream: stream,
               });
               if (ok) {
                 reconnectAttemptRef.current = 0;
-                await startMicRef.current?.();
+                client.setRemoteMuted(mutedRef.current);
+                if (greetingTurnPendingRef.current) {
+                  client.setMicTrackEnabled(false);
+                }
               } else if (reconnectAttemptRef.current >= MAX_WS_RECONNECT) {
                 setErrorMessage("No se pudo reconectar con CED.");
                 setOrbState("error");
@@ -1132,6 +975,7 @@ export function useCedVoiceSession(
         voiceName: prefsRef.current.voiceName,
         language: prefsRef.current.language,
         responseSpeed: prefsRef.current.responseSpeed,
+        micStream: stream,
       });
 
       if (!ok) await stopSession();
@@ -1171,18 +1015,21 @@ export function useCedVoiceSession(
     persistMessage,
     onUsageRefresh,
     callbacks,
-    ensureStreamer,
   ]);
 
   useEffect(() => {
-    streamerRef.current?.setMuted(muted);
+    clientRef.current?.setRemoteMuted(muted);
   }, [muted]);
+
+  useEffect(() => {
+    if (!micOn) return;
+    clientRef.current?.setMicTrackEnabled(micGateOpenRef.current && !paused);
+  }, [micOn, paused]);
 
   useEffect(() => {
     return () => {
       voiceSessionGenRef.current += 1;
       clientRef.current?.disconnect();
-      recorderRef.current?.stop();
       clearUsageInterval();
     };
   }, [clearUsageInterval]);
@@ -1244,6 +1091,7 @@ export function useCedVoiceSession(
   const togglePause = useCallback(() => {
     setPaused((p) => {
       const next = !p;
+      clientRef.current?.setMicTrackEnabled(micGateOpenRef.current && !next);
       setOrbState(next ? "paused" : micOn ? "listening" : "idle");
       setStatusLabel(
         next ? ORB_STATE_LABELS.paused : ORB_STATE_LABELS.listening,
@@ -1271,16 +1119,19 @@ export function useCedVoiceSession(
 
       setOrbState("processing");
       setStatusLabel("Cambiando voz…");
-      recorderRef.current?.stop();
-      streamerRef.current?.stop();
+
+      const stream = micStreamRef.current;
+      if (!stream) return;
 
       const ok = await clientRef.current.connect(handlersRef.current, {
         voiceName: normalized,
         language: prefsRef.current.language,
         responseSpeed: prefsRef.current.responseSpeed,
+        micStream: stream,
       });
 
       if (ok) {
+        clientRef.current.setRemoteMuted(mutedRef.current);
         setOrbState("listening");
         setStatusLabel(`Voz activa: ${normalized}`);
         window.setTimeout(() => {

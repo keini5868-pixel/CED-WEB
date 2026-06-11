@@ -1,4 +1,4 @@
-"""OpenAI Realtime — sesiones efímeras (API key solo en servidor)."""
+"""OpenAI Realtime — sesiones efímeras WebRTC (API key solo en servidor)."""
 
 from __future__ import annotations
 
@@ -12,7 +12,10 @@ from app.domain.openai_voice_prompt import OPENAI_REALTIME_SYSTEM_PROMPT
 from app.services.openai_key_utils import openai_api_key_looks_valid, sanitize_openai_api_key
 from app.services.openai_voice_config import (
     REALTIME_MAX_OUTPUT_TOKENS,
+    REALTIME_NOISE_REDUCTION,
     REALTIME_TEMPERATURE,
+    REALTIME_TURN_DETECTION,
+    REALTIME_TURN_DETECTION_FALLBACK,
     normalize_openai_voice,
 )
 from app.services.openai_voice_tools import OPENAI_REALTIME_TOOLS
@@ -20,6 +23,7 @@ from app.services.openai_voice_tools import OPENAI_REALTIME_TOOLS
 logger = logging.getLogger(__name__)
 
 OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets"
+OPENAI_REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls"
 
 DEFAULT_REALTIME_MODEL = "gpt-realtime-mini"
 FALLBACK_MODELS = (
@@ -52,45 +56,21 @@ def _models_to_try(primary: str) -> list[str]:
     return out
 
 
-def _build_minimal_ga_payload(
-    *,
-    model: str,
-    voice: str,
-    instructions: str,
-) -> dict[str, Any]:
+def _audio_input(turn_detection: dict[str, Any]) -> dict[str, Any]:
     return {
-        "expires_after": EXPIRES_AFTER,
-        "session": {
-            "type": "realtime",
-            "model": model,
-            "instructions": instructions[:8000],
-            "audio": {
-                "input": {
-                    "format": {"type": "audio/pcm", "rate": 24000},
-                "turn_detection": {
-                    "type": "server_vad",
-                    "threshold": 0.6,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 800,
-                    "create_response": False,
-                    "interrupt_response": False,
-                },
-                },
-                "output": {
-                    "format": {"type": "audio/pcm", "rate": 24000},
-                    "voice": voice,
-                },
-            },
-        },
+        "transcription": {"model": "whisper-1"},
+        "noise_reduction": REALTIME_NOISE_REDUCTION,
+        "turn_detection": turn_detection,
     }
 
 
-def _build_full_ga_payload(
+def _build_session_payload(
     *,
     model: str,
     voice: str,
     instructions: str,
     with_tools: bool,
+    turn_detection: dict[str, Any],
 ) -> dict[str, Any]:
     session: dict[str, Any] = {
         "type": "realtime",
@@ -98,20 +78,8 @@ def _build_full_ga_payload(
         "instructions": instructions[:8000],
         "output_modalities": ["audio"],
         "audio": {
-            "input": {
-                "format": {"type": "audio/pcm", "rate": 24000},
-                "transcription": {"model": "whisper-1"},
-                "turn_detection": {
-                    "type": "server_vad",
-                    "threshold": 0.6,
-                    "prefix_padding_ms": 300,
-                    "silence_duration_ms": 800,
-                    "create_response": False,
-                    "interrupt_response": False,
-                },
-            },
+            "input": _audio_input(turn_detection),
             "output": {
-                "format": {"type": "audio/pcm", "rate": 24000},
                 "voice": voice,
             },
         },
@@ -122,6 +90,27 @@ def _build_full_ga_payload(
         session["tools"] = OPENAI_REALTIME_TOOLS
         session["tool_choice"] = "auto"
     return {"expires_after": EXPIRES_AFTER, "session": session}
+
+
+def _build_minimal_payload(
+    *,
+    model: str,
+    voice: str,
+    instructions: str,
+    turn_detection: dict[str, Any],
+) -> dict[str, Any]:
+    return {
+        "expires_after": EXPIRES_AFTER,
+        "session": {
+            "type": "realtime",
+            "model": model,
+            "instructions": instructions[:8000],
+            "audio": {
+                "input": _audio_input(turn_detection),
+                "output": {"voice": voice},
+            },
+        },
+    }
 
 
 def _parse_openai_error(res: httpx.Response) -> str:
@@ -201,9 +190,45 @@ def create_realtime_session(
 
     attempts: list[tuple[str, dict[str, Any]]] = []
     for m in _models_to_try(model):
-        attempts.append((f"tools:{m}", _build_full_ga_payload(model=m, voice=voice, instructions=instructions, with_tools=True)))
-        attempts.append((f"full:{m}", _build_full_ga_payload(model=m, voice=voice, instructions=instructions, with_tools=False)))
-        attempts.append((f"minimal:{m}", _build_minimal_ga_payload(model=m, voice=voice, instructions=instructions)))
+        for td_label, td in (
+            ("semantic", REALTIME_TURN_DETECTION),
+            ("server_vad", REALTIME_TURN_DETECTION_FALLBACK),
+        ):
+            attempts.append(
+                (
+                    f"tools:{td_label}:{m}",
+                    _build_session_payload(
+                        model=m,
+                        voice=voice,
+                        instructions=instructions,
+                        with_tools=True,
+                        turn_detection=td,
+                    ),
+                )
+            )
+            attempts.append(
+                (
+                    f"full:{td_label}:{m}",
+                    _build_session_payload(
+                        model=m,
+                        voice=voice,
+                        instructions=instructions,
+                        with_tools=False,
+                        turn_detection=td,
+                    ),
+                )
+            )
+            attempts.append(
+                (
+                    f"minimal:{td_label}:{m}",
+                    _build_minimal_payload(
+                        model=m,
+                        voice=voice,
+                        instructions=instructions,
+                        turn_detection=td,
+                    ),
+                )
+            )
 
     last_error = "OpenAI rechazó la sesión Realtime."
     try:
@@ -218,7 +243,7 @@ def create_realtime_session(
                         continue
                     used_model = payload.get("session", {}).get("model") or model
                     logger.info(
-                        "[OPENAI] session ok via=%s model=%s voice=%s user=%s",
+                        "[OPENAI] webrtc session ok via=%s model=%s voice=%s user=%s",
                         label,
                         used_model,
                         voice,
@@ -231,7 +256,7 @@ def create_realtime_session(
                         "voiceName": voice,
                         "systemInstruction": instructions,
                         "expiresInSeconds": 600,
-                        "sampleRate": 24000,
+                        "transport": "webrtc",
                     }
 
                 detail = res.text[:400]
@@ -243,3 +268,29 @@ def create_realtime_session(
         return {"ok": False, "error": f"No se pudo contactar OpenAI: {exc}"}
 
     return {"ok": False, "error": last_error}
+
+
+def negotiate_realtime_call(*, client_secret: str, sdp_offer: str) -> dict[str, Any]:
+    """Proxy SDP offer → OpenAI /v1/realtime/calls (evita CORS en el navegador)."""
+    secret = client_secret.strip()
+    if not secret:
+        return {"ok": False, "error": "Falta client secret efímero."}
+    if not sdp_offer.strip():
+        return {"ok": False, "error": "SDP offer vacío."}
+
+    try:
+        with httpx.Client(timeout=45.0) as client:
+            res = client.post(
+                OPENAI_REALTIME_CALLS_URL,
+                content=sdp_offer,
+                headers={
+                    "Authorization": f"Bearer {secret}",
+                    "Content-Type": "application/sdp",
+                },
+            )
+            if res.status_code >= 400:
+                return {"ok": False, "error": _parse_openai_error(res)}
+            return {"ok": True, "sdpAnswer": res.text}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[OPENAI] realtime call negotiate failed")
+        return {"ok": False, "error": f"No se pudo negociar WebRTC: {exc}"}
