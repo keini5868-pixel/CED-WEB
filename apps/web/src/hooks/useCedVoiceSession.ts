@@ -136,6 +136,7 @@ export function useCedVoiceSession(
   const prefsRef = useRef(prefs);
   const modelSpeakingRef = useRef(false);
   const micUplinkEnabledRef = useRef(false);
+  const playbackGateRef = useRef(false);
   const webFetchRef = useRef(false);
   const webAckSentRef = useRef(false);
   const lastWebQueryRef = useRef("");
@@ -276,6 +277,7 @@ export function useCedVoiceSession(
     modelRepliedTurnRef.current = false;
     modelSpeakingRef.current = false;
     micUplinkEnabledRef.current = false;
+    playbackGateRef.current = false;
     webFetchRef.current = false;
     webAckSentRef.current = false;
     lastWebQueryRef.current = "";
@@ -432,9 +434,15 @@ export function useCedVoiceSession(
       const greetingAudioReceivedRef = { current: false };
       const setupTimerRef = { current: null as number | null };
       const micUplinkFallbackRef = { current: null as number | null };
-      const greetingUplinkTimerRef = { current: null as number | null };
       const turnCompleteGenRef = { current: 0 };
       const responseWatchdogRef = { current: null as number | null };
+
+      const releasePlaybackGate = () => {
+        playbackGateRef.current = false;
+        if (streamerRef.current?.isActive()) {
+          streamerRef.current.forceIdle();
+        }
+      };
 
       const clearResponseWatchdog = () => {
         if (responseWatchdogRef.current) {
@@ -446,10 +454,6 @@ export function useCedVoiceSession(
       const enableMicUplink = () => {
         if (isStale() || !micActiveRef.current) return;
         micUplinkEnabledRef.current = true;
-        if (greetingUplinkTimerRef.current) {
-          clearTimeout(greetingUplinkTimerRef.current);
-          greetingUplinkTimerRef.current = null;
-        }
         setHeardIndicator({ status: "listening", userText: null, heardAt: null });
         if (!webFetchRef.current && !modelSpeakingRef.current) {
           setOrbState("listening");
@@ -673,8 +677,7 @@ export function useCedVoiceSession(
           onData: (base64) => client.sendAudioPcm(base64),
           shouldSend: () => {
             if (!micUplinkEnabledRef.current) return false;
-            // Half-duplex (OpenAI cookbook): no enviar mic mientras CED habla → evita eco
-            if (streamerRef.current?.isActive()) return false;
+            if (playbackGateRef.current) return false;
             return !isStale() && !pausedRef.current && client.isOpen();
           },
         });
@@ -716,15 +719,8 @@ export function useCedVoiceSession(
             greetingSentRef.current = true;
             setStatusLabel("CED te saluda…");
             client.sendSessionGreeting();
-            greetingUplinkTimerRef.current = window.setTimeout(() => {
-              greetingUplinkTimerRef.current = null;
-              if (!micUplinkEnabledRef.current) {
-                cedVoiceLog(4, "Mic uplink activado tras saludo (timeout corto)");
-                enableMicUplink();
-              }
-            }, 3500);
           }
-          scheduleMicUplinkFallback(5000);
+          scheduleMicUplinkFallback(8000);
           void startMic();
         },
         onTranscriptUpdate: (text, role) => {
@@ -963,6 +959,7 @@ export function useCedVoiceSession(
           if (!modelSpeakingRef.current) {
             turnCompleteGenRef.current += 1;
           }
+          playbackGateRef.current = true;
           clearResponseWatchdog();
           greetingAudioReceivedRef.current = true;
           modelSpeakingRef.current = true;
@@ -986,6 +983,7 @@ export function useCedVoiceSession(
           cedVoiceLog(5, "OpenAI interrupted");
           turnCompleteGenRef.current += 1;
           clearResponseWatchdog();
+          releasePlaybackGate();
           modelSpeakingRef.current = false;
           streamerRef.current?.stop();
           setErrorMessage((prev) =>
@@ -1038,6 +1036,7 @@ export function useCedVoiceSession(
                   : 900;
             greetingTurnPendingRef.current = false;
             await streamerRef.current?.waitForDrain(drainMs);
+            releasePlaybackGate();
             if (gen !== turnCompleteGenRef.current || isStale()) return;
             enableMicUplink();
             setHeardIndicator((prev) => {
@@ -1177,7 +1176,7 @@ export function useCedVoiceSession(
         loudMs = 0;
         return;
       }
-      if (inputLevelRef.current >= 0.24) {
+      if (playbackGateRef.current && inputLevelRef.current >= 0.24) {
         loudMs += 120;
         if (loudMs >= 360) {
           clientRef.current?.triggerBargeIn();

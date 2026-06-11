@@ -80,6 +80,13 @@ export class AudioStreamer {
           this.activeSources.delete(source);
           if (!this.audioQueue.length && this.endOfQueueSource === source) {
             this.endOfQueueSource = null;
+            if (this.isStreamComplete) {
+              this.isPlaying = false;
+              if (this.checkInterval) {
+                clearInterval(this.checkInterval);
+                this.checkInterval = null;
+              }
+            }
             this.onComplete();
           }
         };
@@ -160,11 +167,20 @@ export class AudioStreamer {
   }
 
   isActive(): boolean {
+    if (!this.isPlaying && this.audioQueue.length === 0 && this.activeSources.size === 0) {
+      return false;
+    }
     return (
       this.isPlaying ||
       this.audioQueue.length > 0 ||
       this.activeSources.size > 0
     );
+  }
+
+  /** Fuerza fin de reproducción si el gate quedó colgado. */
+  forceIdle(): void {
+    if (!this.isActive()) return;
+    this.stop();
   }
 
   waitForDrain(maxMs = 4000): Promise<void> {
