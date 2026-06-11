@@ -5,8 +5,8 @@ export const REALTIME_VAD_TUNING = {
   threshold: 0.6,
   prefix_padding_ms: 300,
   silence_duration_ms: 800,
-  create_response: true,
-  /** Half-duplex en cliente; evita que el servidor interprete eco como barge-in. */
+  /** Cliente envía response.create tras speech_stopped (evita auto-respuesta al eco). */
+  create_response: false,
   interrupt_response: false,
 };
 

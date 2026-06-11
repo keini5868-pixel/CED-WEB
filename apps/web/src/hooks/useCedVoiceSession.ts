@@ -70,6 +70,8 @@ const VIDEO_CAPTURE_WIDTH = 640;
 const VIDEO_CAPTURE_HEIGHT = 480;
 const USAGE_TICK_SECONDS = 15;
 const MAX_WS_RECONNECT = 3;
+/** Espera extra tras drenar playback antes de reabrir mic (anti-eco). */
+const POST_PLAYBACK_TAIL_MS = 500;
 
 export interface CedVoiceSessionCallbacks {
   onTranscript?: (text: string, role: "user" | "model") => void;
@@ -439,10 +441,14 @@ export function useCedVoiceSession(
 
       const releasePlaybackGate = () => {
         playbackGateRef.current = false;
-        client.setBlockServerVad(false);
         if (streamerRef.current?.isActive()) {
           streamerRef.current.forceIdle();
         }
+      };
+
+      const openMicAfterPlayback = () => {
+        client.flushInputAudioBuffer();
+        client.setBlockServerVad(false);
       };
 
       const clearResponseWatchdog = () => {
@@ -986,6 +992,7 @@ export function useCedVoiceSession(
           turnCompleteGenRef.current += 1;
           clearResponseWatchdog();
           releasePlaybackGate();
+          openMicAfterPlayback();
           modelSpeakingRef.current = false;
           streamerRef.current?.stop();
           setErrorMessage((prev) =>
@@ -1039,7 +1046,9 @@ export function useCedVoiceSession(
             greetingTurnPendingRef.current = false;
             await streamerRef.current?.waitForDrain(drainMs);
             releasePlaybackGate();
+            await new Promise((r) => setTimeout(r, POST_PLAYBACK_TAIL_MS));
             if (gen !== turnCompleteGenRef.current || isStale()) return;
+            openMicAfterPlayback();
             enableMicUplink();
             setHeardIndicator((prev) => {
               if (prev.status === "hidden") return prev;
@@ -1168,28 +1177,6 @@ export function useCedVoiceSession(
   useEffect(() => {
     streamerRef.current?.setMuted(muted);
   }, [muted]);
-
-  /** Barge-in local: si hablas encima mientras CED habla, interrumpe (mic en half-duplex). */
-  useEffect(() => {
-    if (!micOn || paused) return;
-    let loudMs = 0;
-    const id = window.setInterval(() => {
-      if (!streamerRef.current?.isActive()) {
-        loudMs = 0;
-        return;
-      }
-      if (playbackGateRef.current && inputLevelRef.current >= 0.24) {
-        loudMs += 120;
-        if (loudMs >= 360) {
-          clientRef.current?.triggerBargeIn();
-          loudMs = 0;
-        }
-      } else {
-        loudMs = Math.max(0, loudMs - 120);
-      }
-    }, 120);
-    return () => clearInterval(id);
-  }, [micOn, paused]);
 
   useEffect(() => {
     return () => {

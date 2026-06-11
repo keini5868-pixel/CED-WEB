@@ -318,7 +318,15 @@ export class CedLiveClient {
         }
 
         if (type === "input_audio_buffer.speech_stopped") {
+          if (this.blockServerVad) {
+            cedVoiceLog(5, "speech_stopped ignorado (anti-eco), limpiando buffer");
+            this.clearInputAudioBuffer();
+            return;
+          }
           handlers.onSpeechStopped?.();
+          if (!this.responseInProgress && !this.modelAudioActive && !this.sendBlocked) {
+            this.send({ type: "response.create" });
+          }
           return;
         }
 
@@ -351,7 +359,7 @@ export class CedLiveClient {
           this.activeResponseId = null;
           this.responseInProgress = false;
           this.modelAudioActive = false;
-          this.blockServerVad = false;
+          /* blockServerVad: lo libera el hook tras drenar playback (anti-eco) */
           this.clearInputAudioBuffer();
           if (this.modelTranscriptAcc.trim()) {
             handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
@@ -457,6 +465,11 @@ export class CedLiveClient {
     } catch (err) {
       cedVoiceError("sendClientTurn failed", err);
     }
+  }
+
+  /** Descarta audio captado en el servidor (eco / fin de turno). */
+  flushInputAudioBuffer(): void {
+    this.clearInputAudioBuffer();
   }
 
   private clearInputAudioBuffer(): void {
