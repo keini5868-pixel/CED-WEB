@@ -237,10 +237,11 @@ def route_message(
 
 
 def build_voice_system_extras(user_id: str) -> str:
-    """Inyectar al token Live: memoria + política + estado Meta."""
+    """Inyectar al token Live: tratamiento, memoria + política + estado Meta."""
     from app.services import supabase_db
+    from app.services.user_address import address_context_for_prompt
 
-    mem = memory_context_for_voice(user_id)
+    address = address_context_for_prompt(user_id)
     policy = (
         "Política CED: responde directo si el tema es estable (conceptos, historia, negocio general). "
         "Usa búsqueda web solo para clima, noticias, precios o datos de hoy. "
@@ -261,15 +262,19 @@ def build_voice_system_extras(user_id: str) -> str:
             "Puedes redactar posts pero NO digas que publicaste. "
             "Indica conectar Meta en el dashboard → Conectar Redes."
         )
-    parts = [policy, meta]
+    parts = [address, policy, meta]
+    mem = memory_context_for_voice(user_id)
     if mem:
         parts.append(mem)
     return "\n\n".join(parts)
 
 
 def build_chat_system_extras(user_id: str, routed: CognitiveRouteResult | None = None) -> str:
+    from app.services.user_address import address_context_for_prompt
+
     mem = memory_context_for_voice(user_id)
     parts = [
+        address_context_for_prompt(user_id),
         "CED usa cerebro interno premium por ramas + web solo cuando el dato cambia en el tiempo. "
         "No digas que no tienes internet si puedes usar contexto inyectado o herramientas.",
     ]

@@ -1,5 +1,6 @@
 import { parseApiJson } from "@/lib/api/http";
 import { proxyFetch } from "@/lib/api/ced-proxy";
+import type { UserAddressContext } from "@/lib/api/profile";
 import type { VoiceSessionPreferences } from "@ced/types";
 
 export type RealtimeSessionResponse =
@@ -14,6 +15,7 @@ export type RealtimeSessionResponse =
       sampleRate?: number;
       usagePercent?: number;
       warningLevel?: string | null;
+      userAddress?: UserAddressContext;
     }
   | { ok: false; error: string; code?: string; usagePercent?: number; blocked?: boolean };
 

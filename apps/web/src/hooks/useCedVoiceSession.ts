@@ -10,6 +10,7 @@ import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { generatePdf } from "@/lib/api/pdf";
 import { fetchVoiceBrief, fetchGenerateImage, fetchDeepAnalysis } from "@/lib/api/openai";
 import { saveMemory, searchMemory } from "@/lib/api/memory";
+import { updateUserAddress } from "@/lib/api/profile";
 import { schedulePanelSearch } from "@/lib/api/panels";
 import {
   disableProspection,
@@ -25,6 +26,11 @@ import {
 } from "@/lib/api/usage";
 import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
+import { clearEphemeralTokenCache } from "@/lib/voice/ephemeralTokenCache";
+import {
+  parseAddressPreference,
+  parseGenderPreference,
+} from "@/lib/voice/addressPreferenceIntent";
 import {
   CedLiveClient,
   type CedLiveHandlers,
@@ -823,6 +829,30 @@ export function useCedVoiceSession(
           return;
         }
 
+        const addressPref = parseAddressPreference(t);
+        const genderPref = parseGenderPreference(t);
+        if (addressPref || genderPref) {
+          void (async () => {
+            const updated = await updateUserAddress({
+              ...(addressPref ? { preferredAddress: addressPref } : {}),
+              ...(genderPref ? { gender: genderPref } : {}),
+            });
+            if (isStale()) return;
+            if (updated) {
+              client.setUserAddress(updated);
+              clearEphemeralTokenCache();
+              client.sendNarrationBrief(
+                `Queda registrado: te diré ${updated.displayName}.`,
+              );
+            } else {
+              client.sendNarrationBrief(
+                "no pude guardar cómo prefieres que te llame.",
+              );
+            }
+          })();
+          return;
+        }
+
         const camIntent = parseCameraIntent(t);
         if (camIntent === "activate") {
           handleCameraActivate(t);
@@ -1040,9 +1070,18 @@ export function useCedVoiceSession(
               return { spoken: "no recibí qué guardar en memoria." };
             }
             const r = await saveMemory(key, content, String(args.categoria ?? ""));
+            if (r.ok && /^(tratamiento|como_llamarme|preferred_address|titulo)$/i.test(key)) {
+              const synced = await updateUserAddress({ preferredAddress: content });
+              if (synced) {
+                client.setUserAddress(synced);
+                clearEphemeralTokenCache();
+              }
+            }
             return {
               spoken: r.ok
-                ? "guardado en memoria cognitiva."
+                ? /^(tratamiento|como_llamarme)$/i.test(key)
+                  ? `queda registrado: te diré ${content}.`
+                  : "guardado en memoria cognitiva."
                 : "no pude guardar en memoria.",
             };
           }

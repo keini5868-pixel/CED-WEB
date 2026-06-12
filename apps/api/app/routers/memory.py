@@ -12,6 +12,7 @@ from app.services.cognitive_memory import (
     save_memory,
     search_memory,
 )
+from app.services.user_address import sync_address_from_memory_key
 
 router = APIRouter(prefix="/v1/memory", tags=["memory"])
 
@@ -33,13 +34,16 @@ async def memory_save(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     try:
-        return save_memory(
+        result = save_memory(
             user_id,
             body.key,
             body.content,
             category=body.category,
             tags=body.tags,
         )
+        if result.get("ok"):
+            sync_address_from_memory_key(user_id, body.key, body.content)
+        return result
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
 

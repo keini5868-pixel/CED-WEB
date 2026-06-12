@@ -201,12 +201,15 @@ def create_realtime_session(
     )
     lang = language or "es"
     temperature, preferred_turn = profile_for_response_speed(response_speed)
+    address: dict[str, Any] = {}
     try:
         from app.services.cognitive_router import build_voice_system_extras
+        from app.services.user_address import resolve_user_address
 
         extras = build_voice_system_extras(user_id)
         if extras:
             instructions = f"{instructions}\n\n{extras}"
+        address = resolve_user_address(user_id)
     except Exception:  # noqa: BLE001
         pass
 
@@ -285,6 +288,15 @@ def create_realtime_session(
                         "systemInstruction": instructions,
                         "expiresInSeconds": 600,
                         "transport": "webrtc",
+                        "userAddress": {
+                            "displayName": address.get("displayName", ""),
+                            "firstName": address.get("firstName", ""),
+                            "honorific": address.get("honorific", ""),
+                            "gender": address.get("gender"),
+                            "preferredAddress": address.get("preferredAddress"),
+                            "greetingPhraseJarvis": address.get("greetingPhraseJarvis", ""),
+                            "greetingPhraseStandard": address.get("greetingPhraseStandard", ""),
+                        },
                     }
 
                 detail = res.text[:400]

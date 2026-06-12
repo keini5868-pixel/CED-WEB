@@ -57,7 +57,10 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "save_memory",
-        "description": "Guarda un dato en memoria cognitiva.",
+        "description": (
+            "Guarda un dato en memoria cognitiva. "
+            "Para cómo llamar al usuario usa key \"tratamiento\" (ej. Señor, Señora, Jefe)."
+        ),
         "parameters": {
             "type": "object",
             "properties": {

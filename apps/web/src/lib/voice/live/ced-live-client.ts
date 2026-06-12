@@ -6,6 +6,7 @@
 import type { VoiceSessionPreferences } from "@ced/types";
 
 import { fetchDeepAnalysis, fetchGenerateImage, fetchVoiceBrief, negotiateRealtimeCall } from "@/lib/api/openai";
+import type { UserAddressContext } from "@/lib/api/profile";
 import { fetchEphemeralTokenCached } from "@/lib/voice/ephemeralTokenCache";
 import { parseCameraIntent } from "@/lib/voice/cameraIntents";
 import { cedVoiceError, cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
@@ -120,6 +121,7 @@ export class CedLiveClient {
   private static RESPONSE_IDLE_MS = 2800;
   private static VIDEO_FRAME_MIN_MS = 2000;
   private voiceProfile: VoiceSessionPreferences["voiceProfile"] = "jarvis";
+  private userAddress: UserAddressContext | null = null;
   private handlers: CedLiveHandlers = {};
 
   isOpen(): boolean {
@@ -296,6 +298,7 @@ export class CedLiveClient {
 
     const voiceName = tokenRes.voiceName ?? "alloy";
     this.model = tokenRes.model;
+    this.userAddress = tokenRes.userAddress ?? null;
     voiceTelemetry.setActiveVoice(voiceName);
 
     try {
@@ -557,8 +560,12 @@ export class CedLiveClient {
     void this.sendClientTurn(CED_VOICE_PROFILE_LOCK.advancedSystem.ackInstruction);
   }
 
+  setUserAddress(address: UserAddressContext | null): void {
+    this.userAddress = address;
+  }
+
   sendSessionGreeting(): void {
-    void this.sendClientTurn(cedGreetingTurn(this.voiceProfile));
+    void this.sendClientTurn(cedGreetingTurn(this.voiceProfile, this.userAddress));
   }
 
   sendNarrationBrief(summary: string): void {

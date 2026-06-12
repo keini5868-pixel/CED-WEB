@@ -16,6 +16,9 @@ import {
   STANDARD_VOICE_PRESET,
   isJarvisPreset,
 } from "@/lib/voice/voicePresets";
+import { fetchUserAddress, updateUserAddress } from "@/lib/api/profile";
+import { clearEphemeralTokenCache } from "@/lib/voice/ephemeralTokenCache";
+import type { UserGender } from "@/lib/voice/addressPreferenceIntent";
 
 export function CedStopConfirmModal({
   open,
@@ -66,10 +69,27 @@ export function CedSettingsModal({
 }) {
   const [draft, setDraft] = useState(prefs);
   const [applyingVoice, setApplyingVoice] = useState(false);
+  const [addressDraft, setAddressDraft] = useState({
+    preferredAddress: "",
+    gender: "" as UserGender | "",
+  });
+  const [addressPreview, setAddressPreview] = useState("");
 
   useEffect(() => {
     if (open) setDraft(prefs);
   }, [open, prefs]);
+
+  useEffect(() => {
+    if (!open) return;
+    void fetchUserAddress().then((a) => {
+      if (!a) return;
+      setAddressDraft({
+        preferredAddress: a.preferredAddress || a.honorific || "",
+        gender: a.gender || "",
+      });
+      setAddressPreview(a.displayName);
+    });
+  }, [open]);
 
   const voiceChanged = draft.voiceName !== prefs.voiceName;
 
@@ -85,8 +105,18 @@ export function CedSettingsModal({
           </CedButton>
           <CedButton
             onClick={() => {
-              onSave(draft);
-              onClose();
+              void (async () => {
+                onSave(draft);
+                const updated = await updateUserAddress({
+                  preferredAddress: addressDraft.preferredAddress,
+                  gender: addressDraft.gender || null,
+                });
+                if (updated) {
+                  setAddressPreview(updated.displayName);
+                  clearEphemeralTokenCache();
+                }
+                onClose();
+              })();
             }}
           >
             GUARDAR PREFS
@@ -197,6 +227,51 @@ export function CedSettingsModal({
             <option value="pt">Português</option>
           </select>
         </label>
+
+        <div className="space-y-3 rounded border border-cyan-900/40 bg-black/40 p-3">
+          <p className="ced-hud-text-muted text-xs font-medium uppercase tracking-wider">
+            Cómo te llama CED
+          </p>
+          <p className="ced-hud-text-muted text-[10px]">
+            El saludo usa tu género o el título que elijas (Señor, Señora, Jefe, tu nombre).
+            También puedes decirlo por voz: &quot;llámame señor&quot;.
+          </p>
+          <label className="block">
+            <span className="ced-hud-text-muted text-xs">Tratamiento preferido</span>
+            <input
+              type="text"
+              className="mt-1 w-full rounded border border-cyan-700/50 bg-black px-3 py-2 text-sm text-white"
+              placeholder="Ej: Señor, Señora, Keini, Jefe"
+              value={addressDraft.preferredAddress}
+              onChange={(e) =>
+                setAddressDraft((d) => ({ ...d, preferredAddress: e.target.value }))
+              }
+            />
+          </label>
+          <label className="block">
+            <span className="ced-hud-text-muted text-xs">Género (título por defecto)</span>
+            <select
+              className="mt-1 w-full rounded border border-cyan-700/50 bg-black px-3 py-2 text-sm text-white"
+              value={addressDraft.gender}
+              onChange={(e) =>
+                setAddressDraft((d) => ({
+                  ...d,
+                  gender: e.target.value as UserGender | "",
+                }))
+              }
+            >
+              <option value="">Sin preferencia</option>
+              <option value="male">Masculino → Señor</option>
+              <option value="female">Femenino → Señora</option>
+              <option value="neutral">Neutral → solo nombre</option>
+            </select>
+          </label>
+          {addressPreview ? (
+            <p className="ced-hud-text-muted text-[10px]">
+              Vista previa saludo: <span className="text-cyan-300">{addressPreview}</span>
+            </p>
+          ) : null}
+        </div>
 
         <div className="space-y-3 rounded border border-cyan-900/40 bg-black/40 p-3">
           <p className="ced-hud-text-muted text-xs font-medium uppercase tracking-wider">

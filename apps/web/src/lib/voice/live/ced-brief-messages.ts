@@ -1,10 +1,15 @@
 /** Instrucciones de voz CED — una sola utterance, sin prefijos duplicados. */
 
-export function cedGreetingTurn(voiceProfile: "standard" | "jarvis" = "jarvis"): string {
+import type { UserAddressContext } from "@/lib/api/profile";
+
+export function cedGreetingTurn(
+  voiceProfile: "standard" | "jarvis" = "jarvis",
+  address?: Pick<UserAddressContext, "greetingPhraseJarvis" | "greetingPhraseStandard"> | null,
+): string {
   const phrase =
     voiceProfile === "jarvis"
-      ? "Buenos días, Keini. ¿En qué trabajamos hoy?"
-      : "Hola Keini. ¿Cómo va todo?";
+      ? address?.greetingPhraseJarvis || "Buenos días. ¿En qué trabajamos hoy?"
+      : address?.greetingPhraseStandard || "Hola. ¿Cómo va todo?";
   return (
     "[CED_GREETING] Di EXACTAMENTE esta frase una sola vez, sin añadir nada antes ni después: " +
     `"${phrase}"`
