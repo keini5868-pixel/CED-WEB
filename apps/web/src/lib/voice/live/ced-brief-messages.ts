@@ -8,7 +8,7 @@ export function cedGreetingTurn(
 ): string {
   const phrase =
     voiceProfile === "jarvis"
-      ? address?.greetingPhraseJarvis || "Buenos días. ¿En qué trabajamos hoy?"
+      ? address?.greetingPhraseJarvis || "Buenas tardes. ¿En qué puedo asistirle hoy?"
       : address?.greetingPhraseStandard || "Hola. ¿Cómo va todo?";
   return (
     "[CED_GREETING] Di EXACTAMENTE esta frase una sola vez, sin añadir nada antes ni después: " +

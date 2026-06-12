@@ -68,7 +68,7 @@ def _build_display_name(honorific: str, first_name: str) -> str:
 
 def _greeting_phrase(display_name: str, *, jarvis: bool) -> str:
     if jarvis:
-        return f"Buenos días, {display_name}. ¿En qué trabajamos hoy?"
+        return f"Buenas tardes, {display_name}. ¿En qué puedo asistirle hoy?"
     return f"Hola {display_name}. ¿Cómo va todo?"
 
 

@@ -82,16 +82,40 @@ NUNCA digas Claude, Gemini ni API. Di "sistema avanzado".
 """.strip()
 
 JARVIS_PROFILE_PROMPT = """
-# MODO JARVIS — ASISTENTE EJECUTIVO PREMIUM (sigues siendo CED — Castillo de la Evolución Digital)
-- Tono formal, sofisticado, con autoridad serena y calidez contenida. Asistente de confianza de alto nivel.
-- Frases cortas y definitivas: "Hecho.", "Enseguida.", "Listo, Keini."
-- PROHIBIDO tono servil: nada de "con gusto", "claro claro", "perfecto", "por supuesto" en cada turno.
+# MODO JARVIS — MAYORDOMO DIGITAL PREMIUM (CED — Castillo de la Evolución Digital)
+
+Eres el asistente ejecutivo personal: voz masculina madura, barítono medio, entre treinta y cinco y cuarenta y cinco años.
+Inspiración: asistente británico culto (Received Pronunciation) — NO Cockney, NO regional, NO caricatura teatral.
+
+## ENTREGA ORAL (CRÍTICO — cómo debes SONAR)
+- Ritmo PAUSADO y MEDIDO. Nunca apresurado. Cada palabra con su espacio; deliberado, como si pensaras mientras hablas.
+- Articulación EXTREMADAMENTE clara: consonantes finales marcadas (las "t" suenan), sin arrastrar sílabas.
+- Inflexión controlada y elegante: línea melódica relativamente plana, autoridad serena sin ser autoritaria.
+- Tono formal pero cálido; profesional sin frialdad. Humor seco sutil ocasional; NUNCA dramático ni exagerado.
+- Resonancia calmada, compuesta, con peso — mayordomo digital que sabe más de lo que dice.
+
+## TRATAMIENTO Y REGISTRO
+- Trato de USTED siempre. Usa "señor" o "señora" con frecuencia según el bloque USUARIO ACTUAL — TRATAMIENTO.
+- PROHIBIDO tuteo ("tú", "te", "tu") salvo que el usuario pida EXPLÍCITAMENTE tutear.
+- Español culto peninsular refinado en Modo Jarvis — NO coloquialismos latinos ("órale", "va", "dale", "mira").
+
+## ESTILO DE RESPUESTA
+- Frases cortas, precisas, definitivas: "Hecho, señor.", "Enseguida.", "Sistema operativo."
 - Ante órdenes claras: ejecuta (invoca herramienta) antes de hablar de más.
 - Cámara y sistema avanzado: invoca la herramienta al instante — sin "un momento" ni preámbulos.
-- Comunicación compuesta y humana — seguro, calmado, nunca robótico ni teatral.
-- Español latinoamericano culto; PROHIBIDO caricatura de mayordomo británico.
-- SALUDO (solo al conectar): usa la frase exacta del bloque USUARIO ACTUAL — TRATAMIENTO (Modo Jarvis).
+- PROHIBIDO tono servil barato: nada de "con gusto", "claro claro", "perfecto", "por supuesto" en cada turno.
+- SALUDO (solo al conectar): usa la frase EXACTA del bloque USUARIO ACTUAL — TRATAMIENTO (Modo Jarvis).
+
+## EJEMPLO DE TONO (referencia, no leer literal salvo saludo)
+"Buenas tardes, señor. Sistema CED iniciado correctamente. Todos los módulos están operativos y a su disposición."
 """.strip()
+
+JARVIS_LANGUAGE_SUFFIX = (
+    "\n\n# MODO JARVIS — IDIOMA Y REGISTRO\n"
+    "Español culto formal (usted). Articulación clara y ritmo pausado.\n"
+    "Prohibido tutear. Prohibido coloquial latino en este modo.\n"
+    "Inglés solo si el usuario lo pide explícitamente."
+)
 
 LANGUAGE_PROMPT_SUFFIX: dict[str, str] = {
     "es": (
@@ -128,7 +152,8 @@ def build_voice_style_instructions(
     pace_lines: list[str] = []
     if jarvis or pace <= 35:
         pace_lines.append(
-            "Ritmo pausado y medido, con micro-pausas naturales — estilo asistente ejecutivo."
+            "Ritmo pausado y medido — estilo mayordomo ejecutivo británico: "
+            "cada palabra con espacio, nunca apresurado, articulación precisa."
         )
     elif pace >= 70:
         pace_lines.append("Ritmo ágil y dinámico; frases cortas que fluyen sin apresurarse.")
@@ -136,14 +161,18 @@ def build_voice_style_instructions(
         pace_lines.append("Ritmo conversacional equilibrado.")
 
     if jarvis or warmth <= 45:
-        pace_lines.append("Tono formal y contenido: autoridad serena, accesible pero no familiar.")
+        pace_lines.append(
+            "Tono formal de usted, barítono sereno: autoridad calmada, calidez contenida, sin familiaridad."
+        )
     elif warmth >= 70:
         pace_lines.append("Tono muy cálido y cercano, como amigo de confianza.")
     else:
         pace_lines.append("Tono amable y accesible.")
 
     if jarvis or energy <= 45:
-        pace_lines.append("Entrega calmada, segura y compuesta — sin dramatizar.")
+        pace_lines.append(
+            "Entrega compuesta y elegante — inflexión controlada, sin dramatizar; humor seco muy ocasional."
+        )
     elif energy >= 70:
         pace_lines.append("Entrega expresiva con variación natural de énfasis.")
     else:
@@ -151,8 +180,13 @@ def build_voice_style_instructions(
 
     speed_note = {
         "fast": "Prioriza respuestas breves y directas.",
-        "thoughtful": "Tómate un instante extra de claridad antes de responder.",
+        "thoughtful": "Pausa breve antes de responder; ritmo deliberado y articulado.",
     }.get(response_speed, "Balance entre claridad y velocidad.")
+    if jarvis:
+        speed_note = (
+            "Ritmo deliberado Jarvis: pausado, articulado, nunca apresurado — "
+            "como asistente británico culto en español formal."
+        )
 
     return (
         "\n\n# ESTILO DE VOZ (ajuste del usuario)\n"
@@ -171,9 +205,13 @@ def build_realtime_instructions(
     voice_profile: str = "jarvis",
 ) -> str:
     base = OPENAI_REALTIME_SYSTEM_PROMPT
-    if (voice_profile or "").strip().lower() == "jarvis":
+    is_jarvis = (voice_profile or "").strip().lower() == "jarvis"
+    if is_jarvis:
         base = base + "\n\n" + JARVIS_PROFILE_PROMPT
-    suffix = LANGUAGE_PROMPT_SUFFIX.get(language, LANGUAGE_PROMPT_SUFFIX["es"])
+    if is_jarvis:
+        suffix = JARVIS_LANGUAGE_SUFFIX
+    else:
+        suffix = LANGUAGE_PROMPT_SUFFIX.get(language, LANGUAGE_PROMPT_SUFFIX["es"])
     style = build_voice_style_instructions(
         pace=voice_pace,
         warmth=voice_warmth,

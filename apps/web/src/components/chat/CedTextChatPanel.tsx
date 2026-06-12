@@ -284,8 +284,8 @@ export function CedTextChatPanel({
 
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className="shrink-0 border-t border-cyan-500/20 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="flex items-end gap-2">
+        <footer className="shrink-0 border-t border-cyan-500/20 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex w-full min-w-0 items-stretch gap-2">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -295,16 +295,21 @@ export function CedTextChatPanel({
                   void submit();
                 }
               }}
-              rows={2}
+              onFocus={(e) => {
+                window.setTimeout(() => {
+                  e.currentTarget.scrollIntoView({ block: "nearest", behavior: "smooth" });
+                }, 280);
+              }}
+              rows={1}
               placeholder="Escribe a CED…"
               disabled={busy || status?.blocked}
-              className="min-h-[44px] flex-1 resize-none rounded border border-cyan-800/50 bg-black/50 px-3 py-2 text-sm text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50"
+              className="min-h-[44px] max-h-[min(28dvh,140px)] min-w-0 flex-1 basis-0 resize-none overflow-y-auto rounded border border-cyan-800/50 bg-black/50 px-3 py-2.5 text-sm leading-snug text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50"
             />
             <button
               type="button"
               disabled={busy || !input.trim() || status?.blocked}
               onClick={() => void submit()}
-              className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded border border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-40"
+              className="flex h-[44px] w-[44px] shrink-0 self-end items-center justify-center rounded border border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-40"
               aria-label="Enviar"
             >
               <Send className="h-4 w-4" />

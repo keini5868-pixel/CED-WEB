@@ -1,14 +1,14 @@
 import type { VoiceSessionPreferences } from "@ced/types";
 
-/** Preset formal-ejecutivo estilo asistente premium (Jarvis). */
+/** Preset Jarvis: voz masculina pausada, formal, articulación clara. */
 export const JARVIS_VOICE_PRESET: VoiceSessionPreferences = {
   language: "es",
-  responseSpeed: "balanced",
+  responseSpeed: "thoughtful",
   voiceName: "echo",
   palette: "cyan",
-  voicePace: 38,
-  voiceWarmth: 42,
-  voiceEnergy: 38,
+  voicePace: 22,
+  voiceWarmth: 30,
+  voiceEnergy: 28,
   voiceProfile: "jarvis",
 };
 

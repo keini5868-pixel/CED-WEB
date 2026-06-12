@@ -19,7 +19,7 @@ def effective_plan_limits(user_id: str) -> tuple[PlanLimits, str, bool]:
     """
     profile = supabase_db.get_profile(user_id) or {}
     if is_super_admin(profile.get("email"), profile.get("role")):
-        return get_plan_limits(PlanId.ELITE.value), "ok", False
+        return get_plan_limits(PlanId.FOUNDING.value), "ok", False
 
     allowed, reason, _ = get_user_access(user_id)
     if not allowed and reason == "trial_expired":

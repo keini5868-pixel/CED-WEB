@@ -8,7 +8,9 @@ from typing import Any
 import httpx
 
 from app.config import get_settings
-from app.domain.plans import get_plan_limits, normalize_plan_id
+from app.deps.auth import is_super_admin
+from app.deps.plan_access import effective_plan_limits
+from app.domain.plans import PlanId, get_plan_limits
 from app.services import supabase_db
 
 logger = logging.getLogger(__name__)
@@ -49,7 +51,12 @@ def generate_image(
     if not api_key:
         return {"ok": False, "error": "OPENAI_API_KEY no configurada"}
 
-    limits = get_plan_limits(normalize_plan_id(plan_id))
+    profile = supabase_db.get_profile(user_id) or {}
+    if is_super_admin(profile.get("email"), profile.get("role")):
+        limits = get_plan_limits(PlanId.FOUNDING.value)
+    else:
+        limits, _reason, _trial = effective_plan_limits(user_id)
+
     std_used, hd_used = _month_image_counts(user_id)
     picked = _pick_quality(topic, None if quality == "auto" else quality)
 
@@ -61,7 +68,11 @@ def generate_image(
         used = std_used
 
     if cap <= 0:
-        return {"ok": False, "error": "Tu plan no incluye imágenes IA.", "code": "plan_limit"}
+        return {
+            "ok": False,
+            "error": "Tu plan actual no incluye generación de imágenes. Mejora tu plan en Precios.",
+            "code": "plan_limit",
+        }
     if used >= cap:
         return {
             "ok": False,
