@@ -201,8 +201,8 @@ export function CedTextChatPanel({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center bg-black/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div className="flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:rounded-2xl sm:border">
+    <div className="fixed inset-0 z-[90] flex items-end justify-center overflow-x-hidden bg-black/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+      <div className="box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-md sm:rounded-2xl sm:border">
         <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/20 px-4 py-3">
           <div className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4 text-cyan-400" />
@@ -284,8 +284,8 @@ export function CedTextChatPanel({
 
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className="shrink-0 border-t border-cyan-500/20 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-          <div className="flex w-full min-w-0 items-stretch gap-2">
+        <footer className="shrink-0 overflow-hidden border-t border-cyan-500/20 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]">
+          <div className="box-border grid w-full max-w-full grid-cols-[minmax(0,1fr)_44px] items-end gap-2">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -303,20 +303,21 @@ export function CedTextChatPanel({
               rows={1}
               placeholder="Escribe a CED…"
               disabled={busy || status?.blocked}
-              className="min-h-[44px] max-h-[min(28dvh,140px)] min-w-0 flex-1 basis-0 resize-none overflow-y-auto rounded border border-cyan-800/50 bg-black/50 px-3 py-2.5 text-sm leading-snug text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50"
+              className="box-border min-h-[44px] max-h-[min(28dvh,140px)] w-full max-w-full resize-none overflow-y-auto overflow-x-hidden rounded border border-cyan-800/50 bg-black/50 px-3 py-2.5 text-sm leading-snug text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50"
+              style={{ WebkitAppearance: "none" }}
             />
             <button
               type="button"
               disabled={busy || !input.trim() || status?.blocked}
               onClick={() => void submit()}
-              className="flex h-[44px] w-[44px] shrink-0 self-end items-center justify-center rounded border border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-40"
+              className="box-border flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded border border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-40"
               aria-label="Enviar"
             >
-              <Send className="h-4 w-4" />
+              <Send className="h-4 w-4 shrink-0" />
             </button>
           </div>
-          <p className="mt-1 text-center text-[9px] text-cyan-700">
-            Enter envía · Pide &quot;genera una imagen de…&quot; o &quot;convierte esto a PDF&quot;
+          <p className="mt-1.5 break-words text-left text-[9px] leading-snug text-cyan-700">
+            Enter envía · &quot;genera una imagen de…&quot; · &quot;convierte esto a PDF&quot;
           </p>
         </footer>
       </div>
