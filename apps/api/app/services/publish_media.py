@@ -56,15 +56,34 @@ def decode_image_data(image_data: str) -> tuple[bytes, str]:
         raise ValueError("Formato de imagen no reconocido") from exc
 
 
-def store_publish_image(user_id: str, image_bytes: bytes, mime: str) -> str:
-    """Guarda bytes y devuelve URL pública HTTPS para Instagram/Meta."""
+def _save_image_file(user_id: str, image_bytes: bytes, mime: str) -> str:
     ext = _EXT_BY_MIME.get(mime.lower(), "jpg")
     file_name = f"{user_id[:8]}_{uuid.uuid4().hex}.{ext}"
     path = _ensure_dir() / file_name
     path.write_bytes(image_bytes)
+    return file_name
+
+
+def api_media_url(file_name: str) -> str:
     settings = get_settings()
     base = settings.api_public_url.rstrip("/")
     return f"{base}/v1/media/publish/{file_name}"
+
+
+def client_media_url(file_name: str) -> str:
+    return f"/api/ced/media/publish/{file_name}"
+
+
+def store_publish_image(user_id: str, image_bytes: bytes, mime: str) -> str:
+    """URL HTTPS pública en la API (Meta / Instagram)."""
+    file_name = _save_image_file(user_id, image_bytes, mime)
+    return api_media_url(file_name)
+
+
+def store_publish_image_for_client(user_id: str, image_bytes: bytes, mime: str) -> str:
+    """URL same-origin vía BFF Next.js — para mostrar en el chat."""
+    file_name = _save_image_file(user_id, image_bytes, mime)
+    return client_media_url(file_name)
 
 
 def resolve_image_input(

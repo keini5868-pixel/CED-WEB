@@ -76,6 +76,7 @@ def generate_image(
         "size": "1024x1024",
         "quality": "high" if picked == "hd" else "medium",
         "n": 1,
+        "response_format": "b64_json",
     }
 
     try:
@@ -89,9 +90,12 @@ def generate_image(
                 json=payload,
             )
             if res.status_code >= 400:
+                detail = res.text[:240]
+                logger.error("[OPENAI:IMAGE] %s %s", res.status_code, detail)
                 return {
                     "ok": False,
-                    "error": f"OpenAI rechazó la imagen ({res.status_code})",
+                    "error": f"No pude generar la imagen ({res.status_code}). Revisa OPENAI_API_KEY y saldo.",
+                    "code": "openai_error",
                 }
             data = res.json()
     except Exception as exc:  # noqa: BLE001
@@ -106,16 +110,24 @@ def generate_image(
     b64 = items[0].get("b64_json")
     public_url = url
     if not public_url and b64:
-        from app.services.publish_media import decode_image_data, store_publish_image
+        from app.services.publish_media import decode_image_data, store_publish_image_for_client
 
         data_url = f"data:image/png;base64,{b64}"
         raw, mime = decode_image_data(data_url)
-        public_url = store_publish_image(user_id, raw, mime)
+        public_url = store_publish_image_for_client(user_id, raw, mime)
     elif public_url.startswith("data:"):
-        from app.services.publish_media import decode_image_data, store_publish_image
+        from app.services.publish_media import decode_image_data, store_publish_image_for_client
 
         raw, mime = decode_image_data(public_url)
-        public_url = store_publish_image(user_id, raw, mime)
+        public_url = store_publish_image_for_client(user_id, raw, mime)
+    elif public_url.startswith("http"):
+        from app.services.publish_media import decode_image_data, store_publish_image_for_client
+
+        try:
+            raw, mime = decode_image_data(public_url)
+            public_url = store_publish_image_for_client(user_id, raw, mime)
+        except Exception:  # noqa: BLE001
+            pass
 
     cost = HD_COST_USD if picked == "hd" else STD_COST_USD
     try:

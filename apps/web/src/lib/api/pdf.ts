@@ -60,7 +60,11 @@ export async function downloadPdfBlob(
   fileId: string,
   filename = "documento-ced.pdf",
 ): Promise<void> {
-  const url = pdfDownloadUrl(fileId);
+  const id = fileId.trim();
+  if (!/^[a-f0-9]{32}$/i.test(id)) {
+    throw new Error("ID de PDF inválido. Pide a CED que genere el documento de nuevo.");
+  }
+  const url = pdfDownloadUrl(id);
   const res = await fetch(url, { credentials: "same-origin" });
   if (!res.ok) {
     let detail: string | undefined;
@@ -73,23 +77,22 @@ export async function downloadPdfBlob(
     throw new Error(pdfDownloadError(res.status, detail));
   }
 
-  const contentType = res.headers.get("content-type") || "";
-  if (!contentType.includes("pdf") && !contentType.includes("octet-stream")) {
-    throw new Error("El servidor no devolvió un PDF válido.");
-  }
-
   const blob = await res.blob();
   if (blob.size < 100) {
     throw new Error("El PDF está vacío o corrupto.");
+  }
+  const header = new Uint8Array(await blob.slice(0, 5).arrayBuffer());
+  const magic = String.fromCharCode(...header);
+  if (!magic.startsWith("%PDF")) {
+    throw new Error("El servidor no devolvió un PDF válido.");
   }
 
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
-  anchor.download = filename;
+  anchor.download = filename.replace(/[^\w\s.-]/g, "") || "documento-ced.pdf";
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  // Revocar tarde: Chrome cancela la descarga si el blob desaparece al instante.
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }

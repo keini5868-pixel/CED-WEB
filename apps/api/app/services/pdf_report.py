@@ -118,7 +118,7 @@ def store_pdf(
     try:
         from app.services import supabase_db
 
-        supabase_db.save_pdf_artifact(
+        saved = supabase_db.save_pdf_artifact(
             file_id=file_id,
             user_id=user_id,
             title=safe_title,
@@ -126,6 +126,8 @@ def store_pdf(
             pdf_bytes=data,
             conversation_id=conversation_id,
         )
+        if not saved:
+            logger.error("PDF no persistido en Supabase file_id=%s user=%s", file_id, user_id[:8])
     except Exception:  # noqa: BLE001
         logger.warning("PDF guardado solo en memoria (Supabase no disponible)")
 

@@ -6,6 +6,7 @@ import type { OrbState, VoiceSessionPreferences } from "@ced/types";
 import { ORB_STATE_LABELS } from "@ced/types";
 
 import { appendConversationMessage } from "@/lib/api/conversations";
+import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { generatePdf } from "@/lib/api/pdf";
 import { fetchVoiceBrief, fetchGenerateImage, fetchDeepAnalysis } from "@/lib/api/openai";
 import { saveMemory, searchMemory } from "@/lib/api/memory";
@@ -356,7 +357,6 @@ export function useCedVoiceSession(
     async (force?: boolean) => {
       const next = force ?? !cameraOn;
       if (!next) {
-        clientRef.current?.detachCameraStream();
         cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
         cameraStreamRef.current = null;
         setCameraOn(false);
@@ -368,9 +368,9 @@ export function useCedVoiceSession(
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: "user",
-            width: { ideal: 640 },
-            height: { ideal: 360 },
-            frameRate: { ideal: 1, max: 2 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 24, max: 30 },
           },
         });
         cameraStreamRef.current = stream;
@@ -378,9 +378,6 @@ export function useCedVoiceSession(
         setCameraOn(true);
         setStatusLabel("Activando cámara…");
         resetCameraIdleTimer();
-        if (clientRef.current?.isOpen()) {
-          await clientRef.current.attachCameraStream(stream);
-        }
       } catch {
         setErrorMessage(
           "Por favor permite el acceso a la cámara para que CED pueda ver.",
@@ -603,8 +600,9 @@ export function useCedVoiceSession(
       };
 
       const notifyGeneratedImage = (url: string, prompt?: string) => {
-        lastPublishableImageRef.current = url;
-        callbacks?.onGeneratedImage?.(url, prompt);
+        const normalized = normalizeCedMediaUrl(url);
+        lastPublishableImageRef.current = normalized;
+        callbacks?.onGeneratedImage?.(normalized, prompt);
       };
 
       const runAdvancedAnalysis = (prompt: string) => {
@@ -879,9 +877,6 @@ export function useCedVoiceSession(
           if (setupTimerRef.current) {
             clearTimeout(setupTimerRef.current);
             setupTimerRef.current = null;
-          }
-          if (cameraStreamRef.current) {
-            void client.attachCameraStream(cameraStreamRef.current);
           }
           if (!greetingSentRef.current) {
             greetingSentRef.current = true;
@@ -1255,13 +1250,10 @@ export function useCedVoiceSession(
           if (intent === "activate") {
             if (!cameraStreamRef.current) {
               await toggleCameraRef.current(true);
-            } else if (client.isOpen()) {
-              await client.attachCameraStream(cameraStreamRef.current);
             }
             return Boolean(cameraStreamRef.current);
           }
           await toggleCameraRef.current(false);
-          client.detachCameraStream();
           return true;
         },
         onError: (msg) => {
@@ -1406,8 +1398,6 @@ export function useCedVoiceSession(
     cameraCaptureVideoRef.current = video;
 
     let cancelled = false;
-    let frameCallbackId = 0;
-    let fallbackTimer: ReturnType<typeof setInterval> | null = null;
 
     const maybeSendFrame = () => {
       if (cancelled || pausedRef.current || !micOnRef.current) return;
@@ -1420,29 +1410,16 @@ export function useCedVoiceSession(
       resetCameraIdleTimer();
     };
 
-    const onVideoFrame = () => {
-      if (cancelled) return;
-      maybeSendFrame();
-      if ("requestVideoFrameCallback" in video) {
-        frameCallbackId = video.requestVideoFrameCallback(onVideoFrame);
-      }
-    };
-
     void video.play().then(() => {
       if (cancelled) return;
-      if ("requestVideoFrameCallback" in video) {
-        frameCallbackId = video.requestVideoFrameCallback(onVideoFrame);
-      } else {
-        fallbackTimer = setInterval(maybeSendFrame, VIDEO_SEND_INTERVAL_MS);
-      }
+      maybeSendFrame();
     });
+
+    const frameTimer = window.setInterval(maybeSendFrame, VIDEO_SEND_INTERVAL_MS);
 
     return () => {
       cancelled = true;
-      if (fallbackTimer) clearInterval(fallbackTimer);
-      if (frameCallbackId && "cancelVideoFrameCallback" in video) {
-        video.cancelVideoFrameCallback(frameCallbackId);
-      }
+      window.clearInterval(frameTimer);
       video.srcObject = null;
       if (cameraCaptureVideoRef.current === video) {
         cameraCaptureVideoRef.current = null;

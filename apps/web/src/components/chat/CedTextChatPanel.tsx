@@ -11,6 +11,7 @@ import {
   type ChatPdfAttachment,
   type ChatStatus,
 } from "@/lib/api/chat";
+import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 
 type CedTextChatPanelProps = {
@@ -86,13 +87,17 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
 }
 
 function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
+  const src = normalizeCedMediaUrl(image.url);
   return (
     <div className="mt-3 overflow-hidden rounded-lg border border-cyan-500/30 bg-black/40">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={image.url}
+        src={src}
         alt={image.prompt || "Imagen generada por CED"}
         className="max-h-64 w-full object-contain"
+        onError={(e) => {
+          e.currentTarget.alt = "No se pudo cargar la imagen";
+        }}
       />
       {image.prompt ? (
         <p className="border-t border-cyan-900/40 px-2 py-1.5 text-[10px] text-cyan-600">
@@ -179,7 +184,9 @@ export function CedTextChatPanel({
           content: result.reply,
           created_at: new Date().toISOString(),
           pdf: result.pdf ?? extractPdfFromContent(result.reply),
-          image: result.image ?? null,
+          image: result.image
+            ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
+            : null,
         },
       ]);
       setStatus(result.usage);

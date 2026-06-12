@@ -124,7 +124,8 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   const isBinary =
     contentType.includes("application/pdf") ||
     contentType.includes("application/octet-stream") ||
-    contentType.includes("application/sdp");
+    contentType.includes("application/sdp") ||
+    contentType.startsWith("image/");
 
   if (isBinary) {
     const buffer = await upstream.arrayBuffer();

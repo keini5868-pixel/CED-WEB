@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
@@ -57,8 +60,18 @@ def get_pdf_download(
     if not row:
         raise HTTPException(status_code=404, detail="PDF no encontrado o expirado.")
     data, filename = row
+    if len(data) < 100 or not data.startswith(b"%PDF"):
+        raise HTTPException(status_code=500, detail="El PDF está corrupto. Genera uno nuevo.")
+    safe_name = re.sub(r"[^\w\s.-]", "", filename) or "documento-ced.pdf"
+    ascii_name = safe_name.encode("ascii", "ignore").decode("ascii") or "documento-ced.pdf"
+    quoted = quote(safe_name)
     return Response(
         content=data,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="{ascii_name}"; filename*=UTF-8\'\'{quoted}'
+            ),
+            "Cache-Control": "private, no-store",
+        },
     )
