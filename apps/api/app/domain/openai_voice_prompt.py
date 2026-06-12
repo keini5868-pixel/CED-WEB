@@ -70,6 +70,17 @@ Di EXACTAMENTE: "Hola Keini. ¿Cómo va todo?" — en español. Espera.
 NUNCA digas Claude, Gemini ni API. Di "sistema avanzado".
 """.strip()
 
+JARVIS_PROFILE_PROMPT = """
+# MODO JARVIS — ASISTENTE EJECUTIVO PREMIUM
+- Tono formal, sofisticado, con autoridad serena y calidez contenida. Asistente de confianza de alto nivel.
+- Frases cortas y definitivas: "Hecho.", "Enseguida.", "Listo, Keini.", "Permíteme un momento."
+- PROHIBIDO tono servil: nada de "con gusto", "claro claro", "perfecto", "por supuesto" en cada turno.
+- Ante órdenes claras: ejecuta (invoca herramienta) antes de hablar de más.
+- Comunicación compuesta y humana — seguro, calmado, nunca robótico ni teatral.
+- Español latinoamericano culto; PROHIBIDO caricatura de mayordomo británico.
+- SALUDO (solo al conectar): di EXACTAMENTE "Buenos días, Keini. ¿En qué trabajamos hoy?" — una vez, y espera.
+""".strip()
+
 LANGUAGE_PROMPT_SUFFIX: dict[str, str] = {
     "es": (
         "\n\n# LOCK IDIOMA: Español latinoamericano obligatorio. "
@@ -95,28 +106,32 @@ def build_voice_style_instructions(
     warmth: int = 55,
     energy: int = 50,
     response_speed: str = "balanced",
+    voice_profile: str = "standard",
 ) -> str:
     pace = _clamp(pace)
     warmth = _clamp(warmth)
     energy = _clamp(energy)
+    jarvis = (voice_profile or "").strip().lower() == "jarvis"
 
     pace_lines: list[str] = []
-    if pace <= 30:
-        pace_lines.append("Ritmo de voz pausado, con micro-pausas naturales entre frases.")
+    if jarvis or pace <= 35:
+        pace_lines.append(
+            "Ritmo pausado y medido, con micro-pausas naturales — estilo asistente ejecutivo."
+        )
     elif pace >= 70:
         pace_lines.append("Ritmo ágil y dinámico; frases cortas que fluyen sin apresurarse.")
     else:
         pace_lines.append("Ritmo conversacional equilibrado.")
 
-    if warmth <= 30:
-        pace_lines.append("Tono profesional y contenido, sin exceso de familiaridad.")
+    if jarvis or warmth <= 45:
+        pace_lines.append("Tono formal y contenido: autoridad serena, accesible pero no familiar.")
     elif warmth >= 70:
         pace_lines.append("Tono muy cálido y cercano, como amigo de confianza.")
     else:
         pace_lines.append("Tono amable y accesible.")
 
-    if energy <= 30:
-        pace_lines.append("Entrega calmada y serena.")
+    if jarvis or energy <= 45:
+        pace_lines.append("Entrega calmada, segura y compuesta — sin dramatizar.")
     elif energy >= 70:
         pace_lines.append("Entrega expresiva con variación natural de énfasis.")
     else:
@@ -141,13 +156,17 @@ def build_realtime_instructions(
     voice_warmth: int = 55,
     voice_energy: int = 50,
     response_speed: str = "balanced",
+    voice_profile: str = "jarvis",
 ) -> str:
     base = OPENAI_REALTIME_SYSTEM_PROMPT
+    if (voice_profile or "").strip().lower() == "jarvis":
+        base = base + "\n\n" + JARVIS_PROFILE_PROMPT
     suffix = LANGUAGE_PROMPT_SUFFIX.get(language, LANGUAGE_PROMPT_SUFFIX["es"])
     style = build_voice_style_instructions(
         pace=voice_pace,
         warmth=voice_warmth,
         energy=voice_energy,
         response_speed=response_speed,
+        voice_profile=voice_profile,
     )
     return base + suffix + style

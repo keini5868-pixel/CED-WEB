@@ -11,6 +11,11 @@ import {
 } from "@/lib/api/conversations";
 import { downloadPdfBlob, listSessionPdfs, type PdfArtifact } from "@/lib/api/pdf";
 import { OPENAI_VOICE_OPTIONS } from "@/lib/voice/openaiVoices";
+import {
+  JARVIS_VOICE_PRESET,
+  STANDARD_VOICE_PRESET,
+  isJarvisPreset,
+} from "@/lib/voice/voicePresets";
 
 export function CedStopConfirmModal({
   open,
@@ -90,6 +95,37 @@ export function CedSettingsModal({
       }
     >
       <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => setDraft({ ...JARVIS_VOICE_PRESET, palette: draft.palette })}
+            className={`rounded border px-3 py-2.5 text-left text-xs transition-colors ${
+              isJarvisPreset(draft)
+                ? "border-amber-400/70 bg-amber-950/30 text-amber-100"
+                : "border-cyan-900/50 bg-black text-zinc-400 hover:border-cyan-700"
+            }`}
+          >
+            <div className="font-semibold tracking-wide">Modo Jarvis</div>
+            <div className="mt-0.5 text-[10px] opacity-80">
+              Echo · formal · pausado · ejecutivo
+            </div>
+          </button>
+          <button
+            type="button"
+            onClick={() => setDraft({ ...STANDARD_VOICE_PRESET, palette: draft.palette })}
+            className={`rounded border px-3 py-2.5 text-left text-xs transition-colors ${
+              draft.voiceProfile === "standard"
+                ? "border-cyan-400 bg-cyan-950/40 text-cyan-200"
+                : "border-cyan-900/50 bg-black text-zinc-400 hover:border-cyan-700"
+            }`}
+          >
+            <div className="font-semibold tracking-wide">Estándar</div>
+            <div className="mt-0.5 text-[10px] opacity-80">
+              Alloy · conversacional · ágil
+            </div>
+          </button>
+        </div>
+
         <div>
           <span className="ced-hud-text-muted text-xs">
             Voz OpenAI Realtime (requiere reiniciar sesión)

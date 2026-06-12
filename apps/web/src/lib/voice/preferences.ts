@@ -14,7 +14,10 @@ const MIC_KEY = "ced_mic_enabled";
 
 
 
-type LegacyPrefs = VoiceSessionPreferences & { voiceTone?: "female" | "male" };
+type LegacyPrefs = VoiceSessionPreferences & {
+  voiceTone?: "female" | "male";
+  voiceProfile?: VoiceSessionPreferences["voiceProfile"];
+};
 
 
 
@@ -43,6 +46,8 @@ function migratePrefs(raw: LegacyPrefs): VoiceSessionPreferences {
     voiceWarmth: raw.voiceWarmth ?? DEFAULT_VOICE_PREFERENCES.voiceWarmth,
 
     voiceEnergy: raw.voiceEnergy ?? DEFAULT_VOICE_PREFERENCES.voiceEnergy,
+
+    voiceProfile: raw.voiceProfile ?? DEFAULT_VOICE_PREFERENCES.voiceProfile,
 
   };
 

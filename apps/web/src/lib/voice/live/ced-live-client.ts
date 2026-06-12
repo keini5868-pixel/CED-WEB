@@ -52,6 +52,7 @@ export type CedLiveConnectOptions = {
   voicePace?: VoiceSessionPreferences["voicePace"];
   voiceWarmth?: VoiceSessionPreferences["voiceWarmth"];
   voiceEnergy?: VoiceSessionPreferences["voiceEnergy"];
+  voiceProfile?: VoiceSessionPreferences["voiceProfile"];
   /** Stream de micrófono con echoCancellation (WebRTC uplink). */
   micStream: MediaStream;
 };
@@ -118,6 +119,7 @@ export class CedLiveClient {
   private static TOOL_COOLDOWN_MS = 2000;
   private static RESPONSE_IDLE_MS = 2800;
   private static VIDEO_FRAME_MIN_MS = 2000;
+  private voiceProfile: VoiceSessionPreferences["voiceProfile"] = "jarvis";
   private handlers: CedLiveHandlers = {};
 
   isOpen(): boolean {
@@ -252,6 +254,7 @@ export class CedLiveClient {
 
     this.connectInFlight = true;
     this.handlers = handlers;
+    this.voiceProfile = options.voiceProfile ?? "jarvis";
     this.sendBlocked = true;
     this.disconnect();
     this.intentionalClose = false;
@@ -277,6 +280,7 @@ export class CedLiveClient {
       voicePace: options.voicePace,
       voiceWarmth: options.voiceWarmth,
       voiceEnergy: options.voiceEnergy,
+      voiceProfile: options.voiceProfile,
     });
     if (isStale()) {
       this.connectInFlight = false;
@@ -554,7 +558,7 @@ export class CedLiveClient {
   }
 
   sendSessionGreeting(): void {
-    void this.sendClientTurn(cedGreetingTurn());
+    void this.sendClientTurn(cedGreetingTurn(this.voiceProfile));
   }
 
   sendNarrationBrief(summary: string): void {
@@ -749,3 +753,4 @@ export class CedLiveClient {
     this.send({ type: "response.create" });
   }
 }
+

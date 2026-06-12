@@ -27,13 +27,14 @@ function sessionOptionsFromPrefs(
       voicePace: options?.voicePace ?? prefs.voicePace,
       voiceWarmth: options?.voiceWarmth ?? prefs.voiceWarmth,
       voiceEnergy: options?.voiceEnergy ?? prefs.voiceEnergy,
+      voiceProfile: options?.voiceProfile ?? prefs.voiceProfile,
     },
   };
 }
 
 function buildCacheKey(voiceName?: string, options?: Partial<RealtimeSessionOptions>): string {
   const { voiceName: name, options: opts } = sessionOptionsFromPrefs(voiceName, options);
-  return `${name}:${opts.language}:${opts.responseSpeed}:${opts.voicePace}:${opts.voiceWarmth}:${opts.voiceEnergy}`;
+  return `${name}:${opts.language}:${opts.responseSpeed}:${opts.voicePace}:${opts.voiceWarmth}:${opts.voiceEnergy}:${opts.voiceProfile}`;
 }
 
 function isFresh(entry: CachedToken): boolean {

@@ -26,9 +26,10 @@ class RealtimeSessionBody(BaseModel):
     voice_name: str | None = Field(default=None, alias="voiceName")
     language: str | None = Field(default="es")
     response_speed: str | None = Field(default="balanced", alias="responseSpeed")
-    voice_pace: int | None = Field(default=50, alias="voicePace")
-    voice_warmth: int | None = Field(default=55, alias="voiceWarmth")
-    voice_energy: int | None = Field(default=50, alias="voiceEnergy")
+    voice_pace: int | None = Field(default=38, alias="voicePace")
+    voice_warmth: int | None = Field(default=42, alias="voiceWarmth")
+    voice_energy: int | None = Field(default=38, alias="voiceEnergy")
+    voice_profile: str | None = Field(default="jarvis", alias="voiceProfile")
 
     model_config = {"populate_by_name": True}
 
@@ -76,9 +77,12 @@ async def realtime_session(
     speed = (body.response_speed if body else None) or "balanced"
     if speed not in ("fast", "balanced", "thoughtful"):
         speed = "balanced"
-    pace = max(0, min(100, int(body.voice_pace if body and body.voice_pace is not None else 50)))
-    warmth = max(0, min(100, int(body.voice_warmth if body and body.voice_warmth is not None else 55)))
-    energy = max(0, min(100, int(body.voice_energy if body and body.voice_energy is not None else 50)))
+    pace = max(0, min(100, int(body.voice_pace if body and body.voice_pace is not None else 38)))
+    warmth = max(0, min(100, int(body.voice_warmth if body and body.voice_warmth is not None else 42)))
+    energy = max(0, min(100, int(body.voice_energy if body and body.voice_energy is not None else 38)))
+    profile = (body.voice_profile if body and body.voice_profile else "jarvis").strip().lower()
+    if profile not in ("standard", "jarvis"):
+        profile = "jarvis"
     result = create_realtime_session(
         user_id=user_id,
         voice_name=voice,
@@ -87,6 +91,7 @@ async def realtime_session(
         voice_pace=pace,
         voice_warmth=warmth,
         voice_energy=energy,
+        voice_profile=profile,
     )
     if result.get("ok"):
         result["userId"] = user_id

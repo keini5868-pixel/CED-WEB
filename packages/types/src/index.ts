@@ -141,6 +141,8 @@ export type VoicePaletteId = "cyan" | "gold" | "matrix" | "iron";
 
 export type GeminiVoiceId = string;
 
+export type VoiceProfileId = "standard" | "jarvis";
+
 export interface VoiceSessionPreferences {
   language: "es" | "en" | "pt";
   responseSpeed: "fast" | "balanced" | "thoughtful";
@@ -152,16 +154,19 @@ export interface VoiceSessionPreferences {
   voiceWarmth: number;
   /** 0 = más calmada, 100 = más expresiva/energética */
   voiceEnergy: number;
+  /** Perfil de personalidad oral (prompt backend) */
+  voiceProfile: VoiceProfileId;
 }
 
 export const DEFAULT_VOICE_PREFERENCES: VoiceSessionPreferences = {
   language: "es",
-  responseSpeed: "fast",
-  voiceName: "alloy",
+  responseSpeed: "balanced",
+  voiceName: "echo",
   palette: "cyan",
-  voicePace: 50,
-  voiceWarmth: 55,
-  voiceEnergy: 50,
+  voicePace: 38,
+  voiceWarmth: 42,
+  voiceEnergy: 38,
+  voiceProfile: "jarvis",
 };
 
 export type HudPanelId = "city" | "global" | "drones" | "waves" | "summary";

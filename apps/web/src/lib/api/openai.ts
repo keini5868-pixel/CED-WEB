@@ -61,7 +61,7 @@ export async function negotiateRealtimeCall(
 
 export type RealtimeSessionOptions = Pick<
   VoiceSessionPreferences,
-  "language" | "responseSpeed" | "voicePace" | "voiceWarmth" | "voiceEnergy"
+  "language" | "responseSpeed" | "voicePace" | "voiceWarmth" | "voiceEnergy" | "voiceProfile"
 >;
 
 export async function fetchRealtimeSession(
@@ -76,6 +76,7 @@ export async function fetchRealtimeSession(
   if (options?.voicePace !== undefined) body.voicePace = options.voicePace;
   if (options?.voiceWarmth !== undefined) body.voiceWarmth = options.voiceWarmth;
   if (options?.voiceEnergy !== undefined) body.voiceEnergy = options.voiceEnergy;
+  if (options?.voiceProfile) body.voiceProfile = options.voiceProfile;
   try {
     response = await proxyFetch("openai/realtime/session", {
       method: "POST",

@@ -168,9 +168,10 @@ def create_realtime_session(
     voice_name: str | None = None,
     language: str = "es",
     response_speed: str = "balanced",
-    voice_pace: int = 50,
-    voice_warmth: int = 55,
-    voice_energy: int = 50,
+    voice_pace: int = 38,
+    voice_warmth: int = 42,
+    voice_energy: int = 38,
+    voice_profile: str = "jarvis",
 ) -> dict[str, Any]:
     settings = get_settings()
     api_key = sanitize_openai_api_key(settings.openai_api_key)
@@ -196,6 +197,7 @@ def create_realtime_session(
         voice_warmth=voice_warmth,
         voice_energy=voice_energy,
         response_speed=response_speed or "balanced",
+        voice_profile=voice_profile or "jarvis",
     )
     lang = language or "es"
     temperature, preferred_turn = profile_for_response_speed(response_speed)

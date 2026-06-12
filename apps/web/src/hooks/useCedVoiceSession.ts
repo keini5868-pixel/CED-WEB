@@ -1302,6 +1302,7 @@ export function useCedVoiceSession(
                 voicePace: prefsRef.current.voicePace,
                 voiceWarmth: prefsRef.current.voiceWarmth,
                 voiceEnergy: prefsRef.current.voiceEnergy,
+                voiceProfile: prefsRef.current.voiceProfile,
                 micStream: stream,
               });
               if (ok) {
@@ -1329,6 +1330,7 @@ export function useCedVoiceSession(
         voicePace: prefsRef.current.voicePace,
         voiceWarmth: prefsRef.current.voiceWarmth,
         voiceEnergy: prefsRef.current.voiceEnergy,
+        voiceProfile: prefsRef.current.voiceProfile,
         micStream: stream,
       });
 
@@ -1469,6 +1471,7 @@ export function useCedVoiceSession(
         voicePace: prefsRef.current.voicePace,
         voiceWarmth: prefsRef.current.voiceWarmth,
         voiceEnergy: prefsRef.current.voiceEnergy,
+        voiceProfile: prefsRef.current.voiceProfile,
         micStream: stream,
       });
 
