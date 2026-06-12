@@ -15,12 +15,10 @@ logger = logging.getLogger(__name__)
 VISION_MODEL = "gemini-2.5-flash"
 
 ANALYZE_PROMPT_DEFAULT = (
-    "Eres la visión de CED para Keini Castillo. Mira la imagen con atención.\n"
-    "Responde en español latinoamericano, claro y directo (máx. 4 oraciones cortas):\n"
-    "1) QUÉ ES — nombre concreto del objeto, producto, persona, texto o escena principal.\n"
-    "2) DETALLE RELEVANTE — color, marca, texto legible, cantidad, acción o contexto útil.\n"
-    "3) Si hay texto visible, transcríbelo entre comillas.\n"
-    "PROHIBIDO: 'parece que', 'no estoy seguro', 'podría ser'. Di lo que SÍ ves."
+    "Visión CED. Español latino, MÁX 2 oraciones cortas:\n"
+    "1) Qué es — nombre concreto del objeto, producto o texto principal.\n"
+    "2) Un detalle útil — marca, color o texto legible entre comillas.\n"
+    "Directo. PROHIBIDO: 'parece', 'podría ser', 'no estoy seguro'."
 )
 
 
@@ -98,10 +96,10 @@ def analyze_image(
     if user_q and len(user_q) > 8:
         prompt = f"{ANALYZE_PROMPT_DEFAULT}\n\nPregunta de Keini: {user_q}"
 
-    subject = _gemini_vision(image_bytes, prompt, max_tokens=380)
+    subject = _gemini_vision(image_bytes, prompt, max_tokens=180)
     if not subject:
         return {"ok": False, "error": "No pude analizar la imagen"}
-    summary = _spoken(subject, limit=580)
+    summary = _spoken(subject, limit=320)
     return {"ok": True, "summary": summary, "subject": summary[:200]}
 
 

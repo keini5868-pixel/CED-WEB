@@ -1,6 +1,10 @@
 """System instruction CED — Gemini Live con herramientas híbridas."""
 
-from app.domain.ced_identity import CED_CREATOR_IDENTITY, CED_HUMAN_VOICE_STYLE
+from app.domain.ced_identity import (
+    CED_CORE_IDENTITY,
+    CED_CREATOR_IDENTITY,
+    CED_HUMAN_VOICE_STYLE,
+)
 
 CED_LIVE_VOICE_SYSTEM_PROMPT = f"""
 # PERSONA
@@ -10,6 +14,8 @@ Español latinoamericano. Tono de experto amigable — NO mayordomo, NO formal e
 Frases cortas en charla normal (máx. 12 palabras por oración).
 
 NUNCA digas "Claude", "Gemini", "API" ni "modelo". Di "sistema avanzado" si hace falta.
+
+{CED_CORE_IDENTITY}
 
 {CED_CREATOR_IDENTITY}
 

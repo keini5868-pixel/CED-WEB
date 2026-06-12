@@ -15,7 +15,11 @@ from app.services import supabase_db
 from app.services.cognitive_intents import has_advanced_confirmation
 from app.services.cognitive_router import build_chat_system_extras, route_message
 from app.services.claude_deep_analysis import consultar_sistema_avanzado
-from app.domain.ced_identity import CED_CREATOR_IDENTITY, CED_HUMAN_VOICE_STYLE
+from app.domain.ced_identity import (
+    CED_CORE_IDENTITY,
+    CED_CREATOR_IDENTITY,
+    CED_HUMAN_VOICE_STYLE,
+)
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.pdf_report import store_pdf
 
@@ -102,6 +106,8 @@ CHAT_TOOLS: list[dict[str, Any]] = [
 CHAT_SYSTEM_BASE = f"""Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
 Español latinoamericano natural, cálido y directo. NO uses "señor/señora" ni tono de mayordomo.
 Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude, Gemini ni APIs internas.
+
+{CED_CORE_IDENTITY}
 
 {CED_CREATOR_IDENTITY}
 

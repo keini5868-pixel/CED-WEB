@@ -164,7 +164,7 @@ export async function fetchVoiceBrief(
 
 export async function fetchDeepAnalysis(
   prompt: string,
-  timeoutMs = 30000,
+  timeoutMs = 20000,
 ): Promise<{ ok: true; result: string } | { ok: false; error: string }> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

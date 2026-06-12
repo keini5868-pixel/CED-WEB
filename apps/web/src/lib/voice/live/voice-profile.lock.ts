@@ -56,10 +56,10 @@ export const CED_VOICE_PROFILE_LOCK = {
   },
 
   advancedSystem: {
-    fetchTimeoutMs: 30000,
-    maxSpokenChars: 520,
+    fetchTimeoutMs: 20000,
+    maxSpokenChars: 400,
     ackInstruction:
-      '[CED_ACK] Di EXACTAMENTE: "Consulto el sistema avanzado." Una sola frase. CALLA hasta [CED_BRIEF].',
+      '[CED_ACK] Di EXACTAMENTE: "Consulto el sistema avanzado." Una sola frase corta. CALLA hasta [CED_BRIEF]. No repitas ni alargues.',
   },
 
   backend: {

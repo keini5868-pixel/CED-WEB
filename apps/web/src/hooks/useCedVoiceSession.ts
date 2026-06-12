@@ -76,11 +76,13 @@ import {
 } from "@/lib/voice/preferences";
 
 const CAMERA_IDLE_MS = 5 * 60 * 1000;
-const CAMERA_FRAME_WARM_MS = 4500;
-const CAMERA_FRAME_READY_MS = 2800;
+const CAMERA_FRAME_WARM_MS = 3200;
+const CAMERA_FRAME_READY_MS = 1200;
 const VIDEO_SEND_INTERVAL_MS = 2000;
 const VIDEO_CAPTURE_WIDTH = 640;
 const VIDEO_CAPTURE_HEIGHT = 480;
+const VISION_CAPTURE_WIDTH = 480;
+const VISION_CAPTURE_HEIGHT = 360;
 const USAGE_TICK_SECONDS = 15;
 const MAX_WS_RECONNECT = 3;
 /** Si el turno no cierra, liberar mic/UI (WebRTC). */
@@ -180,32 +182,39 @@ export function useCedVoiceSession(
     micOnRef.current = micOn;
   }, [micOn]);
 
-  const captureCameraJpeg = useCallback((): string | null => {
+  const captureCameraJpeg = useCallback((compact = false): string | null => {
     const video = cameraCaptureVideoRef.current;
-    if (!video || video.videoWidth === 0) return cameraPreviewRef.current;
+    if (!video || video.videoWidth === 0) {
+      return compact ? null : cameraPreviewRef.current;
+    }
     let canvas = cameraCaptureCanvasRef.current;
     if (!canvas) {
       canvas = document.createElement("canvas");
       cameraCaptureCanvasRef.current = canvas;
     }
-    canvas.width = VIDEO_CAPTURE_WIDTH;
-    canvas.height = VIDEO_CAPTURE_HEIGHT;
+    canvas.width = compact ? VISION_CAPTURE_WIDTH : VIDEO_CAPTURE_WIDTH;
+    canvas.height = compact ? VISION_CAPTURE_HEIGHT : VIDEO_CAPTURE_HEIGHT;
     const ctx = canvas.getContext("2d");
     ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
-    cameraPreviewRef.current = dataUrl;
+    const dataUrl = canvas.toDataURL("image/jpeg", compact ? 0.62 : 0.72);
+    if (!compact) cameraPreviewRef.current = dataUrl;
     return dataUrl;
   }, []);
 
-  const waitForCameraFrame = useCallback(async (maxMs = 2400): Promise<string | null> => {
-    const started = Date.now();
-    while (Date.now() - started < maxMs) {
-      const frame = captureCameraJpeg();
+  const waitForCameraFrame = useCallback(
+    async (maxMs = 2400, compact = false): Promise<string | null> => {
+      const frame = captureCameraJpeg(compact);
       if (frame) return frame;
-      await new Promise((r) => window.setTimeout(r, 120));
-    }
-    return captureCameraJpeg();
-  }, [captureCameraJpeg]);
+      const started = Date.now();
+      while (Date.now() - started < maxMs) {
+        await new Promise((r) => window.setTimeout(r, 80));
+        const next = captureCameraJpeg(compact);
+        if (next) return next;
+      }
+      return captureCameraJpeg(compact);
+    },
+    [captureCameraJpeg],
+  );
 
   const resolvePublishImage = useCallback(
     async (
@@ -728,6 +737,7 @@ export function useCedVoiceSession(
             }
             const frame = await waitForCameraFrame(
               hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
+              true,
             );
             if (!frame) {
               client.sendNarrationBrief(
@@ -1145,6 +1155,7 @@ export function useCedVoiceSession(
             }
             const frame = await waitForCameraFrame(
               hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
+              true,
             );
             if (!frame) {
               return {
