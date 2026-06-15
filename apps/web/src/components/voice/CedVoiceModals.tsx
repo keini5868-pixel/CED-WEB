@@ -35,14 +35,14 @@ export function CedStopConfirmModal({
       onClose={onClose}
       title="DETENER SESIÓN"
       footer={
-        <>
-          <CedButton variant="ghost" onClick={onClose}>
+        <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:gap-3">
+          <CedButton variant="ghost" onClick={onClose} className="w-full sm:w-auto">
             CANCELAR
           </CedButton>
-          <CedButton variant="danger" onClick={onConfirm}>
+          <CedButton variant="danger" onClick={onConfirm} className="w-full sm:w-auto">
             DETENER
           </CedButton>
-        </>
+        </div>
       }
     >
       <p className="ced-hud-text-body">
@@ -99,11 +99,12 @@ export function CedSettingsModal({
       onClose={onClose}
       title="CONFIGURACIÓN DE VOZ"
       footer={
-        <>
-          <CedButton variant="ghost" onClick={onClose}>
+        <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:gap-3">
+          <CedButton variant="ghost" onClick={onClose} className="w-full sm:w-auto">
             CERRAR
           </CedButton>
           <CedButton
+            className="w-full sm:w-auto"
             onClick={() => {
               void (async () => {
                 onSave(draft);
@@ -121,7 +122,7 @@ export function CedSettingsModal({
           >
             GUARDAR CONFIGURACIÓN
           </CedButton>
-        </>
+        </div>
       }
     >
       <div className="space-y-4">
@@ -166,7 +167,7 @@ export function CedSettingsModal({
               ? " · Pulsa APLICAR VOZ para oír el cambio"
               : " · Se aplicará al activar MIC"}
           </p>
-          <div className="mt-2 grid max-h-48 grid-cols-2 gap-2 overflow-y-auto sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {OPENAI_VOICE_OPTIONS.map((voice) => (
               <button
                 key={voice.id}
@@ -379,6 +380,10 @@ export function CedSettingsModal({
             <option value="iron">Iron Man</option>
           </select>
         </label>
+
+        <p className="ced-hud-text-muted pb-2 text-center text-[10px]">
+          Desliza hacia arriba para ver todas las opciones
+        </p>
       </div>
     </CedModal>
   );
