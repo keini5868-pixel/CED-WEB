@@ -122,6 +122,44 @@ export function CedTextChatPanel({
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [status, setStatus] = useState<ChatStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const vv = window.visualViewport;
+    if (!vv) return;
+
+    const syncViewport = () => {
+      const keyboardOffset = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      document.documentElement.style.setProperty(
+        "--ced-keyboard-height",
+        `${Math.round(keyboardOffset)}px`,
+      );
+      if (window.matchMedia("(max-width: 640px)").matches) {
+        setMobilePanelHeight(Math.round(vv.height));
+      } else {
+        setMobilePanelHeight(null);
+      }
+    };
+
+    const resetViewport = () => {
+      document.documentElement.style.setProperty("--ced-keyboard-height", "0px");
+      setMobilePanelHeight(null);
+    };
+
+    syncViewport();
+    vv.addEventListener("resize", syncViewport);
+    vv.addEventListener("scroll", syncViewport);
+    window.addEventListener("orientationchange", syncViewport);
+
+    return () => {
+      vv.removeEventListener("resize", syncViewport);
+      vv.removeEventListener("scroll", syncViewport);
+      window.removeEventListener("orientationchange", syncViewport);
+      resetViewport();
+    };
+  }, [open]);
 
   const refreshStatus = useCallback(async () => {
     const s = await fetchChatStatus();
@@ -202,7 +240,14 @@ export function CedTextChatPanel({
 
   return (
     <div className="fixed inset-0 z-[90] flex items-end justify-center overflow-x-hidden bg-black/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div className="box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-md sm:rounded-2xl sm:border">
+      <div
+        className="box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-md sm:rounded-2xl sm:border"
+        style={
+          mobilePanelHeight
+            ? { height: mobilePanelHeight, maxHeight: mobilePanelHeight }
+            : undefined
+        }
+      >
         <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/20 px-4 py-3">
           <div className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4 text-cyan-400" />
@@ -246,7 +291,10 @@ export function CedTextChatPanel({
           </p>
         )}
 
-        <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-4 pb-2"
+        >
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
             const pdfAttachment = msg.pdf ?? extractPdfFromContent(msg.content);
@@ -284,8 +332,8 @@ export function CedTextChatPanel({
 
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className="shrink-0 overflow-hidden border-t border-cyan-500/20 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))]">
-          <div className="box-border grid w-full max-w-full grid-cols-[minmax(0,1fr)_44px] items-end gap-2">
+        <footer className="shrink-0 border-t border-cyan-500/20 bg-[#060a0f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+          <div className="flex w-full max-w-full items-end gap-2">
             <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -295,25 +343,34 @@ export function CedTextChatPanel({
                   void submit();
                 }
               }}
-              onFocus={(e) => {
+              onFocus={() => {
                 window.setTimeout(() => {
-                  e.currentTarget.scrollIntoView({ block: "nearest", behavior: "smooth" });
-                }, 280);
+                  scrollRef.current?.scrollTo({
+                    top: scrollRef.current.scrollHeight,
+                    behavior: "smooth",
+                  });
+                }, 300);
+              }}
+              onBlur={() => {
+                document.documentElement.style.setProperty("--ced-keyboard-height", "0px");
+                if (window.matchMedia("(max-width: 640px)").matches && window.visualViewport) {
+                  setMobilePanelHeight(Math.round(window.visualViewport.height));
+                }
               }}
               rows={1}
               placeholder="Escribe a CED…"
               disabled={busy || status?.blocked}
-              className="box-border min-h-[44px] max-h-[min(28dvh,140px)] w-full max-w-full resize-none overflow-y-auto overflow-x-hidden rounded border border-cyan-800/50 bg-black/50 px-3 py-2.5 text-sm leading-snug text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50"
+              className="box-border min-h-[44px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded border border-cyan-800/50 bg-black/50 px-3 py-2.5 text-base leading-snug text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50 sm:text-sm"
               style={{ WebkitAppearance: "none" }}
             />
             <button
               type="button"
               disabled={busy || !input.trim() || status?.blocked}
               onClick={() => void submit()}
-              className="box-border flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded border border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-40"
+              className="box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full border border-cyan-400/60 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 active:scale-95 disabled:opacity-40"
               aria-label="Enviar"
             >
-              <Send className="h-4 w-4 shrink-0" />
+              <Send className="h-[18px] w-[18px] shrink-0" />
             </button>
           </div>
           <p className="mt-1.5 break-words text-left text-[9px] leading-snug text-cyan-700">
