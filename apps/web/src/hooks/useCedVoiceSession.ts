@@ -460,7 +460,7 @@ export function useCedVoiceSession(
       const client = new CedLiveClient();
       clientRef.current = client;
       client.setRemoteMuted(mutedRef.current);
-      client.setMicTrackEnabled(!pausedRef.current);
+      client.setMicTrackEnabled(false);
 
       usageIntervalRef.current = setInterval(() => {
         const sid = usageSessionRef.current;

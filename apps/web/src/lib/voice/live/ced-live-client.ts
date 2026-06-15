@@ -28,7 +28,7 @@ import {
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   cedBriefTurn,
-  cedGreetingTurn,
+  cedGreetingPhrase,
   CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
 
@@ -124,6 +124,7 @@ export class CedLiveClient {
   private voiceProfile: VoiceSessionPreferences["voiceProfile"] = "jarvis";
   private userAddress: UserAddressContext | null = null;
   private handlers: CedLiveHandlers = {};
+  private greetingSent = false;
 
   isOpen(): boolean {
     return Boolean(this.pc && this.sessionReady && !this.sendBlocked);
@@ -165,6 +166,7 @@ export class CedLiveClient {
     this.intentionalClose = true;
     this.sessionReady = false;
     this.sendBlocked = true;
+    this.greetingSent = false;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -569,7 +571,26 @@ export class CedLiveClient {
   }
 
   sendSessionGreeting(): void {
-    void this.sendClientTurn(cedGreetingTurn(this.voiceProfile, this.userAddress));
+    if (this.greetingSent || !this.dc || !this.sessionReady || this.sendBlocked) return;
+    this.greetingSent = true;
+    const phrase = cedGreetingPhrase(this.voiceProfile, this.userAddress);
+    void (async () => {
+      this.setMicTrackEnabled(false);
+      this.flushInputAudioBuffer();
+      if (this.responseInProgress) {
+        this.triggerBargeIn();
+        await this.waitForResponseIdle();
+      }
+      this.send({
+        type: "response.create",
+        response: {
+          modalities: ["text", "audio"],
+          instructions:
+            `Saludo de sesión — di EXACTAMENTE esta frase UNA sola vez y calla: "${phrase}" ` +
+            "PROHIBIDO: repetir, añadir palabras, segunda frase o continuar hablando.",
+        },
+      });
+    })();
   }
 
   sendNarrationBrief(summary: string): void {
