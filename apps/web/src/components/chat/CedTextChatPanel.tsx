@@ -12,6 +12,7 @@ import {
   type ChatStatus,
 } from "@/lib/api/chat";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
+import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 
 type CedTextChatPanelProps = {
@@ -75,6 +76,23 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
 
 function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
   const src = normalizeCedMediaUrl(image.url);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDownload = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await downloadGeneratedImage(image.url, image.prompt);
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "No se pudo descargar la imagen.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div className="mt-3 overflow-hidden rounded-lg border border-cyan-500/30 bg-black/40">
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -91,6 +109,17 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
           {image.prompt}
         </p>
       ) : null}
+      <div className="border-t border-cyan-900/40 px-2 py-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void handleDownload()}
+          className="inline-flex items-center gap-1.5 rounded border border-cyan-400/50 bg-cyan-400/10 px-3 py-2 text-[11px] font-semibold tracking-wide text-cyan-200 hover:bg-cyan-400/20 disabled:opacity-60"
+        >
+          {busy ? "Descargando…" : "🖼️ Descargar imagen"}
+        </button>
+        {error ? <p className="mt-1 text-[10px] text-red-400">{error}</p> : null}
+      </div>
     </div>
   );
 }
