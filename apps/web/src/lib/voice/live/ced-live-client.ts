@@ -233,9 +233,9 @@ export class CedLiveClient {
   private notifyCameraContext(active: boolean): void {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     const text = active
-      ? "La cámara del usuario está ACTIVA. Recibes frames de video en tiempo real. " +
-        "Cuando muestre algo Y pregunte sobre ello (ej. qué piensas, qué te parece, mira esto), " +
-        "describe INMEDIATAMENTE lo que ves — NO esperes a que diga solo «¿qué ves?» si ya preguntó. " +
+      ? "La cámara del usuario está ACTIVA. Puedes ver lo que muestra en tiempo real. " +
+        "Cuando pregunte sobre algo visual, describe INMEDIATAMENTE lo que ves. " +
+        "NO esperes a que vuelva a preguntar «¿qué ves?» si ya hizo una pregunta sobre lo que muestra. " +
         "Si muestra algo sin preguntar, espera una pregunta específica."
       : "La cámara del usuario está DESACTIVADA.";
     this.send({
@@ -772,6 +772,7 @@ export class CedLiveClient {
       await this.sendNarrationBrief(spoken);
       return;
     }
+    // Sin texto hablado: forzar respuesta del modelo (p. ej. tool sin spoken).
     this.send({ type: "response.create" });
   }
 }

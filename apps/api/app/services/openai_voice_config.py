@@ -7,8 +7,8 @@ from typing import Any
 OPENAI_VOICES = frozenset({"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"})
 DEFAULT_OPENAI_VOICE = "echo"
 
-REALTIME_MAX_OUTPUT_TOKENS = 120
-REALTIME_TEMPERATURE = 0.72
+REALTIME_MAX_OUTPUT_TOKENS = 250
+REALTIME_TEMPERATURE = 0.7
 
 # semantic_vad low = no interpretar silencios/ruido como turno del usuario
 REALTIME_TURN_DETECTION: dict[str, Any] = {
