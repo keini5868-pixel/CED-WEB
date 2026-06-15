@@ -28,7 +28,8 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Sistema avanzado para análisis profundo. "
             "SOLO tras confirmación del usuario o petición explícita. "
-            "Si la pregunta es compleja y no confirmó: NO invocar — pregunta primero. "
+            "Si la pregunta es compleja y no confirmó: NO invocar — di '¿Activamos análisis profundo?' "
+            "Tras ejecutar, el cliente devuelve spoken — PRESENTA ese resultado de inmediato. "
             "NUNCA para clima, noticias ni búsquedas web."
         ),
         "parameters": {

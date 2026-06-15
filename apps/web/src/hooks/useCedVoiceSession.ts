@@ -372,6 +372,7 @@ export function useCedVoiceSession(
     async (force?: boolean) => {
       const next = force ?? !cameraOn;
       if (!next) {
+        clientRef.current?.detachCameraStream();
         cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
         cameraStreamRef.current = null;
         setCameraOn(false);
@@ -393,6 +394,7 @@ export function useCedVoiceSession(
         setCameraOn(true);
         setStatusLabel("Activando cámara…");
         resetCameraIdleTimer();
+        void clientRef.current?.attachCameraStream(stream);
       } catch {
         setErrorMessage(
           "Por favor permite el acceso a la cámara para que CED pueda ver.",
@@ -491,6 +493,7 @@ export function useCedVoiceSession(
 
       const micActiveRef = { current: true };
       const greetingSentRef = { current: false };
+      const greetingPendingRef = { current: false };
       const setupTimerRef = { current: null as number | null };
       const responseWatchdogRef = { current: null as number | null };
       const lastResponseStartRef = { current: 0 };
@@ -920,6 +923,8 @@ export function useCedVoiceSession(
           }
           if (!greetingSentRef.current) {
             greetingSentRef.current = true;
+            greetingPendingRef.current = true;
+            client.setMicTrackEnabled(false);
             setStatusLabel("CED te saluda…");
             client.sendSessionGreeting();
           }
@@ -1276,6 +1281,9 @@ export function useCedVoiceSession(
         onTurnComplete: () => {
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
+          if (greetingPendingRef.current) {
+            greetingPendingRef.current = false;
+          }
           if (!pausedRef.current) {
             client.setMicTrackEnabled(true);
           }
@@ -1301,8 +1309,13 @@ export function useCedVoiceSession(
             if (!cameraStreamRef.current) {
               await toggleCameraRef.current(true);
             }
-            return Boolean(cameraStreamRef.current);
+            const stream = cameraStreamRef.current;
+            if (stream) {
+              await client.attachCameraStream(stream);
+            }
+            return Boolean(stream);
           }
+          client.detachCameraStream();
           await toggleCameraRef.current(false);
           return true;
         },

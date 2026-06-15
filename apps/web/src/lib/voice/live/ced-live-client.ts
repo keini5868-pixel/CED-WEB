@@ -29,6 +29,7 @@ import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   cedBriefTurn,
   cedGreetingTurn,
+  CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
 
 const TOOL_ALIAS: Record<string, string> = {
@@ -232,7 +233,10 @@ export class CedLiveClient {
   private notifyCameraContext(active: boolean): void {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     const text = active
-      ? "La cámara del usuario está ACTIVA. Recibes frames de video. Describe lo que ves cuando te pregunten."
+      ? "La cámara del usuario está ACTIVA. Recibes frames de video en tiempo real. " +
+        "Cuando muestre algo Y pregunte sobre ello (ej. qué piensas, qué te parece, mira esto), " +
+        "describe INMEDIATAMENTE lo que ves — NO esperes a que diga solo «¿qué ves?» si ya preguntó. " +
+        "Si muestra algo sin preguntar, espera una pregunta específica."
       : "La cámara del usuario está DESACTIVADA.";
     this.send({
       type: "conversation.item.create",
@@ -709,8 +713,7 @@ export class CedLiveClient {
           h.onAdvancedToolBlocked?.(prompt);
           await this.submitToolOutput(callId, {
             status: "needs_confirmation",
-            message:
-              "Di EXACTAMENTE: 'Es complejo. ¿Lo investigamos con el sistema avanzado?' — una sola vez y espera respuesta.",
+            spoken: CED_ADVANCED_CONFIRM_PHRASE,
             prompt,
           });
           return;
@@ -721,7 +724,10 @@ export class CedLiveClient {
           CED_VOICE_PROFILE_LOCK.advancedSystem.fetchTimeoutMs,
         );
         const spoken = result.ok ? result.result : "No pude completar el análisis.";
-        await this.submitToolOutput(callId, { status: result.ok ? "ok" : "error", spoken });
+        await this.submitToolOutput(callId, {
+          status: result.ok ? "ok" : "error",
+          spoken,
+        });
         return;
       }
 
@@ -746,6 +752,8 @@ export class CedLiveClient {
     if (this.responseInProgress) {
       await this.waitForResponseIdle();
     }
+    const spoken =
+      typeof output.spoken === "string" ? output.spoken.trim() : "";
     this.send({
       type: "conversation.item.create",
       item: {
@@ -753,10 +761,17 @@ export class CedLiveClient {
         call_id: callId,
         output: JSON.stringify({
           ...output,
-          delivery: "Di SOLO el campo spoken una vez. Sin muletillas ni repetir.",
+          delivery:
+            spoken.length > 0
+              ? "El cliente leerá el campo spoken en voz. No repitas ni resumas."
+              : "Responde según el status.",
         }),
       },
     });
+    if (spoken.length > 0) {
+      await this.sendNarrationBrief(spoken);
+      return;
+    }
     this.send({ type: "response.create" });
   }
 }

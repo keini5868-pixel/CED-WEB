@@ -66,10 +66,11 @@ def _build_display_name(honorific: str, first_name: str) -> str:
     return h
 
 
-def _greeting_phrase(display_name: str, *, jarvis: bool) -> str:
+def _greeting_phrase(display_name: str, first_name: str, *, jarvis: bool) -> str:
+    name = (first_name or display_name or "Usuario").strip()
     if jarvis:
-        return f"Buenas tardes, {display_name}. ¿En qué puedo asistirle hoy?"
-    return f"Hola {display_name}. ¿Cómo va todo?"
+        return f"Hola {name}. ¿En qué trabajamos?"
+    return f"Hola {name}. ¿En qué trabajamos?"
 
 
 def _read_memory_address(user_id: str) -> str:
@@ -105,8 +106,8 @@ def resolve_user_address(user_id: str) -> dict[str, Any]:
         "displayName": display_name,
         "gender": gender or None,
         "preferredAddress": preferred or None,
-        "greetingPhraseJarvis": _greeting_phrase(display_name, jarvis=True),
-        "greetingPhraseStandard": _greeting_phrase(display_name, jarvis=False),
+        "greetingPhraseJarvis": _greeting_phrase(display_name, first, jarvis=True),
+        "greetingPhraseStandard": _greeting_phrase(display_name, first, jarvis=False),
     }
 
 
