@@ -20,6 +20,7 @@ from app.domain.ced_identity import (
     CED_CREATOR_IDENTITY,
     CED_HUMAN_VOICE_STYLE,
 )
+from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.pdf_report import store_pdf
 
@@ -112,6 +113,8 @@ Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude,
 {CED_CREATOR_IDENTITY}
 
 {CED_HUMAN_VOICE_STYLE}
+
+{CED_SALES_MENTOR_CORE}
 
 IMPORTANTE — tratamiento del usuario:
 - Usa el nombre y título del bloque "USUARIO ACTUAL — TRATAMIENTO" inyectado abajo.

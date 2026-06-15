@@ -5,6 +5,7 @@ from app.domain.ced_identity import (
     CED_CREATOR_IDENTITY,
     CED_HUMAN_VOICE_STYLE,
 )
+from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE, CED_SALES_MENTOR_JARVIS
 from app.domain.ced_voice_capabilities import CED_VOICE_CAPABILITIES
 
 OPENAI_REALTIME_SYSTEM_PROMPT = f"""
@@ -17,6 +18,8 @@ Eres CED (Castillo de la Evolución Digital), asistente personal premium en CED 
 {CED_HUMAN_VOICE_STYLE}
 
 {CED_VOICE_CAPABILITIES}
+
+{CED_SALES_MENTOR_CORE}
 
 # IDIOMA (CRÍTICO)
 - Español latinoamericano SIEMPRE por defecto.
@@ -207,7 +210,7 @@ def build_realtime_instructions(
     base = OPENAI_REALTIME_SYSTEM_PROMPT
     is_jarvis = (voice_profile or "").strip().lower() == "jarvis"
     if is_jarvis:
-        base = base + "\n\n" + JARVIS_PROFILE_PROMPT
+        base = base + "\n\n" + JARVIS_PROFILE_PROMPT + "\n\n" + CED_SALES_MENTOR_JARVIS
     if is_jarvis:
         suffix = JARVIS_LANGUAGE_SUFFIX
     else:
