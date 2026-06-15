@@ -802,10 +802,16 @@ export function useCedVoiceSession(
           setOrbState("processing");
           setStatusLabel("Publicando en Facebook…");
           void (async () => {
-            const image = await resolvePublishImage({}, t);
-            const r = await publishFacebook(fbMessage, image);
-            if (isStale()) return;
-            client.sendNarrationBrief(r.ok ? r.spoken : r.error);
+            if (webFetchRef.current) return;
+            webFetchRef.current = true;
+            try {
+              const image = await resolvePublishImage({}, t);
+              const r = await publishFacebook(fbMessage, image);
+              if (isStale()) return;
+              client.sendNarrationBrief(r.ok ? r.spoken : r.error);
+            } finally {
+              webFetchRef.current = false;
+            }
           })();
           return;
         }
@@ -815,13 +821,25 @@ export function useCedVoiceSession(
           setOrbState("processing");
           setStatusLabel("Publicando en Instagram…");
           void (async () => {
-            const image =
-              igRequest.imageUrl != null
-                ? { imageUrl: igRequest.imageUrl }
-                : await resolvePublishImage({}, t);
-            const r = await publishInstagram(igRequest.caption, image);
-            if (isStale()) return;
-            client.sendNarrationBrief(r.ok ? r.spoken : r.error);
+            if (webFetchRef.current) return;
+            webFetchRef.current = true;
+            try {
+              const image =
+                igRequest.imageUrl != null
+                  ? { imageUrl: igRequest.imageUrl }
+                  : await resolvePublishImage({}, t);
+              if (!image.imageUrl && !image.imageData) {
+                client.sendNarrationBrief(
+                  "Instagram necesita una imagen. Genera una con IA, activa la cámara o muéstrame la foto.",
+                );
+                return;
+              }
+              const r = await publishInstagram(igRequest.caption, image);
+              if (isStale()) return;
+              client.sendNarrationBrief(r.ok ? r.spoken : r.error);
+            } finally {
+              webFetchRef.current = false;
+            }
           })();
           return;
         }

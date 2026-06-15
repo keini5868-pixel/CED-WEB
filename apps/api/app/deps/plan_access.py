@@ -47,6 +47,20 @@ def require_pdf_reports(user_id: str) -> None:
         )
 
 
+def require_meta_social(user_id: str) -> None:
+    limits, reason, _ = effective_plan_limits(user_id)
+    if reason == "trial_expired":
+        raise HTTPException(
+            status_code=403,
+            detail="Tu prueba terminó. Elige un plan de pago para publicar en redes.",
+        )
+    if not limits.meta_social_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Publicar en Facebook e Instagram requiere plan Élite o Founding. {PLAN_UPGRADE_HINT}",
+        )
+
+
 def chat_message_limit(user_id: str) -> int:
     """Mensajes de chat permitidos hoy (-1 = ilimitado, 0 = bloqueado)."""
     profile = supabase_db.get_profile(user_id) or {}

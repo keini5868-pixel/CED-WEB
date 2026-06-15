@@ -11,6 +11,7 @@ from fastapi.responses import RedirectResponse
 
 from app.config import get_settings
 from app.deps.auth import require_user_id
+from app.deps.plan_access import require_meta_social
 from pydantic import BaseModel, Field
 
 from app.services import supabase_db
@@ -20,15 +21,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/meta", tags=["meta"])
 
-# Mismos scopes que CED desktop (.env META_OAUTH_SCOPES) — sin instagram_manage_insights.
+# Permisos mínimos para publicar (FB Page + IG Business). Re-conectar Meta tras cambiar scopes.
 DEFAULT_META_OAUTH_SCOPES = (
     "public_profile,"
     "pages_show_list,"
     "pages_read_engagement,"
     "pages_read_user_content,"
     "pages_manage_engagement,"
+    "pages_manage_posts,"
     "business_management,"
     "instagram_basic,"
+    "instagram_content_publish,"
     "instagram_manage_comments"
 )
 
@@ -179,6 +182,7 @@ def meta_publish_facebook(
     body: FacebookPublishBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
+    require_meta_social(user_id)
     try:
         return publish_facebook(
             user_id,
@@ -195,6 +199,7 @@ def meta_publish_instagram(
     body: InstagramPublishBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
+    require_meta_social(user_id)
     try:
         return publish_instagram(
             user_id,
@@ -215,4 +220,8 @@ def meta_status(user_id: str = Depends(require_user_id)) -> dict:
         "connected": bool(conn.get("access_token")),
         "username": conn.get("ig_username"),
         "followers_count": conn.get("followers_count"),
+        "publish_hint": (
+            "Si publicar falla, reconecta Meta en Conectar Redes "
+            "(permisos pages_manage_posts e instagram_content_publish)."
+        ),
     }

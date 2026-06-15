@@ -21,7 +21,9 @@ class MetaSocialError(RuntimeError):
 def _connection(user_id: str) -> dict[str, Any]:
     conn = supabase_db.get_meta_connection(user_id)
     if not conn or not conn.get("access_token"):
-        raise MetaSocialError("Instagram no conectado. Use Conectar Redes en el dashboard.")
+        raise MetaSocialError(
+            "Meta no conectado. Ve al dashboard y pulsa Conectar Redes."
+        )
     return conn
 
 
@@ -96,10 +98,20 @@ def publish_instagram(
             "Instagram requiere una imagen. Muéstrame la foto, genera una con IA o pásame la imagen."
         )
 
+    settings = get_settings()
+    public_base = settings.api_public_url.rstrip("/")
+    if public_url and ("localhost" in public_url or "127.0.0.1" in public_url):
+        raise MetaSocialError(
+            "La URL de imagen no es accesible para Instagram. "
+            "Configura API_PUBLIC_URL con tu dominio HTTPS en Railway."
+        )
+    if not public_base.startswith("https://"):
+        logger.warning("[META:IG] API_PUBLIC_URL sin HTTPS: %s", public_base)
+
     conn = _connection(user_id)
     ig_id = conn.get("ig_user_id")
     token = str(conn["access_token"])
-    api_version = get_settings().meta_api_version.strip() or "v21.0"
+    api_version = settings.meta_api_version.strip() or "v21.0"
     if not ig_id:
         raise MetaSocialError("Cuenta Instagram Business no vinculada.")
 

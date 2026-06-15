@@ -37,7 +37,16 @@ export function wantsCameraImageForPublish(text: string): boolean {
 }
 
 export function wantsLastImageForPublish(text: string): boolean {
-  return /\b(la\s+imagen\s+generada|la\s+ultima\s+imagen|esa\s+imagen|imagen\s+que\s+generaste)\b/i.test(
-    text.trim(),
+  const t = text.trim();
+  if (
+    /\b(la\s+imagen\s+generada|la\s+ultima\s+imagen|esa\s+imagen|imagen\s+que\s+generaste)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  return (
+    /\b(publica|publicar|postea|sube)\b/i.test(t) &&
+    /\b(est[oa]|lo|la\s+foto|esta\s+imagen)\b/i.test(t)
   );
 }

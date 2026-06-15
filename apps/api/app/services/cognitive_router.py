@@ -254,7 +254,9 @@ def build_voice_system_extras(user_id: str) -> str:
         meta = (
             f"Estado Meta del usuario: CONECTADO (@{username}). "
             "Puedes publicar en Facebook e Instagram con publicar_facebook / publicar_instagram. "
-            "Cuando confirmen el texto del post, INVOCA la herramienta de inmediato — no simules."
+            "Cuando confirmen el texto del post, INVOCA la herramienta de inmediato — no simules. "
+            "PROHIBIDO decir 'estoy revisando' sin ejecutar la tool. "
+            "Si falla por permisos, pide reconectar Meta en Conectar Redes."
         )
     else:
         meta = (
