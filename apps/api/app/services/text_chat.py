@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
 from datetime import date, datetime, timezone
 from typing import Any
 
@@ -35,6 +37,21 @@ from app.services.pdf_report import store_pdf
 logger = logging.getLogger(__name__)
 
 CHAT_MODEL = "claude-sonnet-4-6"
+CHAT_MODEL_FAST = "claude-3-5-haiku-20241022"
+CHAT_HISTORY_LIMIT = 14
+CHAT_SIMPLE_MAX_TOKENS = 700
+CHAT_TOOLS_MAX_TOKENS = 1000
+
+_VIRAL_KEYWORDS = re.compile(
+    r"\b(instagram|tiktok|reels?|viral|horario|publicar|contenido|linkedin|facebook|"
+    r"hooks?|stories|algoritmo|engagement|redes\s+sociales)\b",
+    re.I,
+)
+_TOOLS_KEYWORDS = re.compile(
+    r"\b(publica|publicar|instagram|facebook|meta|recuerdas|guarda|memoria|"
+    r"lead|cliente|pdf|imagen|conectad)\b",
+    re.I,
+)
 
 CHAT_TOOLS: list[dict[str, Any]] = [
     {
@@ -186,16 +203,40 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
-{CED_VIRAL_KNOWLEDGE_2026}
-
-{CED_MEMORY_USAGE_RULES}
-
 PROHIBIDO (respuestas de chatbot genérico):
 - "No tengo acceso a internet en tiempo real" — CED tiene búsqueda y herramientas en voz; en chat puedes preparar contenido y publicar vía Meta.
 - "No me puedo conectar a tus cuentas" — sí puedes vía Meta OAuth cuando está conectado.
 - Recomendar Buffer/Hootsuite como única opción si el usuario ya tiene CED con redes conectadas.
 
 Cuando prepares contenido para redes, entrégalo listo y ofrece publicarlo con CED si aplica."""
+
+
+def _wants_viral_knowledge(text: str) -> bool:
+    return bool(_VIRAL_KEYWORDS.search(text or ""))
+
+
+def _needs_chat_tools(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if is_pdf_intent(t) or is_generate_image_intent(t):
+        return False
+    return bool(_TOOLS_KEYWORDS.search(t))
+
+
+def _build_chat_system(
+    user_id: str,
+    user_text: str,
+    route: Any | None = None,
+) -> str:
+    parts = [_chat_system_for_user(user_id)]
+    if _wants_viral_knowledge(user_text):
+        parts.append(CED_VIRAL_KNOWLEDGE_2026)
+        parts.append(CED_MEMORY_USAGE_RULES)
+    extras = build_chat_system_extras(user_id, route)
+    if extras:
+        parts.append(extras)
+    return "\n\n".join(parts)
 
 
 def _chat_system_for_user(user_id: str) -> str:
@@ -412,8 +453,20 @@ def _anthropic_request(
     api_key: str,
     system: str,
     messages: list[dict[str, Any]],
+    model: str = CHAT_MODEL,
+    max_tokens: int = CHAT_TOOLS_MAX_TOKENS,
+    with_tools: bool = True,
+    timeout: float = 90.0,
 ) -> dict[str, Any]:
-    with httpx.Client(timeout=90.0) as client:
+    payload: dict[str, Any] = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "system": system,
+        "messages": messages,
+    }
+    if with_tools:
+        payload["tools"] = CHAT_TOOLS
+    with httpx.Client(timeout=timeout) as client:
         res = client.post(
             "https://api.anthropic.com/v1/messages",
             headers={
@@ -421,16 +474,66 @@ def _anthropic_request(
                 "anthropic-version": "2023-06-01",
                 "content-type": "application/json",
             },
-            json={
-                "model": CHAT_MODEL,
-                "max_tokens": 1200,
-                "system": system,
-                "messages": messages,
-                "tools": CHAT_TOOLS,
-            },
+            json=payload,
         )
         res.raise_for_status()
         return res.json()
+
+
+def _anthropic_simple_reply(
+    *,
+    api_key: str,
+    system: str,
+    messages: list[dict[str, Any]],
+) -> str:
+    data = _anthropic_request(
+        api_key=api_key,
+        system=system,
+        messages=messages,
+        model=CHAT_MODEL_FAST,
+        max_tokens=CHAT_SIMPLE_MAX_TOKENS,
+        with_tools=False,
+        timeout=45.0,
+    )
+    reply = _final_text_from_response(data)
+    if not reply:
+        raise TextChatError("Respuesta vacía del asistente.")
+    return reply
+
+
+def _openai_simple_reply(
+    *,
+    api_key: str,
+    model: str,
+    system: str,
+    messages: list[dict[str, Any]],
+) -> str:
+    oai_messages = [{"role": "system", "content": system}]
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content")
+        if role in ("user", "assistant") and isinstance(content, str):
+            oai_messages.append({"role": role, "content": content})
+    with httpx.Client(timeout=45.0) as client:
+        res = client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": model,
+                "max_tokens": CHAT_SIMPLE_MAX_TOKENS,
+                "messages": oai_messages,
+            },
+        )
+        res.raise_for_status()
+        data = res.json()
+    choice = (data.get("choices") or [{}])[0]
+    reply = str((choice.get("message") or {}).get("content") or "").strip()
+    if not reply:
+        raise TextChatError("Respuesta vacía del asistente.")
+    return reply
 
 
 def _final_text_from_response(data: dict[str, Any]) -> str:
@@ -670,13 +773,38 @@ def _complete_chat_with_tools(
 def _complete_chat_resilient(
     user_id: str,
     *,
+    user_text: str,
     anthropic_key: str,
     openai_key: str,
     openai_model: str,
     system: str,
     messages: list[dict[str, Any]],
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
-    """Anthropic primero si hay key; fallback OpenAI si falla auth o no hay Anthropic."""
+    """Ruta rápida sin tools para chat normal; tools solo cuando hace falta."""
+    if not _needs_chat_tools(user_text):
+        if anthropic_key:
+            try:
+                reply = _anthropic_simple_reply(
+                    api_key=anthropic_key,
+                    system=system,
+                    messages=messages,
+                )
+                return reply, None, None
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code not in (401, 403) or not openai_key:
+                    raise
+                logger.warning("[CHAT] Haiku failed — fallback OpenAI mini")
+        if openai_key:
+            settings = get_settings()
+            lite = settings.openai_model_chat_lite.strip() or "gpt-4o-mini"
+            reply = _openai_simple_reply(
+                api_key=openai_key,
+                model=lite,
+                system=system,
+                messages=messages,
+            )
+            return reply, None, None
+
     if anthropic_key:
         try:
             return _complete_chat_with_tools(
@@ -745,8 +873,17 @@ def send_message(
         conv = supabase_db.create_conversation(user_id, title=title, channel="text")
         conversation_id = str(conv["id"])
 
-    history = supabase_db.get_conversation_messages(conversation_id, user_id, limit=30)
-    supabase_db.append_message(conversation_id, user_id, "user", text)
+    history = supabase_db.get_conversation_messages(
+        conversation_id, user_id, limit=CHAT_HISTORY_LIMIT,
+    )
+    supabase_db.append_message(
+        conversation_id,
+        user_id,
+        "user",
+        text,
+        session_id=conversation_id,
+        channel="text",
+    )
 
     def _finish(
         reply: str,
@@ -755,7 +892,14 @@ def send_message(
         pdf: dict[str, Any] | None = None,
         image: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        supabase_db.append_message(conversation_id, user_id, "model", reply)
+        supabase_db.append_message(
+            conversation_id,
+            user_id,
+            "model",
+            reply,
+            session_id=conversation_id,
+            channel="text",
+        )
         updated_status = chat_status(user_id)
         out: dict[str, Any] = {
             "conversation_id": conversation_id,
@@ -855,11 +999,12 @@ def send_message(
 
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
-    system = _chat_system_for_user(user_id) + "\n\n" + build_chat_system_extras(user_id, route)
+    system = _build_chat_system(user_id, text, route)
 
     try:
         reply, pdf_attachment, image_attachment = _complete_chat_resilient(
             user_id,
+            user_text=text,
             anthropic_key=anthropic_key,
             openai_key=openai_key,
             openai_model=settings.openai_model_chat,

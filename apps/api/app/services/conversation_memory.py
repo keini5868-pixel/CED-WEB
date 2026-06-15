@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import threading
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -19,7 +20,9 @@ logger = logging.getLogger(__name__)
 
 MAX_CONTENT = 8000
 MAX_CONTEXT_CHARS = 2200
-ROLE_MAP = {"model": "assistant", "assistant": "assistant", "user": "user", "system": "system"}
+CONTEXT_CACHE_TTL_SEC = 90
+_ROLE_MAP = {"model": "assistant", "assistant": "assistant", "user": "user", "system": "system"}
+_context_cache: dict[str, tuple[float, str]] = {}
 
 
 def _client():
@@ -28,7 +31,7 @@ def _client():
 
 def _normalize_role(role: str) -> str:
     r = (role or "user").strip().lower()
-    return ROLE_MAP.get(r, "user")
+    return _ROLE_MAP.get(r, "user")
 
 
 def _generate_embedding(text: str) -> list[float] | None:
@@ -82,13 +85,18 @@ def save_message(
         "content": body,
         "metadata": metadata or {},
     }
-    embedding = _generate_embedding(body)
-    if embedding:
-        row["embedding"] = embedding
-    try:
-        _client().table("user_conversations").insert(row).execute()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[CONV_MEM] save_message failed: %s", exc)
+
+    def _persist() -> None:
+        insert_row = dict(row)
+        embedding = _generate_embedding(body)
+        if embedding:
+            insert_row["embedding"] = embedding
+        try:
+            _client().table("user_conversations").insert(insert_row).execute()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CONV_MEM] save_message failed: %s", exc)
+
+    threading.Thread(target=_persist, daemon=True).start()
 
 
 def save_long_term_memory(
@@ -304,11 +312,16 @@ def _get_pending_actions(user_id: str) -> list[str]:
 
 def load_user_context(user_id: str) -> str:
     """Fragmento para inyectar al iniciar sesión voz/chat."""
-    summaries = _get_recent_summaries(user_id, limit=5)
-    memories = _get_top_memories(user_id, limit=15)
+    cached = _context_cache.get(user_id)
+    if cached and (time.time() - cached[0]) < CONTEXT_CACHE_TTL_SEC:
+        return cached[1]
+
+    summaries = _get_recent_summaries(user_id, limit=3)
+    memories = _get_top_memories(user_id, limit=8)
     pending = _get_pending_actions(user_id)
 
     if not summaries and not memories and not pending:
+        _context_cache[user_id] = (time.time(), "")
         return ""
 
     parts: list[str] = ["# CONTEXTO DEL USUARIO (SESIONES ANTERIORES)"]
@@ -328,7 +341,7 @@ def load_user_context(user_id: str) -> str:
     if memories:
         lines = [
             f"- [{m.get('category', 'fact')}] {m.get('mem_key')}: {str(m.get('value') or '')[:160]}"
-            for m in memories[:15]
+            for m in memories[:8]
         ]
         parts.append("## DATOS IMPORTANTES\n" + "\n".join(lines))
 
@@ -340,7 +353,8 @@ def load_user_context(user_id: str) -> str:
     )
     text = "\n\n".join(parts)
     if len(text) > MAX_CONTEXT_CHARS:
-        return text[: MAX_CONTEXT_CHARS - 24] + "\n… [contexto truncado]"
+        text = text[: MAX_CONTEXT_CHARS - 24] + "\n… [contexto truncado]"
+    _context_cache[user_id] = (time.time(), text)
     return text
 
 

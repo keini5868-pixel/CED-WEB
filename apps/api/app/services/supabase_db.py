@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import date, datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -158,14 +159,17 @@ def append_message(
     try:
         from app.services.conversation_memory import save_message as persist_message
 
-        persist_message(
-            user_id=user_id,
-            session_id=session_id or conversation_id,
-            channel=conv_channel if conv_channel in ("voice", "text") else channel,
-            role=role,
-            content=content,
-            metadata={"conversation_id": conversation_id},
-        )
+        def _mirror() -> None:
+            persist_message(
+                user_id=user_id,
+                session_id=session_id or conversation_id,
+                channel=conv_channel if conv_channel in ("voice", "text") else channel,
+                role=role,
+                content=content,
+                metadata={"conversation_id": conversation_id},
+            )
+
+        threading.Thread(target=_mirror, daemon=True).start()
     except Exception:  # noqa: BLE001
         pass
 
