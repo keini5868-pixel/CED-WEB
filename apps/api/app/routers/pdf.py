@@ -52,21 +52,25 @@ def get_pdf_list(
 
 
 @router.get("/download/{file_id}")
-def get_pdf_download(
+async def get_pdf_download(
     file_id: str,
     user_id: str = Depends(require_user_id),
 ) -> Response:
-    row = get_pdf(file_id, user_id)
+    safe_id = file_id.strip().lower()
+    if not re.fullmatch(r"[a-f0-9]{32}", safe_id):
+        raise HTTPException(status_code=400, detail="ID de PDF inválido.")
+    row = get_pdf(safe_id, user_id)
     if not row:
         raise HTTPException(status_code=404, detail="PDF no encontrado o expirado.")
     data, filename = row
-    if len(data) < 100 or not data.startswith(b"%PDF"):
+    payload = bytes(data) if isinstance(data, bytearray) else data
+    if len(payload) < 100 or not payload.startswith(b"%PDF"):
         raise HTTPException(status_code=500, detail="El PDF está corrupto. Genera uno nuevo.")
     safe_name = re.sub(r"[^\w\s.-]", "", filename) or "documento-ced.pdf"
     ascii_name = safe_name.encode("ascii", "ignore").decode("ascii") or "documento-ced.pdf"
     quoted = quote(safe_name)
     return Response(
-        content=data,
+        content=payload,
         media_type="application/pdf",
         headers={
             "Content-Disposition": (

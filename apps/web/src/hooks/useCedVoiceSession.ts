@@ -7,7 +7,7 @@ import { ORB_STATE_LABELS } from "@ced/types";
 
 import { appendConversationMessage } from "@/lib/api/conversations";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
-import { generatePdf } from "@/lib/api/pdf";
+import { generatePdf, downloadPdfBlob } from "@/lib/api/pdf";
 import { fetchVoiceBrief, fetchGenerateImage, fetchDeepAnalysis } from "@/lib/api/openai";
 import { saveMemory, searchMemory } from "@/lib/api/memory";
 import { updateUserAddress } from "@/lib/api/profile";
@@ -74,6 +74,7 @@ import {
   wantsCameraImageForPublish,
   wantsLastImageForPublish,
 } from "@/lib/voice/imageIntents";
+import { isPdfIntent, parsePdfRequest } from "@/lib/voice/pdfIntents";
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   loadVoicePreferences,
@@ -675,6 +676,32 @@ export function useCedVoiceSession(
         })();
       };
 
+      const runGeneratePdf = (title: string, content: string) => {
+        if (webFetchRef.current) return;
+        webFetchRef.current = true;
+        setOrbState("processing");
+        setStatusLabel("Generando PDF…");
+        void (async () => {
+          try {
+            const cid = conversationRef.current;
+            const pdf = await generatePdf(title, content, cid);
+            if (isStale()) return;
+            void downloadPdfBlob(pdf.file_id, pdf.filename).catch(() => undefined);
+            client.sendNarrationBrief(
+              `Listo. PDF "${pdf.title}" generado y guardado en tu historial.`,
+            );
+          } catch (err) {
+            if (!isStale()) {
+              const msg =
+                err instanceof Error ? err.message : "No pude generar el PDF.";
+              client.sendNarrationBrief(msg);
+            }
+          } finally {
+            webFetchRef.current = false;
+          }
+        })();
+      };
+
       const handleSearchStatus = (_text: string) => {
         if (webFetchRef.current) return;
         const retry = lastWebQueryRef.current.trim();
@@ -847,6 +874,12 @@ export function useCedVoiceSession(
         const imagePrompt = parseGenerateImagePrompt(t);
         if (imagePrompt && isGenerateImageIntent(t)) {
           runGenerateImage(imagePrompt);
+          return;
+        }
+
+        const pdfRequest = parsePdfRequest(t);
+        if (pdfRequest && isPdfIntent(t)) {
+          runGeneratePdf(pdfRequest.title, pdfRequest.content);
           return;
         }
 
@@ -1240,11 +1273,14 @@ export function useCedVoiceSession(
             const cid = conversationRef.current;
             try {
               const pdf = await generatePdf(title, content, cid);
+              void downloadPdfBlob(pdf.file_id, pdf.filename).catch(() => undefined);
               return {
-                spoken: `Listo. PDF "${pdf.title}" guardado en tu historial.`,
+                spoken: `Listo. PDF "${pdf.title}" generado y guardado en tu historial.`,
               };
-            } catch {
-              return { spoken: "no pude generar el PDF. Intenta de nuevo." };
+            } catch (err) {
+              const msg =
+                err instanceof Error ? err.message : "No pude generar el PDF.";
+              return { spoken: msg };
             }
           }
           return { spoken: "herramienta no reconocida." };

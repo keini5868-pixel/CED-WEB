@@ -86,7 +86,11 @@ def generate_pdf_bytes(*, title: str, content: str) -> bytes:
         pdf.ln(1)
 
     raw = pdf.output()
-    return raw if isinstance(raw, (bytes, bytearray)) else str(raw).encode("latin-1", "replace")
+    if isinstance(raw, bytearray):
+        return bytes(raw)
+    if isinstance(raw, bytes):
+        return raw
+    return str(raw).encode("latin-1", "replace")
 
 
 def store_pdf(
@@ -162,7 +166,8 @@ def get_pdf(file_id: str, user_id: str) -> tuple[bytes, str] | None:
     if row:
         data, filename, _, owner = row
         if owner == user_id:
-            return data, filename
+            payload = bytes(data) if isinstance(data, bytearray) else data
+            return payload, filename
 
     try:
         from app.services import supabase_db
@@ -170,8 +175,9 @@ def get_pdf(file_id: str, user_id: str) -> tuple[bytes, str] | None:
         db_row = supabase_db.get_pdf_artifact(file_id, user_id)
         if db_row:
             data, filename, _title = db_row
-            _STORE[file_id] = (data, filename, datetime.now(timezone.utc), user_id)
-            return data, filename
+            payload = bytes(data) if isinstance(data, bytearray) else data
+            _STORE[file_id] = (payload, filename, datetime.now(timezone.utc), user_id)
+            return payload, filename
     except Exception:  # noqa: BLE001
         logger.warning("Fallo lectura PDF desde Supabase file_id=%s", file_id)
 

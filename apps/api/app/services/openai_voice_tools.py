@@ -42,9 +42,10 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "generate_image",
         "description": (
-            "Genera imagen con IA a partir de una descripción. "
-            "Usar cuando pidan crear/diseñar/generar una imagen. "
-            "Tras generar, la imagen queda lista para publicar en redes."
+            "OBLIGATORIO para crear/diseñar/generar imágenes con IA. "
+            "Ejecuta INMEDIATAMENTE cuando pidan logo, banner, flyer o imagen. "
+            "PROHIBIDO decir 'generando' o 'un momento' SIN invocar esta herramienta. "
+            "Tras generar, informa el resultado — NUNCA silencio."
         ),
         "parameters": {
             "type": "object",
@@ -131,14 +132,23 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "generar_pdf",
-        "description": "Genera PDF con título y contenido completo.",
+        "description": (
+            "OBLIGATORIO para crear PDF con título y contenido. "
+            "Ejecuta INMEDIATAMENTE cuando pidan PDF, documento o exportar a PDF. "
+            "Redacta tú el contenido si el usuario no lo dictó completo. "
+            "PROHIBIDO decir 'generando PDF' SIN invocar esta herramienta. "
+            "Tras generar: informa 'Listo. PDF guardado.' o el error — NUNCA silencio."
+        ),
         "parameters": {
             "type": "object",
             "properties": {
-                "titulo": {"type": "string"},
-                "contenido": {"type": "string"},
+                "titulo": {"type": "string", "description": "Título del documento"},
+                "contenido": {
+                    "type": "string",
+                    "description": "Texto completo del PDF (redacta si falta)",
+                },
             },
-            "required": ["titulo", "contenido"],
+            "required": ["titulo"],
         },
     },
     {

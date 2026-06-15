@@ -21,12 +21,72 @@ HD_COST_USD = 0.08
 
 
 def _pick_quality(prompt: str, requested: str | None) -> str:
-    if requested in ("standard", "hd"):
-        return requested
+    if requested in ("standard", "hd", "low", "medium", "high"):
+        if requested in ("hd", "high"):
+            return "hd"
+        if requested in ("low", "medium", "standard"):
+            return "standard"
     p = (prompt or "").lower()
     if any(k in p for k in ("logo", "4k", "ultra", "profesional", "detalle", "hd")):
         return "hd"
     return "standard"
+
+
+def _build_image_payload(model: str, topic: str, picked: str) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model,
+        "prompt": topic[:4000],
+        "n": 1,
+    }
+    if model.startswith("gpt-image"):
+        payload["size"] = "1024x1024"
+        payload["quality"] = "high" if picked == "hd" else "medium"
+        return payload
+    if model == "dall-e-3":
+        payload["size"] = "1024x1024"
+        payload["quality"] = "hd" if picked == "hd" else "standard"
+        payload["response_format"] = "b64_json"
+        return payload
+    payload["size"] = "1024x1024"
+    payload["response_format"] = "b64_json"
+    return payload
+
+
+def _parse_openai_error(res: httpx.Response) -> str:
+    try:
+        body = res.json()
+        err = body.get("error") or {}
+        if isinstance(err, dict):
+            msg = str(err.get("message") or "").strip()
+            if msg:
+                return msg[:200]
+    except Exception:  # noqa: BLE001
+        pass
+    return res.text[:200].strip() or f"HTTP {res.status_code}"
+
+
+def _request_openai_image(
+    *,
+    api_key: str,
+    model: str,
+    topic: str,
+    picked: str,
+) -> tuple[dict[str, Any] | None, str | None]:
+    payload = _build_image_payload(model, topic, picked)
+    with httpx.Client(timeout=90.0) as client:
+        res = client.post(
+            IMAGE_API,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        )
+        if res.status_code >= 400:
+            detail = _parse_openai_error(res)
+            logger.error("[OPENAI:IMAGE] %s model=%s %s", res.status_code, model, detail)
+            return None, detail
+        return res.json(), None
 
 
 def _month_image_counts(user_id: str) -> tuple[int, int]:
@@ -80,38 +140,36 @@ def generate_image(
             "code": "quota_exhausted",
         }
 
-    model = settings.openai_model_image.strip() or "gpt-image-1"
-    payload: dict[str, Any] = {
-        "model": model,
-        "prompt": topic[:4000],
-        "size": "1024x1024",
-        "quality": "high" if picked == "hd" else "medium",
-        "n": 1,
-        "response_format": "b64_json",
-    }
+    primary = settings.openai_model_image.strip() or "gpt-image-1"
+    models_to_try = [primary]
+    if primary.startswith("gpt-image") and "dall-e-3" not in models_to_try:
+        models_to_try.append("dall-e-3")
 
+    data: dict[str, Any] | None = None
+    model = primary
+    last_error = "No pude generar la imagen."
     try:
-        with httpx.Client(timeout=90.0) as client:
-            res = client.post(
-                IMAGE_API,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                },
-                json=payload,
+        for candidate in models_to_try:
+            model = candidate
+            data, err = _request_openai_image(
+                api_key=api_key,
+                model=candidate,
+                topic=topic,
+                picked=picked,
             )
-            if res.status_code >= 400:
-                detail = res.text[:240]
-                logger.error("[OPENAI:IMAGE] %s %s", res.status_code, detail)
-                return {
-                    "ok": False,
-                    "error": f"No pude generar la imagen ({res.status_code}). Revisa OPENAI_API_KEY y saldo.",
-                    "code": "openai_error",
-                }
-            data = res.json()
+            if data is not None:
+                break
+            last_error = err or last_error
     except Exception as exc:  # noqa: BLE001
         logger.exception("[OPENAI:IMAGE] failed")
         return {"ok": False, "error": str(exc)}
+
+    if data is None:
+        return {
+            "ok": False,
+            "error": f"No pude generar la imagen: {last_error}",
+            "code": "openai_error",
+        }
 
     items = data.get("data") or []
     if not items:
@@ -120,6 +178,9 @@ def generate_image(
     url = items[0].get("url") or ""
     b64 = items[0].get("b64_json")
     public_url = url
+    if not public_url and not b64:
+        return {"ok": False, "error": "OpenAI no devolvió imagen usable", "code": "openai_error"}
+
     if not public_url and b64:
         from app.services.publish_media import decode_image_data, store_publish_image_for_client
 

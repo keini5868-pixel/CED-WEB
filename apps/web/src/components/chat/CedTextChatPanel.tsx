@@ -29,8 +29,6 @@ function formatTime(iso?: string) {
   return new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 }
 
-const PDF_FILE_ID_RE = /\/(?:v1\/pdf|api\/ced\/pdf)\/download\/([a-f0-9]+)/i;
-
 function stripPdfLinks(content: string): string {
   return content
     .replace(/\[([^\]]*)\]\([^)]*\/pdf\/download\/[a-f0-9]+[^)]*\)/gi, "")
@@ -38,17 +36,6 @@ function stripPdfLinks(content: string): string {
     .replace(/\/(?:v1\/pdf|api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function extractPdfFromContent(content: string): ChatPdfAttachment | null {
-  const match = content.match(PDF_FILE_ID_RE);
-  const fileId = match?.[1];
-  if (!fileId) return null;
-  return {
-    file_id: fileId,
-    filename: "documento-ced.pdf",
-    title: "Documento CED",
-  };
 }
 
 function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
@@ -221,7 +208,7 @@ export function CedTextChatPanel({
           role: "model",
           content: result.reply,
           created_at: new Date().toISOString(),
-          pdf: result.pdf ?? extractPdfFromContent(result.reply),
+          pdf: result.pdf ?? null,
           image: result.image
             ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
             : null,
@@ -297,7 +284,7 @@ export function CedTextChatPanel({
         >
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
-            const pdfAttachment = msg.pdf ?? extractPdfFromContent(msg.content);
+            const pdfAttachment = msg.pdf ?? null;
             const imageAttachment = msg.image ?? null;
             const displayContent = isUser ? msg.content : stripPdfLinks(msg.content);
             return (

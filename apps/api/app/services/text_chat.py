@@ -14,6 +14,12 @@ from app.config import get_settings
 from app.services import supabase_db
 from app.services.cognitive_intents import has_advanced_confirmation
 from app.services.cognitive_router import build_chat_system_extras, route_message
+from app.services.chat_intents import (
+    is_generate_image_intent,
+    is_pdf_intent,
+    parse_generate_image_prompt,
+    parse_pdf_request,
+)
 from app.services.claude_deep_analysis import consultar_sistema_avanzado
 from app.domain.ced_identity import (
     CED_CORE_IDENTITY,
@@ -363,6 +369,15 @@ def _final_text_from_response(data: dict[str, Any]) -> str:
     ).strip()
 
 
+def _pdf_attachment_from_artifact(artifact: Any) -> dict[str, Any]:
+    return {
+        "file_id": artifact.file_id,
+        "filename": artifact.filename,
+        "title": artifact.title,
+        "download_path": f"/v1/pdf/download/{artifact.file_id}",
+    }
+
+
 def _strip_pdf_markdown_links(text: str) -> str:
     cleaned = re.sub(
         r"\[([^\]]*)\]\([^)]*\/pdf\/download\/[a-f0-9]+[^)]*\)",
@@ -683,6 +698,66 @@ def send_message(
         if image:
             out["image"] = image
         return out
+
+    img_prompt = parse_generate_image_prompt(text)
+    if img_prompt and is_generate_image_intent(text) and openai_key:
+        from app.services.openai_images import generate_image
+
+        plan_id = None
+        try:
+            sub = supabase_db.get_subscription(user_id)
+            plan_id = sub.get("plan_id") if sub else None
+        except Exception:  # noqa: BLE001
+            pass
+        img_result = generate_image(
+            user_id=user_id,
+            plan_id=plan_id,
+            prompt=img_prompt,
+            quality="auto",
+        )
+        if img_result.get("ok") and img_result.get("url"):
+            return _finish(
+                "Listo. Aquí está tu imagen generada.",
+                route_meta={"intent": "generate_image", "source": "direct"},
+                image={
+                    "url": str(img_result["url"]),
+                    "prompt": img_prompt,
+                    "quality": img_result.get("quality"),
+                },
+            )
+        err = str(img_result.get("error") or "No pude generar la imagen.")
+        return _finish(
+            f"No pude generar la imagen: {err}",
+            route_meta={"intent": "generate_image", "source": "direct_error"},
+        )
+
+    pdf_req = parse_pdf_request(text)
+    if pdf_req and is_pdf_intent(text):
+        from app.deps.plan_access import effective_plan_limits
+
+        limits, reason, _trial = effective_plan_limits(user_id)
+        if reason == "trial_expired":
+            return _finish(
+                "Tu prueba terminó. Elige un plan en Precios o continúa con el plan Básico gratis.",
+            )
+        if not limits.pdf_reports:
+            return _finish(
+                "Los PDFs requieren plan Élite o Founding. Mejora tu plan en /pricing.",
+            )
+        pdf_title, pdf_body = pdf_req
+        if pdf_title == "Documento CED" and pdf_body:
+            pdf_title = pdf_body[:60].strip()
+        artifact = store_pdf(
+            user_id=user_id,
+            title=pdf_title,
+            content=pdf_body,
+            conversation_id=conversation_id,
+        )
+        return _finish(
+            f'Listo. PDF "{artifact.title}" generado. Usa el botón Descargar abajo.',
+            route_meta={"intent": "generar_pdf", "source": "direct"},
+            pdf=_pdf_attachment_from_artifact(artifact),
+        )
 
     followup_prompt = _advanced_confirm_followup(history, text)
     if followup_prompt:

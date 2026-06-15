@@ -1,10 +1,11 @@
 /** Intents para generar imágenes por voz. */
 
 const GENERATE_IMAGE_PATTERNS = [
-  /\b(genera|generar|crea|crear|dise[nñ]a|haz(me)?)\s+(?:una?\s+)?imagen\b/i,
-  /\b(genera|crea|haz)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|arte)\b/i,
+  /\b(genera|generar|crea|cresa|crear|dise[nñ]a|haz(me)?|dame)\s+(?:una?\s+)?imagen\b/i,
+  /\b(genera|crea|haz|dame)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|arte|gr[aá]fico)\b/i,
   /\bimagen\s+de\b/i,
   /\bpaint\s+(?:an?\s+)?image\b/i,
+  /\b(?:logo|banner|flyer)\s+(?:de|para|con)\b/i,
 ];
 
 export function isGenerateImageIntent(text: string): boolean {
@@ -16,8 +17,8 @@ export function isGenerateImageIntent(text: string): boolean {
 export function parseGenerateImagePrompt(text: string): string | null {
   const t = text.trim();
   const patterns = [
-    /\b(?:genera|generar|crea|crear|dise[nñ]a|haz)\s+(?:una?\s+)?imagen\s+(?:de|con|que\s+diga|que\s+sea)?\s*[:.]?\s*(.+)$/i,
-    /\b(?:genera|crea|haz)\s+(?:un|una)\s+(?:logo|banner|flyer|portada)\s+(?:de|con|para)?\s*[:.]?\s*(.+)$/i,
+    /\b(?:genera|generar|crea|cresa|crear|dise[nñ]a|haz|dame)\s+(?:una?\s+)?imagen\s+(?:de|con|que\s+diga|que\s+sea)?\s*[:.]?\s*(.+)$/i,
+    /\b(?:genera|crea|haz|dame)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|gr[aá]fico)\s+(?:de|con|para)?\s*[:.]?\s*(.+)$/i,
     /\bimagen\s+de\s+(.+)$/i,
   ];
   for (const pattern of patterns) {
