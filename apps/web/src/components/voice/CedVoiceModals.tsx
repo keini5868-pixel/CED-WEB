@@ -119,7 +119,7 @@ export function CedSettingsModal({
               })();
             }}
           >
-            GUARDAR PREFS
+            GUARDAR CONFIGURACIÓN
           </CedButton>
         </>
       }
