@@ -6,14 +6,15 @@ import re
 
 _IMAGE_PATTERNS = (
     re.compile(
-        r"\b(genera|generar|crea|cresa|crear|dise[nñ]a|haz(me)?|dame)\s+(?:una?\s+)?imagen\b",
+        r"\b(genera|generar|crea|cresa|crear|dise[nñ]a|haz(me)?|dame|necesito)\s+(?:una?\s+)?imagen\b",
         re.I,
     ),
     re.compile(
-        r"\b(genera|crea|haz|dame)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|arte|gr[aá]fico)\b",
+        r"\b(genera|crea|haz|dame|dise[nñ]a)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|arte|gr[aá]fico|creativo|foto)\b",
         re.I,
     ),
-    re.compile(r"\bimagen\s+de\b", re.I),
+    re.compile(r"\b(imagen|foto)\s+de\b", re.I),
+    re.compile(r"\bcrea\s+una\s+foto\b", re.I),
 )
 
 _PDF_PATTERNS = (

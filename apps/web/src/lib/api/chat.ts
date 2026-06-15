@@ -24,6 +24,8 @@ export type ChatMessage = {
   created_at?: string;
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
+  /** Preview local de imagen adjunta por el usuario (solo UI) */
+  user_image_preview?: string | null;
 };
 
 export type ChatStatus = {
@@ -55,6 +57,7 @@ export async function fetchChatMessages(conversationId: string): Promise<ChatMes
 export async function sendChatMessage(
   content: string,
   conversationId?: string | null,
+  image?: File | null,
 ): Promise<{
   conversation_id: string;
   reply: string;
@@ -62,14 +65,30 @@ export async function sendChatMessage(
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
 }> {
-  const res = await proxyFetch("chat/send", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      content,
-      conversation_id: conversationId ?? undefined,
-    }),
-  });
+  let res: Response;
+
+  if (image) {
+    const formData = new FormData();
+    formData.append("content", content);
+    if (conversationId) {
+      formData.append("conversation_id", conversationId);
+    }
+    formData.append("image", image, image.name || "attachment.jpg");
+    res = await proxyFetch("chat/send-with-image", {
+      method: "POST",
+      body: formData,
+    });
+  } else {
+    res = await proxyFetch("chat/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content,
+        conversation_id: conversationId ?? undefined,
+      }),
+    });
+  }
+
   const data = await parseApiJson<{
     conversation_id?: string;
     reply?: string;
@@ -88,4 +107,18 @@ export async function sendChatMessage(
     pdf: data.pdf ?? null,
     image: data.image ?? null,
   };
+}
+
+export async function transcribeChatAudio(audioBlob: Blob): Promise<string> {
+  const formData = new FormData();
+  formData.append("audio", audioBlob, "recording.webm");
+  const res = await proxyFetch("chat/transcribe", {
+    method: "POST",
+    body: formData,
+  });
+  const data = await parseApiJson<{ text?: string; detail?: string }>(res);
+  if (!res.ok) {
+    throw new Error(data.detail || "Error transcribiendo audio.");
+  }
+  return (data.text || "").trim();
 }

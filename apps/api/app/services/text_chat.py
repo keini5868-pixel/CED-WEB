@@ -201,6 +201,9 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
 - Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
 - Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
+- Palabras clave de generación: "genera una imagen", "créame un diseño", "hazme un logo", "necesito una imagen", "diseña un creativo", "imagen de…", "crea una foto".
+- Si el pedido de imagen es vago, pide MÁS DETALLES UNA VEZ (estilo, uso). Si es claro, genera directamente.
+- Tras generar una imagen, preséntala y pregunta si quiere ajustes.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
 PROHIBIDO (respuestas de chatbot genérico):
@@ -837,11 +840,13 @@ def send_message(
     *,
     content: str,
     conversation_id: str | None = None,
+    image_bytes: bytes | None = None,
+    image_media_type: str | None = None,
 ) -> dict[str, Any]:
     text = content.strip()
-    if not text:
+    if not text and not image_bytes:
         raise TextChatError("Mensaje vacío.")
-    if len(text) > 8000:
+    if text and len(text) > 8000:
         raise TextChatError("Mensaje demasiado largo.")
 
     status = chat_status(user_id)
@@ -869,18 +874,20 @@ def send_message(
         if not conv or conv.get("channel") != "text":
             raise TextChatError("Conversación no encontrada.")
     else:
-        title = text[:48] + ("…" if len(text) > 48 else "")
+        title_source = text or "Imagen adjunta"
+        title = title_source[:48] + ("…" if len(title_source) > 48 else "")
         conv = supabase_db.create_conversation(user_id, title=title, channel="text")
         conversation_id = str(conv["id"])
 
     history = supabase_db.get_conversation_messages(
         conversation_id, user_id, limit=CHAT_HISTORY_LIMIT,
     )
+    user_display = text or "📷 Imagen adjunta"
     supabase_db.append_message(
         conversation_id,
         user_id,
         "user",
-        text,
+        user_display,
         session_id=conversation_id,
         channel="text",
     )
@@ -913,6 +920,20 @@ def send_message(
         if image:
             out["image"] = image
         return out
+
+    if image_bytes:
+        from app.services.chat_multimedia import analyze_chat_image
+
+        reply = analyze_chat_image(
+            user_id,
+            image_bytes=image_bytes,
+            media_type=image_media_type or "image/jpeg",
+            user_text=text,
+        )
+        return _finish(
+            reply,
+            route_meta={"intent": "chat_vision", "source": "attachment"},
+        )
 
     img_prompt = parse_generate_image_prompt(text)
     if img_prompt and is_generate_image_intent(text) and openai_key:

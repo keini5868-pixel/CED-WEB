@@ -3,6 +3,8 @@
 import { MessageCircle, Minimize2, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
+import { MicButton } from "@/components/chat/MicButton";
 import {
   fetchChatStatus,
   sendChatMessage,
@@ -132,12 +134,17 @@ export function CedTextChatPanel({
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
+  const [attachedImage, setAttachedImage] = useState<{
+    file: File;
+    preview: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [status, setStatus] = useState<ChatStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
 
   useEffect(() => {
@@ -190,7 +197,7 @@ export function CedTextChatPanel({
         {
           role: "model",
           content:
-            "Hola, soy CED. Escríbeme aquí o usa ASISTENTE CED para voz en vivo. Puedo generar imágenes, PDFs y publicar en redes.",
+            "Hola, soy CED. Escríbeme aquí, dicta con el micrófono o adjunta una imagen. También puedo generar imágenes y PDFs.",
         },
       ]);
     }
@@ -220,16 +227,23 @@ export function CedTextChatPanel({
 
   const submit = async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if ((!text && !attachedImage) || busy) return;
     setError(null);
+    const imageFile = attachedImage?.file ?? null;
+    const imagePreview = attachedImage?.preview ?? null;
     setInput("");
+    setAttachedImage(null);
     setBusy(true);
     setTyping(true);
-    const userMsg: ChatMessage = { role: "user", content: text };
+    const userMsg: ChatMessage = {
+      role: "user",
+      content: text || "📷 Imagen adjunta",
+      user_image_preview: imagePreview,
+    };
     setMessages((prev) => [...prev, userMsg]);
 
     try {
-      const result = await sendChatMessage(text, conversationId);
+      const result = await sendChatMessage(text, conversationId, imageFile);
       setConversationId(result.conversation_id);
       setMessages((prev) => [
         ...prev,
@@ -250,6 +264,14 @@ export function CedTextChatPanel({
       setBusy(false);
       setTyping(false);
     }
+  };
+
+  const handleTranscription = (text: string) => {
+    setInput((prev) => {
+      if (prev.trim()) return `${prev.trim()} ${text}`;
+      return text;
+    });
+    textareaRef.current?.focus();
   };
 
   if (!open) return null;
@@ -315,6 +337,7 @@ export function CedTextChatPanel({
             const isUser = msg.role === "user";
             const pdfAttachment = msg.pdf ?? null;
             const imageAttachment = msg.image ?? null;
+            const userImagePreview = msg.user_image_preview ?? null;
             const displayContent = isUser ? msg.content : stripPdfLinks(msg.content);
             return (
               <div
@@ -334,6 +357,16 @@ export function CedTextChatPanel({
                     </div>
                   )}
                   <p className="whitespace-pre-wrap break-words">{displayContent}</p>
+                  {userImagePreview ? (
+                    <div className="relative mt-2 inline-block">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={userImagePreview}
+                        alt="Imagen adjunta"
+                        className="max-h-36 max-w-[200px] rounded-lg object-cover"
+                      />
+                    </div>
+                  ) : null}
                   {imageAttachment ? <ChatImagePreview image={imageAttachment} /> : null}
                   {pdfAttachment ? <PdfDownloadButton pdf={pdfAttachment} /> : null}
                   <p className="mt-1 text-[9px] opacity-50">{formatTime(msg.created_at)}</p>
@@ -349,8 +382,27 @@ export function CedTextChatPanel({
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
         <footer className="shrink-0 border-t border-cyan-500/20 bg-[#060a0f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
-          <div className="flex w-full max-w-full items-end gap-2">
+          {attachedImage ? (
+            <div className="relative mb-2 inline-block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={attachedImage.preview}
+                alt="Adjuntada"
+                className="max-h-24 max-w-[150px] rounded-lg object-cover sm:max-h-[100px] sm:max-w-[200px]"
+              />
+              <button
+                type="button"
+                onClick={() => setAttachedImage(null)}
+                className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white"
+                aria-label="Quitar imagen"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : null}
+          <div className="flex w-full max-w-full items-end gap-1.5 sm:gap-2">
             <textarea
+              ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -374,23 +426,35 @@ export function CedTextChatPanel({
                 }
               }}
               rows={1}
-              placeholder="Escribe a CED…"
+              placeholder={
+                attachedImage
+                  ? "Pregunta algo sobre la imagen…"
+                  : "Escribe a CED o usa el micrófono…"
+              }
               disabled={busy || status?.blocked}
               className="box-border min-h-[44px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded border border-cyan-800/50 bg-black/50 px-3 py-2.5 text-base leading-snug text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50 sm:text-sm"
               style={{ WebkitAppearance: "none" }}
             />
+            <ImageUploadButton
+              onImageSelected={(file, preview) => setAttachedImage({ file, preview })}
+              disabled={busy || status?.blocked || !!attachedImage}
+            />
+            <MicButton
+              onTranscription={handleTranscription}
+              disabled={busy || status?.blocked}
+            />
             <button
               type="button"
-              disabled={busy || !input.trim() || status?.blocked}
+              disabled={busy || (!input.trim() && !attachedImage) || status?.blocked}
               onClick={() => void submit()}
-              className="box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full border border-cyan-400/60 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 active:scale-95 disabled:opacity-40"
+              className="box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full border border-cyan-400/60 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px]"
               aria-label="Enviar"
             >
               <Send className="h-[18px] w-[18px] shrink-0" />
             </button>
           </div>
           <p className="mt-1.5 break-words text-left text-[9px] leading-snug text-cyan-700">
-            Enter envía · &quot;genera una imagen de…&quot; · &quot;convierte esto a PDF&quot;
+            Enter envía · 📷 adjuntar · 🎤 dictar · &quot;genera una imagen de…&quot;
           </p>
         </footer>
       </div>

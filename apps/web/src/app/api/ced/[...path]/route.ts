@@ -95,9 +95,13 @@ async function forward(request: NextRequest, pathSegments: string[]) {
     headers["X-OpenAI-Ephemeral-Key"] = ephemeralKey;
   }
 
-  let body: string | undefined;
+  let body: BodyInit | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
-    body = await request.text();
+    if (requestContentType?.includes("multipart/form-data")) {
+      body = await request.arrayBuffer();
+    } else {
+      body = await request.text();
+    }
   }
 
   let upstream: Response;

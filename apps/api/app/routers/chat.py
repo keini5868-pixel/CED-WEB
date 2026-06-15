@@ -4,16 +4,19 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services import supabase_db
+from app.services.chat_multimedia import transcribe_audio
 from app.services.text_chat import TextChatError, chat_status, send_message
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/chat", tags=["chat"])
+
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 class SendChatBody(BaseModel):
@@ -71,4 +74,54 @@ def post_chat_message(
         raise HTTPException(
             status_code=503,
             detail="Error procesando mensaje. Reintenta.",
+        ) from exc
+
+
+@router.post("/send-with-image")
+async def post_chat_message_with_image(
+    content: str = Form(default=""),
+    conversation_id: str | None = Form(default=None),
+    image: UploadFile = File(...),
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    try:
+        image_bytes = await image.read()
+        if len(image_bytes) > MAX_IMAGE_BYTES:
+            raise TextChatError("Imagen demasiado grande. Máximo 5 MB.", http_status=400)
+        media_type = (image.content_type or "image/jpeg").split(";")[0].strip()
+        text = content.strip() or "¿Qué piensas de esta imagen?"
+        return send_message(
+            user_id,
+            content=text,
+            conversation_id=conversation_id,
+            image_bytes=image_bytes,
+            image_media_type=media_type,
+        )
+    except TextChatError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[CHAT] send-with-image error")
+        raise HTTPException(
+            status_code=503,
+            detail="Error procesando mensaje con imagen.",
+        ) from exc
+
+
+@router.post("/transcribe")
+async def post_transcribe_audio(
+    audio: UploadFile = File(...),
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    try:
+        audio_bytes = await audio.read()
+        filename = audio.filename or "recording.webm"
+        text = transcribe_audio(user_id, audio_bytes, filename=filename)
+        return {"text": text, "success": True}
+    except TextChatError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[CHAT] transcribe error")
+        raise HTTPException(
+            status_code=500,
+            detail="Error transcribiendo audio.",
         ) from exc
