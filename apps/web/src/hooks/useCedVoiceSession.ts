@@ -9,7 +9,7 @@ import { appendConversationMessage } from "@/lib/api/conversations";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { generatePdf, downloadPdfBlob } from "@/lib/api/pdf";
 import { fetchVoiceBrief, fetchGenerateImage, fetchDeepAnalysis } from "@/lib/api/openai";
-import { saveMemory, searchMemory } from "@/lib/api/memory";
+import { saveMemory, searchMemory, recallPreviousConversations, saveLongTermMemory } from "@/lib/api/memory";
 import { updateUserAddress } from "@/lib/api/profile";
 import { schedulePanelSearch } from "@/lib/api/panels";
 import {
@@ -51,6 +51,8 @@ import {
   PUBLICAR_FACEBOOK,
   PUBLICAR_INSTAGRAM,
   GENERAR_PDF,
+  RECALL_PREVIOUS_CONVERSATIONS,
+  SAVE_LONG_TERM_MEMORY,
 } from "@/lib/voice/liveTools";
 import { isAdvancedConfirmAnswer, isComplexAnalysisRequest, isExplicitAdvancedRequest, isSearchStatusIntent, isWeatherIntent, isWebResearchIntent, shouldAllowAdvancedTool, webBriefKind, webBriefTimeoutMs } from "@/lib/voice/webResearchIntent";
 import {
@@ -292,7 +294,12 @@ export function useCedVoiceSession(
       const cid = conversationRef.current;
       if (!cid || !text.trim()) return;
       try {
-        await appendConversationMessage(cid, role, text);
+        await appendConversationMessage(
+          cid,
+          role,
+          text,
+          usageSessionRef.current ?? undefined,
+        );
       } catch {
         /* ignore */
       }
@@ -1152,6 +1159,29 @@ export function useCedVoiceSession(
               .map((m) => `${m.key}: ${m.content}`)
               .join(". ");
             return { spoken: `recuerdo: ${lines}` };
+          }
+          if (name === RECALL_PREVIOUS_CONVERSATIONS) {
+            const q = String(args.query ?? args.consulta ?? "").trim();
+            const days = Number(args.days_back ?? 30) || 30;
+            const r = await recallPreviousConversations(q, days);
+            return {
+              spoken: r.ok
+                ? r.spoken || "encontré contexto previo."
+                : r.error || "no encontré conversaciones anteriores.",
+            };
+          }
+          if (name === SAVE_LONG_TERM_MEMORY) {
+            const category = String(args.category ?? "fact").trim();
+            const key = String(args.key ?? args.clave ?? "nota").trim();
+            const value = String(args.value ?? args.contenido ?? "").trim();
+            const importance = Number(args.importance ?? 5) || 5;
+            if (!value) {
+              return { spoken: "no recibí qué guardar." };
+            }
+            const r = await saveLongTermMemory(category, key, value, importance);
+            return {
+              spoken: r.ok ? "entendido." : r.error || "no pude guardar eso.",
+            };
           }
           if (name === ACTIVAR_PROSPECCION) {
             const r = await enableProspection();

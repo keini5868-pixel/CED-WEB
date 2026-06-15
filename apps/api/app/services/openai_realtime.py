@@ -81,7 +81,7 @@ def _build_session_payload(
     session: dict[str, Any] = {
         "type": "realtime",
         "model": model,
-        "instructions": instructions[:8000],
+        "instructions": instructions[:12000],
         "output_modalities": ["audio"],
         "audio": {
             "input": _audio_input(turn_detection, language=language),
@@ -111,7 +111,7 @@ def _build_minimal_payload(
         "session": {
             "type": "realtime",
             "model": model,
-            "instructions": instructions[:8000],
+            "instructions": instructions[:12000],
             "audio": {
                 "input": _audio_input(turn_detection, language=language),
                 "output": {"voice": voice},

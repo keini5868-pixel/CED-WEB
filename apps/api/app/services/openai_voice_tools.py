@@ -76,11 +76,67 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "recall_memory",
-        "description": "Busca en memoria cognitiva del usuario.",
+        "description": "Busca en memoria cognitiva del usuario (datos guardados con clave).",
         "parameters": {
             "type": "object",
             "properties": {"consulta": {"type": "string"}},
             "required": ["consulta"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "recall_previous_conversations",
+        "description": (
+            "Busca en conversaciones previas con el usuario. "
+            "Usar cuando diga '¿recuerdas cuando…?', referencias al pasado, "
+            "leads/proyectos mencionados antes, o necesites contexto histórico."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Tema, persona, proyecto o frase a buscar",
+                },
+                "days_back": {
+                    "type": "integer",
+                    "description": "Días hacia atrás (default 30)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "save_to_long_term_memory",
+        "description": (
+            "Guarda información importante para futuras sesiones: leads, metas, "
+            "proyectos, preferencias, decisiones, métricas. "
+            "Hazlo en silencio — NO anuncies que guardas."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": [
+                        "business",
+                        "personal",
+                        "goal",
+                        "preference",
+                        "fact",
+                        "project",
+                        "lead",
+                    ],
+                },
+                "key": {"type": "string", "description": "Identificador corto"},
+                "value": {"type": "string", "description": "Información a recordar"},
+                "importance": {
+                    "type": "integer",
+                    "description": "Importancia 1-10 (default 5)",
+                },
+            },
+            "required": ["category", "key", "value"],
         },
     },
     {

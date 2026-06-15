@@ -17,6 +17,8 @@ import {
   GENERAR_PDF,
   GUARDAR_MEMORIA,
   LIVE_TOOL_NAMES,
+  RECALL_PREVIOUS_CONVERSATIONS,
+  SAVE_LONG_TERM_MEMORY,
 } from "@/lib/voice/liveTools";
 import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
@@ -35,6 +37,8 @@ import {
 const TOOL_ALIAS: Record<string, string> = {
   save_memory: GUARDAR_MEMORIA,
   recall_memory: BUSCAR_MEMORIA,
+  recall_previous_conversations: RECALL_PREVIOUS_CONVERSATIONS,
+  save_to_long_term_memory: SAVE_LONG_TERM_MEMORY,
   generar_pdf: GENERAR_PDF,
   consultar_claude: CONSULTAR_SISTEMA_AVANZADO,
   analyze_camera_frame: ANALIZAR_CAMARA,

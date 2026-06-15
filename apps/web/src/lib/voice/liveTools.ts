@@ -15,6 +15,8 @@ export const REQUEST_CAMERA_DEACTIVATION = "request_camera_deactivation";
 export const PUBLICAR_FACEBOOK = "publicar_facebook";
 export const PUBLICAR_INSTAGRAM = "publicar_instagram";
 export const GENERAR_PDF = "generar_pdf";
+export const RECALL_PREVIOUS_CONVERSATIONS = "recall_previous_conversations";
+export const SAVE_LONG_TERM_MEMORY = "save_to_long_term_memory";
 
 export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
@@ -157,4 +159,6 @@ export const LIVE_TOOL_NAMES = new Set([
   ANALIZAR_CAMARA,
   REQUEST_CAMERA_ACTIVATION,
   REQUEST_CAMERA_DEACTIVATION,
+  RECALL_PREVIOUS_CONVERSATIONS,
+  SAVE_LONG_TERM_MEMORY,
 ]);

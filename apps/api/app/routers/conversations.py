@@ -15,6 +15,8 @@ class AppendMessageBody(BaseModel):
     conversation_id: str
     role: str = Field(pattern="^(user|model|system)$")
     content: str
+    session_id: str | None = None
+    channel: str | None = None
 
 
 @router.get("")
@@ -61,6 +63,8 @@ def append_message(
             user_id,
             body.role,
             body.content,
+            session_id=body.session_id,
+            channel=body.channel or "voice",
         )
         return {"ok": True}
     except PermissionError as exc:

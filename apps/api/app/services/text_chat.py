@@ -26,7 +26,9 @@ from app.domain.ced_identity import (
     CED_CREATOR_IDENTITY,
     CED_HUMAN_VOICE_STYLE,
 )
+from app.domain.ced_memory_prompt import CED_MEMORY_USAGE_RULES
 from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE
+from app.domain.ced_viral_knowledge import CED_VIRAL_KNOWLEDGE_2026
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.pdf_report import store_pdf
 
@@ -108,6 +110,49 @@ CHAT_TOOLS: list[dict[str, Any]] = [
             "required": ["prompt"],
         },
     },
+    {
+        "name": "recall_previous_conversations",
+        "description": (
+            "Busca en conversaciones previas. Usar cuando referencien el pasado "
+            "o pregunten '¿recuerdas cuando…?'"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "days_back": {"type": "integer"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "save_to_long_term_memory",
+        "description": (
+            "Guarda datos importantes para futuras sesiones (leads, metas, proyectos). "
+            "Silencioso — no anunciar."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string",
+                    "enum": [
+                        "business",
+                        "personal",
+                        "goal",
+                        "preference",
+                        "fact",
+                        "project",
+                        "lead",
+                    ],
+                },
+                "key": {"type": "string"},
+                "value": {"type": "string"},
+                "importance": {"type": "integer"},
+            },
+            "required": ["category", "key", "value"],
+        },
+    },
 ]
 
 CHAT_SYSTEM_BASE = f"""Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
@@ -140,6 +185,10 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
 - Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
+
+{CED_VIRAL_KNOWLEDGE_2026}
+
+{CED_MEMORY_USAGE_RULES}
 
 PROHIBIDO (respuestas de chatbot genérico):
 - "No tengo acceso a internet en tiempo real" — CED tiene búsqueda y herramientas en voz; en chat puedes preparar contenido y publicar vía Meta.
@@ -328,6 +377,28 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
             if result.get("ok") and result.get("url"):
                 result["prompt"] = prompt
             return json.dumps(result)
+        if name == "recall_previous_conversations":
+            from app.services.conversation_memory import (
+                format_recall_for_voice,
+                recall_previous_conversations,
+            )
+
+            query = str(tool_input.get("query") or "").strip()
+            days = int(tool_input.get("days_back") or 30)
+            data = recall_previous_conversations(user_id, query, days_back=days)
+            return json.dumps({**data, "spoken": format_recall_for_voice(data)})
+        if name == "save_to_long_term_memory":
+            from app.services.conversation_memory import save_long_term_memory
+
+            return json.dumps(
+                save_long_term_memory(
+                    user_id,
+                    category=str(tool_input.get("category") or "fact"),
+                    key=str(tool_input.get("key") or ""),
+                    value=str(tool_input.get("value") or ""),
+                    importance=int(tool_input.get("importance") or 5),
+                )
+            )
         return json.dumps({"error": f"Herramienta desconocida: {name}"})
     except MetaSocialError as exc:
         return json.dumps({"ok": False, "error": str(exc)})

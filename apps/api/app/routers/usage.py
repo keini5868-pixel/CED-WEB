@@ -60,14 +60,17 @@ def session_start(user_id: str = Depends(require_user_id)) -> dict:
         )
 
     session_id = str(uuid4())
+    started_at = __import__("time").time()
     _active_sessions[session_id] = {
         "user_id": user_id,
-        "started_at": __import__("time").time(),
+        "started_at": started_at,
+        "conversation_id": None,
     }
 
     try:
         conv = supabase_db.create_conversation(user_id)
         conversation_id = conv.get("id")
+        _active_sessions[session_id]["conversation_id"] = conversation_id
     except RuntimeError:
         conversation_id = None
 
@@ -134,6 +137,18 @@ def session_end(
 
     meta = _active_sessions.pop(sid, None)
     balance = usage_balance(user_id)
+    if meta and meta.get("user_id") == user_id:
+        try:
+            from app.services.conversation_memory import finalize_voice_session_async
+
+            finalize_voice_session_async(
+                user_id=user_id,
+                session_id=sid,
+                conversation_id=meta.get("conversation_id"),
+                started_at_epoch=float(meta.get("started_at") or __import__("time").time()),
+            )
+        except Exception:  # noqa: BLE001
+            pass
     if not meta or meta.get("user_id") != user_id:
         return {**balance, "already_ended": True, "session_id": sid}
     return {**balance, "already_ended": False, "session_id": sid}

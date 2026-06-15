@@ -127,13 +127,16 @@ def append_message(
     user_id: str,
     role: str,
     content: str,
+    *,
+    session_id: str | None = None,
+    channel: str = "voice",
 ) -> None:
     if not content.strip():
         return
     client = _client()
     owner = (
         client.table("voice_conversations")
-        .select("id")
+        .select("id, channel")
         .eq("id", conversation_id)
         .eq("user_id", user_id)
         .limit(1)
@@ -141,6 +144,7 @@ def append_message(
     )
     if not owner.data:
         raise PermissionError("Conversación no encontrada")
+    conv_channel = str((owner.data[0] or {}).get("channel") or channel)
     client.table("voice_messages").insert(
         {
             "conversation_id": conversation_id,
@@ -151,6 +155,19 @@ def append_message(
     client.table("voice_conversations").update(
         {"updated_at": datetime.now(timezone.utc).isoformat()}
     ).eq("id", conversation_id).execute()
+    try:
+        from app.services.conversation_memory import save_message as persist_message
+
+        persist_message(
+            user_id=user_id,
+            session_id=session_id or conversation_id,
+            channel=conv_channel if conv_channel in ("voice", "text") else channel,
+            role=role,
+            content=content,
+            metadata={"conversation_id": conversation_id},
+        )
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def list_conversations(

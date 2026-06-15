@@ -33,6 +33,7 @@ export async function appendConversationMessage(
   conversationId: string,
   role: "user" | "model" | "system",
   content: string,
+  sessionId?: string,
 ): Promise<void> {
   await fetch(`${apiUrl()}/v1/conversations/messages`, {
     method: "POST",
@@ -41,6 +42,8 @@ export async function appendConversationMessage(
       conversation_id: conversationId,
       role,
       content,
+      session_id: sessionId,
+      channel: "voice",
     }),
   });
 }

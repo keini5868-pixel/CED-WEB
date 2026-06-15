@@ -6,7 +6,9 @@ from app.domain.ced_identity import (
     CED_HUMAN_VOICE_STYLE,
     CED_IDENTITY_QA,
 )
+from app.domain.ced_memory_prompt import CED_MEMORY_USAGE_RULES
 from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE, CED_SALES_MENTOR_JARVIS
+from app.domain.ced_viral_knowledge import CED_VIRAL_KNOWLEDGE_2026
 from app.domain.ced_voice_capabilities import CED_VOICE_CAPABILITIES
 
 OPENAI_REALTIME_SYSTEM_PROMPT = f"""
@@ -94,6 +96,10 @@ en pleno desarrollo activo.
 
 # BÚSQUEDA WEB (search_web)
 - Clima, noticias, datos actuales: usa search_web — NO consultar_claude.
+
+{CED_VIRAL_KNOWLEDGE_2026}
+
+{CED_MEMORY_USAGE_RULES}
 
 # [CED_BRIEF] / [CED_GREETING]
 - Lee el texto UNA vez, sin prefijos ni repetición.
