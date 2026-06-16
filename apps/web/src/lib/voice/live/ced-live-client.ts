@@ -17,6 +17,8 @@ import {
   GENERAR_PDF,
   GUARDAR_MEMORIA,
   LIVE_TOOL_NAMES,
+  PUBLICAR_FACEBOOK,
+  PUBLICAR_INSTAGRAM,
   RECALL_PREVIOUS_CONVERSATIONS,
   SAVE_LONG_TERM_MEMORY,
 } from "@/lib/voice/liveTools";
@@ -32,6 +34,8 @@ import {
   cedBriefTurn,
   cedGreetingTurn,
   cedPublishConfirmTurn,
+  cedPublishFailurePhrase,
+  cedPublishSuccessPhrase,
   CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
 
@@ -905,8 +909,19 @@ export class CedLiveClient {
       if (LIVE_TOOL_NAMES.has(name) && h.onLiveTool) {
         h.onToolStart?.(name);
         const result = await h.onLiveTool(name, args);
-        const spoken = result?.spoken ?? "Listo.";
         const success = result?.ok !== false;
+        let spoken = (result?.spoken ?? "").trim();
+        if (name === PUBLICAR_FACEBOOK) {
+          spoken = success
+            ? cedPublishSuccessPhrase("facebook", this.userAddress)
+            : cedPublishFailurePhrase(spoken || "no fue posible completar la publicación", this.userAddress);
+        } else if (name === PUBLICAR_INSTAGRAM) {
+          spoken = success
+            ? cedPublishSuccessPhrase("instagram", this.userAddress)
+            : cedPublishFailurePhrase(spoken || "no fue posible completar la publicación", this.userAddress);
+        } else if (!spoken) {
+          spoken = success ? "Operación completada." : "No pude completar la operación.";
+        }
         const toolResult = {
           status: success ? "ok" : "error",
           spoken,
@@ -939,7 +954,7 @@ export class CedLiveClient {
   ): Promise<void> {
     if (this.responseInProgress) {
       cedRealtimeLog("tool.output.wait_idle", { call_id: callId });
-      await this.waitForResponseIdle();
+      await this.waitForResponseIdle(2200);
     }
     const spoken =
       typeof output.spoken === "string" ? output.spoken.trim() : "";
@@ -949,7 +964,7 @@ export class CedLiveClient {
     };
     if (spoken) {
       payload.delivery =
-        "Di en voz UNA frase corta usando el campo spoken. No repitas ni alargues.";
+        "OBLIGATORIO: di en voz alta la confirmación. No omitas ni te quedes en silencio.";
     }
 
     const outputMessage = {
@@ -969,10 +984,13 @@ export class CedLiveClient {
     if (spoken) {
       responseRequest.response = {
         instructions:
-          "Presenta el resultado de la herramienta. Di el campo spoken tal cual, una sola frase.",
+          "Confirmación obligatoria tras herramienta. " +
+          `Di EXACTAMENTE esta frase en voz alta, una sola vez: "${spoken}". ` +
+          "PROHIBIDO: omitir la confirmación, decir 'va', 'ok', 'listo', o quedarte en silencio. " +
+          "No añadas frases antes ni después.",
       };
     }
-    cedRealtimeLog("tool.response.create", { call_id: callId });
+    cedRealtimeLog("tool.response.create", { call_id: callId, spoken });
     this.send(responseRequest);
   }
 }

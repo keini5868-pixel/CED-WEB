@@ -48,10 +48,40 @@ export function cedAdvancedAckTurn(): string {
 /** Usuario confirmó publicar — forzar invocación de tool con el copy ya desarrollado. */
 export function cedPublishConfirmTurn(platform: "facebook" | "instagram"): string {
   const tool = platform === "facebook" ? "publicar_facebook" : "publicar_instagram";
+  const net = platform === "facebook" ? "Facebook" : "Instagram";
   return (
     "[CED_PUBLISH] El usuario confirmó. Invoca " +
     tool +
-    " AHORA con el copy premium completo que acabas de presentar. " +
-    "PROHIBIDO: volver a preguntar, pedir otra confirmación o decir publicado sin invocar la herramienta."
+    " AHORA con el copy completo. " +
+    "Antes: 'Procediendo con la publicación'. " +
+    "Después de ejecutar: confirma en voz 'Publicación enviada con éxito a " +
+    net +
+    "'. " +
+    "PROHIBIDO: 'Va', 'Va para', 'Ok', 'Listo', volver a preguntar o quedarse en silencio tras publicar."
   );
+}
+
+function honorificSuffix(
+  address?: Pick<UserAddressContext, "honorific"> | null,
+): string {
+  const h = address?.honorific?.trim();
+  return h ? `, ${h}` : "";
+}
+
+/** Confirmación Jarvis tras publicar con éxito. */
+export function cedPublishSuccessPhrase(
+  platform: "facebook" | "instagram",
+  address?: Pick<UserAddressContext, "honorific"> | null,
+): string {
+  const net = platform === "facebook" ? "Facebook" : "Instagram";
+  return `Publicación enviada con éxito a ${net}${honorificSuffix(address)}.`;
+}
+
+/** Error Jarvis tras fallo de publicación. */
+export function cedPublishFailurePhrase(
+  reason: string,
+  address?: Pick<UserAddressContext, "honorific"> | null,
+): string {
+  const detail = reason.trim() || "no fue posible completar la publicación";
+  return `Lamentablemente ${detail}${honorificSuffix(address)}.`;
 }

@@ -270,9 +270,11 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "publicar_facebook",
         "description": (
             "OBLIGATORIO para publicar en Facebook. "
-            "Flujo: 'Va para Facebook.' o 'Lo publico.' → invoca AHORA con mensaje completo. "
-            "Si el usuario ya confirmó (sí/dale/publica/ya): EJECUTA sin repreguntar. "
-            "PROHIBIDO decir 'publicado' o 'voy a preparar' sin llamar esta función."
+            "Patrón Jarvis: 1 frase formal ANTES (ej. 'Procediendo con la publicación') "
+            "→ invoca AHORA con mensaje completo → DESPUÉS di en voz la confirmación del campo spoken. "
+            "PROHIBIDO: 'Va', 'Va para Facebook', 'Ok', 'Listo', 'Dale', 'Hecho'. "
+            "PROHIBIDO omitir la confirmación tras ejecutar. "
+            "Si el usuario ya confirmó (sí/publica/ya): EJECUTA sin repreguntar."
         ),
         "parameters": {
             "type": "object",
@@ -297,9 +299,11 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "publicar_instagram",
         "description": (
             "OBLIGATORIO para publicar en Instagram. "
-            "Flujo: 'Va para Instagram.' → invoca AHORA con caption e imagen. "
-            "Si el usuario confirmó: EJECUTA sin repreguntar. "
-            "PROHIBIDO decir 'publicado' sin llamar esta función."
+            "Patrón Jarvis: 1 frase formal ANTES (ej. 'Procediendo con la publicación en Instagram') "
+            "→ invoca AHORA con caption e imagen → DESPUÉS di en voz la confirmación del campo spoken. "
+            "PROHIBIDO: 'Va', 'Va para Instagram', 'Ok', 'Listo', 'Dale'. "
+            "PROHIBIDO omitir la confirmación tras ejecutar. "
+            "Si el usuario confirmó: EJECUTA sin repreguntar."
         ),
         "parameters": {
             "type": "object",

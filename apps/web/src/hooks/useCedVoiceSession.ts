@@ -36,6 +36,10 @@ import {
   type CedLiveHandlers,
 } from "@/lib/voice/live/ced-live-client";
 import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
+import {
+  cedPublishFailurePhrase,
+  cedPublishSuccessPhrase,
+} from "@/lib/voice/live/ced-brief-messages";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import { normalizeVoiceName } from "@/lib/voice/openaiVoices";
@@ -685,7 +689,10 @@ export function useCedVoiceSession(
         callbacks?.onGeneratedImage?.(normalized, prompt);
       };
 
-      const PUBLISH_OK = "Publicado.";
+      const publishSuccessBrief = (platform: PublishPlatform) =>
+        cedPublishSuccessPhrase(platform);
+      const publishFailureBrief = (reason: string) =>
+        cedPublishFailurePhrase(reason);
 
       const runSocialPublish = (
         platform: PublishPlatform,
@@ -708,7 +715,9 @@ export function useCedVoiceSession(
             if (platform === "facebook") {
               const r = await publishFacebook(body, image);
               if (isStale()) return;
-              client.sendNarrationBrief(r.ok ? PUBLISH_OK : r.error);
+              client.sendNarrationBrief(
+                r.ok ? publishSuccessBrief("facebook") : publishFailureBrief(r.error),
+              );
               return;
             }
             if (!image.imageUrl && !image.imageData) {
@@ -721,7 +730,9 @@ export function useCedVoiceSession(
             }
             const r = await publishInstagram(body, image);
             if (isStale()) return;
-            client.sendNarrationBrief(r.ok ? PUBLISH_OK : r.error);
+            client.sendNarrationBrief(
+              r.ok ? publishSuccessBrief("instagram") : publishFailureBrief(r.error),
+            );
           } finally {
             webFetchRef.current = false;
           }
@@ -1008,7 +1019,11 @@ export function useCedVoiceSession(
                 }
                 const r = await publishInstagram(igRequest.caption, image);
                 if (isStale()) return;
-                client.sendNarrationBrief(r.ok ? PUBLISH_OK : r.error);
+                client.sendNarrationBrief(
+                  r.ok
+                    ? publishSuccessBrief("instagram")
+                    : publishFailureBrief(r.error),
+                );
               } finally {
                 webFetchRef.current = false;
               }
@@ -1415,7 +1430,9 @@ export function useCedVoiceSession(
             pendingPublishRef.current = null;
             cedVoiceLog(6, "publicar_facebook", { ok: r.ok, error: r.ok ? undefined : r.error });
             return {
-              spoken: r.ok ? PUBLISH_OK : `${r.error}`,
+              spoken: r.ok
+                ? cedPublishSuccessPhrase("facebook")
+                : cedPublishFailurePhrase(`${r.error}`),
               ok: r.ok,
             };
           }
@@ -1441,7 +1458,9 @@ export function useCedVoiceSession(
             pendingPublishRef.current = null;
             cedVoiceLog(6, "publicar_instagram", { ok: r.ok, error: r.ok ? undefined : r.error });
             return {
-              spoken: r.ok ? PUBLISH_OK : `${r.error}`,
+              spoken: r.ok
+                ? cedPublishSuccessPhrase("instagram")
+                : cedPublishFailurePhrase(`${r.error}`),
               ok: r.ok,
             };
           }
