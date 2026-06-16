@@ -7,6 +7,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS } from "@ced/types";
 
 import { startSubscriptionCheckout } from "@/lib/api/billing";
+import { PublicHeaderLink, PublicSiteHeader } from "@/components/layout/PublicSiteHeader";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/env";
 
@@ -67,7 +68,7 @@ function PricingContent() {
   }, [pendingPlan, loggedIn, busy, subscribe]);
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-black text-cyan-100">
+    <main className="relative min-h-screen overflow-x-hidden bg-black text-cyan-100">
       <div
         className="pointer-events-none absolute inset-0 opacity-30"
         style={{
@@ -76,25 +77,23 @@ function PricingContent() {
         }}
       />
 
-      <header className="relative z-10 flex items-center justify-between border-b border-cyan-500/20 px-6 py-4">
-        <Link href="/" className="text-xs tracking-widest text-cyan-500 hover:text-cyan-300">
-          ← INICIO
-        </Link>
-        <h1 className="font-[family-name:var(--font-orbitron)] text-sm tracking-[0.25em] text-cyan-300">
-          PLANES CED
-        </h1>
-        {loggedIn ? (
-          <Link href="/dashboard" className="text-xs text-cyan-500 hover:text-cyan-300">
-            DASHBOARD
-          </Link>
-        ) : (
-          <Link href="/login?next=%2Fpricing" className="text-xs text-cyan-500 hover:text-cyan-300">
-            LOGIN
-          </Link>
-        )}
-      </header>
+      <PublicSiteHeader
+        left={<PublicHeaderLink href="/">← INICIO</PublicHeaderLink>}
+        center={
+          <h1 className="font-[family-name:var(--font-orbitron)] text-xs tracking-[0.2em] text-cyan-300 sm:text-sm sm:tracking-[0.25em]">
+            PLANES CED
+          </h1>
+        }
+        right={
+          loggedIn ? (
+            <PublicHeaderLink href="/dashboard">DASHBOARD</PublicHeaderLink>
+          ) : (
+            <PublicHeaderLink href="/login?next=%2Fpricing">LOGIN</PublicHeaderLink>
+          )
+        }
+      />
 
-      <section className="relative z-10 mx-auto max-w-5xl px-6 py-12">
+      <section className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
         <p className="text-center text-xs text-cyan-500">
           7 días gratis al registrarte · sin tarjeta
         </p>

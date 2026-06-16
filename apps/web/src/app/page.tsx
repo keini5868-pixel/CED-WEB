@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS, TRIAL_DAYS } from "@ced/types";
 
+import { PublicHeaderLink, PublicHeaderText, PublicSiteHeader } from "@/components/layout/PublicSiteHeader";
+
 const PLAN_STYLES: Record<
   string,
   { border: string; glow: string; badge?: string; badgeClass?: string }
@@ -30,7 +32,7 @@ const PLAN_STYLES: Record<
 
 export default function HomePage() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-black">
+    <main className="relative min-h-screen overflow-x-hidden bg-black">
       <div
         className="pointer-events-none absolute inset-0 opacity-30"
         style={{
@@ -39,17 +41,21 @@ export default function HomePage() {
         }}
       />
 
-      <header className="relative z-10 flex items-center justify-between border-b border-cyan-500/20 px-6 py-4">
-        <span className="font-[family-name:var(--font-orbitron)] text-sm tracking-[0.3em] text-cyan-400">
-          SYS: ONLINE
-        </span>
-        <h1 className="font-[family-name:var(--font-orbitron)] text-lg font-bold tracking-widest text-cyan-300 ced-glow-text">
-          CED
-        </h1>
-        <Link href="/login" className="text-xs text-cyan-500 hover:text-cyan-300">
-          LOGIN
-        </Link>
-      </header>
+      <PublicSiteHeader
+        left={
+          <PublicHeaderText>
+            <span className="font-[family-name:var(--font-orbitron)] text-[10px] tracking-[0.2em] text-cyan-400 sm:text-sm sm:tracking-[0.3em]">
+              SYS: ONLINE
+            </span>
+          </PublicHeaderText>
+        }
+        center={
+          <h1 className="font-[family-name:var(--font-orbitron)] text-base font-bold tracking-widest text-cyan-300 ced-glow-text sm:text-lg">
+            CED
+          </h1>
+        }
+        right={<PublicHeaderLink href="/login">LOGIN</PublicHeaderLink>}
+      />
 
       <section className="relative z-10 mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="text-center">

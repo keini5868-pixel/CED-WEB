@@ -16,6 +16,20 @@ body {
   font-family: var(--font-inter), system-ui, sans-serif;
 }
 
+/* Safe area global — viewport-fit: cover; mínimo 44px arriba en móvil si env() falla */
+body {
+  padding-right: env(safe-area-inset-right, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+@media (max-width: 639px) {
+  body {
+    padding-top: max(2.75rem, env(safe-area-inset-top, 0px));
+  }
+}
+
 /* Glow — auth cards / botones (no usar en paneles con texto) */
 .ced-glow {
   box-shadow: 0 0 20px var(--ced-cyan-glow), inset 0 0 8px rgba(0, 229, 255, 0.05);
@@ -223,5 +237,39 @@ body {
   28% {
     opacity: 0.15;
     transform: scale(0.6);
+  }
+}
+
+/* Header público — clearance extra en móvil (Safari a veces reporta inset 0) */
+.ced-public-header {
+  background: #000;
+}
+
+.ced-public-header__nav {
+  min-height: 52px;
+}
+
+@media (max-width: 639px) {
+  .ced-public-header__title {
+    display: block;
+  }
+}
+
+@media (min-width: 640px) {
+  .ced-public-header__title {
+    display: none;
+  }
+}
+
+.ced-auth-shell {
+  box-sizing: border-box;
+  min-height: calc(100dvh - 2.75rem);
+  padding: 1rem;
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
+}
+
+@media (min-width: 640px) {
+  .ced-auth-shell {
+    min-height: 100dvh;
   }
 }
