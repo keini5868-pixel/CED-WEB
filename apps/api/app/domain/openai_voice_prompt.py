@@ -83,7 +83,12 @@ def build_voice_style_instructions(
     jarvis = (voice_profile or "").strip().lower() == "jarvis"
 
     pace_lines: list[str] = []
-    if jarvis or pace <= 35:
+    if jarvis or pace <= 30:
+        pace_lines.append(
+            "Ritmo Jarvis elegante y fluido: articulación clara, respuesta pronta, "
+            "sin demoras innecesarias al iniciar."
+        )
+    elif pace <= 35:
         pace_lines.append(
             "Ritmo pausado y medido — estilo mayordomo ejecutivo: "
             "cada palabra con espacio, articulación precisa."
@@ -112,7 +117,7 @@ def build_voice_style_instructions(
         "thoughtful": "Ritmo deliberado y articulado.",
     }.get(response_speed, "Balance entre claridad y velocidad.")
     if jarvis:
-        speed_note = "Ritmo Jarvis: pausado, articulado, nunca apresurado."
+        speed_note = "Ritmo Jarvis: formal, conciso y ágil — responde en cuanto el usuario termine."
 
     return (
         "\n\n# ESTILO DE VOZ (ajuste del usuario)\n"

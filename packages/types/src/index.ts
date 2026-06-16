@@ -160,12 +160,12 @@ export interface VoiceSessionPreferences {
 
 export const DEFAULT_VOICE_PREFERENCES: VoiceSessionPreferences = {
   language: "es",
-  responseSpeed: "thoughtful",
+  responseSpeed: "balanced",
   voiceName: "echo",
   palette: "cyan",
-  voicePace: 22,
+  voicePace: 35,
   voiceWarmth: 30,
-  voiceEnergy: 28,
+  voiceEnergy: 32,
   voiceProfile: "jarvis",
 };
 

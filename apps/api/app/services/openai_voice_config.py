@@ -21,19 +21,19 @@ DEFAULT_OPENAI_VOICE = "cedar"
 REALTIME_MAX_OUTPUT_TOKENS = 300
 REALTIME_TEMPERATURE = 0.8
 
-# semantic_vad low = menos auto-interrupciones (cedar / gpt-realtime hablan más pausado)
+# semantic_vad medium = equilibrio latencia/estabilidad (low = más lento; high = más ágil)
 REALTIME_TURN_DETECTION: dict[str, Any] = {
     "type": "semantic_vad",
-    "eagerness": "low",
+    "eagerness": "medium",
     "create_response": True,
     "interrupt_response": True,
 }
 
 REALTIME_TURN_DETECTION_FALLBACK: dict[str, Any] = {
     "type": "server_vad",
-    "threshold": 0.7,
-    "prefix_padding_ms": 500,
-    "silence_duration_ms": 1000,
+    "threshold": 0.68,
+    "prefix_padding_ms": 450,
+    "silence_duration_ms": 850,
     "create_response": True,
     "interrupt_response": True,
 }
@@ -83,6 +83,7 @@ PROHIBIDO EN: Okay, Yeah, Sure thing, Got it, Cool, Awesome
 - NO responderte a ti misma tras terminar un turno
 - Un mensaje = un turno; luego ESPERA
 - NO inicies temas ni ofrezcas ayuda sin que pregunten
+- Inicia tu respuesta con prontitud tras el turno del usuario — sin pausas vacías antes de hablar
 - Humor seco ocasional con seriedad total
 
 ## PREAMBLES POR TOOL — ESPAÑOL (1 frase → ejecutar tool → confirmación OBLIGATORIA)
@@ -141,10 +142,10 @@ def profile_for_response_speed(speed: str | None) -> tuple[float, dict[str, Any]
     """Temperatura y turn_detection según preferencia de velocidad."""
     key = (speed or "balanced").strip().lower()
     if key == "fast":
-        return 0.65, {**REALTIME_TURN_DETECTION, "eagerness": "low"}
+        return 0.65, {**REALTIME_TURN_DETECTION, "eagerness": "high"}
     if key == "thoughtful":
-        return 0.78, {**REALTIME_TURN_DETECTION, "eagerness": "low"}
-    return REALTIME_TEMPERATURE, {**REALTIME_TURN_DETECTION, "eagerness": "low"}
+        return 0.78, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
+    return REALTIME_TEMPERATURE, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
 
 
 def normalize_openai_voice(name: str | None) -> str:

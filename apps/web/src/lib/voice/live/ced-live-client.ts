@@ -156,7 +156,7 @@ export class CedLiveClient {
   private videoSender: RTCRtpSender | null = null;
   private lastVideoFrameAt = 0;
   private static TOOL_COOLDOWN_MS = 2000;
-  private static RESPONSE_IDLE_MS = 4500;
+  private static RESPONSE_IDLE_MS = 3200;
   private static VIDEO_FRAME_MIN_MS = 2000;
   private voiceProfile: VoiceSessionPreferences["voiceProfile"] = "jarvis";
   private userAddress: UserAddressContext | null = null;
@@ -954,7 +954,7 @@ export class CedLiveClient {
   ): Promise<void> {
     if (this.responseInProgress) {
       cedRealtimeLog("tool.output.wait_idle", { call_id: callId });
-      await this.waitForResponseIdle(2200);
+      await this.waitForResponseIdle(1600);
     }
     const spoken =
       typeof output.spoken === "string" ? output.spoken.trim() : "";

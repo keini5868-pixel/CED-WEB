@@ -3,12 +3,12 @@ import type { VoiceSessionPreferences } from "@ced/types";
 /** Preset Jarvis: voz masculina pausada, formal, articulación clara. */
 export const JARVIS_VOICE_PRESET: VoiceSessionPreferences = {
   language: "es",
-  responseSpeed: "thoughtful",
+  responseSpeed: "balanced",
   voiceName: "echo",
   palette: "cyan",
-  voicePace: 22,
+  voicePace: 35,
   voiceWarmth: 30,
-  voiceEnergy: 28,
+  voiceEnergy: 32,
   voiceProfile: "jarvis",
 };
 

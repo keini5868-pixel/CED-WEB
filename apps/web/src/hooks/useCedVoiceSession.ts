@@ -110,7 +110,7 @@ const MAX_WS_RECONNECT = 3;
 /** Si el turno no cierra, liberar mic/UI (WebRTC). */
 const TURN_STUCK_MS = 22000;
 const PROCESSING_STUCK_MS = 12000;
-const MIC_UNMUTE_AFTER_SPEECH_MS = 750;
+const MIC_UNMUTE_AFTER_SPEECH_MS = 550;
 
 async function publishImageToBlob(image: {
   imageUrl?: string;
@@ -1551,7 +1551,7 @@ export function useCedVoiceSession(
         },
         onModelAudioDone: () => {
           if (isStale()) return;
-          scheduleMicUnmute(MIC_UNMUTE_AFTER_SPEECH_MS + 200);
+          scheduleMicUnmute(MIC_UNMUTE_AFTER_SPEECH_MS + 100);
         },
         onInterrupted: () => {
           cedVoiceLog(5, "OpenAI interrupted");
