@@ -32,7 +32,7 @@ import {
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   cedBriefTurn,
-  cedGreetingTurn,
+  cedGreetingPhrase,
   cedPublishConfirmTurn,
   cedPublishFailurePhrase,
   cedPublishSuccessPhrase,
@@ -162,6 +162,7 @@ export class CedLiveClient {
   private userAddress: UserAddressContext | null = null;
   private handlers: CedLiveHandlers = {};
   private greetingSent = false;
+  private greetingInFlight = false;
   private toolsEnabled = true;
 
   /** Sesión Realtime creada sin herramientas (fallback API). */
@@ -210,6 +211,7 @@ export class CedLiveClient {
     this.sessionReady = false;
     this.sendBlocked = true;
     this.greetingSent = false;
+    this.greetingInFlight = false;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -514,12 +516,20 @@ export class CedLiveClient {
 
     cedRealtimeLog("event", { type });
 
-    if (type === "session.created" || type === "session.updated") {
+    if (type === "session.created") {
       const session = msg.session as { tools?: unknown[] } | undefined;
       const toolsCount = session?.tools?.length ?? 0;
       if (toolsCount > 0) this.toolsEnabled = true;
       cedRealtimeLog("session.ready", { type, toolsCount, toolsEnabled: this.toolsEnabled });
       markReady();
+      return;
+    }
+
+    if (type === "session.updated") {
+      const session = msg.session as { tools?: unknown[] } | undefined;
+      const toolsCount = session?.tools?.length ?? 0;
+      if (toolsCount > 0) this.toolsEnabled = true;
+      cedRealtimeLog("session.updated", { toolsCount, toolsEnabled: this.toolsEnabled });
       return;
     }
 
@@ -679,12 +689,40 @@ export class CedLiveClient {
   }
 
   sendSessionGreeting(): void {
-    if (this.greetingSent || !this.dc || !this.sessionReady || this.sendBlocked) return;
+    if (
+      this.greetingSent ||
+      this.greetingInFlight ||
+      !this.dc ||
+      !this.sessionReady ||
+      this.sendBlocked
+    ) {
+      return;
+    }
     this.greetingSent = true;
+    this.greetingInFlight = true;
     void (async () => {
-      this.setMicTrackEnabled(false);
-      this.flushInputAudioBuffer();
-      await this.sendClientTurn(cedGreetingTurn(this.voiceProfile, this.userAddress));
+      try {
+        this.setMicTrackEnabled(false);
+        this.flushInputAudioBuffer();
+        const phrase = cedGreetingPhrase(this.voiceProfile, this.userAddress);
+        if (this.responseInProgress) {
+          this.triggerBargeIn();
+          await this.waitForResponseIdle(1200);
+        }
+        cedRealtimeLog("greeting.create", { phrase });
+        this.send({
+          type: "response.create",
+          response: {
+            modalities: ["audio", "text"],
+            max_output_tokens: 48,
+            instructions:
+              `[CED_GREETING] Di EXACTAMENTE una sola frase, sin nada antes ni después: "${phrase}". ` +
+              "PROHIBIDO repetir el saludo, añadir segunda frase, preguntar en qué ayudar o listar capacidades.",
+          },
+        });
+      } finally {
+        this.greetingInFlight = false;
+      }
     })();
   }
 

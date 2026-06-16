@@ -174,6 +174,7 @@ export function useCedVoiceSession(
     useState<VoiceHeardIndicator>(INITIAL_HEARD);
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
   const [micBusy, setMicBusy] = useState(false);
+  const micBusyRef = useRef(false);
 
   const micStreamRef = useRef<MediaStream | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
@@ -451,7 +452,7 @@ export function useCedVoiceSession(
   toggleCameraRef.current = toggleCamera;
 
   const toggleMic = useCallback(async () => {
-    if (micBusy) return;
+    if (micBusyRef.current) return;
     if (micOn) {
       await stopSession();
       return;
@@ -472,6 +473,7 @@ export function useCedVoiceSession(
       return;
     }
 
+    micBusyRef.current = true;
     setMicBusy(true);
     setErrorMessage(null);
     setOrbState("processing");
@@ -1731,6 +1733,7 @@ export function useCedVoiceSession(
       setOrbState("error");
       await stopSession();
     } finally {
+      micBusyRef.current = false;
       setMicBusy(false);
     }
   }, [
