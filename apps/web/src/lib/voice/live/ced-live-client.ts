@@ -714,7 +714,7 @@ export class CedLiveClient {
           h.onGeneratedImage?.(result.url, prompt);
           await this.submitToolOutput(callId, {
             status: "ok",
-            spoken: "Imagen lista.",
+            spoken: "Ahí está.",
             image_url: result.url,
           });
         } else {
@@ -734,7 +734,7 @@ export class CedLiveClient {
             h.onGeneratedImage?.(result.url, String(args.prompt ?? ""));
             await this.submitToolOutput(callId, {
               status: "ok",
-              spoken: result.spoken || "Aquí está la imagen basada en tu referencia.",
+              spoken: result.spoken || "Ahí está.",
               image_url: result.url,
             });
           } else {

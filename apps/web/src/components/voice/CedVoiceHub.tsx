@@ -13,6 +13,7 @@ import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
 import { useUsageBalance } from "@/hooks/useUsageBalance";
 import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
+import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedAssistantButton } from "@/components/voice/CedAssistantButton";
 import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
@@ -44,6 +45,10 @@ export function CedVoiceHub() {
     url: string;
     prompt?: string;
   } | null>(null);
+  const [voiceImagePreview, setVoiceImagePreview] = useState<{
+    url: string;
+    prompt?: string;
+  } | null>(null);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushLine } = useHudFeed();
 
@@ -56,6 +61,7 @@ export function CedVoiceHub() {
       pushLine(text, role === "user" ? "voice" : "report");
     },
     onGeneratedImage: (url, prompt) => {
+      setVoiceImagePreview({ url, prompt });
       setChatSeedImage({ url, prompt });
       setChatOpen(true);
     },
@@ -99,6 +105,13 @@ export function CedVoiceHub() {
       </div>
 
       <CedCameraPreview stream={voice.cameraStream} active={voice.cameraOn} />
+
+      <CedVoiceImagePreview
+        url={voiceImagePreview?.url ?? null}
+        prompt={voiceImagePreview?.prompt}
+        onOpenChat={() => setChatOpen(true)}
+        onDismiss={() => setVoiceImagePreview(null)}
+      />
 
       <AnimatePresence mode="wait">
         <motion.p

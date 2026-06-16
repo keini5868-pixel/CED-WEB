@@ -68,6 +68,7 @@ import {
 import { parseCameraIntent } from "@/lib/voice/cameraIntents";
 import {
   parseFacebookPublishMessage,
+  parseDirectPublishContent,
   parseInstagramPublishRequest,
   isPublishRequestWithoutContent,
   isPublishPlanningIntent,
@@ -194,7 +195,8 @@ export function useCedVoiceSession(
   const pendingAdvancedPromptRef = useRef("");
   const pendingPublishRef = useRef<{
     platform: PublishPlatform;
-    awaiting: "develop";
+    awaiting: "develop" | "confirm";
+    draftText?: string;
   } | null>(null);
   const webSearchDebounceRef = useRef<number | null>(null);
   const cameraPreviewRef = useRef<string | null>(null);
@@ -660,7 +662,7 @@ export function useCedVoiceSession(
         callbacks?.onGeneratedImage?.(normalized, prompt);
       };
 
-      const PUBLISH_OK = "Publicación enviada.";
+      const PUBLISH_OK = "Publicado.";
 
       const runSocialPublish = (
         platform: PublishPlatform,
@@ -743,9 +745,7 @@ export function useCedVoiceSession(
             if (isStale()) return;
             if (r.ok) {
               notifyGeneratedImage(r.url, prompt);
-              client.sendNarrationBrief(
-                "Imagen generada. La abrí en el chat para que la veas.",
-              );
+              client.sendNarrationBrief("Ahí está.");
             } else {
               client.sendNarrationBrief(r.error);
             }
@@ -899,8 +899,15 @@ export function useCedVoiceSession(
         })();
       };
 
-      const markPublishFlow = (platform: PublishPlatform) => {
-        pendingPublishRef.current = { platform, awaiting: "develop" };
+      const markPublishFlow = (
+        platform: PublishPlatform,
+        draftText?: string,
+      ) => {
+        pendingPublishRef.current = {
+          platform,
+          awaiting: draftText ? "confirm" : "develop",
+          draftText,
+        };
       };
 
       const handleClientVoiceIntents = (text: string) => {
@@ -909,13 +916,24 @@ export function useCedVoiceSession(
 
         const pending = pendingPublishRef.current;
 
-        if (
-          pending &&
-          (isAdvancedConfirmAnswer(t) || isPublishGoCommand(t))
-        ) {
-          const platform = pending.platform;
+        if (pending && isPublishGoCommand(t)) {
+          const { platform, draftText } = pending;
           pendingPublishRef.current = null;
-          client.sendPublishConfirm(platform);
+          if (draftText?.trim()) {
+            runSocialPublish(platform, draftText, t);
+          } else {
+            client.sendPublishConfirm(platform);
+          }
+          return;
+        }
+
+        const directPublish = parseDirectPublishContent(t);
+        if (directPublish) {
+          if (isPublishDirectCommand(t) || isPublishGoCommand(t)) {
+            runSocialPublish(directPublish.platform, directPublish.content, t);
+            return;
+          }
+          markPublishFlow(directPublish.platform, directPublish.content);
           return;
         }
 
@@ -942,7 +960,7 @@ export function useCedVoiceSession(
             runSocialPublish("facebook", fbMessage, t);
             return;
           }
-          markPublishFlow("facebook");
+          markPublishFlow("facebook", fbMessage);
           return;
         }
 
@@ -974,7 +992,7 @@ export function useCedVoiceSession(
             })();
             return;
           }
-          markPublishFlow("instagram");
+          markPublishFlow("instagram", igRequest.caption);
           return;
         }
 
@@ -1223,7 +1241,7 @@ export function useCedVoiceSession(
             return {
               ok: true,
               url: result.url,
-              spoken: "Aquí está la imagen. ¿Te gusta o ajustamos algo?",
+              spoken: "Ahí está.",
             };
           }
           return { ok: false, error: result.error || "No pude generar con la referencia." };
@@ -1345,12 +1363,20 @@ export function useCedVoiceSession(
             };
           }
           if (name === PUBLICAR_FACEBOOK) {
-            const message = String(
+            const fromArgs = String(
               args.mensaje ?? args.message ?? args.texto ?? "",
             ).trim();
+            const fromUtterance =
+              parseFacebookPublishMessage(lastUserUtteranceRef.current) ??
+              parseDirectPublishContent(lastUserUtteranceRef.current)?.content ??
+              pendingPublishRef.current?.draftText ??
+              "";
+            const message = fromArgs || fromUtterance.trim();
             if (!message) {
               markPublishFlow("facebook");
-              return { spoken: "" };
+              return {
+                spoken: "Dime el texto del post y lo publico.",
+              };
             }
             const image = await resolvePublishImage(
               args,

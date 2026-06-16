@@ -7,13 +7,13 @@ from typing import Any
 OPENAI_VOICES = frozenset({"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"})
 DEFAULT_OPENAI_VOICE = "echo"
 
-REALTIME_MAX_OUTPUT_TOKENS = 250
+REALTIME_MAX_OUTPUT_TOKENS = 200
 REALTIME_TEMPERATURE = 0.7
 
-# semantic_vad low = no interpretar silencios/ruido como turno del usuario
+# semantic_vad medium = ejecuta tools con más iniciativa (OpenAI Realtime prompting guide)
 REALTIME_TURN_DETECTION: dict[str, Any] = {
     "type": "semantic_vad",
-    "eagerness": "low",
+    "eagerness": "medium",
     "create_response": True,
     "interrupt_response": True,
 }
@@ -37,7 +37,7 @@ def profile_for_response_speed(speed: str | None) -> tuple[float, dict[str, Any]
         return 0.65, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
     if key == "thoughtful":
         return 0.78, {**REALTIME_TURN_DETECTION, "eagerness": "low"}
-    return REALTIME_TEMPERATURE, {**REALTIME_TURN_DETECTION, "eagerness": "low"}
+    return REALTIME_TEMPERATURE, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
 
 
 def normalize_openai_voice(name: str | None) -> str:

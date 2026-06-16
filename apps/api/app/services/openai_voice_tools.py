@@ -42,11 +42,10 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "generate_image",
         "description": (
-            "OBLIGATORIO para crear/diseñar/generar imágenes con IA desde CERO (sin referencia). "
-            "Ejecuta INMEDIATAMENTE cuando pidan logo, banner, flyer o imagen nueva. "
-            "PROHIBIDO decir 'generando' o 'un momento' SIN invocar esta herramienta. "
-            "Tras generar, informa el resultado — NUNCA silencio. "
-            "NO usar si el usuario envió una imagen y pide variación, estilo similar o editar."
+            "OBLIGATORIO para crear imágenes con IA desde cero. "
+            "Flujo: di UNA frase corta ('Generando.' / 'Un momento.') y EJECUTA esta tool de inmediato. "
+            "PROHIBIDO decir 'voy a generar' o 'estoy generándola' sin invocar. "
+            "Tras generar: 'Ahí está.' — NUNCA silencio."
         ),
         "parameters": {
             "type": "object",
@@ -271,9 +270,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "publicar_facebook",
         "description": (
             "OBLIGATORIO para publicar en Facebook. "
-            "Invoca cuando el usuario confirme (sí/dale/publica) o diga publicar ya. "
-            "Incluye el copy premium completo en mensaje. "
-            "PROHIBIDO decir 'publicado' sin llamar esta función."
+            "Flujo: 'Va para Facebook.' o 'Lo publico.' → invoca AHORA con mensaje completo. "
+            "Si el usuario ya confirmó (sí/dale/publica/ya): EJECUTA sin repreguntar. "
+            "PROHIBIDO decir 'publicado' o 'voy a preparar' sin llamar esta función."
         ),
         "parameters": {
             "type": "object",
@@ -298,7 +297,8 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "publicar_instagram",
         "description": (
             "OBLIGATORIO para publicar en Instagram. "
-            "Invoca al confirmar o al decir publicar ya, con caption premium e imagen. "
+            "Flujo: 'Va para Instagram.' → invoca AHORA con caption e imagen. "
+            "Si el usuario confirmó: EJECUTA sin repreguntar. "
             "PROHIBIDO decir 'publicado' sin llamar esta función."
         ),
         "parameters": {
