@@ -233,9 +233,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "publicar_facebook",
         "description": (
             "OBLIGATORIO para publicar en Facebook. "
-            "Invoca SOLO cuando el usuario confirmó el texto (sí/dale/publica). "
-            "PROHIBIDO decir 'publicado' sin llamar esta función. "
-            "Acepta texto + imagen opcional (image_data, from_camera, use_last_image)."
+            "Invoca cuando el usuario confirme (sí/dale/publica) o diga publicar ya. "
+            "Incluye el copy premium completo en mensaje. "
+            "PROHIBIDO decir 'publicado' sin llamar esta función."
         ),
         "parameters": {
             "type": "object",
@@ -260,9 +260,8 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "publicar_instagram",
         "description": (
             "OBLIGATORIO para publicar en Instagram. "
-            "Invoca SOLO cuando el usuario confirmó y tienes caption e imagen. "
-            "PROHIBIDO decir 'publicado' sin llamar esta función. "
-            "Requiere caption e imagen (image_data, from_camera o use_last_image)."
+            "Invoca al confirmar o al decir publicar ya, con caption premium e imagen. "
+            "PROHIBIDO decir 'publicado' sin llamar esta función."
         ),
         "parameters": {
             "type": "object",

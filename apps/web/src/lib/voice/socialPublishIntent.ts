@@ -12,6 +12,23 @@ export function isPublishIntent(text: string): boolean {
   );
 }
 
+/** Usuario quiere crear/contenido para una publicación (no publicar aún). */
+export function isPublishPlanningIntent(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 10) return false;
+  return (
+    /\b(voy a hacer|vamos a hacer|quiero hacer|necesito hacer|har[eé]|voy a crear|quiero crear)\s+(?:una?\s+)?(?:publicaci[oó]n|post|contenido|pieza)\b/i.test(
+      t,
+    ) ||
+    /\b(ay[uú]dame|ayudame|ap[oó]yame)\s+(?:a\s+)?(?:con\s+)?(?:una?\s+)?(?:publicaci[oó]n|post|contenido)\b/i.test(
+      t,
+    ) ||
+    /\b(prepara(r|me)?|arma(r|me)?|desarrolla(r|me)?)\s+(?:una?\s+)?(?:publicaci[oó]n|post)\b/i.test(
+      t,
+    )
+  );
+}
+
 export function detectPublishPlatform(text: string): PublishPlatform | null {
   const t = text.toLowerCase();
   const hasIg = /\binstagram\b|\binsta\b|\big\b/.test(t);
@@ -21,13 +38,56 @@ export function detectPublishPlatform(text: string): PublishPlatform | null {
   return null;
 }
 
-/** Confirmación corta o orden de ejecutar ("sí", "publica", "hazlo"). */
+/** Confirmación única o orden de ejecutar ("sí", "publica", "envíalo"). */
 export function isPublishGoCommand(text: string): boolean {
   const t = text.trim();
-  if (!t || t.length > 28) return false;
-  return /^(publica(r|lo|la|los|las)?|env[ií]a(r|lo|la|los|las)?|hazlo|confirma(r)?|adelante|s[ií]|ok|dale|vale|claro)[\s.!?,]*$/i.test(
-    t,
+  if (!t || t.length > 56) return false;
+  if (
+    /^(publica(?:r|lo|la|los|las)?(\s+as[ií])?|env[ií]a(?:r|lo|la|los|las)?|m[aá]ndalo|hazlo|confirma(?:r)?|adelante|s[ií]|ok|dale|vale|claro|perfecto|exacto|as[ií]\s+es|de acuerdo)[\s.!?,]*$/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (t.length <= 40 && /\b(s[ií]\s+)?(publica(?:lo|la)?|env[ií]alo|m[aá]ndalo|hazlo)\b/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/** Publicar de inmediato sin más preguntas. */
+export function isPublishDirectCommand(text: string): boolean {
+  return /\b(publica(?:lo|la)?\s+ya|env[ií]a(?:lo|la)?\s+ya|m[aá]ndalo|hazlo\s+ya|sin\s+m[aá]s|directo|ahora\s+s[ií]|ya\s+mismo)\b/i.test(
+    text.trim(),
   );
+}
+
+export function parsePublishIdea(text: string): {
+  platform: PublishPlatform | null;
+  idea: string;
+} | null {
+  const t = text.trim();
+  if (!isPublishPlanningIntent(t) && !isPublishIntent(t)) return null;
+
+  const platform = detectPublishPlatform(t);
+  const ideaPatterns = [
+    /\b(?:sobre|acerca de|de|para|promocionando|promover)\s+(.+)$/i,
+    /\b(?:publicaci[oó]n|post|contenido)\s+(?:sobre|de|para)\s+(.+)$/i,
+    /\b(?:idea|tema)\s*[:.]?\s*(.+)$/i,
+  ];
+
+  for (const pattern of ideaPatterns) {
+    const m = t.match(pattern);
+    const idea = m?.[1]?.trim();
+    if (idea && idea.length >= 8) {
+      return { platform, idea: stripQuotes(idea) };
+    }
+  }
+
+  if (t.length >= 24) {
+    return { platform, idea: t };
+  }
+  return null;
 }
 
 export function parseFacebookPublishMessage(text: string): string | null {
@@ -114,7 +174,7 @@ export function hasExplicitPublishContent(
   return parseInstagramPublishRequest(text) !== null;
 }
 
-/** Pide publicar en una red pero aún no dictó el texto del post. */
+/** Pide publicar en una red sin texto final listo. */
 export function isPublishRequestWithoutContent(text: string): PublishPlatform | null {
   const platform = detectPublishPlatform(text);
   if (!platform || !isPublishIntent(text)) return null;
@@ -122,19 +182,11 @@ export function isPublishRequestWithoutContent(text: string): PublishPlatform | 
   return platform;
 }
 
-/** Texto del post cuando el usuario responde sin repetir la red. */
-export function parseStandalonePublishContent(text: string): string | null {
-  const t = text.trim();
-  if (t.length < 3 || t.length > 2000) return null;
-  if (isPublishIntent(t) || detectPublishPlatform(t)) return null;
-  if (isPublishGoCommand(t)) return null;
-  return stripQuotes(t);
-}
-
 export function isSocialPublishIntent(text: string): boolean {
   return (
     parseFacebookPublishMessage(text) !== null ||
     parseInstagramPublishRequest(text) !== null ||
-    isPublishRequestWithoutContent(text) !== null
+    isPublishRequestWithoutContent(text) !== null ||
+    isPublishPlanningIntent(text)
   );
 }

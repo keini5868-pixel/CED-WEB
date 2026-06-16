@@ -44,3 +44,14 @@ export const CED_ADVANCED_CONFIRM_PHRASE = "¿Activamos análisis profundo?";
 export function cedAdvancedAckTurn(): string {
   return cedBriefTurn("Un momento.");
 }
+
+/** Usuario confirmó publicar — forzar invocación de tool con el copy ya desarrollado. */
+export function cedPublishConfirmTurn(platform: "facebook" | "instagram"): string {
+  const tool = platform === "facebook" ? "publicar_facebook" : "publicar_instagram";
+  return (
+    "[CED_PUBLISH] El usuario confirmó. Invoca " +
+    tool +
+    " AHORA con el copy premium completo que acabas de presentar. " +
+    "PROHIBIDO: volver a preguntar, pedir otra confirmación o decir publicado sin invocar la herramienta."
+  );
+}

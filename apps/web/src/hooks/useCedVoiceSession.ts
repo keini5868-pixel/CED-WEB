@@ -70,8 +70,11 @@ import {
   parseFacebookPublishMessage,
   parseInstagramPublishRequest,
   isPublishRequestWithoutContent,
+  isPublishPlanningIntent,
+  parsePublishIdea,
   isPublishGoCommand,
-  parseStandalonePublishContent,
+  isPublishDirectCommand,
+  detectPublishPlatform,
   type PublishPlatform,
 } from "@/lib/voice/socialPublishIntent";
 import {
@@ -174,8 +177,7 @@ export function useCedVoiceSession(
   const pendingAdvancedPromptRef = useRef("");
   const pendingPublishRef = useRef<{
     platform: PublishPlatform;
-    text: string;
-    awaiting: "content" | "confirm";
+    awaiting: "develop";
   } | null>(null);
   const webSearchDebounceRef = useRef<number | null>(null);
   const cameraPreviewRef = useRef<string | null>(null);
@@ -881,6 +883,10 @@ export function useCedVoiceSession(
         })();
       };
 
+      const markPublishFlow = (platform: PublishPlatform) => {
+        pendingPublishRef.current = { platform, awaiting: "develop" };
+      };
+
       const handleClientVoiceIntents = (text: string) => {
         const t = text.trim();
         if (!t) return;
@@ -888,81 +894,71 @@ export function useCedVoiceSession(
         const pending = pendingPublishRef.current;
 
         if (
-          pending?.awaiting === "confirm" &&
-          pending.text &&
+          pending &&
           (isAdvancedConfirmAnswer(t) || isPublishGoCommand(t))
         ) {
-          runSocialPublish(pending.platform, pending.text, t);
+          const platform = pending.platform;
+          pendingPublishRef.current = null;
+          client.sendPublishConfirm(platform);
           return;
         }
 
-        if (pending?.awaiting === "content") {
-          const content = parseStandalonePublishContent(t) ?? t.trim();
-          if (
-            content.length >= 3 &&
-            !isAdvancedConfirmAnswer(t) &&
-            !isPublishGoCommand(t)
-          ) {
-            pendingPublishRef.current = {
-              platform: pending.platform,
-              text: content,
-              awaiting: "confirm",
-            };
-            client.sendNarrationBrief("¿Confirmo y publico?");
-            return;
-          }
+        const planning = parsePublishIdea(t);
+        if (planning) {
+          markPublishFlow(planning.platform ?? detectPublishPlatform(t) ?? "facebook");
+          return;
+        }
+
+        if (isPublishPlanningIntent(t)) {
+          markPublishFlow(detectPublishPlatform(t) ?? "facebook");
+          return;
         }
 
         const platformOnly = isPublishRequestWithoutContent(t);
         if (platformOnly) {
-          pendingPublishRef.current = {
-            platform: platformOnly,
-            text: "",
-            awaiting: "content",
-          };
-          client.sendNarrationBrief(
-            platformOnly === "facebook"
-              ? "Ok señor, ¿qué desea publicar en Facebook?"
-              : "Ok señor, ¿qué desea publicar en Instagram?",
-          );
+          markPublishFlow(platformOnly);
           return;
         }
 
         const fbMessage = parseFacebookPublishMessage(t);
         if (fbMessage) {
-          runSocialPublish("facebook", fbMessage, t);
+          if (isPublishDirectCommand(t) || isPublishGoCommand(t)) {
+            runSocialPublish("facebook", fbMessage, t);
+            return;
+          }
+          markPublishFlow("facebook");
           return;
         }
 
         const igRequest = parseInstagramPublishRequest(t);
         if (igRequest?.caption) {
-          setOrbState("processing");
-          setStatusLabel("Publicando en Instagram…");
-          void (async () => {
-            if (webFetchRef.current) return;
-            webFetchRef.current = true;
-            pendingPublishRef.current = null;
-            try {
-              const image =
-                igRequest.imageUrl != null
-                  ? { imageUrl: igRequest.imageUrl }
-                  : await resolvePublishImage({}, t);
-              if (!image.imageUrl && !image.imageData) {
-                pendingPublishRef.current = {
-                  platform: "instagram",
-                  text: igRequest.caption,
-                  awaiting: "content",
-                };
-                client.sendNarrationBrief("Necesito una imagen para Instagram.");
-                return;
+          if (isPublishDirectCommand(t) || isPublishGoCommand(t)) {
+            setOrbState("processing");
+            setStatusLabel("Publicando en Instagram…");
+            void (async () => {
+              if (webFetchRef.current) return;
+              webFetchRef.current = true;
+              pendingPublishRef.current = null;
+              try {
+                const image =
+                  igRequest.imageUrl != null
+                    ? { imageUrl: igRequest.imageUrl }
+                    : await resolvePublishImage({}, t);
+                if (!image.imageUrl && !image.imageData) {
+                  markPublishFlow("instagram");
+                  client.sendNarrationBrief("Necesito una imagen para Instagram.");
+                  return;
+                }
+                const r = await publishInstagram(igRequest.caption, image);
+                if (isStale()) return;
+                client.sendNarrationBrief(r.ok ? PUBLISH_OK : r.error);
+              } finally {
+                webFetchRef.current = false;
               }
-              const r = await publishInstagram(igRequest.caption, image);
-              if (isStale()) return;
-              client.sendNarrationBrief(r.ok ? PUBLISH_OK : r.error);
-            } finally {
-              webFetchRef.current = false;
-            }
-          })();
+            })();
+            return;
+          }
+          markPublishFlow("instagram");
           return;
         }
 
@@ -1299,14 +1295,8 @@ export function useCedVoiceSession(
               args.mensaje ?? args.message ?? args.texto ?? "",
             ).trim();
             if (!message) {
-              pendingPublishRef.current = {
-                platform: "facebook",
-                text: "",
-                awaiting: "content",
-              };
-              return {
-                spoken: "Ok señor, ¿qué desea publicar en Facebook?",
-              };
+              markPublishFlow("facebook");
+              return { spoken: "" };
             }
             const image = await resolvePublishImage(
               args,
@@ -1323,25 +1313,15 @@ export function useCedVoiceSession(
               args.caption ?? args.mensaje ?? args.texto ?? "",
             ).trim();
             if (!caption) {
-              pendingPublishRef.current = {
-                platform: "instagram",
-                text: "",
-                awaiting: "content",
-              };
-              return {
-                spoken: "Ok señor, ¿qué desea publicar en Instagram?",
-              };
+              markPublishFlow("instagram");
+              return { spoken: "" };
             }
             const image = await resolvePublishImage(
               args,
               lastUserUtteranceRef.current,
             );
             if (!image.imageUrl && !image.imageData) {
-              pendingPublishRef.current = {
-                platform: "instagram",
-                text: caption,
-                awaiting: "content",
-              };
+              markPublishFlow("instagram");
               return {
                 spoken: "Necesito una imagen para Instagram.",
               };

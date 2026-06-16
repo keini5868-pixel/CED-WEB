@@ -31,6 +31,7 @@ import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   cedBriefTurn,
   cedGreetingTurn,
+  cedPublishConfirmTurn,
   CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
 
@@ -588,6 +589,10 @@ export class CedLiveClient {
     const text = summary.trim();
     if (!text) return;
     void this.sendClientTurn(cedBriefTurn(text));
+  }
+
+  sendPublishConfirm(platform: "facebook" | "instagram"): void {
+    void this.sendClientTurn(cedPublishConfirmTurn(platform));
   }
 
   sendWebSearchAck(): void {
