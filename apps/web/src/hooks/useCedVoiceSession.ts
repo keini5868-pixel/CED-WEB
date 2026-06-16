@@ -8,7 +8,7 @@ import { ORB_STATE_LABELS } from "@ced/types";
 import { appendConversationMessage } from "@/lib/api/conversations";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { generatePdf, downloadPdfBlob } from "@/lib/api/pdf";
-import { fetchVoiceBrief, fetchGenerateImage, fetchDeepAnalysis } from "@/lib/api/openai";
+import { fetchVoiceBrief, fetchGenerateImage, fetchGenerateImageWithReference, fetchDeepAnalysis } from "@/lib/api/openai";
 import { saveMemory, searchMemory, recallPreviousConversations, saveLongTermMemory } from "@/lib/api/memory";
 import { updateUserAddress } from "@/lib/api/profile";
 import { schedulePanelSearch } from "@/lib/api/panels";
@@ -104,6 +104,23 @@ const MAX_WS_RECONNECT = 3;
 /** Si el turno no cierra, liberar mic/UI (WebRTC). */
 const TURN_STUCK_MS = 16000;
 const PROCESSING_STUCK_MS = 10000;
+
+async function publishImageToBlob(image: {
+  imageUrl?: string;
+  imageData?: string;
+}): Promise<Blob | null> {
+  const data = String(image.imageData ?? "").trim();
+  if (data) {
+    const res = await fetch(data);
+    return res.blob();
+  }
+  const url = String(image.imageUrl ?? "").trim();
+  if (url) {
+    const res = await fetch(normalizeCedMediaUrl(url));
+    return res.blob();
+  }
+  return null;
+}
 
 export interface CedVoiceSessionCallbacks {
   onTranscript?: (text: string, role: "user" | "model") => void;
@@ -1165,6 +1182,7 @@ export function useCedVoiceSession(
             request_camera_activation: "Activando cámara…",
             request_camera_deactivation: "Apagando cámara…",
             generate_image: "Generando imagen con IA…",
+            generate_image_with_reference: "Generando variación con referencia…",
             [GENERAR_PDF]: "Generando PDF…",
           };
           setStatusLabel(labels[toolName] ?? "Consultando…");
@@ -1172,6 +1190,43 @@ export function useCedVoiceSession(
         },
         onGeneratedImage: (url, prompt) => {
           notifyGeneratedImage(url, prompt);
+        },
+        onGenerateImageWithReference: async (args) => {
+          const prompt = String(args.prompt ?? "").trim() || "Genera una variación de la referencia";
+          const styleModeRaw = String(args.style_mode ?? "variation");
+          const styleMode =
+            styleModeRaw === "inspired" || styleModeRaw === "edit"
+              ? styleModeRaw
+              : "variation";
+          const quality = String(args.quality ?? "standard") === "hd" ? "hd" : "standard";
+
+          const resolved = await resolvePublishImage(
+            { from_camera: true, use_last_image: true },
+            lastUserUtteranceRef.current,
+          );
+          const blob = await publishImageToBlob(resolved);
+          if (!blob) {
+            return {
+              ok: false,
+              error:
+                "No tengo imagen de referencia. Muéstrame algo con la cámara o genera una imagen primero.",
+            };
+          }
+
+          const result = await fetchGenerateImageWithReference(
+            prompt,
+            blob,
+            styleMode,
+            quality,
+          );
+          if (result.ok) {
+            return {
+              ok: true,
+              url: result.url,
+              spoken: "Aquí está la imagen. ¿Te gusta o ajustamos algo?",
+            };
+          }
+          return { ok: false, error: result.error || "No pude generar con la referencia." };
         },
         onToolComplete: () => {
           if (isStale()) return;

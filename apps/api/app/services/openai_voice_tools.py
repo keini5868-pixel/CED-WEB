@@ -42,10 +42,11 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "generate_image",
         "description": (
-            "OBLIGATORIO para crear/diseñar/generar imágenes con IA. "
-            "Ejecuta INMEDIATAMENTE cuando pidan logo, banner, flyer o imagen. "
+            "OBLIGATORIO para crear/diseñar/generar imágenes con IA desde CERO (sin referencia). "
+            "Ejecuta INMEDIATAMENTE cuando pidan logo, banner, flyer o imagen nueva. "
             "PROHIBIDO decir 'generando' o 'un momento' SIN invocar esta herramienta. "
-            "Tras generar, informa el resultado — NUNCA silencio."
+            "Tras generar, informa el resultado — NUNCA silencio. "
+            "NO usar si el usuario envió una imagen y pide variación, estilo similar o editar."
         ),
         "parameters": {
             "type": "object",
@@ -54,6 +55,43 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
                 "quality": {"type": "string", "enum": ["auto", "standard", "hd"]},
             },
             "required": ["prompt"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "generate_image_with_reference",
+        "description": (
+            "Genera una imagen basada en una imagen de referencia que el usuario ya envió "
+            "(cámara, adjunto o imagen previa en contexto). "
+            "Úsala cuando diga: 'genera algo parecido a esto', 'hazme una variación', "
+            "'crea con el mismo estilo', 'modifica esta imagen', 'genera versiones de esto', "
+            "'cámbiale el color', 'hazlo más moderno/minimalista'. "
+            "REQUIERE imagen de referencia visible o adjunta. "
+            "PROHIBIDO invocar sin referencia. Ejecuta DE INMEDIATO tras confirmar detalles."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "prompt": {
+                    "type": "string",
+                    "description": "Lo que el usuario quiere cambiar o mantener",
+                },
+                "style_mode": {
+                    "type": "string",
+                    "enum": ["inspired", "variation", "edit"],
+                    "description": (
+                        "inspired: mismo estilo, concepto distinto. "
+                        "variation: variaciones similares. "
+                        "edit: cambiar algo específico."
+                    ),
+                },
+                "quality": {
+                    "type": "string",
+                    "enum": ["standard", "hd"],
+                    "description": "Calidad de la imagen",
+                },
+            },
+            "required": ["prompt", "style_mode"],
         },
     },
     {

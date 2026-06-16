@@ -206,8 +206,10 @@ export async function fetchDeepAnalysis(
 }
 
 export type GenerateImageResponse =
-  | { ok: true; url: string; quality?: string }
+  | { ok: true; url: string; quality?: string; model?: string; used_fallback?: boolean }
   | { ok: false; error: string; code?: string };
+
+export type ReferenceImageMode = "inspired" | "variation" | "edit";
 
 export async function fetchGenerateImage(
   prompt: string,
@@ -242,6 +244,76 @@ export async function fetchGenerateImage(
     clearTimeout(timer);
     if (err instanceof Error && err.name === "AbortError") {
       return { ok: false, error: "La generación de imagen tardó demasiado", code: "timeout" };
+    }
+    return { ok: false, error: "No se pudo contactar la API" };
+  }
+}
+
+export async function fetchGenerateImageWithReference(
+  prompt: string,
+  reference: File | Blob,
+  styleMode: ReferenceImageMode,
+  quality: "standard" | "hd" = "standard",
+  filename = "reference.jpg",
+  timeoutMs = 120000,
+): Promise<GenerateImageResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const formData = new FormData();
+    formData.append("prompt", prompt);
+    formData.append("reference_image", reference, filename);
+    formData.append("style_mode", styleMode);
+    formData.append("quality", quality);
+
+    const response = await proxyFetch("images/generate-with-reference", {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const data = await parseApiJson<{
+      ok?: boolean;
+      detail?: string;
+      image_url?: string;
+      url?: string;
+      error?: string;
+      success?: boolean;
+      quality?: string;
+      model?: string;
+      used_fallback?: boolean;
+      code?: string;
+    }>(response);
+    if (!response.ok) {
+      return {
+        ok: false,
+        error:
+          data.detail || data.error || "No se pudo generar la imagen con referencia",
+        code: data.code,
+      };
+    }
+    const url = data.url || data.image_url || "";
+    if (!url) {
+      return {
+        ok: false,
+        error: data.error || "No se recibió URL de imagen",
+      };
+    }
+    return {
+      ok: true,
+      url,
+      quality: data.quality,
+      model: data.model,
+      used_fallback: data.used_fallback,
+    };
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof Error && err.name === "AbortError") {
+      return {
+        ok: false,
+        error: "La generación con referencia tardó demasiado",
+        code: "timeout",
+      };
     }
     return { ok: false, error: "No se pudo contactar la API" };
   }

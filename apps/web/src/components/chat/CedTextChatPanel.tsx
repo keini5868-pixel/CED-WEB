@@ -4,7 +4,14 @@ import { MessageCircle, Minimize2, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
+import {
+  ImageActionBar,
+  imageActionHint,
+  imageActionPlaceholder,
+  type ImageActionMode,
+} from "@/components/chat/ImageActionBar";
 import { MicButton } from "@/components/chat/MicButton";
+import { fetchGenerateImageWithReference } from "@/lib/api/openai";
 import {
   fetchChatStatus,
   sendChatMessage,
@@ -138,12 +145,13 @@ export function CedTextChatPanel({
     file: File;
     preview: string;
   } | null>(null);
+  const [imageMode, setImageMode] = useState<ImageActionMode>("analyze");
+  const [isDictating, setIsDictating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [status, setStatus] = useState<ChatStatus | null>(null);
-  const [isDictating, setIsDictating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
@@ -198,7 +206,7 @@ export function CedTextChatPanel({
         {
           role: "model",
           content:
-            "Hola, soy CED. Escríbeme aquí, dicta con el micrófono o adjunta una imagen. También puedo generar imágenes y PDFs.",
+            "Hola, soy CED. Escríbeme aquí, dicta con el micrófono o adjunta una imagen. Puedo analizarla, generar variaciones o crear imágenes nuevas.",
         },
       ]);
     }
@@ -232,8 +240,10 @@ export function CedTextChatPanel({
     setError(null);
     const imageFile = attachedImage?.file ?? null;
     const imagePreview = attachedImage?.preview ?? null;
+    const currentMode = imageMode;
     setInput("");
     setAttachedImage(null);
+    setImageMode("analyze");
     setBusy(true);
     setTyping(true);
     const userMsg: ChatMessage = {
@@ -244,6 +254,49 @@ export function CedTextChatPanel({
     setMessages((prev) => [...prev, userMsg]);
 
     try {
+      if (
+        imageFile &&
+        (currentMode === "variation" || currentMode === "inspired" || currentMode === "edit")
+      ) {
+        const prompt =
+          text ||
+          (currentMode === "variation"
+            ? "Genera una variación de esta imagen"
+            : currentMode === "inspired"
+              ? "Genera algo con el mismo estilo visual"
+              : "Edita esta imagen según lo indicado");
+        const result = await fetchGenerateImageWithReference(
+          prompt,
+          imageFile,
+          currentMode,
+          "standard",
+          imageFile.name || "reference.jpg",
+        );
+        if (!result.ok) {
+          throw new Error(result.error || "No se pudo generar la imagen.");
+        }
+        const modeLabels: Record<string, string> = {
+          variation: "variación",
+          inspired: "versión inspirada",
+          edit: "imagen editada",
+        };
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "model",
+            content: `Aquí está la ${modeLabels[currentMode] || "imagen generada"}:`,
+            created_at: new Date().toISOString(),
+            image: {
+              url: normalizeCedMediaUrl(result.url),
+              prompt,
+              quality: result.quality,
+            },
+          },
+        ]);
+        await refreshStatus();
+        return;
+      }
+
       const result = await sendChatMessage(text, conversationId, imageFile);
       setConversationId(result.conversation_id);
       setMessages((prev) => [
@@ -394,22 +447,15 @@ export function CedTextChatPanel({
 
         <footer className="shrink-0 border-t border-cyan-500/20 bg-[#060a0f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
           {attachedImage ? (
-            <div className="relative mb-2 inline-block">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={attachedImage.preview}
-                alt="Adjuntada"
-                className="max-h-24 max-w-[150px] rounded-lg object-cover sm:max-h-[100px] sm:max-w-[200px]"
-              />
-              <button
-                type="button"
-                onClick={() => setAttachedImage(null)}
-                className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-black/70 text-white"
-                aria-label="Quitar imagen"
-              >
-                <X className="h-3.5 w-3.5" />
-              </button>
-            </div>
+            <ImageActionBar
+              preview={attachedImage.preview}
+              mode={imageMode}
+              onModeChange={setImageMode}
+              onRemove={() => {
+                setAttachedImage(null);
+                setImageMode("analyze");
+              }}
+            />
           ) : null}
           <div className="flex w-full max-w-full items-end gap-1.5 sm:gap-2">
             <textarea
@@ -438,12 +484,18 @@ export function CedTextChatPanel({
               }}
               rows={1}
               placeholder={
-                attachedImage
-                  ? "Pregunta algo sobre la imagen…"
-                  : "Escribe a CED o usa el micrófono…"
+                isDictating
+                  ? "Escuchando… habla ahora"
+                  : attachedImage
+                    ? imageActionPlaceholder(imageMode)
+                    : "Escribe a CED o usa el micrófono…"
               }
               disabled={busy || status?.blocked}
-              className="box-border min-h-[44px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded border border-cyan-800/50 bg-black/50 px-3 py-2.5 text-base leading-snug text-white placeholder:text-cyan-800 focus:border-cyan-500 focus:outline-none disabled:opacity-50 sm:text-sm"
+              className={`box-border min-h-[44px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded border bg-black/50 px-3 py-2.5 text-base leading-snug text-white placeholder:text-cyan-800 focus:outline-none disabled:opacity-50 sm:text-sm ${
+                isDictating
+                  ? "border-red-500/50 focus:border-red-400"
+                  : "border-cyan-800/50 focus:border-cyan-500"
+              }`}
               style={{ WebkitAppearance: "none" }}
             />
             <ImageUploadButton
@@ -468,8 +520,10 @@ export function CedTextChatPanel({
           </div>
           <p className="mt-1.5 break-words text-left text-[9px] leading-snug text-cyan-700">
             {isDictating
-              ? "Escuchando… suelta el micrófono para terminar"
-              : 'Enter envía · 📷 adjuntar · 🎤 dictar · "genera una imagen de…"'}
+              ? "🎤 Dictando en vivo… clic en el mic para detener"
+              : attachedImage
+                ? imageActionHint(imageMode)
+                : 'Enter envía · 📷 adjuntar · 🎤 dictar · "genera una imagen de…"'}
           </p>
         </footer>
       </div>

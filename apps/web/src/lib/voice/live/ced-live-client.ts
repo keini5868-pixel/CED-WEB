@@ -90,6 +90,10 @@ export type CedLiveHandlers = {
     args: Record<string, unknown>,
   ) => Promise<{ spoken?: string } | void>;
   onGeneratedImage?: (url: string, prompt?: string) => void;
+  /** Resuelve imagen de referencia (cámara, última imagen, adjunto) para generate_image_with_reference. */
+  onGenerateImageWithReference?: (
+    args: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; url?: string; error?: string; spoken?: string }>;
 };
 
 function classifyPeerClose(unexpected: boolean): GeminiCloseInfo {
@@ -717,6 +721,32 @@ export class CedLiveClient {
           await this.submitToolOutput(callId, {
             status: "error",
             spoken: result.error || "No pude generar la imagen.",
+          });
+        }
+        return;
+      }
+
+      if (rawName === "generate_image_with_reference") {
+        h.onToolStart?.("generate_image_with_reference");
+        if (h.onGenerateImageWithReference) {
+          const result = await h.onGenerateImageWithReference(args);
+          if (result.ok && result.url) {
+            h.onGeneratedImage?.(result.url, String(args.prompt ?? ""));
+            await this.submitToolOutput(callId, {
+              status: "ok",
+              spoken: result.spoken || "Aquí está la imagen basada en tu referencia.",
+              image_url: result.url,
+            });
+          } else {
+            await this.submitToolOutput(callId, {
+              status: "error",
+              spoken: result.error || result.spoken || "No pude generar con la referencia.",
+            });
+          }
+        } else {
+          await this.submitToolOutput(callId, {
+            status: "error",
+            spoken: "No tengo acceso a la imagen de referencia. Muéstrame o adjunta una imagen primero.",
           });
         }
         return;
