@@ -238,44 +238,45 @@ def route_message(
 
 def voice_platform_awareness_context(user_id: str) -> str:
     """Consciencia de datos disponibles — memoria, cerebro interno, prospección."""
-    from app.domain.knowledge_domains import KNOWLEDGE_DOMAINS
-    from app.services.prospection import get_prospection_status
-
-    lines = [
-        "# CONSCIENCIA CED — INFORMACIÓN DISPONIBLE EN ESTA SESIÓN",
-        "Tienes acceso real a:",
-        f"- **Cerebro interno:** {len(KNOWLEDGE_DOMAINS)}+ ramas (negocios, marketing, IA, finanzas, "
-        "legal, psicología, etc.) + artículos curados en Supabase + seed premium.",
-        "- **Memorias del usuario** y **contexto de sesiones anteriores** (bloques inyectados abajo).",
-        "- **Conocimiento viral 2026** (Instagram, hooks, Meta) en tu prompt base.",
-        "- **Herramientas de memoria:** recall_memory, recall_previous_conversations, save_to_long_term_memory.",
-        "- **Prospección Instagram:** activar_prospeccion, reporte_prospeccion, desactivar_prospeccion.",
-        "- **Ventas/mentor:** consejo comercial, consultar_claude para análisis profundo.",
-        "",
-        "REGLAS:",
-        "- Usa recall_memory / recall_previous_conversations ANTES de decir que no recuerdas algo.",
-        "- Usa reporte_prospeccion si preguntan por leads o prospección.",
-        "- Para dudas enciclopédicas estables, responde desde cerebro interno; web solo para datos de hoy.",
-        "- NO digas que no tienes acceso a la información del usuario si hay bloques de memoria abajo.",
-        "- NO recites todo el inventario salvo que pregunten qué sabes o qué datos tienes.",
-    ]
     try:
-        status = get_prospection_status(user_id)
-        if status.get("enabled"):
-            lines.append(
-                f"- **Prospección ACTIVA:** {status.get('leads_today', 0)} leads hoy, "
-                f"{status.get('hot_leads', 0)} calientes."
-            )
-            for lead in status.get("recent") or []:
-                handle = str(lead.get("handle") or "@?").lstrip("@")
-                score = lead.get("score", 0)
-                hot = " (caliente)" if lead.get("is_hot") else ""
-                lines.append(f"  · @{handle} — score {score}{hot}")
-        else:
-            lines.append("- **Prospección:** desactivada (invoca activar_prospeccion si la piden).")
-    except Exception:  # noqa: BLE001
-        lines.append("- **Prospección:** consulta reporte_prospeccion si preguntan por leads.")
-    return "\n".join(lines)
+        from app.domain.knowledge_domains import KNOWLEDGE_DOMAINS
+        from app.services.prospection import get_prospection_status
+
+        domain_n = len(KNOWLEDGE_DOMAINS)
+        lines = [
+            "# CONSCIENCIA CED — INFORMACION DISPONIBLE EN ESTA SESION",
+            "Tienes acceso real a:",
+            f"- Cerebro interno: {domain_n}+ ramas + articulos Supabase + seed premium.",
+            "- Memorias del usuario y contexto de sesiones anteriores (bloques inyectados abajo).",
+            "- Conocimiento viral 2026 (Instagram, hooks, Meta) en tu prompt base.",
+            "- Herramientas: recall_memory, recall_previous_conversations, save_to_long_term_memory.",
+            "- Prospeccion Instagram: activar_prospeccion, reporte_prospeccion.",
+            "- Usa recall_memory antes de decir que no recuerdas. reporte_prospeccion para leads.",
+            "- NO recites todo el inventario salvo que pregunten que sabes o que datos tienes.",
+        ]
+        try:
+            status = get_prospection_status(user_id)
+            if status.get("enabled"):
+                lines.append(
+                    f"- Prospeccion ACTIVA: {status.get('leads_today', 0)} leads hoy, "
+                    f"{status.get('hot_leads', 0)} calientes."
+                )
+                for lead in status.get("recent") or []:
+                    handle = str(lead.get("handle") or "?").lstrip("@")
+                    score = lead.get("score", 0)
+                    hot = " (caliente)" if lead.get("is_hot") else ""
+                    lines.append(f"  - @{handle} score {score}{hot}")
+            else:
+                lines.append("- Prospeccion: desactivada (activar_prospeccion si la piden).")
+        except Exception:  # noqa: BLE001
+            lines.append("- Prospeccion: usa reporte_prospeccion si preguntan por leads.")
+        return "\n".join(lines)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[VOICE] awareness context fallback: %s", exc)
+        return (
+            "# CONSCIENCIA CED\n"
+            "Tienes memoria, cerebro interno, prospeccion y herramientas recall_memory / reporte_prospeccion."
+        )
 
 
 def build_voice_system_extras(user_id: str) -> str:
@@ -307,7 +308,10 @@ def build_voice_system_extras(user_id: str) -> str:
             "Indica conectar Meta en el dashboard → Conectar Redes."
         )
     parts = [address, voice_platform_awareness_context(user_id), policy, meta]
-    mem = memory_context_for_voice(user_id, limit=8)
+    try:
+        mem = memory_context_for_voice(user_id, limit=8)
+    except Exception:  # noqa: BLE001
+        mem = ""
     if mem:
         parts.append(mem)
     try:

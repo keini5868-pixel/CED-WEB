@@ -15,6 +15,7 @@ COPY apps/api/requirements.txt .
 RUN pip install -r requirements.txt
 
 COPY apps/api/app ./app
+COPY apps/api/data ./data
 
 # Railway inyecta PORT
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
