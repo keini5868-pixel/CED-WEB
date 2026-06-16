@@ -1413,8 +1413,10 @@ export function useCedVoiceSession(
             );
             const r = await publishFacebook(message, image);
             pendingPublishRef.current = null;
+            cedVoiceLog(6, "publicar_facebook", { ok: r.ok, error: r.ok ? undefined : r.error });
             return {
               spoken: r.ok ? PUBLISH_OK : `${r.error}`,
+              ok: r.ok,
             };
           }
           if (name === PUBLICAR_INSTAGRAM) {
@@ -1437,8 +1439,10 @@ export function useCedVoiceSession(
             }
             const r = await publishInstagram(caption, image);
             pendingPublishRef.current = null;
+            cedVoiceLog(6, "publicar_instagram", { ok: r.ok, error: r.ok ? undefined : r.error });
             return {
               spoken: r.ok ? PUBLISH_OK : `${r.error}`,
+              ok: r.ok,
             };
           }
           if (name === BUSCAR_LO_VISIBLE) {

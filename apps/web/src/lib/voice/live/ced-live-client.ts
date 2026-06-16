@@ -43,7 +43,31 @@ const TOOL_ALIAS: Record<string, string> = {
   generar_pdf: GENERAR_PDF,
   consultar_claude: CONSULTAR_SISTEMA_AVANZADO,
   analyze_camera_frame: ANALIZAR_CAMARA,
+  publish_to_social: "publicar_facebook",
 };
+
+function normalizeToolInvocation(
+  rawName: string,
+  args: Record<string, unknown>,
+): { name: string; args: Record<string, unknown> } {
+  if (rawName === "publish_to_social") {
+    const platform = String(args.platform ?? "facebook").toLowerCase();
+    const content = String(
+      args.content ?? args.message ?? args.mensaje ?? args.texto ?? "",
+    ).trim();
+    if (platform === "instagram") {
+      return {
+        name: "publicar_instagram",
+        args: { ...args, caption: content || args.caption },
+      };
+    }
+    return {
+      name: "publicar_facebook",
+      args: { ...args, mensaje: content || args.mensaje },
+    };
+  }
+  return { name: TOOL_ALIAS[rawName] ?? rawName, args };
+}
 
 export type GeminiCloseInfo = {
   unexpected: boolean;
@@ -88,7 +112,7 @@ export type CedLiveHandlers = {
   onLiveTool?: (
     name: string,
     args: Record<string, unknown>,
-  ) => Promise<{ spoken?: string } | void>;
+  ) => Promise<{ spoken?: string; ok?: boolean } | void>;
   onGeneratedImage?: (url: string, prompt?: string) => void;
   /** Resuelve imagen de referencia (cámara, última imagen, adjunto) para generate_image_with_reference. */
   onGenerateImageWithReference?: (
@@ -761,8 +785,10 @@ export class CedLiveClient {
     this.processedCallIds.add(callId);
 
     const h = this.handlers;
-    const name = TOOL_ALIAS[rawName] ?? rawName;
-    cedRealtimeLog("tool.execute", { name: rawName, call_id: callId, args });
+    const normalized = normalizeToolInvocation(rawName, args);
+    const name = normalized.name;
+    args = normalized.args;
+    cedRealtimeLog("tool.execute", { name: rawName, resolved: name, call_id: callId, args });
 
     try {
       if (rawName === "search_web") {
@@ -880,7 +906,12 @@ export class CedLiveClient {
         h.onToolStart?.(name);
         const result = await h.onLiveTool(name, args);
         const spoken = result?.spoken ?? "Listo.";
-        const toolResult = { status: "ok", spoken };
+        const success = result?.ok !== false;
+        const toolResult = {
+          status: success ? "ok" : "error",
+          spoken,
+          success,
+        };
         this.dispatchVoiceToolResult(name, toolResult);
         await this.submitToolOutput(callId, toolResult);
         return;
