@@ -5,6 +5,7 @@ from app.domain.ced_identity import (
     CED_CREATOR_IDENTITY,
     CED_IDENTITY_QA,
 )
+from app.domain.ced_internal_brain import CED_INTERNAL_BRAIN_RULES
 from app.domain.ced_memory_prompt import CED_MEMORY_USAGE_RULES
 from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE, CED_SALES_MENTOR_JARVIS
 from app.domain.ced_viral_knowledge import CED_VIRAL_KNOWLEDGE_2026
@@ -44,6 +45,8 @@ en pleno desarrollo activo.
 - Clima, noticias, datos actuales: search_web — NO consultar_claude.
 
 {CED_VIRAL_KNOWLEDGE_2026}
+
+{CED_INTERNAL_BRAIN_RULES}
 
 {CED_MEMORY_USAGE_RULES}
 

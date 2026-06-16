@@ -66,14 +66,21 @@ def _build_display_name(honorific: str, first_name: str) -> str:
     return h
 
 
-def _greeting_phrase(display_name: str, first_name: str, *, jarvis: bool) -> str:
-    name = (display_name or first_name or "Usuario").strip()
+def _greeting_phrase(
+    display_name: str,
+    first_name: str,
+    honorific: str,
+    gender: str,
+    *,
+    jarvis: bool,
+) -> str:
+    h = _normalize_honorific(honorific) or _gender_default_honorific(gender)
     if jarvis:
-        # display_name ya incluye Señor/Señora según género del perfil
-        if name.lower().startswith(("señor", "senor", "señora", "senora", "sir", "madam")):
-            return f"A su servicio, {name}."
-        return f"A su servicio, {name}."
-    return f"Hola {first_name or name}. ¿En qué trabajamos?"
+        if h in ("Señor", "Señora", "Don", "Doña"):
+            return f"Hola, {h}. Estoy a sus órdenes."
+        name = (display_name or first_name or "Usuario").strip()
+        return f"Hola, {name}. Listo para asistirle."
+    return f"Hola {first_name or display_name or 'Usuario'}. ¿En qué trabajamos?"
 
 
 def _read_memory_address(user_id: str) -> str:
@@ -109,8 +116,8 @@ def resolve_user_address(user_id: str) -> dict[str, Any]:
         "displayName": display_name,
         "gender": gender or None,
         "preferredAddress": preferred or None,
-        "greetingPhraseJarvis": _greeting_phrase(display_name, first, jarvis=True),
-        "greetingPhraseStandard": _greeting_phrase(display_name, first, jarvis=False),
+        "greetingPhraseJarvis": _greeting_phrase(display_name, first, honorific, gender, jarvis=True),
+        "greetingPhraseStandard": _greeting_phrase(display_name, first, honorific, gender, jarvis=False),
     }
 
 

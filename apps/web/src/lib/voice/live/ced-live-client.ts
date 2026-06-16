@@ -714,10 +714,11 @@ export class CedLiveClient {
           type: "response.create",
           response: {
             modalities: ["audio", "text"],
-            max_output_tokens: 48,
+            max_output_tokens: 40,
             instructions:
               `[CED_GREETING] Di EXACTAMENTE una sola frase, sin nada antes ni después: "${phrase}". ` +
-              "PROHIBIDO repetir el saludo, añadir segunda frase, preguntar en qué ayudar o listar capacidades.",
+              "PROHIBIDO: 'Soy CED', 'asistente de inteligencia', presentarte, listar capacidades, " +
+              "preguntar en qué ayudar, repetir el saludo o añadir segunda frase.",
           },
         });
       } finally {

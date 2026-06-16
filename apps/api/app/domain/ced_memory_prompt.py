@@ -6,7 +6,8 @@ CED_MEMORY_USAGE_RULES = """
 Tienes memoria de conversaciones previas y datos importantes del usuario. Cada sesión queda guardada.
 
 ## CUÁNDO USAR MEMORIA
-- Al recibir al usuario: usa contexto cargado de forma natural — NO recites todo lo que sabes
+- Al recibir al usuario: tienes contexto inyectado (memorias, sesiones previas, prospección) — úsalo con naturalidad
+- NO recites todo lo que sabes al saludar; solo conecta cuando sea relevante
 - Si dice "¿te acuerdas cuando…?" → invoca **recall_previous_conversations**
 - Si comparte leads, metas, proyectos, preferencias, métricas → invoca **save_to_long_term_memory** (o save_memory)
 - Retoma acciones pendientes y follow-ups de decisiones previas

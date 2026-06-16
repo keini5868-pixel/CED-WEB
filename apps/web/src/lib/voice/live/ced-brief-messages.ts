@@ -7,7 +7,7 @@ export function cedGreetingPhrase(
   address?: Pick<UserAddressContext, "greetingPhraseJarvis" | "greetingPhraseStandard"> | null,
 ): string {
   return voiceProfile === "jarvis"
-    ? address?.greetingPhraseJarvis || "Hola. ¿En qué trabajamos?"
+    ? address?.greetingPhraseJarvis || "Hola. Estoy a sus órdenes."
     : address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
 }
 
