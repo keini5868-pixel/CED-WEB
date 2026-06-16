@@ -143,6 +143,7 @@ export function CedTextChatPanel({
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [status, setStatus] = useState<ChatStatus | null>(null);
+  const [isDictating, setIsDictating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
@@ -266,13 +267,23 @@ export function CedTextChatPanel({
     }
   };
 
-  const handleTranscription = (text: string) => {
-    setInput((prev) => {
-      if (prev.trim()) return `${prev.trim()} ${text}`;
-      return text;
+  const handleDictationText = useCallback((text: string) => {
+    setInput(text);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = text.length;
+      el.scrollTop = el.scrollHeight;
     });
-    textareaRef.current?.focus();
-  };
+  }, []);
+
+  const handleDictatingChange = useCallback((active: boolean) => {
+    setIsDictating(active);
+    if (!active) {
+      textareaRef.current?.focus();
+    }
+  }, []);
 
   if (!open) return null;
 
@@ -440,7 +451,9 @@ export function CedTextChatPanel({
               disabled={busy || status?.blocked || !!attachedImage}
             />
             <MicButton
-              onTranscription={handleTranscription}
+              getBaseText={() => input}
+              onTextUpdate={handleDictationText}
+              onDictatingChange={handleDictatingChange}
               disabled={busy || status?.blocked}
             />
             <button
@@ -454,7 +467,9 @@ export function CedTextChatPanel({
             </button>
           </div>
           <p className="mt-1.5 break-words text-left text-[9px] leading-snug text-cyan-700">
-            Enter envía · 📷 adjuntar · 🎤 dictar · &quot;genera una imagen de…&quot;
+            {isDictating
+              ? "Escuchando… suelta el micrófono para terminar"
+              : 'Enter envía · 📷 adjuntar · 🎤 dictar · "genera una imagen de…"'}
           </p>
         </footer>
       </div>
