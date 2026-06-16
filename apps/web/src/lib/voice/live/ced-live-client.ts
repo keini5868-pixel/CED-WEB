@@ -30,7 +30,7 @@ import {
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   cedBriefTurn,
-  cedGreetingPhrase,
+  cedGreetingTurn,
   CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
 
@@ -577,23 +577,10 @@ export class CedLiveClient {
   sendSessionGreeting(): void {
     if (this.greetingSent || !this.dc || !this.sessionReady || this.sendBlocked) return;
     this.greetingSent = true;
-    const phrase = cedGreetingPhrase(this.voiceProfile, this.userAddress);
     void (async () => {
       this.setMicTrackEnabled(false);
       this.flushInputAudioBuffer();
-      if (this.responseInProgress) {
-        this.triggerBargeIn();
-        await this.waitForResponseIdle();
-      }
-      this.send({
-        type: "response.create",
-        response: {
-          modalities: ["text", "audio"],
-          instructions:
-            `Saludo de sesión — di EXACTAMENTE esta frase UNA sola vez y calla: "${phrase}" ` +
-            "PROHIBIDO: repetir, añadir palabras, segunda frase o continuar hablando.",
-        },
-      });
+      await this.sendClientTurn(cedGreetingTurn(this.voiceProfile, this.userAddress));
     })();
   }
 
