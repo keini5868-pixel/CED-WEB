@@ -15,19 +15,23 @@ export function HudUsageBar() {
     100,
     balance.plan > 0 ? (balance.used / balance.plan) * 100 : 0,
   );
-  const warn = pct >= 80;
-  const critical = balance.blocked || balance.accessDenied || pct >= 95;
+  const remaining = Math.max(0, balance.plan - balance.used);
+  const warn = pct >= 80 && pct < 95;
+  const criticalWarn = pct >= 95 && !balance.blocked;
+  const critical = balance.blocked || balance.accessDenied;
   const statusLabel = !loaded
     ? "Cargando…"
     : balance.accessDenied
       ? "Suscripción requerida"
       : balance.blocked
         ? "Límite alcanado"
-        : warn
-          ? "Uso elevado"
-          : balance.plan > 0
-            ? "Plan activo"
-            : "Sin cupo voz";
+        : criticalWarn
+          ? "Casi sin cupo"
+          : warn
+            ? "Uso elevado"
+            : balance.plan > 0
+              ? "Plan activo"
+              : "Sin cupo voz";
 
   return (
     <div>
@@ -40,7 +44,7 @@ export function HudUsageBar() {
         </span>
         <span
           className={
-            critical
+            critical || criticalWarn
               ? "text-red-400"
               : warn
                 ? "text-amber-400"
@@ -53,7 +57,11 @@ export function HudUsageBar() {
       <div className="mt-3 h-2.5 overflow-hidden rounded bg-[#1a1a1a]">
         <div
           className={`h-full transition-all duration-500 ${
-            critical ? "bg-red-500" : warn ? "bg-amber-400" : "bg-[#00e5ff]"
+            critical || criticalWarn
+              ? "bg-red-500"
+              : warn
+                ? "bg-amber-400"
+                : "bg-[#00e5ff]"
           }`}
           style={{ width: `${pct}%` }}
         />
@@ -61,10 +69,11 @@ export function HudUsageBar() {
       <p className="ced-hud-text-muted mt-2">
         Uso diario de voz CED · {pct.toFixed(0)}% del cupo incluido
       </p>
-      {(balance.accessDenied || balance.blocked || warn) && loaded && (
+      {(balance.accessDenied || balance.blocked || warn || criticalWarn) &&
+        loaded && (
         <div
           className={`mt-3 rounded border p-3 text-xs ${
-            balance.accessDenied || balance.blocked
+            balance.accessDenied || balance.blocked || criticalWarn
               ? "border-red-500/40 bg-red-500/10 text-red-100"
               : "border-amber-500/40 bg-amber-500/10 text-amber-100"
           }`}
@@ -86,25 +95,50 @@ export function HudUsageBar() {
             </>
           ) : balance.blocked ? (
             <>
-              <p className="font-semibold">Cupo diario agotado</p>
+              <p className="font-semibold">Llegaste a tu cupo diario de voz</p>
               <p className="mt-1 opacity-90">
-                Recarga saldo para seguir con voz hoy, o vuelve mañana.
+                Se renueva mañana a medianoche (UTC). Puedes recargar minutos extra
+                o subir de plan.
+              </p>
+            </>
+          ) : criticalWarn ? (
+            <>
+              <p className="font-semibold">
+                Te {remaining === 1 ? "queda" : "quedan"}{" "}
+                {remaining.toFixed(0)} min de voz hoy
+              </p>
+              <p className="mt-1 opacity-90">
+                Estás al {pct.toFixed(0)}% del cupo. Considera una recarga antes de
+                quedarte sin voz.
               </p>
             </>
           ) : (
             <>
-              <p className="font-semibold">Te queda poco cupo hoy</p>
-              <p className="mt-1 opacity-90">Considera una recarga antes de quedarte sin voz.</p>
+              <p className="font-semibold">
+                Te {remaining === 1 ? "queda" : "quedan"}{" "}
+                {remaining.toFixed(0)} min de voz hoy
+              </p>
+              <p className="mt-1 opacity-90">
+                Has usado el {pct.toFixed(0)}% de tu cupo diario.
+              </p>
             </>
           )}
-          {balance.blocked && (
-            <button
-              type="button"
-              onClick={() => setRechargeOpen(true)}
-              className="mt-2 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
-            >
-              RECARGAR TIEMPO EXTRA →
-            </button>
+          {(balance.blocked || criticalWarn) && (
+            <div className="mt-2 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setRechargeOpen(true)}
+                className="font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
+              >
+                RECARGAR TIEMPO EXTRA →
+              </button>
+              <Link
+                href="/pricing"
+                className="font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
+              >
+                SUBIR DE PLAN →
+              </Link>
+            </div>
           )}
         </div>
       )}

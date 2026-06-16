@@ -11,20 +11,48 @@ export type UsageBalanceApi = UsageBalance & {
   used_minutes_today?: number;
 };
 
+export type UsageBalanceResult =
+  | { ok: true; data: UsageBalanceApi }
+  | { ok: false; error: string };
+
 export async function fetchUsageBalance(): Promise<UsageBalanceApi | null> {
+  const result = await fetchUsageBalanceDetailed();
+  return result.ok ? result.data : null;
+}
+
+export async function fetchUsageBalanceDetailed(): Promise<UsageBalanceResult> {
   try {
     const res = await fetch(cedApiPath("usage/balance"), {
       credentials: "same-origin",
     });
-    if (!res.ok) return null;
-    const raw = await res.json();
+    const raw = await res.json().catch(() => ({} as Record<string, unknown>));
+    if (!res.ok) {
+      const detail =
+        typeof raw.detail === "string"
+          ? raw.detail
+          : res.status === 502
+            ? "No se pudo contactar la API. Revisa NEXT_PUBLIC_API_URL en Railway (servicio web) y redeploy."
+            : `Error ${res.status} al consultar cupo de voz`;
+      return { ok: false, error: detail };
+    }
     return {
-      ...raw,
-      planMinutesDaily: raw.plan_minutes_daily ?? raw.planMinutesDaily,
-      usedMinutesToday: raw.used_minutes_today ?? raw.usedMinutesToday,
+      ok: true,
+      data: {
+        ...(raw as UsageBalanceApi),
+        planMinutesDaily:
+          (raw as UsageBalanceApi).plan_minutes_daily ??
+          (raw as UsageBalanceApi).planMinutesDaily,
+        usedMinutesToday:
+          (raw as UsageBalanceApi).used_minutes_today ??
+          (raw as UsageBalanceApi).usedMinutesToday,
+      },
     };
   } catch {
-    return null;
+    return {
+      ok: false,
+      error:
+        "Sin conexión con la API. Verifica NEXT_PUBLIC_API_URL=https://ced-web-production.up.railway.app y redeploy del web.",
+    };
   }
 }
 

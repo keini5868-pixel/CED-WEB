@@ -149,9 +149,19 @@ export async function resetMyDailyUsage(): Promise<ResetMyDailyUsageResult> {
   >(res);
 
   if (!res.ok) {
-
+    if (res.status === 403) {
+      throw new Error(
+        data.detail ||
+          "Acceso denegado. Agrega tu email en SUPER_ADMIN_EMAILS en el servicio API (CED-WEB) en Railway.",
+      );
+    }
+    if (res.status === 502) {
+      throw new Error(
+        data.detail ||
+          "No se pudo contactar la API. Revisa NEXT_PUBLIC_API_URL en el servicio web y redeploy.",
+      );
+    }
     throw new Error(data.detail || data.error || "No se pudo renovar el cupo");
-
   }
 
   return data;

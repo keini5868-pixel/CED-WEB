@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { resetMyDailyUsage } from "@/lib/api/admin";
-import { fetchUsageBalance } from "@/lib/api/usage";
+import { fetchUsageBalanceDetailed } from "@/lib/api/usage";
 
 /** Renueva el límite diario de voz — solo visible en /admin para super admin. */
 export function AdminMyUsageReset() {
@@ -15,8 +15,15 @@ export function AdminMyUsageReset() {
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const balance = await fetchUsageBalance();
-    if (!balance) return;
+    setError(null);
+    const result = await fetchUsageBalanceDetailed();
+    if (!result.ok) {
+      setError(result.error);
+      setUsed(null);
+      setPlan(null);
+      return;
+    }
+    const balance = result.data;
     setUsed(balance.usedMinutesToday ?? balance.used_minutes_today ?? 0);
     setPlan(balance.planMinutesDaily ?? balance.plan_minutes_daily ?? 120);
     setBlocked(Boolean(balance.blocked));
