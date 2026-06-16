@@ -26,10 +26,10 @@ logger = logging.getLogger(__name__)
 OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets"
 OPENAI_REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls"
 
-DEFAULT_REALTIME_MODEL = "gpt-realtime-mini"
+DEFAULT_REALTIME_MODEL = "gpt-realtime"
 FALLBACK_MODELS = (
-    "gpt-realtime-mini",
     "gpt-realtime",
+    "gpt-realtime-mini",
     "gpt-4o-mini-realtime-preview-2024-12-17",
     "gpt-4o-realtime-preview-2024-12-17",
 )

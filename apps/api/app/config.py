@@ -68,9 +68,9 @@ class Settings(BaseSettings):
     openai_project_id: str = ""
     openai_model_chat: str = "gpt-4o"
     openai_model_chat_lite: str = "gpt-4o-mini"
-    openai_model_voice: str = "gpt-realtime-mini"
+    openai_model_voice: str = "gpt-realtime"
     openai_model_image: str = "gpt-image-1"
-    openai_default_voice: str = "alloy"
+    openai_default_voice: str = "cedar"
     cost_tracking_enabled: bool = True
     cost_alert_threshold_usd: float = 200.0
     cost_alert_email: str = ""

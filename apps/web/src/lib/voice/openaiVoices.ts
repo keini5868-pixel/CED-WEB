@@ -7,12 +7,32 @@ export type OpenAIVoiceOption = {
   description: string;
   gender: string;
   style: string;
+  /** Etiqueta opcional en selector (p. ej. voces GA premium). */
+  badge?: "NUEVA" | "PREMIUM";
 };
 
-/** Voces OpenAI Realtime (2026). */
+/** Voces OpenAI Realtime (GA gpt-realtime, 2025+). */
 export const OPENAI_VOICE_OPTIONS: OpenAIVoiceOption[] = [
+  {
+    id: "cedar",
+    name: "Cedar",
+    label: "Cedar",
+    description: "Premium, natural, ideal Jarvis",
+    gender: "Masculina",
+    style: "Ejecutiva",
+    badge: "NUEVA",
+  },
+  {
+    id: "marin",
+    name: "Marin",
+    label: "Marin",
+    description: "Premium, cálida y expresiva",
+    gender: "Femenina",
+    style: "Premium",
+    badge: "NUEVA",
+  },
   { id: "alloy", name: "Alloy", label: "Alloy", description: "Neutral, equilibrada", gender: "Neutral", style: "Profesional" },
-  { id: "echo", name: "Echo", label: "Echo", description: "Masculina, clara — recomendada Jarvis", gender: "Masculina", style: "Ejecutiva" },
+  { id: "echo", name: "Echo", label: "Echo", description: "Masculina, clara — Jarvis clásico", gender: "Masculina", style: "Ejecutiva" },
   { id: "shimmer", name: "Shimmer", label: "Shimmer", description: "Femenina, cálida", gender: "Femenina", style: "Cálida" },
   { id: "ash", name: "Ash", label: "Ash", description: "Suave, profesional", gender: "Neutral", style: "Suave" },
   { id: "ballad", name: "Ballad", label: "Ballad", description: "Expresiva", gender: "Neutral", style: "Expresiva" },
@@ -28,5 +48,5 @@ export function normalizeVoiceName(name: string | undefined): GeminiVoiceId {
   const n = (name ?? "").trim().toLowerCase();
   const known = OPENAI_VOICE_OPTIONS.some((v) => v.id === n);
   if (known) return n;
-  return "echo";
+  return "cedar";
 }

@@ -181,7 +181,14 @@ export function CedSettingsModal({
                     : "border-cyan-900/50 bg-black text-zinc-300 hover:border-cyan-700"
                 }`}
               >
-                <div className="font-medium">{voice.name}</div>
+                <div className="flex items-center gap-1.5 font-medium">
+                  {voice.name}
+                  {voice.badge ? (
+                    <span className="rounded bg-amber-500/20 px-1 py-0.5 text-[9px] font-bold tracking-wide text-amber-300">
+                      {voice.badge}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="text-[10px] text-zinc-500">
                   {voice.gender} · {voice.style}
                 </div>

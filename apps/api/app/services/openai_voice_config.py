@@ -4,8 +4,19 @@ from __future__ import annotations
 
 from typing import Any
 
-OPENAI_VOICES = frozenset({"alloy", "ash", "ballad", "coral", "echo", "sage", "shimmer", "verse"})
-DEFAULT_OPENAI_VOICE = "echo"
+OPENAI_VOICES = frozenset({
+    "alloy",
+    "ash",
+    "ballad",
+    "coral",
+    "echo",
+    "sage",
+    "shimmer",
+    "verse",
+    "marin",
+    "cedar",
+})
+DEFAULT_OPENAI_VOICE = "cedar"
 
 REALTIME_MAX_OUTPUT_TOKENS = 200
 REALTIME_TEMPERATURE = 0.7
