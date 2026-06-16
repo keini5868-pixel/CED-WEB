@@ -67,10 +67,13 @@ def _build_display_name(honorific: str, first_name: str) -> str:
 
 
 def _greeting_phrase(display_name: str, first_name: str, *, jarvis: bool) -> str:
-    name = (first_name or display_name or "Usuario").strip()
+    name = (display_name or first_name or "Usuario").strip()
     if jarvis:
-        return f"Hola {name}. ¿En qué trabajamos?"
-    return f"Hola {name}. ¿En qué trabajamos?"
+        # display_name ya incluye Señor/Señora según género del perfil
+        if name.lower().startswith(("señor", "senor", "señora", "senora", "sir", "madam")):
+            return f"A su servicio, {name}."
+        return f"A su servicio, {name}."
+    return f"Hola {first_name or name}. ¿En qué trabajamos?"
 
 
 def _read_memory_address(user_id: str) -> str:
@@ -123,9 +126,15 @@ def address_context_for_prompt(user_id: str) -> str:
 
     gender_note = ""
     if gender == "male":
-        gender_note = "Género registrado: masculino (título por defecto Señor si no hay otro)."
+        gender_note = (
+            "Género registrado: masculino — español: Señor; inglés: Sir. "
+            "PROHIBIDO Señora/Madam."
+        )
     elif gender == "female":
-        gender_note = "Género registrado: femenino (título por defecto Señora si no hay otro)."
+        gender_note = (
+            "Género registrado: femenino — español: Señora; inglés: Madam/Ma'am. "
+            "PROHIBIDO Señor/Sir."
+        )
     elif gender == "neutral":
         gender_note = "Género registrado: neutral (usa nombre sin título salvo preferencia explícita)."
 
