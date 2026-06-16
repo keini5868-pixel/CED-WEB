@@ -104,8 +104,9 @@ const VISION_CAPTURE_HEIGHT = 360;
 const USAGE_TICK_SECONDS = 15;
 const MAX_WS_RECONNECT = 3;
 /** Si el turno no cierra, liberar mic/UI (WebRTC). */
-const TURN_STUCK_MS = 16000;
-const PROCESSING_STUCK_MS = 10000;
+const TURN_STUCK_MS = 22000;
+const PROCESSING_STUCK_MS = 12000;
+const MIC_UNMUTE_AFTER_SPEECH_MS = 750;
 
 async function publishImageToBlob(image: {
   imageUrl?: string;
@@ -481,9 +482,9 @@ export function useCedVoiceSession(
         audio: {
           channelCount: 1,
           sampleRate: { ideal: 24000 },
-          echoCancellation: { ideal: true },
-          noiseSuppression: { ideal: true },
-          autoGainControl: { ideal: true },
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
         },
       });
       micStreamRef.current = stream;
@@ -536,7 +537,27 @@ export function useCedVoiceSession(
       const greetingPendingRef = { current: false };
       const setupTimerRef = { current: null as number | null };
       const responseWatchdogRef = { current: null as number | null };
+      const micUnmuteTimerRef = { current: null as number | null };
       const lastResponseStartRef = { current: 0 };
+
+      const clearMicUnmuteTimer = () => {
+        if (micUnmuteTimerRef.current) {
+          clearTimeout(micUnmuteTimerRef.current);
+          micUnmuteTimerRef.current = null;
+        }
+      };
+
+      /** Evita que el mic capte eco de Cedar mientras aún suena por WebRTC. */
+      const scheduleMicUnmute = (delayMs = MIC_UNMUTE_AFTER_SPEECH_MS) => {
+        clearMicUnmuteTimer();
+        micUnmuteTimerRef.current = window.setTimeout(() => {
+          micUnmuteTimerRef.current = null;
+          if (isStale() || pausedRef.current) return;
+          if (modelSpeakingRef.current || client.isResponseActive()) return;
+          client.setMicTrackEnabled(true);
+          enableListeningUi();
+        }, delayMs);
+      };
 
       const clearResponseWatchdog = () => {
         if (responseWatchdogRef.current) {
@@ -548,6 +569,7 @@ export function useCedVoiceSession(
       const releaseStuckConversation = (reason: string) => {
         cedVoiceLog(4, "Watchdog conversación", { reason });
         clearResponseWatchdog();
+        clearMicUnmuteTimer();
         modelSpeakingRef.current = false;
         if (!clientWebSearchRef.current) {
           webFetchRef.current = false;
@@ -1489,9 +1511,11 @@ export function useCedVoiceSession(
         },
         onResponseStart: () => {
           if (isStale()) return;
+          clearMicUnmuteTimer();
           lastResponseStartRef.current = Date.now();
           modelSpeakingRef.current = true;
           modelRepliedTurnRef.current = true;
+          client.setMicTrackEnabled(false);
           clearResponseWatchdog();
           scheduleResponseWatchdog();
           setOrbState("speaking");
@@ -1502,9 +1526,14 @@ export function useCedVoiceSession(
               : { ...prev, status: "responding" },
           );
         },
+        onModelAudioDone: () => {
+          if (isStale()) return;
+          scheduleMicUnmute(MIC_UNMUTE_AFTER_SPEECH_MS + 200);
+        },
         onInterrupted: () => {
           cedVoiceLog(5, "OpenAI interrupted");
           clearResponseWatchdog();
+          clearMicUnmuteTimer();
           modelSpeakingRef.current = false;
           client.setMicTrackEnabled(!pausedRef.current);
           setErrorMessage((prev) =>
@@ -1540,10 +1569,8 @@ export function useCedVoiceSession(
           if (greetingPendingRef.current) {
             greetingPendingRef.current = false;
           }
-          if (!pausedRef.current) {
-            client.setMicTrackEnabled(true);
-          }
           client.flushInputAudioBuffer();
+          scheduleMicUnmute();
           setHeardIndicator((prev) => {
             if (prev.status === "hidden") return prev;
             if (!modelRepliedTurnRef.current && prev.userText) {

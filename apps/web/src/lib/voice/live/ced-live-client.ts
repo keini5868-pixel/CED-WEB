@@ -128,7 +128,7 @@ export class CedLiveClient {
   private videoSender: RTCRtpSender | null = null;
   private lastVideoFrameAt = 0;
   private static TOOL_COOLDOWN_MS = 2000;
-  private static RESPONSE_IDLE_MS = 2800;
+  private static RESPONSE_IDLE_MS = 4500;
   private static VIDEO_FRAME_MIN_MS = 2000;
   private voiceProfile: VoiceSessionPreferences["voiceProfile"] = "jarvis";
   private userAddress: UserAddressContext | null = null;
@@ -342,6 +342,7 @@ export class CedLiveClient {
       remoteAudio.autoplay = true;
       remoteAudio.setAttribute("playsinline", "true");
       remoteAudio.preload = "auto";
+      remoteAudio.volume = 1;
       this.remoteAudio = remoteAudio;
 
       pc.ontrack = (ev) => {
@@ -349,6 +350,14 @@ export class CedLiveClient {
         if (stream && this.remoteAudio) {
           this.remoteAudio.srcObject = stream;
           void this.remoteAudio.play().catch(() => undefined);
+          stream.getAudioTracks().forEach((track) => {
+            cedRealtimeLog("audio.track", {
+              label: track.label,
+              enabled: track.enabled,
+              muted: track.muted,
+              readyState: track.readyState,
+            });
+          });
         }
       };
 
