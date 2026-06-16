@@ -17,7 +17,7 @@ from app.logging_setup import configure_logging
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
 from app.rate_limit import limiter
-from app.routers import admin, billing, chat, cognitive, conversations, health, hud, media, memory, meta, openai, panels, pdf, profile, prospection, usage, vision
+from app.routers import admin, billing, chat, cognitive, conversations, diagnostic, health, hud, media, memory, meta, openai, panels, pdf, profile, prospection, usage, vision
 
 logger = logging.getLogger("ced.api")
 
@@ -73,6 +73,7 @@ def create_app() -> FastAPI:
         application.add_middleware(SlowAPIMiddleware)
 
     application.include_router(health.router)
+    application.include_router(diagnostic.router)
     application.include_router(admin.router)
     application.include_router(hud.router)
     application.include_router(panels.router)
