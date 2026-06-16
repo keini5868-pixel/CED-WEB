@@ -672,8 +672,7 @@ export function useCedVoiceSession(
             if (!image.imageUrl && !image.imageData) {
               pendingPublishRef.current = {
                 platform: "instagram",
-                text: body,
-                awaiting: "content",
+                awaiting: "develop",
               };
               client.sendNarrationBrief("Necesito una imagen para Instagram.");
               return;
