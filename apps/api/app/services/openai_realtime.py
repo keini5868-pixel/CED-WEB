@@ -213,14 +213,18 @@ def create_realtime_session(
     except Exception:  # noqa: BLE001
         pass
 
-    attempts: list[tuple[str, dict[str, Any]]] = []
+    # CRÍTICO: intentar TODAS las sesiones con tools antes de fallback sin tools.
+    # Antes, un fallo en tools:* hacía caer en full:* sin herramientas → CED hablaba pero no ejecutaba.
+    tool_attempts: list[tuple[str, dict[str, Any]]] = []
+    fallback_attempts: list[tuple[str, dict[str, Any]]] = []
+    turn_options = (
+        ("semantic", preferred_turn),
+        ("semantic_default", REALTIME_TURN_DETECTION),
+        ("server_vad", REALTIME_TURN_DETECTION_FALLBACK),
+    )
     for m in _models_to_try(model):
-        for td_label, td in (
-            ("semantic", preferred_turn),
-            ("semantic_default", REALTIME_TURN_DETECTION),
-            ("server_vad", REALTIME_TURN_DETECTION_FALLBACK),
-        ):
-            attempts.append(
+        for td_label, td in turn_options:
+            tool_attempts.append(
                 (
                     f"tools:{td_label}:{m}",
                     _build_session_payload(
@@ -234,7 +238,7 @@ def create_realtime_session(
                     ),
                 )
             )
-            attempts.append(
+            fallback_attempts.append(
                 (
                     f"full:{td_label}:{m}",
                     _build_session_payload(
@@ -248,7 +252,7 @@ def create_realtime_session(
                     ),
                 )
             )
-            attempts.append(
+            fallback_attempts.append(
                 (
                     f"minimal:{td_label}:{m}",
                     _build_minimal_payload(
@@ -260,6 +264,8 @@ def create_realtime_session(
                     ),
                 )
             )
+
+    attempts = tool_attempts + fallback_attempts
 
     last_error = "OpenAI rechazó la sesión Realtime."
     try:
@@ -273,13 +279,24 @@ def create_realtime_session(
                         last_error = "OpenAI no devolvió client_secret."
                         continue
                     used_model = payload.get("session", {}).get("model") or model
-                    logger.info(
-                        "[OPENAI] webrtc session ok via=%s model=%s voice=%s user=%s",
-                        label,
-                        used_model,
-                        voice,
-                        user_id[:8],
-                    )
+                    session_body = payload.get("session", {})
+                    tools_enabled = bool(session_body.get("tools"))
+                    if not tools_enabled:
+                        logger.warning(
+                            "[OPENAI] webrtc session WITHOUT tools via=%s model=%s user=%s",
+                            label,
+                            used_model,
+                            user_id[:8],
+                        )
+                    else:
+                        logger.info(
+                            "[OPENAI] webrtc session ok via=%s model=%s voice=%s tools=%s user=%s",
+                            label,
+                            used_model,
+                            voice,
+                            len(session_body.get("tools") or []),
+                            user_id[:8],
+                        )
                     return {
                         "ok": True,
                         "clientSecret": client_secret,
@@ -288,6 +305,9 @@ def create_realtime_session(
                         "systemInstruction": instructions,
                         "expiresInSeconds": 600,
                         "transport": "webrtc",
+                        "toolsEnabled": tools_enabled,
+                        "toolsCount": len(session_body.get("tools") or []),
+                        "sessionVia": label,
                         "userAddress": {
                             "displayName": address.get("displayName", ""),
                             "firstName": address.get("firstName", ""),

@@ -76,6 +76,7 @@ import {
   isPublishGoCommand,
   isPublishDirectCommand,
   detectPublishPlatform,
+  isSocialPublishIntent,
   type PublishPlatform,
 } from "@/lib/voice/socialPublishIntent";
 import {
@@ -1149,6 +1150,12 @@ export function useCedVoiceSession(
             }
             if (isSearchStatusIntent(text)) {
               handleSearchStatus(text.trim());
+            } else if (
+              isGenerateImageIntent(text) ||
+              isSocialPublishIntent(text) ||
+              isPublishGoCommand(text)
+            ) {
+              handleClientVoiceIntents(text.trim());
             } else if (isWebResearchIntent(text) && !webFetchRef.current) {
               const q = text.trim();
               if (webSearchDebounceRef.current) {

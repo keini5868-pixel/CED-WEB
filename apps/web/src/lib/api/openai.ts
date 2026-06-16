@@ -13,6 +13,9 @@ export type RealtimeSessionResponse =
       expiresInSeconds: number;
       transport?: string;
       sampleRate?: number;
+      toolsEnabled?: boolean;
+      toolsCount?: number;
+      sessionVia?: string;
       usagePercent?: number;
       warningLevel?: string | null;
       userAddress?: UserAddressContext;

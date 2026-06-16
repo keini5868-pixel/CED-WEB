@@ -56,6 +56,26 @@ export function CedVoiceHub() {
     prefetchEphemeralToken();
   }, []);
 
+  useEffect(() => {
+    const onToolResult = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ tool_name?: string; result?: Record<string, unknown> }>)
+        .detail;
+      const toolName = detail?.tool_name ?? "";
+      const result = detail?.result;
+      const imageUrl =
+        typeof result?.image_url === "string" ? result.image_url : null;
+      if (toolName.includes("image") && imageUrl) {
+        const prompt =
+          typeof result?.prompt === "string" ? result.prompt : undefined;
+        setVoiceImagePreview({ url: imageUrl, prompt });
+        setChatSeedImage({ url: imageUrl, prompt });
+        setChatOpen(true);
+      }
+    };
+    window.addEventListener("ced-voice-tool-result", onToolResult);
+    return () => window.removeEventListener("ced-voice-tool-result", onToolResult);
+  }, []);
+
   const voice = useCedVoiceSession(refreshUsage, {
     onTranscript: (text, role) => {
       pushLine(text, role === "user" ? "voice" : "report");

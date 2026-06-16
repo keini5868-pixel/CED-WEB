@@ -1,7 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import Image from "next/image";
+
+import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 
 type Props = {
   url: string | null;
@@ -17,11 +18,13 @@ export function CedVoiceImagePreview({
   onOpenChat,
   onDismiss,
 }: Props) {
+  const src = url ? normalizeCedMediaUrl(url) : null;
+
   return (
     <AnimatePresence>
-      {url ? (
+      {src ? (
         <motion.div
-          key={url}
+          key={src}
           initial={{ opacity: 0, y: 12, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -31,16 +34,17 @@ export function CedVoiceImagePreview({
             <button
               type="button"
               onClick={onOpenChat}
-              className="relative block aspect-square w-full cursor-pointer"
+              className="block w-full cursor-pointer"
               aria-label="Abrir imagen en chat"
             >
-              <Image
-                src={url}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
                 alt={prompt ? `Imagen: ${prompt}` : "Imagen generada por CED"}
-                fill
-                unoptimized
-                className="object-cover"
-                sizes="(max-width: 640px) 100vw, 384px"
+                className="max-h-72 w-full object-contain"
+                onError={(e) => {
+                  e.currentTarget.alt = "No se pudo cargar la imagen";
+                }}
               />
             </button>
             <div className="flex items-center justify-between gap-2 px-3 py-2">

@@ -9,7 +9,7 @@ import { fetchDeepAnalysis, fetchGenerateImage, fetchVoiceBrief, negotiateRealti
 import type { UserAddressContext } from "@/lib/api/profile";
 import { fetchEphemeralTokenCached } from "@/lib/voice/ephemeralTokenCache";
 import { parseCameraIntent } from "@/lib/voice/cameraIntents";
-import { cedVoiceError, cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
+import { cedVoiceError, cedVoiceLog, cedRealtimeLog } from "@/lib/voice/cedVoiceLogger";
 import {
   ANALIZAR_CAMARA,
   BUSCAR_MEMORIA,
@@ -134,6 +134,12 @@ export class CedLiveClient {
   private userAddress: UserAddressContext | null = null;
   private handlers: CedLiveHandlers = {};
   private greetingSent = false;
+  private toolsEnabled = true;
+
+  /** Sesión Realtime creada sin herramientas (fallback API). */
+  isToolsEnabled(): boolean {
+    return this.toolsEnabled;
+  }
 
   isOpen(): boolean {
     return Boolean(this.pc && this.sessionReady && !this.sendBlocked);
@@ -314,6 +320,18 @@ export class CedLiveClient {
     const voiceName = tokenRes.voiceName ?? "alloy";
     this.model = tokenRes.model;
     this.userAddress = tokenRes.userAddress ?? null;
+    this.toolsEnabled = tokenRes.toolsEnabled !== false;
+    if (!this.toolsEnabled) {
+      cedVoiceError(
+        "[REALTIME] Sesión SIN herramientas — publicar/imagen/búsqueda vía tools no funcionarán. Revisa logs API.",
+      );
+    }
+    cedRealtimeLog("session.connect", {
+      model: this.model,
+      toolsEnabled: this.toolsEnabled,
+      toolsCount: tokenRes.toolsCount ?? null,
+      sessionVia: tokenRes.sessionVia ?? null,
+    });
     voiceTelemetry.setActiveVoice(voiceName);
 
     try {
@@ -457,8 +475,39 @@ export class CedLiveClient {
     const handlers = this.handlers;
     const type = String(msg.type ?? "");
 
+    cedRealtimeLog("event", { type });
+
     if (type === "session.created" || type === "session.updated") {
+      const session = msg.session as { tools?: unknown[] } | undefined;
+      const toolsCount = session?.tools?.length ?? 0;
+      if (toolsCount > 0) this.toolsEnabled = true;
+      cedRealtimeLog("session.ready", { type, toolsCount, toolsEnabled: this.toolsEnabled });
       markReady();
+      return;
+    }
+
+    if (type === "response.function_call_arguments.delta") {
+      cedRealtimeLog("tool.args.delta", { delta: String(msg.delta ?? "").slice(0, 120) });
+      return;
+    }
+
+    if (type === "response.output_item.done") {
+      const item = msg.item as
+        | { type?: string; name?: string; call_id?: string; arguments?: string }
+        | undefined;
+      if (item?.type === "function_call" && item.call_id && item.name) {
+        cedRealtimeLog("tool.output_item.done", {
+          name: item.name,
+          call_id: item.call_id,
+        });
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(String(item.arguments ?? "{}")) as Record<string, unknown>;
+        } catch {
+          args = {};
+        }
+        await this.dispatchTool(item.name, item.call_id, args);
+      }
       return;
     }
 
@@ -507,10 +556,18 @@ export class CedLiveClient {
     }
 
     if (type === "response.done") {
-      const response = msg.response as { status?: string } | undefined;
+      const response = msg.response as
+        | { status?: string; status_details?: unknown }
+        | undefined;
       if (response?.status === "cancelled") {
         cedVoiceLog(5, "OpenAI response cancelled");
       }
+      if (response?.status === "failed") {
+        cedVoiceError("[REALTIME] response.failed", response.status_details);
+      }
+      cedRealtimeLog("response.done", {
+        status: response?.status ?? "unknown",
+      });
       this.activeResponseId = null;
       this.responseInProgress = false;
       if (this.modelTranscriptAcc.trim()) {
@@ -529,6 +586,11 @@ export class CedLiveClient {
     if (type === "response.function_call_arguments.done") {
       const callId = String(msg.call_id ?? "");
       const name = String(msg.name ?? "");
+      cedRealtimeLog("tool.args.done", {
+        name,
+        call_id: callId,
+        arguments: String(msg.arguments ?? "").slice(0, 240),
+      });
       let args: Record<string, unknown> = {};
       try {
         args = JSON.parse(String(msg.arguments ?? "{}")) as Record<string, unknown>;
@@ -655,20 +717,43 @@ export class CedLiveClient {
     this.dc.send(JSON.stringify(payload));
   }
 
+  private dispatchVoiceToolResult(
+    toolName: string,
+    result: Record<string, unknown>,
+  ): void {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("ced-voice-tool-result", {
+        detail: { tool_name: toolName, result },
+      }),
+    );
+  }
+
   private async dispatchTool(
     rawName: string,
     callId: string,
     args: Record<string, unknown>,
   ): Promise<void> {
-    if (!callId || this.processedCallIds.has(callId)) return;
+    if (!callId) {
+      cedRealtimeLog("tool.skip", { reason: "missing call_id", name: rawName });
+      return;
+    }
+    if (this.processedCallIds.has(callId)) {
+      cedRealtimeLog("tool.skip", { reason: "duplicate call_id", call_id: callId, name: rawName });
+      return;
+    }
     const dedupeKey = `${rawName}:${JSON.stringify(args)}`;
     const lastAt = this.recentToolAt.get(dedupeKey) ?? 0;
-    if (Date.now() - lastAt < CedLiveClient.TOOL_COOLDOWN_MS) return;
+    if (Date.now() - lastAt < CedLiveClient.TOOL_COOLDOWN_MS) {
+      cedRealtimeLog("tool.skip", { reason: "cooldown", name: rawName, dedupeKey });
+      return;
+    }
     this.recentToolAt.set(dedupeKey, Date.now());
     this.processedCallIds.add(callId);
 
     const h = this.handlers;
     const name = TOOL_ALIAS[rawName] ?? rawName;
+    cedRealtimeLog("tool.execute", { name: rawName, call_id: callId, args });
 
     try {
       if (rawName === "search_web") {
@@ -712,16 +797,21 @@ export class CedLiveClient {
         );
         if (result.ok) {
           h.onGeneratedImage?.(result.url, prompt);
-          await this.submitToolOutput(callId, {
+          const toolResult = {
             status: "ok",
             spoken: "Ahí está.",
             image_url: result.url,
-          });
+            prompt,
+          };
+          this.dispatchVoiceToolResult("generate_image", toolResult);
+          await this.submitToolOutput(callId, toolResult);
         } else {
-          await this.submitToolOutput(callId, {
+          const toolResult = {
             status: "error",
             spoken: result.error || "No pude generar la imagen.",
-          });
+          };
+          this.dispatchVoiceToolResult("generate_image", toolResult);
+          await this.submitToolOutput(callId, toolResult);
         }
         return;
       }
@@ -781,11 +871,23 @@ export class CedLiveClient {
         h.onToolStart?.(name);
         const result = await h.onLiveTool(name, args);
         const spoken = result?.spoken ?? "Listo.";
-        await this.submitToolOutput(callId, { status: "ok", spoken });
+        const toolResult = { status: "ok", spoken };
+        this.dispatchVoiceToolResult(name, toolResult);
+        await this.submitToolOutput(callId, toolResult);
         return;
       }
 
-      await this.submitToolOutput(callId, { status: "unknown_tool", name: rawName });
+      const unknown = { status: "unknown_tool", name: rawName };
+      cedRealtimeLog("tool.unknown", { name: rawName });
+      await this.submitToolOutput(callId, unknown);
+    } catch (error) {
+      cedVoiceError("[REALTIME] tool execution failed", error);
+      const message = error instanceof Error ? error.message : "Error al ejecutar herramienta";
+      await this.submitToolOutput(callId, {
+        status: "error",
+        spoken: message,
+        success: false,
+      });
     } finally {
       h.onToolComplete?.();
     }
@@ -796,30 +898,42 @@ export class CedLiveClient {
     output: Record<string, unknown>,
   ): Promise<void> {
     if (this.responseInProgress) {
+      cedRealtimeLog("tool.output.wait_idle", { call_id: callId });
       await this.waitForResponseIdle();
     }
     const spoken =
       typeof output.spoken === "string" ? output.spoken.trim() : "";
-    this.send({
+    const payload: Record<string, unknown> = {
+      ...output,
+      success: output.status === "ok" || output.success === true,
+    };
+    if (spoken) {
+      payload.delivery =
+        "Di en voz UNA frase corta usando el campo spoken. No repitas ni alargues.";
+    }
+
+    const outputMessage = {
       type: "conversation.item.create",
       item: {
         type: "function_call_output",
         call_id: callId,
-        output: JSON.stringify({
-          ...output,
-          delivery:
-            spoken.length > 0
-              ? "El cliente leerá el campo spoken en voz. No repitas ni resumas."
-              : "Responde según el status.",
-        }),
+        output: JSON.stringify(payload),
       },
-    });
-    if (spoken.length > 0) {
-      await this.sendNarrationBrief(spoken);
-      return;
+    };
+    cedRealtimeLog("tool.output.send", { call_id: callId, payload });
+    this.send(outputMessage);
+
+    const responseRequest: Record<string, unknown> = {
+      type: "response.create",
+    };
+    if (spoken) {
+      responseRequest.response = {
+        instructions:
+          "Presenta el resultado de la herramienta. Di el campo spoken tal cual, una sola frase.",
+      };
     }
-    // Sin texto hablado: forzar respuesta del modelo (p. ej. tool sin spoken).
-    this.send({ type: "response.create" });
+    cedRealtimeLog("tool.response.create", { call_id: callId });
+    this.send(responseRequest);
   }
 }
 
