@@ -13,7 +13,6 @@ from app.services.openai_key_utils import openai_api_key_looks_valid, sanitize_o
 from app.services.openai_voice_config import (
     REALTIME_MAX_OUTPUT_TOKENS,
     REALTIME_NOISE_REDUCTION,
-    REALTIME_TEMPERATURE,
     REALTIME_TURN_DETECTION,
     REALTIME_TURN_DETECTION_FALLBACK,
     normalize_openai_voice,
@@ -76,7 +75,6 @@ def _build_session_payload(
     with_tools: bool,
     turn_detection: dict[str, Any],
     language: str = "es",
-    temperature: float | None = None,
 ) -> dict[str, Any]:
     session: dict[str, Any] = {
         "type": "realtime",
@@ -90,7 +88,6 @@ def _build_session_payload(
             },
         },
         "max_output_tokens": REALTIME_MAX_OUTPUT_TOKENS,
-        "temperature": temperature if temperature is not None else REALTIME_TEMPERATURE,
     }
     if with_tools:
         session["tools"] = OPENAI_REALTIME_TOOLS
@@ -200,7 +197,7 @@ def create_realtime_session(
         voice_profile=voice_profile or "jarvis",
     )
     lang = language or "es"
-    temperature, preferred_turn = profile_for_response_speed(response_speed)
+    _, preferred_turn = profile_for_response_speed(response_speed)
     address: dict[str, Any] = {}
     try:
         from app.services.cognitive_router import build_voice_system_extras
@@ -233,7 +230,6 @@ def create_realtime_session(
                         with_tools=True,
                         turn_detection=td,
                         language=lang,
-                        temperature=temperature,
                     ),
                 )
             )
