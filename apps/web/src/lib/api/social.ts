@@ -84,7 +84,7 @@ export async function publishFacebook(
 
     }
 
-    return { ok: true, spoken: data.spoken ?? "Publicación enviada a Facebook." };
+    return { ok: true, spoken: data.spoken ?? "Publicación enviada." };
 
   } catch {
 
@@ -130,7 +130,7 @@ export async function publishInstagram(
 
     }
 
-    return { ok: true, spoken: data.spoken ?? "Publicación enviada a Instagram." };
+    return { ok: true, spoken: data.spoken ?? "Publicación enviada." };
 
   } catch {
 

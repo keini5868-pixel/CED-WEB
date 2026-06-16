@@ -705,8 +705,7 @@ export class CedLiveClient {
           h.onGeneratedImage?.(result.url, prompt);
           await this.submitToolOutput(callId, {
             status: "ok",
-            spoken:
-              "Imagen generada. Puedo publicarla en Facebook o Instagram si quieres.",
+            spoken: "Imagen lista.",
             image_url: result.url,
           });
         } else {
