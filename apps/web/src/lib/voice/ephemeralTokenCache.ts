@@ -13,6 +13,8 @@ let cache: CachedToken | null = null;
 let inflight: Promise<RealtimeSessionResponse> | null = null;
 
 const TTL_MS = 4 * 60 * 1000;
+/** Bump al cambiar saludo/prompts de voz — invalida tokens prefetch viejos. */
+const VOICE_SESSION_REVISION = "v4-greeting-wellness";
 
 function sessionOptionsFromPrefs(
   voiceName?: string,
@@ -34,7 +36,7 @@ function sessionOptionsFromPrefs(
 
 function buildCacheKey(voiceName?: string, options?: Partial<RealtimeSessionOptions>): string {
   const { voiceName: name, options: opts } = sessionOptionsFromPrefs(voiceName, options);
-  return `${name}:${opts.language}:${opts.responseSpeed}:${opts.voicePace}:${opts.voiceWarmth}:${opts.voiceEnergy}:${opts.voiceProfile}`;
+  return `${VOICE_SESSION_REVISION}:${name}:${opts.language}:${opts.responseSpeed}:${opts.voicePace}:${opts.voiceWarmth}:${opts.voiceEnergy}:${opts.voiceProfile}`;
 }
 
 function isFresh(entry: CachedToken): boolean {

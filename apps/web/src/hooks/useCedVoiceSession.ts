@@ -112,7 +112,8 @@ const MAX_WS_RECONNECT = 3;
 /** Si el turno no cierra, liberar mic/UI (WebRTC). */
 const TURN_STUCK_MS = 22000;
 const PROCESSING_STUCK_MS = 12000;
-const MIC_UNMUTE_AFTER_SPEECH_MS = 550;
+const MIC_UNMUTE_AFTER_SPEECH_MS = 1200;
+const MIC_UNMUTE_AFTER_GREETING_MS = 2800;
 /** Tras saludo sin respuesta del usuario — una sola frase de presencia. */
 const IDLE_PRESENCE_MS = 50_000;
 
@@ -1179,7 +1180,7 @@ export function useCedVoiceSession(
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
           client.flushInputAudioBuffer();
-          scheduleMicUnmute(1500);
+          scheduleMicUnmute(MIC_UNMUTE_AFTER_GREETING_MS);
           enableListeningUi();
           idlePresenceSentRef.current = false;
           scheduleIdlePresence();

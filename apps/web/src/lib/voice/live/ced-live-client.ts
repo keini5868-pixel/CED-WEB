@@ -174,6 +174,8 @@ export class CedLiveClient {
   private userResponseTimer: number | null = null;
   private intentionalResponse = false;
   private userTurnResponded = false;
+  private lastArmedTranscript = "";
+  private turnCooldownUntil = 0;
   private lastResponseCreateAt = 0;
   private briefChain: Promise<void> = Promise.resolve();
   private toolsEnabled = true;
@@ -206,17 +208,57 @@ export class CedLiveClient {
     this.heardUserSinceGreeting = true;
   }
 
+  private isWellnessSmallTalk(transcript: string): boolean {
+    const t = transcript.trim().toLowerCase();
+    if (
+      /\b(clima|temperatura|public|comentario|facebook|instagram|busca|ayuda|publicar|pdf|imagen|cámara|camara)\b/.test(
+        t,
+      )
+    ) {
+      return false;
+    }
+    return (
+      t.length <= 72 &&
+      /^(hola[,.\s!]*)?(muy )?(estoy )?(bien|fine|ok|gracias|thank you|thanks)/i.test(t)
+    );
+  }
+
+  private resolveHonorific(): string {
+    const h = this.userAddress?.honorific?.trim();
+    if (h) return h;
+    if (this.userAddress?.gender === "female") return "Señora";
+    return "Señor";
+  }
+
+  /** Respuesta fija a "bien/gracias" — evita "me alegra" repetido del modelo. */
+  private async maybeReplyWellnessAck(transcript: string): Promise<boolean> {
+    if (!this.greetingComplete || this.outboundLocked || !this.isWellnessSmallTalk(transcript)) {
+      return false;
+    }
+    const phrase = `Entendido, ${this.resolveHonorific()}.`;
+    await this.speakExactPhrase(phrase, 28);
+    this.userTurnResponded = true;
+    this.turnCooldownUntil = Date.now() + 6000;
+    this.lastArmedTranscript = transcript.trim();
+    return true;
+  }
+
   /** Una sola response.create por turno — evita voces duplicadas. */
   private requestSingleResponse(): void {
     const now = Date.now();
     if (this.responseInProgress || this.outboundLocked) return;
-    if (this.userTurnResponded && now - this.lastResponseCreateAt < 4000) return;
-    if (now - this.lastResponseCreateAt < 900) return;
+    if (now < this.turnCooldownUntil) return;
+    if (this.userTurnResponded && now - this.lastResponseCreateAt < 6000) return;
+    if (now - this.lastResponseCreateAt < 1200) return;
     this.lastResponseCreateAt = now;
     this.userTurnResponded = true;
+    this.turnCooldownUntil = now + 6000;
     this.intentionalResponse = true;
     cedRealtimeLog("response.create.single", {});
-    this.send({ type: "response.create" });
+    this.send({
+      type: "response.create",
+      response: { max_output_tokens: 72 },
+    });
   }
 
   private clearUserResponseTimer(): void {
@@ -227,16 +269,24 @@ export class CedLiveClient {
   }
 
   /** Espera fin de turno (debounce) — un solo response.create por intervención. */
-  private armUserTurnResponse(): void {
+  private armUserTurnResponse(transcript = ""): void {
     if (!this.greetingComplete || this.outboundLocked || this.greetingInFlight) return;
     if (this.responseInProgress) return;
+    if (Date.now() < this.turnCooldownUntil) return;
+    const trimmed = transcript.trim();
+    if (trimmed && trimmed === this.lastArmedTranscript) return;
     this.clearUserResponseTimer();
     this.userResponseTimer = window.setTimeout(() => {
       this.userResponseTimer = null;
       if (!this.greetingComplete || this.outboundLocked || this.responseInProgress) return;
+      if (Date.now() < this.turnCooldownUntil) return;
       if (!this.heardUserSinceGreeting) return;
-      this.requestSingleResponse();
-    }, 850);
+      if (trimmed) this.lastArmedTranscript = trimmed;
+      void (async () => {
+        if (trimmed && (await this.maybeReplyWellnessAck(trimmed))) return;
+        this.requestSingleResponse();
+      })();
+    }, 1100);
   }
 
   /** Sesión Realtime creada sin herramientas (fallback API). */
@@ -281,24 +331,32 @@ export class CedLiveClient {
   }
 
   /** Evita respuestas automáticas del servidor (p. ej. durante el saludo). */
-  private setServerAutoResponse(enabled: boolean): void {
+  private applyTurnDetection(mode: "off" | "listen" | "auto"): void {
     if (!this.dc || this.dc.readyState !== "open") return;
+    const turn_detection =
+      mode === "off"
+        ? null
+        : {
+            type: "semantic_vad" as const,
+            eagerness: "medium" as const,
+            create_response: mode === "auto",
+            interrupt_response: true,
+          };
     this.send({
       type: "session.update",
       session: {
         type: "realtime",
         audio: {
           input: {
-            turn_detection: {
-              type: "semantic_vad",
-              eagerness: "medium",
-              create_response: enabled,
-              interrupt_response: true,
-            },
+            turn_detection,
           },
         },
       },
     });
+  }
+
+  private setServerAutoResponse(enabled: boolean): void {
+    this.applyTurnDetection(enabled ? "auto" : "listen");
   }
 
   disconnect(): void {
@@ -314,6 +372,8 @@ export class CedLiveClient {
     this.clearUserResponseTimer();
     this.intentionalResponse = false;
     this.userTurnResponded = false;
+    this.lastArmedTranscript = "";
+    this.turnCooldownUntil = 0;
     this.userTurnScheduled = false;
     this.lastResponseCreateAt = 0;
     this.connectGen += 1;
@@ -424,6 +484,8 @@ export class CedLiveClient {
     this.clearUserResponseTimer();
     this.intentionalResponse = false;
     this.userTurnResponded = false;
+    this.lastArmedTranscript = "";
+    this.turnCooldownUntil = 0;
     this.userTurnScheduled = false;
     this.lastResponseCreateAt = 0;
 
@@ -713,26 +775,28 @@ export class CedLiveClient {
         const intent = parseCameraIntent(transcript);
         if (intent) handlers.onCameraIntent?.(intent);
         if (this.greetingComplete && !this.outboundLocked) {
-          this.armUserTurnResponse();
+          void this.armUserTurnResponse(transcript);
         }
       }
       return;
     }
 
     if (type === "input_audio_buffer.speech_started") {
-      if (this.greetingComplete) {
+      if (
+        this.greetingComplete &&
+        !this.responseInProgress &&
+        Date.now() - this.lastResponseCreateAt > 3500 &&
+        Date.now() > this.turnCooldownUntil
+      ) {
         this.awaitingFirstUserSpeech = false;
         this.userTurnResponded = false;
+        this.lastArmedTranscript = "";
       }
-      this.clearUserResponseTimer();
       return;
     }
 
     if (type === "input_audio_buffer.speech_stopped") {
       handlers.onSpeechStopped?.();
-      if (this.greetingComplete && !this.outboundLocked) {
-        this.armUserTurnResponse();
-      }
       return;
     }
 
@@ -854,7 +918,7 @@ export class CedLiveClient {
     this.greetingInFlight = true;
     void (async () => {
       try {
-        this.setServerAutoResponse(false);
+        this.applyTurnDetection("off");
         this.setMicTrackEnabled(false);
         this.flushInputAudioBuffer();
         const phrase = cedReceptionGreetingPhrase(this.voiceProfile, this.userAddress);
@@ -863,11 +927,13 @@ export class CedLiveClient {
           await this.waitForResponseIdle(1200);
         }
         cedRealtimeLog("greeting.create", { phrase });
-        await this.speakExactPhrase(phrase, 100);
+        await this.speakExactPhrase(phrase, 36);
         this.flushInputAudioBuffer();
-        this.greetingGraceUntil = Date.now() + 4_000;
+        this.applyTurnDetection("listen");
+        this.greetingGraceUntil = Date.now() + 6_000;
         this.greetingComplete = true;
         this.awaitingFirstUserSpeech = true;
+        this.turnCooldownUntil = Date.now() + 2500;
         this.handlers.onGreetingComplete?.();
       } finally {
         this.greetingInFlight = false;
@@ -889,7 +955,9 @@ export class CedLiveClient {
           max_output_tokens: maxOutputTokens,
           tool_choice: "none",
           instructions:
-            `Di EXACTAMENTE una sola vez, sin añadir ni repetir: "${phrase.trim()}"`,
+            `Pronuncia ÚNICAMENTE este texto en español, sin añadir ni quitar palabras. ` +
+            `PROHIBIDO: "cómo está", buenos días/tardes/noches, "me alegra", inglés, repetir frases. ` +
+            `Texto exacto: "${phrase.trim()}"`,
         },
       });
       await this.waitForResponseIdle(12000);

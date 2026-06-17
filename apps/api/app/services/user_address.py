@@ -152,8 +152,10 @@ def address_context_for_prompt(user_id: str) -> str:
         f"- Tratamiento preferido: {honorific or display}\n"
         f"- Dirígete SIEMPRE como: **{display}**\n"
         + (f"- {gender_note}\n" if gender_note else "")
-        + "- PROHIBIDO saludar al conectar: el sistema ya envió el saludo de recepción.\n"
-        + "- PROHIBIDO repetir 'Hola Señor', '¿cómo está?' o buenos días/tardes/noches tras el saludo inicial.\n"
+        + "- Saludo de recepción YA emitido por el sistema (NO repetir): "
+        + f"\"Hola, {honorific or 'Señor'}. ¿En qué puedo ayudarle hoy?\"\n"
+        + "- PROHIBIDO saludar al conectar, decir '¿cómo está?' o buenos días/tardes/noches.\n"
+        + "- Si el usuario solo dice 'bien' o 'gracias': responde SOLO 'Entendido, Señor/Señora.' — PROHIBIDO 'me alegra'.\n"
         + "\n"
         + "Reglas de tratamiento:\n"
         + "- Usa el tratamiento indicado durante la conversación.\n"
