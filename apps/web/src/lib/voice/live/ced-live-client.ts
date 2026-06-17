@@ -32,7 +32,6 @@ import {
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   cedBriefTurn,
-  cedGreetingBriefTurn,
   cedPublishConfirmTurn,
   cedPublishFailurePhrase,
   cedPublishSuccessPhrase,
@@ -170,6 +169,7 @@ export class CedLiveClient {
   private heardUserSinceGreeting = false;
   private greetingGraceUntil = 0;
   private outboundLocked = false;
+  private awaitingFirstUserSpeech = false;
   private briefChain: Promise<void> = Promise.resolve();
   private toolsEnabled = true;
 
@@ -179,6 +179,32 @@ export class CedLiveClient {
       (!this.greetingComplete && this.greetingSent) ||
       Date.now() < this.greetingGraceUntil
     );
+  }
+
+  private isLikelyGreetingEcho(transcript: string): boolean {
+    if (!this.awaitingFirstUserSpeech && this.heardUserSinceGreeting) return false;
+    const low = transcript.toLowerCase();
+    return (
+      low.includes("hola") &&
+      (low.includes("señor") ||
+        low.includes("senor") ||
+        low.includes("señora") ||
+        low.includes("cómo está") ||
+        low.includes("como esta") ||
+        low.includes("buenas") ||
+        low.includes("buenos"))
+    );
+  }
+
+  private unlockConversationAfterUser(): void {
+    if (!this.awaitingFirstUserSpeech) return;
+    this.awaitingFirstUserSpeech = false;
+    this.heardUserSinceGreeting = true;
+    this.setServerAutoResponse(true);
+    cedRealtimeLog("greeting.user_spoke", {});
+    if (!this.responseInProgress) {
+      this.send({ type: "response.create" });
+    }
   }
 
   /** Sesión Realtime creada sin herramientas (fallback API). */
@@ -252,6 +278,7 @@ export class CedLiveClient {
     this.greetingComplete = false;
     this.heardUserSinceGreeting = false;
     this.greetingGraceUntil = 0;
+    this.awaitingFirstUserSpeech = false;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -602,13 +629,10 @@ export class CedLiveClient {
     if (type === "response.created") {
       const response = msg.response as { id?: string } | undefined;
       if (
-        !this.outboundLocked &&
-        !this.greetingInFlight &&
-        this.greetingComplete &&
-        !this.heardUserSinceGreeting &&
-        Date.now() > this.greetingGraceUntil
+        (this.awaitingFirstUserSpeech || this.greetingInFlight) &&
+        !this.outboundLocked
       ) {
-        cedRealtimeLog("greeting.cancel_unsolicited", { id: response?.id });
+        cedRealtimeLog("greeting.block_auto", { id: response?.id });
         this.triggerBargeIn();
         return;
       }
@@ -631,12 +655,13 @@ export class CedLiveClient {
     }
 
     if (isInputTranscriptionCompleted(type)) {
-      const transcript = String(msg.transcript ?? "");
-      if (transcript.trim()) {
+      const transcript = String(msg.transcript ?? "").trim();
+      if (transcript && !this.isLikelyGreetingEcho(transcript)) {
+        this.unlockConversationAfterUser();
         this.heardUserSinceGreeting = true;
-        this.userTranscriptAcc = transcript.trim();
-        handlers.onTranscriptUpdate?.(transcript.trim(), "user");
-        const intent = parseCameraIntent(transcript.trim());
+        this.userTranscriptAcc = transcript;
+        handlers.onTranscriptUpdate?.(transcript, "user");
+        const intent = parseCameraIntent(transcript);
         if (intent) handlers.onCameraIntent?.(intent);
       }
       return;
@@ -746,6 +771,10 @@ export class CedLiveClient {
     return this.userAddress;
   }
 
+  isAwaitingFirstUserSpeech(): boolean {
+    return this.awaitingFirstUserSpeech;
+  }
+
   sendSessionGreeting(): void {
     if (
       this.greetingSent ||
@@ -764,18 +793,16 @@ export class CedLiveClient {
         this.setMicTrackEnabled(false);
         this.flushInputAudioBuffer();
         const phrase = cedReceptionGreetingPhrase(this.voiceProfile, this.userAddress);
-        const turn = cedGreetingBriefTurn(phrase);
         if (this.responseInProgress) {
           this.triggerBargeIn();
           await this.waitForResponseIdle(1200);
         }
         cedRealtimeLog("greeting.create", { phrase });
-        await this.sendControlledBrief(turn, 450);
-        await this.sleep(2200);
+        await this.speakExactPhrase(phrase, 100);
         this.flushInputAudioBuffer();
-        this.greetingGraceUntil = Date.now() + 10_000;
+        this.greetingGraceUntil = Date.now() + 15_000;
         this.greetingComplete = true;
-        this.setServerAutoResponse(true);
+        this.awaitingFirstUserSpeech = true;
         this.handlers.onGreetingComplete?.();
       } finally {
         this.greetingInFlight = false;
@@ -783,11 +810,37 @@ export class CedLiveClient {
     })();
   }
 
-  /** Presencia tras silencio — una frase exacta, sin improvisar. */
+  /** Una sola frase exacta — fuera del historial de conversación. */
+  private async speakExactPhrase(phrase: string, maxOutputTokens = 100): Promise<void> {
+    if (!this.dc || !this.sessionReady || this.sendBlocked) return;
+    this.outboundLocked = true;
+    this.setServerAutoResponse(false);
+    try {
+      this.send({
+        type: "response.create",
+        response: {
+          conversation: "none",
+          max_output_tokens: maxOutputTokens,
+          tool_choice: "none",
+          instructions:
+            `Di EXACTAMENTE una sola vez, sin añadir ni repetir: "${phrase.trim()}"`,
+        },
+      });
+      await this.waitForResponseIdle(12000);
+      await this.sleep(1200);
+      this.flushInputAudioBuffer();
+    } finally {
+      this.outboundLocked = false;
+    }
+  }
+
+  /** Presencia tras silencio — una frase exacta. */
   sendPresenceBrief(phrase: string): void {
     const text = phrase.trim();
-    if (!text || this.isGreetingInProgress()) return;
-    void this.enqueueControlledBrief(cedBriefTurn(text), 80);
+    if (!text || this.greetingInFlight) return;
+    void (async () => {
+      await this.speakExactPhrase(text, 60);
+    })();
   }
 
   private sleep(ms: number): Promise<void> {
@@ -837,7 +890,7 @@ export class CedLiveClient {
       this.flushInputAudioBuffer();
     } finally {
       this.outboundLocked = false;
-      if (this.greetingComplete) {
+      if (this.heardUserSinceGreeting && !this.awaitingFirstUserSpeech) {
         this.setServerAutoResponse(true);
       }
     }

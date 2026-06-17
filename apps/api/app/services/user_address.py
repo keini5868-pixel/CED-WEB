@@ -77,15 +77,9 @@ def _greeting_phrase(
     h = _normalize_honorific(honorific) or _gender_default_honorific(gender)
     if jarvis:
         if h in ("Señor", "Señora", "Don", "Doña"):
-            return (
-                f"Hola, {h}. ¿Cómo está? Estoy aquí para servirle. "
-                "¿Cuáles son los planes para hoy?"
-            )
+            return f"Hola, {h}. ¿Cómo está?"
         name = (display_name or first_name or "Usuario").strip()
-        return (
-            f"Hola, {name}. ¿Cómo está? Estoy aquí para servirle. "
-            "¿Cuáles son los planes para hoy?"
-        )
+        return f"Hola, {name}. ¿Cómo está?"
     return f"Hola {first_name or display_name or 'Usuario'}. ¿En qué trabajamos?"
 
 
@@ -157,14 +151,13 @@ def address_context_for_prompt(user_id: str) -> str:
         f"- Nombre corto: {first or display}\n"
         f"- Tratamiento preferido: {honorific or display}\n"
         f"- Dirígete SIEMPRE como: **{display}**\n"
-        f"- Frase de saludo (solo cuando el cliente la solicite): \"{jarvis_greeting}\"\n"
-        f"- Frase de saludo estándar (solo cuando el cliente la solicite): \"{standard_greeting}\"\n"
         + (f"- {gender_note}\n" if gender_note else "")
+        + "- PROHIBIDO saludar al conectar: el sistema ya envió el saludo de recepción.\n"
+        + "- PROHIBIDO repetir 'Hola Señor', '¿cómo está?' o buenos días/tardes/noches tras el saludo inicial.\n"
         + "\n"
-        "Reglas de tratamiento:\n"
-        "- Usa el tratamiento indicado durante la conversación.\n"
-        "- PROHIBIDO saludar al conectar por tu cuenta; el cliente envía el saludo.\n"
-        "- Si el usuario pide cambiar cómo lo llamas "
+        + "Reglas de tratamiento:\n"
+        + "- Usa el tratamiento indicado durante la conversación.\n"
+        + "- Si el usuario pide cambiar cómo lo llamas "
         "(\"llámame señor\", \"dime señora\", \"trátame de jefe\", \"llámame Keini\"): "
         "invoca save_memory con key \"tratamiento\" y el valor exacto que pidió; confirma en una frase.\n"
         "- Si pide otro título distinto, reemplaza el anterior — no acumules títulos.\n"

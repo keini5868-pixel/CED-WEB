@@ -31,7 +31,7 @@ function resolveHonorific(
   return address?.displayName?.trim() || address?.firstName?.trim() || "";
 }
 
-/** Saludo recepción Jarvis — hora local + tratamiento por género. */
+/** Saludo corto — una sola frase. */
 export function cedReceptionGreetingPhrase(
   voiceProfile: "standard" | "jarvis" = "jarvis",
   address?: CedGreetingAddress,
@@ -42,16 +42,10 @@ export function cedReceptionGreetingPhrase(
   const tod = timeOfDaySalutation();
   const title = resolveHonorific(address);
   if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
-    return (
-      `Hola, ${title}. ¿Cómo está? ${tod}. ` +
-      "Estoy aquí para servirle. ¿Cuáles son los planes para hoy?"
-    );
+    return `Hola, ${title}. ¿Cómo está? ${tod}.`;
   }
   const name = title || "Usuario";
-  return (
-    `Hola, ${name}. ¿Cómo está? ${tod}. ` +
-    "Estoy aquí para servirle. ¿Cuáles son los planes para hoy?"
-  );
+  return `Hola, ${name}. ¿Cómo está? ${tod}.`;
 }
 
 /** @deprecated Usar cedReceptionGreetingPhrase */
@@ -71,15 +65,15 @@ export function cedGreetingBriefTurn(phrase: string): string {
   );
 }
 
-/** Presencia tras silencio prolongado — una sola frase. */
+/** Tras silencio — una sola frase de presencia. */
 export function cedIdlePresencePhrase(
   address?: CedGreetingAddress,
 ): string {
   const title = resolveHonorific(address);
   if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
-    return `${title}, sigo aquí.`;
+    return `¿Está ahí, ${title}?`;
   }
-  return "Sigo aquí.";
+  return "¿Está ahí?";
 }
 
 /** @deprecated Usar cedGreetingBriefTurn + cedReceptionGreetingPhrase */

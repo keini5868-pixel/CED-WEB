@@ -573,7 +573,7 @@ export function useCedVoiceSession(
           if (isStale() || !micActiveRef.current || client.isGreetingInProgress()) return;
           if (modelSpeakingRef.current || client.isResponseActive()) return;
           if (idlePresenceSentRef.current) return;
-          if (Date.now() - lastUserSpeechAtRef.current < IDLE_PRESENCE_MS - 2000) return;
+          if (!client.isAwaitingFirstUserSpeech()) return;
           idlePresenceSentRef.current = true;
           const phrase = cedIdlePresencePhrase(client.getUserAddress());
           client.sendPresenceBrief(phrase);
@@ -1178,7 +1178,7 @@ export function useCedVoiceSession(
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
           client.flushInputAudioBuffer();
-          scheduleMicUnmute(900);
+          scheduleMicUnmute(1500);
           enableListeningUi();
           idlePresenceSentRef.current = false;
           scheduleIdlePresence();
