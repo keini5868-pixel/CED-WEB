@@ -75,14 +75,12 @@ def _build_session_payload(
     with_tools: bool,
     turn_detection: dict[str, Any],
     language: str = "es",
-    temperature: float = 0.8,
 ) -> dict[str, Any]:
     session: dict[str, Any] = {
         "type": "realtime",
         "model": model,
         "instructions": instructions[:12000],
         "output_modalities": ["audio"],
-        "temperature": temperature,
         "audio": {
             "input": _audio_input(turn_detection, language=language),
             "output": {
@@ -199,7 +197,7 @@ def create_realtime_session(
         voice_profile=voice_profile or "jarvis",
     )
     lang = language or "es"
-    temperature, preferred_turn = profile_for_response_speed(response_speed)
+    _temperature, preferred_turn = profile_for_response_speed(response_speed)
     address: dict[str, Any] = {}
     try:
         from app.services.cognitive_router import build_voice_system_extras
@@ -232,7 +230,6 @@ def create_realtime_session(
                         with_tools=True,
                         turn_detection=td,
                         language=lang,
-                        temperature=temperature,
                     ),
                 )
             )
