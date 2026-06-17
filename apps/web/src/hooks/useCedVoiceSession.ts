@@ -113,7 +113,7 @@ const MAX_WS_RECONNECT = 3;
 const TURN_STUCK_MS = 22000;
 const PROCESSING_STUCK_MS = 12000;
 const MIC_UNMUTE_AFTER_SPEECH_MS = 1200;
-const MIC_UNMUTE_AFTER_GREETING_MS = 3800;
+const MIC_UNMUTE_AFTER_GREETING_MS = 4500;
 /** Tras saludo sin respuesta del usuario — una sola frase de presencia. */
 const IDLE_PRESENCE_MS = 50_000;
 
@@ -569,17 +569,7 @@ export function useCedVoiceSession(
       };
 
       const scheduleIdlePresence = () => {
-        clearIdlePresenceTimer();
-        idlePresenceTimerRef.current = window.setTimeout(() => {
-          idlePresenceTimerRef.current = null;
-          if (isStale() || !micActiveRef.current || client.isGreetingInProgress()) return;
-          if (modelSpeakingRef.current || client.isResponseActive()) return;
-          if (idlePresenceSentRef.current) return;
-          if (!client.isAwaitingFirstUserSpeech()) return;
-          idlePresenceSentRef.current = true;
-          const phrase = cedIdlePresencePhrase(client.getUserAddress());
-          client.sendPresenceBrief(phrase);
-        }, IDLE_PRESENCE_MS);
+        /* Desactivado: hablaba solo tras silencio y confundía con TV/eco. */
       };
 
       /** Evita que el mic capte eco de Cedar mientras aún suena por WebRTC. */
@@ -1196,6 +1186,9 @@ export function useCedVoiceSession(
           if (isStale() || role !== "user") return;
           const trimmed = text.trim();
           if (!trimmed || /^<noise>$/i.test(trimmed)) return;
+          if (/^(muchas|muchísimas)?\s*gracias/i.test(trimmed.toLowerCase()) && trimmed.length < 50) {
+            return;
+          }
           lastUserSpeechAtRef.current = Date.now();
           idlePresenceSentRef.current = false;
           clearIdlePresenceTimer();
@@ -1854,7 +1847,14 @@ export function useCedVoiceSession(
 
   useEffect(() => {
     if (!micOn) return;
-    clientRef.current?.setMicTrackEnabled(!paused);
+    const client = clientRef.current;
+    if (!client) return;
+    client.setMicTrackEnabled(!paused);
+    if (paused) {
+      client.hardPause();
+    } else if (!client.isGreetingInProgress()) {
+      client.resumeListening();
+    }
   }, [micOn, paused]);
 
   useEffect(() => {

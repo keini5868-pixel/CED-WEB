@@ -155,7 +155,7 @@ def address_context_for_prompt(user_id: str) -> str:
         + "- Saludo de recepción YA emitido por el sistema (NO repetir): "
         + f"\"Hola, {honorific or 'Señor'}. ¿En qué puedo ayudarle hoy?\"\n"
         + "- PROHIBIDO saludar al conectar, decir '¿cómo está?' o buenos días/tardes/noches.\n"
-        + "- Si el usuario solo dice 'bien' o 'gracias': responde SOLO 'Entendido, Señor/Señora.' — PROHIBIDO 'me alegra'.\n"
+        + "- Si solo escuchas 'bien', 'gracias' o ruido/TV sin una petición clara: SILENCIO TOTAL — NO digas 'Entendido' ni respondas.\n"
         + "\n"
         + "Reglas de tratamiento:\n"
         + "- Usa el tratamiento indicado durante la conversación.\n"
