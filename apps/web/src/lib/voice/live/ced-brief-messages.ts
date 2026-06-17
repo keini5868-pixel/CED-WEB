@@ -2,6 +2,18 @@
 
 import type { UserAddressContext } from "@/lib/api/profile";
 
+type CedGreetingAddress = Partial<
+  Pick<
+    UserAddressContext,
+    | "honorific"
+    | "gender"
+    | "displayName"
+    | "firstName"
+    | "greetingPhraseJarvis"
+    | "greetingPhraseStandard"
+  >
+> | null;
+
 function timeOfDaySalutation(): string {
   const hour = new Date().getHours();
   if (hour >= 5 && hour < 12) return "Buenos días";
@@ -10,7 +22,7 @@ function timeOfDaySalutation(): string {
 }
 
 function resolveHonorific(
-  address?: Pick<UserAddressContext, "honorific" | "gender" | "displayName" | "firstName"> | null,
+  address?: CedGreetingAddress,
 ): string {
   const h = address?.honorific?.trim();
   if (h) return h;
@@ -22,10 +34,7 @@ function resolveHonorific(
 /** Saludo recepción Jarvis — hora local + tratamiento por género. */
 export function cedReceptionGreetingPhrase(
   voiceProfile: "standard" | "jarvis" = "jarvis",
-  address?: Pick<
-    UserAddressContext,
-    "honorific" | "gender" | "displayName" | "firstName" | "greetingPhraseJarvis" | "greetingPhraseStandard"
-  > | null,
+  address?: CedGreetingAddress,
 ): string {
   if (voiceProfile !== "jarvis") {
     return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
@@ -48,7 +57,7 @@ export function cedReceptionGreetingPhrase(
 /** @deprecated Usar cedReceptionGreetingPhrase */
 export function cedGreetingPhrase(
   voiceProfile: "standard" | "jarvis" = "jarvis",
-  address?: Pick<UserAddressContext, "greetingPhraseJarvis" | "greetingPhraseStandard"> | null,
+  address?: CedGreetingAddress,
 ): string {
   return cedReceptionGreetingPhrase(voiceProfile, address);
 }
@@ -64,7 +73,7 @@ export function cedGreetingBriefTurn(phrase: string): string {
 
 /** Presencia tras silencio prolongado — una sola frase. */
 export function cedIdlePresencePhrase(
-  address?: Pick<UserAddressContext, "honorific" | "gender"> | null,
+  address?: CedGreetingAddress,
 ): string {
   const title = resolveHonorific(address);
   if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
@@ -76,7 +85,7 @@ export function cedIdlePresencePhrase(
 /** @deprecated Usar cedGreetingBriefTurn + cedReceptionGreetingPhrase */
 export function cedGreetingTurn(
   voiceProfile: "standard" | "jarvis" = "jarvis",
-  address?: Pick<UserAddressContext, "greetingPhraseJarvis" | "greetingPhraseStandard"> | null,
+  address?: CedGreetingAddress,
 ): string {
   return cedGreetingBriefTurn(cedReceptionGreetingPhrase(voiceProfile, address));
 }
