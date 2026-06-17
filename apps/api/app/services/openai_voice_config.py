@@ -25,7 +25,7 @@ REALTIME_TEMPERATURE = 0.55
 REALTIME_TURN_DETECTION: dict[str, Any] = {
     "type": "semantic_vad",
     "eagerness": "medium",
-    "create_response": False,
+    "create_response": True,
     "interrupt_response": True,
 }
 

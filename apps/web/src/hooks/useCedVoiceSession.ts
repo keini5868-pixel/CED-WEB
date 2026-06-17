@@ -1166,29 +1166,23 @@ export function useCedVoiceSession(
         },
         onGreetingComplete: () => {
           if (isStale()) return;
-          greetingPendingRef.current = false;
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
           client.flushInputAudioBuffer();
           clearMicUnmuteTimer();
           micUnmuteTimerRef.current = window.setTimeout(() => {
             micUnmuteTimerRef.current = null;
-            if (isStale() || pausedRef.current) return;
-            if (modelSpeakingRef.current || client.isResponseActive()) return;
+            if (isStale() || pausedRef.current || !greetingPendingRef.current) return;
+            greetingPendingRef.current = false;
             client.enableListeningAfterGreeting();
             client.setMicTrackEnabled(true);
             enableListeningUi();
-          }, MIC_UNMUTE_AFTER_GREETING_MS);
-          idlePresenceSentRef.current = false;
-          scheduleIdlePresence();
+          }, 9000);
         },
         onTranscriptUpdate: (text, role) => {
           if (isStale() || role !== "user") return;
           const trimmed = text.trim();
           if (!trimmed || /^<noise>$/i.test(trimmed)) return;
-          if (/^(muchas|muchísimas)?\s*gracias/i.test(trimmed.toLowerCase()) && trimmed.length < 50) {
-            return;
-          }
           lastUserSpeechAtRef.current = Date.now();
           idlePresenceSentRef.current = false;
           clearIdlePresenceTimer();
@@ -1645,7 +1639,18 @@ export function useCedVoiceSession(
           );
         },
         onModelAudioDone: () => {
-          if (isStale() || greetingPendingRef.current) return;
+          if (isStale()) return;
+          if (greetingPendingRef.current) {
+            greetingPendingRef.current = false;
+            clearMicUnmuteTimer();
+            modelSpeakingRef.current = false;
+            if (!pausedRef.current) {
+              client.enableListeningAfterGreeting();
+              client.setMicTrackEnabled(true);
+              enableListeningUi();
+            }
+            return;
+          }
           scheduleMicUnmute(MIC_UNMUTE_AFTER_SPEECH_MS + 100);
         },
         onInterrupted: () => {

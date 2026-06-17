@@ -187,6 +187,7 @@ export class CedLiveClient {
   private lastResponseCreateAt = 0;
   private briefChain: Promise<void> = Promise.resolve();
   private toolsEnabled = true;
+  private modelAudioDoneResolve: (() => void) | null = null;
 
   isGreetingInProgress(): boolean {
     return (
@@ -209,21 +210,21 @@ export class CedLiveClient {
     );
   }
 
-  /** Solo cuenta como usuario real — evita TV/eco/"gracias" sueltos. */
+  /** Solo cuenta como usuario real para tools — no bloquea transcripción ni respuestas VAD. */
   private isMeaningfulUserSpeech(transcript: string): boolean {
     const t = transcript.trim();
     if (!t || this.isLikelyAmbientOrEcho(t)) return false;
     const low = t.toLowerCase();
     if (/^(muchas|muchísimas)?\s*gracias/i.test(low) && t.length < 40) return false;
     if (
-      /\b(publicar|clima|comentario|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|prospecci|activar|publica)\b/i.test(
+      /\b(publicar|clima|comentario|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|prospecci|activar|publica|hora|tiempo|qué|que|cómo|como|dónde|donde|cuánto|cuanto)\b/i.test(
         low,
       )
     ) {
       return true;
     }
     if (parseCameraIntent(t)) return true;
-    return t.length >= 18;
+    return t.length >= 8;
   }
 
   private isLikelyAmbientOrEcho(transcript: string): boolean {
@@ -252,20 +253,11 @@ export class CedLiveClient {
     }
   }
 
-  /** Solo una response.created activa durante saludo/brief. */
+  /** Permite respuestas nativas de OpenAI Realtime; solo bloquea duplicados y utterances scriptadas. */
   private allowResponseCreated(responseId?: string | null): boolean {
     const id = responseId ?? null;
-    const inLockWindow =
-      this.greetingInFlight ||
-      Date.now() < this.blockAutoResponsesUntil ||
-      this.singleSpeechSlot !== "closed";
 
-    if (inLockWindow) {
-      if (this.singleSpeechSlot === "closed") {
-        cedRealtimeLog("response.reject.no_slot", { id });
-        this.cancelResponse(id);
-        return false;
-      }
+    if (this.singleSpeechSlot !== "closed") {
       if (this.singleSpeechSlot === "open") {
         this.singleSpeechSlot = id ?? "unknown";
         return true;
@@ -278,7 +270,13 @@ export class CedLiveClient {
       return true;
     }
 
-    if (!this.userMicLive) {
+    if (!this.greetingComplete && !this.greetingInFlight && !this.outboundLocked) {
+      cedRealtimeLog("response.reject.pre_greeting", { id });
+      this.cancelResponse(id);
+      return false;
+    }
+
+    if (!this.userMicLive && !this.outboundLocked && !this.intentionalResponse) {
       cedRealtimeLog("response.reject.mic_off", { id });
       this.cancelResponse(id);
       return false;
@@ -292,12 +290,12 @@ export class CedLiveClient {
     return true;
   }
 
-  /** Activa VAD cuando el micrófono del usuario está listo. */
+  /** Activa VAD nativo (OpenAI responde e interrumpe como ChatGPT voz). */
   enableListeningAfterGreeting(): void {
     if (!this.sessionReady || this.sendBlocked) return;
     this.flushInputAudioBuffer();
     this.userMicLive = true;
-    this.applyTurnDetection("listen");
+    this.applyTurnDetection("auto");
   }
 
   /** Pausa — corta voz y deja de escuchar. */
@@ -309,7 +307,6 @@ export class CedLiveClient {
     this.flushInputAudioBuffer();
     this.setRemoteMuted(true);
     this.endSingleSpeechSlot();
-    this.blockAutoResponsesUntil = Date.now() + 60_000;
   }
 
   /** Reanuda escucha tras pausa. */
@@ -317,7 +314,8 @@ export class CedLiveClient {
     if (!this.sessionReady || this.sendBlocked) return;
     this.setRemoteMuted(false);
     this.userMicLive = true;
-    this.applyTurnDetection("listen");
+    this.blockAutoResponsesUntil = 0;
+    this.applyTurnDetection("auto");
     this.flushInputAudioBuffer();
   }
 
@@ -342,7 +340,6 @@ export class CedLiveClient {
     this.heardUserSinceGreeting = true;
     this.lastMeaningfulUserUtterance = transcript.trim();
     this.blockAutoResponsesUntil = 0;
-    this.endSingleSpeechSlot();
   }
 
   private resolveHonorific(): string {
@@ -887,22 +884,30 @@ export class CedLiveClient {
 
     if (isResponseAudioDone(type)) {
       handlers.onModelAudioDone?.();
+      this.modelAudioDoneResolve?.();
+      this.modelAudioDoneResolve = null;
       return;
     }
 
     if (isInputTranscriptionCompleted(type)) {
       const transcript = String(msg.transcript ?? "").trim();
-      if (transcript && this.isMeaningfulUserSpeech(transcript)) {
+      if (!transcript || /^<noise>$/i.test(transcript)) return;
+
+      handlers.onTranscriptUpdate?.(transcript, "user");
+      this.userTranscriptAcc = transcript;
+
+      if (this.isLikelyBackgroundNoise(transcript)) {
+        cedRealtimeLog("transcript.noise", { transcript: transcript.slice(0, 80) });
+        this.flushInputAudioBuffer();
+        return;
+      }
+
+      if (this.isMeaningfulUserSpeech(transcript)) {
         this.markUserSpeechHeard(transcript);
-        this.userTranscriptAcc = transcript;
-        handlers.onTranscriptUpdate?.(transcript, "user");
         const intent = parseCameraIntent(transcript);
         if (intent && this.userMicLive) handlers.onCameraIntent?.(intent);
-        if (this.greetingComplete && !this.outboundLocked && this.userMicLive) {
-          void this.armUserTurnResponse(transcript);
-        }
-      } else if (transcript) {
-        cedRealtimeLog("transcript.ignored", { transcript: transcript.slice(0, 80) });
+      } else if (this.isLikelyAmbientOrEcho(transcript)) {
+        cedRealtimeLog("transcript.echo", { transcript: transcript.slice(0, 80) });
         this.flushInputAudioBuffer();
       }
       return;
@@ -1056,17 +1061,16 @@ export class CedLiveClient {
           this.triggerBargeIn();
           await this.waitForResponseIdle(1200);
         }
-        this.blockAutoResponsesUntil = Date.now() + 20_000;
+        this.blockAutoResponsesUntil = Date.now() + 4_000;
         this.beginSingleSpeechSlot();
         cedRealtimeLog("greeting.create", { phrase });
-        await this.speakExactPhrase(phrase, 64);
+        await this.speakExactPhrase(phrase, 120);
         this.flushInputAudioBuffer();
         this.endSingleSpeechSlot();
-        this.blockAutoResponsesUntil = Date.now() + 20_000;
-        this.greetingGraceUntil = Date.now() + 6_000;
+        this.greetingGraceUntil = Date.now() + 2_000;
         this.greetingComplete = true;
         this.awaitingFirstUserSpeech = true;
-        this.turnCooldownUntil = Date.now() + 3500;
+        this.turnCooldownUntil = 0;
         this.handlers.onGreetingComplete?.();
       } finally {
         this.greetingInFlight = false;
@@ -1075,11 +1079,13 @@ export class CedLiveClient {
   }
 
   /** Una sola frase exacta — fuera del historial de conversación. */
-  private async speakExactPhrase(phrase: string, maxOutputTokens = 100): Promise<void> {
+  private async speakExactPhrase(phrase: string, maxOutputTokens = 120): Promise<void> {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     this.outboundLocked = true;
     this.setServerAutoResponse(false);
     try {
+      this.intentionalResponse = true;
+      this.intentionalResponseActive = true;
       this.send({
         type: "response.create",
         response: {
@@ -1087,17 +1093,32 @@ export class CedLiveClient {
           max_output_tokens: maxOutputTokens,
           tool_choice: "none",
           instructions:
-            `Pronuncia ÚNICAMENTE este texto en español, sin añadir ni quitar palabras. ` +
-            `PROHIBIDO: "cómo está", buenos días/tardes/noches, "me alegra", "aquí CED", inglés. ` +
-            `Texto exacto: "${phrase.trim()}"`,
+            `Di EXACTAMENTE este texto en español, de corrido, sin pausas largas ni palabras extra: ` +
+            `"${phrase.trim()}"`,
         },
       });
-      await this.waitForResponseIdle(12000);
-      await this.sleep(800);
+      await this.waitForResponseIdle(15000);
+      await this.waitForModelAudioDone(10000);
+      await this.sleep(500);
       this.flushInputAudioBuffer();
     } finally {
       this.outboundLocked = false;
+      this.intentionalResponse = false;
+      this.intentionalResponseActive = false;
     }
+  }
+
+  private waitForModelAudioDone(maxMs = 8000): Promise<void> {
+    return new Promise((resolve) => {
+      const timeout = window.setTimeout(() => {
+        this.modelAudioDoneResolve = null;
+        resolve();
+      }, maxMs);
+      this.modelAudioDoneResolve = () => {
+        window.clearTimeout(timeout);
+        resolve();
+      };
+    });
   }
 
   /** Presencia tras silencio — una frase exacta. */
@@ -1518,7 +1539,8 @@ export class CedLiveClient {
 
     if (!silent) {
       cedRealtimeLog("tool.response.create", { call_id: callId });
-      this.requestSingleResponse();
+      this.intentionalResponse = true;
+      this.send({ type: "response.create" });
     }
   }
 }
