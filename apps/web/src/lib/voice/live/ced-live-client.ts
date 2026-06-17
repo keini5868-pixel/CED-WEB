@@ -6,6 +6,7 @@
 import type { VoiceSessionPreferences } from "@ced/types";
 
 import { fetchDeepAnalysis, fetchGenerateImage, fetchVoiceBrief, negotiateRealtimeCall } from "@/lib/api/openai";
+import { fetchSocialComments } from "@/lib/api/social";
 import type { UserAddressContext } from "@/lib/api/profile";
 import { fetchEphemeralTokenCached } from "@/lib/voice/ephemeralTokenCache";
 import { parseCameraIntent } from "@/lib/voice/cameraIntents";
@@ -14,7 +15,7 @@ import {
   isProspectionReportIntent,
   userExplicitlyRequestedProspection,
 } from "@/lib/voice/visualSearchIntent";
-import { isSocialCommentReadIntent } from "@/lib/voice/socialCommentIntent";
+import { isSocialCommentReadIntent, socialCommentPlatform } from "@/lib/voice/socialCommentIntent";
 import { isCasualSocialGreeting } from "@/lib/voice/voiceSmallTalk";
 import { cedVoiceError, cedVoiceLog, cedRealtimeLog } from "@/lib/voice/cedVoiceLogger";
 import {
@@ -209,6 +210,8 @@ export class CedLiveClient {
   private postGreetingLockUntil = 0;
   /** Tras saludo: OpenAI server_vad + create_response maneja el turno. */
   private serverConversationMode = false;
+  /** Espera primer transcript real antes de create_response automático. */
+  private waitingForFirstUserInput = false;
 
   private static SERVER_VAD = {
     threshold: 0.5,
@@ -372,6 +375,12 @@ export class CedLiveClient {
       return false;
     }
 
+    if (this.waitingForFirstUserInput && !this.intentionalResponseActive) {
+      cedRealtimeLog("response.reject.awaiting_first_user", { id });
+      this.cancelResponse(id);
+      return false;
+    }
+
     if (this.singleSpeechSlot !== "closed") {
       if (this.singleSpeechSlot === "open") {
         this.singleSpeechSlot = id ?? "unknown";
@@ -399,15 +408,30 @@ export class CedLiveClient {
     return true;
   }
 
-  /** Tras saludo: server_vad + create_response en el servidor. */
+  /** Tras saludo: escucha sin autorespuesta hasta primer transcript del usuario. */
   enableListeningAfterGreeting(): void {
     if (!this.sessionReady || this.sendBlocked) return;
     this.flushInputAudioBuffer();
     this.userMicLive = true;
     this.serverConversationMode = true;
+    this.waitingForFirstUserInput = true;
     this.postGreetingLockUntil = 0;
     this.blockAutoResponsesUntil = 0;
+    this.applyTurnDetection("manual");
+  }
+
+  /** Activa create_response tras primera intervención real del usuario. */
+  private onFirstUserTranscript(transcript: string): void {
+    if (!this.waitingForFirstUserInput) return;
+    if (!this.isMeaningfulUserSpeech(transcript)) return;
+    this.waitingForFirstUserInput = false;
+    cedRealtimeLog("turn_detection.auto_after_first_user", {
+      transcript: transcript.slice(0, 60),
+    });
     this.applyTurnDetection("auto");
+    if (!this.responseInProgress && this.userMicLive) {
+      this.send({ type: "response.create" });
+    }
   }
 
   /** Pausa — corta voz y deja de escuchar. */
@@ -427,7 +451,13 @@ export class CedLiveClient {
     this.setRemoteMuted(false);
     this.userMicLive = true;
     this.blockAutoResponsesUntil = 0;
-    this.applyTurnDetection(this.serverConversationMode ? "auto" : "listen");
+    this.applyTurnDetection(
+      this.serverConversationMode
+        ? this.waitingForFirstUserInput
+          ? "manual"
+          : "auto"
+        : "listen",
+    );
     this.flushInputAudioBuffer();
   }
 
@@ -588,8 +618,8 @@ export class CedLiveClient {
     this.send({ type: "input_audio_buffer.clear" });
   }
 
-  /** server_vad — alineado con API (threshold 0.5, silence 500ms). */
-  private applyTurnDetection(mode: "off" | "listen" | "auto"): void {
+  /** server_vad — manual = escucha sin create_response; auto = conversación fluida. */
+  private applyTurnDetection(mode: "off" | "listen" | "manual" | "auto"): void {
     if (!this.dc || this.dc.readyState !== "open") return;
     const turn_detection =
       mode === "off"
@@ -616,7 +646,7 @@ export class CedLiveClient {
   }
 
   private setServerAutoResponse(enabled: boolean): void {
-    this.applyTurnDetection(enabled ? "auto" : "listen");
+    this.applyTurnDetection(enabled ? "auto" : "manual");
   }
 
   disconnect(): void {
@@ -647,6 +677,7 @@ export class CedLiveClient {
     this.userResponseArmed = false;
     this.postGreetingLockUntil = 0;
     this.serverConversationMode = false;
+    this.waitingForFirstUserInput = false;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -1056,6 +1087,7 @@ export class CedLiveClient {
 
       if (this.isMeaningfulUserSpeech(transcript)) {
         this.markUserSpeechHeard(transcript);
+        this.onFirstUserTranscript(transcript);
         this.userTurnResponded = false;
         this.lastArmedTranscript = "";
         const intent = parseCameraIntent(transcript);
@@ -1239,7 +1271,7 @@ export class CedLiveClient {
         await this.speakExactPhrase(phrase, 300);
         this.flushInputAudioBuffer();
         this.endSingleSpeechSlot();
-        this.greetingGraceUntil = Date.now() + 6_000;
+        this.greetingGraceUntil = Date.now() + 15_000;
         this.greetingComplete = true;
         this.awaitingFirstUserSpeech = true;
         this.heardUserSinceGreeting = false;
@@ -1686,11 +1718,25 @@ export class CedLiveClient {
         return;
       }
 
-      if (name === LEER_COMENTARIOS_REDES && isSocialCommentReadIntent(this.lastMeaningfulUserUtterance)) {
-        cedRealtimeLog("tool.comments.client_handled", {
-          last: this.lastMeaningfulUserUtterance.slice(0, 60),
+      if (name === LEER_COMENTARIOS_REDES) {
+        h.onToolStart?.(name);
+        const platRaw = String(args.platform ?? "both").trim().toLowerCase();
+        const platform =
+          platRaw === "instagram" || platRaw === "ig"
+            ? "instagram"
+            : platRaw === "facebook" || platRaw === "fb"
+              ? "facebook"
+              : socialCommentPlatform(this.lastMeaningfulUserUtterance);
+        const r = await fetchSocialComments(platform);
+        const spoken = r.ok
+          ? r.spoken
+          : r.error || "No fue posible consultar los comentarios.";
+        await this.submitToolOutput(callId, {
+          status: r.ok ? "ok" : "error",
+          spoken,
+          platform,
+          success: r.ok,
         });
-        await this.submitToolOutput(callId, { status: "ok", silent: true });
         return;
       }
 

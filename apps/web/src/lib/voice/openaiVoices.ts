@@ -48,5 +48,5 @@ export function normalizeVoiceName(name: string | undefined): GeminiVoiceId {
   const n = (name ?? "").trim().toLowerCase();
   const known = OPENAI_VOICE_OPTIONS.some((v) => v.id === n);
   if (known) return n;
-  return "cedar";
+  return "ash";
 }

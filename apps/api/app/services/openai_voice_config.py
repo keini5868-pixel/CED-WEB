@@ -16,7 +16,7 @@ OPENAI_VOICES = frozenset({
     "marin",
     "cedar",
 })
-DEFAULT_OPENAI_VOICE = "cedar"
+DEFAULT_OPENAI_VOICE = "ash"
 
 REALTIME_MAX_OUTPUT_TOKENS = 4096
 REALTIME_TEMPERATURE = 0.8
@@ -27,7 +27,7 @@ REALTIME_TURN_DETECTION: dict[str, Any] = {
     "threshold": 0.5,
     "prefix_padding_ms": 300,
     "silence_duration_ms": 500,
-    "create_response": True,
+    "create_response": False,
     "interrupt_response": True,
 }
 

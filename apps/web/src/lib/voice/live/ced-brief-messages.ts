@@ -47,7 +47,7 @@ export function cedReceptionGreetingPhrase(
   }
   const title = cedResolveHonorific(address);
   if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
-    return `Hola, ${title}. ¿En qué puedo ayudarle hoy?`;
+    return `A su servicio, ${title}.`;
   }
   const name = title || "Usuario";
   return `Hola, ${name}. ¿En qué puedo ayudarle hoy?`;

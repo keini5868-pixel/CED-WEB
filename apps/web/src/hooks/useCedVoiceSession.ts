@@ -33,11 +33,6 @@ import {
   parseGenderPreference,
 } from "@/lib/voice/addressPreferenceIntent";
 import {
-  isSocialCommentReadIntent,
-  isUnsupportedCommentPlatform,
-  socialCommentPlatform,
-} from "@/lib/voice/socialCommentIntent";
-import {
   isCasualSocialGreeting,
   isStandaloneHonorificPreference,
 } from "@/lib/voice/voiceSmallTalk";
@@ -566,7 +561,6 @@ export function useCedVoiceSession(
       const micUnmuteTimerRef = { current: null as number | null };
       const lastResponseStartRef = { current: 0 };
       const socialCommentsHandledAtRef = { current: 0 };
-      const socialCommentsInFlightRef = { current: false };
       const prospectionInFlightRef = { current: false };
 
       const finishClientVoiceAction = () => {
@@ -615,56 +609,6 @@ export function useCedVoiceSession(
             finishClientVoiceAction();
             if (!isStale() && !pausedRef.current) {
               scheduleMicUnmute(1200);
-            }
-          }
-        })();
-      };
-
-      const runSocialCommentsRead = (utterance: string) => {
-        if (socialCommentsInFlightRef.current) return;
-        const now = Date.now();
-        if (now - socialCommentsHandledAtRef.current < 4_000) return;
-        socialCommentsInFlightRef.current = true;
-        void (async () => {
-          try {
-            client.setMicTrackEnabled(false);
-            const h = cedResolveHonorific(client.getUserAddress());
-            if (isUnsupportedCommentPlatform(utterance)) {
-              await client.speakExactNarrationAsync(
-                `${h}, por ahora solo puedo leer comentarios de Instagram y Facebook.`,
-              );
-              return;
-            }
-            await client.speakExactNarrationAsync(`Un momento, ${h}.`);
-            if (isStale()) return;
-            setStatusLabel("Leyendo comentarios…");
-            setOrbState("processing");
-            const platform = socialCommentPlatform(utterance);
-            const r = await Promise.race([
-              fetchSocialComments(platform),
-              new Promise<{ ok: false; error: string }>((resolve) =>
-                window.setTimeout(
-                  () => resolve({ ok: false, error: "La consulta tardó demasiado." }),
-                  22_000,
-                ),
-              ),
-            ]);
-            socialCommentsHandledAtRef.current = Date.now();
-            if (isStale()) return;
-            await client.speakExactNarrationAsync(
-              r.ok ? r.spoken : r.error || "No pude leer los comentarios.",
-            );
-          } catch {
-            if (!isStale()) {
-              await client.speakExactNarrationAsync(
-                "No pude completar la consulta de comentarios.",
-              );
-            }
-          } finally {
-            socialCommentsInFlightRef.current = false;
-            finishClientVoiceAction();
-            if (!isStale() && !pausedRef.current) {
-              scheduleMicUnmute(1500);
             }
           }
         })();
@@ -1345,10 +1289,6 @@ export function useCedVoiceSession(
             }
 
             if (client.isToolsEnabled()) {
-              if (isSocialCommentReadIntent(trimmed) || isUnsupportedCommentPlatform(trimmed)) {
-                runSocialCommentsRead(trimmed);
-                return;
-              }
               if (userExplicitlyRequestedProspection(trimmed)) {
                 runProspectionActivate();
                 return;
@@ -1369,11 +1309,6 @@ export function useCedVoiceSession(
                 })();
                 return;
               }
-              return;
-            }
-
-            if (isSocialCommentReadIntent(trimmed) || isUnsupportedCommentPlatform(trimmed)) {
-              runSocialCommentsRead(trimmed);
               return;
             }
 
@@ -1451,10 +1386,6 @@ export function useCedVoiceSession(
                 : { ...prev, status: "responding" },
             );
           }
-        },
-        onSocialCommentsIntent: (utterance) => {
-          if (isStale()) return;
-          runSocialCommentsRead(utterance);
         },
         onProspectionIntent: () => {
           if (isStale()) return;
