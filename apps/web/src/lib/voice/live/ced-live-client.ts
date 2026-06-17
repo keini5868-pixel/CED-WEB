@@ -194,10 +194,8 @@ export class CedLiveClient {
       (low.includes("señor") ||
         low.includes("senor") ||
         low.includes("señora") ||
-        low.includes("cómo está") ||
-        low.includes("como esta") ||
-        low.includes("buenas") ||
-        low.includes("buenos"))
+        low.includes("en qué puedo ayudarle") ||
+        low.includes("en que puedo ayudarle"))
     );
   }
 

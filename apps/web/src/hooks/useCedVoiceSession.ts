@@ -17,7 +17,7 @@ import {
   enableProspection,
   fetchProspectionReport,
 } from "@/lib/api/prospection";
-import { publishFacebook, publishInstagram } from "@/lib/api/social";
+import { publishFacebook, publishInstagram, fetchSocialComments } from "@/lib/api/social";
 import { fetchVisionAnalyze, fetchVisionWebSearch } from "@/lib/api/vision";
 import {
   endVoiceSession,
@@ -45,6 +45,7 @@ import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import { normalizeVoiceName } from "@/lib/voice/openaiVoices";
 import {
+  LEER_COMENTARIOS_REDES,
   ACTIVAR_PROSPECCION,
   ANALIZAR_CAMARA,
   BUSCAR_LO_VISIBLE,
@@ -1311,6 +1312,7 @@ export function useCedVoiceSession(
             [REPORTE_PROSPECCION]: "Generando reporte…",
             [PUBLICAR_FACEBOOK]: "Publicando en Facebook…",
             [PUBLICAR_INSTAGRAM]: "Publicando en Instagram…",
+            [LEER_COMENTARIOS_REDES]: "Leyendo comentarios…",
             [BUSCAR_LO_VISIBLE]: "Buscando lo que veo…",
             [ANALIZAR_CAMARA]: "Analizando cámara…",
             request_camera_activation: "Activando cámara…",
@@ -1478,6 +1480,20 @@ export function useCedVoiceSession(
             const r = await fetchProspectionReport();
             return {
               spoken: r.ok ? r.spoken : "no pude obtener el reporte.",
+            };
+          }
+          if (name === LEER_COMENTARIOS_REDES) {
+            const platRaw = String(args.platform ?? "both").trim().toLowerCase();
+            const platform =
+              platRaw === "instagram" || platRaw === "ig"
+                ? "instagram"
+                : platRaw === "facebook" || platRaw === "fb"
+                  ? "facebook"
+                  : "both";
+            const r = await fetchSocialComments(platform);
+            return {
+              spoken: r.ok ? r.spoken : r.error || "No pude leer los comentarios.",
+              ok: r.ok,
             };
           }
           if (name === PUBLICAR_FACEBOOK) {

@@ -14,12 +14,6 @@ type CedGreetingAddress = Partial<
   >
 > | null;
 
-function timeOfDaySalutation(): string {
-  const hour = new Date().getHours();
-  if (hour >= 5 && hour < 12) return "Buenos días";
-  if (hour >= 12 && hour < 19) return "Buenas tardes";
-  return "Buenas noches";
-}
 
 function resolveHonorific(
   address?: CedGreetingAddress,
@@ -31,7 +25,7 @@ function resolveHonorific(
   return address?.displayName?.trim() || address?.firstName?.trim() || "";
 }
 
-/** Saludo corto — una sola frase. */
+/** Saludo fijo — Señor/Señora + en qué puedo ayudarle hoy. */
 export function cedReceptionGreetingPhrase(
   voiceProfile: "standard" | "jarvis" = "jarvis",
   address?: CedGreetingAddress,
@@ -39,13 +33,12 @@ export function cedReceptionGreetingPhrase(
   if (voiceProfile !== "jarvis") {
     return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
   }
-  const tod = timeOfDaySalutation();
   const title = resolveHonorific(address);
   if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
-    return `Hola, ${title}. ¿Cómo está? ${tod}.`;
+    return `Hola, ${title}. ¿En qué puedo ayudarle hoy?`;
   }
   const name = title || "Usuario";
-  return `Hola, ${name}. ¿Cómo está? ${tod}.`;
+  return `Hola, ${name}. ¿En qué puedo ayudarle hoy?`;
 }
 
 /** @deprecated Usar cedReceptionGreetingPhrase */
@@ -130,11 +123,11 @@ function honorificSuffix(
 
 /** Confirmación Jarvis tras publicar con éxito. */
 export function cedPublishSuccessPhrase(
-  platform: "facebook" | "instagram",
+  _platform: "facebook" | "instagram",
   address?: Pick<UserAddressContext, "honorific"> | null,
 ): string {
-  const net = platform === "facebook" ? "Facebook" : "Instagram";
-  return `Publicación enviada con éxito a ${net}${honorificSuffix(address)}.`;
+  const h = address?.honorific?.trim() || "Señor";
+  return `Publicación enviada, ${h}. ¿Algo más en lo que pueda servirle?`;
 }
 
 /** Error Jarvis tras fallo de publicación. */

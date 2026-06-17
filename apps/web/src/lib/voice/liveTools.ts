@@ -5,6 +5,7 @@ import { Type, type FunctionDeclaration } from "@google/genai";
 export const CONSULTAR_SISTEMA_AVANZADO = "consultar_sistema_avanzado";
 export const GUARDAR_MEMORIA = "guardar_memoria";
 export const BUSCAR_MEMORIA = "buscar_memoria";
+export const LEER_COMENTARIOS_REDES = "leer_comentarios_redes";
 export const ACTIVAR_PROSPECCION = "activar_prospeccion";
 export const DESACTIVAR_PROSPECCION = "desactivar_prospeccion";
 export const REPORTE_PROSPECCION = "reporte_prospeccion";
@@ -155,6 +156,7 @@ export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
 ];
 
 export const LIVE_TOOL_NAMES = new Set([
+  LEER_COMENTARIOS_REDES,
   ...(LIVE_FUNCTION_DECLARATIONS.map((d) => d.name).filter(Boolean) as string[]),
   ANALIZAR_CAMARA,
   REQUEST_CAMERA_ACTIVATION,

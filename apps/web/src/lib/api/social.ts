@@ -60,6 +60,28 @@ export async function publishInstagram(
   }
 }
 
+export async function fetchSocialComments(
+  platform: "both" | "instagram" | "facebook" = "both",
+): Promise<{ ok: true; spoken: string } | { ok: false; error: string }> {
+  try {
+    const res = await proxyFetch(
+      `meta/comments?platform=${encodeURIComponent(platform)}`,
+    );
+    const data = await parseApiJson<{ ok?: boolean; spoken?: string; error?: string; detail?: string }>(
+      res,
+    );
+    if (!res.ok || !data.ok) {
+      return {
+        ok: false,
+        error: data.error || data.detail || "No pude leer los comentarios.",
+      };
+    }
+    return { ok: true, spoken: data.spoken || "Sin comentarios recientes." };
+  } catch {
+    return { ok: false, error: "Error de red al leer comentarios." };
+  }
+}
+
 export async function uploadPublishImage(
   imageData: string,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {

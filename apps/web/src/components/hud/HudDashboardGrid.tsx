@@ -98,7 +98,7 @@ export function HudDashboardGrid() {
           <HudCollapsible title="CASTILLO" defaultOpen>
             <LeftPanel3DCarousel />
           </HudCollapsible>
-          <HudCollapsible title="GLOBAL">
+          <HudCollapsible title="CONVERSACIÓN">
             <HudGlobalPanel />
           </HudCollapsible>
           <HudCollapsible title="DRONES">

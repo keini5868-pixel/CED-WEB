@@ -261,6 +261,27 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "leer_comentarios_redes",
+        "description": (
+            "Úsala SIEMPRE que el usuario quiera saber qué dice la gente, revisar feedback, "
+            "leer comentarios de posts, responder a la audiencia o auditar publicaciones de "
+            "Instagram y Facebook. Patrón: 'Ok, Señor, un momento.' → invoca AHORA → "
+            "informa cuántos comentarios hay y si alguno es caliente (posible cliente). "
+            "PROHIBIDO inventar comentarios sin invocar esta herramienta."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "enum": ["both", "instagram", "facebook"],
+                    "description": "Red a consultar. Por defecto both.",
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
         "name": "activar_prospeccion",
         "description": (
             "Activa modo prospección / perspective mode (Élite+). "

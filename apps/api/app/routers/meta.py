@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from app.services import supabase_db
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
+from app.services.social_comments import fetch_social_comments
 
 logger = logging.getLogger(__name__)
 
@@ -209,6 +210,16 @@ def meta_publish_instagram(
         )
     except MetaSocialError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/comments")
+def meta_read_comments(
+    user_id: str = Depends(require_user_id),
+    platform: str = Query(default="both"),
+) -> dict:
+    """Comentarios recientes de Facebook e Instagram para voz CED."""
+    require_meta_social(user_id)
+    return fetch_social_comments(user_id, platform=platform)
 
 
 @router.get("/status")

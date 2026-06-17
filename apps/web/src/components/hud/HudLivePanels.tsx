@@ -1,77 +1,121 @@
 "use client";
 
+import { useCallback, useMemo, useState } from "react";
+
 import { HudPanel } from "@ced/ui";
 
-import { useHudPanels, hudStateLabel } from "@/contexts/HudPanelContext";
+import { useHudFeed, type HudFeedItem } from "@/contexts/HudFeedContext";
+
+function roleLabel(kind: HudFeedItem["kind"]): string {
+  if (kind === "voice") return "Usted";
+  if (kind === "report") return "CED";
+  if (kind === "news") return "Intel";
+  return "CED";
+}
+
+function formatTranscript(items: HudFeedItem[]): string {
+  const chronological = [...items].reverse();
+  return chronological
+    .map((item) => `${roleLabel(item.kind)}: ${item.text}`)
+    .join("\n\n");
+}
 
 export function HudGlobalPanel() {
-  const { global, lastQuery, hudState } = useHudPanels();
+  const { items } = useHudFeed();
+  const [copied, setCopied] = useState(false);
+
+  const transcript = useMemo(() => formatTranscript(items), [items]);
+  const chronological = useMemo(() => [...items].reverse(), [items]);
+
+  const copyAll = useCallback(async () => {
+    if (!transcript.trim()) return;
+    try {
+      await navigator.clipboard.writeText(transcript);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* ignore */
+    }
+  }, [transcript]);
 
   return (
-    <div className="space-y-3">
-      <p className="ced-hud-text-secondary text-[10px] uppercase tracking-widest">
-        {hudStateLabel(hudState)}
-        {lastQuery ? ` · ${lastQuery.slice(0, 48)}` : ""}
-      </p>
-      {global.length === 0 ? (
-        <p className="ced-hud-text-body">
-          Pide a CED que busque en internet — el contexto global aparecerá aquí.
+    <div className="flex min-h-[280px] flex-col gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="ced-hud-text-secondary text-[10px] uppercase tracking-widest">
+          Diálogo en vivo · {chronological.length} turnos
+        </p>
+        <button
+          type="button"
+          onClick={() => void copyAll()}
+          disabled={!transcript.trim()}
+          className="rounded border border-cyan-500/40 px-2 py-1 font-[family-name:var(--font-orbitron)] text-[10px] uppercase tracking-wider text-cyan-300 transition hover:border-cyan-400 disabled:opacity-40"
+        >
+          {copied ? "Copiado" : "Copiar todo"}
+        </button>
+      </div>
+
+      {chronological.length === 0 ? (
+        <p className="ced-hud-text-body text-sm leading-relaxed">
+          Aquí aparecerá la conversación con CED en tiempo real. Active el micrófono y
+          podrá leer y copiar cada respuesta.
         </p>
       ) : (
-        <ul className="max-h-[200px] space-y-2 overflow-y-auto pr-1">
-          {global.map((item) => (
-            <li
-              key={item.id}
-              className="rounded border border-cyan-500/25 bg-black/50 px-3 py-2"
-            >
-              <p className="font-[family-name:var(--font-orbitron)] text-[10px] text-cyan-400">
-                {item.title}
-              </p>
-              <p className="ced-hud-text-body mt-1 text-xs leading-snug">
-                {item.text}
-              </p>
-            </li>
-          ))}
-        </ul>
+        <div
+          className="max-h-[min(420px,50vh)] flex-1 overflow-y-auto rounded border border-cyan-500/20 bg-black/40 p-3"
+          role="log"
+          aria-live="polite"
+          aria-label="Transcripción de la conversación con CED"
+        >
+          <div className="space-y-3">
+            {chronological.map((item) => (
+              <div key={item.id} className="group">
+                <p className="font-[family-name:var(--font-orbitron)] text-[10px] uppercase tracking-wider text-cyan-500/90">
+                  {roleLabel(item.kind)}
+                </p>
+                <p className="ced-hud-text-body mt-1 select-text whitespace-pre-wrap text-sm leading-relaxed">
+                  {item.text}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
 export function HudSummaryPanel() {
-  const { summary, hudState, lastQuery } = useHudPanels();
+  const { items } = useHudFeed();
+  const lastReport = items.find((i) => i.kind === "report")?.text ?? "";
 
   return (
     <div className="space-y-2">
-      {lastQuery ? (
-        <p className="ced-hud-text-secondary text-[10px] uppercase tracking-widest">
-          Resumen · {hudStateLabel(hudState)}
-        </p>
-      ) : null}
+      <p className="ced-hud-text-secondary text-[10px] uppercase tracking-widest">
+        Última respuesta CED
+      </p>
       <p className="ced-hud-text-body whitespace-pre-wrap leading-relaxed">
-        {summary ||
-          "El resumen en streaming aparecerá aquí cuando CED busque en internet."}
+        {lastReport || "La última respuesta de CED aparecerá aquí."}
       </p>
     </div>
   );
 }
 
 export function HudWavesPanel() {
-  const { waves } = useHudPanels();
+  const { items } = useHudFeed();
+  const stats = items.filter((i) => i.kind === "stat" || i.kind === "news").slice(0, 6);
 
-  if (waves.length === 0) {
+  if (stats.length === 0) {
     return (
       <p className="ced-hud-text-body">
-        Métricas y datos numéricos de la búsqueda aparecerán aquí.
+        Datos de búsquedas e intel aparecerán aquí durante la sesión.
       </p>
     );
   }
 
   return (
     <ul className="space-y-2">
-      {waves.map((item) => (
+      {stats.map((item) => (
         <li key={item.id} className="border-l-2 border-amber-400/60 pl-3">
-          <p className="text-xs font-medium text-amber-200">{item.title}</p>
           <p className="ced-hud-text-body text-xs">{item.text}</p>
         </li>
       ))}
@@ -81,9 +125,8 @@ export function HudWavesPanel() {
 
 /** Wrapper con estado visual del panel HUD. */
 export function HudGlobalPanelFrame({ children }: { children: React.ReactNode }) {
-  const { hudState } = useHudPanels();
   return (
-    <HudPanel title="GLOBAL" state={hudState === "idle" ? "idle" : hudState}>
+    <HudPanel title="CONVERSACIÓN" state="idle">
       {children}
     </HudPanel>
   );
@@ -94,15 +137,8 @@ export function HudSummaryPanelFrame({
 }: {
   children: React.ReactNode;
 }) {
-  const { hudState } = useHudPanels();
-  const state =
-    hudState === "searching" || hudState === "receiving"
-      ? hudState
-      : hudState === "complete"
-        ? "complete"
-        : "idle";
   return (
-    <HudPanel title="SUMMARY" state={state}>
+    <HudPanel title="ÚLTIMA RESPUESTA" state="idle">
       {children}
     </HudPanel>
   );
