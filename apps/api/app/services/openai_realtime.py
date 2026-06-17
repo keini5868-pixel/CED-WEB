@@ -75,12 +75,14 @@ def _build_session_payload(
     with_tools: bool,
     turn_detection: dict[str, Any],
     language: str = "es",
+    temperature: float = 0.8,
 ) -> dict[str, Any]:
     session: dict[str, Any] = {
         "type": "realtime",
         "model": model,
         "instructions": instructions[:12000],
         "output_modalities": ["audio"],
+        "temperature": temperature,
         "audio": {
             "input": _audio_input(turn_detection, language=language),
             "output": {
@@ -197,7 +199,7 @@ def create_realtime_session(
         voice_profile=voice_profile or "jarvis",
     )
     lang = language or "es"
-    _, preferred_turn = profile_for_response_speed(response_speed)
+    temperature, preferred_turn = profile_for_response_speed(response_speed)
     address: dict[str, Any] = {}
     try:
         from app.services.cognitive_router import build_voice_system_extras
@@ -214,9 +216,9 @@ def create_realtime_session(
     # Antes, un fallo en tools:* hacía caer en full:* sin herramientas → CED hablaba pero no ejecutaba.
     tool_attempts: list[tuple[str, dict[str, Any]]] = []
     turn_options = (
-        ("semantic", preferred_turn),
-        ("semantic_default", REALTIME_TURN_DETECTION),
-        ("server_vad", REALTIME_TURN_DETECTION_FALLBACK),
+        ("server_vad", preferred_turn),
+        ("server_vad_default", REALTIME_TURN_DETECTION),
+        ("semantic_fallback", REALTIME_TURN_DETECTION_FALLBACK),
     )
     for m in _models_to_try(model):
         for td_label, td in turn_options:
@@ -230,6 +232,7 @@ def create_realtime_session(
                         with_tools=True,
                         turn_detection=td,
                         language=lang,
+                        temperature=temperature,
                     ),
                 )
             )

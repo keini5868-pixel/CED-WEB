@@ -15,9 +15,46 @@ Gender = Literal["male", "female", "neutral"]
 ADDRESS_MEMORY_KEYS = frozenset(
     {"tratamiento", "como_llamarme", "preferred_address", "titulo", "titulo_preferido"}
 )
-HONORIFICS_WITH_NAME = frozenset(
-    {"señor", "senor", "señora", "senora", "don", "doña", "dona", "sr", "sra", "sr.", "sra."}
+INVALID_HONORIFICS = frozenset(
+    {
+        "si",
+        "sí",
+        "sir",
+        "yes",
+        "ok",
+        "va",
+        "no",
+        "que",
+        "qué",
+        "ke",
+        "se",
+        "me",
+        "te",
+        "lo",
+        "la",
+    }
 )
+
+
+def _is_valid_stored_honorific(raw: str) -> bool:
+    t = (raw or "").strip()
+    if not t or len(t) < 3:
+        return False
+    low = t.lower().rstrip(".")
+    if low in INVALID_HONORIFICS:
+        return False
+    if low in {"sr", "sra"}:
+        return True
+    if _normalize_honorific(t) in ("Señor", "Señora", "Don", "Doña"):
+        return True
+    return len(t) >= 4 and low not in INVALID_HONORIFICS
+
+
+def _sanitize_honorific(raw: str, gender: str) -> str:
+    h = _normalize_honorific(raw)
+    if h and _is_valid_stored_honorific(h):
+        return h
+    return _gender_default_honorific(gender) or "Señor"
 
 
 def _first_name(full_name: str) -> str:
@@ -55,6 +92,11 @@ def _gender_default_honorific(gender: str) -> str:
     if g == "female":
         return "Señora"
     return ""
+
+
+HONORIFICS_WITH_NAME = frozenset(
+    {"señor", "senor", "señora", "senora", "don", "doña", "dona", "sr", "sra", "sr.", "sra."}
+)
 
 
 def _build_display_name(honorific: str, first_name: str) -> str:
@@ -103,7 +145,7 @@ def resolve_user_address(user_id: str) -> dict[str, Any]:
     if not preferred:
         preferred = _read_memory_address(user_id)
 
-    honorific = preferred or _gender_default_honorific(gender)
+    honorific = _sanitize_honorific(preferred or _gender_default_honorific(gender), gender)
     display_name = _build_display_name(honorific, first)
     if not first and full_name:
         first = _first_name(full_name) or full_name
@@ -112,10 +154,10 @@ def resolve_user_address(user_id: str) -> dict[str, Any]:
         "ok": True,
         "fullName": full_name,
         "firstName": first,
-        "honorific": _normalize_honorific(honorific) if honorific else "",
+        "honorific": honorific,
         "displayName": display_name,
         "gender": gender or None,
-        "preferredAddress": preferred or None,
+        "preferredAddress": preferred if _is_valid_stored_honorific(preferred) else None,
         "greetingPhraseJarvis": _greeting_phrase(display_name, first, honorific, gender, jarvis=True),
         "greetingPhraseStandard": _greeting_phrase(display_name, first, honorific, gender, jarvis=False),
     }
@@ -155,6 +197,9 @@ def address_context_for_prompt(user_id: str) -> str:
         + "- Saludo de recepción YA emitido por el sistema (NO repetir): "
         + f"\"Hola, {honorific or 'Señor'}. ¿En qué puedo ayudarle hoy?\"\n"
         + "- PROHIBIDO saludar al conectar, decir '¿cómo está?' o buenos días/tardes/noches.\n"
+        + "- Si el usuario solo dice hola, ¿cómo estás? o charla casual: SILENCIO o una frase muy breve — "
+        "PROHIBIDO preguntar cómo llamarlo si ya tienes tratamiento registrado.\n"
+        + "- PROHIBIDO: '¿Cómo te gustaría que te llame?', '¿Prefieres tu nombre o un título?'.\n"
         + "- Si solo escuchas 'bien', 'gracias' o ruido/TV sin una petición clara: SILENCIO TOTAL — NO digas 'Entendido' ni respondas.\n"
         + "\n"
         + "Reglas de tratamiento:\n"
@@ -176,7 +221,13 @@ def update_user_address(
 ) -> dict[str, Any]:
     fields: dict[str, Any] = {}
     if preferred_address is not None:
-        fields["preferred_address"] = (preferred_address or "").strip()[:80] or None
+        raw = (preferred_address or "").strip()[:80]
+        if raw and _is_valid_stored_honorific(raw):
+            fields["preferred_address"] = _normalize_honorific(raw)
+        elif not raw:
+            fields["preferred_address"] = None
+        else:
+            logger.warning("[ADDRESS] rejected invalid preferred_address: %r", raw)
     if gender is not None:
         g = (gender or "").strip().lower()
         fields["gender"] = g if g in ("male", "female", "neutral") else None
@@ -207,9 +258,10 @@ def sync_address_from_memory_key(user_id: str, key: str, content: str) -> None:
         return
     # Extraer título si el contenido es una frase larga
     m = re.search(
-        r"(se[nñ]or[a]?|don|do[nñ]a|jefe|jefa|doctor[a]?|capit[aá]n|\w+)",
+        r"\b(se[nñ]or[a]?|don|do[nñ]a|jefe|jefa|doctor[a]?|capit[aá]n)\b",
         body,
         re.I,
     )
-    preferred = _normalize_honorific(m.group(1)) if m else body[:80]
-    update_user_address(user_id, preferred_address=preferred, sync_memory=False)
+    preferred = _normalize_honorific(m.group(1)) if m else ""
+    if preferred and _is_valid_stored_honorific(preferred):
+        update_user_address(user_id, preferred_address=preferred, sync_memory=False)

@@ -18,23 +18,28 @@ OPENAI_VOICES = frozenset({
 })
 DEFAULT_OPENAI_VOICE = "cedar"
 
-REALTIME_MAX_OUTPUT_TOKENS = 120
-REALTIME_TEMPERATURE = 0.55
+REALTIME_MAX_OUTPUT_TOKENS = 4096
+REALTIME_TEMPERATURE = 0.8
 
-# semantic_vad medium = equilibrio latencia/estabilidad (low = más lento; high = más ágil)
+# server_vad — predecible, responde rápido (prioridad sobre semantic_vad)
 REALTIME_TURN_DETECTION: dict[str, Any] = {
-    "type": "semantic_vad",
-    "eagerness": "medium",
-    "create_response": False,
+    "type": "server_vad",
+    "threshold": 0.5,
+    "prefix_padding_ms": 300,
+    "silence_duration_ms": 500,
+    "create_response": True,
     "interrupt_response": True,
 }
 
-REALTIME_TURN_DETECTION_FALLBACK: dict[str, Any] = {
-    "type": "server_vad",
-    "threshold": 0.68,
-    "prefix_padding_ms": 450,
-    "silence_duration_ms": 850,
+REALTIME_TURN_DETECTION_LISTEN: dict[str, Any] = {
+    **REALTIME_TURN_DETECTION,
     "create_response": False,
+}
+
+REALTIME_TURN_DETECTION_FALLBACK: dict[str, Any] = {
+    "type": "semantic_vad",
+    "eagerness": "medium",
+    "create_response": True,
     "interrupt_response": True,
 }
 
@@ -184,10 +189,10 @@ def profile_for_response_speed(speed: str | None) -> tuple[float, dict[str, Any]
     """Temperatura y turn_detection según preferencia de velocidad."""
     key = (speed or "balanced").strip().lower()
     if key == "fast":
-        return 0.55, {**REALTIME_TURN_DETECTION, "eagerness": "high"}
+        return 0.75, {**REALTIME_TURN_DETECTION, "silence_duration_ms": 400}
     if key == "thoughtful":
-        return 0.68, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
-    return REALTIME_TEMPERATURE, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
+        return 0.7, {**REALTIME_TURN_DETECTION, "silence_duration_ms": 650}
+    return REALTIME_TEMPERATURE, REALTIME_TURN_DETECTION
 
 
 def normalize_openai_voice(name: str | None) -> str:

@@ -27,7 +27,10 @@ const MEMORY_RECALL_PATTERNS = [
 
 const PROSPECTION_ON = [
   /\bactiva(r)?\s+prospecci[oó]n\b/i,
+  /\bactiva(r)?\b.*\bprospecci[oó]n\b/i,
+  /\bactivamos\b.*\bprospecci[oó]n\b/i,
   /\bmodo\s+prospecci[oó]n\b/i,
+  /\bmodo\b.*\bprospecci[oó]n\b/i,
   /\bmodo\s+perspectiva\b/i,
   /\bperspective\s+mode\b/i,
   /\bencender\s+prospecci[oó]n\b/i,
@@ -79,4 +82,22 @@ export function isProspectionOffIntent(text: string): boolean {
 
 export function isProspectionReportIntent(text: string): boolean {
   return PROSPECTION_REPORT.some((p) => p.test(text.trim()));
+}
+
+const SHORT_AFFIRMATION =
+  /^(ahora\s+s[ií]|s[ií]|ok|vale|dale|perfecto|claro|bueno|listo|de acuerdo)[\s.!?,]*$/i;
+
+/** Evita falsos positivos por "Ahora sí", eco, preposición o "modo protección". */
+export function userExplicitlyRequestedProspection(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length < 12) return false;
+  if (SHORT_AFFIRMATION.test(t)) return false;
+  if (/\bprotecci[oó]n\b/i.test(t)) return false;
+  if (/\bpreposici[oó]n\b/i.test(t)) return false;
+  if (/\bprostitu/i.test(t)) return false;
+  if (/\btranspos/i.test(t)) return false;
+  if (!/\bprospecci[oó]n\b/i.test(t) && !/\bmodo\s+perspectiva\b/i.test(t) && !/\bperspective\s+mode\b/i.test(t)) {
+    return false;
+  }
+  return isProspectionOnIntent(t);
 }

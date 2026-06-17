@@ -28,9 +28,19 @@ import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
 import { clearEphemeralTokenCache } from "@/lib/voice/ephemeralTokenCache";
 import {
+  isAddressPreferenceIntent,
   parseAddressPreference,
   parseGenderPreference,
 } from "@/lib/voice/addressPreferenceIntent";
+import {
+  isSocialCommentReadIntent,
+  isUnsupportedCommentPlatform,
+  socialCommentPlatform,
+} from "@/lib/voice/socialCommentIntent";
+import {
+  isCasualSocialGreeting,
+  isStandaloneHonorificPreference,
+} from "@/lib/voice/voiceSmallTalk";
 import {
   CedLiveClient,
   type CedLiveHandlers,
@@ -40,6 +50,7 @@ import {
   cedIdlePresencePhrase,
   cedPublishFailurePhrase,
   cedPublishSuccessPhrase,
+  cedResolveHonorific,
 } from "@/lib/voice/live/ced-brief-messages";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
@@ -66,6 +77,7 @@ import {
   isRememberIntent,
   isVisualSearchIntent,
   parseRememberContent,
+  userExplicitlyRequestedProspection,
 } from "@/lib/voice/visualSearchIntent";
 import {
   cameraAnalyzeQuestion,
@@ -553,6 +565,110 @@ export function useCedVoiceSession(
       const responseWatchdogRef = { current: null as number | null };
       const micUnmuteTimerRef = { current: null as number | null };
       const lastResponseStartRef = { current: 0 };
+      const socialCommentsHandledAtRef = { current: 0 };
+      const socialCommentsInFlightRef = { current: false };
+      const prospectionInFlightRef = { current: false };
+
+      const finishClientVoiceAction = () => {
+        client.releaseTurnAfterClientAction();
+        client.flushInputAudioBuffer();
+        if (!isStale() && !pausedRef.current) {
+          scheduleMicUnmute(700);
+        }
+      };
+
+      const runProspectionActivate = () => {
+        if (prospectionInFlightRef.current) return;
+        prospectionInFlightRef.current = true;
+        void (async () => {
+          try {
+            client.setMicTrackEnabled(false);
+            const h = cedResolveHonorific(client.getUserAddress());
+            await client.speakExactNarrationAsync(`Un momento, ${h}.`);
+            if (isStale()) return;
+            setStatusLabel("Activando prospección…");
+            setOrbState("processing");
+            const r = await Promise.race([
+              enableProspection(),
+              new Promise<{ ok: false; error: string }>((resolve) =>
+                window.setTimeout(
+                  () => resolve({ ok: false, error: "La activación tardó demasiado." }),
+                  18_000,
+                ),
+              ),
+            ]);
+            if (isStale()) return;
+            await client.speakExactNarrationAsync(
+              r.ok
+                ? `Prospección activada, ${h}.`
+                : `No pude activar prospección, ${h}.`,
+            );
+          } catch {
+            if (!isStale()) {
+              const h = cedResolveHonorific(client.getUserAddress());
+              await client.speakExactNarrationAsync(
+                `No pude activar prospección, ${h}.`,
+              );
+            }
+          } finally {
+            prospectionInFlightRef.current = false;
+            finishClientVoiceAction();
+            if (!isStale() && !pausedRef.current) {
+              scheduleMicUnmute(1200);
+            }
+          }
+        })();
+      };
+
+      const runSocialCommentsRead = (utterance: string) => {
+        if (socialCommentsInFlightRef.current) return;
+        const now = Date.now();
+        if (now - socialCommentsHandledAtRef.current < 4_000) return;
+        socialCommentsInFlightRef.current = true;
+        void (async () => {
+          try {
+            client.setMicTrackEnabled(false);
+            const h = cedResolveHonorific(client.getUserAddress());
+            if (isUnsupportedCommentPlatform(utterance)) {
+              await client.speakExactNarrationAsync(
+                `${h}, por ahora solo puedo leer comentarios de Instagram y Facebook.`,
+              );
+              return;
+            }
+            await client.speakExactNarrationAsync(`Un momento, ${h}.`);
+            if (isStale()) return;
+            setStatusLabel("Leyendo comentarios…");
+            setOrbState("processing");
+            const platform = socialCommentPlatform(utterance);
+            const r = await Promise.race([
+              fetchSocialComments(platform),
+              new Promise<{ ok: false; error: string }>((resolve) =>
+                window.setTimeout(
+                  () => resolve({ ok: false, error: "La consulta tardó demasiado." }),
+                  22_000,
+                ),
+              ),
+            ]);
+            socialCommentsHandledAtRef.current = Date.now();
+            if (isStale()) return;
+            await client.speakExactNarrationAsync(
+              r.ok ? r.spoken : r.error || "No pude leer los comentarios.",
+            );
+          } catch {
+            if (!isStale()) {
+              await client.speakExactNarrationAsync(
+                "No pude completar la consulta de comentarios.",
+              );
+            }
+          } finally {
+            socialCommentsInFlightRef.current = false;
+            finishClientVoiceAction();
+            if (!isStale() && !pausedRef.current) {
+              scheduleMicUnmute(1500);
+            }
+          }
+        })();
+      };
 
       const clearMicUnmuteTimer = () => {
         if (micUnmuteTimerRef.current) {
@@ -1070,9 +1186,9 @@ export function useCedVoiceSession(
           return;
         }
 
-        const addressPref = parseAddressPreference(t);
-        const genderPref = parseGenderPreference(t);
-        if (addressPref || genderPref) {
+        if (isAddressPreferenceIntent(t)) {
+          const addressPref = parseAddressPreference(t);
+          const genderPref = parseGenderPreference(t);
           void (async () => {
             const updated = await updateUserAddress({
               ...(addressPref ? { preferredAddress: addressPref } : {}),
@@ -1082,13 +1198,6 @@ export function useCedVoiceSession(
             if (updated) {
               client.setUserAddress(updated);
               clearEphemeralTokenCache();
-              client.sendNarrationBrief(
-                `Queda registrado: te diré ${updated.displayName}.`,
-              );
-            } else {
-              client.sendNarrationBrief(
-                "no pude guardar cómo prefieres que te llame.",
-              );
             }
           })();
           return;
@@ -1218,6 +1327,56 @@ export function useCedVoiceSession(
             modelRepliedTurnRef.current = false;
             lastUserUtteranceRef.current = trimmed;
 
+            // Comentarios / prospección ANTES que tratamiento
+            if (isStandaloneHonorificPreference(trimmed)) {
+              void (async () => {
+                const pref = /^se[nñ]ora/i.test(trimmed) ? "Señora" : "Señor";
+                const updated = await updateUserAddress({
+                  preferredAddress: pref,
+                  gender: pref === "Señora" ? "female" : "male",
+                });
+                if (isStale()) return;
+                if (updated) {
+                  client.setUserAddress(updated);
+                  clearEphemeralTokenCache();
+                }
+              })();
+              return;
+            }
+
+            if (client.isToolsEnabled()) {
+              if (isSocialCommentReadIntent(trimmed) || isUnsupportedCommentPlatform(trimmed)) {
+                runSocialCommentsRead(trimmed);
+                return;
+              }
+              if (userExplicitlyRequestedProspection(trimmed)) {
+                runProspectionActivate();
+                return;
+              }
+              if (isAddressPreferenceIntent(trimmed)) {
+                const addressPref = parseAddressPreference(trimmed);
+                const genderPref = parseGenderPreference(trimmed);
+                void (async () => {
+                  const updated = await updateUserAddress({
+                    ...(addressPref ? { preferredAddress: addressPref } : {}),
+                    ...(genderPref ? { gender: genderPref } : {}),
+                  });
+                  if (isStale()) return;
+                  if (updated) {
+                    client.setUserAddress(updated);
+                    clearEphemeralTokenCache();
+                  }
+                })();
+                return;
+              }
+              return;
+            }
+
+            if (isSocialCommentReadIntent(trimmed) || isUnsupportedCommentPlatform(trimmed)) {
+              runSocialCommentsRead(trimmed);
+              return;
+            }
+
             const addressPref = parseAddressPreference(trimmed);
             const genderPref = parseGenderPreference(trimmed);
             if (addressPref || genderPref) {
@@ -1230,16 +1389,13 @@ export function useCedVoiceSession(
                 if (updated) {
                   client.setUserAddress(updated);
                   clearEphemeralTokenCache();
-                  client.sendNarrationBrief(
-                    `Queda registrado, ${updated.honorific || updated.displayName}.`,
-                  );
                 }
               })();
               return;
             }
 
-            // Con tools Realtime: una sola voz (OpenAI) — evitar briefs paralelos del cliente
-            if (client.isToolsEnabled()) {
+            if (userExplicitlyRequestedProspection(trimmed)) {
+              runProspectionActivate();
               return;
             }
 
@@ -1295,6 +1451,14 @@ export function useCedVoiceSession(
                 : { ...prev, status: "responding" },
             );
           }
+        },
+        onSocialCommentsIntent: (utterance) => {
+          if (isStale()) return;
+          runSocialCommentsRead(utterance);
+        },
+        onProspectionIntent: () => {
+          if (isStale()) return;
+          runProspectionActivate();
         },
         onToolStart: (toolName) => {
           if (isStale()) return;
@@ -1422,7 +1586,7 @@ export function useCedVoiceSession(
             return {
               spoken: r.ok
                 ? /^(tratamiento|como_llamarme)$/i.test(key)
-                  ? `queda registrado: te diré ${content}.`
+                  ? `Entendido, ${cedResolveHonorific(client.getUserAddress())}.`
                   : "guardado en memoria cognitiva."
                 : "no pude guardar en memoria.",
             };
@@ -1464,7 +1628,7 @@ export function useCedVoiceSession(
           }
           if (name === ACTIVAR_PROSPECCION) {
             const r = await enableProspection();
-            const h = client.getUserAddress()?.honorific?.trim() || "Señor";
+            const h = cedResolveHonorific(client.getUserAddress());
             return {
               spoken: r.ok
                 ? `Prospección activada, ${h}.`
@@ -1473,7 +1637,7 @@ export function useCedVoiceSession(
           }
           if (name === DESACTIVAR_PROSPECCION) {
             const r = await disableProspection();
-            const h = client.getUserAddress()?.honorific?.trim() || "Señor";
+            const h = cedResolveHonorific(client.getUserAddress());
             return {
               spoken: r.ok
                 ? `Prospección desactivada, ${h}.`
@@ -1487,6 +1651,10 @@ export function useCedVoiceSession(
             };
           }
           if (name === LEER_COMENTARIOS_REDES) {
+            if (Date.now() - socialCommentsHandledAtRef.current < 5_000) {
+              return { spoken: "Ya consulté los comentarios.", ok: true };
+            }
+            socialCommentsHandledAtRef.current = Date.now();
             const platRaw = String(args.platform ?? "both").trim().toLowerCase();
             const platform =
               platRaw === "instagram" || platRaw === "ig"
@@ -1512,7 +1680,7 @@ export function useCedVoiceSession(
             const message = fromArgs || fromUtterance.trim();
             if (!message) {
               markPublishFlow("facebook");
-              const h = client.getUserAddress()?.honorific?.trim() || "Señor";
+              const h = cedResolveHonorific(client.getUserAddress());
               return {
                 spoken: `Muy bien, ${h}. ¿Desea agregar algo más o que le sugiera una idea para la publicación?`,
               };
@@ -1537,7 +1705,7 @@ export function useCedVoiceSession(
             ).trim();
             if (!caption) {
               markPublishFlow("instagram");
-              const h = client.getUserAddress()?.honorific?.trim() || "Señor";
+              const h = cedResolveHonorific(client.getUserAddress());
               return {
                 spoken: `Muy bien, ${h}. ¿Desea agregar algo más o que le sugiera una idea para la publicación?`,
               };

@@ -20,7 +20,7 @@ function isInvalidHonorific(raw: string): boolean {
   return h.length < 3 || /^(si|sí|sir|yes|ok|va|si senor|si señor)$/.test(h);
 }
 
-function resolveHonorific(
+export function cedResolveHonorific(
   address?: CedGreetingAddress,
 ): string {
   const h = address?.honorific?.trim();
@@ -45,7 +45,7 @@ export function cedReceptionGreetingPhrase(
   if (voiceProfile !== "jarvis") {
     return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
   }
-  const title = resolveHonorific(address);
+  const title = cedResolveHonorific(address);
   if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
     return `Hola, ${title}. ¿En qué puedo ayudarle hoy?`;
   }
@@ -74,7 +74,7 @@ export function cedGreetingBriefTurn(phrase: string): string {
 export function cedIdlePresencePhrase(
   address?: CedGreetingAddress,
 ): string {
-  const title = resolveHonorific(address);
+  const title = cedResolveHonorific(address);
   if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
     return `¿Está ahí, ${title}?`;
   }
@@ -138,25 +138,25 @@ export function cedPublishConfirmTurn(platform: "facebook" | "instagram"): strin
 }
 
 function honorificSuffix(
-  address?: Pick<UserAddressContext, "honorific"> | null,
+  address?: Pick<UserAddressContext, "honorific" | "gender"> | null,
 ): string {
-  const h = address?.honorific?.trim();
-  return h ? `, ${h}` : "";
+  const h = cedResolveHonorific(address);
+  return `, ${h}`;
 }
 
 /** Confirmación Jarvis tras publicar con éxito. */
 export function cedPublishSuccessPhrase(
   _platform: "facebook" | "instagram",
-  address?: Pick<UserAddressContext, "honorific"> | null,
+  address?: Pick<UserAddressContext, "honorific" | "gender"> | null,
 ): string {
-  const h = address?.honorific?.trim() || "Señor";
+  const h = cedResolveHonorific(address);
   return `Publicación enviada, ${h}. ¿Algo más en lo que pueda servirle?`;
 }
 
 /** Error Jarvis tras fallo de publicación. */
 export function cedPublishFailurePhrase(
   reason: string,
-  address?: Pick<UserAddressContext, "honorific"> | null,
+  address?: Pick<UserAddressContext, "honorific" | "gender"> | null,
 ): string {
   const detail = reason.trim() || "no fue posible completar la publicación";
   return `Lamentablemente ${detail}${honorificSuffix(address)}.`;

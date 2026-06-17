@@ -9,9 +9,20 @@ import { fetchDeepAnalysis, fetchGenerateImage, fetchVoiceBrief, negotiateRealti
 import type { UserAddressContext } from "@/lib/api/profile";
 import { fetchEphemeralTokenCached } from "@/lib/voice/ephemeralTokenCache";
 import { parseCameraIntent } from "@/lib/voice/cameraIntents";
+import {
+  isProspectionOffIntent,
+  isProspectionReportIntent,
+  userExplicitlyRequestedProspection,
+} from "@/lib/voice/visualSearchIntent";
+import { isSocialCommentReadIntent } from "@/lib/voice/socialCommentIntent";
+import { isCasualSocialGreeting } from "@/lib/voice/voiceSmallTalk";
 import { cedVoiceError, cedVoiceLog, cedRealtimeLog } from "@/lib/voice/cedVoiceLogger";
 import {
   ANALIZAR_CAMARA,
+  ACTIVAR_PROSPECCION,
+  DESACTIVAR_PROSPECCION,
+  REPORTE_PROSPECCION,
+  LEER_COMENTARIOS_REDES,
   BUSCAR_MEMORIA,
   CONSULTAR_SISTEMA_AVANZADO,
   GENERAR_PDF,
@@ -37,6 +48,7 @@ import {
   cedPublishSuccessPhrase,
   cedReceptionGreetingPhrase,
   cedAdvancedBriefTurn,
+  cedResolveHonorific,
   CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
 
@@ -125,6 +137,10 @@ export type CedLiveHandlers = {
   onGenerateImageWithReference?: (
     args: Record<string, unknown>,
   ) => Promise<{ ok: boolean; url?: string; error?: string; spoken?: string }>;
+  /** Ejecuta lectura de comentarios sin depender del modelo. */
+  onSocialCommentsIntent?: (utterance: string) => void;
+  /** Activa prospección con una sola voz (sin duplicar tool del modelo). */
+  onProspectionIntent?: (utterance: string) => void;
 };
 
 function classifyPeerClose(unexpected: boolean): GeminiCloseInfo {
@@ -191,6 +207,15 @@ export class CedLiveClient {
   /** Autoriza un único response.create tras intervención real del usuario. */
   private userResponseArmed = false;
   private postGreetingLockUntil = 0;
+  /** Tras saludo: OpenAI server_vad + create_response maneja el turno. */
+  private serverConversationMode = false;
+
+  private static SERVER_VAD = {
+    threshold: 0.5,
+    prefix_padding_ms: 300,
+    silence_duration_ms: 500,
+    interrupt_response: true,
+  } as const;
 
   isGreetingInProgress(): boolean {
     return (
@@ -233,10 +258,24 @@ export class CedLiveClient {
 
   /** Segundo saludo del modelo o muletilla — cortar de inmediato. */
   private isRogueModelGreeting(text: string): boolean {
+    const trimmed = text.trim();
+    if (!trimmed || /^[,.\s…]{1,8}$/.test(trimmed)) return true;
     if (this.outboundLocked) return false;
     const low = text.toLowerCase();
+    if (/^[\s.,]*(me enc|encantado|encantada)\b/i.test(trimmed)) return true;
+    if (
+      /c[oó]mo te gustar[ií]a|prefieres que use|tratamiento formal|en lo que necesites|qu[eé] prefieres/i.test(
+        low,
+      )
+    ) {
+      return true;
+    }
+    if (/activando.*prosp|activando ahora|entendido.*activando|modo prosp|prospecci[oó]n activada|queda registrado,\s*s[ií]/i.test(low)) {
+      if (this.awaitingFirstUserSpeech || !this.heardUserSinceGreeting) return true;
+      if (!userExplicitlyRequestedProspection(this.lastMeaningfulUserUtterance)) return true;
+    }
     const rogue =
-      /buenas tardes|buen d[ií]a|buenos d[ií]as|muy buenas|un placer saludar|encantado de saludar|estoy aqu[ií] para ayudar|listo para ayudar|qu[eé] tiene en mente|en qu[eé] le gustar[ií]a|aqu[ií] estoy[,]? listo|en qu[eé] trabajamos|en qu[eé] puedo ayudar|saludarte|encantado de/i.test(
+      /buenas tardes|buen d[ií]a|buenos d[ií]as|muy buenas|un placer saludar|encantado de saludar|estoy aqu[ií] para ayudar|listo para ayudar|qu[eé] tiene en mente|en qu[eé] le gustar[ií]a|aqu[ií] estoy[,]? listo|en qu[eé] trabajamos|en qu[eé] puedo ayudar|saludarte|encantado de|adelante[,]? estoy a la escucha|estoy a la escucha|qu[eé] necesitas ahora|listo para escuchar|dime qu[eé] necesitas|entendido[,.]? activando|activando el modo prosp/i.test(
         low,
       );
     if (!rogue && !/^hola[,]?\s*(señor|señora|senor|senora)/i.test(low)) return false;
@@ -263,11 +302,15 @@ export class CedLiveClient {
     const t = transcript.trim();
     if (!t || this.isLikelyAmbientOrEcho(t)) return false;
     const low = t.toLowerCase();
+    if (/^(ahora\s+s[ií]|s[ií]|ok|vale|dale|perfecto|claro|bueno|listo|de acuerdo)[\s.!?,]*$/i.test(t)) {
+      return false;
+    }
     if (/^(muchas|muchísimas)?\s*gracias/i.test(low) && t.length < 50) return false;
     if (
-      /\b(publicar|clima|comentario|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|prospecci|activar|publica|hora|tiempo|ced)\b/i.test(
+      /\b(publicar|clima|comentario|comentarios|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|publica|hora|tiempo|ced)\b/i.test(
         low,
-      )
+      ) ||
+      /\b(activar|modo)\s+prospecci/i.test(low)
     ) {
       return true;
     }
@@ -316,9 +359,18 @@ export class CedLiveClient {
     }
   }
 
-  /** Permite respuestas nativas de OpenAI Realtime; solo bloquea duplicados y utterances scriptadas. */
+  /** Permite respuestas nativas; solo bloquea ventana de saludo y duplicados. */
   private allowResponseCreated(responseId?: string | null): boolean {
     const id = responseId ?? null;
+
+    if (
+      (this.greetingInFlight || !this.greetingComplete || Date.now() < this.greetingGraceUntil) &&
+      !this.intentionalResponseActive
+    ) {
+      cedRealtimeLog("response.reject.greeting_window", { id });
+      this.cancelResponse(id);
+      return false;
+    }
 
     if (this.singleSpeechSlot !== "closed") {
       if (this.singleSpeechSlot === "open") {
@@ -333,38 +385,8 @@ export class CedLiveClient {
       return true;
     }
 
-    if (!this.greetingComplete && !this.greetingInFlight && !this.outboundLocked) {
-      cedRealtimeLog("response.reject.pre_greeting", { id });
-      this.cancelResponse(id);
-      return false;
-    }
-
     if (!this.userMicLive && !this.outboundLocked && !this.intentionalResponse) {
       cedRealtimeLog("response.reject.mic_off", { id });
-      this.cancelResponse(id);
-      return false;
-    }
-
-    if (
-      this.greetingComplete &&
-      !this.isClientAuthorizedResponse()
-    ) {
-      if (Date.now() < this.postGreetingLockUntil) {
-        cedRealtimeLog("response.reject.post_greeting_lock", { id });
-        this.cancelResponse(id);
-        return false;
-      }
-      cedRealtimeLog("response.reject.unauthorized", { id });
-      this.cancelResponse(id);
-      return false;
-    }
-
-    if (
-      this.greetingComplete &&
-      !this.heardUserSinceGreeting &&
-      !this.isClientAuthorizedResponse()
-    ) {
-      cedRealtimeLog("response.reject.no_user_speech", { id });
       this.cancelResponse(id);
       return false;
     }
@@ -377,12 +399,15 @@ export class CedLiveClient {
     return true;
   }
 
-  /** Escucha con VAD; respuesta solo tras transcripción válida del usuario. */
+  /** Tras saludo: server_vad + create_response en el servidor. */
   enableListeningAfterGreeting(): void {
     if (!this.sessionReady || this.sendBlocked) return;
     this.flushInputAudioBuffer();
     this.userMicLive = true;
-    this.applyTurnDetection("listen");
+    this.serverConversationMode = true;
+    this.postGreetingLockUntil = 0;
+    this.blockAutoResponsesUntil = 0;
+    this.applyTurnDetection("auto");
   }
 
   /** Pausa — corta voz y deja de escuchar. */
@@ -402,7 +427,7 @@ export class CedLiveClient {
     this.setRemoteMuted(false);
     this.userMicLive = true;
     this.blockAutoResponsesUntil = 0;
-    this.applyTurnDetection("listen");
+    this.applyTurnDetection(this.serverConversationMode ? "auto" : "listen");
     this.flushInputAudioBuffer();
   }
 
@@ -443,15 +468,7 @@ export class CedLiveClient {
   }
 
   private resolveHonorific(): string {
-    const h = this.userAddress?.honorific?.trim();
-    const invalid = !h || h.length < 3 || /^(si|sí|sir|yes|ok)$/i.test(h.replace(/\./g, ""));
-    if (!invalid) {
-      if (/^(senor|señor)$/i.test(h)) return "Señor";
-      if (/^(senora|señora)$/i.test(h)) return "Señora";
-      return h;
-    }
-    if (this.userAddress?.gender === "female") return "Señora";
-    return "Señor";
+    return cedResolveHonorific(this.userAddress);
   }
 
   private briefTokensForSpoken(spoken: string, advanced = false): number {
@@ -466,6 +483,7 @@ export class CedLiveClient {
     const now = Date.now();
     if (!this.userMicLive || this.responseInProgress || this.outboundLocked) return;
     if (now < this.blockAutoResponsesUntil) return;
+    if (now < this.greetingGraceUntil) return;
     if (!this.heardUserSinceGreeting || !this.lastMeaningfulUserUtterance) return;
     if (this.userTurnResponded && now - this.lastResponseCreateAt < 2500) return;
     if (now - this.lastResponseCreateAt < 600) return;
@@ -484,7 +502,26 @@ export class CedLiveClient {
   }
 
   private triggerUserResponse(): void {
-    if (!this.isMeaningfulUserSpeech(this.lastMeaningfulUserUtterance)) return;
+    if (this.serverConversationMode) return;
+    const utterance = this.lastMeaningfulUserUtterance;
+    if (!this.isMeaningfulUserSpeech(utterance)) return;
+    if (isCasualSocialGreeting(utterance)) return;
+    if (isSocialCommentReadIntent(utterance)) {
+      this.userTurnResponded = true;
+      this.handlers.onSocialCommentsIntent?.(utterance);
+      return;
+    }
+    if (userExplicitlyRequestedProspection(utterance)) {
+      this.userTurnResponded = true;
+      this.handlers.onProspectionIntent?.(utterance);
+      return;
+    }
+    if (
+      /\bprospecci/i.test(utterance) &&
+      !userExplicitlyRequestedProspection(utterance)
+    ) {
+      return;
+    }
     this.requestSingleResponse();
   }
 
@@ -514,6 +551,21 @@ export class CedLiveClient {
     cedVoiceLog(4, "forceReleaseTurn — liberando respuesta colgada");
     this.activeResponseId = null;
     this.responseInProgress = false;
+    this.intentionalResponse = false;
+    this.intentionalResponseActive = false;
+    this.userResponseArmed = false;
+    this.endSingleSpeechSlot();
+    this.flushInputAudioBuffer();
+  }
+
+  /** Tras acción directa del cliente (comentarios, prospección) — reabrir escucha. */
+  releaseTurnAfterClientAction(): void {
+    this.forceReleaseTurn();
+    this.blockAutoResponsesUntil = 0;
+    this.turnCooldownUntil = 0;
+    this.userTurnResponded = false;
+    this.outboundLocked = false;
+    this.endSingleSpeechSlot();
     this.flushInputAudioBuffer();
   }
 
@@ -536,17 +588,19 @@ export class CedLiveClient {
     this.send({ type: "input_audio_buffer.clear" });
   }
 
-  /** Evita respuestas automáticas del servidor (p. ej. durante el saludo). */
+  /** server_vad — alineado con API (threshold 0.5, silence 500ms). */
   private applyTurnDetection(mode: "off" | "listen" | "auto"): void {
     if (!this.dc || this.dc.readyState !== "open") return;
     const turn_detection =
       mode === "off"
         ? null
         : {
-            type: "semantic_vad" as const,
-            eagerness: "medium" as const,
+            type: "server_vad" as const,
+            threshold: CedLiveClient.SERVER_VAD.threshold,
+            prefix_padding_ms: CedLiveClient.SERVER_VAD.prefix_padding_ms,
+            silence_duration_ms: CedLiveClient.SERVER_VAD.silence_duration_ms,
             create_response: mode === "auto",
-            interrupt_response: true,
+            interrupt_response: CedLiveClient.SERVER_VAD.interrupt_response,
           };
     this.send({
       type: "session.update",
@@ -592,6 +646,7 @@ export class CedLiveClient {
     this.lastResponseCreateAt = 0;
     this.userResponseArmed = false;
     this.postGreetingLockUntil = 0;
+    this.serverConversationMode = false;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -1178,13 +1233,13 @@ export class CedLiveClient {
           await this.waitForResponseIdle(1200);
         }
         this.blockAutoResponsesUntil = Date.now() + 4_000;
-        this.postGreetingLockUntil = Date.now() + 8_000;
+        this.postGreetingLockUntil = 0;
         this.beginSingleSpeechSlot();
         cedRealtimeLog("greeting.create", { phrase });
-        await this.speakExactPhrase(phrase, 120);
+        await this.speakExactPhrase(phrase, 300);
         this.flushInputAudioBuffer();
         this.endSingleSpeechSlot();
-        this.greetingGraceUntil = Date.now() + 3_000;
+        this.greetingGraceUntil = Date.now() + 6_000;
         this.greetingComplete = true;
         this.awaitingFirstUserSpeech = true;
         this.heardUserSinceGreeting = false;
@@ -1202,6 +1257,7 @@ export class CedLiveClient {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     this.outboundLocked = true;
     this.setServerAutoResponse(false);
+    this.beginSingleSpeechSlot();
     try {
       this.intentionalResponse = true;
       this.intentionalResponseActive = true;
@@ -1212,19 +1268,30 @@ export class CedLiveClient {
           max_output_tokens: maxOutputTokens,
           tool_choice: "none",
           instructions:
-            `Di EXACTAMENTE este texto en español, de corrido, sin pausas largas ni palabras extra: ` +
+            `Di EXACTAMENTE este texto en español, de corrido, palabra por palabra, sin omitir nada al final: ` +
             `"${phrase.trim()}"`,
         },
       });
-      await this.waitForResponseIdle(15000);
-      await this.waitForModelAudioDone(10000);
-      await this.sleep(500);
+      const idleMs = Math.min(55_000, 12_000 + maxOutputTokens * 45);
+      const audioMs = Math.min(50_000, 8_000 + maxOutputTokens * 42);
+      await this.waitForResponseIdle(idleMs);
+      await this.waitForModelAudioDone(audioMs);
+      await this.sleep(600);
       this.flushInputAudioBuffer();
     } finally {
       this.outboundLocked = false;
       this.intentionalResponse = false;
       this.intentionalResponseActive = false;
+      this.endSingleSpeechSlot();
     }
+  }
+
+  /** Lectura exacta para resultados largos (comentarios, prospección). */
+  speakExactNarrationAsync(phrase: string): Promise<void> {
+    const text = phrase.trim();
+    if (!text || this.isGreetingInProgress()) return Promise.resolve();
+    const maxOutputTokens = Math.min(720, Math.max(150, Math.ceil(text.length / 1.4) + 72));
+    return this.speakExactPhrase(text, maxOutputTokens);
   }
 
   private waitForModelAudioDone(maxMs = 8000): Promise<void> {
@@ -1299,13 +1366,26 @@ export class CedLiveClient {
       this.lastResponseCreateAt = Date.now();
       const idleMs = maxOutputTokens > 400 ? 48000 : 18000;
       await this.waitForResponseIdle(idleMs);
-      await this.sleep(500);
+      await this.waitForModelAudioDone(12000);
+      await this.sleep(400);
       this.flushInputAudioBuffer();
-      this.turnCooldownUntil = Date.now() + 5000;
+      this.turnCooldownUntil = Date.now() + 1200;
     } finally {
       this.outboundLocked = false;
       this.advancedBriefInFlight = false;
+      this.intentionalResponse = false;
+      this.intentionalResponseActive = false;
+      this.blockAutoResponsesUntil = Date.now() + 800;
+      this.endSingleSpeechSlot();
     }
+  }
+
+  /** Narración controlada — esperar a que termine (p. ej. comentarios Instagram). */
+  sendNarrationBriefAsync(summary: string): Promise<void> {
+    const text = summary.trim();
+    if (!text || this.isGreetingInProgress()) return Promise.resolve();
+    const tokens = Math.min(900, Math.max(160, Math.ceil(text.length / 2.4)));
+    return this.enqueueControlledBrief(cedBriefTurn(text), tokens);
   }
 
   sendNarrationBrief(summary: string): void {
@@ -1571,6 +1651,49 @@ export class CedLiveClient {
         return;
       }
 
+      if (name === ACTIVAR_PROSPECCION && userExplicitlyRequestedProspection(this.lastMeaningfulUserUtterance)) {
+        cedRealtimeLog("tool.prospection.client_handled", {
+          last: this.lastMeaningfulUserUtterance.slice(0, 60),
+        });
+        await this.submitToolOutput(callId, { status: "ok", silent: true });
+        return;
+      }
+
+      if (name === ACTIVAR_PROSPECCION && !userExplicitlyRequestedProspection(this.lastMeaningfulUserUtterance)) {
+        cedRealtimeLog("tool.prospection.blocked", {
+          last: this.lastMeaningfulUserUtterance.slice(0, 60),
+        });
+        await this.submitToolOutput(callId, {
+          status: "ignored",
+          spoken: "No se activó prospección: el usuario no lo pidió explícitamente.",
+        });
+        return;
+      }
+
+      if (name === DESACTIVAR_PROSPECCION && !isProspectionOffIntent(this.lastMeaningfulUserUtterance)) {
+        cedRealtimeLog("tool.prospection_off.blocked", {
+          last: this.lastMeaningfulUserUtterance.slice(0, 60),
+        });
+        await this.submitToolOutput(callId, { status: "ignored", silent: true });
+        return;
+      }
+
+      if (name === REPORTE_PROSPECCION && !isProspectionReportIntent(this.lastMeaningfulUserUtterance)) {
+        cedRealtimeLog("tool.prospection_report.blocked", {
+          last: this.lastMeaningfulUserUtterance.slice(0, 60),
+        });
+        await this.submitToolOutput(callId, { status: "ignored", silent: true });
+        return;
+      }
+
+      if (name === LEER_COMENTARIOS_REDES && isSocialCommentReadIntent(this.lastMeaningfulUserUtterance)) {
+        cedRealtimeLog("tool.comments.client_handled", {
+          last: this.lastMeaningfulUserUtterance.slice(0, 60),
+        });
+        await this.submitToolOutput(callId, { status: "ok", silent: true });
+        return;
+      }
+
       if (LIVE_TOOL_NAMES.has(name) && h.onLiveTool) {
         h.onToolStart?.(name);
         const result = await h.onLiveTool(name, args);
@@ -1658,17 +1781,8 @@ export class CedLiveClient {
       return;
     }
 
-    if (spoken) {
-      cedRealtimeLog("tool.response.brief", { call_id: callId, spoken });
-      await this.enqueueControlledBrief(cedBriefTurn(spoken), this.briefTokensForSpoken(spoken));
-      return;
-    }
-
     if (!silent) {
       cedRealtimeLog("tool.response.create", { call_id: callId });
-      this.userResponseArmed = true;
-      this.intentionalResponse = true;
-      this.intentionalResponseActive = true;
       this.send({ type: "response.create" });
     }
   }
