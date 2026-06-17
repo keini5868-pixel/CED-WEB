@@ -48,6 +48,9 @@ import {
   cedResolveHonorific,
 } from "@/lib/voice/live/ced-brief-messages";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
+import { registerRetellCall } from "@/lib/api/retell";
+import { CedRetellClient } from "@/lib/voice/retell/ced-retell-client";
+import { isRetellVoice } from "@/lib/voice/voiceProvider";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import { normalizeVoiceName } from "@/lib/voice/openaiVoices";
 import {
@@ -192,6 +195,8 @@ export function useCedVoiceSession(
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clientRef = useRef<CedLiveClient | null>(null);
+  const retellClientRef = useRef<CedRetellClient | null>(null);
+  const isRetellSessionRef = useRef(false);
   const usageSessionRef = useRef<string | null>(null);
   const conversationRef = useRef<string | null>(null);
   const usageIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -380,6 +385,9 @@ export function useCedVoiceSession(
     clearUsageInterval();
     clientRef.current?.disconnect();
     clientRef.current = null;
+    void retellClientRef.current?.stopCall();
+    retellClientRef.current = null;
+    isRetellSessionRef.current = false;
     handlersRef.current = null;
 
     if (usageSessionRef.current) {
@@ -515,6 +523,91 @@ export function useCedVoiceSession(
       usageSessionRef.current = voiceSession.session_id;
       conversationRef.current = voiceSession.conversation_id;
       onUsageRefresh?.();
+
+      if (isRetellVoice()) {
+        isRetellSessionRef.current = true;
+        const registration = await registerRetellCall();
+        if (isStale()) return;
+        if (!registration.ok) {
+          setErrorMessage(registration.error || "No pude iniciar voz Retell.");
+          setOrbState("error");
+          await stopSession();
+          return;
+        }
+
+        const retell = new CedRetellClient();
+        retellClientRef.current = retell;
+        retell.setCallbacks({
+          onCallStarted: () => {
+            if (isStale()) return;
+            setOrbState("listening");
+            setStatusLabel(ORB_STATE_LABELS.listening);
+          },
+          onCallEnded: () => {
+            if (isStale()) return;
+            void stopSession();
+          },
+          onAgentTalking: (talking) => {
+            if (isStale()) return;
+            modelSpeakingRef.current = talking;
+            setOrbState(talking ? "speaking" : "listening");
+            setStatusLabel(
+              talking ? ORB_STATE_LABELS.speaking : ORB_STATE_LABELS.listening,
+            );
+          },
+          onTranscript: (text, role) => {
+            if (isStale()) return;
+            callbacks?.onTranscript?.(text, role === "user" ? "user" : "model");
+            if (role === "user") {
+              setHeardIndicator({
+                status: "heard",
+                userText: text,
+                heardAt: Date.now(),
+              });
+            } else {
+              modelRepliedTurnRef.current = true;
+            }
+            void persistMessage(role === "user" ? "user" : "model", text);
+          },
+          onError: (message) => {
+            if (isStale()) return;
+            setErrorMessage(message);
+            setOrbState("error");
+          },
+        });
+
+        usageIntervalRef.current = setInterval(() => {
+          const sid = usageSessionRef.current;
+          if (!sid) return;
+          void (async () => {
+            try {
+              const data = await tickVoiceSession(sid, USAGE_TICK_SECONDS);
+              if (!data) return;
+              onUsageRefresh?.();
+              if (data.blocked || data.should_disconnect) {
+                setErrorMessage(
+                  "Has alcanzado tu límite diario de voz. Recarga o continúa mañana.",
+                );
+                await stopSession();
+              } else if (data.access_denied) {
+                setErrorMessage(
+                  "Tu suscripción no está activa. Renueva en Precios para usar la voz.",
+                );
+                await stopSession();
+              }
+            } catch {
+              /* ignore */
+            }
+          })();
+        }, USAGE_TICK_SECONDS * 1000);
+
+        await retell.startCall(registration.access_token, registration.call_id);
+        if (isStale()) return;
+        retell.setMuted(mutedRef.current);
+        setOrbState("listening");
+        setStatusLabel(ORB_STATE_LABELS.listening);
+        return;
+      }
 
       const client = new CedLiveClient();
       clientRef.current = client;
@@ -1957,10 +2050,15 @@ export function useCedVoiceSession(
 
   useEffect(() => {
     clientRef.current?.setRemoteMuted(muted);
+    retellClientRef.current?.setMuted(muted);
   }, [muted]);
 
   useEffect(() => {
     if (!micOn) return;
+    if (isRetellSessionRef.current) {
+      retellClientRef.current?.setMuted(paused || mutedRef.current);
+      return;
+    }
     const client = clientRef.current;
     if (!client) return;
     client.setMicTrackEnabled(!paused);
@@ -1975,6 +2073,7 @@ export function useCedVoiceSession(
     return () => {
       voiceSessionGenRef.current += 1;
       clientRef.current?.disconnect();
+      void retellClientRef.current?.stopCall();
       clearUsageInterval();
     };
   }, [clearUsageInterval]);
@@ -2021,7 +2120,11 @@ export function useCedVoiceSession(
   const togglePause = useCallback(() => {
     setPaused((p) => {
       const next = !p;
-      clientRef.current?.setMicTrackEnabled(!next);
+      if (isRetellSessionRef.current) {
+        retellClientRef.current?.setMuted(next || mutedRef.current);
+      } else {
+        clientRef.current?.setMicTrackEnabled(!next);
+      }
       setOrbState(next ? "paused" : micOn ? "listening" : "idle");
       setStatusLabel(
         next ? ORB_STATE_LABELS.paused : ORB_STATE_LABELS.listening,

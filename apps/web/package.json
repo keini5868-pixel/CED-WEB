@@ -24,6 +24,7 @@
     "next": "^15.3.2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "retell-client-js-sdk": "^2.0.8",
     "three": "^0.175.0"
   },
   "devDependencies": {
