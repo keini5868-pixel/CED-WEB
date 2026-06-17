@@ -15,14 +15,26 @@ type CedGreetingAddress = Partial<
 > | null;
 
 
+function isInvalidHonorific(raw: string): boolean {
+  const h = raw.trim().toLowerCase().replace(/\./g, "");
+  return h.length < 3 || /^(si|sí|sir|yes|ok|va|si senor|si señor)$/.test(h);
+}
+
 function resolveHonorific(
   address?: CedGreetingAddress,
 ): string {
   const h = address?.honorific?.trim();
-  if (h) return h;
+  if (h && !isInvalidHonorific(h)) {
+    if (h === "Señor" || h === "Señora" || h === "Don" || h === "Doña") return h;
+    if (/^(senor|señor)$/i.test(h)) return "Señor";
+    if (/^(senora|señora)$/i.test(h)) return "Señora";
+    return h;
+  }
   if (address?.gender === "female") return "Señora";
   if (address?.gender === "male") return "Señor";
-  return address?.displayName?.trim() || address?.firstName?.trim() || "";
+  const name = address?.displayName?.trim() || address?.firstName?.trim() || "";
+  if (name && !isInvalidHonorific(name)) return name;
+  return "Señor";
 }
 
 /** Saludo fijo — Señor/Señora + en qué puedo ayudarle hoy. */
@@ -82,8 +94,19 @@ export function cedBriefTurn(spoken: string): string {
   return (
     "[CED_BRIEF] Lee en voz alta UNA sola vez el siguiente texto. " +
     "PROHIBIDO: muletillas previas (claro, perfecto, dale, listo, ok). " +
-    "PROHIBIDO: repetir la misma idea dos veces. " +
-    "PROHIBIDO: resumir si el texto es un análisis — preséntalo completo en pocas frases.\n\n" +
+    "PROHIBIDO: saludar, decir hola, 'muy buenas', '¿en qué puedo ayudarle?'. " +
+    "PROHIBIDO: repetir la misma idea dos veces.\n\n" +
+    body
+  );
+}
+
+/** Guion / análisis avanzado — lectura larga, una sola voz. */
+export function cedAdvancedBriefTurn(spoken: string): string {
+  const body = spoken.trim();
+  return (
+    "[CED_BRIEF] Lee en voz UNA sola vez, de corrido, el guion o análisis siguiente. " +
+    "PROHIBIDO: saludar, volver a saludar, 'muy buenas', preguntar '¿en qué te ayudo?'. " +
+    "PROHIBIDO: resumir u omitir párrafos — lee el texto completo que sigue.\n\n" +
     body
   );
 }

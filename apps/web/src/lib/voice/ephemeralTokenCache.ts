@@ -14,7 +14,7 @@ let inflight: Promise<RealtimeSessionResponse> | null = null;
 
 const TTL_MS = 4 * 60 * 1000;
 /** Bump al cambiar saludo/prompts de voz — invalida tokens prefetch viejos. */
-const VOICE_SESSION_REVISION = "v4-greeting-wellness";
+const VOICE_SESSION_REVISION = "v5-advanced-single-voice";
 
 function sessionOptionsFromPrefs(
   voiceName?: string,

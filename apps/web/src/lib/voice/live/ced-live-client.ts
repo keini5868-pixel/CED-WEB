@@ -36,6 +36,7 @@ import {
   cedPublishFailurePhrase,
   cedPublishSuccessPhrase,
   cedReceptionGreetingPhrase,
+  cedAdvancedBriefTurn,
   CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
 
@@ -173,6 +174,9 @@ export class CedLiveClient {
   private userTurnScheduled = false;
   private userResponseTimer: number | null = null;
   private intentionalResponse = false;
+  private intentionalResponseActive = false;
+  private blockAutoResponsesUntil = 0;
+  private advancedBriefInFlight = false;
   private userTurnResponded = false;
   private lastArmedTranscript = "";
   private turnCooldownUntil = 0;
@@ -206,6 +210,7 @@ export class CedLiveClient {
       this.awaitingFirstUserSpeech = false;
     }
     this.heardUserSinceGreeting = true;
+    this.blockAutoResponsesUntil = 0;
   }
 
   private isWellnessSmallTalk(transcript: string): boolean {
@@ -225,9 +230,19 @@ export class CedLiveClient {
 
   private resolveHonorific(): string {
     const h = this.userAddress?.honorific?.trim();
-    if (h) return h;
+    const invalid = !h || h.length < 3 || /^(si|sí|sir|yes|ok)$/i.test(h.replace(/\./g, ""));
+    if (!invalid) {
+      if (/^(senor|señor)$/i.test(h)) return "Señor";
+      if (/^(senora|señora)$/i.test(h)) return "Señora";
+      return h;
+    }
     if (this.userAddress?.gender === "female") return "Señora";
     return "Señor";
+  }
+
+  private briefTokensForSpoken(spoken: string, advanced = false): number {
+    const min = advanced ? 680 : 180;
+    return Math.min(900, Math.max(min, Math.ceil(spoken.length / 2.8)));
   }
 
   /** Respuesta fija a "bien/gracias" — evita "me alegra" repetido del modelo. */
@@ -254,6 +269,7 @@ export class CedLiveClient {
     this.userTurnResponded = true;
     this.turnCooldownUntil = now + 6000;
     this.intentionalResponse = true;
+    this.intentionalResponseActive = true;
     cedRealtimeLog("response.create.single", {});
     this.send({
       type: "response.create",
@@ -271,7 +287,7 @@ export class CedLiveClient {
   /** Espera fin de turno (debounce) — un solo response.create por intervención. */
   private armUserTurnResponse(transcript = ""): void {
     if (!this.greetingComplete || this.outboundLocked || this.greetingInFlight) return;
-    if (this.responseInProgress) return;
+    if (this.responseInProgress || this.advancedBriefInFlight) return;
     if (Date.now() < this.turnCooldownUntil) return;
     const trimmed = transcript.trim();
     if (trimmed && trimmed === this.lastArmedTranscript) return;
@@ -732,8 +748,16 @@ export class CedLiveClient {
 
     if (type === "response.created") {
       const response = msg.response as { id?: string } | undefined;
-      const isIntentional = this.intentionalResponse || this.outboundLocked;
-      this.intentionalResponse = false;
+      const isIntentional =
+        this.intentionalResponseActive || this.intentionalResponse || this.outboundLocked;
+      if (
+        !isIntentional &&
+        (Date.now() < this.blockAutoResponsesUntil || this.advancedBriefInFlight)
+      ) {
+        cedRealtimeLog("response.block_window", { id: response?.id });
+        this.triggerBargeIn();
+        return;
+      }
       if (
         !isIntentional &&
         (this.awaitingFirstUserSpeech || this.greetingInFlight) &&
@@ -823,6 +847,9 @@ export class CedLiveClient {
       });
       this.activeResponseId = null;
       this.responseInProgress = false;
+      this.intentionalResponse = false;
+      this.intentionalResponseActive = false;
+      this.advancedBriefInFlight = false;
       this.userTurnScheduled = false;
       if (this.modelTranscriptAcc.trim()) {
         handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
@@ -931,6 +958,7 @@ export class CedLiveClient {
         this.flushInputAudioBuffer();
         this.applyTurnDetection("listen");
         this.greetingGraceUntil = Date.now() + 6_000;
+        this.blockAutoResponsesUntil = Date.now() + 10_000;
         this.greetingComplete = true;
         this.awaitingFirstUserSpeech = true;
         this.turnCooldownUntil = Date.now() + 2500;
@@ -948,6 +976,7 @@ export class CedLiveClient {
     this.setServerAutoResponse(false);
     try {
       this.intentionalResponse = true;
+      this.intentionalResponseActive = true;
       this.send({
         type: "response.create",
         response: {
@@ -998,6 +1027,8 @@ export class CedLiveClient {
   ): Promise<void> {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     this.outboundLocked = true;
+    this.advancedBriefInFlight = maxOutputTokens > 400;
+    this.blockAutoResponsesUntil = Date.now() + Math.max(12000, maxOutputTokens * 40);
     try {
       if (this.responseInProgress) {
         this.triggerBargeIn();
@@ -1012,6 +1043,8 @@ export class CedLiveClient {
           content: [{ type: "input_text", text: turnText }],
         },
       });
+      this.intentionalResponse = true;
+      this.intentionalResponseActive = true;
       this.send({
         type: "response.create",
         response: {
@@ -1019,13 +1052,15 @@ export class CedLiveClient {
           tool_choice: "none",
         },
       });
-      this.intentionalResponse = true;
       this.lastResponseCreateAt = Date.now();
-      await this.waitForResponseIdle(18000);
-      await this.sleep(400);
+      const idleMs = maxOutputTokens > 400 ? 48000 : 18000;
+      await this.waitForResponseIdle(idleMs);
+      await this.sleep(500);
       this.flushInputAudioBuffer();
+      this.turnCooldownUntil = Date.now() + 5000;
     } finally {
       this.outboundLocked = false;
+      this.advancedBriefInFlight = false;
     }
   }
 
@@ -1229,14 +1264,24 @@ export class CedLiveClient {
         const allowed = h.shouldAllowAdvancedTool?.(prompt) ?? false;
         if (!allowed) {
           h.onAdvancedToolBlocked?.(prompt);
+          if (this.responseInProgress) {
+            this.triggerBargeIn();
+            await this.waitForResponseIdle(1600);
+          }
+          await this.speakExactPhrase(CED_ADVANCED_CONFIRM_PHRASE, 36);
           await this.submitToolOutput(callId, {
             status: "needs_confirmation",
-            spoken: CED_ADVANCED_CONFIRM_PHRASE,
             prompt,
+            silent: true,
           });
           return;
         }
         h.onToolStart?.(name);
+        if (this.responseInProgress) {
+          this.triggerBargeIn();
+          await this.waitForResponseIdle(2400);
+        }
+        await this.speakExactPhrase(`Un momento, ${this.resolveHonorific()}.`, 32);
         const result = await fetchDeepAnalysis(
           prompt || "consulta general",
           CED_VOICE_PROFILE_LOCK.advancedSystem.fetchTimeoutMs,
@@ -1245,6 +1290,8 @@ export class CedLiveClient {
         await this.submitToolOutput(callId, {
           status: result.ok ? "ok" : "error",
           spoken,
+          briefOnly: true,
+          advancedBrief: true,
         });
         return;
       }
@@ -1295,19 +1342,25 @@ export class CedLiveClient {
     callId: string,
     output: Record<string, unknown>,
   ): Promise<void> {
-    if (this.responseInProgress) {
+    if (this.responseInProgress && !output.advancedBrief) {
       cedRealtimeLog("tool.output.wait_idle", { call_id: callId });
       await this.waitForResponseIdle(1600);
     }
     const spoken =
       typeof output.spoken === "string" ? output.spoken.trim() : "";
+    const briefOnly = output.briefOnly === true;
+    const advancedBrief = output.advancedBrief === true;
+    const silent = output.silent === true;
     const payload: Record<string, unknown> = {
-      ...output,
+      status: output.status,
       success: output.status === "ok" || output.success === true,
     };
+    if (output.prompt) payload.prompt = output.prompt;
     if (spoken) {
+      payload.spoken = spoken;
       payload.delivery =
-        "OBLIGATORIO: di en voz alta la confirmación. No omitas ni te quedes en silencio.";
+        "SILENCIO OBLIGATORIO. NO narres ni resumas este resultado en voz. " +
+        "El cliente leerá el texto vía [CED_BRIEF]. Permanece en silencio.";
     }
 
     const outputMessage = {
@@ -1321,14 +1374,25 @@ export class CedLiveClient {
     cedRealtimeLog("tool.output.send", { call_id: callId, payload });
     this.send(outputMessage);
 
-    if (spoken) {
-      cedRealtimeLog("tool.response.brief", { call_id: callId, spoken });
-      await this.enqueueControlledBrief(cedBriefTurn(spoken), 160);
+    if (spoken && (briefOnly || advancedBrief)) {
+      cedRealtimeLog("tool.response.brief", { call_id: callId, advanced: advancedBrief });
+      const turn = advancedBrief ? cedAdvancedBriefTurn(spoken) : cedBriefTurn(spoken);
+      const tokens = this.briefTokensForSpoken(spoken, advancedBrief);
+      this.turnCooldownUntil = Date.now() + Math.min(18000, 5000 + spoken.length * 12);
+      await this.enqueueControlledBrief(turn, tokens);
       return;
     }
 
-    cedRealtimeLog("tool.response.create", { call_id: callId });
-    this.requestSingleResponse();
+    if (spoken) {
+      cedRealtimeLog("tool.response.brief", { call_id: callId, spoken });
+      await this.enqueueControlledBrief(cedBriefTurn(spoken), this.briefTokensForSpoken(spoken));
+      return;
+    }
+
+    if (!silent) {
+      cedRealtimeLog("tool.response.create", { call_id: callId });
+      this.requestSingleResponse();
+    }
   }
 }
 

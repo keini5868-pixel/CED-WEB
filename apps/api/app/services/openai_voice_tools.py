@@ -26,10 +26,11 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "consultar_claude",
         "description": (
-            "Sistema avanzado (Claude) — SOLO análisis profundo en TEXTO. "
-            "PROHIBIDO invocar en saludos, clima, publicaciones o imágenes. "
-            "SOLO tras confirmación explícita del usuario ('sí', 'adelante', 'activa análisis profundo'). "
-            "Si no confirmó: pregunta UNA vez '¿Activamos análisis profundo?' y ESPERA."
+            "Sistema avanzado (Claude) — análisis profundo y guiones largos. "
+            "SOLO tras confirmación explícita ('sí', 'adelante'). "
+            "Patrón: di 'Un momento, Señor.' → invoca AHORA → SILENCIO (el cliente [CED_BRIEF] lee el resultado). "
+            "PROHIBIDO narrar el resultado en voz propia ni saludar de nuevo. "
+            "PROHIBIDO para clima, saludos o publicaciones simples."
         ),
         "parameters": {
             "type": "object",
