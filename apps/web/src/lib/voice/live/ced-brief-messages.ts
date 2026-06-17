@@ -2,26 +2,83 @@
 
 import type { UserAddressContext } from "@/lib/api/profile";
 
+function timeOfDaySalutation(): string {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return "Buenos días";
+  if (hour >= 12 && hour < 19) return "Buenas tardes";
+  return "Buenas noches";
+}
+
+function resolveHonorific(
+  address?: Pick<UserAddressContext, "honorific" | "gender" | "displayName" | "firstName"> | null,
+): string {
+  const h = address?.honorific?.trim();
+  if (h) return h;
+  if (address?.gender === "female") return "Señora";
+  if (address?.gender === "male") return "Señor";
+  return address?.displayName?.trim() || address?.firstName?.trim() || "";
+}
+
+/** Saludo recepción Jarvis — hora local + tratamiento por género. */
+export function cedReceptionGreetingPhrase(
+  voiceProfile: "standard" | "jarvis" = "jarvis",
+  address?: Pick<
+    UserAddressContext,
+    "honorific" | "gender" | "displayName" | "firstName" | "greetingPhraseJarvis" | "greetingPhraseStandard"
+  > | null,
+): string {
+  if (voiceProfile !== "jarvis") {
+    return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
+  }
+  const tod = timeOfDaySalutation();
+  const title = resolveHonorific(address);
+  if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
+    return (
+      `Hola, ${title}. ¿Cómo está? ${tod}. ` +
+      "Estoy aquí para servirle. ¿Cuáles son los planes para hoy?"
+    );
+  }
+  const name = title || "Usuario";
+  return (
+    `Hola, ${name}. ¿Cómo está? ${tod}. ` +
+    "Estoy aquí para servirle. ¿Cuáles son los planes para hoy?"
+  );
+}
+
+/** @deprecated Usar cedReceptionGreetingPhrase */
 export function cedGreetingPhrase(
   voiceProfile: "standard" | "jarvis" = "jarvis",
   address?: Pick<UserAddressContext, "greetingPhraseJarvis" | "greetingPhraseStandard"> | null,
 ): string {
-  return voiceProfile === "jarvis"
-    ? address?.greetingPhraseJarvis || "Hola. Estoy a sus órdenes."
-    : address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
+  return cedReceptionGreetingPhrase(voiceProfile, address);
 }
 
-/** @deprecated Usar cedGreetingPhrase + response.create directo */
+export function cedGreetingBriefTurn(phrase: string): string {
+  const body = phrase.trim();
+  return (
+    "[CED_GREETING] Lee en voz alta UNA sola vez, de corrido y sin pausas largas, el texto siguiente. " +
+    "PROHIBIDO: dividir en dos respuestas, cambiar palabras, añadir frases ni listar capacidades.\n\n" +
+    body
+  );
+}
+
+/** Presencia tras silencio prolongado — una sola frase. */
+export function cedIdlePresencePhrase(
+  address?: Pick<UserAddressContext, "honorific" | "gender"> | null,
+): string {
+  const title = resolveHonorific(address);
+  if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
+    return `${title}, sigo aquí.`;
+  }
+  return "Sigo aquí.";
+}
+
+/** @deprecated Usar cedGreetingBriefTurn + cedReceptionGreetingPhrase */
 export function cedGreetingTurn(
   voiceProfile: "standard" | "jarvis" = "jarvis",
   address?: Pick<UserAddressContext, "greetingPhraseJarvis" | "greetingPhraseStandard"> | null,
 ): string {
-  const phrase = cedGreetingPhrase(voiceProfile, address);
-  return (
-    "[CED_GREETING] Di EXACTAMENTE esta frase una sola vez, sin añadir nada antes ni después: " +
-    `"${phrase}"` +
-    " PROHIBIDO: segunda frase, repetir el saludo, listar capacidades o mencionar ventas."
-  );
+  return cedGreetingBriefTurn(cedReceptionGreetingPhrase(voiceProfile, address));
 }
 
 export function cedBriefTurn(spoken: string): string {

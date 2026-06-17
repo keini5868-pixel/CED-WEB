@@ -37,6 +37,7 @@ import {
 } from "@/lib/voice/live/ced-live-client";
 import { CED_VOICE_PROFILE_LOCK } from "@/lib/voice/live/voice-profile.lock";
 import {
+  cedIdlePresencePhrase,
   cedPublishFailurePhrase,
   cedPublishSuccessPhrase,
 } from "@/lib/voice/live/ced-brief-messages";
@@ -111,6 +112,8 @@ const MAX_WS_RECONNECT = 3;
 const TURN_STUCK_MS = 22000;
 const PROCESSING_STUCK_MS = 12000;
 const MIC_UNMUTE_AFTER_SPEECH_MS = 550;
+/** Tras saludo sin respuesta del usuario — una sola frase de presencia. */
+const IDLE_PRESENCE_MS = 50_000;
 
 async function publishImageToBlob(image: {
   imageUrl?: string;
@@ -541,6 +544,9 @@ export function useCedVoiceSession(
       const micActiveRef = { current: true };
       const greetingSentRef = { current: false };
       const greetingPendingRef = { current: false };
+      const idlePresenceSentRef = { current: false };
+      const idlePresenceTimerRef = { current: null as number | null };
+      const lastUserSpeechAtRef = { current: 0 };
       const setupTimerRef = { current: null as number | null };
       const responseWatchdogRef = { current: null as number | null };
       const micUnmuteTimerRef = { current: null as number | null };
@@ -551,6 +557,27 @@ export function useCedVoiceSession(
           clearTimeout(micUnmuteTimerRef.current);
           micUnmuteTimerRef.current = null;
         }
+      };
+
+      const clearIdlePresenceTimer = () => {
+        if (idlePresenceTimerRef.current) {
+          clearTimeout(idlePresenceTimerRef.current);
+          idlePresenceTimerRef.current = null;
+        }
+      };
+
+      const scheduleIdlePresence = () => {
+        clearIdlePresenceTimer();
+        idlePresenceTimerRef.current = window.setTimeout(() => {
+          idlePresenceTimerRef.current = null;
+          if (isStale() || !micActiveRef.current || greetingPendingRef.current) return;
+          if (modelSpeakingRef.current || client.isResponseActive()) return;
+          if (idlePresenceSentRef.current) return;
+          if (Date.now() - lastUserSpeechAtRef.current < IDLE_PRESENCE_MS - 2000) return;
+          idlePresenceSentRef.current = true;
+          const phrase = cedIdlePresencePhrase(client.getUserAddress());
+          client.sendPresenceBrief(phrase);
+        }, IDLE_PRESENCE_MS);
       };
 
       /** Evita que el mic capte eco de Cedar mientras aún suena por WebRTC. */
@@ -1151,13 +1178,18 @@ export function useCedVoiceSession(
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
           client.flushInputAudioBuffer();
-          scheduleMicUnmute(750);
+          scheduleMicUnmute(900);
           enableListeningUi();
+          idlePresenceSentRef.current = false;
+          scheduleIdlePresence();
         },
         onTranscriptUpdate: (text, role) => {
           if (isStale() || role !== "user") return;
           const trimmed = text.trim();
           if (!trimmed || /^<noise>$/i.test(trimmed)) return;
+          lastUserSpeechAtRef.current = Date.now();
+          idlePresenceSentRef.current = false;
+          clearIdlePresenceTimer();
           lastUserUtteranceRef.current = trimmed;
           if (webFetchRef.current) {
             setOrbState("processing");
@@ -1397,18 +1429,20 @@ export function useCedVoiceSession(
           }
           if (name === ACTIVAR_PROSPECCION) {
             const r = await enableProspection();
+            const h = client.getUserAddress()?.honorific?.trim() || "Señor";
             return {
               spoken: r.ok
-                ? "Modo prospección activado."
-                : "no pude activar prospección.",
+                ? `Prospección activada, ${h}.`
+                : `No pude activar prospección, ${h}.`,
             };
           }
           if (name === DESACTIVAR_PROSPECCION) {
             const r = await disableProspection();
+            const h = client.getUserAddress()?.honorific?.trim() || "Señor";
             return {
               spoken: r.ok
-                ? "prospección desactivada."
-                : "no pude desactivar prospección.",
+                ? `Prospección desactivada, ${h}.`
+                : `No pude desactivar prospección, ${h}.`,
             };
           }
           if (name === REPORTE_PROSPECCION) {
@@ -1605,6 +1639,9 @@ export function useCedVoiceSession(
           }
           client.flushInputAudioBuffer();
           scheduleMicUnmute();
+          if (micActiveRef.current && !greetingPendingRef.current) {
+            scheduleIdlePresence();
+          }
           setHeardIndicator((prev) => {
             if (prev.status === "hidden") return prev;
             if (!modelRepliedTurnRef.current && prev.userText) {

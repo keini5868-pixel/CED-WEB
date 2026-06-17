@@ -32,10 +32,11 @@ import {
 import { voiceTelemetry } from "@/lib/voice/voiceTelemetry";
 import {
   cedBriefTurn,
-  cedGreetingPhrase,
+  cedGreetingBriefTurn,
   cedPublishConfirmTurn,
   cedPublishFailurePhrase,
   cedPublishSuccessPhrase,
+  cedReceptionGreetingPhrase,
   CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
 
@@ -167,6 +168,7 @@ export class CedLiveClient {
   private greetingInFlight = false;
   private greetingComplete = false;
   private heardUserSinceGreeting = false;
+  private greetingGraceUntil = 0;
   private toolsEnabled = true;
 
   /** Sesión Realtime creada sin herramientas (fallback API). */
@@ -239,6 +241,7 @@ export class CedLiveClient {
     this.greetingInFlight = false;
     this.greetingComplete = false;
     this.heardUserSinceGreeting = false;
+    this.greetingGraceUntil = 0;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -591,7 +594,8 @@ export class CedLiveClient {
       if (
         this.greetingComplete &&
         !this.heardUserSinceGreeting &&
-        !this.greetingInFlight
+        !this.greetingInFlight &&
+        Date.now() > this.greetingGraceUntil
       ) {
         cedRealtimeLog("greeting.cancel_unsolicited", { id: response?.id });
         this.triggerBargeIn();
@@ -726,6 +730,10 @@ export class CedLiveClient {
     this.userAddress = address;
   }
 
+  getUserAddress(): UserAddressContext | null {
+    return this.userAddress;
+  }
+
   sendSessionGreeting(): void {
     if (
       this.greetingSent ||
@@ -743,25 +751,17 @@ export class CedLiveClient {
         this.setServerAutoResponse(false);
         this.setMicTrackEnabled(false);
         this.flushInputAudioBuffer();
-        const phrase = cedGreetingPhrase(this.voiceProfile, this.userAddress);
+        const phrase = cedReceptionGreetingPhrase(this.voiceProfile, this.userAddress);
+        const turn = cedGreetingBriefTurn(phrase);
         if (this.responseInProgress) {
           this.triggerBargeIn();
           await this.waitForResponseIdle(1200);
         }
         cedRealtimeLog("greeting.create", { phrase });
-        this.send({
-          type: "response.create",
-          response: {
-            max_output_tokens: 120,
-            tool_choice: "none",
-            instructions:
-              `[CED_GREETING] Di EXACTAMENTE UNA sola frase completa, sin pausas ni segunda frase: "${phrase}". ` +
-              "PROHIBIDO: dividir en dos turnos, 'estoy aquí para servir', 'Soy CED', listar capacidades, " +
-              "mencionar estrategias, preguntar en qué ayudar o añadir nada después.",
-          },
-        });
-        await this.waitForResponseIdle(12000);
+        await this.sendControlledBrief(turn, 450);
+        await this.sleep(1600);
         this.flushInputAudioBuffer();
+        this.greetingGraceUntil = Date.now() + 6000;
         this.greetingComplete = true;
         this.setServerAutoResponse(true);
         this.handlers.onGreetingComplete?.();
@@ -769,6 +769,44 @@ export class CedLiveClient {
         this.greetingInFlight = false;
       }
     })();
+  }
+
+  /** Presencia tras silencio — una frase exacta, sin improvisar. */
+  sendPresenceBrief(phrase: string): void {
+    const text = phrase.trim();
+    if (!text) return;
+    void this.sendControlledBrief(cedBriefTurn(text), 80);
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private async sendControlledBrief(
+    turnText: string,
+    maxOutputTokens = 400,
+  ): Promise<void> {
+    if (!this.dc || !this.sessionReady || this.sendBlocked) return;
+    if (this.responseInProgress) {
+      this.triggerBargeIn();
+      await this.waitForResponseIdle();
+    }
+    this.send({
+      type: "conversation.item.create",
+      item: {
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text: turnText }],
+      },
+    });
+    this.send({
+      type: "response.create",
+      response: {
+        max_output_tokens: maxOutputTokens,
+        tool_choice: "none",
+      },
+    });
+    await this.waitForResponseIdle(18000);
   }
 
   sendNarrationBrief(summary: string): void {

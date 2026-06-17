@@ -77,9 +77,15 @@ def _greeting_phrase(
     h = _normalize_honorific(honorific) or _gender_default_honorific(gender)
     if jarvis:
         if h in ("Señor", "Señora", "Don", "Doña"):
-            return f"Hola, {h}. Estoy a sus órdenes."
+            return (
+                f"Hola, {h}. ¿Cómo está? Estoy aquí para servirle. "
+                "¿Cuáles son los planes para hoy?"
+            )
         name = (display_name or first_name or "Usuario").strip()
-        return f"Hola, {name}. Listo para asistirle."
+        return (
+            f"Hola, {name}. ¿Cómo está? Estoy aquí para servirle. "
+            "¿Cuáles son los planes para hoy?"
+        )
     return f"Hola {first_name or display_name or 'Usuario'}. ¿En qué trabajamos?"
 
 
