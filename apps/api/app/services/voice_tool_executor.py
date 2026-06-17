@@ -1,0 +1,262 @@
+"""Ejecutor server-side de tools de voz — usado por Retell webhooks."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+from app.services.claude_deep_analysis import consultar_sistema_avanzado
+from app.services.cognitive_memory import save_memory, search_memory
+from app.services.conversation_memory import (
+    format_recall_for_voice,
+    recall_previous_conversations,
+    save_long_term_memory,
+)
+from app.services.gemini_grounded import fetch_voice_brief
+from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
+from app.services.openai_images import generate_image
+from app.services.pdf_report import store_pdf
+from app.services.prospection import get_prospection_report, set_prospection_enabled
+from app.services.social_comments import fetch_social_comments
+from app.services.user_address import sync_address_from_memory_key
+from app.services.voice_usage import voice_access_state
+
+logger = logging.getLogger(__name__)
+
+CAMERA_CLIENT_ONLY = (
+    "Esta acción requiere la cámara en el navegador. "
+    "Actívela desde el panel de voz o use el chat."
+)
+
+
+def _spoken_ok(text: str) -> dict[str, Any]:
+    return {"ok": True, "spoken": text}
+
+
+def _spoken_err(text: str, *, error: str | None = None) -> dict[str, Any]:
+    out: dict[str, Any] = {"ok": False, "spoken": text}
+    if error:
+        out["error"] = error
+    return out
+
+
+async def execute_voice_tool(
+    tool_name: str,
+    user_id: str,
+    args: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Ejecuta una tool CED y devuelve resultado + mensaje hablable."""
+    name = (tool_name or "").strip()
+    params = args or {}
+    if not user_id:
+        return _spoken_err("No identifiqué al usuario, señor.", error="missing_user_id")
+
+    try:
+        if name == "search_web":
+            query = str(params.get("query") or "").strip()
+            kind = str(params.get("kind") or "general")
+            result = await asyncio.to_thread(fetch_voice_brief, query, kind=kind)
+            if result.get("ok"):
+                summary = str(result.get("summary") or "").strip()
+                return _spoken_ok(summary[:480] if summary else "Consulta completada, señor.")
+            return _spoken_err(
+                f"No fue posible consultar, señor. {result.get('error', '')}".strip(),
+                error=str(result.get("error") or "search_failed"),
+            )
+
+        if name == "consultar_claude":
+            prompt = str(params.get("prompt") or "").strip()
+            result = await asyncio.to_thread(consultar_sistema_avanzado, prompt)
+            if result.get("ok"):
+                text = str(result.get("result") or "").strip()
+                return _spoken_ok(text[:480] if text else "Análisis completado, señor.")
+            return _spoken_err(
+                f"No fue posible el análisis, señor. {result.get('error', '')}".strip(),
+                error=str(result.get("error") or "analysis_failed"),
+            )
+
+        if name == "generate_image":
+            prompt = str(params.get("prompt") or "").strip()
+            quality = str(params.get("quality") or "auto")
+            balance = voice_access_state(user_id)
+            result = await asyncio.to_thread(
+                generate_image,
+                user_id=user_id,
+                plan_id=str(balance.get("plan_id") or ""),
+                prompt=prompt,
+                quality=quality,
+            )
+            if result.get("ok"):
+                return {
+                    "ok": True,
+                    "spoken": "Imagen generada, señor.",
+                    "url": result.get("url"),
+                }
+            return _spoken_err(
+                f"No fue posible generar la imagen, señor. {result.get('error', '')}".strip(),
+                error=str(result.get("error") or "image_failed"),
+            )
+
+        if name == "generate_image_with_reference":
+            return _spoken_err(
+                "Para imágenes con referencia use el chat o la cámara, señor.",
+                error="client_reference_required",
+            )
+
+        if name == "save_memory":
+            clave = str(params.get("clave") or params.get("key") or "").strip()
+            contenido = str(params.get("contenido") or params.get("content") or "").strip()
+            categoria = params.get("categoria") or params.get("category")
+            if not clave or not contenido:
+                return _spoken_err("No recibí qué guardar en memoria, señor.")
+            await asyncio.to_thread(
+                save_memory,
+                user_id,
+                clave,
+                contenido,
+                category=str(categoria) if categoria else None,
+            )
+            await asyncio.to_thread(sync_address_from_memory_key, user_id, clave, contenido)
+            return _spoken_ok("Memoria guardada, señor.")
+
+        if name == "recall_memory":
+            consulta = str(params.get("consulta") or params.get("query") or "").strip()
+            result = await asyncio.to_thread(search_memory, user_id, consulta)
+            items = result.get("results") or result.get("items") or []
+            if not items:
+                return _spoken_ok("No encontré memorias sobre eso, señor.")
+            lines = []
+            for item in items[:3]:
+                key = item.get("key") or item.get("clave") or "dato"
+                val = item.get("content") or item.get("contenido") or ""
+                lines.append(f"{key}: {val}")
+            return _spoken_ok(f"Recuerdo: {'; '.join(lines)}"[:480])
+
+        if name == "recall_previous_conversations":
+            query = str(params.get("query") or "").strip()
+            days_back = int(params.get("days_back") or 30)
+            data = await asyncio.to_thread(
+                recall_previous_conversations,
+                user_id,
+                query,
+                days_back=days_back,
+            )
+            spoken = format_recall_for_voice(data)
+            if spoken:
+                return _spoken_ok(spoken[:480])
+            return _spoken_ok("No encontré conversaciones previas sobre eso, señor.")
+
+        if name == "save_to_long_term_memory":
+            category = str(params.get("category") or "").strip()
+            key = str(params.get("key") or "").strip()
+            value = str(params.get("value") or "").strip()
+            importance = int(params.get("importance") or 5)
+            if not category or not key or not value:
+                return _spoken_err("Faltan datos para guardar en memoria a largo plazo, señor.")
+            await asyncio.to_thread(
+                save_long_term_memory,
+                user_id,
+                category=category,
+                key=key,
+                value=value,
+                importance=importance,
+            )
+            return _spoken_ok("Información registrada, señor.")
+
+        if name in ("request_camera_activation", "request_camera_deactivation"):
+            return _spoken_ok(CAMERA_CLIENT_ONLY)
+
+        if name in ("analyze_camera_frame", "buscar_lo_visible"):
+            return _spoken_err(CAMERA_CLIENT_ONLY, error="camera_client_only")
+
+        if name == "generar_pdf":
+            titulo = str(params.get("titulo") or "Documento CED").strip()
+            contenido = str(params.get("contenido") or titulo).strip()
+            artifact = await asyncio.to_thread(
+                store_pdf,
+                user_id=user_id,
+                title=titulo,
+                content=contenido,
+            )
+            return {
+                "ok": True,
+                "spoken": f"PDF listo, señor. Título: {artifact.title}.",
+                "file_id": artifact.file_id,
+            }
+
+        if name == "leer_comentarios_redes":
+            platform = str(params.get("platform") or "both")
+            result = await asyncio.to_thread(
+                fetch_social_comments,
+                user_id,
+                platform=platform,
+            )
+            spoken = str(result.get("spoken") or "").strip()
+            if result.get("ok"):
+                return {
+                    "ok": True,
+                    "spoken": spoken or "Consulta de comentarios completada, señor.",
+                    "count": result.get("count", 0),
+                }
+            return _spoken_err(
+                spoken or "No fue posible leer comentarios, señor.",
+                error=str(result.get("error") or "comments_failed"),
+            )
+
+        if name == "activar_prospeccion":
+            result = await asyncio.to_thread(set_prospection_enabled, user_id, True)
+            if result.get("ok"):
+                return _spoken_ok("Sistema de prospección activado, señor.")
+            return _spoken_err("No fue posible activar prospección, señor.")
+
+        if name == "desactivar_prospeccion":
+            result = await asyncio.to_thread(set_prospection_enabled, user_id, False)
+            if result.get("ok"):
+                return _spoken_ok("Prospección desactivada, señor.")
+            return _spoken_err("No fue posible desactivar prospección, señor.")
+
+        if name == "reporte_prospeccion":
+            result = await asyncio.to_thread(get_prospection_report, user_id)
+            spoken = str(result.get("spoken") or "Sin datos de prospección.")
+            return _spoken_ok(spoken[:480])
+
+        if name == "publicar_facebook":
+            mensaje = str(params.get("mensaje") or "").strip()
+            image_url = params.get("image_url")
+            image_data = params.get("image_data")
+            try:
+                result = await asyncio.to_thread(
+                    publish_facebook,
+                    user_id,
+                    mensaje,
+                    image_url=str(image_url) if image_url else None,
+                    image_data=str(image_data) if image_data else None,
+                )
+                spoken = str(result.get("spoken") or "Publicación enviada con éxito a Facebook, señor.")
+                return _spoken_ok(spoken)
+            except MetaSocialError as exc:
+                return _spoken_err(f"No fue posible publicar, señor. {exc}")
+
+        if name == "publicar_instagram":
+            caption = str(params.get("caption") or "").strip()
+            image_url = params.get("image_url")
+            image_data = params.get("image_data")
+            try:
+                result = await asyncio.to_thread(
+                    publish_instagram,
+                    user_id,
+                    caption,
+                    image_url=str(image_url) if image_url else None,
+                    image_data=str(image_data) if image_data else None,
+                )
+                spoken = str(result.get("spoken") or "Publicación enviada con éxito a Instagram, señor.")
+                return _spoken_ok(spoken)
+            except MetaSocialError as exc:
+                return _spoken_err(f"No fue posible publicar, señor. {exc}")
+
+        return _spoken_err(f"Herramienta no reconocida: {name}", error="unknown_tool")
+
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[VOICE_TOOL] %s failed for user=%s", name, user_id[:8])
+        return _spoken_err("Lamentablemente hubo un error, señor.", error=str(exc))

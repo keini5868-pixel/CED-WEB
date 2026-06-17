@@ -17,7 +17,29 @@ from app.logging_setup import configure_logging
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
 from app.rate_limit import limiter
-from app.routers import admin, billing, chat, cognitive, conversations, diagnostic, health, hud, image_with_reference, media, memory, meta, openai, panels, pdf, profile, prospection, support, usage, vision
+from app.routers import (
+    admin,
+    billing,
+    chat,
+    cognitive,
+    conversations,
+    diagnostic,
+    health,
+    hud,
+    image_with_reference,
+    media,
+    memory,
+    meta,
+    openai,
+    panels,
+    pdf,
+    profile,
+    prospection,
+    retell,
+    support,
+    usage,
+    vision,
+)
 
 logger = logging.getLogger("ced.api")
 
@@ -37,6 +59,17 @@ async def lifespan(_app: FastAPI):
         logger.warning("OPENAI_API_KEY vacía — voz Realtime no funcionará")
     elif not settings.tavily_api_key.strip():
         logger.warning("TAVILY_API_KEY vacía — búsqueda web en voz fallará")
+    if settings.voice_provider == "retell":
+        if not settings.retell_api_key.strip():
+            logger.warning("RETELL_API_KEY vacía — voz Retell no funcionará")
+        elif not settings.retell_agent_id.strip():
+            logger.warning(
+                "RETELL_AGENT_ID vacío — ejecute scripts/setup_retell_agent.py o POST /v1/retell/admin/bootstrap"
+            )
+        else:
+            from app.services.retell_agent_setup import bootstrap_retell_on_startup
+
+            bootstrap_retell_on_startup()
     yield
 
 
@@ -81,6 +114,7 @@ def create_app() -> FastAPI:
     application.include_router(panels.router)
     application.include_router(meta.router)
     application.include_router(media.router)
+    application.include_router(retell.router)
     application.include_router(openai.router)
     application.include_router(image_with_reference.router)
     application.include_router(memory.router)

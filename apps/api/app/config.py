@@ -98,6 +98,16 @@ class Settings(BaseSettings):
 
     founding_slots_max: int = 50
 
+    # Voz — Retell AI (default) u OpenAI Realtime (legacy)
+    voice_provider: str = "retell"
+    retell_api_key: str = ""
+    retell_agent_id: str = ""
+    retell_llm_id: str = ""
+    retell_voice_id: str = ""
+    retell_webhook_secret: str = ""
+    retell_auto_bootstrap: bool = False
+    elevenlabs_api_key: str = ""
+
     @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:
         self.openai_api_key = sanitize_openai_api_key(self.openai_api_key)

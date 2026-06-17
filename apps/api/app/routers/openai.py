@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field
 
+from app.config import get_settings
 from app.deps.auth import require_user_id
 from app.domain.openai_voice_prompt import OPENAI_REALTIME_SYSTEM_PROMPT
 from app.services.claude_deep_analysis import consultar_sistema_avanzado
@@ -54,6 +55,12 @@ async def realtime_session(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     """Sesión efímera OpenAI Realtime — verifica límites duros antes de conectar."""
+    if get_settings().voice_provider != "openai":
+        return {
+            "ok": False,
+            "error": "OpenAI Realtime deshabilitado. Voz activa vía Retell.",
+            "code": "legacy_disabled",
+        }
     balance = voice_access_state(user_id)
     if balance.get("access_denied"):
         return {"ok": False, "error": "Acceso de voz no disponible. Elige un plan en Precios."}
@@ -107,6 +114,11 @@ async def realtime_calls(
     _user_id: str = Depends(require_user_id),
 ):
     """Negocia WebRTC SDP con OpenAI usando token efímero (proxy anti-CORS)."""
+    if get_settings().voice_provider != "openai":
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "error": "OpenAI Realtime deshabilitado.", "code": "legacy_disabled"},
+        )
     sdp_offer = (await request.body()).decode("utf-8", errors="replace")
     result = negotiate_realtime_call(client_secret=x_openai_ephemeral_key, sdp_offer=sdp_offer)
     if not result.get("ok"):
