@@ -38,12 +38,21 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 @limiter.exempt
 def health(_request: Request) -> dict[str, str]:
+    """Liveness probe — sin dependencias externas (Railway)."""
     settings = get_settings()
     return {
         "status": "ok",
         "service": "castillo-digital-api",
         "env": settings.app_env,
     }
+
+
+@router.get("/ready")
+@limiter.exempt
+def ready(_request: Request) -> dict[str, str]:
+    """Alias de health para compatibilidad con probes."""
+    settings = get_settings()
+    return {"status": "ok", "service": "castillo-digital-api", "env": settings.app_env}
 
 
 @router.get("/v1/auth/diagnostics")

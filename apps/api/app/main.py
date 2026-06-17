@@ -54,7 +54,9 @@ def create_app() -> FastAPI:
 
     origins = settings.cors_origin_list()
     if settings.is_production() and not origins:
-        raise RuntimeError("CORS_ORIGINS o WEB_PUBLIC_URL requeridos en producción")
+        logger.warning(
+            "CORS sin orígenes configurados — revisa CORS_ORIGINS y WEB_PUBLIC_URL en Railway"
+        )
 
     application.add_middleware(
         CORSMiddleware,
