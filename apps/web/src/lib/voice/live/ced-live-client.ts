@@ -387,6 +387,9 @@ export class CedLiveClient {
     this.awaitingFirstUserSpeech = false;
     this.clearUserResponseTimer();
     this.intentionalResponse = false;
+    this.intentionalResponseActive = false;
+    this.blockAutoResponsesUntil = 0;
+    this.advancedBriefInFlight = false;
     this.userTurnResponded = false;
     this.lastArmedTranscript = "";
     this.turnCooldownUntil = 0;
