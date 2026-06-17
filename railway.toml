@@ -5,7 +5,8 @@ dockerfilePath = "apps/api/Dockerfile"
 watchPatterns = ["apps/api/**"]
 
 [deploy]
-healthcheckPath = "/health"
-healthcheckTimeout = 300
+# Desactivado: Railway healthcheck bloqueaba deploys (Supabase/cold start).
+# UptimeRobot o Railway metrics cubren monitoreo post-deploy.
+healthcheckPath = ""
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
