@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { AdminPanelButton } from "@/components/hud/AdminPanelButton";
+import SupportFloatingButton from "@/components/support/SupportFloatingButton";
 import { ConnectNetworksButton } from "@/components/hud/ConnectNetworksButton";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { DriveModeLink } from "@/components/navigation/DriveModeLink";
@@ -39,6 +40,7 @@ export function HudShell({ children, email, isSuperAdmin }: HudShellProps) {
         </div>
       </header>
       <main className="ced-hud-page-bg flex-1">{children}</main>
+      <SupportFloatingButton />
     </div>
   );
 }
