@@ -170,6 +170,11 @@ export class CedLiveClient {
   private greetingGraceUntil = 0;
   private outboundLocked = false;
   private awaitingFirstUserSpeech = false;
+  private userTurnScheduled = false;
+  private userResponseTimer: number | null = null;
+  private intentionalResponse = false;
+  private userTurnResponded = false;
+  private lastResponseCreateAt = 0;
   private briefChain: Promise<void> = Promise.resolve();
   private toolsEnabled = true;
 
@@ -196,15 +201,44 @@ export class CedLiveClient {
     );
   }
 
-  private unlockConversationAfterUser(): void {
-    if (!this.awaitingFirstUserSpeech) return;
-    this.awaitingFirstUserSpeech = false;
-    this.heardUserSinceGreeting = true;
-    this.setServerAutoResponse(true);
-    cedRealtimeLog("greeting.user_spoke", {});
-    if (!this.responseInProgress) {
-      this.send({ type: "response.create" });
+  private markUserSpeechHeard(): void {
+    if (this.awaitingFirstUserSpeech) {
+      this.awaitingFirstUserSpeech = false;
     }
+    this.heardUserSinceGreeting = true;
+  }
+
+  /** Una sola response.create por turno — evita voces duplicadas. */
+  private requestSingleResponse(): void {
+    const now = Date.now();
+    if (this.responseInProgress || this.outboundLocked) return;
+    if (this.userTurnResponded && now - this.lastResponseCreateAt < 4000) return;
+    if (now - this.lastResponseCreateAt < 900) return;
+    this.lastResponseCreateAt = now;
+    this.userTurnResponded = true;
+    this.intentionalResponse = true;
+    cedRealtimeLog("response.create.single", {});
+    this.send({ type: "response.create" });
+  }
+
+  private clearUserResponseTimer(): void {
+    if (this.userResponseTimer) {
+      window.clearTimeout(this.userResponseTimer);
+      this.userResponseTimer = null;
+    }
+  }
+
+  /** Espera fin de turno (debounce) — un solo response.create por intervención. */
+  private armUserTurnResponse(): void {
+    if (!this.greetingComplete || this.outboundLocked || this.greetingInFlight) return;
+    if (this.responseInProgress) return;
+    this.clearUserResponseTimer();
+    this.userResponseTimer = window.setTimeout(() => {
+      this.userResponseTimer = null;
+      if (!this.greetingComplete || this.outboundLocked || this.responseInProgress) return;
+      if (!this.heardUserSinceGreeting) return;
+      this.requestSingleResponse();
+    }, 850);
   }
 
   /** Sesión Realtime creada sin herramientas (fallback API). */
@@ -279,6 +313,11 @@ export class CedLiveClient {
     this.heardUserSinceGreeting = false;
     this.greetingGraceUntil = 0;
     this.awaitingFirstUserSpeech = false;
+    this.clearUserResponseTimer();
+    this.intentionalResponse = false;
+    this.userTurnResponded = false;
+    this.userTurnScheduled = false;
+    this.lastResponseCreateAt = 0;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -384,6 +423,11 @@ export class CedLiveClient {
     this.recentToolAt.clear();
     this.activeResponseId = null;
     this.responseInProgress = false;
+    this.clearUserResponseTimer();
+    this.intentionalResponse = false;
+    this.userTurnResponded = false;
+    this.userTurnScheduled = false;
+    this.lastResponseCreateAt = 0;
 
     const generation = this.connectGen;
     const isStale = () => generation !== this.connectGen;
@@ -628,11 +672,19 @@ export class CedLiveClient {
 
     if (type === "response.created") {
       const response = msg.response as { id?: string } | undefined;
+      const isIntentional = this.intentionalResponse || this.outboundLocked;
+      this.intentionalResponse = false;
       if (
+        !isIntentional &&
         (this.awaitingFirstUserSpeech || this.greetingInFlight) &&
         !this.outboundLocked
       ) {
         cedRealtimeLog("greeting.block_auto", { id: response?.id });
+        this.triggerBargeIn();
+        return;
+      }
+      if (this.responseInProgress && !this.outboundLocked) {
+        cedRealtimeLog("response.dedupe.cancel", { id: response?.id });
         this.triggerBargeIn();
         return;
       }
@@ -657,18 +709,32 @@ export class CedLiveClient {
     if (isInputTranscriptionCompleted(type)) {
       const transcript = String(msg.transcript ?? "").trim();
       if (transcript && !this.isLikelyGreetingEcho(transcript)) {
-        this.unlockConversationAfterUser();
-        this.heardUserSinceGreeting = true;
+        this.markUserSpeechHeard();
         this.userTranscriptAcc = transcript;
         handlers.onTranscriptUpdate?.(transcript, "user");
         const intent = parseCameraIntent(transcript);
         if (intent) handlers.onCameraIntent?.(intent);
+        if (this.greetingComplete && !this.outboundLocked) {
+          this.armUserTurnResponse();
+        }
       }
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_started") {
+      if (this.greetingComplete) {
+        this.awaitingFirstUserSpeech = false;
+        this.userTurnResponded = false;
+      }
+      this.clearUserResponseTimer();
       return;
     }
 
     if (type === "input_audio_buffer.speech_stopped") {
       handlers.onSpeechStopped?.();
+      if (this.greetingComplete && !this.outboundLocked) {
+        this.armUserTurnResponse();
+      }
       return;
     }
 
@@ -695,6 +761,7 @@ export class CedLiveClient {
       });
       this.activeResponseId = null;
       this.responseInProgress = false;
+      this.userTurnScheduled = false;
       if (this.modelTranscriptAcc.trim()) {
         handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
         this.modelTranscriptAcc = "";
@@ -800,7 +867,7 @@ export class CedLiveClient {
         cedRealtimeLog("greeting.create", { phrase });
         await this.speakExactPhrase(phrase, 100);
         this.flushInputAudioBuffer();
-        this.greetingGraceUntil = Date.now() + 15_000;
+        this.greetingGraceUntil = Date.now() + 4_000;
         this.greetingComplete = true;
         this.awaitingFirstUserSpeech = true;
         this.handlers.onGreetingComplete?.();
@@ -816,6 +883,7 @@ export class CedLiveClient {
     this.outboundLocked = true;
     this.setServerAutoResponse(false);
     try {
+      this.intentionalResponse = true;
       this.send({
         type: "response.create",
         response: {
@@ -885,14 +953,13 @@ export class CedLiveClient {
           tool_choice: "none",
         },
       });
+      this.intentionalResponse = true;
+      this.lastResponseCreateAt = Date.now();
       await this.waitForResponseIdle(18000);
       await this.sleep(400);
       this.flushInputAudioBuffer();
     } finally {
       this.outboundLocked = false;
-      if (this.heardUserSinceGreeting && !this.awaitingFirstUserSpeech) {
-        this.setServerAutoResponse(true);
-      }
     }
   }
 
@@ -1195,7 +1262,7 @@ export class CedLiveClient {
     }
 
     cedRealtimeLog("tool.response.create", { call_id: callId });
-    this.send({ type: "response.create" });
+    this.requestSingleResponse();
   }
 }
 
