@@ -176,6 +176,8 @@ export class CedLiveClient {
   private intentionalResponse = false;
   private intentionalResponseActive = false;
   private blockAutoResponsesUntil = 0;
+  /** "open" = esperando un response.id; string = único permitido; "closed" = normal */
+  private singleSpeechSlot: "closed" | "open" | string = "closed";
   private advancedBriefInFlight = false;
   private userTurnResponded = false;
   private lastArmedTranscript = "";
@@ -190,6 +192,82 @@ export class CedLiveClient {
       (!this.greetingComplete && this.greetingSent) ||
       Date.now() < this.greetingGraceUntil
     );
+  }
+
+  private isLikelyBackgroundNoise(transcript: string): boolean {
+    const t = transcript.trim().toLowerCase();
+    if (!t || /^<noise>$/i.test(t)) return true;
+    return (
+      /gracias por ver|hasta la pr[oó]xima|nos vemos en|pr[oó]ximo video|suscr[ií]bete|dale like|thanks for watching|see you in the next|subscribe/i.test(
+        t,
+      ) || (t.length < 6 && /^(gracias|thanks|ok|sí|si|!|\.)+$/i.test(t))
+    );
+  }
+
+  private isLikelyAmbientOrEcho(transcript: string): boolean {
+    if (this.isLikelyBackgroundNoise(transcript)) return true;
+    if (this.isLikelyGreetingEcho(transcript)) return true;
+    const low = transcript.toLowerCase();
+    return (
+      (low.includes("buenos días") || low.includes("buenos dias")) &&
+      (low.includes("ced") || low.includes("asistir"))
+    ) || low.includes("listo para asistir") || low.includes("aquí ced");
+  }
+
+  private beginSingleSpeechSlot(): void {
+    this.singleSpeechSlot = "open";
+  }
+
+  private endSingleSpeechSlot(): void {
+    this.singleSpeechSlot = "closed";
+  }
+
+  private cancelResponse(responseId?: string | null): void {
+    if (responseId) {
+      this.send({ type: "response.cancel", response_id: responseId });
+    } else {
+      this.triggerBargeIn();
+    }
+  }
+
+  /** Solo una response.created activa durante saludo/brief. */
+  private allowResponseCreated(responseId?: string | null): boolean {
+    const id = responseId ?? null;
+    const inLockWindow =
+      this.greetingInFlight ||
+      this.outboundLocked ||
+      Date.now() < this.blockAutoResponsesUntil;
+
+    if (inLockWindow || this.singleSpeechSlot !== "closed") {
+      if (this.singleSpeechSlot === "closed") {
+        this.beginSingleSpeechSlot();
+      }
+      if (this.singleSpeechSlot === "open") {
+        this.singleSpeechSlot = id ?? "unknown";
+        return true;
+      }
+      if (id && this.singleSpeechSlot !== id) {
+        cedRealtimeLog("response.reject.duplicate", { id, allowed: this.singleSpeechSlot });
+        this.cancelResponse(id);
+        return false;
+      }
+      return true;
+    }
+
+    if (this.responseInProgress && this.activeResponseId && id && id !== this.activeResponseId) {
+      cedRealtimeLog("response.dedupe.cancel", { id });
+      this.cancelResponse(id);
+      return false;
+    }
+    return true;
+  }
+
+  /** Activa VAD solo cuando el micrófono del usuario está listo. */
+  enableListeningAfterGreeting(): void {
+    if (!this.sessionReady || this.sendBlocked) return;
+    this.flushInputAudioBuffer();
+    this.applyTurnDetection("listen");
+    this.endSingleSpeechSlot();
   }
 
   private isLikelyGreetingEcho(transcript: string): boolean {
@@ -389,6 +467,7 @@ export class CedLiveClient {
     this.intentionalResponse = false;
     this.intentionalResponseActive = false;
     this.blockAutoResponsesUntil = 0;
+    this.singleSpeechSlot = "closed";
     this.advancedBriefInFlight = false;
     this.userTurnResponded = false;
     this.lastArmedTranscript = "";
@@ -625,6 +704,7 @@ export class CedLiveClient {
           this.sessionReady = true;
           this.sendBlocked = false;
           this.setServerAutoResponse(false);
+          this.applyTurnDetection("off");
           this.flushInputAudioBuffer();
           voiceTelemetry.markSetupComplete();
           handlers.onState?.("connected");
@@ -751,28 +831,7 @@ export class CedLiveClient {
 
     if (type === "response.created") {
       const response = msg.response as { id?: string } | undefined;
-      const isIntentional =
-        this.intentionalResponseActive || this.intentionalResponse || this.outboundLocked;
-      if (
-        !isIntentional &&
-        (Date.now() < this.blockAutoResponsesUntil || this.advancedBriefInFlight)
-      ) {
-        cedRealtimeLog("response.block_window", { id: response?.id });
-        this.triggerBargeIn();
-        return;
-      }
-      if (
-        !isIntentional &&
-        (this.awaitingFirstUserSpeech || this.greetingInFlight) &&
-        !this.outboundLocked
-      ) {
-        cedRealtimeLog("greeting.block_auto", { id: response?.id });
-        this.triggerBargeIn();
-        return;
-      }
-      if (this.responseInProgress && !this.outboundLocked) {
-        cedRealtimeLog("response.dedupe.cancel", { id: response?.id });
-        this.triggerBargeIn();
+      if (!this.allowResponseCreated(response?.id)) {
         return;
       }
       this.activeResponseId = response?.id ?? null;
@@ -795,15 +854,18 @@ export class CedLiveClient {
 
     if (isInputTranscriptionCompleted(type)) {
       const transcript = String(msg.transcript ?? "").trim();
-      if (transcript && !this.isLikelyGreetingEcho(transcript)) {
+      if (transcript && !this.isLikelyAmbientOrEcho(transcript)) {
         this.markUserSpeechHeard();
         this.userTranscriptAcc = transcript;
         handlers.onTranscriptUpdate?.(transcript, "user");
         const intent = parseCameraIntent(transcript);
         if (intent) handlers.onCameraIntent?.(intent);
-        if (this.greetingComplete && !this.outboundLocked) {
+        if (this.greetingComplete && !this.outboundLocked && Date.now() >= this.blockAutoResponsesUntil) {
           void this.armUserTurnResponse(transcript);
         }
+      } else if (transcript) {
+        cedRealtimeLog("transcript.ignored", { transcript: transcript.slice(0, 80) });
+        this.flushInputAudioBuffer();
       }
       return;
     }
@@ -956,15 +1018,15 @@ export class CedLiveClient {
           this.triggerBargeIn();
           await this.waitForResponseIdle(1200);
         }
+        this.blockAutoResponsesUntil = Date.now() + 14_000;
+        this.beginSingleSpeechSlot();
         cedRealtimeLog("greeting.create", { phrase });
-        await this.speakExactPhrase(phrase, 36);
+        await this.speakExactPhrase(phrase, 52);
         this.flushInputAudioBuffer();
-        this.applyTurnDetection("listen");
         this.greetingGraceUntil = Date.now() + 6_000;
-        this.blockAutoResponsesUntil = Date.now() + 10_000;
         this.greetingComplete = true;
         this.awaitingFirstUserSpeech = true;
-        this.turnCooldownUntil = Date.now() + 2500;
+        this.turnCooldownUntil = Date.now() + 3500;
         this.handlers.onGreetingComplete?.();
       } finally {
         this.greetingInFlight = false;
@@ -977,9 +1039,10 @@ export class CedLiveClient {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     this.outboundLocked = true;
     this.setServerAutoResponse(false);
+    if (this.singleSpeechSlot === "closed") {
+      this.beginSingleSpeechSlot();
+    }
     try {
-      this.intentionalResponse = true;
-      this.intentionalResponseActive = true;
       this.send({
         type: "response.create",
         response: {
@@ -988,12 +1051,12 @@ export class CedLiveClient {
           tool_choice: "none",
           instructions:
             `Pronuncia ÚNICAMENTE este texto en español, sin añadir ni quitar palabras. ` +
-            `PROHIBIDO: "cómo está", buenos días/tardes/noches, "me alegra", inglés, repetir frases. ` +
+            `PROHIBIDO: "cómo está", buenos días/tardes/noches, "me alegra", "aquí CED", inglés. ` +
             `Texto exacto: "${phrase.trim()}"`,
         },
       });
       await this.waitForResponseIdle(12000);
-      await this.sleep(1200);
+      await this.sleep(800);
       this.flushInputAudioBuffer();
     } finally {
       this.outboundLocked = false;
@@ -1032,6 +1095,7 @@ export class CedLiveClient {
     this.outboundLocked = true;
     this.advancedBriefInFlight = maxOutputTokens > 400;
     this.blockAutoResponsesUntil = Date.now() + Math.max(12000, maxOutputTokens * 40);
+    this.beginSingleSpeechSlot();
     try {
       if (this.responseInProgress) {
         this.triggerBargeIn();

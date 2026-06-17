@@ -113,7 +113,7 @@ const MAX_WS_RECONNECT = 3;
 const TURN_STUCK_MS = 22000;
 const PROCESSING_STUCK_MS = 12000;
 const MIC_UNMUTE_AFTER_SPEECH_MS = 1200;
-const MIC_UNMUTE_AFTER_GREETING_MS = 2800;
+const MIC_UNMUTE_AFTER_GREETING_MS = 3800;
 /** Tras saludo sin respuesta del usuario — una sola frase de presencia. */
 const IDLE_PRESENCE_MS = 50_000;
 
@@ -1180,8 +1180,15 @@ export function useCedVoiceSession(
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
           client.flushInputAudioBuffer();
-          scheduleMicUnmute(MIC_UNMUTE_AFTER_GREETING_MS);
-          enableListeningUi();
+          clearMicUnmuteTimer();
+          micUnmuteTimerRef.current = window.setTimeout(() => {
+            micUnmuteTimerRef.current = null;
+            if (isStale() || pausedRef.current) return;
+            if (modelSpeakingRef.current || client.isResponseActive()) return;
+            client.enableListeningAfterGreeting();
+            client.setMicTrackEnabled(true);
+            enableListeningUi();
+          }, MIC_UNMUTE_AFTER_GREETING_MS);
           idlePresenceSentRef.current = false;
           scheduleIdlePresence();
         },
