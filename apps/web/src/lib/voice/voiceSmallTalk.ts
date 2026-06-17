@@ -2,7 +2,8 @@
 
 export function isCasualSocialGreeting(text: string): boolean {
   const t = text.trim();
-  if (t.length < 5 || t.length > 96) return false;
+  if (t.length < 3 || t.length > 96) return false;
+  if (/^(un\s+)?saludos?[\s.!?,]*$/i.test(t)) return true;
   const low = t.toLowerCase();
   const greeting =
     /\b(hola|buenos|buenas|hey|qu[eé] tal|buen d[ií]a|buenas tardes|buenas noches)\b/i.test(

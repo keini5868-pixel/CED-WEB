@@ -1235,7 +1235,7 @@ export function useCedVoiceSession(
             client.enableListeningAfterGreeting();
             client.setMicTrackEnabled(true);
             enableListeningUi(true);
-          }, 900);
+          }, 2800);
         },
         onTranscriptUpdate: (text, role) => {
           if (isStale() || role !== "user") return;

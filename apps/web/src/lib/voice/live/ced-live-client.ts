@@ -212,6 +212,8 @@ export class CedLiveClient {
   private serverConversationMode = false;
   /** Espera primer transcript real antes de create_response automático. */
   private waitingForFirstUserInput = false;
+  private lastGreetingPhrase = "";
+  private greetingCompletedAt = 0;
 
   private static SERVER_VAD = {
     threshold: 0.5,
@@ -339,6 +341,7 @@ export class CedLiveClient {
   private isLikelyAmbientOrEcho(transcript: string): boolean {
     if (this.isLikelyBackgroundNoise(transcript)) return true;
     if (this.isLikelyGreetingEcho(transcript)) return true;
+    if (this.isEchoOfCedGreeting(transcript)) return true;
     const low = transcript.toLowerCase();
     return (
       (low.includes("buenos días") || low.includes("buenos dias")) &&
@@ -424,6 +427,12 @@ export class CedLiveClient {
   private onFirstUserTranscript(transcript: string): void {
     if (!this.waitingForFirstUserInput) return;
     if (!this.isMeaningfulUserSpeech(transcript)) return;
+    if (this.isEchoOfCedGreeting(transcript)) {
+      cedRealtimeLog("transcript.greeting_echo_ignored", { transcript: transcript.slice(0, 80) });
+      this.flushInputAudioBuffer();
+      return;
+    }
+    if (Date.now() - this.greetingCompletedAt < 2500) return;
     this.waitingForFirstUserInput = false;
     cedRealtimeLog("turn_detection.auto_after_first_user", {
       transcript: transcript.slice(0, 60),
@@ -477,6 +486,13 @@ export class CedLiveClient {
   private isLikelyGreetingEcho(transcript: string): boolean {
     if (!this.awaitingFirstUserSpeech && this.heardUserSinceGreeting) return false;
     const low = transcript.toLowerCase();
+    if (
+      /\ba\s+su\s+servicio\b/i.test(low) ||
+      /\boperativo\b.*\bservicio\b/i.test(low) ||
+      /\bservicio\b.*\bse[nñ]or\b/i.test(low)
+    ) {
+      return true;
+    }
     return (
       low.includes("hola") &&
       (low.includes("señor") ||
@@ -485,6 +501,55 @@ export class CedLiveClient {
         low.includes("en qué puedo ayudarle") ||
         low.includes("en que puedo ayudarle"))
     );
+  }
+
+  /** Eco del saludo de CED captado por el micrófono — no es el usuario. */
+  private isEchoOfCedGreeting(transcript: string): boolean {
+    if (!this.awaitingFirstUserSpeech && !this.waitingForFirstUserInput) return false;
+    if (this.isLikelyGreetingEcho(transcript)) return true;
+    const low = transcript.toLowerCase().replace(/[.,!?]/g, " ").trim();
+    if (
+      /\boperativo\b/.test(low) ||
+      /\ba\s+la\s+espera\b/.test(low) ||
+      (/\bservicio\b/.test(low) && /\bse[nñ]or\b/.test(low))
+    ) {
+      return true;
+    }
+    if (this.lastGreetingPhrase) {
+      const gl = this.lastGreetingPhrase.toLowerCase();
+      if (gl.length >= 10 && low.length >= 8 && (low.includes("servicio") || gl.includes(low.slice(0, 10)))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private phraseForCasualSocial(transcript: string): string | null {
+    if (!isCasualSocialGreeting(transcript)) return null;
+    const h = this.resolveHonorific();
+    const low = transcript.toLowerCase();
+    if (/^(un\s+)?saludos?[\s.!?,]*$/i.test(transcript.trim())) {
+      return `Buenos días, ${h}.`;
+    }
+    if (/\b(c[oó]mo est[aá]s|qu[eé] tal|c[oó]mo te va)\b/i.test(low)) {
+      return `Operativo y a su servicio, ${h}.`;
+    }
+    if (/^hola[\s.!?,]*$/i.test(transcript.trim())) {
+      return `Buenos días, ${h}.`;
+    }
+    return `Operativo y a su servicio, ${h}.`;
+  }
+
+  private async handleCasualSocialTurn(phrase: string): Promise<void> {
+    if (this.waitingForFirstUserInput) {
+      this.waitingForFirstUserInput = false;
+      this.applyTurnDetection("auto");
+    }
+    if (this.responseInProgress) {
+      this.triggerBargeIn();
+      await this.waitForResponseIdle(1200);
+    }
+    await this.speakExactPhrase(phrase, 72);
   }
 
   private markUserSpeechHeard(transcript: string): void {
@@ -1086,7 +1151,17 @@ export class CedLiveClient {
       this.userTranscriptAcc = transcript;
 
       if (this.isMeaningfulUserSpeech(transcript)) {
+        if (this.isEchoOfCedGreeting(transcript)) {
+          cedRealtimeLog("transcript.greeting_echo_ignored", { transcript: transcript.slice(0, 80) });
+          this.flushInputAudioBuffer();
+          return;
+        }
         this.markUserSpeechHeard(transcript);
+        const casualPhrase = this.phraseForCasualSocial(transcript);
+        if (casualPhrase && this.greetingComplete) {
+          void this.handleCasualSocialTurn(casualPhrase);
+          return;
+        }
         this.onFirstUserTranscript(transcript);
         this.userTurnResponded = false;
         this.lastArmedTranscript = "";
@@ -1260,6 +1335,7 @@ export class CedLiveClient {
         this.setMicTrackEnabled(false);
         this.flushInputAudioBuffer();
         const phrase = cedReceptionGreetingPhrase(this.voiceProfile, this.userAddress);
+        this.lastGreetingPhrase = phrase;
         if (this.responseInProgress) {
           this.triggerBargeIn();
           await this.waitForResponseIdle(1200);
@@ -1273,6 +1349,7 @@ export class CedLiveClient {
         this.endSingleSpeechSlot();
         this.greetingGraceUntil = Date.now() + 15_000;
         this.greetingComplete = true;
+        this.greetingCompletedAt = Date.now();
         this.awaitingFirstUserSpeech = true;
         this.heardUserSinceGreeting = false;
         this.lastMeaningfulUserUtterance = "";
