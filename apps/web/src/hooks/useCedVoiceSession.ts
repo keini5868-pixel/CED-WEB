@@ -1204,14 +1204,18 @@ export function useCedVoiceSession(
         },
         onTranscript: (text, role) => {
           if (isStale()) return;
-          callbacks?.onTranscript?.(text, role);
-          void persistMessage(role, text);
+          const trimmed = text.trim();
+          if (!trimmed) return;
+          if (role === "model" && client.isRogueModelOutput(trimmed)) {
+            return;
+          }
+          callbacks?.onTranscript?.(trimmed, role);
+          void persistMessage(role, trimmed);
           if (role === "user") {
             if (client.isGreetingInProgress()) {
               return;
             }
             modelRepliedTurnRef.current = false;
-            const trimmed = text.trim();
             lastUserUtteranceRef.current = trimmed;
 
             const addressPref = parseAddressPreference(trimmed);

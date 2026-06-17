@@ -190,6 +190,7 @@ export class CedLiveClient {
   private modelAudioDoneResolve: (() => void) | null = null;
   /** Autoriza un único response.create tras intervención real del usuario. */
   private userResponseArmed = false;
+  private postGreetingLockUntil = 0;
 
   isGreetingInProgress(): boolean {
     return (
@@ -235,12 +236,17 @@ export class CedLiveClient {
     if (this.outboundLocked) return false;
     const low = text.toLowerCase();
     const rogue =
-      /buenas tardes|buen d[ií]a|buenos d[ií]as|un placer saludar|estoy aqu[ií] para ayudar|listo para ayudar|qu[eé] tiene en mente|en qu[eé] le gustar[ií]a|aqu[ií] estoy[,]? listo|en qu[eé] trabajamos|en qu[eé] puedo ayudar/i.test(
+      /buenas tardes|buen d[ií]a|buenos d[ií]as|muy buenas|un placer saludar|encantado de saludar|estoy aqu[ií] para ayudar|listo para ayudar|qu[eé] tiene en mente|en qu[eé] le gustar[ií]a|aqu[ií] estoy[,]? listo|en qu[eé] trabajamos|en qu[eé] puedo ayudar|saludarte|encantado de/i.test(
         low,
       );
     if (!rogue && !/^hola[,]?\s*(señor|señora|senor|senora)/i.test(low)) return false;
     if (this.awaitingFirstUserSpeech || !this.heardUserSinceGreeting) return true;
+    if (/^hola,?\s*(señor|señora|senor|senora).*en qu[eé] puedo ayudarle/i.test(low)) return true;
     return rogue;
+  }
+
+  isRogueModelOutput(text: string): boolean {
+    return this.isRogueModelGreeting(text);
   }
 
   private isClientAuthorizedResponse(): boolean {
@@ -267,7 +273,10 @@ export class CedLiveClient {
     }
     if (parseCameraIntent(t)) return true;
     if (/\?/.test(t)) return true;
-    if (/^(qué|que|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|quién|quien|por qué|porque)\b/i.test(low)) {
+    if (/^(qué|que|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|quién|quien|por qué|porque|ahora)\b/i.test(low)) {
+      return true;
+    }
+    if (/\b(estás|estas|estoy|bien|dime|oye|escucha|habla|necesito|quiero)\b/i.test(low) && t.length >= 8) {
       return true;
     }
     if (
@@ -340,6 +349,11 @@ export class CedLiveClient {
       this.greetingComplete &&
       !this.isClientAuthorizedResponse()
     ) {
+      if (Date.now() < this.postGreetingLockUntil) {
+        cedRealtimeLog("response.reject.post_greeting_lock", { id });
+        this.cancelResponse(id);
+        return false;
+      }
       cedRealtimeLog("response.reject.unauthorized", { id });
       this.cancelResponse(id);
       return false;
@@ -447,25 +461,31 @@ export class CedLiveClient {
 
   /** Respuesta fija a "bien/gracias" — desactivado: provocaba loops con audio de TV. */
 
-  /** Una sola response.create por turno — evita voces duplicadas. */
+  /** Respuesta inmediata tras transcripción válida del usuario. */
   private requestSingleResponse(): void {
     const now = Date.now();
     if (!this.userMicLive || this.responseInProgress || this.outboundLocked) return;
-    if (now < this.blockAutoResponsesUntil || now < this.turnCooldownUntil) return;
+    if (now < this.blockAutoResponsesUntil) return;
     if (!this.heardUserSinceGreeting || !this.lastMeaningfulUserUtterance) return;
-    if (this.userTurnResponded && now - this.lastResponseCreateAt < 6000) return;
-    if (now - this.lastResponseCreateAt < 1200) return;
+    if (this.userTurnResponded && now - this.lastResponseCreateAt < 2500) return;
+    if (now - this.lastResponseCreateAt < 600) return;
+    this.postGreetingLockUntil = 0;
     this.lastResponseCreateAt = now;
     this.userTurnResponded = true;
-    this.turnCooldownUntil = now + 6000;
+    this.turnCooldownUntil = now + 2500;
     this.userResponseArmed = true;
     this.intentionalResponse = true;
     this.intentionalResponseActive = true;
-    cedRealtimeLog("response.create.single", {});
+    cedRealtimeLog("response.create.single", { utterance: this.lastMeaningfulUserUtterance.slice(0, 60) });
     this.send({
       type: "response.create",
-      response: { max_output_tokens: 72 },
+      response: { max_output_tokens: 320 },
     });
+  }
+
+  private triggerUserResponse(): void {
+    if (!this.isMeaningfulUserSpeech(this.lastMeaningfulUserUtterance)) return;
+    this.requestSingleResponse();
   }
 
   private clearUserResponseTimer(): void {
@@ -473,31 +493,6 @@ export class CedLiveClient {
       window.clearTimeout(this.userResponseTimer);
       this.userResponseTimer = null;
     }
-  }
-
-  /** Espera fin de turno (debounce) — un solo response.create por intervención. */
-  private armUserTurnResponse(transcript = ""): void {
-    if (!this.userMicLive || !this.greetingComplete || this.outboundLocked || this.greetingInFlight) {
-      return;
-    }
-    if (this.responseInProgress || this.advancedBriefInFlight) return;
-    if (Date.now() < this.turnCooldownUntil || Date.now() < this.blockAutoResponsesUntil) return;
-    const trimmed = transcript.trim();
-    if (!this.isMeaningfulUserSpeech(trimmed)) return;
-    if (trimmed && trimmed === this.lastArmedTranscript) return;
-    this.clearUserResponseTimer();
-    this.userTurnScheduled = true;
-    this.userResponseTimer = window.setTimeout(() => {
-      this.userResponseTimer = null;
-      this.userTurnScheduled = false;
-      if (!this.userMicLive || !this.greetingComplete || this.outboundLocked || this.responseInProgress) {
-        return;
-      }
-      if (Date.now() < this.turnCooldownUntil || Date.now() < this.blockAutoResponsesUntil) return;
-      if (!this.heardUserSinceGreeting) return;
-      this.lastArmedTranscript = trimmed;
-      this.requestSingleResponse();
-    }, 1200);
   }
 
   /** Sesión Realtime creada sin herramientas (fallback API). */
@@ -596,6 +591,7 @@ export class CedLiveClient {
     this.userTurnScheduled = false;
     this.lastResponseCreateAt = 0;
     this.userResponseArmed = false;
+    this.postGreetingLockUntil = 0;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -1014,28 +1010,24 @@ export class CedLiveClient {
           handlers.onCameraIntent?.(intent);
         }
         if (this.greetingComplete && !this.outboundLocked && this.userMicLive) {
-          void this.armUserTurnResponse(transcript);
+          this.triggerUserResponse();
         }
-      }
-      return;
-    }
-
-    if (type === "input_audio_buffer.speech_started") {
-      if (
-        this.greetingComplete &&
-        !this.responseInProgress &&
-        Date.now() - this.lastResponseCreateAt > 3500 &&
-        Date.now() > this.turnCooldownUntil
-      ) {
-        this.awaitingFirstUserSpeech = false;
-        this.userTurnResponded = false;
-        this.lastArmedTranscript = "";
       }
       return;
     }
 
     if (type === "input_audio_buffer.speech_stopped") {
       handlers.onSpeechStopped?.();
+      if (
+        this.greetingComplete &&
+        this.userMicLive &&
+        this.heardUserSinceGreeting &&
+        this.lastMeaningfulUserUtterance &&
+        !this.responseInProgress &&
+        !this.userTurnResponded
+      ) {
+        this.triggerUserResponse();
+      }
       return;
     }
 
@@ -1044,6 +1036,14 @@ export class CedLiveClient {
       this.responseInProgress = false;
       this.flushInputAudioBuffer();
       handlers.onInterrupted?.();
+      return;
+    }
+
+    if (type === "input_audio_buffer.speech_started") {
+      if (this.greetingComplete && !this.responseInProgress) {
+        this.userTurnResponded = false;
+        this.lastArmedTranscript = "";
+      }
       return;
     }
 
@@ -1068,7 +1068,12 @@ export class CedLiveClient {
       this.userTurnScheduled = false;
       this.userResponseArmed = false;
       if (this.modelTranscriptAcc.trim()) {
-        handlers.onTranscript?.(this.modelTranscriptAcc.trim(), "model");
+        const modelText = this.modelTranscriptAcc.trim();
+        if (!this.isRogueModelGreeting(modelText)) {
+          handlers.onTranscript?.(modelText, "model");
+        } else {
+          cedRealtimeLog("transcript.rogue_model_skipped", { text: modelText.slice(0, 80) });
+        }
         this.modelTranscriptAcc = "";
       }
       if (this.userTranscriptAcc.trim()) {
@@ -1173,6 +1178,7 @@ export class CedLiveClient {
           await this.waitForResponseIdle(1200);
         }
         this.blockAutoResponsesUntil = Date.now() + 4_000;
+        this.postGreetingLockUntil = Date.now() + 8_000;
         this.beginSingleSpeechSlot();
         cedRealtimeLog("greeting.create", { phrase });
         await this.speakExactPhrase(phrase, 120);
