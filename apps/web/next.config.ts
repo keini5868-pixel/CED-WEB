@@ -1,7 +1,4 @@
 import type { NextConfig } from "next";
-import path from "path";
-
-const rootDir = path.join(__dirname, "../..");
 
 const securityHeaders = [
   { key: "X-DNS-Prefetch-Control", value: "on" },
@@ -16,8 +13,6 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  output: "standalone",
-  outputFileTracingRoot: rootDir,
   transpilePackages: ["@ced/types", "@ced/ui"],
   experimental: {
     optimizePackageImports: ["lucide-react"],

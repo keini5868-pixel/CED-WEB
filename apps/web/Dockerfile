@@ -1,4 +1,4 @@
-# Next.js @ced/web — Railway (standalone, arranque rápido)
+# Next.js @ced/web — Railway
 FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
@@ -29,7 +29,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @ced/web exec next build
 
-FROM node:22-alpine AS runner
+FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOSTNAME=0.0.0.0
@@ -38,9 +38,7 @@ ARG SUPER_ADMIN_EMAILS
 ENV SUPER_ADMIN_EMAILS=$SUPER_ADMIN_EMAILS
 ENV NEXT_PUBLIC_SUPER_ADMIN_EMAILS=$SUPER_ADMIN_EMAILS
 
-COPY --from=builder /app/apps/web/.next/standalone ./
-COPY --from=builder /app/apps/web/.next/static ./apps/web/.next/static
-COPY --from=builder /app/apps/web/public ./apps/web/public
+COPY --from=builder /app ./
 
 EXPOSE 8080
-CMD ["sh", "-c", "echo \"ced-web standalone on 0.0.0.0:${PORT:-8080}\" && exec node apps/web/server.js"]
+CMD ["sh", "-c", "echo \"ced-web starting on 0.0.0.0:${PORT:-8080}\" && exec pnpm --filter @ced/web exec next start -H 0.0.0.0 -p \"${PORT:-8080}\""]
