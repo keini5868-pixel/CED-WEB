@@ -160,6 +160,7 @@ export function CedVoiceHub() {
       <CedAssistantButton
         active={voice.micOn}
         busy={voice.micBusy}
+        paused={voice.paused}
         onActivate={() => {
           unlockVoiceAudioOnGesture();
           void voice.toggleMic();

@@ -623,10 +623,13 @@ export function useCedVoiceSession(
         }, TURN_STUCK_MS);
       };
 
-      const enableListeningUi = () => {
+      const enableListeningUi = (force = false) => {
         if (isStale() || !micActiveRef.current) return;
         setHeardIndicator({ status: "listening", userText: null, heardAt: null });
-        if (!webFetchRef.current && !modelSpeakingRef.current && !clientWebSearchRef.current) {
+        if (
+          force ||
+          (!webFetchRef.current && !modelSpeakingRef.current && !clientWebSearchRef.current)
+        ) {
           setOrbState("listening");
           setStatusLabel(ORB_STATE_LABELS.listening);
         }
@@ -1166,18 +1169,20 @@ export function useCedVoiceSession(
         },
         onGreetingComplete: () => {
           if (isStale()) return;
+          greetingPendingRef.current = false;
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
           client.flushInputAudioBuffer();
           clearMicUnmuteTimer();
+          setOrbState("processing");
+          setStatusLabel("Preparando escucha…");
           micUnmuteTimerRef.current = window.setTimeout(() => {
             micUnmuteTimerRef.current = null;
-            if (isStale() || pausedRef.current || !greetingPendingRef.current) return;
-            greetingPendingRef.current = false;
+            if (isStale() || pausedRef.current) return;
             client.enableListeningAfterGreeting();
             client.setMicTrackEnabled(true);
-            enableListeningUi();
-          }, 9000);
+            enableListeningUi(true);
+          }, 900);
         },
         onTranscriptUpdate: (text, role) => {
           if (isStale() || role !== "user") return;
@@ -1644,16 +1649,6 @@ export function useCedVoiceSession(
         onModelAudioDone: () => {
           if (isStale()) return;
           if (greetingPendingRef.current) {
-            greetingPendingRef.current = false;
-            clearMicUnmuteTimer();
-            modelSpeakingRef.current = false;
-            micUnmuteTimerRef.current = window.setTimeout(() => {
-              micUnmuteTimerRef.current = null;
-              if (isStale() || pausedRef.current) return;
-              client.enableListeningAfterGreeting();
-              client.setMicTrackEnabled(true);
-              enableListeningUi();
-            }, 2000);
             return;
           }
           scheduleMicUnmute(MIC_UNMUTE_AFTER_SPEECH_MS + 100);
@@ -1695,6 +1690,8 @@ export function useCedVoiceSession(
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
           if (greetingPendingRef.current) {
+            setOrbState("processing");
+            setStatusLabel("Preparando escucha…");
             return;
           }
           client.flushInputAudioBuffer();

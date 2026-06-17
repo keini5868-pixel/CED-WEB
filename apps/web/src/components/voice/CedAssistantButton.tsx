@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 interface CedAssistantButtonProps {
   active: boolean;
   busy: boolean;
+  paused?: boolean;
   onActivate: () => void;
 }
 
@@ -13,9 +14,33 @@ interface CedAssistantButtonProps {
 export function CedAssistantButton({
   active,
   busy,
+  paused = false,
   onActivate,
 }: CedAssistantButtonProps) {
-  if (active) return null;
+  if (active) {
+    return (
+      <div
+        className="mt-5 flex w-full max-w-xs flex-col items-center gap-2 rounded-xl border-2 border-emerald-400/60 bg-emerald-950/30 px-6 py-4"
+        role="status"
+        aria-live="polite"
+      >
+        <span className="flex items-center gap-2 font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-[0.2em] text-emerald-300">
+          <span className="relative flex h-2.5 w-2.5">
+            {!paused ? (
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+            ) : null}
+            <span
+              className={`relative inline-flex h-2.5 w-2.5 rounded-full ${paused ? "bg-amber-400" : "bg-emerald-400"}`}
+            />
+          </span>
+          {paused ? "ASISTENTE EN PAUSA" : "MICRÓFONO ACTIVO"}
+        </span>
+        <span className="text-center text-[9px] font-normal tracking-[0.12em] text-emerald-400/80">
+          {paused ? "Reanuda con PAUSA para escuchar" : "CED está escuchando · habla cuando quieras"}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <motion.button
