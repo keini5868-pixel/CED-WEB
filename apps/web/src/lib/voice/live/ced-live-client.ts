@@ -713,7 +713,6 @@ export class CedLiveClient {
         this.send({
           type: "response.create",
           response: {
-            modalities: ["audio", "text"],
             max_output_tokens: 40,
             instructions:
               `[CED_GREETING] Di EXACTAMENTE una sola frase, sin nada antes ni después: "${phrase}". ` +
