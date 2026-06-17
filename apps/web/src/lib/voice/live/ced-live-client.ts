@@ -203,10 +203,11 @@ export class CedLiveClient {
     if (/^(muchas|muchísimas|mil)?\s*gracias[\s.!]*$/i.test(t)) return true;
     if (/^(gracias[\s.!]*)+$/i.test(t)) return true;
     if (/^entendido[\s,]*señor[\s.!]*$/i.test(t)) return true;
+    if (/^(chau|chao|adi[oó]s|bye|goodbye|nos vemos|hasta luego)[\s.!]*$/i.test(t)) return true;
     return (
-      /gracias por ver|hasta la pr[oó]xima|nos vemos en|pr[oó]ximo video|suscr[ií]bete|dale like|thanks for watching|see you in the next|subscribe|muchísimas gracias/i.test(
+      /gracias por ver|por ver el video|hasta la pr[oó]xima|nos vemos en|pr[oó]ximo video|suscr[ií]bete|suscr[ií]bete al canal|dale like|deja tu like|thanks for watching|see you in the next|don't forget to subscribe|subscribe to|muchísimas gracias|activar la c[aá]mara|voy a activar|c[aá]mara activa/i.test(
         t,
-      ) || (t.length < 10 && /^(gracias|thanks|ok|sí|si|entendido|!|\.)+$/i.test(t))
+      ) || (t.length < 12 && /^(gracias|thanks|ok|sí|si|entendido|chau|chao|!|\.)+$/i.test(t))
     );
   }
 
@@ -282,6 +283,18 @@ export class CedLiveClient {
       return false;
     }
 
+    if (
+      this.greetingComplete &&
+      !this.heardUserSinceGreeting &&
+      !this.outboundLocked &&
+      !this.intentionalResponse &&
+      !this.intentionalResponseActive
+    ) {
+      cedRealtimeLog("response.reject.no_user_speech", { id });
+      this.cancelResponse(id);
+      return false;
+    }
+
     if (this.responseInProgress && this.activeResponseId && id && id !== this.activeResponseId) {
       cedRealtimeLog("response.dedupe.cancel", { id });
       this.cancelResponse(id);
@@ -290,12 +303,12 @@ export class CedLiveClient {
     return true;
   }
 
-  /** Activa VAD nativo (OpenAI responde e interrumpe como ChatGPT voz). */
+  /** Escucha con VAD; respuesta solo tras transcripción válida del usuario. */
   enableListeningAfterGreeting(): void {
     if (!this.sessionReady || this.sendBlocked) return;
     this.flushInputAudioBuffer();
     this.userMicLive = true;
-    this.applyTurnDetection("auto");
+    this.applyTurnDetection("listen");
   }
 
   /** Pausa — corta voz y deja de escuchar. */
@@ -315,8 +328,21 @@ export class CedLiveClient {
     this.setRemoteMuted(false);
     this.userMicLive = true;
     this.blockAutoResponsesUntil = 0;
-    this.applyTurnDetection("auto");
+    this.applyTurnDetection("listen");
     this.flushInputAudioBuffer();
+  }
+
+  getLastMeaningfulUserUtterance(): string {
+    return this.lastMeaningfulUserUtterance;
+  }
+
+  userExplicitlyRequestedVision(): boolean {
+    const last = this.lastMeaningfulUserUtterance.trim();
+    if (!last) return false;
+    if (parseCameraIntent(last) === "activate") return true;
+    return /\b(c[aá]mara|camara|mira esto|qu[eé] ves|qu[eé] veo|mostrar|enseñar|vision|visi[oó]n|foto|imagen)\b/i.test(
+      last,
+    );
   }
 
   private isLikelyGreetingEcho(transcript: string): boolean {
@@ -893,22 +919,31 @@ export class CedLiveClient {
       const transcript = String(msg.transcript ?? "").trim();
       if (!transcript || /^<noise>$/i.test(transcript)) return;
 
-      handlers.onTranscriptUpdate?.(transcript, "user");
-      this.userTranscriptAcc = transcript;
-
-      if (this.isLikelyBackgroundNoise(transcript)) {
+      if (this.isLikelyBackgroundNoise(transcript) || this.isLikelyAmbientOrEcho(transcript)) {
         cedRealtimeLog("transcript.noise", { transcript: transcript.slice(0, 80) });
+        if (this.responseInProgress) {
+          this.triggerBargeIn();
+        }
         this.flushInputAudioBuffer();
         return;
       }
 
+      handlers.onTranscriptUpdate?.(transcript, "user");
+      this.userTranscriptAcc = transcript;
+
       if (this.isMeaningfulUserSpeech(transcript)) {
         this.markUserSpeechHeard(transcript);
+        this.userTurnResponded = false;
+        this.lastArmedTranscript = "";
         const intent = parseCameraIntent(transcript);
-        if (intent && this.userMicLive) handlers.onCameraIntent?.(intent);
-      } else if (this.isLikelyAmbientOrEcho(transcript)) {
-        cedRealtimeLog("transcript.echo", { transcript: transcript.slice(0, 80) });
-        this.flushInputAudioBuffer();
+        if (intent === "deactivate" && this.userMicLive) {
+          handlers.onCameraIntent?.(intent);
+        } else if (intent === "activate" && this.userMicLive) {
+          handlers.onCameraIntent?.(intent);
+        }
+        if (this.greetingComplete && !this.outboundLocked && this.userMicLive) {
+          void this.armUserTurnResponse(transcript);
+        }
       }
       return;
     }
@@ -964,7 +999,10 @@ export class CedLiveClient {
         this.modelTranscriptAcc = "";
       }
       if (this.userTranscriptAcc.trim()) {
-        handlers.onTranscript?.(this.userTranscriptAcc.trim(), "user");
+        const userText = this.userTranscriptAcc.trim();
+        if (!this.isLikelyBackgroundNoise(userText) && !this.isLikelyAmbientOrEcho(userText)) {
+          handlers.onTranscript?.(userText, "user");
+        }
         this.userTranscriptAcc = "";
       }
       voiceTelemetry.markTurnComplete();
@@ -1307,7 +1345,7 @@ export class CedLiveClient {
       }
 
       if (rawName === "request_camera_activation") {
-        if (parseCameraIntent(this.lastMeaningfulUserUtterance) !== "activate") {
+        if (!this.userExplicitlyRequestedVision()) {
           cedRealtimeLog("tool.camera.blocked", { last: this.lastMeaningfulUserUtterance.slice(0, 60) });
           await this.submitToolOutput(callId, { status: "ignored", silent: true });
           return;
@@ -1441,6 +1479,14 @@ export class CedLiveClient {
           briefOnly: true,
           advancedBrief: true,
         });
+        return;
+      }
+
+      if (name === ANALIZAR_CAMARA && !this.userExplicitlyRequestedVision()) {
+        cedRealtimeLog("tool.analyze_camera.blocked", {
+          last: this.lastMeaningfulUserUtterance.slice(0, 60),
+        });
+        await this.submitToolOutput(callId, { status: "ignored", silent: true });
         return;
       }
 

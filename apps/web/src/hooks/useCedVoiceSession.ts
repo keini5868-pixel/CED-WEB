@@ -1580,6 +1580,9 @@ export function useCedVoiceSession(
             };
           }
           if (name === ANALIZAR_CAMARA) {
+            if (!client.userExplicitlyRequestedVision()) {
+              return { spoken: "", ok: false };
+            }
             const hadStream = !!cameraStreamRef.current;
             if (!hadStream) {
               await toggleCameraRef.current(true);
@@ -1711,9 +1714,13 @@ export function useCedVoiceSession(
           }
         },
         onCameraIntent: (intent) => {
+          if (intent === "activate" && !client.userExplicitlyRequestedVision?.()) return;
           void toggleCameraRef.current(intent === "activate");
         },
         onCameraTool: async (intent) => {
+          if (intent === "activate" && !client.getLastMeaningfulUserUtterance().trim()) {
+            return false;
+          }
           if (intent === "activate") {
             if (!cameraStreamRef.current) {
               await toggleCameraRef.current(true);
