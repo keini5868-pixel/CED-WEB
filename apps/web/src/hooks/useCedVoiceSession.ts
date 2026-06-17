@@ -570,7 +570,7 @@ export function useCedVoiceSession(
         clearIdlePresenceTimer();
         idlePresenceTimerRef.current = window.setTimeout(() => {
           idlePresenceTimerRef.current = null;
-          if (isStale() || !micActiveRef.current || greetingPendingRef.current) return;
+          if (isStale() || !micActiveRef.current || client.isGreetingInProgress()) return;
           if (modelSpeakingRef.current || client.isResponseActive()) return;
           if (idlePresenceSentRef.current) return;
           if (Date.now() - lastUserSpeechAtRef.current < IDLE_PRESENCE_MS - 2000) return;
@@ -719,9 +719,9 @@ export function useCedVoiceSession(
       };
 
       const publishSuccessBrief = (platform: PublishPlatform) =>
-        cedPublishSuccessPhrase(platform);
+        cedPublishSuccessPhrase(platform, client.getUserAddress());
       const publishFailureBrief = (reason: string) =>
-        cedPublishFailurePhrase(reason);
+        cedPublishFailurePhrase(reason, client.getUserAddress());
 
       const runSocialPublish = (
         platform: PublishPlatform,
@@ -1206,9 +1206,38 @@ export function useCedVoiceSession(
           callbacks?.onTranscript?.(text, role);
           void persistMessage(role, text);
           if (role === "user") {
+            if (client.isGreetingInProgress()) {
+              return;
+            }
             modelRepliedTurnRef.current = false;
             const trimmed = text.trim();
             lastUserUtteranceRef.current = trimmed;
+
+            const addressPref = parseAddressPreference(trimmed);
+            const genderPref = parseGenderPreference(trimmed);
+            if (addressPref || genderPref) {
+              void (async () => {
+                const updated = await updateUserAddress({
+                  ...(addressPref ? { preferredAddress: addressPref } : {}),
+                  ...(genderPref ? { gender: genderPref } : {}),
+                });
+                if (isStale()) return;
+                if (updated) {
+                  client.setUserAddress(updated);
+                  clearEphemeralTokenCache();
+                  client.sendNarrationBrief(
+                    `Queda registrado, ${updated.honorific || updated.displayName}.`,
+                  );
+                }
+              })();
+              return;
+            }
+
+            // Con tools Realtime: una sola voz (OpenAI) — evitar briefs paralelos del cliente
+            if (client.isToolsEnabled()) {
+              return;
+            }
+
             if (isAdvancedConfirmAnswer(trimmed) && advancedConfirmPendingRef.current) {
               const q =
                 pendingAdvancedPromptRef.current.trim() ||
@@ -1463,8 +1492,9 @@ export function useCedVoiceSession(
             const message = fromArgs || fromUtterance.trim();
             if (!message) {
               markPublishFlow("facebook");
+              const h = client.getUserAddress()?.honorific?.trim() || "Señor";
               return {
-                spoken: "Dime el texto del post y lo publico.",
+                spoken: `Muy bien, ${h}. ¿Desea agregar algo más o que le sugiera una idea para la publicación?`,
               };
             }
             const image = await resolvePublishImage(
@@ -1476,8 +1506,8 @@ export function useCedVoiceSession(
             cedVoiceLog(6, "publicar_facebook", { ok: r.ok, error: r.ok ? undefined : r.error });
             return {
               spoken: r.ok
-                ? cedPublishSuccessPhrase("facebook")
-                : cedPublishFailurePhrase(`${r.error}`),
+                ? cedPublishSuccessPhrase("facebook", client.getUserAddress())
+                : cedPublishFailurePhrase(`${r.error}`, client.getUserAddress()),
               ok: r.ok,
             };
           }
@@ -1487,7 +1517,10 @@ export function useCedVoiceSession(
             ).trim();
             if (!caption) {
               markPublishFlow("instagram");
-              return { spoken: "" };
+              const h = client.getUserAddress()?.honorific?.trim() || "Señor";
+              return {
+                spoken: `Muy bien, ${h}. ¿Desea agregar algo más o que le sugiera una idea para la publicación?`,
+              };
             }
             const image = await resolvePublishImage(
               args,
@@ -1504,8 +1537,8 @@ export function useCedVoiceSession(
             cedVoiceLog(6, "publicar_instagram", { ok: r.ok, error: r.ok ? undefined : r.error });
             return {
               spoken: r.ok
-                ? cedPublishSuccessPhrase("instagram")
-                : cedPublishFailurePhrase(`${r.error}`),
+                ? cedPublishSuccessPhrase("instagram", client.getUserAddress())
+                : cedPublishFailurePhrase(`${r.error}`, client.getUserAddress()),
               ok: r.ok,
             };
           }

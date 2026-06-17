@@ -169,7 +169,17 @@ export class CedLiveClient {
   private greetingComplete = false;
   private heardUserSinceGreeting = false;
   private greetingGraceUntil = 0;
+  private outboundLocked = false;
+  private briefChain: Promise<void> = Promise.resolve();
   private toolsEnabled = true;
+
+  isGreetingInProgress(): boolean {
+    return (
+      this.greetingInFlight ||
+      (!this.greetingComplete && this.greetingSent) ||
+      Date.now() < this.greetingGraceUntil
+    );
+  }
 
   /** Sesión Realtime creada sin herramientas (fallback API). */
   isToolsEnabled(): boolean {
@@ -592,9 +602,10 @@ export class CedLiveClient {
     if (type === "response.created") {
       const response = msg.response as { id?: string } | undefined;
       if (
+        !this.outboundLocked &&
+        !this.greetingInFlight &&
         this.greetingComplete &&
         !this.heardUserSinceGreeting &&
-        !this.greetingInFlight &&
         Date.now() > this.greetingGraceUntil
       ) {
         cedRealtimeLog("greeting.cancel_unsolicited", { id: response?.id });
@@ -723,7 +734,8 @@ export class CedLiveClient {
   }
 
   sendAdvancedSystemAck(): void {
-    void this.sendClientTurn(CED_VOICE_PROFILE_LOCK.advancedSystem.ackInstruction);
+    if (this.isGreetingInProgress()) return;
+    void this.enqueueControlledBrief(CED_VOICE_PROFILE_LOCK.advancedSystem.ackInstruction);
   }
 
   setUserAddress(address: UserAddressContext | null): void {
@@ -759,9 +771,9 @@ export class CedLiveClient {
         }
         cedRealtimeLog("greeting.create", { phrase });
         await this.sendControlledBrief(turn, 450);
-        await this.sleep(1600);
+        await this.sleep(2200);
         this.flushInputAudioBuffer();
-        this.greetingGraceUntil = Date.now() + 6000;
+        this.greetingGraceUntil = Date.now() + 10_000;
         this.greetingComplete = true;
         this.setServerAutoResponse(true);
         this.handlers.onGreetingComplete?.();
@@ -774,12 +786,23 @@ export class CedLiveClient {
   /** Presencia tras silencio — una frase exacta, sin improvisar. */
   sendPresenceBrief(phrase: string): void {
     const text = phrase.trim();
-    if (!text) return;
-    void this.sendControlledBrief(cedBriefTurn(text), 80);
+    if (!text || this.isGreetingInProgress()) return;
+    void this.enqueueControlledBrief(cedBriefTurn(text), 80);
   }
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
+  private enqueueControlledBrief(
+    turnText: string,
+    maxOutputTokens = 400,
+  ): Promise<void> {
+    const task = async () => {
+      await this.sendControlledBrief(turnText, maxOutputTokens);
+    };
+    this.briefChain = this.briefChain.then(task, task);
+    return this.briefChain;
   }
 
   private async sendControlledBrief(
@@ -787,36 +810,48 @@ export class CedLiveClient {
     maxOutputTokens = 400,
   ): Promise<void> {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
-    if (this.responseInProgress) {
-      this.triggerBargeIn();
-      await this.waitForResponseIdle();
+    this.outboundLocked = true;
+    try {
+      if (this.responseInProgress) {
+        this.triggerBargeIn();
+        await this.waitForResponseIdle();
+      }
+      this.setServerAutoResponse(false);
+      this.send({
+        type: "conversation.item.create",
+        item: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: turnText }],
+        },
+      });
+      this.send({
+        type: "response.create",
+        response: {
+          max_output_tokens: maxOutputTokens,
+          tool_choice: "none",
+        },
+      });
+      await this.waitForResponseIdle(18000);
+      await this.sleep(400);
+      this.flushInputAudioBuffer();
+    } finally {
+      this.outboundLocked = false;
+      if (this.greetingComplete) {
+        this.setServerAutoResponse(true);
+      }
     }
-    this.send({
-      type: "conversation.item.create",
-      item: {
-        type: "message",
-        role: "user",
-        content: [{ type: "input_text", text: turnText }],
-      },
-    });
-    this.send({
-      type: "response.create",
-      response: {
-        max_output_tokens: maxOutputTokens,
-        tool_choice: "none",
-      },
-    });
-    await this.waitForResponseIdle(18000);
   }
 
   sendNarrationBrief(summary: string): void {
     const text = summary.trim();
-    if (!text) return;
-    void this.sendClientTurn(cedBriefTurn(text));
+    if (!text || this.isGreetingInProgress()) return;
+    void this.enqueueControlledBrief(cedBriefTurn(text));
   }
 
   sendPublishConfirm(platform: "facebook" | "instagram"): void {
-    void this.sendClientTurn(cedPublishConfirmTurn(platform));
+    if (this.isGreetingInProgress()) return;
+    void this.enqueueControlledBrief(cedPublishConfirmTurn(platform));
   }
 
   sendWebSearchAck(): void {
@@ -957,9 +992,10 @@ export class CedLiveClient {
         );
         if (result.ok) {
           h.onGeneratedImage?.(result.url, prompt);
+          const hTitle = this.userAddress?.honorific?.trim() || "Señor";
           const toolResult = {
             status: "ok",
-            spoken: "Ahí está.",
+            spoken: `Imagen generada, ${hTitle}.`,
             image_url: result.url,
             prompt,
           };
@@ -1099,20 +1135,14 @@ export class CedLiveClient {
     cedRealtimeLog("tool.output.send", { call_id: callId, payload });
     this.send(outputMessage);
 
-    const responseRequest: Record<string, unknown> = {
-      type: "response.create",
-    };
     if (spoken) {
-      responseRequest.response = {
-        instructions:
-          "Confirmación obligatoria tras herramienta. " +
-          `Di EXACTAMENTE esta frase en voz alta, una sola vez: "${spoken}". ` +
-          "PROHIBIDO: omitir la confirmación, decir 'va', 'ok', 'listo', o quedarte en silencio. " +
-          "No añadas frases antes ni después.",
-      };
+      cedRealtimeLog("tool.response.brief", { call_id: callId, spoken });
+      await this.enqueueControlledBrief(cedBriefTurn(spoken), 160);
+      return;
     }
-    cedRealtimeLog("tool.response.create", { call_id: callId, spoken });
-    this.send(responseRequest);
+
+    cedRealtimeLog("tool.response.create", { call_id: callId });
+    this.send({ type: "response.create" });
   }
 }
 

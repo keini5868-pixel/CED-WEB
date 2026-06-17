@@ -26,11 +26,10 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "consultar_claude",
         "description": (
-            "Sistema avanzado para análisis profundo. "
-            "SOLO tras confirmación del usuario o petición explícita. "
-            "Si la pregunta es compleja y no confirmó: NO invocar — di '¿Activamos análisis profundo?' "
-            "Tras ejecutar, el cliente devuelve spoken — PRESENTA ese resultado de inmediato. "
-            "NUNCA para clima, noticias ni búsquedas web."
+            "Sistema avanzado (Claude) — SOLO análisis profundo en TEXTO. "
+            "PROHIBIDO invocar en saludos, clima, publicaciones o imágenes. "
+            "SOLO tras confirmación explícita del usuario ('sí', 'adelante', 'activa análisis profundo'). "
+            "Si no confirmó: pregunta UNA vez '¿Activamos análisis profundo?' y ESPERA."
         ),
         "parameters": {
             "type": "object",
@@ -43,9 +42,8 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "generate_image",
         "description": (
             "OBLIGATORIO para crear imágenes con IA desde cero. "
-            "Flujo: di UNA frase corta ('Generando.' / 'Un momento.') y EJECUTA esta tool de inmediato. "
-            "PROHIBIDO decir 'voy a generar' o 'estoy generándola' sin invocar. "
-            "Tras generar: 'Ahí está.' — NUNCA silencio."
+            "Flujo: 'Un momento, Señor.' → EJECUTA tool → 'Imagen generada, Señor.' "
+            "PROHIBIDO decir 'voy a generar' sin invocar. Tras generar: confirmación formal con Señor/Señora."
         ),
         "parameters": {
             "type": "object",
