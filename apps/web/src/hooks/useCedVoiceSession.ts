@@ -112,7 +112,7 @@ const MAX_WS_RECONNECT = 3;
 /** Si el turno no cierra, liberar mic/UI (WebRTC). */
 const TURN_STUCK_MS = 22000;
 const PROCESSING_STUCK_MS = 12000;
-const MIC_UNMUTE_AFTER_SPEECH_MS = 1200;
+const MIC_UNMUTE_AFTER_SPEECH_MS = 2200;
 const MIC_UNMUTE_AFTER_GREETING_MS = 4500;
 /** Tras saludo sin respuesta del usuario — una sola frase de presencia. */
 const IDLE_PRESENCE_MS = 50_000;
@@ -493,9 +493,9 @@ export function useCedVoiceSession(
         audio: {
           channelCount: 1,
           sampleRate: { ideal: 24000 },
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
         },
       });
       micStreamRef.current = stream;
@@ -1647,11 +1647,13 @@ export function useCedVoiceSession(
             greetingPendingRef.current = false;
             clearMicUnmuteTimer();
             modelSpeakingRef.current = false;
-            if (!pausedRef.current) {
+            micUnmuteTimerRef.current = window.setTimeout(() => {
+              micUnmuteTimerRef.current = null;
+              if (isStale() || pausedRef.current) return;
               client.enableListeningAfterGreeting();
               client.setMicTrackEnabled(true);
               enableListeningUi();
-            }
+            }, 2000);
             return;
           }
           scheduleMicUnmute(MIC_UNMUTE_AFTER_SPEECH_MS + 100);

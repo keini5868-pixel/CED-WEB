@@ -199,9 +199,25 @@ export class CedLiveClient {
     );
   }
 
+  /** Frases fantasma que Whisper inventa con silencio/eco — no son el usuario. */
+  private isWhisperHallucination(text: string): boolean {
+    const t = text.trim().toLowerCase();
+    if (!t) return true;
+    if (t.length <= 3) return true;
+    return (
+      /amara\.org|subt[ií]tulos realizados|subtitles by|thanks for watching|thank you for watching|for more information|visit www\.|copyright|\bwww\./i.test(
+        t,
+      ) ||
+      /^you[\s.!]*$/i.test(t) ||
+      /^thank you[\s.!]*$/i.test(t) ||
+      /^\s*\(?music\)?\s*$/i.test(t)
+    );
+  }
+
   private isLikelyBackgroundNoise(transcript: string): boolean {
     const t = transcript.trim().toLowerCase();
     if (!t || /^<noise>$/i.test(t)) return true;
+    if (this.isWhisperHallucination(t)) return true;
     if (/^(muchas|muchísimas|mil)?\s*gracias[\s.!]*$/i.test(t)) return true;
     if (/^(gracias[\s.!]*)+$/i.test(t)) return true;
     if (/^entendido[\s,]*señor[\s.!]*$/i.test(t)) return true;

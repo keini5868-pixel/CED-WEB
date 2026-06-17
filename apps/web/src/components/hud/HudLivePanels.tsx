@@ -21,11 +21,11 @@ function formatTranscript(items: HudFeedItem[]): string {
 }
 
 export function HudGlobalPanel() {
-  const { items } = useHudFeed();
+  const { voiceItems } = useHudFeed();
   const [copied, setCopied] = useState(false);
 
-  const transcript = useMemo(() => formatTranscript(items), [items]);
-  const chronological = useMemo(() => [...items].reverse(), [items]);
+  const transcript = useMemo(() => formatTranscript(voiceItems), [voiceItems]);
+  const chronological = useMemo(() => [...voiceItems].reverse(), [voiceItems]);
 
   const copyAll = useCallback(async () => {
     if (!transcript.trim()) return;
@@ -85,8 +85,8 @@ export function HudGlobalPanel() {
 }
 
 export function HudSummaryPanel() {
-  const { items } = useHudFeed();
-  const lastReport = items.find((i) => i.kind === "report")?.text ?? "";
+  const { voiceItems } = useHudFeed();
+  const lastReport = voiceItems.find((i) => i.kind === "report")?.text ?? "";
 
   return (
     <div className="space-y-2">

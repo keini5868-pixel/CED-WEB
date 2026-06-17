@@ -50,7 +50,7 @@ export function CedVoiceHub() {
     prompt?: string;
   } | null>(null);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
-  const { pushLine } = useHudFeed();
+  const { pushVoiceLine } = useHudFeed();
 
   useEffect(() => {
     prefetchEphemeralToken();
@@ -78,7 +78,7 @@ export function CedVoiceHub() {
 
   const voice = useCedVoiceSession(refreshUsage, {
     onTranscript: (text, role) => {
-      pushLine(text, role === "user" ? "voice" : "report");
+      pushVoiceLine(text, role);
     },
     onGeneratedImage: (url, prompt) => {
       setVoiceImagePreview({ url, prompt });

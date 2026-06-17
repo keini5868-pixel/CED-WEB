@@ -20,8 +20,11 @@ export interface HudFeedItem {
 
 interface HudFeedContextValue {
   items: HudFeedItem[];
+  /** Solo diálogo voz usuario/CED — no incluye Intel/DRONES. */
+  voiceItems: HudFeedItem[];
   marqueeText: string;
   pushLine: (text: string, kind?: HudFeedKind) => void;
+  pushVoiceLine: (text: string, role: "user" | "model") => void;
 }
 
 const HudFeedContext = createContext<HudFeedContextValue | null>(null);
@@ -30,6 +33,7 @@ const MAX_ITEMS = 48;
 
 export function HudFeedProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<HudFeedItem[]>([]);
+  const [voiceItems, setVoiceItems] = useState<HudFeedItem[]>([]);
 
   const pushLine = useCallback((text: string, kind: HudFeedKind = "voice") => {
     const trimmed = text.replace(/\s+/g, " ").trim();
@@ -38,6 +42,24 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
       const next: HudFeedItem[] = [
         {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          kind,
+          text: trimmed,
+          at: Date.now(),
+        },
+        ...prev,
+      ];
+      return next.slice(0, MAX_ITEMS);
+    });
+  }, []);
+
+  const pushVoiceLine = useCallback((text: string, role: "user" | "model") => {
+    const trimmed = text.replace(/\s+/g, " ").trim();
+    if (!trimmed) return;
+    const kind: HudFeedKind = role === "user" ? "voice" : "report";
+    setVoiceItems((prev) => {
+      const next: HudFeedItem[] = [
+        {
+          id: `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
           kind,
           text: trimmed,
           at: Date.now(),
@@ -59,8 +81,8 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
   }, [items]);
 
   const value = useMemo(
-    () => ({ items, marqueeText, pushLine }),
-    [items, marqueeText, pushLine],
+    () => ({ items, voiceItems, marqueeText, pushLine, pushVoiceLine }),
+    [items, voiceItems, marqueeText, pushLine, pushVoiceLine],
   );
 
   return (
