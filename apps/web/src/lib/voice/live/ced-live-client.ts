@@ -95,6 +95,8 @@ export type CedLiveConnectOptions = {
 export type CedLiveHandlers = {
   onState?: (state: "connecting" | "connected" | "closed" | "error") => void;
   onSessionReady?: () => void;
+  /** Saludo inicial terminado — habilitar escucha normal. */
+  onGreetingComplete?: () => void;
   onTranscriptUpdate?: (text: string, role: "user" | "model") => void;
   onTranscript?: (text: string, role: "user" | "model") => void;
   /** WebRTC reproduce audio remoto; callback opcional para UI (inicio de respuesta). */
@@ -163,6 +165,8 @@ export class CedLiveClient {
   private handlers: CedLiveHandlers = {};
   private greetingSent = false;
   private greetingInFlight = false;
+  private greetingComplete = false;
+  private heardUserSinceGreeting = false;
   private toolsEnabled = true;
 
   /** Sesión Realtime creada sin herramientas (fallback API). */
@@ -206,12 +210,35 @@ export class CedLiveClient {
     this.send({ type: "input_audio_buffer.clear" });
   }
 
+  /** Evita respuestas automáticas del servidor (p. ej. durante el saludo). */
+  private setServerAutoResponse(enabled: boolean): void {
+    if (!this.dc || this.dc.readyState !== "open") return;
+    this.send({
+      type: "session.update",
+      session: {
+        type: "realtime",
+        audio: {
+          input: {
+            turn_detection: {
+              type: "semantic_vad",
+              eagerness: "medium",
+              create_response: enabled,
+              interrupt_response: true,
+            },
+          },
+        },
+      },
+    });
+  }
+
   disconnect(): void {
     this.intentionalClose = true;
     this.sessionReady = false;
     this.sendBlocked = true;
     this.greetingSent = false;
     this.greetingInFlight = false;
+    this.greetingComplete = false;
+    this.heardUserSinceGreeting = false;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -434,6 +461,8 @@ export class CedLiveClient {
           window.clearTimeout(readyTimeout);
           this.sessionReady = true;
           this.sendBlocked = false;
+          this.setServerAutoResponse(false);
+          this.flushInputAudioBuffer();
           voiceTelemetry.markSetupComplete();
           handlers.onState?.("connected");
           handlers.onSessionReady?.();
@@ -559,6 +588,15 @@ export class CedLiveClient {
 
     if (type === "response.created") {
       const response = msg.response as { id?: string } | undefined;
+      if (
+        this.greetingComplete &&
+        !this.heardUserSinceGreeting &&
+        !this.greetingInFlight
+      ) {
+        cedRealtimeLog("greeting.cancel_unsolicited", { id: response?.id });
+        this.triggerBargeIn();
+        return;
+      }
       this.activeResponseId = response?.id ?? null;
       this.responseInProgress = true;
       handlers.onResponseStart?.();
@@ -580,6 +618,7 @@ export class CedLiveClient {
     if (isInputTranscriptionCompleted(type)) {
       const transcript = String(msg.transcript ?? "");
       if (transcript.trim()) {
+        this.heardUserSinceGreeting = true;
         this.userTranscriptAcc = transcript.trim();
         handlers.onTranscriptUpdate?.(transcript.trim(), "user");
         const intent = parseCameraIntent(transcript.trim());
@@ -701,6 +740,7 @@ export class CedLiveClient {
     this.greetingInFlight = true;
     void (async () => {
       try {
+        this.setServerAutoResponse(false);
         this.setMicTrackEnabled(false);
         this.flushInputAudioBuffer();
         const phrase = cedGreetingPhrase(this.voiceProfile, this.userAddress);
@@ -712,13 +752,19 @@ export class CedLiveClient {
         this.send({
           type: "response.create",
           response: {
-            max_output_tokens: 40,
+            max_output_tokens: 120,
+            tool_choice: "none",
             instructions:
-              `[CED_GREETING] Di EXACTAMENTE una sola frase, sin nada antes ni después: "${phrase}". ` +
-              "PROHIBIDO: 'Soy CED', 'asistente de inteligencia', presentarte, listar capacidades, " +
-              "preguntar en qué ayudar, repetir el saludo o añadir segunda frase.",
+              `[CED_GREETING] Di EXACTAMENTE UNA sola frase completa, sin pausas ni segunda frase: "${phrase}". ` +
+              "PROHIBIDO: dividir en dos turnos, 'estoy aquí para servir', 'Soy CED', listar capacidades, " +
+              "mencionar estrategias, preguntar en qué ayudar o añadir nada después.",
           },
         });
+        await this.waitForResponseIdle(12000);
+        this.flushInputAudioBuffer();
+        this.greetingComplete = true;
+        this.setServerAutoResponse(true);
+        this.handlers.onGreetingComplete?.();
       } finally {
         this.greetingInFlight = false;
       }

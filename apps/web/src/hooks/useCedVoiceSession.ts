@@ -1145,6 +1145,15 @@ export function useCedVoiceSession(
             client.sendSessionGreeting();
           }
         },
+        onGreetingComplete: () => {
+          if (isStale()) return;
+          greetingPendingRef.current = false;
+          clearResponseWatchdog();
+          modelSpeakingRef.current = false;
+          client.flushInputAudioBuffer();
+          scheduleMicUnmute(750);
+          enableListeningUi();
+        },
         onTranscriptUpdate: (text, role) => {
           if (isStale() || role !== "user") return;
           const trimmed = text.trim();
@@ -1552,7 +1561,7 @@ export function useCedVoiceSession(
           );
         },
         onModelAudioDone: () => {
-          if (isStale()) return;
+          if (isStale() || greetingPendingRef.current) return;
           scheduleMicUnmute(MIC_UNMUTE_AFTER_SPEECH_MS + 100);
         },
         onInterrupted: () => {
@@ -1592,7 +1601,7 @@ export function useCedVoiceSession(
           clearResponseWatchdog();
           modelSpeakingRef.current = false;
           if (greetingPendingRef.current) {
-            greetingPendingRef.current = false;
+            return;
           }
           client.flushInputAudioBuffer();
           scheduleMicUnmute();
