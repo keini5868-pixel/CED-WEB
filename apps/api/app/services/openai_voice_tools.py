@@ -180,10 +180,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "request_camera_activation",
         "description": (
-            "Activa la cámara del usuario para que puedas VER lo que muestra. "
-            "Usar cuando diga 'activa la cámara', 'enciende la cámara', "
-            "'quiero mostrarte algo', 'mira esto', 'puedes ver esto'. "
-            "El cliente enciende la cámara y envía frames — NO simules encender."
+            "Activa la cámara del usuario cuando pida visión o quiera mostrar algo. "
+            "Usar si dice 'activa la cámara', 'mira esto', '¿qué ves?'. "
+            "Tras activar confirma breve: 'Cámara activa.' NO describes nada visual hasta analyze_camera_frame."
         ),
         "parameters": {
             "type": "object",
@@ -208,9 +207,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "analyze_camera_frame",
         "description": (
-            "OBLIGATORIO cuando el usuario pregunta qué ves en cámara o qué hay frente a la cámara. "
-            "Captura y analiza el frame actual. Requiere cámara activa (activarla si hace falta). "
-            "PROHIBIDO decir que no puedes ver sin invocar esta herramienta."
+            "OBLIGATORIO antes de describir algo visual. Captura y analiza el frame de cámara. "
+            "Si la cámara está apagada, invoca request_camera_activation primero. "
+            "Responde SOLO con el resultado de esta herramienta — PROHIBIDO inventar lo que ves."
         ),
         "parameters": {
             "type": "object",
@@ -218,6 +217,24 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
                 "pregunta": {
                     "type": "string",
                     "description": "Pregunta del usuario sobre lo visible, ej: '¿qué es esto?'",
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "name": "buscar_lo_visible",
+        "description": (
+            "Busca en internet información sobre lo que muestra la cámara. "
+            "Requiere cámara activa (request_camera_activation si hace falta). "
+            "OBLIGATORIO invocar esta tool — PROHIBIDO inventar resultados de búsqueda visual."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pregunta": {
+                    "type": "string",
+                    "description": "Qué buscar sobre lo visible, ej: 'precio de este producto'",
                 },
             },
         },

@@ -289,7 +289,8 @@ def build_voice_system_extras(user_id: str) -> str:
         "Política CED: responde directo si el tema es estable (conceptos, historia, negocio general). "
         "Usa búsqueda web solo para clima, noticias, precios o datos de hoy. "
         "Sistema avanzado solo tras UNA confirmación del usuario para análisis profundo. "
-        "Si ya confirmó, ejecuta sin volver a preguntar."
+        "Si ya confirmó, ejecuta sin volver a preguntar. "
+        "Cámara apagada por defecto: no afirmes visión. Visión solo vía analyze_camera_frame o buscar_lo_visible."
     )
     conn = supabase_db.get_meta_connection(user_id)
     if conn and conn.get("access_token"):

@@ -280,17 +280,16 @@ export class CedLiveClient {
   private notifyCameraContext(active: boolean): void {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     const text = active
-      ? "La cámara del usuario está ACTIVA. Puedes ver lo que muestra en tiempo real. " +
-        "Cuando pregunte sobre algo visual, describe INMEDIATAMENTE lo que ves. " +
-        "NO esperes a que vuelva a preguntar «¿qué ves?» si ya hizo una pregunta sobre lo que muestra. " +
-        "Si muestra algo sin preguntar, espera una pregunta específica."
-      : "La cámara del usuario está DESACTIVADA.";
+      ? "[CED sistema] Cámara ACTIVA. Para describir algo visual invoca analyze_camera_frame o buscar_lo_visible. " +
+        "PROHIBIDO afirmar que ves sin invocar herramienta."
+      : "[CED sistema] Cámara DESACTIVADA. PROHIBIDO decir que ves algo, al usuario o su entorno. " +
+        "Si piden visión, invoca request_camera_activation.";
     this.send({
       type: "conversation.item.create",
       item: {
         type: "message",
         role: "user",
-        content: [{ type: "input_text", text: `[CED sistema] ${text}` }],
+        content: [{ type: "input_text", text }],
       },
     });
   }
@@ -848,7 +847,7 @@ export class CedLiveClient {
         await this.submitToolOutput(callId, {
           status: ok ? "ok" : "error",
           spoken: ok
-            ? "Cámara activa. Ya puedo ver lo que me muestras."
+            ? "Cámara activa."
             : "No pude activar la cámara. Revisa permisos del navegador.",
         });
         return;

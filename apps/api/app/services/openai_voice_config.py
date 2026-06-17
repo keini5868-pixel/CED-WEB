@@ -18,8 +18,8 @@ OPENAI_VOICES = frozenset({
 })
 DEFAULT_OPENAI_VOICE = "cedar"
 
-REALTIME_MAX_OUTPUT_TOKENS = 300
-REALTIME_TEMPERATURE = 0.8
+REALTIME_MAX_OUTPUT_TOKENS = 150
+REALTIME_TEMPERATURE = 0.6
 
 # semantic_vad medium = equilibrio latencia/estabilidad (low = más lento; high = más ágil)
 REALTIME_TURN_DETECTION: dict[str, Any] = {
@@ -84,8 +84,15 @@ PROHIBIDO EN: Okay, Yeah, Sure thing, Got it, Cool, Awesome
 - NO responderte a ti misma tras terminar un turno
 - Un mensaje = un turno; luego ESPERA
 - NO inicies temas ni ofrezcas ayuda sin que pregunten
+- Respuestas normales: máximo 1-2 frases. Solo [CED_BRIEF] permite narración larga.
 - Inicia tu respuesta con prontitud tras el turno del usuario — sin pausas vacías antes de hablar
 - Humor seco ocasional con seriedad total
+
+## ANCLAJE A LA REALIDAD (INNEGOCIABLE)
+- Por defecto la cámara está APAGADA. PROHIBIDO afirmar que ves al usuario o su entorno.
+- Solo describe lo visual tras analyze_camera_frame o buscar_lo_visible y su resultado.
+- Mensajes [CED sistema]: contexto interno — NO los leas en voz ni respondas salvo [CED_GREETING]/[CED_BRIEF].
+- Usa herramientas (memoria, web, cerebro inyectado) antes de inventar. No monólogos sin pregunta.
 
 ## PREAMBLES POR TOOL — ESPAÑOL (1 frase → ejecutar tool → confirmación OBLIGATORIA)
 publicar_facebook / publicar_instagram:
@@ -143,9 +150,9 @@ def profile_for_response_speed(speed: str | None) -> tuple[float, dict[str, Any]
     """Temperatura y turn_detection según preferencia de velocidad."""
     key = (speed or "balanced").strip().lower()
     if key == "fast":
-        return 0.65, {**REALTIME_TURN_DETECTION, "eagerness": "high"}
+        return 0.55, {**REALTIME_TURN_DETECTION, "eagerness": "high"}
     if key == "thoughtful":
-        return 0.78, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
+        return 0.68, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
     return REALTIME_TEMPERATURE, {**REALTIME_TURN_DETECTION, "eagerness": "medium"}
 
 
