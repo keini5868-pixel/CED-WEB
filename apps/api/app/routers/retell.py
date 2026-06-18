@@ -6,13 +6,14 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.deps.auth import require_user_id
-from app.services.retell_agent_setup import ensure_retell_agent
+from app.services.retell_agent_cache import get_last_bootstrap_info, get_retell_agent_id
+from app.services.retell_agent_setup import bootstrap_retell_if_needed, ensure_retell_agent
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.voice_tool_executor import execute_voice_tool
@@ -88,11 +89,11 @@ async def register_retell_call(
     if not client:
         raise HTTPException(status_code=503, detail="RETELL_API_KEY no configurada.")
 
-    agent_id = settings.retell_agent_id.strip()
+    agent_id = get_retell_agent_id()
     if not agent_id:
         raise HTTPException(
             status_code=503,
-            detail="RETELL_AGENT_ID no configurado. Ejecute setup_retell_agent.",
+            detail="RETELL_AGENT_ID no configurado. Reinicie API o ejecute bootstrap.",
         )
 
     _voice_access_or_raise(user_id)
@@ -149,12 +150,81 @@ async def retell_tool_handler(tool_name: str, request: Request) -> JSONResponse:
 @router.get("/config")
 async def retell_config(_user_id: str = Depends(require_user_id)) -> dict:
     settings = get_settings()
+    agent_id = get_retell_agent_id()
     return {
         "provider": settings.voice_provider,
-        "agentConfigured": bool(settings.retell_agent_id.strip()),
+        "agentConfigured": bool(agent_id),
+        "agentId": agent_id or None,
         "voiceId": settings.retell_voice_id.strip() or "11labs-George",
         "brain": settings.gemini_voice_model,
         "architecture": "retell-gemini-elevenlabs",
+    }
+
+
+def _verify_bootstrap_secret(provided: str | None) -> None:
+    settings = get_settings()
+    expected = settings.retell_bootstrap_secret.strip() or settings.retell_api_key.strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="Bootstrap no configurado en servidor.")
+    if not provided or provided.strip() != expected:
+        raise HTTPException(status_code=401, detail="Secret inválido.")
+
+
+@router.post("/bootstrap-public")
+async def retell_bootstrap_public(
+    x_bootstrap_secret: str | None = Header(default=None, alias="X-Bootstrap-Secret"),
+) -> dict[str, Any]:
+    """Bootstrap sin auth de usuario — requiere X-Bootstrap-Secret (= RETELL_API_KEY o RETELL_BOOTSTRAP_SECRET)."""
+    _verify_bootstrap_secret(x_bootstrap_secret)
+    if not get_settings().google_api_key.strip():
+        raise HTTPException(status_code=503, detail="GOOGLE_API_KEY no configurada.")
+
+    agent_id = get_retell_agent_id() or None
+    try:
+        out = bootstrap_retell_if_needed() or ensure_retell_agent(agent_id=agent_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[RETELL] bootstrap-public failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return {
+        "ok": True,
+        **out,
+        "hint": "Copie RETELL_AGENT_ID a Railway y redeploy para persistir.",
+    }
+
+
+@router.get("/bootstrap-status")
+async def retell_bootstrap_status(
+    x_bootstrap_secret: str | None = Header(default=None, alias="X-Bootstrap-Secret"),
+) -> dict[str, Any]:
+    _verify_bootstrap_secret(x_bootstrap_secret)
+    info = get_last_bootstrap_info() or {}
+    agent_id = get_retell_agent_id()
+    return {
+        "ok": True,
+        "agent_id": agent_id or info.get("agent_id"),
+        "voice_id": info.get("voice_id") or get_settings().retell_voice_id or "11labs-George",
+        "llm_websocket_url": info.get("llm_websocket_url"),
+        "brain": info.get("brain") or get_settings().gemini_voice_model,
+    }
+
+
+@router.get("/status")
+async def retell_public_status() -> dict[str, Any]:
+    """Estado Retell sin auth — para verificar bootstrap post-deploy."""
+    settings = get_settings()
+    info = get_last_bootstrap_info() or {}
+    agent_id = get_retell_agent_id()
+    return {
+        "ok": True,
+        "voice_provider": settings.voice_provider,
+        "agent_configured": bool(agent_id),
+        "agent_id": agent_id or None,
+        "voice_id": info.get("voice_id") or settings.retell_voice_id.strip() or "11labs-George",
+        "llm_websocket_url": info.get("llm_websocket_url"),
+        "brain": settings.gemini_voice_model,
+        "has_retell_api_key": bool(settings.retell_api_key.strip()),
+        "has_google_api_key": bool(settings.google_api_key.strip()),
     }
 
 
@@ -167,7 +237,7 @@ async def retell_bootstrap_agent(user_id: str = Depends(require_user_id)) -> dic
 
     agent_id = settings.retell_agent_id.strip() or None
     try:
-        out = ensure_retell_agent(agent_id=agent_id)
+        out = bootstrap_retell_if_needed() or ensure_retell_agent(agent_id=agent_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[RETELL] bootstrap failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc

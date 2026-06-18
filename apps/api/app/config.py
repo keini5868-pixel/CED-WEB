@@ -107,7 +107,9 @@ class Settings(BaseSettings):
     retell_voice_id: str = ""
     retell_webhook_secret: str = ""
     retell_auto_bootstrap: bool = False
+    retell_bootstrap_secret: str = ""
     elevenlabs_api_key: str = ""
+    support_chat_enabled: bool = False
 
     @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:

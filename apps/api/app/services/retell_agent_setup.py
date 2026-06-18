@@ -105,7 +105,7 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     if not settings.google_api_key.strip():
         raise RuntimeError("GOOGLE_API_KEY no configurada — requerida para Gemini voz")
 
-    voice_id = resolve_retell_voice_id()
+    voice_id = settings.retell_voice_id.strip() or DEFAULT_VOICE_ID
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
 
@@ -147,19 +147,49 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     }
 
 
-def bootstrap_retell_on_startup() -> None:
-    """Opcional al arrancar API si RETELL_AUTO_BOOTSTRAP=true."""
+def bootstrap_retell_if_needed() -> dict[str, str] | None:
+    """Crea o actualiza agente Retell al arrancar si hay API keys."""
     settings = get_settings()
     if settings.voice_provider != "retell":
-        return
-    if not settings.retell_auto_bootstrap:
-        return
+        return None
     if not settings.retell_api_key.strip():
-        logger.warning("[RETELL] auto-bootstrap omitido — sin RETELL_API_KEY")
-        return
+        logger.warning("[RETELL] bootstrap omitido — sin RETELL_API_KEY")
+        return None
+    if not settings.google_api_key.strip():
+        logger.warning("[RETELL] bootstrap omitido — sin GOOGLE_API_KEY")
+        return None
+
+    from app.services.retell_agent_cache import set_bootstrapped_agent
+
+    agent_id = settings.retell_agent_id.strip() or None
     try:
-        agent_id = settings.retell_agent_id.strip() or None
         result = ensure_retell_agent(agent_id=agent_id)
-        logger.info("[RETELL] bootstrap ok agent=%s brain=%s", result["agent_id"], result["brain"])
+        set_bootstrapped_agent(result["agent_id"], result)
+        if not agent_id:
+            logger.critical(
+                "═══════════════════════════════════════════════════\n"
+                "RETELL BOOTSTRAP OK — agregue en Railway:\n"
+                "RETELL_AGENT_ID=%s\n"
+                "RETELL_VOICE_ID=%s\n"
+                "═══════════════════════════════════════════════════",
+                result["agent_id"],
+                result["voice_id"],
+            )
+        else:
+            logger.info(
+                "[RETELL] agente listo id=%s voice=%s",
+                result["agent_id"],
+                result["voice_id"],
+            )
+        return result
     except Exception as exc:  # noqa: BLE001
         logger.error("[RETELL] bootstrap failed: %s", exc)
+        return None
+
+
+def bootstrap_retell_on_startup() -> None:
+    """Actualiza agente existente si RETELL_AUTO_BOOTSTRAP=true."""
+    settings = get_settings()
+    if not settings.retell_auto_bootstrap:
+        return
+    bootstrap_retell_if_needed()

@@ -6,9 +6,12 @@ import { useEffect, useState } from "react";
 
 import { fetchAdminSupportUnreadCount } from "@/lib/api/support";
 
+const SUPPORT_CHAT_ENABLED =
+  process.env.NEXT_PUBLIC_SUPPORT_CHAT_ENABLED === "true";
+
 const LINKS = [
   { href: "/admin", label: "Usuarios" },
-  { href: "/admin/support", label: "Soporte" },
+  ...(SUPPORT_CHAT_ENABLED ? [{ href: "/admin/support", label: "Soporte" }] : []),
   { href: "/admin/monitoring", label: "Monitoreo" },
 ];
 
@@ -17,6 +20,7 @@ export function AdminNav() {
   const [unread, setUnread] = useState(0);
 
   useEffect(() => {
+    if (!SUPPORT_CHAT_ENABLED) return;
     const load = async () => {
       try {
         setUnread(await fetchAdminSupportUnreadCount());

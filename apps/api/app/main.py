@@ -65,14 +65,10 @@ async def lifespan(_app: FastAPI):
             logger.warning("RETELL_API_KEY vacía — voz Retell no funcionará")
         elif not settings.google_api_key.strip():
             logger.warning("GOOGLE_API_KEY vacía — cerebro Gemini voz no funcionará")
-        elif not settings.retell_agent_id.strip():
-            logger.warning(
-                "RETELL_AGENT_ID vacío — ejecute scripts/setup_retell_agent.py o POST /v1/retell/admin/bootstrap"
-            )
         else:
-            from app.services.retell_agent_setup import bootstrap_retell_on_startup
+            from app.services.retell_agent_setup import bootstrap_retell_if_needed
 
-            bootstrap_retell_on_startup()
+            bootstrap_retell_if_needed()
     yield
 
 
@@ -131,7 +127,8 @@ def create_app() -> FastAPI:
     application.include_router(pdf.router)
     application.include_router(cognitive.router)
     application.include_router(usage.router)
-    application.include_router(support.router)
+    if settings.support_chat_enabled:
+        application.include_router(support.router)
 
     @application.exception_handler(Exception)
     async def unhandled_exception(_request: Request, exc: Exception) -> JSONResponse:
