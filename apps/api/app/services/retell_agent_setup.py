@@ -287,7 +287,24 @@ def _pick_elevenlabs_voice_for_retell(api_key: str) -> str | None:
     return best_id
 
 
-def custom_llm_websocket_url() -> str:
+def list_custom_voices(client: Any) -> list[dict[str, str]]:
+    """Todas las voces custom_voice_* en la biblioteca Retell."""
+    rows: list[dict[str, str]] = []
+    for voice in _list_retell_voices(client):
+        vid = _voice_field(voice, "voice_id")
+        if vid.startswith("custom_voice_"):
+            rows.append({"voice_id": vid, "voice_name": _voice_field(voice, "voice_name").strip()})
+    return rows
+
+
+def _retrieve_agent_voice_id(client: Any, agent_id: str) -> str | None:
+    try:
+        agent = client.agent.retrieve(agent_id=agent_id)
+        vid = str(getattr(agent, "voice_id", "") or "").strip()
+        return vid or None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[RETELL] agent.retrieve failed: %s", exc)
+        return None
     settings = get_settings()
     base = settings.api_public_url.rstrip("/")
     if base.startswith("https://"):
@@ -301,9 +318,24 @@ def custom_llm_websocket_url() -> str:
 
 def _voice_model_for(voice_id: str) -> str | None:
     """Modelo TTS compatible con el proveedor de la voz Retell."""
+    settings = get_settings()
+    configured = settings.retell_voice_model.strip()
+    if configured:
+        return configured
     if voice_id.startswith("openai-"):
         return "tts-1"
+    if voice_id.startswith("custom_voice_"):
+        return "eleven_multilingual_v2"
     return "eleven_turbo_v2_5"
+
+
+def _voice_speed_for(voice_id: str) -> float:
+    settings = get_settings()
+    if settings.retell_voice_speed > 0:
+        return settings.retell_voice_speed
+    if voice_id.startswith("custom_voice_"):
+        return 0.94
+    return 1.0
 
 
 def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
@@ -327,6 +359,17 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
             voice_id = jarvis
         else:
             voice_id = resolve_retell_voice_id_from_api(client)
+
+    if agent_id:
+        dashboard_voice = _retrieve_agent_voice_id(client, agent_id)
+        if dashboard_voice and dashboard_voice.startswith("custom_voice_") and dashboard_voice != voice_id:
+            logger.info(
+                "[RETELL] Voz elegida en Retell dashboard: %s (Railway/config: %s)",
+                dashboard_voice,
+                voice_id,
+            )
+            voice_id = dashboard_voice
+
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
 
@@ -337,7 +380,7 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
         },
         "voice_id": voice_id,
         "voice_model": _voice_model_for(voice_id),
-        "voice_speed": 1.0,
+        "voice_speed": _voice_speed_for(voice_id),
         "responsiveness": 0.95,
         "interruption_sensitivity": 0.85,
         "language": "multi",
@@ -352,7 +395,12 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
         try:
             client.agent.update(agent_id=agent_id, **agent_payload)
         except Exception as exc:
-            if "not found from voice" in str(exc).lower():
+            err = str(exc).lower()
+            if "voice model" in err or "voice_model" in err:
+                logger.warning("[RETELL] voice_model fallback turbo: %s", exc)
+                agent_payload["voice_model"] = "eleven_turbo_v2_5"
+                client.agent.update(agent_id=agent_id, **agent_payload)
+            elif "not found from voice" in err:
                 if configured:
                     raise RuntimeError(
                         f"RETELL_VOICE_ID={configured!r} no es válido en Retell. "

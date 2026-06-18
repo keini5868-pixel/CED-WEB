@@ -418,6 +418,7 @@ async def retell_jarvis_voice_setup() -> dict[str, Any]:
         find_retell_voice_by_elevenlabs_id,
         search_jarvis_voices,
         _normalize_voice_id,
+        list_custom_voices,
     )
 
     el_id = settings.elevenlabs_jarvis_voice_id.strip() or JARVIS_CLONED_ELEVENLABS_ID
@@ -440,6 +441,7 @@ async def retell_jarvis_voice_setup() -> dict[str, Any]:
         "retell_voice_id": mapped or retell_id,
         "agent_voice_id": agent_voice_id,
         "jarvis_voice_matches": search_jarvis_voices(client, query=configured or el_id),
+        "custom_voices": list_custom_voices(client),
         "error": err,
         "hint": (
             "RETELL_VOICE_ID debe ser el ID de Retell (ej. custom-xxx), NO el de ElevenLabs. "

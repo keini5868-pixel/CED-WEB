@@ -112,6 +112,9 @@ class Settings(BaseSettings):
     # Clon Jarvis en ElevenLabs — se registra en Retell al bootstrap si no hay RETELL_VOICE_ID
     elevenlabs_jarvis_voice_id: str = "UKhFmKblQwXqi7vvaALt"
     elevenlabs_jarvis_public_user_id: str = ""
+    # Modelo TTS Retell: eleven_multilingual_v2 (más fiel al clon) o eleven_turbo_v2_5 (más rápido)
+    retell_voice_model: str = ""
+    retell_voice_speed: float = 0.0
     support_chat_enabled: bool = False
 
     @model_validator(mode="after")
