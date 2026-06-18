@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ImagePlus, Send, X } from "lucide-react";
 
 import {
@@ -36,6 +37,7 @@ function formatTime(iso?: string): string {
 }
 
 export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
+  const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [conversation, setConversation] = useState<SupportConversation | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -45,6 +47,10 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const loadConversation = useCallback(async () => {
     setLoading(true);
@@ -63,8 +69,12 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
       } else {
         setMessages([]);
       }
-    } catch {
-      setError("No se pudo cargar el soporte.");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? e.message
+          : "No se pudo cargar el soporte. Inicia sesión e intenta de nuevo.",
+      );
     } finally {
       setLoading(false);
     }
@@ -83,7 +93,6 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
     setError(null);
     try {
       const conv = await createSupportConversation(category);
-      if (!conv) throw new Error("No se pudo crear la conversación");
       setConversation(conv);
       setMessages([]);
     } catch (e) {
@@ -122,8 +131,10 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
     setPendingFiles((prev) => [...prev, ...next].slice(0, 3));
   };
 
-  return (
-    <div className="fixed bottom-24 right-6 z-50 flex h-[min(560px,calc(100vh-7rem))] w-[min(380px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#0a0f18] shadow-2xl">
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="fixed bottom-24 right-4 z-[130] flex h-[min(560px,calc(100vh-7rem))] w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#0a0f18] shadow-2xl sm:right-6">
       <header className="flex items-center justify-between border-b border-cyan-500/20 bg-gradient-to-r from-purple-900/40 to-blue-900/40 px-4 py-3">
         <div>
           <p className="font-[family-name:var(--font-orbitron)] text-sm font-bold text-cyan-200">
@@ -142,6 +153,12 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
       </header>
 
       <div className="flex-1 overflow-y-auto p-4">
+        {error ? (
+          <div className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+            {error}
+          </div>
+        ) : null}
+
         {loading ? (
           <p className="text-sm text-cyan-500/70">Cargando…</p>
         ) : !conversation ? (
@@ -159,6 +176,9 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
                 >
                   <span className="text-xl">{emoji}</span>
                   <span>{label}</span>
+                  {sending ? (
+                    <span className="ml-auto text-[10px] text-cyan-400">Abriendo…</span>
+                  ) : null}
                 </button>
               );
             })}
@@ -170,6 +190,11 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
               {SUPPORT_CATEGORY_LABELS[conversation.category].label}
               {conversation.status === "resolved" ? " · Resuelto" : ""}
             </div>
+            {messages.length === 0 ? (
+              <p className="text-xs text-cyan-500/70">
+                Cuéntanos tu caso abajo. Te responderemos pronto.
+              </p>
+            ) : null}
             {messages.map((m) => {
               const isUser = m.sender_type === "user";
               return (
@@ -227,7 +252,6 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
               ))}
             </div>
           ) : null}
-          {error ? <p className="mb-2 text-xs text-red-400">{error}</p> : null}
           <div className="flex items-end gap-2">
             <input
               ref={fileInputRef}
@@ -268,7 +292,12 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
             </button>
           </div>
         </footer>
-      ) : null}
-    </div>
+      ) : (
+        <footer className="border-t border-cyan-500/20 px-4 py-3 text-center text-[11px] text-cyan-500/70">
+          Elige una categoría arriba para abrir el chat.
+        </footer>
+      )}
+    </div>,
+    document.body,
   );
 }

@@ -118,6 +118,16 @@ def assert_conversation_access(
     return conv
 
 
+def _is_missing_support_table(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return (
+        "support_conversations" in msg
+        or "support_messages" in msg
+        or "pgrst205" in msg
+        or "42p01" in msg
+    )
+
+
 def create_conversation(user_id: str, category: str) -> dict[str, Any]:
     cat = (category or "").strip().lower()
     if cat not in VALID_CATEGORIES:
@@ -130,19 +140,45 @@ def create_conversation(user_id: str, category: str) -> dict[str, Any]:
         "unread_by_admin": True,
         "unread_by_user": False,
     }
-    result = client.table("support_conversations").insert(row).execute()
-    return _conversation_row((result.data or [{}])[0])
+    try:
+        result = client.table("support_conversations").insert(row).execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("create_conversation failed")
+        if _is_missing_support_table(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Chat de soporte no inicializado. "
+                    "Ejecuta la migración 014_support_chat.sql en Supabase."
+                ),
+            ) from exc
+        raise HTTPException(status_code=500, detail="No se pudo crear la conversación.") from exc
+    data = result.data or []
+    if not data:
+        raise HTTPException(status_code=500, detail="No se pudo crear la conversación.")
+    return _conversation_row(data[0])
 
 
 def list_user_conversations(user_id: str) -> list[dict[str, Any]]:
     client = _client()
-    result = (
-        client.table("support_conversations")
-        .select("*")
-        .eq("user_id", user_id)
-        .order("last_message_at", desc=True)
-        .execute()
-    )
+    try:
+        result = (
+            client.table("support_conversations")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("last_message_at", desc=True)
+            .execute()
+        )
+    except Exception as exc:  # noqa: BLE001
+        if _is_missing_support_table(exc):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Chat de soporte no inicializado. "
+                    "Ejecuta la migración 014_support_chat.sql en Supabase."
+                ),
+            ) from exc
+        raise
     return [_conversation_row(r) for r in (result.data or [])]
 
 

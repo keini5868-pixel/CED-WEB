@@ -55,21 +55,36 @@ export async function fetchSupportChatEnabled(): Promise<boolean> {
 
 export async function fetchUserSupportConversations(): Promise<SupportConversation[]> {
   const res = await proxyFetch("support/conversations");
-  const data = await parseApiJson<{ ok?: boolean; conversations?: SupportConversation[] }>(res);
-  if (!res.ok) return [];
+  const data = await parseApiJson<{
+    ok?: boolean;
+    conversations?: SupportConversation[];
+    detail?: string;
+  }>(res);
+  if (!res.ok) {
+    throw new Error(data.detail || "No se pudo cargar conversaciones de soporte.");
+  }
   return data.conversations ?? [];
 }
 
 export async function createSupportConversation(
   category: SupportCategory,
-): Promise<SupportConversation | null> {
+): Promise<SupportConversation> {
   const res = await proxyFetch("support/conversations", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ category }),
   });
-  const data = await parseApiJson<{ ok?: boolean; conversation?: SupportConversation }>(res);
-  if (!res.ok || !data.conversation) return null;
+  const data = await parseApiJson<{
+    ok?: boolean;
+    conversation?: SupportConversation;
+    detail?: string;
+  }>(res);
+  if (!res.ok) {
+    throw new Error(data.detail || "No se pudo crear la conversación de soporte.");
+  }
+  if (!data.conversation) {
+    throw new Error("No se pudo crear la conversación de soporte.");
+  }
   return data.conversation;
 }
 
