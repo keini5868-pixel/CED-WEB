@@ -238,7 +238,7 @@ async def retell_bootstrap_status(
 
 
 @router.get("/bootstrap-now")
-async def retell_bootstrap_now() -> dict[str, Any]:
+async def retell_bootstrap_now(voice_id: str | None = None) -> dict[str, Any]:
     """Ejecuta bootstrap Retell sin auth — devuelve agent_id o error exacto."""
     settings = get_settings()
     if not settings.retell_api_key.strip():
@@ -250,7 +250,7 @@ async def retell_bootstrap_now() -> dict[str, Any]:
 
     existing = get_retell_agent_id() or None
     try:
-        result = ensure_retell_agent(agent_id=existing)
+        result = ensure_retell_agent(agent_id=existing, voice_id_override=voice_id)
         set_bootstrapped_agent(result["agent_id"], result)
         return {
             "ok": True,

@@ -341,7 +341,7 @@ def _voice_speed_for(voice_id: str) -> float:
     return 1.0
 
 
-def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
+def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str | None = None) -> dict[str, str]:
     """Crea o actualiza agente Retell con Custom LLM (Gemini) + ElevenLabs."""
     client = get_retell_client()
     if not client:
@@ -353,8 +353,20 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
 
     configured = _normalize_voice_id(settings.retell_voice_id)
     jarvis_error: str | None = None
+    override = _normalize_voice_id(voice_id_override or "")
 
-    if configured:
+    if override:
+        voice_id = override
+    elif agent_id:
+        dashboard_voice = _retrieve_agent_voice_id(client, agent_id)
+        if dashboard_voice and dashboard_voice.startswith("custom_voice_"):
+            voice_id = dashboard_voice
+        elif configured:
+            voice_id = resolve_configured_retell_voice_id(client, configured)
+        else:
+            jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
+            voice_id = jarvis or resolve_retell_voice_id_from_api(client)
+    elif configured:
         voice_id = resolve_configured_retell_voice_id(client, configured)
     else:
         jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
@@ -362,16 +374,6 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
             voice_id = jarvis
         else:
             voice_id = resolve_retell_voice_id_from_api(client)
-
-    if agent_id:
-        dashboard_voice = _retrieve_agent_voice_id(client, agent_id)
-        if dashboard_voice and dashboard_voice.startswith("custom_voice_") and dashboard_voice != voice_id:
-            logger.info(
-                "[RETELL] Voz elegida en Retell dashboard: %s (Railway/config: %s)",
-                dashboard_voice,
-                voice_id,
-            )
-            voice_id = dashboard_voice
 
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
