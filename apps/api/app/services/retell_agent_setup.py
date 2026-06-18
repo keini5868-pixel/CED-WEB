@@ -117,10 +117,8 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
         "voice_id": voice_id,
         "voice_model": "eleven_turbo_v2_5",
         "voice_speed": 1.0,
-        "voice_temperature": 0.8,
         "responsiveness": 1.0,
         "interruption_sensitivity": 1.0,
-        "enable_backchannel": True,
         "language": "multi",
         "webhook_url": webhook,
         "agent_name": "CED Jarvis",
@@ -159,7 +157,7 @@ def bootstrap_retell_if_needed() -> dict[str, str] | None:
         logger.warning("[RETELL] bootstrap omitido — sin GOOGLE_API_KEY")
         return None
 
-    from app.services.retell_agent_cache import set_bootstrapped_agent
+    from app.services.retell_agent_cache import set_bootstrapped_agent, set_bootstrap_error
 
     agent_id = settings.retell_agent_id.strip() or None
     try:
@@ -183,7 +181,9 @@ def bootstrap_retell_if_needed() -> dict[str, str] | None:
             )
         return result
     except Exception as exc:  # noqa: BLE001
-        logger.error("[RETELL] bootstrap failed: %s", exc)
+        msg = str(exc)
+        set_bootstrap_error(msg)
+        logger.error("[RETELL] bootstrap failed: %s", msg, exc_info=True)
         return None
 
 

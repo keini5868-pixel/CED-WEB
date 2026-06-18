@@ -9,16 +9,29 @@ from app.config import get_settings
 _lock = threading.Lock()
 _bootstrapped_agent_id: str | None = None
 _last_bootstrap: dict | None = None
+_last_bootstrap_error: str | None = None
 
 
 def set_bootstrapped_agent(agent_id: str, meta: dict | None = None) -> None:
-    global _bootstrapped_agent_id, _last_bootstrap
+    global _bootstrapped_agent_id, _last_bootstrap, _last_bootstrap_error
     aid = (agent_id or "").strip()
     if not aid:
         return
     with _lock:
         _bootstrapped_agent_id = aid
         _last_bootstrap = meta or {"agent_id": aid}
+        _last_bootstrap_error = None
+
+
+def set_bootstrap_error(message: str) -> None:
+    global _last_bootstrap_error
+    with _lock:
+        _last_bootstrap_error = message.strip() or None
+
+
+def get_last_bootstrap_error() -> str | None:
+    with _lock:
+        return _last_bootstrap_error
 
 
 def get_retell_agent_id() -> str:

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.deps.auth import require_user_id
-from app.services.retell_agent_cache import get_last_bootstrap_info, get_retell_agent_id
+from app.services.retell_agent_cache import get_last_bootstrap_error, get_last_bootstrap_info, get_retell_agent_id
 from app.services.retell_agent_setup import bootstrap_retell_if_needed, ensure_retell_agent
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
@@ -211,10 +211,24 @@ async def retell_bootstrap_status(
 
 @router.get("/status")
 async def retell_public_status() -> dict[str, Any]:
-    """Estado Retell sin auth — para verificar bootstrap post-deploy."""
+    """Estado Retell sin auth — reintenta bootstrap si falta agente."""
     settings = get_settings()
     info = get_last_bootstrap_info() or {}
     agent_id = get_retell_agent_id()
+    bootstrap_error: str | None = None
+
+    if not agent_id and settings.voice_provider == "retell":
+        try:
+            result = bootstrap_retell_if_needed()
+            if result:
+                agent_id = result.get("agent_id") or get_retell_agent_id()
+                info = result
+            else:
+                bootstrap_error = "bootstrap_retell_if_needed returned None — revise logs Railway"
+        except Exception as exc:  # noqa: BLE001
+            bootstrap_error = str(exc)
+            logger.exception("[RETELL] status bootstrap retry failed")
+
     return {
         "ok": True,
         "voice_provider": settings.voice_provider,
@@ -225,6 +239,8 @@ async def retell_public_status() -> dict[str, Any]:
         "brain": settings.gemini_voice_model,
         "has_retell_api_key": bool(settings.retell_api_key.strip()),
         "has_google_api_key": bool(settings.google_api_key.strip()),
+        "api_public_url": settings.api_public_url,
+        "bootstrap_error": bootstrap_error or get_last_bootstrap_error(),
     }
 
 
