@@ -1,23 +1,20 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { MessageCircle, X } from "lucide-react";
+import { Headphones, X } from "lucide-react";
 import { usePathname } from "next/navigation";
 
-import SupportChatPanel from "@/components/support/SupportChatPanel";
+import { AdminSupportFloatingPanel } from "@/components/support/AdminSupportFloatingPanel";
 import { useSupportUnreadPoll } from "@/hooks/useSupportUnreadPoll";
-import { fetchUserSupportUnreadCount } from "@/lib/api/support";
+import { fetchAdminSupportUnreadCount } from "@/lib/api/support";
 
-export default function SupportFloatingButton() {
+export default function AdminSupportFloatingButton() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
 
-  const hidden =
-    pathname?.startsWith("/admin") ||
-    pathname?.startsWith("/login") ||
-    pathname?.startsWith("/drive");
+  const hidden = pathname?.startsWith("/login") || pathname?.startsWith("/drive");
 
-  const fetchCount = useCallback(() => fetchUserSupportUnreadCount(), []);
+  const fetchCount = useCallback(() => fetchAdminSupportUnreadCount(), []);
   const { unreadCount, setUnreadCount, refresh } = useSupportUnreadPoll(
     fetchCount,
     !hidden,
@@ -29,17 +26,15 @@ export default function SupportFloatingButton() {
     <>
       <button
         type="button"
-        onClick={() => {
-          setIsOpen((v) => !v);
-        }}
-        className="fixed bottom-6 right-6 z-[120] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-blue-600 shadow-2xl ring-2 ring-cyan-400/40 transition-transform hover:scale-110 sm:bottom-8 sm:right-8"
-        aria-label="Soporte"
+        onClick={() => setIsOpen((v) => !v)}
+        className="fixed bottom-6 left-6 z-[120] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-amber-600 to-purple-700 shadow-2xl ring-2 ring-amber-400/50 transition-transform hover:scale-110 sm:bottom-8 sm:left-8"
+        aria-label="Soporte administrador"
       >
         {isOpen ? (
           <X className="text-white" size={24} />
         ) : (
           <>
-            <MessageCircle className="text-white" size={24} />
+            <Headphones className="text-white" size={24} />
             {unreadCount > 0 ? (
               <span className="absolute -right-1 -top-1 flex h-6 w-6 animate-pulse items-center justify-center rounded-full bg-red-500 text-xs font-bold text-white ring-2 ring-[#0a0f18]">
                 {unreadCount > 9 ? "9+" : unreadCount}
@@ -50,12 +45,12 @@ export default function SupportFloatingButton() {
       </button>
 
       {isOpen ? (
-        <SupportChatPanel
+        <AdminSupportFloatingPanel
           onClose={() => {
             setIsOpen(false);
             void refresh();
           }}
-          onMessageRead={() => setUnreadCount(0)}
+          onUnreadChange={setUnreadCount}
         />
       ) : null}
     </>

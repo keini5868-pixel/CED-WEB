@@ -40,7 +40,13 @@ function formatTime(iso?: string): string {
   }
 }
 
-export function AdminSupportInbox() {
+export function AdminSupportInbox({
+  compact = false,
+  onUnreadCountChange,
+}: {
+  compact?: boolean;
+  onUnreadCountChange?: (count: number) => void;
+}) {
   const [filter, setFilter] = useState<FilterKey>("unread");
   const [conversations, setConversations] = useState<SupportConversation[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -61,6 +67,7 @@ export function AdminSupportInbox() {
         category: filter !== "all" && filter !== "unread" ? filter : undefined,
       });
       setConversations(items);
+      onUnreadCountChange?.(items.filter((c) => c.unread_by_admin).length);
       if (selectedId && !items.some((c) => c.id === selectedId)) {
         setSelectedId(null);
         setMessages([]);
@@ -70,7 +77,7 @@ export function AdminSupportInbox() {
     } finally {
       setLoading(false);
     }
-  }, [filter, selectedId]);
+  }, [filter, selectedId, onUnreadCountChange]);
 
   useEffect(() => {
     void loadList();
@@ -85,9 +92,13 @@ export function AdminSupportInbox() {
       const msgs = await fetchSupportMessages(id);
       setMessages(msgs);
       await markSupportConversationRead(id);
-      setConversations((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, unread_by_admin: false } : c)),
-      );
+      setConversations((prev) => {
+        const next = prev.map((c) =>
+          c.id === id ? { ...c, unread_by_admin: false } : c,
+        );
+        onUnreadCountChange?.(next.filter((c) => c.unread_by_admin).length);
+        return next;
+      });
     } catch {
       setError("No se pudieron cargar los mensajes");
     }
@@ -124,7 +135,13 @@ export function AdminSupportInbox() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-[480px] flex-col gap-3 p-4">
+    <div
+      className={
+        compact
+          ? "flex h-full min-h-0 flex-col gap-2 p-2"
+          : "flex h-[calc(100vh-8rem)] min-h-[480px] flex-col gap-3 p-4"
+      }
+    >
       <div className="flex flex-wrap gap-2">
         {FILTERS.map((f) => (
           <button

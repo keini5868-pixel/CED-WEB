@@ -85,6 +85,28 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
   }, [loadConversation]);
 
   useEffect(() => {
+    if (!conversation?.id) return;
+    const pollMessages = async () => {
+      try {
+        const [msgs, list] = await Promise.all([
+          fetchSupportMessages(conversation.id),
+          fetchUserSupportConversations(),
+        ]);
+        setMessages(msgs);
+        const fresh = list.find((c) => c.id === conversation.id);
+        if (fresh?.unread_by_user) {
+          await markSupportConversationRead(conversation.id);
+          onMessageRead();
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    const interval = window.setInterval(() => void pollMessages(), 8_000);
+    return () => window.clearInterval(interval);
+  }, [conversation?.id, onMessageRead]);
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
