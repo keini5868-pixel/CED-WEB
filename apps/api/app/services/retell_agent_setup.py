@@ -41,6 +41,42 @@ RETELL_ELEVENLABS_NAME_MAP = {
 }
 
 
+def _normalize_voice_id(raw: str) -> str:
+    """Quita comillas que a veces se pegan en Railway (RETELL_VOICE_ID=\"...\")."""
+    return (raw or "").strip().strip('"').strip("'").strip()
+
+
+def search_jarvis_voices(client: Any, *, query: str = "") -> list[dict[str, str]]:
+    """Voces en Retell cuyo nombre o metadata coinciden con Jarvis/CED/query."""
+    q = (query or JARVIS_CLONED_ELEVENLABS_ID).lower()
+    matches: list[dict[str, str]] = []
+    for voice in _list_retell_voices(client):
+        vid = _voice_field(voice, "voice_id")
+        if not vid:
+            continue
+        name = _voice_field(voice, "voice_name")
+        raw = str(voice).lower()
+        if "jarvis" in name.lower() or "ced" in name.lower() or q in raw:
+            matches.append({"voice_id": vid, "voice_name": name})
+    return matches
+
+
+def find_retell_voice_by_elevenlabs_id(client: Any, elevenlabs_id: str) -> str | None:
+    """Busca en la biblioteca Retell la voz cuyo provider_voice_id coincide."""
+    target = _normalize_voice_id(elevenlabs_id)
+    if not target:
+        return None
+    for voice in _list_retell_voices(client):
+        vid = _voice_field(voice, "voice_id")
+        if not vid:
+            continue
+        if _voice_field(voice, "provider_voice_id") == target:
+            return vid
+        if target in str(voice):
+            return vid
+    return None
+
+
 def _voice_field(voice: Any, key: str) -> str:
     if isinstance(voice, dict):
         return str(voice.get(key) or "")
@@ -256,14 +292,24 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     if not settings.google_api_key.strip():
         raise RuntimeError("GOOGLE_API_KEY no configurada — requerida para Gemini voz")
 
-    configured = settings.retell_voice_id.strip()
-    jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
-    if jarvis:
-        voice_id = jarvis
-    elif configured:
-        voice_id = configured
+    configured = _normalize_voice_id(settings.retell_voice_id)
+    jarvis_error: str | None = None
+
+    if configured:
+        mapped = find_retell_voice_by_elevenlabs_id(client, configured)
+        voice_id = mapped or configured
+        if mapped and mapped != configured:
+            logger.info(
+                "[RETELL] RETELL_VOICE_ID ElevenLabs %s → Retell %s",
+                configured,
+                mapped,
+            )
     else:
-        voice_id = resolve_retell_voice_id_from_api(client)
+        jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
+        if jarvis:
+            voice_id = jarvis
+        else:
+            voice_id = resolve_retell_voice_id_from_api(client)
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
 
@@ -290,6 +336,12 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
             client.agent.update(agent_id=agent_id, **agent_payload)
         except Exception as exc:
             if "not found from voice" in str(exc).lower():
+                if configured:
+                    raise RuntimeError(
+                        f"RETELL_VOICE_ID={configured!r} no es válido en Retell. "
+                        "Use el voice_id que asignó Retell al agregar la voz (no el ID de ElevenLabs). "
+                        f"Detalle: {exc}"
+                    ) from exc
                 voice_id = resolve_retell_voice_id_from_api(client)
                 agent_payload["voice_id"] = voice_id
                 client.agent.update(agent_id=agent_id, **agent_payload)
@@ -302,14 +354,22 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
             "llm_websocket_url": llm_ws,
             "brain": settings.gemini_voice_model,
         }
-        if jarvis_error and not jarvis:
+        if jarvis_error:
             out["jarvis_voice_error"] = jarvis_error
+        if configured:
+            out["configured_voice_id"] = configured
         return out
 
     try:
         created = client.agent.create(**agent_payload)
     except Exception as exc:
         if "not found from voice" in str(exc).lower():
+            if configured:
+                raise RuntimeError(
+                    f"RETELL_VOICE_ID={configured!r} no es válido en Retell. "
+                    "Use el voice_id que asignó Retell al agregar la voz. "
+                    f"Detalle: {exc}"
+                ) from exc
             voice_id = resolve_retell_voice_id_from_api(client)
             agent_payload["voice_id"] = voice_id
             created = client.agent.create(**agent_payload)

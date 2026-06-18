@@ -415,18 +415,35 @@ async def retell_jarvis_voice_setup() -> dict[str, Any]:
     from app.services.retell_agent_setup import (
         JARVIS_CLONED_ELEVENLABS_ID,
         ensure_jarvis_voice_in_retell,
+        find_retell_voice_by_elevenlabs_id,
+        search_jarvis_voices,
+        _normalize_voice_id,
     )
 
     el_id = settings.elevenlabs_jarvis_voice_id.strip() or JARVIS_CLONED_ELEVENLABS_ID
+    configured = _normalize_voice_id(settings.retell_voice_id)
+    mapped = find_retell_voice_by_elevenlabs_id(client, configured or el_id)
     retell_id, err = ensure_jarvis_voice_in_retell(client)
+    agent_voice_id: str | None = None
+    agent_ref = get_retell_agent_id() or settings.retell_agent_id.strip()
+    if agent_ref:
+        try:
+            agent_voice_id = str(getattr(client.agent.retrieve(agent_id=agent_ref), "voice_id", "") or "") or None
+        except Exception:  # noqa: BLE001
+            pass
+
     return {
-        "ok": bool(retell_id),
+        "ok": bool(mapped or retell_id or (agent_voice_id and agent_voice_id != "11labs-Brian")),
         "elevenlabs_voice_id": el_id,
-        "retell_voice_id": retell_id,
+        "configured_retell_voice_id": configured or None,
+        "retell_voice_id_from_library": mapped,
+        "retell_voice_id": mapped or retell_id,
+        "agent_voice_id": agent_voice_id,
+        "jarvis_voice_matches": search_jarvis_voices(client, query=configured or el_id),
         "error": err,
         "hint": (
-            "Si la voz es privada: Retell dashboard → Add custom voice → pegue el ID ElevenLabs. "
-            "Luego RETELL_VOICE_ID en Railway con el ID que asigne Retell."
+            "RETELL_VOICE_ID debe ser el ID de Retell (ej. custom-xxx), NO el de ElevenLabs. "
+            "En Retell dashboard → Voices → copie el voice_id de su clon Jarvis."
         ),
     }
 
