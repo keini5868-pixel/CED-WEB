@@ -404,6 +404,33 @@ async def retell_diagnostics() -> dict[str, Any]:
     return out
 
 
+@router.get("/jarvis-voice")
+async def retell_jarvis_voice_setup() -> dict[str, Any]:
+    """Intenta registrar el clon Jarvis y devuelve error detallado si falla."""
+    settings = get_settings()
+    client = get_retell_client()
+    if not client:
+        return {"ok": False, "error": "RETELL_API_KEY no configurada"}
+
+    from app.services.retell_agent_setup import (
+        JARVIS_CLONED_ELEVENLABS_ID,
+        ensure_jarvis_voice_in_retell,
+    )
+
+    el_id = settings.elevenlabs_jarvis_voice_id.strip() or JARVIS_CLONED_ELEVENLABS_ID
+    retell_id, err = ensure_jarvis_voice_in_retell(client)
+    return {
+        "ok": bool(retell_id),
+        "elevenlabs_voice_id": el_id,
+        "retell_voice_id": retell_id,
+        "error": err,
+        "hint": (
+            "Si la voz es privada: Retell dashboard → Add custom voice → pegue el ID ElevenLabs. "
+            "Luego RETELL_VOICE_ID en Railway con el ID que asigne Retell."
+        ),
+    }
+
+
 @router.get("/warmup")
 async def retell_warmup() -> dict[str, Any]:
     """Despierta la API sin bootstrap pesado — precalentamiento al cargar la web."""

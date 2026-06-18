@@ -59,26 +59,29 @@ def _list_retell_voices(client: Any) -> list[Any]:
         return []
 
 
-def ensure_jarvis_voice_in_retell(client: Any) -> str | None:
-    """Registra el clon Jarvis (ElevenLabs) en Retell y devuelve voice_id de Retell."""
+def ensure_jarvis_voice_in_retell(client: Any) -> tuple[str | None, str | None]:
+    """Registra el clon Jarvis (ElevenLabs) en Retell. Retorna (voice_id, error)."""
     settings = get_settings()
     el_id = (
         settings.elevenlabs_jarvis_voice_id.strip() or JARVIS_CLONED_ELEVENLABS_ID
     ).strip()
     if not el_id:
-        return None
+        return None, "ELEVENLABS_JARVIS_VOICE_ID vacío"
 
     for voice in _list_retell_voices(client):
         vid = _voice_field(voice, "voice_id")
         if not vid:
             continue
         if vid == el_id:
-            return vid
+            return vid, None
         if _voice_field(voice, "provider_voice_id") == el_id:
-            return vid
+            return vid, None
         name = _voice_field(voice, "voice_name").lower()
-        if "ced jarvis" in name or name == "ced jarvis":
-            return vid
+        if "ced jarvis" in name:
+            return vid, None
+        raw = str(voice)
+        if el_id in raw:
+            return vid, None
 
     payload: dict[str, Any] = {
         "provider_voice_id": el_id,
@@ -94,15 +97,26 @@ def ensure_jarvis_voice_in_retell(client: Any) -> str | None:
         vid = _voice_field(added, "voice_id")
         if vid:
             logger.info("[RETELL] Clon Jarvis registrado en Retell: %s (el=%s)", vid, el_id)
-            return vid
+            return vid, None
+        return None, "add_resource no devolvió voice_id"
     except Exception as exc:  # noqa: BLE001
+        err = str(exc)
         logger.warning(
-            "[RETELL] No se pudo registrar clon Jarvis %s: %s — "
-            "Agregue la voz en el dashboard Retell o fije RETELL_VOICE_ID.",
+            "[RETELL] No se pudo registrar clon Jarvis %s: %s",
             el_id,
-            exc,
+            err,
         )
-    return None
+        if "public_user_id" in err.lower() or "community" in err.lower():
+            err = (
+                f"{err} — La voz debe ser pública en ElevenLabs o agregue "
+                "ELEVENLABS_JARVIS_PUBLIC_USER_ID en Railway."
+            )
+        elif "private" in err.lower() or "not found" in err.lower():
+            err = (
+                f"{err} — Agregue la voz manualmente en Retell (Add custom voice) "
+                f"con ID {el_id} y fije RETELL_VOICE_ID al ID que asigne Retell."
+            )
+        return None, err
 
 
 def resolve_retell_voice_id_from_api(client: Any) -> str:
@@ -243,7 +257,7 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
         raise RuntimeError("GOOGLE_API_KEY no configurada — requerida para Gemini voz")
 
     configured = settings.retell_voice_id.strip()
-    jarvis = ensure_jarvis_voice_in_retell(client)
+    jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
     if jarvis:
         voice_id = jarvis
     elif configured:
@@ -282,12 +296,15 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
             else:
                 raise
         logger.info("[RETELL] Agente actualizado: %s voice=%s ws=%s", agent_id, voice_id, llm_ws)
-        return {
+        out = {
             "agent_id": agent_id,
             "voice_id": voice_id,
             "llm_websocket_url": llm_ws,
             "brain": settings.gemini_voice_model,
         }
+        if jarvis_error and not jarvis:
+            out["jarvis_voice_error"] = jarvis_error
+        return out
 
     try:
         created = client.agent.create(**agent_payload)
