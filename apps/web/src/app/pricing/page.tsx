@@ -16,6 +16,11 @@ function PricingContent() {
   const searchParams = useSearchParams();
   const pendingPlan = searchParams.get("plan");
   const cancelled = searchParams.get("billing") === "cancelled";
+  const checkoutNext = pendingPlan
+    ? `/pricing?plan=${encodeURIComponent(pendingPlan)}`
+    : "/pricing";
+  const signupHref = `/signup?next=${encodeURIComponent(checkoutNext)}`;
+  const loginHref = `/login?next=${encodeURIComponent(checkoutNext)}`;
 
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +93,7 @@ function PricingContent() {
           loggedIn ? (
             <PublicHeaderLink href="/dashboard">DASHBOARD</PublicHeaderLink>
           ) : (
-            <PublicHeaderLink href="/login?next=%2Fpricing">LOGIN</PublicHeaderLink>
+            <PublicHeaderLink href={loginHref}>LOGIN</PublicHeaderLink>
           )
         }
       />
@@ -110,12 +115,12 @@ function PricingContent() {
         {!loggedIn && loggedIn !== null && (
           <p className="mt-4 text-center text-xs text-cyan-400">
             Debes{" "}
-            <Link href="/login?next=%2Fpricing" className="underline hover:text-cyan-200">
+            <Link href={loginHref} className="underline hover:text-cyan-200">
               iniciar sesión
             </Link>{" "}
             para pagar. Si no tienes cuenta,{" "}
-            <Link href="/signup" className="underline hover:text-cyan-200">
-              regístrate gratis
+            <Link href={signupHref} className="underline hover:text-cyan-200">
+              créala aquí
             </Link>
             .
           </p>

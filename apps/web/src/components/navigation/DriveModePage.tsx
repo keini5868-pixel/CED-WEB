@@ -37,13 +37,13 @@ export function DriveModePage() {
     <div className="fixed inset-0 flex flex-col bg-black">
       <DriveMapView position={position} className="absolute inset-0" />
 
-      <div className="pointer-events-none relative z-10 flex h-full flex-col">
-        <header className="pointer-events-auto flex items-center justify-between gap-2 bg-gradient-to-b from-black/80 to-transparent px-3 py-3 sm:px-4">
+      <div className="pointer-events-none relative z-[110] flex h-full flex-col">
+        <header className="pointer-events-auto flex items-center justify-between gap-2 bg-gradient-to-b from-black/90 to-transparent px-3 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4">
           <Link
             href="/dashboard"
-            className="rounded border border-cyan-500/40 bg-black/70 px-3 py-1.5 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-widest text-cyan-300 sm:text-xs"
+            className="rounded border border-cyan-500/40 bg-black/80 px-3 py-2 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-widest text-cyan-300 shadow-lg sm:text-xs"
           >
-            ← DASHBOARD
+            ← VOLVER
           </Link>
           <div className="flex items-center gap-2 rounded border border-cyan-500/30 bg-black/70 px-2 py-1.5">
             <MapPin className="h-3.5 w-3.5 text-cyan-400" />
@@ -53,7 +53,7 @@ export function DriveModePage() {
 
         <div className="flex-1" />
 
-        <div className="pointer-events-auto border-t border-cyan-500/25 bg-black/75 px-3 py-3 backdrop-blur-md sm:px-4">
+        <div className="pointer-events-auto border-t border-cyan-500/25 bg-black/85 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:px-4">
           <div className="mb-2 flex items-center gap-2">
             <Navigation className="h-4 w-4 text-cyan-400" />
             <p className="font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-widest text-cyan-300">

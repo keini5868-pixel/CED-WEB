@@ -20,3 +20,14 @@ export const PUBLIC_AUTH_PREFIXES = [
 ] as const;
 
 export const PROTECTED_PREFIXES = [DASHBOARD_PATH, DRIVE_PATH, ADMIN_PATH, "/app"] as const;
+
+/** Evita open-redirect; solo rutas internas. */
+export function sanitizeAuthNext(
+  next: string | null | undefined,
+  fallback: string = DASHBOARD_PATH,
+): string {
+  if (!next) return fallback;
+  const trimmed = next.trim();
+  if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return fallback;
+  return trimmed;
+}

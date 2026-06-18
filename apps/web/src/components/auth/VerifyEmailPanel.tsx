@@ -6,12 +6,14 @@ import { useState } from "react";
 
 import { CedButton } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
+import { LOGIN_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/env";
 
 export function VerifyEmailPanel() {
   const searchParams = useSearchParams();
   const email = searchParams.get("email") || "";
+  const next = sanitizeAuthNext(searchParams.get("next"));
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -58,7 +60,7 @@ export function VerifyEmailPanel() {
         {loading ? "…" : "REENVIAR EMAIL"}
       </CedButton>
       <Link
-        href="/login"
+        href={`${LOGIN_PATH}?next=${encodeURIComponent(next)}`}
         className="mt-6 block text-center text-xs text-cyan-500 hover:text-cyan-300"
       >
         Ya verifiqué — Iniciar sesión

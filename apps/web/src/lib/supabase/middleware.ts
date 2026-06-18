@@ -7,6 +7,7 @@ import {
   DASHBOARD_PATH,
   PUBLIC_AUTH_PREFIXES,
   PROTECTED_PREFIXES,
+  sanitizeAuthNext,
 } from "@/lib/auth/paths";
 
 type CookieToSet = {
@@ -82,9 +83,9 @@ export async function updateSession(request: NextRequest) {
     !isResetPassword &&
     !pathname.startsWith("/verify-email")
   ) {
-    const redirectUrl = request.nextUrl.clone();
-    redirectUrl.pathname = DASHBOARD_PATH;
-    return NextResponse.redirect(redirectUrl);
+    const next = sanitizeAuthNext(request.nextUrl.searchParams.get("next"));
+    const target = new URL(next, request.url);
+    return NextResponse.redirect(target);
   }
 
   if (user && pathname.startsWith(ADMIN_PATH)) {

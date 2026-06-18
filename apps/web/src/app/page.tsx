@@ -117,14 +117,14 @@ export default function HomePage() {
                   ))}
                 </ul>
                 <Link
-                  href="/signup"
+                  href={`/pricing?plan=${plan.id}`}
                   className={`mt-5 block rounded border py-2.5 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider transition ${
                     isFounding
                       ? "border-amber-400/70 text-amber-200 hover:bg-amber-400/10"
                       : "border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10"
                   }`}
                 >
-                  {isFounding ? "RESERVAR CUPO" : "PROBAR 7 DÍAS"}
+                  {isFounding ? "RESERVAR CUPO" : "SUSCRIBIRME"}
                 </Link>
               </div>
             );

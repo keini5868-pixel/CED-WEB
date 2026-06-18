@@ -12,7 +12,10 @@ export default function SupportFloatingButton() {
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  const hidden = pathname?.startsWith("/admin") || pathname?.startsWith("/login");
+  const hidden =
+    pathname?.startsWith("/admin") ||
+    pathname?.startsWith("/login") ||
+    pathname?.startsWith("/drive");
 
   useEffect(() => {
     if (hidden) return;

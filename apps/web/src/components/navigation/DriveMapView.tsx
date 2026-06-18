@@ -42,7 +42,7 @@ export function DriveMapView({ position, className = "" }: DriveMapViewProps) {
           zoomControl: true,
           mapTypeControl: false,
           streetViewControl: false,
-          fullscreenControl: true,
+          fullscreenControl: false,
           gestureHandling: "greedy",
           styles: MAP_STYLES,
         });

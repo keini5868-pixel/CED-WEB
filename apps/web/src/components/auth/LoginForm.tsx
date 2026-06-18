@@ -6,14 +6,14 @@ import { useEffect, useState } from "react";
 
 import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
-import { DASHBOARD_PATH } from "@/lib/auth/paths";
+import { DASHBOARD_PATH, SIGNUP_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
 import { createClient } from "@/lib/supabase/client";
 import { appUrl, isSupabaseConfigured } from "@/lib/env";
 
 export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const next = searchParams.get("next") || DASHBOARD_PATH;
+  const next = sanitizeAuthNext(searchParams.get("next"));
   const urlError = searchParams.get("error");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -46,7 +46,7 @@ export function LoginForm() {
       if (authError.message.toLowerCase().includes("email not confirmed")) {
         setError("Confirma tu email antes de entrar.");
         router.push(
-          `/verify-email?email=${encodeURIComponent(email.trim())}`,
+          `/verify-email?email=${encodeURIComponent(email.trim())}&next=${encodeURIComponent(next)}`,
         );
         return;
       }
@@ -54,7 +54,9 @@ export function LoginForm() {
       return;
     }
     if (data.user && !data.user.email_confirmed_at) {
-      router.push(`/verify-email?email=${encodeURIComponent(email.trim())}`);
+      router.push(
+        `/verify-email?email=${encodeURIComponent(email.trim())}&next=${encodeURIComponent(next)}`,
+      );
       return;
     }
     router.push(next);
@@ -135,8 +137,11 @@ export function LoginForm() {
       </CedButton>
       <p className="mt-6 text-center text-xs text-cyan-600">
         ¿Sin cuenta?{" "}
-        <Link href="/signup" className="text-cyan-400 hover:underline">
-          Registro — 7 días gratis
+        <Link
+          href={`${SIGNUP_PATH}?next=${encodeURIComponent(next)}`}
+          className="text-cyan-400 hover:underline"
+        >
+          {next.startsWith("/pricing") ? "Crear cuenta y pagar" : "Registro — 7 días gratis"}
         </Link>
       </p>
       <Link
