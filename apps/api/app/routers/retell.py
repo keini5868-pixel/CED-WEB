@@ -148,6 +148,8 @@ async def retell_config(_user_id: str = Depends(require_user_id)) -> dict:
         "provider": settings.voice_provider,
         "agentConfigured": bool(settings.retell_agent_id.strip()),
         "voiceId": settings.retell_voice_id.strip() or "11labs-George",
+        "brain": settings.gemini_voice_model,
+        "architecture": "retell-gemini-elevenlabs",
     }
 
 
@@ -159,11 +161,14 @@ async def retell_bootstrap_agent(user_id: str = Depends(require_user_id)) -> dic
         raise HTTPException(status_code=503, detail="RETELL_API_KEY no configurada.")
 
     agent_id = settings.retell_agent_id.strip() or None
-    llm_id = settings.retell_llm_id.strip() or None
     try:
-        out = ensure_retell_agent(agent_id=agent_id, llm_id=llm_id)
+        out = ensure_retell_agent(agent_id=agent_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[RETELL] bootstrap failed")
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    return {"ok": True, **out, "hint": "Guarde RETELL_AGENT_ID y RETELL_LLM_ID en Railway."}
+    return {
+        "ok": True,
+        **out,
+        "hint": "Guarde RETELL_AGENT_ID y RETELL_VOICE_ID en Railway.",
+    }
