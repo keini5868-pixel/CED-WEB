@@ -245,6 +245,11 @@ export function useCedVoiceSession(
     micOnRef.current = micOn;
   }, [micOn]);
 
+  useEffect(() => {
+    if (!isRetellVoice()) return;
+    void warmupRetellVoiceApi();
+  }, []);
+
   const captureCameraJpeg = useCallback((compact = false): string | null => {
     const video = cameraCaptureVideoRef.current;
     if (!video || video.videoWidth === 0) {
@@ -519,14 +524,19 @@ export function useCedVoiceSession(
       setMicOn(true);
       saveMicPreference(true);
 
-      const voiceSession = await startVoiceSession();
+      setStatusLabel(isRetellVoice() ? "Conectando con CED…" : ORB_STATE_LABELS.processing);
+
+      const [voiceSession] = await Promise.all([
+        startVoiceSession(),
+        isRetellVoice() ? warmupRetellVoiceApi() : Promise.resolve(),
+      ]);
       usageSessionRef.current = voiceSession.session_id;
       conversationRef.current = voiceSession.conversation_id;
       onUsageRefresh?.();
 
       if (isRetellVoice()) {
         isRetellSessionRef.current = true;
-        await warmupRetellVoiceApi();
+        setStatusLabel("Iniciando llamada…");
         const registration = await registerRetellCall();
         if (isStale()) return;
         if (!registration.ok) {

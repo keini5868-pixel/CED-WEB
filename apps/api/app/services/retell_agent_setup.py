@@ -13,6 +13,8 @@ from app.services.retell_client import get_retell_client
 logger = logging.getLogger(__name__)
 
 DEFAULT_VOICE_ID = "11labs-Brian"
+JARVIS_CLONED_ELEVENLABS_ID = "UKhFmKblQwXqi7vvaALt"
+JARVIS_RETELL_VOICE_NAME = "CED Jarvis"
 
 JARVIS_VOICE_HINTS = (
     "british", "butler", "george", "brian", "daniel", "jarvis", "formal", "deep",
@@ -39,15 +41,75 @@ RETELL_ELEVENLABS_NAME_MAP = {
 }
 
 
-def resolve_retell_voice_id_from_api(client: Any) -> str:
-    """Lista voces Retell y elige la mejor Jarvis disponible (ignora env inválido)."""
+def _voice_field(voice: Any, key: str) -> str:
+    if isinstance(voice, dict):
+        return str(voice.get(key) or "")
+    return str(getattr(voice, key, None) or "")
+
+
+def _list_retell_voices(client: Any) -> list[Any]:
     try:
         listed = client.voice.list()
         voices = getattr(listed, "voices", None) or listed
         if not isinstance(voices, list):
-            voices = list(voices) if voices else []
+            return list(voices) if voices else []
+        return voices
     except Exception as exc:  # noqa: BLE001
         logger.warning("[RETELL] voice.list failed: %s", exc)
+        return []
+
+
+def ensure_jarvis_voice_in_retell(client: Any) -> str | None:
+    """Registra el clon Jarvis (ElevenLabs) en Retell y devuelve voice_id de Retell."""
+    settings = get_settings()
+    el_id = (
+        settings.elevenlabs_jarvis_voice_id.strip() or JARVIS_CLONED_ELEVENLABS_ID
+    ).strip()
+    if not el_id:
+        return None
+
+    for voice in _list_retell_voices(client):
+        vid = _voice_field(voice, "voice_id")
+        if not vid:
+            continue
+        if vid == el_id:
+            return vid
+        if _voice_field(voice, "provider_voice_id") == el_id:
+            return vid
+        name = _voice_field(voice, "voice_name").lower()
+        if "ced jarvis" in name or name == "ced jarvis":
+            return vid
+
+    payload: dict[str, Any] = {
+        "provider_voice_id": el_id,
+        "voice_name": JARVIS_RETELL_VOICE_NAME,
+        "voice_provider": "elevenlabs",
+    }
+    public_uid = settings.elevenlabs_jarvis_public_user_id.strip()
+    if public_uid:
+        payload["public_user_id"] = public_uid
+
+    try:
+        added = client.voice.add_resource(**payload)
+        vid = _voice_field(added, "voice_id")
+        if vid:
+            logger.info("[RETELL] Clon Jarvis registrado en Retell: %s (el=%s)", vid, el_id)
+            return vid
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[RETELL] No se pudo registrar clon Jarvis %s: %s — "
+            "Agregue la voz en el dashboard Retell o fije RETELL_VOICE_ID.",
+            el_id,
+            exc,
+        )
+    return None
+
+
+def resolve_retell_voice_id_from_api(client: Any) -> str:
+    """Lista voces Retell y elige la mejor Jarvis disponible (ignora env inválido)."""
+    try:
+        voices = _list_retell_voices(client)
+    except Exception:  # noqa: BLE001
         return DEFAULT_VOICE_ID
 
     available: list[str] = []
@@ -167,9 +229,7 @@ def _voice_model_for(voice_id: str) -> str | None:
     """Modelo TTS compatible con el proveedor de la voz Retell."""
     if voice_id.startswith("openai-"):
         return "tts-1"
-    if voice_id.startswith("11labs-"):
-        return "eleven_turbo_v2_5"
-    return None
+    return "eleven_turbo_v2_5"
 
 
 def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
@@ -182,10 +242,14 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     if not settings.google_api_key.strip():
         raise RuntimeError("GOOGLE_API_KEY no configurada — requerida para Gemini voz")
 
-    voice_id = resolve_retell_voice_id_from_api(client)
     configured = settings.retell_voice_id.strip()
-    if configured:
+    jarvis = ensure_jarvis_voice_in_retell(client)
+    if jarvis:
+        voice_id = jarvis
+    elif configured:
         voice_id = configured
+    else:
+        voice_id = resolve_retell_voice_id_from_api(client)
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
 

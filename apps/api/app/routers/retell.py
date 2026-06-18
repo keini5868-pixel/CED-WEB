@@ -404,6 +404,15 @@ async def retell_diagnostics() -> dict[str, Any]:
     return out
 
 
+@router.get("/warmup")
+async def retell_warmup() -> dict[str, Any]:
+    """Despierta la API sin bootstrap pesado — precalentamiento al cargar la web."""
+    return {
+        "ok": True,
+        "agent_configured": bool(get_retell_agent_id()),
+    }
+
+
 @router.get("/status")
 async def retell_public_status() -> dict[str, Any]:
     """Estado Retell sin auth — reintenta bootstrap si falta agente."""

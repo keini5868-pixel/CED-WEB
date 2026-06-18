@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["retell-custom-llm"])
 
 # Evita solapar TTS del saludo con la primera respuesta (audio borroso).
-POST_GREETING_COOLDOWN_S = 1.6
+POST_GREETING_COOLDOWN_S = 1.2
 
 
 def _normalize_user_key(text: str) -> str:

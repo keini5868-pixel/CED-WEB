@@ -12,7 +12,7 @@ export type RetellRegisterCallResponse =
 
 export async function warmupRetellVoiceApi(): Promise<void> {
   try {
-    await proxyFetch("retell/status", { method: "GET" });
+    await proxyFetch("retell/warmup", { method: "GET" });
   } catch {
     /* ignore — best effort */
   }
