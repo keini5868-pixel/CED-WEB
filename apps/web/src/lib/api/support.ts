@@ -41,6 +41,18 @@ export const SUPPORT_CATEGORY_LABELS: Record<
   other: { label: "Otro", emoji: "💬" },
 };
 
+/** Activo por defecto; la API puede desactivarlo en runtime. */
+export async function fetchSupportChatEnabled(): Promise<boolean> {
+  try {
+    const res = await proxyFetch("support/status");
+    if (!res.ok) return true;
+    const data = await parseApiJson<{ enabled?: boolean }>(res);
+    return data.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
 export async function fetchUserSupportConversations(): Promise<SupportConversation[]> {
   const res = await proxyFetch("support/conversations");
   const data = await parseApiJson<{ ok?: boolean; conversations?: SupportConversation[] }>(res);

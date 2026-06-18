@@ -142,7 +142,8 @@ def check_stripe() -> dict[str, Any]:
     try:
         stripe.api_key = settings.stripe_secret_key
         account = stripe.Account.retrieve()
-        livemode = bool(getattr(account, "livemode", False))
+        # Account.retrieve() no trae livemode; la clave sk_live_ define cobros reales.
+        livemode = key_mode == "live"
         return {
             "ok": True,
             "account_id": getattr(account, "id", None),

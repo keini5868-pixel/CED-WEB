@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from app.deps.auth import is_super_admin, require_auth_user, require_super_admin
+from app.config import get_settings
 from app.services import support_chat as svc
 from app.services.support_media import (
     _EXT_BY_MIME,
@@ -43,6 +44,12 @@ class UpdateStatusBody(BaseModel):
 
 async def _auth_context(authorization: str | None = Header(default=None)) -> dict[str, Any]:
     return await require_auth_user(authorization)
+
+
+@router.get("/status")
+async def support_status() -> dict[str, bool]:
+    """Público — indica si el chat de soporte está activo en API."""
+    return {"ok": True, "enabled": get_settings().support_chat_enabled}
 
 
 @router.post("/conversations")

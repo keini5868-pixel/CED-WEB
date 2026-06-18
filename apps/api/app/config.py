@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     retell_voice_model: str = ""
     retell_voice_speed: float = 0.0
     retell_voice_temperature: float = 0.0
-    support_chat_enabled: bool = False
+    support_chat_enabled: bool = True
 
     @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:

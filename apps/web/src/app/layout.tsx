@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Orbitron } from "next/font/google";
 import "./globals.css";
+import { ClientShell } from "@/components/ClientShell";
 
 const orbitron = Orbitron({
   subsets: ["latin"],
@@ -40,7 +41,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es" className={`${orbitron.variable} ${inter.variable}`}>
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        <ClientShell>{children}</ClientShell>
+      </body>
     </html>
   );
 }

@@ -7,11 +7,8 @@ const SupportFloatingButton = dynamic(
   { ssr: false },
 );
 
-const SUPPORT_ENABLED =
-  process.env.NEXT_PUBLIC_SUPPORT_CHAT_ENABLED === "true";
-
-/** Burbuja flotante de soporte — solo si NEXT_PUBLIC_SUPPORT_CHAT_ENABLED=true */
+/** Activa por defecto; solo se oculta con NEXT_PUBLIC_SUPPORT_CHAT_ENABLED=false */
 export function SupportChatMount() {
-  if (!SUPPORT_ENABLED) return null;
+  if (process.env.NEXT_PUBLIC_SUPPORT_CHAT_ENABLED === "false") return null;
   return <SupportFloatingButton />;
 }

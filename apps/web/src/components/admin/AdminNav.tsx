@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { fetchAdminSupportUnreadCount } from "@/lib/api/support";
 
 const SUPPORT_CHAT_ENABLED =
-  process.env.NEXT_PUBLIC_SUPPORT_CHAT_ENABLED === "true";
+  process.env.NEXT_PUBLIC_SUPPORT_CHAT_ENABLED !== "false";
 
 const LINKS = [
   { href: "/admin", label: "Usuarios" },
