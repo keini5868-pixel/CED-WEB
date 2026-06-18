@@ -120,23 +120,40 @@ def check_supabase() -> dict[str, Any]:
         return {"ok": False, "error": msg[:200]}
 
 
+def _stripe_key_mode(secret_key: str) -> str:
+    key = (secret_key or "").strip()
+    if key.startswith("sk_live_"):
+        return "live"
+    if key.startswith("sk_test_"):
+        return "test"
+    if key.startswith("rk_live_"):
+        return "live"
+    if key.startswith("rk_test_"):
+        return "test"
+    return "unknown"
+
+
 def check_stripe() -> dict[str, Any]:
     settings = get_settings()
     if not settings.stripe_secret_key:
         return {"ok": False, "error": "missing_stripe_secret_key"}
 
+    key_mode = _stripe_key_mode(settings.stripe_secret_key)
     try:
         stripe.api_key = settings.stripe_secret_key
         account = stripe.Account.retrieve()
+        livemode = bool(getattr(account, "livemode", False))
         return {
             "ok": True,
             "account_id": getattr(account, "id", None),
-            "livemode": bool(getattr(account, "livemode", False)),
+            "livemode": livemode,
+            "key_mode": key_mode,
+            "charges_real_money": livemode,
         }
     except stripe.error.AuthenticationError:
-        return {"ok": False, "error": "invalid_stripe_secret_key"}
+        return {"ok": False, "error": "invalid_stripe_secret_key", "key_mode": key_mode}
     except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "error": str(exc)[:200]}
+        return {"ok": False, "error": str(exc)[:200], "key_mode": key_mode}
 
 
 def check_supabase_auth() -> dict[str, Any]:

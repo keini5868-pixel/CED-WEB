@@ -79,8 +79,12 @@ def billing_readiness() -> dict:
             settings.stripe_price_founding.strip(),
         ]
     )
+    livemode = bool(stripe_status.get("livemode"))
+    key_mode = stripe_status.get("key_mode", "unknown")
     return {
         "ok": bool(stripe_status.get("ok")) and prices_ok and supa.get("ok"),
+        "livemode": livemode,
+        "charges_real_money": livemode,
         "stripe": stripe_status,
         "supabase": {"ok": supa.get("ok"), "error": supa.get("error")},
         "prices_configured": price_vars,
@@ -88,6 +92,19 @@ def billing_readiness() -> dict:
             f"{settings.api_public_url.rstrip('/')}/v1/billing/webhook",
             f"{settings.api_public_url.rstrip('/')}/v1/billing/webhooks/stripe",
         ],
+        "live_checklist": None
+        if livemode
+        else {
+            "reason": f"STRIPE_SECRET_KEY es modo {key_mode} (sk_test_ = prueba, sk_live_ = cobros reales)",
+            "steps": [
+                "Stripe Dashboard → activar Live (no Test)",
+                "Copiar Secret key sk_live_... → Railway API STRIPE_SECRET_KEY",
+                "Copiar Publishable pk_live_... → Railway Web NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY",
+                "Crear productos/precios en Live y copiar price_... LIVE a STRIPE_PRICE_*",
+                "Webhooks en Live → endpoint /v1/billing/webhook → STRIPE_WEBHOOK_SECRET (whsec_ live)",
+                "Redeploy API + Web y verificar livemode: true en /v1/billing/readiness",
+            ],
+        },
     }
 
 
