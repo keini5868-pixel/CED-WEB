@@ -163,6 +163,15 @@ def custom_llm_websocket_url() -> str:
     return f"{ws_base}/llm-websocket/{{call_id}}"
 
 
+def _voice_model_for(voice_id: str) -> str | None:
+    """Modelo TTS compatible con el proveedor de la voz Retell."""
+    if voice_id.startswith("openai-"):
+        return "tts-1"
+    if voice_id.startswith("11labs-"):
+        return "eleven_turbo_v2_5"
+    return None
+
+
 def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     """Crea o actualiza agente Retell con Custom LLM (Gemini) + ElevenLabs."""
     client = get_retell_client()
@@ -186,6 +195,7 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
             "llm_websocket_url": llm_ws,
         },
         "voice_id": voice_id,
+        "voice_model": _voice_model_for(voice_id),
         "voice_speed": 1.0,
         "responsiveness": 1.0,
         "interruption_sensitivity": 1.0,
