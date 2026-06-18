@@ -27,12 +27,7 @@ RETELL_ELEVENLABS_NAME_MAP = {
 
 
 def resolve_retell_voice_id_from_api(client: Any) -> str:
-    """Lista voces Retell y elige la mejor Jarvis disponible."""
-    settings = get_settings()
-    configured = settings.retell_voice_id.strip()
-    if configured:
-        return configured
-
+    """Lista voces Retell y elige la mejor Jarvis disponible (ignora env inválido)."""
     try:
         listed = client.voice.list()
         voices = getattr(listed, "voices", None) or listed
@@ -143,7 +138,7 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     if not settings.google_api_key.strip():
         raise RuntimeError("GOOGLE_API_KEY no configurada — requerida para Gemini voz")
 
-    voice_id = resolve_retell_voice_id(client)
+    voice_id = settings.retell_voice_id.strip() or resolve_retell_voice_id_from_api(client)
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
 
