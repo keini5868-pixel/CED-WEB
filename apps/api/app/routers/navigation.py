@@ -1,0 +1,139 @@
+"""Navegación — GPS, rutas y estado para modo conducir."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
+
+from app.deps.auth import require_user_id
+from app.services import navigation_maps as maps_svc
+from app.services import navigation_session as nav_session
+
+router = APIRouter(prefix="/v1/navigation", tags=["navigation"])
+
+
+class LocationBody(BaseModel):
+    lat: float
+    lng: float
+    heading: float | None = None
+    speed: float | None = None
+    accuracy: float | None = None
+
+
+class GeocodeBody(BaseModel):
+    query: str = Field(min_length=2, max_length=500)
+
+
+class RouteBody(BaseModel):
+    destination: str = Field(min_length=2, max_length=500)
+    origin_lat: float | None = None
+    origin_lng: float | None = None
+
+
+class AckActionBody(BaseModel):
+    action_id: int
+
+
+@router.get("/state")
+async def navigation_state(
+    user_id: str = Depends(require_user_id),
+    consume: bool = False,
+) -> dict[str, Any]:
+    return {"ok": True, **nav_session.get_state(user_id, consume_action=consume)}
+
+
+@router.post("/location")
+async def navigation_location(
+    body: LocationBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, bool]:
+    nav_session.update_location(
+        user_id,
+        lat=body.lat,
+        lng=body.lng,
+        heading=body.heading,
+        speed=body.speed,
+        accuracy=body.accuracy,
+    )
+    return {"ok": True}
+
+
+@router.post("/geocode")
+async def navigation_geocode(
+    body: GeocodeBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    loc = nav_session.get_location(user_id)
+    bias_lat = float(loc["lat"]) if loc else None
+    bias_lng = float(loc["lng"]) if loc else None
+    result = maps_svc.geocode_address(
+        body.query,
+        bias_lat=bias_lat,
+        bias_lng=bias_lng,
+    )
+    if not result.get("ok"):
+        return result
+    nav_session.push_client_action(
+        user_id,
+        "show_destination",
+        {
+            "lat": result["lat"],
+            "lng": result["lng"],
+            "label": result.get("formatted_address") or body.query,
+        },
+    )
+    return result
+
+
+@router.post("/route")
+async def navigation_route(
+    body: RouteBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    geo = maps_svc.geocode_address(body.destination)
+    if not geo.get("ok"):
+        return geo
+
+    origin_lat = body.origin_lat
+    origin_lng = body.origin_lng
+    if origin_lat is None or origin_lng is None:
+        loc = nav_session.get_location(user_id)
+        if not loc:
+            return {
+                "ok": False,
+                "error": "No tengo tu ubicación GPS. Abre el modo mapa y activa ubicación.",
+            }
+        origin_lat = float(loc["lat"])
+        origin_lng = float(loc["lng"])
+
+    route = maps_svc.compute_route(
+        origin_lat=origin_lat,
+        origin_lng=origin_lng,
+        dest_lat=float(geo["lat"]),
+        dest_lng=float(geo["lng"]),
+        dest_label=str(geo.get("formatted_address") or body.destination),
+    )
+    if not route.get("ok"):
+        return route
+
+    nav_session.set_route(user_id, route)
+    nav_session.push_client_action(user_id, "apply_route", route)
+    return route
+
+
+@router.post("/cancel")
+async def navigation_cancel(user_id: str = Depends(require_user_id)) -> dict[str, bool]:
+    nav_session.clear_navigation(user_id)
+    nav_session.push_client_action(user_id, "cancel_navigation", {})
+    return {"ok": True}
+
+
+@router.post("/ack-action")
+async def navigation_ack_action(
+    body: AckActionBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, bool]:
+    nav_session.consume_client_action(user_id, body.action_id)
+    return {"ok": True}

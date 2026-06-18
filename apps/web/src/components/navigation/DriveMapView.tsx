@@ -4,9 +4,12 @@ import { useEffect, useRef, useState } from "react";
 
 import type { GeoPosition } from "@/hooks/useGeolocation";
 import { loadGoogleMaps } from "@/lib/maps/loadGoogleMaps";
+import type { NavLatLng, NavRoute } from "@/lib/api/navigation";
 
 type DriveMapViewProps = {
   position: GeoPosition | null;
+  route?: NavRoute | null;
+  destinationPin?: { lat: number; lng: number; label: string } | null;
   className?: string;
 };
 
@@ -22,10 +25,17 @@ const MAP_STYLES: google.maps.MapTypeStyle[] = [
   { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
 ];
 
-export function DriveMapView({ position, className = "" }: DriveMapViewProps) {
+export function DriveMapView({
+  position,
+  route = null,
+  destinationPin = null,
+  className = "",
+}: DriveMapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const markerRef = useRef<google.maps.Marker | null>(null);
+  const destMarkerRef = useRef<google.maps.Marker | null>(null);
+  const polylineRef = useRef<google.maps.Polyline | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -78,6 +88,58 @@ export function DriveMapView({ position, className = "" }: DriveMapViewProps) {
     markerRef.current.setPosition(latLng);
     mapRef.current.panTo(latLng);
   }, [position]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (polylineRef.current) {
+      polylineRef.current.setMap(null);
+      polylineRef.current = null;
+    }
+
+    const path: NavLatLng[] = route?.path?.length ? route.path : [];
+    if (path.length > 1) {
+      polylineRef.current = new google.maps.Polyline({
+        map,
+        path,
+        strokeColor: "#00e5ff",
+        strokeOpacity: 0.9,
+        strokeWeight: 5,
+      });
+      const bounds = new google.maps.LatLngBounds();
+      for (const p of path) bounds.extend(p);
+      map.fitBounds(bounds, 48);
+    }
+  }, [route]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (destMarkerRef.current) {
+      destMarkerRef.current.setMap(null);
+      destMarkerRef.current = null;
+    }
+
+    const pin = destinationPin ?? route?.destination ?? null;
+    if (!pin) return;
+
+    destMarkerRef.current = new google.maps.Marker({
+      map,
+      position: { lat: pin.lat, lng: pin.lng },
+      title: "label" in pin ? pin.label : "Destino",
+      icon: {
+        path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
+        scale: 6,
+        fillColor: "#a855f7",
+        fillOpacity: 1,
+        strokeColor: "#ffffff",
+        strokeWeight: 1.5,
+        rotation: 180,
+      },
+    });
+  }, [destinationPin, route?.destination?.lat, route?.destination?.lng]);
 
   if (mapError) {
     return (

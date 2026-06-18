@@ -15,6 +15,14 @@ from app.services.conversation_memory import (
 )
 from app.services.gemini_grounded import fetch_voice_brief
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
+from app.services.navigation_maps import compute_route, geocode_address
+from app.services.navigation_session import (
+    clear_navigation,
+    get_location,
+    get_route,
+    push_client_action,
+    set_route,
+)
 from app.services.openai_images import generate_image
 from app.services.pdf_report import store_pdf
 from app.services.prospection import get_prospection_report, set_prospection_enabled
@@ -254,6 +262,109 @@ async def execute_voice_tool(
                 return _spoken_ok(spoken)
             except MetaSocialError as exc:
                 return _spoken_err(f"No fue posible publicar, señor. {exc}")
+
+        if name == "activar_modo_conducir":
+            push_client_action(user_id, "open_drive", {})
+            return {
+                "ok": True,
+                "spoken": "Abriendo el mapa y modo conducir, señor.",
+                "client_action": "open_drive",
+            }
+
+        if name == "buscar_direccion":
+            query = str(params.get("query") or params.get("destino") or "").strip()
+            if not query:
+                return _spoken_err("No escuché qué dirección buscar, señor.")
+            loc = get_location(user_id)
+            geo = await asyncio.to_thread(
+                geocode_address,
+                query,
+                bias_lat=float(loc["lat"]) if loc else None,
+                bias_lng=float(loc["lng"]) if loc else None,
+            )
+            if not geo.get("ok"):
+                return _spoken_err(
+                    str(geo.get("error") or "No encontré esa dirección, señor."),
+                    error="geocode_failed",
+                )
+            label = str(geo.get("formatted_address") or query)
+            payload = {"lat": geo["lat"], "lng": geo["lng"], "label": label}
+            push_client_action(user_id, "show_destination", payload)
+            return {
+                "ok": True,
+                "spoken": f"Encontré {label}, señor. Lo marqué en el mapa.",
+                "client_action": "show_destination",
+                "destination": payload,
+            }
+
+        if name == "iniciar_navegacion":
+            destino = str(params.get("destino") or params.get("query") or "").strip()
+            if not destino:
+                return _spoken_err("No escuché el destino, señor.")
+            loc = get_location(user_id)
+            if not loc:
+                push_client_action(user_id, "open_drive", {})
+                return {
+                    "ok": True,
+                    "spoken": (
+                        "Abro el mapa primero, señor. Active ubicación y repita el destino."
+                    ),
+                    "client_action": "open_drive",
+                }
+            geo = await asyncio.to_thread(
+                geocode_address,
+                destino,
+                bias_lat=float(loc["lat"]),
+                bias_lng=float(loc["lng"]),
+            )
+            if not geo.get("ok"):
+                return _spoken_err(
+                    str(geo.get("error") or "No encontré el destino, señor."),
+                    error="geocode_failed",
+                )
+            route = await asyncio.to_thread(
+                compute_route,
+                origin_lat=float(loc["lat"]),
+                origin_lng=float(loc["lng"]),
+                dest_lat=float(geo["lat"]),
+                dest_lng=float(loc["lng"]),
+                dest_label=str(geo.get("formatted_address") or destino),
+            )
+            if not route.get("ok"):
+                return _spoken_err(
+                    str(route.get("error") or "No pude calcular la ruta, señor."),
+                    error="route_failed",
+                )
+            set_route(user_id, route)
+            push_client_action(user_id, "apply_route", route)
+            return {
+                "ok": True,
+                "spoken": (
+                    f"Ruta lista, señor. {route.get('duration_text', '')} "
+                    f"({route.get('distance_text', '')}). Le guiaré paso a paso."
+                )[:480],
+                "client_action": "apply_route",
+                "route": route,
+            }
+
+        if name == "cancelar_navegacion":
+            clear_navigation(user_id)
+            push_client_action(user_id, "cancel_navigation", {})
+            return {
+                "ok": True,
+                "spoken": "Navegación cancelada, señor.",
+                "client_action": "cancel_navigation",
+            }
+
+        if name == "estado_navegacion":
+            route = get_route(user_id)
+            if not route:
+                return _spoken_ok("No hay ruta activa en este momento, señor.")
+            return _spoken_ok(
+                f"Ruta activa hacia {route.get('destination', {}).get('label', 'su destino')}. "
+                f"Quedan aproximadamente {route.get('duration_text', '')} "
+                f"({route.get('distance_text', '')}), señor."
+            )[:480]
 
         return _spoken_err(f"Herramienta no reconocida: {name}", error="unknown_tool")
 

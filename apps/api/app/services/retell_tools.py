@@ -27,6 +27,11 @@ EXECUTION_MESSAGES: dict[str, str] = {
     "reporte_prospeccion": "Consultando reporte, señor",
     "publicar_facebook": "Un momento, señor",
     "publicar_instagram": "Un momento, señor",
+    "activar_modo_conducir": "Abriendo mapa, señor",
+    "buscar_direccion": "Buscando dirección, señor",
+    "iniciar_navegacion": "Calculando ruta, señor",
+    "cancelar_navegacion": "Un momento, señor",
+    "estado_navegacion": "Consultando ruta, señor",
 }
 
 TIMEOUT_MS: dict[str, int] = {
@@ -45,6 +50,11 @@ TIMEOUT_MS: dict[str, int] = {
     "recall_memory": 5_000,
     "recall_previous_conversations": 8_000,
     "save_to_long_term_memory": 5_000,
+    "buscar_direccion": 12_000,
+    "iniciar_navegacion": 20_000,
+    "activar_modo_conducir": 5_000,
+    "cancelar_navegacion": 5_000,
+    "estado_navegacion": 5_000,
 }
 
 

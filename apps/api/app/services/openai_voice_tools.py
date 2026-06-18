@@ -286,7 +286,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "activar_prospeccion",
         "description": (
             "Activa modo prospección / perspective mode (Élite+). "
-            "Usar cuando digan 'activa modo prospección', 'modo perspectiva' o 'perspective mode'."
+            "SOLO invocar si el usuario dice EXPLÍCITAMENTE 'activa prospección', "
+            "'activar modo prospección', 'modo perspectiva' o 'perspective mode'. "
+            "PROHIBIDO invocar en saludos, '¿cómo estás?', charla casual o frases con 'sí'."
         ),
         "parameters": {"type": "object", "properties": {}},
     },
@@ -353,5 +355,65 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
             },
             "required": ["caption"],
         },
+    },
+    {
+        "type": "function",
+        "name": "activar_modo_conducir",
+        "description": (
+            "Abre el mapa GPS / modo conducir de CED. "
+            "Usar cuando digan: abre el mapa, modo conducir, navegar, GPS, guíame, "
+            "quiero que me guíes, activa navegación. "
+            "Si ya están en el mapa, confirma que está activo."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
+        "name": "buscar_direccion",
+        "description": (
+            "Busca una dirección o lugar y la muestra en el mapa. "
+            "Usar cuando digan: busca X, dónde queda X, encuentra la dirección de X."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Dirección o nombre del lugar"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "iniciar_navegacion",
+        "description": (
+            "Calcula ruta de manejo y activa guía paso a paso como copiloto. "
+            "Usar cuando digan: llévame a, navega a, guíame a, ruta a, cómo llego a. "
+            "Requiere modo mapa con GPS activo. Anuncia distancia y tiempo estimado."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "destino": {
+                    "type": "string",
+                    "description": "Dirección o lugar de destino",
+                },
+            },
+            "required": ["destino"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "cancelar_navegacion",
+        "description": (
+            "Cancela la ruta activa y deja de guiar. "
+            "Usar cuando digan: cancela ruta, ya no navegues, detén la guía."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
+        "name": "estado_navegacion",
+        "description": "Informa distancia, tiempo restante o si hay ruta activa.",
+        "parameters": {"type": "object", "properties": {}},
     },
 ]
