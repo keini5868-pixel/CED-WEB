@@ -153,26 +153,21 @@ class GeminiVoiceLlm:
 
         function_calls = _extract_function_calls(response)
         if function_calls:
-            yield ResponseResponse(
-                response_id=request.response_id,
-                content="Un momento, señor.",
-                content_complete=True,
-                end_call=False,
-            )
-
             function_response_parts: list[types.Part] = []
             model_parts: list[types.Part] = list(response.candidates[0].content.parts or [])
 
+            tool_spoken_parts: list[str] = []
             for fc in function_calls:
                 name = str(fc.name or "")
                 args = _function_call_args(fc)
-                logger.info("[RETELL-GEMINI] tool=%s args=%s", name, args)
+                logger.info("[RETELL-GEMINI] tool=%s args=%s user=%s", name, args, (self.user_id or "?")[:8])
 
                 if not self.user_id:
                     spoken = "No identifiqué al usuario, señor."
                 else:
                     tool_result = await execute_voice_tool(name, self.user_id, args)
                     spoken = str(tool_result.get("spoken") or "Completado, señor.")
+                tool_spoken_parts.append(spoken)
 
                 function_response_parts.append(
                     types.Part.from_function_response(
@@ -188,22 +183,25 @@ class GeminiVoiceLlm:
                 types.Content(role="user", parts=function_response_parts),
             ]
 
+            final_text = ""
             try:
                 final = await self.client.aio.models.generate_content(
                     model=self.model,
                     contents=follow_up_contents,
                     config=config,
                 )
-                final_text = _extract_text(final) or "Completado, señor."
-            except Exception as exc:  # noqa: BLE001
+                final_text = _extract_text(final)
+            except Exception:  # noqa: BLE001
                 logger.exception("[RETELL-GEMINI] follow-up failed")
-                final_text = "Lamentablemente hubo un error, señor."
+
+            if not final_text:
+                final_text = tool_spoken_parts[0] if len(tool_spoken_parts) == 1 else "Completado, señor."
 
             self._history = follow_up_contents
             logger.info("[RETELL-GEMINI] agent=%s", final_text[:160])
             yield ResponseResponse(
                 response_id=request.response_id,
-                content=final_text,
+                content=final_text[:480],
                 content_complete=True,
                 end_call=False,
             )

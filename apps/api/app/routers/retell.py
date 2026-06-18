@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from app.config import get_settings
 from app.deps.auth import require_user_id
 from app.services.retell_agent_setup import ensure_retell_agent
+from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_usage import voice_access_state
@@ -105,10 +106,14 @@ async def register_retell_call(
         logger.error("[RETELL] create_web_call failed: %s", exc)
         raise HTTPException(status_code=502, detail="No pude iniciar llamada Retell.") from exc
 
+    call_id = getattr(call, "call_id", None) or getattr(call, "callId", None)
+    if call_id:
+        bind_call_user(str(call_id), user_id)
+
     return {
         "ok": True,
         "access_token": call.access_token,
-        "call_id": getattr(call, "call_id", None) or getattr(call, "callId", None),
+        "call_id": call_id,
         "agent_id": agent_id,
     }
 
