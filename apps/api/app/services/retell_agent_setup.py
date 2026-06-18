@@ -160,7 +160,7 @@ def custom_llm_websocket_url() -> str:
         ws_base = "ws://" + base[len("http://") :]
     else:
         ws_base = base
-    return f"{ws_base}/llm-websocket/{{call_id}}"
+    return f"{ws_base}/llm-websocket"
 
 
 def _voice_model_for(voice_id: str) -> str | None:

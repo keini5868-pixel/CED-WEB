@@ -105,8 +105,7 @@ async def register_retell_call(
     _voice_access_or_raise(user_id)
 
     try:
-        # create_web_call es síncrono: si bloquea el event loop, Retell no puede
-        # abrir el Custom LLM WebSocket en paralelo → error_llm_websocket_open.
+        # create_web_call es síncrono: liberar event loop para que Retell abra el LLM WS.
         call = await asyncio.to_thread(
             client.call.create_web_call,
             agent_id=agent_id,
@@ -285,7 +284,7 @@ async def retell_call_debug(call_id: str) -> dict[str, Any]:
         return {"ok": False, "error": "RETELL_API_KEY no configurada"}
 
     try:
-        call = client.call.retrieve(call_id=call_id.strip())
+        call = await asyncio.to_thread(client.call.retrieve, call_id=call_id.strip())
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc), "call_id": call_id}
 
@@ -298,6 +297,11 @@ async def retell_call_debug(call_id: str) -> dict[str, Any]:
             "disconnection_reason": getattr(call, "disconnection_reason", None),
             "agent_id": getattr(call, "agent_id", None),
             "transcript": transcript,
+            "llm_token_usage": getattr(call, "llm_token_usage", None),
+            "recording_url": getattr(call, "recording_url", None),
+            "start_timestamp": getattr(call, "start_timestamp", None),
+            "end_timestamp": getattr(call, "end_timestamp", None),
+            "expected_llm_ws_url": f"{custom_llm_websocket_url()}/{call_id.strip()}",
             "active_llm_ws": active_ws_calls(),
         }
     )
@@ -315,6 +319,7 @@ async def retell_diagnostics() -> dict[str, Any]:
         "has_elevenlabs_api_key": bool(settings.elevenlabs_api_key.strip()),
         "agent_id": get_retell_agent_id(),
         "llm_websocket_url": custom_llm_websocket_url(),
+        "llm_websocket_url_note": "Retell añade /{call_id} al final — no usar placeholder {call_id} en la URL base",
         "active_llm_ws": active_ws_calls(),
     }
 
