@@ -50,8 +50,6 @@ def resolve_retell_voice_id_from_api(client: Any) -> str:
         logger.warning("[RETELL] voice.list failed: %s", exc)
         return DEFAULT_VOICE_ID
 
-    best_id = DEFAULT_VOICE_ID
-    best_score = -1
     available: list[str] = []
     for voice in voices:
         if isinstance(voice, dict):
@@ -65,6 +63,26 @@ def resolve_retell_voice_id_from_api(client: Any) -> str:
         if not vid:
             continue
         available.append(vid)
+
+    available_set = set(available)
+    for preferred in PREFERRED_RETELL_VOICES:
+        if preferred in available_set:
+            logger.info("[RETELL] voice preferida: %s", preferred)
+            return preferred
+
+    best_id = DEFAULT_VOICE_ID
+    best_score = -1
+    for voice in voices:
+        if isinstance(voice, dict):
+            vid = str(voice.get("voice_id") or voice.get("id") or "")
+            name = str(voice.get("voice_name") or voice.get("name") or "").lower()
+            provider = str(voice.get("provider") or "").lower()
+        else:
+            vid = str(getattr(voice, "voice_id", None) or getattr(voice, "id", "") or "")
+            name = str(getattr(voice, "voice_name", None) or getattr(voice, "name", "") or "").lower()
+            provider = str(getattr(voice, "provider", None) or "").lower()
+        if not vid:
+            continue
         if vid in PREFERRED_RETELL_VOICES:
             return vid
         haystack = f"{name} {vid.lower()} {provider}"

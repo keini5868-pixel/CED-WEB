@@ -240,6 +240,18 @@ async def retell_bootstrap_now() -> dict[str, Any]:
         return {"ok": False, "error": err, "api_public_url": settings.api_public_url}
 
 
+def _json_safe(value: Any) -> Any:
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if hasattr(value, "model_dump"):
+        return _json_safe(value.model_dump())
+    return str(value)
+
+
 @router.get("/diagnostics")
 async def retell_diagnostics() -> dict[str, Any]:
     """Diagnóstico voz: agente Retell, voces disponibles, Gemini ping."""
@@ -264,12 +276,14 @@ async def retell_diagnostics() -> dict[str, Any]:
     if agent_id:
         try:
             agent = client.agent.retrieve(agent_id=agent_id)
-            out["agent"] = {
-                "agent_id": getattr(agent, "agent_id", agent_id),
-                "voice_id": getattr(agent, "voice_id", None),
-                "response_engine": getattr(agent, "response_engine", None),
-                "language": getattr(agent, "language", None),
-            }
+            out["agent"] = _json_safe(
+                {
+                    "agent_id": getattr(agent, "agent_id", agent_id),
+                    "voice_id": getattr(agent, "voice_id", None),
+                    "response_engine": getattr(agent, "response_engine", None),
+                    "language": getattr(agent, "language", None),
+                }
+            )
         except Exception as exc:  # noqa: BLE001
             out["agent_error"] = str(exc)
 
