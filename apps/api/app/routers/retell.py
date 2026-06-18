@@ -209,6 +209,33 @@ async def retell_bootstrap_status(
     }
 
 
+@router.get("/bootstrap-now")
+async def retell_bootstrap_now() -> dict[str, Any]:
+    """Ejecuta bootstrap Retell sin auth — devuelve agent_id o error exacto."""
+    settings = get_settings()
+    if not settings.retell_api_key.strip():
+        return {"ok": False, "error": "RETELL_API_KEY vacía en Railway"}
+    if not settings.google_api_key.strip():
+        return {"ok": False, "error": "GOOGLE_API_KEY vacía en Railway"}
+
+    from app.services.retell_agent_cache import set_bootstrapped_agent, set_bootstrap_error
+
+    existing = get_retell_agent_id() or None
+    try:
+        result = ensure_retell_agent(agent_id=existing)
+        set_bootstrapped_agent(result["agent_id"], result)
+        return {
+            "ok": True,
+            **result,
+            "message": "Copie RETELL_AGENT_ID a Railway para persistir tras reinicios.",
+        }
+    except Exception as exc:  # noqa: BLE001
+        err = str(exc)
+        set_bootstrap_error(err)
+        logger.exception("[RETELL] bootstrap-now failed")
+        return {"ok": False, "error": err, "api_public_url": settings.api_public_url}
+
+
 @router.get("/status")
 async def retell_public_status() -> dict[str, Any]:
     """Estado Retell sin auth — reintenta bootstrap si falta agente."""
@@ -240,7 +267,7 @@ async def retell_public_status() -> dict[str, Any]:
         "has_retell_api_key": bool(settings.retell_api_key.strip()),
         "has_google_api_key": bool(settings.google_api_key.strip()),
         "api_public_url": settings.api_public_url,
-        "bootstrap_error": bootstrap_error or get_last_bootstrap_error(),
+        "bootstrap_error": get_last_bootstrap_error() or bootstrap_error,
     }
 
 
