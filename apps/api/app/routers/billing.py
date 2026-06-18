@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
+from app.config import get_settings
 from app.domain.plans import (
     RECHARGE_MAX_USD,
     RECHARGE_MIN_USD,
@@ -16,6 +17,7 @@ from app.domain.plans import (
     quote_recharge,
 )
 from app.services import supabase_db
+from app.services.integrations import check_stripe, check_supabase
 from app.services.stripe_billing import (
     create_portal_session,
     create_recharge_checkout,
@@ -51,6 +53,41 @@ def list_plans() -> dict:
         "founding_slots_used": used,
         "founding_slots_max": cap,
         "recharge_amounts": recharge_catalog(),
+    }
+
+
+@router.get("/readiness")
+def billing_readiness() -> dict:
+    """Estado Stripe + precios configurados — diagnóstico de cobros."""
+    settings = get_settings()
+    stripe_status = check_stripe()
+    supa = check_supabase()
+    price_vars = {
+        "starter": bool(settings.stripe_price_starter.strip()),
+        "pro": bool(settings.stripe_price_pro.strip()),
+        "elite": bool(settings.stripe_price_elite.strip()),
+        "founding": bool(settings.stripe_price_founding.strip()),
+        "recharge_10": bool(settings.stripe_price_recharge_10.strip()),
+        "webhook_secret": bool(settings.stripe_webhook_secret.strip()),
+        "publishable_hint": "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY en web",
+    }
+    prices_ok = all(
+        [
+            settings.stripe_price_starter.strip(),
+            settings.stripe_price_pro.strip(),
+            settings.stripe_price_elite.strip(),
+            settings.stripe_price_founding.strip(),
+        ]
+    )
+    return {
+        "ok": bool(stripe_status.get("ok")) and prices_ok and supa.get("ok"),
+        "stripe": stripe_status,
+        "supabase": {"ok": supa.get("ok"), "error": supa.get("error")},
+        "prices_configured": price_vars,
+        "webhook_urls": [
+            f"{settings.api_public_url.rstrip('/')}/v1/billing/webhook",
+            f"{settings.api_public_url.rstrip('/')}/v1/billing/webhooks/stripe",
+        ],
     }
 
 

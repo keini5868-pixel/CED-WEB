@@ -19,6 +19,7 @@ import {
 import { fetchUserAddress, updateUserAddress } from "@/lib/api/profile";
 import { clearEphemeralTokenCache } from "@/lib/voice/ephemeralTokenCache";
 import type { UserGender } from "@/lib/voice/addressPreferenceIntent";
+import { isRetellVoice } from "@/lib/voice/voiceProvider";
 
 export function CedStopConfirmModal({
   open,
@@ -92,6 +93,7 @@ export function CedSettingsModal({
   }, [open]);
 
   const voiceChanged = draft.voiceName !== prefs.voiceName;
+  const retellMode = isRetellVoice();
 
   return (
     <CedModal
@@ -138,7 +140,9 @@ export function CedSettingsModal({
           >
             <div className="font-semibold tracking-wide">Modo Jarvis</div>
             <div className="mt-0.5 text-[10px] opacity-80">
-              Echo · formal · pausado · ejecutivo
+              {retellMode
+                ? "Retell · tono formal · pausado · ejecutivo"
+                : "Echo · formal · pausado · ejecutivo"}
             </div>
           </button>
           <button
@@ -157,6 +161,19 @@ export function CedSettingsModal({
           </button>
         </div>
 
+        {retellMode ? (
+          <div className="rounded border border-amber-500/30 bg-amber-950/20 px-3 py-3 text-xs text-amber-100/90">
+            <div className="font-semibold tracking-wide text-amber-200">Voz Retell (Jarvis)</div>
+            <p className="mt-1 text-[11px] leading-relaxed opacity-90">
+              CED usa su clon en Retell + ElevenLabs. Tono grave y pausado configurado en
+              servidor. Para cambiar la voz, actualice el agente en Retell dashboard y ejecute
+              bootstrap.
+            </p>
+            <p className="mt-2 text-[10px] text-zinc-400">
+              El reconocimiento de voz usa modo preciso (español). Hable claro, cerca del micrófono.
+            </p>
+          </div>
+        ) : (
         <div>
           <span className="ced-hud-text-muted text-xs">
             Voz OpenAI Realtime (requiere reiniciar sesión)
@@ -217,6 +234,7 @@ export function CedSettingsModal({
                 : "GUARDAR VOZ (próxima sesión)"}
           </CedButton>
         </div>
+        )}
 
         <label className="block">
           <span className="ced-hud-text-muted text-xs">Idioma (UI)</span>

@@ -115,6 +115,7 @@ class Settings(BaseSettings):
     # Modelo TTS Retell: eleven_multilingual_v2 (más fiel al clon) o eleven_turbo_v2_5 (más rápido)
     retell_voice_model: str = ""
     retell_voice_speed: float = 0.0
+    retell_voice_temperature: float = 0.0
     support_chat_enabled: bool = False
 
     @model_validator(mode="after")

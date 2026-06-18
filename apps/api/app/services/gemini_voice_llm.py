@@ -11,7 +11,7 @@ from google import genai
 from google.genai import types
 
 from app.config import get_settings
-from app.domain.openai_voice_prompt import CED_MINIMAL_REALTIME_PROMPT
+from app.domain.openai_voice_prompt import build_ced_voice_system_prompt
 from app.services.gemini_voice_tools import build_gemini_voice_tools
 from app.services.retell_custom_llm import (
     concise_reply_for_small_talk,
@@ -146,7 +146,7 @@ class GeminiVoiceLlm:
         logger.info("[RETELL-GEMINI] user=%s text=%s", (self.user_id or "?")[:8], user_text[:120])
 
         config = types.GenerateContentConfig(
-            system_instruction=CED_MINIMAL_REALTIME_PROMPT,
+            system_instruction=build_ced_voice_system_prompt(),
             tools=[self.tools],
             temperature=0.4,
             max_output_tokens=320,

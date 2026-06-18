@@ -337,7 +337,16 @@ def _voice_speed_for(voice_id: str) -> float:
     if settings.retell_voice_speed > 0:
         return settings.retell_voice_speed
     if voice_id.startswith("custom_voice_"):
-        return 0.94
+        return 0.88
+    return 1.0
+
+
+def _voice_temperature_for(voice_id: str) -> float:
+    settings = get_settings()
+    if settings.retell_voice_temperature > 0:
+        return settings.retell_voice_temperature
+    if voice_id.startswith("custom_voice_"):
+        return 0.82
     return 1.0
 
 
@@ -386,10 +395,11 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "voice_id": voice_id,
         "voice_model": _voice_model_for(voice_id),
         "voice_speed": _voice_speed_for(voice_id),
+        "voice_temperature": _voice_temperature_for(voice_id),
         "responsiveness": 0.95,
         "interruption_sensitivity": 0.85,
-        "language": "multi",
-        "stt_mode": "fast",
+        "language": "es",
+        "stt_mode": "accurate",
         "webhook_url": webhook,
         "webhook_events": ["call_started", "call_ended", "call_analyzed"],
         "begin_message_delay_ms": 0,
