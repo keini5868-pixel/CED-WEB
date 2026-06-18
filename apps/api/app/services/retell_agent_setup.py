@@ -305,6 +305,9 @@ def _retrieve_agent_voice_id(client: Any, agent_id: str) -> str | None:
     except Exception as exc:  # noqa: BLE001
         logger.warning("[RETELL] agent.retrieve failed: %s", exc)
         return None
+
+
+def custom_llm_websocket_url() -> str:
     settings = get_settings()
     base = settings.api_public_url.rstrip("/")
     if base.startswith("https://"):
