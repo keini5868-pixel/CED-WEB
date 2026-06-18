@@ -65,13 +65,14 @@ export class CedRetellClient {
   private flushUserTranscript(force = false): void {
     const text = this.pendingUserText.trim();
     if (!text) return;
-    if (!force && text === this.lastPersistedUserLine) return;
+    if (text === this.lastPersistedUserLine) return;
     this.lastPersistedUserLine = text;
     this.lastUserLine = text;
     this.callbacks.onTranscript?.(text, "user");
   }
 
   private scheduleUserTranscript(text: string): void {
+    if (text === this.lastPersistedUserLine || text === this.pendingUserText) return;
     this.pendingUserText = text;
     this.clearUserDebounce();
     this.userDebounceTimer = window.setTimeout(() => {

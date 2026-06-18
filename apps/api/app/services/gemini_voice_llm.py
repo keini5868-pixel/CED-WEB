@@ -131,6 +131,18 @@ class GeminiVoiceLlm:
         if not user_text:
             return
 
+        if is_small_talk(user_text):
+            reply = concise_reply_for_small_talk(user_text)
+            self._history = [*self._history, last, types.Content(role="model", parts=[types.Part(text=reply)])]
+            logger.info("[RETELL-GEMINI] small_talk=%s", reply)
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=reply,
+                content_complete=True,
+                end_call=False,
+            )
+            return
+
         logger.info("[RETELL-GEMINI] user=%s text=%s", (self.user_id or "?")[:8], user_text[:120])
 
         config = types.GenerateContentConfig(
@@ -203,11 +215,8 @@ class GeminiVoiceLlm:
             return
 
         text_response = _extract_text(response)
-        if not text_response or is_generic_agent_line(text_response):
-            if is_small_talk(user_text):
-                text_response = concise_reply_for_small_talk(user_text)
-            elif not text_response:
-                text_response = "¿En qué puedo ayudarle, señor?"
+        if is_generic_agent_line(text_response) or not text_response:
+            text_response = concise_reply_for_small_talk(user_text) if is_small_talk(user_text) else "¿En qué puedo ayudarle, señor?"
 
         self._history = [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])]
         logger.info("[RETELL-GEMINI] agent=%s", text_response[:160])

@@ -168,7 +168,7 @@ def _voice_model_for(voice_id: str) -> str | None:
     if voice_id.startswith("openai-"):
         return "tts-1"
     if voice_id.startswith("11labs-"):
-        return "eleven_turbo_v2_5"
+        return "eleven_turbo_v2"
     return None
 
 
@@ -196,9 +196,9 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
         },
         "voice_id": voice_id,
         "voice_model": _voice_model_for(voice_id),
-        "voice_speed": 0.95,
-        "responsiveness": 1.0,
-        "interruption_sensitivity": 0.9,
+        "voice_speed": 1.0,
+        "responsiveness": 0.95,
+        "interruption_sensitivity": 0.85,
         "language": "multi",
         "stt_mode": "fast",
         "webhook_url": webhook,

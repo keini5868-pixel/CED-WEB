@@ -84,11 +84,29 @@ def should_respond_to_transcript(
 
 
 def is_small_talk(text: str) -> bool:
-    return _normalize(text) in _SMALL_TALK
+    norm = _normalize(text)
+    if norm in _SMALL_TALK:
+        return True
+    if re.search(r"hola.*(como|cómo)\s+est", norm):
+        return True
+    if re.search(r"hola.*\bs[ií]\b", norm) and re.search(r"(como|cómo)\s+est", norm):
+        return True
+    if re.search(r"(como|cómo)\s+est", norm) and len(norm.split()) <= 10:
+        return True
+    if norm.startswith("hola") and len(norm.split()) <= 6:
+        return True
+    return False
 
 
 def is_generic_agent_line(text: str) -> bool:
-    return _normalize(text) in {_normalize(line) for line in _GENERIC_AGENT_LINES}
+    norm = _normalize(text)
+    if norm in {_normalize(line) for line in _GENERIC_AGENT_LINES}:
+        return True
+    if "operativo" in norm and "servicio" in norm:
+        return True
+    if norm.startswith("operativo"):
+        return True
+    return False
 
 
 def concise_reply_for_small_talk(user_text: str) -> str:

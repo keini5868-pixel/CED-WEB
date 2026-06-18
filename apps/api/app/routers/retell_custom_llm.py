@@ -9,7 +9,12 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.gemini_voice_llm import GeminiVoiceLlm, draft_begin_message
 from app.services.retell_call_registry import release_call_user, resolve_call_user
-from app.services.retell_custom_llm import should_respond_to_transcript
+from app.services.retell_custom_llm import (
+    concise_reply_for_small_talk,
+    is_small_talk,
+    last_user_text,
+    should_respond_to_transcript,
+)
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -22,6 +27,13 @@ from app.services.retell_ws_tracker import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retell-custom-llm"])
+
+# Evita solapar TTS del saludo con la primera respuesta (audio borroso).
+POST_GREETING_COOLDOWN_S = 1.6
+
+
+def _normalize_user_key(text: str) -> str:
+    return " ".join((text or "").strip().lower().split())
 
 
 @router.get("/llm-websocket/active")
@@ -42,7 +54,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     response_lock = asyncio.Lock()
     active_response_id = 0
     debounce_task: asyncio.Task[None] | None = None
-    debounce_wait_s = 0.55
+    debounce_wait_s = 0.75
+    post_greeting_ready = asyncio.Event()
+    post_greeting_ready.set()
+    last_answered_user_key = ""
+    greeting_release_task: asyncio.Task[None] | None = None
 
     user_id = resolve_call_user(call_id)
     if user_id:
@@ -58,29 +74,32 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
     greeting_sent = False
 
+    async def release_post_greeting_cooldown() -> None:
+        await asyncio.sleep(POST_GREETING_COOLDOWN_S)
+        post_greeting_ready.set()
+        logger.info("[RETELL-GEMINI] post-greeting cooldown listo call=%s", call_id)
+
     async def send_greeting(response_id: int = 0, *, reason: str) -> None:
-        nonlocal greeting_sent
+        nonlocal greeting_sent, greeting_release_task
         if greeting_sent:
             return
         greeting_sent = True
+        post_greeting_ready.clear()
+        if greeting_release_task and not greeting_release_task.done():
+            greeting_release_task.cancel()
         begin = draft_begin_message()
         payload = begin.model_dump()
         payload["response_id"] = response_id
         await websocket.send_json(payload)
         mark_greeting_sent(call_id)
+        greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
         logger.info("[RETELL-GEMINI] saludo enviado call=%s reason=%s", call_id, reason)
 
-    # Igual que el demo oficial Retell: saludo inmediato tras config
+    # Saludo único al conectar (demo Retell Node: tras call_details; aquí inmediato)
     await send_greeting(0, reason="immediate")
 
-    async def greeting_backup() -> None:
-        await asyncio.sleep(2.0)
-        await send_greeting(0, reason="backup_2s")
-
-    asyncio.create_task(greeting_backup())
-
     async def handle_message(request_json: dict) -> None:
-        nonlocal active_response_id
+        nonlocal active_response_id, debounce_task, last_answered_user_key
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
@@ -124,28 +143,53 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             logger.info("[RETELL-GEMINI] skip interaction=%s call=%s", interaction, call_id)
             return
 
-        request = ResponseRequiredRequest(
-            interaction_type=interaction,  # type: ignore[arg-type]
-            response_id=response_id,
-            transcript=transcript,
-        )
-
-        nonlocal debounce_task
+        user_text = last_user_text(transcript)
+        user_key = _normalize_user_key(user_text)
+        if user_key and user_key == last_answered_user_key:
+            logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
+            return
 
         if debounce_task and not debounce_task.done():
             debounce_task.cancel()
 
         async def run_debounced() -> None:
-            nonlocal active_response_id
+            nonlocal active_response_id, last_answered_user_key
             try:
+                await post_greeting_ready.wait()
                 await asyncio.sleep(debounce_wait_s)
             except asyncio.CancelledError:
                 return
+
+            if is_small_talk(user_text):
+                reply = concise_reply_for_small_talk(user_text)
+                async with response_lock:
+                    if response_id < active_response_id:
+                        return
+                    active_response_id = response_id
+                    last_answered_user_key = user_key
+                    await websocket.send_json(
+                        {
+                            "response_type": "response",
+                            "response_id": response_id,
+                            "content": reply,
+                            "content_complete": True,
+                            "end_call": False,
+                        }
+                    )
+                logger.info("[RETELL-GEMINI] small_talk call=%s: %s", call_id, reply)
+                return
+
+            request = ResponseRequiredRequest(
+                interaction_type=interaction,  # type: ignore[arg-type]
+                response_id=response_id,
+                transcript=transcript,
+            )
 
             async with response_lock:
                 if response_id < active_response_id:
                     return
                 active_response_id = response_id
+                last_answered_user_key = user_key
 
                 async for event in llm.draft_response(request):
                     if event.response_id < active_response_id:
