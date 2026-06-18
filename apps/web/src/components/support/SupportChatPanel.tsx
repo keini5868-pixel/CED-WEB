@@ -36,6 +36,41 @@ function formatTime(iso?: string): string {
   }
 }
 
+function CategoryPicker({
+  sending,
+  onPick,
+}: {
+  sending: boolean;
+  onPick: (category: SupportCategory) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-cyan-100">¿En qué podemos ayudarte?</p>
+      <p className="text-[11px] text-cyan-500/70">
+        Elige una categoría para abrir un reporte nuevo.
+      </p>
+      {(Object.keys(SUPPORT_CATEGORY_LABELS) as SupportCategory[]).map((key) => {
+        const { label, emoji } = SUPPORT_CATEGORY_LABELS[key];
+        return (
+          <button
+            key={key}
+            type="button"
+            disabled={sending}
+            onClick={() => onPick(key)}
+            className="flex w-full items-center gap-3 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3 text-left text-sm text-cyan-100 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
+          >
+            <span className="text-xl">{emoji}</span>
+            <span>{label}</span>
+            {sending ? (
+              <span className="ml-auto text-[10px] text-cyan-400">Abriendo…</span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
   const [mounted, setMounted] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -45,6 +80,7 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [showNewReport, setShowNewReport] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -57,7 +93,8 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
     setError(null);
     try {
       const list = await fetchUserSupportConversations();
-      const open = list.find((c) => c.status !== "resolved") ?? list[0] ?? null;
+      const open = list.find((c) => c.status !== "resolved") ?? null;
+      setShowNewReport(false);
       setConversation(open);
       if (open) {
         const msgs = await fetchSupportMessages(open.id);
@@ -115,12 +152,22 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
       const conv = await createSupportConversation(category);
       setConversation(conv);
       setMessages([]);
+      setShowNewReport(false);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al crear conversación");
     } finally {
       setSending(false);
     }
   };
+
+  const beginNewReport = () => {
+    setShowNewReport(true);
+    setText("");
+    setPendingFiles([]);
+    setError(null);
+  };
+
+  const showCategoryPicker = !conversation || showNewReport;
 
   const handleSend = async () => {
     if (!conversation || sending) return;
@@ -182,6 +229,18 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
         </button>
       </header>
 
+      {conversation && !showNewReport ? (
+        <div className="shrink-0 border-b border-cyan-500/15 px-4 py-2">
+          <button
+            type="button"
+            onClick={beginNewReport}
+            className="w-full rounded-lg border border-cyan-500/30 bg-cyan-500/5 py-2 text-center text-[11px] font-semibold tracking-wide text-cyan-300 transition hover:border-cyan-400/50 hover:bg-cyan-500/10"
+          >
+            + Nuevo reporte
+          </button>
+        </div>
+      ) : null}
+
       <div className="flex-1 overflow-y-auto p-4">
         {error ? (
           <div className="mb-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
@@ -191,27 +250,21 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
 
         {loading ? (
           <p className="text-sm text-cyan-500/70">Cargando…</p>
-        ) : !conversation ? (
+        ) : showCategoryPicker ? (
           <div className="space-y-3">
-            <p className="text-sm text-cyan-100">¿En qué podemos ayudarte?</p>
-            {(Object.keys(SUPPORT_CATEGORY_LABELS) as SupportCategory[]).map((key) => {
-              const { label, emoji } = SUPPORT_CATEGORY_LABELS[key];
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  disabled={sending}
-                  onClick={() => void startCategory(key)}
-                  className="flex w-full items-center gap-3 rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3 text-left text-sm text-cyan-100 transition hover:border-cyan-400/50 hover:bg-cyan-500/10 disabled:opacity-50"
-                >
-                  <span className="text-xl">{emoji}</span>
-                  <span>{label}</span>
-                  {sending ? (
-                    <span className="ml-auto text-[10px] text-cyan-400">Abriendo…</span>
-                  ) : null}
-                </button>
-              );
-            })}
+            {conversation && showNewReport ? (
+              <button
+                type="button"
+                onClick={() => setShowNewReport(false)}
+                className="text-[11px] font-medium text-cyan-400 underline-offset-2 hover:underline"
+              >
+                ← Volver al reporte actual
+              </button>
+            ) : null}
+            <CategoryPicker
+              sending={sending}
+              onPick={(key) => void startCategory(key)}
+            />
           </div>
         ) : (
           <div className="space-y-3">
@@ -268,7 +321,7 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
         )}
       </div>
 
-      {conversation ? (
+      {conversation && !showNewReport ? (
         <footer className="shrink-0 border-t border-cyan-500/20 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {pendingFiles.length > 0 ? (
             <div className="mb-2 flex flex-wrap gap-2">

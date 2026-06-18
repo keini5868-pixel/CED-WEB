@@ -94,7 +94,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.STARTER.value: PlanLimits(
         voice_minutes_per_day=15,
         web_searches_per_day=30,
-        ai_images_standard_per_day=25,
+        ai_images_standard_per_day=20,
         ai_images_hd_per_day=0,
         voice_enabled=True,
         camera_enabled=False,
@@ -106,8 +106,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.PRO.value: PlanLimits(
         voice_minutes_per_day=30,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=50,
-        ai_images_hd_per_day=10,
+        ai_images_standard_per_day=45,
+        ai_images_hd_per_day=5,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=False,
@@ -118,8 +118,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.ELITE.value: PlanLimits(
         voice_minutes_per_day=60,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=100,
-        ai_images_hd_per_day=20,
+        ai_images_standard_per_day=95,
+        ai_images_hd_per_day=15,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
@@ -130,8 +130,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.FOUNDING.value: PlanLimits(
         voice_minutes_per_day=FOUNDING_VOICE_CAP_MINUTES,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=150,
-        ai_images_hd_per_day=30,
+        ai_images_standard_per_day=145,
+        ai_images_hd_per_day=25,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,

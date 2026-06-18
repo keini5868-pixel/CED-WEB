@@ -75,7 +75,7 @@ export const PUBLIC_PLANS = [
       "Chat texto ilimitado",
       "15 min/día voz CED",
       "30 búsquedas web/día",
-      "25 imágenes IA/día",
+      "20 imágenes IA/día",
     ],
   },
   {
@@ -88,7 +88,7 @@ export const PUBLIC_PLANS = [
       "30 min/día voz",
       "Cámara por voz",
       "Búsquedas ilimitadas",
-      "50 std + 10 HD imágenes/día",
+      "45 std + 5 HD imágenes/día",
     ],
   },
   {
@@ -101,7 +101,7 @@ export const PUBLIC_PLANS = [
       "60 min/día voz",
       "Instagram/Facebook",
       "Modo prospección",
-      "100 std + 20 HD imágenes/día",
+      "95 std + 15 HD imágenes/día",
     ],
   },
   {
@@ -113,7 +113,7 @@ export const PUBLIC_PLANS = [
       "Todo Élite +",
       "90 min/día voz",
       "Precio bloqueado de por vida",
-      "150 std + 30 HD imágenes/día",
+      "145 std + 25 HD imágenes/día",
       "Cupos limitados (50)",
     ],
   },

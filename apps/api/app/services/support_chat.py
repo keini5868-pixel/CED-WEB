@@ -18,6 +18,8 @@ logger = logging.getLogger(__name__)
 VALID_CATEGORIES = frozenset({"bug", "idea", "question", "other"})
 VALID_STATUSES = frozenset({"open", "in_progress", "resolved"})
 USER_MESSAGE_LIMIT_PER_MIN = 10
+# Tras este tiempo sin mensajes, la conversación se considera cerrada para el usuario.
+SUPPORT_STALE_AFTER_HOURS = 48
 
 
 def _sanitize_content(text: str) -> str:
@@ -159,7 +161,57 @@ def create_conversation(user_id: str, category: str) -> dict[str, Any]:
     return _conversation_row(data[0])
 
 
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        text = value.strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt
+    except ValueError:
+        return None
+
+
+def _is_conversation_stale(conv: dict[str, Any]) -> bool:
+    if conv.get("status") == "resolved":
+        return True
+    ref = _parse_iso_datetime(conv.get("last_message_at")) or _parse_iso_datetime(
+        conv.get("created_at"),
+    )
+    if not ref:
+        return False
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=SUPPORT_STALE_AFTER_HOURS)
+    return ref < cutoff
+
+
+def _auto_resolve_stale_conversations(user_id: str) -> None:
+    client = _client()
+    try:
+        result = (
+            client.table("support_conversations")
+            .select("id, status, last_message_at, created_at")
+            .eq("user_id", user_id)
+            .neq("status", "resolved")
+            .execute()
+        )
+    except Exception:  # noqa: BLE001
+        return
+    for row in result.data or []:
+        if not _is_conversation_stale(row):
+            continue
+        try:
+            client.table("support_conversations").update({"status": "resolved"}).eq(
+                "id",
+                row["id"],
+            ).execute()
+        except Exception:  # noqa: BLE001
+            logger.warning("auto_resolve stale support conversation %s failed", row.get("id"))
+
+
 def list_user_conversations(user_id: str) -> list[dict[str, Any]]:
+    _auto_resolve_stale_conversations(user_id)
     client = _client()
     try:
         result = (
