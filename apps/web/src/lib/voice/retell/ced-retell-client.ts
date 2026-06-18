@@ -23,6 +23,7 @@ export class CedRetellClient {
   private levelRaf: number | null = null;
   private lastUserLine = "";
   private lastAgentLine = "";
+  private audioRetryTimer: number | null = null;
 
   constructor() {
     this.client = new RetellWebClient();
@@ -33,21 +34,47 @@ export class CedRetellClient {
     this.callbacks = callbacks;
   }
 
+  private stopAudioRetry(): void {
+    if (this.audioRetryTimer != null) {
+      window.clearInterval(this.audioRetryTimer);
+      this.audioRetryTimer = null;
+    }
+  }
+
+  /** Retell/LiveKit requiere desbloqueo de audio tras gesto del usuario. */
+  private ensureAudioPlayback(): void {
+    void this.client.startAudioPlayback().catch(() => undefined);
+  }
+
+  private startAudioRetryLoop(): void {
+    this.stopAudioRetry();
+    let attempts = 0;
+    this.ensureAudioPlayback();
+    this.audioRetryTimer = window.setInterval(() => {
+      attempts += 1;
+      this.ensureAudioPlayback();
+      if (attempts >= 8) this.stopAudioRetry();
+    }, 500);
+  }
+
   private setupListeners(): void {
     this.client.on("call_started", () => {
+      this.startAudioRetryLoop();
       this.callbacks.onCallStarted?.();
     });
 
     this.client.on("call_ended", () => {
+      this.stopAudioRetry();
       this.stopLevelLoop();
       this.callbacks.onCallEnded?.();
     });
 
     this.client.on("call_ready", () => {
-      void this.client.startAudioPlayback().catch(() => undefined);
+      this.ensureAudioPlayback();
     });
 
     this.client.on("agent_start_talking", () => {
+      this.ensureAudioPlayback();
       this.callbacks.onAgentTalking?.(true);
     });
 
@@ -72,6 +99,7 @@ export class CedRetellClient {
         } else {
           if (text === this.lastAgentLine) continue;
           this.lastAgentLine = text;
+          this.ensureAudioPlayback();
         }
         this.callbacks.onTranscript?.(text, role);
       }
@@ -112,16 +140,18 @@ export class CedRetellClient {
     this.callId = callId ?? null;
     this.lastUserLine = "";
     this.lastAgentLine = "";
+    this.ensureAudioPlayback();
     await this.client.startCall({
       accessToken,
       sampleRate: 24000,
       emitRawAudioSamples: true,
     });
     this.startLevelLoop();
-    await this.client.startAudioPlayback().catch(() => undefined);
+    this.startAudioRetryLoop();
   }
 
   async stopCall(): Promise<void> {
+    this.stopAudioRetry();
     this.stopLevelLoop();
     this.client.stopCall();
     this.callId = null;

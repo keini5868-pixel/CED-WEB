@@ -13,7 +13,11 @@ from pydantic import BaseModel, Field
 from app.config import get_settings
 from app.deps.auth import require_user_id
 from app.services.retell_agent_cache import get_last_bootstrap_error, get_last_bootstrap_info, get_retell_agent_id
-from app.services.retell_agent_setup import bootstrap_retell_if_needed, ensure_retell_agent
+from app.services.retell_agent_setup import (
+    bootstrap_retell_if_needed,
+    custom_llm_websocket_url,
+    ensure_retell_agent,
+)
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.voice_tool_executor import execute_voice_tool
@@ -234,6 +238,99 @@ async def retell_bootstrap_now() -> dict[str, Any]:
         set_bootstrap_error(err)
         logger.exception("[RETELL] bootstrap-now failed")
         return {"ok": False, "error": err, "api_public_url": settings.api_public_url}
+
+
+@router.get("/diagnostics")
+async def retell_diagnostics() -> dict[str, Any]:
+    """Diagnóstico voz: agente Retell, voces disponibles, Gemini ping."""
+    settings = get_settings()
+    out: dict[str, Any] = {
+        "ok": True,
+        "voice_provider": settings.voice_provider,
+        "has_retell_api_key": bool(settings.retell_api_key.strip()),
+        "has_google_api_key": bool(settings.google_api_key.strip()),
+        "has_elevenlabs_api_key": bool(settings.elevenlabs_api_key.strip()),
+        "agent_id": get_retell_agent_id(),
+        "llm_websocket_url": custom_llm_websocket_url(),
+    }
+
+    client = get_retell_client()
+    if not client:
+        out["ok"] = False
+        out["error"] = "RETELL_API_KEY no configurada"
+        return out
+
+    agent_id = get_retell_agent_id() or settings.retell_agent_id.strip()
+    if agent_id:
+        try:
+            agent = client.agent.retrieve(agent_id=agent_id)
+            out["agent"] = {
+                "agent_id": getattr(agent, "agent_id", agent_id),
+                "voice_id": getattr(agent, "voice_id", None),
+                "response_engine": getattr(agent, "response_engine", None),
+                "language": getattr(agent, "language", None),
+            }
+        except Exception as exc:  # noqa: BLE001
+            out["agent_error"] = str(exc)
+
+    try:
+        listed = client.voice.list()
+        voices = getattr(listed, "voices", None) or listed
+        ids = []
+        for voice in voices or []:
+            vid = getattr(voice, "voice_id", None) or (
+                voice.get("voice_id") if isinstance(voice, dict) else None
+            )
+            if vid:
+                ids.append(str(vid))
+        out["retell_voices_count"] = len(ids)
+        out["retell_voices_sample"] = ids[:20]
+        out["openai_voices"] = [v for v in ids if v.startswith("openai-")]
+        out["elevenlabs_voices"] = [v for v in ids if v.startswith("11labs-")]
+    except Exception as exc:  # noqa: BLE001
+        out["voices_error"] = str(exc)
+
+    if settings.elevenlabs_api_key.strip():
+        try:
+            import httpx
+
+            with httpx.Client(timeout=12.0) as http:
+                res = http.get(
+                    "https://api.elevenlabs.io/v1/user",
+                    headers={"xi-api-key": settings.elevenlabs_api_key.strip()},
+                )
+                out["elevenlabs_user_status"] = res.status_code
+                if res.status_code == 200:
+                    data = res.json()
+                    sub = data.get("subscription") or {}
+                    out["elevenlabs"] = {
+                        "tier": sub.get("tier"),
+                        "character_count": sub.get("character_count"),
+                        "character_limit": sub.get("character_limit"),
+                    }
+                else:
+                    out["elevenlabs_error"] = res.text[:200]
+        except Exception as exc:  # noqa: BLE001
+            out["elevenlabs_error"] = str(exc)
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        gemini = genai.Client(api_key=settings.google_api_key.strip())
+        model = settings.gemini_voice_model.strip() or "gemini-2.5-pro"
+        response = await gemini.aio.models.generate_content(
+            model=model,
+            contents=[types.Content(role="user", parts=[types.Part(text="Di hola en una palabra.")])],
+        )
+        text = (response.text or "").strip()
+        out["gemini_ok"] = bool(text)
+        out["gemini_sample"] = text[:80]
+    except Exception as exc:  # noqa: BLE001
+        out["gemini_ok"] = False
+        out["gemini_error"] = str(exc)
+
+    return out
 
 
 @router.get("/status")

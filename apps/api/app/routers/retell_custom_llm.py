@@ -40,8 +40,24 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         }
     )
 
-    begin = draft_begin_message()
-    await websocket.send_json(begin.model_dump())
+    greeting_sent = False
+
+    async def send_greeting(response_id: int = 0) -> None:
+        nonlocal greeting_sent
+        if greeting_sent:
+            return
+        greeting_sent = True
+        begin = draft_begin_message()
+        payload = begin.model_dump()
+        payload["response_id"] = response_id
+        await websocket.send_json(payload)
+        logger.info("[RETELL-GEMINI] saludo enviado call=%s", call_id)
+
+    async def greeting_fallback() -> None:
+        await asyncio.sleep(1.2)
+        await send_greeting(0)
+
+    asyncio.create_task(greeting_fallback())
 
     async def handle_message(request_json: dict) -> None:
         nonlocal active_response_id
@@ -61,7 +77,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
             return
 
-        if interaction in ("call_details", "update_only"):
+        if interaction == "call_details":
+            await send_greeting(0)
+            return
+
+        if interaction == "update_only":
             return
 
         if interaction not in ("response_required", "reminder_required"):
