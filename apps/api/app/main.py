@@ -10,7 +10,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from slowapi.middleware import SlowAPIMiddleware
 
 from app.config import get_settings
 from app.logging_setup import configure_logging
@@ -101,10 +100,10 @@ def create_app() -> FastAPI:
     application.add_middleware(RequestLoggingMiddleware)
 
     if settings.rate_limit_enabled:
-        limiter.default_limits = [f"{settings.rate_limit_per_minute}/minute"]
+        # Sin límite global: SlowAPIMiddleware rompe el upgrade WebSocket de Retell LLM.
+        limiter.default_limits = []
         application.state.limiter = limiter
         application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-        application.add_middleware(SlowAPIMiddleware)
 
     application.include_router(health.router)
     application.include_router(diagnostic.router)

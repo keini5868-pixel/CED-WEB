@@ -15,6 +15,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         self._settings = settings
 
     async def dispatch(self, request: Request, call_next) -> Response:
+        if request.scope["type"] != "http":
+            return await call_next(request)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"

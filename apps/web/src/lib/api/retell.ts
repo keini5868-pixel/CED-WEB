@@ -10,6 +10,14 @@ export type RetellRegisterCallResponse =
     }
   | { ok: false; error?: string; detail?: string };
 
+export async function warmupRetellVoiceApi(): Promise<void> {
+  try {
+    await proxyFetch("retell/status", { method: "GET" });
+  } catch {
+    /* ignore — best effort */
+  }
+}
+
 export async function registerRetellCall(): Promise<RetellRegisterCallResponse> {
   let response: Response;
   try {

@@ -15,6 +15,8 @@ logger = logging.getLogger("ced.api.request")
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
+        if request.scope["type"] != "http":
+            return await call_next(request)
         if request.url.path == "/health":
             return await call_next(request)
 

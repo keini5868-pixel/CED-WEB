@@ -48,7 +48,7 @@ import {
   cedResolveHonorific,
 } from "@/lib/voice/live/ced-brief-messages";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
-import { registerRetellCall } from "@/lib/api/retell";
+import { registerRetellCall, warmupRetellVoiceApi } from "@/lib/api/retell";
 import { CedRetellClient } from "@/lib/voice/retell/ced-retell-client";
 import { isRetellVoice } from "@/lib/voice/voiceProvider";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
@@ -526,6 +526,7 @@ export function useCedVoiceSession(
 
       if (isRetellVoice()) {
         isRetellSessionRef.current = true;
+        await warmupRetellVoiceApi();
         const registration = await registerRetellCall();
         if (isStale()) return;
         if (!registration.ok) {
