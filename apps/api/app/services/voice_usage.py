@@ -7,7 +7,10 @@ from app.services import supabase_db
 from app.services.admin_users import get_user_access
 
 ACCESS_DENIED_MESSAGES = {
-    "trial_expired": "Tu prueba de 7 días terminó. Elige un plan para seguir con voz y chat.",
+    "trial_expired": (
+        "Tu prueba de 7 días de voz terminó. Adquiere un plan o recarga desde $10. "
+        "El chat de texto sigue disponible en plan Básico gratis."
+    ),
     "Sin suscripción activa": "No tienes suscripción activa. Elige un plan en Precios.",
     "Suscripción inactiva": "Tu suscripción no está activa. Renueva en Precios o contacta soporte.",
     "Cuenta pausada por administrador": "Tu cuenta está pausada. Contacta al administrador.",

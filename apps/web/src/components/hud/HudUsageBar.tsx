@@ -3,13 +3,18 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { useUsageBalance } from "@/hooks/useUsageBalance";
 import { RechargeModal } from "@/components/billing/RechargeModal";
+import {
+  VoiceLimitModal,
+  voiceLimitReasonFromBalance,
+} from "@/components/billing/VoiceLimitModal";
+import { useUsageBalance } from "@/hooks/useUsageBalance";
 import { openBillingPortal } from "@/lib/api/billing";
 
 export function HudUsageBar() {
   const { balance, loaded } = useUsageBalance();
   const [rechargeOpen, setRechargeOpen] = useState(false);
+  const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
   const pct = Math.min(
     100,
@@ -18,26 +23,31 @@ export function HudUsageBar() {
   const remaining = Math.max(0, balance.plan - balance.used);
   const warn = pct >= 80 && pct < 95;
   const criticalWarn = pct >= 95 && !balance.blocked;
-  const critical = balance.blocked || balance.accessDenied;
+  const voiceLimit = voiceLimitReasonFromBalance(balance);
+  const critical = Boolean(voiceLimit);
   const statusLabel = !loaded
     ? "Cargando…"
-    : balance.accessDenied
-      ? "Suscripción requerida"
-      : balance.blocked
-        ? "Límite alcanado"
-        : criticalWarn
-          ? "Casi sin cupo"
-          : warn
-            ? "Uso elevado"
-            : balance.plan > 0
-              ? "Plan activo"
-              : "Sin cupo voz";
+    : voiceLimit === "daily_limit"
+      ? "Límite alcanzado"
+      : voiceLimit === "trial_expired"
+        ? "Prueba de voz terminada"
+        : voiceLimit === "subscription"
+          ? "Suscripción requerida"
+          : voiceLimit === "no_voice"
+            ? "Voz no incluida"
+            : criticalWarn
+              ? "Casi sin cupo"
+              : warn
+                ? "Uso elevado"
+                : balance.plan > 0
+                  ? "Plan activo"
+                  : "Sin cupo voz";
 
   return (
     <div>
       <div className="ced-hud-text-primary flex flex-wrap items-center justify-between gap-2 font-medium">
         <span>
-          USO HOY:{" "}
+          USO VOZ HOY:{" "}
           {loaded
             ? `${balance.used.toFixed(1)} / ${balance.plan} min`
             : "— / — min"}
@@ -63,94 +73,102 @@ export function HudUsageBar() {
                 ? "bg-amber-400"
                 : "bg-[#00e5ff]"
           }`}
-          style={{ width: `${pct}%` }}
+          style={{ width: `${balance.plan > 0 ? pct : 0}%` }}
         />
       </div>
-      <p className="ced-hud-text-muted mt-2">
-        Uso diario de voz CED · {pct.toFixed(0)}% del cupo incluido
+      <p className="ced-hud-text-muted mt-2 text-xs">
+        Límite diario del asistente de voz · el chat de texto es independiente
       </p>
-      {(balance.accessDenied || balance.blocked || warn || criticalWarn) &&
-        loaded && (
+
+      {critical && loaded ? (
+        <div className="mt-3 rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-100">
+          <p className="font-semibold text-red-200">
+            {voiceLimit === "daily_limit"
+              ? "Has alcanzado tu límite diario de voz"
+              : voiceLimit === "trial_expired"
+                ? "Tu prueba de 7 días de voz terminó"
+                : "El asistente de voz requiere plan o recarga"}
+          </p>
+          <p className="mt-2 opacity-90">
+            Adquiere un paquete para seguir disfrutando del servicio de voz, o recarga
+            desde <strong className="text-white">$10</strong> para usar el asistente hoy.
+            El chat y otras funciones gratuitas siguen disponibles.
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <button
+              type="button"
+              onClick={() => setRechargeOpen(true)}
+              className="rounded border border-cyan-400 bg-cyan-400/10 px-3 py-2 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-200 hover:bg-cyan-400/20"
+            >
+              RECARGAR DESDE $10
+            </button>
+            <Link
+              href="/pricing"
+              className="rounded border border-purple-400/60 bg-purple-500/10 px-3 py-2 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-purple-200 hover:bg-purple-500/20"
+            >
+              ADQUIRIR UN PLAN
+            </Link>
+            <button
+              type="button"
+              onClick={() => setLimitModalOpen(true)}
+              className="text-[10px] text-cyan-400 underline hover:text-cyan-200"
+            >
+              Ver opciones
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {!critical && (warn || criticalWarn) && loaded ? (
         <div
           className={`mt-3 rounded border p-3 text-xs ${
-            balance.accessDenied || balance.blocked || criticalWarn
+            criticalWarn
               ? "border-red-500/40 bg-red-500/10 text-red-100"
               : "border-amber-500/40 bg-amber-500/10 text-amber-100"
           }`}
         >
-          {balance.accessDenied ? (
-            <>
-              <p className="font-semibold">Acceso suspendido</p>
-              <p className="mt-1 opacity-90">
-                {balance.accessMessage === "trial_expired"
-                  ? "Tu prueba terminó. Elige un plan para seguir con voz y chat."
-                  : "Renueva tu plan en Precios para reactivar voz y chat."}
-              </p>
-              <Link
-                href="/pricing"
-                className="mt-2 inline-block font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
-              >
-                VER PLANES →
-              </Link>
-            </>
-          ) : balance.blocked ? (
-            <>
-              <p className="font-semibold">Llegaste a tu cupo diario de voz</p>
-              <p className="mt-1 opacity-90">
-                Se renueva mañana a medianoche (UTC). Puedes recargar minutos extra
-                o subir de plan.
-              </p>
-            </>
-          ) : criticalWarn ? (
-            <>
-              <p className="font-semibold">
-                Te {remaining === 1 ? "queda" : "quedan"}{" "}
-                {remaining.toFixed(0)} min de voz hoy
-              </p>
-              <p className="mt-1 opacity-90">
-                Estás al {pct.toFixed(0)}% del cupo. Considera una recarga antes de
-                quedarte sin voz.
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="font-semibold">
-                Te {remaining === 1 ? "queda" : "quedan"}{" "}
-                {remaining.toFixed(0)} min de voz hoy
-              </p>
-              <p className="mt-1 opacity-90">
-                Has usado el {pct.toFixed(0)}% de tu cupo diario.
-              </p>
-            </>
-          )}
-          {(balance.blocked || criticalWarn) && (
-            <div className="mt-2 flex flex-wrap gap-3">
-              <button
-                type="button"
-                onClick={() => setRechargeOpen(true)}
-                className="font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
-              >
-                RECARGAR TIEMPO EXTRA →
-              </button>
-              <Link
-                href="/pricing"
-                className="font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
-              >
-                SUBIR DE PLAN →
-              </Link>
-            </div>
-          )}
+          <p className="font-semibold">
+            Te {remaining === 1 ? "queda" : "quedan"} {remaining.toFixed(0)} min de voz hoy
+          </p>
+          <p className="mt-1 opacity-90">
+            Has usado el {pct.toFixed(0)}% de tu cupo diario.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setRechargeOpen(true)}
+              className="font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
+            >
+              RECARGAR DESDE $10 →
+            </button>
+            <Link
+              href="/pricing"
+              className="font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
+            >
+              VER PLANES →
+            </Link>
+          </div>
         </div>
-      )}
-      {balance.plan === 0 && (
+      ) : null}
+
+      {balance.plan === 0 && !critical && loaded && (
         <p className="ced-hud-text-muted mt-2 text-xs">
-          Plan Básico Gratis ·{" "}
+          Sin minutos de voz en tu plan ·{" "}
           <Link href="/pricing" className="text-cyan-400 underline">
-            Mejora aquí
-          </Link>
+            Adquirir plan
+          </Link>{" "}
+          o{" "}
+          <button
+            type="button"
+            onClick={() => setRechargeOpen(true)}
+            className="text-cyan-400 underline"
+          >
+            recargar desde $10
+          </button>
         </p>
       )}
-      {balance.hasStripeCustomer && !balance.accessDenied && (
+
+      {balance.hasStripeCustomer && !critical && (
         <button
           type="button"
           disabled={portalBusy}
@@ -170,9 +188,16 @@ export function HudUsageBar() {
           {portalBusy ? "Abriendo portal…" : "Gestionar suscripción en Stripe"}
         </button>
       )}
+
       <RechargeModal
         open={rechargeOpen}
         onClose={() => setRechargeOpen(false)}
+        planMinutesDaily={balance.plan}
+      />
+      <VoiceLimitModal
+        open={limitModalOpen}
+        onClose={() => setLimitModalOpen(false)}
+        reason={voiceLimit ?? "daily_limit"}
         planMinutesDaily={balance.plan}
       />
     </div>

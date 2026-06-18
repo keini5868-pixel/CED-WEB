@@ -304,28 +304,19 @@ def chat_status(user_id: str) -> dict[str, Any]:
     from app.services.admin_users import get_user_access
 
     allowed, reason, _ = get_user_access(user_id)
-    if not allowed and reason == "trial_expired":
-        used = count_user_messages_today(user_id)
-        return {
-            "messages_used_today": used,
-            "messages_limit_daily": 0,
-            "unlimited": False,
-            "remaining_today": 0,
-            "blocked": True,
-            "trial_expired": True,
-        }
-
+    trial_expired = not allowed and reason == "trial_expired"
     limit = _message_limit_for_user(user_id)
     used = count_user_messages_today(user_id)
     unlimited = limit < 0
     remaining = -1 if unlimited else max(0, limit - used)
-    blocked = not unlimited and used >= limit
+    blocked = not unlimited and limit > 0 and used >= limit
     return {
         "messages_used_today": used,
         "messages_limit_daily": limit if limit >= 0 else None,
         "unlimited": unlimited,
         "remaining_today": remaining if remaining >= 0 else None,
         "blocked": blocked,
+        "trial_expired": trial_expired,
     }
 
 
@@ -850,10 +841,6 @@ def send_message(
         raise TextChatError("Mensaje demasiado largo.")
 
     status = chat_status(user_id)
-    if status.get("trial_expired"):
-        raise TextChatError(
-            "Tu prueba terminó. Elige un plan en Precios o continúa con el plan Básico gratis."
-        )
     if status["blocked"]:
         raise TextChatError(
             "Alcanzaste el límite de mensajes de hoy. Mejora tu plan o vuelve mañana.",

@@ -60,11 +60,11 @@ export function RechargeModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded border border-cyan-500/40 bg-[#0a0f14] p-6 shadow-xl">
         <h2 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wider text-cyan-300">
-          Se agotó tu tiempo de hoy
+          Recarga de voz desde $10
         </h2>
         <p className="mt-2 text-sm text-cyan-100/80">
           Ya usaste tus {planMinutesDaily} minutos diarios incluidos en {planLabel}.
-          ¿Quieres recargar tiempo extra?
+          Elige un monto para seguir con el asistente de voz hoy.
         </p>
 
         <div className="mt-5 grid grid-cols-2 gap-3">
@@ -196,7 +196,8 @@ export function TrialExpiredModal({ open, onClose }: TrialExpiredModalProps) {
           Tu prueba terminó
         </h2>
         <p className="mt-2 text-sm text-cyan-100/80">
-          Elige un plan de pago o continúa con el plan Básico gratis (solo chat de texto).
+          El asistente de voz requiere plan o recarga desde $10. El chat de texto sigue
+          disponible gratis en plan Básico.
         </p>
         <div className="mt-4 space-y-2">
           {PUBLIC_PLANS.map((p) => (

@@ -12,6 +12,10 @@ import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
 import { useUsageBalance } from "@/hooks/useUsageBalance";
+import {
+  VoiceLimitModal,
+  voiceLimitReasonFromBalance,
+} from "@/components/billing/VoiceLimitModal";
 import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
@@ -41,6 +45,7 @@ const JarvisOrbScene = dynamic(
 /** Centro del dashboard — orbe JARVIS + controles + Gemini Live. */
 export function CedVoiceHub() {
   const [chatOpen, setChatOpen] = useState(false);
+  const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
     url: string;
     prompt?: string;
@@ -88,12 +93,18 @@ export function CedVoiceHub() {
   });
   const { errorMessage, clearError } = voice;
 
+  const voiceLimit = loaded ? voiceLimitReasonFromBalance(balance) : null;
+
   useEffect(() => {
     if (!loaded || !errorMessage) return;
     const limitMsg = errorMessage.includes("límite diario");
     const subMsg =
       errorMessage.includes("suscripción") ||
-      errorMessage.includes("prueba");
+      errorMessage.includes("prueba") ||
+      errorMessage.includes("plan");
+    if (limitMsg || subMsg) {
+      setVoiceLimitOpen(true);
+    }
     if (limitMsg && !balance.blocked && !balance.accessDenied) {
       clearError();
     }
@@ -163,6 +174,10 @@ export function CedVoiceHub() {
         paused={voice.paused}
         onActivate={() => {
           unlockVoiceAudioOnGesture();
+          if (voiceLimit) {
+            setVoiceLimitOpen(true);
+            return;
+          }
           void voice.toggleMic();
         }}
       />
@@ -228,6 +243,13 @@ export function CedVoiceHub() {
         onClose={() => setChatOpen(false)}
         seedImage={chatSeedImage}
         onSeedConsumed={() => setChatSeedImage(null)}
+      />
+
+      <VoiceLimitModal
+        open={voiceLimitOpen}
+        onClose={() => setVoiceLimitOpen(false)}
+        reason={voiceLimit ?? "daily_limit"}
+        planMinutesDaily={balance.plan}
       />
 
       <CedVoiceDebugPanel />

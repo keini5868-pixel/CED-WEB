@@ -70,7 +70,7 @@ def chat_message_limit(user_id: str) -> int:
     supabase_db.expire_trial_if_needed(user_id)
     allowed, reason, _ = get_user_access(user_id)
     if not allowed and reason == "trial_expired":
-        return 0
+        return get_plan_limits(PlanId.FREE_BASIC.value).claude_messages_per_day
 
     if allowed and reason == "trial":
         return -1

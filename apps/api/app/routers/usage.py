@@ -52,7 +52,7 @@ def session_start(user_id: str = Depends(require_user_id)) -> dict:
         if balance.get("quota_exhausted"):
             raise HTTPException(
                 status_code=402,
-                detail="Has alcanzado tu límite diario de voz. Recarga saldo o continúa mañana.",
+                detail="Has alcanzado tu límite diario de voz. Recarga desde $10 o adquiere un plan. El chat sigue disponible.",
             )
         raise HTTPException(
             status_code=402,
