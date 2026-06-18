@@ -16,11 +16,6 @@ type RetellUpdateEvent = {
   turntaking?: string;
 };
 
-type RetellClientWithRoom = RetellWebClient & {
-  room?: { startAudio?: () => Promise<void> };
-  connected?: boolean;
-};
-
 function retellLog(message: string, detail?: unknown): void {
   if (detail !== undefined) {
     console.log(`[CED:RETELL] ${message}`, detail);
@@ -39,6 +34,7 @@ export class CedRetellClient {
   private lastPersistedAgentLine = "";
   private audioRetryTimer: number | null = null;
   private agentAudioReady = false;
+  private liveKitConnected = false;
 
   constructor() {
     this.client = new RetellWebClient();
@@ -47,11 +43,6 @@ export class CedRetellClient {
 
   setCallbacks(callbacks: CedRetellCallbacks): void {
     this.callbacks = callbacks;
-  }
-
-  private liveKitReady(): boolean {
-    const c = this.client as RetellClientWithRoom;
-    return Boolean(c.connected && c.room?.startAudio);
   }
 
   private stopAudioRetry(): void {
@@ -63,7 +54,7 @@ export class CedRetellClient {
 
   /** Solo tras call_started — room.startAudio no existe antes. */
   private ensureAudioPlayback(): void {
-    if (!this.liveKitReady()) return;
+    if (!this.liveKitConnected) return;
     void this.client.startAudioPlayback().catch((err) => {
       retellLog("startAudioPlayback falló", err);
     });
@@ -98,6 +89,7 @@ export class CedRetellClient {
 
   private setupListeners(): void {
     this.client.on("call_started", () => {
+      this.liveKitConnected = true;
       retellLog("call_started — LiveKit conectado");
       this.startAudioRetryLoop();
       this.callbacks.onCallStarted?.();
@@ -105,6 +97,7 @@ export class CedRetellClient {
 
     this.client.on("call_ended", () => {
       retellLog("call_ended");
+      this.liveKitConnected = false;
       this.agentAudioReady = false;
       this.stopAudioRetry();
       this.stopLevelLoop();
@@ -185,6 +178,7 @@ export class CedRetellClient {
     this.lastAgentLine = "";
     this.lastPersistedAgentLine = "";
     this.agentAudioReady = false;
+    this.liveKitConnected = false;
     retellLog("startCall", { callId: this.callId });
 
     await this.client.startCall({
@@ -209,6 +203,7 @@ export class CedRetellClient {
     this.client.stopCall();
     this.callId = null;
     this.agentAudioReady = false;
+    this.liveKitConnected = false;
   }
 
   setMuted(muted: boolean): void {
