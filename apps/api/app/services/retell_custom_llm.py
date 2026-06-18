@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from app.services.cognitive_intents import is_news_intent, is_weather_intent, is_web_research_intent
 from app.services.retell_llm_types import Utterance
 
 _ECHO_USER_LINES = frozenset(
@@ -83,15 +84,32 @@ def should_respond_to_transcript(
     return True
 
 
+def _is_task_or_info_query(text: str) -> bool:
+    """Preguntas reales (clima, noticias, tools) — no son small talk."""
+    if is_weather_intent(text) or is_news_intent(text) or is_web_research_intent(text):
+        return True
+    norm = _normalize(text)
+    return bool(
+        re.search(
+            r"\b(clima|tiempo|temperatura|weather|pronóstico|pronostico|lluvia|"
+            r"noticias?|publica|publicar|busca|buscar|recuerda|memoria|carolina)\b",
+            norm,
+        )
+    )
+
+
 def is_small_talk(text: str) -> bool:
+    if _is_task_or_info_query(text):
+        return False
     norm = _normalize(text)
     if norm in _SMALL_TALK:
         return True
-    if re.search(r"hola.*(como|cómo)\s+est", norm):
+    if re.search(r"hola.*(como|cómo)\s+estás?\b", norm):
         return True
-    if re.search(r"hola.*\bs[ií]\b", norm) and re.search(r"(como|cómo)\s+est", norm):
+    if re.search(r"hola.*\bs[ií]\b", norm) and re.search(r"(como|cómo)\s+estás?\b", norm):
         return True
-    if re.search(r"(como|cómo)\s+est", norm) and len(norm.split()) <= 10:
+    # Solo "¿cómo estás?" al agente — NO "¿cómo está el clima/tiempo?"
+    if re.search(r"(como|cómo)\s+estás?\s*$", norm) or re.search(r"(como|cómo)\s+estás?\?", norm):
         return True
     if norm.startswith("hola") and len(norm.split()) <= 6:
         return True
@@ -111,7 +129,7 @@ def is_generic_agent_line(text: str) -> bool:
 
 def concise_reply_for_small_talk(user_text: str) -> str:
     norm = _normalize(user_text)
-    if "cómo estás" in norm or "como estas" in norm or "qué tal" in norm or "que tal" in norm:
+    if re.search(r"(como|cómo)\s+estás?\b", norm) or "qué tal" in norm or "que tal" in norm:
         return "Muy bien, señor. ¿En qué puedo ayudarle?"
     if norm.startswith("hola") or norm in ("buenos días", "buenas tardes", "buenas noches"):
         return "Buenos días, señor. ¿En qué puedo ayudarle?"
