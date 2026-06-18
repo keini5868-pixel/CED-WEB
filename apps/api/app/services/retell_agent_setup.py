@@ -47,18 +47,42 @@ def _normalize_voice_id(raw: str) -> str:
 
 
 def search_jarvis_voices(client: Any, *, query: str = "") -> list[dict[str, str]]:
-    """Voces en Retell cuyo nombre o metadata coinciden con Jarvis/CED/query."""
+    """Voces en Retell llamadas Jarvis o ligadas al ID ElevenLabs del clon."""
     q = (query or JARVIS_CLONED_ELEVENLABS_ID).lower()
     matches: list[dict[str, str]] = []
     for voice in _list_retell_voices(client):
         vid = _voice_field(voice, "voice_id")
         if not vid:
             continue
-        name = _voice_field(voice, "voice_name")
+        name = _voice_field(voice, "voice_name").strip()
         raw = str(voice).lower()
-        if "jarvis" in name.lower() or "ced" in name.lower() or q in raw:
+        if "jarvis" in name.lower():
+            matches.append({"voice_id": vid, "voice_name": name})
+        elif q and q in raw:
             matches.append({"voice_id": vid, "voice_name": name})
     return matches
+
+
+def resolve_configured_retell_voice_id(client: Any, configured: str) -> str:
+    """RETELL_VOICE_ID → voice_id válido en Retell (mapea ElevenLabs o busca Jarvis)."""
+    cleaned = _normalize_voice_id(configured)
+    if not cleaned:
+        return resolve_retell_voice_id_from_api(client)
+
+    if cleaned.startswith(("custom_voice_", "11labs-", "openai-", "retell-", "cartesia-", "minimax-")):
+        return cleaned
+
+    mapped = find_retell_voice_by_elevenlabs_id(client, cleaned)
+    if mapped:
+        logger.info("[RETELL] ElevenLabs %s → Retell %s", cleaned, mapped)
+        return mapped
+
+    for entry in search_jarvis_voices(client, query=cleaned):
+        if "jarvis" in entry["voice_name"].lower():
+            logger.info("[RETELL] voz Jarvis en biblioteca: %s", entry["voice_id"])
+            return entry["voice_id"]
+
+    return cleaned
 
 
 def find_retell_voice_by_elevenlabs_id(client: Any, elevenlabs_id: str) -> str | None:
@@ -296,14 +320,7 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     jarvis_error: str | None = None
 
     if configured:
-        mapped = find_retell_voice_by_elevenlabs_id(client, configured)
-        voice_id = mapped or configured
-        if mapped and mapped != configured:
-            logger.info(
-                "[RETELL] RETELL_VOICE_ID ElevenLabs %s → Retell %s",
-                configured,
-                mapped,
-            )
+        voice_id = resolve_configured_retell_voice_id(client, configured)
     else:
         jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
         if jarvis:
