@@ -62,10 +62,8 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
       if (open) {
         const msgs = await fetchSupportMessages(open.id);
         setMessages(msgs);
-        if (open.unread_by_user) {
-          await markSupportConversationRead(open.id);
-          onMessageRead();
-        }
+        await markSupportConversationRead(open.id);
+        onMessageRead();
       } else {
         setMessages([]);
       }
@@ -156,18 +154,28 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
   if (!mounted) return null;
 
   return createPortal(
-    <div className="fixed bottom-24 right-4 z-[130] flex h-[min(560px,calc(100vh-7rem))] w-[min(380px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-cyan-500/30 bg-[#0a0f18] shadow-2xl sm:right-6">
-      <header className="flex items-center justify-between border-b border-cyan-500/20 bg-gradient-to-r from-purple-900/40 to-blue-900/40 px-4 py-3">
-        <div>
-          <p className="font-[family-name:var(--font-orbitron)] text-sm font-bold text-cyan-200">
-            Soporte CED
-          </p>
-          <p className="text-[11px] text-cyan-500/80">Escríbenos directamente</p>
+    <div className="fixed inset-0 z-[130] flex flex-col overflow-hidden border-cyan-500/30 bg-[#0a0f18] shadow-2xl sm:inset-auto sm:bottom-24 sm:right-6 sm:h-[min(560px,calc(100vh-7rem))] sm:w-[min(380px,calc(100vw-1.5rem))] sm:rounded-2xl sm:border">
+      <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/20 bg-gradient-to-r from-purple-900/40 to-blue-900/40 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 rounded px-1 py-1 font-[family-name:var(--font-orbitron)] text-[10px] font-semibold tracking-wide text-cyan-400 hover:bg-cyan-500/10 sm:hidden"
+            aria-label="Volver"
+          >
+            ← VOLVER
+          </button>
+          <div className="min-w-0">
+            <p className="font-[family-name:var(--font-orbitron)] text-sm font-bold text-cyan-200">
+              Soporte CED
+            </p>
+            <p className="text-[11px] text-cyan-500/80">Escríbenos directamente</p>
+          </div>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="rounded p-1 text-cyan-400 hover:bg-cyan-500/10"
+          className="shrink-0 rounded p-1 text-cyan-400 hover:bg-cyan-500/10"
           aria-label="Cerrar"
         >
           <X size={18} />
@@ -261,7 +269,7 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
       </div>
 
       {conversation ? (
-        <footer className="border-t border-cyan-500/20 p-3">
+        <footer className="shrink-0 border-t border-cyan-500/20 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {pendingFiles.length > 0 ? (
             <div className="mb-2 flex flex-wrap gap-2">
               {pendingFiles.map((f) => (
@@ -315,7 +323,7 @@ export default function SupportChatPanel({ onClose, onMessageRead }: Props) {
           </div>
         </footer>
       ) : (
-        <footer className="border-t border-cyan-500/20 px-4 py-3 text-center text-[11px] text-cyan-500/70">
+        <footer className="shrink-0 border-t border-cyan-500/20 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] text-center text-[11px] text-cyan-500/70">
           Elige una categoría arriba para abrir el chat.
         </footer>
       )}

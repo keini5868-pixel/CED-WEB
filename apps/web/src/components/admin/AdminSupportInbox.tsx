@@ -8,6 +8,7 @@ import {
   adminSendSupportMessage,
   adminUpdateSupportStatus,
   fetchAdminSupportConversations,
+  fetchAdminSupportUnreadCount,
   fetchSupportMessages,
   markSupportConversationRead,
   type SupportCategory,
@@ -59,6 +60,16 @@ export function AdminSupportInbox({
 
   const selected = conversations.find((c) => c.id === selectedId) ?? null;
 
+  const syncUnreadBadge = useCallback(async () => {
+    if (!onUnreadCountChange) return;
+    try {
+      const count = await fetchAdminSupportUnreadCount();
+      onUnreadCountChange(count);
+    } catch {
+      /* ignore */
+    }
+  }, [onUnreadCountChange]);
+
   const loadList = useCallback(async () => {
     setLoading(true);
     try {
@@ -67,7 +78,7 @@ export function AdminSupportInbox({
         category: filter !== "all" && filter !== "unread" ? filter : undefined,
       });
       setConversations(items);
-      onUnreadCountChange?.(items.filter((c) => c.unread_by_admin).length);
+      void syncUnreadBadge();
       if (selectedId && !items.some((c) => c.id === selectedId)) {
         setSelectedId(null);
         setMessages([]);
@@ -77,7 +88,7 @@ export function AdminSupportInbox({
     } finally {
       setLoading(false);
     }
-  }, [filter, selectedId, onUnreadCountChange]);
+  }, [filter, selectedId, syncUnreadBadge]);
 
   useEffect(() => {
     void loadList();
@@ -92,13 +103,10 @@ export function AdminSupportInbox({
       const msgs = await fetchSupportMessages(id);
       setMessages(msgs);
       await markSupportConversationRead(id);
-      setConversations((prev) => {
-        const next = prev.map((c) =>
-          c.id === id ? { ...c, unread_by_admin: false } : c,
-        );
-        onUnreadCountChange?.(next.filter((c) => c.unread_by_admin).length);
-        return next;
-      });
+      setConversations((prev) =>
+        prev.map((c) => (c.id === id ? { ...c, unread_by_admin: false } : c)),
+      );
+      await syncUnreadBadge();
     } catch {
       setError("No se pudieron cargar los mensajes");
     }

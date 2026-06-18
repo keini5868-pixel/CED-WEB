@@ -810,6 +810,26 @@ def list_pdf_artifacts(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]
         return []
 
 
+def count_generated_images_today(user_id: str) -> tuple[int, int]:
+    """Cuenta imágenes standard y HD del día actual (UTC)."""
+    try:
+        client = _client()
+        start = today_utc().isoformat()
+        result = (
+            client.table("generated_images")
+            .select("quality")
+            .eq("user_id", user_id)
+            .gte("created_at", start)
+            .execute()
+        )
+        rows = result.data or []
+        std = sum(1 for r in rows if (r.get("quality") or "standard") != "hd")
+        hd = sum(1 for r in rows if (r.get("quality") or "") == "hd")
+        return std, hd
+    except Exception:  # noqa: BLE001
+        return 0, 0
+
+
 def count_generated_images_this_month(user_id: str) -> tuple[int, int]:
     """Cuenta imágenes standard y HD del mes actual."""
     try:

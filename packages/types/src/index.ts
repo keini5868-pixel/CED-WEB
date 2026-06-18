@@ -13,7 +13,7 @@ export type UserRole = "client" | "super_admin";
 export interface PlanFeatures {
   geminiMinutesPerDay: number;
   webSearchesPerDay: number;
-  aiImagesPerMonth: number;
+  aiImagesPerDay: number;
   voiceEnabled: boolean;
   cameraEnabled: boolean;
   metaSocialEnabled: boolean;
@@ -75,7 +75,7 @@ export const PUBLIC_PLANS = [
       "Chat texto ilimitado",
       "15 min/día voz CED",
       "30 búsquedas web/día",
-      "3 imágenes IA/mes",
+      "25 imágenes IA/día",
     ],
   },
   {
@@ -88,7 +88,7 @@ export const PUBLIC_PLANS = [
       "30 min/día voz",
       "Cámara por voz",
       "Búsquedas ilimitadas",
-      "10 std + 3 HD imágenes/mes",
+      "50 std + 10 HD imágenes/día",
     ],
   },
   {
@@ -101,7 +101,7 @@ export const PUBLIC_PLANS = [
       "60 min/día voz",
       "Instagram/Facebook",
       "Modo prospección",
-      "20 std + 8 HD imágenes/mes",
+      "100 std + 20 HD imágenes/día",
     ],
   },
   {
@@ -113,7 +113,7 @@ export const PUBLIC_PLANS = [
       "Todo Élite +",
       "90 min/día voz",
       "Precio bloqueado de por vida",
-      "40 std + 15 HD imágenes/mes",
+      "150 std + 30 HD imágenes/día",
       "Cupos limitados (50)",
     ],
   },

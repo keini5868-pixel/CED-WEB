@@ -59,8 +59,8 @@ STRIPE_CHECKOUT_PLANS = frozenset(
 class PlanLimits:
     voice_minutes_per_day: int
     web_searches_per_day: int  # -1 = ilimitado
-    ai_images_standard_per_month: int
-    ai_images_hd_per_month: int
+    ai_images_standard_per_day: int
+    ai_images_hd_per_day: int
     voice_enabled: bool
     camera_enabled: bool
     meta_social_enabled: bool
@@ -74,19 +74,28 @@ class PlanLimits:
 
     @property
     def ai_images_per_month(self) -> int:
-        std = self.ai_images_standard_per_month
-        hd = self.ai_images_hd_per_month
+        std = self.ai_images_standard_per_day
+        hd = self.ai_images_hd_per_day
         if std < 0 or hd < 0:
             return -1
         return std + hd
+
+    # Alias legacy (antes era mensual; ahora la cuota real es diaria)
+    @property
+    def ai_images_standard_per_month(self) -> int:
+        return self.ai_images_standard_per_day
+
+    @property
+    def ai_images_hd_per_month(self) -> int:
+        return self.ai_images_hd_per_day
 
 
 PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.STARTER.value: PlanLimits(
         voice_minutes_per_day=15,
         web_searches_per_day=30,
-        ai_images_standard_per_month=3,
-        ai_images_hd_per_month=0,
+        ai_images_standard_per_day=25,
+        ai_images_hd_per_day=0,
         voice_enabled=True,
         camera_enabled=False,
         meta_social_enabled=False,
@@ -97,8 +106,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.PRO.value: PlanLimits(
         voice_minutes_per_day=30,
         web_searches_per_day=-1,
-        ai_images_standard_per_month=10,
-        ai_images_hd_per_month=3,
+        ai_images_standard_per_day=50,
+        ai_images_hd_per_day=10,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=False,
@@ -109,8 +118,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.ELITE.value: PlanLimits(
         voice_minutes_per_day=60,
         web_searches_per_day=-1,
-        ai_images_standard_per_month=20,
-        ai_images_hd_per_month=8,
+        ai_images_standard_per_day=100,
+        ai_images_hd_per_day=20,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
@@ -121,8 +130,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.FOUNDING.value: PlanLimits(
         voice_minutes_per_day=FOUNDING_VOICE_CAP_MINUTES,
         web_searches_per_day=-1,
-        ai_images_standard_per_month=40,
-        ai_images_hd_per_month=15,
+        ai_images_standard_per_day=150,
+        ai_images_hd_per_day=30,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
@@ -133,8 +142,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.FREE_BASIC.value: PlanLimits(
         voice_minutes_per_day=0,
         web_searches_per_day=0,
-        ai_images_standard_per_month=0,
-        ai_images_hd_per_month=0,
+        ai_images_standard_per_day=0,
+        ai_images_hd_per_day=0,
         voice_enabled=False,
         camera_enabled=False,
         meta_social_enabled=False,
@@ -216,8 +225,8 @@ def public_plans_catalog() -> list[dict]:
                 "price_usd": PLAN_PRICES_USD[pid.value],
                 "minutes_per_day": limits.voice_minutes_per_day,
                 "web_searches_per_day": limits.web_searches_per_day,
-                "ai_images_standard_per_month": limits.ai_images_standard_per_month,
-                "ai_images_hd_per_month": limits.ai_images_hd_per_month,
+                "ai_images_standard_per_day": limits.ai_images_standard_per_day,
+                "ai_images_hd_per_day": limits.ai_images_hd_per_day,
                 "voice_enabled": limits.voice_enabled,
                 "camera_enabled": limits.camera_enabled,
                 "meta_social_enabled": limits.meta_social_enabled,

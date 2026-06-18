@@ -21,8 +21,8 @@ export function AdminSupportFloatingPanel({ onClose, onUnreadChange }: Props) {
   if (!mounted) return null;
 
   return createPortal(
-    <div className="fixed bottom-24 left-4 z-[130] flex h-[min(640px,calc(100vh-6rem))] w-[min(720px,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border border-amber-500/40 bg-[#0a0f18] shadow-2xl sm:left-6">
-      <header className="flex items-center justify-between border-b border-amber-500/25 bg-gradient-to-r from-amber-900/30 to-purple-900/30 px-4 py-3">
+    <div className="fixed inset-0 z-[130] flex flex-col overflow-hidden border-amber-500/40 bg-[#0a0f18] shadow-2xl sm:inset-auto sm:bottom-24 sm:left-6 sm:h-[min(640px,calc(100vh-6rem))] sm:w-[min(720px,calc(100vw-1.5rem))] sm:rounded-2xl sm:border">
+      <header className="flex shrink-0 items-center justify-between border-b border-amber-500/25 bg-gradient-to-r from-amber-900/30 to-purple-900/30 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
         <div className="flex items-center gap-2">
           <Headphones className="h-4 w-4 text-amber-300" />
           <div>

@@ -14,7 +14,7 @@ from app.deps.auth import is_super_admin
 from app.deps.plan_access import effective_plan_limits
 from app.domain.plans import PlanId, get_plan_limits
 from app.services import supabase_db
-from app.services.openai_images import HD_COST_USD, STD_COST_USD, _month_image_counts, _parse_openai_error
+from app.services.openai_images import HD_COST_USD, STD_COST_USD, _day_image_counts, _parse_openai_error
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +88,12 @@ def _check_image_quota(user_id: str, quality: str) -> dict[str, Any] | None:
         if reason == "trial_expired":
             limits = get_plan_limits(PlanId.FREE_BASIC.value)
 
-    std_used, hd_used = _month_image_counts(user_id)
+    std_used, hd_used = _day_image_counts(user_id)
     if quality == "hd":
-        cap = limits.ai_images_hd_per_month
+        cap = limits.ai_images_hd_per_day
         used = hd_used
     else:
-        cap = limits.ai_images_standard_per_month
+        cap = limits.ai_images_standard_per_day
         used = std_used
 
     if cap <= 0:
@@ -105,7 +105,7 @@ def _check_image_quota(user_id: str, quality: str) -> dict[str, Any] | None:
     if used >= cap:
         return {
             "ok": False,
-            "error": f"Límite mensual de imágenes {quality} alcanzado.",
+            "error": f"Límite diario de imágenes {quality} alcanzado ({cap}/día).",
             "code": "quota_exhausted",
         }
     return None
@@ -360,7 +360,7 @@ def generate_image_with_reference(
         plan_allows_hd = True
     else:
         limits, _reason, _trial = effective_plan_limits(user_id)
-        plan_allows_hd = limits.ai_images_hd_per_month > 0
+        plan_allows_hd = limits.ai_images_hd_per_day > 0
 
     picked = _pick_quality(quality, plan_allows_hd=plan_allows_hd)
     if quality == "hd" and not plan_allows_hd:

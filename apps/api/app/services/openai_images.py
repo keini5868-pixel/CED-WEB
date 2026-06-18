@@ -89,9 +89,9 @@ def _request_openai_image(
         return res.json(), None
 
 
-def _month_image_counts(user_id: str) -> tuple[int, int]:
+def _day_image_counts(user_id: str) -> tuple[int, int]:
     try:
-        return supabase_db.count_generated_images_this_month(user_id)
+        return supabase_db.count_generated_images_today(user_id)
     except Exception:  # noqa: BLE001
         return 0, 0
 
@@ -117,14 +117,14 @@ def generate_image(
     else:
         limits, _reason, _trial = effective_plan_limits(user_id)
 
-    std_used, hd_used = _month_image_counts(user_id)
+    std_used, hd_used = _day_image_counts(user_id)
     picked = _pick_quality(topic, None if quality == "auto" else quality)
 
     if picked == "hd":
-        cap = limits.ai_images_hd_per_month
+        cap = limits.ai_images_hd_per_day
         used = hd_used
     else:
-        cap = limits.ai_images_standard_per_month
+        cap = limits.ai_images_standard_per_day
         used = std_used
 
     if cap <= 0:
@@ -136,7 +136,7 @@ def generate_image(
     if used >= cap:
         return {
             "ok": False,
-            "error": f"Límite mensual de imágenes {picked} alcanzado.",
+            "error": f"Límite diario de imágenes {picked} alcanzado ({cap}/día). Mañana se reinicia tu cupo.",
             "code": "quota_exhausted",
         }
 

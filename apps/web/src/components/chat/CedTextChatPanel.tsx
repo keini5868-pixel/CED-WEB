@@ -23,6 +23,7 @@ import {
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
+import { useCedOverlay } from "@/contexts/CedOverlayContext";
 
 type CedTextChatPanelProps = {
   open: boolean;
@@ -155,6 +156,12 @@ export function CedTextChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
+  const { setTextChatOpen } = useCedOverlay();
+
+  useEffect(() => {
+    setTextChatOpen(open);
+    return () => setTextChatOpen(false);
+  }, [open, setTextChatOpen]);
 
   useEffect(() => {
     if (!open) return;
@@ -341,7 +348,7 @@ export function CedTextChatPanel({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[90] flex items-end justify-center overflow-x-hidden bg-black/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+    <div className="fixed inset-0 z-[150] flex items-end justify-center overflow-x-hidden bg-black/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
       <div
         className="box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-md sm:rounded-2xl sm:border"
         style={
@@ -350,10 +357,18 @@ export function CedTextChatPanel({
             : undefined
         }
       >
-        <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/20 px-4 py-3">
-          <div className="flex items-center gap-2">
-            <MessageCircle className="h-4 w-4 text-cyan-400" />
-            <span className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-300">
+        <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/20 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 rounded px-1 py-1.5 font-[family-name:var(--font-orbitron)] text-[10px] font-semibold tracking-wide text-cyan-400 hover:bg-cyan-500/10 sm:hidden"
+              aria-label="Volver"
+            >
+              ← VOLVER
+            </button>
+            <MessageCircle className="h-4 w-4 shrink-0 text-cyan-400" />
+            <span className="truncate font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-300">
               CHAT con CED
             </span>
           </div>
