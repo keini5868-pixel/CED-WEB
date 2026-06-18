@@ -12,9 +12,9 @@ from app.services.retell_client import get_retell_client
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VOICE_ID = "11labs-George"
+DEFAULT_VOICE_ID = "11labs-Adrian"
 
-JARVIS_VOICE_HINTS = ("british", "butler", "george", "brian", "daniel", "jarvis", "formal", "deep")
+JARVIS_VOICE_HINTS = ("british", "butler", "george", "brian", "daniel", "jarvis", "formal", "deep", "adrian", "callum")
 
 # Voces ElevenLabs integradas en Retell (prefijo 11labs-)
 RETELL_ELEVENLABS_NAME_MAP = {
@@ -26,18 +26,56 @@ RETELL_ELEVENLABS_NAME_MAP = {
 }
 
 
-def resolve_retell_voice_id() -> str:
+def resolve_retell_voice_id_from_api(client: Any) -> str:
+    """Lista voces Retell y elige la mejor Jarvis disponible."""
     settings = get_settings()
     configured = settings.retell_voice_id.strip()
     if configured:
         return configured
 
-    eleven_key = settings.elevenlabs_api_key.strip()
-    if eleven_key:
-        picked = _pick_elevenlabs_voice_for_retell(eleven_key)
-        if picked:
-            return picked
+    try:
+        listed = client.voice.list()
+        voices = getattr(listed, "voices", None) or listed
+        if not isinstance(voices, list):
+            voices = list(voices) if voices else []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[RETELL] voice.list failed: %s", exc)
+        return DEFAULT_VOICE_ID
 
+    best_id = DEFAULT_VOICE_ID
+    best_score = -1
+    for voice in voices:
+        if isinstance(voice, dict):
+            vid = str(voice.get("voice_id") or voice.get("id") or "")
+            name = str(voice.get("voice_name") or voice.get("name") or "").lower()
+            provider = str(voice.get("provider") or "").lower()
+        else:
+            vid = str(getattr(voice, "voice_id", None) or getattr(voice, "id", "") or "")
+            name = str(getattr(voice, "voice_name", None) or getattr(voice, "name", "") or "").lower()
+            provider = str(getattr(voice, "provider", None) or "").lower()
+        if not vid:
+            continue
+        haystack = f"{name} {vid.lower()} {provider}"
+        score = sum(1 for hint in JARVIS_VOICE_HINTS if hint in haystack)
+        if "11labs" in haystack or "eleven" in provider:
+            score += 2
+        if "male" in haystack or "man" in haystack:
+            score += 1
+        if score > best_score:
+            best_score = score
+            best_id = vid
+
+    logger.info("[RETELL] voice seleccionada: %s (score=%s)", best_id, best_score)
+    return best_id
+
+
+def resolve_retell_voice_id(client: Any | None = None) -> str:
+    settings = get_settings()
+    configured = settings.retell_voice_id.strip()
+    if configured:
+        return configured
+    if client is not None:
+        return resolve_retell_voice_id_from_api(client)
     return DEFAULT_VOICE_ID
 
 
@@ -105,7 +143,7 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     if not settings.google_api_key.strip():
         raise RuntimeError("GOOGLE_API_KEY no configurada — requerida para Gemini voz")
 
-    voice_id = settings.retell_voice_id.strip() or DEFAULT_VOICE_ID
+    voice_id = resolve_retell_voice_id(client)
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
 
@@ -125,7 +163,15 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
     }
 
     if agent_id:
-        client.agent.update(agent_id=agent_id, **agent_payload)
+        try:
+            client.agent.update(agent_id=agent_id, **agent_payload)
+        except Exception as exc:
+            if "not found from voice" in str(exc).lower():
+                voice_id = resolve_retell_voice_id_from_api(client)
+                agent_payload["voice_id"] = voice_id
+                client.agent.update(agent_id=agent_id, **agent_payload)
+            else:
+                raise
         logger.info("[RETELL] Agente actualizado: %s voice=%s ws=%s", agent_id, voice_id, llm_ws)
         return {
             "agent_id": agent_id,
@@ -134,7 +180,15 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
             "brain": settings.gemini_voice_model,
         }
 
-    created = client.agent.create(**agent_payload)
+    try:
+        created = client.agent.create(**agent_payload)
+    except Exception as exc:
+        if "not found from voice" in str(exc).lower():
+            voice_id = resolve_retell_voice_id_from_api(client)
+            agent_payload["voice_id"] = voice_id
+            created = client.agent.create(**agent_payload)
+        else:
+            raise
     new_agent = str(created.agent_id)
     logger.info("[RETELL] Agente creado: %s voice=%s ws=%s", new_agent, voice_id, llm_ws)
     return {
