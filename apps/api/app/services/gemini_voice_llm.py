@@ -13,6 +13,11 @@ from google.genai import types
 from app.config import get_settings
 from app.domain.openai_voice_prompt import CED_MINIMAL_REALTIME_PROMPT
 from app.services.gemini_voice_tools import build_gemini_voice_tools
+from app.services.retell_custom_llm import (
+    concise_reply_for_small_talk,
+    is_generic_agent_line,
+    is_small_talk,
+)
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_tool_executor import execute_voice_tool
 
@@ -131,8 +136,8 @@ class GeminiVoiceLlm:
         config = types.GenerateContentConfig(
             system_instruction=CED_MINIMAL_REALTIME_PROMPT,
             tools=[self.tools],
-            temperature=0.7,
-            max_output_tokens=1024,
+            temperature=0.4,
+            max_output_tokens=320,
         )
 
         try:
@@ -183,22 +188,12 @@ class GeminiVoiceLlm:
                 types.Content(role="user", parts=function_response_parts),
             ]
 
-            final_text = ""
-            try:
-                final = await self.client.aio.models.generate_content(
-                    model=self.model,
-                    contents=follow_up_contents,
-                    config=config,
-                )
-                final_text = _extract_text(final)
-            except Exception:  # noqa: BLE001
-                logger.exception("[RETELL-GEMINI] follow-up failed")
-
-            if not final_text:
-                final_text = tool_spoken_parts[0] if len(tool_spoken_parts) == 1 else "Completado, señor."
+            final_text = tool_spoken_parts[-1] if tool_spoken_parts else "Completado, señor."
+            if len(tool_spoken_parts) > 1:
+                final_text = tool_spoken_parts[-1]
 
             self._history = follow_up_contents
-            logger.info("[RETELL-GEMINI] agent=%s", final_text[:160])
+            logger.info("[RETELL-GEMINI] tool agent=%s", final_text[:160])
             yield ResponseResponse(
                 response_id=request.response_id,
                 content=final_text[:480],
@@ -208,8 +203,11 @@ class GeminiVoiceLlm:
             return
 
         text_response = _extract_text(response)
-        if not text_response:
-            text_response = "Operativo y a su servicio, señor."
+        if not text_response or is_generic_agent_line(text_response):
+            if is_small_talk(user_text):
+                text_response = concise_reply_for_small_talk(user_text)
+            elif not text_response:
+                text_response = "¿En qué puedo ayudarle, señor?"
 
         self._history = [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])]
         logger.info("[RETELL-GEMINI] agent=%s", text_response[:160])

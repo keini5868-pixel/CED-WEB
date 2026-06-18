@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.services.retell_llm_types import Utterance
 
 _ECHO_USER_LINES = frozenset(
@@ -13,13 +15,51 @@ _ECHO_USER_LINES = frozenset(
     }
 )
 
+_SMALL_TALK = frozenset(
+    {
+        "hola",
+        "hola cómo estás",
+        "hola como estas",
+        "hola, ¿cómo estás?",
+        "hola, como estas?",
+        "buenos días",
+        "buenas tardes",
+        "buenas noches",
+        "cómo estás",
+        "como estas",
+        "qué tal",
+        "que tal",
+    }
+)
+
+_GENERIC_AGENT_LINES = frozenset(
+    {
+        "operativo y a su servicio, señor.",
+        "operativo y a su servicio señor.",
+        "a su servicio, señor.",
+    }
+)
+
+
+def _normalize(text: str) -> str:
+    cleaned = (text or "").strip().lower()
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.rstrip(".,!?¿¡")
+
+
+def last_user_text(transcript: list[Utterance]) -> str:
+    for utterance in reversed(transcript):
+        if utterance.role == "user" and (utterance.content or "").strip():
+            return utterance.content.strip()
+    return ""
+
 
 def should_respond_to_transcript(
     transcript: list[Utterance],
     *,
     interaction_type: str,
 ) -> bool:
-    """Evita autorespuestas tras el saludo o en recordatorios vacíos."""
+    """Evita autorespuestas, recordatorios vacíos y turnos parciales muy cortos."""
     if interaction_type == "reminder_required":
         return False
 
@@ -31,15 +71,30 @@ def should_respond_to_transcript(
     if not user_lines:
         return False
 
-    last = user_lines[-1].strip().lower()
-    if last in _ECHO_USER_LINES:
+    last = user_lines[-1].strip()
+    normalized = _normalize(last)
+    if normalized in _ECHO_USER_LINES:
         return False
 
-    # Solo saludo del agente en transcript → esperar voz real del usuario
-    agent_lines = [u for u in transcript if u.role == "agent" and (u.content or "").strip()]
-    if len(user_lines) == 1 and len(agent_lines) >= 1:
-        normalized = last.rstrip(".")
-        if normalized in ("hola", "buenos días", "buenas tardes", "buenas noches"):
-            return True
+    words = last.split()
+    if len(words) < 2 and len(last) < 12 and not last.rstrip().endswith(("?", ".", "!")):
+        return False
 
     return True
+
+
+def is_small_talk(text: str) -> bool:
+    return _normalize(text) in _SMALL_TALK
+
+
+def is_generic_agent_line(text: str) -> bool:
+    return _normalize(text) in {_normalize(line) for line in _GENERIC_AGENT_LINES}
+
+
+def concise_reply_for_small_talk(user_text: str) -> str:
+    norm = _normalize(user_text)
+    if "cómo estás" in norm or "como estas" in norm or "qué tal" in norm or "que tal" in norm:
+        return "Muy bien, señor. ¿En qué puedo ayudarle?"
+    if norm.startswith("hola") or norm in ("buenos días", "buenas tardes", "buenas noches"):
+        return "Buenos días, señor. ¿En qué puedo ayudarle?"
+    return "¿En qué puedo ayudarle, señor?"

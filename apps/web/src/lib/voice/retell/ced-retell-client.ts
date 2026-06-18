@@ -32,6 +32,9 @@ export class CedRetellClient {
   private lastUserLine = "";
   private lastAgentLine = "";
   private lastPersistedAgentLine = "";
+  private lastPersistedUserLine = "";
+  private pendingUserText = "";
+  private userDebounceTimer: number | null = null;
   private audioRetryTimer: number | null = null;
   private agentAudioReady = false;
   private liveKitConnected = false;
@@ -50,6 +53,30 @@ export class CedRetellClient {
       window.clearInterval(this.audioRetryTimer);
       this.audioRetryTimer = null;
     }
+  }
+
+  private clearUserDebounce(): void {
+    if (this.userDebounceTimer != null) {
+      window.clearTimeout(this.userDebounceTimer);
+      this.userDebounceTimer = null;
+    }
+  }
+
+  private flushUserTranscript(force = false): void {
+    const text = this.pendingUserText.trim();
+    if (!text) return;
+    if (!force && text === this.lastPersistedUserLine) return;
+    this.lastPersistedUserLine = text;
+    this.lastUserLine = text;
+    this.callbacks.onTranscript?.(text, "user");
+  }
+
+  private scheduleUserTranscript(text: string): void {
+    this.pendingUserText = text;
+    this.clearUserDebounce();
+    this.userDebounceTimer = window.setTimeout(() => {
+      this.flushUserTranscript(false);
+    }, 900);
   }
 
   /** Solo tras call_started — room.startAudio no existe antes. */
@@ -100,6 +127,7 @@ export class CedRetellClient {
       this.liveKitConnected = false;
       this.agentAudioReady = false;
       this.stopAudioRetry();
+      this.clearUserDebounce();
       this.stopLevelLoop();
       this.callbacks.onCallEnded?.();
     });
@@ -111,6 +139,7 @@ export class CedRetellClient {
     });
 
     this.client.on("agent_start_talking", () => {
+      this.flushUserTranscript(true);
       this.ensureAudioPlayback();
       this.callbacks.onAgentTalking?.(true);
     });
@@ -119,7 +148,6 @@ export class CedRetellClient {
       this.callbacks.onAgentTalking?.(false);
       if (this.lastAgentLine && this.lastAgentLine !== this.lastPersistedAgentLine) {
         this.lastPersistedAgentLine = this.lastAgentLine;
-        retellLog("transcript agente (final)", this.lastAgentLine);
         this.callbacks.onTranscript?.(this.lastAgentLine, "agent");
       }
     });
@@ -128,10 +156,13 @@ export class CedRetellClient {
       const lines = update.transcript;
       if (!Array.isArray(lines) || lines.length === 0) return;
 
+      if (update.turntaking === "agent_turn") {
+        this.flushUserTranscript(true);
+      }
+
       const userText = this.latestLine(lines, "user");
-      if (userText && userText !== this.lastUserLine) {
-        this.lastUserLine = userText;
-        this.callbacks.onTranscript?.(userText, "user");
+      if (userText && userText !== this.pendingUserText) {
+        this.scheduleUserTranscript(userText);
       }
 
       const agentText = this.latestLine(lines, "agent");
@@ -177,6 +208,9 @@ export class CedRetellClient {
     this.lastUserLine = "";
     this.lastAgentLine = "";
     this.lastPersistedAgentLine = "";
+    this.lastPersistedUserLine = "";
+    this.pendingUserText = "";
+    this.clearUserDebounce();
     this.agentAudioReady = false;
     this.liveKitConnected = false;
     retellLog("startCall", { callId: this.callId });
@@ -199,6 +233,7 @@ export class CedRetellClient {
 
   async stopCall(): Promise<void> {
     this.stopAudioRetry();
+    this.clearUserDebounce();
     this.stopLevelLoop();
     this.client.stopCall();
     this.callId = null;

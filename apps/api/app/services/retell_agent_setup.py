@@ -12,21 +12,21 @@ from app.services.retell_client import get_retell_client
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_VOICE_ID = "openai-Onyx"
+DEFAULT_VOICE_ID = "11labs-Brian"
 
 JARVIS_VOICE_HINTS = (
     "british", "butler", "george", "brian", "daniel", "jarvis", "formal", "deep",
-    "adrian", "callum", "onyx", "echo", "ash",
+    "adrian", "callum",
 )
 
-# Preferir voces OpenAI vía Retell (más fiables sin créditos ElevenLabs propios)
+# Jarvis: voces masculinas británicas ElevenLabs vía Retell (11labs-*)
 PREFERRED_RETELL_VOICES = (
+    "11labs-Brian",
+    "11labs-Callum",
+    "11labs-Daniel",
+    "11labs-Adrian",
     "openai-Onyx",
     "openai-Echo",
-    "openai-Ash",
-    "11labs-Brian",
-    "11labs-Adrian",
-    "11labs-Callum",
 )
 
 # Voces ElevenLabs integradas en Retell (prefijo 11labs-)
@@ -184,7 +184,7 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
 
     voice_id = resolve_retell_voice_id_from_api(client)
     configured = settings.retell_voice_id.strip()
-    if configured.startswith("openai-"):
+    if configured:
         voice_id = configured
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
@@ -196,10 +196,11 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
         },
         "voice_id": voice_id,
         "voice_model": _voice_model_for(voice_id),
-        "voice_speed": 1.0,
+        "voice_speed": 0.95,
         "responsiveness": 1.0,
-        "interruption_sensitivity": 1.0,
+        "interruption_sensitivity": 0.9,
         "language": "multi",
+        "stt_mode": "fast",
         "webhook_url": webhook,
         "webhook_events": ["call_started", "call_ended", "call_analyzed"],
         "begin_message_delay_ms": 0,

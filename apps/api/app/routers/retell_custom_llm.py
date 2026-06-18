@@ -41,6 +41,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     llm = GeminiVoiceLlm()
     response_lock = asyncio.Lock()
     active_response_id = 0
+    debounce_task: asyncio.Task[None] | None = None
+    debounce_wait_s = 0.55
 
     user_id = resolve_call_user(call_id)
     if user_id:
@@ -128,21 +130,35 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             transcript=transcript,
         )
 
-        async with response_lock:
-            if response_id < active_response_id:
-                return
-            active_response_id = response_id
+        nonlocal debounce_task
 
-            async for event in llm.draft_response(request):
-                if event.response_id < active_response_id:
-                    break
-                await websocket.send_json(event.model_dump())
-                logger.info(
-                    "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
-                    call_id,
-                    event.response_id,
-                    len(event.content or ""),
-                )
+        if debounce_task and not debounce_task.done():
+            debounce_task.cancel()
+
+        async def run_debounced() -> None:
+            nonlocal active_response_id
+            try:
+                await asyncio.sleep(debounce_wait_s)
+            except asyncio.CancelledError:
+                return
+
+            async with response_lock:
+                if response_id < active_response_id:
+                    return
+                active_response_id = response_id
+
+                async for event in llm.draft_response(request):
+                    if event.response_id < active_response_id:
+                        break
+                    await websocket.send_json(event.model_dump())
+                    logger.info(
+                        "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
+                        call_id,
+                        event.response_id,
+                        len(event.content or ""),
+                    )
+
+        debounce_task = asyncio.create_task(run_debounced())
 
     try:
         async for data in websocket.iter_json():

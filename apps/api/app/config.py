@@ -81,7 +81,7 @@ class Settings(BaseSettings):
 
     google_api_key: str = ""
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
-    gemini_voice_model: str = "gemini-2.5-pro"
+    gemini_voice_model: str = "gemini-2.5-flash"
     anthropic_api_key: str = ""
     tavily_api_key: str = ""
 
