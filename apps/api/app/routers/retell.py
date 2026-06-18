@@ -18,6 +18,7 @@ from app.services.retell_agent_setup import (
     custom_llm_websocket_url,
     ensure_retell_agent,
 )
+from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.voice_tool_executor import execute_voice_tool
@@ -128,7 +129,27 @@ async def retell_webhook(request: Request) -> dict[str, Any]:
     """Eventos generales de llamada Retell (call_started, call_ended, etc.)."""
     payload = await _verify_retell_request(request)
     event = payload.get("event") or payload.get("event_type") or "unknown"
-    logger.info("[RETELL] webhook event=%s", event)
+    call = payload.get("call") or payload.get("data") or {}
+    call_id = call.get("call_id") or call.get("callId")
+    logger.info(
+        "[RETELL] webhook event=%s call_id=%s status=%s",
+        event,
+        call_id,
+        call.get("call_status") or call.get("status"),
+    )
+    if event == "call_ended" and call_id:
+        try:
+            client = get_retell_client()
+            if client:
+                detail = client.call.retrieve(call_id=str(call_id))
+                logger.info(
+                    "[RETELL] call_ended id=%s disconnection=%s transcript_len=%s",
+                    call_id,
+                    getattr(detail, "disconnection_reason", None),
+                    len(getattr(detail, "transcript_object", None) or []),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[RETELL] call retrieve failed: %s", exc)
     return {"received": True}
 
 
@@ -252,6 +273,32 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
+@router.get("/call-debug/{call_id}")
+async def retell_call_debug(call_id: str) -> dict[str, Any]:
+    """Estado de una llamada Retell (transcript, desconexión) — diagnóstico."""
+    client = get_retell_client()
+    if not client:
+        return {"ok": False, "error": "RETELL_API_KEY no configurada"}
+
+    try:
+        call = client.call.retrieve(call_id=call_id.strip())
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc), "call_id": call_id}
+
+    transcript = getattr(call, "transcript_object", None) or getattr(call, "transcript", None) or []
+    return _json_safe(
+        {
+            "ok": True,
+            "call_id": getattr(call, "call_id", call_id),
+            "call_status": getattr(call, "call_status", None),
+            "disconnection_reason": getattr(call, "disconnection_reason", None),
+            "agent_id": getattr(call, "agent_id", None),
+            "transcript": transcript,
+            "active_llm_ws": active_ws_calls(),
+        }
+    )
+
+
 @router.get("/diagnostics")
 async def retell_diagnostics() -> dict[str, Any]:
     """Diagnóstico voz: agente Retell, voces disponibles, Gemini ping."""
@@ -264,6 +311,7 @@ async def retell_diagnostics() -> dict[str, Any]:
         "has_elevenlabs_api_key": bool(settings.elevenlabs_api_key.strip()),
         "agent_id": get_retell_agent_id(),
         "llm_websocket_url": custom_llm_websocket_url(),
+        "active_llm_ws": active_ws_calls(),
     }
 
     client = get_retell_client()

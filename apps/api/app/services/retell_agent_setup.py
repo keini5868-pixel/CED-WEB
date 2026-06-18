@@ -201,6 +201,8 @@ def ensure_retell_agent(*, agent_id: str | None = None) -> dict[str, str]:
         "interruption_sensitivity": 1.0,
         "language": "multi",
         "webhook_url": webhook,
+        "webhook_events": ["call_started", "call_ended", "call_analyzed"],
+        "begin_message_delay_ms": 0,
         "agent_name": "CED Jarvis",
     }
 

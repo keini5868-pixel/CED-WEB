@@ -11,16 +11,31 @@ from app.services.gemini_voice_llm import GeminiVoiceLlm, draft_begin_message
 from app.services.retell_call_registry import release_call_user, resolve_call_user
 from app.services.retell_custom_llm import should_respond_to_transcript
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
+from app.services.retell_ws_tracker import (
+    active_ws_calls,
+    mark_greeting_sent,
+    mark_ws_connected,
+    mark_ws_disconnected,
+    note_ws_interaction,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retell-custom-llm"])
 
 
+@router.get("/llm-websocket/active")
+async def retell_llm_active_connections() -> dict:
+    """Conexiones LLM activas — diagnóstico sin auth."""
+    rows = active_ws_calls()
+    return {"ok": True, "active_count": len(rows), "connections": rows}
+
+
 @router.websocket("/llm-websocket/{call_id}")
 async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     """Custom LLM endpoint — Retell envía transcripciones, Gemini responde."""
     await websocket.accept()
+    mark_ws_connected(call_id)
     logger.info("[RETELL-GEMINI] WebSocket conectado call_id=%s", call_id)
 
     llm = GeminiVoiceLlm()
@@ -42,7 +57,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
     greeting_sent = False
 
-    async def send_greeting(response_id: int = 0) -> None:
+    async def send_greeting(response_id: int = 0, *, reason: str) -> None:
         nonlocal greeting_sent
         if greeting_sent:
             return
@@ -51,18 +66,24 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         payload = begin.model_dump()
         payload["response_id"] = response_id
         await websocket.send_json(payload)
-        logger.info("[RETELL-GEMINI] saludo enviado call=%s", call_id)
+        mark_greeting_sent(call_id)
+        logger.info("[RETELL-GEMINI] saludo enviado call=%s reason=%s", call_id, reason)
 
-    async def greeting_fallback() -> None:
-        await asyncio.sleep(1.2)
-        await send_greeting(0)
+    # Igual que el demo oficial Retell: saludo inmediato tras config
+    await send_greeting(0, reason="immediate")
 
-    asyncio.create_task(greeting_fallback())
+    async def greeting_backup() -> None:
+        await asyncio.sleep(2.0)
+        await send_greeting(0, reason="backup_2s")
+
+    asyncio.create_task(greeting_backup())
 
     async def handle_message(request_json: dict) -> None:
         nonlocal active_response_id
 
         interaction = str(request_json.get("interaction_type") or "")
+        note_ws_interaction(call_id, interaction)
+        logger.info("[RETELL-GEMINI] interaction=%s call=%s", interaction, call_id)
 
         uid = resolve_call_user(call_id, request_json)
         if uid:
@@ -78,10 +99,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         if interaction == "call_details":
-            await send_greeting(0)
+            await send_greeting(0, reason="call_details")
             return
 
         if interaction == "update_only":
+            turntaking = request_json.get("turntaking")
+            if turntaking:
+                logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)
             return
 
         if interaction not in ("response_required", "reminder_required"):
@@ -114,10 +138,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 if event.response_id < active_response_id:
                     break
                 await websocket.send_json(event.model_dump())
+                logger.info(
+                    "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
+                    call_id,
+                    event.response_id,
+                    len(event.content or ""),
+                )
 
     try:
         async for data in websocket.iter_json():
-            await handle_message(data)
+            asyncio.create_task(handle_message(data))
     except WebSocketDisconnect:
         logger.info("[RETELL-GEMINI] WebSocket desconectado call_id=%s", call_id)
     except Exception as exc:  # noqa: BLE001
@@ -127,5 +157,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         except Exception:  # noqa: BLE001
             pass
     finally:
+        mark_ws_disconnected(call_id)
         release_call_user(call_id)
         logger.info("[RETELL-GEMINI] WebSocket cerrado call_id=%s", call_id)
