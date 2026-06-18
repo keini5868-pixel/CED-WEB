@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -104,7 +105,10 @@ async def register_retell_call(
     _voice_access_or_raise(user_id)
 
     try:
-        call = client.call.create_web_call(
+        # create_web_call es síncrono: si bloquea el event loop, Retell no puede
+        # abrir el Custom LLM WebSocket en paralelo → error_llm_websocket_open.
+        call = await asyncio.to_thread(
+            client.call.create_web_call,
             agent_id=agent_id,
             metadata={"user_id": user_id},
         )

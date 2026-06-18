@@ -51,7 +51,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         {
             "response_type": "config",
             "config": {"auto_reconnect": True, "call_details": True},
-            "response_id": 1,
         }
     )
 
