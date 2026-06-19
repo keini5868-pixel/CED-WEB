@@ -36,6 +36,10 @@ _SMALL_TALK = frozenset(
         "como estas",
         "qué tal",
         "que tal",
+        "okay",
+        "ok",
+        "sí",
+        "si",
     }
 )
 
@@ -47,10 +51,17 @@ _GENERIC_AGENT_LINES = frozenset(
     }
 )
 
+_ACK_ONLY = frozenset({"ok", "okay", "sí", "si", "vale", "bien", "yes", "news", "noticias"})
+
 _WEB_FRAGMENT_HINTS = re.compile(
     r"\b(busca|buscar|buscame|investiga|precio|cotiza|clima|tiempo|temperatura|"
     r"noticia|ultim|dime|dame|cuanto|cuesta|hoy|internet|google|web|mercado|"
-    r"tendencia|actualidad|significa|vale)\b",
+    r"tendencia|actualidad|significa|vale|creatina|suplemento)\b",
+    re.I,
+)
+
+_FRAGMENT_PREFIX = re.compile(
+    r"^(de|del|la|el|los|las|en|con|para|y|que|qué|en\s+estados)\b",
     re.I,
 )
 
@@ -61,6 +72,69 @@ def _normalize(text: str) -> str:
     return cleaned.rstrip(".,!?¿¡")
 
 
+def _user_lines(transcript: list[Utterance]) -> list[str]:
+    return [
+        (u.content or "").strip()
+        for u in transcript
+        if u.role == "user" and (u.content or "").strip()
+    ]
+
+
+def last_user_text(transcript: list[Utterance]) -> str:
+    lines = _user_lines(transcript)
+    return lines[-1] if lines else ""
+
+
+def merged_user_query(transcript: list[Utterance], *, max_lines: int = 2) -> str:
+    """Une solo fragmentos cortos del mismo turno — no arrastra temas viejos."""
+    lines = _user_lines(transcript)
+    if not lines:
+        return ""
+    if len(lines) == 1:
+        return lines[0]
+    last = lines[-1]
+    prev = lines[-2]
+    if _is_fragment_continuation(last, prev):
+        return f"{prev} {last}".strip()
+    return last
+
+
+def _is_fragment_continuation(last: str, prev: str) -> bool:
+    """True solo si `last` completa la frase anterior (ej. 'de Estados Unidos')."""
+    ln = _normalize(last)
+    pn = _normalize(prev)
+    if not ln or not pn:
+        return False
+    if ln in _ACK_ONLY or pn in _ACK_ONLY:
+        return False
+    if _needs_internet_lookup(last) and not _FRAGMENT_PREFIX.search(ln):
+        if is_news_intent(last) or is_weather_intent(last) or is_web_research_intent(last):
+            return False
+    if len(ln.split()) <= 4 and _FRAGMENT_PREFIX.search(ln):
+        return True
+    if len(ln.split()) <= 2 and _needs_internet_lookup(pn):
+        return True
+    return False
+
+
+def _needs_internet_lookup(text: str) -> bool:
+    if is_weather_intent(text) or is_news_intent(text) or is_web_research_intent(text):
+        return True
+    norm = normalize_text(text)
+    if len(norm) < 4 or norm in _ACK_ONLY:
+        return False
+    if is_volatile_query(text) and _WEB_FRAGMENT_HINTS.search(norm):
+        return True
+    return bool(
+        re.search(
+            r"\b(clima|tiempo|temperatura|weather|pronóstico|pronostico|lluvia|"
+            r"noticias?|precio|cotiza|busca|buscar|investiga|google|internet|"
+            r"mercado|tendencia|actualidad|creatina|suplemento)\b",
+            norm,
+        )
+    )
+
+
 def _web_kind_for(text: str) -> str:
     if is_weather_intent(text):
         return "weather"
@@ -69,63 +143,33 @@ def _web_kind_for(text: str) -> str:
     return "general"
 
 
-def last_user_text(transcript: list[Utterance]) -> str:
-    for utterance in reversed(transcript):
-        if utterance.role == "user" and (utterance.content or "").strip():
-            return utterance.content.strip()
-    return ""
-
-
-def merged_user_query(transcript: list[Utterance], *, max_lines: int = 5) -> str:
-    """Une los últimos turnos del usuario — cubre frases partidas por voz."""
-    user_lines = [
-        (u.content or "").strip()
-        for u in transcript
-        if u.role == "user" and (u.content or "").strip()
-    ]
-    if not user_lines:
-        return ""
-    return " ".join(user_lines[-max_lines:]).strip()
-
-
-def _needs_internet_lookup(text: str) -> bool:
-    if is_weather_intent(text) or is_news_intent(text) or is_web_research_intent(text):
-        return True
-    norm = normalize_text(text)
-    if len(norm) < 6:
-        return False
-    if is_volatile_query(text) and _WEB_FRAGMENT_HINTS.search(norm):
-        return True
-    return bool(
-        re.search(
-            r"\b(clima|tiempo|temperatura|weather|pronóstico|pronostico|lluvia|"
-            r"noticias?|precio|cotiza|busca|buscar|investiga|google|internet|"
-            r"mercado|tendencia|actualidad)\b",
-            norm,
-        )
-    )
-
-
 def resolve_web_search_request(
     user_text: str,
     transcript: list[Utterance],
 ) -> dict[str, str] | None:
-    """Detecta cualquier consulta que requiera internet, incluso frases partidas."""
-    merged = merged_user_query(transcript)
-    candidates: list[str] = []
-    for item in (merged, user_text):
-        cleaned = (item or "").strip()
-        if cleaned and cleaned not in candidates:
-            candidates.append(cleaned)
+    """Detecta búsqueda web usando el último turno — sin mezclar noticias previas."""
+    last = (user_text or "").strip()
+    if not last or _normalize(last) in _ACK_ONLY:
+        return None
 
-    for candidate in candidates:
-        if _needs_internet_lookup(candidate):
-            return {"kind": _web_kind_for(candidate), "query": candidate}
+    lines = _user_lines(transcript)
+    prev = lines[-2] if len(lines) >= 2 else ""
 
-    if merged and _normalize(user_text) != _normalize(merged):
-        if _WEB_FRAGMENT_HINTS.search(_normalize(merged)):
-            return {"kind": _web_kind_for(merged), "query": merged}
-    return None
+    if prev and _is_fragment_continuation(last, prev):
+        query = f"{prev} {last}".strip()
+        intent_source = query
+    else:
+        query = last
+        intent_source = last
+
+    if not _needs_internet_lookup(intent_source):
+        return None
+
+    kind = _web_kind_for(intent_source)
+    if kind == "news" and not is_news_intent(intent_source):
+        kind = "general"
+
+    return {"kind": kind, "query": query}
 
 
 def web_search_hold_phrase(kind: str) -> str:
@@ -133,7 +177,7 @@ def web_search_hold_phrase(kind: str) -> str:
         return "Un momento, señor, consulto el clima."
     if kind == "news":
         return "Un momento, señor, consulto las noticias."
-    return "Un momento, señor, busco esa información en internet."
+    return "Un momento, señor, busco eso en internet."
 
 
 def should_respond_to_transcript(
@@ -145,11 +189,7 @@ def should_respond_to_transcript(
     if interaction_type == "reminder_required":
         return False
 
-    user_lines = [
-        (u.content or "").strip()
-        for u in transcript
-        if u.role == "user" and (u.content or "").strip()
-    ]
+    user_lines = _user_lines(transcript)
     if not user_lines:
         return False
 
@@ -182,13 +222,12 @@ def is_small_talk(text: str) -> bool:
     if _is_task_or_info_query(text):
         return False
     norm = _normalize(text)
-    if norm in _SMALL_TALK:
+    if norm in _SMALL_TALK or norm in _ACK_ONLY:
         return True
     if re.search(r"hola.*(como|cómo)\s+estás?\b", norm):
         return True
     if re.search(r"hola.*\bs[ií]\b", norm) and re.search(r"(como|cómo)\s+estás?\b", norm):
         return True
-    # Solo "¿cómo estás?" al agente — NO "¿cómo está el clima/tiempo?"
     if re.search(r"(como|cómo)\s+estás?\s*$", norm) or re.search(r"(como|cómo)\s+estás?\?", norm):
         return True
     if norm.startswith("hola") and len(norm.split()) <= 6:

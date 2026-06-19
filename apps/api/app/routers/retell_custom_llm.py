@@ -153,6 +153,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
             return
 
+        # Nueva pregunta del usuario — invalida respuestas en curso (barge-in).
+        active_response_id = max(active_response_id, response_id)
+
         if debounce_task and not debounce_task.done():
             debounce_task.cancel()
 
@@ -162,6 +165,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 await post_greeting_ready.wait()
                 await asyncio.sleep(debounce_wait_s)
             except asyncio.CancelledError:
+                return
+
+            if response_id < active_response_id:
+                logger.info("[RETELL-GEMINI] skip stale rid=%s active=%s", response_id, active_response_id)
                 return
 
             if is_small_talk(user_text) and not resolve_web_search_request(user_text, transcript):
@@ -195,6 +202,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         uid,
                         {"query": web_req["query"], "kind": web_req["kind"]},
                     )
+                    if response_id < active_response_id:
+                        logger.info("[RETELL-GEMINI] drop stale web rid=%s", response_id)
+                        return
                     spoken = str(tool_result.get("spoken") or "").strip()
                     if not spoken or spoken.startswith("No fue posible"):
                         full = spoken or "No pude consultar en internet, señor. Intente de nuevo."

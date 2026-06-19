@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "2026-06-19-voice-camera-news-v9"
+BUILD_VERSION = "2026-06-19-voice-intent-v10"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
