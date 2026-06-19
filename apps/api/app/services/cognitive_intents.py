@@ -42,6 +42,13 @@ NEWS_PATTERNS = [
     r"\bhoy\s+en\s+",
     r"\bqu[eé]\s+pas[oó]\b",
     r"\bqu[eé]\s+pasa\s+con\b",
+    r"\b[uú]ltim\w*\b.*\b(noticia|hora|titular|hoy)\b",
+    r"\b(noticia|titular)\w*\b.*\b[uú]ltim",
+    r"\bdime\b.*\b(noticia|ultim|titular|hoy|decir)\b",
+    r"\bdame\b.*\b(noticia|ultim|titular|resumen)\b",
+    r"\bcu[eé]ntame\b.*\b(noticia|hoy|ultim)\b",
+    r"\btitulares\b",
+    r"\bnews\b",
 ]
 
 WEB_PATTERNS = [

@@ -19,6 +19,8 @@ from app.services.retell_custom_llm import (
     concise_reply_for_small_talk,
     is_generic_agent_line,
     is_small_talk,
+    resolve_web_search_request,
+    web_search_hold_phrase,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_tool_executor import execute_voice_tool
@@ -227,13 +229,53 @@ class GeminiVoiceLlm:
         if not user_text:
             return
 
-        if is_small_talk(user_text):
+        if is_small_talk(user_text) and not resolve_web_search_request(user_text, request.transcript):
             reply = concise_reply_for_small_talk(user_text)
             self._history = [*self._history, last, types.Content(role="model", parts=[types.Part(text=reply)])]
             logger.info("[RETELL-GEMINI] small_talk=%s turns=%s", reply, self._turn_count)
             yield ResponseResponse(
                 response_id=request.response_id,
                 content=reply,
+                content_complete=True,
+                end_call=False,
+            )
+            return
+
+        web_req = resolve_web_search_request(user_text, request.transcript)
+        if web_req:
+            hold = web_search_hold_phrase(web_req["kind"])
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=hold,
+                content_complete=False,
+                end_call=False,
+            )
+            if self.user_id:
+                tool_result = await execute_voice_tool(
+                    "search_web",
+                    self.user_id,
+                    {"query": web_req["query"], "kind": web_req["kind"]},
+                )
+                spoken = str(tool_result.get("spoken") or "No pude consultar, señor.")
+            else:
+                spoken = "No identifiqué al usuario, señor."
+            self._history = _truncate_contents(
+                [
+                    *self._history,
+                    last,
+                    types.Content(role="model", parts=[types.Part(text=spoken)]),
+                ],
+                max_turns=MAX_HISTORY_TURNS,
+            )
+            logger.info(
+                "[RETELL-GEMINI] web_search kind=%s query=%s spoken=%s",
+                web_req["kind"],
+                web_req["query"][:80],
+                spoken[:120],
+            )
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=spoken[:480],
                 content_complete=True,
                 end_call=False,
             )
@@ -347,8 +389,23 @@ class GeminiVoiceLlm:
             return
 
         text_response = _extract_text(response)
-        if is_generic_agent_line(text_response) or not text_response:
-            text_response = concise_reply_for_small_talk(user_text) if is_small_talk(user_text) else "¿En qué puedo ayudarle, señor?"
+        web_req = resolve_web_search_request(user_text, request.transcript)
+        if web_req and (is_generic_agent_line(text_response) or not text_response):
+            if self.user_id:
+                tool_result = await execute_voice_tool(
+                    "search_web",
+                    self.user_id,
+                    {"query": web_req["query"], "kind": web_req["kind"]},
+                )
+                text_response = str(tool_result.get("spoken") or "No pude consultar, señor.")
+            else:
+                text_response = "No identifiqué al usuario, señor."
+        elif is_generic_agent_line(text_response) or not text_response:
+            text_response = (
+                concise_reply_for_small_talk(user_text)
+                if is_small_talk(user_text)
+                else "¿En qué puedo ayudarle, señor?"
+            )
 
         self._history = _truncate_contents(
             [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])],

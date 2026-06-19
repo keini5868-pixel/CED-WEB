@@ -14,8 +14,11 @@ from app.services.retell_custom_llm import (
     concise_reply_for_small_talk,
     is_small_talk,
     last_user_text,
+    resolve_web_search_request,
     should_respond_to_transcript,
+    web_search_hold_phrase,
 )
+from app.services.voice_tool_executor import execute_voice_tool
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -161,7 +164,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             except asyncio.CancelledError:
                 return
 
-            if is_small_talk(user_text):
+            if is_small_talk(user_text) and not resolve_web_search_request(user_text, transcript):
                 reply = concise_reply_for_small_talk(user_text)
                 async with response_lock:
                     if response_id < active_response_id:
@@ -178,6 +181,46 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         }
                     )
                 logger.info("[RETELL-GEMINI] small_talk call=%s: %s", call_id, reply)
+                return
+
+            web_req = resolve_web_search_request(user_text, transcript)
+            if web_req and uid:
+                hold = web_search_hold_phrase(web_req["kind"])
+                async with response_lock:
+                    if response_id < active_response_id:
+                        return
+                    active_response_id = response_id
+                    last_answered_user_key = user_key
+                    await websocket.send_json(
+                        {
+                            "response_type": "response",
+                            "response_id": response_id,
+                            "content": hold,
+                            "content_complete": False,
+                            "end_call": False,
+                        }
+                    )
+                    tool_result = await execute_voice_tool(
+                        "search_web",
+                        uid,
+                        {"query": web_req["query"], "kind": web_req["kind"]},
+                    )
+                    spoken = str(tool_result.get("spoken") or "No pude consultar, señor.")
+                    await websocket.send_json(
+                        {
+                            "response_type": "response",
+                            "response_id": response_id,
+                            "content": spoken[:480],
+                            "content_complete": True,
+                            "end_call": False,
+                        }
+                    )
+                logger.info(
+                    "[RETELL-GEMINI] web_search call=%s kind=%s query=%s",
+                    call_id,
+                    web_req["kind"],
+                    web_req["query"][:80],
+                )
                 return
 
             request = ResponseRequiredRequest(

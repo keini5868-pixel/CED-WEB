@@ -55,6 +55,56 @@ def last_user_text(transcript: list[Utterance]) -> str:
     return ""
 
 
+def merged_user_query(transcript: list[Utterance], *, max_lines: int = 4) -> str:
+    """Une los últimos turnos del usuario — cubre frases partidas por voz."""
+    user_lines = [
+        (u.content or "").strip()
+        for u in transcript
+        if u.role == "user" and (u.content or "").strip()
+    ]
+    if not user_lines:
+        return ""
+    return " ".join(user_lines[-max_lines:]).strip()
+
+
+def resolve_web_search_request(
+    user_text: str,
+    transcript: list[Utterance],
+) -> dict[str, str] | None:
+    """Detecta clima/noticias/búsqueda web, incluso en frases fragmentadas."""
+    merged = merged_user_query(transcript)
+    candidates: list[str] = []
+    for item in (merged, user_text):
+        cleaned = (item or "").strip()
+        if cleaned and cleaned not in candidates:
+            candidates.append(cleaned)
+
+    for candidate in candidates:
+        if is_weather_intent(candidate):
+            return {"kind": "weather", "query": candidate}
+        if is_news_intent(candidate):
+            return {"kind": "news", "query": candidate}
+        if is_web_research_intent(candidate):
+            return {"kind": "general", "query": candidate}
+
+    if merged and _normalize(user_text) != _normalize(merged):
+        mnorm = _normalize(merged)
+        if is_news_intent(merged) or re.search(
+            r"\b(dime|dame|ultim|noticia|decir|cuent|titular)\b",
+            mnorm,
+        ):
+            return {"kind": "news", "query": merged}
+    return None
+
+
+def web_search_hold_phrase(kind: str) -> str:
+    if kind == "weather":
+        return "Un momento, señor, consulto el clima."
+    if kind == "news":
+        return "Un momento, señor, consulto las noticias."
+    return "Un momento, señor, busco esa información."
+
+
 def should_respond_to_transcript(
     transcript: list[Utterance],
     *,
@@ -76,6 +126,9 @@ def should_respond_to_transcript(
     normalized = _normalize(last)
     if normalized in _ECHO_USER_LINES:
         return False
+
+    if resolve_web_search_request(last, transcript) is not None:
+        return True
 
     words = last.split()
     if len(words) < 2 and len(last) < 12 and not last.rstrip().endswith(("?", ".", "!")):
@@ -123,6 +176,10 @@ def is_generic_agent_line(text: str) -> bool:
     if "operativo" in norm and "servicio" in norm:
         return True
     if norm.startswith("operativo"):
+        return True
+    if "en qué puedo ayudarle" in norm or "en que puedo ayudarle" in norm:
+        return True
+    if norm in {"muy bien, señor", "muy bien señor"}:
         return True
     return False
 
