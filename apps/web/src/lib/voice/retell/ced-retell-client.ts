@@ -1,6 +1,17 @@
 import { RetellWebClient } from "retell-client-js-sdk";
-import type { Room, RemoteAudioTrack } from "livekit-client";
 
+/** Tipos mínimos — livekit-client es transitiva vía retell; no importar directo (rompe next build). */
+type RetellLiveRoom = {
+  remoteParticipants: Map<
+    string,
+    {
+      audioTrackPublications: Map<
+        string,
+        { trackName?: string; track?: { setVolume?(volume: number): void } }
+      >;
+    }
+  >;
+};
 export type RetellTranscriptRole = "user" | "agent";
 
 export interface CedRetellCallbacks {
@@ -52,18 +63,20 @@ export class CedRetellClient {
     this.callbacks = callbacks;
   }
 
+  private liveKitRoom(): RetellLiveRoom | undefined {
+    return (this.client as unknown as { room?: RetellLiveRoom }).room;
+  }
+
   private muteAgentPlayback(): void {
     try {
-      const room = (this.client as unknown as { room?: Room }).room;
+      const room = this.liveKitRoom();
       if (!room) return;
       room.remoteParticipants.forEach((participant) => {
         participant.audioTrackPublications.forEach((publication) => {
           if (publication.trackName !== "agent_audio") return;
-          const track = publication.track as RemoteAudioTrack | undefined;
-          track?.setVolume(0);
+          publication.track?.setVolume?.(0);
         });
-      });
-      this.agentMutedForBargeIn = true;
+      });      this.agentMutedForBargeIn = true;
       retellLog("barge-in: agent audio silenciado");
     } catch (err) {
       retellLog("barge-in mute falló", err);
@@ -73,16 +86,14 @@ export class CedRetellClient {
   private restoreAgentPlayback(): void {
     if (!this.agentMutedForBargeIn) return;
     try {
-      const room = (this.client as unknown as { room?: Room }).room;
+      const room = this.liveKitRoom();
       if (!room) return;
       room.remoteParticipants.forEach((participant) => {
         participant.audioTrackPublications.forEach((publication) => {
           if (publication.trackName !== "agent_audio") return;
-          const track = publication.track as RemoteAudioTrack | undefined;
-          track?.setVolume(1);
+          publication.track?.setVolume?.(1);
         });
-      });
-      this.agentMutedForBargeIn = false;
+      });      this.agentMutedForBargeIn = false;
     } catch (err) {
       retellLog("barge-in restore falló", err);
     }
