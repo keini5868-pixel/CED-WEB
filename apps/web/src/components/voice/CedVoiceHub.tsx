@@ -93,7 +93,6 @@ export function CedVoiceHub() {
   });
   const { errorMessage, clearError } = voice;
 
-  const { balance, loaded, refresh: refreshUsageBalance } = useUsageBalance(refreshUsage);
   const voiceLimit = loaded ? voiceLimitReasonFromBalance(balance) : null;
 
   useEffect(() => {
@@ -195,7 +194,7 @@ export function CedVoiceHub() {
         onActivate={() => {
           unlockVoiceAudioOnGesture();
           void (async () => {
-            const fresh = await refreshUsageBalance();
+            const fresh = await refreshUsage();
             const snapshot = fresh ?? balance;
             const limit = voiceLimitReasonFromBalance(snapshot);
             if (limit) {
