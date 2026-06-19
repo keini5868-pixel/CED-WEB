@@ -34,6 +34,9 @@ from app.domain.plans import (
 
 router = APIRouter(tags=["health"])
 
+# Bump al redeployar — visible en GET /health
+API_BUILD_TAG = "2026-06-18-chat-fallback-v2"
+
 
 @router.get("/health")
 @limiter.exempt
@@ -44,6 +47,7 @@ def health(_request: Request) -> dict[str, str]:
         "status": "ok",
         "service": "castillo-digital-api",
         "env": settings.app_env,
+        "build": API_BUILD_TAG,
     }
 
 
@@ -52,7 +56,7 @@ def health(_request: Request) -> dict[str, str]:
 def ready(_request: Request) -> dict[str, str]:
     """Alias de health para compatibilidad con probes."""
     settings = get_settings()
-    return {"status": "ok", "service": "castillo-digital-api", "env": settings.app_env}
+    return {"status": "ok", "service": "castillo-digital-api", "env": settings.app_env, "build": API_BUILD_TAG}
 
 
 @router.get("/v1/auth/diagnostics")
