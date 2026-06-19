@@ -27,7 +27,7 @@ export type UsageBalanceState = {
 type UsageBalanceValue = {
   balance: UsageBalanceState;
   loaded: boolean;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<UsageBalanceState | null>;
 };
 
 const EMPTY_BALANCE: UsageBalanceState = {
@@ -50,8 +50,8 @@ function useUsageBalancePoll(
   const [balance, setBalance] = useState<UsageBalanceState>(EMPTY_BALANCE);
   const [loaded, setLoaded] = useState(false);
 
-  const refresh = useCallback(async () => {
-    if (!enabled) return;
+  const refresh = useCallback(async (): Promise<UsageBalanceState | null> => {
+    if (!enabled) return null;
     try {
       const data = (await fetchUsageBalance()) as
         | (UsageBalance & {
@@ -63,10 +63,10 @@ function useUsageBalancePoll(
             subscription_status?: string | null;
           })
         | null;
-      if (!data) return;
+      if (!data) return null;
       const plan = data.planMinutesDaily ?? data.plan_minutes_daily ?? 0;
       const used = data.usedMinutesToday ?? data.used_minutes_today ?? 0;
-      setBalance({
+      const next: UsageBalanceState = {
         used,
         plan,
         percent:
@@ -85,10 +85,12 @@ function useUsageBalancePoll(
         hasStripeCustomer: Boolean(
           (data as { has_stripe_customer?: boolean }).has_stripe_customer,
         ),
-      });
+      };
+      setBalance(next);
       setLoaded(true);
+      return next;
     } catch {
-      /* ignore */
+      return null;
     }
   }, [enabled]);
 

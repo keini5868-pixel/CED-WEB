@@ -93,11 +93,31 @@ export function CedVoiceHub() {
   });
   const { errorMessage, clearError } = voice;
 
+  const { balance, loaded, refresh: refreshUsageBalance } = useUsageBalance(refreshUsage);
   const voiceLimit = loaded ? voiceLimitReasonFromBalance(balance) : null;
 
   useEffect(() => {
+    if (!loaded) return;
+    if (!voiceLimitReasonFromBalance(balance)) {
+      setVoiceLimitOpen(false);
+    }
+  }, [loaded, balance.blocked, balance.accessDenied, balance.accessMessage, balance.plan]);
+
+  useEffect(() => {
     if (!loaded || !errorMessage) return;
-    const limitMsg = errorMessage.includes("límite diario");
+    const limit = voiceLimitReasonFromBalance(balance);
+    if (!limit) {
+      if (
+        errorMessage.includes("límite diario") ||
+        errorMessage.includes("límite de voz")
+      ) {
+        clearError();
+      }
+      return;
+    }
+    const limitMsg =
+      errorMessage.includes("límite diario") ||
+      errorMessage.includes("límite de voz");
     const subMsg =
       errorMessage.includes("suscripción") ||
       errorMessage.includes("prueba") ||
@@ -105,16 +125,11 @@ export function CedVoiceHub() {
     if (limitMsg || subMsg) {
       setVoiceLimitOpen(true);
     }
-    if (limitMsg && !balance.blocked && !balance.accessDenied) {
-      clearError();
-    }
-    if (subMsg && !balance.accessDenied && balance.plan > 0) {
-      clearError();
-    }
   }, [
     loaded,
     balance.blocked,
     balance.accessDenied,
+    balance.accessMessage,
     balance.plan,
     errorMessage,
     clearError,
@@ -179,11 +194,16 @@ export function CedVoiceHub() {
         paused={voice.paused}
         onActivate={() => {
           unlockVoiceAudioOnGesture();
-          if (voiceLimit) {
-            setVoiceLimitOpen(true);
-            return;
-          }
-          void voice.toggleMic();
+          void (async () => {
+            const fresh = await refreshUsageBalance();
+            const snapshot = fresh ?? balance;
+            const limit = voiceLimitReasonFromBalance(snapshot);
+            if (limit) {
+              setVoiceLimitOpen(true);
+              return;
+            }
+            void voice.toggleMic();
+          })();
         }}
       />
 

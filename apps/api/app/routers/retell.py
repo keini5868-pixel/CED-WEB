@@ -23,7 +23,7 @@ from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.voice_tool_executor import execute_voice_tool
-from app.services.voice_usage import voice_access_state
+from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state
 
 logger = logging.getLogger(__name__)
 
@@ -39,19 +39,23 @@ class RegisterCallBody(BaseModel):
 def _voice_access_or_raise(user_id: str) -> None:
     balance = voice_access_state(user_id)
     if balance.get("access_denied"):
-        raise HTTPException(
-            status_code=403,
-            detail="Acceso de voz no disponible. Elige un plan en Precios.",
-        )
-    if balance.get("blocked"):
-        raise HTTPException(
-            status_code=429,
-            detail="Alcanzaste tu límite diario de voz. Recarga o vuelve mañana.",
-        )
+        msg = balance.get("access_message") or "Acceso no disponible."
+        detail = ACCESS_DENIED_MESSAGES.get(msg, msg)
+        raise HTTPException(status_code=403, detail=detail)
     if balance.get("plan_minutes_daily", 0) <= 0 and balance.get("access_message") == "free_basic":
         raise HTTPException(
             status_code=403,
-            detail="La voz no está incluida en el plan Básico gratis.",
+            detail="La voz no está incluida en el plan Básico gratis. Mejora tu plan o recarga.",
+        )
+    if balance.get("blocked"):
+        if balance.get("quota_exhausted"):
+            raise HTTPException(
+                status_code=402,
+                detail="Has alcanzado tu límite diario de voz. Recarga desde $10 o adquiere un plan. El chat sigue disponible.",
+            )
+        raise HTTPException(
+            status_code=402,
+            detail="Tu plan no incluye minutos de voz hoy. Mejora tu plan o recarga saldo.",
         )
 
 
