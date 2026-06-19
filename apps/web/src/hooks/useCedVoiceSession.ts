@@ -20,6 +20,12 @@ import {
 import { publishFacebook, publishInstagram, fetchSocialComments } from "@/lib/api/social";
 import { fetchVisionAnalyze, fetchVisionWebSearch } from "@/lib/api/vision";
 import {
+  ackVoiceClientAction,
+  fetchVoiceClientState,
+  postVoiceCameraStatus,
+  postVoiceVisionResult,
+} from "@/lib/api/voiceClient";
+import {
   endVoiceSession,
   startVoiceSession,
   tickVoiceSession,
@@ -176,6 +182,8 @@ export function useCedVoiceSession(
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [statusLabel, setStatusLabel] = useState(ORB_STATE_LABELS.idle);
   const [micOn, setMicOn] = useState(false);
+  const [retellPollActive, setRetellPollActive] = useState(false);
+  const lastVoiceActionIdRef = useRef<number | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -284,6 +292,88 @@ export function useCedVoiceSession(
     [captureCameraJpeg],
   );
 
+  useEffect(() => {
+    if (!retellPollActive) return;
+
+    let cancelled = false;
+
+    const handleVoiceClientAction = async (action: {
+      id: number;
+      action: string;
+      payload: Record<string, unknown>;
+    }) => {
+      if (action.action === "camera_activate") {
+        await toggleCameraRef.current(true);
+        await postVoiceCameraStatus(true);
+        await ackVoiceClientAction(action.id);
+        return;
+      }
+      if (action.action === "camera_deactivate") {
+        await toggleCameraRef.current(false);
+        await postVoiceCameraStatus(false);
+        await ackVoiceClientAction(action.id);
+        return;
+      }
+      if (action.action !== "camera_capture") return;
+
+      const requestId = Number(action.payload.request_id || 0);
+      const question = String(action.payload.question || "");
+      const mode = String(action.payload.mode || "analyze");
+      if (!requestId) {
+        await ackVoiceClientAction(action.id);
+        return;
+      }
+
+      try {
+        await toggleCameraRef.current(true);
+        await postVoiceCameraStatus(true);
+        const hadStream = !!cameraStreamRef.current;
+        const frame = await waitForCameraFrame(
+          hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
+          mode === "analyze",
+        );
+        if (!frame) {
+          await postVoiceVisionResult(requestId, "No pude capturar la cámara.");
+        } else {
+          const result =
+            mode === "visual_search"
+              ? await fetchVisionWebSearch(frame, question)
+              : await fetchVisionAnalyze(
+                  frame,
+                  question || "¿Qué ves en la imagen?",
+                );
+          await postVoiceVisionResult(
+            requestId,
+            result.ok ? result.summary : `No pude analizar: ${result.error}`,
+          );
+        }
+      } catch {
+        await postVoiceVisionResult(requestId, "Falló el análisis de cámara.");
+      }
+      await ackVoiceClientAction(action.id);
+    };
+
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const state = await fetchVoiceClientState(false);
+        const action = state.client_action;
+        if (!action || action.id === lastVoiceActionIdRef.current) return;
+        lastVoiceActionIdRef.current = action.id;
+        await handleVoiceClientAction(action);
+      } catch {
+        /* sin sesión */
+      }
+    };
+
+    void poll();
+    const timer = window.setInterval(() => void poll(), 1200);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [retellPollActive, waitForCameraFrame]);
+
   const resolvePublishImage = useCallback(
     async (
       args: Record<string, unknown>,
@@ -334,11 +424,16 @@ export function useCedVoiceSession(
     [waitForCameraFrame],
   );
 
-  const inputLevel = useAudioAnalyser(micStream, micOn && !paused);
+  const [retellInputLevel, setRetellInputLevel] = useState(0);
+  const inputLevelFromMic = useAudioAnalyser(
+    micStream,
+    micOn && !paused && !isRetellVoice(),
+  );
   const inputLevelRef = useRef(0);
   useEffect(() => {
-    inputLevelRef.current = inputLevel;
-  }, [inputLevel]);
+    inputLevelRef.current = isRetellVoice() ? retellInputLevel : inputLevelFromMic;
+  }, [retellInputLevel, inputLevelFromMic]);
+  const inputLevel = isRetellVoice() ? retellInputLevel : inputLevelFromMic;
   const audioLevel =
     orbState === "listening"
       ? inputLevel
@@ -392,6 +487,8 @@ export function useCedVoiceSession(
     clientRef.current = null;
     void retellClientRef.current?.stopCall();
     retellClientRef.current = null;
+    setRetellPollActive(false);
+    lastVoiceActionIdRef.current = null;
     isRetellSessionRef.current = false;
     handlersRef.current = null;
 
@@ -411,6 +508,7 @@ export function useCedVoiceSession(
     cameraStreamRef.current = null;
     setMicOn(false);
     setCameraOn(false);
+    setRetellInputLevel(0);
     setCameraStream(null);
     cameraPreviewRef.current = null;
     setHeardIndicator(INITIAL_HEARD);
@@ -449,6 +547,7 @@ export function useCedVoiceSession(
         setCameraOn(false);
         setCameraStream(null);
         cameraPreviewRef.current = null;
+        void postVoiceCameraStatus(false).catch(() => undefined);
         return;
       }
       try {
@@ -465,6 +564,7 @@ export function useCedVoiceSession(
         setCameraOn(true);
         setStatusLabel("Activando cámara…");
         resetCameraIdleTimer();
+        void postVoiceCameraStatus(true).catch(() => undefined);
         void clientRef.current?.attachCameraStream(stream);
       } catch {
         setErrorMessage(
@@ -509,17 +609,19 @@ export function useCedVoiceSession(
     const isStale = () => voiceSessionGenRef.current !== sessionGen;
 
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: { ideal: 24000 },
-          echoCancellation: { ideal: true },
-          noiseSuppression: { ideal: true },
-          autoGainControl: { ideal: true },
-        },
-      });
-      micStreamRef.current = stream;
-      setMicStream(stream);
+      if (!isRetellVoice()) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: { ideal: 24000 },
+            echoCancellation: { ideal: true },
+            noiseSuppression: { ideal: true },
+            autoGainControl: { ideal: true },
+          },
+        });
+        micStreamRef.current = stream;
+        setMicStream(stream);
+      }
 
       setMicOn(true);
       saveMicPreference(true);
@@ -551,11 +653,14 @@ export function useCedVoiceSession(
         retell.setCallbacks({
           onCallStarted: () => {
             if (isStale()) return;
+            setRetellPollActive(true);
+            lastVoiceActionIdRef.current = null;
             setOrbState("listening");
             setStatusLabel(ORB_STATE_LABELS.listening);
           },
           onCallEnded: () => {
             if (isStale()) return;
+            setRetellPollActive(false);
             void stopSession();
           },
           onAgentTalking: (talking) => {
@@ -575,6 +680,13 @@ export function useCedVoiceSession(
                 userText: text,
                 heardAt: Date.now(),
               });
+              if (cameraStreamRef.current?.active) {
+                void postVoiceCameraStatus(true).catch(() => undefined);
+              }
+              const camIntent = parseCameraIntent(text);
+              if (camIntent === "activate") {
+                void toggleCameraRef.current(true);
+              }
             } else {
               modelRepliedTurnRef.current = true;
             }
@@ -584,6 +696,10 @@ export function useCedVoiceSession(
             if (isStale()) return;
             setErrorMessage(message);
             setOrbState("error");
+          },
+          onAudioLevel: (level) => {
+            if (isStale()) return;
+            setRetellInputLevel(level);
           },
         });
 
@@ -2008,6 +2124,13 @@ export function useCedVoiceSession(
       if (isStale()) return;
 
       voiceTelemetry.setActiveVoice(prefsRef.current.voiceName);
+      const stream = micStreamRef.current;
+      if (!stream) {
+        setErrorMessage("No se detectó flujo de micrófono.");
+        setOrbState("error");
+        await stopSession();
+        return;
+      }
       const ok = await client.connect(handlers, {
         voiceName: prefsRef.current.voiceName,
         language: prefsRef.current.language,

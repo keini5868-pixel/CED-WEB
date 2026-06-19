@@ -28,14 +28,61 @@ from app.services.pdf_report import store_pdf
 from app.services.prospection import get_prospection_report, set_prospection_enabled
 from app.services.social_comments import fetch_social_comments
 from app.services.user_address import sync_address_from_memory_key
+from app.services import voice_client_session as vcs
 from app.services.voice_usage import voice_access_state
 
 logger = logging.getLogger(__name__)
 
-CAMERA_CLIENT_ONLY = (
-    "Esta acción requiere la cámara en el navegador. "
-    "Actívela desde el panel de voz o use el chat."
-)
+
+async def _wait_camera_active(user_id: str, timeout_sec: float = 8.0) -> bool:
+    import time
+
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        if vcs.is_camera_active(user_id):
+            return True
+        await asyncio.sleep(0.35)
+    return False
+
+
+async def _wait_vision_result(user_id: str, request_id: int, timeout_sec: float = 16.0) -> str | None:
+    import time
+
+    deadline = time.monotonic() + timeout_sec
+    while time.monotonic() < deadline:
+        result = vcs.pop_vision_result(user_id, request_id)
+        if result:
+            return result
+        await asyncio.sleep(0.35)
+    return None
+
+
+async def _run_camera_capture(
+    user_id: str,
+    *,
+    question: str,
+    mode: str,
+) -> dict[str, Any]:
+    import time
+
+    request_id = int(time.time() * 1000)
+    if not vcs.is_camera_active(user_id):
+        vcs.push_client_action(user_id, "camera_activate", {})
+        await _wait_camera_active(user_id, 5.0)
+
+    vcs.push_client_action(
+        user_id,
+        "camera_capture",
+        {"request_id": request_id, "question": question, "mode": mode},
+    )
+    summary = await _wait_vision_result(user_id, request_id)
+    if summary:
+        return _spoken_ok(summary[:480])
+    return _spoken_err(
+        "No pude ver la cámara, señor. Verifique que esté encendida en el panel de voz "
+        "y que el navegador tenga permiso.",
+        error="camera_capture_timeout",
+    )
 
 
 def _spoken_ok(text: str) -> dict[str, Any]:
@@ -173,10 +220,33 @@ async def execute_voice_tool(
             return _spoken_ok("Información registrada, señor.")
 
         if name in ("request_camera_activation", "request_camera_deactivation"):
-            return _spoken_ok(CAMERA_CLIENT_ONLY)
+            if name == "request_camera_deactivation":
+                vcs.push_client_action(user_id, "camera_deactivate", {})
+                vcs.set_camera_active(user_id, False)
+                return _spoken_ok("Cámara desactivada, señor.")
+            if vcs.is_camera_active(user_id):
+                return _spoken_ok("Cámara activa, señor.")
+            vcs.push_client_action(user_id, "camera_activate", {})
+            if await _wait_camera_active(user_id, 8.0):
+                return _spoken_ok("Cámara activa, señor.")
+            return _spoken_ok(
+                "Encienda la cámara en el panel de voz, señor. "
+                "Cuando esté lista, repita qué desea que vea."
+            )
 
-        if name in ("analyze_camera_frame", "buscar_lo_visible"):
-            return _spoken_err(CAMERA_CLIENT_ONLY, error="camera_client_only")
+        if name == "analyze_camera_frame":
+            pregunta = str(
+                params.get("pregunta") or params.get("question") or "¿Qué ves en la imagen?"
+            ).strip()
+            return await _run_camera_capture(user_id, question=pregunta, mode="analyze")
+
+        if name == "buscar_lo_visible":
+            pregunta = str(params.get("pregunta") or params.get("question") or "").strip()
+            return await _run_camera_capture(
+                user_id,
+                question=pregunta or "Identifica lo visible y busca información",
+                mode="visual_search",
+            )
 
         if name == "generar_pdf":
             titulo = str(params.get("titulo") or "Documento CED").strip()

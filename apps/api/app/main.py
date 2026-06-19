@@ -41,6 +41,7 @@ from app.routers import (
     usage,
     vision,
     navigation,
+    voice_client,
 )
 
 logger = logging.getLogger("ced.api")
@@ -131,6 +132,7 @@ def create_app() -> FastAPI:
     application.include_router(cognitive.router)
     application.include_router(usage.router)
     application.include_router(navigation.router)
+    application.include_router(voice_client.router)
     if settings.support_chat_enabled:
         application.include_router(support.router)
 

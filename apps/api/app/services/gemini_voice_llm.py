@@ -243,27 +243,25 @@ class GeminiVoiceLlm:
 
         web_req = resolve_web_search_request(user_text, request.transcript)
         if web_req:
-            hold = web_search_hold_phrase(web_req["kind"])
-            yield ResponseResponse(
-                response_id=request.response_id,
-                content=hold,
-                content_complete=False,
-                end_call=False,
-            )
             if self.user_id:
                 tool_result = await execute_voice_tool(
                     "search_web",
                     self.user_id,
                     {"query": web_req["query"], "kind": web_req["kind"]},
                 )
-                spoken = str(tool_result.get("spoken") or "No pude consultar, señor.")
+                spoken = str(tool_result.get("spoken") or "").strip()
             else:
                 spoken = "No identifiqué al usuario, señor."
+            if not spoken or spoken.startswith("No fue posible"):
+                full = spoken or "No pude consultar en internet, señor."
+            else:
+                hold = web_search_hold_phrase(web_req["kind"])
+                full = f"{hold} {spoken}"[:480]
             self._history = _truncate_contents(
                 [
                     *self._history,
                     last,
-                    types.Content(role="model", parts=[types.Part(text=spoken)]),
+                    types.Content(role="model", parts=[types.Part(text=full)]),
                 ],
                 max_turns=MAX_HISTORY_TURNS,
             )
@@ -271,11 +269,11 @@ class GeminiVoiceLlm:
                 "[RETELL-GEMINI] web_search kind=%s query=%s spoken=%s",
                 web_req["kind"],
                 web_req["query"][:80],
-                spoken[:120],
+                full[:120],
             )
             yield ResponseResponse(
                 response_id=request.response_id,
-                content=spoken[:480],
+                content=full,
                 content_complete=True,
                 end_call=False,
             )

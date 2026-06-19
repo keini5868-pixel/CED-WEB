@@ -185,41 +185,37 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             web_req = resolve_web_search_request(user_text, transcript)
             if web_req and uid:
-                hold = web_search_hold_phrase(web_req["kind"])
                 async with response_lock:
                     if response_id < active_response_id:
                         return
                     active_response_id = response_id
                     last_answered_user_key = user_key
-                    await websocket.send_json(
-                        {
-                            "response_type": "response",
-                            "response_id": response_id,
-                            "content": hold,
-                            "content_complete": False,
-                            "end_call": False,
-                        }
-                    )
                     tool_result = await execute_voice_tool(
                         "search_web",
                         uid,
                         {"query": web_req["query"], "kind": web_req["kind"]},
                     )
-                    spoken = str(tool_result.get("spoken") or "No pude consultar, señor.")
+                    spoken = str(tool_result.get("spoken") or "").strip()
+                    if not spoken or spoken.startswith("No fue posible"):
+                        full = spoken or "No pude consultar en internet, señor. Intente de nuevo."
+                    else:
+                        hold = web_search_hold_phrase(web_req["kind"])
+                        full = f"{hold} {spoken}"[:480]
                     await websocket.send_json(
                         {
                             "response_type": "response",
                             "response_id": response_id,
-                            "content": spoken[:480],
+                            "content": full,
                             "content_complete": True,
                             "end_call": False,
                         }
                     )
                 logger.info(
-                    "[RETELL-GEMINI] web_search call=%s kind=%s query=%s",
+                    "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
                     call_id,
                     web_req["kind"],
                     web_req["query"][:80],
+                    full[:120],
                 )
                 return
 
