@@ -71,10 +71,21 @@ async def voice_chat_image(
     body: ChatImageBody,
     user_id: str = Depends(require_user_id),
 ) -> dict[str, str]:
-    """Registra imagen del chat para publicar por voz Retell."""
+    """Registra imagen del chat para publicar por voz Retell (solo sesión activa)."""
+    if not vcs.is_voice_session_active(user_id):
+        return {"ok": "false", "reason": "no_active_voice_session"}
     vcs.set_last_publishable_image(
         user_id,
         image_url=body.image_url,
         image_data=body.image_data,
     )
+    return {"ok": "true"}
+
+
+@router.post("/session-end")
+async def voice_session_end(
+    user_id: str = Depends(require_user_id),
+) -> dict[str, str]:
+    """Fin de sesión voz en cliente — limpia imagen pendiente de Instagram."""
+    vcs.end_voice_publish_session(user_id)
     return {"ok": "true"}

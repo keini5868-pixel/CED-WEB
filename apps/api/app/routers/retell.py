@@ -156,6 +156,10 @@ async def register_retell_call(
     call_id = getattr(call, "call_id", None) or getattr(call, "callId", None)
     if call_id:
         bind_call_user(str(call_id), user_id)
+        from app.services import voice_client_session as vcs
+
+        vcs.begin_voice_publish_session(user_id, str(call_id))
+        logger.info("[RETELL] voice publish session reset call=%s user=%s", call_id, user_id[:8])
 
     return {
         "ok": True,

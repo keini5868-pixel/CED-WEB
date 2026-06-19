@@ -67,3 +67,7 @@ export async function postVoiceChatImage(payload: {
     body: JSON.stringify(payload),
   });
 }
+
+export async function postVoiceSessionEnd(): Promise<void> {
+  await proxyFetch("voice/session-end", { method: "POST" });
+}

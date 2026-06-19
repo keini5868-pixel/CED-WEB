@@ -741,6 +741,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         uid = resolve_call_user(call_id) or user_id
         if uid:
             try:
+                from app.services import voice_client_session as vcs
+
+                vcs.end_voice_publish_session(uid, call_id)
+            except Exception:  # noqa: BLE001
+                pass
+            try:
                 from app.services.conversation_memory import finalize_voice_session_async
 
                 finalize_voice_session_async(

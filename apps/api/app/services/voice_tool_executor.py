@@ -379,9 +379,8 @@ async def execute_voice_tool(
                     image_data=str(image_data) if image_data else None,
                 )
                 spoken = str(result.get("spoken") or "Publicación enviada con éxito a Instagram, señor.")
-                from app.services import voice_client_session as vcs
-
                 vcs.clear_awaiting_instagram_caption(user_id)
+                vcs.clear_last_publishable_image(user_id)
                 return _spoken_ok(spoken)
             except MetaSocialError as exc:
                 return _spoken_err(f"No fue posible publicar, señor. {exc}")

@@ -93,8 +93,11 @@ async def post_chat_message_with_image(
         try:
             from app.services import voice_client_session as vcs
 
-            vcs.set_last_publishable_image_from_bytes(user_id, image_bytes, media_type)
-            logger.info("[CHAT] imagen registrada para voz user=%s bytes=%s", user_id[:8], len(image_bytes))
+            if vcs.is_voice_session_active(user_id):
+                vcs.set_last_publishable_image_from_bytes(user_id, image_bytes, media_type)
+                logger.info("[CHAT] imagen registrada para voz user=%s bytes=%s", user_id[:8], len(image_bytes))
+            else:
+                logger.info("[CHAT] imagen omitida para voz — sin sesión activa user=%s", user_id[:8])
         except Exception:  # noqa: BLE001
             logger.warning("[CHAT] no se pudo registrar imagen para voz", exc_info=True)
         return send_message(

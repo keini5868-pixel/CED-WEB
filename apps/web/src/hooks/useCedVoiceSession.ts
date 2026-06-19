@@ -24,6 +24,7 @@ import {
   fetchVoiceClientState,
   postVoiceCameraStatus,
   postVoiceChatImage,
+  postVoiceSessionEnd,
   postVoiceVisionResult,
 } from "@/lib/api/voiceClient";
 import {
@@ -534,6 +535,8 @@ export function useCedVoiceSession(
     advancedConfirmAskedRef.current = false;
     pendingAdvancedPromptRef.current = "";
     pendingPublishRef.current = null;
+    lastPublishableImageRef.current = null;
+    void postVoiceSessionEnd().catch(() => undefined);
     setPaused(false);
     setOrbState("idle");
     setStatusLabel(ORB_STATE_LABELS.idle);
@@ -693,6 +696,7 @@ export function useCedVoiceSession(
         retell.setCallbacks({
           onCallStarted: () => {
             if (isStale()) return;
+            lastPublishableImageRef.current = null;
             setRetellPollActive(true);
             lastVoiceActionIdRef.current = null;
             setOrbState("listening");
@@ -2363,6 +2367,7 @@ export function useCedVoiceSession(
 
   const registerChatImageForVoice = useCallback(
     async (preview: string, file?: File) => {
+      if (!isRetellSessionRef.current) return;
       const normalized = preview.startsWith("http")
         ? normalizeCedMediaUrl(preview)
         : preview;

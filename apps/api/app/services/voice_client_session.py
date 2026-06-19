@@ -24,6 +24,7 @@ def _fresh_session() -> dict[str, Any]:
         "vision_results": {},
         "last_publishable_image": None,
         "awaiting_instagram_caption": False,
+        "active_voice_call_id": None,
         "updated_at": _now(),
     }
 
@@ -121,6 +122,47 @@ def pop_vision_result(user_id: str, request_id: int, *, max_age_sec: float = 30.
         return text or None
 
 
+def begin_voice_publish_session(user_id: str, voice_call_id: str) -> None:
+    """Nueva llamada Retell — descarta imagen/caption de sesiones anteriores."""
+    cid = (voice_call_id or "").strip()
+    if not cid:
+        return
+    session = _get(user_id)
+    with _lock:
+        session["active_voice_call_id"] = cid
+        session["last_publishable_image"] = None
+        session["awaiting_instagram_caption"] = False
+        session["updated_at"] = _now()
+
+
+def end_voice_publish_session(user_id: str, voice_call_id: str | None = None) -> None:
+    """Fin de llamada — limpia estado de publicación."""
+    session = _get(user_id)
+    with _lock:
+        active = str(session.get("active_voice_call_id") or "").strip()
+        end_id = (voice_call_id or "").strip()
+        if end_id and active and active != end_id:
+            return
+        session["active_voice_call_id"] = None
+        session["last_publishable_image"] = None
+        session["awaiting_instagram_caption"] = False
+        session["updated_at"] = _now()
+
+
+def is_voice_session_active(user_id: str) -> bool:
+    session = _get(user_id)
+    with _lock:
+        return bool(str(session.get("active_voice_call_id") or "").strip())
+
+
+def clear_last_publishable_image(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["last_publishable_image"] = None
+        session["awaiting_instagram_caption"] = False
+        session["updated_at"] = _now()
+
+
 def set_last_publishable_image(
     user_id: str,
     *,
@@ -135,10 +177,14 @@ def set_last_publishable_image(
         return
     session = _get(user_id)
     with _lock:
+        call_id = str(session.get("active_voice_call_id") or "").strip()
+        if not call_id:
+            return
         session["last_publishable_image"] = {
             "url": url or None,
             "data": data or None,
             "at": _now(),
+            "voice_call_id": call_id,
         }
         if awaiting_caption:
             session["awaiting_instagram_caption"] = True
@@ -161,6 +207,8 @@ def set_last_publishable_image_from_bytes(
 def is_awaiting_instagram_caption(user_id: str) -> bool:
     session = _get(user_id)
     with _lock:
+        if not str(session.get("active_voice_call_id") or "").strip():
+            return False
         return bool(session.get("awaiting_instagram_caption"))
 
 
@@ -174,8 +222,13 @@ def clear_awaiting_instagram_caption(user_id: str) -> None:
 def get_last_publishable_image(user_id: str, *, max_age_sec: float = 900.0) -> dict[str, str] | None:
     session = _get(user_id)
     with _lock:
+        active_call = str(session.get("active_voice_call_id") or "").strip()
+        if not active_call:
+            return None
         row = session.get("last_publishable_image")
         if not row:
+            return None
+        if str(row.get("voice_call_id") or "") != active_call:
             return None
         age = _now() - float(row.get("at") or 0)
         if age > max_age_sec:

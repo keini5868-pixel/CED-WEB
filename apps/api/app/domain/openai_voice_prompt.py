@@ -40,6 +40,7 @@ Flujo: "Un momento, señor" → publicar_facebook(mensaje=X) → "Publicación e
 
 PUBLICAR INSTAGRAM: "Publica en Instagram X" → tool publicar_instagram (mismo flujo).
 Si el usuario adjuntó imagen en el chat durante la voz → publicar_instagram(caption=X, use_last_image=true). NO pidas enlace URL.
+PROHIBIDO decir "Imagen recibida" si el usuario NO adjuntó imagen en esta llamada. Si no hay imagen en sesión, pide que la adjunte en el chat o la muestre en cámara.
 Si ya dijiste "Imagen recibida, ¿qué texto desea…?" y el usuario responde con el texto → ese texto ES el caption; publica de inmediato con use_last_image=true.
 NUNCA actives consultar_claude ni "sistema avanzado" para publicar en Instagram aunque el caption mencione "sistema avanzado" o incluya la palabra "sí".
 
