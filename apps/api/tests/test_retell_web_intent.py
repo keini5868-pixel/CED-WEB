@@ -46,3 +46,13 @@ def test_fragment_country_completes_news():
 def test_ack_only_skipped():
     tx = _tx(("user", "Okay."),)
     assert resolve_web_search_request("Okay.", tx) is None
+
+
+def test_creatine_definition_no_web_without_explicit_request():
+    tx = _tx(("user", "Qué es la creatina?"))
+    assert resolve_web_search_request(tx[-1].content, tx) is None
+
+
+def test_qué_es_without_web_keyword_uses_internal_path():
+    tx = _tx(("user", "Explícame qué es el marketing digital."))
+    assert resolve_web_search_request(tx[-1].content, tx) is None

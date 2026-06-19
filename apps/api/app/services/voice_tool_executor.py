@@ -111,6 +111,14 @@ async def execute_voice_tool(
         if name == "search_web":
             query = str(params.get("query") or "").strip()
             kind = str(params.get("kind") or "general")
+            if not requires_live_web(query):
+                hits = search_internal_knowledge(query, limit=2)
+                if hits:
+                    internal = format_hits_for_prompt(hits)
+                    return _spoken_ok(internal[:480])
+                return _spoken_ok(
+                    "Eso lo respondo con mi conocimiento interno, señor, sin consultar internet."
+                )
             result = await asyncio.to_thread(fetch_voice_brief, query, kind=kind)
             if result.get("ok"):
                 summary = str(result.get("summary") or "").strip()

@@ -10,6 +10,7 @@ from app.services.cognitive_intents import (
     is_weather_intent,
     is_web_research_intent,
     normalize_text,
+    requires_live_web,
 )
 from app.services.retell_llm_types import Utterance
 
@@ -67,9 +68,7 @@ _FRAGMENT_PREFIX = re.compile(
 
 
 def _normalize(text: str) -> str:
-    cleaned = (text or "").strip().lower()
-    cleaned = re.sub(r"\s+", " ", cleaned)
-    return cleaned.rstrip(".,!?¿¡")
+    return normalize_text(text).rstrip(".,!?¿¡")
 
 
 def _user_lines(transcript: list[Utterance]) -> list[str]:
@@ -118,21 +117,16 @@ def _is_fragment_continuation(last: str, prev: str) -> bool:
 
 
 def _needs_internet_lookup(text: str) -> bool:
-    if is_weather_intent(text) or is_news_intent(text) or is_web_research_intent(text):
+    if is_weather_intent(text) or is_news_intent(text):
+        return True
+    if requires_live_web(text):
         return True
     norm = normalize_text(text)
     if len(norm) < 4 or norm in _ACK_ONLY:
         return False
     if is_volatile_query(text) and _WEB_FRAGMENT_HINTS.search(norm):
-        return True
-    return bool(
-        re.search(
-            r"\b(clima|tiempo|temperatura|weather|pronóstico|pronostico|lluvia|"
-            r"noticias?|precio|cotiza|busca|buscar|investiga|google|internet|"
-            r"mercado|tendencia|actualidad|creatina|suplemento)\b",
-            norm,
-        )
-    )
+        return is_news_intent(text) or is_weather_intent(text)
+    return False
 
 
 def _web_kind_for(text: str) -> str:
@@ -173,11 +167,18 @@ def resolve_web_search_request(
 
 
 def web_search_hold_phrase(kind: str) -> str:
+    """No concatenar con resultados TTS — Retell usa otra voz en chunks separados."""
     if kind == "weather":
-        return "Un momento, señor, consulto el clima."
+        return "Consulto el clima, señor."
     if kind == "news":
-        return "Un momento, señor, consulto las noticias."
-    return "Un momento, señor, busco eso en internet."
+        return "Consulto las noticias, señor."
+    return "Consulto en internet, señor."
+
+
+def split_spoken_chunks(text: str, *, max_len: int = 140) -> list[str]:
+    """Un solo bloque — varios chunks provocan cambio de voz en Retell."""
+    cleaned = " ".join((text or "").split()).strip()
+    return [cleaned[:480]] if cleaned else []
 
 
 def should_respond_to_transcript(

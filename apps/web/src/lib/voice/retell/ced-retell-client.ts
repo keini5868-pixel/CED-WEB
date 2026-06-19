@@ -1,4 +1,5 @@
 import { RetellWebClient } from "retell-client-js-sdk";
+import type { Room, RemoteAudioTrack } from "livekit-client";
 
 export type RetellTranscriptRole = "user" | "agent";
 
@@ -39,6 +40,8 @@ export class CedRetellClient {
   private agentAudioReady = false;
   private liveKitConnected = false;
   private audioPlaybackStarted = false;
+  private agentSpeaking = false;
+  private agentMutedForBargeIn = false;
 
   constructor() {
     this.client = new RetellWebClient();
@@ -47,6 +50,47 @@ export class CedRetellClient {
 
   setCallbacks(callbacks: CedRetellCallbacks): void {
     this.callbacks = callbacks;
+  }
+
+  private muteAgentPlayback(): void {
+    try {
+      const room = (this.client as unknown as { room?: Room }).room;
+      if (!room) return;
+      room.remoteParticipants.forEach((participant) => {
+        participant.audioTrackPublications.forEach((publication) => {
+          if (publication.trackName !== "agent_audio") return;
+          const track = publication.track as RemoteAudioTrack | undefined;
+          track?.setVolume(0);
+        });
+      });
+      this.agentMutedForBargeIn = true;
+      retellLog("barge-in: agent audio silenciado");
+    } catch (err) {
+      retellLog("barge-in mute falló", err);
+    }
+  }
+
+  private restoreAgentPlayback(): void {
+    if (!this.agentMutedForBargeIn) return;
+    try {
+      const room = (this.client as unknown as { room?: Room }).room;
+      if (!room) return;
+      room.remoteParticipants.forEach((participant) => {
+        participant.audioTrackPublications.forEach((publication) => {
+          if (publication.trackName !== "agent_audio") return;
+          const track = publication.track as RemoteAudioTrack | undefined;
+          track?.setVolume(1);
+        });
+      });
+      this.agentMutedForBargeIn = false;
+    } catch (err) {
+      retellLog("barge-in restore falló", err);
+    }
+  }
+
+  private maybeBargeIn(userText: string): void {
+    if (!this.agentSpeaking || !userText.trim()) return;
+    this.muteAgentPlayback();
   }
 
   private stopAudioRetry(): void {
@@ -151,11 +195,15 @@ export class CedRetellClient {
     });
 
     this.client.on("agent_start_talking", () => {
+      this.restoreAgentPlayback();
+      this.agentSpeaking = true;
       this.flushUserTranscript(true);
       this.callbacks.onAgentTalking?.(true);
     });
 
     this.client.on("agent_stop_talking", () => {
+      this.agentSpeaking = false;
+      this.restoreAgentPlayback();
       this.callbacks.onAgentTalking?.(false);
       if (this.lastAgentLine && this.lastAgentLine !== this.lastPersistedAgentLine) {
         this.lastPersistedAgentLine = this.lastAgentLine;
@@ -170,9 +218,13 @@ export class CedRetellClient {
       if (update.turntaking === "agent_turn") {
         this.flushUserTranscript(true);
       }
+      if (update.turntaking === "user_turn") {
+        this.maybeBargeIn(this.pendingUserText);
+      }
 
       const userText = this.latestLine(lines, "user");
       if (userText && userText !== this.pendingUserText) {
+        this.maybeBargeIn(userText);
         this.scheduleUserTranscript(userText);
       }
 
@@ -228,6 +280,8 @@ export class CedRetellClient {
     this.agentAudioReady = false;
     this.liveKitConnected = false;
     this.audioPlaybackStarted = false;
+    this.agentSpeaking = false;
+    this.agentMutedForBargeIn = false;
     retellLog("startCall", { callId: this.callId });
 
     await this.client.startCall({
@@ -254,6 +308,8 @@ export class CedRetellClient {
     this.agentAudioReady = false;
     this.liveKitConnected = false;
     this.audioPlaybackStarted = false;
+    this.agentSpeaking = false;
+    this.agentMutedForBargeIn = false;
   }
 
   setMuted(muted: boolean): void {

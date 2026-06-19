@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from enum import Enum
 
 
 def normalize_text(text: str) -> str:
-    return re.sub(r"\s+", " ", (text or "").strip().lower())
+    t = (text or "").strip().lower()
+    t = unicodedata.normalize("NFD", t)
+    t = "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
+    return re.sub(r"\s+", " ", t)
 
 
 class CognitiveIntent(str, Enum):
@@ -167,6 +171,25 @@ def is_web_research_intent(text: str) -> bool:
     return _matches(t, WEB_PATTERNS)
 
 
+def requires_live_web(text: str) -> bool:
+    """Solo noticias/clima/datos de hoy o búsqueda explícita en internet."""
+    if is_news_intent(text) or is_weather_intent(text):
+        return True
+    t = normalize_text(text)
+    if re.search(r"\b(precio|cuesta|cotiza|valor)\b.*\b(hoy|actual|ahora)\b", t):
+        return True
+    if re.search(r"\b(hoy|ahora|actual)\b.*\b(precio|cuesta|cotiza|mercado)\b", t):
+        return True
+    return bool(
+        re.search(
+            r"\b(busca(r|me)?\s+(en\s+)?(internet|la web|google|l[ií]nea)|"
+            r"investiga(r|me)?\s+(en\s+(internet|la web)|sobre)|"
+            r"informaci[oó]n actualizada|datos actuales|titulares|última hora)\b",
+            t,
+        )
+    )
+
+
 def is_volatile_query(text: str) -> bool:
     t = normalize_text(text)
     return _matches(t, VOLATILE_PATTERNS) or is_weather_intent(text) or is_news_intent(text)
@@ -237,11 +260,10 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
         )
 
     volatile = is_volatile_query(raw)
-    web = is_web_research_intent(raw)
     advanced = is_advanced_request(raw)
     confirmed = has_advanced_confirmation(raw) or (confirm_pending and has_advanced_confirmation(raw))
 
-    if web or volatile:
+    if requires_live_web(raw):
         kind = "weather" if is_weather_intent(raw) else "news" if is_news_intent(raw) else "general"
         return IntentAnalysis(
             primary=CognitiveIntent.WEB_SEARCH,

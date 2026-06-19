@@ -2,6 +2,44 @@
 
 Preparación sin credenciales activas. Al recibir las claves, conecta en `apps/web/.env.local`.
 
+## Producción Railway (usar AHORA — castillodigital.com requiere DNS)
+
+**Servicio WEB (`cedweb-production`):**
+```env
+NEXT_PUBLIC_APP_URL=https://cedweb-production.up.railway.app
+NEXT_PUBLIC_API_URL=https://ced-api-production.up.railway.app
+CED_API_URL=https://ced-api-production.up.railway.app
+NEXT_PUBLIC_SUPABASE_URL=https://foscutjtuscqrduugklm.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
+SUPER_ADMIN_EMAILS=keini5868@gmail.com
+```
+
+**Servicio API (`ced-api-production`):**
+```env
+WEB_PUBLIC_URL=https://cedweb-production.up.railway.app
+API_PUBLIC_URL=https://ced-api-production.up.railway.app
+CORS_ORIGINS=https://cedweb-production.up.railway.app
+SUPER_ADMIN_EMAILS=keini5868@gmail.com
+SUPABASE_URL=https://foscutjtuscqrduugklm.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=...
+SUPABASE_JWT_SECRET=...
+META_APP_ID=...
+META_APP_SECRET=...
+OPENAI_API_KEY=...
+```
+
+Tras cambiar variables → **Redeploy WEB + API**.
+
+Diagnóstico: `https://cedweb-production.up.railway.app/api/ced/health` → `"ok": true`.
+
+**Cuando exista DNS custom (futuro):**
+```env
+NEXT_PUBLIC_APP_URL=https://app.castillodigital.com
+NEXT_PUBLIC_API_URL=https://api.castillodigital.com
+```
+
+## Producción con dominio custom (cuando DNS esté listo)
+
 ## Variables (`apps/web/.env.local`)
 
 ```env
@@ -17,10 +55,13 @@ SUPER_ADMIN_EMAILS=keini@castillodigital.com
 ## Supabase Dashboard
 
 1. **Authentication → URL Configuration**
-   - Site URL: `http://localhost:3000` (prod: tu dominio)
+   - Site URL: tu dominio público (ej. `https://app.castillodigital.com`)
    - Redirect URLs:
-     - `http://localhost:3000/auth/callback`
-     - `http://localhost:3000/**` (desarrollo)
+     - `https://cedweb-production.up.railway.app/**`
+     - `https://*.up.railway.app/**`
+     - `http://localhost:3000/**`
+     - (futuro) `https://app.castillodigital.com/**`
+   - Importante: deben coincidir con el dominio del navegador (www vs sin www).
 
 2. **Authentication → Providers → Google**
    - Client ID / Secret de Google Cloud Console

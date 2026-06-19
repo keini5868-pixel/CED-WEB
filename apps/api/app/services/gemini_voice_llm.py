@@ -20,7 +20,6 @@ from app.services.retell_custom_llm import (
     is_generic_agent_line,
     is_small_talk,
     resolve_web_search_request,
-    web_search_hold_phrase,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_tool_executor import execute_voice_tool
@@ -74,19 +73,32 @@ def _truncate_contents(contents: list[types.Content], *, max_turns: int) -> list
     return contents[-max_turns:]
 
 
-def _build_voice_system(user_id: str | None) -> str:
+def _build_voice_system(user_id: str | None, user_text: str = "") -> str:
     base = build_ced_voice_system_prompt()
     uid = (user_id or "").strip()
-    if not uid:
-        return base
-    try:
-        from app.services.conversation_memory import load_user_context
+    if uid:
+        try:
+            from app.services.conversation_memory import load_user_context
 
-        ctx = load_user_context(uid)
-        if ctx:
-            return f"{base}\n\n{ctx}"
-    except Exception:  # noqa: BLE001
-        pass
+            ctx = load_user_context(uid)
+            if ctx:
+                base = f"{base}\n\n{ctx}"
+        except Exception:  # noqa: BLE001
+            pass
+    query = (user_text or "").strip()
+    if query:
+        try:
+            from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
+
+            hits = search_internal_knowledge(query, limit=2)
+            if hits:
+                block = format_hits_for_prompt(hits)
+                base = (
+                    f"{base}\n\n# CONOCIMIENTO INTERNO CED (prioriza esto; no busques en web salvo noticias/clima/datos de hoy)\n"
+                    f"{block}"
+                )
+        except Exception:  # noqa: BLE001
+            pass
     return base
 
 
@@ -255,8 +267,7 @@ class GeminiVoiceLlm:
             if not spoken or spoken.startswith("No fue posible"):
                 full = spoken or "No pude consultar en internet, señor."
             else:
-                hold = web_search_hold_phrase(web_req["kind"])
-                full = f"{hold} {spoken}"[:480]
+                full = spoken[:480]
             self._history = _truncate_contents(
                 [
                     *self._history,
@@ -288,7 +299,7 @@ class GeminiVoiceLlm:
         )
 
         config = types.GenerateContentConfig(
-            system_instruction=_build_voice_system(self.user_id),
+            system_instruction=_build_voice_system(self.user_id, user_text),
             tools=[self.tools],
             temperature=0.4,
             max_output_tokens=320,
@@ -365,7 +376,7 @@ class GeminiVoiceLlm:
                 follow_up = await self._generate_with_timeout(
                     contents=follow_up_contents,
                     config=types.GenerateContentConfig(
-                        system_instruction=_build_voice_system(self.user_id),
+                        system_instruction=_build_voice_system(self.user_id, user_text),
                         temperature=0.4,
                         max_output_tokens=320,
                     ),
@@ -387,18 +398,7 @@ class GeminiVoiceLlm:
             return
 
         text_response = _extract_text(response)
-        web_req = resolve_web_search_request(user_text, request.transcript)
-        if web_req and (is_generic_agent_line(text_response) or not text_response):
-            if self.user_id:
-                tool_result = await execute_voice_tool(
-                    "search_web",
-                    self.user_id,
-                    {"query": web_req["query"], "kind": web_req["kind"]},
-                )
-                text_response = str(tool_result.get("spoken") or "No pude consultar, señor.")
-            else:
-                text_response = "No identifiqué al usuario, señor."
-        elif is_generic_agent_line(text_response) or not text_response:
+        if is_generic_agent_line(text_response) or not text_response:
             text_response = (
                 concise_reply_for_small_talk(user_text)
                 if is_small_talk(user_text)
@@ -412,7 +412,7 @@ class GeminiVoiceLlm:
         logger.info("[RETELL-GEMINI] agent=%s", text_response[:160])
         yield ResponseResponse(
             response_id=request.response_id,
-            content=text_response,
+            content=text_response[:480],
             content_complete=True,
             end_call=False,
         )

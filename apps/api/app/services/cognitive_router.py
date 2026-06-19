@@ -10,7 +10,6 @@ from typing import Any, Literal
 from app.services.cognitive_intents import (
     CognitiveIntent,
     analyze_intent,
-    is_volatile_query,
 )
 from app.services.cognitive_memory import memory_context_for_voice, save_memory, search_memory
 from app.services.claude_deep_analysis import consultar_sistema_avanzado
@@ -122,6 +121,26 @@ def route_message(
             meta={"hint": "meta_tools"},
         )
 
+    hits = search_internal_knowledge(raw, limit=3)
+    hit = hits[0] if hits else None
+    mem_ctx = _memory_context(user_id, raw)
+
+    if hit and should_use_internal_brain(raw, hit):
+        ctx = format_hits_for_prompt(hits)
+        if mem_ctx:
+            ctx = f"{mem_ctx}\n\n{ctx}"
+        return CognitiveRouteResult(
+            intent=CognitiveIntent.INTERNAL_KNOWLEDGE.value,
+            channel=channel,
+            confidence=hit.confidence,
+            domain_id=hit.domain_id,
+            domain_label=hit.domain_label,
+            context_for_llm=ctx,
+            internal_hits=[asdict(h) for h in hits],
+            source="internal_brain",
+            meta={"fast_path": True},
+        )
+
     if analysis.primary == CognitiveIntent.WEB_SEARCH:
         brief = fetch_voice_brief(raw, kind=analysis.web_kind)
         if execute_side_effects and channel == "voice":
@@ -180,42 +199,6 @@ def route_message(
             advanced_prompt=raw,
             needs_advanced_confirm=False,
         )
-
-    # Cerebro interno (estable) — fluidez sin cargar internet
-    hits = search_internal_knowledge(raw, limit=3)
-    hit = hits[0] if hits else None
-    mem_ctx = _memory_context(user_id, raw)
-    volatile = is_volatile_query(raw)
-
-    if hit and should_use_internal_brain(raw, hit) and not volatile:
-        ctx = format_hits_for_prompt(hits)
-        if mem_ctx:
-            ctx = mem_ctx + "\n\n" + ctx
-        return CognitiveRouteResult(
-            intent=CognitiveIntent.INTERNAL_KNOWLEDGE.value,
-            channel=channel,
-            confidence=hit.confidence,
-            domain_id=hit.domain_id,
-            domain_label=hit.domain_label,
-            context_for_llm=ctx,
-            internal_hits=[asdict(h) for h in hits],
-            source="internal_brain",
-            meta={"fast_path": True},
-        )
-
-    if volatile and not analysis.needs_web:
-        brief = fetch_voice_brief(raw, kind="general")
-        if brief.get("ok"):
-            summary = str(brief.get("summary") or "")
-            return CognitiveRouteResult(
-                intent=CognitiveIntent.WEB_SEARCH.value,
-                channel=channel,
-                confidence=0.85,
-                web_kind="general",
-                speakable=summary,
-                context_for_llm=f"Dato sensible al tiempo — verificado en web:\n{summary}",
-                source="web_fallback",
-            )
 
     # Respuesta directa con contexto parcial interno + memoria
     partial = format_hits_for_prompt(hits[:1]) if hits else ""

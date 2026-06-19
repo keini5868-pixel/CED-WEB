@@ -1,8 +1,8 @@
 # Castillo Digital API — producción (Railway / Render)
-# build: 2026-06-19-voice-intent-v10
+# build: 2026-06-19-single-voice-v12
 FROM python:3.12-slim
 
-ARG BUILD_VERSION=2026-06-19-voice-intent-v10
+ARG BUILD_VERSION=2026-06-19-single-voice-v12
 LABEL org.ced.build="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

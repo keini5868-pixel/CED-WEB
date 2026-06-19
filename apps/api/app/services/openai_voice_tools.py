@@ -8,7 +8,10 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     {
         "type": "function",
         "name": "search_web",
-        "description": "Busca información actual en internet (clima, noticias, precios). NO usar para análisis profundo.",
+        "description": (
+            "Busca en internet SOLO clima actual, noticias de hoy o precios/cotizaciones de hoy. "
+            "PROHIBIDO para opiniones, personas, conceptos estables o conocimiento general — usa cerebro interno."
+        ),
         "parameters": {
             "type": "object",
             "properties": {

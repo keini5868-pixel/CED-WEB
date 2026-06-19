@@ -16,7 +16,6 @@ from app.services.retell_custom_llm import (
     last_user_text,
     resolve_web_search_request,
     should_respond_to_transcript,
-    web_search_hold_phrase,
 )
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
@@ -58,10 +57,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     response_lock = asyncio.Lock()
     active_response_id = 0
     debounce_task: asyncio.Task[None] | None = None
-    debounce_wait_s = 0.75
+    debounce_wait_s = 0.45
     post_greeting_ready = asyncio.Event()
     post_greeting_ready.set()
     last_answered_user_key = ""
+    generation_cancel = 0
     greeting_release_task: asyncio.Task[None] | None = None
     message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
@@ -103,7 +103,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     await send_greeting(0, reason="immediate")
 
     async def handle_message(request_json: dict) -> None:
-        nonlocal active_response_id, debounce_task, last_answered_user_key
+        nonlocal active_response_id, debounce_task, last_answered_user_key, generation_cancel
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
@@ -130,6 +130,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             turntaking = request_json.get("turntaking")
             if turntaking:
                 logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)
+            if turntaking == "user_turn":
+                generation_cancel += 1
+                active_response_id += 1
+                if debounce_task and not debounce_task.done():
+                    debounce_task.cancel()
             return
 
         if interaction not in ("response_required", "reminder_required"):
@@ -160,11 +165,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             debounce_task.cancel()
 
         async def run_debounced() -> None:
-            nonlocal active_response_id, last_answered_user_key
+            nonlocal active_response_id, last_answered_user_key, generation_cancel
+            started_cancel = generation_cancel
             try:
                 await post_greeting_ready.wait()
                 await asyncio.sleep(debounce_wait_s)
             except asyncio.CancelledError:
+                return
+
+            if generation_cancel != started_cancel:
+                logger.info("[RETELL-GEMINI] skip cancelled gen call=%s", call_id)
                 return
 
             if response_id < active_response_id:
@@ -209,8 +219,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     if not spoken or spoken.startswith("No fue posible"):
                         full = spoken or "No pude consultar en internet, señor. Intente de nuevo."
                     else:
-                        hold = web_search_hold_phrase(web_req["kind"])
-                        full = f"{hold} {spoken}"[:480]
+                        full = spoken[:480]
+                    if response_id < active_response_id:
+                        logger.info("[RETELL-GEMINI] drop stale web rid=%s", response_id)
+                        return
                     await websocket.send_json(
                         {
                             "response_type": "response",

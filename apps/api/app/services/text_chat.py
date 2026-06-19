@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 CHAT_MODEL = "claude-sonnet-4-6"
 CHAT_MODEL_FAST = "claude-3-5-haiku-20241022"
-CHAT_GEMINI_MODEL = "gemini-2.5-pro"
+CHAT_GEMINI_MODEL = "gemini-2.5-flash"
 CHAT_SYSTEM_MAX_CHARS = 14_000
 
 
@@ -1028,7 +1028,7 @@ def send_message(
     if route.intent == "advanced_analysis" and route.speakable:
         return _finish(route.speakable, route_meta=route.to_dict())
 
-    if route.intent == "web_search" and route.speakable:
+    if route.intent == "web_search" and route.speakable and route.web_kind in ("news", "weather"):
         return _finish(route.speakable, route_meta=route.to_dict())
 
     messages = _anthropic_messages(history)

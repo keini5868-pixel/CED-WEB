@@ -21,17 +21,14 @@ LEAD_HINT = re.compile(
 )
 
 
+from app.services.user_address import _sanitize_honorific
+
+
 def _honorific_from_profile(user_id: str) -> str:
     profile = supabase_db.get_profile(user_id) or {}
     gender = str(profile.get("gender") or "").strip().lower()
     preferred = str(profile.get("preferred_address") or "").strip()
-    if preferred:
-        return preferred
-    if gender == "female":
-        return "Señora"
-    if gender == "male":
-        return "Señor"
-    return "Señor"
+    return _sanitize_honorific(preferred or "", gender)
 
 
 def _fetch_ig_comments(
@@ -148,8 +145,8 @@ def _build_spoken(comments: list[dict[str, Any]], honorific: str) -> str:
         platform = "Instagram" if best.get("platform") == "instagram" else "Facebook"
         return (
             f"{honorific}, hay {total} comentario{'s' if total != 1 else ''} recientes. "
-            f"Hay uno caliente en {platform} de {user}: \"{text}\". "
-            f"Parece {intent} — posible cliente."
+            f"Hay uno caliente en {platform} de {user}: «{text}». "
+            f"Posible cliente, parece {intent}."
         )
 
     sample = comments[0]
