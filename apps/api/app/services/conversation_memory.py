@@ -310,6 +310,58 @@ def _get_pending_actions(user_id: str) -> list[str]:
     return actions[:8]
 
 
+def load_recent_messages_for_llm(user_id: str, *, limit: int = 30) -> list[dict[str, str]]:
+    """Últimos mensajes del usuario (voz + texto) para historial Gemini, orden cronológico."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return []
+    cap = max(1, min(limit, 50))
+    rows: list[dict[str, Any]] = []
+    try:
+        res = (
+            _client()
+            .table("user_conversations")
+            .select("role, content, created_at")
+            .eq("user_id", uid)
+            .order("created_at", desc=True)
+            .limit(cap)
+            .execute()
+        )
+        rows = list(reversed(res.data or []))
+    except Exception:  # noqa: BLE001
+        rows = []
+
+    if not rows:
+        try:
+            convs = supabase_db.list_conversations(uid, limit=3)
+            for conv in convs:
+                msgs = supabase_db.get_conversation_messages(
+                    str(conv["id"]), uid, limit=cap,
+                )
+                for m in msgs:
+                    rows.append(
+                        {
+                            "role": m.get("role") or "user",
+                            "content": m.get("content") or "",
+                        }
+                    )
+            rows = rows[-cap:]
+        except Exception:  # noqa: BLE001
+            return []
+
+    out: list[dict[str, str]] = []
+    for row in rows:
+        role = str(row.get("role") or "user").lower()
+        if role in ("assistant", "model"):
+            role = "model"
+        elif role != "user":
+            continue
+        content = str(row.get("content") or "").strip()
+        if content:
+            out.append({"role": role, "content": content[:MAX_CONTENT]})
+    return out[-cap:]
+
+
 def load_user_context(user_id: str) -> str:
     """Fragmento para inyectar al iniciar sesión voz/chat."""
     cached = _context_cache.get(user_id)

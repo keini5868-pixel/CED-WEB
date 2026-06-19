@@ -192,6 +192,40 @@ def list_conversations(
     return result.data or []
 
 
+def list_conversations_filtered(
+    user_id: str,
+    *,
+    limit: int = 50,
+    channel: str | None = None,
+    q: str | None = None,
+) -> list[dict[str, Any]]:
+    """Lista conversaciones con vista previa; filtra por canal y texto."""
+    import re
+
+    cap = max(1, min(limit, 100))
+    rows = list_conversations(user_id, limit=cap * 2 if q else cap, channel=channel)
+    needle = re.sub(r"[%_\\]", "", (q or "").strip().lower())
+    out: list[dict[str, Any]] = []
+
+    for conv in rows:
+        msgs = get_conversation_messages(str(conv["id"]), user_id, limit=8)
+        preview = ""
+        for m in msgs:
+            content = str(m.get("content") or "").strip()
+            if content:
+                preview = content[:160]
+                break
+        item = {**conv, "preview": preview, "message_count": len(msgs)}
+        if needle:
+            haystack = f"{conv.get('title', '')} {preview}".lower()
+            if needle not in haystack:
+                continue
+        out.append(item)
+        if len(out) >= cap:
+            break
+    return out
+
+
 def get_conversation_messages(
     conversation_id: str,
     user_id: str,

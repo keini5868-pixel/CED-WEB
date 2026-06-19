@@ -6,6 +6,7 @@ import { CedButton, CedModal } from "@ced/ui";
 import type { VoicePaletteId, VoiceSessionPreferences } from "@ced/types";
 
 import {
+  getConversationMessages,
   listConversations,
   type ConversationRow,
 } from "@/lib/api/conversations";
@@ -423,6 +424,10 @@ export function CedHistoryPanel({
 }) {
   const [items, setItems] = useState<ConversationRow[]>([]);
   const [pdfs, setPdfs] = useState<PdfArtifact[]>([]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedMessages, setExpandedMessages] = useState<
+    { role: string; content: string; created_at?: string }[]
+  >([]);
 
   useEffect(() => {
     if (!open) return;
@@ -506,10 +511,41 @@ export function CedHistoryPanel({
                   key={c.id}
                   className="rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
                 >
-                  <p className="font-medium text-[#00e5ff]">{c.title}</p>
-                  <p className="ced-hud-text-muted mt-1 text-xs">
-                    {new Date(c.updated_at).toLocaleString("es-MX")}
-                  </p>
+                  <button
+                    type="button"
+                    className="w-full text-left"
+                    onClick={() => {
+                      if (expandedId === c.id) {
+                        setExpandedId(null);
+                        setExpandedMessages([]);
+                        return;
+                      }
+                      setExpandedId(c.id);
+                      void getConversationMessages(c.id)
+                        .then((data) => setExpandedMessages(data.messages))
+                        .catch(() => setExpandedMessages([]));
+                    }}
+                  >
+                    <p className="font-medium text-[#00e5ff]">{c.title}</p>
+                    {c.preview ? (
+                      <p className="ced-hud-text-muted mt-1 line-clamp-2 text-xs">{c.preview}</p>
+                    ) : null}
+                    <p className="ced-hud-text-muted mt-1 text-xs">
+                      {new Date(c.updated_at).toLocaleString("es-MX")}
+                    </p>
+                  </button>
+                  {expandedId === c.id && expandedMessages.length > 0 ? (
+                    <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto border-t border-cyan-900/40 pt-3 text-xs">
+                      {expandedMessages.map((m) => (
+                        <li key={`${m.created_at}-${m.content.slice(0, 20)}`}>
+                          <span className="text-cyan-600">
+                            {m.role === "user" ? "Tú" : "CED"}:
+                          </span>{" "}
+                          {m.content}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </li>
               ))
             )}

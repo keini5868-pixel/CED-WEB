@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
@@ -20,9 +20,19 @@ class AppendMessageBody(BaseModel):
 
 
 @router.get("")
-def list_conversations(user_id: str = Depends(require_user_id)) -> dict:
+def list_conversations(
+    user_id: str = Depends(require_user_id),
+    limit: int = Query(default=50, ge=1, le=100),
+    channel: str | None = Query(default=None, pattern="^(voice|text)$"),
+    q: str | None = Query(default=None, max_length=120),
+) -> dict:
     try:
-        items = supabase_db.list_conversations(user_id)
+        items = supabase_db.list_conversations_filtered(
+            user_id,
+            limit=limit,
+            channel=channel,
+            q=q,
+        )
         return {"conversations": items}
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -46,8 +56,11 @@ def get_messages(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     try:
+        conv = supabase_db.get_conversation(conversation_id, user_id)
+        if not conv:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada.")
         messages = supabase_db.get_conversation_messages(conversation_id, user_id)
-        return {"messages": messages}
+        return {"messages": messages, "conversation": conv}
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

@@ -28,6 +28,12 @@ export function HudShell({ children, email, isSuperAdmin }: HudShellProps) {
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           <DriveModeLink compact />
+          <Link
+            href="/historial"
+            className="text-[10px] font-semibold uppercase tracking-wider text-cyan-600 hover:text-cyan-300"
+          >
+            Historial
+          </Link>
           <AdminPanelButton visible={isSuperAdmin} />
           <ConnectNetworksButton />
           {email ? (
