@@ -116,8 +116,9 @@ import {
 } from "@/lib/voice/preferences";
 
 const CAMERA_IDLE_MS = 5 * 60 * 1000;
-const CAMERA_FRAME_WARM_MS = 3200;
-const CAMERA_FRAME_READY_MS = 1200;
+const CAMERA_FRAME_WARM_MS = 2200;
+const CAMERA_FRAME_READY_MS = 900;
+const VOICE_CLIENT_POLL_MS = 450;
 const VIDEO_SEND_INTERVAL_MS = 2000;
 const VIDEO_CAPTURE_WIDTH = 640;
 const VIDEO_CAPTURE_HEIGHT = 480;
@@ -327,9 +328,13 @@ export function useCedVoiceSession(
       }
 
       try {
-        await toggleCameraRef.current(true);
-        await postVoiceCameraStatus(true);
-        const hadStream = !!cameraStreamRef.current;
+        const hadStream =
+          !!cameraStreamRef.current?.active &&
+          cameraStreamRef.current.getVideoTracks().some((t) => t.readyState === "live");
+        if (!hadStream) {
+          await toggleCameraRef.current(true);
+          await postVoiceCameraStatus(true);
+        }
         const frame = await waitForCameraFrame(
           hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
           mode === "analyze",
@@ -369,7 +374,7 @@ export function useCedVoiceSession(
     };
 
     void poll();
-    const timer = window.setInterval(() => void poll(), 1200);
+    const timer = window.setInterval(() => void poll(), VOICE_CLIENT_POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -574,6 +579,10 @@ export function useCedVoiceSession(
         setCameraStream(null);
         cameraPreviewRef.current = null;
         void postVoiceCameraStatus(false).catch(() => undefined);
+        return;
+      }
+      const stream = cameraStreamRef.current;
+      if (stream && stream.active && stream.getVideoTracks().some((t) => t.readyState === "live")) {
         return;
       }
       try {

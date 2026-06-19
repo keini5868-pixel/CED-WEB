@@ -125,8 +125,11 @@ EXPLICIT_ADVANCED_ACTIVATION_PATTERNS = [
 CAMERA_VOICE_PATTERNS = [
     r"\b(activa(r|me|do)?|activo|enciende|prende|abre)\s+(la\s+)?c[aá]mara\b",
     r"\b(apaga(r|me|do)?|desactiva(r|me|do)?|cierra|deja de mirar)\s+(la\s+)?c[aá]mara\b",
-    r"\b(qu[eé] ves|mira esto|m[ií]rame|analiza.*(c[aá]mara|imagen|foto)|visi[oó]n)\b",
+    r"\b(qu[eé]\s+ves|qu[eé] veo|mira esto|m[ií]rame|analiza.*(c[aá]mara|imagen|foto)|visi[oó]n)\b",
     r"\b(muestrame|mu[eé]strame|mostrar).*(c[aá]mara|pantalla|esto)\b",
+    r"\b(estoy\s+)?mostrando\b",
+    r"\b(lo\s+)?ves\?",
+    r"\b(dime|dime qu[eé]|cu[eé]ntame qu[eé])\s+(ves|veo|observas)\b",
 ]
 
 ADVANCED_PATTERNS = [

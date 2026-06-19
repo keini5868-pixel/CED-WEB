@@ -47,7 +47,9 @@ async def _wait_camera_active(user_id: str, timeout_sec: float = 8.0) -> bool:
     return False
 
 
-async def _wait_vision_result(user_id: str, request_id: int, timeout_sec: float = 16.0) -> str | None:
+async def _wait_vision_result(
+    user_id: str, request_id: int, timeout_sec: float = 24.0
+) -> str | None:
     import time
 
     deadline = time.monotonic() + timeout_sec
@@ -70,19 +72,19 @@ async def _run_camera_capture(
     request_id = int(time.time() * 1000)
     if not vcs.is_camera_active(user_id):
         vcs.push_client_action(user_id, "camera_activate", {})
-        await _wait_camera_active(user_id, 5.0)
+        await _wait_camera_active(user_id, 2.5)
 
     vcs.push_client_action(
         user_id,
         "camera_capture",
         {"request_id": request_id, "question": question, "mode": mode},
     )
-    summary = await _wait_vision_result(user_id, request_id)
+    summary = await _wait_vision_result(user_id, request_id, timeout_sec=26.0)
     if summary:
         return _spoken_ok(summary)
     return _spoken_err(
-        "No pude ver la cámara, señor. Verifique que esté encendida en el panel de voz "
-        "y que el navegador tenga permiso.",
+        "No pude ver nada claro en la cámara, señor. "
+        "Asegúrese de que esté encendida y apunte lo que desea que analice.",
         error="camera_capture_timeout",
     )
 
@@ -245,13 +247,8 @@ async def execute_voice_tool(
                     "Cámara activa, señor. Muéstreme qué desea que analice con visión."
                 )
             vcs.push_client_action(user_id, "camera_activate", {})
-            if await _wait_camera_active(user_id, 8.0):
-                return _spoken_ok(
-                    "Cámara activa, señor. Muéstreme qué desea que analice con visión."
-                )
             return _spoken_ok(
-                "Encienda la cámara en el panel de voz, señor. "
-                "Cuando esté lista, indíqueme qué desea que analice con visión."
+                "Activando cámara, señor. Dígame qué desea que analice con visión."
             )
 
         if name == "analyze_camera_frame":

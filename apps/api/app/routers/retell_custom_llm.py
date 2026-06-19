@@ -309,27 +309,44 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if camera_tool and uid:
                 clear_pending_advanced_topic(call_id)
                 llm._pending_advanced = None
+                is_vision = camera_tool in ("analyze_camera_frame", "buscar_lo_visible")
                 async with response_lock:
                     if response_id < active_response_id:
                         return
+                    if is_vision:
+                        await send_voice_partial(
+                            response_id=response_id,
+                            content="Un momento, señor. Analizo con visión.",
+                            content_complete=False,
+                        )
                     tool_args: dict = {}
-                    if camera_tool in ("analyze_camera_frame", "buscar_lo_visible"):
+                    if is_vision:
                         tool_args["pregunta"] = user_text
                     try:
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(camera_tool, uid, tool_args),
-                            timeout=30.0,
+                            timeout=40.0 if is_vision else 12.0,
                         )
                     except asyncio.TimeoutError:
                         tool_result = {
                             "spoken": "No pude completar el análisis visual, señor.",
                         }
                     spoken = str(tool_result.get("spoken") or "").strip()
-                    await send_voice_response(
-                        response_id=response_id,
-                        content=spoken or "Completado, señor.",
-                        user_key=user_key,
-                    )
+                    if is_vision:
+                        await send_voice_partial(
+                            response_id=response_id,
+                            content=spoken or "No pude analizar la imagen, señor.",
+                            content_complete=True,
+                        )
+                        active_response_id = response_id
+                        if user_key:
+                            last_answered_user_key = user_key
+                    else:
+                        await send_voice_response(
+                            response_id=response_id,
+                            content=spoken or "Completado, señor.",
+                            user_key=user_key,
+                        )
                 logger.info("[RETELL-GEMINI] camera call=%s tool=%s", call_id, camera_tool)
                 return
 

@@ -347,7 +347,11 @@ def resolve_camera_voice_request(user_text: str) -> str | None:
     norm = _normalize(last)
     if re.search(r"\b(apaga|desactiva|cierra|deja de mirar)\b", norm):
         return "request_camera_deactivation"
-    if re.search(r"\b(qu[eé] ves|mira|analiza|visi[oó]n|busca.*visible)\b", norm):
+    if re.search(
+        r"\b(qu[eé]\s+ves|qu[eé] veo|mira|analiza|visi[oó]n|busca.*visible|mostrando|"
+        r"ves\?|dime qu[eé] ves|cu[eé]ntame qu[eé] ves|observas)\b",
+        norm,
+    ):
         if re.search(r"\bbusca|internet|google|web\b", norm):
             return "buscar_lo_visible"
         return "analyze_camera_frame"
