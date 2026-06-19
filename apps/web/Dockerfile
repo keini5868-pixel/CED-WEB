@@ -1,4 +1,4 @@
-# Next.js @ced/web — Railway
+# Next.js @ced/web — Railway (build 2026-06-18-v3-emergency)
 FROM node:22-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 

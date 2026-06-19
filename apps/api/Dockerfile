@@ -1,5 +1,9 @@
 # Castillo Digital API — producción (Railway / Render)
+# build: 2026-06-18-chat-fallback-v3-emergency
 FROM python:3.12-slim
+
+ARG BUILD_VERSION=2026-06-18-chat-fallback-v3-emergency
+LABEL org.ced.build="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
