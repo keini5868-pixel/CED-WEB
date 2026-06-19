@@ -665,7 +665,9 @@ export class CedLiveClient {
   }
 
   /** Compat — WebRTC maneja half-duplex con AEC nativo. */
-  setBlockServerVad(_block: boolean): void {}
+  setBlockServerVad(_block: boolean): void {
+    void _block;
+  }
 
   setMicTrackEnabled(enabled: boolean): void {
     this.micStream?.getAudioTracks().forEach((t) => {

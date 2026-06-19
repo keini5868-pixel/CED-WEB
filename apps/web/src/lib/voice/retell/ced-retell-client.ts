@@ -38,6 +38,7 @@ export class CedRetellClient {
   private audioRetryTimer: number | null = null;
   private agentAudioReady = false;
   private liveKitConnected = false;
+  private audioPlaybackStarted = false;
 
   constructor() {
     this.client = new RetellWebClient();
@@ -63,6 +64,9 @@ export class CedRetellClient {
   }
 
   private flushUserTranscript(force = false): void {
+    if (force) {
+      this.clearUserDebounce();
+    }
     const text = this.pendingUserText.trim();
     if (!text) return;
     if (text === this.lastPersistedUserLine) return;
@@ -80,10 +84,12 @@ export class CedRetellClient {
     }, 900);
   }
 
-  /** Solo tras call_started — room.startAudio no existe antes. */
+  /** Una sola vez tras call_ready — evita zumbido por startAudioPlayback repetido. */
   private ensureAudioPlayback(): void {
-    if (!this.liveKitConnected) return;
+    if (!this.liveKitConnected || !this.agentAudioReady || this.audioPlaybackStarted) return;
+    this.audioPlaybackStarted = true;
     void this.client.startAudioPlayback().catch((err) => {
+      this.audioPlaybackStarted = false;
       retellLog("startAudioPlayback falló", err);
     });
   }
@@ -91,12 +97,15 @@ export class CedRetellClient {
   private startAudioRetryLoop(): void {
     this.stopAudioRetry();
     let attempts = 0;
-    this.ensureAudioPlayback();
     this.audioRetryTimer = window.setInterval(() => {
+      if (this.audioPlaybackStarted || this.agentAudioReady) {
+        this.ensureAudioPlayback();
+        this.stopAudioRetry();
+        return;
+      }
       attempts += 1;
-      this.ensureAudioPlayback();
-      if (attempts >= 12) this.stopAudioRetry();
-    }, 500);
+      if (attempts >= 6) this.stopAudioRetry();
+    }, 1000);
   }
 
   private latestLine(
@@ -127,6 +136,7 @@ export class CedRetellClient {
       retellLog("call_ended");
       this.liveKitConnected = false;
       this.agentAudioReady = false;
+      this.audioPlaybackStarted = false;
       this.stopAudioRetry();
       this.clearUserDebounce();
       this.stopLevelLoop();
@@ -137,11 +147,11 @@ export class CedRetellClient {
       this.agentAudioReady = true;
       retellLog("call_ready — pista agent_audio recibida");
       this.ensureAudioPlayback();
+      if (this.levelRaf == null) this.startLevelLoop();
     });
 
     this.client.on("agent_start_talking", () => {
       this.flushUserTranscript(true);
-      this.ensureAudioPlayback();
       this.callbacks.onAgentTalking?.(true);
     });
 
@@ -169,7 +179,6 @@ export class CedRetellClient {
       const agentText = this.latestLine(lines, "agent");
       if (!agentText || agentText === this.lastAgentLine) return;
       this.lastAgentLine = agentText;
-      this.ensureAudioPlayback();
     });
 
     this.client.on("error", (error: unknown) => {
@@ -186,11 +195,15 @@ export class CedRetellClient {
 
   private startLevelLoop(): void {
     this.stopLevelLoop();
-    const tick = () => {
-      const analyzer = this.client.analyzerComponent;
-      if (analyzer) {
-        const level = Math.min(1, Math.max(0, analyzer.calculateVolume()));
-        this.callbacks.onAudioLevel?.(level);
+    let lastTick = 0;
+    const tick = (now: number) => {
+      if (now - lastTick >= 120) {
+        lastTick = now;
+        const analyzer = this.client.analyzerComponent;
+        if (analyzer) {
+          const level = Math.min(1, Math.max(0, analyzer.calculateVolume()));
+          this.callbacks.onAudioLevel?.(level);
+        }
       }
       this.levelRaf = window.requestAnimationFrame(tick);
     };
@@ -214,13 +227,13 @@ export class CedRetellClient {
     this.clearUserDebounce();
     this.agentAudioReady = false;
     this.liveKitConnected = false;
+    this.audioPlaybackStarted = false;
     retellLog("startCall", { callId: this.callId });
 
     await this.client.startCall({
       accessToken,
       sampleRate: 24000,
     });
-    this.startLevelLoop();
 
     window.setTimeout(() => {
       if (!this.agentAudioReady) {
@@ -240,6 +253,7 @@ export class CedRetellClient {
     this.callId = null;
     this.agentAudioReady = false;
     this.liveKitConnected = false;
+    this.audioPlaybackStarted = false;
   }
 
   setMuted(muted: boolean): void {

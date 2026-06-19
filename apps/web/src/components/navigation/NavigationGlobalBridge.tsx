@@ -25,7 +25,6 @@ export function NavigationGlobalBridge() {
     if (!shouldPollNavigation(pathname)) return;
 
     let cancelled = false;
-    let timer: number | undefined;
 
     const poll = async () => {
       if (cancelled) return;
@@ -54,11 +53,11 @@ export function NavigationGlobalBridge() {
     };
 
     void poll();
-    timer = window.setInterval(() => void poll(), POLL_MS);
+    const timer = window.setInterval(() => void poll(), POLL_MS);
 
     return () => {
       cancelled = true;
-      if (timer !== undefined) window.clearInterval(timer);
+      window.clearInterval(timer);
     };
   }, [pathname, router]);
 
