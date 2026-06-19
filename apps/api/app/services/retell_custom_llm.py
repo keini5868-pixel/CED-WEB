@@ -691,6 +691,8 @@ def _is_task_or_info_query(text: str) -> bool:
         return True
     if _needs_internet_lookup(text):
         return True
+    if is_casual_conversation(text):
+        return True
     if bool(
         re.search(
             r"\b(publica|publicar|recuerda|memoria|carolina|imagen|genera|"
@@ -703,6 +705,36 @@ def _is_task_or_info_query(text: str) -> bool:
     if len(norm.split()) >= 8:
         return True
     return False
+
+
+def is_casual_conversation(text: str) -> bool:
+    """Charla natural / personal — no requiere tools ni web."""
+    if is_meta_publish_intent(text) or _is_concept_question(text):
+        return False
+    if _needs_internet_lookup(text) or is_script_demo_request(text):
+        return False
+    norm = _normalize(text)
+    if len(norm.split()) < 4:
+        return False
+    if re.search(
+        r"\b(dormi|dormí|descans|descanso|cansad|cansancio|estuve|estaba|"
+        r"te decia|te decía|no habia descansado|gracias por contar|"
+        r"me siento|como amanec|hoy dorm|platic|charla)\b",
+        norm,
+    ):
+        return True
+    return len(norm.split()) >= 9
+
+
+def casual_conversation_reply(text: str) -> str:
+    norm = _normalize(text)
+    if re.search(r"\b(dormi|dormí|descans)\b", norm):
+        return "Qué bueno, señor. Descansar lo necesario es clave. ¿Se siente mejor ahora?"
+    if re.search(r"\b(cansad|cansancio|agotad|estres)\b", norm):
+        return "Lo comprendo, señor. Cuídese; el descanso forma parte del rendimiento."
+    if re.search(r"\b(te decia|te decía|estuve|estaba)\b", norm):
+        return "Entendido, señor. Gracias por contármelo. ¿Seguimos con algo en lo que pueda ayudarle?"
+    return "Entendido, señor. Gracias por compartirlo conmigo."
 
 
 def is_small_talk(text: str, transcript: list[Utterance] | None = None) -> bool:

@@ -123,20 +123,58 @@ def pop_vision_result(user_id: str, request_id: int, *, max_age_sec: float = 30.
 
 
 def begin_voice_publish_session(user_id: str, voice_call_id: str) -> None:
-    """Nueva llamada Retell — descarta imagen/caption de sesiones anteriores."""
+    """Nueva llamada Retell — descarta imagen solo si cambió el call_id."""
     cid = (voice_call_id or "").strip()
     if not cid:
         return
     session = _get(user_id)
     with _lock:
+        prev = str(session.get("active_voice_call_id") or "").strip()
+        if prev and prev != cid:
+            session["last_publishable_image"] = None
+            session["awaiting_instagram_caption"] = False
         session["active_voice_call_id"] = cid
+        session["updated_at"] = _now()
+
+
+def sync_voice_call(user_id: str, voice_call_id: str) -> None:
+    """Alinea call_id activo sin borrar imagen ya adjunta en la misma llamada."""
+    begin_voice_publish_session(user_id, voice_call_id)
+
+
+def ensure_active_voice_call(user_id: str) -> str | None:
+    """Devuelve call_id activo; recupera del registro Retell si hace falta."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return None
+    with _lock:
+        session = _sessions.get(uid)
+        if session:
+            active = str(session.get("active_voice_call_id") or "").strip()
+            if active:
+                return active
+    from app.services.retell_call_registry import resolve_user_active_call
+
+    call_id = resolve_user_active_call(uid)
+    if not call_id:
+        return None
+    begin_voice_publish_session(uid, call_id)
+    return call_id
+
+
+def is_voice_session_active(user_id: str) -> bool:
+    return bool(ensure_active_voice_call(user_id))
+
+
+def clear_last_publishable_image(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
         session["last_publishable_image"] = None
         session["awaiting_instagram_caption"] = False
         session["updated_at"] = _now()
 
 
 def end_voice_publish_session(user_id: str, voice_call_id: str | None = None) -> None:
-    """Fin de llamada — limpia estado de publicación."""
     session = _get(user_id)
     with _lock:
         active = str(session.get("active_voice_call_id") or "").strip()
@@ -144,20 +182,6 @@ def end_voice_publish_session(user_id: str, voice_call_id: str | None = None) ->
         if end_id and active and active != end_id:
             return
         session["active_voice_call_id"] = None
-        session["last_publishable_image"] = None
-        session["awaiting_instagram_caption"] = False
-        session["updated_at"] = _now()
-
-
-def is_voice_session_active(user_id: str) -> bool:
-    session = _get(user_id)
-    with _lock:
-        return bool(str(session.get("active_voice_call_id") or "").strip())
-
-
-def clear_last_publishable_image(user_id: str) -> None:
-    session = _get(user_id)
-    with _lock:
         session["last_publishable_image"] = None
         session["awaiting_instagram_caption"] = False
         session["updated_at"] = _now()
@@ -175,11 +199,11 @@ def set_last_publishable_image(
     data = (image_data or "").strip()
     if not url and not data:
         return
+    call_id = ensure_active_voice_call(user_id)
+    if not call_id:
+        return
     session = _get(user_id)
     with _lock:
-        call_id = str(session.get("active_voice_call_id") or "").strip()
-        if not call_id:
-            return
         session["last_publishable_image"] = {
             "url": url or None,
             "data": data or None,
@@ -220,11 +244,11 @@ def clear_awaiting_instagram_caption(user_id: str) -> None:
 
 
 def get_last_publishable_image(user_id: str, *, max_age_sec: float = 900.0) -> dict[str, str] | None:
+    active_call = ensure_active_voice_call(user_id)
+    if not active_call:
+        return None
     session = _get(user_id)
     with _lock:
-        active_call = str(session.get("active_voice_call_id") or "").strip()
-        if not active_call:
-            return None
         row = session.get("last_publishable_image")
         if not row:
             return None

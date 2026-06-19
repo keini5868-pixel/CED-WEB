@@ -33,6 +33,7 @@ type CedTextChatPanelProps = {
   onSeedConsumed?: () => void;
   /** Mientras hay sesión de voz activa, registra imagen para publicar en Instagram */
   onVoiceImageAttached?: (preview: string, file?: File) => void;
+  voicePublishActive?: boolean;
 };
 
 function formatTime(iso?: string) {
@@ -224,6 +225,7 @@ export function CedTextChatPanel({
   seedImage,
   onSeedConsumed,
   onVoiceImageAttached,
+  voicePublishActive = false,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -393,7 +395,12 @@ export function CedTextChatPanel({
         return;
       }
 
-      const result = await sendChatMessage(text, conversationId, imageFile);
+      const result = await sendChatMessage(
+        text,
+        conversationId,
+        imageFile,
+        voicePublishActive || Boolean(onVoiceImageAttached),
+      );
       setConversationId(result.conversation_id);
       setMessages((prev) => [
         ...prev,

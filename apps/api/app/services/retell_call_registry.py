@@ -7,6 +7,7 @@ from typing import Any
 
 _lock = threading.Lock()
 _by_call: dict[str, str] = {}
+_by_user: dict[str, str] = {}
 
 
 def bind_call_user(call_id: str, user_id: str) -> None:
@@ -16,6 +17,7 @@ def bind_call_user(call_id: str, user_id: str) -> None:
         return
     with _lock:
         _by_call[cid] = uid
+        _by_user[uid] = cid
 
 
 def resolve_call_user(call_id: str, payload: dict[str, Any] | None = None) -> str | None:
@@ -43,9 +45,19 @@ def resolve_call_user(call_id: str, payload: dict[str, Any] | None = None) -> st
         return _by_call.get(cid)
 
 
+def resolve_user_active_call(user_id: str) -> str | None:
+    uid = (user_id or "").strip()
+    if not uid:
+        return None
+    with _lock:
+        return _by_user.get(uid)
+
+
 def release_call_user(call_id: str) -> None:
     cid = (call_id or "").strip()
     if not cid:
         return
     with _lock:
-        _by_call.pop(cid, None)
+        uid = _by_call.pop(cid, None)
+        if uid and _by_user.get(uid) == cid:
+            _by_user.pop(uid, None)

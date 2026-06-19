@@ -58,6 +58,7 @@ export async function sendChatMessage(
   content: string,
   conversationId?: string | null,
   image?: File | null,
+  voicePublish?: boolean,
 ): Promise<{
   conversation_id: string;
   reply: string;
@@ -74,6 +75,9 @@ export async function sendChatMessage(
       formData.append("conversation_id", conversationId);
     }
     formData.append("image", image, image.name || "attachment.jpg");
+    if (voicePublish) {
+      formData.append("voice_publish", "true");
+    }
     res = await proxyFetch("chat/send-with-image", {
       method: "POST",
       body: formData,

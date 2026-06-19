@@ -72,7 +72,7 @@ async def voice_chat_image(
     user_id: str = Depends(require_user_id),
 ) -> dict[str, str]:
     """Registra imagen del chat para publicar por voz Retell (solo sesión activa)."""
-    if not vcs.is_voice_session_active(user_id):
+    if not vcs.ensure_active_voice_call(user_id):
         return {"ok": "false", "reason": "no_active_voice_session"}
     vcs.set_last_publishable_image(
         user_id,

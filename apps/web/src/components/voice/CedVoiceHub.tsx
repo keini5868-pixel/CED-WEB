@@ -270,6 +270,7 @@ export function CedVoiceHub() {
         onVoiceImageAttached={(preview, file) => {
           void voice.registerChatImageForVoice(preview, file);
         }}
+        voicePublishActive={voice.voiceSessionActive}
       />
 
       <VoiceLimitModal

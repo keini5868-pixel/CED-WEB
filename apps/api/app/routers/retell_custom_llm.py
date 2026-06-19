@@ -19,9 +19,11 @@ from app.services.gemini_voice_llm import GeminiVoiceLlm, draft_begin_message
 from app.services.retell_call_registry import release_call_user, resolve_call_user
 from app.services.retell_custom_llm import (
     advanced_analysis_hold_phrase,
+    casual_conversation_reply,
     concise_reply_for_small_talk,
     fallback_advanced_topic,
     format_web_delivery,
+    is_casual_conversation,
     is_small_talk,
     merged_user_query,
     remember_pending_script_topic,
@@ -198,6 +200,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         uid = resolve_call_user(call_id, request_json)
         if uid:
             llm.set_user_id(uid)
+            from app.services import voice_client_session as vcs
+
+            vcs.sync_voice_call(uid, call_id)
             pending_for_llm = get_pending_advanced_topic(call_id)
             if pending_for_llm:
                 llm._pending_advanced = pending_for_llm
@@ -342,6 +347,22 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         user_key=user_key,
                     )
                 logger.info("[RETELL-GEMINI] small_talk call=%s: %s", call_id, reply)
+                return
+
+            if (
+                is_casual_conversation(user_text)
+                and not advanced_req
+                and not resolve_meta_publish_request(user_text)
+                and not resolve_instagram_caption_request(user_text, transcript, user_id=uid)
+            ):
+                reply = casual_conversation_reply(user_text)
+                async with response_lock:
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=reply,
+                        user_key=user_key,
+                    )
+                logger.info("[RETELL-GEMINI] casual call=%s: %s", call_id, reply[:80])
                 return
 
             camera_tool = resolve_camera_voice_request(user_text)
@@ -672,6 +693,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                     content = format_hits_for_prompt(hits)
                                 else:
                                     content = FALLBACK_REPLY
+                            elif is_casual_conversation(user_text):
+                                content = casual_conversation_reply(user_text)
                             else:
                                 content = FALLBACK_REPLY
                         await send_voice_response(

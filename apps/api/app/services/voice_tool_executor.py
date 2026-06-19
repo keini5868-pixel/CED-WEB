@@ -365,8 +365,8 @@ async def execute_voice_tool(
                 return {
                     "ok": False,
                     "spoken": (
-                        "Necesito la imagen, señor. Adjúntela en el chat mientras hablamos "
-                        "— no hace falta un enlace— o muéstremela con la cámara."
+                        "Aún no recibo la imagen en esta llamada, señor. "
+                        "Adjúntela en el chat con la voz activa o muéstremela con la cámara."
                     ),
                     "error": "missing_image",
                 }
