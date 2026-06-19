@@ -265,15 +265,22 @@ class GeminiVoiceLlm:
                 yield ResponseResponse(
                     response_id=request.response_id,
                     content=web_search_hold_phrase(kind),
-                    content_complete=True,
+                    content_complete=False,
                     end_call=False,
                 )
             if self.user_id:
-                tool_result = await execute_voice_tool(
-                    "search_web",
-                    self.user_id,
-                    {"query": web_req["query"], "kind": kind},
-                )
+                try:
+                    tool_result = await asyncio.wait_for(
+                        execute_voice_tool(
+                            "search_web",
+                            self.user_id,
+                            {"query": web_req["query"], "kind": kind},
+                        ),
+                        timeout=28.0,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning("[RETELL-GEMINI] web_search timeout kind=%s", kind)
+                    tool_result = {"spoken": web_search_error_phrase(kind)}
                 spoken = str(tool_result.get("spoken") or "").strip()
             else:
                 spoken = "No identifiqué al usuario, señor."

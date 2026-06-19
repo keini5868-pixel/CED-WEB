@@ -174,7 +174,7 @@ def web_search_hold_phrase(kind: str) -> str:
     if kind == "weather":
         return "Un momento, señor. Consulto el clima y vuelvo con el resultado."
     if kind == "news":
-        return "Un momento, señor. Investigaré las noticias y vuelvo con el resultado."
+        return "Un momento, señor. Consulto las noticias más relevantes del día."
     return "Un momento, señor."
 
 

@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 BRIEF_MODEL = "gemini-2.5-flash"
 # Gemini 2.5 + Google Search consume tokens internos; <512 trunca en MAX_TOKENS.
 GEMINI_OUTPUT_TOKENS = 512
-TAVILY_TIMEOUT_SEC = 8
-GEMINI_TIMEOUT_SEC = 22
+TAVILY_TIMEOUT_SEC = 12
+GEMINI_TIMEOUT_SEC = 24
 MIN_SPOKEN_CHARS = 28
 MIN_SPOKEN_CHARS_NEWS = 24
 

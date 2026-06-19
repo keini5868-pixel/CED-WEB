@@ -135,7 +135,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)
             if turntaking == "user_turn":
                 generation_cancel += 1
-                active_response_id += 1
                 if debounce_task and not debounce_task.done():
                     debounce_task.cancel()
             return
@@ -212,22 +211,27 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     active_response_id = response_id
                     last_answered_user_key = user_key
                     if kind in ("news", "weather"):
-                        if response_id < active_response_id:
-                            return
                         await websocket.send_json(
                             {
                                 "response_type": "response",
                                 "response_id": response_id,
                                 "content": web_search_hold_phrase(kind),
-                                "content_complete": True,
+                                "content_complete": False,
                                 "end_call": False,
                             }
                         )
-                    tool_result = await execute_voice_tool(
-                        "search_web",
-                        uid,
-                        {"query": web_req["query"], "kind": kind},
-                    )
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "search_web",
+                                uid,
+                                {"query": web_req["query"], "kind": kind},
+                            ),
+                            timeout=28.0,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("[RETELL-GEMINI] web_search timeout call=%s", call_id)
+                        tool_result = {"spoken": web_search_error_phrase(kind)}
                     if response_id < active_response_id:
                         logger.info("[RETELL-GEMINI] drop stale web rid=%s", response_id)
                         return
