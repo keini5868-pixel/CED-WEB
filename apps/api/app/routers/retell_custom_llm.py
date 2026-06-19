@@ -35,6 +35,7 @@ from app.services.retell_custom_llm import (
     web_search_error_phrase,
 )
 from app.services.voice_tool_executor import execute_voice_tool
+from app.services.voice_spoken import split_voice_delivery_chunks
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -378,11 +379,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         full = web_search_error_phrase(kind)
                     else:
                         full = format_web_delivery(kind, spoken)
-                    await send_voice_response(
-                        response_id=response_id,
-                        content=full,
-                        user_key=user_key,
-                    )
+                    chunks = split_voice_delivery_chunks(full)
+                    for chunk, complete in chunks:
+                        if response_id < active_response_id:
+                            return
+                        await send_voice_partial(
+                            response_id=response_id,
+                            content=chunk,
+                            content_complete=complete,
+                        )
+                    active_response_id = response_id
+                    if user_key:
+                        last_answered_user_key = user_key
                 logger.info(
                     "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
                     call_id,
@@ -427,21 +435,23 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         return
                     spoken = str(tool_result.get("spoken") or "").strip()
                     if not spoken or spoken.startswith("No fue posible"):
-                        full = (
-                            spoken
-                            or "Disculpe, señor. No pude completar el análisis avanzado."
-                        )
+                        chunks = [
+                            (
+                                spoken
+                                or "Disculpe, señor. No pude completar el análisis avanzado.",
+                                True,
+                            )
+                        ]
                     else:
-                        from app.services.voice_spoken import fit_voice_spoken, voice_spoken_limit
-
-                        full = fit_voice_spoken(spoken, max_chars=voice_spoken_limit(advanced_req))
-                    if response_id < active_response_id:
-                        return
-                    await send_voice_partial(
-                        response_id=response_id,
-                        content=full,
-                        content_complete=True,
-                    )
+                        chunks = split_voice_delivery_chunks(spoken)
+                    for chunk, complete in chunks:
+                        if response_id < active_response_id:
+                            return
+                        await send_voice_partial(
+                            response_id=response_id,
+                            content=chunk,
+                            content_complete=complete,
+                        )
                     active_response_id = response_id
                     if user_key:
                         last_answered_user_key = user_key
@@ -493,12 +503,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 ),
                             }
                         spoken = str(tool_result.get("spoken") or "").strip()
-                        full = spoken or "Disculpe, señor. No pude completar el análisis."
-                        await send_voice_partial(
-                            response_id=response_id,
-                            content=full,
-                            content_complete=True,
-                        )
+                        if not spoken:
+                            chunks = [("Disculpe, señor. No pude completar el análisis.", True)]
+                        else:
+                            chunks = split_voice_delivery_chunks(spoken)
+                        for chunk, complete in chunks:
+                            await send_voice_partial(
+                                response_id=response_id,
+                                content=chunk,
+                                content_complete=complete,
+                            )
                         active_response_id = response_id
                         if user_key:
                             last_answered_user_key = user_key

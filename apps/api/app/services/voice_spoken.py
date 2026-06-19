@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import re
 
-# Retell tolera ~60–90 s de TTS; 720 chars ≈ 45–55 s en español.
+# Retell ~60–90 s por bloque; repartimos en 2–3 bloques secuenciales sin perder texto.
 VOICE_SPOKEN_MAX_CHARS = 720
-VOICE_ADVISORY_MAX_CHARS = 1100
+VOICE_ADVISORY_MAX_CHARS = 1800
+VOICE_NEWS_MAX_CHARS = 1500
+VOICE_CHUNK_TARGET = 680
 
 _ADVISORY_HINTS = re.compile(
     r"\b("
@@ -47,3 +49,41 @@ def fit_voice_spoken(text: str, *, max_chars: int | None = None) -> str:
     if last_space >= int(limit * 0.55):
         return f"{chunk[:last_space].strip()}."
     return f"{chunk.strip()}."
+
+
+
+def split_voice_delivery_chunks(
+    text: str,
+    *,
+    max_chunk: int = VOICE_CHUNK_TARGET,
+) -> list[tuple[str, bool]]:
+    """Parte texto largo en bloques por oraciones — sin descartar el final."""
+    cleaned = " ".join((text or "").split()).strip()
+    if not cleaned:
+        return []
+    if len(cleaned) <= max_chunk:
+        return [(cleaned, True)]
+
+    sentences = re.split(r"(?<=[.!?])\s+", cleaned)
+    sentences = [s.strip() for s in sentences if s.strip()]
+    if not sentences:
+        return [(cleaned, True)]
+
+    chunks: list[str] = []
+    current = ""
+    for sent in sentences:
+        candidate = f"{current} {sent}".strip() if current else sent
+        if len(candidate) <= max_chunk:
+            current = candidate
+            continue
+        if current:
+            chunks.append(current)
+        current = sent
+    if current:
+        chunks.append(current)
+
+    if len(chunks) > 3:
+        tail = " ".join(chunks[2:])
+        chunks = [chunks[0], chunks[1], tail]
+
+    return [(part, idx == len(chunks) - 1) for idx, part in enumerate(chunks)]

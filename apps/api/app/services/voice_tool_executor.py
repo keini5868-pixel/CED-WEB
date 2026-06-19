@@ -130,7 +130,10 @@ async def execute_voice_tool(
             result = await asyncio.to_thread(fetch_voice_brief, query, kind=kind)
             if result.get("ok"):
                 summary = str(result.get("summary") or "").strip()
-                return _spoken_ok(summary if summary else "Consulta completada, señor.")
+                return {
+                    "ok": True,
+                    "spoken": summary if summary else "Consulta completada, señor.",
+                }
             return _spoken_err(
                 f"No fue posible consultar, señor. {result.get('error', '')}".strip(),
                 error=str(result.get("error") or "search_failed"),
@@ -141,9 +144,10 @@ async def execute_voice_tool(
             result = await asyncio.to_thread(consultar_sistema_avanzado, prompt)
             if result.get("ok"):
                 text = str(result.get("result") or "").strip()
-                limit = voice_spoken_limit(prompt)
-                spoken = fit_voice_spoken(text if text else "Análisis completado, señor.", max_chars=limit)
-                return {"ok": True, "spoken": spoken}
+                return {
+                    "ok": True,
+                    "spoken": text if text else "Análisis completado, señor.",
+                }
             return _spoken_err(
                 f"No fue posible el análisis, señor. {result.get('error', '')}".strip(),
                 error=str(result.get("error") or "analysis_failed"),

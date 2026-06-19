@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 BRIEF_MODEL = "gemini-2.5-flash"
 # Gemini 2.5 + Google Search consume tokens internos; <512 trunca en MAX_TOKENS.
-GEMINI_OUTPUT_TOKENS = 512
+GEMINI_OUTPUT_TOKENS = 768
 TAVILY_TIMEOUT_SEC = 12
 GEMINI_TIMEOUT_SEC = 24
 MIN_SPOKEN_CHARS = 28
@@ -56,15 +56,20 @@ def _generate_brief(client: Any, user_prompt: str, *, kind: str = "general") -> 
     return text
 
 
-def _spoken_fallback(raw: str) -> str:
+def _spoken_fallback(raw: str, *, kind: str = "general") -> str:
     text = re.sub(r"\s+", " ", raw).strip()
     if not text:
         return ""
-    return fit_voice_spoken(text, max_chars=520)
+    from app.services.voice_spoken import VOICE_NEWS_MAX_CHARS, fit_voice_spoken
+
+    limit = VOICE_NEWS_MAX_CHARS if kind == "news" else 900
+    if len(text) <= limit:
+        return text
+    return fit_voice_spoken(text, max_chars=limit)
 
 
 def _tavily_brief(topic: str, kind: str) -> str:
-    return _spoken_fallback(tavily_voice_snippet(topic, kind=kind))
+    return _spoken_fallback(tavily_voice_snippet(topic, kind=kind), kind=kind)
 
 
 def _gemini_prompt(topic: str, kind: str) -> str:
@@ -80,8 +85,8 @@ def _gemini_prompt(topic: str, kind: str) -> str:
         return (
             f"Fecha: {today}. Pregunta del usuario: {topic}\n\n"
             "Busca en internet noticias RECIENTES sobre lo que preguntó el usuario. "
-            "Responde en 2-3 frases COMPLETAS en español latinoamericano para narración por VOZ. "
-            "Máximo 380 caracteres. Termina cada oración. "
+            "Responde en 3-4 oraciones COMPLETAS en español latinoamericano para narración por VOZ. "
+            "Cierra SIEMPRE la última oración con punto. No dejes frases a medias. "
             "Enfócate en lo pedido (país, persona o tema). "
             "NO repitas introducciones genéricas. Sin markdown, URLs ni listas numeradas."
         )
@@ -107,7 +112,7 @@ def _news_search_queries(topic: str) -> list[str]:
 def _run_tavily(topic: str, kind: str) -> str:
     queries = _news_search_queries(topic) if kind == "news" else [topic]
     for q in queries:
-        text = _spoken_fallback(tavily_voice_snippet(q, kind=kind))
+        text = _spoken_fallback(tavily_voice_snippet(q, kind=kind), kind=kind)
         if _is_valid_brief(text, kind=kind):
             return text
     return ""

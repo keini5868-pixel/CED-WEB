@@ -16,8 +16,8 @@ logger = logging.getLogger(__name__)
 ANALYSIS_MODEL_FAST = "claude-haiku-4-5-20251001"
 ANALYSIS_MODEL_FALLBACK = "claude-sonnet-4-6"
 ANALYSIS_TIMEOUT_SEC = 22
-VOICE_RESULT_LIMIT = 720
-VOICE_SCRIPT_LIMIT = 1100
+VOICE_RESULT_LIMIT = 900
+VOICE_SCRIPT_LIMIT = 1800
 
 
 def _is_script_request(topic: str) -> bool:
@@ -31,9 +31,15 @@ def _is_script_request(topic: str) -> bool:
 
 
 def _voice_trim(text: str, *, is_script: bool = False) -> str:
+    from app.services.voice_spoken import fit_voice_spoken
+
     t = re.sub(r"\s+", " ", text).strip()
+    if not t:
+        return ""
     limit = VOICE_SCRIPT_LIMIT if is_script else VOICE_RESULT_LIMIT
-    return t[:limit] if t else ""
+    if len(t) <= limit:
+        return t
+    return fit_voice_spoken(t, max_chars=limit)
 
 
 def _anthropic_analysis(api_key: str, user_prompt: str, *, model: str, max_tokens: int) -> str:
@@ -97,10 +103,12 @@ def _run_analysis(topic: str) -> tuple[str | None, str | None]:
             "publicación en redes, prospección, generación de imágenes, mapas/navegación y sistema avanzado.\n"
             "El guion debe durar unos 20-30 segundos al leerlo en voz alta. "
             "Entre 8 y 12 oraciones fluidas y consecutivas. "
-            "Empieza enganchando, explica qué es CED y sus características principales, cierra con llamado a acción. "
+            "Empieza enganchando, explica qué es CED y sus características principales. "
+            "Cierra OBLIGATORIAMENTE con una oración completa que diga "
+            "'Creado por Keini Castillo' o equivalente. "
             "Sin markdown, URLs ni listas con viñetas."
         )
-        max_tokens = 900
+        max_tokens = 1400
     else:
         user_prompt = (
             f"Consulta: {topic}\n\n"
@@ -135,7 +143,7 @@ def _run_analysis(topic: str) -> tuple[str | None, str | None]:
                 logger.warning("[CLAUDE:DEEP] sonnet %s: %s", type(exc).__name__, exc)
 
         if google_key:
-            gemini_tokens = 900 if is_script else 320
+            gemini_tokens = 1400 if is_script else 320
             future = pool.submit(
                 _gemini_analysis,
                 google_key,

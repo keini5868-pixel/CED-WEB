@@ -89,9 +89,16 @@ def tavily_voice_snippet(
     query: str,
     *,
     kind: str = "general",
-    max_chars: int = 380,
+    max_chars: int | None = None,
 ) -> str:
     """Texto hablable — prioriza `answer` de Tavily."""
+    if max_chars is None:
+        from app.services.voice_spoken import VOICE_NEWS_MAX_CHARS, fit_voice_spoken
+
+        max_chars = VOICE_NEWS_MAX_CHARS if kind == "news" else 720
+    else:
+        from app.services.voice_spoken import fit_voice_spoken
+
     q = (query or "").strip()
     if not q:
         return ""
@@ -105,11 +112,11 @@ def tavily_voice_snippet(
 
     answer = tavily_answer(search_q, max_results=5)
     if answer:
-        return answer[:max_chars]
+        return fit_voice_spoken(answer, max_chars=max_chars)
 
     answer = tavily_answer(q, max_results=5)
     if answer:
-        return answer[:max_chars]
+        return fit_voice_spoken(answer, max_chars=max_chars)
 
     rows = tavily_search(search_q, max_results=5)
     if not rows:
@@ -117,5 +124,8 @@ def tavily_voice_snippet(
     for row in rows:
         text = str(row.get("content") or row.get("snippet") or "").strip()
         if len(text) >= 30:
-            return text[:max_chars]
-    return str(rows[0].get("title") or "").strip()[:max_chars] if rows else ""
+            return fit_voice_spoken(text, max_chars=max_chars)
+    if rows:
+        title = str(rows[0].get("title") or "").strip()
+        return fit_voice_spoken(title, max_chars=max_chars) if title else ""
+    return ""

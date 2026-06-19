@@ -437,7 +437,7 @@ def web_search_hold_phrase(kind: str) -> str:
 
 
 def format_web_delivery(kind: str, spoken: str) -> str:
-    cleaned = fit_voice_spoken(" ".join((spoken or "").split()).strip())
+    cleaned = " ".join((spoken or "").split()).strip()
     if not cleaned:
         return cleaned
     lower = cleaned.lower()
@@ -455,11 +455,11 @@ def format_web_delivery(kind: str, spoken: str) -> str:
             )
         ):
             return cleaned
-        return fit_voice_spoken(f"Señor, sobre su consulta: {cleaned}")
+        return f"Señor, sobre su consulta: {cleaned}"
     if kind == "weather":
         if lower.startswith(("señor", "senor", "el clima")):
             return cleaned
-        return fit_voice_spoken(f"Señor, el clima es el siguiente: {cleaned}")
+        return f"Señor, el clima es el siguiente: {cleaned}"
     return cleaned
 
 
