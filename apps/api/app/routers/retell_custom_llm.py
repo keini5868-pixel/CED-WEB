@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -28,7 +29,6 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retell-custom-llm"])
 
-# Evita solapar TTS del saludo con la primera respuesta (audio borroso).
 POST_GREETING_COOLDOWN_S = 1.2
 
 
@@ -48,6 +48,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     """Custom LLM endpoint — Retell envía transcripciones, Gemini responde."""
     await websocket.accept()
     mark_ws_connected(call_id)
+    session_started = time.time()
     logger.info("[RETELL-GEMINI] WebSocket conectado call_id=%s", call_id)
 
     llm = GeminiVoiceLlm()
@@ -59,6 +60,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     post_greeting_ready.set()
     last_answered_user_key = ""
     greeting_release_task: asyncio.Task[None] | None = None
+    message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
     user_id = resolve_call_user(call_id)
     if user_id:
@@ -95,7 +97,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
         logger.info("[RETELL-GEMINI] saludo enviado call=%s reason=%s", call_id, reason)
 
-    # Saludo único al conectar (demo Retell Node: tras call_details; aquí inmediato)
     await send_greeting(0, reason="immediate")
 
     async def handle_message(request_json: dict) -> None:
@@ -191,22 +192,53 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 active_response_id = response_id
                 last_answered_user_key = user_key
 
-                async for event in llm.draft_response(request):
-                    if event.response_id < active_response_id:
-                        break
-                    await websocket.send_json(event.model_dump())
-                    logger.info(
-                        "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
+                try:
+                    async for event in llm.draft_response(request):
+                        if event.response_id < active_response_id:
+                            break
+                        await websocket.send_json(event.model_dump())
+                        logger.info(
+                            "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
+                            call_id,
+                            event.response_id,
+                            len(event.content or ""),
+                        )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "[RETELL-GEMINI] draft_response error call=%s last=%s",
                         call_id,
-                        event.response_id,
-                        len(event.content or ""),
+                        user_text[:80],
+                    )
+                    await websocket.send_json(
+                        {
+                            "response_type": "response",
+                            "response_id": response_id,
+                            "content": "Disculpe, señor. Tuve un inconveniente. ¿Puede repetir?",
+                            "content_complete": True,
+                            "end_call": False,
+                        }
                     )
 
         debounce_task = asyncio.create_task(run_debounced())
 
+    async def message_worker() -> None:
+        while True:
+            data = await message_queue.get()
+            if data is None:
+                message_queue.task_done()
+                break
+            try:
+                await handle_message(data)
+            except Exception:  # noqa: BLE001
+                logger.exception("[RETELL-GEMINI] handle_message error call=%s", call_id)
+            finally:
+                message_queue.task_done()
+
+    worker_task = asyncio.create_task(message_worker())
+
     try:
         async for data in websocket.iter_json():
-            asyncio.create_task(handle_message(data))
+            await message_queue.put(data)
     except WebSocketDisconnect:
         logger.info("[RETELL-GEMINI] WebSocket desconectado call_id=%s", call_id)
     except Exception as exc:  # noqa: BLE001
@@ -216,6 +248,24 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         except Exception:  # noqa: BLE001
             pass
     finally:
+        await message_queue.put(None)
+        try:
+            await asyncio.wait_for(worker_task, timeout=5.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            worker_task.cancel()
         mark_ws_disconnected(call_id)
+        uid = resolve_call_user(call_id) or user_id
+        if uid:
+            try:
+                from app.services.conversation_memory import finalize_voice_session_async
+
+                finalize_voice_session_async(
+                    user_id=uid,
+                    session_id=call_id,
+                    conversation_id=None,
+                    started_at_epoch=session_started,
+                )
+            except Exception:  # noqa: BLE001
+                pass
         release_call_user(call_id)
         logger.info("[RETELL-GEMINI] WebSocket cerrado call_id=%s", call_id)
