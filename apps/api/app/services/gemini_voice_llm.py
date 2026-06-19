@@ -17,9 +17,12 @@ from app.domain.openai_voice_prompt import build_ced_voice_system_prompt
 from app.services.gemini_voice_tools import build_gemini_voice_tools
 from app.services.retell_custom_llm import (
     concise_reply_for_small_talk,
+    format_web_delivery,
     is_generic_agent_line,
     is_small_talk,
     resolve_web_search_request,
+    web_search_error_phrase,
+    web_search_hold_phrase,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_tool_executor import execute_voice_tool
@@ -95,7 +98,9 @@ def _build_voice_system(user_id: str | None, user_text: str = "") -> str:
                 block = format_hits_for_prompt(hits)
                 base = (
                     f"{base}\n\n# CONOCIMIENTO INTERNO CED (prioriza esto; no busques en web salvo noticias/clima/datos de hoy)\n"
-                    f"{block}"
+                    f"{block}\n\n"
+                    "PROHIBIDO decir 'busco en internet', 'consulto la web' o 'un momento mientras busco' "
+                    "para este tema. Responde directo como experto interno."
                 )
         except Exception:  # noqa: BLE001
             pass
@@ -255,19 +260,27 @@ class GeminiVoiceLlm:
 
         web_req = resolve_web_search_request(user_text, request.transcript)
         if web_req:
+            kind = web_req["kind"]
+            if kind in ("news", "weather"):
+                yield ResponseResponse(
+                    response_id=request.response_id,
+                    content=web_search_hold_phrase(kind),
+                    content_complete=True,
+                    end_call=False,
+                )
             if self.user_id:
                 tool_result = await execute_voice_tool(
                     "search_web",
                     self.user_id,
-                    {"query": web_req["query"], "kind": web_req["kind"]},
+                    {"query": web_req["query"], "kind": kind},
                 )
                 spoken = str(tool_result.get("spoken") or "").strip()
             else:
                 spoken = "No identifiqué al usuario, señor."
             if not spoken or spoken.startswith("No fue posible"):
-                full = spoken or "No pude consultar en internet, señor."
+                full = web_search_error_phrase(kind)
             else:
-                full = spoken[:480]
+                full = format_web_delivery(kind, spoken)
             self._history = _truncate_contents(
                 [
                     *self._history,
@@ -289,6 +302,54 @@ class GeminiVoiceLlm:
                 end_call=False,
             )
             return
+
+        from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
+        from app.services.internal_knowledge import (
+            best_internal_answer,
+            should_use_internal_brain,
+        )
+
+        internal_hit = best_internal_answer(user_text)
+        use_internal = (
+            internal_hit
+            and should_use_internal_brain(user_text, internal_hit)
+            and (is_internal_knowledge_query(user_text) or not requires_live_web(user_text))
+        )
+        if use_internal:
+            internal_config = types.GenerateContentConfig(
+                system_instruction=(
+                    f"{_build_voice_system(self.user_id, user_text)}\n\n"
+                    "Responde SOLO con conocimiento interno CED. "
+                    "PROHIBIDO invocar search_web o decir que buscas en internet."
+                ),
+                temperature=0.4,
+                max_output_tokens=320,
+            )
+            try:
+                internal_response = await self._generate_with_timeout(
+                    contents=[*self._history, last],
+                    config=internal_config,
+                )
+                internal_text = _extract_text(internal_response)
+                if internal_text and not is_generic_agent_line(internal_text):
+                    self._history = _truncate_contents(
+                        [
+                            *self._history,
+                            last,
+                            types.Content(role="model", parts=[types.Part(text=internal_text)]),
+                        ],
+                        max_turns=MAX_HISTORY_TURNS,
+                    )
+                    logger.info("[RETELL-GEMINI] internal_brain user=%s", user_text[:80])
+                    yield ResponseResponse(
+                        response_id=request.response_id,
+                        content=internal_text[:480],
+                        content_complete=True,
+                        end_call=False,
+                    )
+                    return
+            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                logger.warning("[RETELL-GEMINI] internal_brain fallback to tools")
 
         logger.info(
             "[RETELL-GEMINI] user=%s text=%s turns=%s hist=%s",

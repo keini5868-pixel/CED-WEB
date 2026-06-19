@@ -14,6 +14,7 @@ from app.services.conversation_memory import (
     save_long_term_memory,
 )
 from app.services.gemini_grounded import fetch_voice_brief
+from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.navigation_maps import compute_route, geocode_address
 from app.services.navigation_session import (
@@ -111,13 +112,17 @@ async def execute_voice_tool(
         if name == "search_web":
             query = str(params.get("query") or "").strip()
             kind = str(params.get("kind") or "general")
-            if not requires_live_web(query):
+            from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
+
+            if is_internal_knowledge_query(query) or (
+                not requires_live_web(query) and kind == "general"
+            ):
                 hits = search_internal_knowledge(query, limit=2)
                 if hits:
                     internal = format_hits_for_prompt(hits)
                     return _spoken_ok(internal[:480])
                 return _spoken_ok(
-                    "Eso lo respondo con mi conocimiento interno, señor, sin consultar internet."
+                    "Con gusto, señor. Puedo explicarle eso con lo que ya tengo en mi cerebro interno."
                 )
             result = await asyncio.to_thread(fetch_voice_brief, query, kind=kind)
             if result.get("ok"):

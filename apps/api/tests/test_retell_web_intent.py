@@ -53,6 +53,16 @@ def test_creatine_definition_no_web_without_explicit_request():
     assert resolve_web_search_request(tx[-1].content, tx) is None
 
 
-def test_qué_es_without_web_keyword_uses_internal_path():
-    tx = _tx(("user", "Explícame qué es el marketing digital."))
+def test_creatine_internal_not_web():
+    from app.services.cognitive_intents import is_internal_knowledge_query
+
+    tx = _tx(("user", "Yo sé lo que es la creatina"))
+    assert is_internal_knowledge_query(tx[-1].content)
     assert resolve_web_search_request(tx[-1].content, tx) is None
+
+
+def test_world_news_triggers_web():
+    tx = _tx(("user", "Dame las noticias más relevantes del mundo"))
+    req = resolve_web_search_request(tx[-1].content, tx)
+    assert req is not None
+    assert req["kind"] == "news"

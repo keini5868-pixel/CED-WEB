@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 
 from app.services.cognitive_intents import (
+    is_internal_knowledge_query,
     is_news_intent,
     is_volatile_query,
     is_weather_intent,
@@ -117,6 +118,8 @@ def _is_fragment_continuation(last: str, prev: str) -> bool:
 
 
 def _needs_internet_lookup(text: str) -> bool:
+    if is_internal_knowledge_query(text):
+        return False
     if is_weather_intent(text) or is_news_intent(text):
         return True
     if requires_live_web(text):
@@ -167,12 +170,34 @@ def resolve_web_search_request(
 
 
 def web_search_hold_phrase(kind: str) -> str:
-    """No concatenar con resultados TTS — Retell usa otra voz en chunks separados."""
+    """Frase de espera — solo noticias/clima (mensaje aparte antes del resultado)."""
     if kind == "weather":
-        return "Consulto el clima, señor."
+        return "Un momento, señor. Consulto el clima y vuelvo con el resultado."
     if kind == "news":
-        return "Consulto las noticias, señor."
-    return "Consulto en internet, señor."
+        return "Un momento, señor. Investigaré las noticias y vuelvo con el resultado."
+    return "Un momento, señor."
+
+
+def format_web_delivery(kind: str, spoken: str) -> str:
+    cleaned = " ".join((spoken or "").split()).strip()
+    if not cleaned:
+        return cleaned
+    if kind == "news":
+        return f"Señor, las noticias más relevantes de hoy son: {cleaned}"[:480]
+    if kind == "weather":
+        return f"Señor, el clima es el siguiente: {cleaned}"[:480]
+    return cleaned[:480]
+
+
+def web_search_error_phrase(kind: str) -> str:
+    if kind == "news":
+        return (
+            "Disculpe, señor. No pude obtener las noticias en este momento. "
+            "¿Desea que lo intente de nuevo?"
+        )
+    if kind == "weather":
+        return "Disculpe, señor. No pude consultar el clima ahora."
+    return "Disculpe, señor. No pude consultar en internet ahora."
 
 
 def split_spoken_chunks(text: str, *, max_len: int = 140) -> list[str]:

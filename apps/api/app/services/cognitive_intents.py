@@ -46,13 +46,18 @@ NEWS_PATTERNS = [
     r"\bhoy\s+en\s+",
     r"\bqu[eé]\s+pas[oó]\b",
     r"\bqu[eé]\s+pasa\s+con\b",
-    r"\b[uú]ltim\w*\b.*\b(noticia|hora|titular|hoy)\b",
+    r"\b[uú]ltim\w*\b.*\b(noticia|hora|titular|hoy|relevante|importante)\b",
     r"\b(noticia|titular)\w*\b.*\b[uú]ltim",
-    r"\bdime\b.*\b(noticia|ultim|titular|hoy|decir)\b",
-    r"\bdame\b.*\b(noticia|ultim|titular|resumen)\b",
+    r"\b(relevante|importante)\w*\b.*\b(noticia|mundo|internacional)\b",
+    r"\b(mundo|internacional|global)\b.*\b(noticia|titular)\b",
+    r"\bdime\b.*\b(noticia|ultim|titular|hoy|decir|relevante)\b",
+    r"\bdame\b.*\b(noticia|ultim|titular|resumen|relevante)\b",
+    r"\bbusca(r|me)?\b.*\b(noticia|titular|actualidad)\b",
     r"\bcu[eé]ntame\b.*\b(noticia|hoy|ultim)\b",
     r"\btitulares\b",
     r"\bnews\b",
+    r"\blatest news\b",
+    r"\bworld news\b",
 ]
 
 WEB_PATTERNS = [
@@ -171,8 +176,34 @@ def is_web_research_intent(text: str) -> bool:
     return _matches(t, WEB_PATTERNS)
 
 
+def is_internal_knowledge_query(text: str) -> bool:
+    """Conceptos estables / explicaciones — cerebro interno, no web."""
+    if is_news_intent(text) or is_weather_intent(text):
+        return False
+    t = normalize_text(text)
+    if re.search(
+        r"\b(busca(r|me)?\s+(en\s+)?(internet|la web|google)|"
+        r"investiga(r|me)?\s+(en\s+)?(internet|la web)|"
+        r"noticias?|clima|tiempo|precio|cotiza)\b",
+        t,
+    ):
+        return False
+    if re.search(
+        r"\b(que es|qué es|que significa|explícame|explicame|dime que es|"
+        r"cuentame que es|hablame de|informacion sobre|información sobre|"
+        r"creatina|suplemento|marketing|ventas|embudo|instagram|facebook)\b",
+        t,
+    ):
+        return True
+    if re.search(r"\b(yo\s+se|ya\s+se|se\s+lo\s+que|i know|explain|what is)\b", t):
+        return True
+    return False
+
+
 def requires_live_web(text: str) -> bool:
     """Solo noticias/clima/datos de hoy o búsqueda explícita en internet."""
+    if is_internal_knowledge_query(text):
+        return False
     if is_news_intent(text) or is_weather_intent(text):
         return True
     t = normalize_text(text)

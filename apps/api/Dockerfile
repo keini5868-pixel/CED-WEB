@@ -1,8 +1,8 @@
 # Castillo Digital API — producción (Railway / Render)
-# build: 2026-06-19-gemini-images-v13
+# build: 2026-06-19-voice-news-v14
 FROM python:3.12-slim
 
-ARG BUILD_VERSION=2026-06-19-gemini-images-v13
+ARG BUILD_VERSION=2026-06-19-voice-news-v14
 LABEL org.ced.build="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

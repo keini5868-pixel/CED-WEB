@@ -12,10 +12,13 @@ from app.services.gemini_voice_llm import GeminiVoiceLlm, draft_begin_message
 from app.services.retell_call_registry import release_call_user, resolve_call_user
 from app.services.retell_custom_llm import (
     concise_reply_for_small_talk,
+    format_web_delivery,
     is_small_talk,
     last_user_text,
     resolve_web_search_request,
     should_respond_to_transcript,
+    web_search_error_phrase,
+    web_search_hold_phrase,
 )
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
@@ -202,24 +205,37 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             web_req = resolve_web_search_request(user_text, transcript)
             if web_req and uid:
+                kind = web_req["kind"]
                 async with response_lock:
                     if response_id < active_response_id:
                         return
                     active_response_id = response_id
                     last_answered_user_key = user_key
+                    if kind in ("news", "weather"):
+                        if response_id < active_response_id:
+                            return
+                        await websocket.send_json(
+                            {
+                                "response_type": "response",
+                                "response_id": response_id,
+                                "content": web_search_hold_phrase(kind),
+                                "content_complete": True,
+                                "end_call": False,
+                            }
+                        )
                     tool_result = await execute_voice_tool(
                         "search_web",
                         uid,
-                        {"query": web_req["query"], "kind": web_req["kind"]},
+                        {"query": web_req["query"], "kind": kind},
                     )
                     if response_id < active_response_id:
                         logger.info("[RETELL-GEMINI] drop stale web rid=%s", response_id)
                         return
                     spoken = str(tool_result.get("spoken") or "").strip()
                     if not spoken or spoken.startswith("No fue posible"):
-                        full = spoken or "No pude consultar en internet, señor. Intente de nuevo."
+                        full = web_search_error_phrase(kind)
                     else:
-                        full = spoken[:480]
+                        full = format_web_delivery(kind, spoken)
                     if response_id < active_response_id:
                         logger.info("[RETELL-GEMINI] drop stale web rid=%s", response_id)
                         return
