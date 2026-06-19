@@ -1,5 +1,5 @@
 # Castillo Digital API — producción (Railway / Render)
-# build: 2026-06-18-chat-fallback-v3-emergency
+# build: 2026-06-18-chat-fallback-v4-openai-fix
 FROM python:3.12-slim
 
 ARG BUILD_VERSION=2026-06-18-chat-fallback-v3-emergency

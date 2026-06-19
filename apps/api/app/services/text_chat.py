@@ -38,6 +38,8 @@ logger = logging.getLogger(__name__)
 
 CHAT_MODEL = "claude-sonnet-4-6"
 CHAT_MODEL_FAST = "claude-3-5-haiku-20241022"
+CHAT_GEMINI_MODEL = "gemini-2.0-flash"
+CHAT_SYSTEM_MAX_CHARS = 14_000
 CHAT_HISTORY_LIMIT = 30
 CHAT_SIMPLE_MAX_TOKENS = 700
 CHAT_TOOLS_MAX_TOKENS = 1000
@@ -452,6 +454,13 @@ def _should_fallback_anthropic_to_openai(exc: httpx.HTTPStatusError, *, has_open
     return exc.response.status_code in _anthropic_fallback_statuses()
 
 
+def _trim_system(system: str) -> str:
+    text = (system or "").strip()
+    if len(text) <= CHAT_SYSTEM_MAX_CHARS:
+        return text
+    return text[: CHAT_SYSTEM_MAX_CHARS - 24] + "\n… [contexto truncado]"
+
+
 def _anthropic_request(
     *,
     api_key: str,
@@ -527,32 +536,62 @@ def _openai_simple_reply(
     system: str,
     messages: list[dict[str, Any]],
 ) -> str:
-    oai_messages = [{"role": "system", "content": system}]
+    from app.services.openai_key_utils import sanitize_openai_api_key
+
+    key = sanitize_openai_api_key(api_key)
+    if not key:
+        raise TextChatError("OpenAI no configurado.", http_status=503)
+
+    oai_messages = [{"role": "system", "content": _trim_system(system)}]
     for msg in messages:
         role = msg.get("role")
         content = msg.get("content")
         if role in ("user", "assistant") and isinstance(content, str):
             oai_messages.append({"role": role, "content": content})
-    with httpx.Client(timeout=45.0) as client:
-        res = client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "max_tokens": CHAT_SIMPLE_MAX_TOKENS,
-                "messages": oai_messages,
-            },
-        )
-        res.raise_for_status()
-        data = res.json()
-    choice = (data.get("choices") or [{}])[0]
-    reply = str((choice.get("message") or {}).get("content") or "").strip()
-    if not reply:
-        raise TextChatError("Respuesta vacía del asistente.")
-    return reply
+
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                res = client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": model,
+                        "max_tokens": CHAT_SIMPLE_MAX_TOKENS,
+                        "messages": oai_messages,
+                    },
+                )
+                if res.status_code == 429 and attempt < 2:
+                    wait_s = 1.5 * (attempt + 1)
+                    logger.warning("[CHAT] OpenAI 429 — reintento %s en %.1fs", attempt + 1, wait_s)
+                    time.sleep(wait_s)
+                    continue
+                res.raise_for_status()
+                data = res.json()
+            choice = (data.get("choices") or [{}])[0]
+            reply = str((choice.get("message") or {}).get("content") or "").strip()
+            if reply:
+                return reply
+            raise TextChatError("Respuesta vacía del asistente.", http_status=503)
+        except httpx.HTTPStatusError as exc:
+            last_exc = exc
+            if exc.response.status_code in (429, 503) and attempt < 2:
+                time.sleep(1.5 * (attempt + 1))
+                continue
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < 2:
+                time.sleep(1.0)
+                continue
+            raise
+    if last_exc:
+        raise last_exc
+    raise TextChatError("No hubo respuesta de OpenAI.", http_status=503)
 
 
 def _gemini_simple_reply(
@@ -580,11 +619,12 @@ def _gemini_simple_reply(
         raise TextChatError("Sin mensajes para el asistente.")
 
     client = genai.Client(api_key=api_key)
+    model_name = (model or CHAT_GEMINI_MODEL).strip() or CHAT_GEMINI_MODEL
     response = client.models.generate_content(
-        model=model,
+        model=model_name,
         contents=contents,
         config=types.GenerateContentConfig(
-            system_instruction=system,
+            system_instruction=_trim_system(system),
             temperature=0.5,
             max_output_tokens=CHAT_SIMPLE_MAX_TOKENS,
         ),
@@ -643,6 +683,8 @@ def _simple_chat_cascade(
             last_exc = exc
 
     if isinstance(last_exc, httpx.HTTPStatusError):
+        raise last_exc
+    if isinstance(last_exc, TextChatError):
         raise last_exc
     raise TextChatError(
         "Servicio de chat temporalmente no disponible. Intenta de nuevo en unos minutos.",
@@ -997,6 +1039,7 @@ def send_message(
     from app.deps.auth import is_super_admin
     from app.deps.plan_access import chat_message_limit
     from app.services.chat_rate_limit import check_chat_rate_limit
+    from app.services.openai_key_utils import sanitize_openai_api_key
 
     profile = supabase_db.get_profile(user_id) or {}
     admin = is_super_admin(profile.get("email"), profile.get("role"))
@@ -1015,9 +1058,9 @@ def send_message(
 
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
-    openai_key = settings.openai_api_key.strip()
+    openai_key = sanitize_openai_api_key(settings.openai_api_key)
     google_key = settings.google_api_key.strip()
-    gemini_model = settings.gemini_voice_model.strip() or "gemini-2.0-flash"
+    gemini_model = CHAT_GEMINI_MODEL
     if not anthropic_key and not openai_key and not google_key:
         raise TextChatError(
             "Servicio de chat temporalmente no disponible. Intenta de nuevo en unos minutos.",
@@ -1189,6 +1232,8 @@ def send_message(
             system=system,
             messages=messages,
         )
+    except TextChatError:
+        raise
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         body = exc.response.text[:300]
@@ -1213,9 +1258,9 @@ def send_message(
             http_status=503,
         ) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[CHAT] provider failed")
+        logger.exception("[CHAT] provider failed: %s", exc)
         raise TextChatError(
-            "Error de conexión con el asistente.",
+            "No pude conectar con el asistente. Intenta de nuevo en un momento.",
             http_status=503,
         ) from exc
 
