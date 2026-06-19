@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "2026-06-18-chat-fallback-v4-openai-fix"
+BUILD_VERSION = "2026-06-19-chat-openai-v5"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

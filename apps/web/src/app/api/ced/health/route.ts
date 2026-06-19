@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
 
+const WEB_BUILD = "2026-06-19-web-v5";
+
 /** Diagnóstico BFF: comprueba que el web alcanza la API (sin auth). */
 export async function GET() {
   const apiBase = apiUrl();
@@ -17,6 +19,7 @@ export async function GET() {
     }
     return NextResponse.json({
       ok: res.ok,
+      web_build: WEB_BUILD,
       api_base: apiBase,
       api_status: res.status,
       api_response: parsed,

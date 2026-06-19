@@ -938,9 +938,54 @@ def _complete_chat_resilient(
     system: str,
     messages: list[dict[str, Any]],
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
-    """Ruta rápida sin tools; cascade Claude → OpenAI → Gemini."""
+    """Chat resiliente — sin Claude usa OpenAI directo."""
     settings = get_settings()
     lite = settings.openai_model_chat_lite.strip() or "gpt-4o-mini"
+    trimmed_system = _trim_system(system)
+
+    if not anthropic_key and openai_key:
+        try:
+            if not _needs_chat_tools(user_text):
+                reply = _openai_simple_reply(
+                    api_key=openai_key,
+                    model=lite,
+                    system=trimmed_system,
+                    messages=messages,
+                )
+                return reply, None, None
+            try:
+                return _complete_chat_with_tools_openai(
+                    user_id,
+                    api_key=openai_key,
+                    model=openai_model or settings.openai_model_chat,
+                    system=trimmed_system,
+                    messages=messages,
+                )
+            except Exception as tool_exc:  # noqa: BLE001
+                logger.warning("[CHAT] OpenAI tools falló — modo simple: %s", tool_exc)
+                reply = _openai_simple_reply(
+                    api_key=openai_key,
+                    model=lite,
+                    system=trimmed_system,
+                    messages=messages,
+                )
+                return reply, None, None
+        except (httpx.HTTPStatusError, TextChatError):
+            raise
+        except Exception as exc:  # noqa: BLE001
+            if google_key:
+                logger.warning("[CHAT] OpenAI falló — fallback Gemini: %s", exc)
+                reply = _gemini_simple_reply(
+                    api_key=google_key,
+                    model=gemini_model,
+                    system=trimmed_system,
+                    messages=messages,
+                )
+                return reply, None, None
+            raise TextChatError(
+                "No pude conectar con el asistente (OpenAI). Intenta en un momento.",
+                http_status=503,
+            ) from exc
 
     if not _needs_chat_tools(user_text):
         return _simple_chat_cascade(
@@ -1218,7 +1263,11 @@ def send_message(
 
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
-    system = _build_chat_system(user_id, text, route)
+    try:
+        system = _build_chat_system(user_id, text, route)
+    except Exception:  # noqa: BLE001
+        logger.exception("[CHAT] fallo armando system prompt — usando base")
+        system = _chat_system_for_user(user_id)
 
     try:
         reply, pdf_attachment, image_attachment = _complete_chat_resilient(

@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
+from app.build_info import BUILD_TIMESTAMP, BUILD_VERSION
 from app.config import get_settings
 from app.logging_setup import configure_logging
 from app.middleware.request_logging import RequestLoggingMiddleware
@@ -53,7 +54,9 @@ async def lifespan(_app: FastAPI):
     configure_logging(settings)
     if settings.is_production():
         logger.info(
-            "CED API production",
+            "CED API production build=%s ts=%s",
+            BUILD_VERSION,
+            BUILD_TIMESTAMP,
             extra={"web_url": settings.web_public_url, "api_url": settings.api_public_url},
         )
     if not settings.openai_api_key.strip():

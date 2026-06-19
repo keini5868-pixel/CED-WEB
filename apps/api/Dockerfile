@@ -1,8 +1,8 @@
 # Castillo Digital API — producción (Railway / Render)
-# build: 2026-06-18-chat-fallback-v4-openai-fix
+# build: 2026-06-19-chat-openai-v5
 FROM python:3.12-slim
 
-ARG BUILD_VERSION=2026-06-18-chat-fallback-v3-emergency
+ARG BUILD_VERSION=2026-06-19-chat-openai-v5
 LABEL org.ced.build="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

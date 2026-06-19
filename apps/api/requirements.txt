@@ -1,4 +1,4 @@
-# Castillo Digital API — Fase 0+
+# Castillo Digital API — deps (build 2026-06-19-v5)
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 pydantic-settings>=2.6.0
