@@ -27,8 +27,10 @@ from app.services.retell_custom_llm import (
     remember_pending_script_topic,
     resolve_advanced_analysis_request,
     resolve_camera_voice_request,
+    resolve_instagram_caption_request,
     resolve_meta_publish_request,
     resolve_web_search_request,
+    is_inaudible_or_noise,
     should_clear_pending_script,
     should_execute_advanced_now,
     should_respond_to_transcript,
@@ -231,7 +233,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         ]
 
         if interaction == "reminder_required":
-            logger.info("[RETELL-GEMINI] skip reminder call=%s", call_id)
+            async with response_lock:
+                if response_id < active_response_id:
+                    return
+                await send_voice_response(
+                    response_id=response_id,
+                    content="¿Sigue ahí, señor?",
+                    user_key="",
+                )
+            logger.info("[RETELL-GEMINI] silence ping call=%s", call_id)
             return
 
         if not should_respond_to_transcript(transcript, interaction_type=interaction):
@@ -239,6 +249,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         user_text = merged_user_query(transcript)
+        if is_inaudible_or_noise(user_text):
+            logger.info("[RETELL-GEMINI] skip inaudible/noise call=%s text=%s", call_id, user_text[:40])
+            return
         if should_clear_pending_script(user_text):
             clear_pending_advanced_topic(call_id)
             llm._pending_advanced = None
@@ -307,6 +320,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 transcript,
                 pending_topic=pending_now,
             )
+            if uid:
+                from app.services import voice_client_session as vcs
+
+                if vcs.is_awaiting_instagram_caption(uid) and not is_script_demo_request(user_text):
+                    advanced_req = None
             if not advanced_req and (
                 has_advanced_confirmation(user_text)
                 or is_explicit_advanced_activation(user_text)
@@ -372,6 +390,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             meta_req = resolve_meta_publish_request(user_text)
+            if not meta_req:
+                meta_req = resolve_instagram_caption_request(
+                    user_text,
+                    transcript,
+                    user_id=uid,
+                )
             if meta_req and uid:
                 clear_pending_advanced_topic(call_id)
                 llm._pending_advanced = None

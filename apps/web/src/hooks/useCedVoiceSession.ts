@@ -2382,7 +2382,9 @@ export function useCedVoiceSession(
             ? { image_url: imageData }
             : { image_data: imageData },
         );
-        cedVoiceLog(5, "Chat image registered for voice publish");
+        cedVoiceLog(5, "Chat image registered for voice publish", {
+          via: imageData.startsWith("http") ? "url" : "data",
+        });
       } catch {
         /* voice session may be idle */
       }

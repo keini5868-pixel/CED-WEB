@@ -297,7 +297,22 @@ def is_camera_voice_command(text: str) -> bool:
 def has_advanced_confirmation(text: str) -> bool:
     if is_camera_voice_command(text):
         return False
-    return _matches(normalize_text(text), ADVANCED_CONFIRM_PATTERNS)
+    if is_meta_publish_intent(text):
+        return False
+    t = normalize_text(text).strip()
+    if is_explicit_advanced_activation(text):
+        return True
+    # "sí" dentro de una frase larga (caption, texto de post) NO es confirmación de guion.
+    if len(t.split()) >= 3 and re.search(r"\b(s[ií]|ok|vale)\b", t):
+        if not _matches(t, EXPLICIT_ADVANCED_ACTIVATION_PATTERNS):
+            return False
+    if re.fullmatch(
+        r"(s[ií]|ok|okay|vale|dale|adelante|confirma(do)?|hazlo|de acuerdo|"
+        r"consulta(lo|me)?|ahora s[ií]|s[ií],?\s*adelante|s[ií],?\s*activa)",
+        t,
+    ):
+        return True
+    return _matches(t, EXPLICIT_ADVANCED_ACTIVATION_PATTERNS)
 
 
 def parse_memory_save(text: str) -> str | None:

@@ -32,7 +32,24 @@ _STT_ECHO_FRAGMENTS = frozenset(
         "en qué puedo",
         "como orden",
         "cómo orden",
+        "la",
+        "el",
+        "los",
+        "las",
+        "y",
+        "que",
+        "qué",
     }
+)
+
+_INAUDIBLE_STT = re.compile(
+    r"\b(inaudible|unintelligible|indiscernible|mumbling)\b|\(\s*inaudible",
+    re.I,
+)
+
+_TV_NOISE_STT = re.compile(
+    r"\bsecci[oó]n de la econom[ií]a\b|\bnoticias del d[ií]a\b|\bultima hora\b",
+    re.I,
 )
 
 _ECHO_USER_LINES = frozenset(
@@ -202,6 +219,23 @@ def _is_pure_ack(text: str) -> bool:
     return bool(re.fullmatch(r"(s[ií]|ok|vale|dale|adelante|de acuerdo|confirma(do)?)", norm))
 
 
+def is_inaudible_or_noise(text: str) -> bool:
+    """Ruido de TV, silencio mal transcrito o fragmentos vacíos — no responder."""
+    raw = (text or "").strip()
+    if not raw:
+        return True
+    if _INAUDIBLE_STT.search(raw):
+        return True
+    if _TV_NOISE_STT.search(raw):
+        return True
+    norm = _normalize(raw)
+    if norm in _STT_ECHO_FRAGMENTS:
+        return True
+    if len(norm.split()) == 1 and len(norm) <= 3:
+        return True
+    return False
+
+
 def transcript_has_meta_publish_context(transcript: list[Utterance]) -> bool:
     """True si el turno reciente trata de publicar en redes, no de guion."""
     for line in _user_lines(transcript)[-8:]:
@@ -234,6 +268,68 @@ def resolve_meta_publish_request(user_text: str) -> dict[str, str] | None:
             caption = m.group(1).strip(" .,:;-")
             break
     return {"platform": platform, "caption": caption}
+
+
+_AGENT_AWAITING_CAPTION = re.compile(
+    r"imagen recibida|qu[eé] texto desea|texto desea que acompa[nñ]|"
+    r"mensaje.*publicaci|descripci[oó]n.*instagram|qu[eé] desea publicar|"
+    r"acompa[nñ]e su publicaci|necesito una imagen para instagram",
+    re.I,
+)
+
+
+def agent_awaiting_instagram_caption(transcript: list[Utterance]) -> bool:
+    for utterance in reversed(transcript):
+        if utterance.role == "user":
+            continue
+        content = (utterance.content or "").strip()
+        if content and _AGENT_AWAITING_CAPTION.search(content):
+            return True
+    return False
+
+
+def resolve_instagram_caption_request(
+    user_text: str,
+    transcript: list[Utterance],
+    *,
+    user_id: str | None = None,
+) -> dict[str, str] | None:
+    """Tras 'Imagen recibida, ¿qué texto…?' — el siguiente turno es el caption."""
+    last = (user_text or "").strip()
+    if not last or is_inaudible_or_noise(last):
+        return None
+    if has_advanced_confirmation(last) and len(_normalize(last).split()) <= 2:
+        return None
+
+    from app.services import voice_client_session as vcs
+
+    has_image = bool(user_id and vcs.get_last_publishable_image(user_id))
+    awaiting = agent_awaiting_instagram_caption(transcript)
+    if user_id and vcs.is_awaiting_instagram_caption(user_id):
+        awaiting = True
+
+    if not awaiting and not has_image:
+        return None
+    if not awaiting:
+        norm = _normalize(last)
+        if not re.search(
+            r"\b(pon|pongas|ponle|texto|diga|digas|llegado|lleg[oó]|sistema|publica)\b",
+            norm,
+        ):
+            return None
+
+    caption = last
+    for pat in (
+        r"(?:quiero que (?:le )?)?(?:pongas|ponle|escribe|di(?:ga)?)\s+(?:que\s+)?(.+)$",
+        r"(?:el texto es|texto:|caption:)\s*(.+)$",
+    ):
+        m = re.search(pat, last, re.I)
+        if m and m.group(1).strip():
+            caption = m.group(1).strip(" .,:;-")
+            break
+    if not caption or is_inaudible_or_noise(caption):
+        return None
+    return {"platform": "instagram", "caption": caption}
 
 
 def fallback_advanced_topic(
@@ -538,6 +634,9 @@ def should_respond_to_transcript(
 
     last = user_lines[-1].strip()
     normalized = _normalize(last)
+    if is_inaudible_or_noise(last):
+        return False
+
     if normalized in _STT_ECHO_FRAGMENTS:
         return False
 

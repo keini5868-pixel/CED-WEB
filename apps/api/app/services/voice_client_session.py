@@ -23,6 +23,7 @@ def _fresh_session() -> dict[str, Any]:
         "camera_updated_at": 0.0,
         "vision_results": {},
         "last_publishable_image": None,
+        "awaiting_instagram_caption": False,
         "updated_at": _now(),
     }
 
@@ -125,6 +126,7 @@ def set_last_publishable_image(
     *,
     image_url: str | None = None,
     image_data: str | None = None,
+    awaiting_caption: bool = True,
 ) -> None:
     """Imagen del chat o generada — disponible para publicar_instagram en voz Retell."""
     url = (image_url or "").strip()
@@ -138,6 +140,34 @@ def set_last_publishable_image(
             "data": data or None,
             "at": _now(),
         }
+        if awaiting_caption:
+            session["awaiting_instagram_caption"] = True
+        session["updated_at"] = _now()
+
+
+def set_last_publishable_image_from_bytes(
+    user_id: str,
+    image_bytes: bytes,
+    mime: str,
+) -> str:
+    """Guarda imagen del chat en disco + sesión voz (URL HTTPS para Meta)."""
+    from app.services.publish_media import store_publish_image
+
+    public_url = store_publish_image(user_id, image_bytes, mime)
+    set_last_publishable_image(user_id, image_url=public_url, awaiting_caption=True)
+    return public_url
+
+
+def is_awaiting_instagram_caption(user_id: str) -> bool:
+    session = _get(user_id)
+    with _lock:
+        return bool(session.get("awaiting_instagram_caption"))
+
+
+def clear_awaiting_instagram_caption(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["awaiting_instagram_caption"] = False
         session["updated_at"] = _now()
 
 

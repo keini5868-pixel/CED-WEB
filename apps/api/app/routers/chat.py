@@ -90,6 +90,13 @@ async def post_chat_message_with_image(
             raise TextChatError("Imagen demasiado grande. Máximo 5 MB.", http_status=400)
         media_type = (image.content_type or "image/jpeg").split(";")[0].strip()
         text = content.strip() or "¿Qué piensas de esta imagen?"
+        try:
+            from app.services import voice_client_session as vcs
+
+            vcs.set_last_publishable_image_from_bytes(user_id, image_bytes, media_type)
+            logger.info("[CHAT] imagen registrada para voz user=%s bytes=%s", user_id[:8], len(image_bytes))
+        except Exception:  # noqa: BLE001
+            logger.warning("[CHAT] no se pudo registrar imagen para voz", exc_info=True)
         return send_message(
             user_id,
             content=text,

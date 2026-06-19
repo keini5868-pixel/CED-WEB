@@ -348,19 +348,25 @@ async def execute_voice_tool(
             caption = str(params.get("caption") or "").strip()
             image_url = params.get("image_url")
             image_data = params.get("image_data")
-            if not image_url and not image_data:
-                from app.services import voice_client_session as vcs
+            from app.services import voice_client_session as vcs
 
+            if not image_url and not image_data:
                 stored = vcs.get_last_publishable_image(user_id)
                 if stored:
                     image_url = stored.get("url")
                     image_data = stored.get("data")
+            if not caption and (image_url or image_data):
+                return {
+                    "ok": False,
+                    "spoken": "Imagen recibida, señor. ¿Qué texto desea que acompañe su publicación?",
+                    "error": "missing_caption",
+                }
             if not image_url and not image_data:
                 return {
                     "ok": False,
                     "spoken": (
                         "Necesito la imagen, señor. Adjúntela en el chat mientras hablamos "
-                        "o muéstremela con la cámara."
+                        "— no hace falta un enlace— o muéstremela con la cámara."
                     ),
                     "error": "missing_image",
                 }
@@ -373,6 +379,9 @@ async def execute_voice_tool(
                     image_data=str(image_data) if image_data else None,
                 )
                 spoken = str(result.get("spoken") or "Publicación enviada con éxito a Instagram, señor.")
+                from app.services import voice_client_session as vcs
+
+                vcs.clear_awaiting_instagram_caption(user_id)
                 return _spoken_ok(spoken)
             except MetaSocialError as exc:
                 return _spoken_err(f"No fue posible publicar, señor. {exc}")
