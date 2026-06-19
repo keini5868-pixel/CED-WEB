@@ -18,7 +18,6 @@ from app.services.retell_custom_llm import (
     resolve_web_search_request,
     should_respond_to_transcript,
     web_search_error_phrase,
-    web_search_hold_phrase,
 )
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
@@ -210,16 +209,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         return
                     active_response_id = response_id
                     last_answered_user_key = user_key
-                    if kind in ("news", "weather"):
-                        await websocket.send_json(
-                            {
-                                "response_type": "response",
-                                "response_id": response_id,
-                                "content": web_search_hold_phrase(kind),
-                                "content_complete": False,
-                                "end_call": False,
-                            }
-                        )
                     try:
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(

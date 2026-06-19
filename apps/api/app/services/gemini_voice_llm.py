@@ -22,7 +22,6 @@ from app.services.retell_custom_llm import (
     is_small_talk,
     resolve_web_search_request,
     web_search_error_phrase,
-    web_search_hold_phrase,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_tool_executor import execute_voice_tool
@@ -261,13 +260,6 @@ class GeminiVoiceLlm:
         web_req = resolve_web_search_request(user_text, request.transcript)
         if web_req:
             kind = web_req["kind"]
-            if kind in ("news", "weather"):
-                yield ResponseResponse(
-                    response_id=request.response_id,
-                    content=web_search_hold_phrase(kind),
-                    content_complete=False,
-                    end_call=False,
-                )
             if self.user_id:
                 try:
                     tool_result = await asyncio.wait_for(

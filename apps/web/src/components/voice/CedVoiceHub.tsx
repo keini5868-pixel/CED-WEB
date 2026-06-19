@@ -135,7 +135,12 @@ export function CedVoiceHub() {
         />
       </div>
 
-      <CedCameraPreview stream={voice.cameraStream} active={voice.cameraOn} />
+      <CedCameraPreview
+        stream={voice.cameraStream}
+        active={voice.cameraOn}
+        facing={voice.cameraFacing}
+        onFlipCamera={() => void voice.flipCamera()}
+      />
 
       <CedVoiceImagePreview
         url={voiceImagePreview?.url ?? null}

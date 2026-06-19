@@ -192,6 +192,7 @@ export function useCedVoiceSession(
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraFacing, setCameraFacing] = useState<"user" | "environment">("user");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [heardIndicator, setHeardIndicator] =
     useState<VoiceHeardIndicator>(INITIAL_HEARD);
@@ -201,6 +202,7 @@ export function useCedVoiceSession(
 
   const micStreamRef = useRef<MediaStream | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
+  const cameraFacingRef = useRef<"user" | "environment">("user");
   const cameraIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clientRef = useRef<CedLiveClient | null>(null);
   const retellClientRef = useRef<CedRetellClient | null>(null);
@@ -537,6 +539,30 @@ export function useCedVoiceSession(
     async () => undefined,
   );
 
+  const startCameraWithFacing = useCallback(
+    async (facing: "user" | "environment") => {
+      cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: facing },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 24, max: 30 },
+        },
+      });
+      cameraFacingRef.current = facing;
+      setCameraFacing(facing);
+      cameraStreamRef.current = stream;
+      setCameraStream(stream);
+      setCameraOn(true);
+      resetCameraIdleTimer();
+      void postVoiceCameraStatus(true).catch(() => undefined);
+      void clientRef.current?.attachCameraStream(stream);
+      return stream;
+    },
+    [resetCameraIdleTimer],
+  );
+
   const toggleCamera = useCallback(
     async (force?: boolean) => {
       const next = force ?? !cameraOn;
@@ -551,30 +577,34 @@ export function useCedVoiceSession(
         return;
       }
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: "user",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            frameRate: { ideal: 24, max: 30 },
-          },
-        });
-        cameraStreamRef.current = stream;
-        setCameraStream(stream);
-        setCameraOn(true);
+        await startCameraWithFacing(cameraFacingRef.current);
         setStatusLabel("Activando cámara…");
-        resetCameraIdleTimer();
-        void postVoiceCameraStatus(true).catch(() => undefined);
-        void clientRef.current?.attachCameraStream(stream);
       } catch {
         setErrorMessage(
           "Por favor permite el acceso a la cámara para que CED pueda ver.",
         );
       }
     },
-    [cameraOn, resetCameraIdleTimer],
+    [cameraOn, startCameraWithFacing],
   );
   toggleCameraRef.current = toggleCamera;
+
+  const flipCamera = useCallback(async () => {
+    if (!cameraOn) return;
+    const nextFacing: "user" | "environment" =
+      cameraFacingRef.current === "user" ? "environment" : "user";
+    try {
+      clientRef.current?.detachCameraStream();
+      await startCameraWithFacing(nextFacing);
+      setStatusLabel(
+        nextFacing === "environment"
+          ? "Cámara trasera activa"
+          : "Cámara frontal activa",
+      );
+    } catch {
+      setErrorMessage("No pude cambiar de cámara. Intenta de nuevo.");
+    }
+  }, [cameraOn, startCameraWithFacing]);
 
   const toggleMic = useCallback(async () => {
     if (micBusyRef.current) return;
@@ -2327,6 +2357,7 @@ export function useCedVoiceSession(
     audioLevel,
     micOn,
     cameraOn,
+    cameraFacing,
     muted,
     paused,
     prefs,
@@ -2343,6 +2374,7 @@ export function useCedVoiceSession(
     inputLevel,
     toggleMic,
     toggleCamera,
+    flipCamera,
     togglePause,
     setMuted,
     stopSession,
