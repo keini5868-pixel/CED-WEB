@@ -259,6 +259,49 @@ def _anthropic_vision_reply(
         return None
 
 
+def _gemini_chat_vision_reply(
+    *,
+    image_bytes: bytes,
+    media_type: str,
+    user_text: str,
+) -> str | None:
+    settings = get_settings()
+    api_key = settings.google_api_key.strip()
+    if not api_key:
+        return None
+    prompt = user_text.strip() or (
+        "Analiza esta imagen como mentor de ventas y marketing digital. "
+        "Sé específico, útil y directo en español latino. Máximo 4 oraciones."
+    )
+    mime = media_type if media_type in ALLOWED_IMAGE_TYPES else "image/jpeg"
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_bytes(data=image_bytes, mime_type=mime),
+                        types.Part.from_text(text=prompt),
+                    ],
+                )
+            ],
+            config=types.GenerateContentConfig(
+                temperature=0.35,
+                max_output_tokens=900,
+            ),
+        )
+        text = (getattr(response, "text", None) or "").strip()
+        return text or None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[CHAT-MM] gemini vision failed: %s", exc)
+        return None
+
+
 def analyze_chat_image(
     user_id: str,
     *,
@@ -281,8 +324,19 @@ def analyze_chat_image(
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
 
-    reply: str | None = None
-    if anthropic_key:
+    reply: str | None = _gemini_chat_vision_reply(
+        image_bytes=image_bytes,
+        media_type=media_type,
+        user_text=user_text,
+    )
+
+    if not reply:
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        result = analyze_image(b64, question=user_text)
+        if result.get("ok") and result.get("summary"):
+            reply = str(result["summary"])
+
+    if not reply and anthropic_key:
         reply = _anthropic_vision_reply(
             api_key=anthropic_key,
             image_bytes=image_bytes,
@@ -291,13 +345,8 @@ def analyze_chat_image(
         )
 
     if not reply:
-        b64 = base64.b64encode(image_bytes).decode("utf-8")
-        result = analyze_image(b64, question=user_text)
-        if result.get("ok") and result.get("summary"):
-            reply = str(result["summary"])
-        else:
-            err = str(result.get("error") or "No pude analizar la imagen.")
-            raise TextChatError(err, http_status=503)
+        err = "No pude analizar la imagen. Verifica GOOGLE_API_KEY en Railway."
+        raise TextChatError(err, http_status=503)
 
     _log_feature_usage(
         user_id,

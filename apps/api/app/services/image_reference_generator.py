@@ -340,9 +340,8 @@ def generate_image_with_reference(
     Modos: inspired | variation | edit
     """
     settings = get_settings()
+    google_key = settings.google_api_key.strip()
     api_key = settings.openai_api_key.strip()
-    if not api_key:
-        return {"ok": False, "error": "OPENAI_API_KEY no configurada", "code": "config_error"}
 
     topic = (prompt or "").strip()
     if not topic:
@@ -369,6 +368,61 @@ def generate_image_with_reference(
     quota_err = _check_image_quota(user_id, picked)
     if quota_err:
         return quota_err
+
+    if google_key:
+        from app.services.gemini_images import generate_image_with_reference_gemini
+
+        gemini_result = generate_image_with_reference_gemini(
+            prompt=topic,
+            reference_image=reference_image,
+            content_type=mime,
+            style_mode=mode,
+            quality=picked,
+        )
+        if gemini_result.get("ok"):
+            raw = gemini_result.get("raw_bytes")
+            out_mime = str(gemini_result.get("mime_type") or "image/png")
+            model_used = str(gemini_result.get("model") or "gemini-image")
+            if isinstance(raw, (bytes, bytearray)) and raw:
+                public_url, store_err = _store_result(
+                    user_id=user_id,
+                    b64=base64.b64encode(bytes(raw)).decode("utf-8"),
+                    url=None,
+                    prompt=topic,
+                    quality=picked,
+                    model=model_used,
+                    style_mode=mode,
+                )
+                if store_err:
+                    return store_err
+                cost = float(gemini_result.get("estimated_cost_usd") or STD_COST_USD)
+                return {
+                    "ok": True,
+                    "success": True,
+                    "image_url": public_url,
+                    "url": public_url,
+                    "prompt": topic,
+                    "style_mode": mode,
+                    "quality": picked,
+                    "model": model_used,
+                    "used_fallback": False,
+                    "provider": "gemini",
+                    "estimated_cost_usd": cost,
+                }
+        if not api_key:
+            return {
+                "ok": False,
+                "error": str(gemini_result.get("error") or "No pude generar con referencia en Gemini."),
+                "code": str(gemini_result.get("code") or "gemini_error"),
+            }
+        logger.warning("[GEMINI:REF-IMG] fallback OpenAI: %s", gemini_result.get("error"))
+
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "Configura GOOGLE_API_KEY en Railway para imágenes con referencia.",
+            "code": "config_error",
+        }
 
     primary = settings.openai_model_image.strip() or "gpt-image-1"
     models_to_try: list[str] = []

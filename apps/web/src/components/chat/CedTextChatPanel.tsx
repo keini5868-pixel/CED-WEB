@@ -84,10 +84,60 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
   );
 }
 
+function ImageLightbox({
+  src,
+  alt,
+  open,
+  onClose,
+}: {
+  src: string;
+  alt: string;
+  open: boolean;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/92 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Vista ampliada"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
+        aria-label="Cerrar"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-[92vh] max-w-[96vw] cursor-zoom-out rounded-lg object-contain shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      />
+    </div>
+  );
+}
+
 function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
   const src = normalizeCedMediaUrl(image.url);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const handleDownload = async () => {
     setBusy(true);
@@ -104,16 +154,18 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
   };
 
   return (
-    <div className="mt-3 overflow-hidden rounded-lg border border-cyan-500/30 bg-black/40">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={image.prompt || "Imagen generada por CED"}
-        className="max-h-64 w-full object-contain"
-        onError={(e) => {
-          e.currentTarget.alt = "No se pudo cargar la imagen";
-        }}
-      />
+    <>
+      <div className="mt-3 overflow-hidden rounded-lg border border-cyan-500/30 bg-black/40">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt={image.prompt || "Imagen generada por CED"}
+          className="max-h-64 w-full cursor-zoom-in object-contain transition hover:opacity-95"
+          onClick={() => setLightboxOpen(true)}
+          onError={(e) => {
+            e.currentTarget.alt = "No se pudo cargar la imagen";
+          }}
+        />
       {image.prompt ? (
         <p className="border-t border-cyan-900/40 px-2 py-1.5 text-[10px] text-cyan-600">
           {image.prompt}
@@ -130,7 +182,37 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
         </button>
         {error ? <p className="mt-1 text-[10px] text-red-400">{error}</p> : null}
       </div>
-    </div>
+      </div>
+      <ImageLightbox
+        src={src}
+        alt={image.prompt || "Imagen generada por CED"}
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+      />
+    </>
+  );
+}
+
+function UserImagePreview({ preview }: { preview: string }) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  return (
+    <>
+      <div className="relative mt-2 inline-block">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={preview}
+          alt="Imagen adjunta"
+          className="max-h-36 max-w-[200px] cursor-zoom-in rounded-lg object-cover"
+          onClick={() => setLightboxOpen(true)}
+        />
+      </div>
+      <ImageLightbox
+        src={preview}
+        alt="Imagen adjunta"
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+      />
+    </>
   );
 }
 
@@ -436,16 +518,7 @@ export function CedTextChatPanel({
                     </div>
                   )}
                   <p className="whitespace-pre-wrap break-words">{displayContent}</p>
-                  {userImagePreview ? (
-                    <div className="relative mt-2 inline-block">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={userImagePreview}
-                        alt="Imagen adjunta"
-                        className="max-h-36 max-w-[200px] rounded-lg object-cover"
-                      />
-                    </div>
-                  ) : null}
+                  {userImagePreview ? <UserImagePreview preview={userImagePreview} /> : null}
                   {imageAttachment ? <ChatImagePreview image={imageAttachment} /> : null}
                   {pdfAttachment ? <PdfDownloadButton pdf={pdfAttachment} /> : null}
                   <p className="mt-1 text-[9px] opacity-50">{formatTime(msg.created_at)}</p>
