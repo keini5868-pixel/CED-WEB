@@ -8,6 +8,7 @@ from collections.abc import Callable
 from app.services.cognitive_intents import (
     has_advanced_confirmation,
     is_advanced_request,
+    is_camera_voice_command,
     is_explicit_advanced,
     is_explicit_advanced_activation,
     is_internal_knowledge_query,
@@ -258,6 +259,8 @@ def _substantive_user_lines(transcript: list[Utterance]) -> list[str]:
 
 def should_execute_advanced_now(user_text: str, topic: str) -> bool:
     """Ejecuta Claude solo para guiones/demos o tras confirmación explícita."""
+    if is_camera_voice_command(user_text):
+        return False
     if is_script_demo_request(topic) or is_script_demo_request(user_text):
         return True
     if has_advanced_confirmation(user_text) or is_explicit_advanced_activation(user_text):
@@ -277,6 +280,9 @@ def resolve_advanced_analysis_request(
     last = (user_text or "").strip()
     if not last:
         return pending_topic
+
+    if is_camera_voice_command(last):
+        return None
 
     if is_explicit_advanced_activation(last):
         return fallback_advanced_topic(transcript, pending_topic=pending_topic)
@@ -333,34 +339,66 @@ def is_unwanted_voice_reply(text: str, *, user_text: str = "") -> bool:
     return False
 
 
+def resolve_camera_voice_request(user_text: str) -> str | None:
+    """Tool de cámara a ejecutar, o None."""
+    last = (user_text or "").strip()
+    if not last or not is_camera_voice_command(last):
+        return None
+    norm = _normalize(last)
+    if re.search(r"\b(apaga|desactiva|cierra|deja de mirar)\b", norm):
+        return "request_camera_deactivation"
+    if re.search(r"\b(qu[eé] ves|mira|analiza|visi[oó]n|busca.*visible)\b", norm):
+        if re.search(r"\bbusca|internet|google|web\b", norm):
+            return "buscar_lo_visible"
+        return "analyze_camera_frame"
+    return "request_camera_activation"
+
+
+def _current_turn_wants_script(user_text: str) -> bool:
+    last = (user_text or "").strip()
+    if not last or _is_pure_ack(last):
+        return False
+    return is_script_demo_request(last) or (
+        is_advanced_request(last) and not is_camera_voice_command(last)
+    )
+
+
+def should_clear_pending_script(user_text: str) -> bool:
+    """True si el turno actual NO es guion ni confirmación de guion."""
+    last = (user_text or "").strip()
+    if not last:
+        return False
+    if is_camera_voice_command(last):
+        return True
+    if resolve_web_search_request(last, []) is not None:
+        return True
+    if _is_concept_question(last):
+        return True
+    if _current_turn_wants_script(last):
+        return False
+    if has_advanced_confirmation(last) or is_explicit_advanced_activation(last):
+        return False
+    return True
+
+
 def remember_pending_script_topic(
     call_id: str,
     transcript: list[Utterance],
     *,
     user_text: str,
     set_pending: Callable[[str, str], None],
+    script_already_delivered: bool = False,
 ) -> None:
-    """Guarda el tema del guion en cuanto el usuario lo menciona."""
-    for line in reversed(_user_lines(transcript)):
-        cleaned = line.strip()
-        if not cleaned or _is_pure_ack(cleaned):
-            continue
-        if is_script_demo_request(cleaned) or is_advanced_request(cleaned):
-            set_pending(call_id, cleaned)
-            return
-        if len(_normalize(cleaned).split()) >= 6 and (
-            "guion" in _normalize(cleaned)
-            or "video" in _normalize(cleaned)
-            or "sistema" in _normalize(cleaned)
-        ):
-            set_pending(call_id, cleaned)
-            return
-
-    cleaned = (user_text or "").strip()
-    if cleaned and not _is_pure_ack(cleaned) and (
-        is_script_demo_request(cleaned) or is_advanced_request(cleaned)
-    ):
-        set_pending(call_id, cleaned)
+    """Guarda el tema del guion solo si el turno ACTUAL lo pide (no reescanea historial)."""
+    last = (user_text or "").strip()
+    if not last or _is_pure_ack(last):
+        return
+    if script_already_delivered and not _current_turn_wants_script(last):
+        return
+    if is_camera_voice_command(last):
+        return
+    if _current_turn_wants_script(last):
+        set_pending(call_id, last)
 
 
 def split_progressive_voice(text: str, *, topic: str) -> list[tuple[str, bool]]:
@@ -462,6 +500,9 @@ def should_respond_to_transcript(
     if has_advanced_confirmation(last) or is_explicit_advanced_activation(last):
         return True
 
+    if resolve_camera_voice_request(last) is not None:
+        return True
+
     if resolve_web_search_request(last, transcript) is not None:
         return True
 
@@ -504,7 +545,8 @@ def _is_task_or_info_query(text: str) -> bool:
     if bool(
         re.search(
             r"\b(publica|publicar|recuerda|memoria|carolina|imagen|genera|"
-            r"video|demo|mostrar|guion|guión|relevante|estrategia|secuencia|seq)\b",
+            r"video|demo|mostrar|guion|guión|relevante|estrategia|secuencia|seq|"
+            r"c[aá]mara|camara|mira|visi[oó]n)\b",
             norm,
         )
     ):

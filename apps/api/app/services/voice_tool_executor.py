@@ -241,13 +241,17 @@ async def execute_voice_tool(
                 vcs.set_camera_active(user_id, False)
                 return _spoken_ok("Cámara desactivada, señor.")
             if vcs.is_camera_active(user_id):
-                return _spoken_ok("Cámara activa, señor.")
+                return _spoken_ok(
+                    "Cámara activa, señor. Muéstreme qué desea que analice con visión."
+                )
             vcs.push_client_action(user_id, "camera_activate", {})
             if await _wait_camera_active(user_id, 8.0):
-                return _spoken_ok("Cámara activa, señor.")
+                return _spoken_ok(
+                    "Cámara activa, señor. Muéstreme qué desea que analice con visión."
+                )
             return _spoken_ok(
                 "Encienda la cámara en el panel de voz, señor. "
-                "Cuando esté lista, repita qué desea que vea."
+                "Cuando esté lista, indíqueme qué desea que analice con visión."
             )
 
         if name == "analyze_camera_frame":

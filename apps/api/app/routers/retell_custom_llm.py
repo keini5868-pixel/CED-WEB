@@ -10,6 +10,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.cognitive_intents import (
     has_advanced_confirmation,
+    is_camera_voice_command,
     is_explicit_advanced_activation,
     is_script_demo_request,
 )
@@ -24,7 +25,9 @@ from app.services.retell_custom_llm import (
     merged_user_query,
     remember_pending_script_topic,
     resolve_advanced_analysis_request,
+    resolve_camera_voice_request,
     resolve_web_search_request,
+    should_clear_pending_script,
     should_execute_advanced_now,
     should_respond_to_transcript,
     is_unwanted_voice_reply,
@@ -37,7 +40,9 @@ from app.services.retell_ws_tracker import (
     active_ws_calls,
     clear_pending_advanced_topic,
     get_pending_advanced_topic,
+    is_script_delivered,
     mark_greeting_sent,
+    mark_script_delivered,
     mark_ws_connected,
     mark_ws_disconnected,
     note_ws_interaction,
@@ -225,11 +230,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         user_text = merged_user_query(transcript)
+        if should_clear_pending_script(user_text):
+            clear_pending_advanced_topic(call_id)
+            llm._pending_advanced = None
         remember_pending_script_topic(
             call_id,
             transcript,
             user_text=user_text,
             set_pending=set_pending_advanced_topic,
+            script_already_delivered=is_script_delivered(call_id),
         )
         user_key = _normalize_user_key(user_text)
         pending_topic = get_pending_advanced_topic(call_id)
@@ -280,7 +289,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if not advanced_req and (
                 has_advanced_confirmation(user_text)
                 or is_explicit_advanced_activation(user_text)
-            ):
+            ) and not is_script_delivered(call_id):
                 advanced_req = fallback_advanced_topic(transcript, pending_topic=pending_now)
 
             if is_small_talk(user_text, transcript) and not resolve_web_search_request(
@@ -296,8 +305,38 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 logger.info("[RETELL-GEMINI] small_talk call=%s: %s", call_id, reply)
                 return
 
+            camera_tool = resolve_camera_voice_request(user_text)
+            if camera_tool and uid:
+                clear_pending_advanced_topic(call_id)
+                llm._pending_advanced = None
+                async with response_lock:
+                    if response_id < active_response_id:
+                        return
+                    tool_args: dict = {}
+                    if camera_tool in ("analyze_camera_frame", "buscar_lo_visible"):
+                        tool_args["pregunta"] = user_text
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(camera_tool, uid, tool_args),
+                            timeout=30.0,
+                        )
+                    except asyncio.TimeoutError:
+                        tool_result = {
+                            "spoken": "No pude completar el análisis visual, señor.",
+                        }
+                    spoken = str(tool_result.get("spoken") or "").strip()
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=spoken or "Completado, señor.",
+                        user_key=user_key,
+                    )
+                logger.info("[RETELL-GEMINI] camera call=%s tool=%s", call_id, camera_tool)
+                return
+
             web_req = resolve_web_search_request(user_text, transcript)
             if web_req and uid:
+                clear_pending_advanced_topic(call_id)
+                llm._pending_advanced = None
                 kind = web_req["kind"]
                 async with response_lock:
                     if response_id < active_response_id:
@@ -391,6 +430,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         last_answered_user_key = user_key
                     clear_pending_advanced_topic(call_id)
                     llm._pending_advanced = None
+                    mark_script_delivered(call_id)
                 logger.info(
                     "[RETELL-GEMINI] advanced call=%s topic=%s chars=%s",
                     call_id,
@@ -402,7 +442,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if (
                 has_advanced_confirmation(user_text)
                 or is_explicit_advanced_activation(user_text)
-            ) and uid:
+            ) and uid and not is_camera_voice_command(user_text) and not is_script_delivered(call_id):
                 topic = fallback_advanced_topic(transcript, pending_topic=pending_now)
                 logger.warning(
                     "[RETELL-GEMINI] confirm sin ruta advanced — forzando topic=%s",
@@ -447,6 +487,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             last_answered_user_key = user_key
                         clear_pending_advanced_topic(call_id)
                         llm._pending_advanced = None
+                        mark_script_delivered(call_id)
                     return
 
             request = ResponseRequiredRequest(

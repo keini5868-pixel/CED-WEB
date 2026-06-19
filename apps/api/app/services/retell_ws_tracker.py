@@ -89,6 +89,25 @@ def clear_pending_advanced_topic(call_id: str) -> str | None:
         return (row.pop("pending_advanced_topic", None) or "").strip() or None
 
 
+def mark_script_delivered(call_id: str) -> None:
+    cid = (call_id or "").strip()
+    if not cid:
+        return
+    with _lock:
+        row = _by_call.setdefault(cid, {"call_id": cid, "connected_at": time.time()})
+        row["script_delivered"] = True
+        row.pop("pending_advanced_topic", None)
+
+
+def is_script_delivered(call_id: str) -> bool:
+    cid = (call_id or "").strip()
+    if not cid:
+        return False
+    with _lock:
+        row = _by_call.get(cid)
+        return bool(row and row.get("script_delivered"))
+
+
 def active_ws_calls() -> list[dict[str, Any]]:
     now = time.time()
     with _lock:

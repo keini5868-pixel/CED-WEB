@@ -117,9 +117,16 @@ SCRIPT_DEMO_PATTERNS = [
 
 EXPLICIT_ADVANCED_ACTIVATION_PATTERNS = [
     r"\b(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado)\b",
-    r"\bs[ií]\s*,?\s*(activa(r|me|do)?|activo)\b",
+    r"\bs[ií]\s*,?\s*(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado|guion|gui[oó]n)\b",
     r"\b(activa(r|me|do)?|activo)\s+(el\s+)?guion\b",
-    r"\bprocede\b.*\b(an[aá]lisis avanzado|sistema avanzado|guion)\b",
+    r"\bprocede\b.*\b(an[aá]lisis avanzado|sistema avanzado|guion|gui[oó]n)\b",
+]
+
+CAMERA_VOICE_PATTERNS = [
+    r"\b(activa(r|me|do)?|activo|enciende|prende|abre)\s+(la\s+)?c[aá]mara\b",
+    r"\b(apaga(r|me|do)?|desactiva(r|me|do)?|cierra|deja de mirar)\s+(la\s+)?c[aá]mara\b",
+    r"\b(qu[eé] ves|mira esto|m[ií]rame|analiza.*(c[aá]mara|imagen|foto)|visi[oó]n)\b",
+    r"\b(muestrame|mu[eé]strame|mostrar).*(c[aá]mara|pantalla|esto)\b",
 ]
 
 ADVANCED_PATTERNS = [
@@ -266,10 +273,18 @@ def is_script_demo_request(text: str) -> bool:
 
 
 def is_explicit_advanced_activation(text: str) -> bool:
+    if is_camera_voice_command(text):
+        return False
     return _matches(normalize_text(text), EXPLICIT_ADVANCED_ACTIVATION_PATTERNS)
 
 
+def is_camera_voice_command(text: str) -> bool:
+    return _matches(normalize_text(text), CAMERA_VOICE_PATTERNS)
+
+
 def has_advanced_confirmation(text: str) -> bool:
+    if is_camera_voice_command(text):
+        return False
     return _matches(normalize_text(text), ADVANCED_CONFIRM_PATTERNS)
 
 
