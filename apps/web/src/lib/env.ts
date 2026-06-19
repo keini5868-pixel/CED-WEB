@@ -17,3 +17,8 @@ export function apiUrl(): string {
 export function googleMapsKey(): string {
   return process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY?.trim() || "";
 }
+
+/** OAuth Google — deshabilitado hasta configurar proveedor en Supabase. */
+export function isGoogleAuthEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
+}

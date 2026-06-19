@@ -8,7 +8,7 @@ import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { DASHBOARD_PATH, SIGNUP_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
 import { createClient } from "@/lib/supabase/client";
-import { appUrl, isSupabaseConfigured } from "@/lib/env";
+import { appUrl, isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
 
 export function LoginForm() {
   const router = useRouter();
@@ -121,20 +121,24 @@ export function LoginForm() {
           {loading ? "CONECTANDO…" : "ENTRAR"}
         </CedButton>
       </form>
-      <div className="my-6 flex items-center gap-3">
-        <div className="h-px flex-1 bg-cyan-900" />
-        <span className="text-[10px] text-cyan-700">O</span>
-        <div className="h-px flex-1 bg-cyan-900" />
-      </div>
-      <CedButton
-        type="button"
-        variant="secondary"
-        fullWidth
-        disabled={loading}
-        onClick={handleGoogle}
-      >
-        GOOGLE
-      </CedButton>
+      {isGoogleAuthEnabled() ? (
+        <>
+          <div className="my-6 flex items-center gap-3">
+            <div className="h-px flex-1 bg-cyan-900" />
+            <span className="text-[10px] text-cyan-700">O</span>
+            <div className="h-px flex-1 bg-cyan-900" />
+          </div>
+          <CedButton
+            type="button"
+            variant="secondary"
+            fullWidth
+            disabled={loading}
+            onClick={handleGoogle}
+          >
+            GOOGLE
+          </CedButton>
+        </>
+      ) : null}
       <p className="mt-6 text-center text-xs text-cyan-600">
         ¿Sin cuenta?{" "}
         <Link
