@@ -1028,6 +1028,9 @@ def send_message(
     if route.intent == "advanced_analysis" and route.speakable:
         return _finish(route.speakable, route_meta=route.to_dict())
 
+    if route.intent == "web_search" and route.speakable:
+        return _finish(route.speakable, route_meta=route.to_dict())
+
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
     try:

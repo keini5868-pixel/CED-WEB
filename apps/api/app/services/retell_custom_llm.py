@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import re
 
-from app.services.cognitive_intents import is_news_intent, is_weather_intent, is_web_research_intent
+from app.services.cognitive_intents import (
+    is_news_intent,
+    is_volatile_query,
+    is_weather_intent,
+    is_web_research_intent,
+    normalize_text,
+)
 from app.services.retell_llm_types import Utterance
 
 _ECHO_USER_LINES = frozenset(
@@ -41,11 +47,26 @@ _GENERIC_AGENT_LINES = frozenset(
     }
 )
 
+_WEB_FRAGMENT_HINTS = re.compile(
+    r"\b(busca|buscar|buscame|investiga|precio|cotiza|clima|tiempo|temperatura|"
+    r"noticia|ultim|dime|dame|cuanto|cuesta|hoy|internet|google|web|mercado|"
+    r"tendencia|actualidad|significa|vale)\b",
+    re.I,
+)
+
 
 def _normalize(text: str) -> str:
     cleaned = (text or "").strip().lower()
     cleaned = re.sub(r"\s+", " ", cleaned)
     return cleaned.rstrip(".,!?¿¡")
+
+
+def _web_kind_for(text: str) -> str:
+    if is_weather_intent(text):
+        return "weather"
+    if is_news_intent(text):
+        return "news"
+    return "general"
 
 
 def last_user_text(transcript: list[Utterance]) -> str:
@@ -55,7 +76,7 @@ def last_user_text(transcript: list[Utterance]) -> str:
     return ""
 
 
-def merged_user_query(transcript: list[Utterance], *, max_lines: int = 4) -> str:
+def merged_user_query(transcript: list[Utterance], *, max_lines: int = 5) -> str:
     """Une los últimos turnos del usuario — cubre frases partidas por voz."""
     user_lines = [
         (u.content or "").strip()
@@ -67,11 +88,29 @@ def merged_user_query(transcript: list[Utterance], *, max_lines: int = 4) -> str
     return " ".join(user_lines[-max_lines:]).strip()
 
 
+def _needs_internet_lookup(text: str) -> bool:
+    if is_weather_intent(text) or is_news_intent(text) or is_web_research_intent(text):
+        return True
+    norm = normalize_text(text)
+    if len(norm) < 6:
+        return False
+    if is_volatile_query(text) and _WEB_FRAGMENT_HINTS.search(norm):
+        return True
+    return bool(
+        re.search(
+            r"\b(clima|tiempo|temperatura|weather|pronóstico|pronostico|lluvia|"
+            r"noticias?|precio|cotiza|busca|buscar|investiga|google|internet|"
+            r"mercado|tendencia|actualidad)\b",
+            norm,
+        )
+    )
+
+
 def resolve_web_search_request(
     user_text: str,
     transcript: list[Utterance],
 ) -> dict[str, str] | None:
-    """Detecta clima/noticias/búsqueda web, incluso en frases fragmentadas."""
+    """Detecta cualquier consulta que requiera internet, incluso frases partidas."""
     merged = merged_user_query(transcript)
     candidates: list[str] = []
     for item in (merged, user_text):
@@ -80,20 +119,12 @@ def resolve_web_search_request(
             candidates.append(cleaned)
 
     for candidate in candidates:
-        if is_weather_intent(candidate):
-            return {"kind": "weather", "query": candidate}
-        if is_news_intent(candidate):
-            return {"kind": "news", "query": candidate}
-        if is_web_research_intent(candidate):
-            return {"kind": "general", "query": candidate}
+        if _needs_internet_lookup(candidate):
+            return {"kind": _web_kind_for(candidate), "query": candidate}
 
     if merged and _normalize(user_text) != _normalize(merged):
-        mnorm = _normalize(merged)
-        if is_news_intent(merged) or re.search(
-            r"\b(dime|dame|ultim|noticia|decir|cuent|titular)\b",
-            mnorm,
-        ):
-            return {"kind": "news", "query": merged}
+        if _WEB_FRAGMENT_HINTS.search(_normalize(merged)):
+            return {"kind": _web_kind_for(merged), "query": merged}
     return None
 
 
@@ -102,7 +133,7 @@ def web_search_hold_phrase(kind: str) -> str:
         return "Un momento, señor, consulto el clima."
     if kind == "news":
         return "Un momento, señor, consulto las noticias."
-    return "Un momento, señor, busco esa información."
+    return "Un momento, señor, busco esa información en internet."
 
 
 def should_respond_to_transcript(
@@ -139,14 +170,10 @@ def should_respond_to_transcript(
 
 def _is_task_or_info_query(text: str) -> bool:
     """Preguntas reales (clima, noticias, tools) — no son small talk."""
-    if is_weather_intent(text) or is_news_intent(text) or is_web_research_intent(text):
-        return True
-    norm = _normalize(text)
-    return bool(
+    return _needs_internet_lookup(text) or bool(
         re.search(
-            r"\b(clima|tiempo|temperatura|weather|pronóstico|pronostico|lluvia|"
-            r"noticias?|publica|publicar|busca|buscar|recuerda|memoria|carolina)\b",
-            norm,
+            r"\b(publica|publicar|recuerda|memoria|carolina|imagen|genera)\b",
+            _normalize(text),
         )
     )
 

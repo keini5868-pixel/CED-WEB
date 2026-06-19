@@ -104,12 +104,17 @@ def generate_image(
     quality: str | None = "auto",
 ) -> dict[str, Any]:
     settings = get_settings()
+    google_key = settings.google_api_key.strip()
     api_key = settings.openai_api_key.strip()
     topic = (prompt or "").strip()
     if not topic:
         return {"ok": False, "error": "Prompt vacío"}
-    if not api_key:
-        return {"ok": False, "error": "OPENAI_API_KEY no configurada"}
+    if not google_key and not api_key:
+        return {
+            "ok": False,
+            "error": "Configura GOOGLE_API_KEY en Railway para generar imágenes.",
+            "code": "config_error",
+        }
 
     profile = supabase_db.get_profile(user_id) or {}
     if is_super_admin(profile.get("email"), profile.get("role")):
@@ -139,6 +144,50 @@ def generate_image(
             "error": f"Límite diario de imágenes {picked} alcanzado ({cap}/día). Mañana se reinicia tu cupo.",
             "code": "quota_exhausted",
         }
+
+    if google_key:
+        from app.services.gemini_images import generate_image_gemini
+
+        gemini_result = generate_image_gemini(prompt=topic, quality=picked)
+        if gemini_result.get("ok"):
+            raw = gemini_result.get("raw_bytes")
+            mime = str(gemini_result.get("mime_type") or "image/png")
+            model = str(gemini_result.get("model") or "gemini-image")
+            if not isinstance(raw, (bytes, bytearray)) or not raw:
+                return {"ok": False, "error": "Gemini no devolvió imagen usable", "code": "gemini_error"}
+            from app.services.publish_media import store_publish_image_for_client
+
+            public_url = store_publish_image_for_client(user_id, bytes(raw), mime)
+            cost = float(gemini_result.get("estimated_cost_usd") or STD_COST_USD)
+            try:
+                supabase_db.insert_generated_image(
+                    user_id=user_id,
+                    prompt=topic,
+                    quality=picked,
+                    model=model,
+                    public_url=public_url,
+                    estimated_cost_usd=cost,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("[GEMINI:IMAGE] log insert failed")
+            return {
+                "ok": True,
+                "url": public_url,
+                "quality": picked,
+                "model": model,
+                "provider": "gemini",
+                "estimated_cost_usd": cost,
+            }
+        if not api_key:
+            return {
+                "ok": False,
+                "error": str(gemini_result.get("error") or "No pude generar la imagen con Gemini."),
+                "code": str(gemini_result.get("code") or "gemini_error"),
+            }
+        logger.warning("[GEMINI:IMAGE] fallback OpenAI: %s", gemini_result.get("error"))
+
+    if not api_key:
+        return {"ok": False, "error": "GOOGLE_API_KEY no configurada"}
 
     primary = settings.openai_model_image.strip() or "gpt-image-1"
     models_to_try = [primary]

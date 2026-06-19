@@ -55,12 +55,26 @@ WEB_PATTERNS = [
     r"\binvestig",
     r"\bb[uú]sca(r|me|lo|rlo)?\b",
     r"\bb[uú]scame\b",
-    r"\bbusca(r|me)?\b.*\b(internet|web|google|l[ií]nea)\b",
+    r"\bbusca(r|me)?\b.*\b(internet|web|google|l[ií]nea|reddit)\b",
     r"\b(informaci[oó]n|datos)\s+(sobre|de|acerca)\b",
     r"\binformaci[oó]n actualizada\b",
     r"\bdatos actuales\b",
     r"\bprecio\b.*\bhoy\b",
     r"\bc[uú]anto cuesta hoy\b",
+    r"\bqu[eé]\s+es\b",
+    r"\bqu[eé]\s+significa\b",
+    r"\bc[uú]anto\s+(vale|cuesta|est[aá])\b",
+    r"\bprecio\s+(de|del|actual)\b",
+    r"\bcotizaci[oó]n\b",
+    r"\bdime\b.*\b(sobre|de|precio|costo)\b",
+    r"\bdame\b.*\b(precio|costo|info|informaci)\b",
+    r"\bconsulta(r|me)?\b.*\b(internet|web|google|l[ií]nea)\b",
+    r"\ben\s+internet\b",
+    r"\bgoogle\b",
+    r"\bbusca\b.*\b(en|por)\b",
+    r"\b(reddit|twitter|x\.com)\b",
+    r"\bmercado\b.*\bhoy\b",
+    r"\btendencia\b",
 ]
 
 VOLATILE_PATTERNS = [
@@ -144,6 +158,10 @@ def is_web_research_intent(text: str) -> bool:
     if is_news_intent(text) or is_weather_intent(text):
         return True
     t = normalize_text(text)
+    if len(t) < 6:
+        return False
+    if re.search(r"\b(busca|buscar|buscame|investiga|google|internet|precio|cotiza)\b", t):
+        return len(t) >= 6
     if len(t) < 8:
         return False
     return _matches(t, WEB_PATTERNS)
