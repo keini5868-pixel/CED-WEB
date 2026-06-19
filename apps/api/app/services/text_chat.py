@@ -848,11 +848,17 @@ def send_message(
         )
 
     from app.deps.auth import is_super_admin
+    from app.deps.plan_access import chat_message_limit
     from app.services.chat_rate_limit import check_chat_rate_limit
 
     profile = supabase_db.get_profile(user_id) or {}
     admin = is_super_admin(profile.get("email"), profile.get("role"))
-    allowed, retry_after = check_chat_rate_limit(user_id, is_admin=admin)
+    unlimited_plan = chat_message_limit(user_id) < 0
+    allowed, retry_after = check_chat_rate_limit(
+        user_id,
+        is_admin=admin,
+        unlimited_plan=unlimited_plan,
+    )
     if not allowed:
         raise TextChatError(
             f"Has alcanzado el límite de mensajes. Espera {retry_after} segundos e intenta de nuevo.",

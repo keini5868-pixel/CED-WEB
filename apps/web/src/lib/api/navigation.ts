@@ -47,6 +47,12 @@ export type NavigationMapState = {
 export async function fetchNavigationState(consume = false): Promise<NavigationState> {
   const qs = consume ? "?consume=true" : "";
   const res = await proxyFetch(`navigation/state${qs}`);
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false };
+  }
+  if (!res.ok) {
+    return { ok: false };
+  }
   return parseApiJson<NavigationState>(res);
 }
 

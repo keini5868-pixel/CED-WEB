@@ -22,3 +22,8 @@ export function googleMapsKey(): string {
 export function isGoogleAuthEnabled(): boolean {
   return process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
 }
+
+/** Soporte flotante — activo salvo NEXT_PUBLIC_SUPPORT_CHAT_ENABLED=false */
+export function isSupportChatEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_SUPPORT_CHAT_ENABLED !== "false";
+}

@@ -7,10 +7,11 @@ import time
 from dataclasses import dataclass
 from threading import Lock
 
-# 60 mensajes/min con ráfaga de 20 (1 token/s de recarga).
-_BURST_CAPACITY = 20.0
-_REFILL_PER_SEC = 1.0  # 60/min
-_ADMIN_REFILL_PER_SEC = 3.33  # ~200/min efectivo para admins
+# 60 mensajes/min, ráfaga inicial 60 (1 token/s de recarga).
+_MAX_REQUESTS = 60
+_WINDOW_SECONDS = 60
+_BURST_CAPACITY = 60.0
+_REFILL_PER_SEC = _MAX_REQUESTS / _WINDOW_SECONDS  # 1.0/s
 
 
 @dataclass
@@ -23,35 +24,28 @@ _lock = Lock()
 _buckets: dict[str, _BucketState] = {}
 
 
-def _capacity(*, is_admin: bool) -> float:
-    return _BURST_CAPACITY if not is_admin else _BURST_CAPACITY * 2
-
-
-def _refill_rate(*, is_admin: bool) -> float:
-    return _ADMIN_REFILL_PER_SEC if is_admin else _REFILL_PER_SEC
-
-
-def check_chat_rate_limit(user_id: str, *, is_admin: bool) -> tuple[bool, int]:
+def check_chat_rate_limit(user_id: str, *, is_admin: bool, unlimited_plan: bool) -> tuple[bool, int]:
     """
     Devuelve (permitido, segundos_de_espera).
-    Admins tienen cupo alto (~200/min); usuarios normales 60/min con ráfaga 20.
+    Super admin y planes ilimitados: sin límite por minuto.
     """
+    if is_admin or unlimited_plan:
+        return True, 0
+
     uid = (user_id or "").strip()
     if not uid:
         return True, 0
 
     now = time.monotonic()
-    cap = _capacity(is_admin=is_admin)
-    rate = _refill_rate(is_admin=is_admin)
 
     with _lock:
         state = _buckets.get(uid)
         if state is None:
-            state = _BucketState(tokens=cap, updated_at=now)
+            state = _BucketState(tokens=_BURST_CAPACITY, updated_at=now)
             _buckets[uid] = state
 
         elapsed = max(0.0, now - state.updated_at)
-        state.tokens = min(cap, state.tokens + elapsed * rate)
+        state.tokens = min(_BURST_CAPACITY, state.tokens + elapsed * _REFILL_PER_SEC)
         state.updated_at = now
 
         if state.tokens >= 1.0:
@@ -59,5 +53,5 @@ def check_chat_rate_limit(user_id: str, *, is_admin: bool) -> tuple[bool, int]:
             return True, 0
 
         deficit = 1.0 - state.tokens
-        retry = max(1, min(30, int(math.ceil(deficit / rate))))
+        retry = max(1, min(30, int(math.ceil(deficit / _REFILL_PER_SEC))))
         return False, retry

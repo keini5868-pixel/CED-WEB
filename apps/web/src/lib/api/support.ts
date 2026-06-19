@@ -135,6 +135,7 @@ export async function markSupportConversationRead(conversationId: string): Promi
 
 export async function fetchUserSupportUnreadCount(): Promise<number> {
   const res = await proxyFetch("support/user/unread-count");
+  if (res.status === 401 || res.status === 403 || res.status === 404) return 0;
   const data = await parseApiJson<{ count?: number }>(res);
   if (!res.ok) return 0;
   return data.count ?? 0;
@@ -158,6 +159,7 @@ export async function fetchAdminSupportConversations(filters?: {
 
 export async function fetchAdminSupportUnreadCount(): Promise<number> {
   const res = await proxyFetch("support/admin/unread-count");
+  if (res.status === 401 || res.status === 403 || res.status === 404) return 0;
   const data = await parseApiJson<{ count?: number }>(res);
   if (!res.ok) return 0;
   return data.count ?? 0;
