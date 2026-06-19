@@ -31,6 +31,8 @@ type CedTextChatPanelProps = {
   /** Imagen generada por voz — se muestra al abrir el chat */
   seedImage?: ChatImageAttachment | null;
   onSeedConsumed?: () => void;
+  /** Mientras hay sesión de voz activa, registra imagen para publicar en Instagram */
+  onVoiceImageAttached?: (preview: string, file?: File) => void;
 };
 
 function formatTime(iso?: string) {
@@ -221,6 +223,7 @@ export function CedTextChatPanel({
   onClose,
   seedImage,
   onSeedConsumed,
+  onVoiceImageAttached,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -341,6 +344,10 @@ export function CedTextChatPanel({
       user_image_preview: imagePreview,
     };
     setMessages((prev) => [...prev, userMsg]);
+
+    if (imageFile && imagePreview && onVoiceImageAttached) {
+      onVoiceImageAttached(imagePreview, imageFile);
+    }
 
     try {
       if (

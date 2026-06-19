@@ -21,7 +21,7 @@ from app.services.retell_custom_llm import (
     merged_user_query,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
-from app.services.voice_spoken import fit_voice_spoken, is_advisory_voice_query, voice_spoken_limit
+from app.services.voice_spoken import is_advisory_voice_query
 from app.services.voice_tool_executor import execute_voice_tool
 
 logger = logging.getLogger(__name__)
@@ -41,8 +41,8 @@ def _voice_generation_limits(user_text: str) -> tuple[int, float]:
     return 640, GEMINI_TIMEOUT_SEC
 
 
-def _spoken_for_user(text: str, user_text: str) -> str:
-    return fit_voice_spoken(text, max_chars=voice_spoken_limit(user_text))
+def _delivery_text(text: str) -> str:
+    return " ".join((text or "").split()).strip()
 
 
 def _gemini_client() -> genai.Client:
@@ -310,7 +310,7 @@ class GeminiVoiceLlm:
                     logger.info("[RETELL-GEMINI] internal_brain user=%s", user_text[:80])
                     yield ResponseResponse(
                         response_id=request.response_id,
-                        content=_spoken_for_user(internal_text, user_text),
+                        content=_delivery_text(internal_text),
                         content_complete=True,
                         end_call=False,
                     )
@@ -432,7 +432,7 @@ class GeminiVoiceLlm:
             logger.info("[RETELL-GEMINI] tool agent=%s", final_text[:160])
             yield ResponseResponse(
                 response_id=request.response_id,
-                content=_spoken_for_user(final_text, user_text),
+                content=_delivery_text(final_text),
                 content_complete=True,
                 end_call=False,
             )
@@ -453,7 +453,7 @@ class GeminiVoiceLlm:
         logger.info("[RETELL-GEMINI] agent=%s", text_response[:160])
         yield ResponseResponse(
             response_id=request.response_id,
-            content=_spoken_for_user(text_response, user_text),
+            content=_delivery_text(text_response),
             content_complete=True,
             end_call=False,
         )

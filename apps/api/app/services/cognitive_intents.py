@@ -133,7 +133,6 @@ CAMERA_VOICE_PATTERNS = [
 ]
 
 ADVANCED_PATTERNS = [
-    r"\bsistema avanzado\b",
     r"\ban[aá]lisis profundo\b",
     r"\banaliza(r|me)?\s+(en detalle|a fondo|profundo)\b",
     r"\bestrategia\b",
@@ -267,7 +266,17 @@ def is_volatile_query(text: str) -> bool:
     return _matches(t, VOLATILE_PATTERNS) or is_weather_intent(text) or is_news_intent(text)
 
 
+def is_meta_publish_intent(text: str) -> bool:
+    """Publicar en redes — no confundir con guion / sistema avanzado."""
+    t = normalize_text(text)
+    if len(t) < 6:
+        return False
+    return _matches(t, META_PATTERNS)
+
+
 def is_advanced_request(text: str) -> bool:
+    if is_meta_publish_intent(text):
+        return False
     return _matches(normalize_text(text), ADVANCED_PATTERNS)
 
 
@@ -386,4 +395,9 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
 
 
 def is_explicit_advanced(text: str) -> bool:
-    return _matches(normalize_text(text), [r"\bsistema avanzado\b", r"\bmodo avanzado\b"])
+    if is_meta_publish_intent(text):
+        return False
+    t = normalize_text(text)
+    if _matches(t, EXPLICIT_ADVANCED_ACTIVATION_PATTERNS):
+        return True
+    return bool(re.search(r"\b(activa(r|me|do)?|activo)\s+(el\s+)?(modo avanzado|sistema avanzado)\b", t))

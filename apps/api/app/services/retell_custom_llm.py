@@ -12,6 +12,7 @@ from app.services.cognitive_intents import (
     is_explicit_advanced,
     is_explicit_advanced_activation,
     is_internal_knowledge_query,
+    is_meta_publish_intent,
     is_script_demo_request,
     is_news_intent,
     is_volatile_query,
@@ -201,6 +202,40 @@ def _is_pure_ack(text: str) -> bool:
     return bool(re.fullmatch(r"(s[ií]|ok|vale|dale|adelante|de acuerdo|confirma(do)?)", norm))
 
 
+def transcript_has_meta_publish_context(transcript: list[Utterance]) -> bool:
+    """True si el turno reciente trata de publicar en redes, no de guion."""
+    for line in _user_lines(transcript)[-8:]:
+        if is_meta_publish_intent(line):
+            return True
+        norm = _normalize(line)
+        if re.search(r"\b(imagen|foto|adjunt|chat|enlace|whatsapp)\b", norm) and re.search(
+            r"\b(instagram|facebook|publica|publicar|postea)\b",
+            norm,
+        ):
+            return True
+    return False
+
+
+def resolve_meta_publish_request(user_text: str) -> dict[str, str] | None:
+    """Publicación directa en Meta — prioridad sobre sistema avanzado."""
+    last = (user_text or "").strip()
+    if not last or not is_meta_publish_intent(last):
+        return None
+    norm = _normalize(last)
+    platform = "instagram" if re.search(r"\b(instagram|ig)\b", norm) else "facebook"
+    caption = ""
+    for pat in (
+        r"\bpublica(?:r|me|lo|que|ar)?\s+(?:en\s+)?(?:instagram|ig|facebook|fb)\b[\s,:-]*(.+)$",
+        r"\bpublique\s+(?:esa\s+imagen\s+)?(?:en\s+)?(?:instagram|ig)\b[\s,:-]*(.+)$",
+        r"\b(?:sube|postea)(?:r|me|lo)?\s+(?:en\s+)?(?:instagram|ig|facebook|fb)\b[\s,:-]*(.+)$",
+    ):
+        m = re.search(pat, last, re.I)
+        if m and m.group(1):
+            caption = m.group(1).strip(" .,:;-")
+            break
+    return {"platform": platform, "caption": caption}
+
+
 def fallback_advanced_topic(
     transcript: list[Utterance],
     *,
@@ -261,9 +296,13 @@ def should_execute_advanced_now(user_text: str, topic: str) -> bool:
     """Ejecuta Claude solo para guiones/demos o tras confirmación explícita."""
     if is_camera_voice_command(user_text):
         return False
+    if is_meta_publish_intent(user_text) or is_meta_publish_intent(topic):
+        return False
     if is_script_demo_request(topic) or is_script_demo_request(user_text):
         return True
     if has_advanced_confirmation(user_text) or is_explicit_advanced_activation(user_text):
+        if is_meta_publish_intent(topic):
+            return False
         return True
     if is_explicit_advanced(user_text):
         return True
@@ -284,6 +323,9 @@ def resolve_advanced_analysis_request(
     if is_camera_voice_command(last):
         return None
 
+    if is_meta_publish_intent(last):
+        return None
+
     if is_explicit_advanced_activation(last):
         return fallback_advanced_topic(transcript, pending_topic=pending_topic)
 
@@ -293,6 +335,8 @@ def resolve_advanced_analysis_request(
         return last
 
     if has_advanced_confirmation(last) or is_explicit_advanced_activation(last) or _is_pure_ack(last):
+        if transcript_has_meta_publish_context(transcript):
+            return None
         if pending_topic:
             return pending_topic
 
@@ -372,6 +416,8 @@ def should_clear_pending_script(user_text: str) -> bool:
     last = (user_text or "").strip()
     if not last:
         return False
+    if is_meta_publish_intent(last):
+        return True
     if is_camera_voice_command(last):
         return True
     if resolve_web_search_request(last, []) is not None:

@@ -23,6 +23,7 @@ import {
   ackVoiceClientAction,
   fetchVoiceClientState,
   postVoiceCameraStatus,
+  postVoiceChatImage,
   postVoiceVisionResult,
 } from "@/lib/api/voiceClient";
 import {
@@ -2360,6 +2361,35 @@ export function useCedVoiceSession(
     setStatusLabel(ORB_STATE_LABELS.idle);
   }, []);
 
+  const registerChatImageForVoice = useCallback(
+    async (preview: string, file?: File) => {
+      const normalized = preview.startsWith("http")
+        ? normalizeCedMediaUrl(preview)
+        : preview;
+      lastPublishableImageRef.current = normalized;
+      try {
+        let imageData = normalized;
+        if (file && !normalized.startsWith("data:")) {
+          imageData = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ""));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          });
+        }
+        await postVoiceChatImage(
+          imageData.startsWith("http")
+            ? { image_url: imageData }
+            : { image_data: imageData },
+        );
+        cedVoiceLog(5, "Chat image registered for voice publish");
+      } catch {
+        /* voice session may be idle */
+      }
+    },
+    [],
+  );
+
   return {
     orbState,
     statusLabel,
@@ -2390,5 +2420,6 @@ export function useCedVoiceSession(
     updatePrefs,
     applyVoiceChange,
     clearError,
+    registerChatImageForVoice,
   };
 }

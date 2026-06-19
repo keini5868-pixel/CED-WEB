@@ -22,6 +22,7 @@ def _fresh_session() -> dict[str, Any]:
         "camera_active": False,
         "camera_updated_at": 0.0,
         "vision_results": {},
+        "last_publishable_image": None,
         "updated_at": _now(),
     }
 
@@ -117,3 +118,46 @@ def pop_vision_result(user_id: str, request_id: int, *, max_age_sec: float = 30.
             return None
         text = str(row.get("summary") or "").strip()
         return text or None
+
+
+def set_last_publishable_image(
+    user_id: str,
+    *,
+    image_url: str | None = None,
+    image_data: str | None = None,
+) -> None:
+    """Imagen del chat o generada — disponible para publicar_instagram en voz Retell."""
+    url = (image_url or "").strip()
+    data = (image_data or "").strip()
+    if not url and not data:
+        return
+    session = _get(user_id)
+    with _lock:
+        session["last_publishable_image"] = {
+            "url": url or None,
+            "data": data or None,
+            "at": _now(),
+        }
+        session["updated_at"] = _now()
+
+
+def get_last_publishable_image(user_id: str, *, max_age_sec: float = 900.0) -> dict[str, str] | None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("last_publishable_image")
+        if not row:
+            return None
+        age = _now() - float(row.get("at") or 0)
+        if age > max_age_sec:
+            session["last_publishable_image"] = None
+            return None
+        url = str(row.get("url") or "").strip()
+        data = str(row.get("data") or "").strip()
+        if not url and not data:
+            return None
+        out: dict[str, str] = {}
+        if url:
+            out["url"] = url
+        if data:
+            out["data"] = data
+        return out

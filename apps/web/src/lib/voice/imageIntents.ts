@@ -40,7 +40,7 @@ export function wantsCameraImageForPublish(text: string): boolean {
 export function wantsLastImageForPublish(text: string): boolean {
   const t = text.trim();
   if (
-    /\b(la\s+imagen\s+generada|la\s+ultima\s+imagen|esa\s+imagen|imagen\s+que\s+generaste)\b/i.test(
+    /\b(la\s+imagen\s+generada|la\s+ultima\s+imagen|esa\s+imagen|imagen\s+que\s+generaste|imagen\s+del\s+chat|en\s+el\s+chat|te\s+acabo\s+de\s+enviar|adjunt[eé]|busqu[eé])\b/i.test(
       t,
     )
   ) {

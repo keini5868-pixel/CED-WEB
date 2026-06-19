@@ -12,6 +12,7 @@ from app.services.cognitive_intents import (
     has_advanced_confirmation,
     is_camera_voice_command,
     is_explicit_advanced_activation,
+    is_meta_publish_intent,
     is_script_demo_request,
 )
 from app.services.gemini_voice_llm import GeminiVoiceLlm, draft_begin_message
@@ -26,11 +27,13 @@ from app.services.retell_custom_llm import (
     remember_pending_script_topic,
     resolve_advanced_analysis_request,
     resolve_camera_voice_request,
+    resolve_meta_publish_request,
     resolve_web_search_request,
     should_clear_pending_script,
     should_execute_advanced_now,
     should_respond_to_transcript,
     is_unwanted_voice_reply,
+    transcript_has_meta_publish_context,
     _is_concept_question,
     web_search_error_phrase,
 )
@@ -159,22 +162,27 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         nonlocal active_response_id, last_answered_user_key
         if response_id < active_response_id:
             return False
-        payload = {
-            "response_type": "response",
-            "response_id": response_id,
-            "content": content,
-            "content_complete": True,
-            "end_call": False,
-        }
-        await websocket.send_json(payload)
+        chunks = split_voice_delivery_chunks(content)
+        for chunk, complete in chunks:
+            if response_id < active_response_id:
+                return False
+            payload = {
+                "response_type": "response",
+                "response_id": response_id,
+                "content": chunk,
+                "content_complete": complete,
+                "end_call": False,
+            }
+            await websocket.send_json(payload)
         active_response_id = response_id
         if user_key:
             last_answered_user_key = user_key
         logger.info(
-            "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
+            "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s chunks=%s",
             call_id,
             response_id,
             len(content),
+            len(chunks),
         )
         return True
 
@@ -256,6 +264,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             ):
                 logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
                 return
+        if user_key and last_answered_user_key and user_key != last_answered_user_key:
+            if user_key.startswith(last_answered_user_key) and len(user_key) - len(last_answered_user_key) < 24:
+                logger.info("[RETELL-GEMINI] skip partial extension call=%s", call_id)
+                return
+            if last_answered_user_key.startswith(user_key) and len(last_answered_user_key) - len(user_key) < 24:
+                logger.info("[RETELL-GEMINI] skip shorter repeat call=%s", call_id)
+                return
 
         active_response_id = max(active_response_id, response_id)
 
@@ -267,10 +282,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
         async def run_debounced() -> None:
             nonlocal active_response_id, last_answered_user_key
+            scheduled_key = user_key
             try:
                 await post_greeting_ready.wait()
                 await asyncio.sleep(wait_s)
             except asyncio.CancelledError:
+                return
+
+            if scheduled_key != last_scheduled_user_key:
+                logger.info("[RETELL-GEMINI] skip superseded debounce call=%s", call_id)
                 return
 
             if response_id < active_response_id:
@@ -349,6 +369,54 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             user_key=user_key,
                         )
                 logger.info("[RETELL-GEMINI] camera call=%s tool=%s", call_id, camera_tool)
+                return
+
+            meta_req = resolve_meta_publish_request(user_text)
+            if meta_req and uid:
+                clear_pending_advanced_topic(call_id)
+                llm._pending_advanced = None
+                tool_name = (
+                    "publicar_instagram"
+                    if meta_req["platform"] == "instagram"
+                    else "publicar_facebook"
+                )
+                tool_args: dict = {}
+                if meta_req.get("caption"):
+                    if tool_name == "publicar_instagram":
+                        tool_args["caption"] = meta_req["caption"]
+                    else:
+                        tool_args["mensaje"] = meta_req["caption"]
+                tool_args["use_last_image"] = True
+                async with response_lock:
+                    if response_id < active_response_id:
+                        return
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(tool_name, uid, tool_args),
+                            timeout=35.0,
+                        )
+                    except asyncio.TimeoutError:
+                        tool_result = {
+                            "spoken": "La publicación tardó demasiado, señor. ¿Desea que lo intente de nuevo?",
+                        }
+                    spoken = str(tool_result.get("spoken") or "").strip()
+                    if not spoken:
+                        spoken = (
+                            "No pude publicar, señor. Confirme que adjuntó la imagen en el chat."
+                            if tool_name == "publicar_instagram"
+                            else "No pude publicar en Facebook, señor."
+                        )
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=spoken,
+                        user_key=user_key,
+                    )
+                logger.info(
+                    "[RETELL-GEMINI] meta_publish call=%s tool=%s caption=%s",
+                    call_id,
+                    tool_name,
+                    (meta_req.get("caption") or "")[:80],
+                )
                 return
 
             web_req = resolve_web_search_request(user_text, transcript)
@@ -470,56 +538,62 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 has_advanced_confirmation(user_text)
                 or is_explicit_advanced_activation(user_text)
             ) and uid and not is_camera_voice_command(user_text) and not is_script_delivered(call_id):
-                topic = fallback_advanced_topic(transcript, pending_topic=pending_now)
-                logger.warning(
-                    "[RETELL-GEMINI] confirm sin ruta advanced — forzando topic=%s",
-                    topic[:80],
-                )
-                advanced_req = topic
-                if should_execute_advanced_now(user_text, advanced_req):
-                    hold = advanced_analysis_hold_phrase()
-                    async with response_lock:
-                        if response_id < active_response_id:
-                            return
-                        await send_voice_partial(
-                            response_id=response_id,
-                            content=hold,
-                            content_complete=False,
-                        )
-                        try:
-                            tool_result = await asyncio.wait_for(
-                                execute_voice_tool(
-                                    "consultar_claude",
-                                    uid,
-                                    {"prompt": advanced_req},
-                                ),
-                                timeout=45.0,
-                            )
-                        except asyncio.TimeoutError:
-                            tool_result = {
-                                "spoken": (
-                                    "El sistema avanzado tardó demasiado, señor. "
-                                    "¿Desea que lo intente de nuevo?"
-                                ),
-                            }
-                        spoken = str(tool_result.get("spoken") or "").strip()
-                        if not spoken:
-                            chunks = [("Disculpe, señor. No pude completar el análisis.", True)]
-                        else:
-                            chunks = split_voice_delivery_chunks(spoken)
-                        for chunk, complete in chunks:
+                if not (
+                    transcript_has_meta_publish_context(transcript)
+                    or is_meta_publish_intent(user_text)
+                ):
+                    topic = fallback_advanced_topic(transcript, pending_topic=pending_now)
+                    logger.warning(
+                        "[RETELL-GEMINI] confirm sin ruta advanced — forzando topic=%s",
+                        topic[:80],
+                    )
+                    advanced_req = topic
+                    if should_execute_advanced_now(user_text, advanced_req):
+                        hold = advanced_analysis_hold_phrase()
+                        async with response_lock:
+                            if response_id < active_response_id:
+                                return
                             await send_voice_partial(
                                 response_id=response_id,
-                                content=chunk,
-                                content_complete=complete,
+                                content=hold,
+                                content_complete=False,
                             )
-                        active_response_id = response_id
-                        if user_key:
-                            last_answered_user_key = user_key
-                        clear_pending_advanced_topic(call_id)
-                        llm._pending_advanced = None
-                        mark_script_delivered(call_id)
-                    return
+                            try:
+                                tool_result = await asyncio.wait_for(
+                                    execute_voice_tool(
+                                        "consultar_claude",
+                                        uid,
+                                        {"prompt": advanced_req},
+                                    ),
+                                    timeout=45.0,
+                                )
+                            except asyncio.TimeoutError:
+                                tool_result = {
+                                    "spoken": (
+                                        "El sistema avanzado tardó demasiado, señor. "
+                                        "¿Desea que lo intente de nuevo?"
+                                    ),
+                                }
+                            spoken = str(tool_result.get("spoken") or "").strip()
+                            if not spoken:
+                                chunks = [("Disculpe, señor. No pude completar el análisis.", True)]
+                            else:
+                                chunks = split_voice_delivery_chunks(spoken)
+                            for chunk, complete in chunks:
+                                await send_voice_partial(
+                                    response_id=response_id,
+                                    content=chunk,
+                                    content_complete=complete,
+                                )
+                            active_response_id = response_id
+                            if user_key:
+                                last_answered_user_key = user_key
+                            clear_pending_advanced_topic(call_id)
+                            llm._pending_advanced = None
+                            mark_script_delivered(call_id)
+                        return
+                else:
+                    logger.info("[RETELL-GEMINI] skip advanced confirm — meta publish context")
 
             request = ResponseRequiredRequest(
                 interaction_type=interaction,  # type: ignore[arg-type]

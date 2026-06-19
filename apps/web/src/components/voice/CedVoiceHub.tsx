@@ -267,6 +267,9 @@ export function CedVoiceHub() {
         onClose={() => setChatOpen(false)}
         seedImage={chatSeedImage}
         onSeedConsumed={() => setChatSeedImage(null)}
+        onVoiceImageAttached={(preview, file) => {
+          void voice.registerChatImageForVoice(preview, file);
+        }}
       />
 
       <VoiceLimitModal

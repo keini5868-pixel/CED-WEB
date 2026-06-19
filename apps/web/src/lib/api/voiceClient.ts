@@ -54,3 +54,16 @@ export async function ackVoiceClientAction(actionId: number): Promise<void> {
     body: JSON.stringify({ action_id: actionId }),
   });
 }
+
+/** Registra imagen del chat para que la voz Retell pueda publicarla en Instagram. */
+export async function postVoiceChatImage(payload: {
+  image_url?: string;
+  image_data?: string;
+}): Promise<void> {
+  if (!payload.image_url && !payload.image_data) return;
+  await proxyFetch("voice/chat-image", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}

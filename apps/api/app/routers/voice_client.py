@@ -26,6 +26,11 @@ class AckActionBody(BaseModel):
     action_id: int
 
 
+class ChatImageBody(BaseModel):
+    image_url: str | None = Field(default=None, max_length=4000)
+    image_data: str | None = Field(default=None, max_length=6_000_000)
+
+
 @router.get("/client-state")
 async def voice_client_state(
     user_id: str = Depends(require_user_id),
@@ -58,4 +63,18 @@ async def voice_ack_action(
     user_id: str = Depends(require_user_id),
 ) -> dict[str, str]:
     vcs.consume_client_action(user_id, body.action_id)
+    return {"ok": "true"}
+
+
+@router.post("/chat-image")
+async def voice_chat_image(
+    body: ChatImageBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, str]:
+    """Registra imagen del chat para publicar por voz Retell."""
+    vcs.set_last_publishable_image(
+        user_id,
+        image_url=body.image_url,
+        image_data=body.image_data,
+    )
     return {"ok": "true"}
