@@ -1,8 +1,8 @@
 # Castillo Digital API — producción (Railway / Render)
-# build: 2026-06-19-voice-arch-v18
+# build: 2026-06-19-retell-lang-v19
 FROM python:3.12-slim
 
-ARG BUILD_VERSION=2026-06-19-voice-arch-v18
+ARG BUILD_VERSION=2026-06-19-retell-lang-v19
 LABEL org.ced.build="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

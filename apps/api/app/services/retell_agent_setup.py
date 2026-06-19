@@ -69,6 +69,13 @@ def resolve_configured_retell_voice_id(client: Any, configured: str) -> str:
     if not cleaned:
         return resolve_retell_voice_id_from_api(client)
 
+    if cleaned.startswith("agent_"):
+        logger.warning(
+            "[RETELL] RETELL_VOICE_ID=%s parece agent_id — resolviendo voz automática",
+            cleaned[:20],
+        )
+        return resolve_retell_voice_id_from_api(client)
+
     if cleaned.startswith(("custom_voice_", "11labs-", "openai-", "retell-", "cartesia-", "minimax-")):
         return cleaned
 
@@ -405,7 +412,7 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "volume": _voice_volume_for(voice_id),
         "responsiveness": 0.92,
         "interruption_sensitivity": 0.42,
-        "language": "es",
+        "language": "es-419",
         "stt_mode": "accurate",
         "webhook_url": webhook,
         "webhook_events": ["call_started", "call_ended", "call_analyzed"],

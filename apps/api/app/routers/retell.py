@@ -81,6 +81,29 @@ async def _verify_retell_request(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
 
 
+def _format_retell_call_error(exc: Exception) -> str:
+    """Mensaje claro para el usuario según el error de Retell."""
+    raw = str(exc).strip()
+    lower = raw.lower()
+    if "402" in lower or "payment required" in lower or "trial" in lower:
+        return (
+            "Cuenta Retell sin saldo o prueba expirada. "
+            "Agregue método de pago en retellai.com."
+        )
+    if "401" in lower or "unauthorized" in lower:
+        return "RETELL_API_KEY inválida. Revise la variable en Railway."
+    if "422" in lower or "not found" in lower:
+        return "Agente Retell no encontrado. Ejecute bootstrap del agente."
+    if "429" in lower or "rate limit" in lower:
+        return "Demasiadas llamadas. Espere unos segundos e intente de nuevo."
+    if "language" in lower:
+        return "Error de idioma en agente Retell — se está corrigiendo, intente en 1 minuto."
+    if raw:
+        snippet = raw if len(raw) <= 220 else f"{raw[:220]}…"
+        return f"No pude iniciar llamada Retell: {snippet}"
+    return "No pude iniciar llamada Retell."
+
+
 @router.post("/register-call")
 async def register_retell_call(
     body: RegisterCallBody | None = None,
@@ -97,15 +120,26 @@ async def register_retell_call(
 
     agent_id = get_retell_agent_id()
     if not agent_id:
+        try:
+            boot = bootstrap_retell_if_needed()
+            agent_id = (boot or {}).get("agent_id") or get_retell_agent_id()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[RETELL] bootstrap on register failed: %s", exc)
+    if not agent_id:
+        err = get_last_bootstrap_error()
         raise HTTPException(
             status_code=503,
-            detail="RETELL_AGENT_ID no configurado. Reinicie API o ejecute bootstrap.",
+            detail=err or "RETELL_AGENT_ID no configurado. Reinicie API o ejecute bootstrap.",
         )
 
     _voice_access_or_raise(user_id)
 
     try:
-        # create_web_call es síncrono: liberar event loop para que Retell abra el LLM WS.
+        await asyncio.to_thread(ensure_retell_agent, agent_id=agent_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[RETELL] agent refresh before call failed (continuing): %s", exc)
+
+    try:
         call = await asyncio.to_thread(
             client.call.create_web_call,
             agent_id=agent_id,
@@ -113,7 +147,7 @@ async def register_retell_call(
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("[RETELL] create_web_call failed: %s", exc)
-        raise HTTPException(status_code=502, detail="No pude iniciar llamada Retell.") from exc
+        raise HTTPException(status_code=502, detail=_format_retell_call_error(exc)) from exc
 
     call_id = getattr(call, "call_id", None) or getattr(call, "callId", None)
     if call_id:
@@ -466,6 +500,9 @@ async def retell_public_status() -> dict[str, Any]:
     info = get_last_bootstrap_info() or {}
     agent_id = get_retell_agent_id()
     bootstrap_error: str | None = None
+    resolved_voice_id = info.get("voice_id") or settings.retell_voice_id.strip() or None
+    if resolved_voice_id and str(resolved_voice_id).startswith("agent_"):
+        resolved_voice_id = None
 
     if not agent_id and settings.voice_provider == "retell":
         try:
@@ -484,7 +521,7 @@ async def retell_public_status() -> dict[str, Any]:
         "voice_provider": settings.voice_provider,
         "agent_configured": bool(agent_id),
         "agent_id": agent_id or None,
-        "voice_id": info.get("voice_id") or settings.retell_voice_id.strip() or "11labs-George",
+        "voice_id": resolved_voice_id or "11labs-George",
         "llm_websocket_url": info.get("llm_websocket_url"),
         "brain": settings.gemini_voice_model,
         "has_retell_api_key": bool(settings.retell_api_key.strip()),
