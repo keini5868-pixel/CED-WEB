@@ -14,6 +14,18 @@ from app.services.cognitive_intents import (
     requires_live_web,
 )
 from app.services.retell_llm_types import Utterance
+from app.services.voice_spoken import VOICE_SPOKEN_MAX_CHARS, fit_voice_spoken
+
+_STT_ECHO_FRAGMENTS = frozenset(
+    {
+        "a su",
+        "usted",
+        "en que puedo",
+        "en qué puedo",
+        "como orden",
+        "cómo orden",
+    }
+)
 
 _ECHO_USER_LINES = frozenset(
     {
@@ -179,14 +191,30 @@ def web_search_hold_phrase(kind: str) -> str:
 
 
 def format_web_delivery(kind: str, spoken: str) -> str:
-    cleaned = " ".join((spoken or "").split()).strip()
+    cleaned = fit_voice_spoken(" ".join((spoken or "").split()).strip())
     if not cleaned:
         return cleaned
+    lower = cleaned.lower()
     if kind == "news":
-        return f"Señor, las noticias más relevantes de hoy son: {cleaned}"[:480]
+        if any(
+            lower.startswith(prefix)
+            for prefix in (
+                "señor",
+                "senor",
+                "aquí están",
+                "aqui están",
+                "las noticias",
+                "en venezuela",
+                "sobre ",
+            )
+        ):
+            return cleaned
+        return fit_voice_spoken(f"Señor, sobre su consulta: {cleaned}")
     if kind == "weather":
-        return f"Señor, el clima es el siguiente: {cleaned}"[:480]
-    return cleaned[:480]
+        if lower.startswith(("señor", "senor", "el clima")):
+            return cleaned
+        return fit_voice_spoken(f"Señor, el clima es el siguiente: {cleaned}")
+    return cleaned
 
 
 def web_search_error_phrase(kind: str) -> str:
@@ -200,10 +228,10 @@ def web_search_error_phrase(kind: str) -> str:
     return "Disculpe, señor. No pude consultar en internet ahora."
 
 
-def split_spoken_chunks(text: str, *, max_len: int = 140) -> list[str]:
+def split_spoken_chunks(text: str, *, max_len: int = VOICE_SPOKEN_MAX_CHARS) -> list[str]:
     """Un solo bloque — varios chunks provocan cambio de voz en Retell."""
-    cleaned = " ".join((text or "").split()).strip()
-    return [cleaned[:480]] if cleaned else []
+    cleaned = fit_voice_spoken(" ".join((text or "").split()).strip(), max_chars=max_len)
+    return [cleaned] if cleaned else []
 
 
 def should_respond_to_transcript(
@@ -221,6 +249,9 @@ def should_respond_to_transcript(
 
     last = user_lines[-1].strip()
     normalized = _normalize(last)
+    if normalized in _STT_ECHO_FRAGMENTS:
+        return False
+
     if normalized in _ECHO_USER_LINES:
         return False
 
@@ -276,8 +307,20 @@ def is_generic_agent_line(text: str) -> bool:
     return False
 
 
-def concise_reply_for_small_talk(user_text: str) -> str:
+def concise_reply_for_small_talk(
+    user_text: str,
+    transcript: list[Utterance] | None = None,
+) -> str:
     norm = _normalize(user_text)
+    user_lines = _user_lines(transcript or [])
+    mid_conversation = len(user_lines) >= 2 or len(transcript or []) >= 5
+
+    if mid_conversation:
+        if norm.startswith("hola") or norm in _SMALL_TALK or norm in _ACK_ONLY:
+            return "Sí, señor. Sigo atento. ¿En qué más puedo ayudarle?"
+        if re.search(r"(como|cómo)\s+estás?\b", norm) or "qué tal" in norm or "que tal" in norm:
+            return "Muy bien, señor. ¿Continuamos?"
+
     if re.search(r"(como|cómo)\s+estás?\b", norm) or "qué tal" in norm or "que tal" in norm:
         return "Muy bien, señor. ¿En qué puedo ayudarle?"
     if norm.startswith("hola") or norm in ("buenos días", "buenas tardes", "buenas noches"):

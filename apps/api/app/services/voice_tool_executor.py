@@ -14,6 +14,7 @@ from app.services.conversation_memory import (
     save_long_term_memory,
 )
 from app.services.gemini_grounded import fetch_voice_brief
+from app.services.voice_spoken import fit_voice_spoken
 from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.navigation_maps import compute_route, geocode_address
@@ -78,7 +79,7 @@ async def _run_camera_capture(
     )
     summary = await _wait_vision_result(user_id, request_id)
     if summary:
-        return _spoken_ok(summary[:480])
+        return _spoken_ok(summary)
     return _spoken_err(
         "No pude ver la cámara, señor. Verifique que esté encendida en el panel de voz "
         "y que el navegador tenga permiso.",
@@ -87,7 +88,7 @@ async def _run_camera_capture(
 
 
 def _spoken_ok(text: str) -> dict[str, Any]:
-    return {"ok": True, "spoken": text}
+    return {"ok": True, "spoken": fit_voice_spoken(text)}
 
 
 def _spoken_err(text: str, *, error: str | None = None) -> dict[str, Any]:
@@ -120,14 +121,14 @@ async def execute_voice_tool(
                 hits = search_internal_knowledge(query, limit=2)
                 if hits:
                     internal = format_hits_for_prompt(hits)
-                    return _spoken_ok(internal[:480])
+                    return _spoken_ok(internal)
                 return _spoken_ok(
                     "Con gusto, señor. Puedo explicarle eso con lo que ya tengo en mi cerebro interno."
                 )
             result = await asyncio.to_thread(fetch_voice_brief, query, kind=kind)
             if result.get("ok"):
                 summary = str(result.get("summary") or "").strip()
-                return _spoken_ok(summary[:480] if summary else "Consulta completada, señor.")
+                return _spoken_ok(summary if summary else "Consulta completada, señor.")
             return _spoken_err(
                 f"No fue posible consultar, señor. {result.get('error', '')}".strip(),
                 error=str(result.get("error") or "search_failed"),
@@ -138,7 +139,7 @@ async def execute_voice_tool(
             result = await asyncio.to_thread(consultar_sistema_avanzado, prompt)
             if result.get("ok"):
                 text = str(result.get("result") or "").strip()
-                return _spoken_ok(text[:480] if text else "Análisis completado, señor.")
+                return _spoken_ok(text if text else "Análisis completado, señor.")
             return _spoken_err(
                 f"No fue posible el análisis, señor. {result.get('error', '')}".strip(),
                 error=str(result.get("error") or "analysis_failed"),
@@ -199,7 +200,7 @@ async def execute_voice_tool(
                 key = item.get("key") or item.get("clave") or "dato"
                 val = item.get("content") or item.get("contenido") or ""
                 lines.append(f"{key}: {val}")
-            return _spoken_ok(f"Recuerdo: {'; '.join(lines)}"[:480])
+            return _spoken_ok(f"Recuerdo: {'; '.join(lines)}")
 
         if name == "recall_previous_conversations":
             query = str(params.get("query") or "").strip()
@@ -212,7 +213,7 @@ async def execute_voice_tool(
             )
             spoken = format_recall_for_voice(data)
             if spoken:
-                return _spoken_ok(spoken[:480])
+                return _spoken_ok(spoken)
             return _spoken_ok("No encontré conversaciones previas sobre eso, señor.")
 
         if name == "save_to_long_term_memory":
@@ -310,7 +311,7 @@ async def execute_voice_tool(
         if name == "reporte_prospeccion":
             result = await asyncio.to_thread(get_prospection_report, user_id)
             spoken = str(result.get("spoken") or "Sin datos de prospección.")
-            return _spoken_ok(spoken[:480])
+            return _spoken_ok(spoken)
 
         if name == "publicar_facebook":
             mensaje = str(params.get("mensaje") or "").strip()
@@ -420,12 +421,13 @@ async def execute_voice_tool(
                 )
             set_route(user_id, route)
             push_client_action(user_id, "apply_route", route)
+            spoken = fit_voice_spoken(
+                f"Ruta lista, señor. {route.get('duration_text', '')} "
+                f"({route.get('distance_text', '')}). Le guiaré paso a paso."
+            )
             return {
                 "ok": True,
-                "spoken": (
-                    f"Ruta lista, señor. {route.get('duration_text', '')} "
-                    f"({route.get('distance_text', '')}). Le guiaré paso a paso."
-                )[:480],
+                "spoken": spoken,
                 "client_action": "apply_route",
                 "route": route,
             }
@@ -447,7 +449,7 @@ async def execute_voice_tool(
                 f"Ruta activa hacia {route.get('destination', {}).get('label', 'su destino')}. "
                 f"Quedan aproximadamente {route.get('duration_text', '')} "
                 f"({route.get('distance_text', '')}), señor."
-            )[:480]
+            )
 
         return _spoken_err(f"Herramienta no reconocida: {name}", error="unknown_tool")
 

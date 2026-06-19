@@ -99,9 +99,9 @@ export class CedRetellClient {
     }
   }
 
-  private maybeBargeIn(userText: string): void {
-    if (!this.agentSpeaking || !userText.trim()) return;
-    this.muteAgentPlayback();
+  private maybeBargeIn(_userText: string): void {
+    // Retell gestiona interrupciones en servidor; silenciar aquí cortaba el audio a medias.
+    return;
   }
 
   private stopAudioRetry(): void {

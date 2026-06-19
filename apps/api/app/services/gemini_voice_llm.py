@@ -24,6 +24,7 @@ from app.services.retell_custom_llm import (
     web_search_error_phrase,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
+from app.services.voice_spoken import fit_voice_spoken
 from app.services.voice_tool_executor import execute_voice_tool
 
 logger = logging.getLogger(__name__)
@@ -246,7 +247,7 @@ class GeminiVoiceLlm:
             return
 
         if is_small_talk(user_text) and not resolve_web_search_request(user_text, request.transcript):
-            reply = concise_reply_for_small_talk(user_text)
+            reply = concise_reply_for_small_talk(user_text, request.transcript)
             self._history = [*self._history, last, types.Content(role="model", parts=[types.Part(text=reply)])]
             logger.info("[RETELL-GEMINI] small_talk=%s turns=%s", reply, self._turn_count)
             yield ResponseResponse(
@@ -322,7 +323,7 @@ class GeminiVoiceLlm:
                     "PROHIBIDO invocar search_web o decir que buscas en internet."
                 ),
                 temperature=0.4,
-                max_output_tokens=320,
+                max_output_tokens=480,
             )
             try:
                 internal_response = await self._generate_with_timeout(
@@ -342,7 +343,7 @@ class GeminiVoiceLlm:
                     logger.info("[RETELL-GEMINI] internal_brain user=%s", user_text[:80])
                     yield ResponseResponse(
                         response_id=request.response_id,
-                        content=internal_text[:480],
+                        content=fit_voice_spoken(internal_text),
                         content_complete=True,
                         end_call=False,
                     )
@@ -362,7 +363,7 @@ class GeminiVoiceLlm:
             system_instruction=_build_voice_system(self.user_id, user_text),
             tools=[self.tools],
             temperature=0.4,
-            max_output_tokens=320,
+            max_output_tokens=480,
         )
 
         try:
@@ -438,7 +439,7 @@ class GeminiVoiceLlm:
                     config=types.GenerateContentConfig(
                         system_instruction=_build_voice_system(self.user_id, user_text),
                         temperature=0.4,
-                        max_output_tokens=320,
+                        max_output_tokens=480,
                     ),
                 )
                 follow_text = _extract_text(follow_up)
@@ -451,7 +452,7 @@ class GeminiVoiceLlm:
             logger.info("[RETELL-GEMINI] tool agent=%s", final_text[:160])
             yield ResponseResponse(
                 response_id=request.response_id,
-                content=final_text[:480],
+                content=fit_voice_spoken(final_text),
                 content_complete=True,
                 end_call=False,
             )
@@ -460,7 +461,7 @@ class GeminiVoiceLlm:
         text_response = _extract_text(response)
         if is_generic_agent_line(text_response) or not text_response:
             text_response = (
-                concise_reply_for_small_talk(user_text)
+                concise_reply_for_small_talk(user_text, request.transcript)
                 if is_small_talk(user_text)
                 else "¿En qué puedo ayudarle, señor?"
             )
@@ -472,7 +473,7 @@ class GeminiVoiceLlm:
         logger.info("[RETELL-GEMINI] agent=%s", text_response[:160])
         yield ResponseResponse(
             response_id=request.response_id,
-            content=text_response[:480],
+            content=fit_voice_spoken(text_response),
             content_complete=True,
             end_call=False,
         )

@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retell-custom-llm"])
 
-POST_GREETING_COOLDOWN_S = 1.2
+POST_GREETING_COOLDOWN_S = 2.8
 
 
 def _normalize_user_key(text: str) -> str:
@@ -183,7 +183,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             if is_small_talk(user_text) and not resolve_web_search_request(user_text, transcript):
-                reply = concise_reply_for_small_talk(user_text)
+                reply = concise_reply_for_small_talk(user_text, transcript)
                 async with response_lock:
                     if response_id < active_response_id:
                         return
@@ -263,15 +263,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 last_answered_user_key = user_key
 
                 try:
+                    final_event = None
                     async for event in llm.draft_response(request):
                         if event.response_id < active_response_id:
                             break
-                        await websocket.send_json(event.model_dump())
+                        final_event = event
+                    if final_event is not None:
+                        payload = final_event.model_dump()
+                        payload["content_complete"] = True
+                        await websocket.send_json(payload)
                         logger.info(
                             "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
                             call_id,
-                            event.response_id,
-                            len(event.content or ""),
+                            final_event.response_id,
+                            len(final_event.content or ""),
                         )
                 except Exception:  # noqa: BLE001
                     logger.exception(

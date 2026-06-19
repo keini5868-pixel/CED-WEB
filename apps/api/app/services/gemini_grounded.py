@@ -10,6 +10,7 @@ from typing import Any
 
 from app.config import get_settings
 from app.services.tavily_search import tavily_voice_snippet
+from app.services.voice_spoken import fit_voice_spoken
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def _spoken_fallback(raw: str) -> str:
     text = re.sub(r"\s+", " ", raw).strip()
     if not text:
         return ""
-    return text[:420]
+    return fit_voice_spoken(text, max_chars=520)
 
 
 def _tavily_brief(topic: str, kind: str) -> str:
@@ -78,10 +79,11 @@ def _gemini_prompt(topic: str, kind: str) -> str:
     if kind == "news":
         return (
             f"Fecha: {today}. Pregunta del usuario: {topic}\n\n"
-            "Busca en internet las noticias INTERNACIONALES más relevantes de HOY. "
-            "Responde en 3-4 frases cortas en español latinoamericano para narración por VOZ. "
-            "Menciona 3 o 4 titulares concretos del mundo. "
-            "NO digas que buscaste en internet. Sin markdown, URLs ni listas numeradas."
+            "Busca en internet noticias RECIENTES sobre lo que preguntó el usuario. "
+            "Responde en 2-3 frases COMPLETAS en español latinoamericano para narración por VOZ. "
+            "Máximo 380 caracteres. Termina cada oración. "
+            "Enfócate en lo pedido (país, persona o tema). "
+            "NO repitas introducciones genéricas. Sin markdown, URLs ni listas numeradas."
         )
     return (
         f"Pregunta: {topic}\n\n"

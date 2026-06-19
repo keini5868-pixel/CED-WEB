@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 ANALYSIS_MODEL_FAST = "claude-haiku-4-5-20251001"
 ANALYSIS_MODEL_FALLBACK = "claude-sonnet-4-6"
 ANALYSIS_TIMEOUT_SEC = 16
-VOICE_RESULT_LIMIT = 480
+VOICE_RESULT_LIMIT = 720
 
 
 def _voice_trim(text: str) -> str:

@@ -1,8 +1,8 @@
 # Castillo Digital API — producción (Railway / Render)
-# build: 2026-06-19-voice-single-tts-v16
+# build: 2026-06-19-voice-fluid-v17
 FROM python:3.12-slim
 
-ARG BUILD_VERSION=2026-06-19-voice-single-tts-v16
+ARG BUILD_VERSION=2026-06-19-voice-fluid-v17
 LABEL org.ced.build="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
