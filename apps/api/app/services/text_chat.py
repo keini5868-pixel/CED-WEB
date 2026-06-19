@@ -442,6 +442,16 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
         return json.dumps({"ok": False, "error": str(exc)[:200]})
 
 
+def _anthropic_fallback_statuses() -> tuple[int, ...]:
+    return (401, 403, 429, 529)
+
+
+def _should_fallback_anthropic_to_openai(exc: httpx.HTTPStatusError, *, has_openai: bool) -> bool:
+    if not has_openai:
+        return False
+    return exc.response.status_code in _anthropic_fallback_statuses()
+
+
 def _anthropic_request(
     *,
     api_key: str,
@@ -460,18 +470,33 @@ def _anthropic_request(
     }
     if with_tools:
         payload["tools"] = CHAT_TOOLS
-    with httpx.Client(timeout=timeout) as client:
-        res = client.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json=payload,
-        )
-        res.raise_for_status()
-        return res.json()
+    last_response: httpx.Response | None = None
+    for attempt in range(3):
+        with httpx.Client(timeout=timeout) as client:
+            res = client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json=payload,
+            )
+            last_response = res
+            if res.status_code == 429 and attempt < 2:
+                retry_hdr = (res.headers.get("retry-after") or "").strip()
+                try:
+                    wait_s = min(float(retry_hdr), 8.0) if retry_hdr else 1.5 * (attempt + 1)
+                except ValueError:
+                    wait_s = 1.5 * (attempt + 1)
+                logger.warning("[CHAT] Anthropic 429 — reintento %s en %.1fs", attempt + 1, wait_s)
+                time.sleep(wait_s)
+                continue
+            res.raise_for_status()
+            return res.json()
+    if last_response is not None:
+        last_response.raise_for_status()
+    raise TextChatError("No hubo respuesta del proveedor de chat.")
 
 
 def _anthropic_simple_reply(
@@ -785,9 +810,12 @@ def _complete_chat_resilient(
                 )
                 return reply, None, None
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code not in (401, 403) or not openai_key:
+                if not _should_fallback_anthropic_to_openai(exc, has_openai=bool(openai_key)):
                     raise
-                logger.warning("[CHAT] Haiku failed — fallback OpenAI mini")
+                logger.warning(
+                    "[CHAT] Anthropic %s — fallback OpenAI mini",
+                    exc.response.status_code,
+                )
         if openai_key:
             settings = get_settings()
             lite = settings.openai_model_chat_lite.strip() or "gpt-4o-mini"
@@ -808,10 +836,12 @@ def _complete_chat_resilient(
                 messages=messages,
             )
         except httpx.HTTPStatusError as exc:
-            if exc.response.status_code in (401, 403) and openai_key:
-                logger.warning("[CHAT] Anthropic auth failed — fallback OpenAI")
-            else:
+            if not _should_fallback_anthropic_to_openai(exc, has_openai=bool(openai_key)):
                 raise
+            logger.warning(
+                "[CHAT] Anthropic %s con tools — fallback OpenAI",
+                exc.response.status_code,
+            )
     if openai_key:
         return _complete_chat_with_tools_openai(
             user_id,
@@ -1053,8 +1083,8 @@ def send_message(
             ) from exc
         if status == 429:
             raise TextChatError(
-                "Has alcanzado el límite del proveedor de IA. Espera 30 segundos e intenta de nuevo.",
-                http_status=429,
+                "Los servidores de IA están saturados. Espera un momento e intenta de nuevo.",
+                http_status=503,
             ) from exc
         raise TextChatError(
             "No pude obtener respuesta del asistente. Intenta de nuevo en un momento.",
