@@ -1,8 +1,8 @@
 # Castillo Digital API — producción (Railway / Render)
-# build: 2026-06-19-chat-openai-v5
+# build: 2026-06-19-chat-gemini-v6
 FROM python:3.12-slim
 
-ARG BUILD_VERSION=2026-06-19-chat-openai-v5
+ARG BUILD_VERSION=2026-06-19-chat-gemini-v6
 LABEL org.ced.build="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

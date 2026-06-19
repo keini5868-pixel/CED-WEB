@@ -38,8 +38,15 @@ logger = logging.getLogger(__name__)
 
 CHAT_MODEL = "claude-sonnet-4-6"
 CHAT_MODEL_FAST = "claude-3-5-haiku-20241022"
-CHAT_GEMINI_MODEL = "gemini-2.0-flash"
+CHAT_GEMINI_MODEL = "gemini-2.5-pro"
 CHAT_SYSTEM_MAX_CHARS = 14_000
+
+
+def _gemini_chat_model() -> str:
+    settings = get_settings()
+    return settings.gemini_voice_model.strip() or CHAT_GEMINI_MODEL
+
+
 CHAT_HISTORY_LIMIT = 30
 CHAT_SIMPLE_MAX_TOKENS = 700
 CHAT_TOOLS_MAX_TOKENS = 1000
@@ -448,8 +455,8 @@ def _anthropic_fallback_statuses() -> tuple[int, ...]:
     return (401, 403, 429, 529)
 
 
-def _should_fallback_anthropic_to_openai(exc: httpx.HTTPStatusError, *, has_openai: bool) -> bool:
-    if not has_openai:
+def _should_fallback_anthropic_to_gemini(exc: httpx.HTTPStatusError, *, has_gemini: bool) -> bool:
+    if not has_gemini:
         return False
     return exc.response.status_code in _anthropic_fallback_statuses()
 
@@ -529,71 +536,6 @@ def _anthropic_simple_reply(
     return reply
 
 
-def _openai_simple_reply(
-    *,
-    api_key: str,
-    model: str,
-    system: str,
-    messages: list[dict[str, Any]],
-) -> str:
-    from app.services.openai_key_utils import sanitize_openai_api_key
-
-    key = sanitize_openai_api_key(api_key)
-    if not key:
-        raise TextChatError("OpenAI no configurado.", http_status=503)
-
-    oai_messages = [{"role": "system", "content": _trim_system(system)}]
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content")
-        if role in ("user", "assistant") and isinstance(content, str):
-            oai_messages.append({"role": role, "content": content})
-
-    last_exc: Exception | None = None
-    for attempt in range(3):
-        try:
-            with httpx.Client(timeout=60.0) as client:
-                res = client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {key}",
-                        "Content-Type": "application/json",
-                    },
-                    json={
-                        "model": model,
-                        "max_tokens": CHAT_SIMPLE_MAX_TOKENS,
-                        "messages": oai_messages,
-                    },
-                )
-                if res.status_code == 429 and attempt < 2:
-                    wait_s = 1.5 * (attempt + 1)
-                    logger.warning("[CHAT] OpenAI 429 — reintento %s en %.1fs", attempt + 1, wait_s)
-                    time.sleep(wait_s)
-                    continue
-                res.raise_for_status()
-                data = res.json()
-            choice = (data.get("choices") or [{}])[0]
-            reply = str((choice.get("message") or {}).get("content") or "").strip()
-            if reply:
-                return reply
-            raise TextChatError("Respuesta vacía del asistente.", http_status=503)
-        except httpx.HTTPStatusError as exc:
-            last_exc = exc
-            if exc.response.status_code in (429, 503) and attempt < 2:
-                time.sleep(1.5 * (attempt + 1))
-                continue
-            raise
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            if attempt < 2:
-                time.sleep(1.0)
-                continue
-            raise
-    if last_exc:
-        raise last_exc
-    raise TextChatError("No hubo respuesta de OpenAI.", http_status=503)
-
-
 def _gemini_simple_reply(
     *,
     api_key: str,
@@ -618,56 +560,50 @@ def _gemini_simple_reply(
     if not contents:
         raise TextChatError("Sin mensajes para el asistente.")
 
-    client = genai.Client(api_key=api_key)
     model_name = (model or CHAT_GEMINI_MODEL).strip() or CHAT_GEMINI_MODEL
-    response = client.models.generate_content(
-        model=model_name,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=_trim_system(system),
-            temperature=0.5,
-            max_output_tokens=CHAT_SIMPLE_MAX_TOKENS,
-        ),
-    )
-    text = (response.text or "").strip()
-    if not text:
-        raise TextChatError("Respuesta vacía del asistente.")
-    return text
+    last_exc: Exception | None = None
+    for attempt in range(3):
+        try:
+            client = genai.Client(api_key=api_key)
+            response = client.models.generate_content(
+                model=model_name,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=_trim_system(system),
+                    temperature=0.4,
+                    max_output_tokens=CHAT_SIMPLE_MAX_TOKENS,
+                ),
+            )
+            text = (response.text or "").strip()
+            if text:
+                return text
+            raise TextChatError("Respuesta vacía del asistente.", http_status=503)
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            if attempt < 2:
+                wait_s = 1.5 * (attempt + 1)
+                logger.warning("[CHAT] Gemini reintento %s en %.1fs: %s", attempt + 1, wait_s, exc)
+                time.sleep(wait_s)
+                continue
+            break
+    if isinstance(last_exc, TextChatError):
+        raise last_exc
+    raise TextChatError(
+        "Gemini no respondió. Intenta de nuevo en un momento.",
+        http_status=503,
+    ) from last_exc
 
 
 def _simple_chat_cascade(
     *,
     anthropic_key: str,
-    openai_key: str,
     google_key: str,
-    openai_lite_model: str,
     gemini_model: str,
     system: str,
     messages: list[dict[str, Any]],
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
-    """Claude → OpenAI → Gemini para chat sin herramientas."""
+    """Gemini primero; Claude como respaldo."""
     last_exc: Exception | None = None
-
-    if anthropic_key:
-        try:
-            reply = _anthropic_simple_reply(api_key=anthropic_key, system=system, messages=messages)
-            return reply, None, None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Anthropic simple failed: %s", exc)
-            last_exc = exc
-
-    if openai_key:
-        try:
-            reply = _openai_simple_reply(
-                api_key=openai_key,
-                model=openai_lite_model,
-                system=system,
-                messages=messages,
-            )
-            return reply, None, None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] OpenAI simple failed: %s", exc)
-            last_exc = exc
 
     if google_key:
         try:
@@ -680,6 +616,14 @@ def _simple_chat_cascade(
             return reply, None, None
         except Exception as exc:  # noqa: BLE001
             logger.warning("[CHAT] Gemini simple failed: %s", exc)
+            last_exc = exc
+
+    if anthropic_key:
+        try:
+            reply = _anthropic_simple_reply(api_key=anthropic_key, system=system, messages=messages)
+            return reply, None, None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CHAT] Anthropic simple failed: %s", exc)
             last_exc = exc
 
     if isinstance(last_exc, httpx.HTTPStatusError):
@@ -785,103 +729,6 @@ def _advanced_confirm_followup(history: list[dict[str, str]], user_reply: str) -
     return None
 
 
-def _openai_tools_format() -> list[dict[str, Any]]:
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": tool["name"],
-                "description": tool["description"],
-                "parameters": tool["input_schema"],
-            },
-        }
-        for tool in CHAT_TOOLS
-    ]
-
-
-def _openai_request(
-    *,
-    api_key: str,
-    model: str,
-    system: str,
-    messages: list[dict[str, Any]],
-) -> dict[str, Any]:
-    with httpx.Client(timeout=90.0) as client:
-        res = client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "max_tokens": 1200,
-                "messages": [{"role": "system", "content": system}, *messages],
-                "tools": _openai_tools_format(),
-            },
-        )
-        res.raise_for_status()
-        return res.json()
-
-
-def _complete_chat_with_tools_openai(
-    user_id: str,
-    *,
-    api_key: str,
-    model: str,
-    system: str,
-    messages: list[dict[str, Any]],
-) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
-    pdf_attachment: dict[str, Any] | None = None
-    image_attachment: dict[str, Any] | None = None
-    working = list(messages)
-    for _ in range(4):
-        data = _openai_request(
-            api_key=api_key,
-            model=model,
-            system=system,
-            messages=working,
-        )
-        choice = (data.get("choices") or [{}])[0]
-        message = choice.get("message") or {}
-        tool_calls = message.get("tool_calls") or []
-        if not tool_calls:
-            reply = str(message.get("content") or "").strip()
-            if reply:
-                if pdf_attachment:
-                    reply = _strip_pdf_markdown_links(reply)
-                return reply, pdf_attachment, image_attachment
-            raise TextChatError("Respuesta vacía del asistente.")
-
-        working.append(message)
-        for tool in tool_calls:
-            fn = tool.get("function") or {}
-            name = str(fn.get("name") or "")
-            raw_args = fn.get("arguments") or "{}"
-            try:
-                tool_input = json.loads(raw_args) if isinstance(raw_args, str) else {}
-            except json.JSONDecodeError:
-                tool_input = {}
-            if not isinstance(tool_input, dict):
-                tool_input = {}
-            result = _run_chat_tool(user_id, name, tool_input)
-            maybe_pdf = _extract_pdf_from_tool_result(result)
-            if maybe_pdf:
-                pdf_attachment = maybe_pdf
-            maybe_img = _extract_image_from_tool_result(result)
-            if maybe_img:
-                image_attachment = maybe_img
-            working.append(
-                {
-                    "role": "tool",
-                    "tool_call_id": tool.get("id"),
-                    "content": result,
-                }
-            )
-
-    raise TextChatError("Demasiados pasos de herramientas. Intenta con un pedido más simple.")
-
-
 def _complete_chat_with_tools(
     user_id: str,
     *,
@@ -931,70 +778,20 @@ def _complete_chat_resilient(
     *,
     user_text: str,
     anthropic_key: str,
-    openai_key: str,
-    openai_model: str,
     google_key: str,
     gemini_model: str,
     system: str,
     messages: list[dict[str, Any]],
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
-    """Chat resiliente — sin Claude usa OpenAI directo."""
-    settings = get_settings()
-    lite = settings.openai_model_chat_lite.strip() or "gpt-4o-mini"
+    """Gemini para chat normal; Claude para herramientas / análisis."""
     trimmed_system = _trim_system(system)
-
-    if not anthropic_key and openai_key:
-        try:
-            if not _needs_chat_tools(user_text):
-                reply = _openai_simple_reply(
-                    api_key=openai_key,
-                    model=lite,
-                    system=trimmed_system,
-                    messages=messages,
-                )
-                return reply, None, None
-            try:
-                return _complete_chat_with_tools_openai(
-                    user_id,
-                    api_key=openai_key,
-                    model=openai_model or settings.openai_model_chat,
-                    system=trimmed_system,
-                    messages=messages,
-                )
-            except Exception as tool_exc:  # noqa: BLE001
-                logger.warning("[CHAT] OpenAI tools falló — modo simple: %s", tool_exc)
-                reply = _openai_simple_reply(
-                    api_key=openai_key,
-                    model=lite,
-                    system=trimmed_system,
-                    messages=messages,
-                )
-                return reply, None, None
-        except (httpx.HTTPStatusError, TextChatError):
-            raise
-        except Exception as exc:  # noqa: BLE001
-            if google_key:
-                logger.warning("[CHAT] OpenAI falló — fallback Gemini: %s", exc)
-                reply = _gemini_simple_reply(
-                    api_key=google_key,
-                    model=gemini_model,
-                    system=trimmed_system,
-                    messages=messages,
-                )
-                return reply, None, None
-            raise TextChatError(
-                "No pude conectar con el asistente (OpenAI). Intenta en un momento.",
-                http_status=503,
-            ) from exc
 
     if not _needs_chat_tools(user_text):
         return _simple_chat_cascade(
             anthropic_key=anthropic_key,
-            openai_key=openai_key,
             google_key=google_key,
-            openai_lite_model=lite,
             gemini_model=gemini_model,
-            system=system,
+            system=trimmed_system,
             messages=messages,
         )
 
@@ -1003,59 +800,31 @@ def _complete_chat_resilient(
             return _complete_chat_with_tools(
                 user_id,
                 api_key=anthropic_key,
-                system=system,
+                system=trimmed_system,
                 messages=messages,
             )
         except httpx.HTTPStatusError as exc:
-            if not _should_fallback_anthropic_to_openai(exc, has_openai=bool(openai_key)):
-                if google_key and exc.response.status_code in _anthropic_fallback_statuses():
-                    logger.warning("[CHAT] Anthropic tools %s — degraded Gemini", exc.response.status_code)
-                    reply = _gemini_simple_reply(
-                        api_key=google_key,
-                        model=gemini_model,
-                        system=system,
-                        messages=messages,
-                    )
-                    return reply, None, None
-                raise
-            logger.warning(
-                "[CHAT] Anthropic %s con tools — fallback OpenAI",
-                exc.response.status_code,
-            )
-
-    if openai_key:
-        try:
-            return _complete_chat_with_tools_openai(
-                user_id,
-                api_key=openai_key,
-                model=openai_model,
-                system=system,
-                messages=messages,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] OpenAI tools failed: %s", exc)
-            if google_key:
-                reply = _gemini_simple_reply(
-                    api_key=google_key,
-                    model=gemini_model,
-                    system=system,
-                    messages=messages,
+            if google_key and _should_fallback_anthropic_to_gemini(exc, has_gemini=True):
+                logger.warning(
+                    "[CHAT] Claude tools %s — fallback Gemini",
+                    exc.response.status_code,
                 )
-                return reply, None, None
-            if isinstance(exc, httpx.HTTPStatusError):
+            else:
                 raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CHAT] Claude tools failed: %s", exc)
 
     if google_key:
         reply = _gemini_simple_reply(
             api_key=google_key,
             model=gemini_model,
-            system=system,
+            system=trimmed_system,
             messages=messages,
         )
         return reply, None, None
 
     raise TextChatError(
-        "Servicio de chat temporalmente no disponible. Intenta de nuevo en unos minutos.",
+        "Servicio de chat temporalmente no disponible. Configura GOOGLE_API_KEY.",
         http_status=503,
     )
 
@@ -1084,7 +853,6 @@ def send_message(
     from app.deps.auth import is_super_admin
     from app.deps.plan_access import chat_message_limit
     from app.services.chat_rate_limit import check_chat_rate_limit
-    from app.services.openai_key_utils import sanitize_openai_api_key
 
     profile = supabase_db.get_profile(user_id) or {}
     admin = is_super_admin(profile.get("email"), profile.get("role"))
@@ -1103,12 +871,11 @@ def send_message(
 
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
-    openai_key = sanitize_openai_api_key(settings.openai_api_key)
     google_key = settings.google_api_key.strip()
-    gemini_model = CHAT_GEMINI_MODEL
-    if not anthropic_key and not openai_key and not google_key:
+    gemini_model = _gemini_chat_model()
+    if not google_key:
         raise TextChatError(
-            "Servicio de chat temporalmente no disponible. Intenta de nuevo en unos minutos.",
+            "Servicio de chat no disponible. Configura GOOGLE_API_KEY en Railway.",
             http_status=503,
         )
 
@@ -1179,7 +946,7 @@ def send_message(
         )
 
     img_prompt = parse_generate_image_prompt(text)
-    if img_prompt and is_generate_image_intent(text) and openai_key:
+    if img_prompt and is_generate_image_intent(text):
         from app.services.openai_images import generate_image
 
         plan_id = None
@@ -1274,8 +1041,6 @@ def send_message(
             user_id,
             user_text=text,
             anthropic_key=anthropic_key,
-            openai_key=openai_key,
-            openai_model=settings.openai_model_chat,
             google_key=google_key,
             gemini_model=gemini_model,
             system=system,

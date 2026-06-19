@@ -13,6 +13,7 @@ from app.rate_limit import limiter
 from app.services.openai_key_utils import openai_api_key_looks_valid
 from app.services.integrations import (
     check_anthropic,
+    check_google,
     check_openai,
     check_stripe,
     check_supabase,
@@ -162,6 +163,7 @@ def integrations_status(
     supabase_auth = check_supabase_auth()
     stripe_status = check_stripe()
     openai_status = check_openai()
+    google_status = check_google()
     anthropic_status = check_anthropic()
     return {
         "phase": 1,
@@ -169,13 +171,13 @@ def integrations_status(
         "supabase_auth": supabase_auth,
         "stripe": stripe_status,
         "openai": openai_status,
-        "gemini": openai_status,
+        "gemini": google_status,
         "anthropic": anthropic_status,
         "ready": supabase_db.get("ok")
         and stripe_status.get("ok")
-        and openai_status.get("ok")
+        and google_status.get("ok")
         and anthropic_status.get("ok"),
-        "chat_ready": anthropic_status.get("ok") or openai_status.get("ok"),
+        "chat_ready": google_status.get("ok") or anthropic_status.get("ok"),
     }
 
 

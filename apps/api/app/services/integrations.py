@@ -34,9 +34,37 @@ def check_openai() -> dict[str, Any]:
     }
 
 
+def check_google() -> dict[str, Any]:
+    """Comprueba GOOGLE_API_KEY (Gemini) — chat de texto y voz."""
+    settings = get_settings()
+    api_key = settings.google_api_key.strip()
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "missing_google_api_key",
+            "hint": "Añade GOOGLE_API_KEY en Railway (servicio CED-WEB).",
+        }
+    model = settings.gemini_voice_model.strip() or "gemini-2.5-pro"
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=model,
+            contents=[types.Content(role="user", parts=[types.Part(text="ping")])],
+            config=types.GenerateContentConfig(max_output_tokens=8),
+        )
+        text = (response.text or "").strip()
+        if text:
+            return {"ok": True, "model": model, "provider": "google_gemini"}
+        return {"ok": False, "error": "empty_response", "model": model}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:200], "model": model}
+
+
 def check_gemini() -> dict[str, Any]:
-    """Legacy alias — OpenAI Realtime reemplazó Gemini Live."""
-    return check_openai()
+    return check_google()
 
 
 def check_anthropic() -> dict[str, Any]:
@@ -45,18 +73,18 @@ def check_anthropic() -> dict[str, Any]:
     settings = get_settings()
     api_key = settings.anthropic_api_key.strip()
     if not api_key:
-        openai_key = settings.openai_api_key.strip()
-        if openai_key:
+        google_key = settings.google_api_key.strip()
+        if google_key:
             return {
                 "ok": True,
-                "model": settings.openai_model_chat,
-                "provider": "openai_fallback",
-                "hint": "Chat usa OpenAI (OPENAI_API_KEY) — Anthropic no configurada.",
+                "model": settings.gemini_voice_model.strip() or "gemini-2.5-pro",
+                "provider": "gemini_fallback",
+                "hint": "Chat usa Gemini (GOOGLE_API_KEY) — Anthropic no configurada.",
             }
         return {
             "ok": False,
             "error": "missing_anthropic_api_key",
-            "hint": "Añade ANTHROPIC_API_KEY u OPENAI_API_KEY en Railway (CED-WEB).",
+            "hint": "Añade ANTHROPIC_API_KEY o GOOGLE_API_KEY en Railway (CED-WEB).",
         }
     try:
         with httpx.Client(timeout=15.0) as client:

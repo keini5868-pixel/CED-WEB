@@ -10,6 +10,7 @@ from app.config import get_settings
 from app.deps.auth import require_super_admin
 from app.services.integrations import (
     check_anthropic,
+    check_google,
     check_openai,
     check_stripe,
     check_supabase,
@@ -33,6 +34,7 @@ def health_diagnostic(_admin_id: str = Depends(require_super_admin)) -> dict:
 
     api_keys = {
         "anthropic": _key_configured(settings.anthropic_api_key),
+        "google": _key_configured(settings.google_api_key),
         "openai": _key_configured(settings.openai_api_key),
         "stripe": _key_configured(settings.stripe_secret_key),
         "supabase_service_role": _key_configured(settings.supabase_service_role_key),
@@ -46,6 +48,7 @@ def health_diagnostic(_admin_id: str = Depends(require_super_admin)) -> dict:
     supabase_keys = check_supabase_auth_api_key()
     stripe_status = check_stripe()
     openai_status = check_openai()
+    google_status = check_google()
     anthropic_status = check_anthropic()
 
     services: dict[str, str] = {}
@@ -54,6 +57,7 @@ def health_diagnostic(_admin_id: str = Depends(require_super_admin)) -> dict:
         ("supabase_auth", supabase_auth),
         ("stripe", stripe_status),
         ("openai", openai_status),
+        ("google", google_status),
         ("anthropic", anthropic_status),
     ):
         if result.get("ok"):
@@ -77,7 +81,7 @@ def health_diagnostic(_admin_id: str = Depends(require_super_admin)) -> dict:
         "services": services,
         "database": {"connected": supabase_db.get("ok", False)},
         "ready": supabase_db.get("ok")
-        and openai_status.get("ok")
-        and (anthropic_status.get("ok") or openai_status.get("ok")),
+        and google_status.get("ok")
+        and (anthropic_status.get("ok") or google_status.get("ok")),
         "errors": errors,
     }
