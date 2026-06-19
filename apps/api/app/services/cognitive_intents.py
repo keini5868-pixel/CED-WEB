@@ -98,6 +98,30 @@ VOLATILE_PATTERNS = [
     r"\bnoticia",
 ]
 
+SCRIPT_DEMO_PATTERNS = [
+    r"\bguion\b",
+    r"\bgui[oó]n\b",
+    r"\bscript\b",
+    r"\bvideo\b",
+    r"\bdemo\b",
+    r"\bmostrar.*sistema\b",
+    r"\bcaracter[ií]sticas.*sistema\b",
+    r"\bsec\b",
+    r"\bcep\b",
+    r"\bced\b.*(video|demo|mostrar|segund)",
+    r"\b\d+\s*segund",
+    r"\b(veinte|veinticinco|treinta|quince|diez)\s*(y\s*)?(cinco\s*)?segund",
+    r"\ban[aá]lisis avanzado\b.*\bguion\b",
+    r"\bguion\b.*\b(veinte|veinticinco|25|segund)",
+]
+
+EXPLICIT_ADVANCED_ACTIVATION_PATTERNS = [
+    r"\b(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado)\b",
+    r"\bs[ií]\s*,?\s*(activa(r|me|do)?|activo)\b",
+    r"\b(activa(r|me|do)?|activo)\s+(el\s+)?guion\b",
+    r"\bprocede\b.*\b(an[aá]lisis avanzado|sistema avanzado|guion)\b",
+]
+
 ADVANCED_PATTERNS = [
     r"\bsistema avanzado\b",
     r"\ban[aá]lisis profundo\b",
@@ -105,6 +129,11 @@ ADVANCED_PATTERNS = [
     r"\bestrategia\b",
     r"\bplan de acci[oó]n\b",
     r"\bcompar(a|ar|me)\b.*\b(opciones|alternativas)\b",
+    r"\bguion\b",
+    r"\bgui[oó]n\b",
+    r"\bscript\b",
+    r"\bperfecciona(r|me)?\b.*\b(guion|gui[oó]n|script|texto)\b",
+    *SCRIPT_DEMO_PATTERNS,
 ]
 
 MEMORY_SAVE_PATTERNS = [
@@ -133,6 +162,7 @@ ADVANCED_CONFIRM_PATTERNS = [
     r"\bhazlo\b",
     r"\bde acuerdo\b",
     r"\bconsulta(lo|me)?\b",
+    *EXPLICIT_ADVANCED_ACTIVATION_PATTERNS,
 ]
 
 
@@ -191,7 +221,8 @@ def is_internal_knowledge_query(text: str) -> bool:
     if re.search(
         r"\b(que es|qué es|que significa|explícame|explicame|dime que es|"
         r"cuentame que es|hablame de|informacion sobre|información sobre|"
-        r"creatina|suplemento|marketing|ventas|embudo|instagram|facebook)\b",
+        r"creatina|suplemento|marketing|ventas|embudo|instagram|facebook|"
+        r"psicolog|psicolog\u00eda|ansiedad|estr[eé]s|depresi|emocion|mental)\b",
         t,
     ):
         return True
@@ -228,6 +259,14 @@ def is_volatile_query(text: str) -> bool:
 
 def is_advanced_request(text: str) -> bool:
     return _matches(normalize_text(text), ADVANCED_PATTERNS)
+
+
+def is_script_demo_request(text: str) -> bool:
+    return _matches(normalize_text(text), SCRIPT_DEMO_PATTERNS)
+
+
+def is_explicit_advanced_activation(text: str) -> bool:
+    return _matches(normalize_text(text), EXPLICIT_ADVANCED_ACTIVATION_PATTERNS)
 
 
 def has_advanced_confirmation(text: str) -> bool:

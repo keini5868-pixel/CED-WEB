@@ -56,6 +56,39 @@ def mark_ws_disconnected(call_id: str) -> None:
             row["disconnected_at"] = time.time()
 
 
+def set_pending_advanced_topic(call_id: str, topic: str) -> None:
+    cid = (call_id or "").strip()
+    cleaned = (topic or "").strip()
+    if not cid or not cleaned:
+        return
+    with _lock:
+        row = _by_call.setdefault(cid, {"call_id": cid, "connected_at": time.time()})
+        row["pending_advanced_topic"] = cleaned
+
+
+def get_pending_advanced_topic(call_id: str) -> str | None:
+    cid = (call_id or "").strip()
+    if not cid:
+        return None
+    with _lock:
+        row = _by_call.get(cid)
+        if not row:
+            return None
+        topic = (row.get("pending_advanced_topic") or "").strip()
+        return topic or None
+
+
+def clear_pending_advanced_topic(call_id: str) -> str | None:
+    cid = (call_id or "").strip()
+    if not cid:
+        return None
+    with _lock:
+        row = _by_call.get(cid)
+        if not row:
+            return None
+        return (row.pop("pending_advanced_topic", None) or "").strip() or None
+
+
 def active_ws_calls() -> list[dict[str, Any]]:
     now = time.time()
     with _lock:

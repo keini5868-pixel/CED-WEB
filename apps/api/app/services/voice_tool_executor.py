@@ -14,7 +14,7 @@ from app.services.conversation_memory import (
     save_long_term_memory,
 )
 from app.services.gemini_grounded import fetch_voice_brief
-from app.services.voice_spoken import fit_voice_spoken
+from app.services.voice_spoken import fit_voice_spoken, voice_spoken_limit
 from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.navigation_maps import compute_route, geocode_address
@@ -139,7 +139,9 @@ async def execute_voice_tool(
             result = await asyncio.to_thread(consultar_sistema_avanzado, prompt)
             if result.get("ok"):
                 text = str(result.get("result") or "").strip()
-                return _spoken_ok(text if text else "Análisis completado, señor.")
+                limit = voice_spoken_limit(prompt)
+                spoken = fit_voice_spoken(text if text else "Análisis completado, señor.", max_chars=limit)
+                return {"ok": True, "spoken": spoken}
             return _spoken_err(
                 f"No fue posible el análisis, señor. {result.get('error', '')}".strip(),
                 error=str(result.get("error") or "analysis_failed"),

@@ -411,7 +411,7 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "voice_temperature": _voice_temperature_for(voice_id),
         "volume": _voice_volume_for(voice_id),
         "responsiveness": 0.92,
-        "interruption_sensitivity": 0.42,
+        "interruption_sensitivity": 0.58,
         "language": "es-419",
         "stt_mode": "accurate",
         "webhook_url": webhook,

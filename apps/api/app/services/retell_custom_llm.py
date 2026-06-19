@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
 from app.services.cognitive_intents import (
+    has_advanced_confirmation,
+    is_advanced_request,
+    is_explicit_advanced,
+    is_explicit_advanced_activation,
     is_internal_knowledge_query,
+    is_script_demo_request,
     is_news_intent,
     is_volatile_query,
     is_weather_intent,
@@ -181,6 +187,204 @@ def resolve_web_search_request(
     return {"kind": kind, "query": query}
 
 
+DEFAULT_SCRIPT_TOPIC = (
+    "Guion de 25 segundos para video presentando el sistema CED "
+    "(Castillo de la Evolución Digital) y sus características principales."
+)
+
+
+def _is_pure_ack(text: str) -> bool:
+    norm = _normalize(text)
+    if norm in _ACK_ONLY:
+        return True
+    return bool(re.fullmatch(r"(s[ií]|ok|vale|dale|adelante|de acuerdo|confirma(do)?)", norm))
+
+
+def fallback_advanced_topic(
+    transcript: list[Utterance],
+    *,
+    pending_topic: str | None = None,
+) -> str:
+    if pending_topic:
+        return pending_topic
+    for line in reversed(_user_lines(transcript)):
+        cleaned = line.strip()
+        if not cleaned or _is_pure_ack(cleaned):
+            continue
+        if is_script_demo_request(cleaned) or is_advanced_request(cleaned):
+            return cleaned
+        norm = _normalize(cleaned)
+        if len(norm.split()) >= 5:
+            return cleaned
+    return DEFAULT_SCRIPT_TOPIC
+
+
+def advanced_analysis_hold_phrase() -> str:
+    return "Activo el sistema avanzado, señor. Un momento."
+
+
+_AGENT_ADVANCED_CONFIRM = re.compile(
+    r"sistema avanzado|an[aá]lisis avanzado|an[aá]lisis profundo|"
+    r"modo avanzado|confirma|desea que|perfeccion|generar el guion|generar el gui[oó]n",
+    re.I,
+)
+
+
+def agent_asked_advanced_confirm(transcript: list[Utterance]) -> bool:
+    for utterance in transcript:
+        if utterance.role == "user":
+            continue
+        content = (utterance.content or "").strip()
+        if content and _AGENT_ADVANCED_CONFIRM.search(content):
+            return True
+    return False
+
+
+def _substantive_user_lines(transcript: list[Utterance]) -> list[str]:
+    lines: list[str] = []
+    for line in _user_lines(transcript):
+        cleaned = line.strip()
+        if not cleaned or _is_pure_ack(cleaned):
+            continue
+        if has_advanced_confirmation(cleaned) and not (
+            is_script_demo_request(cleaned)
+            or is_explicit_advanced_activation(cleaned)
+            or len(_normalize(cleaned).split()) >= 5
+        ):
+            continue
+        lines.append(cleaned)
+    return lines
+
+
+def should_execute_advanced_now(user_text: str, topic: str) -> bool:
+    """Ejecuta Claude solo para guiones/demos o tras confirmación explícita."""
+    if is_script_demo_request(topic) or is_script_demo_request(user_text):
+        return True
+    if has_advanced_confirmation(user_text) or is_explicit_advanced_activation(user_text):
+        return True
+    if is_explicit_advanced(user_text):
+        return True
+    return False
+
+
+def resolve_advanced_analysis_request(
+    user_text: str,
+    transcript: list[Utterance],
+    *,
+    pending_topic: str | None = None,
+) -> str | None:
+    """Detecta confirmación de sistema avanzado o petición directa de guion/análisis."""
+    last = (user_text or "").strip()
+    if not last:
+        return pending_topic
+
+    if is_explicit_advanced_activation(last):
+        return fallback_advanced_topic(transcript, pending_topic=pending_topic)
+
+    if is_script_demo_request(last) and not _is_pure_ack(last):
+        return last
+    if is_explicit_advanced(last):
+        return last
+
+    if has_advanced_confirmation(last) or is_explicit_advanced_activation(last) or _is_pure_ack(last):
+        if pending_topic:
+            return pending_topic
+
+        seen_agent_confirm = False
+        for utterance in reversed(transcript):
+            content = (utterance.content or "").strip()
+            if not content:
+                continue
+            role = utterance.role
+            if role != "user":
+                if seen_agent_confirm:
+                    continue
+                if _AGENT_ADVANCED_CONFIRM.search(content):
+                    seen_agent_confirm = True
+            elif seen_agent_confirm:
+                if _is_pure_ack(content):
+                    continue
+                return content
+
+        substantive = _substantive_user_lines(transcript)
+        if substantive:
+            return substantive[-1]
+
+        if has_advanced_confirmation(last) or is_explicit_advanced_activation(last):
+            return fallback_advanced_topic(transcript, pending_topic=pending_topic)
+
+    return None
+
+
+def is_unwanted_voice_reply(text: str, *, user_text: str = "") -> bool:
+    """Detecta relleno tipo chatbot o re-preguntas de confirmación."""
+    if is_generic_agent_line(text):
+        return True
+    norm = _normalize(text)
+    if re.search(r"activo an[aá]lisis avanzado|sistema avanzado.*\?", norm):
+        return True
+    if re.search(r"sigo atento|continuamos|en qu[eé] m[aá]s puedo", norm):
+        return True
+    if user_text and (
+        has_advanced_confirmation(user_text) or is_explicit_advanced_activation(user_text)
+    ):
+        if "en qué puedo ayudarle" in norm or "en que puedo ayudarle" in norm:
+            return True
+    return False
+
+
+def remember_pending_script_topic(
+    call_id: str,
+    transcript: list[Utterance],
+    *,
+    user_text: str,
+    set_pending: Callable[[str, str], None],
+) -> None:
+    """Guarda el tema del guion en cuanto el usuario lo menciona."""
+    for line in reversed(_user_lines(transcript)):
+        cleaned = line.strip()
+        if not cleaned or _is_pure_ack(cleaned):
+            continue
+        if is_script_demo_request(cleaned) or is_advanced_request(cleaned):
+            set_pending(call_id, cleaned)
+            return
+        if len(_normalize(cleaned).split()) >= 6 and (
+            "guion" in _normalize(cleaned)
+            or "video" in _normalize(cleaned)
+            or "sistema" in _normalize(cleaned)
+        ):
+            set_pending(call_id, cleaned)
+            return
+
+    cleaned = (user_text or "").strip()
+    if cleaned and not _is_pure_ack(cleaned) and (
+        is_script_demo_request(cleaned) or is_advanced_request(cleaned)
+    ):
+        set_pending(call_id, cleaned)
+
+
+def split_progressive_voice(text: str, *, topic: str) -> list[tuple[str, bool]]:
+    """Parte respuestas largas de guion en dos bloques secuenciales (sin solaparse)."""
+    from app.services.voice_spoken import is_advisory_voice_query, voice_spoken_limit
+
+    limit = voice_spoken_limit(topic)
+    cleaned = fit_voice_spoken(" ".join((text or "").split()).strip(), max_chars=limit)
+    if not cleaned:
+        return []
+    if not is_advisory_voice_query(topic) or len(cleaned) <= 520:
+        return [(cleaned, True)]
+
+    chunk = cleaned[:560]
+    last_end = max(chunk.rfind(". "), chunk.rfind("! "), chunk.rfind("? "))
+    if last_end < 180:
+        return [(cleaned, True)]
+    first = cleaned[: last_end + 1].strip()
+    second = cleaned[last_end + 1 :].strip()
+    if not second:
+        return [(cleaned, True)]
+    return [(first, False), (second, True)]
+
+
 def web_search_hold_phrase(kind: str) -> str:
     """Frase de espera — solo noticias/clima (mensaje aparte antes del resultado)."""
     if kind == "weather":
@@ -255,7 +459,16 @@ def should_respond_to_transcript(
     if interaction_type == "reminder_required":
         return True
 
+    if has_advanced_confirmation(last) or is_explicit_advanced_activation(last):
+        return True
+
     if resolve_web_search_request(last, transcript) is not None:
+        return True
+
+    if resolve_advanced_analysis_request(last, transcript) is not None:
+        return True
+
+    if _is_concept_question(last):
         return True
 
     if _is_task_or_info_query(last):
@@ -268,9 +481,24 @@ def should_respond_to_transcript(
     return True
 
 
+def _is_concept_question(text: str) -> bool:
+    norm = _normalize(text)
+    if len(norm) < 4:
+        return False
+    return bool(
+        re.search(
+            r"\b(qu[eé] es|qu[eé] significa|expl[ií]came|explicame|hablame de|"
+            r"cu[eé]ntame qu[eé] es|dime qu[eé] es)\b",
+            norm,
+        )
+    )
+
+
 def _is_task_or_info_query(text: str) -> bool:
     """Preguntas reales (clima, noticias, tools, estrategia) — no son small talk."""
     norm = _normalize(text)
+    if _is_concept_question(text):
+        return True
     if _needs_internet_lookup(text):
         return True
     if bool(
@@ -286,8 +514,18 @@ def _is_task_or_info_query(text: str) -> bool:
     return False
 
 
-def is_small_talk(text: str) -> bool:
+def is_small_talk(text: str, transcript: list[Utterance] | None = None) -> bool:
     if _is_task_or_info_query(text):
+        return False
+    if is_explicit_advanced_activation(text):
+        return False
+    if transcript and resolve_advanced_analysis_request(text, transcript) is not None:
+        return False
+    if transcript and (
+        has_advanced_confirmation(text)
+        or _is_pure_ack(text)
+        or is_explicit_advanced_activation(text)
+    ):
         return False
     norm = _normalize(text)
     if norm in _SMALL_TALK or norm in _ACK_ONLY:
@@ -313,6 +551,10 @@ def is_generic_agent_line(text: str) -> bool:
         return True
     if "en qué puedo ayudarle" in norm or "en que puedo ayudarle" in norm:
         return True
+    if "sigo atento" in norm:
+        return True
+    if re.search(r"activo an[aá]lisis avanzado", norm):
+        return True
     if norm in {"muy bien, señor", "muy bien señor"}:
         return True
     return False
@@ -324,16 +566,11 @@ def concise_reply_for_small_talk(
 ) -> str:
     norm = _normalize(user_text)
     user_lines = _user_lines(transcript or [])
-    mid_conversation = len(user_lines) >= 2 or len(transcript or []) >= 5
-
-    if mid_conversation:
-        if norm.startswith("hola") or norm in _SMALL_TALK or norm in _ACK_ONLY:
-            return "Sí, señor. Sigo atento. ¿En qué más puedo ayudarle?"
-        if re.search(r"(como|cómo)\s+estás?\b", norm) or "qué tal" in norm or "que tal" in norm:
-            return "Muy bien, señor. ¿Continuamos?"
 
     if re.search(r"(como|cómo)\s+estás?\b", norm) or "qué tal" in norm or "que tal" in norm:
         return "Muy bien, señor. ¿En qué puedo ayudarle?"
     if norm.startswith("hola") or norm in ("buenos días", "buenas tardes", "buenas noches"):
         return "Buenos días, señor. ¿En qué puedo ayudarle?"
+    if norm in _ACK_ONLY and len(user_lines) <= 1:
+        return "¿En qué puedo ayudarle, señor?"
     return "¿En qué puedo ayudarle, señor?"

@@ -16,13 +16,9 @@ from app.config import get_settings
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt
 from app.services.gemini_voice_tools import build_gemini_voice_tools
 from app.services.retell_custom_llm import (
-    concise_reply_for_small_talk,
-    format_web_delivery,
     is_generic_agent_line,
-    is_small_talk,
+    is_unwanted_voice_reply,
     merged_user_query,
-    resolve_web_search_request,
-    web_search_error_phrase,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_spoken import fit_voice_spoken, is_advisory_voice_query, voice_spoken_limit
@@ -33,8 +29,8 @@ logger = logging.getLogger(__name__)
 BEGIN_SENTENCE = "A su servicio, señor."
 MAX_HISTORY_TURNS = 50
 SESSION_MAX_MINUTES = 30.0
-GEMINI_TIMEOUT_SEC = 18.0
-GEMINI_ADVISORY_TIMEOUT_SEC = 24.0
+GEMINI_TIMEOUT_SEC = 14.0
+GEMINI_ADVISORY_TIMEOUT_SEC = 20.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
 TOOL_TIMEOUT_SEC = 25.0
 
@@ -59,7 +55,7 @@ def _gemini_client() -> genai.Client:
 
 def _voice_model() -> str:
     settings = get_settings()
-    return settings.gemini_voice_model.strip() or "gemini-2.5-pro"
+    return settings.gemini_voice_model.strip() or "gemini-2.5-flash"
 
 
 def draft_begin_message() -> ResponseResponse:
@@ -177,6 +173,7 @@ class GeminiVoiceLlm:
         self._session_started = time.monotonic()
         self._turn_count = 0
         self._context_loaded_for: str | None = None
+        self._pending_advanced: str | None = None
 
     def set_user_id(self, user_id: str | None) -> None:
         cleaned = (user_id or "").strip()
@@ -271,63 +268,6 @@ class GeminiVoiceLlm:
             return
 
         max_tokens, timeout_sec = _voice_generation_limits(user_text)
-
-        if is_small_talk(user_text) and not resolve_web_search_request(user_text, request.transcript):
-            reply = concise_reply_for_small_talk(user_text, request.transcript)
-            self._history = [*self._history, last, types.Content(role="model", parts=[types.Part(text=reply)])]
-            logger.info("[RETELL-GEMINI] small_talk=%s turns=%s", reply, self._turn_count)
-            yield ResponseResponse(
-                response_id=request.response_id,
-                content=reply,
-                content_complete=True,
-                end_call=False,
-            )
-            return
-
-        web_req = resolve_web_search_request(user_text, request.transcript)
-        if web_req:
-            kind = web_req["kind"]
-            if self.user_id:
-                try:
-                    tool_result = await asyncio.wait_for(
-                        execute_voice_tool(
-                            "search_web",
-                            self.user_id,
-                            {"query": web_req["query"], "kind": kind},
-                        ),
-                        timeout=28.0,
-                    )
-                except asyncio.TimeoutError:
-                    logger.warning("[RETELL-GEMINI] web_search timeout kind=%s", kind)
-                    tool_result = {"spoken": web_search_error_phrase(kind)}
-                spoken = str(tool_result.get("spoken") or "").strip()
-            else:
-                spoken = "No identifiqué al usuario, señor."
-            if not spoken or spoken.startswith("No fue posible"):
-                full = web_search_error_phrase(kind)
-            else:
-                full = format_web_delivery(kind, spoken)
-            self._history = _truncate_contents(
-                [
-                    *self._history,
-                    last,
-                    types.Content(role="model", parts=[types.Part(text=full)]),
-                ],
-                max_turns=MAX_HISTORY_TURNS,
-            )
-            logger.info(
-                "[RETELL-GEMINI] web_search kind=%s query=%s spoken=%s",
-                web_req["kind"],
-                web_req["query"][:80],
-                full[:120],
-            )
-            yield ResponseResponse(
-                response_id=request.response_id,
-                content=full,
-                content_complete=True,
-                end_call=False,
-            )
-            return
 
         from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
         from app.services.internal_knowledge import (
@@ -467,22 +407,26 @@ class GeminiVoiceLlm:
             ]
 
             final_text = tool_spoken_parts[-1] if tool_spoken_parts else "Completado, señor."
+            only_claude = function_calls and all(str(fc.name or "") == "consultar_claude" for fc in function_calls)
 
-            try:
-                follow_up = await self._generate_with_timeout(
-                    contents=follow_up_contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=_build_voice_system(self.user_id, user_text),
-                        temperature=0.4,
-                        max_output_tokens=max_tokens,
-                    ),
-                    timeout_sec=timeout_sec,
-                )
-                follow_text = _extract_text(follow_up)
-                if follow_text:
-                    final_text = follow_text
-            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
-                logger.warning("[RETELL-GEMINI] tool follow-up failed — using spoken tool result")
+            if not only_claude:
+                try:
+                    follow_up = await self._generate_with_timeout(
+                        contents=follow_up_contents,
+                        config=types.GenerateContentConfig(
+                            system_instruction=_build_voice_system(self.user_id, user_text),
+                            temperature=0.4,
+                            max_output_tokens=max_tokens,
+                        ),
+                        timeout_sec=timeout_sec,
+                    )
+                    follow_text = _extract_text(follow_up)
+                    if follow_text:
+                        final_text = follow_text
+                except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                    logger.warning("[RETELL-GEMINI] tool follow-up failed — using spoken tool result")
+            else:
+                logger.info("[RETELL-GEMINI] consultar_claude direct spoken (no follow-up)")
 
             self._history = _truncate_contents(follow_up_contents, max_turns=MAX_HISTORY_TURNS)
             logger.info("[RETELL-GEMINI] tool agent=%s", final_text[:160])
@@ -495,14 +439,12 @@ class GeminiVoiceLlm:
             return
 
         text_response = _extract_text(response)
+        if is_unwanted_voice_reply(text_response, user_text=user_text):
+            text_response = ""
         if not text_response or (
             is_generic_agent_line(text_response) and len(text_response) < 48
         ):
-            text_response = (
-                concise_reply_for_small_talk(user_text, request.transcript)
-                if is_small_talk(user_text)
-                else "¿En qué puedo ayudarle, señor?"
-            )
+            text_response = "¿En qué puedo ayudarle, señor?"
 
         self._history = _truncate_contents(
             [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])],

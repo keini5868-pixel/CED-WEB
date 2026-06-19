@@ -15,13 +15,25 @@ logger = logging.getLogger(__name__)
 
 ANALYSIS_MODEL_FAST = "claude-haiku-4-5-20251001"
 ANALYSIS_MODEL_FALLBACK = "claude-sonnet-4-6"
-ANALYSIS_TIMEOUT_SEC = 16
+ANALYSIS_TIMEOUT_SEC = 22
 VOICE_RESULT_LIMIT = 720
+VOICE_SCRIPT_LIMIT = 1100
 
 
-def _voice_trim(text: str) -> str:
+def _is_script_request(topic: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(guion|gui[oó]n|script|narraci|video|demo|presentaci|grabar|secuencia)\b",
+            topic,
+            re.I,
+        )
+    )
+
+
+def _voice_trim(text: str, *, is_script: bool = False) -> str:
     t = re.sub(r"\s+", " ", text).strip()
-    return t[:VOICE_RESULT_LIMIT] if t else ""
+    limit = VOICE_SCRIPT_LIMIT if is_script else VOICE_RESULT_LIMIT
+    return t[:limit] if t else ""
 
 
 def _anthropic_analysis(api_key: str, user_prompt: str, *, model: str, max_tokens: int) -> str:
@@ -47,7 +59,7 @@ def _anthropic_analysis(api_key: str, user_prompt: str, *, model: str, max_token
     return "".join(parts).strip()
 
 
-def _gemini_analysis(api_key: str, user_prompt: str, *, model: str) -> str:
+def _gemini_analysis(api_key: str, user_prompt: str, *, model: str, max_tokens: int = 320) -> str:
     from google import genai
     from google.genai import types
 
@@ -58,10 +70,10 @@ def _gemini_analysis(api_key: str, user_prompt: str, *, model: str) -> str:
         config=types.GenerateContentConfig(
             system_instruction=(
                 "Respondes en español latinoamericano para narración por voz. "
-                "Máximo 3 oraciones cortas. Sin markdown, URLs ni listas."
+                "Oraciones completas. Sin markdown, URLs ni listas."
             ),
             temperature=0.35,
-            max_output_tokens=220,
+            max_output_tokens=max_tokens,
         ),
     )
     return (response.text or "").strip()
@@ -72,16 +84,33 @@ def _run_analysis(topic: str) -> tuple[str | None, str | None]:
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
     google_key = settings.google_api_key.strip()
-    gemini_model = settings.gemini_voice_model.strip() or "gemini-2.5-pro"
+    gemini_model = settings.gemini_voice_model.strip() or "gemini-2.5-flash"
+    is_script = _is_script_request(topic)
 
-    user_prompt = (
-        f"Consulta: {topic}\n\n"
-        "Responde en español latino para VOZ. Máximo 2-3 oraciones cortas. "
-        "Preciso, directo. Sin markdown ni URLs."
-    )
+    if is_script:
+        user_prompt = (
+            f"Consulta: {topic}\n\n"
+            "Responde en español latino para NARRACIÓN POR VOZ con un guion COMPLETO "
+            "para video corto del sistema CED (Castillo de la Evolución Digital).\n"
+            "CED es la inteligencia central de Castillo Digital, creada por Keini Castillo. "
+            "Incluye: conversación IA, voz Jarvis, búsqueda web, memoria, cámara/visión, "
+            "publicación en redes, prospección, generación de imágenes, mapas/navegación y sistema avanzado.\n"
+            "El guion debe durar unos 20-30 segundos al leerlo en voz alta. "
+            "Entre 8 y 12 oraciones fluidas y consecutivas. "
+            "Empieza enganchando, explica qué es CED y sus características principales, cierra con llamado a acción. "
+            "Sin markdown, URLs ni listas con viñetas."
+        )
+        max_tokens = 900
+    else:
+        user_prompt = (
+            f"Consulta: {topic}\n\n"
+            "Responde en español latino para VOZ. Máximo 3-4 oraciones completas. "
+            "Preciso, directo. Sin markdown ni URLs."
+        )
+        max_tokens = 320
 
     def _try_anthropic(model: str) -> str:
-        return _anthropic_analysis(anthropic_key, user_prompt, model=model, max_tokens=220)
+        return _anthropic_analysis(anthropic_key, user_prompt, model=model, max_tokens=max_tokens)
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         if anthropic_key:
@@ -89,7 +118,7 @@ def _run_analysis(topic: str) -> tuple[str | None, str | None]:
             try:
                 text = future.result(timeout=ANALYSIS_TIMEOUT_SEC)
                 if text:
-                    return _voice_trim(text), None
+                    return _voice_trim(text, is_script=is_script), None
             except FuturesTimeout:
                 logger.warning("[CLAUDE:DEEP] haiku timeout")
             except Exception as exc:
@@ -99,18 +128,25 @@ def _run_analysis(topic: str) -> tuple[str | None, str | None]:
             try:
                 text = future.result(timeout=ANALYSIS_TIMEOUT_SEC)
                 if text:
-                    return _voice_trim(text), None
+                    return _voice_trim(text, is_script=is_script), None
             except FuturesTimeout:
                 logger.warning("[CLAUDE:DEEP] sonnet timeout")
             except Exception as exc:
                 logger.warning("[CLAUDE:DEEP] sonnet %s: %s", type(exc).__name__, exc)
 
         if google_key:
-            future = pool.submit(_gemini_analysis, google_key, user_prompt, model=gemini_model)
+            gemini_tokens = 900 if is_script else 320
+            future = pool.submit(
+                _gemini_analysis,
+                google_key,
+                user_prompt,
+                model=gemini_model,
+                max_tokens=gemini_tokens,
+            )
             try:
                 text = future.result(timeout=ANALYSIS_TIMEOUT_SEC)
                 if text:
-                    return _voice_trim(text), None
+                    return _voice_trim(text, is_script=is_script), None
             except FuturesTimeout:
                 logger.warning("[CLAUDE:DEEP] gemini timeout")
             except Exception as exc:

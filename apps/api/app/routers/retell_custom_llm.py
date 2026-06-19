@@ -8,32 +8,47 @@ import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app.services.cognitive_intents import (
+    has_advanced_confirmation,
+    is_explicit_advanced_activation,
+    is_script_demo_request,
+)
 from app.services.gemini_voice_llm import GeminiVoiceLlm, draft_begin_message
 from app.services.retell_call_registry import release_call_user, resolve_call_user
 from app.services.retell_custom_llm import (
+    advanced_analysis_hold_phrase,
     concise_reply_for_small_talk,
+    fallback_advanced_topic,
     format_web_delivery,
     is_small_talk,
     merged_user_query,
+    remember_pending_script_topic,
+    resolve_advanced_analysis_request,
     resolve_web_search_request,
+    should_execute_advanced_now,
     should_respond_to_transcript,
+    is_unwanted_voice_reply,
+    _is_concept_question,
     web_search_error_phrase,
 )
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
+    clear_pending_advanced_topic,
+    get_pending_advanced_topic,
     mark_greeting_sent,
     mark_ws_connected,
     mark_ws_disconnected,
     note_ws_interaction,
+    set_pending_advanced_topic,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retell-custom-llm"])
 
-POST_GREETING_COOLDOWN_S = 1.5
+POST_GREETING_COOLDOWN_S = 2.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente. ¿Puede repetir?"
 REMINDER_REPLY = "Sigo atento, señor. ¿Continuamos?"
 
@@ -45,10 +60,10 @@ def _normalize_user_key(text: str) -> str:
 def _debounce_wait_s(user_text: str) -> float:
     words = len(user_text.split())
     if words >= 20:
-        return 1.05
+        return 0.70
     if words >= 10:
-        return 0.85
-    return 0.55
+        return 0.55
+    return 0.35
 
 
 @router.get("/llm-websocket/active")
@@ -114,6 +129,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
     await send_greeting(0, reason="immediate")
 
+    async def send_voice_partial(
+        *,
+        response_id: int,
+        content: str,
+        content_complete: bool,
+    ) -> None:
+        payload = {
+            "response_type": "response",
+            "response_id": response_id,
+            "content": content,
+            "content_complete": content_complete,
+            "end_call": False,
+        }
+        await websocket.send_json(payload)
+
     async def send_voice_response(
         *,
         response_id: int,
@@ -152,6 +182,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         uid = resolve_call_user(call_id, request_json)
         if uid:
             llm.set_user_id(uid)
+            pending_for_llm = get_pending_advanced_topic(call_id)
+            if pending_for_llm:
+                llm._pending_advanced = pending_for_llm
 
         if interaction == "ping_pong":
             await websocket.send_json(
@@ -163,7 +196,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         if interaction == "call_details":
-            await send_greeting(0, reason="call_details")
+            logger.info("[RETELL-GEMINI] call_details call=%s (saludo ya enviado)", call_id)
             return
 
         if interaction == "update_only":
@@ -184,12 +217,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         ]
 
         if interaction == "reminder_required":
-            async with response_lock:
-                await send_voice_response(
-                    response_id=response_id,
-                    content=REMINDER_REPLY,
-                    user_key="",
-                )
+            logger.info("[RETELL-GEMINI] skip reminder call=%s", call_id)
             return
 
         if not should_respond_to_transcript(transcript, interaction_type=interaction):
@@ -197,10 +225,27 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         user_text = merged_user_query(transcript)
+        remember_pending_script_topic(
+            call_id,
+            transcript,
+            user_text=user_text,
+            set_pending=set_pending_advanced_topic,
+        )
         user_key = _normalize_user_key(user_text)
+        pending_topic = get_pending_advanced_topic(call_id)
+        advanced_preview = resolve_advanced_analysis_request(
+            user_text,
+            transcript,
+            pending_topic=pending_topic,
+        )
         if user_key and user_key == last_answered_user_key:
-            logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
-            return
+            if not (
+                advanced_preview
+                or has_advanced_confirmation(user_text)
+                or is_explicit_advanced_activation(user_text)
+            ):
+                logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
+                return
 
         active_response_id = max(active_response_id, response_id)
 
@@ -211,7 +256,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         wait_s = _debounce_wait_s(user_text)
 
         async def run_debounced() -> None:
-            nonlocal active_response_id
+            nonlocal active_response_id, last_answered_user_key
             try:
                 await post_greeting_ready.wait()
                 await asyncio.sleep(wait_s)
@@ -226,7 +271,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 return
 
-            if is_small_talk(user_text) and not resolve_web_search_request(user_text, transcript):
+            pending_now = get_pending_advanced_topic(call_id)
+            advanced_req = resolve_advanced_analysis_request(
+                user_text,
+                transcript,
+                pending_topic=pending_now,
+            )
+            if not advanced_req and (
+                has_advanced_confirmation(user_text)
+                or is_explicit_advanced_activation(user_text)
+            ):
+                advanced_req = fallback_advanced_topic(transcript, pending_topic=pending_now)
+
+            if is_small_talk(user_text, transcript) and not resolve_web_search_request(
+                user_text, transcript
+            ) and not advanced_req:
                 reply = concise_reply_for_small_talk(user_text, transcript)
                 async with response_lock:
                     await send_voice_response(
@@ -277,6 +336,119 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 return
 
+            if advanced_req and is_script_demo_request(advanced_req):
+                set_pending_advanced_topic(call_id, advanced_req)
+                llm._pending_advanced = advanced_req
+            if advanced_req and uid and should_execute_advanced_now(user_text, advanced_req):
+                hold = advanced_analysis_hold_phrase()
+                async with response_lock:
+                    if response_id < active_response_id:
+                        return
+                    await send_voice_partial(
+                        response_id=response_id,
+                        content=hold,
+                        content_complete=False,
+                    )
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "consultar_claude",
+                                uid,
+                                {"prompt": advanced_req},
+                            ),
+                            timeout=45.0,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("[RETELL-GEMINI] advanced timeout call=%s", call_id)
+                        tool_result = {
+                            "spoken": (
+                                "El sistema avanzado tardó demasiado, señor. "
+                                "¿Desea que lo intente de nuevo?"
+                            ),
+                        }
+                    if response_id < active_response_id:
+                        logger.info("[RETELL-GEMINI] drop stale advanced rid=%s", response_id)
+                        return
+                    spoken = str(tool_result.get("spoken") or "").strip()
+                    if not spoken or spoken.startswith("No fue posible"):
+                        full = (
+                            spoken
+                            or "Disculpe, señor. No pude completar el análisis avanzado."
+                        )
+                    else:
+                        from app.services.voice_spoken import fit_voice_spoken, voice_spoken_limit
+
+                        full = fit_voice_spoken(spoken, max_chars=voice_spoken_limit(advanced_req))
+                    if response_id < active_response_id:
+                        return
+                    await send_voice_partial(
+                        response_id=response_id,
+                        content=full,
+                        content_complete=True,
+                    )
+                    active_response_id = response_id
+                    if user_key:
+                        last_answered_user_key = user_key
+                    clear_pending_advanced_topic(call_id)
+                    llm._pending_advanced = None
+                logger.info(
+                    "[RETELL-GEMINI] advanced call=%s topic=%s chars=%s",
+                    call_id,
+                    advanced_req[:80],
+                    len(spoken),
+                )
+                return
+
+            if (
+                has_advanced_confirmation(user_text)
+                or is_explicit_advanced_activation(user_text)
+            ) and uid:
+                topic = fallback_advanced_topic(transcript, pending_topic=pending_now)
+                logger.warning(
+                    "[RETELL-GEMINI] confirm sin ruta advanced — forzando topic=%s",
+                    topic[:80],
+                )
+                advanced_req = topic
+                if should_execute_advanced_now(user_text, advanced_req):
+                    hold = advanced_analysis_hold_phrase()
+                    async with response_lock:
+                        if response_id < active_response_id:
+                            return
+                        await send_voice_partial(
+                            response_id=response_id,
+                            content=hold,
+                            content_complete=False,
+                        )
+                        try:
+                            tool_result = await asyncio.wait_for(
+                                execute_voice_tool(
+                                    "consultar_claude",
+                                    uid,
+                                    {"prompt": advanced_req},
+                                ),
+                                timeout=45.0,
+                            )
+                        except asyncio.TimeoutError:
+                            tool_result = {
+                                "spoken": (
+                                    "El sistema avanzado tardó demasiado, señor. "
+                                    "¿Desea que lo intente de nuevo?"
+                                ),
+                            }
+                        spoken = str(tool_result.get("spoken") or "").strip()
+                        full = spoken or "Disculpe, señor. No pude completar el análisis."
+                        await send_voice_partial(
+                            response_id=response_id,
+                            content=full,
+                            content_complete=True,
+                        )
+                        active_response_id = response_id
+                        if user_key:
+                            last_answered_user_key = user_key
+                        clear_pending_advanced_topic(call_id)
+                        llm._pending_advanced = None
+                    return
+
             request = ResponseRequiredRequest(
                 interaction_type=interaction,  # type: ignore[arg-type]
                 response_id=response_id,
@@ -295,6 +467,43 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         final_event = event
                     if final_event is not None:
                         content = (final_event.content or "").strip() or FALLBACK_REPLY
+                        if is_unwanted_voice_reply(content, user_text=user_text):
+                            logger.warning(
+                                "[RETELL-GEMINI] bloqueado relleno chatbot call=%s text=%s reply=%s",
+                                call_id,
+                                user_text[:60],
+                                content[:80],
+                            )
+                            if (
+                                has_advanced_confirmation(user_text)
+                                or is_explicit_advanced_activation(user_text)
+                            ) and uid:
+                                topic = fallback_advanced_topic(
+                                    transcript,
+                                    pending_topic=get_pending_advanced_topic(call_id),
+                                )
+                                tool_result = await asyncio.wait_for(
+                                    execute_voice_tool(
+                                        "consultar_claude",
+                                        uid,
+                                        {"prompt": topic},
+                                    ),
+                                    timeout=45.0,
+                                )
+                                content = str(tool_result.get("spoken") or "").strip() or FALLBACK_REPLY
+                            elif _is_concept_question(user_text):
+                                from app.services.internal_knowledge import (
+                                    format_hits_for_prompt,
+                                    search_internal_knowledge,
+                                )
+
+                                hits = search_internal_knowledge(user_text, limit=2)
+                                if hits:
+                                    content = format_hits_for_prompt(hits)
+                                else:
+                                    content = FALLBACK_REPLY
+                            else:
+                                content = FALLBACK_REPLY
                         await send_voice_response(
                             response_id=response_id,
                             content=content,
