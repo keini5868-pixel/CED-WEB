@@ -20,11 +20,12 @@ from app.services.retell_custom_llm import (
     format_web_delivery,
     is_generic_agent_line,
     is_small_talk,
+    merged_user_query,
     resolve_web_search_request,
     web_search_error_phrase,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
-from app.services.voice_spoken import fit_voice_spoken
+from app.services.voice_spoken import fit_voice_spoken, is_advisory_voice_query, voice_spoken_limit
 from app.services.voice_tool_executor import execute_voice_tool
 
 logger = logging.getLogger(__name__)
@@ -32,8 +33,20 @@ logger = logging.getLogger(__name__)
 BEGIN_SENTENCE = "A su servicio, señor."
 MAX_HISTORY_TURNS = 50
 SESSION_MAX_MINUTES = 30.0
-GEMINI_TIMEOUT_SEC = 15.0
+GEMINI_TIMEOUT_SEC = 18.0
+GEMINI_ADVISORY_TIMEOUT_SEC = 24.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
+TOOL_TIMEOUT_SEC = 25.0
+
+
+def _voice_generation_limits(user_text: str) -> tuple[int, float]:
+    if is_advisory_voice_query(user_text):
+        return 1024, GEMINI_ADVISORY_TIMEOUT_SEC
+    return 640, GEMINI_TIMEOUT_SEC
+
+
+def _spoken_for_user(text: str, user_text: str) -> str:
+    return fit_voice_spoken(text, max_chars=voice_spoken_limit(user_text))
 
 
 def _gemini_client() -> genai.Client:
@@ -89,6 +102,14 @@ def _build_voice_system(user_id: str | None, user_text: str = "") -> str:
         except Exception:  # noqa: BLE001
             pass
     query = (user_text or "").strip()
+    if query and is_advisory_voice_query(query):
+        base = (
+            f"{base}\n\n"
+            "# MODO ASESORÍA (demo / video / estrategia)\n"
+            "El usuario pide ideas para demo, video o presentación. "
+            "Responde con 3-5 puntos concretos del sistema CED, en español, "
+            "oraciones completas, sin cortar a mitad. Cierra con una frase final."
+        )
     if query:
         try:
             from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
@@ -214,14 +235,16 @@ class GeminiVoiceLlm:
         *,
         contents: list[types.Content],
         config: types.GenerateContentConfig,
+        timeout_sec: float | None = None,
     ) -> types.GenerateContentResponse:
+        limit = timeout_sec if timeout_sec is not None else GEMINI_TIMEOUT_SEC
         return await asyncio.wait_for(
             self.client.aio.models.generate_content(
                 model=self.model,
                 contents=contents,
                 config=config,
             ),
-            timeout=GEMINI_TIMEOUT_SEC,
+            timeout=limit,
         )
 
     async def draft_response(
@@ -240,11 +263,14 @@ class GeminiVoiceLlm:
         self._history = self._resolve_history(contents)
         self._turn_count += 1
 
-        user_text = ""
-        if last.parts and last.parts[0].text:
-            user_text = last.parts[0].text.strip()
+        user_text = merged_user_query(request.transcript)
+        if not user_text:
+            if last.parts and last.parts[0].text:
+                user_text = last.parts[0].text.strip()
         if not user_text:
             return
+
+        max_tokens, timeout_sec = _voice_generation_limits(user_text)
 
         if is_small_talk(user_text) and not resolve_web_search_request(user_text, request.transcript):
             reply = concise_reply_for_small_talk(user_text, request.transcript)
@@ -323,12 +349,13 @@ class GeminiVoiceLlm:
                     "PROHIBIDO invocar search_web o decir que buscas en internet."
                 ),
                 temperature=0.4,
-                max_output_tokens=480,
+                max_output_tokens=max_tokens,
             )
             try:
                 internal_response = await self._generate_with_timeout(
                     contents=[*self._history, last],
                     config=internal_config,
+                    timeout_sec=timeout_sec,
                 )
                 internal_text = _extract_text(internal_response)
                 if internal_text and not is_generic_agent_line(internal_text):
@@ -343,7 +370,7 @@ class GeminiVoiceLlm:
                     logger.info("[RETELL-GEMINI] internal_brain user=%s", user_text[:80])
                     yield ResponseResponse(
                         response_id=request.response_id,
-                        content=fit_voice_spoken(internal_text),
+                        content=_spoken_for_user(internal_text, user_text),
                         content_complete=True,
                         end_call=False,
                     )
@@ -363,13 +390,14 @@ class GeminiVoiceLlm:
             system_instruction=_build_voice_system(self.user_id, user_text),
             tools=[self.tools],
             temperature=0.4,
-            max_output_tokens=480,
+            max_output_tokens=max_tokens,
         )
 
         try:
             response = await self._generate_with_timeout(
                 contents=[*self._history, last],
                 config=config,
+                timeout_sec=timeout_sec,
             )
         except asyncio.TimeoutError:
             logger.warning(
@@ -413,8 +441,15 @@ class GeminiVoiceLlm:
                 if not self.user_id:
                     spoken = "No identifiqué al usuario, señor."
                 else:
-                    tool_result = await execute_voice_tool(name, self.user_id, args)
-                    spoken = str(tool_result.get("spoken") or "Completado, señor.")
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(name, self.user_id, args),
+                            timeout=TOOL_TIMEOUT_SEC,
+                        )
+                        spoken = str(tool_result.get("spoken") or "Completado, señor.")
+                    except asyncio.TimeoutError:
+                        logger.warning("[RETELL-GEMINI] tool timeout name=%s", name)
+                        spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
                 tool_spoken_parts.append(spoken)
 
                 function_response_parts.append(
@@ -439,8 +474,9 @@ class GeminiVoiceLlm:
                     config=types.GenerateContentConfig(
                         system_instruction=_build_voice_system(self.user_id, user_text),
                         temperature=0.4,
-                        max_output_tokens=480,
+                        max_output_tokens=max_tokens,
                     ),
+                    timeout_sec=timeout_sec,
                 )
                 follow_text = _extract_text(follow_up)
                 if follow_text:
@@ -452,14 +488,16 @@ class GeminiVoiceLlm:
             logger.info("[RETELL-GEMINI] tool agent=%s", final_text[:160])
             yield ResponseResponse(
                 response_id=request.response_id,
-                content=fit_voice_spoken(final_text),
+                content=_spoken_for_user(final_text, user_text),
                 content_complete=True,
                 end_call=False,
             )
             return
 
         text_response = _extract_text(response)
-        if is_generic_agent_line(text_response) or not text_response:
+        if not text_response or (
+            is_generic_agent_line(text_response) and len(text_response) < 48
+        ):
             text_response = (
                 concise_reply_for_small_talk(user_text, request.transcript)
                 if is_small_talk(user_text)
@@ -473,7 +511,7 @@ class GeminiVoiceLlm:
         logger.info("[RETELL-GEMINI] agent=%s", text_response[:160])
         yield ResponseResponse(
             response_id=request.response_id,
-            content=fit_voice_spoken(text_response),
+            content=_spoken_for_user(text_response, user_text),
             content_complete=True,
             end_call=False,
         )

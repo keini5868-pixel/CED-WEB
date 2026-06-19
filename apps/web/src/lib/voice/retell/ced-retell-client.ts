@@ -145,7 +145,14 @@ export class CedRetellClient {
     this.audioPlaybackStarted = true;
     void this.client.startAudioPlayback().catch((err) => {
       this.audioPlaybackStarted = false;
-      retellLog("startAudioPlayback falló", err);
+      retellLog("startAudioPlayback falló — reintento", err);
+      window.setTimeout(() => {
+        if (!this.audioPlaybackStarted && this.agentAudioReady) {
+          void this.client.startAudioPlayback().catch((retryErr) => {
+            retellLog("startAudioPlayback reintento falló", retryErr);
+          });
+        }
+      }, 600);
     });
   }
 

@@ -14,7 +14,7 @@ from app.services.retell_custom_llm import (
     concise_reply_for_small_talk,
     format_web_delivery,
     is_small_talk,
-    last_user_text,
+    merged_user_query,
     resolve_web_search_request,
     should_respond_to_transcript,
     web_search_error_phrase,
@@ -33,11 +33,22 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retell-custom-llm"])
 
-POST_GREETING_COOLDOWN_S = 2.8
+POST_GREETING_COOLDOWN_S = 1.5
+FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente. ¿Puede repetir?"
+REMINDER_REPLY = "Sigo atento, señor. ¿Continuamos?"
 
 
 def _normalize_user_key(text: str) -> str:
     return " ".join((text or "").strip().lower().split())
+
+
+def _debounce_wait_s(user_text: str) -> float:
+    words = len(user_text.split())
+    if words >= 20:
+        return 1.05
+    if words >= 10:
+        return 0.85
+    return 0.55
 
 
 @router.get("/llm-websocket/active")
@@ -59,11 +70,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     response_lock = asyncio.Lock()
     active_response_id = 0
     debounce_task: asyncio.Task[None] | None = None
-    debounce_wait_s = 0.45
     post_greeting_ready = asyncio.Event()
     post_greeting_ready.set()
     last_answered_user_key = ""
-    generation_cancel = 0
+    last_scheduled_user_key = ""
     greeting_release_task: asyncio.Task[None] | None = None
     message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
@@ -104,8 +114,36 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
     await send_greeting(0, reason="immediate")
 
+    async def send_voice_response(
+        *,
+        response_id: int,
+        content: str,
+        user_key: str,
+    ) -> bool:
+        nonlocal active_response_id, last_answered_user_key
+        if response_id < active_response_id:
+            return False
+        payload = {
+            "response_type": "response",
+            "response_id": response_id,
+            "content": content,
+            "content_complete": True,
+            "end_call": False,
+        }
+        await websocket.send_json(payload)
+        active_response_id = response_id
+        if user_key:
+            last_answered_user_key = user_key
+        logger.info(
+            "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
+            call_id,
+            response_id,
+            len(content),
+        )
+        return True
+
     async def handle_message(request_json: dict) -> None:
-        nonlocal active_response_id, debounce_task, last_answered_user_key, generation_cancel
+        nonlocal active_response_id, debounce_task, last_scheduled_user_key
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
@@ -132,10 +170,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             turntaking = request_json.get("turntaking")
             if turntaking:
                 logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)
-            if turntaking == "user_turn":
-                generation_cancel += 1
-                if debounce_task and not debounce_task.done():
-                    debounce_task.cancel()
             return
 
         if interaction not in ("response_required", "reminder_required"):
@@ -149,54 +183,56 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if isinstance(item, dict)
         ]
 
+        if interaction == "reminder_required":
+            async with response_lock:
+                await send_voice_response(
+                    response_id=response_id,
+                    content=REMINDER_REPLY,
+                    user_key="",
+                )
+            return
+
         if not should_respond_to_transcript(transcript, interaction_type=interaction):
             logger.info("[RETELL-GEMINI] skip interaction=%s call=%s", interaction, call_id)
             return
 
-        user_text = last_user_text(transcript)
+        user_text = merged_user_query(transcript)
         user_key = _normalize_user_key(user_text)
         if user_key and user_key == last_answered_user_key:
             logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
             return
 
-        # Nueva pregunta del usuario — invalida respuestas en curso (barge-in).
         active_response_id = max(active_response_id, response_id)
 
-        if debounce_task and not debounce_task.done():
+        if debounce_task and not debounce_task.done() and user_key != last_scheduled_user_key:
             debounce_task.cancel()
 
+        last_scheduled_user_key = user_key
+        wait_s = _debounce_wait_s(user_text)
+
         async def run_debounced() -> None:
-            nonlocal active_response_id, last_answered_user_key, generation_cancel
-            started_cancel = generation_cancel
+            nonlocal active_response_id
             try:
                 await post_greeting_ready.wait()
-                await asyncio.sleep(debounce_wait_s)
+                await asyncio.sleep(wait_s)
             except asyncio.CancelledError:
                 return
 
-            if generation_cancel != started_cancel:
-                logger.info("[RETELL-GEMINI] skip cancelled gen call=%s", call_id)
-                return
-
             if response_id < active_response_id:
-                logger.info("[RETELL-GEMINI] skip stale rid=%s active=%s", response_id, active_response_id)
+                logger.info(
+                    "[RETELL-GEMINI] skip stale rid=%s active=%s",
+                    response_id,
+                    active_response_id,
+                )
                 return
 
             if is_small_talk(user_text) and not resolve_web_search_request(user_text, transcript):
                 reply = concise_reply_for_small_talk(user_text, transcript)
                 async with response_lock:
-                    if response_id < active_response_id:
-                        return
-                    active_response_id = response_id
-                    last_answered_user_key = user_key
-                    await websocket.send_json(
-                        {
-                            "response_type": "response",
-                            "response_id": response_id,
-                            "content": reply,
-                            "content_complete": True,
-                            "end_call": False,
-                        }
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=reply,
+                        user_key=user_key,
                     )
                 logger.info("[RETELL-GEMINI] small_talk call=%s: %s", call_id, reply)
                 return
@@ -207,8 +243,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 async with response_lock:
                     if response_id < active_response_id:
                         return
-                    active_response_id = response_id
-                    last_answered_user_key = user_key
                     try:
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(
@@ -229,17 +263,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         full = web_search_error_phrase(kind)
                     else:
                         full = format_web_delivery(kind, spoken)
-                    if response_id < active_response_id:
-                        logger.info("[RETELL-GEMINI] drop stale web rid=%s", response_id)
-                        return
-                    await websocket.send_json(
-                        {
-                            "response_type": "response",
-                            "response_id": response_id,
-                            "content": full,
-                            "content_complete": True,
-                            "end_call": False,
-                        }
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=full,
+                        user_key=user_key,
                     )
                 logger.info(
                     "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
@@ -259,8 +286,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             async with response_lock:
                 if response_id < active_response_id:
                     return
-                active_response_id = response_id
-                last_answered_user_key = user_key
 
                 try:
                     final_event = None
@@ -269,14 +294,23 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             break
                         final_event = event
                     if final_event is not None:
-                        payload = final_event.model_dump()
-                        payload["content_complete"] = True
-                        await websocket.send_json(payload)
-                        logger.info(
-                            "[RETELL-GEMINI] respuesta enviada call=%s rid=%s chars=%s",
+                        content = (final_event.content or "").strip() or FALLBACK_REPLY
+                        await send_voice_response(
+                            response_id=response_id,
+                            content=content,
+                            user_key=user_key,
+                        )
+                    elif response_id >= active_response_id:
+                        logger.warning(
+                            "[RETELL-GEMINI] empty draft_response call=%s rid=%s text=%s",
                             call_id,
-                            final_event.response_id,
-                            len(final_event.content or ""),
+                            response_id,
+                            user_text[:80],
+                        )
+                        await send_voice_response(
+                            response_id=response_id,
+                            content=FALLBACK_REPLY,
+                            user_key=user_key,
                         )
                 except Exception:  # noqa: BLE001
                     logger.exception(
@@ -284,14 +318,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         call_id,
                         user_text[:80],
                     )
-                    await websocket.send_json(
-                        {
-                            "response_type": "response",
-                            "response_id": response_id,
-                            "content": "Disculpe, señor. Tuve un inconveniente. ¿Puede repetir?",
-                            "content_complete": True,
-                            "end_call": False,
-                        }
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=FALLBACK_REPLY,
+                        user_key=user_key,
                     )
 
         debounce_task = asyncio.create_task(run_debounced())

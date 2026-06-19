@@ -240,12 +240,9 @@ def should_respond_to_transcript(
     interaction_type: str,
 ) -> bool:
     """Evita autorespuestas, recordatorios vacíos y turnos parciales muy cortos."""
-    if interaction_type == "reminder_required":
-        return False
-
     user_lines = _user_lines(transcript)
     if not user_lines:
-        return False
+        return interaction_type == "reminder_required"
 
     last = user_lines[-1].strip()
     normalized = _normalize(last)
@@ -255,7 +252,13 @@ def should_respond_to_transcript(
     if normalized in _ECHO_USER_LINES:
         return False
 
+    if interaction_type == "reminder_required":
+        return True
+
     if resolve_web_search_request(last, transcript) is not None:
+        return True
+
+    if _is_task_or_info_query(last):
         return True
 
     words = last.split()
@@ -266,13 +269,21 @@ def should_respond_to_transcript(
 
 
 def _is_task_or_info_query(text: str) -> bool:
-    """Preguntas reales (clima, noticias, tools) — no son small talk."""
-    return _needs_internet_lookup(text) or bool(
+    """Preguntas reales (clima, noticias, tools, estrategia) — no son small talk."""
+    norm = _normalize(text)
+    if _needs_internet_lookup(text):
+        return True
+    if bool(
         re.search(
-            r"\b(publica|publicar|recuerda|memoria|carolina|imagen|genera)\b",
-            _normalize(text),
+            r"\b(publica|publicar|recuerda|memoria|carolina|imagen|genera|"
+            r"video|demo|mostrar|guion|guión|relevante|estrategia|secuencia|seq)\b",
+            norm,
         )
-    )
+    ):
+        return True
+    if len(norm.split()) >= 8:
+        return True
+    return False
 
 
 def is_small_talk(text: str) -> bool:
@@ -287,7 +298,7 @@ def is_small_talk(text: str) -> bool:
         return True
     if re.search(r"(como|cómo)\s+estás?\s*$", norm) or re.search(r"(como|cómo)\s+estás?\?", norm):
         return True
-    if norm.startswith("hola") and len(norm.split()) <= 6:
+    if norm.startswith("hola") and len(norm.split()) <= 4 and len(norm) < 32:
         return True
     return False
 
