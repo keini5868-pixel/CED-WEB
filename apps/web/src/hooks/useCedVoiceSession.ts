@@ -185,6 +185,7 @@ export function useCedVoiceSession(
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [statusLabel, setStatusLabel] = useState(ORB_STATE_LABELS.idle);
   const [micOn, setMicOn] = useState(false);
+  const [retellPollActive, setRetellPollActive] = useState(false);
   const [voiceSessionActive, setVoiceSessionActive] = useState(false);
   const lastVoiceActionIdRef = useRef<number | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
