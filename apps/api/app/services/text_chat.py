@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 CHAT_MODEL = "claude-sonnet-4-6"
 CHAT_MODEL_FAST = "claude-3-5-haiku-20241022"
-CHAT_HISTORY_LIMIT = 14
+CHAT_HISTORY_LIMIT = 30
 CHAT_SIMPLE_MAX_TOKENS = 700
 CHAT_TOOLS_MAX_TOKENS = 1000
 
@@ -847,6 +847,18 @@ def send_message(
             http_status=429,
         )
 
+    from app.deps.auth import is_super_admin
+    from app.services.chat_rate_limit import check_chat_rate_limit
+
+    profile = supabase_db.get_profile(user_id) or {}
+    admin = is_super_admin(profile.get("email"), profile.get("role"))
+    allowed, retry_after = check_chat_rate_limit(user_id, is_admin=admin)
+    if not allowed:
+        raise TextChatError(
+            f"Has alcanzado el límite de mensajes. Espera {retry_after} segundos e intenta de nuevo.",
+            http_status=429,
+        )
+
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
     openai_key = settings.openai_api_key.strip()
@@ -1035,7 +1047,7 @@ def send_message(
             ) from exc
         if status == 429:
             raise TextChatError(
-                "Demasiadas solicitudes. Espera un momento e intenta de nuevo.",
+                "Has alcanzado el límite del proveedor de IA. Espera 30 segundos e intenta de nuevo.",
                 http_status=429,
             ) from exc
         raise TextChatError(
