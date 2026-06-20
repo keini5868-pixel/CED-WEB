@@ -418,7 +418,6 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "stt_mode": "accurate",
         "webhook_url": webhook,
         "webhook_events": ["call_started", "call_ended", "call_analyzed"],
-        "begin_message": "",
         "begin_message_delay_ms": 0,
         "agent_name": "CED Jarvis",
     }
@@ -456,7 +455,6 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
             "tts_provider": "cartesia" if voice_id.startswith("cartesia-") else "retell",
             "responsiveness": agent_payload["responsiveness"],
             "interruption_sensitivity": agent_payload["interruption_sensitivity"],
-            "begin_message": agent_payload.get("begin_message", ""),
         }
         if jarvis_error:
             out["jarvis_voice_error"] = jarvis_error
