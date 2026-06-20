@@ -52,6 +52,27 @@ def fit_voice_spoken(text: str, *, max_chars: int | None = None) -> str:
 
 
 
+def _split_long_sentence(sent: str, max_chunk: int) -> list[str]:
+    """Parte oraciones largas por palabras completas."""
+    cleaned = sent.strip()
+    if len(cleaned) <= max_chunk:
+        return [cleaned]
+    words = cleaned.split()
+    parts: list[str] = []
+    current = ""
+    for word in words:
+        candidate = f"{current} {word}".strip() if current else word
+        if len(candidate) <= max_chunk:
+            current = candidate
+            continue
+        if current:
+            parts.append(current)
+        current = word
+    if current:
+        parts.append(current)
+    return parts or [cleaned[:max_chunk].rstrip()]
+
+
 def split_voice_delivery_chunks(
     text: str,
     *,
@@ -78,7 +99,10 @@ def split_voice_delivery_chunks(
             continue
         if current:
             chunks.append(current)
-        current = sent
+        if len(sent) > max_chunk:
+            chunks.extend(_split_long_sentence(sent, max_chunk))
+        else:
+            current = sent
     if current:
         chunks.append(current)
 

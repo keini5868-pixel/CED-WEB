@@ -413,7 +413,7 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "voice_temperature": _voice_temperature_for(voice_id),
         "volume": _voice_volume_for(voice_id),
         "responsiveness": 0.78,
-        "interruption_sensitivity": 0.58,
+        "interruption_sensitivity": 0.50,
         "language": "es-419",
         "stt_mode": "accurate",
         "webhook_url": webhook,
@@ -454,6 +454,9 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
             "llm_websocket_url": llm_ws,
             "brain": settings.openai_model_retell_llm,
             "tts_provider": "cartesia" if voice_id.startswith("cartesia-") else "retell",
+            "responsiveness": agent_payload["responsiveness"],
+            "interruption_sensitivity": agent_payload["interruption_sensitivity"],
+            "begin_message": agent_payload.get("begin_message", ""),
         }
         if jarvis_error:
             out["jarvis_voice_error"] = jarvis_error
