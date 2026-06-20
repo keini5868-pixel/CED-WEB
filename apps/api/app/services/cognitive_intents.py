@@ -106,8 +106,6 @@ SCRIPT_DEMO_PATTERNS = [
     r"\bdemo\b",
     r"\bmostrar.*sistema\b",
     r"\bcaracter[ií]sticas.*sistema\b",
-    r"\bsec\b",
-    r"\bcep\b",
     r"\bced\b.*(video|demo|mostrar|segund)",
     r"\b\d+\s*segund",
     r"\b(veinte|veinticinco|treinta|quince|diez)\s*(y\s*)?(cinco\s*)?segund",
