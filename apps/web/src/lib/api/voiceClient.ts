@@ -65,17 +65,45 @@ export async function ackVoiceClientAction(actionId: number): Promise<void> {
   });
 }
 
-/** Registra imagen del chat para que la voz Retell pueda publicarla en Instagram. */
+/** Registra imagen del chat para que la voz Retell pueda publicarla/analizarla. */
+export type VoiceChatImageResponse = {
+  ok: boolean;
+  image_url?: string;
+  public_url?: string;
+  size_bytes?: number;
+  filename?: string;
+  reason?: string;
+  detail?: string;
+};
+
 export async function postVoiceChatImage(payload: {
   image_url?: string;
   image_data?: string;
-}): Promise<void> {
-  if (!payload.image_url && !payload.image_data) return;
-  await proxyFetch("voice/chat-image", {
+  filename?: string;
+}): Promise<VoiceChatImageResponse> {
+  if (!payload.image_url && !payload.image_data) {
+    throw new Error("Imagen vacía.");
+  }
+  const res = await proxyFetch("voice/chat-image", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+  const data = (await res.json().catch(() => ({}))) as VoiceChatImageResponse & {
+    detail?: string;
+  };
+  if (!res.ok || data.ok === false) {
+    const msg =
+      (typeof data.detail === "string" && data.detail) ||
+      data.reason ||
+      "Error al subir imagen";
+    throw new Error(msg);
+  }
+  return data;
+}
+
+export async function deleteVoiceChatImage(): Promise<void> {
+  await proxyFetch("voice/chat-image", { method: "DELETE" });
 }
 
 export async function postVoiceSessionEnd(): Promise<void> {

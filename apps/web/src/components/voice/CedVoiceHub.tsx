@@ -90,7 +90,7 @@ export function CedVoiceHub() {
       pushVoiceLine(text, role, options);
     },
     onGeneratedImage: (url, prompt) => {
-      pushVoiceImage(url, prompt);
+      pushVoiceImage(url, { prompt, role: "model", status: "ready" });
       setVoiceImagePreview({ url, prompt });
       setChatSeedImage({ url, prompt });
       setChatOpen(true);

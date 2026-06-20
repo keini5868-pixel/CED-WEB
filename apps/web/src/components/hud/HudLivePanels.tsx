@@ -6,10 +6,11 @@ import { HudPanel } from "@ced/ui";
 
 import { useHudFeed, type HudFeedItem } from "@/contexts/HudFeedContext";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
-import { postVoiceChatImage } from "@/lib/api/voiceClient";
+import { postVoiceChatImage, deleteVoiceChatImage } from "@/lib/api/voiceClient";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 
-function roleLabel(kind: HudFeedItem["kind"]): string {
+function roleLabel(kind: HudFeedItem["kind"], item?: HudFeedItem): string {
+  if (kind === "image" && item?.role === "user") return "Usted · Imagen";
   if (kind === "voice") return "Usted";
   if (kind === "image") return "CED · Imagen";
   if (kind === "report") return "CED";
@@ -17,14 +18,21 @@ function roleLabel(kind: HudFeedItem["kind"]): string {
   return "CED";
 }
 
+function formatFileSize(bytes?: number): string {
+  if (!bytes || bytes <= 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function formatTranscript(items: HudFeedItem[]): string {
   const chronological = [...items].reverse();
   return chronological
     .map((item) => {
       if (item.kind === "image" && item.imageUrl) {
-        return `${roleLabel(item.kind)}: [Imagen] ${item.text} ${item.imageUrl}`;
+        return `${roleLabel(item.kind, item)}: [Imagen] ${item.text} ${item.imageUrl}`;
       }
-      return `${roleLabel(item.kind)}: ${item.text}`;
+      return `${roleLabel(item.kind, item)}: ${item.text}`;
     })
     .join("\n\n");
 }
@@ -32,50 +40,77 @@ function formatTranscript(items: HudFeedItem[]): string {
 function HudTranscriptImage({
   item,
   onExpand,
+  onRemove,
 }: {
   item: HudFeedItem;
   onExpand: (url: string) => void;
+  onRemove?: (id: string) => void;
 }) {
   const src = normalizeCedMediaUrl(item.imageUrl ?? "");
   const [busy, setBusy] = useState(false);
 
-  if (!src) return null;
+  if (!src && item.uploadStatus !== "uploading") return null;
 
   return (
     <div className="mt-2 space-y-2">
-      <button
-        type="button"
-        onClick={() => onExpand(src)}
-        className="block overflow-hidden rounded-lg border border-cyan-500/30 transition hover:border-cyan-400/60"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
-          alt={item.imagePrompt || item.text || "Imagen CED"}
-          className="max-h-48 w-full object-cover"
-        />
-      </button>
-      <div className="flex flex-wrap gap-2">
+      {src ? (
         <button
           type="button"
           onClick={() => onExpand(src)}
-          className="rounded border border-cyan-500/40 px-2 py-1 text-[10px] uppercase tracking-wider text-cyan-300"
+          className="block overflow-hidden rounded-lg border border-cyan-500/30 transition hover:border-cyan-400/60"
         >
-          Ver en grande
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt={item.imagePrompt || item.text || "Imagen CED"}
+            className="max-h-48 w-full object-cover"
+          />
         </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setBusy(true);
-            void downloadGeneratedImage(src, item.imagePrompt).finally(() =>
-              setBusy(false),
-            );
-          }}
-          className="rounded border border-cyan-500/40 px-2 py-1 text-[10px] uppercase tracking-wider text-cyan-300 disabled:opacity-50"
-        >
-          {busy ? "Descargando…" : "Descargar"}
-        </button>
+      ) : (
+        <div className="rounded-lg border border-dashed border-cyan-500/30 bg-cyan-950/20 px-3 py-8 text-center text-xs text-cyan-400">
+          Subiendo imagen…
+        </div>
+      )}
+      {(item.fileName || item.fileSize) && (
+        <p className="ced-hud-text-muted text-[10px]">
+          {item.fileName}
+          {item.fileSize ? ` · ${formatFileSize(item.fileSize)}` : ""}
+        </p>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {src ? (
+          <>
+            <button
+              type="button"
+              onClick={() => onExpand(src)}
+              className="rounded border border-cyan-500/40 px-2 py-1 text-[10px] uppercase tracking-wider text-cyan-300"
+            >
+              Ver en grande
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                void downloadGeneratedImage(src, item.imagePrompt).finally(() =>
+                  setBusy(false),
+                );
+              }}
+              className="rounded border border-cyan-500/40 px-2 py-1 text-[10px] uppercase tracking-wider text-cyan-300 disabled:opacity-50"
+            >
+              {busy ? "Descargando…" : "Descargar"}
+            </button>
+          </>
+        ) : null}
+        {onRemove && item.role === "user" ? (
+          <button
+            type="button"
+            onClick={() => onRemove(item.id)}
+            className="rounded border border-red-500/40 px-2 py-1 text-[10px] uppercase tracking-wider text-red-300"
+          >
+            Quitar
+          </button>
+        ) : null}
       </div>
     </div>
   );
@@ -85,32 +120,79 @@ function HudVoiceImageUpload() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { pushVoiceImage, updateVoiceImage } = useHudFeed();
 
-  const onFile = useCallback(async (file: File | null) => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const reader = new FileReader();
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => resolve(String(reader.result ?? ""));
-        reader.onerror = () => reject(new Error("No se pudo leer la imagen"));
-        reader.readAsDataURL(file);
+  const onFile = useCallback(
+    async (file: File | null) => {
+      if (!file) return;
+      setError(null);
+      const maxBytes = 10 * 1024 * 1024;
+      const allowed = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "image/gif",
+        "image/heic",
+        "image/heif",
+      ];
+      if (!allowed.includes(file.type) && !file.name.match(/\.(jpe?g|png|webp|gif|heic|heif)$/i)) {
+        setError("Formato no soportado. Usa JPG, PNG, WebP o GIF.");
+        return;
+      }
+      if (file.size > maxBytes) {
+        setError("Imagen muy grande. Máximo 10 MB.");
+        return;
+      }
+
+      const previewUrl = URL.createObjectURL(file);
+      const itemId = pushVoiceImage(previewUrl, {
+        fileName: file.name,
+        fileSize: file.size,
+        status: "uploading",
+        role: "user",
       });
-      await postVoiceChatImage({ image_data: dataUrl });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error al subir imagen");
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+
+      setBusy(true);
+      try {
+        const reader = new FileReader();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(new Error("No se pudo leer la imagen"));
+          reader.readAsDataURL(file);
+        });
+        const result = await postVoiceChatImage({
+          image_data: dataUrl,
+          filename: file.name,
+        });
+        const serverUrl = normalizeCedMediaUrl(result.image_url || previewUrl);
+        updateVoiceImage(itemId, {
+          imageUrl: serverUrl,
+          text: "Imagen lista para Seth",
+          uploadStatus: "ready",
+          fileName: result.filename || file.name,
+          fileSize: result.size_bytes ?? file.size,
+        });
+        URL.revokeObjectURL(previewUrl);
+      } catch (e) {
+        updateVoiceImage(itemId, {
+          text: "Error al subir imagen",
+          uploadStatus: "error",
+        });
+        setError(e instanceof Error ? e.message : "Error al subir imagen");
+      } finally {
+        setBusy(false);
+        if (inputRef.current) inputRef.current.value = "";
+      }
+    },
+    [pushVoiceImage, updateVoiceImage],
+  );
 
   return (
     <div className="flex flex-col gap-1">
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp,image/gif"
+        accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif"
         className="hidden"
         onChange={(e) => void onFile(e.target.files?.[0] ?? null)}
       />
@@ -128,12 +210,20 @@ function HudVoiceImageUpload() {
 }
 
 export function HudGlobalPanel() {
-  const { voiceItems } = useHudFeed();
+  const { voiceItems, removeVoiceImage } = useHudFeed();
   const [copied, setCopied] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
 
   const transcript = useMemo(() => formatTranscript(voiceItems), [voiceItems]);
   const chronological = useMemo(() => [...voiceItems].reverse(), [voiceItems]);
+
+  const handleRemoveImage = useCallback(
+    (id: string) => {
+      removeVoiceImage(id);
+      void deleteVoiceChatImage().catch(() => undefined);
+    },
+    [removeVoiceImage],
+  );
 
   const copyAll = useCallback(async () => {
     if (!transcript.trim()) return;
@@ -181,17 +271,24 @@ export function HudGlobalPanel() {
             {chronological.map((item) => (
               <div key={item.id} className="group">
                 <p className="font-[family-name:var(--font-orbitron)] text-[10px] uppercase tracking-wider text-cyan-500/90">
-                  {roleLabel(item.kind)}
+                  {roleLabel(item.kind, item)}
                 </p>
-                {item.kind === "image" && item.imageUrl ? (
-                  <HudTranscriptImage item={item} onExpand={setLightbox} />
+                {item.kind === "image" ? (
+                  <>
+                    <p className="ced-hud-text-body mt-1 text-sm text-cyan-100/90">{item.text}</p>
+                    <HudTranscriptImage
+                      item={item}
+                      onExpand={setLightbox}
+                      onRemove={item.role === "user" ? handleRemoveImage : undefined}
+                    />
+                  </>
                 ) : (
                   <p className="ced-hud-text-body mt-1 select-text whitespace-pre-wrap text-sm leading-relaxed">
                     {item.text}
                   </p>
                 )}
-                {item.kind === "image" && item.text ? (
-                  <p className="ced-hud-text-secondary mt-1 text-xs">{item.text}</p>
+                {item.kind === "image" && item.imagePrompt ? (
+                  <p className="ced-hud-text-secondary mt-1 text-xs">{item.imagePrompt}</p>
                 ) : null}
               </div>
             ))}

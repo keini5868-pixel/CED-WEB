@@ -134,6 +134,26 @@ def build_voice_system(user_id: str | None, user_text: str = "") -> str:
                 )
         except Exception:  # noqa: BLE001
             pass
+        try:
+            from app.services import voice_client_session as vcs
+
+            stored = vcs.get_last_publishable_image(uid)
+            images = vcs.list_publishable_images(uid)
+            if stored and stored.get("url"):
+                base = (
+                    f"{base}\n\n# IMAGEN(ES) SUBIDA(S) POR EL USUARIO (sesión voz activa)\n"
+                    f"Imagen principal disponible en URL: {stored['url']}\n"
+                    "Cuando diga «esta imagen», «la foto», «publica esto» → invoca publicar_facebook o "
+                    "publicar_instagram con use_last_image=true.\n"
+                    "Para describir o analizar → invoca analyze_uploaded_image con la pregunta del usuario."
+                )
+                if len(images) > 1:
+                    base = (
+                        f"{base}\nHay {len(images)} imágenes en la sesión; "
+                        "la más reciente es la principal."
+                    )
+        except Exception:  # noqa: BLE001
+            pass
     return base
 
 

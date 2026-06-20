@@ -207,6 +207,25 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "analyze_uploaded_image",
+        "description": (
+            "Analiza la imagen que el usuario subió al panel de chat de voz (no cámara). "
+            "OBLIGATORIO cuando pregunte qué hay en la imagen, pida describirla, caption, "
+            "ideas para redes, etc. y hay imagen subida en sesión. "
+            "PROHIBIDO inventar contenido visual sin invocar esta herramienta."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "pregunta": {
+                    "type": "string",
+                    "description": "Qué quiere saber el usuario sobre la imagen subida",
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
         "name": "analyze_camera_frame",
         "description": (
             "OBLIGATORIO antes de describir algo visual. Captura y analiza el frame de cámara. "

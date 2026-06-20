@@ -23,6 +23,18 @@ export interface HudFeedItem {
   role?: "user" | "model";
   partial?: boolean;
   streamKey?: string;
+  uploadStatus?: "uploading" | "ready" | "error";
+  fileName?: string;
+  fileSize?: number;
+}
+
+export interface HudVoiceImageOptions {
+  prompt?: string;
+  fileName?: string;
+  fileSize?: number;
+  status?: "uploading" | "ready" | "error";
+  role?: "user" | "model";
+  id?: string;
 }
 
 export interface HudVoiceLineOptions {
@@ -40,7 +52,9 @@ interface HudFeedContextValue {
     role: "user" | "model",
     options?: HudVoiceLineOptions,
   ) => void;
-  pushVoiceImage: (url: string, prompt?: string) => void;
+  pushVoiceImage: (url: string, options?: HudVoiceImageOptions) => string;
+  updateVoiceImage: (id: string, patch: Partial<HudFeedItem>) => void;
+  removeVoiceImage: (id: string) => void;
 }
 
 const HudFeedContext = createContext<HudFeedContextValue | null>(null);
@@ -135,23 +149,48 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
     [],
   );
 
-  const pushVoiceImage = useCallback((url: string, prompt?: string) => {
+  const pushVoiceImage = useCallback((url: string, options?: HudVoiceImageOptions) => {
     const trimmed = url.trim();
-    if (!trimmed) return;
+    if (!trimmed) return "";
+    const id = options?.id || `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const status = options?.status ?? "ready";
+    const label =
+      options?.prompt?.trim() ||
+      (status === "uploading"
+        ? "Subiendo imagen…"
+        : status === "ready"
+          ? "Imagen lista para Seth"
+          : "Error al subir imagen");
     setVoiceItems((prev) => {
+      const without = prev.filter((item) => item.id !== id);
       const next: HudFeedItem[] = [
         {
-          id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          id,
           kind: "image",
-          text: prompt?.trim() || "Imagen generada por CED",
+          text: label,
           imageUrl: trimmed,
-          imagePrompt: prompt,
+          imagePrompt: options?.prompt,
           at: Date.now(),
+          role: options?.role ?? "user",
+          uploadStatus: status,
+          fileName: options?.fileName,
+          fileSize: options?.fileSize,
         },
-        ...prev,
+        ...without,
       ];
       return next.slice(0, MAX_ITEMS);
     });
+    return id;
+  }, []);
+
+  const updateVoiceImage = useCallback((id: string, patch: Partial<HudFeedItem>) => {
+    setVoiceItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...patch, at: Date.now() } : item)),
+    );
+  }, []);
+
+  const removeVoiceImage = useCallback((id: string) => {
+    setVoiceItems((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
   const marqueeText = useMemo(() => {
@@ -165,8 +204,26 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
   }, [items]);
 
   const value = useMemo(
-    () => ({ items, voiceItems, marqueeText, pushLine, pushVoiceLine, pushVoiceImage }),
-    [items, voiceItems, marqueeText, pushLine, pushVoiceLine, pushVoiceImage],
+    () => ({
+      items,
+      voiceItems,
+      marqueeText,
+      pushLine,
+      pushVoiceLine,
+      pushVoiceImage,
+      updateVoiceImage,
+      removeVoiceImage,
+    }),
+    [
+      items,
+      voiceItems,
+      marqueeText,
+      pushLine,
+      pushVoiceLine,
+      pushVoiceImage,
+      updateVoiceImage,
+      removeVoiceImage,
+    ],
   );
 
   return (

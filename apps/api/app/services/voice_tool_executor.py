@@ -311,6 +311,35 @@ async def execute_voice_tool(
                 error="camera_activation_timeout",
             )
 
+        if name == "analyze_uploaded_image":
+            from app.services import voice_client_session as vcs
+            from app.services.chat_multimedia import analyze_chat_image
+            from app.services.publish_media import decode_image_data
+
+            pregunta = str(
+                params.get("pregunta") or params.get("question") or "¿Qué hay en esta imagen?"
+            ).strip()
+            stored = vcs.get_last_publishable_image(user_id)
+            if not stored or not stored.get("url"):
+                return _spoken_err(
+                    "No hay imagen subida en esta sesión, señor. "
+                    "Use el botón «Subir imagen a Seth» en el panel.",
+                    error="missing_uploaded_image",
+                )
+            try:
+                raw, mime = decode_image_data(str(stored["url"]))
+                spoken = await asyncio.to_thread(
+                    analyze_chat_image,
+                    user_id,
+                    image_bytes=raw,
+                    media_type=mime,
+                    user_text=pregunta,
+                )
+                return _spoken_ok(spoken)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[VOICE:IMAGE] analyze_uploaded failed user=%s: %s", user_id[:8], exc)
+                return _spoken_err("No pude analizar la imagen subida, señor.")
+
         if name == "analyze_camera_frame":
             pregunta = str(
                 params.get("pregunta") or params.get("question") or "¿Qué ves en la imagen?"
