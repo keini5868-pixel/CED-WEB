@@ -185,6 +185,23 @@ def build_ced_voice_system_prompt() -> str:
     ).strip()
 
 
+def voice_prompt_diagnostics() -> dict[str, str | int | bool]:
+    """Metadatos del system prompt activo (sin exponer el texto completo)."""
+    import hashlib
+
+    prompt = build_ced_voice_system_prompt()
+    digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
+    return {
+        "persona": "Seth",
+        "system": "CED",
+        "prompt_chars": len(prompt),
+        "prompt_sha256_prefix": digest[:16],
+        "includes_seth": "Seth" in prompt,
+        "includes_conversational_core": "SETH" in prompt or "Escucha activa" in prompt,
+        "includes_anti_transactional": "bot transaccional" in prompt,
+    }
+
+
 OPENAI_REALTIME_SYSTEM_PROMPT_LEGACY = CED_MINIMAL_REALTIME_PROMPT
 
 

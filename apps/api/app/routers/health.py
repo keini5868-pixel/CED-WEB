@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from app.build_info import BUILD_TIMESTAMP, BUILD_VERSION
 from app.config import get_settings
 from app.deps.auth import require_super_admin
+from app.domain.openai_voice_prompt import voice_prompt_diagnostics
 from app.rate_limit import limiter
 from app.services.openai_key_utils import openai_api_key_looks_valid
 from app.services.integrations import (
@@ -48,6 +49,24 @@ def health(_request: Request) -> dict[str, str]:
         "env": settings.app_env,
         "build": BUILD_VERSION,
         "timestamp": BUILD_TIMESTAMP,
+    }
+
+
+@router.get("/health/voice-prompt")
+@limiter.exempt
+def health_voice_prompt(_request: Request) -> dict:
+    """Confirma que el system prompt Seth/CED activo está cargado (sin exponer el texto)."""
+    settings = get_settings()
+    from app.services.gemini_voice_llm import _voice_model
+
+    diag = voice_prompt_diagnostics()
+    return {
+        "status": "ok",
+        "build": BUILD_VERSION,
+        "env": settings.app_env,
+        "voice_model": _voice_model(),
+        "conversational_routing": "gemini_with_seth_prompt",
+        **diag,
     }
 
 

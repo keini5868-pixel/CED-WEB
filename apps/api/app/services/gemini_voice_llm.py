@@ -16,6 +16,7 @@ from app.config import get_settings
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt
 from app.services.gemini_voice_tools import build_gemini_voice_tools
 from app.services.retell_custom_llm import (
+    empathetic_fallback_reply,
     is_generic_agent_line,
     is_unwanted_voice_reply,
     merged_user_query,
@@ -31,8 +32,17 @@ MAX_HISTORY_TURNS = 50
 SESSION_MAX_MINUTES = 30.0
 GEMINI_TIMEOUT_SEC = 14.0
 GEMINI_ADVISORY_TIMEOUT_SEC = 20.0
+GEMINI_CONVERSATIONAL_TIMEOUT_SEC = 10.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
 TOOL_TIMEOUT_SEC = 25.0
+
+CONVERSATIONAL_TURN_OVERLAY = """
+# TURNO CONVERSACIONAL — PRIORIDAD ABSOLUTA
+El usuario está en charla personal, saludo casual o comparte algo emocional/cotidiano.
+NO invoques herramientas. Responde como Seth: empático, natural, 1-3 oraciones completas.
+PROHIBIDO responder solo "¿En qué puedo ayudarle?" o variantes transaccionales.
+Valida lo que dice antes de ofrecer ayuda. No fuerces tareas ni prospección.
+""".strip()
 
 
 def _voice_generation_limits(user_text: str) -> tuple[int, float]:
@@ -244,6 +254,59 @@ class GeminiVoiceLlm:
             timeout=limit,
         )
 
+    async def draft_conversational_response(
+        self,
+        request: ResponseRequiredRequest,
+    ) -> str | None:
+        """Gemini + prompt Seth, sin tools — charla personal y saludos."""
+        contents = _transcript_to_contents(request.transcript)
+        if not contents:
+            return None
+        last = contents[-1]
+        if last.role != "user":
+            return None
+
+        user_text = merged_user_query(request.transcript)
+        if not user_text and last.parts and last.parts[0].text:
+            user_text = last.parts[0].text.strip()
+        if not user_text:
+            return None
+
+        history = self._resolve_history(contents)
+        config = types.GenerateContentConfig(
+            system_instruction=(
+                f"{_build_voice_system(self.user_id, user_text)}\n\n{CONVERSATIONAL_TURN_OVERLAY}"
+            ),
+            temperature=0.65,
+            max_output_tokens=320,
+        )
+        try:
+            response = await self._generate_with_timeout(
+                contents=[*history, last],
+                config=config,
+                timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
+            )
+            text = _extract_text(response)
+            if not text or is_unwanted_voice_reply(text, user_text=user_text):
+                return None
+            if is_generic_agent_line(text) and len(text) < 56:
+                return None
+            delivered = _delivery_text(text)
+            self._history = _truncate_contents(
+                [
+                    *history,
+                    last,
+                    types.Content(role="model", parts=[types.Part(text=delivered)]),
+                ],
+                max_turns=MAX_HISTORY_TURNS,
+            )
+            self._turn_count += 1
+            logger.info("[RETELL-GEMINI] conversational user=%s", user_text[:80])
+            return delivered
+        except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+            logger.warning("[RETELL-GEMINI] conversational turn failed user=%s", user_text[:80])
+            return None
+
     async def draft_response(
         self,
         request: ResponseRequiredRequest,
@@ -442,9 +505,9 @@ class GeminiVoiceLlm:
         if is_unwanted_voice_reply(text_response, user_text=user_text):
             text_response = ""
         if not text_response or (
-            is_generic_agent_line(text_response) and len(text_response) < 48
+            is_generic_agent_line(text_response) and len(text_response) < 56
         ):
-            text_response = "¿En qué puedo ayudarle, señor?"
+            text_response = empathetic_fallback_reply(user_text)
 
         self._history = _truncate_contents(
             [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])],

@@ -19,8 +19,7 @@ from app.services.gemini_voice_llm import GeminiVoiceLlm, draft_begin_message
 from app.services.retell_call_registry import release_call_user, resolve_call_user
 from app.services.retell_custom_llm import (
     advanced_analysis_hold_phrase,
-    casual_conversation_reply,
-    concise_reply_for_small_talk,
+    empathetic_fallback_reply,
     fallback_advanced_topic,
     format_web_delivery,
     is_casual_conversation,
@@ -336,33 +335,34 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             ) and not is_script_delivered(call_id):
                 advanced_req = fallback_advanced_topic(transcript, pending_topic=pending_now)
 
-            if is_small_talk(user_text, transcript) and not resolve_web_search_request(
-                user_text, transcript
-            ) and not advanced_req:
-                reply = concise_reply_for_small_talk(user_text, transcript)
-                async with response_lock:
-                    await send_voice_response(
-                        response_id=response_id,
-                        content=reply,
-                        user_key=user_key,
-                    )
-                logger.info("[RETELL-GEMINI] small_talk call=%s: %s", call_id, reply)
-                return
-
-            if (
-                is_casual_conversation(user_text)
-                and not advanced_req
+            conversational_turn = (
+                not advanced_req
                 and not resolve_meta_publish_request(user_text)
                 and not resolve_instagram_caption_request(user_text, transcript, user_id=uid)
-            ):
-                reply = casual_conversation_reply(user_text)
+                and (
+                    is_casual_conversation(user_text)
+                    or (
+                        is_small_talk(user_text, transcript)
+                        and not resolve_web_search_request(user_text, transcript)
+                    )
+                )
+            )
+            if conversational_turn:
+                conv_request = ResponseRequiredRequest(
+                    interaction_type=interaction,
+                    response_id=response_id,
+                    transcript=transcript,
+                )
+                reply = await llm.draft_conversational_response(conv_request)
+                if not reply:
+                    reply = empathetic_fallback_reply(user_text)
                 async with response_lock:
                     await send_voice_response(
                         response_id=response_id,
                         content=reply,
                         user_key=user_key,
                     )
-                logger.info("[RETELL-GEMINI] casual call=%s: %s", call_id, reply[:80])
+                logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
                 return
 
             camera_tool = resolve_camera_voice_request(user_text)
@@ -694,7 +694,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 else:
                                     content = FALLBACK_REPLY
                             elif is_casual_conversation(user_text):
-                                content = casual_conversation_reply(user_text)
+                                content = empathetic_fallback_reply(user_text)
                             else:
                                 content = FALLBACK_REPLY
                         await send_voice_response(

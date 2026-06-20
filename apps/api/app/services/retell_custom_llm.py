@@ -727,13 +727,33 @@ def is_casual_conversation(text: str) -> bool:
 
 
 def casual_conversation_reply(text: str) -> str:
+    return empathetic_fallback_reply(text)
+
+
+def empathetic_fallback_reply(text: str) -> str:
+    """Respuesta empática estática — solo fallback si Gemini no alcanza."""
     norm = _normalize(text)
-    if re.search(r"\b(dormi|dormí|descans)\b", norm):
-        return "Qué bueno, señor. Descansar lo necesario es clave. ¿Se siente mejor ahora?"
-    if re.search(r"\b(cansad|cansancio|agotad|estres)\b", norm):
-        return "Lo comprendo, señor. Cuídese; el descanso forma parte del rendimiento."
-    if re.search(r"\b(te decia|te decía|estuve|estaba)\b", norm):
-        return "Entendido, señor. Gracias por contármelo. ¿Seguimos con algo en lo que pueda ayudarle?"
+    if re.search(r"\b(dormi|dormí|descans|no habia descansado|no había descansado)\b", norm):
+        return (
+            "Entiendo, señor. Dormir poco pesa en el cuerpo y en la mente. "
+            "Lo importante es que reconozca cuándo necesita recuperarse."
+        )
+    if re.search(r"\b(cansad|cansancio|agotad|estres|estresad|pesad)\b", norm):
+        return (
+            "Lo comprendo, señor. Esos días realmente consumen energía. "
+            "Cuídese; descansar también es parte del rendimiento."
+        )
+    if re.search(r"\b(d[ií]a dif[ií]cil|problemas en el trabajo|mucho trabajo)\b", norm):
+        return (
+            "Suena agotador, señor. Es bueno que lo reconozca. "
+            "Si quiere desahogarse un poco más, aquí estoy."
+        )
+    if re.search(r"\b(te decia|te decía|estuve|estaba|me siento|platic|charla)\b", norm):
+        return "Entendido, señor. Gracias por contármelo — le escucho."
+    if re.search(r"(como|cómo)\s+estás?\b", norm) or "qué tal" in norm or "que tal" in norm:
+        return "Muy bien, señor. Gracias por preguntar."
+    if norm.startswith("hola") or norm in ("buenos días", "buenas tardes", "buenas noches"):
+        return "Buenos días, señor."
     return "Entendido, señor. Gracias por compartirlo conmigo."
 
 
@@ -787,13 +807,5 @@ def concise_reply_for_small_talk(
     user_text: str,
     transcript: list[Utterance] | None = None,
 ) -> str:
-    norm = _normalize(user_text)
-    user_lines = _user_lines(transcript or [])
-
-    if re.search(r"(como|cómo)\s+estás?\b", norm) or "qué tal" in norm or "que tal" in norm:
-        return "Muy bien, señor. ¿En qué puedo ayudarle?"
-    if norm.startswith("hola") or norm in ("buenos días", "buenas tardes", "buenas noches"):
-        return "Buenos días, señor. ¿En qué puedo ayudarle?"
-    if norm in _ACK_ONLY and len(user_lines) <= 1:
-        return "¿En qué puedo ayudarle, señor?"
-    return "¿En qué puedo ayudarle, señor?"
+    del transcript
+    return empathetic_fallback_reply(user_text)
