@@ -437,20 +437,21 @@ export function CedHistoryPanel({
 
   if (!open) return null;
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 w-full max-w-sm border-l border-cyan-500/40 bg-black shadow-2xl ced-panel-glow">
-      <header className="flex items-center justify-between border-b border-cyan-500/30 px-4 py-3">
+    <aside className="ced-panel-glow fixed inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col border-l border-cyan-500/40 bg-black pr-[env(safe-area-inset-right,0px)] shadow-2xl">
+      <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/30 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
         <h2 className="font-[family-name:var(--font-orbitron)] text-sm font-bold text-[#00e5ff]">
           HISTORIAL
         </h2>
         <button
           type="button"
           onClick={onClose}
-          className="text-[#888888] hover:text-white"
+          aria-label="Cerrar historial"
+          className="-mr-1 flex h-11 min-w-11 items-center justify-center rounded text-lg text-[#888888] hover:bg-cyan-950/40 hover:text-white"
         >
           ✕
         </button>
       </header>
-      <div className="max-h-[calc(100vh-3.5rem)] overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
         <section>
           <h3 className="ced-hud-text-muted mb-2 text-[10px] uppercase tracking-widest">
             PDFs de sesión
