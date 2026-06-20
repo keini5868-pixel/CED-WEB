@@ -165,10 +165,21 @@ async def execute_voice_tool(
                 quality=quality,
             )
             if result.get("ok"):
+                url = str(result.get("url") or "")
+                vcs.push_tool_event(
+                    user_id,
+                    {
+                        "type": "generated_image",
+                        "image_url": url,
+                        "prompt": prompt,
+                    },
+                )
                 return {
                     "ok": True,
                     "spoken": "Imagen generada, señor.",
-                    "url": result.get("url"),
+                    "url": url,
+                    "image_url": url,
+                    "prompt": prompt,
                 }
             return _spoken_err(
                 f"No fue posible generar la imagen, señor. {result.get('error', '')}".strip(),

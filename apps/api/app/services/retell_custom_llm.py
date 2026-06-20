@@ -270,6 +270,56 @@ def resolve_meta_publish_request(user_text: str) -> dict[str, str] | None:
     return {"platform": platform, "caption": caption}
 
 
+_SOCIAL_COMMENT_UNSUPPORTED = re.compile(
+    r"\b(github|twitter|x\.com|tiktok|youtube|whatsapp|telegram|linkedin|discord)\b",
+    re.I,
+)
+
+
+def is_social_comment_read_intent(text: str) -> bool:
+    last = (text or "").strip()
+    if len(last) < 8:
+        return False
+    if _SOCIAL_COMMENT_UNSUPPORTED.search(last) and re.search(r"\bcomentarios?\b", last, re.I):
+        return False
+    has_platform = bool(
+        re.search(r"\b(instagram|facebook|meta|redes|ig|fb)\b", last, re.I)
+    )
+    has_comment_cue = bool(
+        re.search(r"\bcomentarios?\b", last, re.I)
+        or re.search(
+            r"\b(revisa|revisar|revisate|revis[aá]me|revisalo|checa|mira|lee|leer|listado|lista)\b",
+            last,
+            re.I,
+        )
+        or re.search(r"\b(nuevos?|recientes?)\b", last, re.I)
+        or re.search(r"\bdime\s+s[ií]\b", last, re.I)
+        or re.search(r"\btengo\b.*\b(nuevos?|comentarios?)\b", last, re.I)
+    )
+    if has_platform and has_comment_cue:
+        return True
+    return bool(re.search(r"\bcomentarios?\b", last, re.I) and has_comment_cue)
+
+
+def social_comment_platform(text: str) -> str:
+    norm = (text or "").lower()
+    ig = bool(re.search(r"\b(instagram|ig)\b", norm))
+    fb = bool(re.search(r"\b(facebook|fb)\b", norm))
+    if ig and not fb:
+        return "instagram"
+    if fb and not ig:
+        return "facebook"
+    return "both"
+
+
+def resolve_social_comments_request(user_text: str) -> dict[str, str] | None:
+    """Lectura directa de comentarios — prioridad sobre narración del LLM."""
+    last = (user_text or "").strip()
+    if not last or not is_social_comment_read_intent(last):
+        return None
+    return {"platform": social_comment_platform(last)}
+
+
 _AGENT_AWAITING_CAPTION = re.compile(
     r"imagen recibida|qu[eé] texto desea|texto desea que acompa[nñ]|"
     r"mensaje.*publicaci|descripci[oó]n.*instagram|qu[eé] desea publicar|"

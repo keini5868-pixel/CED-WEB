@@ -53,6 +53,7 @@ def publish_facebook(
         if image_bytes:
             ext = "jpg" if "jpeg" in mime else "png"
             path = f"https://graph.facebook.com/{api_version}/{page_id}/photos"
+            logger.info("[META:FB] POST %s caption_len=%s has_bytes=%s", path, len(text), True)
             res = client.post(
                 path,
                 data={"caption": text, "access_token": token},
@@ -60,14 +61,18 @@ def publish_facebook(
             )
         elif public_url:
             path = f"https://graph.facebook.com/{api_version}/{page_id}/photos"
+            logger.info("[META:FB] POST %s caption_len=%s image_url=%s", path, len(text), public_url[:120])
             res = client.post(
                 path,
                 data={"caption": text, "url": public_url, "access_token": token},
             )
         else:
             path = f"https://graph.facebook.com/{api_version}/{page_id}/feed"
+            logger.info("[META:FB] POST %s message_len=%s page_id=%s", path, len(text), page_id)
             res = client.post(path, data={"message": text, "access_token": token})
 
+        raw_body = res.text[:800]
+        logger.info("[META:FB] response status=%s body=%s", res.status_code, raw_body)
         data = res.json()
         if res.status_code >= 400 or data.get("error"):
             err = data.get("error", {}).get("message") or str(data)

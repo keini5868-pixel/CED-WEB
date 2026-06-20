@@ -9,22 +9,24 @@ import {
   type ReactNode,
 } from "react";
 
-export type HudFeedKind = "voice" | "news" | "stat" | "report";
+export type HudFeedKind = "voice" | "news" | "stat" | "report" | "image";
 
 export interface HudFeedItem {
   id: string;
   kind: HudFeedKind;
   text: string;
   at: number;
+  imageUrl?: string;
+  imagePrompt?: string;
 }
 
 interface HudFeedContextValue {
   items: HudFeedItem[];
-  /** Solo diálogo voz usuario/CED — no incluye Intel/DRONES. */
   voiceItems: HudFeedItem[];
   marqueeText: string;
   pushLine: (text: string, kind?: HudFeedKind) => void;
   pushVoiceLine: (text: string, role: "user" | "model") => void;
+  pushVoiceImage: (url: string, prompt?: string) => void;
 }
 
 const HudFeedContext = createContext<HudFeedContextValue | null>(null);
@@ -70,6 +72,25 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const pushVoiceImage = useCallback((url: string, prompt?: string) => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    setVoiceItems((prev) => {
+      const next: HudFeedItem[] = [
+        {
+          id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          kind: "image",
+          text: prompt?.trim() || "Imagen generada por CED",
+          imageUrl: trimmed,
+          imagePrompt: prompt,
+          at: Date.now(),
+        },
+        ...prev,
+      ];
+      return next.slice(0, MAX_ITEMS);
+    });
+  }, []);
+
   const marqueeText = useMemo(() => {
     if (items.length === 0) {
       return "Sincronizando canal de inteligencia CED…";
@@ -81,8 +102,8 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
   }, [items]);
 
   const value = useMemo(
-    () => ({ items, voiceItems, marqueeText, pushLine, pushVoiceLine }),
-    [items, voiceItems, marqueeText, pushLine, pushVoiceLine],
+    () => ({ items, voiceItems, marqueeText, pushLine, pushVoiceLine, pushVoiceImage }),
+    [items, voiceItems, marqueeText, pushLine, pushVoiceLine, pushVoiceImage],
   );
 
   return (

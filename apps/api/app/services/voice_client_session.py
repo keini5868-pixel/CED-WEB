@@ -20,11 +20,13 @@ def _fresh_session() -> dict[str, Any]:
     return {
         "client_action": None,
         "camera_active": False,
+        "camera_stream_present": False,
         "camera_updated_at": 0.0,
         "vision_results": {},
         "last_publishable_image": None,
         "awaiting_instagram_caption": False,
         "active_voice_call_id": None,
+        "tool_events": [],
         "updated_at": _now(),
     }
 
@@ -41,21 +43,57 @@ def _get(user_id: str) -> dict[str, Any]:
         return session
 
 
-def set_camera_active(user_id: str, active: bool) -> None:
+def set_camera_active(
+    user_id: str,
+    active: bool,
+    *,
+    stream_present: bool | None = None,
+) -> None:
     session = _get(user_id)
     with _lock:
         session["camera_active"] = bool(active)
+        if stream_present is not None:
+            session["camera_stream_present"] = bool(stream_present)
+        elif not active:
+            session["camera_stream_present"] = False
         session["camera_updated_at"] = _now()
         session["updated_at"] = _now()
 
 
-def is_camera_active(user_id: str, *, max_age_sec: float = 120.0) -> bool:
+def is_camera_active(user_id: str, *, max_age_sec: float = 45.0) -> bool:
+    """Cámara activa solo si el cliente reporta stream presente con heartbeat reciente."""
     session = _get(user_id)
     with _lock:
         if not session.get("camera_active"):
             return False
+        if not session.get("camera_stream_present"):
+            return False
         age = _now() - float(session.get("camera_updated_at") or 0)
         return age <= max_age_sec
+
+
+def push_tool_event(user_id: str, event: dict[str, Any]) -> int:
+    session = _get(user_id)
+    event_id = int(_now() * 1000)
+    row = {"id": event_id, "at": _now(), **event}
+    with _lock:
+        events: list[dict[str, Any]] = list(session.get("tool_events") or [])
+        events.append(row)
+        session["tool_events"] = events[-24:]
+        session["updated_at"] = _now()
+    return event_id
+
+
+def consume_tool_events(user_id: str, *, since_id: int = 0) -> list[dict[str, Any]]:
+    session = _get(user_id)
+    with _lock:
+        events: list[dict[str, Any]] = list(session.get("tool_events") or [])
+        if since_id <= 0:
+            session["tool_events"] = []
+            return events
+        fresh = [e for e in events if int(e.get("id") or 0) > since_id]
+        session["tool_events"] = [e for e in events if int(e.get("id") or 0) <= since_id]
+        return fresh
 
 
 def push_client_action(user_id: str, action: str, payload: dict[str, Any] | None = None) -> int:
@@ -91,7 +129,9 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
             session["client_action"] = None
         return {
             "camera_active": bool(session.get("camera_active")),
+            "camera_stream_present": bool(session.get("camera_stream_present")),
             "client_action": deepcopy(action) if action else None,
+            "tool_events": deepcopy(session.get("tool_events") or []),
         }
 
 

@@ -13,7 +13,14 @@ export type VoiceClientAction = {
 export type VoiceClientState = {
   ok: boolean;
   camera_active?: boolean;
+  camera_stream_present?: boolean;
   client_action?: VoiceClientAction | null;
+  tool_events?: Array<{
+    id: number;
+    type?: string;
+    image_url?: string;
+    prompt?: string;
+  }>;
 };
 
 export async function fetchVoiceClientState(consume = false): Promise<VoiceClientState> {
@@ -28,11 +35,14 @@ export async function fetchVoiceClientState(consume = false): Promise<VoiceClien
   return parseApiJson<VoiceClientState>(res);
 }
 
-export async function postVoiceCameraStatus(active: boolean): Promise<void> {
+export async function postVoiceCameraStatus(
+  active: boolean,
+  streamPresent = active,
+): Promise<void> {
   await proxyFetch("voice/camera-status", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ active }),
+    body: JSON.stringify({ active, streamPresent }),
   });
 }
 

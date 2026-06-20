@@ -15,6 +15,9 @@ router = APIRouter(prefix="/v1/voice", tags=["voice-client"])
 
 class CameraStatusBody(BaseModel):
     active: bool
+    stream_present: bool = Field(default=True, alias="streamPresent")
+
+    model_config = {"populate_by_name": True}
 
 
 class VisionResultBody(BaseModel):
@@ -44,8 +47,16 @@ async def voice_camera_status(
     body: CameraStatusBody,
     user_id: str = Depends(require_user_id),
 ) -> dict[str, str]:
-    vcs.set_camera_active(user_id, body.active)
-    return {"ok": "true", "active": str(body.active).lower()}
+    vcs.set_camera_active(
+        user_id,
+        body.active,
+        stream_present=body.stream_present if body.active else False,
+    )
+    return {
+        "ok": "true",
+        "active": str(body.active).lower(),
+        "stream_present": str(body.stream_present).lower(),
+    }
 
 
 @router.post("/vision-result")

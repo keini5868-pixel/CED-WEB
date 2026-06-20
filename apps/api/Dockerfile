@@ -1,8 +1,8 @@
 # Castillo Digital API — producción (Railway / Render)
-# build: 2026-06-20-voice-premium-v36
+# build: 2026-06-20-voice-premium-v37
 FROM python:3.12-slim
 
-ARG BUILD_VERSION=2026-06-20-voice-premium-v36
+ARG BUILD_VERSION=2026-06-20-voice-premium-v37
 LABEL org.ced.build="${BUILD_VERSION}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

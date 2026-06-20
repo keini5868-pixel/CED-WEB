@@ -189,6 +189,7 @@ export function useCedVoiceSession(
   const [voiceSessionActive, setVoiceSessionActive] = useState(false);
   const lastVoiceActionIdRef = useRef<number | null>(null);
   const lastCameraHeartbeatRef = useRef(0);
+  const lastToolEventIdRef = useRef(0);
   const [cameraOn, setCameraOn] = useState(false);
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -304,6 +305,23 @@ export function useCedVoiceSession(
 
     let cancelled = false;
 
+    const cameraStreamLive = (): boolean => {
+      const stream = cameraStreamRef.current;
+      return !!(
+        stream?.active &&
+        stream.getVideoTracks().some((t) => t.readyState === "live" && t.enabled)
+      );
+    };
+
+    const waitForCameraStream = async (maxMs = 6500): Promise<boolean> => {
+      const started = Date.now();
+      while (Date.now() - started < maxMs) {
+        if (cameraStreamLive()) return true;
+        await new Promise((r) => window.setTimeout(r, 120));
+      }
+      return cameraStreamLive();
+    };
+
     const handleVoiceClientAction = async (action: {
       id: number;
       action: string;
@@ -311,13 +329,14 @@ export function useCedVoiceSession(
     }) => {
       if (action.action === "camera_activate") {
         await toggleCameraRef.current(true);
-        await postVoiceCameraStatus(true);
+        const live = await waitForCameraStream();
+        await postVoiceCameraStatus(live, live);
         await ackVoiceClientAction(action.id);
         return;
       }
       if (action.action === "camera_deactivate") {
         await toggleCameraRef.current(false);
-        await postVoiceCameraStatus(false);
+        await postVoiceCameraStatus(false, false);
         await ackVoiceClientAction(action.id);
         return;
       }
@@ -337,8 +356,10 @@ export function useCedVoiceSession(
           cameraStreamRef.current.getVideoTracks().some((t) => t.readyState === "live");
         if (!hadStream) {
           await toggleCameraRef.current(true);
-          await postVoiceCameraStatus(true);
+          await waitForCameraStream();
         }
+        const streamLive = cameraStreamLive();
+        await postVoiceCameraStatus(streamLive, streamLive);
         const frame = await waitForCameraFrame(
           hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
           mode === "analyze",
@@ -368,14 +389,26 @@ export function useCedVoiceSession(
       if (cancelled) return;
       try {
         const now = Date.now();
-        if (
-          cameraStreamRef.current?.active &&
-          now - lastCameraHeartbeatRef.current > 45_000
-        ) {
+        const streamLive = cameraStreamLive();
+        if (streamLive && now - lastCameraHeartbeatRef.current > 12_000) {
           lastCameraHeartbeatRef.current = now;
-          void postVoiceCameraStatus(true).catch(() => undefined);
+          void postVoiceCameraStatus(true, true).catch(() => undefined);
+        } else if (!streamLive && cameraOn && now - lastCameraHeartbeatRef.current > 12_000) {
+          lastCameraHeartbeatRef.current = now;
+          void postVoiceCameraStatus(false, false).catch(() => undefined);
         }
         const state = await fetchVoiceClientState(false);
+        const events = state.tool_events ?? [];
+        for (const ev of events) {
+          const id = Number(ev.id || 0);
+          if (!id || id <= lastToolEventIdRef.current) continue;
+          lastToolEventIdRef.current = id;
+          if (ev.type === "generated_image" && ev.image_url) {
+            const normalized = normalizeCedMediaUrl(ev.image_url);
+            lastPublishableImageRef.current = normalized;
+            callbacks?.onGeneratedImage?.(normalized, ev.prompt);
+          }
+        }
         const action = state.client_action;
         if (!action || action.id === lastVoiceActionIdRef.current) return;
         lastVoiceActionIdRef.current = action.id;
@@ -391,7 +424,7 @@ export function useCedVoiceSession(
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [retellPollActive, waitForCameraFrame]);
+  }, [retellPollActive, waitForCameraFrame, cameraOn, callbacks]);
 
   const resolvePublishImage = useCallback(
     async (
@@ -497,7 +530,7 @@ export function useCedVoiceSession(
       setCameraOn(false);
       setCameraStream(null);
       cameraPreviewRef.current = null;
-      void postVoiceCameraStatus(false).catch(() => undefined);
+      void postVoiceCameraStatus(false, false).catch(() => undefined);
     }, CAMERA_IDLE_MS);
   }, [cameraOn]);
 
@@ -578,7 +611,7 @@ export function useCedVoiceSession(
       setCameraStream(stream);
       setCameraOn(true);
       resetCameraIdleTimer();
-      void postVoiceCameraStatus(true).catch(() => undefined);
+      void postVoiceCameraStatus(true, true).catch(() => undefined);
       void clientRef.current?.attachCameraStream(stream);
       return stream;
     },
@@ -595,7 +628,7 @@ export function useCedVoiceSession(
         setCameraOn(false);
         setCameraStream(null);
         cameraPreviewRef.current = null;
-        void postVoiceCameraStatus(false).catch(() => undefined);
+        void postVoiceCameraStatus(false, false).catch(() => undefined);
         return;
       }
       const stream = cameraStreamRef.current;
@@ -713,6 +746,7 @@ export function useCedVoiceSession(
             lastPublishableImageRef.current = null;
             setRetellPollActive(true);
             lastVoiceActionIdRef.current = null;
+            lastToolEventIdRef.current = 0;
             setOrbState("listening");
             setStatusLabel(ORB_STATE_LABELS.listening);
           },
@@ -739,7 +773,7 @@ export function useCedVoiceSession(
                 heardAt: Date.now(),
               });
               if (cameraStreamRef.current?.active) {
-                void postVoiceCameraStatus(true).catch(() => undefined);
+                void postVoiceCameraStatus(true, true).catch(() => undefined);
               }
               const camIntent = parseCameraIntent(text);
               if (camIntent === "activate") {

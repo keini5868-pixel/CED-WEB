@@ -55,7 +55,7 @@ export function CedVoiceHub() {
     prompt?: string;
   } | null>(null);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
-  const { pushVoiceLine } = useHudFeed();
+  const { pushVoiceLine, pushVoiceImage } = useHudFeed();
 
   useEffect(() => {
     prefetchEphemeralToken();
@@ -68,7 +68,11 @@ export function CedVoiceHub() {
       const toolName = detail?.tool_name ?? "";
       const result = detail?.result;
       const imageUrl =
-        typeof result?.image_url === "string" ? result.image_url : null;
+        typeof result?.image_url === "string"
+          ? result.image_url
+          : typeof result?.url === "string"
+            ? result.url
+            : null;
       if (toolName.includes("image") && imageUrl) {
         const prompt =
           typeof result?.prompt === "string" ? result.prompt : undefined;
@@ -86,6 +90,7 @@ export function CedVoiceHub() {
       pushVoiceLine(text, role);
     },
     onGeneratedImage: (url, prompt) => {
+      pushVoiceImage(url, prompt);
       setVoiceImagePreview({ url, prompt });
       setChatSeedImage({ url, prompt });
       setChatOpen(true);

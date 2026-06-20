@@ -1,4 +1,4 @@
-"""Retell Custom LLM WebSocket — Gemini 2.5 Pro como cerebro de voz."""
+"""Retell Custom LLM WebSocket — OpenAI GPT-4.1 como cerebro conversacional de voz."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from app.services.cognitive_intents import (
     is_meta_publish_intent,
     is_script_demo_request,
 )
-from app.services.gemini_voice_llm import GeminiVoiceLlm
+from app.services.openai_voice_llm import OpenAIVoiceLlm
 from app.services.retell_call_registry import release_call_user, resolve_call_user
 from app.services.retell_custom_llm import (
     advanced_analysis_hold_phrase,
@@ -29,6 +29,7 @@ from app.services.retell_custom_llm import (
     resolve_camera_voice_request,
     resolve_instagram_caption_request,
     resolve_meta_publish_request,
+    resolve_social_comments_request,
     resolve_web_search_request,
     is_inaudible_or_noise,
     should_clear_pending_script,
@@ -41,6 +42,7 @@ from app.services.retell_custom_llm import (
 )
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_spoken import split_voice_delivery_chunks
+from app.services.voice_response_guard import guard_voice_response
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -91,7 +93,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     session_started = time.time()
     logger.info("[RETELL-GEMINI] WebSocket conectado call_id=%s", call_id)
 
-    llm = GeminiVoiceLlm()
+    llm = OpenAIVoiceLlm()
     response_lock = asyncio.Lock()
     active_response_id = 0
     debounce_task: asyncio.Task[None] | None = None
@@ -168,10 +170,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     ) -> bool:
         if generation is not None and generation != generation_seq:
             return False
+        safe, blocked = guard_voice_response(content)
+        if blocked:
+            logger.warning(
+                "[RETELL-OPENAI] blocked partial code leak rid=%s call=%s",
+                response_id,
+                call_id,
+            )
+            safe = FALLBACK_REPLY
         payload = {
             "response_type": "response",
             "response_id": response_id,
-            "content": content,
+            "content": safe or FALLBACK_REPLY,
             "content_complete": content_complete,
             "end_call": False,
         }
@@ -188,20 +198,30 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         nonlocal active_response_id, last_answered_user_key, answered_response_ids
         if generation is not None and generation != generation_seq:
             logger.info(
-                "[RETELL-GEMINI] skip stale generation send rid=%s call=%s",
+                "[RETELL-OPENAI] skip stale generation send rid=%s call=%s",
                 response_id,
                 call_id,
             )
             return False
         if response_id in answered_response_ids:
             logger.info(
-                "[RETELL-GEMINI] skip duplicate send rid=%s call=%s",
+                "[RETELL-OPENAI] skip duplicate send rid=%s call=%s",
                 response_id,
                 call_id,
             )
             return False
         if response_id < active_response_id:
             return False
+        safe, blocked = guard_voice_response(content)
+        if blocked:
+            logger.warning(
+                "[RETELL-OPENAI] blocked outbound code leak rid=%s call=%s preview=%s",
+                response_id,
+                call_id,
+                content[:80],
+            )
+            safe = FALLBACK_REPLY
+        content = safe or FALLBACK_REPLY
         chunks = split_voice_delivery_chunks(content)
         for chunk, complete in chunks:
             if response_id < active_response_id:
@@ -539,10 +559,46 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         generation=my_generation,
                     )
                 logger.info(
-                    "[RETELL-GEMINI] meta_publish call=%s tool=%s caption=%s",
+                    "[RETELL-OPENAI] meta_publish call=%s tool=%s caption=%s",
                     call_id,
                     tool_name,
                     (meta_req.get("caption") or "")[:80],
+                )
+                return
+
+            comments_req = resolve_social_comments_request(user_text)
+            if comments_req and uid:
+                clear_pending_advanced_topic(call_id)
+                llm._pending_advanced = None
+                async with response_lock:
+                    if response_id < active_response_id:
+                        return
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "leer_comentarios_redes",
+                                uid,
+                                {"platform": comments_req["platform"]},
+                            ),
+                            timeout=20.0,
+                        )
+                    except asyncio.TimeoutError:
+                        tool_result = {
+                            "spoken": "No pude leer los comentarios a tiempo, señor.",
+                        }
+                    spoken = str(tool_result.get("spoken") or "").strip()
+                    if not spoken:
+                        spoken = "No pude consultar los comentarios, señor."
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=spoken,
+                        user_key=user_key,
+                        generation=my_generation,
+                    )
+                logger.info(
+                    "[RETELL-OPENAI] social_comments call=%s platform=%s",
+                    call_id,
+                    comments_req["platform"],
                 )
                 return
 

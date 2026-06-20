@@ -420,3 +420,25 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "parameters": {"type": "object", "properties": {}},
     },
 ]
+
+
+def build_openai_chat_tools() -> list[dict[str, Any]]:
+    """Convierte esquemas Realtime al formato Chat Completions de OpenAI."""
+    out: list[dict[str, Any]] = []
+    for tool in OPENAI_REALTIME_TOOLS:
+        name = str(tool.get("name") or "").strip()
+        if not name:
+            continue
+        out.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": str(tool.get("description") or ""),
+                    "parameters": tool.get("parameters")
+                    or {"type": "object", "properties": {}},
+                },
+            }
+        )
+    return out
+

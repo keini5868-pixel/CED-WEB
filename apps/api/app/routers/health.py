@@ -57,7 +57,7 @@ def health(_request: Request) -> dict[str, str]:
 def health_voice_prompt(_request: Request) -> dict:
     """Confirma que el system prompt Seth/CED activo está cargado (sin exponer el texto)."""
     settings = get_settings()
-    from app.services.gemini_voice_llm import _voice_model
+    from app.services.openai_voice_llm import _voice_model
 
     diag = voice_prompt_diagnostics()
     return {
@@ -65,7 +65,7 @@ def health_voice_prompt(_request: Request) -> dict:
         "build": BUILD_VERSION,
         "env": settings.app_env,
         "voice_model": _voice_model(),
-        "conversational_routing": "gemini_with_seth_prompt",
+        "conversational_routing": "openai_gpt41_with_seth_prompt",
         **diag,
     }
 
