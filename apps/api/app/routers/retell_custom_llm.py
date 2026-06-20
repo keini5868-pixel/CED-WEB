@@ -101,6 +101,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     post_greeting_ready.set()
     last_answered_user_key = ""
     last_scheduled_user_key = ""
+    generation_seq = 0
+    answered_response_ids: set[int] = set()
     greeting_release_task: asyncio.Task[None] | None = None
     message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
@@ -108,6 +110,19 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     if user_id:
         llm.set_user_id(user_id)
         logger.info("[RETELL-GEMINI] user_id=%s call=%s (registry)", user_id[:8], call_id)
+
+    from app.build_info import BUILD_VERSION
+    from app.domain.openai_voice_prompt import voice_prompt_diagnostics
+
+    prompt_diag = voice_prompt_diagnostics()
+    logger.info(
+        "[RETELL-GEMINI] session prompt call=%s build=%s sha=%s chars=%s seth=%s",
+        call_id,
+        BUILD_VERSION,
+        prompt_diag.get("prompt_sha256_prefix"),
+        prompt_diag.get("prompt_chars"),
+        prompt_diag.get("includes_seth"),
+    )
 
     await websocket.send_json(
         {
@@ -146,7 +161,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         response_id: int,
         content: str,
         content_complete: bool,
-    ) -> None:
+        generation: int | None = None,
+    ) -> bool:
+        if generation is not None and generation != generation_seq:
+            return False
         payload = {
             "response_type": "response",
             "response_id": response_id,
@@ -155,14 +173,30 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             "end_call": False,
         }
         await websocket.send_json(payload)
+        return True
 
     async def send_voice_response(
         *,
         response_id: int,
         content: str,
         user_key: str,
+        generation: int | None = None,
     ) -> bool:
-        nonlocal active_response_id, last_answered_user_key
+        nonlocal active_response_id, last_answered_user_key, answered_response_ids
+        if generation is not None and generation != generation_seq:
+            logger.info(
+                "[RETELL-GEMINI] skip stale generation send rid=%s call=%s",
+                response_id,
+                call_id,
+            )
+            return False
+        if response_id in answered_response_ids:
+            logger.info(
+                "[RETELL-GEMINI] skip duplicate send rid=%s call=%s",
+                response_id,
+                call_id,
+            )
+            return False
         if response_id < active_response_id:
             return False
         chunks = split_voice_delivery_chunks(content)
@@ -178,6 +212,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             }
             await websocket.send_json(payload)
         active_response_id = response_id
+        answered_response_ids.add(response_id)
         if user_key:
             last_answered_user_key = user_key
         logger.info(
@@ -190,11 +225,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         return True
 
     async def handle_message(request_json: dict) -> None:
-        nonlocal active_response_id, debounce_task, last_scheduled_user_key
+        nonlocal active_response_id, debounce_task, last_scheduled_user_key, generation_seq
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
         logger.info("[RETELL-GEMINI] interaction=%s call=%s", interaction, call_id)
+
+        response_id = int(request_json.get("response_id") or 0)
+        if response_id in answered_response_ids:
+            logger.info(
+                "[RETELL-GEMINI] skip answered rid=%s call=%s",
+                response_id,
+                call_id,
+            )
+            return
 
         uid = resolve_call_user(call_id, request_json)
         if uid:
@@ -228,7 +272,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if interaction not in ("response_required", "reminder_required"):
             return
 
-        response_id = int(request_json.get("response_id") or 0)
         transcript_raw = request_json.get("transcript") or []
         transcript = [
             Utterance(role=item.get("role", "user"), content=str(item.get("content") or ""))
@@ -291,7 +334,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
         active_response_id = max(active_response_id, response_id)
 
-        if debounce_task and not debounce_task.done() and user_key != last_scheduled_user_key:
+        generation_seq += 1
+        my_generation = generation_seq
+
+        if debounce_task and not debounce_task.done():
             debounce_task.cancel()
 
         last_scheduled_user_key = user_key
@@ -300,14 +346,32 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         async def run_debounced() -> None:
             nonlocal active_response_id, last_answered_user_key
             scheduled_key = user_key
+            scheduled_rid = response_id
             try:
                 await post_greeting_ready.wait()
                 await asyncio.sleep(wait_s)
             except asyncio.CancelledError:
                 return
 
+            if my_generation != generation_seq:
+                logger.info(
+                    "[RETELL-GEMINI] skip superseded generation call=%s seq=%s current=%s",
+                    call_id,
+                    my_generation,
+                    generation_seq,
+                )
+                return
+
             if scheduled_key != last_scheduled_user_key:
                 logger.info("[RETELL-GEMINI] skip superseded debounce call=%s", call_id)
+                return
+
+            if scheduled_rid in answered_response_ids:
+                logger.info(
+                    "[RETELL-GEMINI] skip answered debounced rid=%s call=%s",
+                    scheduled_rid,
+                    call_id,
+                )
                 return
 
             if response_id < active_response_id:
@@ -361,6 +425,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         response_id=response_id,
                         content=reply,
                         user_key=user_key,
+                        generation=my_generation,
                     )
                 logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
                 return
@@ -378,6 +443,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             response_id=response_id,
                             content="Un momento, señor. Analizo con visión.",
                             content_complete=False,
+                            generation=my_generation,
                         )
                     tool_args: dict = {}
                     if is_vision:
@@ -397,8 +463,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             response_id=response_id,
                             content=spoken or "No pude analizar la imagen, señor.",
                             content_complete=True,
+                            generation=my_generation,
                         )
                         active_response_id = response_id
+                        answered_response_ids.add(response_id)
                         if user_key:
                             last_answered_user_key = user_key
                     else:
@@ -455,6 +523,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         response_id=response_id,
                         content=spoken,
                         user_key=user_key,
+                        generation=my_generation,
                     )
                 logger.info(
                     "[RETELL-GEMINI] meta_publish call=%s tool=%s caption=%s",
@@ -500,8 +569,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             response_id=response_id,
                             content=chunk,
                             content_complete=complete,
+                            generation=my_generation,
                         )
                     active_response_id = response_id
+                    answered_response_ids.add(response_id)
                     if user_key:
                         last_answered_user_key = user_key
                 logger.info(
@@ -525,6 +596,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         response_id=response_id,
                         content=hold,
                         content_complete=False,
+                        generation=my_generation,
                     )
                     try:
                         tool_result = await asyncio.wait_for(
@@ -564,8 +636,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             response_id=response_id,
                             content=chunk,
                             content_complete=complete,
+                            generation=my_generation,
                         )
                     active_response_id = response_id
+                    answered_response_ids.add(response_id)
                     if user_key:
                         last_answered_user_key = user_key
                     clear_pending_advanced_topic(call_id)
@@ -602,6 +676,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 response_id=response_id,
                                 content=hold,
                                 content_complete=False,
+                                generation=my_generation,
                             )
                             try:
                                 tool_result = await asyncio.wait_for(
@@ -629,8 +704,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                     response_id=response_id,
                                     content=chunk,
                                     content_complete=complete,
+                                    generation=my_generation,
                                 )
                             active_response_id = response_id
+                            answered_response_ids.add(response_id)
                             if user_key:
                                 last_answered_user_key = user_key
                             clear_pending_advanced_topic(call_id)
@@ -724,6 +801,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         response_id=response_id,
                         content=FALLBACK_REPLY,
                         user_key=user_key,
+                        generation=my_generation,
                     )
 
         debounce_task = asyncio.create_task(run_debounced())

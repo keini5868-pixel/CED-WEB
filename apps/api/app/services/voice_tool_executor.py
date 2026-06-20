@@ -251,8 +251,14 @@ async def execute_voice_tool(
                     "Cámara activa, señor. Muéstreme qué desea que analice con visión."
                 )
             vcs.push_client_action(user_id, "camera_activate", {})
-            return _spoken_ok(
-                "Activando cámara, señor. Dígame qué desea que analice con visión."
+            active = await _wait_camera_active(user_id, 8.0)
+            if active:
+                return _spoken_ok(
+                    "Cámara activa, señor. Muéstreme qué desea que analice con visión."
+                )
+            return _spoken_err(
+                "No pude activar la cámara, señor. Verifique permisos en el navegador.",
+                error="camera_activation_timeout",
             )
 
         if name == "analyze_camera_frame":

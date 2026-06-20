@@ -131,6 +131,22 @@ def _build_voice_system(user_id: str | None, user_text: str = "") -> str:
                 )
         except Exception:  # noqa: BLE001
             pass
+    if uid:
+        try:
+            from app.services import voice_client_session as vcs
+
+            if vcs.is_camera_active(uid):
+                base = (
+                    f"{base}\n\n# ESTADO CÁMARA (backend)\n"
+                    "Cámara ACTIVA confirmada en el cliente. Puede invocar analyze_camera_frame."
+                )
+            else:
+                base = (
+                    f"{base}\n\n# ESTADO CÁMARA (backend)\n"
+                    "Cámara APAGADA. No describas nada visual hasta activarla o usar la tool."
+                )
+        except Exception:  # noqa: BLE001
+            pass
     return base
 
 
@@ -243,16 +259,40 @@ class GeminiVoiceLlm:
         contents: list[types.Content],
         config: types.GenerateContentConfig,
         timeout_sec: float | None = None,
+        path: str = "generate",
     ) -> types.GenerateContentResponse:
         limit = timeout_sec if timeout_sec is not None else GEMINI_TIMEOUT_SEC
-        return await asyncio.wait_for(
-            self.client.aio.models.generate_content(
-                model=self.model,
-                contents=contents,
-                config=config,
-            ),
-            timeout=limit,
+        logger.info(
+            "[RETELL-GEMINI] model_call start path=%s model=%s user=%s ts=%.3f",
+            path,
+            self.model,
+            (self.user_id or "?")[:8],
+            time.time(),
         )
+        try:
+            response = await asyncio.wait_for(
+                self.client.aio.models.generate_content(
+                    model=self.model,
+                    contents=contents,
+                    config=config,
+                ),
+                timeout=limit,
+            )
+        except Exception:
+            logger.warning(
+                "[RETELL-GEMINI] model_call failed path=%s user=%s ts=%.3f",
+                path,
+                (self.user_id or "?")[:8],
+                time.time(),
+            )
+            raise
+        logger.info(
+            "[RETELL-GEMINI] model_call done path=%s user=%s ts=%.3f",
+            path,
+            (self.user_id or "?")[:8],
+            time.time(),
+        )
+        return response
 
     async def draft_conversational_response(
         self,
@@ -285,6 +325,7 @@ class GeminiVoiceLlm:
                 contents=[*history, last],
                 config=config,
                 timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
+                path="conversational",
             )
             text = _extract_text(response)
             if not text or is_unwanted_voice_reply(text, user_text=user_text):
@@ -359,6 +400,7 @@ class GeminiVoiceLlm:
                     contents=[*self._history, last],
                     config=internal_config,
                     timeout_sec=timeout_sec,
+                    path="internal_brain",
                 )
                 internal_text = _extract_text(internal_response)
                 if internal_text and not is_generic_agent_line(internal_text):
@@ -401,6 +443,7 @@ class GeminiVoiceLlm:
                 contents=[*self._history, last],
                 config=config,
                 timeout_sec=timeout_sec,
+                path="draft_main",
             )
         except asyncio.TimeoutError:
             logger.warning(
@@ -482,6 +525,7 @@ class GeminiVoiceLlm:
                             max_output_tokens=max_tokens,
                         ),
                         timeout_sec=timeout_sec,
+                        path="tool_follow_up",
                     )
                     follow_text = _extract_text(follow_up)
                     if follow_text:

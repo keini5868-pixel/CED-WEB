@@ -124,14 +124,28 @@ export class CedRetellClient {
     }
     const text = this.pendingUserText.trim();
     if (!text) return;
-    if (text === this.lastPersistedUserLine) return;
-    this.lastPersistedUserLine = text;
-    this.lastUserLine = text;
-    this.callbacks.onTranscript?.(text, "user");
+    this.persistUserLine(text);
+  }
+
+  /** Una sola línea por turno de usuario — evita parcial + final duplicados. */
+  private persistUserLine(text: string): void {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    if (trimmed === this.lastPersistedUserLine) return;
+    if (
+      this.lastPersistedUserLine &&
+      trimmed.startsWith(this.lastPersistedUserLine) &&
+      trimmed.length - this.lastPersistedUserLine.length < 4
+    ) {
+      return;
+    }
+    this.lastPersistedUserLine = trimmed;
+    this.lastUserLine = trimmed;
+    this.callbacks.onTranscript?.(trimmed, "user");
   }
 
   private scheduleUserTranscript(text: string): void {
-    if (text === this.lastPersistedUserLine || text === this.pendingUserText) return;
+    if (text === this.pendingUserText) return;
     this.pendingUserText = text;
     this.clearUserDebounce();
     this.userDebounceTimer = window.setTimeout(() => {
@@ -201,6 +215,7 @@ export class CedRetellClient {
       this.audioPlaybackStarted = false;
       this.stopAudioRetry();
       this.clearUserDebounce();
+      this.flushUserTranscript(true);
       this.stopLevelLoop();
       this.callbacks.onCallEnded?.();
     });
@@ -215,7 +230,6 @@ export class CedRetellClient {
     this.client.on("agent_start_talking", () => {
       this.restoreAgentPlayback();
       this.agentSpeaking = true;
-      this.flushUserTranscript(true);
       this.callbacks.onAgentTalking?.(true);
     });
 
@@ -234,7 +248,12 @@ export class CedRetellClient {
       if (!Array.isArray(lines) || lines.length === 0) return;
 
       if (update.turntaking === "agent_turn") {
-        this.flushUserTranscript(true);
+        this.clearUserDebounce();
+        const finalUser = this.latestLine(lines, "user");
+        if (finalUser) {
+          this.pendingUserText = finalUser;
+          this.persistUserLine(finalUser);
+        }
       }
       if (update.turntaking === "user_turn") {
         this.maybeBargeIn(this.pendingUserText);
@@ -243,7 +262,9 @@ export class CedRetellClient {
       const userText = this.latestLine(lines, "user");
       if (userText && userText !== this.pendingUserText) {
         this.maybeBargeIn(userText);
-        this.scheduleUserTranscript(userText);
+        if (update.turntaking === "user_turn") {
+          this.scheduleUserTranscript(userText);
+        }
       }
 
       const agentText = this.latestLine(lines, "agent");

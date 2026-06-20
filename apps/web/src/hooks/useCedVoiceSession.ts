@@ -188,6 +188,7 @@ export function useCedVoiceSession(
   const [retellPollActive, setRetellPollActive] = useState(false);
   const [voiceSessionActive, setVoiceSessionActive] = useState(false);
   const lastVoiceActionIdRef = useRef<number | null>(null);
+  const lastCameraHeartbeatRef = useRef(0);
   const [cameraOn, setCameraOn] = useState(false);
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -366,6 +367,14 @@ export function useCedVoiceSession(
     const poll = async () => {
       if (cancelled) return;
       try {
+        const now = Date.now();
+        if (
+          cameraStreamRef.current?.active &&
+          now - lastCameraHeartbeatRef.current > 45_000
+        ) {
+          lastCameraHeartbeatRef.current = now;
+          void postVoiceCameraStatus(true).catch(() => undefined);
+        }
         const state = await fetchVoiceClientState(false);
         const action = state.client_action;
         if (!action || action.id === lastVoiceActionIdRef.current) return;
@@ -482,11 +491,13 @@ export function useCedVoiceSession(
     if (cameraIdleTimerRef.current) clearTimeout(cameraIdleTimerRef.current);
     if (!cameraOn) return;
     cameraIdleTimerRef.current = setTimeout(() => {
+      clientRef.current?.detachCameraStream();
+      cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+      cameraStreamRef.current = null;
       setCameraOn(false);
       setCameraStream(null);
       cameraPreviewRef.current = null;
-      cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
-      cameraStreamRef.current = null;
+      void postVoiceCameraStatus(false).catch(() => undefined);
     }, CAMERA_IDLE_MS);
   }, [cameraOn]);
 
