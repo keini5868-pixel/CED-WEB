@@ -431,8 +431,8 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         except Exception as exc:
             err = str(exc).lower()
             if "voice model" in err or "voice_model" in err:
-                logger.warning("[RETELL] voice_model fallback turbo: %s", exc)
-                agent_payload["voice_model"] = "eleven_turbo_v2_5"
+                logger.warning("[RETELL] voice_model omit retry: %s", exc)
+                agent_payload.pop("voice_model", None)
                 client.agent.update(agent_id=agent_id, **agent_payload)
             elif "not found from voice" in err:
                 if configured:
