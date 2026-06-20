@@ -359,7 +359,37 @@ def load_recent_messages_for_llm(user_id: str, *, limit: int = 30) -> list[dict[
         content = str(row.get("content") or "").strip()
         if content:
             out.append({"role": role, "content": content[:MAX_CONTENT]})
-    return out[-cap:]
+    return out
+
+
+def user_conversed_within_hours(user_id: str, *, hours: float = 4.0) -> bool:
+    """True si el usuario tuvo actividad conversacional reciente (voz o texto)."""
+    uid = (user_id or "").strip()
+    if not uid or hours <= 0:
+        return False
+    try:
+        res = (
+            _client()
+            .table("user_conversations")
+            .select("created_at")
+            .eq("user_id", uid)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        rows = res.data or []
+        if not rows:
+            return False
+        created_raw = rows[0].get("created_at")
+        if not created_raw:
+            return False
+        created = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - created.astimezone(timezone.utc)
+        return delta <= timedelta(hours=hours)
+    except Exception:  # noqa: BLE001
+        return False
 
 
 def load_user_context(user_id: str) -> str:

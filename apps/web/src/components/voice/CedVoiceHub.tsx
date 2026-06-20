@@ -86,8 +86,8 @@ export function CedVoiceHub() {
   }, []);
 
   const voice = useCedVoiceSession(refreshUsage, {
-    onTranscript: (text, role) => {
-      pushVoiceLine(text, role);
+    onTranscript: (text, role, options) => {
+      pushVoiceLine(text, role, options);
     },
     onGeneratedImage: (url, prompt) => {
       pushVoiceImage(url, prompt);

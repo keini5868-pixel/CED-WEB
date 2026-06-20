@@ -18,7 +18,11 @@ export interface CedRetellCallbacks {
   onCallStarted?: () => void;
   onCallEnded?: () => void;
   onAgentTalking?: (talking: boolean) => void;
-  onTranscript?: (text: string, role: RetellTranscriptRole) => void;
+  onTranscript?: (
+    text: string,
+    role: RetellTranscriptRole,
+    options?: { partial?: boolean },
+  ) => void;
   onError?: (message: string) => void;
   onAudioLevel?: (level: number) => void;
 }
@@ -239,7 +243,7 @@ export class CedRetellClient {
       this.callbacks.onAgentTalking?.(false);
       if (this.lastAgentLine && this.lastAgentLine !== this.lastPersistedAgentLine) {
         this.lastPersistedAgentLine = this.lastAgentLine;
-        this.callbacks.onTranscript?.(this.lastAgentLine, "agent");
+        this.callbacks.onTranscript?.(this.lastAgentLine, "agent", { partial: false });
       }
     });
 
@@ -270,6 +274,9 @@ export class CedRetellClient {
       const agentText = this.latestLine(lines, "agent");
       if (!agentText || agentText === this.lastAgentLine) return;
       this.lastAgentLine = agentText;
+      if (this.agentSpeaking) {
+        this.callbacks.onTranscript?.(agentText, "agent", { partial: true });
+      }
     });
 
     this.client.on("error", (error: unknown) => {

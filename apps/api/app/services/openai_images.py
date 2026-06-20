@@ -179,12 +179,18 @@ def generate_image(
                 "estimated_cost_usd": cost,
             }
         if not api_key:
+            err_detail = str(gemini_result.get("error") or "Gemini falló")
+            logger.error(
+                "[GEMINI:IMAGE] no OpenAI fallback user=%s gemini_error=%s",
+                user_id[:8],
+                err_detail[:200],
+            )
             return {
                 "ok": False,
-                "error": str(gemini_result.get("error") or "No pude generar la imagen con Gemini."),
+                "error": f"Gemini: {err_detail}. Configure OPENAI_API_KEY como respaldo.",
                 "code": str(gemini_result.get("code") or "gemini_error"),
             }
-        logger.warning("[GEMINI:IMAGE] fallback OpenAI: %s", gemini_result.get("error"))
+        logger.warning("[GEMINI:IMAGE] fallback OpenAI user=%s reason=%s", user_id[:8], gemini_result.get("error"))
 
     if not api_key:
         return {"ok": False, "error": "GOOGLE_API_KEY no configurada"}

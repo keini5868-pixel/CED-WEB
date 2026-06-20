@@ -439,20 +439,12 @@ def _substantive_user_lines(transcript: list[Utterance]) -> list[str]:
 
 
 def should_execute_advanced_now(user_text: str, topic: str) -> bool:
-    """Ejecuta Claude solo para guiones/demos o tras confirmación explícita."""
+    """Ejecuta Claude SOLO tras comando explícito de sistema avanzado (v38)."""
     if is_camera_voice_command(user_text):
         return False
     if is_meta_publish_intent(user_text) or is_meta_publish_intent(topic):
         return False
-    if is_script_demo_request(topic) or is_script_demo_request(user_text):
-        return True
-    if has_advanced_confirmation(user_text) or is_explicit_advanced_activation(user_text):
-        if is_meta_publish_intent(topic):
-            return False
-        return True
-    if is_explicit_advanced(user_text):
-        return True
-    return False
+    return is_explicit_advanced_activation(user_text)
 
 
 def resolve_advanced_analysis_request(
@@ -475,8 +467,6 @@ def resolve_advanced_analysis_request(
     if is_explicit_advanced_activation(last):
         return fallback_advanced_topic(transcript, pending_topic=pending_topic)
 
-    if is_script_demo_request(last) and not _is_pure_ack(last):
-        return last
     if is_explicit_advanced(last):
         return last
 

@@ -154,7 +154,11 @@ async function publishImageToBlob(image: {
 }
 
 export interface CedVoiceSessionCallbacks {
-  onTranscript?: (text: string, role: "user" | "model") => void;
+  onTranscript?: (
+    text: string,
+    role: "user" | "model",
+    options?: { partial?: boolean },
+  ) => void;
   /** Imagen generada (voz) — abrir chat / preview */
   onGeneratedImage?: (url: string, prompt?: string) => void;
 }
@@ -313,7 +317,7 @@ export function useCedVoiceSession(
       );
     };
 
-    const waitForCameraStream = async (maxMs = 6500): Promise<boolean> => {
+    const waitForCameraStream = async (maxMs = 4500): Promise<boolean> => {
       const started = Date.now();
       while (Date.now() - started < maxMs) {
         if (cameraStreamLive()) return true;
@@ -328,8 +332,9 @@ export function useCedVoiceSession(
       payload: Record<string, unknown>;
     }) => {
       if (action.action === "camera_activate") {
+        void postVoiceCameraStatus(true, false).catch(() => undefined);
         await toggleCameraRef.current(true);
-        const live = await waitForCameraStream();
+        const live = await waitForCameraStream(4500);
         await postVoiceCameraStatus(live, live);
         await ackVoiceClientAction(action.id);
         return;
@@ -763,9 +768,13 @@ export function useCedVoiceSession(
               talking ? ORB_STATE_LABELS.speaking : ORB_STATE_LABELS.listening,
             );
           },
-          onTranscript: (text, role) => {
+          onTranscript: (text, role, options) => {
             if (isStale()) return;
-            callbacks?.onTranscript?.(text, role === "user" ? "user" : "model");
+            callbacks?.onTranscript?.(
+              text,
+              role === "user" ? "user" : "model",
+              options,
+            );
             if (role === "user") {
               setHeardIndicator({
                 status: "heard",

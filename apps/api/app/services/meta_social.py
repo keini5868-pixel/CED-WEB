@@ -9,6 +9,7 @@ import httpx
 
 from app.config import get_settings
 from app.services import supabase_db
+from app.services.meta_publish_dedupe import find_duplicate_publish, record_publish
 from app.services.publish_media import resolve_image_input
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,22 @@ def publish_facebook(
     text = (message or "").strip()
     if not text:
         raise MetaSocialError("El mensaje de Facebook no puede estar vacío.")
+
+    dup_post_id = find_duplicate_publish(user_id, text, platform="facebook")
+    if dup_post_id:
+        logger.info(
+            "[META:FB] dedupe=skip user=%s post_id=%s message_len=%s",
+            user_id[:8],
+            dup_post_id,
+            len(text),
+        )
+        return {
+            "ok": True,
+            "platform": "facebook",
+            "post_id": dup_post_id if dup_post_id != "dedupe" else None,
+            "spoken": "Publicación enviada con éxito a Facebook, señor.",
+            "dedupe": True,
+        }
 
     conn = _connection(user_id)
     page_id = conn.get("page_id")
@@ -78,8 +95,15 @@ def publish_facebook(
             err = data.get("error", {}).get("message") or str(data)
             raise MetaSocialError(f"Facebook: {err}")
 
+    post_id = data.get("id")
+    record_publish(user_id, text, str(post_id) if post_id else None, platform="facebook")
     supabase_db.log_ced_activity(user_id, "facebook_post", detail=text[:120])
-    return {"ok": True, "platform": "facebook", "post_id": data.get("id"), "spoken": "Publicación enviada."}
+    return {
+        "ok": True,
+        "platform": "facebook",
+        "post_id": post_id,
+        "spoken": "Publicación enviada con éxito a Facebook, señor.",
+    }
 
 
 def publish_instagram(

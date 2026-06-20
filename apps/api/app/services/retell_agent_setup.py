@@ -1,4 +1,4 @@
-"""Bootstrap agente Retell CED — Custom LLM (Gemini) + ElevenLabs voice."""
+"""Bootstrap agente Retell CED — Custom LLM (GPT-4.1 Mini) + voz Cartesia/ElevenLabs."""
 
 from __future__ import annotations
 
@@ -332,6 +332,8 @@ def _voice_model_for(voice_id: str) -> str | None:
     configured = settings.retell_voice_model.strip()
     if configured:
         return configured
+    if voice_id.startswith("cartesia-"):
+        return None
     if voice_id.startswith("openai-"):
         return "tts-1"
     if voice_id.startswith("custom_voice_"):
@@ -364,14 +366,12 @@ def _voice_volume_for(voice_id: str) -> float:
 
 
 def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str | None = None) -> dict[str, str]:
-    """Crea o actualiza agente Retell con Custom LLM (Gemini) + ElevenLabs."""
+    """Crea o actualiza agente Retell con Custom LLM (GPT-4.1 Mini) + voz configurada."""
     client = get_retell_client()
     if not client:
         raise RuntimeError("RETELL_API_KEY no configurada")
 
     settings = get_settings()
-    if not settings.google_api_key.strip():
-        raise RuntimeError("GOOGLE_API_KEY no configurada — requerida para Gemini voz")
 
     configured = _normalize_voice_id(settings.retell_voice_id)
     jarvis_error: str | None = None
@@ -379,6 +379,9 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
 
     if override:
         voice_id = override
+    elif configured and configured.startswith(("cartesia-", "11labs-", "openai-", "retell-", "custom_voice_", "minimax-")):
+        voice_id = resolve_configured_retell_voice_id(client, configured)
+        logger.info("[RETELL] voz desde RETELL_VOICE_ID: %s", voice_id)
     elif agent_id:
         dashboard_voice = _retrieve_agent_voice_id(client, agent_id)
         if dashboard_voice and dashboard_voice.startswith("custom_voice_"):
@@ -406,19 +409,22 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
             "llm_websocket_url": llm_ws,
         },
         "voice_id": voice_id,
-        "voice_model": _voice_model_for(voice_id),
         "voice_speed": _voice_speed_for(voice_id),
         "voice_temperature": _voice_temperature_for(voice_id),
         "volume": _voice_volume_for(voice_id),
-        "responsiveness": 0.92,
+        "responsiveness": 0.78,
         "interruption_sensitivity": 0.58,
         "language": "es-419",
         "stt_mode": "accurate",
         "webhook_url": webhook,
         "webhook_events": ["call_started", "call_ended", "call_analyzed"],
+        "begin_message": "",
         "begin_message_delay_ms": 0,
         "agent_name": "CED Jarvis",
     }
+    voice_model = _voice_model_for(voice_id)
+    if voice_model:
+        agent_payload["voice_model"] = voice_model
 
     if agent_id:
         try:
@@ -446,7 +452,8 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
             "agent_id": agent_id,
             "voice_id": voice_id,
             "llm_websocket_url": llm_ws,
-            "brain": settings.gemini_voice_model,
+            "brain": settings.openai_model_retell_llm,
+            "tts_provider": "cartesia" if voice_id.startswith("cartesia-") else "retell",
         }
         if jarvis_error:
             out["jarvis_voice_error"] = jarvis_error
@@ -475,7 +482,8 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "agent_id": new_agent,
         "voice_id": voice_id,
         "llm_websocket_url": llm_ws,
-        "brain": settings.gemini_voice_model,
+        "brain": settings.openai_model_retell_llm,
+        "tts_provider": "cartesia" if voice_id.startswith("cartesia-") else "retell",
     }
 
 
@@ -486,9 +494,6 @@ def bootstrap_retell_if_needed() -> dict[str, str] | None:
         return None
     if not settings.retell_api_key.strip():
         logger.warning("[RETELL] bootstrap omitido — sin RETELL_API_KEY")
-        return None
-    if not settings.google_api_key.strip():
-        logger.warning("[RETELL] bootstrap omitido — sin GOOGLE_API_KEY")
         return None
 
     from app.services.retell_agent_cache import set_bootstrapped_agent, set_bootstrap_error

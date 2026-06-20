@@ -166,7 +166,7 @@ export function CedSettingsModal({
           <div className="rounded border border-amber-500/30 bg-amber-950/20 px-3 py-3 text-xs text-amber-100/90">
             <div className="font-semibold tracking-wide text-amber-200">Voz Retell (Jarvis)</div>
             <p className="mt-1 text-[11px] leading-relaxed opacity-90">
-              CED usa su clon en Retell + ElevenLabs. Tono grave y pausado configurado en
+              CED usa su clon Jarvis en Retell + Cartesia. Tono grave y pausado configurado en
               servidor. Para cambiar la voz, actualice el agente en Retell dashboard y ejecute
               bootstrap.
             </p>

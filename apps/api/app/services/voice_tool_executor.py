@@ -36,15 +36,36 @@ from app.services.voice_usage import voice_access_state
 logger = logging.getLogger(__name__)
 
 
-async def _wait_camera_active(user_id: str, timeout_sec: float = 8.0) -> bool:
+async def _wait_camera_ack(user_id: str, timeout_sec: float = 5.0) -> bool:
+    """Espera ACK del cliente: camera_active + camera_stream_present."""
     import time
 
     deadline = time.monotonic() + timeout_sec
     while time.monotonic() < deadline:
         if vcs.is_camera_active(user_id):
+            status = vcs.get_camera_status(user_id)
+            logger.info(
+                "[CAMERA] ack=true user=%s active=%s stream=%s age=%.1fs",
+                user_id[:8],
+                status.get("camera_active"),
+                status.get("camera_stream_present"),
+                float(status.get("age_sec") or 0),
+            )
             return True
-        await asyncio.sleep(0.35)
+        await asyncio.sleep(0.2)
+    status = vcs.get_camera_status(user_id)
+    logger.warning(
+        "[CAMERA] ack=timeout user=%s active=%s stream=%s age=%.1fs",
+        user_id[:8],
+        status.get("camera_active"),
+        status.get("camera_stream_present"),
+        float(status.get("age_sec") or 0),
+    )
     return False
+
+
+async def _wait_camera_active(user_id: str, timeout_sec: float = 5.0) -> bool:
+    return await _wait_camera_ack(user_id, timeout_sec)
 
 
 async def _wait_vision_result(
@@ -72,7 +93,7 @@ async def _run_camera_capture(
     request_id = int(time.time() * 1000)
     if not vcs.is_camera_active(user_id):
         vcs.push_client_action(user_id, "camera_activate", {})
-        await _wait_camera_active(user_id, 2.5)
+        await _wait_camera_ack(user_id, 5.0)
 
     vcs.push_client_action(
         user_id,
@@ -157,6 +178,7 @@ async def execute_voice_tool(
             prompt = str(params.get("prompt") or "").strip()
             quality = str(params.get("quality") or "auto")
             balance = voice_access_state(user_id)
+            logger.info("[VOICE:IMAGE] start user=%s prompt=%s", user_id[:8], prompt[:80])
             result = await asyncio.to_thread(
                 generate_image,
                 user_id=user_id,
@@ -166,6 +188,12 @@ async def execute_voice_tool(
             )
             if result.get("ok"):
                 url = str(result.get("url") or "")
+                logger.info(
+                    "[VOICE:IMAGE] ok user=%s provider=%s url=%s",
+                    user_id[:8],
+                    result.get("provider") or result.get("model"),
+                    url[:120],
+                )
                 vcs.push_tool_event(
                     user_id,
                     {
@@ -181,9 +209,24 @@ async def execute_voice_tool(
                     "image_url": url,
                     "prompt": prompt,
                 }
+            err = str(result.get("error") or "image_failed")
+            code = str(result.get("code") or "")
+            logger.error(
+                "[VOICE:IMAGE] fail user=%s code=%s error=%s",
+                user_id[:8],
+                code,
+                err[:200],
+            )
+            if code == "config_error":
+                return _spoken_err(
+                    "No fue posible generar la imagen: falta configurar GOOGLE_API_KEY o OPENAI_API_KEY, señor.",
+                    error=err,
+                )
+            if code in ("quota_exhausted", "plan_limit"):
+                return _spoken_err(f"No fue posible generar la imagen, señor. {err}", error=code)
             return _spoken_err(
-                f"No fue posible generar la imagen, señor. {result.get('error', '')}".strip(),
-                error=str(result.get("error") or "image_failed"),
+                f"No fue posible generar la imagen en este momento, señor. {err}".strip(),
+                error=code or err,
             )
 
         if name == "generate_image_with_reference":
@@ -258,17 +301,13 @@ async def execute_voice_tool(
                 vcs.set_camera_active(user_id, False)
                 return _spoken_ok("Cámara desactivada, señor.")
             if vcs.is_camera_active(user_id):
-                return _spoken_ok(
-                    "Cámara activa, señor. Muéstreme qué desea que analice con visión."
-                )
+                return _spoken_ok("Cámara activa, señor. ¿Qué desea que analice?")
             vcs.push_client_action(user_id, "camera_activate", {})
-            active = await _wait_camera_active(user_id, 8.0)
-            if active:
-                return _spoken_ok(
-                    "Cámara activa, señor. Muéstreme qué desea que analice con visión."
-                )
+            active = await _wait_camera_ack(user_id, 5.0)
+            if active or vcs.is_camera_active(user_id):
+                return _spoken_ok("Cámara activa, señor. ¿Qué desea que analice?")
             return _spoken_err(
-                "No pude activar la cámara, señor. Verifique permisos en el navegador.",
+                "No pude activar la cámara, señor. ¿Intentamos de nuevo?",
                 error="camera_activation_timeout",
             )
 
@@ -510,4 +549,19 @@ async def execute_voice_tool(
 
     except Exception as exc:  # noqa: BLE001
         logger.exception("[VOICE_TOOL] %s failed for user=%s", name, user_id[:8])
+        camera_tools = {
+            "request_camera_activation",
+            "request_camera_deactivation",
+            "analyze_camera_frame",
+            "buscar_lo_visible",
+        }
+        if name in camera_tools and vcs.is_camera_active(user_id):
+            logger.info(
+                "[CAMERA] recovered after exception user=%s tool=%s stream=live",
+                user_id[:8],
+                name,
+            )
+            if name == "request_camera_deactivation":
+                return _spoken_ok("Cámara desactivada, señor.")
+            return _spoken_ok("Cámara activa, señor. ¿Qué desea que analice?")
         return _spoken_err("Lamentablemente hubo un error, señor.", error=str(exc))

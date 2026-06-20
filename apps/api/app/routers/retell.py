@@ -227,7 +227,7 @@ async def retell_config(_user_id: str = Depends(require_user_id)) -> dict:
         "agentId": agent_id or None,
         "voiceId": settings.retell_voice_id.strip() or "11labs-George",
         "brain": settings.gemini_voice_model,
-        "architecture": "retell-gemini-elevenlabs",
+        "architecture": "retell-gpt41mini-cartesia",
     }
 
 

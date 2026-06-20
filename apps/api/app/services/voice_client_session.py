@@ -72,6 +72,17 @@ def is_camera_active(user_id: str, *, max_age_sec: float = 45.0) -> bool:
         return age <= max_age_sec
 
 
+def get_camera_status(user_id: str) -> dict[str, bool | float]:
+    """Estado de cámara para logs y gates de ACK."""
+    session = _get(user_id)
+    with _lock:
+        return {
+            "camera_active": bool(session.get("camera_active")),
+            "camera_stream_present": bool(session.get("camera_stream_present")),
+            "age_sec": _now() - float(session.get("camera_updated_at") or 0),
+        }
+
+
 def push_tool_event(user_id: str, event: dict[str, Any]) -> int:
     session = _get(user_id)
     event_id = int(_now() * 1000)

@@ -62,7 +62,21 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["retell-custom-llm"])
 
 POST_GREETING_COOLDOWN_S = 2.0
+GREETING_FALLBACK_S = 2.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente. ¿Puede repetir?"
+
+
+def _turn_slot(user_key: str) -> str:
+    return user_key or "_empty"
+
+
+def _is_superseded_turn_rid(
+    scheduled_rid: int,
+    user_key: str,
+    turn_latest_rid: dict[str, int],
+) -> tuple[bool, int]:
+    latest = turn_latest_rid.get(_turn_slot(user_key), scheduled_rid)
+    return scheduled_rid < latest, latest
 
 
 def _normalize_user_key(text: str) -> str:
@@ -103,7 +117,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     last_scheduled_user_key = ""
     generation_seq = 0
     answered_response_ids: set[int] = set()
+    meta_publish_guard: dict[str, float] = {}
+    response_required_counts: dict[int, int] = {}
     greeting_release_task: asyncio.Task[None] | None = None
+    greeting_fallback_task: asyncio.Task[None] | None = None
+    turn_latest_rid: dict[str, int] = {}
+    turn_draft_in_progress = False
+    turn_draft_user_key = ""
     message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
 
     user_id = resolve_call_user(call_id)
@@ -157,9 +177,22 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         await websocket.send_json(payload)
         mark_greeting_sent(call_id)
         greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
-        logger.info("[RETELL-GEMINI] saludo enviado call=%s reason=%s", call_id, reason)
+        logger.info(
+            "[GREETING] sent call=%s reason=%s preview=%s",
+            call_id,
+            reason,
+            begin_text[:80],
+        )
 
-    await send_greeting(0, reason="immediate")
+    async def greeting_fallback() -> None:
+        try:
+            await asyncio.sleep(GREETING_FALLBACK_S)
+            if not greeting_sent:
+                await send_greeting(0, reason="fallback_timeout")
+        except asyncio.CancelledError:
+            return
+
+    greeting_fallback_task = asyncio.create_task(greeting_fallback())
 
     async def send_voice_partial(
         *,
@@ -249,12 +282,22 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
     async def handle_message(request_json: dict) -> None:
         nonlocal active_response_id, debounce_task, last_scheduled_user_key, generation_seq
+        nonlocal turn_draft_in_progress, turn_draft_user_key
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
         logger.info("[RETELL-GEMINI] interaction=%s call=%s", interaction, call_id)
 
         response_id = int(request_json.get("response_id") or 0)
+        if interaction == "response_required":
+            response_required_counts[response_id] = response_required_counts.get(response_id, 0) + 1
+            logger.info(
+                "[RETELL-OPENAI] response_required rid=%s count=%s answered=%s cancelled=%s",
+                response_id,
+                response_required_counts[response_id],
+                response_id in answered_response_ids,
+                response_id < active_response_id,
+            )
         if response_id in answered_response_ids:
             logger.info(
                 "[RETELL-GEMINI] skip answered rid=%s call=%s",
@@ -283,7 +326,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         if interaction == "call_details":
-            logger.info("[RETELL-GEMINI] call_details call=%s (saludo ya enviado)", call_id)
+            if greeting_fallback_task and not greeting_fallback_task.done():
+                greeting_fallback_task.cancel()
+            await send_greeting(0, reason="call_details")
             return
 
         if interaction == "update_only":
@@ -307,6 +352,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     response_id=response_id,
                     content=reminder_text,
                     user_key="",
+                    generation=None,
                 )
             logger.info("[RETELL-GEMINI] silence ping call=%s gemini", call_id)
             return
@@ -363,6 +409,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
         active_response_id = max(active_response_id, response_id)
+        slot = _turn_slot(user_key)
+        turn_latest_rid[slot] = max(turn_latest_rid.get(slot, 0), response_id)
 
         generation_seq += 1
         my_generation = generation_seq
@@ -374,9 +422,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         wait_s = _debounce_wait_s(user_text)
 
         async def run_debounced() -> None:
-            nonlocal active_response_id, last_answered_user_key
+            nonlocal active_response_id, last_answered_user_key, turn_draft_in_progress, turn_draft_user_key
             scheduled_key = user_key
             scheduled_rid = response_id
+            gpt_calls = 0
             try:
                 await post_greeting_ready.wait()
                 await asyncio.sleep(wait_s)
@@ -385,30 +434,54 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             if my_generation != generation_seq:
                 logger.info(
-                    "[RETELL-GEMINI] skip superseded generation call=%s seq=%s current=%s",
-                    call_id,
+                    "[RETELL-TURN] rid=%s superseded=gen seq=%s current=%s gpt_calls=0 call=%s",
+                    scheduled_rid,
                     my_generation,
                     generation_seq,
+                    call_id,
                 )
                 return
 
             if scheduled_key != last_scheduled_user_key:
-                logger.info("[RETELL-GEMINI] skip superseded debounce call=%s", call_id)
+                logger.info("[RETELL-TURN] rid=%s superseded=debounce gpt_calls=0 call=%s", scheduled_rid, call_id)
                 return
 
             if scheduled_rid in answered_response_ids:
                 logger.info(
-                    "[RETELL-GEMINI] skip answered debounced rid=%s call=%s",
+                    "[RETELL-TURN] rid=%s superseded=answered gpt_calls=0 call=%s",
                     scheduled_rid,
                     call_id,
                 )
                 return
 
-            if response_id < active_response_id:
+            superseded, latest_rid = _is_superseded_turn_rid(
+                scheduled_rid,
+                scheduled_key,
+                turn_latest_rid,
+            )
+            if superseded:
                 logger.info(
-                    "[RETELL-GEMINI] skip stale rid=%s active=%s",
-                    response_id,
+                    "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s",
+                    scheduled_rid,
+                    latest_rid,
+                    call_id,
+                )
+                return
+
+            if scheduled_rid < active_response_id:
+                logger.info(
+                    "[RETELL-TURN] rid=%s superseded=active_%s gpt_calls=0 call=%s",
+                    scheduled_rid,
                     active_response_id,
+                    call_id,
+                )
+                return
+
+            if turn_draft_in_progress and scheduled_key and scheduled_key == turn_draft_user_key:
+                logger.info(
+                    "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s",
+                    scheduled_rid,
+                    call_id,
                 )
                 return
 
@@ -442,20 +515,62 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
             )
             if conversational_turn:
-                conv_request = ResponseRequiredRequest(
-                    interaction_type=interaction,
-                    response_id=response_id,
-                    transcript=transcript,
-                )
-                reply = await llm.draft_conversational_response(conv_request)
+                async with response_lock:
+                    superseded, latest_rid = _is_superseded_turn_rid(
+                        scheduled_rid,
+                        scheduled_key,
+                        turn_latest_rid,
+                    )
+                    if superseded or scheduled_rid < active_response_id:
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=conversational",
+                            scheduled_rid,
+                            latest_rid,
+                            call_id,
+                        )
+                        return
+                    if scheduled_key and scheduled_key == last_answered_user_key:
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
+                            scheduled_rid,
+                            call_id,
+                        )
+                        return
+                    if turn_draft_in_progress:
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s",
+                            scheduled_rid,
+                            call_id,
+                        )
+                        return
+                    turn_draft_in_progress = True
+                    turn_draft_user_key = scheduled_key
+                try:
+                    conv_request = ResponseRequiredRequest(
+                        interaction_type=interaction,
+                        response_id=scheduled_rid,
+                        transcript=transcript,
+                    )
+                    gpt_calls += 1
+                    reply = await llm.draft_conversational_response(conv_request)
+                finally:
+                    turn_draft_in_progress = False
+                    turn_draft_user_key = ""
                 if reply:
                     async with response_lock:
                         await send_voice_response(
-                            response_id=response_id,
+                            response_id=scheduled_rid,
                             content=reply,
-                            user_key=user_key,
+                            user_key=scheduled_key,
                             generation=my_generation,
                         )
+                    logger.info(
+                        "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=conversational",
+                        scheduled_rid,
+                        turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
+                        gpt_calls,
+                        call_id,
+                    )
                     logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
                     return
                 logger.warning(
@@ -482,13 +597,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     if is_vision:
                         tool_args["pregunta"] = user_text
                     try:
+                        cam_timeout = 10.0 if camera_tool == "request_camera_activation" else (
+                            40.0 if is_vision else 12.0
+                        )
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(camera_tool, uid, tool_args),
-                            timeout=40.0 if is_vision else 12.0,
+                            timeout=cam_timeout,
                         )
                     except asyncio.TimeoutError:
                         tool_result = {
-                            "spoken": "No pude completar el análisis visual, señor.",
+                            "spoken": (
+                                "No pude activar la cámara, señor. ¿Intentamos de nuevo?"
+                                if camera_tool == "request_camera_activation"
+                                else "No pude completar el análisis visual, señor."
+                            ),
                         }
                     spoken = str(tool_result.get("spoken") or "").strip()
                     if is_vision:
@@ -504,9 +626,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             last_answered_user_key = user_key
                     else:
                         await send_voice_response(
-                            response_id=response_id,
+                            response_id=scheduled_rid,
                             content=spoken or "Completado, señor.",
-                            user_key=user_key,
+                            user_key=scheduled_key,
+                            generation=my_generation,
                         )
                 logger.info("[RETELL-GEMINI] camera call=%s tool=%s", call_id, camera_tool)
                 return
@@ -519,6 +642,29 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     user_id=uid,
                 )
             if meta_req and uid:
+                import time as _time
+
+                guard_key = f"{uid}:{_normalize_user_key(meta_req.get('caption') or user_text)}"
+                prev = meta_publish_guard.get(guard_key, 0.0)
+                if _time.time() - prev < 30.0:
+                    logger.info(
+                        "[RETELL-OPENAI] meta_publish skip duplicate turn call=%s key=%s",
+                        call_id,
+                        guard_key[:48],
+                    )
+                    dup_spoken = (
+                        "Publicación enviada con éxito a Instagram, señor."
+                        if meta_req.get("platform") == "instagram"
+                        else "Publicación enviada con éxito a Facebook, señor."
+                    )
+                    async with response_lock:
+                        await send_voice_response(
+                            response_id=response_id,
+                            content=dup_spoken,
+                            user_key=user_key,
+                            generation=my_generation,
+                        )
+                    return
                 clear_pending_advanced_topic(call_id)
                 llm._pending_advanced = None
                 tool_name = (
@@ -558,6 +704,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         user_key=user_key,
                         generation=my_generation,
                     )
+                meta_publish_guard[guard_key] = _time.time()
                 logger.info(
                     "[RETELL-OPENAI] meta_publish call=%s tool=%s caption=%s",
                     call_id,
@@ -653,10 +800,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 return
 
-            if advanced_req and is_script_demo_request(advanced_req):
-                set_pending_advanced_topic(call_id, advanced_req)
-                llm._pending_advanced = advanced_req
-            if advanced_req and uid and should_execute_advanced_now(user_text, advanced_req):
+            if (
+                is_explicit_advanced_activation(user_text)
+                and uid
+                and not is_camera_voice_command(user_text)
+            ):
+                topic = fallback_advanced_topic(transcript, pending_topic=pending_now) or user_text
                 hold = advanced_analysis_hold_phrase()
                 async with response_lock:
                     if response_id < active_response_id:
@@ -672,30 +821,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             execute_voice_tool(
                                 "consultar_claude",
                                 uid,
-                                {"prompt": advanced_req},
+                                {"prompt": topic},
                             ),
                             timeout=45.0,
                         )
                     except asyncio.TimeoutError:
-                        logger.warning("[RETELL-GEMINI] advanced timeout call=%s", call_id)
+                        logger.warning("[RETELL-OPENAI] advanced timeout call=%s", call_id)
                         tool_result = {
                             "spoken": (
                                 "El sistema avanzado tardó demasiado, señor. "
                                 "¿Desea que lo intente de nuevo?"
                             ),
                         }
-                    if response_id < active_response_id:
-                        logger.info("[RETELL-GEMINI] drop stale advanced rid=%s", response_id)
-                        return
                     spoken = str(tool_result.get("spoken") or "").strip()
-                    if not spoken or spoken.startswith("No fue posible"):
-                        chunks = [
-                            (
-                                spoken
-                                or "Disculpe, señor. No pude completar el análisis avanzado.",
-                                True,
-                            )
-                        ]
+                    if not spoken:
+                        chunks = [("Disculpe, señor. No pude completar el análisis avanzado.", True)]
                     else:
                         chunks = split_voice_delivery_chunks(spoken)
                     for chunk, complete in chunks:
@@ -713,175 +853,154 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         last_answered_user_key = user_key
                     clear_pending_advanced_topic(call_id)
                     llm._pending_advanced = None
-                    mark_script_delivered(call_id)
                 logger.info(
-                    "[RETELL-GEMINI] advanced call=%s topic=%s chars=%s",
+                    "[RETELL-OPENAI] advanced explicit call=%s topic=%s",
                     call_id,
-                    advanced_req[:80],
-                    len(spoken),
+                    topic[:80],
                 )
                 return
 
-            if (
-                has_advanced_confirmation(user_text)
-                or is_explicit_advanced_activation(user_text)
-            ) and uid and not is_camera_voice_command(user_text) and not is_script_delivered(call_id):
-                if not (
-                    transcript_has_meta_publish_context(transcript)
-                    or is_meta_publish_intent(user_text)
-                ):
-                    topic = fallback_advanced_topic(transcript, pending_topic=pending_now)
-                    logger.warning(
-                        "[RETELL-GEMINI] confirm sin ruta advanced — forzando topic=%s",
-                        topic[:80],
-                    )
-                    advanced_req = topic
-                    if should_execute_advanced_now(user_text, advanced_req):
-                        hold = advanced_analysis_hold_phrase()
-                        async with response_lock:
-                            if response_id < active_response_id:
-                                return
-                            await send_voice_partial(
-                                response_id=response_id,
-                                content=hold,
-                                content_complete=False,
-                                generation=my_generation,
-                            )
-                            try:
-                                tool_result = await asyncio.wait_for(
-                                    execute_voice_tool(
-                                        "consultar_claude",
-                                        uid,
-                                        {"prompt": advanced_req},
-                                    ),
-                                    timeout=45.0,
-                                )
-                            except asyncio.TimeoutError:
-                                tool_result = {
-                                    "spoken": (
-                                        "El sistema avanzado tardó demasiado, señor. "
-                                        "¿Desea que lo intente de nuevo?"
-                                    ),
-                                }
-                            spoken = str(tool_result.get("spoken") or "").strip()
-                            if not spoken:
-                                chunks = [("Disculpe, señor. No pude completar el análisis.", True)]
-                            else:
-                                chunks = split_voice_delivery_chunks(spoken)
-                            for chunk, complete in chunks:
-                                await send_voice_partial(
-                                    response_id=response_id,
-                                    content=chunk,
-                                    content_complete=complete,
-                                    generation=my_generation,
-                                )
-                            active_response_id = response_id
-                            answered_response_ids.add(response_id)
-                            if user_key:
-                                last_answered_user_key = user_key
-                            clear_pending_advanced_topic(call_id)
-                            llm._pending_advanced = None
-                            mark_script_delivered(call_id)
-                        return
-                else:
-                    logger.info("[RETELL-GEMINI] skip advanced confirm — meta publish context")
-
             request = ResponseRequiredRequest(
                 interaction_type=interaction,  # type: ignore[arg-type]
-                response_id=response_id,
+                response_id=scheduled_rid,
                 transcript=transcript,
             )
 
             async with response_lock:
-                if response_id < active_response_id:
+                superseded, latest_rid = _is_superseded_turn_rid(
+                    scheduled_rid,
+                    scheduled_key,
+                    turn_latest_rid,
+                )
+                if superseded or scheduled_rid < active_response_id:
+                    logger.info(
+                        "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=draft",
+                        scheduled_rid,
+                        latest_rid,
+                        call_id,
+                    )
                     return
+                if scheduled_key and scheduled_key == last_answered_user_key:
+                    logger.info(
+                        "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
+                        scheduled_rid,
+                        call_id,
+                    )
+                    return
+                if turn_draft_in_progress:
+                    logger.info(
+                        "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s",
+                        scheduled_rid,
+                        call_id,
+                    )
+                    return
+                turn_draft_in_progress = True
+                turn_draft_user_key = scheduled_key
 
-                try:
-                    final_event = None
-                    async for event in llm.draft_response(request):
-                        if event.response_id < active_response_id:
-                            break
-                        final_event = event
-                    if final_event is not None:
-                        content = (final_event.content or "").strip() or FALLBACK_REPLY
-                        if is_unwanted_voice_reply(content, user_text=user_text):
-                            logger.warning(
-                                "[RETELL-GEMINI] bloqueado relleno chatbot call=%s text=%s reply=%s",
-                                call_id,
-                                user_text[:60],
-                                content[:80],
-                            )
-                            if (
-                                has_advanced_confirmation(user_text)
-                                or is_explicit_advanced_activation(user_text)
-                            ) and uid:
-                                topic = fallback_advanced_topic(
-                                    transcript,
-                                    pending_topic=get_pending_advanced_topic(call_id),
-                                )
-                                tool_result = await asyncio.wait_for(
-                                    execute_voice_tool(
-                                        "consultar_claude",
-                                        uid,
-                                        {"prompt": topic},
-                                    ),
-                                    timeout=45.0,
-                                )
-                                content = str(tool_result.get("spoken") or "").strip() or FALLBACK_REPLY
-                            elif _is_concept_question(user_text):
-                                from app.services.internal_knowledge import (
-                                    format_hits_for_prompt,
-                                    search_internal_knowledge,
-                                )
+            try:
+                gpt_calls += 1
+                async with response_lock:
+                    if scheduled_rid < active_response_id:
+                        return
 
-                                hits = search_internal_knowledge(user_text, limit=2)
-                                if hits:
-                                    content = format_hits_for_prompt(hits)
+                    try:
+                        final_event = None
+                        async for event in llm.draft_response(request):
+                            if event.response_id < active_response_id:
+                                break
+                            final_event = event
+                        if final_event is not None:
+                            content = (final_event.content or "").strip() or FALLBACK_REPLY
+                            if is_unwanted_voice_reply(content, user_text=user_text):
+                                logger.warning(
+                                    "[RETELL-GEMINI] bloqueado relleno chatbot call=%s text=%s reply=%s",
+                                    call_id,
+                                    user_text[:60],
+                                    content[:80],
+                                )
+                                if (
+                                    has_advanced_confirmation(user_text)
+                                    or is_explicit_advanced_activation(user_text)
+                                ) and uid:
+                                    topic = fallback_advanced_topic(
+                                        transcript,
+                                        pending_topic=get_pending_advanced_topic(call_id),
+                                    )
+                                    tool_result = await asyncio.wait_for(
+                                        execute_voice_tool(
+                                            "consultar_claude",
+                                            uid,
+                                            {"prompt": topic},
+                                        ),
+                                        timeout=45.0,
+                                    )
+                                    content = str(tool_result.get("spoken") or "").strip() or FALLBACK_REPLY
+                                elif _is_concept_question(user_text):
+                                    from app.services.internal_knowledge import (
+                                        format_hits_for_prompt,
+                                        search_internal_knowledge,
+                                    )
+
+                                    hits = search_internal_knowledge(user_text, limit=2)
+                                    if hits:
+                                        content = format_hits_for_prompt(hits)
+                                    else:
+                                        content = FALLBACK_REPLY
+                                elif is_casual_conversation(user_text):
+                                    reformed = await llm.generate_empathetic_reformulation(
+                                        user_text,
+                                        transcript=transcript,
+                                        bad_reply=content,
+                                    )
+                                    if reformed:
+                                        content = reformed
+                                    else:
+                                        conv = await llm.draft_conversational_response(request)
+                                        if conv:
+                                            content = conv
                                 else:
                                     content = FALLBACK_REPLY
-                            elif is_casual_conversation(user_text):
-                                reformed = await llm.generate_empathetic_reformulation(
-                                    user_text,
-                                    transcript=transcript,
-                                    bad_reply=content,
-                                )
-                                if reformed:
-                                    content = reformed
-                                else:
-                                    conv = await llm.draft_conversational_response(request)
-                                    if conv:
-                                        content = conv
-                            else:
-                                content = FALLBACK_REPLY
-                        await send_voice_response(
-                            response_id=response_id,
-                            content=content,
-                            user_key=user_key,
-                        )
-                    elif response_id >= active_response_id:
-                        logger.warning(
-                            "[RETELL-GEMINI] empty draft_response call=%s rid=%s text=%s",
+                            await send_voice_response(
+                                response_id=scheduled_rid,
+                                content=content,
+                                user_key=scheduled_key,
+                                generation=my_generation,
+                            )
+                        elif scheduled_rid >= active_response_id:
+                            logger.warning(
+                                "[RETELL-GEMINI] empty draft_response call=%s rid=%s text=%s",
+                                call_id,
+                                scheduled_rid,
+                                user_text[:80],
+                            )
+                            await send_voice_response(
+                                response_id=scheduled_rid,
+                                content=FALLBACK_REPLY,
+                                user_key=scheduled_key,
+                                generation=my_generation,
+                            )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "[RETELL-GEMINI] draft_response error call=%s last=%s",
                             call_id,
-                            response_id,
                             user_text[:80],
                         )
                         await send_voice_response(
-                            response_id=response_id,
+                            response_id=scheduled_rid,
                             content=FALLBACK_REPLY,
-                            user_key=user_key,
+                            user_key=scheduled_key,
+                            generation=my_generation,
                         )
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "[RETELL-GEMINI] draft_response error call=%s last=%s",
-                        call_id,
-                        user_text[:80],
-                    )
-                    await send_voice_response(
-                        response_id=response_id,
-                        content=FALLBACK_REPLY,
-                        user_key=user_key,
-                        generation=my_generation,
-                    )
+            finally:
+                turn_draft_in_progress = False
+                turn_draft_user_key = ""
+                logger.info(
+                    "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft",
+                    scheduled_rid,
+                    turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
+                    gpt_calls,
+                    call_id,
+                )
 
         debounce_task = asyncio.create_task(run_debounced())
 

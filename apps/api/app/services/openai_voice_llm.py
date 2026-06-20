@@ -50,7 +50,7 @@ PROVIDER = "openai"
 def _voice_model() -> str:
     settings = get_settings()
     model = getattr(settings, "openai_model_retell_llm", "") or ""
-    return model.strip() or "gpt-4.1"
+    return model.strip() or "gpt-4.1-mini-2025-04-14"
 
 
 def _api_key() -> str:
@@ -81,6 +81,7 @@ class OpenAIVoiceLlm:
         self._seed_history: list[dict[str, Any]] = []
         self._session_started = time.monotonic()
         self._turn_count = 0
+        self._current_user_text = ""
         self._context_loaded_for: str | None = None
         self._pending_advanced: str | None = None
 
@@ -257,43 +258,15 @@ class OpenAIVoiceLlm:
         return None
 
     async def draft_greeting(self) -> str:
-        messages = [
-            {
-                "role": "user",
-                "content": "[conexión de voz — saludo inicial, el usuario aún no habla]",
-            }
-        ]
-        text = await self.generate_natural_reply(
-            messages=messages,
-            user_text="",
-            overlay=GREETING_OVERLAY,
-            path="greeting",
-            timeout_sec=GREETING_TIMEOUT_SEC,
-            max_tokens=80,
-            temperature=0.7,
+        from app.services.voice_greetings import pick_jarvis_greeting
+
+        greeting = pick_jarvis_greeting(self.user_id)
+        logger.info(
+            "[RETELL-OPENAI] greeting pool user=%s chars=%s",
+            (self.user_id or "?")[:8],
+            len(greeting),
         )
-        if text and not needs_empathy_reformulation(text):
-            return text
-        retry = await self.generate_natural_reply(
-            messages=messages,
-            user_text="",
-            overlay=f"{GREETING_OVERLAY}\n\nReintenta: una sola frase cálida, sin clichés de mayordomo.",
-            path="greeting_retry",
-            timeout_sec=GREETING_TIMEOUT_SEC,
-            max_tokens=80,
-            temperature=0.75,
-        )
-        if retry:
-            return retry
-        delay = await self.generate_natural_reply(
-            messages=messages,
-            user_text="",
-            overlay=DELAY_ACK_OVERLAY,
-            path="greeting_delay_ack",
-            timeout_sec=GREETING_TIMEOUT_SEC,
-            max_tokens=60,
-        )
-        return delay or FALLBACK_REPLY
+        return greeting
 
     async def draft_reminder(self, transcript: list[Utterance]) -> str:
         messages = transcript_to_openai_messages(transcript)
@@ -385,6 +358,28 @@ class OpenAIVoiceLlm:
             )
             if not self.user_id:
                 spoken = "No identifiqué al usuario, señor."
+            elif name == "consultar_claude":
+                from app.services.cognitive_intents import is_explicit_advanced_activation
+
+                if not is_explicit_advanced_activation(self._current_user_text):
+                    logger.info(
+                        "[RETELL-OPENAI] blocked consultar_claude — no explicit activation user=%s",
+                        (self.user_id or "?")[:8],
+                    )
+                    spoken = (
+                        "Respondo directamente, señor. El sistema avanzado solo se activa "
+                        "cuando usted lo solicite explícitamente."
+                    )
+                else:
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(name, self.user_id, args),
+                            timeout=TOOL_TIMEOUT_SEC,
+                        )
+                        spoken = str(tool_result.get("spoken") or "Completado, señor.")
+                    except asyncio.TimeoutError:
+                        logger.warning("[RETELL-OPENAI] tool timeout name=%s", name)
+                        spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
             else:
                 try:
                     tool_result = await asyncio.wait_for(
@@ -421,29 +416,22 @@ class OpenAIVoiceLlm:
         if not user_text:
             return
 
+        self._current_user_text = user_text
         max_tokens, timeout_sec = voice_generation_limits(user_text)
         system = build_voice_system(self.user_id, user_text)
 
-        from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
-        from app.services.internal_knowledge import best_internal_answer, should_use_internal_brain
+        from app.services.knowledge_router import level_system_overlay, route_knowledge
         from app.services.retell_custom_llm import is_generic_agent_line
 
-        internal_hit = best_internal_answer(user_text)
-        use_internal = (
-            internal_hit
-            and should_use_internal_brain(user_text, internal_hit)
-            and (is_internal_knowledge_query(user_text) or not requires_live_web(user_text))
-        )
-        if use_internal:
+        route = route_knowledge(user_text)
+        system = f"{system}\n\n{level_system_overlay(route)}"
+
+        if route.level == "LEVEL-1" and route.inject:
             try:
                 data = await self._chat_completion(
                     messages=[*self._history, last],
-                    system=(
-                        f"{system}\n\n"
-                        "Responde SOLO con conocimiento interno CED. "
-                        "PROHIBIDO invocar search_web o decir que buscas en internet."
-                    ),
-                    path="internal_brain",
+                    system=system,
+                    path="level1_internal",
                     timeout_sec=timeout_sec,
                     max_tokens=max_tokens,
                     temperature=0.4,
@@ -455,7 +443,7 @@ class OpenAIVoiceLlm:
                 if blocked:
                     internal_text = ""
                 if internal_text and not is_generic_agent_line(internal_text):
-                    log_voice_delivery(PROVIDER, "internal_brain", internal_text, user_text=user_text)
+                    log_voice_delivery(PROVIDER, "level1_internal", internal_text, user_text=user_text)
                     self._history = truncate_messages(
                         [
                             *self._history,
@@ -472,7 +460,7 @@ class OpenAIVoiceLlm:
                     )
                     return
             except (asyncio.TimeoutError, Exception):  # noqa: BLE001
-                logger.warning("[RETELL-OPENAI] internal_brain fallback to tools")
+                logger.warning("[RETELL-OPENAI] level1 fallback to tools")
 
         logger.info(
             "[RETELL-OPENAI] user=%s text=%s turns=%s hist=%s",

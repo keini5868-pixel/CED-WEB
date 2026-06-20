@@ -69,7 +69,7 @@ class Settings(BaseSettings):
     openai_model_chat: str = "gpt-4o"
     openai_model_chat_lite: str = "gpt-4o-mini"
     openai_model_voice: str = "gpt-realtime"
-    openai_model_retell_llm: str = "gpt-4.1"
+    openai_model_retell_llm: str = "gpt-4.1-mini-2025-04-14"
     openai_model_image: str = "gpt-image-1"
     openai_default_voice: str = "cedar"
     cost_tracking_enabled: bool = True
@@ -118,6 +118,8 @@ class Settings(BaseSettings):
     retell_voice_model: str = ""
     retell_voice_speed: float = 0.0
     retell_voice_temperature: float = 0.0
+    # Provider voice ID Cartesia (opcional — Retell usa RETELL_VOICE_ID en prod)
+    cartesia_jarvis_voice_id: str = ""
     support_chat_enabled: bool = True
 
     @model_validator(mode="after")
