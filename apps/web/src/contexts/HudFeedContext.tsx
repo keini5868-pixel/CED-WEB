@@ -69,18 +69,20 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
       setVoiceItems((prev) => {
         if (role === "model" && prev.length > 0) {
           const head = prev[0];
-          const sameTurn =
-            head.role === "model" &&
-            (partial || head.partial || Date.now() - head.at < 45_000);
-          if (sameTurn) {
-            const merged: HudFeedItem = {
-              ...head,
-              text: trimmed,
-              at: Date.now(),
-              partial,
-              role: "model",
-            };
-            return [merged, ...prev.slice(1)];
+          if (head) {
+            const sameTurn =
+              head.role === "model" &&
+              (partial || head.partial || Date.now() - head.at < 45_000);
+            if (sameTurn) {
+              const merged: HudFeedItem = {
+                ...head,
+                text: trimmed,
+                at: Date.now(),
+                partial,
+                role: "model",
+              };
+              return [merged, ...prev.slice(1)];
+            }
           }
         }
         const next: HudFeedItem[] = [
