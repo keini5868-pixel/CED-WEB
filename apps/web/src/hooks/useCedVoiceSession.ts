@@ -157,7 +157,7 @@ export interface CedVoiceSessionCallbacks {
   onTranscript?: (
     text: string,
     role: "user" | "model",
-    options?: { partial?: boolean },
+    options?: { partial?: boolean; streamKey?: string },
   ) => void;
   /** Imagen generada (voz) — abrir chat / preview */
   onGeneratedImage?: (url: string, prompt?: string) => void;

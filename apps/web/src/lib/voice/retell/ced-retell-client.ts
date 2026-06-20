@@ -1,5 +1,7 @@
 import { RetellWebClient } from "retell-client-js-sdk";
 
+import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
+
 /** Tipos mínimos — livekit-client es transitiva vía retell; no importar directo (rompe next build). */
 type RetellLiveRoom = {
   remoteParticipants: Map<
@@ -21,7 +23,7 @@ export interface CedRetellCallbacks {
   onTranscript?: (
     text: string,
     role: RetellTranscriptRole,
-    options?: { partial?: boolean },
+    options?: { partial?: boolean; streamKey?: string },
   ) => void;
   onError?: (message: string) => void;
   onAudioLevel?: (level: number) => void;
@@ -57,6 +59,8 @@ export class CedRetellClient {
   private audioPlaybackStarted = false;
   private agentSpeaking = false;
   private agentMutedForBargeIn = false;
+  private agentTurnSeq = 0;
+  private currentAgentStreamKey = "";
 
   constructor() {
     this.client = new RetellWebClient();
@@ -204,6 +208,19 @@ export class CedRetellClient {
     return latest;
   }
 
+  private emitAgentTranscript(text: string, partial: boolean): void {
+    const sanitized = sanitizeHudTranscript(text);
+    if (!sanitized) return;
+    if (!this.currentAgentStreamKey) {
+      this.agentTurnSeq += 1;
+      this.currentAgentStreamKey = `agent-${this.agentTurnSeq}`;
+    }
+    this.callbacks.onTranscript?.(sanitized, "agent", {
+      partial,
+      streamKey: this.currentAgentStreamKey,
+    });
+  }
+
   private setupListeners(): void {
     this.client.on("call_started", () => {
       this.liveKitConnected = true;
@@ -234,6 +251,8 @@ export class CedRetellClient {
     this.client.on("agent_start_talking", () => {
       this.restoreAgentPlayback();
       this.agentSpeaking = true;
+      this.agentTurnSeq += 1;
+      this.currentAgentStreamKey = `agent-${this.agentTurnSeq}`;
       this.callbacks.onAgentTalking?.(true);
     });
 
@@ -243,8 +262,9 @@ export class CedRetellClient {
       this.callbacks.onAgentTalking?.(false);
       if (this.lastAgentLine && this.lastAgentLine !== this.lastPersistedAgentLine) {
         this.lastPersistedAgentLine = this.lastAgentLine;
-        this.callbacks.onTranscript?.(this.lastAgentLine, "agent", { partial: false });
+        this.emitAgentTranscript(this.lastAgentLine, false);
       }
+      this.currentAgentStreamKey = "";
     });
 
     this.client.on("update", (update: RetellUpdateEvent) => {
@@ -275,7 +295,7 @@ export class CedRetellClient {
       if (!agentText || agentText === this.lastAgentLine) return;
       this.lastAgentLine = agentText;
       if (this.agentSpeaking) {
-        this.callbacks.onTranscript?.(agentText, "agent", { partial: true });
+        this.emitAgentTranscript(agentText, true);
       }
     });
 
@@ -328,6 +348,8 @@ export class CedRetellClient {
     this.audioPlaybackStarted = false;
     this.agentSpeaking = false;
     this.agentMutedForBargeIn = false;
+    this.agentTurnSeq = 0;
+    this.currentAgentStreamKey = "";
     retellLog("startCall", { callId: this.callId });
 
     await this.client.startCall({

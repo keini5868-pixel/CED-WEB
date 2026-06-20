@@ -9,6 +9,8 @@ import {
   type ReactNode,
 } from "react";
 
+import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
+
 export type HudFeedKind = "voice" | "news" | "stat" | "report" | "image";
 
 export interface HudFeedItem {
@@ -20,6 +22,12 @@ export interface HudFeedItem {
   imagePrompt?: string;
   role?: "user" | "model";
   partial?: boolean;
+  streamKey?: string;
+}
+
+export interface HudVoiceLineOptions {
+  partial?: boolean;
+  streamKey?: string;
 }
 
 interface HudFeedContextValue {
@@ -30,7 +38,7 @@ interface HudFeedContextValue {
   pushVoiceLine: (
     text: string,
     role: "user" | "model",
-    options?: { partial?: boolean },
+    options?: HudVoiceLineOptions,
   ) => void;
   pushVoiceImage: (url: string, prompt?: string) => void;
 }
@@ -44,7 +52,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
   const [voiceItems, setVoiceItems] = useState<HudFeedItem[]>([]);
 
   const pushLine = useCallback((text: string, kind: HudFeedKind = "voice") => {
-    const trimmed = text.replace(/\s+/g, " ").trim();
+    const trimmed = sanitizeHudTranscript(text);
     if (!trimmed) return;
     setItems((prev) => {
       const next: HudFeedItem[] = [
@@ -61,30 +69,54 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const pushVoiceLine = useCallback(
-    (text: string, role: "user" | "model", options?: { partial?: boolean }) => {
-      const trimmed = text.replace(/\s+/g, " ").trim();
+    (text: string, role: "user" | "model", options?: HudVoiceLineOptions) => {
+      const trimmed = sanitizeHudTranscript(text);
       if (!trimmed) return;
       const kind: HudFeedKind = role === "user" ? "voice" : "report";
       const partial = options?.partial ?? false;
+      const streamKey = options?.streamKey;
+
       setVoiceItems((prev) => {
+        if (streamKey) {
+          const idx = prev.findIndex(
+            (item) => item.streamKey === streamKey && item.role === role,
+          );
+          if (idx >= 0) {
+            const existing = prev[idx];
+            if (!existing) return prev;
+            const merged: HudFeedItem = {
+              ...existing,
+              text: trimmed,
+              at: Date.now(),
+              partial,
+              kind,
+              role,
+            };
+            return [merged, ...prev.filter((_, i) => i !== idx)].slice(0, MAX_ITEMS);
+          }
+        }
+
         if (role === "model" && prev.length > 0) {
           const head = prev[0];
-          if (head) {
+          if (head?.role === "model") {
             const sameTurn =
-              head.role === "model" &&
-              (partial || head.partial || Date.now() - head.at < 45_000);
-            if (sameTurn) {
+              partial ||
+              head.partial ||
+              Date.now() - head.at < 45_000;
+            if (sameTurn && (streamKey ? head.streamKey === streamKey : true)) {
               const merged: HudFeedItem = {
                 ...head,
                 text: trimmed,
                 at: Date.now(),
                 partial,
                 role: "model",
+                streamKey: streamKey ?? head.streamKey,
               };
               return [merged, ...prev.slice(1)];
             }
           }
         }
+
         const next: HudFeedItem[] = [
           {
             id: `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -93,6 +125,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
             at: Date.now(),
             role,
             partial,
+            streamKey,
           },
           ...prev,
         ];
