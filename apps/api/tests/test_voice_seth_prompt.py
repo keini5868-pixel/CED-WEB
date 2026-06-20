@@ -5,14 +5,19 @@ from app.services.gemini_voice_llm import _needs_empathy_reformulation
 from app.services.retell_custom_llm import is_casual_conversation, is_generic_agent_line
 
 
-def test_voice_prompt_includes_seth_and_anti_transactional():
+def test_voice_prompt_includes_seth_v36_strict_execution():
     prompt = build_ced_voice_system_prompt()
     assert "Seth" in prompt
-    assert "Castillo de la Evolución Digital" in prompt
+    assert "Castillo Evolución Digital" in prompt
     assert "bot transaccional" in prompt
+    assert "REGLA INVIOLABLE" in prompt
+    assert "EJECUCIÓN DE HERRAMIENTAS" in prompt
+    assert "NUNCA inventes comentarios" in prompt
     diag = voice_prompt_diagnostics()
     assert diag["includes_seth"] is True
     assert diag["includes_anti_transactional"] is True
+    assert diag["includes_strict_tool_execution"] is True
+    assert diag["prompt_version"] == "v36"
     assert diag["prompt_chars"] > 4000
 
 
