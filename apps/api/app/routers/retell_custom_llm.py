@@ -15,11 +15,10 @@ from app.services.cognitive_intents import (
     is_meta_publish_intent,
     is_script_demo_request,
 )
-from app.services.gemini_voice_llm import GeminiVoiceLlm, draft_begin_message
+from app.services.gemini_voice_llm import GeminiVoiceLlm
 from app.services.retell_call_registry import release_call_user, resolve_call_user
 from app.services.retell_custom_llm import (
     advanced_analysis_hold_phrase,
-    empathetic_fallback_reply,
     fallback_advanced_topic,
     format_web_delivery,
     is_casual_conversation,
@@ -62,7 +61,6 @@ router = APIRouter(tags=["retell-custom-llm"])
 
 POST_GREETING_COOLDOWN_S = 2.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente. ¿Puede repetir?"
-REMINDER_REPLY = "Sigo atento, señor. ¿Continuamos?"
 
 
 def _normalize_user_key(text: str) -> str:
@@ -146,9 +144,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         post_greeting_ready.clear()
         if greeting_release_task and not greeting_release_task.done():
             greeting_release_task.cancel()
-        begin = draft_begin_message()
-        payload = begin.model_dump()
-        payload["response_id"] = response_id
+        begin_text = await llm.draft_greeting()
+        payload = {
+            "response_type": "response",
+            "response_id": response_id,
+            "content": begin_text,
+            "content_complete": True,
+            "end_call": False,
+        }
         await websocket.send_json(payload)
         mark_greeting_sent(call_id)
         greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
@@ -269,6 +272,25 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)
             return
 
+        if interaction == "reminder_required":
+            transcript_raw = request_json.get("transcript") or []
+            transcript = [
+                Utterance(role=item.get("role", "user"), content=str(item.get("content") or ""))
+                for item in transcript_raw
+                if isinstance(item, dict)
+            ]
+            async with response_lock:
+                if response_id < active_response_id:
+                    return
+                reminder_text = await llm.draft_reminder(transcript)
+                await send_voice_response(
+                    response_id=response_id,
+                    content=reminder_text,
+                    user_key="",
+                )
+            logger.info("[RETELL-GEMINI] silence ping call=%s gemini", call_id)
+            return
+
         if interaction not in ("response_required", "reminder_required"):
             return
 
@@ -278,18 +300,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             for item in transcript_raw
             if isinstance(item, dict)
         ]
-
-        if interaction == "reminder_required":
-            async with response_lock:
-                if response_id < active_response_id:
-                    return
-                await send_voice_response(
-                    response_id=response_id,
-                    content="¿Sigue ahí, señor?",
-                    user_key="",
-                )
-            logger.info("[RETELL-GEMINI] silence ping call=%s", call_id)
-            return
 
         if not should_respond_to_transcript(transcript, interaction_type=interaction):
             logger.info("[RETELL-GEMINI] skip interaction=%s call=%s", interaction, call_id)
@@ -418,17 +428,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     transcript=transcript,
                 )
                 reply = await llm.draft_conversational_response(conv_request)
-                if not reply:
-                    reply = empathetic_fallback_reply(user_text)
-                async with response_lock:
-                    await send_voice_response(
-                        response_id=response_id,
-                        content=reply,
-                        user_key=user_key,
-                        generation=my_generation,
-                    )
-                logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
-                return
+                if reply:
+                    async with response_lock:
+                        await send_voice_response(
+                            response_id=response_id,
+                            content=reply,
+                            user_key=user_key,
+                            generation=my_generation,
+                        )
+                    logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
+                    return
+                logger.warning(
+                    "[RETELL-GEMINI] conversational miss — fallthrough draft_response call=%s",
+                    call_id,
+                )
 
             camera_tool = resolve_camera_voice_request(user_text)
             if camera_tool and uid:
@@ -771,7 +784,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 else:
                                     content = FALLBACK_REPLY
                             elif is_casual_conversation(user_text):
-                                content = empathetic_fallback_reply(user_text)
+                                reformed = await llm.generate_empathetic_reformulation(
+                                    user_text,
+                                    transcript=transcript,
+                                    bad_reply=content,
+                                )
+                                if reformed:
+                                    content = reformed
+                                else:
+                                    conv = await llm.draft_conversational_response(request)
+                                    if conv:
+                                        content = conv
                             else:
                                 content = FALLBACK_REPLY
                         await send_voice_response(

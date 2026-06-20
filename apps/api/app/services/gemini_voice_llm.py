@@ -13,10 +13,9 @@ from google import genai
 from google.genai import types
 
 from app.config import get_settings
-from app.domain.openai_voice_prompt import build_ced_voice_system_prompt
+from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
 from app.services.gemini_voice_tools import build_gemini_voice_tools
 from app.services.retell_custom_llm import (
-    empathetic_fallback_reply,
     is_generic_agent_line,
     is_unwanted_voice_reply,
     merged_user_query,
@@ -27,12 +26,12 @@ from app.services.voice_tool_executor import execute_voice_tool
 
 logger = logging.getLogger(__name__)
 
-BEGIN_SENTENCE = "A su servicio, señor."
 MAX_HISTORY_TURNS = 50
 SESSION_MAX_MINUTES = 30.0
 GEMINI_TIMEOUT_SEC = 14.0
 GEMINI_ADVISORY_TIMEOUT_SEC = 20.0
-GEMINI_CONVERSATIONAL_TIMEOUT_SEC = 10.0
+GEMINI_CONVERSATIONAL_TIMEOUT_SEC = 18.0
+GEMINI_GREETING_TIMEOUT_SEC = 12.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
 TOOL_TIMEOUT_SEC = 25.0
 
@@ -42,6 +41,37 @@ El usuario está en charla personal, saludo casual o comparte algo emocional/cot
 NO invoques herramientas. Responde como Seth: empático, natural, 1-3 oraciones completas.
 PROHIBIDO responder solo "¿En qué puedo ayudarle?" o variantes transaccionales.
 Valida lo que dice antes de ofrecer ayuda. No fuerces tareas ni prospección.
+""".strip()
+
+GREETING_OVERLAY = """
+# SALUDO INICIAL DE VOZ — UNA SOLA FRASE
+Acabas de conectar una llamada de voz. El usuario aún no ha hablado.
+Di UNA sola frase breve, cálida y natural estilo Seth (como en chat empático).
+Válido: "Hola, señor." / "Buenos días, señor." / "Seth en línea, señor."
+PROHIBIDO: monólogo, listar capacidades, "¿En qué puedo ayudarle?", "A su servicio", "operativo".
+""".strip()
+
+REMINDER_OVERLAY = """
+# SILENCIO PROLONGADO
+El usuario lleva un momento en silencio. Usa el transcript para contexto.
+Responde con UNA frase natural y empática — pregunta si sigue ahí, ofrece paciencia,
+o retoma el tema anterior si aplica.
+PROHIBIDO: "Sigo atento", "¿Continuamos?", tono de chatbot de soporte.
+""".strip()
+
+DELAY_ACK_OVERLAY = """
+# DEMORA EN PROCESAR
+La generación tardó. Responde con UNA frase breve que reconozca la demora con calidez.
+Ejemplo: "Permítame un momento, señor." / "Un segundo, señor, ya le respondo."
+NO listes capacidades ni uses "¿En qué puedo ayudarle?"
+""".strip()
+
+REFORMULATE_EMPATHY_OVERLAY = """
+# REFORMULAR CON MÁS EMPATÍA
+Tu respuesta anterior fue demasiado genérica, transaccional o vacía.
+Reescribe con empatía genuina estilo Seth — la misma calidez que el chat de texto CED.
+1-3 oraciones naturales. Valida lo que compartió el usuario antes de ofrecer ayuda.
+PROHIBIDO: "¿En qué puedo ayudarle?", "operativo", "a su servicio", relleno de chatbot.
 """.strip()
 
 
@@ -55,6 +85,21 @@ def _delivery_text(text: str) -> str:
     return " ".join((text or "").split()).strip()
 
 
+def _prompt_sha_prefix() -> str:
+    return str(voice_prompt_diagnostics().get("prompt_sha256_prefix") or "")
+
+
+def _log_gemini_delivery(path: str, text: str, *, user_text: str = "") -> None:
+    logger.info(
+        "[RETELL-GEMINI] response_source=gemini path=%s prompt_sha=%s user=%s chars=%s preview=%s",
+        path,
+        _prompt_sha_prefix(),
+        (user_text or "")[:48],
+        len(text),
+        text[:120],
+    )
+
+
 def _gemini_client() -> genai.Client:
     settings = get_settings()
     api_key = settings.google_api_key.strip()
@@ -66,15 +111,6 @@ def _gemini_client() -> genai.Client:
 def _voice_model() -> str:
     settings = get_settings()
     return settings.gemini_voice_model.strip() or "gemini-2.5-flash"
-
-
-def draft_begin_message() -> ResponseResponse:
-    return ResponseResponse(
-        response_id=0,
-        content=BEGIN_SENTENCE,
-        content_complete=True,
-        end_call=False,
-    )
 
 
 def _transcript_to_contents(transcript: list[Utterance]) -> list[types.Content]:
@@ -186,6 +222,16 @@ def _function_call_args(function_call: types.FunctionCall) -> dict[str, Any]:
         return {}
 
 
+def _needs_empathy_reformulation(text: str, *, user_text: str = "") -> bool:
+    if not text or not text.strip():
+        return True
+    if is_unwanted_voice_reply(text, user_text=user_text):
+        return True
+    if is_generic_agent_line(text) and len(text) < 72:
+        return True
+    return False
+
+
 class GeminiVoiceLlm:
     """Sesión Gemini por llamada Retell — mantiene historial en memoria."""
 
@@ -263,9 +309,10 @@ class GeminiVoiceLlm:
     ) -> types.GenerateContentResponse:
         limit = timeout_sec if timeout_sec is not None else GEMINI_TIMEOUT_SEC
         logger.info(
-            "[RETELL-GEMINI] model_call start path=%s model=%s user=%s ts=%.3f",
+            "[RETELL-GEMINI] model_call start path=%s model=%s prompt_sha=%s user=%s ts=%.3f",
             path,
             self.model,
+            _prompt_sha_prefix(),
             (self.user_id or "?")[:8],
             time.time(),
         )
@@ -280,19 +327,159 @@ class GeminiVoiceLlm:
             )
         except Exception:
             logger.warning(
-                "[RETELL-GEMINI] model_call failed path=%s user=%s ts=%.3f",
+                "[RETELL-GEMINI] model_call failed path=%s prompt_sha=%s user=%s ts=%.3f",
                 path,
+                _prompt_sha_prefix(),
                 (self.user_id or "?")[:8],
                 time.time(),
             )
             raise
         logger.info(
-            "[RETELL-GEMINI] model_call done path=%s user=%s ts=%.3f",
+            "[RETELL-GEMINI] model_call done path=%s prompt_sha=%s user=%s ts=%.3f",
             path,
+            _prompt_sha_prefix(),
             (self.user_id or "?")[:8],
             time.time(),
         )
         return response
+
+    async def generate_natural_reply(
+        self,
+        *,
+        contents: list[types.Content],
+        user_text: str,
+        overlay: str,
+        path: str,
+        timeout_sec: float = GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
+        max_tokens: int = 320,
+        temperature: float = 0.65,
+        with_tools: bool = False,
+    ) -> str | None:
+        system = f"{_build_voice_system(self.user_id, user_text)}\n\n{overlay}"
+        config = types.GenerateContentConfig(
+            system_instruction=system,
+            tools=[self.tools] if with_tools else None,
+            temperature=temperature,
+            max_output_tokens=max_tokens,
+        )
+        try:
+            response = await self._generate_with_timeout(
+                contents=contents,
+                config=config,
+                timeout_sec=timeout_sec,
+                path=path,
+            )
+        except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+            return None
+        text = _delivery_text(_extract_text(response))
+        if not text:
+            return None
+        _log_gemini_delivery(path, text, user_text=user_text)
+        return text
+
+    async def generate_empathetic_reformulation(
+        self,
+        user_text: str,
+        *,
+        transcript: list[Utterance] | None = None,
+        bad_reply: str = "",
+    ) -> str | None:
+        contents = _transcript_to_contents(transcript or [])
+        if not contents:
+            prompt = user_text.strip() or "[mensaje del usuario]"
+            contents = [types.Content(role="user", parts=[types.Part(text=prompt)])]
+        else:
+            last = contents[-1]
+            if last.role != "user":
+                contents.append(
+                    types.Content(role="user", parts=[types.Part(text=user_text.strip())]),
+                )
+        history = self._resolve_history(contents)
+        last = contents[-1]
+        overlay = REFORMULATE_EMPATHY_OVERLAY
+        if bad_reply.strip():
+            overlay = (
+                f"{overlay}\n\nRespuesta deficiente a reemplazar: \"{bad_reply.strip()[:240]}\""
+            )
+        reply = await self.generate_natural_reply(
+            contents=[*history, last],
+            user_text=user_text,
+            overlay=overlay,
+            path="reformulate_empathy",
+            timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
+            temperature=0.72,
+        )
+        if reply and not _needs_empathy_reformulation(reply, user_text=user_text):
+            return reply
+        return None
+
+    async def draft_greeting(self) -> str:
+        contents = [
+            types.Content(
+                role="user",
+                parts=[types.Part(text="[conexión de voz — saludo inicial, el usuario aún no habla]")],
+            )
+        ]
+        text = await self.generate_natural_reply(
+            contents=contents,
+            user_text="",
+            overlay=GREETING_OVERLAY,
+            path="greeting",
+            timeout_sec=GEMINI_GREETING_TIMEOUT_SEC,
+            max_tokens=80,
+            temperature=0.7,
+        )
+        if text and not _needs_empathy_reformulation(text):
+            return text
+        retry = await self.generate_natural_reply(
+            contents=contents,
+            user_text="",
+            overlay=f"{GREETING_OVERLAY}\n\nReintenta: una sola frase cálida, sin clichés de mayordomo.",
+            path="greeting_retry",
+            timeout_sec=GEMINI_GREETING_TIMEOUT_SEC,
+            max_tokens=80,
+            temperature=0.75,
+        )
+        if retry:
+            return retry
+        logger.warning("[RETELL-GEMINI] greeting gemini failed — delay_ack fallback")
+        delay = await self.generate_natural_reply(
+            contents=contents,
+            user_text="",
+            overlay=DELAY_ACK_OVERLAY,
+            path="greeting_delay_ack",
+            timeout_sec=GEMINI_GREETING_TIMEOUT_SEC,
+            max_tokens=60,
+        )
+        return delay or FALLBACK_REPLY
+
+    async def draft_reminder(self, transcript: list[Utterance]) -> str:
+        contents = _transcript_to_contents(transcript)
+        if not contents:
+            contents = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part(text="[silencio prolongado en la llamada]")],
+                )
+            ]
+        user_text = merged_user_query(transcript) if transcript else ""
+        text = await self.generate_natural_reply(
+            contents=contents,
+            user_text=user_text,
+            overlay=REMINDER_OVERLAY,
+            path="reminder",
+            timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
+            max_tokens=120,
+            temperature=0.65,
+        )
+        if text and not _needs_empathy_reformulation(text, user_text=user_text):
+            return text
+        retry = await self.generate_empathetic_reformulation(
+            user_text or "silencio prolongado",
+            transcript=transcript,
+            bad_reply=text or "",
+        )
+        return retry or text or FALLBACK_REPLY
 
     async def draft_conversational_response(
         self,
@@ -313,40 +500,47 @@ class GeminiVoiceLlm:
             return None
 
         history = self._resolve_history(contents)
-        config = types.GenerateContentConfig(
-            system_instruction=(
-                f"{_build_voice_system(self.user_id, user_text)}\n\n{CONVERSATIONAL_TURN_OVERLAY}"
-            ),
-            temperature=0.65,
-            max_output_tokens=320,
+        reply = await self.generate_natural_reply(
+            contents=[*history, last],
+            user_text=user_text,
+            overlay=CONVERSATIONAL_TURN_OVERLAY,
+            path="conversational",
+            timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
         )
-        try:
-            response = await self._generate_with_timeout(
+        if reply and _needs_empathy_reformulation(reply, user_text=user_text):
+            reply = await self.generate_empathetic_reformulation(
+                user_text,
+                transcript=request.transcript,
+                bad_reply=reply,
+            )
+        if not reply:
+            reply = await self.generate_natural_reply(
                 contents=[*history, last],
-                config=config,
+                user_text=user_text,
+                overlay=DELAY_ACK_OVERLAY,
+                path="conversational_delay_ack",
                 timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
-                path="conversational",
+                max_tokens=120,
             )
-            text = _extract_text(response)
-            if not text or is_unwanted_voice_reply(text, user_text=user_text):
-                return None
-            if is_generic_agent_line(text) and len(text) < 56:
-                return None
-            delivered = _delivery_text(text)
-            self._history = _truncate_contents(
-                [
-                    *history,
-                    last,
-                    types.Content(role="model", parts=[types.Part(text=delivered)]),
-                ],
-                max_turns=MAX_HISTORY_TURNS,
+        if not reply:
+            reply = await self.generate_empathetic_reformulation(
+                user_text,
+                transcript=request.transcript,
             )
-            self._turn_count += 1
-            logger.info("[RETELL-GEMINI] conversational user=%s", user_text[:80])
-            return delivered
-        except (asyncio.TimeoutError, Exception):  # noqa: BLE001
-            logger.warning("[RETELL-GEMINI] conversational turn failed user=%s", user_text[:80])
+        if not reply:
             return None
+
+        self._history = _truncate_contents(
+            [
+                *history,
+                last,
+                types.Content(role="model", parts=[types.Part(text=reply)]),
+            ],
+            max_turns=MAX_HISTORY_TURNS,
+        )
+        self._turn_count += 1
+        logger.info("[RETELL-GEMINI] conversational delivered user=%s", user_text[:80])
+        return reply
 
     async def draft_response(
         self,
@@ -404,6 +598,8 @@ class GeminiVoiceLlm:
                 )
                 internal_text = _extract_text(internal_response)
                 if internal_text and not is_generic_agent_line(internal_text):
+                    internal_text = _delivery_text(internal_text)
+                    _log_gemini_delivery("internal_brain", internal_text, user_text=user_text)
                     self._history = _truncate_contents(
                         [
                             *self._history,
@@ -415,7 +611,7 @@ class GeminiVoiceLlm:
                     logger.info("[RETELL-GEMINI] internal_brain user=%s", user_text[:80])
                     yield ResponseResponse(
                         response_id=request.response_id,
-                        content=_delivery_text(internal_text),
+                        content=internal_text,
                         content_complete=True,
                         end_call=False,
                     )
@@ -452,9 +648,17 @@ class GeminiVoiceLlm:
                 self._turn_count,
                 user_text[:80],
             )
+            delay = await self.generate_natural_reply(
+                contents=[*self._history, last],
+                user_text=user_text,
+                overlay=DELAY_ACK_OVERLAY,
+                path="draft_timeout_ack",
+                timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
+                max_tokens=120,
+            )
             yield ResponseResponse(
                 response_id=request.response_id,
-                content="Un momento, señor. Procesando su solicitud.",
+                content=delay or FALLBACK_REPLY,
                 content_complete=True,
                 end_call=False,
             )
@@ -529,7 +733,8 @@ class GeminiVoiceLlm:
                     )
                     follow_text = _extract_text(follow_up)
                     if follow_text:
-                        final_text = follow_text
+                        final_text = _delivery_text(follow_text)
+                        _log_gemini_delivery("tool_follow_up", final_text, user_text=user_text)
                 except (asyncio.TimeoutError, Exception):  # noqa: BLE001
                     logger.warning("[RETELL-GEMINI] tool follow-up failed — using spoken tool result")
             else:
@@ -545,13 +750,21 @@ class GeminiVoiceLlm:
             )
             return
 
-        text_response = _extract_text(response)
-        if is_unwanted_voice_reply(text_response, user_text=user_text):
-            text_response = ""
-        if not text_response or (
-            is_generic_agent_line(text_response) and len(text_response) < 56
-        ):
-            text_response = empathetic_fallback_reply(user_text)
+        text_response = _delivery_text(_extract_text(response))
+        if text_response:
+            _log_gemini_delivery("draft_main", text_response, user_text=user_text)
+        if _needs_empathy_reformulation(text_response, user_text=user_text):
+            reformed = await self.generate_empathetic_reformulation(
+                user_text,
+                transcript=request.transcript,
+                bad_reply=text_response,
+            )
+            if reformed:
+                text_response = reformed
+
+        if not text_response:
+            conv = await self.draft_conversational_response(request)
+            text_response = conv or FALLBACK_REPLY
 
         self._history = _truncate_contents(
             [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])],
