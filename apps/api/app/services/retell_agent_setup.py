@@ -337,7 +337,7 @@ def _voice_model_for(voice_id: str) -> str | None:
     if voice_id.startswith("openai-"):
         return "tts-1"
     if voice_id.startswith("custom_voice_"):
-        return "eleven_multilingual_v2"
+        return None
     return "eleven_turbo_v2_5"
 
 
