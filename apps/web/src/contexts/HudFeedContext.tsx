@@ -85,10 +85,19 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
   const pushVoiceLine = useCallback(
     (text: string, role: "user" | "model", options?: HudVoiceLineOptions) => {
       const trimmed = sanitizeHudTranscript(text);
-      if (!trimmed) return;
-      const kind: HudFeedKind = role === "user" ? "voice" : "report";
       const partial = options?.partial ?? false;
       const streamKey = options?.streamKey;
+
+      if (!trimmed) {
+        if (streamKey) {
+          setVoiceItems((prev) =>
+            prev.filter((item) => !(item.streamKey === streamKey && item.role === role)),
+          );
+        }
+        return;
+      }
+
+      const kind: HudFeedKind = role === "user" ? "voice" : "report";
 
       setVoiceItems((prev) => {
         if (streamKey) {
@@ -112,7 +121,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
 
         if (role === "model" && prev.length > 0) {
           const head = prev[0];
-          if (head?.role === "model") {
+          if (head?.role === "model" && head.kind === "report") {
             const sameTurn =
               partial ||
               head.partial ||

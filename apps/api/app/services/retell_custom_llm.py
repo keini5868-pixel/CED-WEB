@@ -252,21 +252,14 @@ def transcript_has_meta_publish_context(transcript: list[Utterance]) -> bool:
 
 def resolve_meta_publish_request(user_text: str) -> dict[str, str] | None:
     """Publicación directa en Meta — prioridad sobre sistema avanzado."""
+    from app.services.publish_text import extract_publish_body
+
     last = (user_text or "").strip()
     if not last or not is_meta_publish_intent(last):
         return None
     norm = _normalize(last)
     platform = "instagram" if re.search(r"\b(instagram|ig)\b", norm) else "facebook"
-    caption = ""
-    for pat in (
-        r"\bpublica(?:r|me|lo|que|ar)?\s+(?:en\s+)?(?:instagram|ig|facebook|fb)\b[\s,:-]*(.+)$",
-        r"\bpublique\s+(?:esa\s+imagen\s+)?(?:en\s+)?(?:instagram|ig)\b[\s,:-]*(.+)$",
-        r"\b(?:sube|postea)(?:r|me|lo)?\s+(?:en\s+)?(?:instagram|ig|facebook|fb)\b[\s,:-]*(.+)$",
-    ):
-        m = re.search(pat, last, re.I)
-        if m and m.group(1):
-            caption = m.group(1).strip(" .,:;-")
-            break
+    caption = extract_publish_body(last, platform=platform)
     return {"platform": platform, "caption": caption}
 
 

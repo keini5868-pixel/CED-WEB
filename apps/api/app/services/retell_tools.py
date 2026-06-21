@@ -35,8 +35,8 @@ EXECUTION_MESSAGES: dict[str, str] = {
 }
 
 TIMEOUT_MS: dict[str, int] = {
-    "generate_image": 30_000,
-    "generate_image_with_reference": 30_000,
+    "generate_image": 60_000,
+    "generate_image_with_reference": 60_000,
     "consultar_claude": 30_000,
     "generar_pdf": 20_000,
     "search_web": 10_000,
@@ -55,6 +55,11 @@ TIMEOUT_MS: dict[str, int] = {
     "activar_modo_conducir": 5_000,
     "cancelar_navegacion": 5_000,
     "estado_navegacion": 5_000,
+    "request_camera_activation": 12_000,
+    "request_camera_deactivation": 5_000,
+    "analyze_camera_frame": 45_000,
+    "analyze_uploaded_image": 30_000,
+    "buscar_lo_visible": 45_000,
 }
 
 

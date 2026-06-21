@@ -256,10 +256,17 @@ export function HudGlobalPanel() {
       </div>
 
       {chronological.length === 0 ? (
-        <p className="ced-hud-text-body text-sm leading-relaxed">
-          Aquí aparecerá la conversación con CED en tiempo real. Active el micrófono,
-          suba imágenes para Seth o genere imágenes por voz.
-        </p>
+        <div
+          className="max-h-[min(420px,50vh)] flex-1 overflow-y-auto rounded border border-cyan-500/20 bg-black/40 p-3"
+          role="log"
+          aria-live="polite"
+          aria-label="Transcripción de la conversación con CED"
+        >
+          <p className="ced-hud-text-body text-sm leading-relaxed">
+            Aquí aparecerá la conversación con CED en tiempo real. Active el micrófono,
+            suba imágenes para Seth o genere imágenes por voz.
+          </p>
+        </div>
       ) : (
         <div
           className="max-h-[min(420px,50vh)] flex-1 overflow-y-auto rounded border border-cyan-500/20 bg-black/40 p-3"

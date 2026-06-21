@@ -33,6 +33,7 @@ def _gemini_vision(image_bytes: bytes, prompt: str, *, max_tokens: int = 320) ->
     settings = get_settings()
     api_key = settings.google_api_key.strip()
     if not api_key:
+        logger.warning("[VISION:GEMINI] status=skip reason=no_api_key")
         return ""
     try:
         from google import genai
@@ -55,9 +56,64 @@ def _gemini_vision(image_bytes: bytes, prompt: str, *, max_tokens: int = 320) ->
                 max_output_tokens=max_tokens,
             ),
         )
-        return (getattr(response, "text", None) or "").strip()
+        text = (getattr(response, "text", None) or "").strip()
+        if text:
+            logger.info("[VISION:GEMINI] status=ok len=%s", len(text))
+        else:
+            logger.warning("[VISION:GEMINI] status=empty")
+        return text
     except Exception as exc:  # noqa: BLE001
-        logger.error("[VISION] gemini %s", exc)
+        logger.warning("[VISION:GEMINI] status=fail error=%s", exc)
+        return ""
+
+
+def _openai_vision_fallback(image_bytes: bytes, prompt: str, *, max_tokens: int = 320) -> str:
+    settings = get_settings()
+    api_key = settings.openai_api_key.strip()
+    model = (settings.openai_model_retell_llm or "gpt-4.1-mini-2025-04-14").strip()
+    if not api_key:
+        logger.warning("[VISION:OPENAI_FALLBACK] status=skip reason=no_api_key")
+        return ""
+    try:
+        import httpx
+
+        b64 = base64.b64encode(image_bytes).decode("utf-8")
+        with httpx.Client(timeout=8.0) as client:
+            res = client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/jpeg;base64,{b64}"},
+                                },
+                            ],
+                        }
+                    ],
+                    "max_tokens": max_tokens,
+                },
+            )
+            res.raise_for_status()
+            data = res.json()
+        text = str(
+            data.get("choices", [{}])[0].get("message", {}).get("content") or ""
+        ).strip()
+        if text:
+            logger.info("[VISION:OPENAI_FALLBACK] status=ok len=%s", len(text))
+        else:
+            logger.warning("[VISION:OPENAI_FALLBACK] status=empty")
+        return text
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[VISION:OPENAI_FALLBACK] status=fail error=%s", exc)
         return ""
 
 
@@ -97,6 +153,8 @@ def analyze_image(
         prompt = f"{ANALYZE_PROMPT_DEFAULT}\n\nPregunta de Keini: {user_q}"
 
     subject = _gemini_vision(image_bytes, prompt, max_tokens=180)
+    if not subject:
+        subject = _openai_vision_fallback(image_bytes, prompt, max_tokens=180)
     if not subject:
         return {"ok": False, "error": "No pude analizar la imagen"}
     summary = _spoken(subject, limit=320)

@@ -36,7 +36,7 @@ from app.services.voice_usage import voice_access_state
 logger = logging.getLogger(__name__)
 
 
-async def _wait_camera_ack(user_id: str, timeout_sec: float = 5.0) -> bool:
+async def _wait_camera_ack(user_id: str, timeout_sec: float = 8.0) -> bool:
     """Espera ACK del cliente: camera_active + camera_stream_present."""
     import time
 
@@ -93,14 +93,14 @@ async def _run_camera_capture(
     request_id = int(time.time() * 1000)
     if not vcs.is_camera_active(user_id):
         vcs.push_client_action(user_id, "camera_activate", {})
-        await _wait_camera_ack(user_id, 5.0)
+        await _wait_camera_ack(user_id, 8.0)
 
     vcs.push_client_action(
         user_id,
         "camera_capture",
         {"request_id": request_id, "question": question, "mode": mode},
     )
-    summary = await _wait_vision_result(user_id, request_id, timeout_sec=26.0)
+    summary = await _wait_vision_result(user_id, request_id, timeout_sec=20.0)
     if summary:
         return _spoken_ok(summary)
     return _spoken_err(
@@ -303,11 +303,11 @@ async def execute_voice_tool(
             if vcs.is_camera_active(user_id):
                 return _spoken_ok("Cámara activa, señor. ¿Qué desea que analice?")
             vcs.push_client_action(user_id, "camera_activate", {})
-            active = await _wait_camera_ack(user_id, 5.0)
+            active = await _wait_camera_ack(user_id, 8.0)
             if active or vcs.is_camera_active(user_id):
                 return _spoken_ok("Cámara activa, señor. ¿Qué desea que analice?")
             return _spoken_err(
-                "No pude activar la cámara, señor. ¿Intentamos de nuevo?",
+                "No pude activar la cámara, señor. Verifique permisos.",
                 error="camera_activation_timeout",
             )
 
@@ -406,7 +406,9 @@ async def execute_voice_tool(
             return _spoken_ok(spoken)
 
         if name == "publicar_facebook":
-            mensaje = str(params.get("mensaje") or "").strip()
+            from app.services.publish_text import strip_publish_instruction
+
+            mensaje = strip_publish_instruction(str(params.get("mensaje") or ""))
             image_url = params.get("image_url")
             image_data = params.get("image_data")
             if not image_url and not image_data and params.get("use_last_image"):
@@ -430,7 +432,9 @@ async def execute_voice_tool(
                 return _spoken_err(f"No fue posible publicar, señor. {exc}")
 
         if name == "publicar_instagram":
-            caption = str(params.get("caption") or "").strip()
+            from app.services.publish_text import strip_publish_instruction
+
+            caption = strip_publish_instruction(str(params.get("caption") or ""))
             image_url = params.get("image_url")
             image_data = params.get("image_data")
             from app.services import voice_client_session as vcs

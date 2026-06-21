@@ -2424,32 +2424,34 @@ export function useCedVoiceSession(
 
   const registerChatImageForVoice = useCallback(
     async (preview: string, file?: File) => {
-      if (!isRetellSessionRef.current) return;
+      if (!isRetellSessionRef.current) {
+        throw new Error("Sesión de voz no activa.");
+      }
       const normalized = preview.startsWith("http")
         ? normalizeCedMediaUrl(preview)
         : preview;
       lastPublishableImageRef.current = normalized;
-      try {
-        let imageData = normalized;
-        if (file && !normalized.startsWith("data:")) {
-          imageData = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result || ""));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-          });
-        }
-        await postVoiceChatImage(
-          imageData.startsWith("http")
-            ? { image_url: imageData }
-            : { image_data: imageData },
-        );
-        cedVoiceLog(5, "Chat image registered for voice publish", {
-          via: imageData.startsWith("http") ? "url" : "data",
+      let imageData = normalized;
+      if (file && !normalized.startsWith("data:")) {
+        imageData = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
         });
-      } catch {
-        /* voice session may be idle */
       }
+      const result = await postVoiceChatImage(
+        imageData.startsWith("http")
+          ? { image_url: imageData, filename: file?.name }
+          : { image_data: imageData, filename: file?.name },
+      );
+      if (result.image_url) {
+        lastPublishableImageRef.current = normalizeCedMediaUrl(result.image_url);
+      }
+      cedVoiceLog(5, "Chat image registered for voice publish", {
+        via: imageData.startsWith("http") ? "url" : "data",
+      });
+      return result;
     },
     [],
   );

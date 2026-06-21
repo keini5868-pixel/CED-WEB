@@ -149,6 +149,8 @@ export class CedRetellClient {
     }
     this.lastPersistedUserLine = trimmed;
     this.lastUserLine = trimmed;
+    this.currentAgentStreamKey = "";
+    this.lastAgentLine = "";
     this.callbacks.onTranscript?.(trimmed, "user");
   }
 
@@ -210,7 +212,15 @@ export class CedRetellClient {
 
   private emitAgentTranscript(text: string, partial: boolean): void {
     const sanitized = sanitizeHudTranscript(text);
-    if (!sanitized) return;
+    if (!sanitized) {
+      if (this.currentAgentStreamKey) {
+        this.callbacks.onTranscript?.("", "agent", {
+          partial: false,
+          streamKey: this.currentAgentStreamKey,
+        });
+      }
+      return;
+    }
     if (!this.currentAgentStreamKey) {
       this.agentTurnSeq += 1;
       this.currentAgentStreamKey = `agent-${this.agentTurnSeq}`;
@@ -251,8 +261,6 @@ export class CedRetellClient {
     this.client.on("agent_start_talking", () => {
       this.restoreAgentPlayback();
       this.agentSpeaking = true;
-      this.agentTurnSeq += 1;
-      this.currentAgentStreamKey = `agent-${this.agentTurnSeq}`;
       this.callbacks.onAgentTalking?.(true);
     });
 
@@ -264,7 +272,6 @@ export class CedRetellClient {
         this.lastPersistedAgentLine = this.lastAgentLine;
         this.emitAgentTranscript(this.lastAgentLine, false);
       }
-      this.currentAgentStreamKey = "";
     });
 
     this.client.on("update", (update: RetellUpdateEvent) => {

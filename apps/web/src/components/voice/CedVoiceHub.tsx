@@ -8,6 +8,7 @@ import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
 
 import { CedOrbOverlay } from "@/components/orb/CedOrbOverlay";
 import { useHudFeed } from "@/contexts/HudFeedContext";
+import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
@@ -55,7 +56,7 @@ export function CedVoiceHub() {
     prompt?: string;
   } | null>(null);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
-  const { pushVoiceLine, pushVoiceImage } = useHudFeed();
+  const { pushVoiceLine, pushVoiceImage, updateVoiceImage } = useHudFeed();
 
   useEffect(() => {
     prefetchEphemeralToken();
@@ -76,8 +77,10 @@ export function CedVoiceHub() {
       if (toolName.includes("image") && imageUrl) {
         const prompt =
           typeof result?.prompt === "string" ? result.prompt : undefined;
-        setVoiceImagePreview({ url: imageUrl, prompt });
-        setChatSeedImage({ url: imageUrl, prompt });
+        const normalized = normalizeCedMediaUrl(imageUrl);
+        pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
+        setVoiceImagePreview({ url: normalized, prompt });
+        setChatSeedImage({ url: normalized, prompt });
         setChatOpen(true);
       }
     };
@@ -273,7 +276,27 @@ export function CedVoiceHub() {
         seedImage={chatSeedImage}
         onSeedConsumed={() => setChatSeedImage(null)}
         onVoiceImageAttached={(preview, file) => {
-          void voice.registerChatImageForVoice(preview, file);
+          const itemId = pushVoiceImage(preview, {
+            fileName: file?.name,
+            fileSize: file?.size,
+            status: "uploading",
+            role: "user",
+          });
+          void voice.registerChatImageForVoice(preview, file).then((result) => {
+            if (!result?.image_url) return;
+            updateVoiceImage(itemId, {
+              imageUrl: result.image_url,
+              text: "Imagen lista para Seth",
+              uploadStatus: "ready",
+              fileName: result.filename || file?.name,
+              fileSize: result.size_bytes ?? file?.size,
+            });
+          }).catch(() => {
+            updateVoiceImage(itemId, {
+              text: "Error al subir imagen",
+              uploadStatus: "error",
+            });
+          });
         }}
         voicePublishActive={voice.voiceSessionActive}
       />
