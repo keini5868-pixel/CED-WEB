@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 BRIEF_MODEL = "gemini-2.5-flash"
 # Gemini 2.5 + Google Search consume tokens internos; <512 trunca en MAX_TOKENS.
 GEMINI_OUTPUT_TOKENS = 768
-TAVILY_TIMEOUT_SEC = 12
-GEMINI_TIMEOUT_SEC = 24
+TAVILY_TIMEOUT_SEC = 5
+GEMINI_TIMEOUT_SEC = 5
 MIN_SPOKEN_CHARS = 28
 MIN_SPOKEN_CHARS_NEWS = 24
 
@@ -98,23 +98,22 @@ def _gemini_prompt(topic: str, kind: str) -> str:
     )
 
 
-def _news_search_queries(topic: str) -> list[str]:
+def _optimal_search_query(topic: str, kind: str) -> str:
     base = (topic or "").strip()
-    fallbacks = [
-        "noticias internacionales más importantes hoy en el mundo",
-        "top world news headlines today",
-    ]
     if not base:
-        return fallbacks
-    return [base, *fallbacks]
+        return "noticias importantes de hoy"
+    if kind == "weather":
+        return f"clima tiempo actual hoy {base}"
+    if kind == "news":
+        return f"noticias de hoy {base}"
+    return base
 
 
 def _run_tavily(topic: str, kind: str) -> str:
-    queries = _news_search_queries(topic) if kind == "news" else [topic]
-    for q in queries:
-        text = _spoken_fallback(tavily_voice_snippet(q, kind=kind), kind=kind)
-        if _is_valid_brief(text, kind=kind):
-            return text
+    q = _optimal_search_query(topic, kind)
+    text = _spoken_fallback(tavily_voice_snippet(q, kind=kind), kind=kind)
+    if _is_valid_brief(text, kind=kind):
+        return text
     return ""
 
 
@@ -122,24 +121,22 @@ def _run_gemini(topic: str, kind: str, api_key: str) -> str:
     from google import genai
 
     client = genai.Client(api_key=api_key)
-    queries = _news_search_queries(topic) if kind == "news" else [topic]
-    last_text = ""
-    for q in queries:
-        prompt = _gemini_prompt(q, kind)
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_generate_brief, client, prompt, kind=kind)
-            try:
-                last_text = future.result(timeout=GEMINI_TIMEOUT_SEC)
-            except FuturesTimeout:
-                logger.warning("[VOICE:BRIEF] gemini timeout kind=%s", kind)
-                continue
-        if _is_valid_brief(last_text, kind=kind):
-            return last_text
+    q = _optimal_search_query(topic, kind)
+    prompt = _gemini_prompt(q, kind)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_generate_brief, client, prompt, kind=kind)
+        try:
+            last_text = future.result(timeout=GEMINI_TIMEOUT_SEC)
+        except FuturesTimeout:
+            logger.warning("[VOICE:BRIEF] gemini timeout kind=%s", kind)
+            return ""
+    if _is_valid_brief(last_text, kind=kind):
+        return last_text
     return last_text
 
 
 def fetch_voice_brief(query: str, *, kind: str = "news") -> dict[str, Any]:
-    """Resumen hablable: Tavily (~3-5 s) → Gemini Search (~8-12 s)."""
+    """Resumen hablable: Tavily (~1-5 s) → Gemini Search (~5 s) como respaldo único."""
     settings = get_settings()
     topic = (query or "").strip() or "noticias importantes de hoy"
     kind = kind if kind in ("news", "weather", "general") else "general"
@@ -157,7 +154,7 @@ def fetch_voice_brief(query: str, *, kind: str = "news") -> dict[str, Any]:
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
                 future = pool.submit(_run_tavily, topic, kind)
-                tavily_text = future.result(timeout=TAVILY_TIMEOUT_SEC + 4)
+                tavily_text = future.result(timeout=TAVILY_TIMEOUT_SEC)
             if _is_valid_brief(tavily_text, kind=kind):
                 logger.info(
                     "[VOICE:BRIEF] tavily ok kind=%s len=%s", kind, len(tavily_text)

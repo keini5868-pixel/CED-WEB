@@ -775,6 +775,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 clear_pending_advanced_topic(call_id)
                 llm._pending_advanced = None
                 kind = web_req["kind"]
+                web_delivered = False
                 async with response_lock:
                     if _turn_stale():
                         return
@@ -785,41 +786,51 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 uid,
                                 {"query": web_req["query"], "kind": kind},
                             ),
-                            timeout=28.0,
+                            timeout=8.0,
                         )
                     except asyncio.TimeoutError:
                         logger.warning("[RETELL-GEMINI] web_search timeout call=%s", call_id)
-                        tool_result = {"spoken": web_search_error_phrase(kind)}
+                        tool_result = {
+                            "status": "timeout",
+                            "fallback": True,
+                            "spoken": "Búsqueda agotada.",
+                        }
                     if _turn_stale():
                         logger.info("[RETELL-GEMINI] drop stale web rid=%s", scheduled_rid)
                         return
-                    spoken = str(tool_result.get("spoken") or "").strip()
-                    if not spoken or spoken.startswith("No fue posible"):
-                        full = web_search_error_phrase(kind)
-                    else:
-                        full = format_web_delivery(kind, spoken)
-                    chunks = split_voice_delivery_chunks(full)
-                    for chunk, complete in chunks:
-                        if my_generation != generation_seq:
-                            return
-                        await send_voice_partial(
-                            response_id=scheduled_rid,
-                            content=chunk,
-                            content_complete=complete,
-                            generation=my_generation,
+                    if tool_result.get("fallback") or tool_result.get("status") == "timeout":
+                        llm._web_search_fallback = True
+                        logger.info(
+                            "[RETELL-OPENAI] web_search fallback -> LLM call=%s",
+                            call_id,
                         )
-                    active_response_id = max(active_response_id, scheduled_rid)
-                    answered_response_ids.add(scheduled_rid)
-                    if scheduled_key:
-                        last_answered_user_key = scheduled_key
-                logger.info(
-                    "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
-                    call_id,
-                    web_req["kind"],
-                    web_req["query"][:80],
-                    full[:120],
-                )
-                return
+                    elif tool_result.get("status") == "success" or tool_result.get("ok"):
+                        spoken = str(tool_result.get("spoken") or "").strip()
+                        full = format_web_delivery(kind, spoken) if spoken else web_search_error_phrase(kind)
+                        chunks = split_voice_delivery_chunks(full)
+                        for chunk, complete in chunks:
+                            if my_generation != generation_seq:
+                                return
+                            await send_voice_partial(
+                                response_id=scheduled_rid,
+                                content=chunk,
+                                content_complete=complete,
+                                generation=my_generation,
+                            )
+                        active_response_id = max(active_response_id, scheduled_rid)
+                        answered_response_ids.add(scheduled_rid)
+                        if scheduled_key:
+                            last_answered_user_key = scheduled_key
+                        web_delivered = True
+                        logger.info(
+                            "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
+                            call_id,
+                            web_req["kind"],
+                            web_req["query"][:80],
+                            full[:120],
+                        )
+                if web_delivered:
+                    return
 
             if (
                 is_explicit_advanced_activation(user_text)

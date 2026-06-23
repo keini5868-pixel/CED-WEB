@@ -35,6 +35,8 @@ from app.services.voice_usage import voice_access_state
 
 logger = logging.getLogger(__name__)
 
+SEARCH_WEB_TIMEOUT_SEC = 8.0
+
 
 async def _wait_camera_ack(user_id: str, timeout_sec: float = 8.0) -> bool:
     """Espera ACK del cliente: camera_active + camera_stream_present."""
@@ -169,17 +171,40 @@ async def execute_voice_tool(
                 return _spoken_ok(
                     "Con gusto, señor. Puedo explicarle eso con lo que ya tengo en mi cerebro interno."
                 )
-            result = await asyncio.to_thread(fetch_voice_brief, query, kind=kind)
-            if result.get("ok"):
-                summary = str(result.get("summary") or "").strip()
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(fetch_voice_brief, query, kind=kind),
+                    timeout=SEARCH_WEB_TIMEOUT_SEC,
+                )
+            except (asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001
+                logger.warning("[WEB_SEARCH] fallback: %s", exc)
                 return {
-                    "ok": True,
-                    "spoken": summary if summary else "Consulta completada, señor.",
+                    "status": "timeout",
+                    "fallback": True,
+                    "ok": False,
+                    "spoken": "Búsqueda agotada.",
                 }
-            return _spoken_err(
-                f"No fue posible consultar, señor. {result.get('error', '')}".strip(),
-                error=str(result.get("error") or "search_failed"),
+            summary = str(result.get("summary") or "").strip()
+            if result.get("ok") and summary:
+                return {
+                    "status": "success",
+                    "ok": True,
+                    "spoken": summary,
+                    "summary": summary,
+                    "kind": kind,
+                    "source": result.get("source"),
+                }
+            logger.warning(
+                "[WEB_SEARCH] empty/fail kind=%s code=%s",
+                kind,
+                result.get("code"),
             )
+            return {
+                "status": "timeout",
+                "fallback": True,
+                "ok": False,
+                "spoken": "Sin resultados actuales disponibles.",
+            }
 
         if name == "consultar_claude":
             prompt = str(params.get("prompt") or "").strip()

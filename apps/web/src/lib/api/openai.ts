@@ -120,7 +120,7 @@ export type VoiceBriefResponse =
 export async function fetchVoiceBrief(
   query: string,
   kind: "news" | "weather" | "general" = "news",
-  timeoutMs = 24000,
+  timeoutMs = 9000,
 ): Promise<VoiceBriefResponse> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

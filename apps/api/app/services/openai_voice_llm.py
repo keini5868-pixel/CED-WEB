@@ -43,6 +43,7 @@ OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 CONVERSATIONAL_TIMEOUT_SEC = 18.0
 GREETING_TIMEOUT_SEC = 12.0
 TOOL_TIMEOUT_SEC = 25.0
+SEARCH_WEB_TIMEOUT_SEC = 8.0
 MAX_TOOL_ROUNDS = 3
 PROVIDER = "openai"
 
@@ -84,6 +85,7 @@ class OpenAIVoiceLlm:
         self._current_user_text = ""
         self._context_loaded_for: str | None = None
         self._pending_advanced: str | None = None
+        self._web_search_fallback: bool = False
 
     def set_user_id(self, user_id: str | None) -> None:
         cleaned = (user_id or "").strip()
@@ -339,6 +341,27 @@ class OpenAIVoiceLlm:
         logger.info("[RETELL-OPENAI] conversational delivered user=%s", user_text[:80])
         return reply
 
+    @staticmethod
+    def _search_web_tool_payload(tool_result: dict[str, Any]) -> tuple[str, str]:
+        if tool_result.get("fallback") or tool_result.get("status") == "timeout":
+            payload = {
+                "status": "timeout",
+                "fallback": True,
+                "spoken": str(tool_result.get("spoken") or "Búsqueda agotada."),
+            }
+            return payload["spoken"], json.dumps(payload, ensure_ascii=False)
+        summary = str(
+            tool_result.get("summary") or tool_result.get("spoken") or ""
+        ).strip()
+        payload = {
+            "status": "success",
+            "spoken": summary,
+            "summary": summary,
+        }
+        if tool_result.get("source"):
+            payload["source"] = tool_result.get("source")
+        return summary or "Consulta completada, señor.", json.dumps(payload, ensure_ascii=False)
+
     async def _execute_tool_calls(
         self,
         tool_calls: list[dict[str, Any]],
@@ -358,6 +381,7 @@ class OpenAIVoiceLlm:
             )
             if not self.user_id:
                 spoken = "No identifiqué al usuario, señor."
+                content = spoken
             elif name == "consultar_claude":
                 from app.services.cognitive_intents import is_explicit_advanced_activation
 
@@ -370,6 +394,7 @@ class OpenAIVoiceLlm:
                         "Respondo directamente, señor. El sistema avanzado solo se activa "
                         "cuando usted lo solicite explícitamente."
                     )
+                    content = spoken
                 else:
                     try:
                         tool_result = await asyncio.wait_for(
@@ -380,22 +405,36 @@ class OpenAIVoiceLlm:
                     except asyncio.TimeoutError:
                         logger.warning("[RETELL-OPENAI] tool timeout name=%s", name)
                         spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
+                    content = spoken
             else:
+                timeout = SEARCH_WEB_TIMEOUT_SEC if name == "search_web" else TOOL_TIMEOUT_SEC
                 try:
                     tool_result = await asyncio.wait_for(
                         execute_voice_tool(name, self.user_id, args),
-                        timeout=TOOL_TIMEOUT_SEC,
+                        timeout=timeout,
                     )
-                    spoken = str(tool_result.get("spoken") or "Completado, señor.")
+                    if name == "search_web":
+                        spoken, content = self._search_web_tool_payload(tool_result)
+                    else:
+                        spoken = str(tool_result.get("spoken") or "Completado, señor.")
+                        content = spoken
                 except asyncio.TimeoutError:
                     logger.warning("[RETELL-OPENAI] tool timeout name=%s", name)
-                    spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
+                    if name == "search_web":
+                        spoken = "Búsqueda agotada."
+                        content = json.dumps(
+                            {"status": "timeout", "fallback": True},
+                            ensure_ascii=False,
+                        )
+                    else:
+                        spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
+                        content = spoken
             spoken_parts.append(spoken)
             tool_messages.append(
                 {
                     "role": "tool",
                     "tool_call_id": call_id,
-                    "content": spoken,
+                    "content": content,
                 }
             )
         return tool_messages, spoken_parts
@@ -425,6 +464,14 @@ class OpenAIVoiceLlm:
 
         route = route_knowledge(user_text)
         system = f"{system}\n\n{level_system_overlay(route)}"
+
+        if getattr(self, "_web_search_fallback", False):
+            self._web_search_fallback = False
+            system = (
+                f"{system}\n\n"
+                "[Contexto: search_web devolvió status=timeout con fallback=True. "
+                "Responde con conocimiento integrado y el disclaimer obligatorio de REGLA 3.]"
+            )
 
         if route.level == "LEVEL-1" and route.inject:
             try:

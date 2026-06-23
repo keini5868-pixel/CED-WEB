@@ -38,7 +38,7 @@ def tavily_raw_search(
         payload["include_domains"] = include_domains
 
     try:
-        with httpx.Client(timeout=10.0) as client:
+        with httpx.Client(timeout=5.0) as client:
             res = client.post(TAVILY_URL, json=payload)
         if res.status_code != 200:
             logger.warning("[TAVILY] status=%s body=%s", res.status_code, res.text[:200])
@@ -103,24 +103,7 @@ def tavily_voice_snippet(
     if not q:
         return ""
 
-    if kind == "weather":
-        search_q = f"clima tiempo actual hoy {q}"
-    elif kind == "news":
-        search_q = f"noticias de hoy {q}"
-    else:
-        search_q = q
-
-    answer = tavily_answer(search_q, max_results=5)
-    if answer:
-        return fit_voice_spoken(answer, max_chars=max_chars)
-
-    answer = tavily_answer(q, max_results=5)
-    if answer:
-        return fit_voice_spoken(answer, max_chars=max_chars)
-
-    rows = tavily_search(search_q, max_results=5)
-    if not rows:
-        rows = tavily_search(q, max_results=5)
+    rows = tavily_search(q, max_results=5)
     for row in rows:
         text = str(row.get("content") or row.get("snippet") or "").strip()
         if len(text) >= 30:
