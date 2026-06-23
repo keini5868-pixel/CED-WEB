@@ -91,18 +91,39 @@ async def _run_camera_capture(
     import time
 
     request_id = int(time.time() * 1000)
+    logger.info(
+        "[CAMERA] capture_start user=%s mode=%s request_id=%s q=%s",
+        user_id[:8],
+        mode,
+        request_id,
+        question[:80],
+    )
     if not vcs.is_camera_active(user_id):
+        logger.info("[CAMERA] auto_activate user=%s", user_id[:8])
         vcs.push_client_action(user_id, "camera_activate", {})
-        await _wait_camera_ack(user_id, 8.0)
+        ack = await _wait_camera_ack(user_id, 8.0)
+        logger.info("[CAMERA] auto_activate_ack user=%s ok=%s", user_id[:8], ack)
 
     vcs.push_client_action(
         user_id,
         "camera_capture",
         {"request_id": request_id, "question": question, "mode": mode},
     )
+    logger.info("[CAMERA] capture_pushed user=%s request_id=%s", user_id[:8], request_id)
     summary = await _wait_vision_result(user_id, request_id, timeout_sec=20.0)
     if summary:
+        logger.info(
+            "[VISION:GEMINI] capture_ok user=%s request_id=%s len=%s",
+            user_id[:8],
+            request_id,
+            len(summary),
+        )
         return _spoken_ok(summary)
+    logger.warning(
+        "[VISION:GEMINI] capture_timeout user=%s request_id=%s",
+        user_id[:8],
+        request_id,
+    )
     return _spoken_err(
         "No pude ver nada claro en la cámara, señor. "
         "Asegúrese de que esté encendida y apunte lo que desea que analice.",
@@ -363,10 +384,23 @@ async def execute_voice_tool(
                 title=titulo,
                 content=contenido,
             )
+            spoken = (
+                f"PDF listo, señor. Título: {artifact.title}. "
+                "¿Dónde desea que lo guarde?"
+            )
+            vcs.push_tool_event(
+                user_id,
+                {
+                    "type": "pdf_created",
+                    "title": artifact.title,
+                    "file_id": artifact.file_id,
+                },
+            )
             return {
                 "ok": True,
-                "spoken": f"PDF listo, señor. Título: {artifact.title}.",
+                "spoken": spoken,
                 "file_id": artifact.file_id,
+                "title": artifact.title,
             }
 
         if name == "leer_comentarios_redes":

@@ -161,6 +161,8 @@ export interface CedVoiceSessionCallbacks {
   ) => void;
   /** Imagen generada (voz) — abrir chat / preview */
   onGeneratedImage?: (url: string, prompt?: string) => void;
+  /** Retracta bubble agent en HUD al interrumpir (Retell). */
+  onClearAgentPartial?: () => void;
 }
 
 export type VoiceHeardStatus =
@@ -332,9 +334,11 @@ export function useCedVoiceSession(
       payload: Record<string, unknown>;
     }) => {
       if (action.action === "camera_activate") {
+        console.log("[CAMERA] poll activate action_id=%s", action.id);
         void postVoiceCameraStatus(true, false).catch(() => undefined);
         await toggleCameraRef.current(true);
         const live = await waitForCameraStream(4500);
+        console.log("[CAMERA] stream_ready live=%s action_id=%s", live, action.id);
         await postVoiceCameraStatus(live, live);
         await ackVoiceClientAction(action.id);
         return;
@@ -350,6 +354,7 @@ export function useCedVoiceSession(
       const requestId = Number(action.payload.request_id || 0);
       const question = String(action.payload.question || "");
       const mode = String(action.payload.mode || "analyze");
+      console.log("[CAMERA] poll capture request_id=%s mode=%s", requestId, mode);
       if (!requestId) {
         await ackVoiceClientAction(action.id);
         return;
@@ -370,8 +375,10 @@ export function useCedVoiceSession(
           mode === "analyze",
         );
         if (!frame) {
+          console.warn("[VISION:GEMINI] empty_frame request_id=%s", requestId);
           await postVoiceVisionResult(requestId, "No pude capturar la cámara.");
         } else {
+          console.log("[VISION:GEMINI] analyze_start request_id=%s mode=%s", requestId, mode);
           const result =
             mode === "visual_search"
               ? await fetchVisionWebSearch(frame, question)
@@ -379,12 +386,18 @@ export function useCedVoiceSession(
                   frame,
                   question || "¿Qué ves en la imagen?",
                 );
+          console.log(
+            "[VISION:GEMINI] analyze_done request_id=%s ok=%s",
+            requestId,
+            result.ok,
+          );
           await postVoiceVisionResult(
             requestId,
             result.ok ? result.summary : `No pude analizar: ${result.error}`,
           );
         }
-      } catch {
+      } catch (err) {
+        console.error("[VISION:GEMINI] analyze_error request_id=%s", requestId, err);
         await postVoiceVisionResult(requestId, "Falló el análisis de cámara.");
       }
       await ackVoiceClientAction(action.id);
@@ -412,6 +425,13 @@ export function useCedVoiceSession(
             const normalized = normalizeCedMediaUrl(ev.image_url);
             lastPublishableImageRef.current = normalized;
             callbacks?.onGeneratedImage?.(normalized, ev.prompt);
+          }
+          if (ev.type === "pdf_created" && ev.title) {
+            callbacks?.onTranscript?.(
+              `PDF listo, señor. Título: ${String(ev.title)}. ¿Dónde desea guardarlo?`,
+              "model",
+              { partial: false },
+            );
           }
         }
         const action = state.client_action;
@@ -792,6 +812,9 @@ export function useCedVoiceSession(
               modelRepliedTurnRef.current = true;
             }
             void persistMessage(role === "user" ? "user" : "model", text);
+          },
+          onClearAgentPartial: () => {
+            callbacks?.onClearAgentPartial?.();
           },
           onError: (message) => {
             if (isStale()) return;

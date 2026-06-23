@@ -268,7 +268,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
             "Ejecuta INMEDIATAMENTE cuando pidan PDF, documento o exportar a PDF. "
             "Redacta tú el contenido si el usuario no lo dictó completo. "
             "PROHIBIDO decir 'generando PDF' SIN invocar esta herramienta. "
-            "Tras generar: informa 'Listo. PDF guardado.' o el error — NUNCA silencio."
+            "Tras invocar generar_pdf, DEBES decir explícitamente: "
+            "'PDF listo, señor. Título: [título]. ¿Dónde desea guardarlo?' "
+            "NUNCA asumas éxito sin confirmar verbalmente. NUNCA quedes en silencio tras crear un PDF."
         ),
         "parameters": {
             "type": "object",

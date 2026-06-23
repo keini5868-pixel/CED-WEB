@@ -56,7 +56,7 @@ export function CedVoiceHub() {
     prompt?: string;
   } | null>(null);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
-  const { pushVoiceLine, pushVoiceImage, updateVoiceImage } = useHudFeed();
+  const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial } = useHudFeed();
 
   useEffect(() => {
     prefetchEphemeralToken();
@@ -92,6 +92,7 @@ export function CedVoiceHub() {
     onTranscript: (text, role, options) => {
       pushVoiceLine(text, role, options);
     },
+    onClearAgentPartial: clearAgentPartial,
     onGeneratedImage: (url, prompt) => {
       pushVoiceImage(url, { prompt, role: "model", status: "ready" });
       setVoiceImagePreview({ url, prompt });

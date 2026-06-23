@@ -62,7 +62,7 @@ export async function fetchVisionAnalyze(
         image: imageDataUrl,
         question,
       },
-      22000,
+      25000,
     );
     const data = (await res.json()) as Record<string, unknown>;
     if (!res.ok || data.ok !== true) {

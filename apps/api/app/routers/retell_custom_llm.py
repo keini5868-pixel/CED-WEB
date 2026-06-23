@@ -153,6 +153,22 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     )
 
     greeting_sent = False
+    greeting_cancelled = False
+    greeting_in_flight = False
+
+    async def cancel_greeting_stream(*, reason: str) -> None:
+        nonlocal greeting_cancelled, greeting_in_flight, generation_seq
+        if greeting_cancelled and not greeting_in_flight:
+            return
+        greeting_cancelled = True
+        greeting_in_flight = False
+        if greeting_fallback_task and not greeting_fallback_task.done():
+            greeting_fallback_task.cancel()
+        if greeting_release_task and not greeting_release_task.done():
+            greeting_release_task.cancel()
+        post_greeting_ready.set()
+        generation_seq += 1
+        logger.info("[GREETING] cancelled call=%s reason=%s gen=%s", call_id, reason, generation_seq)
 
     async def release_post_greeting_cooldown() -> None:
         await asyncio.sleep(POST_GREETING_COOLDOWN_S)
@@ -160,14 +176,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         logger.info("[RETELL-GEMINI] post-greeting cooldown listo call=%s", call_id)
 
     async def send_greeting(response_id: int = 0, *, reason: str) -> None:
-        nonlocal greeting_sent, greeting_release_task
-        if greeting_sent:
+        nonlocal greeting_sent, greeting_release_task, greeting_in_flight
+        if greeting_sent or greeting_cancelled:
             return
         greeting_sent = True
+        greeting_in_flight = True
         post_greeting_ready.clear()
         if greeting_release_task and not greeting_release_task.done():
             greeting_release_task.cancel()
         begin_text = await llm.draft_greeting()
+        if greeting_cancelled:
+            greeting_in_flight = False
+            post_greeting_ready.set()
+            logger.info("[GREETING] aborted before send call=%s reason=%s", call_id, reason)
+            return
         payload = {
             "response_type": "response",
             "response_id": response_id,
@@ -176,6 +198,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             "end_call": False,
         }
         await websocket.send_json(payload)
+        greeting_in_flight = False
         mark_greeting_sent(call_id)
         greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
         logger.info(
@@ -310,6 +333,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 call_id,
             )
             return
+
+        if interaction == "response_required" and response_id > 0:
+            await cancel_greeting_stream(reason=f"user_turn_rid={response_id}")
 
         uid = resolve_call_user(call_id, request_json)
         if uid:

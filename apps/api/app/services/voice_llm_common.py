@@ -110,10 +110,12 @@ def build_voice_system(user_id: str | None, user_text: str = "") -> str:
             if hits:
                 block = format_hits_for_prompt(hits)
                 base = (
-                    f"{base}\n\n# CONOCIMIENTO INTERNO CED (prioriza esto; no busques en web salvo noticias/clima/datos de hoy)\n"
+                    f"{base}\n\n# CONOCIMIENTO INTERNO CED (prioriza esto con confianza directa)\n"
                     f"{block}\n\n"
-                    "PROHIBIDO decir 'busco en internet', 'consulto la web' o 'un momento mientras busco' "
-                    "para este tema. Responde directo como experto interno."
+                    "Si el KB no alcanza, usa search_web u otras herramientas sin decir que no tienes información. "
+                    "Responde directo como experto interno cuando el contexto lo permita.\n"
+                    "El sistema Retell dice automáticamente «Un momento, señor» al ejecutar herramientas. "
+                    "NO repitas ese filler: procede directamente con la herramienta."
                 )
         except Exception:  # noqa: BLE001
             pass

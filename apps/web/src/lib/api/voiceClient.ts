@@ -20,6 +20,8 @@ export type VoiceClientState = {
     type?: string;
     image_url?: string;
     prompt?: string;
+    title?: string;
+    file_id?: string;
   }>;
 };
 

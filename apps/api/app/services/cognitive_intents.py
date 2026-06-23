@@ -114,8 +114,8 @@ SCRIPT_DEMO_PATTERNS = [
 ]
 
 EXPLICIT_ADVANCED_ACTIVATION_PATTERNS = [
-    r"\b(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado)\b",
-    r"\bs[ií]\s*,?\s*(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado|guion|gui[oó]n)\b",
+    r"\b(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado|modo avanzado)\b",
+    r"\bs[ií]\s*,?\s*(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado|modo avanzado|guion|gui[oó]n)\b",
     r"\b(activa(r|me|do)?|activo)\s+(el\s+)?guion\b",
     r"\bprocede\b.*\b(an[aá]lisis avanzado|sistema avanzado|guion|gui[oó]n)\b",
 ]

@@ -55,6 +55,7 @@ interface HudFeedContextValue {
   pushVoiceImage: (url: string, options?: HudVoiceImageOptions) => string;
   updateVoiceImage: (id: string, patch: Partial<HudFeedItem>) => void;
   removeVoiceImage: (id: string) => void;
+  clearAgentPartial: () => void;
 }
 
 const HudFeedContext = createContext<HudFeedContextValue | null>(null);
@@ -202,6 +203,17 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
     setVoiceItems((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
+  const clearAgentPartial = useCallback(() => {
+    setVoiceItems((prev) =>
+      prev.filter((item, index) => {
+        if (item.role !== "model") return true;
+        if (item.partial) return false;
+        if (index === 0 && item.kind === "report") return false;
+        return true;
+      }),
+    );
+  }, []);
+
   const marqueeText = useMemo(() => {
     if (items.length === 0) {
       return "Sincronizando canal de inteligencia CED…";
@@ -222,6 +234,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
       pushVoiceImage,
       updateVoiceImage,
       removeVoiceImage,
+      clearAgentPartial,
     }),
     [
       items,
@@ -232,6 +245,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
       pushVoiceImage,
       updateVoiceImage,
       removeVoiceImage,
+      clearAgentPartial,
     ],
   );
 

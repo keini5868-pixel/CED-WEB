@@ -25,6 +25,8 @@ export interface CedRetellCallbacks {
     role: RetellTranscriptRole,
     options?: { partial?: boolean; streamKey?: string },
   ) => void;
+  /** Retracta bubble agent activo cuando el usuario interrumpe. */
+  onClearAgentPartial?: () => void;
   onError?: (message: string) => void;
   onAudioLevel?: (level: number) => void;
 }
@@ -151,6 +153,7 @@ export class CedRetellClient {
     this.lastUserLine = trimmed;
     this.currentAgentStreamKey = "";
     this.lastAgentLine = "";
+    this.callbacks.onClearAgentPartial?.();
     this.callbacks.onTranscript?.(trimmed, "user");
   }
 
