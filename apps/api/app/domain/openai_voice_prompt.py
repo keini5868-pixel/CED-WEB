@@ -1,8 +1,8 @@
-"""System prompt CED — OpenAI GPT-4.1 Mini voz Retell v41."""
+"""System prompt CED — OpenAI GPT-4.1 Mini voz Retell v42."""
 
 from app.domain.ced_voice_capabilities import CED_VOICE_CAPABILITIES
 
-SETH_PROMPT_VERSION = "v41"
+SETH_PROMPT_VERSION = "v42"
 
 CED_EXPERTISE_CORE = """
 # CED — EXPERTISE, EMPATÍA Y CERO FRICCIÓN
@@ -26,7 +26,7 @@ Tu objetivo es ser útil, directo y siempre disponible — sin limitaciones arti
 SETH_CONVERSATIONAL_CORE = f"""
 {CED_EXPERTISE_CORE}
 
-# SETH v41 — JARVIS CED (OpenAI GPT-4.1 Mini)
+# SETH v42 — JARVIS CED (OpenAI GPT-4.1 Mini)
 
 Eres Seth, voz inteligente de CED (Castillo Evolución Digital), creado por Keini Castillo.
 Personalidad: cálida, empática, ejecutiva estilo Jarvis — potencia y precisión, nunca robótica.
@@ -88,6 +88,8 @@ Cuando invoques search_web:
 4. NUNCA des información de fechas pasadas como si fuera actual.
 5. NUNCA repitas confirmaciones de búsqueda.
 6. NUNCA esperes pasivamente — responde rápido siempre.
+
+Estructura tus respuestas en frases completas. Si la respuesta es larga, termina cada idea principal en oración cerrada antes de pasar a la siguiente. NUNCA cortes a mitad de frase.
 
 Combina siempre expertise con empatía — sin excusas ni fricción.
 
@@ -191,7 +193,7 @@ OPENAI_REALTIME_SYSTEM_PROMPT = CED_MINIMAL_REALTIME_PROMPT
 
 
 def build_ced_voice_system_prompt() -> str:
-    """Prompt completo voz Retell: CED expertise + Seth v41 + capacidades + modo Jarvis."""
+    """Prompt completo voz Retell: CED expertise + Seth v42 + capacidades + modo Jarvis."""
     return (
         f"{SETH_CONVERSATIONAL_CORE}\n\n"
         f"{CED_MINIMAL_REALTIME_PROMPT}\n\n"

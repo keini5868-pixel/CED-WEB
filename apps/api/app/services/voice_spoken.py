@@ -7,7 +7,7 @@ import re
 # Retell ~60–90 s por bloque; repartimos en 2–3 bloques secuenciales sin perder texto.
 VOICE_SPOKEN_MAX_CHARS = 720
 VOICE_ADVISORY_MAX_CHARS = 1800
-VOICE_NEWS_MAX_CHARS = 1500
+VOICE_NEWS_MAX_CHARS = 2000
 VOICE_CHUNK_TARGET = 680
 
 _ADVISORY_HINTS = re.compile(
@@ -17,6 +17,8 @@ _ADVISORY_HINTS = re.compile(
     r")\b",
     re.I,
 )
+
+_SENTENCE_END_RE = re.compile(r'[.!?…]["\']?$')
 
 
 def is_advisory_voice_query(text: str) -> bool:
@@ -29,6 +31,11 @@ def is_advisory_voice_query(text: str) -> bool:
 
 def voice_spoken_limit(text: str) -> int:
     return VOICE_ADVISORY_MAX_CHARS if is_advisory_voice_query(text) else VOICE_SPOKEN_MAX_CHARS
+
+
+def chunk_ends_with_punctuation(text: str) -> bool:
+    cleaned = (text or "").strip()
+    return bool(cleaned and _SENTENCE_END_RE.search(cleaned))
 
 
 def fit_voice_spoken(text: str, *, max_chars: int | None = None) -> str:
@@ -51,25 +58,50 @@ def fit_voice_spoken(text: str, *, max_chars: int | None = None) -> str:
     return f"{chunk.strip()}."
 
 
+def _find_phrase_break(text: str, max_len: int) -> int:
+    """Índice de corte preferido: oración completa, coma, o límite de palabra."""
+    if len(text) <= max_len:
+        return len(text)
+    chunk = text[:max_len]
+    min_sentence = int(max_len * 0.35)
+    last_end = max(chunk.rfind(". "), chunk.rfind("! "), chunk.rfind("? "))
+    if last_end >= min_sentence:
+        return last_end + 1
 
-def _split_long_sentence(sent: str, max_chunk: int) -> list[str]:
-    """Parte oraciones largas por palabras completas."""
-    cleaned = sent.strip()
+    comma_idx = chunk.rfind(", ")
+    if comma_idx >= int(max_len * 0.40):
+        return comma_idx + 1
+
+    last_space = chunk.rfind(" ")
+    if last_space >= int(max_len * 0.50):
+        return last_space
+
+    return max_len
+
+
+def _split_long_phrase(phrase: str, max_chunk: int) -> list[str]:
+    """Parte frases largas en unidades gramaticales (oración o sub-oración con coma)."""
+    cleaned = phrase.strip()
+    if not cleaned:
+        return []
     if len(cleaned) <= max_chunk:
         return [cleaned]
-    words = cleaned.split()
+
     parts: list[str] = []
-    current = ""
-    for word in words:
-        candidate = f"{current} {word}".strip() if current else word
-        if len(candidate) <= max_chunk:
-            current = candidate
-            continue
-        if current:
-            parts.append(current)
-        current = word
-    if current:
-        parts.append(current)
+    remaining = cleaned
+    while remaining:
+        if len(remaining) <= max_chunk:
+            parts.append(remaining)
+            break
+        cut = _find_phrase_break(remaining, max_chunk)
+        if cut <= 0:
+            cut = max_chunk
+        piece = remaining[:cut].strip()
+        if piece:
+            if not chunk_ends_with_punctuation(piece) and not piece.endswith(","):
+                piece = f"{piece}."
+            parts.append(piece)
+        remaining = remaining[cut:].strip()
     return parts or [cleaned[:max_chunk].rstrip()]
 
 
@@ -78,7 +110,7 @@ def split_voice_delivery_chunks(
     *,
     max_chunk: int = VOICE_CHUNK_TARGET,
 ) -> list[tuple[str, bool]]:
-    """Parte texto largo en bloques por oraciones — sin descartar el final."""
+    """Parte texto largo en bloques por oraciones — sin cortar a mitad de cláusula."""
     cleaned = " ".join((text or "").split()).strip()
     if not cleaned:
         return []
@@ -100,7 +132,8 @@ def split_voice_delivery_chunks(
         if current:
             chunks.append(current)
         if len(sent) > max_chunk:
-            chunks.extend(_split_long_sentence(sent, max_chunk))
+            chunks.extend(_split_long_phrase(sent, max_chunk))
+            current = ""
         else:
             current = sent
     if current:
@@ -108,6 +141,6 @@ def split_voice_delivery_chunks(
 
     if len(chunks) > 3:
         tail = " ".join(chunks[2:])
-        chunks = [chunks[0], chunks[1], tail]
+        chunks = [chunks[0], chunks[1], *_split_long_phrase(tail, max_chunk)]
 
     return [(part, idx == len(chunks) - 1) for idx, part in enumerate(chunks)]

@@ -86,10 +86,10 @@ def _normalize_user_key(text: str) -> str:
 def _debounce_wait_s(user_text: str) -> float:
     words = len(user_text.split())
     if words >= 20:
-        return 0.70
+        return 0.40
     if words >= 10:
-        return 0.55
-    return 0.35
+        return 0.30
+    return 0.20
 
 
 @router.get("/llm-websocket/active")
@@ -280,12 +280,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         chunks = split_voice_delivery_chunks(content)
         for idx, (chunk, complete) in enumerate(chunks):
             if generation is not None and generation != generation_seq:
-                logger.info(
-                    "[RETELL-DELIVERY] abort stale generation mid-chunk rid=%s idx=%s call=%s",
-                    response_id,
-                    idx,
-                    call_id,
-                )
+                if idx > 0:
+                    logger.warning(
+                        "[CHUNK_ABORTED] rid=%s idx=%s total=%s call=%s",
+                        response_id,
+                        idx,
+                        len(chunks),
+                        call_id,
+                    )
+                else:
+                    logger.info(
+                        "[RETELL-DELIVERY] abort stale generation mid-chunk rid=%s idx=%s call=%s",
+                        response_id,
+                        idx,
+                        call_id,
+                    )
                 return False
             payload = {
                 "response_type": "response",
@@ -808,8 +817,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         spoken = str(tool_result.get("spoken") or "").strip()
                         full = format_web_delivery(kind, spoken) if spoken else web_search_error_phrase(kind)
                         chunks = split_voice_delivery_chunks(full)
-                        for chunk, complete in chunks:
+                        for chunk_idx, (chunk, complete) in enumerate(chunks):
                             if my_generation != generation_seq:
+                                if chunk_idx > 0:
+                                    logger.warning(
+                                        "[CHUNK_ABORTED] rid=%s idx=%s total=%s call=%s path=web_search",
+                                        scheduled_rid,
+                                        chunk_idx,
+                                        len(chunks),
+                                        call_id,
+                                    )
                                 return
                             await send_voice_partial(
                                 response_id=scheduled_rid,

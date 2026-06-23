@@ -457,13 +457,25 @@ class OpenAIVoiceLlm:
 
         self._current_user_text = user_text
         max_tokens, timeout_sec = voice_generation_limits(user_text)
-        system = build_voice_system(self.user_id, user_text)
+
+        kb_hits: list = []
+        if user_text.strip():
+            try:
+                from app.services.internal_knowledge import search_internal_knowledge
+
+                kb_hits = search_internal_knowledge(user_text, limit=2)
+            except Exception:  # noqa: BLE001
+                kb_hits = []
+
+        system = build_voice_system(self.user_id, user_text, kb_hits=kb_hits)
 
         from app.services.knowledge_router import level_system_overlay, route_knowledge
         from app.services.retell_custom_llm import is_generic_agent_line
 
-        route = route_knowledge(user_text)
+        route = route_knowledge(user_text, kb_hits=kb_hits)
         system = f"{system}\n\n{level_system_overlay(route)}"
+
+        kb_injected_in_system = "# CONOCIMIENTO INTERNO CED (prioriza esto" in system
 
         if getattr(self, "_web_search_fallback", False):
             self._web_search_fallback = False
@@ -473,7 +485,7 @@ class OpenAIVoiceLlm:
                 "Responde con conocimiento integrado y el disclaimer obligatorio de REGLA 3.]"
             )
 
-        if route.level == "LEVEL-1" and route.inject:
+        if route.level == "LEVEL-1" and route.inject and not kb_injected_in_system:
             try:
                 data = await self._chat_completion(
                     messages=[*self._history, last],

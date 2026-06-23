@@ -23,7 +23,7 @@ export interface CedRetellCallbacks {
   onTranscript?: (
     text: string,
     role: RetellTranscriptRole,
-    options?: { partial?: boolean; streamKey?: string },
+    options?: { partial?: boolean; streamKey?: string; incomplete?: boolean },
   ) => void;
   /** Retracta bubble agent activo cuando el usuario interrumpe. */
   onClearAgentPartial?: () => void;
@@ -42,6 +42,22 @@ function retellLog(message: string, detail?: unknown): void {
   } else {
     console.log(`[CED:RETELL] ${message}`);
   }
+}
+
+/** Limpia artefactos STT del agente antes de emitir al HUD. */
+function sanitizeAgentStt(text: string): { text: string; incomplete: boolean } {
+  let cleaned = text.trim();
+  if (!cleaned) {
+    return { text: "", incomplete: false };
+  }
+
+  if (cleaned.startsWith("[") && !cleaned.includes("]")) {
+    cleaned = cleaned.slice(1).trimStart();
+  }
+
+  const incomplete =
+    cleaned.length > 0 && !/[.!?…]["']?$/.test(cleaned);
+  return { text: cleaned, incomplete };
 }
 
 export class CedRetellClient {
@@ -214,7 +230,8 @@ export class CedRetellClient {
   }
 
   private emitAgentTranscript(text: string, partial: boolean): void {
-    const sanitized = sanitizeHudTranscript(text);
+    const { text: sttCleaned, incomplete } = sanitizeAgentStt(text);
+    const sanitized = sanitizeHudTranscript(sttCleaned);
     if (!sanitized) {
       if (this.currentAgentStreamKey) {
         this.callbacks.onTranscript?.("", "agent", {
@@ -231,6 +248,7 @@ export class CedRetellClient {
     this.callbacks.onTranscript?.(sanitized, "agent", {
       partial,
       streamKey: this.currentAgentStreamKey,
+      incomplete: incomplete || undefined,
     });
   }
 
@@ -275,6 +293,9 @@ export class CedRetellClient {
         this.lastPersistedAgentLine = this.lastAgentLine;
         this.emitAgentTranscript(this.lastAgentLine, false);
       }
+      this.currentAgentStreamKey = "";
+      this.lastAgentLine = "";
+      this.callbacks.onClearAgentPartial?.();
     });
 
     this.client.on("update", (update: RetellUpdateEvent) => {

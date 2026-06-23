@@ -7,7 +7,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
-from app.services.internal_knowledge import best_internal_answer, format_hits_for_prompt, should_use_internal_brain
+from app.services.internal_knowledge import (
+    InternalKnowledgeHit,
+    best_internal_answer,
+    format_hits_for_prompt,
+    should_use_internal_brain,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,13 +28,21 @@ class KnowledgeRoute:
     use_web: bool
 
 
-def route_knowledge(user_text: str) -> KnowledgeRoute:
+def route_knowledge(
+    user_text: str,
+    *,
+    kb_hits: list[InternalKnowledgeHit] | None = None,
+) -> KnowledgeRoute:
     """Determina nivel de conocimiento y contexto a inyectar."""
     query = (user_text or "").strip()
     if not query:
         return KnowledgeRoute("LEVEL-2", None, None, None, False)
 
-    hit = best_internal_answer(query)
+    hit: InternalKnowledgeHit | None = None
+    if kb_hits:
+        hit = kb_hits[0] if kb_hits else None
+    else:
+        hit = best_internal_answer(query)
     if hit and should_use_internal_brain(query, hit):
         confidence = float(hit.confidence or 0.0)
         if confidence >= KB_CONFIDENCE_THRESHOLD or is_internal_knowledge_query(query):

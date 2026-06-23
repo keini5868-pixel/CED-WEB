@@ -81,7 +81,12 @@ def log_voice_delivery(provider: str, path: str, text: str, *, user_text: str = 
     )
 
 
-def build_voice_system(user_id: str | None, user_text: str = "") -> str:
+def build_voice_system(
+    user_id: str | None,
+    user_text: str = "",
+    *,
+    kb_hits: list | None = None,
+) -> str:
     base = build_ced_voice_system_prompt()
     uid = (user_id or "").strip()
     if uid:
@@ -106,7 +111,11 @@ def build_voice_system(user_id: str | None, user_text: str = "") -> str:
         try:
             from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
 
-            hits = search_internal_knowledge(query, limit=2)
+            hits = (
+                kb_hits
+                if kb_hits is not None
+                else search_internal_knowledge(query, limit=2)
+            )
             if hits:
                 block = format_hits_for_prompt(hits)
                 base = (
