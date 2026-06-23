@@ -287,7 +287,7 @@ export function CedVoiceHub() {
             if (!result?.image_url) return;
             updateVoiceImage(itemId, {
               imageUrl: result.image_url,
-              text: "Imagen lista para Seth",
+              text: "Imagen lista para CED",
               uploadStatus: "ready",
               fileName: result.filename || file?.name,
               fileSize: result.size_bytes ?? file?.size,

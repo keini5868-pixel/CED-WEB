@@ -7,9 +7,9 @@ from app.services.retell_custom_llm import should_execute_advanced_now
 from app.services.voice_greetings import JARVIS_GREETING_POOL, pick_jarvis_greeting
 
 
-def test_voice_prompt_v42():
+def test_voice_prompt_v43():
     prompt = build_ced_voice_system_prompt()
-    assert "SETH v42" in prompt
+    assert "CED v43" in prompt
     assert "CED — EXPERTISE, EMPATÍA Y CERO FRICCIÓN" in prompt
     assert "sin limitaciones artificiales" in prompt
     assert "NO repitas ese filler" in prompt
@@ -20,7 +20,7 @@ def test_voice_prompt_v42():
     assert "consultar_claude DE INMEDIATO" not in prompt
     assert "NUNCA busques web para opiniones" not in prompt
     diag = voice_prompt_diagnostics()
-    assert diag["prompt_version"] == "v42"
+    assert diag["prompt_version"] == "v43"
     assert diag["llm_provider"] == "openai_gpt41_mini"
     assert diag["includes_advanced_explicit_only"] is True
 

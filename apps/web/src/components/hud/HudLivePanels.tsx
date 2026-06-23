@@ -167,7 +167,7 @@ function HudVoiceImageUpload() {
         const serverUrl = normalizeCedMediaUrl(result.image_url || previewUrl);
         updateVoiceImage(itemId, {
           imageUrl: serverUrl,
-          text: "Imagen lista para Seth",
+          text: "Imagen lista para CED",
           uploadStatus: "ready",
           fileName: result.filename || file.name,
           fileSize: result.size_bytes ?? file.size,
@@ -202,7 +202,7 @@ function HudVoiceImageUpload() {
         onClick={() => inputRef.current?.click()}
         className="rounded border border-cyan-500/40 px-2 py-1 font-[family-name:var(--font-orbitron)] text-[10px] uppercase tracking-wider text-cyan-300 transition hover:border-cyan-400 disabled:opacity-40"
       >
-        {busy ? "Subiendo…" : "📷 Subir imagen a Seth"}
+        {busy ? "Subiendo…" : "📷 Subir imagen a CED"}
       </button>
       {error ? <p className="text-[10px] text-red-400">{error}</p> : null}
     </div>
@@ -264,7 +264,7 @@ export function HudGlobalPanel() {
         >
           <p className="ced-hud-text-body text-sm leading-relaxed">
             Aquí aparecerá la conversación con CED en tiempo real. Active el micrófono,
-            suba imágenes para Seth o genere imágenes por voz.
+            suba imágenes para CED o genere imágenes por voz.
           </p>
         </div>
       ) : (

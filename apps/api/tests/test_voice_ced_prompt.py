@@ -1,13 +1,14 @@
-"""Tests — prompt Seth activo y rutas conversacionales sin texto fijo."""
+"""Tests — prompt CED activo y rutas conversacionales sin texto fijo."""
 
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
 from app.services.voice_llm_common import needs_empathy_reformulation as _needs_empathy_reformulation
 from app.services.retell_custom_llm import is_casual_conversation, is_generic_agent_line
 
 
-def test_voice_prompt_includes_seth_v42_openai_strict_execution():
+def test_voice_prompt_includes_ced_v43_openai_strict_execution():
     prompt = build_ced_voice_system_prompt()
-    assert "Seth" in prompt
+    assert "CED" in prompt
+    assert "Seth" not in prompt
     assert "CED — EXPERTISE" in prompt
     assert "Castillo Evolución Digital" in prompt
     assert "FUNCTION CALLING OBLIGATORIO" in prompt
@@ -15,15 +16,15 @@ def test_voice_prompt_includes_seth_v42_openai_strict_execution():
     assert "SOLO BAJO COMANDO EXPLÍCITO" in prompt
     assert "NUNCA cortes a mitad de frase" in prompt
     diag = voice_prompt_diagnostics()
-    assert diag["includes_seth"] is True
+    assert diag["includes_ced"] is True
     assert diag["includes_strict_tool_execution"] is True
-    assert diag["prompt_version"] == "v42"
+    assert diag["prompt_version"] == "v43"
     assert diag["llm_provider"] == "openai_gpt41_mini"
     assert diag["prompt_chars"] > 4000
 
 
 def test_casual_conversation_detects_tired_day():
-    text = "Seth, hoy fue un día bastante agotador y me siento cansado"
+    text = "Hola, hoy fue un día bastante agotador y me siento cansado"
     assert is_casual_conversation(text)
 
 

@@ -369,7 +369,7 @@ async def execute_voice_tool(
             if not stored or not stored.get("url"):
                 return _spoken_err(
                     "No hay imagen subida en esta sesión, señor. "
-                    "Use el botón «Subir imagen a Seth» en el panel.",
+                    "Use el botón «Subir imagen a CED» en el panel.",
                     error="missing_uploaded_image",
                 )
             try:

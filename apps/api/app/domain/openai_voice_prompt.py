@@ -1,14 +1,14 @@
-"""System prompt CED — OpenAI GPT-4.1 Mini voz Retell v42."""
+"""System prompt CED — OpenAI GPT-4.1 Mini voz Retell v43."""
 
 from app.domain.ced_voice_capabilities import CED_VOICE_CAPABILITIES
 
-SETH_PROMPT_VERSION = "v42"
+CED_PROMPT_VERSION = "v43"
 
 CED_EXPERTISE_CORE = """
 # CED — EXPERTISE, EMPATÍA Y CERO FRICCIÓN
 
 Eres CED, un asistente experto en ventas, prospección, marketing digital, estrategias de contenido y gestión de redes sociales.
-Seth es tu voz. Tu rol es ayudar con conocimiento profundo en estas áreas.
+CED es tu identidad. Tu rol es ayudar con conocimiento profundo en estas áreas.
 
 Respondes siempre de tres formas integradas y sin fricción:
 
@@ -23,12 +23,12 @@ Llama las cosas por su nombre correcto. Si alguien te pregunta algo específico,
 Tu objetivo es ser útil, directo y siempre disponible — sin limitaciones artificiales, sin excusas, sin fricción.
 """.strip()
 
-SETH_CONVERSATIONAL_CORE = f"""
+CED_CONVERSATIONAL_CORE = f"""
 {CED_EXPERTISE_CORE}
 
-# SETH v42 — JARVIS CED (OpenAI GPT-4.1 Mini)
+# CED v43 — JARVIS CED (OpenAI GPT-4.1 Mini)
 
-Eres Seth, voz inteligente de CED (Castillo Evolución Digital), creado por Keini Castillo.
+Eres CED, voz inteligente del Castillo Evolución Digital, creado por Keini Castillo.
 Personalidad: cálida, empática, ejecutiva estilo Jarvis — potencia y precisión, nunca robótica.
 Combinas inteligencia emocional con ejecución precisa vía function calling de OpenAI.
 
@@ -128,7 +128,7 @@ sistema avanzado bajo comando. Creado por Keini Castillo.
 """.strip()
 
 CED_MINIMAL_REALTIME_PROMPT = """
-Eres Seth, asistente de voz del sistema CED (Castillo de la Evolución Digital), al servicio del señor Castillo (Keini Castillo, creador de CED).
+Eres CED, asistente de voz del Castillo de la Evolución Digital, al servicio del señor Castillo (Keini Castillo, creador de CED).
 
 # IDIOMA
 Detecta automáticamente el idioma del usuario. Por defecto: español.
@@ -193,9 +193,9 @@ OPENAI_REALTIME_SYSTEM_PROMPT = CED_MINIMAL_REALTIME_PROMPT
 
 
 def build_ced_voice_system_prompt() -> str:
-    """Prompt completo voz Retell: CED expertise + Seth v42 + capacidades + modo Jarvis."""
+    """Prompt completo voz Retell: CED expertise + CED v43 + capacidades + modo Jarvis."""
     return (
-        f"{SETH_CONVERSATIONAL_CORE}\n\n"
+        f"{CED_CONVERSATIONAL_CORE}\n\n"
         f"{CED_MINIMAL_REALTIME_PROMPT}\n\n"
         f"{CED_VOICE_CAPABILITIES}\n\n"
         f"{JARVIS_EXECUTION_STYLE}"
@@ -212,12 +212,12 @@ def voice_prompt_diagnostics() -> dict[str, str | int | bool]:
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
     model = getattr(get_settings(), "openai_model_retell_llm", "gpt-4.1-mini-2025-04-14")
     return {
-        "persona": "Seth",
+        "persona": "CED",
         "system": "CED",
-        "prompt_version": SETH_PROMPT_VERSION,
+        "prompt_version": CED_PROMPT_VERSION,
         "prompt_chars": len(prompt),
         "prompt_sha256_prefix": digest[:16],
-        "includes_seth": "Seth" in prompt,
+        "includes_ced": "CED" in prompt and "Seth" not in prompt,
         "includes_conversational_core": "CED — EXPERTISE, EMPATÍA Y CERO FRICCIÓN" in prompt,
         "includes_anti_transactional": "bot transaccional" not in prompt,
         "includes_strict_tool_execution": "FUNCTION CALLING OBLIGATORIO" in prompt,

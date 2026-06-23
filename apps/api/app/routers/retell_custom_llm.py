@@ -137,12 +137,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
     prompt_diag = voice_prompt_diagnostics()
     logger.info(
-        "[RETELL-GEMINI] session prompt call=%s build=%s sha=%s chars=%s seth=%s",
+        "[RETELL-GEMINI] session prompt call=%s build=%s sha=%s chars=%s ced=%s",
         call_id,
         BUILD_VERSION,
         prompt_diag.get("prompt_sha256_prefix"),
         prompt_diag.get("prompt_chars"),
-        prompt_diag.get("includes_seth"),
+        prompt_diag.get("includes_ced"),
     )
 
     await websocket.send_json(

@@ -169,7 +169,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
       (status === "uploading"
         ? "Subiendo imagen…"
         : status === "ready"
-          ? "Imagen lista para Seth"
+          ? "Imagen lista para CED"
           : "Error al subir imagen");
     setVoiceItems((prev) => {
       const without = prev.filter((item) => item.id !== id);
