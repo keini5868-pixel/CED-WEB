@@ -151,7 +151,16 @@ def handle_publish_flow_turn(
                 f"{new_caption}\n\n"
                 f"Cuando quiera enviarla, dígame «envía» o «publica»."
             )
-        return publish_flow_opening(platform)
+        if caption:
+            return (
+                f"Muy bien, señor. Tengo este texto listo:\n\n"
+                f"{caption}\n\n"
+                f"Dígame «envía» o «publica» cuando quiera que lo publique en {label}."
+            )
+        return (
+            f"Disculpe, señor, no entendí el texto. ¿Me lo repite? "
+            f"O dígame si desea que le sugiera un título y descripción."
+        )
 
     if stage == "awaiting_confirm":
         new_caption = extract_caption_from_turn(user_text, platform=platform)

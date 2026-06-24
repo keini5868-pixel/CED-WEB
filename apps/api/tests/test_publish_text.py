@@ -54,3 +54,5 @@ def test_extract_user_caption():
     assert is_publish_confirm("si enviala", allow_short_yes=True)
     assert is_publish_confirm("sí envíala", allow_short_yes=True)
     assert extract_caption_from_turn("publicame esta imagen en intagran") == ""
+    assert extract_user_caption_for_publish("el tutulo sera ced esta aqui") == "ced esta aqui"
+    assert extract_caption_from_turn("el tutulo sera ced esta aqui") == "ced esta aqui"

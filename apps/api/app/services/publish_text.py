@@ -22,7 +22,7 @@ _PUBLISH_VERB = re.compile(
     r"comparte(?:r|me|lo)?)\b",
     re.I,
 )
-_PUBLISH_STEM = re.compile(r"\bpublic\w+", re.I)
+_PUBLISH_STEM = re.compile(r"\b(?:public\w*|p[uúií]+blic\w*)\b", re.I)
 _SOCIAL_PLATFORM = re.compile(
     r"\b(instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram|facebook|fb|meta|redes)\b",
     re.I,
@@ -35,6 +35,14 @@ _PUBLISH_CONFIRM = re.compile(
 )
 _CAPTION_IS = re.compile(
     r"\b(?:el\s+)?texto\s+(?:para\s+la\s+imagen\s+)?(?:es|ser[aá])\s+(.+)$",
+    re.I,
+)
+_CAPTION_TITLE = re.compile(
+    r"\b(?:el\s+)?t[uiíu]tulo\s+(?:ser[aá]|es|ser[eé])\s+(.+)$",
+    re.I,
+)
+_CAPTION_NAMED = re.compile(
+    r"\b(?:t[uiíu]tulo|caption|descripci[oó]n)\s*[:=]\s*(.+)$",
     re.I,
 )
 _PUBLISH_TRAILING = re.compile(
@@ -166,14 +174,32 @@ def extract_user_caption_for_publish(text: str) -> str:
     t = (text or "").strip()
     if not t:
         return ""
-    match = _CAPTION_IS.search(t)
-    if match:
+    for pattern in (_CAPTION_IS, _CAPTION_TITLE, _CAPTION_NAMED):
+        match = pattern.search(t)
+        if not match:
+            continue
         body = match.group(1).strip()
         body = _PUBLISH_TRAILING.sub("", body).strip(" .,:;-")
         body = _PUBLISH_TRAILING_EXTRA.sub("", body).strip(" .,:;-")
         if body and not _is_instruction_garbage_caption(body):
             return body
     return ""
+
+
+def _plain_caption_fallback(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return ""
+    if is_publish_help_request(t) or wants_publish_now(t) or is_social_publish_intent(t):
+        return ""
+    if _is_instruction_garbage_caption(t):
+        return ""
+    if re.fullmatch(r"s[ií][\s!.]*", t, re.I):
+        return ""
+    words = [w for w in t.split() if w]
+    if len(words) < 2 and len(t) < 6:
+        return ""
+    return t
 
 
 def extract_caption_from_turn(text: str, platform: str = "instagram") -> str:
@@ -186,7 +212,7 @@ def extract_caption_from_turn(text: str, platform: str = "instagram") -> str:
     cap = extract_inline_publish_caption(t, platform=platform)
     if cap and not _is_instruction_garbage_caption(cap):
         return cap
-    return ""
+    return _plain_caption_fallback(t)
 
 
 def is_publish_help_request(text: str) -> bool:

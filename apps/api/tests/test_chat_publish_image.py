@@ -158,3 +158,47 @@ def test_publish_flow_caption_and_publish_same_turn():
     )
     assert published == ["ceda llegado ya"]
     assert reply and "enviada" in reply.lower()
+
+
+def test_publish_flow_title_then_confirm():
+    from app.services.publish_image_context import (
+        begin_publish_flow,
+        clear_publish_flow,
+        register_text_chat_image_url,
+    )
+    from app.services.text_publish_flow import handle_publish_flow_turn
+
+    uid = "user-title"
+    cid = "conv-title"
+    clear_publish_flow(uid, cid)
+    register_text_chat_image_url(uid, cid, "https://cdn.example.com/z.jpg")
+    begin_publish_flow(uid, cid, platform="instagram", stage="awaiting_caption_choice")
+
+    reply1 = handle_publish_flow_turn(
+        uid,
+        cid,
+        "el tutulo sera ced esta aqui",
+        history=[],
+        run_tool=lambda *a, **k: "{}",
+        suggest_caption=lambda *_: "caption",
+    )
+    assert reply1 is not None
+    assert "ced esta aqui" in reply1
+    assert "envía" in reply1.lower() or "publica" in reply1.lower()
+
+    published: list[str] = []
+
+    def fake_tool(user_id, name, payload, conversation_id=None):
+        published.append(payload.get("caption", ""))
+        return '{"ok": true}'
+
+    reply2 = handle_publish_flow_turn(
+        uid,
+        cid,
+        "si enviala",
+        history=[],
+        run_tool=fake_tool,
+        suggest_caption=lambda *_: "caption",
+    )
+    assert published == ["ced esta aqui"]
+    assert reply2 and "enviada" in reply2.lower()
