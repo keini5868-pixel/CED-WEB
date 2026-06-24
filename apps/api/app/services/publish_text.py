@@ -17,6 +17,38 @@ _INSTRUCTION_PREFIX = re.compile(
 
 _QUOTED = re.compile(r'^["\'](.+)["\']$')
 
+_PUBLISH_VERB = re.compile(
+    r"\b(publica|publicar|postea|postear|sube|subir|comparte|compartir)\b",
+    re.I,
+)
+_SOCIAL_PLATFORM = re.compile(
+    r"\b(instagram|insta|ig|imtagram|imstagram|facebook|fb|meta|redes)\b",
+    re.I,
+)
+_PUBLISH_CONFIRM = re.compile(
+    r"\b(env[ií]a|enviar|publica|publ[ií]calo|dale|adelante|confirmo|"
+    r"s[ií]\s+publica|m[aá]ndala|mandala|hazlo|procede|env[ií]a\s+la\s+imagen|"
+    r"enviar\s+publicaci[oó]n)\b",
+    re.I,
+)
+_PUBLISH_HELP = re.compile(
+    r"\b(ay[uú]da|ay[uú]dame|suger|cr[eé]ame|cr[eé]a|prop[oó]n|propone|"
+    r"t[ií]tulo|descripci[oó]n|escr[ií]belo|escribe)\b",
+    re.I,
+)
+_INLINE_CAPTION = re.compile(
+    r"\b(?:con\s+el\s+|el\s+)?t[ií]tulo\s+(.+)$|"
+    r"\b(?:con\s+la\s+)?descripci[oó]n\s+(.+)$|"
+    r"\bque\s+diga\s+(.+)$",
+    re.I,
+)
+_PUBLISH_ONLY = re.compile(
+    r"^(?:ced\s+)?(?:publica(?:r|me|lo)?|postea(?:r|me)?|sube)\s+"
+    r"(?:esta\s+)?(?:imagen|foto|esto)?\s*"
+    r"(?:en\s+)?(?:mi\s+)?(?:instagram|ig|imtagram|imstagram|facebook|fb)?\s*[.!?]*$",
+    re.I,
+)
+
 
 def strip_publish_instruction(raw: str) -> str:
     """Quita prefijos como 'que diga', 'hazme una publicación que diga'."""
@@ -57,3 +89,44 @@ def extract_publish_body(user_text: str, platform: str = "facebook") -> str:
     if quoted and quoted.group(1).strip():
         return strip_publish_instruction(quoted.group(1))
     return strip_publish_instruction(last)
+
+
+def is_social_publish_intent(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    return bool(_PUBLISH_VERB.search(t) and (_SOCIAL_PLATFORM.search(t) or re.search(r"\b(imagen|foto|esto)\b", t, re.I)))
+
+
+def detect_publish_platform(text: str) -> str:
+    t = (text or "").strip()
+    if re.search(r"\b(facebook|fb)\b", t, re.I):
+        return "facebook"
+    if re.search(r"\b(instagram|insta|ig|imtagram|imstagram)\b", t, re.I):
+        return "instagram"
+    return "instagram"
+
+
+def is_publish_confirm(text: str) -> bool:
+    return bool(_PUBLISH_CONFIRM.search((text or "").strip()))
+
+
+def is_publish_help_request(text: str) -> bool:
+    return bool(_PUBLISH_HELP.search((text or "").strip()))
+
+
+def extract_inline_publish_caption(text: str, platform: str = "instagram") -> str:
+    t = (text or "").strip()
+    if not t or _PUBLISH_ONLY.match(t):
+        return ""
+    match = _INLINE_CAPTION.search(t)
+    if match:
+        for group in match.groups():
+            if group and group.strip():
+                return strip_publish_instruction(group.strip())
+    body = extract_publish_body(t, platform=platform)
+    if not body or _PUBLISH_ONLY.match(body):
+        return ""
+    if _PUBLISH_VERB.search(body) and not re.search(r"[a-záéíóúñ]{4,}", body, re.I):
+        return ""
+    return body

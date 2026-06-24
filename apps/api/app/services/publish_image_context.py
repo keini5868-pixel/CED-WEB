@@ -184,3 +184,60 @@ def clear_session_image(user_id: str, conversation_id: str | None = None) -> Non
         if conversation_id:
             _by_conversation.pop(_conv_key(uid, conversation_id), None)
         _by_user.pop(uid, None)
+
+
+_publish_flows: dict[str, dict[str, Any]] = {}
+
+
+def begin_publish_flow(
+    user_id: str,
+    conversation_id: str,
+    *,
+    platform: str,
+    caption_draft: str = "",
+    stage: str = "awaiting_caption_choice",
+) -> None:
+    key = _conv_key(user_id, conversation_id)
+    with _lock:
+        _publish_flows[key] = {
+            "platform": platform,
+            "caption_draft": caption_draft.strip(),
+            "stage": stage,
+            "at": _now(),
+        }
+
+
+def get_publish_flow(user_id: str, conversation_id: str) -> dict[str, Any] | None:
+    key = _conv_key(user_id, conversation_id)
+    with _lock:
+        row = _publish_flows.get(key)
+        if not row:
+            return None
+        if _now() - float(row.get("at") or 0) > MAX_AGE_SEC:
+            _publish_flows.pop(key, None)
+            return None
+        return dict(row)
+
+
+def update_publish_flow(
+    user_id: str,
+    conversation_id: str,
+    *,
+    caption_draft: str | None = None,
+    stage: str | None = None,
+) -> None:
+    key = _conv_key(user_id, conversation_id)
+    with _lock:
+        row = _publish_flows.get(key)
+        if not row:
+            return
+        if caption_draft is not None:
+            row["caption_draft"] = caption_draft.strip()
+        if stage is not None:
+            row["stage"] = stage
+        row["at"] = _now()
+
+
+def clear_publish_flow(user_id: str, conversation_id: str) -> None:
+    with _lock:
+        _publish_flows.pop(_conv_key(user_id, conversation_id), None)

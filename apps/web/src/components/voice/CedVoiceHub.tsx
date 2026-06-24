@@ -276,29 +276,33 @@ export function CedVoiceHub() {
         onClose={() => setChatOpen(false)}
         seedImage={chatSeedImage}
         onSeedConsumed={() => setChatSeedImage(null)}
-        onVoiceImageAttached={(preview, file) => {
-          const itemId = pushVoiceImage(preview, {
-            fileName: file?.name,
-            fileSize: file?.size,
-            status: "uploading",
-            role: "user",
-          });
-          void voice.registerChatImageForVoice(preview, file).then((result) => {
-            if (!result?.image_url) return;
-            updateVoiceImage(itemId, {
-              imageUrl: result.image_url,
-              text: "Imagen lista para CED",
-              uploadStatus: "ready",
-              fileName: result.filename || file?.name,
-              fileSize: result.size_bytes ?? file?.size,
-            });
-          }).catch(() => {
-            updateVoiceImage(itemId, {
-              text: "Error al subir imagen",
-              uploadStatus: "error",
-            });
-          });
-        }}
+        onVoiceImageAttached={
+          voice.voiceSessionActive
+            ? (preview, file) => {
+                const itemId = pushVoiceImage(preview, {
+                  fileName: file?.name,
+                  fileSize: file?.size,
+                  status: "uploading",
+                  role: "user",
+                });
+                void voice.registerChatImageForVoice(preview, file).then((result) => {
+                  if (!result?.image_url) return;
+                  updateVoiceImage(itemId, {
+                    imageUrl: result.image_url,
+                    text: "Imagen lista para CED",
+                    uploadStatus: "ready",
+                    fileName: result.filename || file?.name,
+                    fileSize: result.size_bytes ?? file?.size,
+                  });
+                }).catch(() => {
+                  updateVoiceImage(itemId, {
+                    text: "Error al subir imagen",
+                    uploadStatus: "error",
+                  });
+                });
+              }
+            : undefined
+        }
         voicePublishActive={voice.voiceSessionActive}
       />
 

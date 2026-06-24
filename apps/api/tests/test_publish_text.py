@@ -1,6 +1,11 @@
 """Tests publish text extraction (P5)."""
 
-from app.services.publish_text import extract_publish_body, strip_publish_instruction
+from app.services.publish_text import (
+    detect_publish_platform,
+    extract_publish_body,
+    is_social_publish_intent,
+    strip_publish_instruction,
+)
 
 
 def test_strip_publish_instruction():
@@ -25,3 +30,8 @@ def test_extract_publish_body_instagram():
         platform="instagram",
     )
     assert body == "motivación diaria"
+
+
+def test_is_social_publish_intent_typo_instagram():
+    assert is_social_publish_intent("ced publica esta imagen en mi imtagram")
+    assert detect_publish_platform("publica en mi imtagram") == "instagram"

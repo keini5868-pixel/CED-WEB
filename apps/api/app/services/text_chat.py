@@ -272,21 +272,19 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 
 PUBLICACIÓN EN REDES SOCIALES (Instagram / Facebook):
 
+FLUJO OBLIGATORIO (sigue estos pasos en orden):
+1. Usuario sube imagen + pide publicar → responde SIEMPRE: «Imagen recibida, señor. ¿Necesita que le ayude con el título y la descripción, o ya tiene su texto listo?»
+2. Si pide ayuda → propón título + descripción + hashtags CONCRETOS (nunca respuestas vacías, nunca solo «---» o «**»).
+3. Si da su texto → confirma el texto y pide que diga «envía» o «publica».
+4. Solo cuando diga «envía», «publica», «dale», «enviar publicación» → invoca la tool (use_last_uploaded_image=true).
+5. Tras éxito real de la tool → «Un momento, señor… Listo. Publicación enviada.»
+
 REGLAS ABSOLUTAS:
-1. NUNCA pidas URL de imagen al usuario. NUNCA. Si el usuario subió una imagen al chat, está disponible para publicar automáticamente (use_last_uploaded_image=true).
-2. NUNCA escribas '**publicar_instagram**' o cualquier nombre de tool como texto. INVOCA la tool con function calling real.
-3. Si el usuario sube imagen y dice 'publica esto':
-   - Pregunta: '¿Necesita ayuda con el título y descripción, o ya tiene su texto?'
-4. Si el usuario acepta ayuda:
-   - Genera propuesta de caption basada en la imagen y contexto.
-   - Muéstrala al usuario y pregunta: '¿Publico así o desea ajustar?'
-5. Si el usuario da su texto directamente:
-   - Confirma: 'Listo, ¿publico con este texto?'
-6. Si el usuario dice 'sí', 'enviar publicación', 'publica', 'dale', 'publícalo':
-   - INVOCA publicar_instagram (o publicar_facebook) con el caption acordado.
-   - La imagen subida se usa automáticamente — NO pidas URL.
-7. Confirma resultado: 'Publicación enviada, señor' o avisa honestamente si falló.
-8. JAMÁS finjas que publicaste si no invocaste la tool.
+1. NUNCA pidas URL de imagen al usuario. NUNCA. La imagen subida al chat está disponible automáticamente.
+2. NUNCA escribas '**publicar_instagram**' como texto. INVOCA la tool con function calling real.
+3. NUNCA publiques sin confirmación explícita del usuario («envía» / «publica»).
+4. NUNCA finjas que publicaste si no invocaste la tool.
+5. PROHIBIDO responder con plantillas vacías, puntos suspensivos solos o markdown sin contenido.
 
 REGLAS CRÍTICAS PARA HERRAMIENTAS:
 
@@ -334,11 +332,60 @@ def _is_empty_or_placeholder_response(text: str) -> bool:
     stripped = (text or "").strip()
     if len(stripped) < 10:
         return True
-    if stripped in ("...", "…", "...."):
+    if stripped in ("...", "…", "....", "**", "---", "----"):
         return True
     if stripped.endswith(("...", "…")) and all(c in ".… \t\n\r" for c in stripped):
         return True
+    if re.fullmatch(r"[-*_`\s]+", stripped):
+        return True
+    if re.search(r"sugerencia.*(?:instagram|facebook)", stripped, re.I) and len(stripped) < 80:
+        return True
     return False
+
+
+def _suggest_social_caption(
+    platform: str,
+    user_text: str,
+    history: list[dict[str, str]],
+) -> str:
+    settings = get_settings()
+    google_key = settings.google_api_key.strip()
+    if not google_key:
+        return "Un momento especial compartido desde CED. #CED #EvoluciónDigital"
+    messages: list[dict[str, str]] = []
+    for row in history[-8:]:
+        role = row.get("role")
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "model":
+            messages.append({"role": "assistant", "content": content})
+        elif role == "user":
+            messages.append({"role": "user", "content": content})
+    messages.append(
+        {
+            "role": "user",
+            "content": (
+                f"El usuario subió una imagen y quiere publicar en {platform}. "
+                f"Escribe SOLO el caption del post: título breve, 1-2 frases y 3-5 hashtags. "
+                f"Sin introducción, sin «aquí tienes», sin markdown vacío. "
+                f"Contexto: {user_text}"
+            ),
+        }
+    )
+    system = (
+        "Eres CED. Genera captions atractivos para redes en español latinoamericano. "
+        "Responde solo con el texto del post."
+    )
+    try:
+        return _gemini_simple_reply(
+            api_key=google_key,
+            model=_gemini_chat_model(),
+            system=system,
+            messages=messages,
+        )
+    except Exception:  # noqa: BLE001
+        return "Un momento especial compartido desde CED. #CED #EvoluciónDigital"
 
 
 def _needs_chat_tools(text: str) -> bool:
@@ -1212,6 +1259,11 @@ def send_message(
     if image_bytes:
         from app.services.chat_multimedia import analyze_chat_image
         from app.services.publish_image_context import register_text_chat_image
+        from app.services.publish_text import is_social_publish_intent
+        from app.services.text_publish_flow import (
+            handle_publish_flow_turn,
+            start_publish_flow_from_image,
+        )
 
         register_text_chat_image(
             user_id,
@@ -1219,6 +1271,13 @@ def send_message(
             image_bytes,
             image_media_type or "image/jpeg",
         )
+
+        if is_social_publish_intent(text):
+            reply = start_publish_flow_from_image(user_id, conversation_id, text)
+            return _finish(
+                reply,
+                route_meta={"intent": "publish_flow", "source": "image_upload"},
+            )
 
         reply = analyze_chat_image(
             user_id,
@@ -1327,6 +1386,22 @@ def send_message(
 
     if route.intent == "web_search" and route.speakable and route.web_kind in ("news", "weather"):
         return _finish(route.speakable, route_meta=route.to_dict())
+
+    from app.services.text_publish_flow import handle_publish_flow_turn
+
+    publish_reply = handle_publish_flow_turn(
+        user_id,
+        conversation_id,
+        text,
+        history=history,
+        run_tool=_run_chat_tool,
+        suggest_caption=_suggest_social_caption,
+    )
+    if publish_reply:
+        return _finish(
+            publish_reply,
+            route_meta={"intent": "publish_flow", "source": "conversation"},
+        )
 
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
