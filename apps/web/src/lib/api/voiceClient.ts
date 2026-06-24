@@ -75,7 +75,7 @@ export type VoiceChatImageResponse = {
   size_bytes?: number;
   filename?: string;
   reason?: string;
-  detail?: string;
+  detail?: string | Array<{ type?: string; msg?: string }>;
 };
 
 export async function postVoiceChatImage(payload: {
@@ -91,9 +91,7 @@ export async function postVoiceChatImage(payload: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const data = (await res.json().catch(() => ({}))) as VoiceChatImageResponse & {
-    detail?: string;
-  };
+  const data = (await res.json().catch(() => ({}))) as VoiceChatImageResponse;
   if (!res.ok || data.ok === false) {
     const errorMessage = (() => {
       if (typeof data.detail === "string") return data.detail;
