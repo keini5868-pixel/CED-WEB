@@ -7,7 +7,7 @@ import { CedButton } from "@ced/ui";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/env";
 
-export function SignOutButton() {
+export function SignOutButton({ className = "" }: { className?: string }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
 
@@ -25,7 +25,7 @@ export function SignOutButton() {
   }
 
   return (
-    <CedButton variant="ghost" onClick={handleSignOut} disabled={loading}>
+    <CedButton variant="ghost" onClick={handleSignOut} disabled={loading} className={className}>
       {loading ? "…" : "SALIR"}
     </CedButton>
   );

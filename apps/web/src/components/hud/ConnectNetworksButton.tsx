@@ -201,7 +201,7 @@ export function ConnectNetworksButton() {
 
         title="Cuenta vinculada. Clic para cambiar de cuenta."
 
-        className="flex items-center gap-2 rounded border border-emerald-400/70 bg-emerald-950/40 px-3 py-2 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-emerald-200 transition hover:bg-emerald-950/60"
+        className="flex max-w-[9.5rem] items-center gap-1.5 truncate rounded border border-emerald-400/70 bg-emerald-950/40 px-2 py-1.5 font-[family-name:var(--font-orbitron)] text-[9px] font-bold tracking-wider text-emerald-200 transition hover:bg-emerald-950/60 sm:max-w-none sm:gap-2 sm:px-3 sm:text-[10px]"
 
       >
 
@@ -223,7 +223,7 @@ export function ConnectNetworksButton() {
 
   return (
 
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-center gap-1 md:items-end">
 
       <CedButton
 
@@ -235,11 +235,16 @@ export function ConnectNetworksButton() {
 
         onClick={() => void connect()}
 
-        className="!px-3 !py-2 !text-[10px] !tracking-wider"
+        className="!px-2.5 !py-1.5 !text-[9px] !tracking-wider sm:!px-3 sm:!text-[10px]"
 
       >
 
-        {busy ? "CONECTANDO…" : "CONECTAR REDES"}
+        {busy ? "CONECTANDO…" : (
+          <>
+            <span className="sm:hidden">REDES</span>
+            <span className="hidden sm:inline">CONECTAR REDES</span>
+          </>
+        )}
 
       </CedButton>
 

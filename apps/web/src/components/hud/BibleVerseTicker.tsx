@@ -249,7 +249,7 @@ export function BibleVerseTicker() {
 
   return (
     <div
-      className="max-w-xl px-2 text-center"
+      className="w-full max-w-xl px-2 text-center"
       aria-live="polite"
       aria-atomic="true"
       onMouseEnter={() => setPaused(true)}

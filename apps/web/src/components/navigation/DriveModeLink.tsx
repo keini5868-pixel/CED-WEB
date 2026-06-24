@@ -13,7 +13,7 @@ export function DriveModeLink({ compact = false }: { compact?: boolean }) {
       className={[
         "inline-flex items-center justify-center gap-2 rounded border font-[family-name:var(--font-orbitron)] font-bold tracking-wider transition",
         compact
-          ? "border-cyan-500/50 bg-cyan-950/40 px-3 py-2 text-[10px] text-cyan-300 hover:border-cyan-400 sm:text-xs"
+          ? "border-cyan-500/50 bg-cyan-950/40 px-2 py-1.5 text-[9px] text-cyan-300 hover:border-cyan-400 sm:px-3 sm:py-2 sm:text-xs"
           : "w-full border-cyan-400/60 bg-gradient-to-r from-cyan-950/80 to-black/80 px-4 py-3 text-xs text-cyan-200 shadow-[0_0_20px_rgba(0,229,255,0.12)] hover:border-cyan-300 sm:text-sm",
       ].join(" ")}
     >
