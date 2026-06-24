@@ -120,12 +120,14 @@ function HudVoiceImageUpload() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadHint, setUploadHint] = useState<string | null>(null);
   const { pushVoiceImage, updateVoiceImage } = useHudFeed();
 
   const onFile = useCallback(
     async (file: File | null) => {
       if (!file) return;
       setError(null);
+      setUploadHint(null);
       const maxBytes = 10 * 1024 * 1024;
       const allowed = [
         "image/jpeg",
@@ -153,6 +155,9 @@ function HudVoiceImageUpload() {
       });
 
       setBusy(true);
+      if (file.size > 8 * 1024 * 1024) {
+        setUploadHint("Imagen grande, subiendo…");
+      }
       try {
         const reader = new FileReader();
         const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -181,6 +186,7 @@ function HudVoiceImageUpload() {
         setError(e instanceof Error ? e.message : "Error al subir imagen");
       } finally {
         setBusy(false);
+        setUploadHint(null);
         if (inputRef.current) inputRef.current.value = "";
       }
     },
@@ -205,6 +211,9 @@ function HudVoiceImageUpload() {
         {busy ? "Subiendo…" : "📷 Subir imagen a CED"}
       </button>
       {error ? <p className="text-[10px] text-red-400">{error}</p> : null}
+      {uploadHint && !error ? (
+        <p className="text-[10px] text-cyan-500/80">{uploadHint}</p>
+      ) : null}
     </div>
   );
 }

@@ -95,11 +95,18 @@ export async function postVoiceChatImage(payload: {
     detail?: string;
   };
   if (!res.ok || data.ok === false) {
-    const msg =
-      (typeof data.detail === "string" && data.detail) ||
-      data.reason ||
-      "Error al subir imagen";
-    throw new Error(msg);
+    const errorMessage = (() => {
+      if (typeof data.detail === "string") return data.detail;
+      if (Array.isArray(data.detail) && data.detail.length > 0) {
+        const first = data.detail[0] as { type?: string; msg?: string };
+        if (first.type === "string_too_long") {
+          return "Imagen demasiado grande. Intenta con una más pequeña.";
+        }
+        return first.msg || "Error de validación al subir imagen";
+      }
+      return data.reason || "Error al subir imagen";
+    })();
+    throw new Error(errorMessage);
   }
   return data;
 }

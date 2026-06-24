@@ -47,7 +47,7 @@ class AckActionBody(BaseModel):
 
 class ChatImageBody(BaseModel):
     image_url: str | None = Field(default=None, max_length=4000)
-    image_data: str | None = Field(default=None, max_length=6_000_000)
+    image_data: str | None = Field(default=None, max_length=15_000_000)
     filename: str | None = Field(default=None, max_length=260)
 
 
