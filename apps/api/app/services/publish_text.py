@@ -24,15 +24,24 @@ _PUBLISH_VERB = re.compile(
 )
 _PUBLISH_STEM = re.compile(r"\bpublic\w+", re.I)
 _SOCIAL_PLATFORM = re.compile(
-    r"\b(instagram|insta|ig|imtagram|imstagram|facebook|fb|meta|redes)\b",
+    r"\b(instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram|facebook|fb|meta|redes)\b",
     re.I,
 )
 _PUBLISH_CONFIRM = re.compile(
-    r"\b(env[ií]a|enviar|publica|publ[ií]calo|dale|adelante|confirmo|"
-    r"s[ií]\s+publica|m[aá]ndala|mandala|hazlo|procede|env[ií]a\s+la\s+imagen|"
+    r"\b(env[ií]a(?:la|lo|me|r)?|enviar|publica(?:la|lo|me|r)?|publ[ií]calo|dale|adelante|confirmo|"
+    r"s[ií]\s*(?:env[ií]a|publica)|m[aá]ndala|mandala|hazlo|procede|env[ií]a\s+la\s+imagen|"
     r"enviar\s+publicaci[oó]n)\b",
     re.I,
 )
+_CAPTION_IS = re.compile(
+    r"\b(?:el\s+)?texto\s+(?:para\s+la\s+imagen\s+)?(?:es|ser[aá])\s+(.+)$",
+    re.I,
+)
+_PUBLISH_TRAILING = re.compile(
+    r"\s+(?:y\s+)?(?:public[a-záéíóú]*|env[ií]a[a-záéíóú]*|postea[a-záéíóú]*|sube[a-záéíóú]*)\b.*$",
+    re.I,
+)
+_PUBLISH_TRAILING_EXTRA = re.compile(r"\s+con\s+ese\s+texto\s*$", re.I)
 _PUBLISH_HELP = re.compile(
     r"\b(ay[uú]da|ay[uú]dame|suger|cr[eé]ame|cr[eé]a|prop[oó]n|propone|"
     r"t[ií]tulo|descripci[oó]n|escr[ií]belo|escribe)\b",
@@ -47,7 +56,8 @@ _INLINE_CAPTION = re.compile(
 _PUBLISH_ONLY = re.compile(
     r"^(?:ced\s+)?public[a-záéíóú]*\s+"
     r"(?:esta\s+)?(?:imagen|foto|esto)?\s*"
-    r"(?:en\s+)?(?:mi\s+)?(?:instagram|ig|imtagram|imstagram|facebook|fb)?\s*[.!?]*$",
+    r"(?:en\s+)?(?:mi\s+)?"
+    r"(?:instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram|facebook|fb)?\s*[.!?]*$",
     re.I,
 )
 
@@ -113,13 +123,70 @@ def detect_publish_platform(text: str) -> str:
     t = (text or "").strip()
     if re.search(r"\b(facebook|fb)\b", t, re.I):
         return "facebook"
-    if re.search(r"\b(instagram|insta|ig|imtagram|imstagram)\b", t, re.I):
+    if re.search(
+        r"\b(instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram)\b",
+        t,
+        re.I,
+    ):
         return "instagram"
     return "instagram"
 
 
-def is_publish_confirm(text: str) -> bool:
-    return bool(_PUBLISH_CONFIRM.search((text or "").strip()))
+def is_publish_confirm(text: str, *, allow_short_yes: bool = False) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if allow_short_yes and re.fullmatch(r"s[ií][\s!.]*", t, re.I):
+        return True
+    if re.fullmatch(r"s[ií]\s*(?:env[ií]a(?:la|lo)?|publica(?:la|lo)?)[\s!.]*", t, re.I):
+        return True
+    return bool(_PUBLISH_CONFIRM.search(t))
+
+
+def wants_publish_now(text: str) -> bool:
+    t = (text or "").strip()
+    if is_publish_confirm(t):
+        return True
+    return bool(re.search(r"\bpublica(?:la|lo|me|r)?\b", t, re.I))
+
+
+def _is_instruction_garbage_caption(text: str) -> bool:
+    t = (text or "").strip()
+    if not t or _PUBLISH_ONLY.match(t):
+        return True
+    if is_publish_confirm(t):
+        return True
+    if _PUBLISH_STEM.search(t) and (_SOCIAL_PLATFORM.search(t) or re.search(r"\b(imagen|foto)\b", t, re.I)):
+        return True
+    letters = re.sub(r"[^a-záéíóúñA-ZÁÉÍÓÚÑ]", "", t)
+    return len(letters) < 3
+
+
+def extract_user_caption_for_publish(text: str) -> str:
+    t = (text or "").strip()
+    if not t:
+        return ""
+    match = _CAPTION_IS.search(t)
+    if match:
+        body = match.group(1).strip()
+        body = _PUBLISH_TRAILING.sub("", body).strip(" .,:;-")
+        body = _PUBLISH_TRAILING_EXTRA.sub("", body).strip(" .,:;-")
+        if body and not _is_instruction_garbage_caption(body):
+            return body
+    return ""
+
+
+def extract_caption_from_turn(text: str, platform: str = "instagram") -> str:
+    t = (text or "").strip()
+    if not t:
+        return ""
+    cap = extract_user_caption_for_publish(t)
+    if cap:
+        return cap
+    cap = extract_inline_publish_caption(t, platform=platform)
+    if cap and not _is_instruction_garbage_caption(cap):
+        return cap
+    return ""
 
 
 def is_publish_help_request(text: str) -> bool:
@@ -128,16 +195,13 @@ def is_publish_help_request(text: str) -> bool:
 
 def extract_inline_publish_caption(text: str, platform: str = "instagram") -> str:
     t = (text or "").strip()
-    if not t or _PUBLISH_ONLY.match(t):
+    if not t or _PUBLISH_ONLY.match(t) or _is_instruction_garbage_caption(t):
         return ""
     match = _INLINE_CAPTION.search(t)
     if match:
         for group in match.groups():
             if group and group.strip():
-                return strip_publish_instruction(group.strip())
-    body = extract_publish_body(t, platform=platform)
-    if not body or _PUBLISH_ONLY.match(body):
-        return ""
-    if _PUBLISH_VERB.search(body) and not re.search(r"[a-záéíóúñ]{4,}", body, re.I):
-        return ""
-    return body
+                body = strip_publish_instruction(group.strip())
+                if body and not _is_instruction_garbage_caption(body):
+                    return body
+    return ""

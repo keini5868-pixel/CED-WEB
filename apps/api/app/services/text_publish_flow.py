@@ -16,11 +16,12 @@ from app.services.publish_image_context import (
 )
 from app.services.publish_text import (
     detect_publish_platform,
+    extract_caption_from_turn,
     extract_inline_publish_caption,
     is_publish_confirm,
     is_publish_help_request,
     is_social_publish_intent,
-    strip_publish_instruction,
+    wants_publish_now,
 )
 
 _PLATFORM_LABEL = {"instagram": "Instagram", "facebook": "Facebook"}
@@ -105,7 +106,7 @@ def handle_publish_flow_turn(
     user_text = (text or "").strip()
 
     if stage == "awaiting_caption_choice":
-        if is_publish_confirm(user_text) and caption:
+        if is_publish_confirm(user_text, allow_short_yes=True) and caption:
             return _execute_publish(
                 user_id,
                 conversation_id,
@@ -117,7 +118,7 @@ def handle_publish_flow_turn(
             draft = suggest_caption(platform, user_text, history).strip()
             draft = _clean_caption_draft(draft)
             if not draft:
-                draft = f"Un momento especial — compartido desde CED. #CED #EvoluciónDigital"
+                draft = "Un momento especial — compartido desde CED. #CED #EvoluciónDigital"
             update_publish_flow(
                 user_id,
                 conversation_id,
@@ -129,34 +130,47 @@ def handle_publish_flow_turn(
                 f"{draft}\n\n"
                 f"¿Publico así o desea ajustar algo? Cuando esté listo, dígame «envía» o «publica»."
             )
-        inline = extract_inline_publish_caption(user_text, platform=platform)
-        body = inline or strip_publish_instruction(user_text)
-        if body and len(body) >= 3 and not is_publish_help_request(user_text):
+        new_caption = extract_caption_from_turn(user_text, platform=platform)
+        if new_caption:
             update_publish_flow(
                 user_id,
                 conversation_id,
-                caption_draft=body,
+                caption_draft=new_caption,
                 stage="awaiting_confirm",
             )
+            if wants_publish_now(user_text):
+                return _execute_publish(
+                    user_id,
+                    conversation_id,
+                    platform,
+                    new_caption,
+                    run_tool=run_tool,
+                )
             return (
                 f"Perfecto, señor. Publicaré en {label} con este texto:\n\n"
-                f"{body}\n\n"
+                f"{new_caption}\n\n"
                 f"Cuando quiera enviarla, dígame «envía» o «publica»."
             )
         return publish_flow_opening(platform)
 
     if stage == "awaiting_confirm":
-        if is_publish_confirm(user_text):
-            if not caption:
-                update_publish_flow(user_id, conversation_id, stage="awaiting_caption_choice")
-                return publish_flow_opening(platform)
-            return _execute_publish(
-                user_id,
-                conversation_id,
-                platform,
-                caption,
-                run_tool=run_tool,
-            )
+        new_caption = extract_caption_from_turn(user_text, platform=platform)
+        if new_caption:
+            caption = new_caption
+            update_publish_flow(user_id, conversation_id, caption_draft=caption)
+
+        if wants_publish_now(user_text) or is_publish_confirm(user_text, allow_short_yes=True):
+            if caption:
+                return _execute_publish(
+                    user_id,
+                    conversation_id,
+                    platform,
+                    caption,
+                    run_tool=run_tool,
+                )
+            update_publish_flow(user_id, conversation_id, stage="awaiting_caption_choice")
+            return publish_flow_opening(platform)
+
         if is_publish_help_request(user_text):
             draft = suggest_caption(platform, user_text, history).strip()
             draft = _clean_caption_draft(draft)
@@ -167,14 +181,6 @@ def handle_publish_flow_turn(
                     f"{draft}\n\n"
                     f"¿Envío la publicación o desea otro ajuste?"
                 )
-        body = extract_inline_publish_caption(user_text, platform=platform) or strip_publish_instruction(user_text)
-        if body and len(body) >= 3 and not is_publish_confirm(user_text):
-            update_publish_flow(user_id, conversation_id, caption_draft=body)
-            return (
-                f"Entendido, señor. Quedó así:\n\n"
-                f"{body}\n\n"
-                f"¿Envío la publicación ahora?"
-            )
         if caption:
             return (
                 f"Muy bien, señor. Tengo este texto listo:\n\n"
