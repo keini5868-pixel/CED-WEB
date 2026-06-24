@@ -34,4 +34,6 @@ def test_extract_publish_body_instagram():
 
 def test_is_social_publish_intent_typo_instagram():
     assert is_social_publish_intent("ced publica esta imagen en mi imtagram")
+    assert is_social_publish_intent("publicame esta imagen en imtagram", with_image=True)
+    assert is_social_publish_intent("publicame esta imagen en imtagram")
     assert detect_publish_platform("publica en mi imtagram") == "instagram"

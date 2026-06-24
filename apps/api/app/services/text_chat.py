@@ -338,8 +338,9 @@ def _is_empty_or_placeholder_response(text: str) -> bool:
         return True
     if re.fullmatch(r"[-*_`\s]+", stripped):
         return True
-    if re.search(r"sugerencia.*(?:instagram|facebook)", stripped, re.I) and len(stripped) < 80:
-        return True
+    if re.search(r"sugerencia.*(?:instagram|facebook)|opci[oó]n\s+1\s*:", stripped, re.I):
+        if len(stripped) < 120 or re.search(r"\*\*[^*]{0,20}$", stripped):
+            return True
     return False
 
 
@@ -1272,7 +1273,7 @@ def send_message(
             image_media_type or "image/jpeg",
         )
 
-        if is_social_publish_intent(text):
+        if is_social_publish_intent(text, with_image=True):
             reply = start_publish_flow_from_image(user_id, conversation_id, text)
             return _finish(
                 reply,

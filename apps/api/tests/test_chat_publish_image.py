@@ -85,8 +85,8 @@ def test_publish_flow_first_turn_with_image_intent():
     uid = "user-flow"
     cid = "conv-flow"
     clear_publish_flow(uid, cid)
-    msg = "ced publica esta imagen en mi imtagram"
-    assert is_social_publish_intent(msg)
+    msg = "publicame esta imagen en imtagram"
+    assert is_social_publish_intent(msg, with_image=True)
     reply = start_publish_flow_from_image(uid, cid, msg)
     assert "ayude con el título" in reply.lower() or "título y la descripción" in reply.lower()
     assert "señor" in reply.lower()

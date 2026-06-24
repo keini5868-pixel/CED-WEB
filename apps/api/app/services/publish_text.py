@@ -18,9 +18,11 @@ _INSTRUCTION_PREFIX = re.compile(
 _QUOTED = re.compile(r'^["\'](.+)["\']$')
 
 _PUBLISH_VERB = re.compile(
-    r"\b(publica|publicar|postea|postear|sube|subir|comparte|compartir)\b",
+    r"\b(publica(?:r|me|lo|mos|is|dan)?|postea(?:r|me|lo)?|sube(?:r|me|lo)?|"
+    r"comparte(?:r|me|lo)?)\b",
     re.I,
 )
+_PUBLISH_STEM = re.compile(r"\bpublic\w+", re.I)
 _SOCIAL_PLATFORM = re.compile(
     r"\b(instagram|insta|ig|imtagram|imstagram|facebook|fb|meta|redes)\b",
     re.I,
@@ -43,7 +45,7 @@ _INLINE_CAPTION = re.compile(
     re.I,
 )
 _PUBLISH_ONLY = re.compile(
-    r"^(?:ced\s+)?(?:publica(?:r|me|lo)?|postea(?:r|me)?|sube)\s+"
+    r"^(?:ced\s+)?public[a-záéíóú]*\s+"
     r"(?:esta\s+)?(?:imagen|foto|esto)?\s*"
     r"(?:en\s+)?(?:mi\s+)?(?:instagram|ig|imtagram|imstagram|facebook|fb)?\s*[.!?]*$",
     re.I,
@@ -91,11 +93,20 @@ def extract_publish_body(user_text: str, platform: str = "facebook") -> str:
     return strip_publish_instruction(last)
 
 
-def is_social_publish_intent(text: str) -> bool:
+def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     t = (text or "").strip()
     if not t:
         return False
-    return bool(_PUBLISH_VERB.search(t) and (_SOCIAL_PLATFORM.search(t) or re.search(r"\b(imagen|foto|esto)\b", t, re.I)))
+    has_platform = bool(_SOCIAL_PLATFORM.search(t))
+    has_image_ref = bool(re.search(r"\b(imagen|foto|esto|esta)\b", t, re.I))
+    has_verb = bool(_PUBLISH_VERB.search(t) or _PUBLISH_STEM.search(t))
+    if has_verb and (has_platform or has_image_ref):
+        return True
+    if with_image and has_platform:
+        return True
+    if with_image and has_verb and has_image_ref:
+        return True
+    return False
 
 
 def detect_publish_platform(text: str) -> str:
