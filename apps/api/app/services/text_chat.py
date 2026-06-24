@@ -82,6 +82,10 @@ HALLUCINATION_FALLBACK_REPLY = (
     "Por ejemplo: 'genera una imagen de un atardecer'."
 )
 
+EMPTY_RESPONSE_RETRY_USER_MESSAGE = (
+    "Tu respuesta anterior fue vacía o incompleta. Da una respuesta completa y útil."
+)
+
 CHAT_TOOLS: list[dict[str, Any]] = [
     {
         "name": "consultar_redes_conectadas",
@@ -90,14 +94,22 @@ CHAT_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "publicar_facebook",
-        "description": "Publica un post en la página de Facebook conectada del usuario.",
+        "description": (
+            "Publica un post en la página de Facebook conectada. La imagen DEBE venir "
+            "de una que el usuario ya subió al chat o sesión. NUNCA pidas URL al usuario. "
+            "Si subió imagen recientemente, usa use_last_uploaded_image=true automáticamente."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "message": {"type": "string", "description": "Texto del post"},
-                "image_url": {
-                    "type": "string",
-                    "description": "URL HTTPS pública de imagen opcional",
+                "use_last_uploaded_image": {
+                    "type": "boolean",
+                    "description": (
+                        "Si true, usa la última imagen subida por el usuario en esta "
+                        "conversación. Default true cuando hay imagen en el chat."
+                    ),
+                    "default": True,
                 },
             },
             "required": ["message"],
@@ -105,17 +117,29 @@ CHAT_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "publicar_instagram",
-        "description": "Publica en Instagram Business conectado. Requiere imagen con URL HTTPS pública.",
+        "description": (
+            "Publica una imagen en Instagram Business conectado. La imagen DEBE venir "
+            "de una que el usuario ya subió al chat o sesión. NUNCA pidas URL al usuario. "
+            "Si subió imagen recientemente, usa use_last_uploaded_image=true automáticamente. "
+            "Si no hay imagen subida, avisa que primero suba una imagen al chat."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "caption": {"type": "string", "description": "Caption del post"},
-                "image_url": {
+                "caption": {
                     "type": "string",
-                    "description": "URL HTTPS pública de la imagen (obligatoria en IG)",
+                    "description": "Texto/caption de la publicación",
+                },
+                "use_last_uploaded_image": {
+                    "type": "boolean",
+                    "description": (
+                        "Si true, usa la última imagen subida por el usuario en esta "
+                        "conversación. Default true."
+                    ),
+                    "default": True,
                 },
             },
-            "required": ["caption", "image_url"],
+            "required": ["caption"],
         },
     },
     {
@@ -237,8 +261,7 @@ IMPORTANTE — cerebro híbrido CED:
 
 IMPORTANTE — capacidades REALES de esta plataforma:
 - CED puede publicar en Facebook e Instagram cuando el usuario conectó Meta (dashboard → Conectar Redes).
-- Usa las herramientas publicar_facebook / publicar_instagram cuando el usuario pida publicar y tengas los datos.
-- Si falta caption o image_url (Instagram), pídelos antes de invocar la herramienta.
+- Usa las herramientas publicar_facebook / publicar_instagram cuando el usuario pida publicar y confirme el texto.
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
 - Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
 - Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
@@ -246,6 +269,24 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Si el pedido de imagen es vago, pide MÁS DETALLES UNA VEZ (estilo, uso). Si es claro, genera directamente.
 - Tras generar una imagen, preséntala y pregunta si quiere ajustes.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
+
+PUBLICACIÓN EN REDES SOCIALES (Instagram / Facebook):
+
+REGLAS ABSOLUTAS:
+1. NUNCA pidas URL de imagen al usuario. NUNCA. Si el usuario subió una imagen al chat, está disponible para publicar automáticamente (use_last_uploaded_image=true).
+2. NUNCA escribas '**publicar_instagram**' o cualquier nombre de tool como texto. INVOCA la tool con function calling real.
+3. Si el usuario sube imagen y dice 'publica esto':
+   - Pregunta: '¿Necesita ayuda con el título y descripción, o ya tiene su texto?'
+4. Si el usuario acepta ayuda:
+   - Genera propuesta de caption basada en la imagen y contexto.
+   - Muéstrala al usuario y pregunta: '¿Publico así o desea ajustar?'
+5. Si el usuario da su texto directamente:
+   - Confirma: 'Listo, ¿publico con este texto?'
+6. Si el usuario dice 'sí', 'enviar publicación', 'publica', 'dale', 'publícalo':
+   - INVOCA publicar_instagram (o publicar_facebook) con el caption acordado.
+   - La imagen subida se usa automáticamente — NO pidas URL.
+7. Confirma resultado: 'Publicación enviada, señor' o avisa honestamente si falló.
+8. JAMÁS finjas que publicaste si no invocaste la tool.
 
 REGLAS CRÍTICAS PARA HERRAMIENTAS:
 
@@ -289,6 +330,17 @@ def _has_hallucinated_tool(text: str) -> bool:
     return False
 
 
+def _is_empty_or_placeholder_response(text: str) -> bool:
+    stripped = (text or "").strip()
+    if len(stripped) < 10:
+        return True
+    if stripped in ("...", "…", "...."):
+        return True
+    if stripped.endswith(("...", "…")) and all(c in ".… \t\n\r" for c in stripped):
+        return True
+    return False
+
+
 def _needs_chat_tools(text: str) -> bool:
     t = (text or "").strip()
     if not t:
@@ -307,8 +359,21 @@ def _build_chat_system(
     user_id: str,
     user_text: str,
     route: Any | None = None,
+    conversation_id: str | None = None,
 ) -> str:
     parts = [_chat_system_for_user(user_id)]
+    if conversation_id:
+        from app.services.publish_image_context import has_publishable_image
+
+        if has_publishable_image(user_id, conversation_id):
+            parts.append(
+                "IMAGEN DISPONIBLE EN ESTA CONVERSACIÓN:\n"
+                "El usuario ya subió una imagen al chat. Está lista para publicar en "
+                "Instagram o Facebook.\n"
+                "Al invocar publicar_instagram o publicar_facebook usa "
+                "use_last_uploaded_image=true.\n"
+                "PROHIBIDO pedir URL de imagen al usuario."
+            )
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
@@ -410,7 +475,13 @@ def _anthropic_messages(history: list[dict[str, str]]) -> list[dict[str, str]]:
     return out[-20:]
 
 
-def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
+def _run_chat_tool(
+    user_id: str,
+    name: str,
+    tool_input: dict[str, Any],
+    *,
+    conversation_id: str | None = None,
+) -> str:
     try:
         if name == "consultar_redes_conectadas":
             conn = supabase_db.get_meta_connection(user_id)
@@ -424,20 +495,79 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
                 }
             )
         if name == "publicar_facebook":
+            from app.services.publish_image_context import (
+                clear_session_image,
+                resolve_image_for_publishing,
+            )
+
+            use_last = tool_input.get("use_last_uploaded_image", True)
+            resolved_url: str | None = None
+            resolved_data: str | None = None
+            if tool_input.get("image_url") or tool_input.get("image_data"):
+                resolved = resolve_image_for_publishing(
+                    user_id,
+                    conversation_id,
+                    use_last_uploaded_image=False,
+                    image_url=tool_input.get("image_url"),
+                    image_data=tool_input.get("image_data"),
+                )
+                if resolved.get("ok"):
+                    resolved_url = resolved.get("url")
+                    resolved_data = resolved.get("data")
+            elif use_last is not False:
+                resolved = resolve_image_for_publishing(
+                    user_id,
+                    conversation_id,
+                    use_last_uploaded_image=True,
+                )
+                if resolved.get("ok"):
+                    resolved_url = resolved.get("url")
+                    resolved_data = resolved.get("data")
             result = publish_facebook(
                 user_id,
                 str(tool_input.get("message") or ""),
+                image_url=resolved_url,
+                image_data=resolved_data,
+            )
+            if result.get("ok") and (resolved_url or resolved_data):
+                clear_session_image(user_id, conversation_id)
+            return json.dumps(result)
+        if name == "publicar_instagram":
+            from app.services.publish_image_context import (
+                clear_session_image,
+                resolve_image_for_publishing,
+            )
+
+            use_last = tool_input.get("use_last_uploaded_image", True)
+            resolved = resolve_image_for_publishing(
+                user_id,
+                conversation_id,
+                use_last_uploaded_image=use_last is not False,
                 image_url=tool_input.get("image_url"),
                 image_data=tool_input.get("image_data"),
             )
-            return json.dumps(result)
-        if name == "publicar_instagram":
+            if not resolved.get("ok"):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": resolved.get("error"),
+                        "message": resolved.get("message"),
+                    }
+                )
             result = publish_instagram(
                 user_id,
                 str(tool_input.get("caption") or ""),
-                image_url=tool_input.get("image_url"),
-                image_data=tool_input.get("image_data"),
+                image_url=resolved.get("url"),
+                image_data=resolved.get("data"),
             )
+            if result.get("ok"):
+                clear_session_image(user_id, conversation_id)
+                try:
+                    from app.services import voice_client_session as vcs
+
+                    vcs.clear_last_publishable_image(user_id)
+                except Exception:  # noqa: BLE001
+                    pass
             return json.dumps(result)
         if name == "generar_pdf":
             from app.deps.plan_access import effective_plan_limits
@@ -487,6 +617,14 @@ def _run_chat_tool(user_id: str, name: str, tool_input: dict[str, Any]) -> str:
             )
             if result.get("ok") and result.get("url"):
                 result["prompt"] = prompt
+                if conversation_id:
+                    from app.services.publish_image_context import register_text_chat_image_url
+
+                    register_text_chat_image_url(
+                        user_id,
+                        conversation_id,
+                        str(result["url"]),
+                    )
             return json.dumps(result)
         if name == "recall_previous_conversations":
             from app.services.conversation_memory import (
@@ -802,7 +940,9 @@ def _complete_chat_with_tools(
     api_key: str,
     system: str,
     messages: list[dict[str, Any]],
+    conversation_id: str | None = None,
     allow_hallucination_retry: bool = True,
+    allow_empty_retry: bool = True,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
     pdf_attachment: dict[str, Any] | None = None
     image_attachment: dict[str, Any] | None = None
@@ -832,7 +972,30 @@ def _complete_chat_with_tools(
                         api_key=api_key,
                         system=system,
                         messages=retry_messages,
+                        conversation_id=conversation_id,
                         allow_hallucination_retry=False,
+                        allow_empty_retry=allow_empty_retry,
+                    )
+                if (
+                    allow_empty_retry
+                    and _is_empty_or_placeholder_response(reply)
+                    and not image_attachment
+                    and not pdf_attachment
+                ):
+                    logger.warning("[CHAT] Empty or placeholder response, retrying")
+                    retry_messages = [
+                        *messages,
+                        {"role": "assistant", "content": reply},
+                        {"role": "user", "content": EMPTY_RESPONSE_RETRY_USER_MESSAGE},
+                    ]
+                    return _complete_chat_with_tools(
+                        user_id,
+                        api_key=api_key,
+                        system=system,
+                        messages=retry_messages,
+                        conversation_id=conversation_id,
+                        allow_hallucination_retry=False,
+                        allow_empty_retry=False,
                     )
                 if _has_hallucinated_tool(reply) and not image_attachment and not pdf_attachment:
                     return HALLUCINATION_FALLBACK_REPLY, None, None
@@ -843,7 +1006,12 @@ def _complete_chat_with_tools(
         tool_results: list[dict[str, Any]] = []
         for tool in tool_uses:
             tool_input = tool.get("input") if isinstance(tool.get("input"), dict) else {}
-            result = _run_chat_tool(user_id, str(tool.get("name") or ""), tool_input)
+            result = _run_chat_tool(
+                user_id,
+                str(tool.get("name") or ""),
+                tool_input,
+                conversation_id=conversation_id,
+            )
             maybe_pdf = _extract_pdf_from_tool_result(result)
             if maybe_pdf:
                 pdf_attachment = maybe_pdf
@@ -871,6 +1039,7 @@ def _complete_chat_resilient(
     gemini_model: str,
     system: str,
     messages: list[dict[str, Any]],
+    conversation_id: str | None = None,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
     """Gemini para chat normal; Claude para herramientas / análisis."""
     trimmed_system = _trim_system(system)
@@ -890,6 +1059,16 @@ def _complete_chat_resilient(
                 api_key=anthropic_key,
                 system=trimmed_system,
                 messages=messages,
+                conversation_id=conversation_id,
+            )
+        if _is_empty_or_placeholder_response(reply) and anthropic_key:
+            logger.warning("[CHAT] Empty response in simple path — escalating to tools")
+            return _complete_chat_with_tools(
+                user_id,
+                api_key=anthropic_key,
+                system=trimmed_system,
+                messages=messages,
+                conversation_id=conversation_id,
             )
         return reply, pdf_attachment, image_attachment
 
@@ -900,6 +1079,7 @@ def _complete_chat_resilient(
                 api_key=anthropic_key,
                 system=trimmed_system,
                 messages=messages,
+                conversation_id=conversation_id,
             )
         except httpx.HTTPStatusError as exc:
             if google_key and _should_fallback_anthropic_to_gemini(exc, has_gemini=True):
@@ -1031,6 +1211,14 @@ def send_message(
 
     if image_bytes:
         from app.services.chat_multimedia import analyze_chat_image
+        from app.services.publish_image_context import register_text_chat_image
+
+        register_text_chat_image(
+            user_id,
+            conversation_id,
+            image_bytes,
+            image_media_type or "image/jpeg",
+        )
 
         reply = analyze_chat_image(
             user_id,
@@ -1064,6 +1252,13 @@ def send_message(
             quality="auto",
         )
         if img_result.get("ok") and img_result.get("url"):
+            from app.services.publish_image_context import register_text_chat_image_url
+
+            register_text_chat_image_url(
+                user_id,
+                conversation_id,
+                str(img_result["url"]),
+            )
             return _finish(
                 "Listo. Aquí está tu imagen generada.",
                 route_meta={"intent": "generate_image", "source": "direct"},
@@ -1136,7 +1331,7 @@ def send_message(
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
     try:
-        system = _build_chat_system(user_id, text, route)
+        system = _build_chat_system(user_id, text, route, conversation_id)
     except Exception:  # noqa: BLE001
         logger.exception("[CHAT] fallo armando system prompt — usando base")
         system = _chat_system_for_user(user_id)
@@ -1150,6 +1345,7 @@ def send_message(
             gemini_model=gemini_model,
             system=system,
             messages=messages,
+            conversation_id=conversation_id,
         )
     except TextChatError:
         raise

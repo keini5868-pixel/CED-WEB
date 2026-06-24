@@ -92,28 +92,13 @@ async def post_chat_message_with_image(
         media_type = (image.content_type or "image/jpeg").split(";")[0].strip()
         text = content.strip() or "¿Qué piensas de esta imagen?"
         want_voice = voice_publish.strip().lower() in ("true", "1", "yes")
+        active: str | None = None
         try:
             from app.services import voice_client_session as vcs
 
             active = vcs.ensure_active_voice_call(user_id)
-            if want_voice or active:
-                public_url = vcs.set_last_publishable_image_from_bytes(
-                    user_id, image_bytes, media_type
-                )
-                logger.info(
-                    "[CHAT] imagen vinculada a voz user=%s call=%s url=%s bytes=%s",
-                    user_id[:8],
-                    (active or "?")[:12],
-                    public_url[:80],
-                    len(image_bytes),
-                )
-            else:
-                logger.info(
-                    "[CHAT] imagen NO vinculada a voz (sin sesión activa) user=%s",
-                    user_id[:8],
-                )
         except Exception:  # noqa: BLE001
-            logger.warning("[CHAT] no se pudo registrar imagen para voz", exc_info=True)
+            logger.warning("[CHAT] no se pudo consultar sesión de voz", exc_info=True)
         result = send_message(
             user_id,
             content=text,
@@ -121,6 +106,12 @@ async def post_chat_message_with_image(
             image_bytes=image_bytes,
             image_media_type=media_type,
         )
+        if want_voice or active:
+            logger.info(
+                "[CHAT] imagen registrada para publicar user=%s call=%s",
+                user_id[:8],
+                (active or "?")[:12],
+            )
         return result
     except TextChatError as exc:
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
