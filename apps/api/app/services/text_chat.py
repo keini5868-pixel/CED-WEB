@@ -50,6 +50,7 @@ def _gemini_chat_model() -> str:
 CHAT_HISTORY_LIMIT = 30
 CHAT_SIMPLE_MAX_TOKENS = 700
 CHAT_TOOLS_MAX_TOKENS = 1000
+DIRECT_IMAGE_MAX_CHARS = 500
 
 _VIRAL_KEYWORDS = re.compile(
     r"\b(instagram|tiktok|reels?|viral|horario|publicar|contenido|linkedin|facebook|"
@@ -60,6 +61,25 @@ _TOOLS_KEYWORDS = re.compile(
     r"\b(publica|publicar|instagram|facebook|meta|recuerdas|guarda|memoria|"
     r"lead|cliente|pdf|imagen|conectad)\b",
     re.I,
+)
+
+HALLUCINATED_TOOL_PATTERNS = (
+    r"\*\*generate_image\*\*",
+    r"\*\*generar_pdf\*\*",
+    r"\*\*publicar_facebook\*\*",
+    r"\*\*publicar_instagram\*\*",
+    r"```\s*generate_image",
+    r"```\s*generar_pdf",
+)
+
+HALLUCINATION_RETRY_USER_MESSAGE = (
+    "ERROR: Escribiste el nombre de la herramienta como texto. "
+    "Invócala mediante function calling real, o avisa honestamente que no puedes."
+)
+
+HALLUCINATION_FALLBACK_REPLY = (
+    "Tuve un problema procesando tu solicitud. ¿Puedes intentar con un prompt más simple? "
+    "Por ejemplo: 'genera una imagen de un atardecer'."
 )
 
 CHAT_TOOLS: list[dict[str, Any]] = [
@@ -120,13 +140,25 @@ CHAT_TOOLS: list[dict[str, Any]] = [
     {
         "name": "generate_image",
         "description": (
-            "Genera una imagen con IA. Usar cuando pidan crear, diseñar o generar una imagen. "
-            "Tras generar, confirma brevemente; la app muestra la imagen automáticamente."
+            "Genera una imagen con IA. INVÓCALA directamente mediante "
+            "function calling; nunca escribas su nombre como texto. "
+            "Usar cuando el usuario pida crear, diseñar, generar o "
+            "hacer una imagen. Tras invocar exitosamente, confirma "
+            "brevemente al usuario; la app muestra la imagen "
+            "automáticamente. Si falla, avisa honestamente."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
-                "prompt": {"type": "string", "description": "Descripción detallada de la imagen"},
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "Descripción visual concisa (sujeto, estilo, colores, composición). "
+                        "Si el usuario da un brief largo, resume los elementos visuales clave "
+                        "en máximo 1500 caracteres."
+                    ),
+                    "maxLength": 2000,
+                },
                 "quality": {
                     "type": "string",
                     "enum": ["auto", "standard", "hd"],
@@ -215,6 +247,29 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Tras generar una imagen, preséntala y pregunta si quiere ajustes.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
+REGLAS CRÍTICAS PARA HERRAMIENTAS:
+
+Cuando necesites usar generate_image, generar_pdf, o cualquier otra herramienta:
+
+1. INVOCA la herramienta mediante function calling real.
+2. NUNCA escribas el nombre de la herramienta como texto (ej: '**generate_image**' o 'generar_pdf').
+3. NUNCA escribas el JSON de parámetros como texto en el chat.
+4. Si una herramienta NO está disponible en este momento o falla, AVISA HONESTAMENTE: 'No pude completar esa acción ahora mismo, ¿quieres que intente con un enfoque distinto?'
+5. NUNCA finjas que ejecutaste una acción que no ocurrió.
+6. NUNCA digas 'la imagen está en camino', 'procesándose', o 'aparecerá en breve' a menos que realmente hayas invocado la herramienta exitosamente.
+
+PROMPTS DE IMAGEN LARGOS:
+Si el usuario te da un brief largo (>500 caracteres) para una imagen con mucho texto narrativo, ANTES de invocar generate_image, resume internamente los elementos VISUALES clave:
+- Sujeto principal
+- Estilo (digital art, fotorrealista, cartoon, etc.)
+- Colores predominantes
+- Composición / ambiente
+- Elementos visuales adicionales
+
+NO incluyas en el prompt el texto que el usuario pide que aparezca DENTRO de la imagen, a menos que sea muy corto (1-3 palabras). Los modelos de imagen no son buenos renderizando texto largo.
+
+Si el usuario insiste en que aparezca texto largo en la imagen, ofrécele alternativas: 'El texto largo no se renderiza bien en imágenes. ¿Quieres que genere la imagen sin texto y te entrego el texto aparte para que lo agregues con un editor?'
+
 PROHIBIDO (respuestas de chatbot genérico):
 - "No tengo acceso a internet en tiempo real" — CED tiene búsqueda y herramientas en voz; en chat puedes preparar contenido y publicar vía Meta.
 - "No me puedo conectar a tus cuentas" — sí puedes vía Meta OAuth cuando está conectado.
@@ -227,11 +282,23 @@ def _wants_viral_knowledge(text: str) -> bool:
     return bool(_VIRAL_KEYWORDS.search(text or ""))
 
 
+def _has_hallucinated_tool(text: str) -> bool:
+    for pattern in HALLUCINATED_TOOL_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
+
+
 def _needs_chat_tools(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
-    if is_pdf_intent(t) or is_generate_image_intent(t):
+    if is_generate_image_intent(t):
+        img_prompt = parse_generate_image_prompt(t)
+        if not img_prompt or len(t) > DIRECT_IMAGE_MAX_CHARS:
+            return True
+        return False
+    if is_pdf_intent(t):
         return False
     return bool(_TOOLS_KEYWORDS.search(t))
 
@@ -735,6 +802,7 @@ def _complete_chat_with_tools(
     api_key: str,
     system: str,
     messages: list[dict[str, Any]],
+    allow_hallucination_retry: bool = True,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
     pdf_attachment: dict[str, Any] | None = None
     image_attachment: dict[str, Any] | None = None
@@ -747,6 +815,27 @@ def _complete_chat_with_tools(
             if reply:
                 if pdf_attachment:
                     reply = _strip_pdf_markdown_links(reply)
+                if (
+                    allow_hallucination_retry
+                    and _has_hallucinated_tool(reply)
+                    and not image_attachment
+                    and not pdf_attachment
+                ):
+                    logger.warning("[CHAT] Hallucinated tool detected, retrying")
+                    retry_messages = [
+                        *messages,
+                        {"role": "assistant", "content": reply},
+                        {"role": "user", "content": HALLUCINATION_RETRY_USER_MESSAGE},
+                    ]
+                    return _complete_chat_with_tools(
+                        user_id,
+                        api_key=api_key,
+                        system=system,
+                        messages=retry_messages,
+                        allow_hallucination_retry=False,
+                    )
+                if _has_hallucinated_tool(reply) and not image_attachment and not pdf_attachment:
+                    return HALLUCINATION_FALLBACK_REPLY, None, None
                 return reply, pdf_attachment, image_attachment
             raise TextChatError("Respuesta vacía del asistente.")
 
@@ -787,13 +876,22 @@ def _complete_chat_resilient(
     trimmed_system = _trim_system(system)
 
     if not _needs_chat_tools(user_text):
-        return _simple_chat_cascade(
+        reply, pdf_attachment, image_attachment = _simple_chat_cascade(
             anthropic_key=anthropic_key,
             google_key=google_key,
             gemini_model=gemini_model,
             system=trimmed_system,
             messages=messages,
         )
+        if _has_hallucinated_tool(reply) and anthropic_key:
+            logger.warning("[CHAT] Hallucinated tool in simple path — escalating to tools")
+            return _complete_chat_with_tools(
+                user_id,
+                api_key=anthropic_key,
+                system=trimmed_system,
+                messages=messages,
+            )
+        return reply, pdf_attachment, image_attachment
 
     if anthropic_key:
         try:
@@ -946,7 +1044,11 @@ def send_message(
         )
 
     img_prompt = parse_generate_image_prompt(text)
-    if img_prompt and is_generate_image_intent(text):
+    if (
+        img_prompt
+        and is_generate_image_intent(text)
+        and len(text.strip()) <= DIRECT_IMAGE_MAX_CHARS
+    ):
         from app.services.openai_images import generate_image
 
         plan_id = None

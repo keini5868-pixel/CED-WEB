@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+_CREATE_VERBS = r"(?:crea(?:r|me|s|do)?|genera(?:r|me|s|do)?|haz(?:me|lo|la)?|dise[nñ]a(?:r|me|s|do)?|hacer|generar|crear|diseñar)"
+
 _IMAGE_PATTERNS = (
     re.compile(
         r"\b(genera|generar|crea|cresa|crear|dise[nñ]a|haz(me)?|dame|necesito)\s+(?:una?\s+)?imagen\b",
@@ -15,6 +17,51 @@ _IMAGE_PATTERNS = (
     ),
     re.compile(r"\b(imagen|foto)\s+de\b", re.I),
     re.compile(r"\bcrea\s+una\s+foto\b", re.I),
+    re.compile(
+        rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?imagen\b",
+        re.I,
+    ),
+    re.compile(r"\bnecesito\s+(?:una?\s+)?imagen\b", re.I),
+    re.compile(
+        rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?imagen\b",
+        re.I,
+    ),
+    re.compile(
+        rf"\b(?:crea(?:me)?|dise[nñ]a(?:me)?|haz(?:me)?)\s+(?:una?\s+)?imagen\b",
+        re.I,
+    ),
+    re.compile(
+        rf"\bimagen\b.+\b{_CREATE_VERBS}\b|\b{_CREATE_VERBS}\b.+\bimagen\b",
+        re.I,
+    ),
+)
+
+_IMAGE_PROMPT_PATTERNS = (
+    re.compile(
+        r"\b(?:genera|generar|crea|cresa|crear|dise[nñ]a|haz|dame)\s+(?:una?\s+)?imagen\s+(?:de|con|que\s+diga|que\s+sea)?\s*[:.]?\s*(.+)$",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:genera|crea|haz|dame)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|gr[aá]fico|creativo|foto)\s+(?:de|con|para)?\s*[:.]?\s*(.+)$",
+        re.I,
+    ),
+    re.compile(r"\bimagen\s+de\s+(.+)$", re.I),
+    re.compile(
+        rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?imagen\s+(?:de|con|que\s+)?\s*[:.]?\s*(.+)$",
+        re.I,
+    ),
+    re.compile(
+        rf"\bnecesito\s+(?:una?\s+)?imagen\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
+        re.I,
+    ),
+    re.compile(
+        rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?imagen\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
+        re.I,
+    ),
+    re.compile(
+        rf"\b(?:crea(?:me)?|dise[nñ]a(?:me)?|haz(?:me)?)\s+(?:una?\s+)?imagen\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
+        re.I,
+    ),
 )
 
 _PDF_PATTERNS = (
@@ -37,24 +84,15 @@ def parse_generate_image_prompt(text: str) -> str | None:
     t = text.strip()
     if not is_generate_image_intent(t):
         return None
-    patterns = (
-        re.compile(
-            r"\b(?:genera|generar|crea|cresa|crear|dise[nñ]a|haz|dame)\s+(?:una?\s+)?imagen\s+(?:de|con|que\s+diga|que\s+sea)?\s*[:.]?\s*(.+)$",
-            re.I,
-        ),
-        re.compile(
-            r"\b(?:genera|crea|haz|dame)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|gr[aá]fico)\s+(?:de|con|para)?\s*[:.]?\s*(.+)$",
-            re.I,
-        ),
-        re.compile(r"\bimagen\s+de\s+(.+)$", re.I),
-    )
-    for pattern in patterns:
+    for pattern in _IMAGE_PROMPT_PATTERNS:
         match = pattern.search(t)
         body = (match.group(1) if match else "") or ""
         body = body.strip().strip("\"'")
         if len(body) >= 3:
             return body
-    return t
+    if len(t) >= 12:
+        return t
+    return None
 
 
 def is_pdf_intent(text: str) -> bool:
