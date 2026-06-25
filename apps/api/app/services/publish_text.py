@@ -69,6 +69,35 @@ _PUBLISH_ONLY = re.compile(
     re.I,
 )
 
+_SUSPICIOUS_CAPTION_PATTERNS = (
+    re.compile(r"^(sí|si|dale|ok|envía|envia|publica)\s+", re.I),
+    re.compile(r"\s+(envía|envia|publica)\s+(la\s+)?publicaci[oó]n", re.I),
+    re.compile(r"(envíalo|envialo|mándalo|mandalo|póstéalo|postealo)\s+ya", re.I),
+)
+
+
+def sanitize_publish_caption(raw: str) -> str:
+    return strip_publish_instruction((raw or "").strip())
+
+
+def validate_caption(caption: str) -> tuple[bool, str]:
+    """Valida que el caption no parezca historial de conversación."""
+    text = sanitize_publish_caption(caption)
+    if not text:
+        return False, "Caption vacío"
+    if _is_instruction_garbage_caption(text):
+        return False, "Caption parece instrucción conversacional"
+    lowered = text.lower()
+    for pattern in _SUSPICIOUS_CAPTION_PATTERNS:
+        if pattern.search(lowered):
+            return False, "Caption parece contener historial de conversación"
+    words = lowered.split()
+    if len(words) > 10:
+        unique_ratio = len(set(words)) / len(words)
+        if unique_ratio < 0.7:
+            return False, "Caption tiene mucha repetición"
+    return True, "ok"
+
 
 def strip_publish_instruction(raw: str) -> str:
     """Quita prefijos como 'que diga', 'hazme una publicación que diga'."""

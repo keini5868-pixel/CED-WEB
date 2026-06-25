@@ -252,6 +252,7 @@ def _append_publishable_image(
     voice_call_id: str,
     filename: str = "",
     size_bytes: int = 0,
+    source: str = "voice",
 ) -> None:
     entry = {
         "url": url,
@@ -260,6 +261,7 @@ def _append_publishable_image(
         "voice_call_id": voice_call_id or "",
         "filename": filename,
         "size_bytes": size_bytes,
+        "source": (source or "voice").strip() or "voice",
     }
     images: list[dict[str, Any]] = list(session.get("publishable_images") or [])
     images.append(entry)
@@ -298,6 +300,7 @@ def set_last_publishable_image(
     awaiting_caption: bool = False,
     filename: str = "",
     size_bytes: int = 0,
+    source: str = "voice",
 ) -> str | None:
     """Imagen del chat — disponible para publicar/analizar en voz Retell."""
     url = (image_url or "").strip()
@@ -307,6 +310,7 @@ def set_last_publishable_image(
     call_id = ensure_active_voice_call(user_id) or ""
     session = _get(user_id)
     with _lock:
+        img_source = (source or "voice").strip() or "voice"
         if url:
             _append_publishable_image(
                 session,
@@ -314,6 +318,7 @@ def set_last_publishable_image(
                 voice_call_id=call_id,
                 filename=filename,
                 size_bytes=size_bytes,
+                source=img_source,
             )
         else:
             session["last_publishable_image"] = {
@@ -323,6 +328,7 @@ def set_last_publishable_image(
                 "voice_call_id": call_id,
                 "filename": filename,
                 "size_bytes": size_bytes,
+                "source": img_source,
             }
         if awaiting_caption:
             session["awaiting_instagram_caption"] = True
@@ -367,18 +373,25 @@ def clear_awaiting_instagram_caption(user_id: str) -> None:
         session["updated_at"] = _now()
 
 
-def get_last_publishable_image(user_id: str, *, max_age_sec: float = 900.0) -> dict[str, str] | None:
+def get_last_publishable_image(
+    user_id: str,
+    *,
+    max_age_sec: float = 900.0,
+    ignore_call_binding: bool = False,
+) -> dict[str, str] | None:
     active_call = ensure_active_voice_call(user_id) or ""
     session = _get(user_id)
     with _lock:
         row = session.get("last_publishable_image")
         if not row:
             return None
+        source = str(row.get("source") or "").strip()
         bound_call = str(row.get("voice_call_id") or "").strip()
-        if bound_call and active_call and bound_call != active_call:
-            return None
-        if bound_call and not active_call:
-            return None
+        if not ignore_call_binding and source != "chat":
+            if bound_call and active_call and bound_call != active_call:
+                return None
+            if bound_call and not active_call:
+                return None
         age = _now() - float(row.get("at") or 0)
         if age > max_age_sec:
             session["last_publishable_image"] = None

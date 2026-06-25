@@ -2,15 +2,58 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _by_conversation: dict[str, dict[str, Any]] = {}
 _by_user: dict[str, dict[str, Any]] = {}
 
 MAX_AGE_SEC = 3600.0
+RECENT_UPLOAD_HOURS = 24.0
+
+
+def get_last_voice_session_image(
+    user_id: str,
+    session_id: str | None = None,
+    *,
+    max_age_sec: float = MAX_AGE_SEC,
+) -> dict[str, Any] | None:
+    from app.services import voice_client_session as vcs
+
+    stored = vcs.get_last_publishable_image(user_id, max_age_sec=max_age_sec, ignore_call_binding=True)
+    if stored:
+        return {"url": stored.get("url"), "data": stored.get("data"), "source": "voice_session"}
+    return None
+
+
+def get_last_chat_conversation_image(
+    user_id: str,
+    conversation_id: str | None,
+    *,
+    max_age_sec: float = MAX_AGE_SEC,
+) -> dict[str, Any] | None:
+    if not conversation_id:
+        return None
+    uid = user_id.strip()
+    now = _now()
+    with _lock:
+        row = _by_conversation.get(_conv_key(uid, conversation_id.strip()))
+        if row and now - float(row.get("at") or 0) <= max_age_sec:
+            return dict(row)
+    return None
+
+
+def get_last_user_upload(
+    user_id: str,
+    *,
+    hours: float = RECENT_UPLOAD_HOURS,
+) -> dict[str, Any] | None:
+    return get_last_uploaded_image_for_session(user_id, None, max_age_sec=hours * 3600.0)
 
 
 def _now() -> float:
@@ -90,6 +133,7 @@ def _mirror_to_voice_session(
             image_url=public_url,
             filename=filename,
             size_bytes=size_bytes,
+            source="chat",
         )
     except Exception:  # noqa: BLE001
         pass
@@ -139,6 +183,7 @@ def resolve_image_for_publishing(
     conversation_id: str | None = None,
     *,
     explicit_image_id: str | None = None,
+    session_id: str | None = None,
     use_last_uploaded_image: bool = True,
     image_url: str | None = None,
     image_data: str | None = None,
@@ -155,16 +200,39 @@ def resolve_image_for_publishing(
     if not use_last_uploaded_image:
         return _no_image_error()
 
-    last = get_last_uploaded_image_for_session(user_id, conversation_id)
-    if not last:
-        return _no_image_error()
+    sid = str(session_id or "").strip() or None
+    voice_img = get_last_voice_session_image(user_id, sid)
+    if voice_img and (voice_img.get("url") or voice_img.get("data")):
+        logger.info("[PUBLISH] imagen encontrada en voice session user=%s", user_id[:8])
+        return {
+            "ok": True,
+            "url": voice_img.get("url"),
+            "data": voice_img.get("data"),
+        }
 
-    last_url = str(last.get("url") or "").strip()
-    last_data = str(last.get("data") or "").strip()
-    if not last_url and not last_data:
-        return _no_image_error()
+    chat_img = get_last_chat_conversation_image(user_id, conversation_id)
+    if chat_img and (chat_img.get("url") or chat_img.get("data")):
+        logger.info(
+            "[PUBLISH] imagen encontrada en chat conv=%s user=%s",
+            (conversation_id or "")[:8],
+            user_id[:8],
+        )
+        return {
+            "ok": True,
+            "url": chat_img.get("url"),
+            "data": chat_img.get("data"),
+        }
 
-    return {"ok": True, "url": last_url or None, "data": last_data or None}
+    recent = get_last_user_upload(user_id, hours=RECENT_UPLOAD_HOURS)
+    if recent and (recent.get("url") or recent.get("data")):
+        logger.info("[PUBLISH] imagen encontrada en uploads recientes user=%s", user_id[:8])
+        return {
+            "ok": True,
+            "url": recent.get("url"),
+            "data": recent.get("data"),
+        }
+
+    return _no_image_error()
 
 
 def _no_image_error() -> dict[str, Any]:

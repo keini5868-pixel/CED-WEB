@@ -52,11 +52,14 @@ export async function postVoiceVisionResult(
   requestId: number,
   summary: string,
 ): Promise<void> {
-  await proxyFetch("voice/vision-result", {
+  const res = await proxyFetch("voice/vision-result", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ request_id: requestId, summary }),
   });
+  if (!res.ok) {
+    console.warn("[VISION] vision-result failed status=%s request_id=%s", res.status, requestId);
+  }
 }
 
 export async function ackVoiceClientAction(actionId: number): Promise<void> {

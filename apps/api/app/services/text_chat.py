@@ -279,6 +279,11 @@ FLUJO OBLIGATORIO (sigue estos pasos en orden):
 4. Solo cuando diga «envía», «publica», «dale», «enviar publicación» → invoca la tool (use_last_uploaded_image=true).
 5. Tras éxito real de la tool → «Un momento, señor… Listo. Publicación enviada.»
 
+CAPTION DE PUBLICACIÓN — REGLA CRÍTICA:
+- El parámetro caption/message DEBE ser SOLAMENTE el texto final acordado con el usuario.
+- NUNCA incluyas confirmaciones («sí», «envía», «dale», «publica»), diálogo previo ni historial.
+- Si tienes dudas, pregunta: «¿Confirma que el texto a publicar es: [texto]?»
+
 REGLAS ABSOLUTAS:
 1. NUNCA pidas URL de imagen al usuario. NUNCA. La imagen subida al chat está disponible automáticamente.
 2. NUNCA escribas '**publicar_instagram**' como texto. INVOCA la tool con function calling real.
@@ -547,6 +552,7 @@ def _run_chat_tool(
                 clear_session_image,
                 resolve_image_for_publishing,
             )
+            from app.services.publish_text import sanitize_publish_caption
 
             use_last = tool_input.get("use_last_uploaded_image", True)
             resolved_url: str | None = None
@@ -573,7 +579,7 @@ def _run_chat_tool(
                     resolved_data = resolved.get("data")
             result = publish_facebook(
                 user_id,
-                str(tool_input.get("message") or ""),
+                sanitize_publish_caption(str(tool_input.get("message") or "")),
                 image_url=resolved_url,
                 image_data=resolved_data,
             )
@@ -585,6 +591,7 @@ def _run_chat_tool(
                 clear_session_image,
                 resolve_image_for_publishing,
             )
+            from app.services.publish_text import sanitize_publish_caption
 
             use_last = tool_input.get("use_last_uploaded_image", True)
             resolved = resolve_image_for_publishing(
@@ -604,7 +611,7 @@ def _run_chat_tool(
                 )
             result = publish_instagram(
                 user_id,
-                str(tool_input.get("caption") or ""),
+                sanitize_publish_caption(str(tool_input.get("caption") or "")),
                 image_url=resolved.get("url"),
                 image_data=resolved.get("data"),
             )

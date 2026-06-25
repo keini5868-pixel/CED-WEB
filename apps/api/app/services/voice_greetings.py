@@ -12,6 +12,33 @@ from app.services.conversation_memory import user_conversed_within_hours
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_USER_TZ = "America/New_York"
+
+
+def get_user_timezone(user_id: str | None) -> str:
+    """Timezone IANA del perfil; default Charlotte / US East."""
+    if not user_id:
+        return DEFAULT_USER_TZ
+    try:
+        from app.services import supabase_db
+
+        profile = supabase_db.get_profile(user_id.strip()) or {}
+        tz = str(profile.get("timezone") or "").strip()
+        if tz:
+            return tz
+    except Exception:  # noqa: BLE001
+        pass
+    return DEFAULT_USER_TZ
+
+
+def get_user_local_hour(user_id: str | None) -> int:
+    tz_name = get_user_timezone(user_id)
+    try:
+        return datetime.now(ZoneInfo(tz_name)).hour
+    except Exception:  # noqa: BLE001
+        return datetime.now().hour
+
+
 CONTINUITY_GREETING = (
     "De regreso, señor. ¿Continuamos donde dejamos… o iniciamos misión nueva?"
 )
@@ -53,7 +80,7 @@ def _hour_prefix(hour: int) -> str | None:
     return None
 
 
-def _adapt_time_of_day(text: str, *, tz_name: str = "America/Mexico_City") -> str:
+def _adapt_time_of_day(text: str, *, tz_name: str = DEFAULT_USER_TZ) -> str:
     try:
         hour = datetime.now(ZoneInfo(tz_name)).hour
     except Exception:  # noqa: BLE001
@@ -93,6 +120,13 @@ def pick_jarvis_greeting(user_id: str | None = None) -> str:
 
     idx = _pick_pool_index(user_id)
     greeting = JARVIS_GREETING_POOL[idx]
-    greeting = _adapt_time_of_day(greeting)
-    logger.info("[GREETING] pool=%s user=%s", idx + 1, (user_id or "?")[:8])
+    tz_name = get_user_timezone(user_id)
+    greeting = _adapt_time_of_day(greeting, tz_name=tz_name)
+    logger.info(
+        "[GREETING] pool=%s user=%s tz=%s hour=%s",
+        idx + 1,
+        (user_id or "?")[:8],
+        tz_name,
+        get_user_local_hour(user_id),
+    )
     return greeting

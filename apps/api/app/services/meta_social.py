@@ -35,9 +35,15 @@ def publish_facebook(
     image_url: str | None = None,
     image_data: str | None = None,
 ) -> dict[str, Any]:
-    text = (message or "").strip()
-    if not text:
-        raise MetaSocialError("El mensaje de Facebook no puede estar vacío.")
+    from app.services.publish_text import sanitize_publish_caption, validate_caption
+
+    text = sanitize_publish_caption(message)
+    is_valid, reason = validate_caption(text)
+    if not is_valid:
+        logger.warning("[PUBLISH] caption inválido FB user=%s: %s", user_id[:8], reason)
+        raise MetaSocialError(
+            "El texto a publicar no parece correcto. ¿Puede confirmar el texto exacto?"
+        )
 
     dup_post_id = find_duplicate_publish(user_id, text, platform="facebook")
     if dup_post_id:
@@ -113,9 +119,15 @@ def publish_instagram(
     image_url: str | None = None,
     image_data: str | None = None,
 ) -> dict[str, Any]:
-    text = (caption or "").strip()
-    if not text:
-        raise MetaSocialError("El caption de Instagram no puede estar vacío.")
+    from app.services.publish_text import sanitize_publish_caption, validate_caption
+
+    text = sanitize_publish_caption(caption)
+    is_valid, reason = validate_caption(text)
+    if not is_valid:
+        logger.warning("[PUBLISH] caption inválido IG user=%s: %s", user_id[:8], reason)
+        raise MetaSocialError(
+            "El texto a publicar no parece correcto. ¿Puede confirmar el texto exacto?"
+        )
 
     public_url, _, _ = resolve_image_input(
         user_id=user_id,

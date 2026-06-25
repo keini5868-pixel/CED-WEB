@@ -36,6 +36,7 @@ from app.services.voice_usage import voice_access_state
 logger = logging.getLogger(__name__)
 
 SEARCH_WEB_TIMEOUT_SEC = 20.0
+VISION_PIPELINE_TIMEOUT_SEC = 45.0
 
 
 class SearchWebState:
@@ -131,7 +132,9 @@ async def _run_camera_capture(
         {"request_id": request_id, "question": question, "mode": mode},
     )
     logger.info("[CAMERA] capture_pushed user=%s request_id=%s", user_id[:8], request_id)
-    summary = await _wait_vision_result(user_id, request_id, timeout_sec=20.0)
+    summary = await _wait_vision_result(
+        user_id, request_id, timeout_sec=VISION_PIPELINE_TIMEOUT_SEC
+    )
     if summary:
         logger.info(
             "[VISION:GEMINI] capture_ok user=%s request_id=%s len=%s",
@@ -146,8 +149,7 @@ async def _run_camera_capture(
         request_id,
     )
     return _spoken_err(
-        "No pude ver nada claro en la cámara, señor. "
-        "Asegúrese de que esté encendida y apunte lo que desea que analice.",
+        "Señor, no pude procesar la imagen de la cámara. Intente mostrar de nuevo.",
         error="camera_capture_timeout",
     )
 
@@ -161,6 +163,26 @@ def _spoken_err(text: str, *, error: str | None = None) -> dict[str, Any]:
     if error:
         out["error"] = error
     return out
+
+
+def _resolve_image_for_publishing(
+    user_id: str,
+    params: dict[str, Any],
+) -> dict[str, Any]:
+    from app.services.publish_image_context import resolve_image_for_publishing
+
+    conversation_id = str(
+        params.get("conversation_id") or params.get("session_id") or ""
+    ).strip() or None
+    return resolve_image_for_publishing(
+        user_id,
+        conversation_id,
+        session_id=conversation_id,
+        explicit_image_id=str(params.get("image_id") or "").strip() or None,
+        use_last_uploaded_image=params.get("use_last_image", True) is not False,
+        image_url=params.get("image_url"),
+        image_data=params.get("image_data"),
+    )
 
 
 async def execute_voice_tool(
@@ -388,11 +410,11 @@ async def execute_voice_tool(
                 vcs.set_camera_active(user_id, False)
                 return _spoken_ok("Cámara desactivada, señor.")
             if vcs.is_camera_active(user_id):
-                return _spoken_ok("Cámara activa, señor. ¿Qué desea que analice?")
+                return _spoken_ok("Cámara activa, señor. Lista para análisis.")
             vcs.push_client_action(user_id, "camera_activate", {})
             active = await _wait_camera_ack(user_id, 8.0)
             if active or vcs.is_camera_active(user_id):
-                return _spoken_ok("Cámara activa, señor. ¿Qué desea que analice?")
+                return _spoken_ok("Cámara activa, señor. Lista para análisis.")
             return _spoken_err(
                 "No pude activar la cámara, señor. Verifique permisos.",
                 error="camera_activation_timeout",
@@ -506,18 +528,24 @@ async def execute_voice_tool(
             return _spoken_ok(spoken)
 
         if name == "publicar_facebook":
-            from app.services.publish_text import strip_publish_instruction
+            from app.services.publish_text import sanitize_publish_caption, validate_caption
 
-            mensaje = strip_publish_instruction(str(params.get("mensaje") or ""))
+            mensaje = sanitize_publish_caption(str(params.get("mensaje") or ""))
+            is_valid, reason = validate_caption(mensaje)
+            if not is_valid:
+                logger.warning("[PUBLISH] caption inválido voice FB: %s", reason)
+                return _spoken_err(
+                    "El texto a publicar no parece correcto, señor. "
+                    "¿Puede confirmar el texto exacto?",
+                    error="invalid_caption",
+                )
             image_url = params.get("image_url")
             image_data = params.get("image_data")
-            if not image_url and not image_data and params.get("use_last_image"):
-                from app.services import voice_client_session as vcs
-
-                stored = vcs.get_last_publishable_image(user_id)
-                if stored:
-                    image_url = stored.get("url")
-                    image_data = stored.get("data")
+            if not image_url and not image_data:
+                resolved = _resolve_image_for_publishing(user_id, params)
+                if resolved.get("ok"):
+                    image_url = resolved.get("url")
+                    image_data = resolved.get("data")
             try:
                 result = await asyncio.to_thread(
                     publish_facebook,
@@ -532,18 +560,18 @@ async def execute_voice_tool(
                 return _spoken_err(f"No fue posible publicar, señor. {exc}")
 
         if name == "publicar_instagram":
-            from app.services.publish_text import strip_publish_instruction
+            from app.services.publish_text import sanitize_publish_caption, validate_caption
 
-            caption = strip_publish_instruction(str(params.get("caption") or ""))
+            caption = sanitize_publish_caption(str(params.get("caption") or ""))
             image_url = params.get("image_url")
             image_data = params.get("image_data")
             from app.services import voice_client_session as vcs
 
             if not image_url and not image_data:
-                stored = vcs.get_last_publishable_image(user_id)
-                if stored:
-                    image_url = stored.get("url")
-                    image_data = stored.get("data")
+                resolved = _resolve_image_for_publishing(user_id, params)
+                if resolved.get("ok"):
+                    image_url = resolved.get("url")
+                    image_data = resolved.get("data")
             if not caption and (image_url or image_data):
                 return {
                     "ok": False,
@@ -554,11 +582,19 @@ async def execute_voice_tool(
                 return {
                     "ok": False,
                     "spoken": (
-                        "Aún no recibo la imagen en esta llamada, señor. "
-                        "Adjúntela en el chat con la voz activa o muéstremela con la cámara."
+                        "No encuentro la imagen para publicar, señor. "
+                        "Adjúntela en el chat o muéstremela con la cámara activa."
                     ),
                     "error": "missing_image",
                 }
+            is_valid, reason = validate_caption(caption)
+            if not is_valid:
+                logger.warning("[PUBLISH] caption inválido voice IG: %s", reason)
+                return _spoken_err(
+                    "El texto a publicar no parece correcto, señor. "
+                    "¿Puede confirmar el texto exacto?",
+                    error="invalid_caption",
+                )
             try:
                 result = await asyncio.to_thread(
                     publish_instagram,

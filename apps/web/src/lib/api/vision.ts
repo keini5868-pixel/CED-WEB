@@ -66,7 +66,7 @@ export async function fetchVisionAnalyze(
         image: imageDataUrl,
         question,
       },
-      25000,
+      15000,
     );
     const data = (await res.json()) as Record<string, unknown>;
     if (!res.ok || data.ok !== true) {
@@ -77,7 +77,10 @@ export async function fetchVisionAnalyze(
       summary: String(data.summary || ""),
       subject: typeof data.subject === "string" ? data.subject : undefined,
     };
-  } catch {
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      return { ok: false, error: "El análisis de cámara tardó demasiado", code: "timeout" };
+    }
     return { ok: false, error: "No se pudo contactar la API" };
   }
 }

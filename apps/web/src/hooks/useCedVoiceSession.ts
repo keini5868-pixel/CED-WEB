@@ -118,8 +118,8 @@ import {
 } from "@/lib/voice/preferences";
 
 const CAMERA_IDLE_MS = 5 * 60 * 1000;
-const CAMERA_FRAME_WARM_MS = 2200;
-const CAMERA_FRAME_READY_MS = 900;
+const CAMERA_FRAME_WARM_MS = 4500;
+const CAMERA_FRAME_READY_MS = 1200;
 const VOICE_CLIENT_POLL_MS = 450;
 const VIDEO_SEND_INTERVAL_MS = 2000;
 const VIDEO_CAPTURE_WIDTH = 640;
@@ -328,6 +328,26 @@ export function useCedVoiceSession(
       return cameraStreamLive();
     };
 
+    const ensureCameraCaptureVideo = async (maxMs = 5000): Promise<boolean> => {
+      const stream = cameraStreamRef.current;
+      if (!stream) return false;
+      let video = cameraCaptureVideoRef.current;
+      if (!video || video.srcObject !== stream) {
+        video = document.createElement("video");
+        video.srcObject = stream;
+        video.muted = true;
+        video.playsInline = true;
+        cameraCaptureVideoRef.current = video;
+        await video.play().catch(() => undefined);
+      }
+      const started = Date.now();
+      while (Date.now() - started < maxMs) {
+        if (video.videoWidth > 0) return true;
+        await new Promise((r) => window.setTimeout(r, 80));
+      }
+      return video.videoWidth > 0;
+    };
+
     const handleVoiceClientAction = async (action: {
       id: number;
       action: string;
@@ -370,13 +390,17 @@ export function useCedVoiceSession(
         }
         const streamLive = cameraStreamLive();
         await postVoiceCameraStatus(streamLive, streamLive);
+        await ensureCameraCaptureVideo(hadStream ? 2000 : 5000);
         const frame = await waitForCameraFrame(
           hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
           mode === "analyze",
         );
         if (!frame) {
           console.warn("[VISION:GEMINI] empty_frame request_id=%s", requestId);
-          await postVoiceVisionResult(requestId, "No pude capturar la cámara.");
+          await postVoiceVisionResult(
+            requestId,
+            "Señor, no pude procesar la imagen de la cámara. Intente mostrar de nuevo.",
+          );
         } else {
           console.log("[VISION:GEMINI] analyze_start request_id=%s mode=%s", requestId, mode);
           const result =
