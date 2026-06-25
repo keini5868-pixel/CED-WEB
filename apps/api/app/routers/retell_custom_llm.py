@@ -795,7 +795,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 uid,
                                 {"query": web_req["query"], "kind": kind},
                             ),
-                            timeout=8.0,
+                            timeout=20.0,
                         )
                     except asyncio.TimeoutError:
                         logger.warning("[RETELL-GEMINI] web_search timeout call=%s", call_id)

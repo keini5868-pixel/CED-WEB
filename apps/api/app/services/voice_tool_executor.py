@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from typing import Any
-
 from app.services.claude_deep_analysis import consultar_sistema_avanzado
 from app.services.cognitive_memory import save_memory, search_memory
 from app.services.conversation_memory import (
@@ -13,7 +13,7 @@ from app.services.conversation_memory import (
     recall_previous_conversations,
     save_long_term_memory,
 )
-from app.services.gemini_grounded import fetch_voice_brief
+from app.services.gemini_grounded import fetch_voice_brief_parallel
 from app.services.voice_spoken import fit_voice_spoken, voice_spoken_limit
 from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
@@ -35,7 +35,26 @@ from app.services.voice_usage import voice_access_state
 
 logger = logging.getLogger(__name__)
 
-SEARCH_WEB_TIMEOUT_SEC = 8.0
+SEARCH_WEB_TIMEOUT_SEC = 20.0
+
+
+class SearchWebState:
+    """Evita procesar más de una respuesta search_web por invocación."""
+
+    def __init__(self) -> None:
+        self.responded = False
+        self.response_id: str | None = None
+
+    def take(self, payload: dict[str, Any]) -> dict[str, Any] | None:
+        if self.responded:
+            logger.warning(
+                "[SEARCH] respuesta duplicada descartada (id=%s)",
+                self.response_id,
+            )
+            return None
+        self.responded = True
+        self.response_id = str(payload.get("response_id") or uuid.uuid4())[:8]
+        return payload
 
 
 async def _wait_camera_ack(user_id: str, timeout_sec: float = 8.0) -> bool:
@@ -171,14 +190,23 @@ async def execute_voice_tool(
                 return _spoken_ok(
                     "Con gusto, señor. Puedo explicarle eso con lo que ya tengo en mi cerebro interno."
                 )
+            web_state = SearchWebState()
             try:
                 result = await asyncio.wait_for(
-                    asyncio.to_thread(fetch_voice_brief, query, kind=kind),
+                    fetch_voice_brief_parallel(query, kind=kind),
                     timeout=SEARCH_WEB_TIMEOUT_SEC,
                 )
             except (asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001
                 logger.warning("[WEB_SEARCH] fallback: %s", exc)
-                return {
+                payload = web_state.take(
+                    {
+                        "status": "timeout",
+                        "fallback": True,
+                        "ok": False,
+                        "spoken": "Búsqueda agotada.",
+                    }
+                )
+                return payload or {
                     "status": "timeout",
                     "fallback": True,
                     "ok": False,
@@ -186,20 +214,33 @@ async def execute_voice_tool(
                 }
             summary = str(result.get("summary") or "").strip()
             if result.get("ok") and summary:
-                return {
-                    "status": "success",
-                    "ok": True,
-                    "spoken": summary,
-                    "summary": summary,
-                    "kind": kind,
-                    "source": result.get("source"),
-                }
+                payload = web_state.take(
+                    {
+                        "status": "success",
+                        "ok": True,
+                        "spoken": summary,
+                        "summary": summary,
+                        "kind": kind,
+                        "source": result.get("source"),
+                        "response_id": result.get("response_id"),
+                    }
+                )
+                if payload:
+                    return payload
             logger.warning(
                 "[WEB_SEARCH] empty/fail kind=%s code=%s",
                 kind,
                 result.get("code"),
             )
-            return {
+            payload = web_state.take(
+                {
+                    "status": "timeout",
+                    "fallback": True,
+                    "ok": False,
+                    "spoken": str(result.get("spoken") or "Sin resultados actuales disponibles."),
+                }
+            )
+            return payload or {
                 "status": "timeout",
                 "fallback": True,
                 "ok": False,

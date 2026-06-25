@@ -25,10 +25,14 @@ export async function fetchVisionWebSearch(
   question = "",
 ): Promise<VisionSearchResult> {
   try {
-    const res = await proxyPost("vision/search-web", {
-      image: imageDataUrl,
-      question,
-    });
+    const res = await proxyPost(
+      "vision/search-web",
+      {
+        image: imageDataUrl,
+        question,
+      },
+      20000,
+    );
     const data = (await res.json()) as Record<string, unknown>;
     if (!res.ok || data.ok !== true) {
       return {

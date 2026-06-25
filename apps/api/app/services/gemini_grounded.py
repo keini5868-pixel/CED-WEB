@@ -1,10 +1,12 @@
-"""Consultas web para voz — Tavily primero, Gemini Search como respaldo."""
+"""Consultas web para voz — Tavily + Gemini Search en paralelo."""
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
 import re
+import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Any
 
@@ -17,8 +19,9 @@ logger = logging.getLogger(__name__)
 BRIEF_MODEL = "gemini-2.5-flash"
 # Gemini 2.5 + Google Search consume tokens internos; <512 trunca en MAX_TOKENS.
 GEMINI_OUTPUT_TOKENS = 768
-TAVILY_TIMEOUT_SEC = 5
-GEMINI_TIMEOUT_SEC = 5
+TAVILY_TIMEOUT_SEC = 15
+GEMINI_TIMEOUT_SEC = 15
+SEARCH_WEB_PARALLEL_TIMEOUT_SEC = 20
 MIN_SPOKEN_CHARS = 28
 MIN_SPOKEN_CHARS_NEWS = 24
 
@@ -66,10 +69,6 @@ def _spoken_fallback(raw: str, *, kind: str = "general") -> str:
     if len(text) <= limit:
         return text
     return fit_voice_spoken(text, max_chars=limit)
-
-
-def _tavily_brief(topic: str, kind: str) -> str:
-    return _spoken_fallback(tavily_voice_snippet(topic, kind=kind), kind=kind)
 
 
 def _gemini_prompt(topic: str, kind: str) -> str:
@@ -135,13 +134,45 @@ def _run_gemini(topic: str, kind: str, api_key: str) -> str:
     return last_text
 
 
-def fetch_voice_brief(query: str, *, kind: str = "news") -> dict[str, Any]:
-    """Resumen hablable: Tavily (~1-5 s) → Gemini Search (~5 s) como respaldo único."""
+async def _run_tavily_async(topic: str, kind: str) -> str:
+    return await asyncio.wait_for(
+        asyncio.to_thread(_run_tavily, topic, kind),
+        timeout=TAVILY_TIMEOUT_SEC,
+    )
+
+
+async def _run_gemini_async(topic: str, kind: str, api_key: str) -> str:
+    return await asyncio.wait_for(
+        asyncio.to_thread(_run_gemini, topic, kind, api_key),
+        timeout=GEMINI_TIMEOUT_SEC,
+    )
+
+
+def _source_from_task_name(name: str) -> str:
+    return "tavily" if "tavily" in name else "gemini"
+
+
+async def _cancel_pending_tasks(tasks: list[asyncio.Task[Any]]) -> None:
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    for task in tasks:
+        if task.cancelled():
+            continue
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
+
+
+async def fetch_voice_brief_parallel(query: str, *, kind: str = "news") -> dict[str, Any]:
+    """Tavily y Gemini en paralelo — usa el primero con resultado válido."""
     settings = get_settings()
     topic = (query or "").strip() or "noticias importantes de hoy"
     kind = kind if kind in ("news", "weather", "general") else "general"
     has_tavily = bool(settings.tavily_api_key.strip())
     has_google = bool(settings.google_api_key.strip())
+    api_key = settings.google_api_key.strip()
 
     if not has_tavily and not has_google:
         return {
@@ -150,62 +181,105 @@ def fetch_voice_brief(query: str, *, kind: str = "news") -> dict[str, Any]:
             "code": "missing_keys",
         }
 
+    tasks: list[asyncio.Task[str]] = []
     if has_tavily:
-        try:
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                future = pool.submit(_run_tavily, topic, kind)
-                tavily_text = future.result(timeout=TAVILY_TIMEOUT_SEC)
-            if _is_valid_brief(tavily_text, kind=kind):
-                logger.info(
-                    "[VOICE:BRIEF] tavily ok kind=%s len=%s", kind, len(tavily_text)
-                )
-                return {
-                    "ok": True,
-                    "summary": tavily_text,
-                    "kind": kind,
-                    "source": "tavily",
-                }
-            logger.warning("[VOICE:BRIEF] tavily vacío o corto kind=%s", kind)
-        except FuturesTimeout:
-            logger.warning("[VOICE:BRIEF] tavily timeout kind=%s", kind)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[VOICE:BRIEF] tavily error %s", exc)
-
+        tavily_task = asyncio.create_task(_run_tavily_async(topic, kind))
+        tavily_task.set_name("tavily_task")
+        tasks.append(tavily_task)
     if has_google:
-        try:
-            gemini_text = _run_gemini(topic, kind, settings.google_api_key.strip())
-            if _is_valid_brief(gemini_text, kind=kind):
-                logger.info(
-                    "[VOICE:BRIEF] gemini ok kind=%s len=%s", kind, len(gemini_text)
-                )
-                return {
-                    "ok": True,
-                    "summary": gemini_text,
-                    "kind": kind,
-                    "source": "gemini",
-                }
-            logger.warning(
-                "[VOICE:BRIEF] gemini incompleto kind=%s len=%s",
-                kind,
-                len(gemini_text or ""),
-            )
-        except FuturesTimeout:
-            logger.warning("[VOICE:BRIEF] gemini timeout kind=%s", kind)
-        except Exception as exc:  # noqa: BLE001
-            logger.error("[GEMINI:BRIEF] %s: %s", type(exc).__name__, exc)
+        gemini_task = asyncio.create_task(_run_gemini_async(topic, kind, api_key))
+        gemini_task.set_name("gemini_task")
+        tasks.append(gemini_task)
 
-    if not has_tavily:
+    pending = set(tasks)
+    result: dict[str, Any] | None = None
+    response_id = str(uuid.uuid4())[:8]
+
+    try:
+        deadline = asyncio.get_running_loop().time() + SEARCH_WEB_PARALLEL_TIMEOUT_SEC
+        while pending and result is None:
+            timeout = max(0.1, deadline - asyncio.get_running_loop().time())
+            done, pending = await asyncio.wait(
+                pending,
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                logger.warning("[SEARCH] timeout total kind=%s id=%s", kind, response_id)
+                break
+
+            for task in done:
+                name = task.get_name()
+                try:
+                    candidate = task.result()
+                    if candidate and _is_valid_brief(candidate, kind=kind):
+                        result = {
+                            "ok": True,
+                            "summary": candidate,
+                            "kind": kind,
+                            "source": _source_from_task_name(name),
+                            "response_id": response_id,
+                        }
+                        logger.info("[SEARCH] resultado de %s id=%s", name, response_id)
+                        break
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("[SEARCH] task falló %s: %s", name, exc)
+
+        for task in list(pending):
+            if not task.done():
+                task.cancel()
+        for task in list(pending):
+            if task.cancelled():
+                continue
+            try:
+                late = task.result()
+                if late and _is_valid_brief(str(late), kind=kind):
+                    logger.warning(
+                        "[SEARCH] respuesta duplicada descartada (id=%s task=%s)",
+                        response_id,
+                        task.get_name(),
+                    )
+            except (asyncio.CancelledError, Exception):
+                pass
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+        if result:
+            return result
+
+        if not has_tavily:
+            return {
+                "ok": False,
+                "error": (
+                    "Búsqueda web lenta o incompleta. Agregue TAVILY_API_KEY en "
+                    "apps/api/.env (tavily.com) para resultados rápidos."
+                ),
+                "code": "missing_tavily",
+            }
+
         return {
             "ok": False,
-            "error": (
-                "Búsqueda web lenta o incompleta. Agregue TAVILY_API_KEY en "
-                "apps/api/.env (tavily.com) para resultados rápidos."
-            ),
-            "code": "missing_tavily",
+            "error": "No se obtuvo información suficiente en el tiempo límite",
+            "code": "empty_result",
+            "status": "timeout",
+            "fallback": True,
+            "spoken": "Sin resultados disponibles.",
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[SEARCH] error paralelismo: %s", exc)
+        await _cancel_pending_tasks(tasks)
+        return {
+            "ok": False,
+            "error": str(exc),
+            "code": "error",
+            "status": "error",
+            "fallback": True,
+            "spoken": "Sin resultados disponibles.",
         }
 
-    return {
-        "ok": False,
-        "error": "No se obtuvo información suficiente en el tiempo límite",
-        "code": "empty_result",
-    }
+
+def fetch_voice_brief(query: str, *, kind: str = "news") -> dict[str, Any]:
+    """Wrapper síncrono para callers legacy (thread pool / rutas sync)."""
+    return asyncio.run(fetch_voice_brief_parallel(query, kind=kind))
