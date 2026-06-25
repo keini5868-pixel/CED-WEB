@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 SEARCH_WEB_TIMEOUT_SEC = 20.0
 VISION_PIPELINE_TIMEOUT_SEC = 45.0
+PUBLISH_TIMEOUT_SEC = 30.0
 
 
 class SearchWebState:
@@ -183,6 +184,42 @@ def _resolve_image_for_publishing(
         image_url=params.get("image_url"),
         image_data=params.get("image_data"),
     )
+
+
+async def _run_publish_call(
+    fn: Any,
+    *args: Any,
+    **kwargs: Any,
+) -> dict[str, Any]:
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(fn, *args, **kwargs),
+            timeout=PUBLISH_TIMEOUT_SEC,
+        )
+    except asyncio.TimeoutError:
+        logger.error("[PUBLISH] timeout en %s", getattr(fn, "__name__", "publish"))
+        return {
+            "ok": False,
+            "spoken": (
+                "Señor, la publicación está tardando más de lo normal. "
+                "¿Desea que lo intente de nuevo?"
+            ),
+            "error": "timeout",
+        }
+    except MetaSocialError as exc:
+        logger.error("[PUBLISH] Meta error: %s", exc)
+        return {
+            "ok": False,
+            "spoken": f"Señor, no pude publicar. {str(exc)[:100]}",
+            "error": "publish_failed",
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[PUBLISH] error: %s", exc)
+        return {
+            "ok": False,
+            "spoken": f"Señor, hubo un problema publicando. {str(exc)[:100]}",
+            "error": "publish_failed",
+        }
 
 
 async def execute_voice_tool(
@@ -530,44 +567,49 @@ async def execute_voice_tool(
         if name == "publicar_facebook":
             from app.services.publish_text import sanitize_publish_caption, validate_caption
 
+            logger.info("[PUBLISH] inicio publicar_facebook user=%s", user_id[:8])
             mensaje = sanitize_publish_caption(str(params.get("mensaje") or ""))
             is_valid, reason = validate_caption(mensaje)
             if not is_valid:
                 logger.warning("[PUBLISH] caption inválido voice FB: %s", reason)
                 return _spoken_err(
-                    "El texto a publicar no parece correcto, señor. "
-                    "¿Puede confirmar el texto exacto?",
+                    "Señor, eso parece una instrucción, no el texto final. "
+                    "Genero un guion sobre el tema, se lo propongo y publico solo tras su confirmación.",
                     error="invalid_caption",
                 )
             image_url = params.get("image_url")
             image_data = params.get("image_data")
             if not image_url and not image_data:
+                logger.info("[PUBLISH] resolviendo imagen user=%s", user_id[:8])
                 resolved = _resolve_image_for_publishing(user_id, params)
                 if resolved.get("ok"):
                     image_url = resolved.get("url")
                     image_data = resolved.get("data")
-            try:
-                result = await asyncio.to_thread(
-                    publish_facebook,
-                    user_id,
-                    mensaje,
-                    image_url=str(image_url) if image_url else None,
-                    image_data=str(image_data) if image_data else None,
-                )
-                spoken = str(result.get("spoken") or "Publicación enviada con éxito a Facebook, señor.")
-                return _spoken_ok(spoken)
-            except MetaSocialError as exc:
-                return _spoken_err(f"No fue posible publicar, señor. {exc}")
+            logger.info("[PUBLISH] llamando Meta API facebook user=%s", user_id[:8])
+            result = await _run_publish_call(
+                publish_facebook,
+                user_id,
+                mensaje,
+                image_url=str(image_url) if image_url else None,
+                image_data=str(image_data) if image_data else None,
+            )
+            logger.info("[PUBLISH] fin publicar_facebook ok=%s user=%s", result.get("ok"), user_id[:8])
+            if not result.get("ok"):
+                return _spoken_err(str(result.get("spoken") or "No pude publicar."), error=str(result.get("error")))
+            spoken = str(result.get("spoken") or "Publicación enviada con éxito a Facebook, señor.")
+            return _spoken_ok(spoken)
 
         if name == "publicar_instagram":
             from app.services.publish_text import sanitize_publish_caption, validate_caption
 
+            logger.info("[PUBLISH] inicio publicar_instagram user=%s", user_id[:8])
             caption = sanitize_publish_caption(str(params.get("caption") or ""))
             image_url = params.get("image_url")
             image_data = params.get("image_data")
             from app.services import voice_client_session as vcs
 
             if not image_url and not image_data:
+                logger.info("[PUBLISH] resolviendo imagen user=%s", user_id[:8])
                 resolved = _resolve_image_for_publishing(user_id, params)
                 if resolved.get("ok"):
                     image_url = resolved.get("url")
@@ -591,24 +633,25 @@ async def execute_voice_tool(
             if not is_valid:
                 logger.warning("[PUBLISH] caption inválido voice IG: %s", reason)
                 return _spoken_err(
-                    "El texto a publicar no parece correcto, señor. "
-                    "¿Puede confirmar el texto exacto?",
+                    "Señor, eso parece una instrucción, no el texto final. "
+                    "Genero un guion sobre el tema, se lo propongo y publico solo tras su confirmación.",
                     error="invalid_caption",
                 )
-            try:
-                result = await asyncio.to_thread(
-                    publish_instagram,
-                    user_id,
-                    caption,
-                    image_url=str(image_url) if image_url else None,
-                    image_data=str(image_data) if image_data else None,
-                )
-                spoken = str(result.get("spoken") or "Publicación enviada con éxito a Instagram, señor.")
-                vcs.clear_awaiting_instagram_caption(user_id)
-                vcs.clear_last_publishable_image(user_id)
-                return _spoken_ok(spoken)
-            except MetaSocialError as exc:
-                return _spoken_err(f"No fue posible publicar, señor. {exc}")
+            logger.info("[PUBLISH] llamando Meta API instagram user=%s", user_id[:8])
+            result = await _run_publish_call(
+                publish_instagram,
+                user_id,
+                caption,
+                image_url=str(image_url) if image_url else None,
+                image_data=str(image_data) if image_data else None,
+            )
+            logger.info("[PUBLISH] fin publicar_instagram ok=%s user=%s", result.get("ok"), user_id[:8])
+            if not result.get("ok"):
+                return _spoken_err(str(result.get("spoken") or "No pude publicar."), error=str(result.get("error")))
+            spoken = str(result.get("spoken") or "Publicación enviada con éxito a Instagram, señor.")
+            vcs.clear_awaiting_instagram_caption(user_id)
+            vcs.clear_last_publishable_image(user_id)
+            return _spoken_ok(spoken)
 
         if name == "activar_modo_conducir":
             push_client_action(user_id, "open_drive", {})

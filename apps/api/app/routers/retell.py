@@ -201,6 +201,8 @@ async def retell_webhook(request: Request) -> dict[str, Any]:
 @router.post("/tools/{tool_name}")
 async def retell_tool_handler(tool_name: str, request: Request) -> JSONResponse:
     """Custom function invocada por Retell durante la llamada."""
+    import asyncio
+
     payload = await _verify_retell_request(request)
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
@@ -212,7 +214,22 @@ async def retell_tool_handler(tool_name: str, request: Request) -> JSONResponse:
             content={"result": "No identifiqué al usuario, señor."},
         )
 
-    result = await execute_voice_tool(tool_name, user_id, args)
+    publish_tools = {"publicar_facebook", "publicar_instagram"}
+    timeout_sec = 30.0 if tool_name in publish_tools else 45.0
+    try:
+        result = await asyncio.wait_for(
+            execute_voice_tool(tool_name, user_id, args),
+            timeout=timeout_sec,
+        )
+    except asyncio.TimeoutError:
+        logger.error("[PUBLISH] timeout retell webhook tool=%s user=%s", tool_name, user_id[:8])
+        spoken = (
+            "Señor, la publicación está tardando más de lo normal. "
+            "¿Desea que lo intente de nuevo?"
+            if tool_name in publish_tools
+            else "La acción tardó demasiado, señor. ¿Reintentamos?"
+        )
+        return JSONResponse(status_code=200, content={"result": spoken})
     spoken = str(result.get("spoken") or "Completado, señor.")
     return JSONResponse(status_code=200, content={"result": spoken})
 

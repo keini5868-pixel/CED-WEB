@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Callable
+
+logger = logging.getLogger(__name__)
 
 from app.services.cognitive_intents import (
     has_advanced_confirmation,
@@ -251,15 +254,26 @@ def transcript_has_meta_publish_context(transcript: list[Utterance]) -> bool:
 
 
 def resolve_meta_publish_request(user_text: str) -> dict[str, str] | None:
-    """Publicación directa en Meta — prioridad sobre sistema avanzado."""
-    from app.services.publish_text import extract_publish_body
+    """Publicación directa en Meta — solo con caption final válido."""
+    from app.services.publish_text import (
+        is_vague_publish_instruction,
+        sanitize_publish_caption,
+        validate_caption,
+        extract_publish_body,
+    )
 
     last = (user_text or "").strip()
     if not last or not is_meta_publish_intent(last):
         return None
+    if is_vague_publish_instruction(last):
+        return None
     norm = _normalize(last)
     platform = "instagram" if re.search(r"\b(instagram|ig)\b", norm) else "facebook"
-    caption = extract_publish_body(last, platform=platform)
+    caption = sanitize_publish_caption(extract_publish_body(last, platform=platform))
+    is_valid, reason = validate_caption(caption)
+    if not is_valid or not caption:
+        logger.info("[PUBLISH] bypass omitido caption inválido: %s", reason)
+        return None
     return {"platform": platform, "caption": caption}
 
 

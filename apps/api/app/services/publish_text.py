@@ -75,6 +75,57 @@ _SUSPICIOUS_CAPTION_PATTERNS = (
     re.compile(r"(envíalo|envialo|mándalo|mandalo|póstéalo|postealo)\s+ya", re.I),
 )
 
+_LITERAL_INSTRUCTION_PATTERNS = (
+    re.compile(r"^publica\s+(tus?|mis?|el|la|los|las|un|una|esto|esta)\s+", re.I),
+    re.compile(r"^postea\s+(tus?|mis?|el|la|los|las|un|una|esto|esta)\s+", re.I),
+    re.compile(r"^haz\s+(una?\s+)?publicaci[oó]n", re.I),
+    re.compile(r"^crea\s+(un\s+)?post", re.I),
+    re.compile(r"^comparte\s+(en|tus?|mis?)\s+", re.I),
+)
+
+PUBLISH_INTERPRETATION_RULES = """
+INTERPRETACIÓN DE INSTRUCCIONES DE PUBLICACIÓN:
+
+Cuando el usuario dice "publica X" o "publica sobre X", NUNCA publiques literalmente
+la frase "publica X". En su lugar:
+
+1. INTERPRETA X como el TEMA o TIPO de contenido a publicar.
+2. GENERA el contenido apropiado sobre X.
+3. PROPÓN al usuario: "Voy a publicar lo siguiente: [contenido generado]. ¿Lo confirmo?"
+4. Solo invoca publicar_* tras confirmación explícita del usuario.
+
+EJEMPLO INCORRECTO: caption="Publica tus características en Facebook"
+EJEMPLO CORRECTO: genera texto sobre CED → pide confirmación → publica ese texto.
+
+REGLA: el caption SIEMPRE es contenido sustantivo, NUNCA la instrucción de publicación.
+"""
+
+
+def _is_literal_instruction(caption: str) -> bool:
+    text = (caption or "").strip().lower()
+    if not text:
+        return False
+    for pattern in _LITERAL_INSTRUCTION_PATTERNS:
+        if pattern.match(text):
+            return True
+    return False
+
+
+def is_vague_publish_instruction(user_text: str) -> bool:
+    """True si el usuario pide publicar un tema, no un caption final."""
+    t = (user_text or "").strip()
+    if not t:
+        return False
+    if _is_literal_instruction(t):
+        return True
+    if _PUBLISH_ONLY.match(t):
+        return True
+    body = extract_publish_body(t, platform=detect_publish_platform(t))
+    if not body:
+        return True
+    is_valid, _ = validate_caption(body)
+    return not is_valid
+
 
 def sanitize_publish_caption(raw: str) -> str:
     return strip_publish_instruction((raw or "").strip())
@@ -85,6 +136,8 @@ def validate_caption(caption: str) -> tuple[bool, str]:
     text = sanitize_publish_caption(caption)
     if not text:
         return False, "Caption vacío"
+    if _is_literal_instruction(text):
+        return False, "caption es la instrucción literal, no el contenido"
     if _is_instruction_garbage_caption(text):
         return False, "Caption parece instrucción conversacional"
     lowered = text.lower()
