@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 from app.config import get_settings
-from app.services.tavily_search import tavily_answer, tavily_search
+from app.services.tavily_search import DEFAULT_MAX_RESULTS, tavily_answer, tavily_search
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,7 @@ def vision_search_web(
             "source": "tavily",
         }
 
-    rows = tavily_search(query, max_results=5)
+    rows = tavily_search(query, max_results=DEFAULT_MAX_RESULTS, kind="general")
     for row in rows:
         content = str(row.get("content") or "").strip()
         if len(content) >= 40:

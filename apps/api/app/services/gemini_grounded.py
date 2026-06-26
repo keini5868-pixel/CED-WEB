@@ -109,7 +109,11 @@ def _optimal_search_query(topic: str, kind: str) -> str:
 
 
 def _run_tavily(topic: str, kind: str) -> str:
+    from app.services.tavily_search import infer_tavily_topic
+
     q = _optimal_search_query(topic, kind)
+    tavily_topic = infer_tavily_topic(q, kind=kind)
+    logger.info("[SEARCH] tavily topic=%s kind=%s q=%s", tavily_topic, kind, q[:80])
     text = _spoken_fallback(tavily_voice_snippet(q, kind=kind), kind=kind)
     if _is_valid_brief(text, kind=kind):
         return text

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -12,14 +13,54 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 TAVILY_URL = "https://api.tavily.com/search"
+DEFAULT_MAX_RESULTS = 3
+
+_NEWS_QUERY_HINTS = re.compile(
+    r"\b(noticias?|última hora|ultima hora|breaking|hoy|ayer|esta semana)\b",
+    re.I,
+)
+_RESEARCH_HINTS = re.compile(
+    r"\b("
+    r"investig(a|ación|ar)|research|análisis profundo|analisis profundo|"
+    r"deep dive|estudio detallado|modo avanzado|investigación profunda"
+    r")\b",
+    re.I,
+)
+
+
+def infer_tavily_topic(query: str, *, kind: str = "general") -> str:
+    """Topic Tavily: news solo si kind o query lo ameritan; general es más rápido."""
+    if kind == "news":
+        return "news"
+    if _NEWS_QUERY_HINTS.search((query or "").strip()):
+        return "news"
+    return "general"
+
+
+def resolve_search_depth(
+    query: str,
+    *,
+    kind: str = "general",
+    research: bool = False,
+) -> str:
+    """basic por defecto; advanced solo para investigación explícita."""
+    if research:
+        return "advanced"
+    q = (query or "").strip()
+    if _RESEARCH_HINTS.search(q):
+        return "advanced"
+    return "basic"
 
 
 def tavily_raw_search(
     query: str,
     *,
-    max_results: int = 5,
+    max_results: int = DEFAULT_MAX_RESULTS,
     include_domains: list[str] | None = None,
-    search_depth: str = "basic",
+    search_depth: str | None = None,
+    topic: str | None = None,
+    kind: str = "general",
+    research: bool = False,
 ) -> dict[str, Any]:
     """Respuesta completa Tavily: answer, results, response_time."""
     settings = get_settings()
@@ -27,12 +68,16 @@ def tavily_raw_search(
     if not key:
         return {"query": query, "answer": None, "results": [], "response_time": 0}
 
+    depth = search_depth or resolve_search_depth(query, kind=kind, research=research)
+    tavily_topic = topic or infer_tavily_topic(query, kind=kind)
+
     payload: dict[str, Any] = {
         "api_key": key,
         "query": query,
         "max_results": max_results,
         "include_answer": True,
-        "search_depth": search_depth,
+        "search_depth": depth,
+        "topic": tavily_topic,
     }
     if include_domains:
         payload["include_domains"] = include_domains
@@ -43,15 +88,35 @@ def tavily_raw_search(
         if res.status_code != 200:
             logger.warning("[TAVILY] status=%s body=%s", res.status_code, res.text[:200])
             return {"query": query, "answer": None, "results": [], "response_time": 0}
-        return res.json()
+        data = res.json()
+        logger.info(
+            "[TAVILY] q=%s topic=%s depth=%s max=%s rt=%s",
+            (query or "")[:60],
+            tavily_topic,
+            depth,
+            max_results,
+            data.get("response_time"),
+        )
+        return data
     except Exception as exc:  # noqa: BLE001
         logger.warning("[TAVILY] %s", exc)
         return {"query": query, "answer": None, "results": [], "response_time": 0}
 
 
-def tavily_answer(query: str, *, max_results: int = 5) -> str:
+def tavily_answer(
+    query: str,
+    *,
+    max_results: int = DEFAULT_MAX_RESULTS,
+    kind: str = "general",
+    research: bool = False,
+) -> str:
     """Campo `answer` de Tavily — ideal para voz (ej. búsqueda AMD)."""
-    data = tavily_raw_search(query, max_results=max_results)
+    data = tavily_raw_search(
+        query,
+        max_results=max_results,
+        kind=kind,
+        research=research,
+    )
     answer = data.get("answer")
     if answer and isinstance(answer, str) and len(answer.strip()) >= 20:
         return answer.strip()
@@ -65,11 +130,23 @@ def tavily_answer(query: str, *, max_results: int = 5) -> str:
 def tavily_search(
     query: str,
     *,
-    max_results: int = 5,
+    max_results: int = DEFAULT_MAX_RESULTS,
     include_domains: list[str] | None = None,
+    search_depth: str | None = None,
+    topic: str | None = None,
+    kind: str = "general",
+    research: bool = False,
 ) -> list[dict[str, Any]]:
     """Lista de resultados — answer como primer item si existe."""
-    data = tavily_raw_search(query, max_results=max_results, include_domains=include_domains)
+    data = tavily_raw_search(
+        query,
+        max_results=max_results,
+        include_domains=include_domains,
+        search_depth=search_depth,
+        topic=topic,
+        kind=kind,
+        research=research,
+    )
     rows = list(data.get("results") or [])
     answer = data.get("answer")
     if answer and isinstance(answer, str):
@@ -103,7 +180,7 @@ def tavily_voice_snippet(
     if not q:
         return ""
 
-    rows = tavily_search(q, max_results=5)
+    rows = tavily_search(q, max_results=DEFAULT_MAX_RESULTS, kind=kind)
     for row in rows:
         text = str(row.get("content") or row.get("snippet") or "").strip()
         if len(text) >= 30:
