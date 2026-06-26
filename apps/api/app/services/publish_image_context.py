@@ -15,6 +15,38 @@ _by_user: dict[str, dict[str, Any]] = {}
 
 MAX_AGE_SEC = 3600.0
 RECENT_UPLOAD_HOURS = 24.0
+VOICE_RECENT_SEC = 300.0
+
+
+def register_voice_session_image(
+    user_id: str,
+    public_url: str,
+    *,
+    filename: str = "",
+    size_bytes: int = 0,
+    session_id: str | None = None,
+) -> None:
+    """Registra imagen subida por HUD de voz para resolución cross-replica."""
+    url = (public_url or "").strip()
+    if not url:
+        return
+    uid = user_id.strip()
+    entry = {
+        "url": url,
+        "data": None,
+        "at": _now(),
+        "filename": filename,
+        "size_bytes": size_bytes,
+        "source": "voice",
+        "session_id": (session_id or "").strip() or None,
+    }
+    with _lock:
+        _by_user[uid] = entry
+    logger.info(
+        "[PUBLISH] [IMAGE] voice upload registrada user=%s url=%s",
+        uid[:8],
+        url[:80],
+    )
 
 
 def get_last_voice_session_image(
@@ -25,9 +57,33 @@ def get_last_voice_session_image(
 ) -> dict[str, Any] | None:
     from app.services import voice_client_session as vcs
 
-    stored = vcs.get_last_publishable_image(user_id, max_age_sec=max_age_sec, ignore_call_binding=True)
-    if stored:
+    uid = user_id.strip()
+    recent_window = min(max_age_sec, VOICE_RECENT_SEC)
+
+    stored = vcs.get_last_publishable_image(
+        uid,
+        max_age_sec=recent_window,
+        ignore_call_binding=True,
+    )
+    if stored and (stored.get("url") or stored.get("data")):
+        logger.info("[PUBLISH] [IMAGE] voice_session last_publishable user=%s", uid[:8])
         return {"url": stored.get("url"), "data": stored.get("data"), "source": "voice_session"}
+
+    listed = vcs.list_recent_publishable_images(uid, max_age_sec=recent_window)
+    if listed:
+        row = listed[-1]
+        logger.info("[PUBLISH] [IMAGE] voice_session list_recent user=%s", uid[:8])
+        return {
+            "url": row.get("url"),
+            "data": row.get("data"),
+            "source": "voice_session_list",
+        }
+
+    with _lock:
+        row = _by_user.get(uid)
+        if row and _now() - float(row.get("at") or 0) <= max_age_sec:
+            logger.info("[PUBLISH] [IMAGE] publish_context user=%s", uid[:8])
+            return dict(row)
     return None
 
 
@@ -159,7 +215,7 @@ def get_last_uploaded_image_for_session(
     try:
         from app.services import voice_client_session as vcs
 
-        stored = vcs.get_last_publishable_image(uid, max_age_sec=max_age_sec)
+        stored = vcs.get_last_publishable_image(uid, max_age_sec=max_age_sec, ignore_call_binding=True)
         if stored:
             return {
                 "url": stored.get("url"),

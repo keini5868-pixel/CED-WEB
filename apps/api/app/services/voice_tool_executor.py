@@ -569,6 +569,7 @@ async def execute_voice_tool(
 
             logger.info("[PUBLISH] inicio publicar_facebook user=%s", user_id[:8])
             mensaje = sanitize_publish_caption(str(params.get("mensaje") or ""))
+            logger.info("[PUBLISH] caption recibido: '%s'", mensaje[:120])
             is_valid, reason = validate_caption(mensaje)
             if not is_valid:
                 logger.warning("[PUBLISH] caption inválido voice FB: %s", reason)
@@ -580,12 +581,20 @@ async def execute_voice_tool(
             image_url = params.get("image_url")
             image_data = params.get("image_data")
             if not image_url and not image_data:
-                logger.info("[PUBLISH] resolviendo imagen user=%s", user_id[:8])
+                session_id = str(
+                    params.get("conversation_id") or params.get("session_id") or ""
+                ).strip() or "?"
+                logger.info("[PUBLISH] resolviendo imagen para session=%s user=%s", session_id, user_id[:8])
                 resolved = _resolve_image_for_publishing(user_id, params)
                 if resolved.get("ok"):
                     image_url = resolved.get("url")
                     image_data = resolved.get("data")
-            logger.info("[PUBLISH] llamando Meta API facebook user=%s", user_id[:8])
+            logger.info(
+                "[PUBLISH] imagen resuelta: %s user=%s",
+                (str(image_url or image_data or "NONE"))[:120],
+                user_id[:8],
+            )
+            logger.info("[PUBLISH] enviando a Meta API facebook user=%s", user_id[:8])
             result = await _run_publish_call(
                 publish_facebook,
                 user_id,
@@ -594,6 +603,7 @@ async def execute_voice_tool(
                 image_data=str(image_data) if image_data else None,
             )
             logger.info("[PUBLISH] fin publicar_facebook ok=%s user=%s", result.get("ok"), user_id[:8])
+            logger.info("[PUBLISH] respuesta Meta: %s", str(result.get("spoken") or result.get("error") or "")[:160])
             if not result.get("ok"):
                 return _spoken_err(str(result.get("spoken") or "No pude publicar."), error=str(result.get("error")))
             spoken = str(result.get("spoken") or "Publicación enviada con éxito a Facebook, señor.")
@@ -604,16 +614,25 @@ async def execute_voice_tool(
 
             logger.info("[PUBLISH] inicio publicar_instagram user=%s", user_id[:8])
             caption = sanitize_publish_caption(str(params.get("caption") or ""))
+            logger.info("[PUBLISH] caption recibido: '%s'", caption[:120])
             image_url = params.get("image_url")
             image_data = params.get("image_data")
             from app.services import voice_client_session as vcs
 
             if not image_url and not image_data:
-                logger.info("[PUBLISH] resolviendo imagen user=%s", user_id[:8])
+                session_id = str(
+                    params.get("conversation_id") or params.get("session_id") or ""
+                ).strip() or "?"
+                logger.info("[PUBLISH] resolviendo imagen para session=%s user=%s", session_id, user_id[:8])
                 resolved = _resolve_image_for_publishing(user_id, params)
                 if resolved.get("ok"):
                     image_url = resolved.get("url")
                     image_data = resolved.get("data")
+            logger.info(
+                "[PUBLISH] imagen resuelta: %s user=%s",
+                (str(image_url or image_data or "NONE"))[:120],
+                user_id[:8],
+            )
             if not caption and (image_url or image_data):
                 return {
                     "ok": False,
@@ -637,7 +656,7 @@ async def execute_voice_tool(
                     "Genero un guion sobre el tema, se lo propongo y publico solo tras su confirmación.",
                     error="invalid_caption",
                 )
-            logger.info("[PUBLISH] llamando Meta API instagram user=%s", user_id[:8])
+            logger.info("[PUBLISH] enviando a Meta API instagram user=%s", user_id[:8])
             result = await _run_publish_call(
                 publish_instagram,
                 user_id,
@@ -646,6 +665,7 @@ async def execute_voice_tool(
                 image_data=str(image_data) if image_data else None,
             )
             logger.info("[PUBLISH] fin publicar_instagram ok=%s user=%s", result.get("ok"), user_id[:8])
+            logger.info("[PUBLISH] respuesta Meta: %s", str(result.get("spoken") or result.get("error") or "")[:160])
             if not result.get("ok"):
                 return _spoken_err(str(result.get("spoken") or "No pude publicar."), error=str(result.get("error")))
             spoken = str(result.get("spoken") or "Publicación enviada con éxito a Instagram, señor.")

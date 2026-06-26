@@ -269,6 +269,36 @@ def _append_publishable_image(
     session["last_publishable_image"] = entry
 
 
+def list_recent_publishable_images(
+    user_id: str,
+    *,
+    max_age_sec: float = 300.0,
+    ignore_call_binding: bool = True,
+) -> list[dict[str, Any]]:
+    """Imágenes recientes del HUD de voz; opcionalmente ignora voice_call_id."""
+    session = _get(user_id)
+    active_call = ensure_active_voice_call(user_id) if not ignore_call_binding else None
+    with _lock:
+        rows: list[dict[str, Any]] = list(session.get("publishable_images") or [])
+        if not rows and session.get("last_publishable_image"):
+            rows = [session["last_publishable_image"]]
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            vid = str(row.get("voice_call_id") or "").strip()
+            if not ignore_call_binding and active_call and vid and vid != active_call:
+                continue
+            age = _now() - float(row.get("at") or 0)
+            if age > max_age_sec:
+                continue
+            url = str(row.get("url") or "").strip()
+            data = str(row.get("data") or "").strip()
+            if url or data:
+                out.append(row)
+        return out
+
+
 def list_publishable_images(user_id: str, *, max_age_sec: float = 900.0) -> list[dict[str, Any]]:
     active_call = ensure_active_voice_call(user_id)
     session = _get(user_id)
@@ -355,6 +385,17 @@ def set_last_publishable_image_from_bytes(
         filename=filename,
         size_bytes=len(image_bytes),
     )
+    try:
+        from app.services.publish_image_context import register_voice_session_image
+
+        register_voice_session_image(
+            user_id,
+            public_url,
+            filename=filename,
+            size_bytes=len(image_bytes),
+        )
+    except Exception:  # noqa: BLE001
+        pass
     return public_url
 
 

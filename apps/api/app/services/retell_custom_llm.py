@@ -253,28 +253,56 @@ def transcript_has_meta_publish_context(transcript: list[Utterance]) -> bool:
     return False
 
 
-def resolve_meta_publish_request(user_text: str) -> dict[str, str] | None:
-    """Publicación directa en Meta — solo con caption final válido."""
+def resolve_meta_publish_request(
+    user_text: str,
+    transcript: list[Utterance] | None = None,
+) -> dict[str, str] | None:
+    """Publicación en Meta solo tras confirmación explícita del usuario."""
     from app.services.publish_text import (
-        is_vague_publish_instruction,
+        extract_confirmed_publish_caption,
+        is_publish_confirm,
         sanitize_publish_caption,
         validate_caption,
-        extract_publish_body,
+        detect_publish_platform,
     )
 
     last = (user_text or "").strip()
-    if not last or not is_meta_publish_intent(last):
+    if not last or not is_publish_confirm(last, allow_short_yes=True):
         return None
-    if is_vague_publish_instruction(last):
+    platform = _detect_publish_platform_from_transcript(transcript or [], last)
+    caption = extract_confirmed_publish_caption(transcript or [], platform=platform)
+    if not caption:
+        logger.info("[PUBLISH] bypass omitido: sin caption acordado en transcript")
         return None
-    norm = _normalize(last)
-    platform = "instagram" if re.search(r"\b(instagram|ig)\b", norm) else "facebook"
-    caption = sanitize_publish_caption(extract_publish_body(last, platform=platform))
     is_valid, reason = validate_caption(caption)
-    if not is_valid or not caption:
+    if not is_valid:
         logger.info("[PUBLISH] bypass omitido caption inválido: %s", reason)
         return None
-    return {"platform": platform, "caption": caption}
+    return {
+        "platform": platform,
+        "caption": sanitize_publish_caption(caption),
+    }
+
+
+def _detect_publish_platform_from_transcript(
+    transcript: list[Utterance],
+    user_text: str,
+) -> str:
+    for utterance in reversed(transcript[-16:]):
+        content = (utterance.content or "").strip()
+        if not content:
+            continue
+        norm = content.lower()
+        if re.search(r"\b(facebook|fb)\b", norm):
+            return "facebook"
+        if re.search(r"\b(instagram|insta|ig)\b", norm):
+            return "instagram"
+    norm = (user_text or "").lower()
+    if re.search(r"\b(facebook|fb)\b", norm):
+        return "facebook"
+    if re.search(r"\b(instagram|insta|ig)\b", norm):
+        return "instagram"
+    return "facebook"
 
 
 _SOCIAL_COMMENT_UNSUPPORTED = re.compile(

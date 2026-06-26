@@ -27,7 +27,6 @@ from app.services.retell_custom_llm import (
     remember_pending_script_topic,
     resolve_advanced_analysis_request,
     resolve_camera_voice_request,
-    resolve_instagram_caption_request,
     resolve_meta_publish_request,
     resolve_social_comments_request,
     resolve_web_search_request,
@@ -532,8 +531,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             conversational_turn = (
                 not advanced_req
-                and not resolve_meta_publish_request(user_text)
-                and not resolve_instagram_caption_request(user_text, transcript, user_id=uid)
+                and not resolve_meta_publish_request(user_text, transcript)
                 and (
                     is_casual_conversation(user_text)
                     or (
@@ -664,13 +662,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 logger.info("[RETELL-GEMINI] camera call=%s tool=%s", call_id, camera_tool)
                 return
 
-            meta_req = resolve_meta_publish_request(user_text)
-            if not meta_req:
-                meta_req = resolve_instagram_caption_request(
-                    user_text,
-                    transcript,
-                    user_id=uid,
-                )
+            meta_req = resolve_meta_publish_request(user_text, transcript)
             if meta_req and uid:
                 import time as _time
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
 _INSTRUCTION_PREFIX = re.compile(
     r"^(?:"
@@ -45,6 +46,10 @@ _CAPTION_NAMED = re.compile(
     r"\b(?:t[uiíu]tulo|caption|descripci[oó]n)\s*[:=]\s*(.+)$",
     re.I,
 )
+_CAPTION_MESSAGE_WILL = re.compile(
+    r"\b(?:el\s+)?mensaje\s+ser[aá]\s+(.+)$",
+    re.I,
+)
 _PUBLISH_TRAILING = re.compile(
     r"\s+(?:y\s+)?(?:public[a-záéíóú]*|env[ií]a[a-záéíóú]*|postea[a-záéíóú]*|sube[a-záéíóú]*)\b.*$",
     re.I,
@@ -82,6 +87,80 @@ _LITERAL_INSTRUCTION_PATTERNS = (
     re.compile(r"^crea\s+(un\s+)?post", re.I),
     re.compile(r"^comparte\s+(en|tus?|mis?)\s+", re.I),
 )
+
+_UI_LABEL_PATTERNS = (
+    re.compile(r"^subir\s+imagen(\s+a\s+ced)?\.?$", re.I),
+    re.compile(r"^upload\s+image\.?$", re.I),
+    re.compile(r"^enviar\.?$", re.I),
+    re.compile(r"^send\.?$", re.I),
+    re.compile(r"^cancelar\.?$", re.I),
+    re.compile(r"^cancel\.?$", re.I),
+    re.compile(r"^cerrar\.?$", re.I),
+    re.compile(r"^close\.?$", re.I),
+    re.compile(r"^imagen\s+lista\s+para\s+ced\.?$", re.I),
+    re.compile(r"^publicar\.?$", re.I),
+)
+
+PUBLISH_CONFIRMATION_RULES = """
+FLUJO OBLIGATORIO DE PUBLICACIÓN:
+
+NUNCA invoques publicar_facebook ni publicar_instagram sin ANTES haber:
+1. Acordado con el usuario el texto EXACTO a publicar.
+2. Mostrado al usuario el texto propuesto: "Voy a publicar: [texto]. ¿Confirmo?"
+3. Recibido confirmación explícita: "sí", "envía", "publica", "dale", "confirmo", "enviar publicación".
+
+SI EL USUARIO NO CONFIRMÓ EXPLÍCITAMENTE, NO INVOQUES LA TOOL.
+
+NUNCA uses como caption strings genéricos como "Subir imagen", "Enviar", "Publicar" o labels de UI.
+"""
+
+
+def _is_ui_label(caption: str) -> bool:
+    text = (caption or "").strip()
+    text = re.sub(r"^[^\wáéíóúñ]+", "", text, flags=re.I).strip().lower()
+    if not text:
+        return True
+    for pattern in _UI_LABEL_PATTERNS:
+        if pattern.match(text):
+            return True
+    if len(text) < 10:
+        return True
+    return False
+
+
+def requires_publish_confirmation(user_text: str) -> bool:
+    return is_publish_confirm(user_text, allow_short_yes=True)
+
+
+def extract_confirmed_publish_caption(
+    transcript: list[Any],
+    platform: str = "facebook",
+) -> str:
+    """Busca el caption acordado en turnos previos del usuario (no el de confirmación)."""
+    for row in reversed(transcript or []):
+        role = str(getattr(row, "role", None) or (row.get("role") if isinstance(row, dict) else "") or "")
+        if role != "user":
+            continue
+        text = str(getattr(row, "content", None) or (row.get("content") if isinstance(row, dict) else "") or "").strip()
+        if not text:
+            continue
+        explicit_cap = extract_user_caption_for_publish(text)
+        if explicit_cap:
+            cap = sanitize_publish_caption(explicit_cap)
+            is_valid, _ = validate_caption(cap)
+            if is_valid:
+                return cap
+        if is_publish_confirm(text, allow_short_yes=True):
+            continue
+        if is_publish_help_request(text) or is_vague_publish_instruction(text):
+            continue
+        cap = extract_caption_from_turn(text, platform)
+        cap = sanitize_publish_caption(cap)
+        is_valid, _ = validate_caption(cap)
+        if is_valid:
+            return cap
+    return ""
+
 
 PUBLISH_INTERPRETATION_RULES = """
 INTERPRETACIÓN DE INSTRUCCIONES DE PUBLICACIÓN:
@@ -136,6 +215,8 @@ def validate_caption(caption: str) -> tuple[bool, str]:
     text = sanitize_publish_caption(caption)
     if not text:
         return False, "Caption vacío"
+    if _is_ui_label(text):
+        return False, "Caption parece ser un label de UI, no contenido"
     if _is_literal_instruction(text):
         return False, "caption es la instrucción literal, no el contenido"
     if _is_instruction_garbage_caption(text):
@@ -256,7 +337,7 @@ def extract_user_caption_for_publish(text: str) -> str:
     t = (text or "").strip()
     if not t:
         return ""
-    for pattern in (_CAPTION_IS, _CAPTION_TITLE, _CAPTION_NAMED):
+    for pattern in (_CAPTION_IS, _CAPTION_TITLE, _CAPTION_NAMED, _CAPTION_MESSAGE_WILL):
         match = pattern.search(t)
         if not match:
             continue

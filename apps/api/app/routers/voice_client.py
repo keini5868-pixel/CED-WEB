@@ -156,6 +156,14 @@ async def voice_chat_image(
         awaiting_caption=False,
         filename=filename,
     )
+    from app.services.publish_image_context import register_voice_session_image
+
+    register_voice_session_image(
+        user_id,
+        url,
+        filename=filename,
+        session_id=call_id or None,
+    )
     logger.info(
         "[VOICE_UPLOAD] user=%s file=%s status=ok_url call=%s",
         user_id[:8],
