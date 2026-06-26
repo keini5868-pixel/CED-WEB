@@ -101,6 +101,26 @@ _UI_LABEL_PATTERNS = (
     re.compile(r"^publicar\.?$", re.I),
 )
 
+_INSTRUCTION_TO_CED_PATTERNS = (
+    re.compile(
+        r"^(solo\s+)?(pon|coloca|escribe|describe|explica|expl[ií]came|cuenta|cu[eé]ntame|"
+        r"dime|muestra|mu[eé]strame|comparte|comparteme|hazme|haz|dame|env[ií]ame)\b",
+        re.I,
+    ),
+    re.compile(
+        r"^(cu[aá]les?|qu[eé]|c[oó]mo|cu[aá]ndo|d[oó]nde|por\s+qu[eé]|para\s+qu[eé])\s+"
+        r"(son|es|son\s+las|es\s+el)",
+        re.I,
+    ),
+    re.compile(
+        r"\b(t[uú]|tu|tus|tuyas?|tuyos?)\s+"
+        r"(caracter[ií]sticas|capacidades|funciones|servicios)\b",
+        re.I,
+    ),
+    re.compile(r"\b(dime|dime\s+tu|dime\s+tus)\b", re.I),
+    re.compile(r"^(crea|genera|escribe|redacta|inventa)\s+(un|una|el|la|los|las)\b", re.I),
+)
+
 PUBLISH_CONFIRMATION_RULES = """
 FLUJO OBLIGATORIO DE PUBLICACIÓN:
 
@@ -113,6 +133,50 @@ SI EL USUARIO NO CONFIRMÓ EXPLÍCITAMENTE, NO INVOQUES LA TOOL.
 
 NUNCA uses como caption strings genéricos como "Subir imagen", "Enviar", "Publicar" o labels de UI.
 """
+
+PUBLISH_INSTRUCTION_ABSOLUTE_RULES = """
+INTERPRETACIÓN DE INSTRUCCIONES DE PUBLICACIÓN — REGLA ABSOLUTA:
+
+Cuando el usuario diga frases tipo:
+- "pon las características", "escribe sobre X", "solo pon Y"
+- "dime cuáles son tus características", "describe esto", "explica X"
+
+NUNCA tomes esa frase literal como caption. Son INSTRUCCIONES PARA TI.
+
+PROCESO CORRECTO:
+1. IDENTIFICAR que es una instrucción dirigida a ti (o una pregunta).
+2. GENERAR el contenido apropiado basado en la instrucción.
+3. PROPONER: "Voy a publicar lo siguiente: [contenido generado]. ¿Lo confirmo o desea ajustar?"
+4. ESPERAR confirmación explícita: "sí", "envía", "dale", "publica".
+5. Solo después invocar la tool con el contenido GENERADO como caption.
+
+Si el usuario hace una PREGUNTA ("¿cuáles son tus características?"):
+- RESPONDE la pregunta normalmente.
+- NO interpretes como caption ni ofrezcas publicar salvo que lo pida explícitamente.
+
+DISTINCIÓN CRÍTICA:
+- "publica esto: [texto]" → caption = [texto]
+- "publica X" o "pon X" → GENERA contenido sobre X primero
+- "¿cuáles son X?" → RESPONDE, NO publiques
+
+EJEMPLO INCORRECTO: Usuario "pon las características del sistema CED" → caption="pon las características..."
+EJEMPLO CORRECTO: Genera texto sobre CED → propone → confirma → publica ese texto generado.
+"""
+
+
+def _is_instruction_to_ced(caption: str) -> bool:
+    text = (caption or "").strip().lower()
+    if not text:
+        return False
+    for pattern in _INSTRUCTION_TO_CED_PATTERNS:
+        if pattern.search(text):
+            return True
+    return False
+
+
+def is_instruction_to_ced(text: str) -> bool:
+    """True si el texto es una instrucción o pregunta al asistente, no un caption."""
+    return _is_instruction_to_ced(text)
 
 
 def _is_ui_label(caption: str) -> bool:
@@ -195,6 +259,8 @@ def is_vague_publish_instruction(user_text: str) -> bool:
     t = (user_text or "").strip()
     if not t:
         return False
+    if _is_instruction_to_ced(t):
+        return True
     if _is_literal_instruction(t):
         return True
     if _PUBLISH_ONLY.match(t):
@@ -215,6 +281,8 @@ def validate_caption(caption: str) -> tuple[bool, str]:
     text = sanitize_publish_caption(caption)
     if not text:
         return False, "Caption vacío"
+    if _is_instruction_to_ced(text):
+        return False, "Caption parece ser una instrucción al asistente, no contenido a publicar"
     if _is_ui_label(text):
         return False, "Caption parece ser un label de UI, no contenido"
     if _is_literal_instruction(text):
@@ -325,6 +393,8 @@ def _is_instruction_garbage_caption(text: str) -> bool:
     t = (text or "").strip()
     if not t or _PUBLISH_ONLY.match(t):
         return True
+    if _is_instruction_to_ced(t):
+        return True
     if is_publish_confirm(t):
         return True
     if _PUBLISH_STEM.search(t) and (_SOCIAL_PLATFORM.search(t) or re.search(r"\b(imagen|foto)\b", t, re.I)):
@@ -344,7 +414,7 @@ def extract_user_caption_for_publish(text: str) -> str:
         body = match.group(1).strip()
         body = _PUBLISH_TRAILING.sub("", body).strip(" .,:;-")
         body = _PUBLISH_TRAILING_EXTRA.sub("", body).strip(" .,:;-")
-        if body and not _is_instruction_garbage_caption(body):
+        if body and not _is_instruction_garbage_caption(body) and not _is_instruction_to_ced(body):
             return body
     return ""
 
@@ -354,6 +424,8 @@ def _plain_caption_fallback(text: str) -> str:
     if not t:
         return ""
     if is_publish_help_request(t) or wants_publish_now(t) or is_social_publish_intent(t):
+        return ""
+    if _is_instruction_to_ced(t):
         return ""
     if _is_instruction_garbage_caption(t):
         return ""

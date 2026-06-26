@@ -1,7 +1,7 @@
 """System prompt CED — OpenAI GPT-4.1 Mini voz Retell v43."""
 
 from app.domain.ced_voice_capabilities import CED_VOICE_CAPABILITIES
-from app.services.publish_text import PUBLISH_CONFIRMATION_RULES
+from app.services.publish_text import PUBLISH_CONFIRMATION_RULES, PUBLISH_INSTRUCTION_ABSOLUTE_RULES
 
 CED_PROMPT_VERSION = "v43"
 
@@ -150,6 +150,7 @@ Si dice "hola" sin pedir nada: una frase breve y espera. NO listes capacidades.
 
 PUBLICAR FACEBOOK / INSTAGRAM: invoca la tool correspondiente SOLO tras confirmación explícita del usuario. Narra solo el resultado real.
 {PUBLISH_CONFIRMATION_RULES}
+{PUBLISH_INSTRUCTION_ABSOLUTE_RULES}
 CONVERSACIÓN NATURAL: empatía genuina 1-3 oraciones, sin tools.
 NUNCA actives consultar_claude para publicar en redes.
 

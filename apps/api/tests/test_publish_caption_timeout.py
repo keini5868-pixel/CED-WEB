@@ -10,6 +10,43 @@ from app.services.publish_text import validate_caption
 from app.services.voice_tool_executor import PUBLISH_TIMEOUT_SEC, execute_voice_tool
 
 
+def test_caption_rejects_solo_pon_pattern():
+    ok, reason = validate_caption("solo pon las características del sistema CED")
+    assert ok is False
+    assert "instrucción" in reason.lower()
+
+
+def test_caption_rejects_dime_question_pattern():
+    ok, reason = validate_caption("solo dime tu cuales son tus características")
+    assert ok is False
+    assert "instrucción" in reason.lower()
+
+    ok2, _ = validate_caption("cuales son las características del sistema CED")
+    assert ok2 is False
+
+
+def test_caption_rejects_describe_pattern():
+    ok, reason = validate_caption("describe esto para mi publicación")
+    assert ok is False
+    assert "instrucción" in reason.lower()
+
+
+def test_prompt_generates_content_from_instruction():
+    from app.domain.openai_voice_prompt import build_ced_voice_system_prompt
+    from app.services.publish_text import (
+        PUBLISH_INSTRUCTION_ABSOLUTE_RULES,
+        is_vague_publish_instruction,
+    )
+    from app.services.text_chat import CHAT_SYSTEM_BASE
+
+    assert "GENERAR" in PUBLISH_INSTRUCTION_ABSOLUTE_RULES
+    assert PUBLISH_INSTRUCTION_ABSOLUTE_RULES.strip() in CHAT_SYSTEM_BASE
+    voice_prompt = build_ced_voice_system_prompt()
+    assert PUBLISH_INSTRUCTION_ABSOLUTE_RULES.strip() in voice_prompt
+    assert is_vague_publish_instruction("solo pon las características del sistema CED")
+    assert is_vague_publish_instruction("solo dime tu cuales son tus características")
+
+
 def test_caption_rejects_ui_labels_like_subir_imagen():
     ok, reason = validate_caption("Subir imagen")
     assert ok is False

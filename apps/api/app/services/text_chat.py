@@ -33,6 +33,7 @@ from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE
 from app.domain.ced_viral_knowledge import CED_VIRAL_KNOWLEDGE_2026
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.pdf_report import store_pdf
+from app.services.publish_text import PUBLISH_INSTRUCTION_ABSOLUTE_RULES
 
 logger = logging.getLogger(__name__)
 
@@ -288,10 +289,10 @@ CAPTION DE PUBLICACIÓN — REGLA CRÍTICA:
 - Si tienes dudas, pregunta: «¿Confirma que el texto a publicar es: [texto]?»
 
 INTERPRETACIÓN DE INSTRUCCIONES DE PUBLICACIÓN:
-- «Publica tus características» / «publica un mensaje motivacional» = TEMA, no caption literal.
-- GENERA el contenido sobre el tema, PROPÓN al usuario, publica SOLO tras confirmación.
 - «Publica esto: Visita Charlotte hoy» → caption = «Visita Charlotte hoy» (sin «publica esto:»).
 - NUNCA publiques la frase de instrucción del usuario como caption.
+
+{PUBLISH_INSTRUCTION_ABSOLUTE_RULES}
 
 REGLAS ABSOLUTAS:
 1. NUNCA pidas URL de imagen al usuario. NUNCA. La imagen subida al chat está disponible automáticamente.
