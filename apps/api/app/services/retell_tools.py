@@ -39,7 +39,7 @@ TIMEOUT_MS: dict[str, int] = {
     "generate_image_with_reference": 60_000,
     "consultar_claude": 30_000,
     "generar_pdf": 20_000,
-    "search_web": 20_000,
+    "search_web": 17_000,
     "publicar_facebook": 35_000,
     "publicar_instagram": 35_000,
     "leer_comentarios_redes": 8_000,

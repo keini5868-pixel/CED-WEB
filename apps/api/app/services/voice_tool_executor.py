@@ -35,7 +35,7 @@ from app.services.voice_usage import voice_access_state
 
 logger = logging.getLogger(__name__)
 
-SEARCH_WEB_TIMEOUT_SEC = 20.0
+SEARCH_WEB_TIMEOUT_SEC = 17.0
 VISION_PIPELINE_TIMEOUT_SEC = 45.0
 PUBLISH_TIMEOUT_SEC = 30.0
 

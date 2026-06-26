@@ -79,9 +79,9 @@ export function webBriefKind(text: string): WebBriefKind {
 }
 
 export function webBriefTimeoutMs(kind: WebBriefKind): number {
-  // Backend: Tavily + Gemini en paralelo; margen cliente 20s total.
+  // Backend: Tavily + Gemini en paralelo; margen cliente 17s total.
   void kind;
-  return 20000;
+  return 17000;
 }
 
 const ADVANCED_CONFIRM_ANSWER = /^(s[ií]|s[ií]\s+se[nñ]or|si\s+se[nñ]or|adelante|ok|vale|dale|de acuerdo|hazlo|confirmado|por favor|claro|exacto|correcto|bueno)[\s.!?,]*$/i;

@@ -31,7 +31,7 @@ export async function fetchVisionWebSearch(
         image: imageDataUrl,
         question,
       },
-      20000,
+      17000,
     );
     const data = (await res.json()) as Record<string, unknown>;
     if (!res.ok || data.ok !== true) {
