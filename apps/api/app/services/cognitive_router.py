@@ -13,7 +13,7 @@ from app.services.cognitive_intents import (
 )
 from app.services.cognitive_memory import memory_context_for_voice, save_memory, search_memory
 from app.services.claude_deep_analysis import consultar_sistema_avanzado
-from app.services.gemini_grounded import fetch_voice_brief
+from app.services.gemini_grounded import execute_search_web_sync
 from app.services.internal_knowledge import (
     format_hits_for_prompt,
     search_internal_knowledge,
@@ -142,11 +142,11 @@ def route_message(
         )
 
     if analysis.primary == CognitiveIntent.WEB_SEARCH:
-        brief = fetch_voice_brief(raw, kind=analysis.web_kind)
+        brief = execute_search_web_sync(raw, kind=analysis.web_kind or "general")
         if execute_side_effects and channel == "voice":
             _schedule_panel_search(user_id, raw)
         if brief.get("ok"):
-            summary = str(brief.get("summary") or "")
+            summary = str(brief.get("summary") or brief.get("message") or "")
             return CognitiveRouteResult(
                 intent=CognitiveIntent.WEB_SEARCH.value,
                 channel=channel,
@@ -156,12 +156,23 @@ def route_message(
                 context_for_llm=f"Información verificada en web ({brief.get('source', 'web')}):\n{summary}",
                 source=str(brief.get("source") or "web"),
             )
+        fallback_msg = str(
+            brief.get("message")
+            or brief.get("error")
+            or "No pude buscar en internet ahora."
+        )
         return CognitiveRouteResult(
             intent=CognitiveIntent.WEB_SEARCH.value,
             channel=channel,
             confidence=0.2,
             web_kind=analysis.web_kind,
-            speakable=str(brief.get("error") or "No pude buscar en internet ahora."),
+            speakable=fallback_msg,
+            context_for_llm=(
+                "La búsqueda web falló o agotó tiempo. Responde con conocimiento integrado "
+                f"y avisa honestamente. Detalle: {fallback_msg}"
+            ),
+            source="fallback",
+            meta={"fallback": True, "status": brief.get("status")},
         )
 
     if analysis.primary == CognitiveIntent.ADVANCED_ANALYSIS:

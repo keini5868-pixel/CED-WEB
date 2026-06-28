@@ -22,6 +22,7 @@ GEMINI_OUTPUT_TOKENS = 768
 TAVILY_TIMEOUT_SEC = 12
 GEMINI_TIMEOUT_SEC = 12
 SEARCH_WEB_PARALLEL_TIMEOUT_SEC = 20
+SEARCH_WEB_TIMEOUT_SEC = 17.0
 MIN_SPOKEN_CHARS = 28
 MIN_SPOKEN_CHARS_NEWS = 24
 
@@ -287,3 +288,78 @@ async def fetch_voice_brief_parallel(query: str, *, kind: str = "news") -> dict[
 def fetch_voice_brief(query: str, *, kind: str = "news") -> dict[str, Any]:
     """Wrapper síncrono para callers legacy (thread pool / rutas sync)."""
     return asyncio.run(fetch_voice_brief_parallel(query, kind=kind))
+
+
+async def execute_search_web(query: str, *, kind: str = "general") -> dict[str, Any]:
+    """Paralelismo Tavily+Gemini con timeout unificado (voz y chat)."""
+    q = (query or "").strip()
+    if not q:
+        return {
+            "ok": False,
+            "status": "error",
+            "fallback": True,
+            "message": "Consulta de búsqueda vacía.",
+            "summary": "",
+        }
+    try:
+        result = await asyncio.wait_for(
+            fetch_voice_brief_parallel(q, kind=kind),
+            timeout=SEARCH_WEB_TIMEOUT_SEC,
+        )
+    except asyncio.TimeoutError:
+        logger.warning("[WEB_SEARCH] timeout query=%s kind=%s", q[:80], kind)
+        return {
+            "ok": False,
+            "status": "timeout",
+            "fallback": True,
+            "message": (
+                "Señor, no pude obtener información actual en este momento. "
+                "Según lo que tengo registrado, puedo orientarle con conocimiento general."
+            ),
+            "summary": "",
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[WEB_SEARCH] error query=%s: %s", q[:80], exc)
+        return {
+            "ok": False,
+            "status": "error",
+            "fallback": True,
+            "message": (
+                "Señor, no pude obtener información actual en este momento. "
+                "Según lo que tengo registrado, puedo orientarle con conocimiento general."
+            ),
+            "summary": "",
+        }
+
+    summary = str(result.get("summary") or "").strip()
+    if result.get("ok") and summary:
+        return {
+            "ok": True,
+            "status": "success",
+            "fallback": False,
+            "message": summary,
+            "summary": summary,
+            "source": result.get("source"),
+            "kind": kind,
+        }
+    logger.warning(
+        "[WEB_SEARCH] empty/fail kind=%s code=%s",
+        kind,
+        result.get("code"),
+    )
+    return {
+        "ok": False,
+        "status": "timeout",
+        "fallback": True,
+        "message": str(
+            result.get("spoken")
+            or result.get("error")
+            or "Señor, no pude obtener información actual en este momento."
+        ),
+        "summary": "",
+    }
+
+
+def execute_search_web_sync(query: str, *, kind: str = "general") -> dict[str, Any]:
+    """Wrapper síncrono para chat de texto y router cognitivo."""
+    return asyncio.run(execute_search_web(query, kind=kind))

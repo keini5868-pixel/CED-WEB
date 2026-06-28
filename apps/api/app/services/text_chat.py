@@ -60,7 +60,8 @@ _VIRAL_KEYWORDS = re.compile(
 )
 _TOOLS_KEYWORDS = re.compile(
     r"\b(publica|publicar|instagram|facebook|meta|recuerdas|guarda|memoria|"
-    r"lead|cliente|pdf|imagen|conectad)\b",
+    r"lead|cliente|pdf|imagen|conectad|busca|buscar|búsqueda|noticias|clima|"
+    r"informaci[oó]n|investiga|terremoto|actual|reciente|dame datos)\b",
     re.I,
 )
 
@@ -69,8 +70,16 @@ HALLUCINATED_TOOL_PATTERNS = (
     r"\*\*generar_pdf\*\*",
     r"\*\*publicar_facebook\*\*",
     r"\*\*publicar_instagram\*\*",
+    r"\*\*search_web\*\*",
     r"```\s*generate_image",
     r"```\s*generar_pdf",
+    r"```\s*search_web",
+)
+
+SEARCH_HALLUCINATION_RETRY_MESSAGE = (
+    "Dijiste que ibas a buscar pero no invocaste search_web. "
+    "Invoca search_web AHORA con function calling real, o responde con conocimiento "
+    "integrado y avisa honestamente si no hay datos actuales."
 )
 
 HALLUCINATION_RETRY_USER_MESSAGE = (
@@ -88,6 +97,30 @@ EMPTY_RESPONSE_RETRY_USER_MESSAGE = (
 )
 
 CHAT_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "search_web",
+        "description": (
+            "Busca en internet datos actuales: noticias, clima, eventos recientes, "
+            "cifras o cualquier información que cambie en el tiempo. "
+            "OBLIGATORIO invocar cuando el usuario pida buscar o información actual. "
+            "NUNCA digas 'voy a buscar' sin invocar esta herramienta en el mismo turno."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Consulta de búsqueda en lenguaje natural",
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": ["news", "weather", "general"],
+                    "description": "Tipo: news (noticias), weather (clima), general (otros)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
     {
         "name": "consultar_redes_conectadas",
         "description": "Consulta si Facebook/Instagram están conectados a CED para este usuario.",
@@ -271,6 +304,20 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Tras generar una imagen, preséntala y pregunta si quiere ajustes.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
+INVOCACIÓN OBLIGATORIA DE HERRAMIENTAS (BÚSQUEDA WEB):
+
+Cuando necesites información actual (noticias, clima, eventos recientes, cifras):
+DEBES invocar search_web mediante function calling REAL.
+
+NUNCA digas "voy a buscar", "buscaré" o "investigaré" sin invocar search_web en el mismo turno.
+
+Si dices que vas a buscar, DEBES invocar search_web inmediatamente y responder con el resultado.
+
+Si search_web devuelve status=timeout o fallback=True, AVISA honestamente:
+"Señor, no pude obtener información actual en este momento. Según lo que tengo registrado, [responde con conocimiento integrado]."
+
+NUNCA te quedes en silencio ni solo prometas una búsqueda sin ejecutarla.
+
 PUBLICACIÓN EN REDES SOCIALES (Instagram / Facebook):
 
 FLUJO OBLIGATORIO (sigue estos pasos en orden):
@@ -341,6 +388,25 @@ def _has_hallucinated_tool(text: str) -> bool:
         if re.search(pattern, text, re.IGNORECASE):
             return True
     return False
+
+
+def _promised_web_search_without_tool(text: str) -> bool:
+    """True si promete buscar pero no entrega resultado sustantivo."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    promised = bool(
+        re.search(
+            r"\b(buscar[eé]|voy a buscar|investigar[eé]|consultar[eé] en internet|"
+            r"d[eé]jame buscar|perm[ií]teme buscar)\b",
+            t,
+            re.I,
+        )
+    )
+    if not promised:
+        return False
+    substantive = len(re.sub(r"[^a-záéíóúñA-ZÁÉÍÓÚÑ0-9]", "", t)) > 80
+    return not substantive
 
 
 def _is_empty_or_placeholder_response(text: str) -> bool:
@@ -546,6 +612,16 @@ def _run_chat_tool(
     conversation_id: str | None = None,
 ) -> str:
     try:
+        if name == "search_web":
+            from app.services.gemini_grounded import execute_search_web_sync
+
+            query = str(tool_input.get("query") or "").strip()
+            kind = str(tool_input.get("kind") or "general").strip() or "general"
+            if not query:
+                return json.dumps({"ok": False, "error": "query vacía", "status": "error"})
+            logger.info("[CHAT] search_web query=%s kind=%s", query[:80], kind)
+            result = execute_search_web_sync(query, kind=kind)
+            return json.dumps(result)
         if name == "consultar_redes_conectadas":
             conn = supabase_db.get_meta_connection(user_id)
             if not conn or not conn.get("access_token"):
@@ -1022,15 +1098,25 @@ def _complete_chat_with_tools(
                     reply = _strip_pdf_markdown_links(reply)
                 if (
                     allow_hallucination_retry
-                    and _has_hallucinated_tool(reply)
+                    and (
+                        _has_hallucinated_tool(reply)
+                        or _promised_web_search_without_tool(reply)
+                    )
                     and not image_attachment
                     and not pdf_attachment
                 ):
-                    logger.warning("[CHAT] Hallucinated tool detected, retrying")
+                    logger.warning("[CHAT] Hallucinated tool or search promise, retrying")
                     retry_messages = [
                         *messages,
                         {"role": "assistant", "content": reply},
-                        {"role": "user", "content": HALLUCINATION_RETRY_USER_MESSAGE},
+                        {
+                            "role": "user",
+                            "content": (
+                                SEARCH_HALLUCINATION_RETRY_MESSAGE
+                                if _promised_web_search_without_tool(reply)
+                                else HALLUCINATION_RETRY_USER_MESSAGE
+                            ),
+                        },
                     ]
                     return _complete_chat_with_tools(
                         user_id,
@@ -1117,8 +1203,10 @@ def _complete_chat_resilient(
             system=trimmed_system,
             messages=messages,
         )
-        if _has_hallucinated_tool(reply) and anthropic_key:
-            logger.warning("[CHAT] Hallucinated tool in simple path — escalating to tools")
+        if anthropic_key and (
+            _has_hallucinated_tool(reply) or _promised_web_search_without_tool(reply)
+        ):
+            logger.warning("[CHAT] Hallucinated tool/search in simple path — escalating to tools")
             return _complete_chat_with_tools(
                 user_id,
                 api_key=anthropic_key,
@@ -1402,7 +1490,7 @@ def send_message(
     if route.intent == "advanced_analysis" and route.speakable:
         return _finish(route.speakable, route_meta=route.to_dict())
 
-    if route.intent == "web_search" and route.speakable and route.web_kind in ("news", "weather"):
+    if route.intent == "web_search" and route.speakable:
         return _finish(route.speakable, route_meta=route.to_dict())
 
     from app.services.text_publish_flow import handle_publish_flow_turn
