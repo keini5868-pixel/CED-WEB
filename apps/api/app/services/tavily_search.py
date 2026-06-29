@@ -85,6 +85,18 @@ def tavily_raw_search(
     try:
         with httpx.Client(timeout=5.0) as client:
             res = client.post(TAVILY_URL, json=payload)
+        if res.status_code == 429:
+            logger.warning(
+                "[TAVILY] rate limit 429 query=%s",
+                (query or "")[:60],
+            )
+            return {
+                "query": query,
+                "answer": None,
+                "results": [],
+                "response_time": 0,
+                "rate_limited": True,
+            }
         if res.status_code != 200:
             logger.warning("[TAVILY] status=%s body=%s", res.status_code, res.text[:200])
             return {"query": query, "answer": None, "results": [], "response_time": 0}

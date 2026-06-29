@@ -6,6 +6,7 @@ import asyncio
 import datetime
 import logging
 import re
+import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Any
@@ -25,6 +26,9 @@ SEARCH_WEB_PARALLEL_TIMEOUT_SEC = 20
 SEARCH_WEB_TIMEOUT_SEC = 17.0
 MIN_SPOKEN_CHARS = 28
 MIN_SPOKEN_CHARS_NEWS = 24
+MAX_CONCURRENT_SEARCHES = 3
+
+_search_concurrency = threading.BoundedSemaphore(MAX_CONCURRENT_SEARCHES)
 
 
 def _is_valid_brief(text: str, *, kind: str = "general") -> bool:
@@ -157,7 +161,25 @@ def _source_from_task_name(name: str) -> str:
     return "tavily" if "tavily" in name else "gemini"
 
 
-async def _cancel_pending_tasks(tasks: list[asyncio.Task[Any]]) -> None:
+def _log_active_search_tasks() -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    search_tasks = [
+        t
+        for t in asyncio.all_tasks(loop)
+        if t.get_name().startswith(("tavily_", "gemini_"))
+    ]
+    if search_tasks:
+        logger.warning(
+            "[SEARCH] %d tasks de búsqueda aún activos: %s",
+            len(search_tasks),
+            [t.get_name() for t in search_tasks],
+        )
+
+
+async def _cleanup_search_tasks(tasks: list[asyncio.Task[Any]]) -> None:
     for task in tasks:
         if not task.done():
             task.cancel()
@@ -170,16 +192,34 @@ async def _cancel_pending_tasks(tasks: list[asyncio.Task[Any]]) -> None:
             pass
 
 
+async def _cancel_pending_tasks(tasks: list[asyncio.Task[Any]]) -> None:
+    await _cleanup_search_tasks(tasks)
+
+
 async def fetch_voice_brief_parallel(query: str, *, kind: str = "news") -> dict[str, Any]:
     """Tavily y Gemini en paralelo — usa el primero con resultado válido."""
+    acquired = _search_concurrency.acquire(timeout=SEARCH_WEB_TIMEOUT_SEC + 5)
+    if not acquired:
+        logger.warning("[SEARCH] cola llena — demasiadas búsquedas simultáneas")
+        return {
+            "ok": False,
+            "error": "Demasiadas búsquedas en curso. Intente de nuevo en unos segundos.",
+            "code": "search_busy",
+            "status": "timeout",
+            "fallback": True,
+            "spoken": "Un momento, señor. Estoy procesando otra consulta.",
+        }
+
     settings = get_settings()
     topic = (query or "").strip() or "noticias importantes de hoy"
     kind = kind if kind in ("news", "weather", "general") else "general"
     has_tavily = bool(settings.tavily_api_key.strip())
     has_google = bool(settings.google_api_key.strip())
     api_key = settings.google_api_key.strip()
+    query_tag = str(abs(hash(topic)))[-8:]
 
     if not has_tavily and not has_google:
+        _search_concurrency.release()
         return {
             "ok": False,
             "error": "Sin TAVILY_API_KEY ni GOOGLE_API_KEY en apps/api/.env",
@@ -187,20 +227,20 @@ async def fetch_voice_brief_parallel(query: str, *, kind: str = "news") -> dict[
         }
 
     tasks: list[asyncio.Task[str]] = []
-    if has_tavily:
-        tavily_task = asyncio.create_task(_run_tavily_async(topic, kind))
-        tavily_task.set_name("tavily_task")
-        tasks.append(tavily_task)
-    if has_google:
-        gemini_task = asyncio.create_task(_run_gemini_async(topic, kind, api_key))
-        gemini_task.set_name("gemini_task")
-        tasks.append(gemini_task)
-
-    pending = set(tasks)
     result: dict[str, Any] | None = None
     response_id = str(uuid.uuid4())[:8]
 
     try:
+        if has_tavily:
+            tavily_task = asyncio.create_task(_run_tavily_async(topic, kind))
+            tavily_task.set_name(f"tavily_{query_tag}")
+            tasks.append(tavily_task)
+        if has_google:
+            gemini_task = asyncio.create_task(_run_gemini_async(topic, kind, api_key))
+            gemini_task.set_name(f"gemini_{query_tag}")
+            tasks.append(gemini_task)
+
+        pending = set(tasks)
         deadline = asyncio.get_running_loop().time() + SEARCH_WEB_PARALLEL_TIMEOUT_SEC
         while pending and result is None:
             timeout = max(0.1, deadline - asyncio.get_running_loop().time())
@@ -246,10 +286,6 @@ async def fetch_voice_brief_parallel(query: str, *, kind: str = "news") -> dict[
                     )
             except (asyncio.CancelledError, Exception):
                 pass
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
 
         if result:
             return result
@@ -274,7 +310,6 @@ async def fetch_voice_brief_parallel(query: str, *, kind: str = "news") -> dict[
         }
     except Exception as exc:  # noqa: BLE001
         logger.error("[SEARCH] error paralelismo: %s", exc)
-        await _cancel_pending_tasks(tasks)
         return {
             "ok": False,
             "error": str(exc),
@@ -283,6 +318,10 @@ async def fetch_voice_brief_parallel(query: str, *, kind: str = "news") -> dict[
             "fallback": True,
             "spoken": "Sin resultados disponibles.",
         }
+    finally:
+        await _cleanup_search_tasks(tasks)
+        _log_active_search_tasks()
+        _search_concurrency.release()
 
 
 def fetch_voice_brief(query: str, *, kind: str = "news") -> dict[str, Any]:
@@ -362,4 +401,14 @@ async def execute_search_web(query: str, *, kind: str = "general") -> dict[str, 
 
 def execute_search_web_sync(query: str, *, kind: str = "general") -> dict[str, Any]:
     """Wrapper síncrono para chat de texto y router cognitivo."""
-    return asyncio.run(execute_search_web(query, kind=kind))
+    coro = execute_search_web(query, kind=kind)
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(asyncio.run, coro)
+        return future.result(timeout=SEARCH_WEB_TIMEOUT_SEC + 10)

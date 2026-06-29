@@ -56,7 +56,7 @@ def test_search_web_cancels_pending_task():
         try:
             await asyncio.sleep(2.0)
         except asyncio.CancelledError:
-            cancelled.append("gemini_task")
+            cancelled.append("gemini")
             raise
         return GEMINI_TEXT
 
@@ -76,7 +76,7 @@ def test_search_web_cancels_pending_task():
 
     assert result.get("ok") is True
     assert result.get("source") == "tavily"
-    assert "gemini_task" in cancelled
+    assert "gemini" in cancelled
 
 
 def test_search_web_no_duplicate_response():
