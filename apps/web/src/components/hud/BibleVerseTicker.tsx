@@ -208,12 +208,8 @@ const VERSES = [
 const ROTATE_MS = 60_000;
 const FADE_MS = 600;
 
-function randomIndex(): number {
-  return Math.floor(Math.random() * VERSES.length);
-}
-
 export function BibleVerseTicker() {
-  const [index, setIndex] = useState(randomIndex);
+  const [index, setIndex] = useState(0);
   const [visible, setVisible] = useState(true);
   const [paused, setPaused] = useState(false);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -226,6 +222,10 @@ export function BibleVerseTicker() {
       setIndex((prev) => (prev + 1) % VERSES.length);
       setVisible(true);
     }, FADE_MS / 2);
+  }, []);
+
+  useEffect(() => {
+    setIndex(Math.floor(Math.random() * VERSES.length));
   }, []);
 
   useEffect(() => {

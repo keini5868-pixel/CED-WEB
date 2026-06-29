@@ -146,6 +146,15 @@ class Settings(BaseSettings):
         web = self.web_public_url.strip().rstrip("/")
         if web and web not in origins:
             origins.append(web)
+        for extra in (
+            "https://ced-web-production.up.railway.app",
+            "https://cedweb-production.up.railway.app",
+            "https://app.castillodigital.com",
+            "http://localhost:3000",
+            "http://localhost:3001",
+        ):
+            if extra not in origins:
+                origins.append(extra)
         return origins
 
 

@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { Suspense } from "react";
 
 import { HudPanel } from "@ced/ui";
@@ -19,14 +20,20 @@ import {
   HudWavesPanel,
 } from "@/components/hud/HudLivePanels";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
-import { CedVoiceHub } from "@/components/voice/CedVoiceHub";
 import { DriveModeLink } from "@/components/navigation/DriveModeLink";
 import { HudFeedProvider } from "@/contexts/HudFeedContext";
 import { HudPanelProvider } from "@/contexts/HudPanelContext";
+import { useBreakpointLg } from "@/hooks/useBreakpointLg";
 import { UsageBalanceProvider } from "@/hooks/useUsageBalance";
+
+const CedVoiceHub = dynamic(
+  () => import("@/components/voice/CedVoiceHub").then((m) => m.CedVoiceHub),
+  { ssr: false },
+);
 
 /** HUD — 3 columnas desktop; móvil con paneles colapsables. */
 export function HudDashboardGrid() {
+  const isLg = useBreakpointLg();
   return (
     <HudFeedProvider>
       <HudPanelProvider>
@@ -58,7 +65,7 @@ export function HudDashboardGrid() {
           </div>
           <div className="col-span-4 flex flex-col items-center justify-center gap-3 py-2">
             <DriveModeLink />
-            <CedVoiceHub />
+            {isLg === true ? <CedVoiceHub /> : null}
           </div>
           <div className="col-span-4">
             <HudGlobalPanelFrame>
@@ -94,7 +101,7 @@ export function HudDashboardGrid() {
             <TrialExpiredBanner />
           </Suspense>
           <DriveModeLink />
-          <CedVoiceHub />
+          {isLg === false ? <CedVoiceHub /> : null}
           <HudCollapsible title="CASTILLO" defaultOpen>
             <LeftPanel3DCarousel />
           </HudCollapsible>

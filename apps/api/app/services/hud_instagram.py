@@ -56,11 +56,12 @@ def fetch_instagram_card(user_id: str) -> dict[str, Any]:
         followers = int(conn.get("followers_count") or 0)
         username = conn.get("ig_username") or "instagram"
         engagement = conn.get("engagement_rate")
-        eng_line = (
-            f"Engagement {float(engagement):.1f}%"
-            if engagement is not None
-            else f"{conn.get('media_count') or 0} publicaciones"
-        )
+        eng_line = f"{conn.get('media_count') or 0} publicaciones"
+        if engagement is not None and str(engagement).strip() != "":
+            try:
+                eng_line = f"Engagement {float(engagement):.1f}%"
+            except (TypeError, ValueError):
+                pass
         return {
             "lines": [
                 f"@{username} · {followers:,} seguidores".replace(",", "."),
