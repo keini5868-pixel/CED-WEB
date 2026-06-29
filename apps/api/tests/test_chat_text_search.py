@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from unittest.mock import patch
 
@@ -10,8 +11,17 @@ from app.services.gemini_grounded import SEARCH_WEB_TIMEOUT_SEC, execute_search_
 from app.services.text_chat import (
     CHAT_SYSTEM_BASE,
     CHAT_TOOLS,
+    _complete_chat_with_tools,
+    _extract_query_from_hallucination,
+    _has_hallucinated_tool_code,
     _promised_web_search_without_tool,
     _run_chat_tool,
+)
+
+TRUMP_TOOL_CODE_REPLY = (
+    "Un momento, Señor. Permítame buscar...\n"
+    "**tool_code**\n"
+    "print(search_web(query='últimas declaraciones Donald Trump'))"
 )
 
 
@@ -74,3 +84,74 @@ def test_chat_text_invokes_tool_not_hallucinates():
     assert not _promised_web_search_without_tool(
         "Según reportes recientes, el terremoto dejó más de cien víctimas en la región."
     )
+
+
+def test_chat_detects_tool_code_hallucination():
+    assert _has_hallucinated_tool_code(TRUMP_TOOL_CODE_REPLY)
+    assert _promised_web_search_without_tool(TRUMP_TOOL_CODE_REPLY)
+    assert "tool_code" in CHAT_SYSTEM_BASE.lower()
+    assert "print(search_web" in CHAT_SYSTEM_BASE.lower()
+
+
+def test_chat_extracts_query_from_hallucination():
+    query = _extract_query_from_hallucination(TRUMP_TOOL_CODE_REPLY)
+    assert query == "últimas declaraciones Donald Trump"
+    assert _extract_query_from_hallucination("sin código aquí") is None
+
+
+def test_chat_retries_with_real_function_calling():
+    tool_code_response = {
+        "content": [{"type": "text", "text": TRUMP_TOOL_CODE_REPLY}],
+    }
+    real_tool_response = {
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "toolu_1",
+                "name": "search_web",
+                "input": {
+                    "query": "últimas declaraciones Donald Trump",
+                    "kind": "news",
+                },
+            }
+        ],
+    }
+    final_response = {
+        "content": [
+            {
+                "type": "text",
+                "text": "Según fuentes recientes, Trump declaró sobre comercio internacional.",
+            }
+        ],
+    }
+    call_count = {"n": 0}
+
+    def fake_anthropic(**_kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            return tool_code_response
+        if call_count["n"] == 2:
+            return real_tool_response
+        return final_response
+
+    search_payload = json.dumps(
+        {
+            "ok": True,
+            "status": "success",
+            "summary": "Trump habló sobre aranceles y política exterior esta semana.",
+        }
+    )
+
+    with patch("app.services.text_chat._anthropic_request", side_effect=fake_anthropic):
+        with patch("app.services.text_chat._run_chat_tool", return_value=search_payload):
+            reply, pdf, img = _complete_chat_with_tools(
+                "user-trump",
+                api_key="test-key",
+                system="system",
+                messages=[{"role": "user", "content": "dame info Trump"}],
+            )
+
+    assert call_count["n"] >= 2
+    assert "Trump" in reply or "aranceles" in reply
+    assert pdf is None
+    assert img is None

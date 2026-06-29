@@ -76,6 +76,21 @@ HALLUCINATED_TOOL_PATTERNS = (
     r"```\s*search_web",
 )
 
+HALLUCINATED_TOOL_CODE_PATTERNS = (
+    r"\*\*tool_code\*\*",
+    r"```\s*tool_code",
+    r"print\(search_web\(",
+    r"print\(generate_image\(",
+    r"tool_code\s*\n\s*print\(",
+    r"search_web\(query=",
+    r"generate_image\(prompt=",
+)
+
+TOOL_CODE_HALLUCINATION_RETRY_MESSAGE = (
+    "ERROR: Escribiste código Python en lugar de invocar la herramienta con function calling. "
+    "USA function calling real. NO escribas print(), tool_code, ni código Python."
+)
+
 SEARCH_HALLUCINATION_RETRY_MESSAGE = (
     "Dijiste que ibas a buscar pero no invocaste search_web. "
     "Invoca search_web AHORA con function calling real, o responde con conocimiento "
@@ -318,6 +333,24 @@ Si search_web devuelve status=timeout o fallback=True, AVISA honestamente:
 
 NUNCA te quedes en silencio ni solo prometas una búsqueda sin ejecutarla.
 
+PROHIBICIÓN ABSOLUTA — NUNCA escribas código Python:
+
+NUNCA escribas bloques tipo:
+- **tool_code**
+- print(search_web(...))
+- print(generate_image(...))
+- ```python
+- ```tool_code
+- Ningún código Python en tu respuesta
+
+Cuando necesites usar una herramienta:
+- USA function calling directamente
+- NO expliques cómo lo harías en código
+- NO simules la invocación
+- INVÓCALA y espera el resultado
+
+Si ves que vas a escribir 'print(' o 'tool_code', DETENTE y usa function calling real en su lugar.
+
 PUBLICACIÓN EN REDES SOCIALES (Instagram / Facebook):
 
 FLUJO OBLIGATORIO (sigue estos pasos en orden):
@@ -390,11 +423,89 @@ def _has_hallucinated_tool(text: str) -> bool:
     return False
 
 
+def _has_hallucinated_tool_code(text: str) -> bool:
+    for pattern in HALLUCINATED_TOOL_CODE_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return True
+    return False
+
+
+def _extract_query_from_hallucination(text: str) -> str | None:
+    """Extrae el query del código alucinado para ejecutar búsqueda directa."""
+    t = text or ""
+    match = re.search(r'query=["\']([^"\']+)["\']', t, re.I)
+    if match:
+        return match.group(1).strip()
+    match = re.search(r'search_web\(["\']([^"\']+)["\']', t, re.I)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def _last_user_text(messages: list[dict[str, Any]]) -> str:
+    for row in reversed(messages):
+        if row.get("role") != "user":
+            continue
+        content = row.get("content")
+        if isinstance(content, str):
+            stripped = content.strip()
+            if stripped:
+                return stripped
+    return ""
+
+
+def _reply_from_direct_search(query: str, *, kind: str = "news") -> str:
+    """Ejecuta búsqueda directamente si Claude alucinó tool_code."""
+    q = (query or "").strip()
+    if not q:
+        return "Señor, no pude obtener la información. ¿Puede reformular?"
+    from app.services.gemini_grounded import execute_search_web_sync
+
+    result = execute_search_web_sync(q, kind=kind)
+    summary = str(result.get("summary") or result.get("message") or "").strip()
+    if result.get("ok") and summary:
+        return summary
+    return str(
+        result.get("message")
+        or "Señor, no pude obtener información actual en este momento."
+    )
+
+
+def _resolve_hallucinated_tool_code_reply(
+    reply: str,
+    messages: list[dict[str, Any]],
+) -> str | None:
+    if not _has_hallucinated_tool_code(reply):
+        return None
+    query = _extract_query_from_hallucination(reply) or _last_user_text(messages)
+    return _reply_from_direct_search(query)
+
+
+def _tool_hallucination_kind(reply: str) -> str | None:
+    if _has_hallucinated_tool_code(reply):
+        return "tool_code"
+    if _promised_web_search_without_tool(reply):
+        return "search_promise"
+    if _has_hallucinated_tool(reply):
+        return "tool_name"
+    return None
+
+
+def _hallucination_retry_message(kind: str) -> str:
+    if kind == "tool_code":
+        return TOOL_CODE_HALLUCINATION_RETRY_MESSAGE
+    if kind == "search_promise":
+        return SEARCH_HALLUCINATION_RETRY_MESSAGE
+    return HALLUCINATION_RETRY_USER_MESSAGE
+
+
 def _promised_web_search_without_tool(text: str) -> bool:
     """True si promete buscar pero no entrega resultado sustantivo."""
     t = (text or "").strip()
     if not t:
         return False
+    if _has_hallucinated_tool_code(t):
+        return True
     promised = bool(
         re.search(
             r"\b(buscar[eé]|voy a buscar|investigar[eé]|consultar[eé] en internet|"
@@ -1096,26 +1207,20 @@ def _complete_chat_with_tools(
             if reply:
                 if pdf_attachment:
                     reply = _strip_pdf_markdown_links(reply)
+                hallucination = _tool_hallucination_kind(reply)
                 if (
                     allow_hallucination_retry
-                    and (
-                        _has_hallucinated_tool(reply)
-                        or _promised_web_search_without_tool(reply)
-                    )
+                    and hallucination
                     and not image_attachment
                     and not pdf_attachment
                 ):
-                    logger.warning("[CHAT] Hallucinated tool or search promise, retrying")
+                    logger.warning("[CHAT] Hallucinated tool (%s), retrying", hallucination)
                     retry_messages = [
                         *messages,
                         {"role": "assistant", "content": reply},
                         {
                             "role": "user",
-                            "content": (
-                                SEARCH_HALLUCINATION_RETRY_MESSAGE
-                                if _promised_web_search_without_tool(reply)
-                                else HALLUCINATION_RETRY_USER_MESSAGE
-                            ),
+                            "content": _hallucination_retry_message(hallucination),
                         },
                     ]
                     return _complete_chat_with_tools(
@@ -1127,6 +1232,16 @@ def _complete_chat_with_tools(
                         allow_hallucination_retry=False,
                         allow_empty_retry=allow_empty_retry,
                     )
+                if (
+                    not allow_hallucination_retry
+                    and _has_hallucinated_tool_code(reply)
+                    and not image_attachment
+                    and not pdf_attachment
+                ):
+                    logger.warning("[CHAT] tool_code alucinado tras retry — búsqueda directa")
+                    direct = _resolve_hallucinated_tool_code_reply(reply, messages)
+                    if direct:
+                        return direct, pdf_attachment, image_attachment
                 if (
                     allow_empty_retry
                     and _is_empty_or_placeholder_response(reply)
@@ -1203,6 +1318,11 @@ def _complete_chat_resilient(
             system=trimmed_system,
             messages=messages,
         )
+        if _has_hallucinated_tool_code(reply):
+            logger.warning("[CHAT] tool_code alucinado en simple path — búsqueda directa")
+            direct = _resolve_hallucinated_tool_code_reply(reply, messages)
+            if direct:
+                return direct, pdf_attachment, image_attachment
         if anthropic_key and (
             _has_hallucinated_tool(reply) or _promised_web_search_without_tool(reply)
         ):
