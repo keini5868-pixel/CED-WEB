@@ -97,6 +97,17 @@ SEARCH_HALLUCINATION_RETRY_MESSAGE = (
     "integrado y avisa honestamente si no hay datos actuales."
 )
 
+INTERNAL_KB_LEAK_RETRY_MESSAGE = (
+    "Tu respuesta anterior incluyó el bloque interno 'Conocimiento interno CED'. "
+    "Ese texto es SOLO contexto del sistema — NUNCA debe aparecer en tu respuesta al usuario. "
+    "Reescribe de forma natural y útil, usando la información sin citar ni copiar el bloque interno."
+)
+
+_INTERNAL_KB_LEAK_RE = re.compile(
+    r"Conocimiento interno CED\s*\(priorizar",
+    re.I,
+)
+
 HALLUCINATION_RETRY_USER_MESSAGE = (
     "ERROR: Escribiste el nombre de la herramienta como texto. "
     "Invócala mediante function calling real, o avisa honestamente que no puedes."
@@ -307,6 +318,15 @@ IMPORTANTE — cerebro híbrido CED:
 - Primero usa conocimiento interno estable (conceptos, negocio, ciencia, cultura) cuando viene en el contexto.
 - Solo afirma datos de hoy (clima, precios, noticias) si hay contexto web inyectado abajo.
 - Sistema avanzado: si el contexto indica confirmación pendiente, pregunta antes de profundizar.
+- NUNCA incluyas en tu respuesta al usuario el texto del bloque "Conocimiento interno CED" ni líneas tipo "- [Marketing digital] ...".
+  Úsalo SOLO como contexto interno para generar respuestas naturales, útiles y en tus propias palabras.
+
+IMPORTANTE — prompts para otras herramientas de IA:
+- Cuando el usuario pida un "prompt" para usar en otra herramienta de IA (ChatGPT, Midjourney, Gemini, etc.),
+  entrégalo COMPLETO, detallado y listo para copiar y pegar.
+- Delimita el prompt con --- arriba y --- abajo.
+- NO entregues solo una "estructura de página", un esquema de secciones ni un resumen.
+- Si pidió el prompt, entrégalo de inmediato — no sustituyas por una descripción de lo que incluiría.
 
 IMPORTANTE — capacidades REALES de esta plataforma:
 - CED puede publicar en Facebook e Instagram cuando el usuario conectó Meta (dashboard → Conectar Redes).
@@ -494,6 +514,91 @@ def _hallucination_retry_message(kind: str) -> str:
     if kind == "search_promise":
         return SEARCH_HALLUCINATION_RETRY_MESSAGE
     return HALLUCINATION_RETRY_USER_MESSAGE
+
+
+def _contains_internal_kb_leak(text: str) -> bool:
+    """True si la respuesta expone el bloque interno de KB al usuario."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _INTERNAL_KB_LEAK_RE.search(t):
+        return True
+    if re.search(r"Conocimiento interno CED", t, re.I) and re.search(
+        r"-\s*\[[^\]]+\]\s+[^:]+:\s",
+        t,
+    ):
+        return True
+    return False
+
+
+def _strip_internal_kb_from_reply(text: str) -> str:
+    """Elimina bloques de KB filtrados que el modelo copió a la respuesta."""
+    cleaned = re.sub(
+        r"Conocimiento interno CED\s*\([^)]*\):?\s*",
+        "",
+        text or "",
+        flags=re.I,
+    )
+    cleaned = re.sub(
+        r"(?:^|\n)-\s*\[[^\]]+\][^\n]*",
+        "",
+        cleaned,
+        flags=re.I,
+    )
+    return " ".join(cleaned.split()).strip()
+
+
+def _ensure_chat_reply_no_kb_leak(
+    reply: str,
+    *,
+    user_id: str,
+    user_text: str,
+    anthropic_key: str,
+    google_key: str,
+    gemini_model: str,
+    system: str,
+    messages: list[dict[str, Any]],
+    conversation_id: str | None,
+    pdf_attachment: dict[str, Any] | None,
+    image_attachment: dict[str, Any] | None,
+) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
+    if not _contains_internal_kb_leak(reply):
+        return reply, pdf_attachment, image_attachment
+
+    logger.warning("[CHAT] Internal KB leak detected — regenerating reply")
+    retry_messages = [
+        *messages,
+        {"role": "assistant", "content": reply},
+        {"role": "user", "content": INTERNAL_KB_LEAK_RETRY_MESSAGE},
+    ]
+    try:
+        regen, pdf2, img2 = _complete_chat_resilient(
+            user_id,
+            user_text=user_text,
+            anthropic_key=anthropic_key,
+            google_key=google_key,
+            gemini_model=gemini_model,
+            system=system,
+            messages=retry_messages,
+            conversation_id=conversation_id,
+        )
+        if not pdf_attachment and pdf2:
+            pdf_attachment = pdf2
+        if not image_attachment and img2:
+            image_attachment = img2
+        if regen and not _contains_internal_kb_leak(regen):
+            return regen, pdf_attachment, image_attachment
+        if regen:
+            stripped = _strip_internal_kb_from_reply(regen)
+            if stripped and not _contains_internal_kb_leak(stripped):
+                return stripped, pdf_attachment, image_attachment
+    except Exception:  # noqa: BLE001
+        logger.exception("[CHAT] KB leak regeneration failed")
+
+    stripped = _strip_internal_kb_from_reply(reply)
+    if stripped and not _contains_internal_kb_leak(stripped):
+        return stripped, pdf_attachment, image_attachment
+    return reply, pdf_attachment, image_attachment
 
 
 def _promised_web_search_without_tool(text: str) -> bool:
@@ -1676,6 +1781,20 @@ def send_message(
             "No pude conectar con el asistente. Intenta de nuevo en un momento.",
             http_status=503,
         ) from exc
+
+    reply, pdf_attachment, image_attachment = _ensure_chat_reply_no_kb_leak(
+        reply,
+        user_id=user_id,
+        user_text=text,
+        anthropic_key=anthropic_key,
+        google_key=google_key,
+        gemini_model=gemini_model,
+        system=system,
+        messages=messages,
+        conversation_id=conversation_id,
+        pdf_attachment=pdf_attachment,
+        image_attachment=image_attachment,
+    )
 
     return _finish(
         reply,

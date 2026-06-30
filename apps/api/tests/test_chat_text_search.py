@@ -12,10 +12,12 @@ from app.services.text_chat import (
     CHAT_SYSTEM_BASE,
     CHAT_TOOLS,
     _complete_chat_with_tools,
+    _contains_internal_kb_leak,
     _extract_query_from_hallucination,
     _has_hallucinated_tool_code,
     _promised_web_search_without_tool,
     _run_chat_tool,
+    _strip_internal_kb_from_reply,
 )
 
 TRUMP_TOOL_CODE_REPLY = (
@@ -155,3 +157,26 @@ def test_chat_retries_with_real_function_calling():
     assert "Trump" in reply or "aranceles" in reply
     assert pdf is None
     assert img is None
+
+
+def test_chat_system_hides_internal_kb_from_user():
+    assert "Conocimiento interno CED" in CHAT_SYSTEM_BASE
+    assert "NUNCA incluyas" in CHAT_SYSTEM_BASE
+    assert "solo como contexto" in CHAT_SYSTEM_BASE.lower() or "contexto interno" in CHAT_SYSTEM_BASE.lower()
+
+
+def test_chat_system_delivers_full_ai_prompts():
+    assert "listo para copiar" in CHAT_SYSTEM_BASE.lower()
+    assert "---" in CHAT_SYSTEM_BASE
+    assert "estructura" in CHAT_SYSTEM_BASE.lower()
+
+
+def test_internal_kb_leak_detection_and_strip():
+    leaked = (
+        "Conocimiento interno CED (priorizar sobre suposiciones):\n"
+        "- [Marketing digital] SEO básico para negocios: SEO es clave..."
+    )
+    assert _contains_internal_kb_leak(leaked)
+    stripped = _strip_internal_kb_from_reply(leaked)
+    assert not _contains_internal_kb_leak(stripped)
+    assert "SEO" in stripped or stripped == ""

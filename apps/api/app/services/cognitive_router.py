@@ -340,7 +340,13 @@ def build_chat_system_extras(user_id: str, routed: CognitiveRouteResult | None =
     except Exception:  # noqa: BLE001
         pass
     if routed and routed.context_for_llm:
-        parts.append(routed.context_for_llm)
+        ctx = routed.context_for_llm
+        if "Conocimiento interno CED" in ctx:
+            ctx = (
+                "CONTEXTO INTERNO DEL SISTEMA (NO mostrar al usuario — solo usar para redactar):\n"
+                f"{ctx}"
+            )
+        parts.append(ctx)
     if routed and routed.needs_advanced_confirm:
         parts.append(
             "El usuario pidió análisis profundo. Pregunta si desea activar el sistema avanzado antes de profundizar."
