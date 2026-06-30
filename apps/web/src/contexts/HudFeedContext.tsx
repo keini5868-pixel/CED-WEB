@@ -205,12 +205,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
 
   const clearAgentPartial = useCallback(() => {
     setVoiceItems((prev) =>
-      prev.filter((item, index) => {
-        if (item.role !== "model") return true;
-        if (item.partial) return false;
-        if (index === 0 && item.kind === "report") return false;
-        return true;
-      }),
+      prev.filter((item) => !(item.role === "model" && item.partial)),
     );
   }, []);
 

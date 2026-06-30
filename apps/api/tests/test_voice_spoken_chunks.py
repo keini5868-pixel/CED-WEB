@@ -1,6 +1,22 @@
 """Voice chunk splitting — punctuation-aware cuts."""
 
-from app.services.voice_spoken import chunk_ends_with_punctuation, split_voice_delivery_chunks
+from app.services.voice_response_guard import guard_voice_response
+from app.services.voice_spoken import (
+    chunk_ends_with_punctuation,
+    normalize_numbers_for_speech,
+    split_voice_delivery_chunks,
+)
+
+
+def test_normalize_numbers_for_speech_removes_thousand_commas():
+    assert normalize_numbers_for_speech("1,300 muertos") == "1300 muertos"
+    assert normalize_numbers_for_speech("Hay 12,345,678 casos") == "Hay 12345678 casos"
+
+
+def test_guard_voice_response_normalizes_numbers():
+    safe, blocked = guard_voice_response("Se reportan 1,300 víctimas confirmadas.")
+    assert not blocked
+    assert safe == "Se reportan 1300 víctimas confirmadas."
 
 
 def test_short_text_single_complete_chunk():

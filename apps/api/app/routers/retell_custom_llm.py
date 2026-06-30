@@ -14,6 +14,7 @@ from app.services.cognitive_intents import (
     is_explicit_advanced_activation,
     is_meta_publish_intent,
     is_script_demo_request,
+    is_web_research_intent,
 )
 from app.services.openai_voice_llm import OpenAIVoiceLlm
 from app.services.retell_call_registry import release_call_user, resolve_call_user
@@ -35,6 +36,7 @@ from app.services.retell_custom_llm import (
     should_execute_advanced_now,
     should_respond_to_transcript,
     is_unwanted_voice_reply,
+    promised_voice_search_without_result,
     transcript_has_meta_publish_context,
     _is_concept_question,
     web_search_error_phrase,
@@ -556,15 +558,84 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             ) and not is_script_delivered(call_id):
                 advanced_req = fallback_advanced_topic(transcript, pending_topic=pending_now)
 
+            web_req = resolve_web_search_request(user_text, transcript)
+            if web_req and uid:
+                clear_pending_advanced_topic(call_id)
+                llm._pending_advanced = None
+                kind = web_req["kind"]
+                web_delivered = False
+                async with response_lock:
+                    if _turn_stale():
+                        return
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "search_web",
+                                uid,
+                                {"query": web_req["query"], "kind": kind},
+                            ),
+                            timeout=20.0,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("[RETELL-GEMINI] web_search timeout call=%s", call_id)
+                        tool_result = {
+                            "status": "timeout",
+                            "fallback": True,
+                            "spoken": "Búsqueda agotada.",
+                        }
+                    if _turn_stale():
+                        logger.info("[RETELL-GEMINI] drop stale web rid=%s", scheduled_rid)
+                        return
+                    if tool_result.get("fallback") or tool_result.get("status") == "timeout":
+                        llm._web_search_fallback = True
+                        logger.info(
+                            "[RETELL-OPENAI] web_search fallback -> LLM call=%s",
+                            call_id,
+                        )
+                    elif tool_result.get("status") == "success" or tool_result.get("ok"):
+                        spoken = str(tool_result.get("spoken") or "").strip()
+                        full = format_web_delivery(kind, spoken) if spoken else web_search_error_phrase(kind)
+                        chunks = split_voice_delivery_chunks(full)
+                        for chunk_idx, (chunk, complete) in enumerate(chunks):
+                            if my_generation != generation_seq:
+                                if chunk_idx > 0:
+                                    logger.warning(
+                                        "[CHUNK_ABORTED] rid=%s idx=%s total=%s call=%s path=web_search",
+                                        scheduled_rid,
+                                        chunk_idx,
+                                        len(chunks),
+                                        call_id,
+                                    )
+                                return
+                            await send_voice_partial(
+                                response_id=scheduled_rid,
+                                content=chunk,
+                                content_complete=complete,
+                                generation=my_generation,
+                            )
+                        active_response_id = max(active_response_id, scheduled_rid)
+                        answered_response_ids.add(scheduled_rid)
+                        if scheduled_key:
+                            last_answered_user_key = scheduled_key
+                        web_delivered = True
+                        logger.info(
+                            "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
+                            call_id,
+                            web_req["kind"],
+                            web_req["query"][:80],
+                            full[:120],
+                        )
+                if web_delivered:
+                    return
+
             conversational_turn = (
                 not advanced_req
                 and not resolve_meta_publish_request(user_text, transcript)
+                and resolve_web_search_request(user_text, transcript) is None
+                and not is_web_research_intent(user_text)
                 and (
                     is_casual_conversation(user_text)
-                    or (
-                        is_small_talk(user_text, transcript)
-                        and not resolve_web_search_request(user_text, transcript)
-                    )
+                    or is_small_talk(user_text, transcript)
                 )
             )
             if conversational_turn:
@@ -611,6 +682,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 finally:
                     turn_draft_in_progress = False
                     turn_draft_user_key = ""
+                if reply and promised_voice_search_without_result(reply, user_text=user_text):
+                    logger.warning(
+                        "[RETELL-OPENAI] conversational search promise without tool — "
+                        "escalating call=%s text=%s",
+                        call_id,
+                        user_text[:80],
+                    )
+                    reply = None
                 if reply:
                     async with response_lock:
                         await send_voice_response(
@@ -797,76 +876,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     comments_req["platform"],
                 )
                 return
-
-            web_req = resolve_web_search_request(user_text, transcript)
-            if web_req and uid:
-                clear_pending_advanced_topic(call_id)
-                llm._pending_advanced = None
-                kind = web_req["kind"]
-                web_delivered = False
-                async with response_lock:
-                    if _turn_stale():
-                        return
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(
-                                "search_web",
-                                uid,
-                                {"query": web_req["query"], "kind": kind},
-                            ),
-                            timeout=20.0,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning("[RETELL-GEMINI] web_search timeout call=%s", call_id)
-                        tool_result = {
-                            "status": "timeout",
-                            "fallback": True,
-                            "spoken": "Búsqueda agotada.",
-                        }
-                    if _turn_stale():
-                        logger.info("[RETELL-GEMINI] drop stale web rid=%s", scheduled_rid)
-                        return
-                    if tool_result.get("fallback") or tool_result.get("status") == "timeout":
-                        llm._web_search_fallback = True
-                        logger.info(
-                            "[RETELL-OPENAI] web_search fallback -> LLM call=%s",
-                            call_id,
-                        )
-                    elif tool_result.get("status") == "success" or tool_result.get("ok"):
-                        spoken = str(tool_result.get("spoken") or "").strip()
-                        full = format_web_delivery(kind, spoken) if spoken else web_search_error_phrase(kind)
-                        chunks = split_voice_delivery_chunks(full)
-                        for chunk_idx, (chunk, complete) in enumerate(chunks):
-                            if my_generation != generation_seq:
-                                if chunk_idx > 0:
-                                    logger.warning(
-                                        "[CHUNK_ABORTED] rid=%s idx=%s total=%s call=%s path=web_search",
-                                        scheduled_rid,
-                                        chunk_idx,
-                                        len(chunks),
-                                        call_id,
-                                    )
-                                return
-                            await send_voice_partial(
-                                response_id=scheduled_rid,
-                                content=chunk,
-                                content_complete=complete,
-                                generation=my_generation,
-                            )
-                        active_response_id = max(active_response_id, scheduled_rid)
-                        answered_response_ids.add(scheduled_rid)
-                        if scheduled_key:
-                            last_answered_user_key = scheduled_key
-                        web_delivered = True
-                        logger.info(
-                            "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
-                            call_id,
-                            web_req["kind"],
-                            web_req["query"][:80],
-                            full[:120],
-                        )
-                if web_delivered:
-                    return
 
             if (
                 is_explicit_advanced_activation(user_text)

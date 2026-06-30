@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from app.services.voice_spoken import normalize_numbers_for_speech
+
 _CODE_LEAK = re.compile(
     r"(?:"
     r"tool_code|end_of_tool_code|"
@@ -49,7 +51,7 @@ def contains_tool_leak(text: str) -> bool:
 
 def guard_voice_response(text: str) -> tuple[str, bool]:
     """Devuelve (texto_seguro, fue_bloqueado)."""
-    cleaned = " ".join((text or "").split()).strip()
+    cleaned = normalize_numbers_for_speech(" ".join((text or "").split()).strip())
     if not cleaned:
         return "", False
     if contains_code_leak(cleaned) or contains_tool_leak(cleaned):

@@ -66,3 +66,42 @@ def test_world_news_triggers_web():
     req = resolve_web_search_request(tx[-1].content, tx)
     assert req is not None
     assert req["kind"] == "news"
+
+
+def test_venezuela_news_triggers_web():
+    tx = _tx(("user", "Dame las últimas noticias de Venezuela"))
+    req = resolve_web_search_request(tx[-1].content, tx)
+    assert req is not None
+    assert req["kind"] == "news"
+    assert "venezuela" in req["query"].lower()
+
+
+def test_investigate_intent_triggers_web():
+    tx = _tx(("user", "Investiga lo que pasó con el terremoto en Venezuela"))
+    req = resolve_web_search_request(tx[-1].content, tx)
+    assert req is not None
+
+
+def test_casual_long_text_not_search():
+    from app.services.retell_custom_llm import is_casual_conversation
+
+    text = (
+        "Hoy dormí muy mal y estuve pensando en muchas cosas del trabajo "
+        "y de la familia durante toda la noche sin poder descansar bien"
+    )
+    assert is_casual_conversation(text) is True
+    assert resolve_web_search_request(text, _tx(("user", text))) is None
+
+
+def test_search_promise_detection():
+    from app.services.retell_custom_llm import promised_voice_search_without_result
+
+    assert promised_voice_search_without_result(
+        "Permítame investigar eso, señor.",
+        user_text="noticias de Venezuela",
+    )
+    assert not promised_voice_search_without_result(
+        "Según las fuentes consultadas, el precio subió a 1300 dólares "
+        "y el mercado reaccionó con volatilidad en la sesión de hoy.",
+        user_text="precio del bitcoin",
+    )

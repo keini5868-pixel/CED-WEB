@@ -295,7 +295,6 @@ export class CedRetellClient {
       }
       this.currentAgentStreamKey = "";
       this.lastAgentLine = "";
-      this.callbacks.onClearAgentPartial?.();
     });
 
     this.client.on("update", (update: RetellUpdateEvent) => {

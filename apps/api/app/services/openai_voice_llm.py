@@ -10,10 +10,11 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from app.config import get_settings
+from app.services.cognitive_intents import is_web_research_intent
 from app.services.http_clients import get_openai_async_client
 from app.services.openai_key_utils import sanitize_openai_api_key
 from app.services.openai_voice_tools import build_openai_chat_tools
-from app.services.retell_custom_llm import merged_user_query
+from app.services.retell_custom_llm import merged_user_query, _needs_internet_lookup
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_llm_common import (
     CONVERSATIONAL_TURN_OVERLAY,
@@ -646,7 +647,14 @@ class OpenAIVoiceLlm:
                     )
                     if reformed:
                         text_response = reformed
-                final_text = text_response or await self.draft_conversational_response(request) or FALLBACK_REPLY
+                if _needs_internet_lookup(user_text) or is_web_research_intent(user_text):
+                    final_text = text_response or FALLBACK_REPLY
+                else:
+                    final_text = (
+                        text_response
+                        or await self.draft_conversational_response(request)
+                        or FALLBACK_REPLY
+                    )
                 break
         except asyncio.TimeoutError:
             delay = await self.generate_natural_reply(

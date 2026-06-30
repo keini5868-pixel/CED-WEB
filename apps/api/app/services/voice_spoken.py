@@ -18,7 +18,18 @@ _ADVISORY_HINTS = re.compile(
     re.I,
 )
 
+_THOUSANDS_COMMA_RE = re.compile(r"\d{1,3}(?:,\d{3})+")
 _SENTENCE_END_RE = re.compile(r'[.!?…]["\']?$')
+
+
+def normalize_numbers_for_speech(text: str) -> str:
+    """Quita separadores de miles para que el TTS pronuncie cantidades, no dígitos sueltos."""
+    cleaned = text or ""
+    if not cleaned:
+        return ""
+    cleaned = _THOUSANDS_COMMA_RE.sub(lambda m: m.group(0).replace(",", ""), cleaned)
+    cleaned = re.sub(r"(\d),(\d{1,2})\b", r"\1.\2", cleaned)
+    return cleaned
 
 
 def is_advisory_voice_query(text: str) -> bool:
@@ -40,7 +51,7 @@ def chunk_ends_with_punctuation(text: str) -> bool:
 
 def fit_voice_spoken(text: str, *, max_chars: int | None = None) -> str:
     """Recorta al límite de voz sin cortar a mitad de oración cuando es posible."""
-    cleaned = " ".join((text or "").split()).strip()
+    cleaned = normalize_numbers_for_speech(" ".join((text or "").split()).strip())
     if not cleaned:
         return ""
     limit = max_chars if max_chars is not None else voice_spoken_limit(cleaned)
@@ -111,7 +122,7 @@ def split_voice_delivery_chunks(
     max_chunk: int = VOICE_CHUNK_TARGET,
 ) -> list[tuple[str, bool]]:
     """Parte texto largo en bloques por oraciones — sin cortar a mitad de cláusula."""
-    cleaned = " ".join((text or "").split()).strip()
+    cleaned = normalize_numbers_for_speech(" ".join((text or "").split()).strip())
     if not cleaned:
         return []
     if len(cleaned) <= max_chunk:

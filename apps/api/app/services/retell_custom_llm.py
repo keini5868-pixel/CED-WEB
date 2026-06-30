@@ -162,13 +162,19 @@ def _needs_internet_lookup(text: str) -> bool:
         return False
     if is_weather_intent(text) or is_news_intent(text):
         return True
+    if is_web_research_intent(text):
+        return True
     if requires_live_web(text):
         return True
     norm = normalize_text(text)
     if len(norm) < 4 or norm in _ACK_ONLY:
         return False
     if is_volatile_query(text) and _WEB_FRAGMENT_HINTS.search(norm):
-        return is_news_intent(text) or is_weather_intent(text)
+        return (
+            is_news_intent(text)
+            or is_weather_intent(text)
+            or is_web_research_intent(text)
+        )
     return False
 
 
@@ -554,6 +560,30 @@ def is_unwanted_voice_reply(text: str, *, user_text: str = "") -> bool:
     return False
 
 
+def promised_voice_search_without_result(text: str, *, user_text: str = "") -> bool:
+    """True si promete buscar/investigar sin entregar resultado sustantivo."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    promised = bool(
+        re.search(
+            r"\b(buscar[eé]|voy a buscar|investigar[eé]|voy a investigar|"
+            r"consultar[eé] en internet|d[eé]jame buscar|perm[ií]teme buscar|"
+            r"un momento.*buscar|perm[ií]tame.*investigar)\b",
+            t,
+            re.I,
+        )
+    )
+    if not promised:
+        return False
+    substantive = len(re.sub(r"[^a-záéíóúñA-ZÁÉÍÓÚÑ0-9]", "", t)) > 80
+    if substantive:
+        return False
+    if user_text and (_needs_internet_lookup(user_text) or is_web_research_intent(user_text)):
+        return True
+    return False
+
+
 def resolve_camera_voice_request(user_text: str) -> str | None:
     """Tool de cámara a ejecutar, o None."""
     last = (user_text or "").strip()
@@ -786,7 +816,11 @@ def is_casual_conversation(text: str) -> bool:
     """Charla natural / personal — no requiere tools ni web."""
     if is_meta_publish_intent(text) or _is_concept_question(text):
         return False
-    if _needs_internet_lookup(text) or is_script_demo_request(text):
+    if (
+        _needs_internet_lookup(text)
+        or is_web_research_intent(text)
+        or is_script_demo_request(text)
+    ):
         return False
     norm = _normalize(text)
     if len(norm.split()) < 4:
