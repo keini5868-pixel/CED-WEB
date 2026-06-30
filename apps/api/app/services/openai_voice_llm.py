@@ -9,6 +9,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
+from app.config import get_settings
 from app.services.http_clients import get_openai_async_client
 from app.services.openai_key_utils import sanitize_openai_api_key
 from app.services.openai_voice_tools import build_openai_chat_tools
@@ -250,7 +251,11 @@ class OpenAIVoiceLlm:
                 temperature=temperature,
                 tools=self.tools if with_tools else None,
             )
-        except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+        except asyncio.TimeoutError:
+            logger.warning("[RETELL-OPENAI] natural_reply timeout path=%s", path)
+            return None
+        except Exception:  # noqa: BLE001
+            logger.exception("[RETELL-OPENAI] natural_reply failed path=%s", path)
             return None
         text = delivery_text(str(self._message_from_response(data).get("content") or ""))
         safe, blocked = guard_voice_response(text)

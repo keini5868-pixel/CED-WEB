@@ -63,7 +63,7 @@ router = APIRouter(tags=["retell-custom-llm"])
 
 POST_GREETING_COOLDOWN_S = 2.0
 GREETING_FALLBACK_S = 2.0
-FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente. ¿Puede repetir?"
+FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
 
 
 def _turn_slot(user_key: str) -> str:
@@ -184,29 +184,46 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         post_greeting_ready.clear()
         if greeting_release_task and not greeting_release_task.done():
             greeting_release_task.cancel()
-        begin_text = await llm.draft_greeting()
-        if greeting_cancelled:
+        try:
+            begin_text = await llm.draft_greeting()
+            if greeting_cancelled:
+                post_greeting_ready.set()
+                logger.info("[GREETING] aborted before send call=%s reason=%s", call_id, reason)
+                return
+            payload = {
+                "response_type": "response",
+                "response_id": response_id,
+                "content": begin_text,
+                "content_complete": True,
+                "end_call": False,
+            }
+            await websocket.send_json(payload)
+            mark_greeting_sent(call_id)
+            greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
+            logger.info(
+                "[GREETING] sent call=%s reason=%s preview=%s",
+                call_id,
+                reason,
+                begin_text[:80],
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[GREETING] failed call=%s reason=%s", call_id, reason)
+            try:
+                await websocket.send_json(
+                    {
+                        "response_type": "response",
+                        "response_id": response_id,
+                        "content": FALLBACK_REPLY,
+                        "content_complete": True,
+                        "end_call": False,
+                    }
+                )
+                greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
+            except Exception:  # noqa: BLE001
+                logger.exception("[GREETING] fallback send failed call=%s", call_id)
+                post_greeting_ready.set()
+        finally:
             greeting_in_flight = False
-            post_greeting_ready.set()
-            logger.info("[GREETING] aborted before send call=%s reason=%s", call_id, reason)
-            return
-        payload = {
-            "response_type": "response",
-            "response_id": response_id,
-            "content": begin_text,
-            "content_complete": True,
-            "end_call": False,
-        }
-        await websocket.send_json(payload)
-        greeting_in_flight = False
-        mark_greeting_sent(call_id)
-        greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
-        logger.info(
-            "[GREETING] sent call=%s reason=%s preview=%s",
-            call_id,
-            reason,
-            begin_text[:80],
-        )
 
     async def greeting_fallback() -> None:
         try:
