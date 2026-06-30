@@ -11,6 +11,15 @@ MAX_HISTORY_TURNS = 10
 SESSION_MAX_MINUTES = 30.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
 
+_BASE_VOICE_PROMPT: str | None = None
+
+
+def _cached_base_voice_prompt() -> str:
+    global _BASE_VOICE_PROMPT
+    if _BASE_VOICE_PROMPT is None:
+        _BASE_VOICE_PROMPT = build_ced_voice_system_prompt()
+    return _BASE_VOICE_PROMPT
+
 CONVERSATIONAL_TURN_OVERLAY = """
 # TURNO CONVERSACIONAL — PRIORIDAD ABSOLUTA
 El usuario está en charla personal, saludo casual o comparte algo emocional/cotidiano.
@@ -86,8 +95,10 @@ def build_voice_system(
     user_text: str = "",
     *,
     kb_hits: list | None = None,
+    skip_kb: bool = False,
+    lightweight: bool = False,
 ) -> str:
-    base = build_ced_voice_system_prompt()
+    base = _cached_base_voice_prompt()
     uid = (user_id or "").strip()
     if uid:
         try:
@@ -107,15 +118,12 @@ def build_voice_system(
             "Responde con 3-5 puntos concretos del sistema CED, en español, "
             "oraciones completas, sin cortar a mitad. Cierra con una frase final."
         )
-    if query:
+    if query and not skip_kb:
         try:
-            from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
+            from app.services.internal_knowledge import format_hits_for_prompt
+            from app.services.kb_turn_cache import get_turn_kb_hits
 
-            hits = (
-                kb_hits
-                if kb_hits is not None
-                else search_internal_knowledge(query, limit=2)
-            )
+            hits = kb_hits if kb_hits is not None else get_turn_kb_hits(query, limit=2)
             if hits:
                 block = format_hits_for_prompt(hits)
                 base = (
@@ -128,6 +136,8 @@ def build_voice_system(
                 )
         except Exception:  # noqa: BLE001
             pass
+    if lightweight:
+        return base
     if uid:
         try:
             from app.services import voice_client_session as vcs

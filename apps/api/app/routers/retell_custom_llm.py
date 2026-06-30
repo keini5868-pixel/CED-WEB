@@ -42,6 +42,7 @@ from app.services.retell_custom_llm import (
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_spoken import split_voice_delivery_chunks
 from app.services.voice_response_guard import guard_voice_response
+from app.services.voice_latency import get_turn, start_turn
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -85,10 +86,10 @@ def _normalize_user_key(text: str) -> str:
 def _debounce_wait_s(user_text: str) -> float:
     words = len(user_text.split())
     if words >= 20:
-        return 0.40
-    if words >= 10:
         return 0.30
-    return 0.20
+    if words >= 10:
+        return 0.25
+    return 0.15
 
 
 @router.get("/llm-websocket/active")
@@ -303,6 +304,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 "end_call": False,
             }
             await websocket.send_json(payload)
+            if idx == 0:
+                turn = get_turn(call_id, response_id)
+                if turn:
+                    turn.mark_first_audio()
         active_response_id = max(active_response_id, response_id)
         answered_response_ids.add(response_id)
         if user_key:
@@ -459,6 +464,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
         last_scheduled_user_key = user_key
         wait_s = _debounce_wait_s(user_text)
+        start_turn(call_id, response_id)
 
         async def run_debounced() -> None:
             nonlocal active_response_id, last_answered_user_key, turn_draft_in_progress, turn_draft_user_key
@@ -473,6 +479,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             try:
                 await post_greeting_ready.wait()
                 await asyncio.sleep(wait_s)
+                turn = get_turn(call_id, scheduled_rid)
+                if turn:
+                    turn.mark_debounce_end()
+                llm.set_latency_context(call_id, scheduled_rid)
             except asyncio.CancelledError:
                 return
 
@@ -996,12 +1006,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                     )
                                     content = str(tool_result.get("spoken") or "").strip() or FALLBACK_REPLY
                                 elif _is_concept_question(user_text):
-                                    from app.services.internal_knowledge import (
-                                        format_hits_for_prompt,
-                                        search_internal_knowledge,
-                                    )
+                                    from app.services.internal_knowledge import format_hits_for_prompt
+                                    from app.services.kb_turn_cache import get_turn_kb_hits
 
-                                    hits = search_internal_knowledge(user_text, limit=2)
+                                    hits = get_turn_kb_hits(user_text, limit=2)
                                     if hits:
                                         content = format_hits_for_prompt(hits)
                                     else:

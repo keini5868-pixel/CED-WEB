@@ -9,9 +9,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
-
-from app.config import get_settings
+from app.services.http_clients import get_openai_async_client
 from app.services.openai_key_utils import sanitize_openai_api_key
 from app.services.openai_voice_tools import build_openai_chat_tools
 from app.services.retell_custom_llm import merged_user_query
@@ -86,6 +84,12 @@ class OpenAIVoiceLlm:
         self._context_loaded_for: str | None = None
         self._pending_advanced: str | None = None
         self._web_search_fallback: bool = False
+        self._latency_call_id: str = ""
+        self._latency_response_id: int = 0
+
+    def set_latency_context(self, call_id: str, response_id: int) -> None:
+        self._latency_call_id = call_id
+        self._latency_response_id = response_id
 
     def set_user_id(self, user_id: str | None) -> None:
         cleaned = (user_id or "").strip()
@@ -158,6 +162,16 @@ class OpenAIVoiceLlm:
             payload["tools"] = tools
             payload["tool_choice"] = "auto"
 
+        from app.services.voice_latency import get_turn
+
+        turn = (
+            get_turn(self._latency_call_id, self._latency_response_id)
+            if self._latency_call_id and self._latency_response_id
+            else None
+        )
+        if turn:
+            turn.mark_llm_request(path=path)
+
         logger.info(
             "[RETELL-OPENAI] model_call start path=%s model=%s prompt_sha=%s user=%s ts=%.3f",
             path,
@@ -170,17 +184,24 @@ class OpenAIVoiceLlm:
             "Authorization": f"Bearer {_api_key()}",
             "Content-Type": "application/json",
         }
-        async with httpx.AsyncClient(timeout=timeout_sec + 2.0) as client:
-            res = await client.post(OPENAI_CHAT_URL, headers=headers, json=payload)
-            if res.status_code >= 400:
-                logger.warning(
-                    "[RETELL-OPENAI] model_call error path=%s status=%s body=%s",
-                    path,
-                    res.status_code,
-                    res.text[:400],
-                )
-                res.raise_for_status()
-            data = res.json()
+        client = get_openai_async_client()
+        res = await client.post(
+            OPENAI_CHAT_URL,
+            headers=headers,
+            json=payload,
+            timeout=timeout_sec + 2.0,
+        )
+        if res.status_code >= 400:
+            logger.warning(
+                "[RETELL-OPENAI] model_call error path=%s status=%s body=%s",
+                path,
+                res.status_code,
+                res.text[:400],
+            )
+            res.raise_for_status()
+        data = res.json()
+        if turn:
+            turn.mark_llm_first_token()
         logger.info(
             "[RETELL-OPENAI] model_call done path=%s prompt_sha=%s user=%s ts=%.3f",
             path,
@@ -208,7 +229,17 @@ class OpenAIVoiceLlm:
         temperature: float = 0.65,
         with_tools: bool = False,
     ) -> str | None:
-        system = f"{build_voice_system(self.user_id, user_text)}\n\n{overlay}"
+        lightweight = path in {
+            "conversational",
+            "conversational_delay_ack",
+            "greeting",
+            "reminder",
+            "reformulate_empathy",
+        }
+        system = (
+            f"{build_voice_system(self.user_id, user_text, skip_kb=lightweight, lightweight=lightweight)}"
+            f"\n\n{overlay}"
+        )
         try:
             data = await self._chat_completion(
                 messages=messages,
@@ -461,9 +492,9 @@ class OpenAIVoiceLlm:
         kb_hits: list = []
         if user_text.strip():
             try:
-                from app.services.internal_knowledge import search_internal_knowledge
+                from app.services.kb_turn_cache import get_turn_kb_hits
 
-                kb_hits = search_internal_knowledge(user_text, limit=2)
+                kb_hits = get_turn_kb_hits(user_text, limit=2)
             except Exception:  # noqa: BLE001
                 kb_hits = []
 
