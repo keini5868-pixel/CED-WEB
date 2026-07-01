@@ -628,16 +628,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 if web_delivered:
                     return
 
-            conversational_turn = (
-                not advanced_req
-                and not resolve_meta_publish_request(user_text, transcript)
-                and resolve_web_search_request(user_text, transcript) is None
-                and not is_web_research_intent(user_text)
-                and (
-                    is_casual_conversation(user_text)
-                    or is_small_talk(user_text, transcript)
-                )
-            )
+            # Path conversacional ligero DESACTIVADO (regresión 6f15302 — silencio post-saludo).
+            # Todos los turnos usan draft_response con tools y system prompt completo.
+            conversational_turn = False
             if conversational_turn:
                 async with response_lock:
                     superseded, latest_rid = _is_superseded_turn_rid(

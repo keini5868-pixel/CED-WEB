@@ -46,6 +46,8 @@ TOOL_TIMEOUT_SEC = 25.0
 SEARCH_WEB_TIMEOUT_SEC = 17.0
 MAX_TOOL_ROUNDS = 3
 PROVIDER = "openai"
+# Regresión 6f15302: path ligero desactivado — usar system prompt completo siempre.
+VOICE_LIGHTWEIGHT_PATH_ENABLED = False
 
 
 def _voice_model() -> str:
@@ -231,13 +233,17 @@ class OpenAIVoiceLlm:
         temperature: float = 0.65,
         with_tools: bool = False,
     ) -> str | None:
-        lightweight = path in {
-            "conversational",
-            "conversational_delay_ack",
-            "greeting",
-            "reminder",
-            "reformulate_empathy",
-        }
+        lightweight = (
+            VOICE_LIGHTWEIGHT_PATH_ENABLED
+            and path
+            in {
+                "conversational",
+                "conversational_delay_ack",
+                "greeting",
+                "reminder",
+                "reformulate_empathy",
+            }
+        )
         system = (
             f"{build_voice_system(self.user_id, user_text, skip_kb=lightweight, lightweight=lightweight)}"
             f"\n\n{overlay}"

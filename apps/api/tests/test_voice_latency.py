@@ -7,12 +7,13 @@ from unittest.mock import MagicMock, patch
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
 from app.routers.retell_custom_llm import _debounce_wait_s
 from app.services.kb_turn_cache import clear_turn_kb_cache, get_turn_kb_hits
-from app.services.openai_voice_llm import OpenAIVoiceLlm, _api_key, _voice_model
+from app.services.openai_voice_llm import OpenAIVoiceLlm, VOICE_LIGHTWEIGHT_PATH_ENABLED, _api_key, _voice_model
 from app.services.voice_llm_common import build_voice_system
 
 
 def test_openai_voice_llm_imports_get_settings():
     """Regresión 6f15302: get_settings debe existir para instanciar el LLM."""
+    assert VOICE_LIGHTWEIGHT_PATH_ENABLED is False
     assert _voice_model()
     with patch("app.services.openai_voice_llm.get_settings") as mock_settings:
         mock_settings.return_value.openai_api_key = "sk-test-key"
