@@ -14,7 +14,11 @@ from app.services.conversation_memory import (
     save_long_term_memory,
 )
 from app.services.gemini_grounded import fetch_voice_brief_parallel
-from app.services.voice_spoken import fit_voice_spoken, voice_spoken_limit
+from app.services.voice_spoken import (
+    fit_voice_spoken,
+    voice_spoken_limit,
+    voice_spoken_limit_for_kind,
+)
 from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.navigation_maps import compute_route, geocode_address
@@ -155,8 +159,8 @@ async def _run_camera_capture(
     )
 
 
-def _spoken_ok(text: str) -> dict[str, Any]:
-    return {"ok": True, "spoken": fit_voice_spoken(text)}
+def _spoken_ok(text: str, *, max_chars: int | None = None) -> dict[str, Any]:
+    return {"ok": True, "spoken": fit_voice_spoken(text, max_chars=max_chars)}
 
 
 def _spoken_err(text: str, *, error: str | None = None) -> dict[str, Any]:
@@ -273,11 +277,12 @@ async def execute_voice_tool(
                 }
             summary = str(result.get("summary") or "").strip()
             if result.get("ok") and summary:
+                spoken_limit = voice_spoken_limit_for_kind(kind, query)
                 payload = web_state.take(
                     {
                         "status": "success",
                         "ok": True,
-                        "spoken": summary,
+                        "spoken": fit_voice_spoken(summary, max_chars=spoken_limit),
                         "summary": summary,
                         "kind": kind,
                         "source": result.get("source"),

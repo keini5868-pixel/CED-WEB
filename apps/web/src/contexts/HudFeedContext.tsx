@@ -11,6 +11,15 @@ import {
 
 import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
 
+function sameVoiceBlockPrefix(a: string, b: string): boolean {
+  const na = a.trim().toLowerCase();
+  const nb = b.trim().toLowerCase();
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const n = Math.min(na.length, nb.length, 55);
+  return n >= 28 && na.slice(0, n) === nb.slice(0, n);
+}
+
 export type HudFeedKind = "voice" | "news" | "stat" | "report" | "image";
 
 export interface HudFeedItem {
@@ -127,7 +136,10 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
               partial ||
               head.partial ||
               Date.now() - head.at < 45_000;
-            if (sameTurn && (streamKey ? head.streamKey === streamKey : true)) {
+            if (
+              sameTurn &&
+              (streamKey ? head.streamKey === streamKey : true)
+            ) {
               const merged: HudFeedItem = {
                 ...head,
                 text: trimmed,
@@ -135,6 +147,21 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
                 partial,
                 role: "model",
                 streamKey: streamKey ?? head.streamKey,
+              };
+              return [merged, ...prev.slice(1)];
+            }
+            if (
+              !partial &&
+              !head.partial &&
+              sameVoiceBlockPrefix(head.text, trimmed)
+            ) {
+              const merged: HudFeedItem = {
+                ...head,
+                text: trimmed.length >= head.text.length ? trimmed : head.text,
+                at: Date.now(),
+                partial: false,
+                role: "model",
+                streamKey: head.streamKey ?? streamKey,
               };
               return [merged, ...prev.slice(1)];
             }

@@ -41,7 +41,11 @@ from app.services.retell_custom_llm import (
     _is_concept_question,
     web_search_error_phrase,
 )
-from app.services.voice_llm_common import transcript_to_openai_messages
+from app.services.voice_llm_common import (
+    is_duplicate_voice_delivery,
+    normalize_voice_delivery_text,
+    transcript_to_openai_messages,
+)
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_spoken import split_voice_delivery_chunks, voice_delivery_chunks
 from app.services.voice_response_guard import guard_voice_response
@@ -129,6 +133,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     turn_draft_user_key = ""
     latest_incoming_rid = 0
     message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
+    last_delivered_voice_content = ""
+    last_web_delivery_at = 0.0
+    last_web_query_norm = ""
 
     user_id = resolve_call_user(call_id)
     if user_id:
@@ -273,6 +280,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         generation: int | None = None,
     ) -> bool:
         nonlocal active_response_id, last_answered_user_key, answered_response_ids
+        nonlocal last_delivered_voice_content, last_web_delivery_at
         if generation is not None and generation != generation_seq:
             logger.info(
                 "[RETELL-OPENAI] skip stale generation send rid=%s call=%s",
@@ -297,6 +305,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
             safe = FALLBACK_REPLY
         content = safe or FALLBACK_REPLY
+        if is_duplicate_voice_delivery(last_delivered_voice_content, content):
+            logger.warning(
+                "[RETELL-DELIVERY] skip duplicate voice content rid=%s call=%s preview=%s",
+                response_id,
+                call_id,
+                content[:80],
+            )
+            answered_response_ids.add(response_id)
+            if user_key:
+                last_answered_user_key = user_key
+            return True
         chunks = voice_delivery_chunks(content)
         for idx, (chunk, complete) in enumerate(chunks):
             if generation is not None and generation != generation_seq:
@@ -330,6 +349,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     turn.mark_first_audio()
         active_response_id = max(active_response_id, response_id)
         answered_response_ids.add(response_id)
+        last_delivered_voice_content = normalize_voice_delivery_text(content)
         if user_key:
             last_answered_user_key = user_key
         logger.info(
@@ -505,6 +525,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     return
                 if scheduled_rid < latest:
                     return
+                if is_duplicate_voice_delivery(
+                    last_delivered_voice_content,
+                    FALLBACK_REPLY,
+                ):
+                    answered_response_ids.add(scheduled_rid)
+                    return
                 logger.warning(
                     "[RETELL-VOICE] anti-silence rid=%s reason=%s call=%s text=%s",
                     scheduled_rid,
@@ -588,6 +614,26 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             web_req = resolve_web_search_request(user_text, transcript)
             if web_req and uid:
+                query_norm = " ".join(str(web_req.get("query") or "").lower().split())
+                now = time.time()
+                if (
+                    last_web_delivery_at
+                    and now - last_web_delivery_at < 15.0
+                    and query_norm
+                    and (
+                        query_norm in last_web_query_norm
+                        or last_web_query_norm in query_norm
+                        or last_web_query_norm.startswith(query_norm[:24])
+                        or query_norm.startswith(last_web_query_norm[:24])
+                    )
+                ):
+                    logger.info(
+                        "[RETELL-WEB] skip duplicate web query call=%s query=%s",
+                        call_id,
+                        query_norm[:60],
+                    )
+                    await anti_silence_if_unanswered(reason="web_duplicate_skip")
+                    return
                 clear_pending_advanced_topic(call_id)
                 llm._pending_advanced = None
                 kind = web_req["kind"]
@@ -623,36 +669,31 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     elif tool_result.get("status") == "success" or tool_result.get("ok"):
                         spoken = str(tool_result.get("spoken") or "").strip()
                         full = format_web_delivery(kind, spoken) if spoken else web_search_error_phrase(kind)
-                        chunks = voice_delivery_chunks(full)
-                        for chunk_idx, (chunk, complete) in enumerate(chunks):
-                            if my_generation != generation_seq:
-                                if chunk_idx > 0:
-                                    logger.warning(
-                                        "[CHUNK_ABORTED] rid=%s idx=%s total=%s call=%s path=web_search",
-                                        scheduled_rid,
-                                        chunk_idx,
-                                        len(chunks),
-                                        call_id,
-                                    )
-                                return
-                            await send_voice_partial(
+                        if not is_duplicate_voice_delivery(last_delivered_voice_content, full):
+                            delivered = await send_voice_response(
                                 response_id=scheduled_rid,
-                                content=chunk,
-                                content_complete=complete,
+                                content=full,
+                                user_key=scheduled_key,
                                 generation=my_generation,
                             )
-                        active_response_id = max(active_response_id, scheduled_rid)
-                        answered_response_ids.add(scheduled_rid)
-                        if scheduled_key:
-                            last_answered_user_key = scheduled_key
-                        web_delivered = True
-                        logger.info(
-                            "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
-                            call_id,
-                            web_req["kind"],
-                            web_req["query"][:80],
-                            full[:120],
-                        )
+                            if delivered:
+                                last_web_delivery_at = time.time()
+                                last_web_query_norm = query_norm
+                                web_delivered = True
+                                logger.info(
+                                    "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
+                                    call_id,
+                                    web_req["kind"],
+                                    web_req["query"][:80],
+                                    full[:120],
+                                )
+                        else:
+                            logger.warning(
+                                "[RETELL-WEB] skip duplicate web delivery call=%s",
+                                call_id,
+                            )
+                            answered_response_ids.add(scheduled_rid)
+                            web_delivered = True
                 if web_delivered:
                     return
 

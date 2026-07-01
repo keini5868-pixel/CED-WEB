@@ -259,3 +259,25 @@ def voice_repeats_last_assistant(new_text: str, history: list[dict]) -> bool:
             return True
         return False
     return False
+
+
+def normalize_voice_delivery_text(text: str) -> str:
+    return " ".join((text or "").split()).strip()
+
+
+def is_duplicate_voice_delivery(previous: str, candidate: str, *, prefix_len: int = 55) -> bool:
+    """Detecta reinicio del mismo bloque hablado (p. ej. noticias repetidas)."""
+    prev = normalize_voice_delivery_text(previous).lower()
+    cand = normalize_voice_delivery_text(candidate).lower()
+    if not cand:
+        return True
+    if not prev:
+        return False
+    if cand == prev:
+        return True
+    n = min(len(prev), len(cand), prefix_len)
+    if n >= 28 and prev[:n] == cand[:n]:
+        return True
+    if len(cand) > 80 and len(prev) > 80 and prev[:80] == cand[:80]:
+        return True
+    return False

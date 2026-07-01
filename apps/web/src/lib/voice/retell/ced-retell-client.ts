@@ -290,8 +290,15 @@ export class CedRetellClient {
       this.restoreAgentPlayback();
       this.callbacks.onAgentTalking?.(false);
       if (this.lastAgentLine && this.lastAgentLine !== this.lastPersistedAgentLine) {
-        this.lastPersistedAgentLine = this.lastAgentLine;
-        this.emitAgentTranscript(this.lastAgentLine, false);
+        const line = this.lastAgentLine;
+        const prev = this.lastPersistedAgentLine;
+        if (prev && line.trim().toLowerCase().slice(0, 55) === prev.trim().toLowerCase().slice(0, 55)) {
+          this.currentAgentStreamKey = "";
+          this.lastAgentLine = "";
+          return;
+        }
+        this.lastPersistedAgentLine = line;
+        this.emitAgentTranscript(line, false);
       }
       this.currentAgentStreamKey = "";
       this.lastAgentLine = "";

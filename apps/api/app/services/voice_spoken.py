@@ -8,7 +8,7 @@ import re
 VOICE_SPOKEN_MAX_CHARS = 720
 VOICE_ADVISORY_MAX_CHARS = 1800
 VOICE_PROMPT_MAX_CHARS = 4200
-VOICE_NEWS_MAX_CHARS = 2000
+VOICE_NEWS_MAX_CHARS = 2800
 VOICE_CHUNK_TARGET = 680
 VOICE_SINGLE_DELIVERY_MAX = 3500
 
@@ -90,6 +90,13 @@ def voice_spoken_limit(text: str) -> int:
     if is_prompt_creation_request(text):
         return VOICE_PROMPT_MAX_CHARS
     return VOICE_ADVISORY_MAX_CHARS if is_advisory_voice_query(text) else VOICE_SPOKEN_MAX_CHARS
+
+
+def voice_spoken_limit_for_kind(kind: str, query: str = "") -> int:
+    """Límite de caracteres hablados según tipo de tool (noticias/clima más largos)."""
+    if kind in {"news", "weather"}:
+        return VOICE_NEWS_MAX_CHARS
+    return voice_spoken_limit(query)
 
 
 def chunk_ends_with_punctuation(text: str) -> bool:
