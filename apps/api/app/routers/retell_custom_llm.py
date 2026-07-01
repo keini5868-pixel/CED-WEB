@@ -41,8 +41,9 @@ from app.services.retell_custom_llm import (
     _is_concept_question,
     web_search_error_phrase,
 )
+from app.services.voice_llm_common import transcript_to_openai_messages
 from app.services.voice_tool_executor import execute_voice_tool
-from app.services.voice_spoken import split_voice_delivery_chunks
+from app.services.voice_spoken import split_voice_delivery_chunks, voice_delivery_chunks
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_latency import get_turn, start_turn
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
@@ -296,7 +297,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
             safe = FALLBACK_REPLY
         content = safe or FALLBACK_REPLY
-        chunks = split_voice_delivery_chunks(content)
+        chunks = voice_delivery_chunks(content)
         for idx, (chunk, complete) in enumerate(chunks):
             if generation is not None and generation != generation_seq:
                 if idx > 0:
@@ -495,6 +496,30 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 stale, _ = _is_superseded_turn_rid(rid, scheduled_key, turn_latest_rid)
                 return stale or my_generation != generation_seq
 
+            async def anti_silence_if_unanswered(*, reason: str) -> None:
+                """Nunca dejar response_required sin respuesta audible."""
+                latest = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
+                if scheduled_rid in answered_response_ids:
+                    return
+                if my_generation != generation_seq:
+                    return
+                if scheduled_rid < latest:
+                    return
+                logger.warning(
+                    "[RETELL-VOICE] anti-silence rid=%s reason=%s call=%s text=%s",
+                    scheduled_rid,
+                    reason,
+                    call_id,
+                    user_text[:60],
+                )
+                async with response_lock:
+                    await send_voice_response(
+                        response_id=scheduled_rid,
+                        content=FALLBACK_REPLY,
+                        user_key=scheduled_key,
+                        generation=my_generation,
+                    )
+
             try:
                 await post_greeting_ready.wait()
                 await asyncio.sleep(wait_s)
@@ -513,10 +538,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     generation_seq,
                     call_id,
                 )
+                await anti_silence_if_unanswered(reason="gen_superseded")
                 return
 
             if scheduled_key != last_scheduled_user_key:
                 logger.info("[RETELL-TURN] rid=%s superseded=debounce gpt_calls=0 call=%s", scheduled_rid, call_id)
+                await anti_silence_if_unanswered(reason="debounce_superseded")
                 return
 
             if scheduled_rid in answered_response_ids:
@@ -539,6 +566,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     latest_rid,
                     call_id,
                 )
+                await anti_silence_if_unanswered(reason="turn_superseded")
                 return
 
             pending_now = get_pending_advanced_topic(call_id)
@@ -595,7 +623,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     elif tool_result.get("status") == "success" or tool_result.get("ok"):
                         spoken = str(tool_result.get("spoken") or "").strip()
                         full = format_web_delivery(kind, spoken) if spoken else web_search_error_phrase(kind)
-                        chunks = split_voice_delivery_chunks(full)
+                        chunks = voice_delivery_chunks(full)
                         for chunk_idx, (chunk, complete) in enumerate(chunks):
                             if my_generation != generation_seq:
                                 if chunk_idx > 0:
@@ -907,7 +935,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     if not spoken:
                         chunks = [("Disculpe, señor. No pude completar el análisis avanzado.", True)]
                     else:
-                        chunks = split_voice_delivery_chunks(spoken)
+                        chunks = voice_delivery_chunks(spoken)
                     for chunk, complete in chunks:
                         if my_generation != generation_seq:
                             return
@@ -978,6 +1006,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         turn_latest_rid,
                     )
                     if superseded_now:
+                        await anti_silence_if_unanswered(reason="draft_superseded")
                         return
 
                     try:
@@ -1025,14 +1054,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                     )
                                     content = str(tool_result.get("spoken") or "").strip() or FALLBACK_REPLY
                                 elif _is_concept_question(user_text):
-                                    from app.services.internal_knowledge import format_hits_for_prompt
-                                    from app.services.kb_turn_cache import get_turn_kb_hits
-
-                                    hits = get_turn_kb_hits(user_text, limit=2)
-                                    if hits:
-                                        content = format_hits_for_prompt(hits)
-                                    else:
-                                        content = FALLBACK_REPLY
+                                    regen = await llm.generate_natural_reply(
+                                        messages=transcript_to_openai_messages(transcript),
+                                        user_text=user_text,
+                                        overlay=(
+                                            "Responde de forma natural y breve usando tu conocimiento. "
+                                            "NUNCA cites 'Conocimiento interno CED' ni etiquetas [Marketing digital]."
+                                        ),
+                                        path="concept_kb_regen",
+                                        max_tokens=640,
+                                    )
+                                    content = regen or FALLBACK_REPLY
                                 elif is_casual_conversation(user_text):
                                     reformed = await llm.generate_empathetic_reformulation(
                                         user_text,
@@ -1081,6 +1113,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             finally:
                 turn_draft_in_progress = False
                 turn_draft_user_key = ""
+                await anti_silence_if_unanswered(reason="draft_finally")
                 logger.info(
                     "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft",
                     scheduled_rid,
@@ -1088,6 +1121,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     gpt_calls,
                     call_id,
                 )
+
+            await anti_silence_if_unanswered(reason="run_debounced_tail")
 
         debounce_task = asyncio.create_task(run_debounced())
 

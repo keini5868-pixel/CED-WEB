@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -26,6 +27,7 @@ from app.services.voice_llm_common import (
     REMINDER_OVERLAY,
     SESSION_MAX_MINUTES,
     build_voice_system,
+    dedupe_voice_reply,
     delivery_text,
     log_voice_delivery,
     needs_empathy_reformulation,
@@ -33,7 +35,10 @@ from app.services.voice_llm_common import (
     transcript_to_openai_messages,
     truncate_messages,
     voice_generation_limits,
+    voice_repeats_last_assistant,
 )
+from app.services.internal_kb_guard import VOICE_KB_LEAK_OVERLAY, contains_internal_kb_leak
+from app.services.voice_spoken import is_prompt_creation_request
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_tool_executor import execute_voice_tool
 
@@ -233,6 +238,86 @@ class OpenAIVoiceLlm:
         temperature: float = 0.65,
         with_tools: bool = False,
     ) -> str | None:
+        text = await self._raw_natural_reply(
+            messages=messages,
+            user_text=user_text,
+            overlay=overlay,
+            path=path,
+            timeout_sec=timeout_sec,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            with_tools=with_tools,
+        )
+        if not text:
+            return None
+        safe, blocked = guard_voice_response(text)
+        if not blocked and safe:
+            log_voice_delivery(PROVIDER, path, safe, user_text=user_text)
+            return safe
+        if blocked and contains_internal_kb_leak(text):
+            logger.warning("[RETELL-OPENAI] KB leak in natural_reply path=%s preview=%s", path, text[:80])
+            regen = await self._raw_natural_reply(
+                messages=messages,
+                user_text=user_text,
+                overlay=VOICE_KB_LEAK_OVERLAY,
+                path=f"{path}_kb_regen",
+                timeout_sec=timeout_sec,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            if regen:
+                safe2, blocked2 = guard_voice_response(regen)
+                if not blocked2 and safe2:
+                    log_voice_delivery(PROVIDER, f"{path}_kb_regen", safe2, user_text=user_text)
+                    return safe2
+        if blocked:
+            logger.warning("[RETELL-OPENAI] blocked code leak path=%s preview=%s", path, text[:80])
+        return None
+
+    async def _sanitize_voice_output(
+        self,
+        text: str,
+        *,
+        messages: list[dict[str, Any]],
+        user_text: str,
+        max_tokens: int,
+        path: str,
+    ) -> str:
+        safe, blocked = guard_voice_response(text)
+        if not blocked:
+            if safe:
+                log_voice_delivery(PROVIDER, path, safe, user_text=user_text)
+            return safe or text
+        if not contains_internal_kb_leak(text):
+            logger.warning("[RETELL-OPENAI] blocked code leak path=%s preview=%s", path, text[:80])
+            return FALLBACK_REPLY
+        logger.warning("[RETELL-OPENAI] KB leak blocked — regenerating path=%s preview=%s", path, text[:80])
+        regen = await self._raw_natural_reply(
+            messages=messages,
+            user_text=user_text,
+            overlay=VOICE_KB_LEAK_OVERLAY,
+            path=f"{path}_kb_regen",
+            max_tokens=max_tokens,
+        )
+        if regen:
+            safe2, blocked2 = guard_voice_response(regen)
+            if not blocked2 and safe2:
+                log_voice_delivery(PROVIDER, f"{path}_kb_regen", safe2, user_text=user_text)
+                return safe2
+        return FALLBACK_REPLY
+
+    async def _raw_natural_reply(
+        self,
+        *,
+        messages: list[dict[str, Any]],
+        user_text: str,
+        overlay: str,
+        path: str,
+        timeout_sec: float = CONVERSATIONAL_TIMEOUT_SEC,
+        max_tokens: int = 320,
+        temperature: float = 0.65,
+        with_tools: bool = False,
+    ) -> str | None:
         lightweight = (
             VOICE_LIGHTWEIGHT_PATH_ENABLED
             and path
@@ -264,15 +349,7 @@ class OpenAIVoiceLlm:
         except Exception:  # noqa: BLE001
             logger.exception("[RETELL-OPENAI] natural_reply failed path=%s", path)
             return None
-        text = delivery_text(str(self._message_from_response(data).get("content") or ""))
-        safe, blocked = guard_voice_response(text)
-        if blocked:
-            logger.warning("[RETELL-OPENAI] blocked code leak path=%s preview=%s", path, text[:80])
-            return None
-        if not safe:
-            return None
-        log_voice_delivery(PROVIDER, path, safe, user_text=user_text)
-        return safe
+        return delivery_text(str(self._message_from_response(data).get("content") or ""))
 
     async def generate_empathetic_reformulation(
         self,
@@ -492,16 +569,36 @@ class OpenAIVoiceLlm:
         request: ResponseRequiredRequest,
     ) -> AsyncIterator[ResponseResponse]:
         self._maybe_reset_session()
+        user_text = merged_user_query(request.transcript) or ""
         messages = transcript_to_openai_messages(request.transcript)
-        if not messages or messages[-1]["role"] != "user":
+
+        if not user_text:
+            logger.warning(
+                "[RETELL-OPENAI] draft_response sin texto de usuario rid=%s",
+                request.response_id,
+            )
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=FALLBACK_REPLY,
+                content_complete=True,
+                end_call=False,
+            )
             return
+
+        if not messages:
+            messages = [{"role": "user", "content": user_text}]
+        elif messages[-1]["role"] != "user":
+            logger.info(
+                "[RETELL-OPENAI] transcript termina en agente — anexando turno usuario rid=%s",
+                request.response_id,
+            )
+            messages = [*messages, {"role": "user", "content": user_text}]
 
         self._history = self._resolve_history(messages)
         self._turn_count += 1
         last = messages[-1]
-        user_text = merged_user_query(request.transcript) or str(last.get("content") or "").strip()
-        if not user_text:
-            return
+        if not str(last.get("content") or "").strip():
+            last = {"role": "user", "content": user_text}
 
         self._current_user_text = user_text
         max_tokens, timeout_sec = voice_generation_limits(user_text)
@@ -546,11 +643,16 @@ class OpenAIVoiceLlm:
                 internal_text = delivery_text(
                     str(self._message_from_response(data).get("content") or "")
                 )
-                safe, blocked = guard_voice_response(internal_text)
-                if blocked:
-                    internal_text = ""
-                if internal_text and not is_generic_agent_line(internal_text):
-                    log_voice_delivery(PROVIDER, "level1_internal", internal_text, user_text=user_text)
+                internal_text = await self._sanitize_voice_output(
+                    internal_text,
+                    messages=[*self._history, last],
+                    user_text=user_text,
+                    max_tokens=max_tokens,
+                    path="level1_internal",
+                )
+                if internal_text and internal_text != FALLBACK_REPLY and not is_generic_agent_line(
+                    internal_text
+                ):
                     self._history = truncate_messages(
                         [
                             *self._history,
@@ -657,7 +759,16 @@ class OpenAIVoiceLlm:
 
                 if text_response:
                     log_voice_delivery(PROVIDER, "draft_main", text_response, user_text=user_text)
-                if needs_empathy_reformulation(text_response, user_text=user_text):
+                skip_reformulation = (
+                    is_prompt_creation_request(user_text)
+                    or len(text_response) > 280
+                    or re.search(r"\b1[\.)]\s", text_response)
+                )
+                if (
+                    text_response
+                    and needs_empathy_reformulation(text_response, user_text=user_text)
+                    and not skip_reformulation
+                ):
                     reformed = await self.generate_empathetic_reformulation(
                         user_text,
                         transcript=request.transcript,
@@ -673,6 +784,23 @@ class OpenAIVoiceLlm:
                         or await self.draft_conversational_response(request)
                         or FALLBACK_REPLY
                     )
+                if voice_repeats_last_assistant(final_text, self._history):
+                    logger.warning(
+                        "[RETELL-OPENAI] duplicate assistant reply — regenerating user=%s",
+                        (self.user_id or "?")[:8],
+                    )
+                    regen = await self.generate_natural_reply(
+                        messages=working_messages,
+                        user_text=user_text,
+                        overlay=(
+                            "NO repitas tu mensaje anterior. Responde de forma nueva y útil. "
+                            "Si pidió un prompt para una herramienta de IA, entrégalo completo ya."
+                        ),
+                        path="duplicate_reply_regen",
+                        max_tokens=max_tokens,
+                    )
+                    if regen:
+                        final_text = regen
                 break
         except asyncio.TimeoutError:
             delay = await self.generate_natural_reply(
@@ -687,9 +815,13 @@ class OpenAIVoiceLlm:
             logger.exception("[RETELL-OPENAI] chat completion failed")
             final_text = FALLBACK_REPLY
 
-        safe, blocked = guard_voice_response(final_text)
-        if blocked or not safe:
-            final_text = FALLBACK_REPLY
+        final_text = await self._sanitize_voice_output(
+            dedupe_voice_reply(final_text),
+            messages=working_messages,
+            user_text=user_text,
+            max_tokens=max_tokens,
+            path="draft_final",
+        )
 
         self._history = truncate_messages(
             [*self._history, last, {"role": "assistant", "content": final_text}],

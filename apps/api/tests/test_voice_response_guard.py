@@ -16,3 +16,25 @@ def test_allows_natural_speech():
     text, was = guard_voice_response("Publicación enviada con éxito, señor.")
     assert was is False
     assert "Publicación" in text
+
+
+def test_blocks_internal_kb_leak():
+    leaked = (
+        "Conocimiento interno CED (priorizar sobre suposiciones): "
+        "- [Marketing digital] SEO básico para negocios."
+    )
+    text, was = guard_voice_response(leaked)
+    assert was is True
+    assert text == ""
+
+
+def test_strips_kb_prefix_and_keeps_natural_answer():
+    mixed = (
+        "Conocimiento interno CED (priorizar sobre suposiciones): "
+        "- [Marketing digital] SEO: tips. "
+        "Señor, aquí tiene el prompt para Google AI Studio sobre microimplementación."
+    )
+    text, was = guard_voice_response(mixed)
+    assert was is False
+    assert "Conocimiento interno CED" not in text
+    assert "Google AI Studio" in text

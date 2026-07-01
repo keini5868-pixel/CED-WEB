@@ -19,21 +19,24 @@ def _cache_key(query: str) -> int:
 
 
 def get_turn_kb_hits(query: str, *, limit: int = 2) -> list:
-    from app.services.internal_knowledge import search_internal_knowledge
+    try:
+        from app.services.internal_knowledge import search_internal_knowledge
 
-    key = _cache_key(query)
-    now = time.time()
-    cached = _CACHE.get(key)
-    if cached and (now - cached[0]) < _TTL_SEC:
-        return list(cached[1][:limit])
+        key = _cache_key(query)
+        now = time.time()
+        cached = _CACHE.get(key)
+        if cached and (now - cached[0]) < _TTL_SEC:
+            return list(cached[1][:limit])
 
-    hits = search_internal_knowledge(query, limit=limit)
-    _CACHE[key] = (now, hits)
-    if len(_CACHE) > _MAX_ENTRIES:
-        oldest = sorted(_CACHE.items(), key=lambda item: item[1][0])[: len(_CACHE) - _MAX_ENTRIES]
-        for stale_key, _ in oldest:
-            _CACHE.pop(stale_key, None)
-    return hits
+        hits = search_internal_knowledge(query, limit=limit)
+        _CACHE[key] = (now, hits)
+        if len(_CACHE) > _MAX_ENTRIES:
+            oldest = sorted(_CACHE.items(), key=lambda item: item[1][0])[: len(_CACHE) - _MAX_ENTRIES]
+            for stale_key, _ in oldest:
+                _CACHE.pop(stale_key, None)
+        return hits
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def clear_turn_kb_cache() -> None:

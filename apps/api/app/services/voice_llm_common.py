@@ -5,7 +5,11 @@ from __future__ import annotations
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
 from app.services.retell_custom_llm import is_generic_agent_line, is_unwanted_voice_reply
 from app.services.retell_llm_types import Utterance
-from app.services.voice_spoken import is_advisory_voice_query
+from app.services.voice_spoken import (
+    PROMPT_DELIVERY_OVERLAY,
+    is_advisory_voice_query,
+    is_prompt_creation_request,
+)
 
 MAX_HISTORY_TURNS = 10
 SESSION_MAX_MINUTES = 30.0
@@ -62,8 +66,10 @@ PROHIBIDO: "¿En qué puedo ayudarle?", "operativo", "a su servicio", relleno de
 
 
 def voice_generation_limits(user_text: str) -> tuple[int, float]:
+    if is_prompt_creation_request(user_text):
+        return 2048, 28.0
     if is_advisory_voice_query(user_text):
-        return 1024, 20.0
+        return 1536, 22.0
     return 640, 14.0
 
 
@@ -119,6 +125,10 @@ def build_voice_system(
             "Responde con 3-5 puntos concretos del sistema CED, en español, "
             "oraciones completas, sin cortar a mitad. Cierra con una frase final."
         )
+    if query and is_prompt_creation_request(query):
+        base = (
+            f"{base}\n\n{PROMPT_DELIVERY_OVERLAY}"
+        )
     if query and not skip_kb:
         try:
             from app.services.internal_knowledge import format_hits_for_prompt
@@ -130,6 +140,9 @@ def build_voice_system(
                 base = (
                     f"{base}\n\n# CONOCIMIENTO INTERNO CED (prioriza esto con confianza directa)\n"
                     f"{block}\n\n"
+                    "REGLA CRÍTICA: Ese bloque es SOLO contexto interno del sistema. "
+                    "NUNCA lo leas ni lo repitas al usuario. No digas 'Conocimiento interno CED' "
+                    "ni líneas con etiquetas [Marketing digital]. Usa la información en lenguaje natural.\n"
                     "Si el KB no alcanza, usa search_web u otras herramientas sin decir que no tienes información. "
                     "Responde directo como experto interno cuando el contexto lo permita.\n"
                     "El sistema Retell dice automáticamente «Un momento, señor» al ejecutar herramientas. "
@@ -204,3 +217,45 @@ def truncate_messages(messages: list[dict], *, max_turns: int = MAX_HISTORY_TURN
     if len(messages) <= max_turns:
         return messages
     return messages[-max_turns:]
+
+
+def dedupe_voice_reply(text: str) -> str:
+    """Elimina bloques idénticos consecutivos en respuestas de voz."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return cleaned
+    parts = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
+    if len(parts) >= 2:
+        deduped: list[str] = [parts[0]]
+        for part in parts[1:]:
+            if part != deduped[-1]:
+                deduped.append(part)
+        cleaned = "\n\n".join(deduped)
+    half = len(cleaned) // 2
+    if half > 120:
+        first = cleaned[:half].strip()
+        second = cleaned[half:].strip()
+        if first == second:
+            return first
+    return cleaned
+
+
+def voice_repeats_last_assistant(new_text: str, history: list[dict]) -> bool:
+    """True si la respuesta repite casi literalmente el último turno del asistente."""
+    candidate = (new_text or "").strip()
+    if not candidate:
+        return False
+    for msg in reversed(history):
+        if msg.get("role") != "assistant":
+            continue
+        prev = str(msg.get("content") or "").strip()
+        if not prev or len(prev) < 80:
+            return False
+        if candidate == prev:
+            return True
+        if len(candidate) > 100 and candidate in prev:
+            return True
+        if len(prev) > 100 and prev in candidate:
+            return True
+        return False
+    return False

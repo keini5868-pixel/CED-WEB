@@ -7,16 +7,46 @@ import re
 # Retell ~60–90 s por bloque; repartimos en 2–3 bloques secuenciales sin perder texto.
 VOICE_SPOKEN_MAX_CHARS = 720
 VOICE_ADVISORY_MAX_CHARS = 1800
+VOICE_PROMPT_MAX_CHARS = 4200
 VOICE_NEWS_MAX_CHARS = 2000
 VOICE_CHUNK_TARGET = 680
+VOICE_SINGLE_DELIVERY_MAX = 3500
 
 _ADVISORY_HINTS = re.compile(
     r"\b("
     r"video|demo|demostrar|mostrar|guion|guión|script|segundos|relevante|"
-    r"estrategia|presentar|pitch|contenido|grabar|pantalla|secuencia|seq"
+    r"estrategia|presentar|pitch|contenido|grabar|pantalla|secuencia|seq|"
+    r"prompt|prospecto|p[aá]gina|landing|studio"
     r")\b",
     re.I,
 )
+
+_PROMPT_CREATION = re.compile(
+    r"\b("
+    r"prompt|prospecto|brief|p[aá]gina web|landing|google\s+studio|"
+    r"dooble|double\s+studio|herramienta de ia|herramienta de inteligencia"
+    r")\b",
+    re.I,
+)
+
+_PROMPT_DELIVERY_VERBS = re.compile(
+    r"\b("
+    r"prep[aá]r(a|ame|ame)|hazme|cr[eé]a(me)?|genera(me)?|dame|escribe|"
+    r"detallad[oa]|completo|listo para copiar|datos creados|cread[oa]s por"
+    r")\b",
+    re.I,
+)
+
+PROMPT_DELIVERY_OVERLAY = """
+# PROMPT PARA HERRAMIENTA DE IA — ENTREGA DIRECTA
+El usuario pide un prompt o prospecto completo para crear una página/sitio con una herramienta de IA.
+NO hagas más preguntas de confirmación si ya pidió el prompt.
+Inventa público, tono, servicios, promociones y llamada a la acción razonables si faltan datos.
+Entrega EL PROMPT COMPLETO en español, listo para copiar, en UNA sola respuesta continua.
+NO repitas tu mensaje anterior ni la misma lista de preguntas.
+NO empieces a mitad de sección: incluye introducción, servicios, beneficios, promociones, contacto y cierre.
+Para voz: evita markdown con asteriscos; usa secciones numeradas breves; cierra cada idea en oración completa.
+""".strip()
 
 _THOUSANDS_COMMA_RE = re.compile(r"\d{1,3}(?:,\d{3})+")
 _SENTENCE_END_RE = re.compile(r'[.!?…]["\']?$')
@@ -37,10 +67,28 @@ def is_advisory_voice_query(text: str) -> bool:
     cleaned = " ".join((text or "").split()).strip()
     if len(cleaned) < 20:
         return False
+    if is_prompt_creation_request(cleaned):
+        return True
     return bool(_ADVISORY_HINTS.search(cleaned))
 
 
+def is_prompt_creation_request(text: str) -> bool:
+    """True si el usuario pide un prompt/prospecto para otra herramienta de IA."""
+    cleaned = " ".join((text or "").split()).strip()
+    if len(cleaned) < 10:
+        return False
+    if re.search(r"\bprompt\b", cleaned, re.I):
+        return True
+    if re.search(r"prep[aá]r(a|ame|ame).{0,48}prompt", cleaned, re.I):
+        return True
+    if _PROMPT_CREATION.search(cleaned) and _PROMPT_DELIVERY_VERBS.search(cleaned):
+        return True
+    return False
+
+
 def voice_spoken_limit(text: str) -> int:
+    if is_prompt_creation_request(text):
+        return VOICE_PROMPT_MAX_CHARS
     return VOICE_ADVISORY_MAX_CHARS if is_advisory_voice_query(text) else VOICE_SPOKEN_MAX_CHARS
 
 
@@ -150,8 +198,14 @@ def split_voice_delivery_chunks(
     if current:
         chunks.append(current)
 
-    if len(chunks) > 3:
-        tail = " ".join(chunks[2:])
-        chunks = [chunks[0], chunks[1], *_split_long_phrase(tail, max_chunk)]
-
     return [(part, idx == len(chunks) - 1) for idx, part in enumerate(chunks)]
+
+
+def voice_delivery_chunks(text: str) -> list[tuple[str, bool]]:
+    """Un solo envío Retell cuando cabe — evita perder audio al interrumpir entre chunks."""
+    cleaned = normalize_numbers_for_speech(" ".join((text or "").split()).strip())
+    if not cleaned:
+        return []
+    if len(cleaned) <= VOICE_SINGLE_DELIVERY_MAX:
+        return [(cleaned, True)]
+    return split_voice_delivery_chunks(cleaned)

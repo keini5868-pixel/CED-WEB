@@ -1,9 +1,13 @@
-"""Filtro defensivo — bloquea fugas de código y tool calls en respuestas de voz."""
+"""Filtro defensivo — bloquea fugas de código, tools y KB interno en respuestas de voz."""
 
 from __future__ import annotations
 
 import re
 
+from app.services.internal_kb_guard import (
+    contains_internal_kb_leak,
+    strip_internal_kb_from_reply,
+)
 from app.services.voice_spoken import normalize_numbers_for_speech
 
 _CODE_LEAK = re.compile(
@@ -55,5 +59,10 @@ def guard_voice_response(text: str) -> tuple[str, bool]:
     if not cleaned:
         return "", False
     if contains_code_leak(cleaned) or contains_tool_leak(cleaned):
+        return "", True
+    if contains_internal_kb_leak(cleaned):
+        stripped = strip_internal_kb_from_reply(cleaned)
+        if stripped and not contains_internal_kb_leak(stripped):
+            return stripped, False
         return "", True
     return cleaned, False

@@ -38,6 +38,10 @@ from app.services.pdf_report import (
     resolve_pdf_content,
     store_pdf,
 )
+from app.services.internal_kb_guard import (
+    contains_internal_kb_leak as _contains_internal_kb_leak,
+    strip_internal_kb_from_reply as _strip_internal_kb_from_reply,
+)
 from app.services.publish_text import PUBLISH_INSTRUCTION_ABSOLUTE_RULES
 
 logger = logging.getLogger(__name__)
@@ -106,11 +110,6 @@ INTERNAL_KB_LEAK_RETRY_MESSAGE = (
     "Tu respuesta anterior incluyó el bloque interno 'Conocimiento interno CED'. "
     "Ese texto es SOLO contexto del sistema — NUNCA debe aparecer en tu respuesta al usuario. "
     "Reescribe de forma natural y útil, usando la información sin citar ni copiar el bloque interno."
-)
-
-_INTERNAL_KB_LEAK_RE = re.compile(
-    r"Conocimiento interno CED\s*\(priorizar",
-    re.I,
 )
 
 HALLUCINATION_RETRY_USER_MESSAGE = (
@@ -524,32 +523,6 @@ def _hallucination_retry_message(kind: str) -> str:
     return HALLUCINATION_RETRY_USER_MESSAGE
 
 
-_INTERNAL_KB_LEAK_PATTERNS = (
-    "Conocimiento interno CED",
-    "[Marketing digital]",
-    "[Finanzas personales]",
-    "[general]",
-    "priorizar sobre suposiciones",
-)
-
-
-def _contains_internal_kb_leak(text: str) -> bool:
-    """True si la respuesta expone el bloque interno de KB al usuario."""
-    t = (text or "").strip()
-    if not t:
-        return False
-    if _INTERNAL_KB_LEAK_RE.search(t):
-        return True
-    if any(pattern in t for pattern in _INTERNAL_KB_LEAK_PATTERNS):
-        return True
-    if re.search(r"Conocimiento interno CED", t, re.I) and re.search(
-        r"-\s*\[[^\]]+\]\s+[^:]+:\s",
-        t,
-    ):
-        return True
-    return False
-
-
 def _dedupe_chat_reply(text: str) -> str:
     """Elimina bloques idénticos consecutivos en la respuesta."""
     cleaned = (text or "").strip()
@@ -569,23 +542,6 @@ def _dedupe_chat_reply(text: str) -> str:
         if first == second:
             return first
     return cleaned
-
-
-def _strip_internal_kb_from_reply(text: str) -> str:
-    """Elimina bloques de KB filtrados que el modelo copió a la respuesta."""
-    cleaned = re.sub(
-        r"Conocimiento interno CED\s*\([^)]*\):?\s*",
-        "",
-        text or "",
-        flags=re.I,
-    )
-    cleaned = re.sub(
-        r"(?:^|\n)-\s*\[[^\]]+\][^\n]*",
-        "",
-        cleaned,
-        flags=re.I,
-    )
-    return " ".join(cleaned.split()).strip()
 
 
 def _ensure_chat_reply_no_kb_leak(
