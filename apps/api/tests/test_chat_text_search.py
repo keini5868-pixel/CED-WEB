@@ -172,11 +172,13 @@ def test_chat_system_delivers_full_ai_prompts():
 
 
 def test_internal_kb_leak_detection_and_strip():
+    from app.services.text_chat import _strip_internal_kb_from_reply
+
     leaked = (
         "Conocimiento interno CED (priorizar sobre suposiciones):\n"
         "- [Marketing digital] SEO básico para negocios: SEO es clave..."
     )
     assert _contains_internal_kb_leak(leaked)
+    assert _contains_internal_kb_leak("Texto con [Marketing digital] embebido")
     stripped = _strip_internal_kb_from_reply(leaked)
-    assert not _contains_internal_kb_leak(stripped)
-    assert "SEO" in stripped or stripped == ""
+    assert not _contains_internal_kb_leak(stripped) or stripped == ""

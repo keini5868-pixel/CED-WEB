@@ -8,6 +8,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from fpdf import FPDF
 
@@ -18,7 +19,58 @@ _STORE: dict[str, tuple[bytes, str, datetime, str]] = {}
 _USER_INDEX: dict[str, list[dict[str, str]]] = {}
 _TTL = timedelta(hours=48)
 _CED_PDF_PREFIX = "[CED_PDF]"
+_PDF_BODY_MAX_CHARS = 50_000
 
+
+def normalize_pdf_fields(params: dict[str, Any]) -> tuple[str, str]:
+    title = str(
+        params.get("titulo") or params.get("title") or params.get("titulo_documento") or "Documento CED"
+    ).strip()
+    content = str(
+        params.get("contenido")
+        or params.get("content")
+        or params.get("body")
+        or params.get("texto")
+        or ""
+    ).strip()
+    return title, content
+
+
+def resolve_pdf_content(
+    title: str,
+    content: str,
+    *,
+    fallback_texts: list[str] | None = None,
+) -> str:
+    """Usa el cuerpo completo; si el modelo solo pasó el título, toma texto previo del chat."""
+    safe_title = (title or "Documento CED").strip()
+    body = (content or "").strip()
+    min_body = max(80, len(safe_title) + 24)
+    if body and len(body) >= min_body and body.lower() != safe_title.lower():
+        return body[:_PDF_BODY_MAX_CHARS]
+    if body and body.lower() != safe_title.lower() and len(body) > len(safe_title) + 8:
+        return body[:_PDF_BODY_MAX_CHARS]
+    for candidate in reversed(fallback_texts or []):
+        text = (candidate or "").strip()
+        if not text or text.lower() == safe_title.lower():
+            continue
+        if len(text) >= min_body or len(text) > len(safe_title) + 12:
+            return text[:_PDF_BODY_MAX_CHARS]
+    if body:
+        return body[:_PDF_BODY_MAX_CHARS]
+    return safe_title
+
+
+def assistant_fallback_texts_from_messages(messages: list[dict[str, Any]]) -> list[str]:
+    texts: list[str] = []
+    for row in messages:
+        role = str(row.get("role") or "")
+        if role not in {"assistant", "model"}:
+            continue
+        content = row.get("content")
+        if isinstance(content, str) and content.strip():
+            texts.append(content.strip())
+    return texts
 
 @dataclass(frozen=True)
 class PdfArtifact:
@@ -76,7 +128,7 @@ def generate_pdf_bytes(*, title: str, content: str) -> bytes:
 
     pdf.set_text_color(30, 30, 30)
     pdf.set_font("Helvetica", size=11)
-    body = _latin1_safe(clean_body[:12000])
+    body = _latin1_safe(clean_body[:_PDF_BODY_MAX_CHARS])
     for paragraph in body.split("\n"):
         line = paragraph.strip()
         if not line:
@@ -99,11 +151,16 @@ def store_pdf(
     title: str,
     content: str,
     conversation_id: str | None = None,
+    fallback_texts: list[str] | None = None,
 ) -> PdfArtifact:
     _purge_expired()
     file_id = uuid.uuid4().hex
     safe_title = _strip_markdown(title) or "Documento CED"
-    safe_content = _strip_markdown(content) or safe_title
+    safe_content = resolve_pdf_content(
+        safe_title,
+        _strip_markdown(content),
+        fallback_texts=fallback_texts,
+    )
     filename = _sanitize_filename(safe_title)
     data = generate_pdf_bytes(title=safe_title, content=safe_content)
     now = datetime.now(timezone.utc)

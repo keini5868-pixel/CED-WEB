@@ -32,7 +32,12 @@ from app.domain.ced_memory_prompt import CED_MEMORY_USAGE_RULES
 from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE
 from app.domain.ced_viral_knowledge import CED_VIRAL_KNOWLEDGE_2026
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
-from app.services.pdf_report import store_pdf
+from app.services.pdf_report import (
+    assistant_fallback_texts_from_messages,
+    normalize_pdf_fields,
+    resolve_pdf_content,
+    store_pdf,
+)
 from app.services.publish_text import PUBLISH_INSTRUCTION_ABSOLUTE_RULES
 
 logger = logging.getLogger(__name__)
@@ -320,6 +325,9 @@ IMPORTANTE — cerebro híbrido CED:
 - Sistema avanzado: si el contexto indica confirmación pendiente, pregunta antes de profundizar.
 - NUNCA incluyas en tu respuesta al usuario el texto del bloque "Conocimiento interno CED" ni líneas tipo "- [Marketing digital] ...".
   Úsalo SOLO como contexto interno para generar respuestas naturales, útiles y en tus propias palabras.
+- REGLA CRÍTICA: NUNCA incluyas en tu respuesta al usuario texto que empiece con "Conocimiento interno CED"
+  o que contenga etiquetas como [Marketing digital], [Finanzas personales], [general], etc.
+  Ese conocimiento es solo contexto interno tuyo. El usuario NUNCA debe verlo.
 
 IMPORTANTE — prompts para otras herramientas de IA:
 - Cuando el usuario pida un "prompt" para usar en otra herramienta de IA (ChatGPT, Midjourney, Gemini, etc.),
@@ -516,6 +524,15 @@ def _hallucination_retry_message(kind: str) -> str:
     return HALLUCINATION_RETRY_USER_MESSAGE
 
 
+_INTERNAL_KB_LEAK_PATTERNS = (
+    "Conocimiento interno CED",
+    "[Marketing digital]",
+    "[Finanzas personales]",
+    "[general]",
+    "priorizar sobre suposiciones",
+)
+
+
 def _contains_internal_kb_leak(text: str) -> bool:
     """True si la respuesta expone el bloque interno de KB al usuario."""
     t = (text or "").strip()
@@ -523,12 +540,35 @@ def _contains_internal_kb_leak(text: str) -> bool:
         return False
     if _INTERNAL_KB_LEAK_RE.search(t):
         return True
+    if any(pattern in t for pattern in _INTERNAL_KB_LEAK_PATTERNS):
+        return True
     if re.search(r"Conocimiento interno CED", t, re.I) and re.search(
         r"-\s*\[[^\]]+\]\s+[^:]+:\s",
         t,
     ):
         return True
     return False
+
+
+def _dedupe_chat_reply(text: str) -> str:
+    """Elimina bloques idénticos consecutivos en la respuesta."""
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return cleaned
+    parts = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
+    if len(parts) >= 2:
+        deduped: list[str] = [parts[0]]
+        for part in parts[1:]:
+            if part != deduped[-1]:
+                deduped.append(part)
+        cleaned = "\n\n".join(deduped)
+    half = len(cleaned) // 2
+    if half > 120:
+        first = cleaned[:half].strip()
+        second = cleaned[half:].strip()
+        if first == second:
+            return first
+    return cleaned
 
 
 def _strip_internal_kb_from_reply(text: str) -> str:
@@ -823,6 +863,7 @@ def _run_chat_tool(
     tool_input: dict[str, Any],
     *,
     conversation_id: str | None = None,
+    chat_messages: list[dict[str, Any]] | None = None,
 ) -> str:
     try:
         if name == "search_web":
@@ -938,11 +979,16 @@ def _run_chat_tool(
                         "error": "Los PDFs requieren plan Élite o Founding. Mejora en /pricing.",
                     },
                 )
-            title = str(tool_input.get("title") or "Documento CED").strip()
-            content = str(tool_input.get("content") or "").strip()
-            if not content or len(content) < 3:
-                content = title
-            artifact = store_pdf(user_id=user_id, title=title, content=content)
+            title, content = normalize_pdf_fields(tool_input)
+            fallbacks = assistant_fallback_texts_from_messages(chat_messages or [])
+            resolved = resolve_pdf_content(title, content, fallback_texts=fallbacks)
+            artifact = store_pdf(
+                user_id=user_id,
+                title=title,
+                content=resolved,
+                conversation_id=conversation_id,
+                fallback_texts=fallbacks,
+            )
             return json.dumps(
                 {
                     "ok": True,
@@ -1379,6 +1425,7 @@ def _complete_chat_with_tools(
                 str(tool.get("name") or ""),
                 tool_input,
                 conversation_id=conversation_id,
+                chat_messages=messages,
             )
             maybe_pdf = _extract_pdf_from_tool_result(result)
             if maybe_pdf:
@@ -1677,11 +1724,14 @@ def send_message(
         pdf_title, pdf_body = pdf_req
         if pdf_title == "Documento CED" and pdf_body:
             pdf_title = pdf_body[:60].strip()
+        fallbacks = assistant_fallback_texts_from_messages(_anthropic_messages(history))
+        resolved_body = resolve_pdf_content(pdf_title, pdf_body, fallback_texts=fallbacks)
         artifact = store_pdf(
             user_id=user_id,
             title=pdf_title,
-            content=pdf_body,
+            content=resolved_body,
             conversation_id=conversation_id,
+            fallback_texts=fallbacks,
         )
         return _finish(
             f'Listo. PDF "{artifact.title}" generado. Usa el botón Descargar abajo.',
@@ -1795,6 +1845,7 @@ def send_message(
         pdf_attachment=pdf_attachment,
         image_attachment=image_attachment,
     )
+    reply = _dedupe_chat_reply(reply)
 
     return _finish(
         reply,

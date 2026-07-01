@@ -52,6 +52,31 @@ function stripPdfLinks(content: string): string {
     .trim();
 }
 
+function dedupeChatMessages(messages: ChatMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  const seenIds = new Set<string>();
+  for (const msg of messages) {
+    if (msg.id) {
+      if (seenIds.has(msg.id)) continue;
+      seenIds.add(msg.id);
+    }
+    const prev = out[out.length - 1];
+    if (
+      prev &&
+      prev.role === msg.role &&
+      prev.content.trim() === msg.content.trim() &&
+      !msg.pdf &&
+      !msg.image &&
+      !prev.pdf &&
+      !prev.image
+    ) {
+      continue;
+    }
+    out.push(msg);
+  }
+  return out;
+}
+
 function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -345,7 +370,7 @@ export function CedTextChatPanel({
       content: text || "📷 Imagen adjunta",
       user_image_preview: imagePreview,
     };
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => dedupeChatMessages([...prev, userMsg]));
 
     if (imageFile && imagePreview && onVoiceImageAttached) {
       onVoiceImageAttached(imagePreview, imageFile);
@@ -402,18 +427,20 @@ export function CedTextChatPanel({
         voicePublishActive || Boolean(onVoiceImageAttached),
       );
       setConversationId(result.conversation_id);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "model",
-          content: result.reply,
-          created_at: new Date().toISOString(),
-          pdf: result.pdf ?? null,
-          image: result.image
-            ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
-            : null,
-        },
-      ]);
+      setMessages((prev) =>
+        dedupeChatMessages([
+          ...prev,
+          {
+            role: "model",
+            content: result.reply,
+            created_at: new Date().toISOString(),
+            pdf: result.pdf ?? null,
+            image: result.image
+              ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
+              : null,
+          },
+        ]),
+      );
       setStatus(result.usage);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al enviar.");

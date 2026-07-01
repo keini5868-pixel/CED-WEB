@@ -26,7 +26,7 @@ from app.services.navigation_session import (
     set_route,
 )
 from app.services.openai_images import generate_image
-from app.services.pdf_report import store_pdf
+from app.services.pdf_report import assistant_fallback_texts_from_messages
 from app.services.prospection import get_prospection_report, set_prospection_enabled
 from app.services.social_comments import fetch_social_comments
 from app.services.user_address import sync_address_from_memory_key
@@ -501,13 +501,16 @@ async def execute_voice_tool(
             )
 
         if name == "generar_pdf":
-            titulo = str(params.get("titulo") or "Documento CED").strip()
-            contenido = str(params.get("contenido") or titulo).strip()
+            titulo, contenido = normalize_pdf_fields(params)
+            fallbacks = params.get("_pdf_fallback_texts")
+            fallback_list = fallbacks if isinstance(fallbacks, list) else None
+            resolved = resolve_pdf_content(titulo, contenido, fallback_texts=fallback_list)
             artifact = await asyncio.to_thread(
                 store_pdf,
                 user_id=user_id,
                 title=titulo,
-                content=contenido,
+                content=resolved,
+                fallback_texts=fallback_list,
             )
             spoken = (
                 f"PDF listo, señor. Título: {artifact.title}. "

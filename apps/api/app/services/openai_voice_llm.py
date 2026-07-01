@@ -408,13 +408,18 @@ class OpenAIVoiceLlm:
     async def _execute_tool_calls(
         self,
         tool_calls: list[dict[str, Any]],
+        *,
+        context_messages: list[dict[str, Any]] | None = None,
     ) -> tuple[list[dict[str, Any]], list[str]]:
         tool_messages: list[dict[str, Any]] = []
         spoken_parts: list[str] = []
+        pdf_fallbacks = assistant_fallback_texts_from_messages(context_messages or [])
         for tc in tool_calls:
             fn = tc.get("function") or {}
             name = str(fn.get("name") or "")
             args = _parse_tool_args(fn.get("arguments"))
+            if name == "generar_pdf" and pdf_fallbacks:
+                args = {**args, "_pdf_fallback_texts": pdf_fallbacks[-3:]}
             call_id = str(tc.get("id") or "")
             logger.info(
                 "[RETELL-OPENAI] tool=%s args=%s user=%s",
@@ -595,16 +600,23 @@ class OpenAIVoiceLlm:
                         "content": message.get("content"),
                         "tool_calls": tool_calls,
                     }
-                    tool_messages, spoken_parts = await self._execute_tool_calls(tool_calls)
+                    tool_messages, spoken_parts = await self._execute_tool_calls(
+                        tool_calls,
+                        context_messages=working_messages,
+                    )
                     working_messages = [*working_messages, assistant_msg, *tool_messages]
                     final_text = spoken_parts[-1] if spoken_parts else "Completado, señor."
 
-                    only_claude = all(
-                        str((tc.get("function") or {}).get("name") or "") == "consultar_claude"
-                        for tc in tool_calls
-                    )
+                    tool_names = [
+                        str((tc.get("function") or {}).get("name") or "") for tc in tool_calls
+                    ]
+                    only_claude = all(n == "consultar_claude" for n in tool_names)
+                    only_pdf = all(n == "generar_pdf" for n in tool_names)
                     if only_claude:
                         logger.info("[RETELL-OPENAI] consultar_claude direct spoken")
+                        break
+                    if only_pdf:
+                        logger.info("[RETELL-OPENAI] generar_pdf direct spoken")
                         break
 
                     follow_data = await self._chat_completion(

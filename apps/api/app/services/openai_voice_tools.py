@@ -281,7 +281,7 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
                     "description": "Texto completo del PDF (redacta si falta)",
                 },
             },
-            "required": ["titulo"],
+            "required": ["titulo", "contenido"],
         },
     },
     {
