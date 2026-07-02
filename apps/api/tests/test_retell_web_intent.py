@@ -8,6 +8,27 @@ def _tx(*lines: tuple[str, str]) -> list[Utterance]:
     return [Utterance(role=role, content=text) for role, text in lines]
 
 
+def test_trump_news_intent():
+    text = "Sí, dime las últimas noticias de Donald Trump."
+    tx = _tx(("agent", "CED en línea, señor."), ("user", text))
+    req = resolve_web_search_request(text, tx)
+    assert req is not None
+    assert req["kind"] == "news"
+    assert "donald trump" in req["query"].lower()
+
+
+def test_trump_news_after_ack_fragment():
+    tx = _tx(
+        ("agent", "CED en"),
+        ("user", "Sí"),
+        ("user", "dime las últimas noticias de Donald Trump"),
+    )
+    merged = tx[-1].content
+    req = resolve_web_search_request(merged, tx)
+    assert req is not None
+    assert req["kind"] == "news"
+
+
 def test_news_only_last_turn():
     tx = _tx(
         ("user", "Sí, dime las noticias del día de hoy en Estados Unidos."),
