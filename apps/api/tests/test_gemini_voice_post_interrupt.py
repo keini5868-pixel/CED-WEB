@@ -9,7 +9,7 @@ from app.services.gemini_voice_llm import (
     _looks_incomplete_voice_reply,
     _response_hit_max_tokens,
 )
-from app.services.voice_llm_common import voice_generation_limits
+from app.services.voice_llm_common import WEB_SEARCH_VOICE_FALLBACK, voice_generation_limits
 
 
 def test_news_query_gets_web_token_budget():
@@ -68,6 +68,27 @@ def test_ensure_complete_voice_reply_appends_continuation():
         assert "resultados recientes" in result
 
     asyncio.run(run())
+
+
+def test_web_search_voice_fallback_phrase():
+    assert "no pude obtener información actual" in WEB_SEARCH_VOICE_FALLBACK.lower()
+    assert "registrado" in WEB_SEARCH_VOICE_FALLBACK.lower()
+
+
+def test_search_web_tool_payload_timeout_uses_voice_fallback():
+    spoken, payload = GeminiVoiceLlm._search_web_tool_payload(
+        {"status": "timeout", "fallback": True, "spoken": ""},
+    )
+    assert payload.get("fallback") is True
+    assert "no pude obtener información actual" in spoken.lower()
+
+
+def test_search_web_tool_payload_success():
+    spoken, payload = GeminiVoiceLlm._search_web_tool_payload(
+        {"status": "success", "summary": "Noticia reciente sobre economía."},
+    )
+    assert payload.get("status") == "success"
+    assert "Noticia reciente" in spoken
 
 
 def test_ensure_complete_voice_reply_fits_without_regen():

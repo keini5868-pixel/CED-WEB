@@ -16,9 +16,14 @@ from app.config import get_settings
 from app.services.internal_kb_guard import VOICE_KB_LEAK_OVERLAY, contains_internal_kb_leak
 from app.services.gemini_voice_tools import build_gemini_voice_tools
 from app.services.retell_custom_llm import (
+    _needs_internet_lookup,
+    format_web_delivery,
     is_generic_agent_line,
     is_unwanted_voice_reply,
     merged_user_query,
+    promised_voice_search_without_result,
+    resolve_web_search_request,
+    web_search_error_phrase,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_response_guard import guard_voice_response
@@ -38,6 +43,7 @@ from app.services.voice_llm_common import (
     REFORMULATE_EMPATHY_OVERLAY,
     REMINDER_OVERLAY,
     SESSION_MAX_MINUTES,
+    WEB_SEARCH_VOICE_FALLBACK,
     build_voice_system,
     log_voice_delivery,
     needs_empathy_reformulation,
@@ -54,6 +60,7 @@ GEMINI_CONVERSATIONAL_TIMEOUT_SEC = 18.0
 GEMINI_GREETING_TIMEOUT_SEC = 12.0
 GEMINI_WEB_TIMEOUT_SEC = 22.0
 TOOL_TIMEOUT_SEC = 45.0
+SEARCH_WEB_TOOL_TIMEOUT_SEC = 17.0
 
 WEB_SEARCH_FALLBACK_OVERLAY = (
     "[Contexto: search_web devolvió status=timeout con fallback=True. "
@@ -377,6 +384,69 @@ class GeminiVoiceLlm:
         if not chunk_ends_with_punctuation(cleaned):
             cleaned = fit_voice_spoken(cleaned, max_chars=voice_spoken_limit(user_text))
         return cleaned
+
+    @staticmethod
+    def _search_web_tool_payload(tool_result: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if tool_result.get("fallback") or tool_result.get("status") == "timeout":
+            spoken = str(
+                tool_result.get("spoken") or WEB_SEARCH_VOICE_FALLBACK
+            ).strip()
+            payload = {
+                "status": "timeout",
+                "fallback": True,
+                "spoken": spoken,
+            }
+            return spoken, payload
+        summary = str(
+            tool_result.get("summary") or tool_result.get("spoken") or ""
+        ).strip()
+        payload: dict[str, Any] = {
+            "status": "success",
+            "spoken": summary,
+            "summary": summary,
+        }
+        if tool_result.get("source"):
+            payload["source"] = tool_result.get("source")
+        return summary or "Consulta completada, señor.", payload
+
+    async def _run_voice_search_web(
+        self,
+        *,
+        query: str,
+        kind: str,
+    ) -> tuple[str, dict[str, Any]]:
+        if not self.user_id:
+            spoken = "No identifiqué al usuario, señor."
+            return spoken, {"status": "error", "spoken": spoken}
+        try:
+            tool_result = await asyncio.wait_for(
+                execute_voice_tool(
+                    "search_web",
+                    self.user_id,
+                    {"query": query, "kind": kind},
+                ),
+                timeout=SEARCH_WEB_TOOL_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("[RETELL-GEMINI] inline search_web timeout query=%s", query[:80])
+            tool_result = {
+                "status": "timeout",
+                "fallback": True,
+                "spoken": WEB_SEARCH_VOICE_FALLBACK,
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[RETELL-GEMINI] inline search_web failed: %s", exc)
+            tool_result = {
+                "status": "timeout",
+                "fallback": True,
+                "spoken": WEB_SEARCH_VOICE_FALLBACK,
+            }
+        spoken, payload = self._search_web_tool_payload(tool_result)
+        if payload.get("status") == "success" and spoken:
+            return format_web_delivery(kind, spoken), payload
+        if spoken:
+            return spoken, payload
+        return web_search_error_phrase(kind), payload
 
     async def generate_natural_reply(
         self,
@@ -850,22 +920,46 @@ class GeminiVoiceLlm:
 
                 if not self.user_id:
                     spoken = "No identifiqué al usuario, señor."
+                    tool_payload: dict[str, Any] = {"status": "error", "spoken": spoken}
                 else:
+                    tool_timeout = (
+                        SEARCH_WEB_TOOL_TIMEOUT_SEC if name == "search_web" else TOOL_TIMEOUT_SEC
+                    )
                     try:
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(name, self.user_id, args),
-                            timeout=TOOL_TIMEOUT_SEC,
+                            timeout=tool_timeout,
                         )
-                        spoken = str(tool_result.get("spoken") or "Completado, señor.")
+                        if name == "search_web":
+                            spoken, tool_payload = self._search_web_tool_payload(tool_result)
+                            if tool_payload.get("status") == "success" and spoken:
+                                kind = str(args.get("kind") or "general")
+                                spoken = format_web_delivery(kind, spoken)
+                                tool_payload = {**tool_payload, "spoken": spoken}
+                            elif tool_payload.get("fallback"):
+                                self._web_search_fallback = True
+                        else:
+                            spoken = str(tool_result.get("spoken") or "Completado, señor.")
+                            tool_payload = {"status": "success", "spoken": spoken}
                     except asyncio.TimeoutError:
                         logger.warning("[RETELL-GEMINI] tool timeout name=%s", name)
-                        spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
+                        if name == "search_web":
+                            self._web_search_fallback = True
+                            spoken = WEB_SEARCH_VOICE_FALLBACK
+                            tool_payload = {
+                                "status": "timeout",
+                                "fallback": True,
+                                "spoken": spoken,
+                            }
+                        else:
+                            spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
+                            tool_payload = {"status": "timeout", "spoken": spoken}
                 tool_spoken_parts.append(spoken)
 
                 function_response_parts.append(
                     types.Part.from_function_response(
                         name=name,
-                        response={"result": spoken},
+                        response=tool_payload,
                     )
                 )
 
@@ -946,6 +1040,27 @@ class GeminiVoiceLlm:
         if not text_response:
             conv = await self.draft_conversational_response(request)
             text_response = conv or FALLBACK_REPLY
+
+        web_req = resolve_web_search_request(user_text, request.transcript)
+        needs_web = _needs_internet_lookup(user_text) or web_req is not None
+        if needs_web and (
+            not text_response
+            or text_response == FALLBACK_REPLY
+            or promised_voice_search_without_result(text_response, user_text=user_text)
+            or is_generic_agent_line(text_response)
+        ):
+            inline_req = web_req or resolve_web_search_request(user_text, request.transcript)
+            if inline_req:
+                logger.info(
+                    "[RETELL-GEMINI] inline search_web safety-net query=%s",
+                    str(inline_req.get("query") or "")[:80],
+                )
+                text_response, _payload = await self._run_voice_search_web(
+                    query=str(inline_req.get("query") or user_text),
+                    kind=str(inline_req.get("kind") or "general"),
+                )
+            elif not text_response or text_response == FALLBACK_REPLY:
+                text_response = WEB_SEARCH_VOICE_FALLBACK
 
         text_response = await self._sanitize_voice_output(
             text_response,

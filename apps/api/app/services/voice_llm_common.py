@@ -14,6 +14,11 @@ from app.services.voice_spoken import (
 MAX_HISTORY_TURNS = 10
 SESSION_MAX_MINUTES = 30.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
+WEB_SEARCH_VOICE_FALLBACK = (
+    "Señor, no pude obtener información actual en este momento. "
+    "Basándome en lo que tengo registrado, le oriento con lo disponible. "
+    "¿Desea que lo intente de nuevo?"
+)
 
 _BASE_VOICE_PROMPT: str | None = None
 

@@ -36,6 +36,7 @@ from app.services.retell_custom_llm import (
 )
 from app.services.voice_llm_common import (
     FALLBACK_REPLY,
+    WEB_SEARCH_VOICE_FALLBACK,
     is_duplicate_voice_delivery,
     normalize_voice_delivery_text,
 )
@@ -525,10 +526,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     call_id,
                     user_text[:60],
                 )
+                fallback_content = WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
                 async with response_lock:
                     await send_voice_response(
                         response_id=scheduled_rid,
-                        content=FALLBACK_REPLY,
+                        content=fallback_content,
                         user_key=scheduled_key,
                         generation=my_generation,
                     )
@@ -608,69 +610,96 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 clear_pending_advanced_topic(call_id)
                 kind = web_req["kind"]
                 web_delivered = False
-                async with response_lock:
-                    if _turn_stale():
-                        await anti_silence_if_unanswered(reason="web_stale_before")
-                        return
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(
-                                "search_web",
-                                uid,
-                                {"query": web_req["query"], "kind": kind},
-                            ),
-                            timeout=20.0,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning("[RETELL-GEMINI] web_search timeout call=%s", call_id)
-                        tool_result = {
-                            "status": "timeout",
-                            "fallback": True,
-                            "spoken": (
-                                "La búsqueda tardó demasiado, señor. "
-                                "Le respondo con lo que tengo disponible."
-                            ),
-                        }
-                    if _turn_stale():
-                        logger.info("[RETELL-GEMINI] drop stale web rid=%s", scheduled_rid)
-                        await anti_silence_if_unanswered(reason="web_stale_after")
-                        return
-                    if tool_result.get("fallback") or tool_result.get("status") == "timeout":
-                        llm._web_search_fallback = True
-                        logger.info(
-                            "[RETELL-OPENAI] web_search fallback -> LLM call=%s",
-                            call_id,
-                        )
-                    elif tool_result.get("status") == "success" or tool_result.get("ok"):
-                        spoken = str(tool_result.get("spoken") or "").strip()
-                        full = format_web_delivery(kind, spoken) if spoken else web_search_error_phrase(kind)
-                        if not is_duplicate_voice_delivery(last_delivered_voice_content, full):
-                            delivered = await send_voice_response(
-                                response_id=scheduled_rid,
-                                content=full,
-                                user_key=scheduled_key,
-                                generation=my_generation,
+                try:
+                    async with response_lock:
+                        if _turn_stale():
+                            await anti_silence_if_unanswered(reason="web_stale_before")
+                            return
+                        try:
+                            tool_result = await asyncio.wait_for(
+                                execute_voice_tool(
+                                    "search_web",
+                                    uid,
+                                    {"query": web_req["query"], "kind": kind},
+                                ),
+                                timeout=20.0,
                             )
-                            if delivered:
-                                last_web_delivery_at = time.time()
-                                last_web_query_norm = query_norm
-                                web_delivered = True
-                                logger.info(
-                                    "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
-                                    call_id,
-                                    web_req["kind"],
-                                    web_req["query"][:80],
-                                    full[:120],
-                                )
-                        else:
-                            logger.warning(
-                                "[RETELL-WEB] skip duplicate web delivery call=%s",
+                        except asyncio.TimeoutError:
+                            logger.warning("[RETELL-GEMINI] web_search timeout call=%s", call_id)
+                            tool_result = {
+                                "status": "timeout",
+                                "fallback": True,
+                                "spoken": WEB_SEARCH_VOICE_FALLBACK,
+                            }
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "[RETELL-GEMINI] web_search error call=%s query=%s",
+                                call_id,
+                                web_req["query"][:80],
+                            )
+                            tool_result = {
+                                "status": "timeout",
+                                "fallback": True,
+                                "spoken": WEB_SEARCH_VOICE_FALLBACK,
+                            }
+                        if _turn_stale():
+                            logger.info("[RETELL-GEMINI] drop stale web rid=%s", scheduled_rid)
+                            await anti_silence_if_unanswered(reason="web_stale_after")
+                            return
+                        if tool_result.get("fallback") or tool_result.get("status") == "timeout":
+                            llm._web_search_fallback = True
+                            logger.info(
+                                "[RETELL-GEMINI] web_search fallback -> draft call=%s",
                                 call_id,
                             )
-                            answered_response_ids.add(scheduled_rid)
-                            web_delivered = True
+                        elif tool_result.get("status") == "success" or tool_result.get("ok"):
+                            spoken = str(tool_result.get("spoken") or "").strip()
+                            full = (
+                                format_web_delivery(kind, spoken)
+                                if spoken
+                                else web_search_error_phrase(kind)
+                            )
+                            if not is_duplicate_voice_delivery(last_delivered_voice_content, full):
+                                delivered = await send_voice_response(
+                                    response_id=scheduled_rid,
+                                    content=full,
+                                    user_key=scheduled_key,
+                                    generation=my_generation,
+                                )
+                                if delivered:
+                                    last_web_delivery_at = time.time()
+                                    last_web_query_norm = query_norm
+                                    web_delivered = True
+                                    logger.info(
+                                        "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
+                                        call_id,
+                                        web_req["kind"],
+                                        web_req["query"][:80],
+                                        full[:120],
+                                    )
+                            else:
+                                logger.warning(
+                                    "[RETELL-WEB] skip duplicate web delivery call=%s",
+                                    call_id,
+                                )
+                                answered_response_ids.add(scheduled_rid)
+                                web_delivered = True
+                except Exception:  # noqa: BLE001
+                    logger.exception("[RETELL-GEMINI] web fast-path failed call=%s", call_id)
+                    llm._web_search_fallback = True
                 if web_delivered:
                     return
+            elif web_req and not uid:
+                logger.warning("[RETELL-GEMINI] web intent without uid call=%s", call_id)
+                async with response_lock:
+                    if not _turn_stale():
+                        await send_voice_response(
+                            response_id=scheduled_rid,
+                            content=WEB_SEARCH_VOICE_FALLBACK,
+                            user_key=scheduled_key,
+                            generation=my_generation,
+                        )
+                return
 
             # Path conversacional ligero DESACTIVADO (regresión 6f15302 — silencio post-saludo).
             # Todos los turnos usan draft_response con tools y system prompt completo.
@@ -930,13 +959,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         latest_rid,
                         call_id,
                     )
+                    await anti_silence_if_unanswered(reason="draft_superseded_prelock")
                     return
-                if scheduled_key and scheduled_key == last_answered_user_key:
+                if scheduled_key and scheduled_key == last_answered_user_key and not pending_web:
                     logger.info(
                         "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
                         scheduled_rid,
                         call_id,
                     )
+                    await anti_silence_if_unanswered(reason="draft_answered_key")
                     return
                 if turn_draft_in_progress and scheduled_key == turn_draft_user_key:
                     latest_for_key = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
@@ -946,6 +977,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             scheduled_rid,
                             call_id,
                         )
+                        await anti_silence_if_unanswered(reason="draft_busy")
                         return
                 turn_draft_in_progress = True
                 turn_draft_user_key = scheduled_key
