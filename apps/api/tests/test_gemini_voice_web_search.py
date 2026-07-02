@@ -23,3 +23,22 @@ def test_trump_news_resolves_web_search():
 
 def test_web_search_fast_path_timeout_is_15s():
     assert WEB_SEARCH_FAST_PATH_TIMEOUT_SEC == 15.0
+
+
+def test_english_concept_question_detected():
+    from app.services.retell_custom_llm import _is_concept_question
+
+    assert _is_concept_question("what is digital marketing")
+    assert _is_concept_question("What is the digital market?")
+
+
+def test_marketing_digital_routes_to_draft_not_web():
+    from app.services.retell_custom_llm import should_respond_to_transcript
+
+    text = "what is digital marketing"
+    tx = [
+        Utterance(role="agent", content="Señor, sobre su consulta: Trump news..."),
+        Utterance(role="user", content=text),
+    ]
+    assert resolve_web_search_request(text, tx) is None
+    assert should_respond_to_transcript(tx, interaction_type="response_required") is True

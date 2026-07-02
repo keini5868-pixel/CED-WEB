@@ -648,7 +648,7 @@ def _is_concept_question(text: str) -> bool:
     return bool(
         re.search(
             r"\b(qu[eé] es|qu[eé] significa|expl[ií]came|explicame|hablame de|"
-            r"cu[eé]ntame qu[eé] es|dime qu[eé] es)\b",
+            r"cu[eé]ntame qu[eé] es|dime qu[eé] es|what is|what's|explain)\b",
             norm,
         )
     )

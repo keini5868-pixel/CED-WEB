@@ -310,6 +310,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 call_id,
                 content[:80],
             )
+            await websocket.send_json(
+                {
+                    "response_type": "response",
+                    "response_id": response_id,
+                    "content": "",
+                    "content_complete": True,
+                    "end_call": False,
+                }
+            )
             answered_response_ids.add(response_id)
             if user_key:
                 last_answered_user_key = user_key
@@ -408,6 +417,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 response_id,
                 call_id,
             )
+            if interaction == "response_required":
+                await ack_empty_response(response_id=response_id, reason="duplicate_rid")
             return
 
         if interaction == "response_required" and response_id > 0:
@@ -716,24 +727,28 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             await anti_silence_if_unanswered(reason=f"web_finish_{reason}")
 
                     try:
+                        stale_before = False
                         async with response_lock:
                             if _turn_rid_stale():
-                                await anti_silence_if_unanswered(reason="web_stale_before")
-                                return
-                            await send_voice_partial(
-                                response_id=scheduled_rid,
-                                content=web_search_hold_phrase(kind),
-                                content_complete=False,
-                                generation=None,
-                            )
-                            partial_sent = True
-                            logger.info(
-                                "[RETELL-WEB] hold rid=%s call=%s kind=%s query=%s",
-                                scheduled_rid,
-                                call_id,
-                                kind,
-                                query[:80],
-                            )
+                                stale_before = True
+                            else:
+                                await send_voice_partial(
+                                    response_id=scheduled_rid,
+                                    content=web_search_hold_phrase(kind),
+                                    content_complete=False,
+                                    generation=None,
+                                )
+                                partial_sent = True
+                                logger.info(
+                                    "[RETELL-WEB] hold rid=%s call=%s kind=%s query=%s",
+                                    scheduled_rid,
+                                    call_id,
+                                    kind,
+                                    query[:80],
+                                )
+                        if stale_before:
+                            await anti_silence_if_unanswered(reason="web_stale_before")
+                            return
 
                         tool_result: dict[str, Any]
                         try:
@@ -1102,6 +1117,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 transcript=transcript,
             )
 
+            skip_draft = False
             async with response_lock:
                 superseded, latest_rid = _is_superseded_turn_rid(
                     scheduled_rid,
@@ -1115,17 +1131,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         latest_rid,
                         call_id,
                     )
-                    await anti_silence_if_unanswered(reason="draft_superseded_prelock")
-                    return
-                if scheduled_key and scheduled_key == last_answered_user_key and not pending_web:
+                    skip_draft = True
+                elif scheduled_key and scheduled_key == last_answered_user_key and not pending_web:
                     logger.info(
                         "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
                         scheduled_rid,
                         call_id,
                     )
-                    await anti_silence_if_unanswered(reason="draft_answered_key")
-                    return
-                if turn_draft_in_progress and scheduled_key == turn_draft_user_key:
+                    skip_draft = True
+                elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
                     latest_for_key = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
                     if scheduled_rid < latest_for_key:
                         logger.info(
@@ -1133,102 +1147,105 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             scheduled_rid,
                             call_id,
                         )
-                        await anti_silence_if_unanswered(reason="draft_busy")
-                        return
-                turn_draft_in_progress = True
-                turn_draft_user_key = scheduled_key
+                        skip_draft = True
+                else:
+                    turn_draft_in_progress = True
+                    turn_draft_user_key = scheduled_key
+
+            if skip_draft:
+                await anti_silence_if_unanswered(reason="draft_superseded_prelock")
+                return
 
             try:
                 gpt_calls += 1
-                async with response_lock:
-                    superseded_now, latest_now = _is_superseded_turn_rid(
-                        scheduled_rid,
-                        scheduled_key,
-                        turn_latest_rid,
-                    )
-                    if superseded_now:
-                        await anti_silence_if_unanswered(reason="draft_superseded")
-                        return
+                superseded_now, latest_now = _is_superseded_turn_rid(
+                    scheduled_rid,
+                    scheduled_key,
+                    turn_latest_rid,
+                )
+                if superseded_now:
+                    await anti_silence_if_unanswered(reason="draft_superseded")
+                    return
 
-                    try:
-                        final_event = None
-                        async for event in llm.draft_response(request):
-                            stale, _ = _is_superseded_turn_rid(
+                try:
+                    final_event = None
+                    async for event in llm.draft_response(request):
+                        stale, _ = _is_superseded_turn_rid(
+                            scheduled_rid,
+                            scheduled_key,
+                            turn_latest_rid,
+                        )
+                        if stale:
+                            logger.info(
+                                "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft_abort",
                                 scheduled_rid,
-                                scheduled_key,
-                                turn_latest_rid,
-                            )
-                            if stale:
-                                logger.info(
-                                    "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft_abort",
-                                    scheduled_rid,
-                                    turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
-                                    gpt_calls,
-                                    call_id,
-                                )
-                                break
-                            final_event = event
-                        if final_event is not None:
-                            content = (final_event.content or "").strip() or FALLBACK_REPLY
-                            if pending_web and (
-                                not content
-                                or content == FALLBACK_REPLY
-                                or is_unwanted_voice_reply(content, user_text=user_text)
-                            ):
-                                content = WEB_SEARCH_VOICE_FALLBACK
-                            if is_unwanted_voice_reply(content, user_text=user_text):
-                                logger.warning(
-                                    "[RETELL-GEMINI] bloqueado relleno chatbot call=%s text=%s reply=%s",
-                                    call_id,
-                                    user_text[:60],
-                                    content[:80],
-                                )
-                                if _is_concept_question(user_text):
-                                    regen = await llm.generate_natural_reply(
-                                        transcript=transcript,
-                                        user_text=user_text,
-                                        overlay=(
-                                            "Responde de forma natural y breve usando tu conocimiento. "
-                                            "NUNCA cites 'Conocimiento interno CED' ni etiquetas [Marketing digital]."
-                                        ),
-                                        path="concept_kb_regen",
-                                        max_tokens=640,
-                                    )
-                                    content = regen or FALLBACK_REPLY
-                                elif is_casual_conversation(user_text):
-                                    reformed = await llm.generate_empathetic_reformulation(
-                                        user_text,
-                                        transcript=transcript,
-                                        bad_reply=content,
-                                    )
-                                    if reformed:
-                                        content = reformed
-                                    else:
-                                        conv = await llm.draft_conversational_response(request)
-                                        if conv:
-                                            content = conv
-                                else:
-                                    content = FALLBACK_REPLY
-                            await deliver_voice(content)
-                        elif not superseded_now:
-                            logger.warning(
-                                "[RETELL-GEMINI] empty draft_response call=%s rid=%s text=%s",
+                                turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
+                                gpt_calls,
                                 call_id,
-                                scheduled_rid,
-                                user_text[:80],
                             )
-                            await deliver_voice(
-                                WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
+                            break
+                        final_event = event
+                    if final_event is not None:
+                        content = (final_event.content or "").strip() or FALLBACK_REPLY
+                        if pending_web and (
+                            not content
+                            or content == FALLBACK_REPLY
+                            or is_unwanted_voice_reply(content, user_text=user_text)
+                        ):
+                            content = WEB_SEARCH_VOICE_FALLBACK
+                        if is_unwanted_voice_reply(content, user_text=user_text):
+                            logger.warning(
+                                "[RETELL-GEMINI] bloqueado relleno chatbot call=%s text=%s reply=%s",
+                                call_id,
+                                user_text[:60],
+                                content[:80],
                             )
-                    except Exception:  # noqa: BLE001
-                        logger.exception(
-                            "[RETELL-GEMINI] draft_response error call=%s last=%s",
+                            if _is_concept_question(user_text):
+                                regen = await llm.generate_natural_reply(
+                                    transcript=transcript,
+                                    user_text=user_text,
+                                    overlay=(
+                                        "Responde de forma natural y breve usando tu conocimiento. "
+                                        "NUNCA cites 'Conocimiento interno CED' ni etiquetas [Marketing digital]."
+                                    ),
+                                    path="concept_kb_regen",
+                                    max_tokens=640,
+                                )
+                                content = regen or FALLBACK_REPLY
+                            elif is_casual_conversation(user_text):
+                                reformed = await llm.generate_empathetic_reformulation(
+                                    user_text,
+                                    transcript=transcript,
+                                    bad_reply=content,
+                                )
+                                if reformed:
+                                    content = reformed
+                                else:
+                                    conv = await llm.draft_conversational_response(request)
+                                    if conv:
+                                        content = conv
+                            else:
+                                content = FALLBACK_REPLY
+                        await deliver_voice(content)
+                    elif not superseded_now:
+                        logger.warning(
+                            "[RETELL-GEMINI] empty draft_response call=%s rid=%s text=%s",
                             call_id,
+                            scheduled_rid,
                             user_text[:80],
                         )
                         await deliver_voice(
                             WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
                         )
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "[RETELL-GEMINI] draft_response error call=%s last=%s",
+                        call_id,
+                        user_text[:80],
+                    )
+                    await deliver_voice(
+                        WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
+                    )
             finally:
                 turn_draft_in_progress = False
                 turn_draft_user_key = ""
