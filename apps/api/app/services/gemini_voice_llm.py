@@ -1,4 +1,4 @@
-"""Gemini 2.5 Pro — cerebro de voz CED para Retell Custom LLM."""
+"""Gemini 2.5 Flash — cerebro de voz CED para Retell Custom LLM."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from google import genai
 from google.genai import types
 
 from app.config import get_settings
-from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
+from app.services.internal_kb_guard import VOICE_KB_LEAK_OVERLAY, contains_internal_kb_leak
 from app.services.gemini_voice_tools import build_gemini_voice_tools
 from app.services.retell_custom_llm import (
     is_generic_agent_line,
@@ -21,64 +21,33 @@ from app.services.retell_custom_llm import (
     merged_user_query,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
+from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_spoken import is_advisory_voice_query
 from app.services.voice_tool_executor import execute_voice_tool
+from app.services.voice_llm_common import (
+    CONVERSATIONAL_TURN_OVERLAY,
+    DELAY_ACK_OVERLAY,
+    FALLBACK_REPLY,
+    GREETING_OVERLAY,
+    MAX_HISTORY_TURNS,
+    REFORMULATE_EMPATHY_OVERLAY,
+    REMINDER_OVERLAY,
+    SESSION_MAX_MINUTES,
+    build_voice_system,
+    log_voice_delivery,
+    needs_empathy_reformulation,
+    prompt_sha_prefix,
+    voice_generation_limits,
+)
 
 logger = logging.getLogger(__name__)
 
-MAX_HISTORY_TURNS = 50
-SESSION_MAX_MINUTES = 30.0
+PROVIDER = "gemini"
 GEMINI_TIMEOUT_SEC = 14.0
 GEMINI_ADVISORY_TIMEOUT_SEC = 20.0
 GEMINI_CONVERSATIONAL_TIMEOUT_SEC = 18.0
 GEMINI_GREETING_TIMEOUT_SEC = 12.0
-FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
 TOOL_TIMEOUT_SEC = 45.0
-
-CONVERSATIONAL_TURN_OVERLAY = """
-# TURNO CONVERSACIONAL — PRIORIDAD ABSOLUTA
-El usuario está en charla personal, saludo casual o comparte algo emocional/cotidiano.
-NO invoques herramientas. Responde con empatía natural: 1-3 oraciones completas.
-PROHIBIDO responder solo "¿En qué puedo ayudarle?" o variantes transaccionales.
-Valida lo que dice antes de ofrecer ayuda. No fuerces tareas ni prospección.
-""".strip()
-
-GREETING_OVERLAY = """
-# SALUDO INICIAL DE VOZ — UNA SOLA FRASE
-Acabas de conectar una llamada de voz. El usuario aún no ha hablado.
-Di UNA sola frase breve, cálida y natural (como en chat empático).
-Válido: "Hola, señor." / "Buenos días, señor." / "CED en línea, señor."
-PROHIBIDO: monólogo, listar capacidades, "¿En qué puedo ayudarle?", "A su servicio", "operativo".
-""".strip()
-
-REMINDER_OVERLAY = """
-# SILENCIO PROLONGADO
-El usuario lleva un momento en silencio. Usa el transcript para contexto.
-Responde con UNA frase natural y empática — pregunta si sigue ahí, ofrece paciencia,
-o retoma el tema anterior si aplica.
-PROHIBIDO: "Sigo atento", "¿Continuamos?", tono de chatbot de soporte.
-""".strip()
-
-DELAY_ACK_OVERLAY = """
-# DEMORA EN PROCESAR
-La generación tardó. Responde con UNA frase breve que reconozca la demora con calidez.
-Ejemplo: "Permítame un momento, señor." / "Un segundo, señor, ya le respondo."
-NO listes capacidades ni uses "¿En qué puedo ayudarle?"
-""".strip()
-
-REFORMULATE_EMPATHY_OVERLAY = """
-# REFORMULAR CON MÁS EMPATÍA
-Tu respuesta anterior fue demasiado genérica, transaccional o vacía.
-Reescribe con empatía genuina — la misma calidez que el chat de texto CED.
-1-3 oraciones naturales. Valida lo que compartió el usuario antes de ofrecer ayuda.
-PROHIBIDO: "¿En qué puedo ayudarle?", "operativo", "a su servicio", relleno de chatbot.
-""".strip()
-
-
-def _voice_generation_limits(user_text: str) -> tuple[int, float]:
-    if is_advisory_voice_query(user_text):
-        return 1024, GEMINI_ADVISORY_TIMEOUT_SEC
-    return 640, GEMINI_TIMEOUT_SEC
 
 
 def _delivery_text(text: str) -> str:
@@ -86,7 +55,12 @@ def _delivery_text(text: str) -> str:
 
 
 def _prompt_sha_prefix() -> str:
-    return str(voice_prompt_diagnostics().get("prompt_sha256_prefix") or "")
+    return str(prompt_sha_prefix())
+
+
+def _voice_generation_limits(user_text: str) -> tuple[int, float]:
+    max_tokens, timeout_sec = voice_generation_limits(user_text)
+    return max_tokens, timeout_sec
 
 
 def _log_gemini_delivery(path: str, text: str, *, user_text: str = "") -> None:
@@ -131,63 +105,6 @@ def _truncate_contents(contents: list[types.Content], *, max_turns: int) -> list
     return contents[-max_turns:]
 
 
-def _build_voice_system(user_id: str | None, user_text: str = "") -> str:
-    base = build_ced_voice_system_prompt()
-    uid = (user_id or "").strip()
-    if uid:
-        try:
-            from app.services.conversation_memory import load_user_context
-
-            ctx = load_user_context(uid)
-            if ctx:
-                base = f"{base}\n\n{ctx}"
-        except Exception:  # noqa: BLE001
-            pass
-    query = (user_text or "").strip()
-    if query and is_advisory_voice_query(query):
-        base = (
-            f"{base}\n\n"
-            "# MODO ASESORÍA (demo / video / estrategia)\n"
-            "El usuario pide ideas para demo, video o presentación. "
-            "Responde con 3-5 puntos concretos del sistema CED, en español, "
-            "oraciones completas, sin cortar a mitad. Cierra con una frase final."
-        )
-    if query:
-        try:
-            from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
-
-            hits = search_internal_knowledge(query, limit=2)
-            if hits:
-                block = format_hits_for_prompt(hits)
-                base = (
-                    f"{base}\n\n# CONOCIMIENTO INTERNO CED (prioriza esto con confianza directa)\n"
-                    f"{block}\n\n"
-                    "Si el KB no alcanza, usa search_web u otras herramientas sin decir que no tienes información. "
-                    "Responde directo como experto interno cuando el contexto lo permita.\n"
-                    "El sistema Retell dice automáticamente «Un momento, señor» al ejecutar herramientas. "
-                    "NO repitas ese filler: procede directamente con la herramienta."
-                )
-        except Exception:  # noqa: BLE001
-            pass
-    if uid:
-        try:
-            from app.services import voice_client_session as vcs
-
-            if vcs.is_camera_active(uid):
-                base = (
-                    f"{base}\n\n# ESTADO CÁMARA (backend)\n"
-                    "Cámara ACTIVA confirmada en el cliente. Puede invocar analyze_camera_frame."
-                )
-            else:
-                base = (
-                    f"{base}\n\n# ESTADO CÁMARA (backend)\n"
-                    "Cámara APAGADA. No describas nada visual hasta activarla o usar la tool."
-                )
-        except Exception:  # noqa: BLE001
-            pass
-    return base
-
-
 def _extract_function_calls(response: types.GenerateContentResponse) -> list[types.FunctionCall]:
     calls: list[types.FunctionCall] = []
     if not response.candidates:
@@ -225,13 +142,18 @@ def _function_call_args(function_call: types.FunctionCall) -> dict[str, Any]:
 
 
 def _needs_empathy_reformulation(text: str, *, user_text: str = "") -> bool:
-    if not text or not text.strip():
-        return True
-    if is_unwanted_voice_reply(text, user_text=user_text):
-        return True
-    if is_generic_agent_line(text) and len(text) < 72:
-        return True
-    return False
+    return needs_empathy_reformulation(text, user_text=user_text)
+
+
+def _messages_to_contents(messages: list[dict[str, Any]]) -> list[types.Content]:
+    contents: list[types.Content] = []
+    for msg in messages:
+        role = "user" if msg.get("role") == "user" else "model"
+        text = str(msg.get("content") or "").strip()
+        if not text:
+            continue
+        contents.append(types.Content(role=role, parts=[types.Part(text=text)]))
+    return contents
 
 
 class GeminiVoiceLlm:
@@ -247,7 +169,12 @@ class GeminiVoiceLlm:
         self._session_started = time.monotonic()
         self._turn_count = 0
         self._context_loaded_for: str | None = None
-        self._pending_advanced: str | None = None
+        self._latency_call_id: str = ""
+        self._latency_response_id: int = 0
+
+    def set_latency_context(self, call_id: str, response_id: int) -> None:
+        self._latency_call_id = call_id
+        self._latency_response_id = response_id
 
     def set_user_id(self, user_id: str | None) -> None:
         cleaned = (user_id or "").strip()
@@ -310,6 +237,17 @@ class GeminiVoiceLlm:
         path: str = "generate",
     ) -> types.GenerateContentResponse:
         limit = timeout_sec if timeout_sec is not None else GEMINI_TIMEOUT_SEC
+
+        from app.services.voice_latency import get_turn
+
+        turn = (
+            get_turn(self._latency_call_id, self._latency_response_id)
+            if self._latency_call_id and self._latency_response_id
+            else None
+        )
+        if turn:
+            turn.mark_llm_request(path=path)
+
         logger.info(
             "[RETELL-GEMINI] model_call start path=%s model=%s prompt_sha=%s user=%s ts=%.3f",
             path,
@@ -348,6 +286,66 @@ class GeminiVoiceLlm:
     async def generate_natural_reply(
         self,
         *,
+        contents: list[types.Content] | None = None,
+        messages: list[dict[str, Any]] | None = None,
+        transcript: list[Utterance] | None = None,
+        user_text: str,
+        overlay: str,
+        path: str,
+        timeout_sec: float = GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
+        max_tokens: int = 320,
+        temperature: float = 0.65,
+        with_tools: bool = False,
+    ) -> str | None:
+        if contents is None:
+            if transcript is not None:
+                contents = _transcript_to_contents(transcript)
+            elif messages is not None:
+                contents = _messages_to_contents(messages)
+            else:
+                return None
+        if not contents:
+            return None
+
+        text = await self._raw_natural_reply(
+            contents=contents,
+            user_text=user_text,
+            overlay=overlay,
+            path=path,
+            timeout_sec=timeout_sec,
+            max_tokens=max_tokens,
+            temperature=temperature,
+            with_tools=with_tools,
+        )
+        if not text:
+            return None
+        safe, blocked = guard_voice_response(text)
+        if not blocked and safe:
+            log_voice_delivery(PROVIDER, path, safe, user_text=user_text)
+            return safe
+        if blocked and contains_internal_kb_leak(text):
+            logger.warning("[RETELL-GEMINI] KB leak in natural_reply path=%s preview=%s", path, text[:80])
+            regen = await self._raw_natural_reply(
+                contents=contents,
+                user_text=user_text,
+                overlay=VOICE_KB_LEAK_OVERLAY,
+                path=f"{path}_kb_regen",
+                timeout_sec=timeout_sec,
+                max_tokens=max_tokens,
+                temperature=temperature,
+            )
+            if regen:
+                safe2, blocked2 = guard_voice_response(regen)
+                if not blocked2 and safe2:
+                    log_voice_delivery(PROVIDER, f"{path}_kb_regen", safe2, user_text=user_text)
+                    return safe2
+        if blocked:
+            logger.warning("[RETELL-GEMINI] blocked code leak path=%s preview=%s", path, text[:80])
+        return None
+
+    async def _raw_natural_reply(
+        self,
+        *,
         contents: list[types.Content],
         user_text: str,
         overlay: str,
@@ -357,7 +355,7 @@ class GeminiVoiceLlm:
         temperature: float = 0.65,
         with_tools: bool = False,
     ) -> str | None:
-        system = f"{_build_voice_system(self.user_id, user_text)}\n\n{overlay}"
+        system = f"{build_voice_system(self.user_id, user_text)}\n\n{overlay}"
         config = types.GenerateContentConfig(
             system_instruction=system,
             tools=[self.tools] if with_tools else None,
@@ -378,6 +376,38 @@ class GeminiVoiceLlm:
             return None
         _log_gemini_delivery(path, text, user_text=user_text)
         return text
+
+    async def _sanitize_voice_output(
+        self,
+        text: str,
+        *,
+        contents: list[types.Content],
+        user_text: str,
+        max_tokens: int,
+        path: str,
+    ) -> str:
+        safe, blocked = guard_voice_response(text)
+        if not blocked:
+            if safe:
+                log_voice_delivery(PROVIDER, path, safe, user_text=user_text)
+            return safe or text
+        if not contains_internal_kb_leak(text):
+            logger.warning("[RETELL-GEMINI] blocked code leak path=%s preview=%s", path, text[:80])
+            return FALLBACK_REPLY
+        logger.warning("[RETELL-GEMINI] KB leak blocked — regenerating path=%s preview=%s", path, text[:80])
+        regen = await self._raw_natural_reply(
+            contents=contents,
+            user_text=user_text,
+            overlay=VOICE_KB_LEAK_OVERLAY,
+            path=f"{path}_kb_regen",
+            max_tokens=max_tokens,
+        )
+        if regen:
+            safe2, blocked2 = guard_voice_response(regen)
+            if not blocked2 and safe2:
+                log_voice_delivery(PROVIDER, f"{path}_kb_regen", safe2, user_text=user_text)
+                return safe2
+        return FALLBACK_REPLY
 
     async def generate_empathetic_reformulation(
         self,
@@ -550,8 +580,35 @@ class GeminiVoiceLlm:
     ) -> AsyncIterator[ResponseResponse]:
         self._maybe_reset_session()
         contents = _transcript_to_contents(request.transcript)
+        user_text = merged_user_query(request.transcript) or ""
+        if not user_text and request.transcript:
+            for utterance in reversed(request.transcript):
+                if utterance.role == "user" and (utterance.content or "").strip():
+                    user_text = utterance.content.strip()
+                    break
+
         if not contents:
-            return
+            if not user_text:
+                return
+            contents = [types.Content(role="user", parts=[types.Part(text=user_text)])]
+        elif contents[-1].role != "user":
+            if not user_text:
+                logger.warning(
+                    "[RETELL-GEMINI] draft_response sin texto de usuario rid=%s",
+                    request.response_id,
+                )
+                yield ResponseResponse(
+                    response_id=request.response_id,
+                    content=FALLBACK_REPLY,
+                    content_complete=True,
+                    end_call=False,
+                )
+                return
+            logger.info(
+                "[RETELL-GEMINI] transcript termina en agente — anexando turno usuario rid=%s",
+                request.response_id,
+            )
+            contents = [*contents, types.Content(role="user", parts=[types.Part(text=user_text)])]
 
         last = contents[-1]
         if last.role != "user":
@@ -560,11 +617,16 @@ class GeminiVoiceLlm:
         self._history = self._resolve_history(contents)
         self._turn_count += 1
 
-        user_text = merged_user_query(request.transcript)
         if not user_text:
             if last.parts and last.parts[0].text:
                 user_text = last.parts[0].text.strip()
         if not user_text:
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=FALLBACK_REPLY,
+                content_complete=True,
+                end_call=False,
+            )
             return
 
         max_tokens, timeout_sec = _voice_generation_limits(user_text)
@@ -584,7 +646,7 @@ class GeminiVoiceLlm:
         if use_internal:
             internal_config = types.GenerateContentConfig(
                 system_instruction=(
-                    f"{_build_voice_system(self.user_id, user_text)}\n\n"
+                    f"{build_voice_system(self.user_id, user_text)}\n\n"
                     "Responde SOLO con conocimiento interno CED. "
                     "PROHIBIDO invocar search_web o decir que buscas en internet."
                 ),
@@ -630,7 +692,7 @@ class GeminiVoiceLlm:
         )
 
         config = types.GenerateContentConfig(
-            system_instruction=_build_voice_system(self.user_id, user_text),
+            system_instruction=build_voice_system(self.user_id, user_text),
             tools=[self.tools],
             temperature=0.4,
             max_output_tokens=max_tokens,
@@ -719,30 +781,33 @@ class GeminiVoiceLlm:
             ]
 
             final_text = tool_spoken_parts[-1] if tool_spoken_parts else "Completado, señor."
-            only_claude = function_calls and all(str(fc.name or "") == "consultar_claude" for fc in function_calls)
 
-            if not only_claude:
-                try:
-                    follow_up = await self._generate_with_timeout(
-                        contents=follow_up_contents,
-                        config=types.GenerateContentConfig(
-                            system_instruction=_build_voice_system(self.user_id, user_text),
-                            temperature=0.4,
-                            max_output_tokens=max_tokens,
-                        ),
-                        timeout_sec=timeout_sec,
-                        path="tool_follow_up",
-                    )
-                    follow_text = _extract_text(follow_up)
-                    if follow_text:
-                        final_text = _delivery_text(follow_text)
-                        _log_gemini_delivery("tool_follow_up", final_text, user_text=user_text)
-                except (asyncio.TimeoutError, Exception):  # noqa: BLE001
-                    logger.warning("[RETELL-GEMINI] tool follow-up failed — using spoken tool result")
-            else:
-                logger.info("[RETELL-GEMINI] consultar_claude direct spoken (no follow-up)")
+            try:
+                follow_up = await self._generate_with_timeout(
+                    contents=follow_up_contents,
+                    config=types.GenerateContentConfig(
+                        system_instruction=build_voice_system(self.user_id, user_text),
+                        temperature=0.4,
+                        max_output_tokens=max_tokens,
+                    ),
+                    timeout_sec=timeout_sec,
+                    path="tool_follow_up",
+                )
+                follow_text = _extract_text(follow_up)
+                if follow_text:
+                    final_text = _delivery_text(follow_text)
+                    _log_gemini_delivery("tool_follow_up", final_text, user_text=user_text)
+            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                logger.warning("[RETELL-GEMINI] tool follow-up failed — using spoken tool result")
 
             self._history = _truncate_contents(follow_up_contents, max_turns=MAX_HISTORY_TURNS)
+            final_text = await self._sanitize_voice_output(
+                final_text,
+                contents=follow_up_contents,
+                user_text=user_text,
+                max_tokens=max_tokens,
+                path="tool_follow_up",
+            )
             logger.info("[RETELL-GEMINI] tool agent=%s", final_text[:160])
             yield ResponseResponse(
                 response_id=request.response_id,
@@ -767,6 +832,14 @@ class GeminiVoiceLlm:
         if not text_response:
             conv = await self.draft_conversational_response(request)
             text_response = conv or FALLBACK_REPLY
+
+        text_response = await self._sanitize_voice_output(
+            text_response,
+            contents=[*self._history, last],
+            user_text=user_text,
+            max_tokens=max_tokens,
+            path="draft_main",
+        )
 
         self._history = _truncate_contents(
             [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])],

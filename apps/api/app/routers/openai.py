@@ -163,7 +163,7 @@ async def generate_image_endpoint(
     body: ImageGenerateBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
-    from app.services.openai_images import generate_image
+    from app.services.gemini_images import generate_image
     from app.services import supabase_db
 
     plan_id = None

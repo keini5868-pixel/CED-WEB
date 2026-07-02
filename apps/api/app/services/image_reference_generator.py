@@ -14,7 +14,7 @@ from app.deps.auth import is_super_admin
 from app.deps.plan_access import effective_plan_limits
 from app.domain.plans import PlanId, get_plan_limits
 from app.services import supabase_db
-from app.services.openai_images import HD_COST_USD, STD_COST_USD, _day_image_counts, _parse_openai_error
+from app.services.gemini_images import GEMINI_HD_COST_USD, GEMINI_STD_COST_USD, _day_image_counts
 
 logger = logging.getLogger(__name__)
 
@@ -113,6 +113,19 @@ def _check_image_quota(user_id: str, quality: str) -> dict[str, Any] | None:
 
 def _gpt_image_quality_param(picked: str) -> str:
     return "high" if picked == "hd" else "medium"
+
+
+def _parse_openai_error(res: httpx.Response) -> str:
+    try:
+        body = res.json()
+        err = body.get("error") or {}
+        if isinstance(err, dict):
+            msg = str(err.get("message") or "").strip()
+            if msg:
+                return msg[:200]
+    except Exception:  # noqa: BLE001
+        pass
+    return res.text[:200].strip() or f"HTTP {res.status_code}"
 
 
 def _request_gpt_image_edit(
@@ -283,7 +296,7 @@ def _store_result(
     if not public_url:
         return None, {"ok": False, "error": "No se pudo almacenar la imagen generada", "code": "storage_error"}
 
-    cost = HD_COST_USD if quality == "hd" else STD_COST_USD
+    cost = GEMINI_HD_COST_USD if quality == "hd" else GEMINI_STD_COST_USD
     log_prompt = f"[ref:{style_mode}] {prompt[:500]}"
     try:
         supabase_db.insert_generated_image(
@@ -395,7 +408,7 @@ def generate_image_with_reference(
                 )
                 if store_err:
                     return store_err
-                cost = float(gemini_result.get("estimated_cost_usd") or STD_COST_USD)
+                cost = float(gemini_result.get("estimated_cost_usd") or GEMINI_STD_COST_USD)
                 return {
                     "ok": True,
                     "success": True,
@@ -415,102 +428,14 @@ def generate_image_with_reference(
                 "error": str(gemini_result.get("error") or "No pude generar con referencia en Gemini."),
                 "code": str(gemini_result.get("code") or "gemini_error"),
             }
-        logger.warning("[GEMINI:REF-IMG] fallback OpenAI: %s", gemini_result.get("error"))
-
-    if not api_key:
         return {
             "ok": False,
-            "error": "Configura GOOGLE_API_KEY en Railway para imágenes con referencia.",
-            "code": "config_error",
+            "error": str(gemini_result.get("error") or "No pude generar con referencia en Gemini."),
+            "code": str(gemini_result.get("code") or "gemini_error"),
         }
 
-    primary = settings.openai_model_image.strip() or "gpt-image-1"
-    models_to_try: list[str] = []
-    if primary.startswith("gpt-image"):
-        models_to_try.append(primary)
-    models_to_try.append("gpt-image-1")
-
-    data: dict[str, Any] | None = None
-    model_used = primary
-    last_error = "No pude generar la imagen con referencia."
-    used_fallback = False
-
-    for candidate in dict.fromkeys(models_to_try):
-        data, err = _request_gpt_image_edit(
-            api_key=api_key,
-            model=candidate,
-            prompt=topic,
-            reference_image=reference_image,
-            mime=mime,
-            style_mode=mode,
-            quality=picked,
-        )
-        model_used = candidate
-        if data is not None:
-            break
-        last_error = err or last_error
-        if err and any(k in err.lower() for k in ("verification", "organization", "access")):
-            break
-
-    if data is None:
-        logger.info("[OPENAI:REF-IMG] falling back to DALL-E 3 + GPT-4V analysis")
-        img_hash = _image_hash(reference_image)
-        style_desc, analyze_err = _analyze_reference_style(
-            api_key=api_key,
-            reference_image=reference_image,
-            mime=mime,
-            image_hash=img_hash,
-        )
-        if not style_desc:
-            policy_hint = ""
-            if last_error and "policy" in last_error.lower():
-                policy_hint = " OpenAI rechazó la referencia por política de contenido."
-            return {
-                "ok": False,
-                "error": f"No pude generar con referencia: {analyze_err or last_error}.{policy_hint}",
-                "code": "openai_error",
-            }
-        data, err = _request_dalle_fallback(
-            api_key=api_key,
-            prompt=build_reference_prompt(topic, mode),
-            style_description=style_desc,
-            quality=picked,
-        )
-        model_used = "dall-e-3+fallback"
-        used_fallback = True
-        if data is None:
-            return {
-                "ok": False,
-                "error": f"No pude generar la imagen: {err or last_error}",
-                "code": "openai_error",
-            }
-
-    b64, url = _extract_image_b64(data)
-    if not b64 and not url:
-        return {"ok": False, "error": "OpenAI no devolvió imagen usable", "code": "openai_error"}
-
-    public_url, store_err = _store_result(
-        user_id=user_id,
-        b64=b64,
-        url=url,
-        prompt=topic,
-        quality=picked,
-        model=model_used,
-        style_mode=mode,
-    )
-    if store_err:
-        return store_err
-
-    cost = HD_COST_USD if picked == "hd" else STD_COST_USD
     return {
-        "ok": True,
-        "success": True,
-        "image_url": public_url,
-        "url": public_url,
-        "prompt": topic,
-        "style_mode": mode,
-        "quality": picked,
-        "model": model_used,
-        "used_fallback": used_fallback,
-        "estimated_cost_usd": cost,
+        "ok": False,
+        "error": "Configura GOOGLE_API_KEY en Railway para imágenes con referencia.",
+        "code": "config_error",
     }

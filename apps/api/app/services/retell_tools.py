@@ -9,7 +9,6 @@ from app.services.openai_voice_tools import OPENAI_REALTIME_TOOLS
 
 EXECUTION_MESSAGES: dict[str, str] = {
     "search_web": "Consultando, señor",
-    "consultar_claude": "Ejecutando análisis profundo, señor",
     "generate_image": "Generando imagen, señor",
     "generate_image_with_reference": "Generando imagen, señor",
     "save_memory": "Un momento, señor",
@@ -37,7 +36,6 @@ EXECUTION_MESSAGES: dict[str, str] = {
 TIMEOUT_MS: dict[str, int] = {
     "generate_image": 60_000,
     "generate_image_with_reference": 60_000,
-    "consultar_claude": 30_000,
     "generar_pdf": 20_000,
     "search_web": 17_000,
     "publicar_facebook": 35_000,

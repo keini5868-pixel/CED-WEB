@@ -14,7 +14,6 @@ import httpx
 
 from app.config import get_settings
 from app.services import supabase_db
-from app.services.cognitive_intents import has_advanced_confirmation
 from app.services.cognitive_router import build_chat_system_extras, route_message
 from app.services.chat_intents import (
     is_generate_image_intent,
@@ -22,7 +21,6 @@ from app.services.chat_intents import (
     parse_generate_image_prompt,
     parse_pdf_request,
 )
-from app.services.claude_deep_analysis import consultar_sistema_avanzado
 from app.domain.ced_identity import (
     CED_CORE_IDENTITY,
     CED_CREATOR_IDENTITY,
@@ -955,7 +953,7 @@ def _run_chat_tool(
                 }
             )
         if name == "generate_image":
-            from app.services.openai_images import generate_image
+            from app.services.gemini_images import generate_image
 
             plan_id = None
             try:
@@ -1262,31 +1260,6 @@ def _extract_image_from_tool_result(result: str) -> dict[str, Any] | None:
             "prompt": data.get("prompt"),
             "quality": data.get("quality"),
         }
-    return None
-
-
-def _advanced_confirm_followup(history: list[dict[str, str]], user_reply: str) -> str | None:
-    """Si el usuario confirmó sistema avanzado, devuelve la pregunta original."""
-    if not has_advanced_confirmation(user_reply):
-        return None
-    last_model: str | None = None
-    for row in reversed(history):
-        if row.get("role") == "model":
-            last_model = (row.get("content") or "").strip()
-            break
-    if not last_model or not re.search(r"sistema avanzado|confirma", last_model, re.I):
-        return None
-    seen_model = False
-    for row in reversed(history):
-        role = row.get("role")
-        content = (row.get("content") or "").strip()
-        if not content:
-            continue
-        if role == "model" and content == last_model:
-            seen_model = True
-            continue
-        if seen_model and role == "user":
-            return content
     return None
 
 
@@ -1627,7 +1600,7 @@ def send_message(
         and is_generate_image_intent(text)
         and len(text.strip()) <= DIRECT_IMAGE_MAX_CHARS
     ):
-        from app.services.openai_images import generate_image
+        from app.services.gemini_images import generate_image
 
         plan_id = None
         try:
@@ -1695,27 +1668,9 @@ def send_message(
             pdf=_pdf_attachment_from_artifact(artifact),
         )
 
-    followup_prompt = _advanced_confirm_followup(history, text)
-    if followup_prompt:
-        deep = consultar_sistema_avanzado(followup_prompt)
-        if deep.get("ok"):
-            reply = str(deep.get("result") or "").strip() or "Listo."
-        else:
-            reply = str(deep.get("error") or "El sistema avanzado no respondió.")
-        return _finish(
-            reply,
-            route_meta={"intent": "advanced_analysis", "source": "confirm_followup"},
-        )
-
     route = route_message(user_id, text, channel="text")
 
     if route.intent == "memory_save" and route.speakable:
-        return _finish(route.speakable, route_meta=route.to_dict())
-
-    if route.needs_advanced_confirm and route.speakable:
-        return _finish(route.speakable, route_meta=route.to_dict())
-
-    if route.intent == "advanced_analysis" and route.speakable:
         return _finish(route.speakable, route_meta=route.to_dict())
 
     if route.intent == "web_search" and route.speakable:

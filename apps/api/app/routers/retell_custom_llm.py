@@ -1,4 +1,4 @@
-"""Retell Custom LLM WebSocket — OpenAI GPT-4.1 como cerebro conversacional de voz."""
+"""Retell Custom LLM WebSocket — Gemini 2.5 Flash como cerebro conversacional de voz."""
 
 from __future__ import annotations
 
@@ -9,42 +9,35 @@ import time
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.cognitive_intents import (
-    has_advanced_confirmation,
     is_camera_voice_command,
-    is_explicit_advanced_activation,
     is_meta_publish_intent,
     is_script_demo_request,
     is_web_research_intent,
 )
-from app.services.openai_voice_llm import OpenAIVoiceLlm
+from app.services.gemini_voice_llm import GeminiVoiceLlm
 from app.services.retell_call_registry import release_call_user, resolve_call_user
 from app.services.retell_custom_llm import (
-    advanced_analysis_hold_phrase,
-    fallback_advanced_topic,
     format_web_delivery,
     is_casual_conversation,
     is_small_talk,
     merged_user_query,
     remember_pending_script_topic,
-    resolve_advanced_analysis_request,
     resolve_camera_voice_request,
     resolve_meta_publish_request,
     resolve_social_comments_request,
     resolve_web_search_request,
     is_inaudible_or_noise,
     should_clear_pending_script,
-    should_execute_advanced_now,
     should_respond_to_transcript,
     is_unwanted_voice_reply,
     promised_voice_search_without_result,
-    transcript_has_meta_publish_context,
     _is_concept_question,
     web_search_error_phrase,
 )
 from app.services.voice_llm_common import (
+    FALLBACK_REPLY,
     is_duplicate_voice_delivery,
     normalize_voice_delivery_text,
-    transcript_to_openai_messages,
 )
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_spoken import split_voice_delivery_chunks, voice_delivery_chunks
@@ -54,7 +47,6 @@ from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
     clear_pending_advanced_topic,
-    get_pending_advanced_topic,
     is_script_delivered,
     mark_greeting_sent,
     mark_script_delivered,
@@ -70,7 +62,6 @@ router = APIRouter(tags=["retell-custom-llm"])
 
 POST_GREETING_COOLDOWN_S = 2.0
 GREETING_FALLBACK_S = 2.0
-FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
 
 
 def _turn_slot(user_key: str) -> str:
@@ -114,7 +105,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     session_started = time.time()
     logger.info("[RETELL-GEMINI] WebSocket conectado call_id=%s", call_id)
 
-    llm = OpenAIVoiceLlm()
+    llm = GeminiVoiceLlm()
     response_lock = asyncio.Lock()
     active_response_id = 0
     debounce_task: asyncio.Task[None] | None = None
@@ -396,9 +387,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             from app.services import voice_client_session as vcs
 
             vcs.sync_voice_call(uid, call_id)
-            pending_for_llm = get_pending_advanced_topic(call_id)
-            if pending_for_llm:
-                llm._pending_advanced = pending_for_llm
 
         if interaction == "ping_pong":
             await websocket.send_json(
@@ -461,7 +449,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
         if should_clear_pending_script(user_text):
             clear_pending_advanced_topic(call_id)
-            llm._pending_advanced = None
         remember_pending_script_topic(
             call_id,
             transcript,
@@ -470,20 +457,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             script_already_delivered=is_script_delivered(call_id),
         )
         user_key = _normalize_user_key(user_text)
-        pending_topic = get_pending_advanced_topic(call_id)
-        advanced_preview = resolve_advanced_analysis_request(
-            user_text,
-            transcript,
-            pending_topic=pending_topic,
-        )
         if user_key and user_key == last_answered_user_key:
-            if not (
-                advanced_preview
-                or has_advanced_confirmation(user_text)
-                or is_explicit_advanced_activation(user_text)
-            ):
-                logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
-                return
+            logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
+            return
         if user_key and last_answered_user_key and user_key != last_answered_user_key:
             if user_key.startswith(last_answered_user_key) and len(user_key) - len(last_answered_user_key) < 24:
                 logger.info("[RETELL-GEMINI] skip partial extension call=%s", call_id)
@@ -595,23 +571,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 await anti_silence_if_unanswered(reason="turn_superseded")
                 return
 
-            pending_now = get_pending_advanced_topic(call_id)
-            advanced_req = resolve_advanced_analysis_request(
-                user_text,
-                transcript,
-                pending_topic=pending_now,
-            )
-            if uid:
-                from app.services import voice_client_session as vcs
-
-                if vcs.is_awaiting_instagram_caption(uid) and not is_script_demo_request(user_text):
-                    advanced_req = None
-            if not advanced_req and (
-                has_advanced_confirmation(user_text)
-                or is_explicit_advanced_activation(user_text)
-            ) and not is_script_delivered(call_id):
-                advanced_req = fallback_advanced_topic(transcript, pending_topic=pending_now)
-
             web_req = resolve_web_search_request(user_text, transcript)
             if web_req and uid:
                 query_norm = " ".join(str(web_req.get("query") or "").lower().split())
@@ -635,7 +594,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     await anti_silence_if_unanswered(reason="web_duplicate_skip")
                     return
                 clear_pending_advanced_topic(call_id)
-                llm._pending_advanced = None
                 kind = web_req["kind"]
                 web_delivered = False
                 async with response_lock:
@@ -777,7 +735,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             camera_tool = resolve_camera_voice_request(user_text)
             if camera_tool and uid:
                 clear_pending_advanced_topic(call_id)
-                llm._pending_advanced = None
                 is_vision = camera_tool in ("analyze_camera_frame", "buscar_lo_visible")
                 async with response_lock:
                     if _turn_stale():
@@ -856,7 +813,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         )
                     return
                 clear_pending_advanced_topic(call_id)
-                llm._pending_advanced = None
                 tool_name = (
                     "publicar_instagram"
                     if meta_req["platform"] == "instagram"
@@ -906,7 +862,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             comments_req = resolve_social_comments_request(user_text)
             if comments_req and uid:
                 clear_pending_advanced_topic(call_id)
-                llm._pending_advanced = None
                 async with response_lock:
                     if _turn_stale():
                         return
@@ -936,66 +891,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     "[RETELL-OPENAI] social_comments call=%s platform=%s",
                     call_id,
                     comments_req["platform"],
-                )
-                return
-
-            if (
-                is_explicit_advanced_activation(user_text)
-                and uid
-                and not is_camera_voice_command(user_text)
-            ):
-                topic = fallback_advanced_topic(transcript, pending_topic=pending_now) or user_text
-                hold = advanced_analysis_hold_phrase()
-                async with response_lock:
-                    if _turn_stale():
-                        return
-                    await send_voice_partial(
-                        response_id=scheduled_rid,
-                        content=hold,
-                        content_complete=False,
-                        generation=my_generation,
-                    )
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(
-                                "consultar_claude",
-                                uid,
-                                {"prompt": topic},
-                            ),
-                            timeout=45.0,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning("[RETELL-OPENAI] advanced timeout call=%s", call_id)
-                        tool_result = {
-                            "spoken": (
-                                "El sistema avanzado tardó demasiado, señor. "
-                                "¿Desea que lo intente de nuevo?"
-                            ),
-                        }
-                    spoken = str(tool_result.get("spoken") or "").strip()
-                    if not spoken:
-                        chunks = [("Disculpe, señor. No pude completar el análisis avanzado.", True)]
-                    else:
-                        chunks = voice_delivery_chunks(spoken)
-                    for chunk, complete in chunks:
-                        if my_generation != generation_seq:
-                            return
-                        await send_voice_partial(
-                            response_id=scheduled_rid,
-                            content=chunk,
-                            content_complete=complete,
-                            generation=my_generation,
-                        )
-                    active_response_id = max(active_response_id, scheduled_rid)
-                    answered_response_ids.add(scheduled_rid)
-                    if scheduled_key:
-                        last_answered_user_key = scheduled_key
-                    clear_pending_advanced_topic(call_id)
-                    llm._pending_advanced = None
-                logger.info(
-                    "[RETELL-OPENAI] advanced explicit call=%s topic=%s",
-                    call_id,
-                    topic[:80],
                 )
                 return
 
@@ -1077,26 +972,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                     user_text[:60],
                                     content[:80],
                                 )
-                                if (
-                                    has_advanced_confirmation(user_text)
-                                    or is_explicit_advanced_activation(user_text)
-                                ) and uid:
-                                    topic = fallback_advanced_topic(
-                                        transcript,
-                                        pending_topic=get_pending_advanced_topic(call_id),
-                                    )
-                                    tool_result = await asyncio.wait_for(
-                                        execute_voice_tool(
-                                            "consultar_claude",
-                                            uid,
-                                            {"prompt": topic},
-                                        ),
-                                        timeout=45.0,
-                                    )
-                                    content = str(tool_result.get("spoken") or "").strip() or FALLBACK_REPLY
-                                elif _is_concept_question(user_text):
+                                if _is_concept_question(user_text):
                                     regen = await llm.generate_natural_reply(
-                                        messages=transcript_to_openai_messages(transcript),
+                                        transcript=transcript,
                                         user_text=user_text,
                                         overlay=(
                                             "Responde de forma natural y breve usando tu conocimiento. "

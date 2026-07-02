@@ -27,22 +27,6 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
-        "name": "consultar_claude",
-        "description": (
-            "Sistema avanzado (Claude) — análisis profundo y guiones largos. "
-            "SOLO tras confirmación explícita ('sí', 'adelante'). "
-            "Patrón: di 'Un momento, Señor.' → invoca AHORA → SILENCIO (el cliente [CED_BRIEF] lee el resultado). "
-            "PROHIBIDO narrar el resultado en voz propia ni saludar de nuevo. "
-            "PROHIBIDO para clima, saludos o publicaciones simples."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {"prompt": {"type": "string"}},
-            "required": ["prompt"],
-        },
-    },
-    {
-        "type": "function",
         "name": "generate_image",
         "description": (
             "OBLIGATORIO para crear imágenes con IA desde cero. "

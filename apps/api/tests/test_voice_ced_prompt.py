@@ -5,7 +5,7 @@ from app.services.voice_llm_common import needs_empathy_reformulation as _needs_
 from app.services.retell_custom_llm import is_casual_conversation, is_generic_agent_line
 
 
-def test_voice_prompt_includes_ced_v43_openai_strict_execution():
+def test_voice_prompt_includes_ced_v43_gemini_strict_execution():
     prompt = build_ced_voice_system_prompt()
     assert "CED" in prompt
     assert "Seth" not in prompt
@@ -13,13 +13,13 @@ def test_voice_prompt_includes_ced_v43_openai_strict_execution():
     assert "Castillo Evolución Digital" in prompt
     assert "FUNCTION CALLING OBLIGATORIO" in prompt
     assert "NUNCA inventes comentarios" in prompt
-    assert "SOLO BAJO COMANDO EXPLÍCITO" in prompt
+    assert "Gemini 2.5 Flash" in prompt
     assert "NUNCA cortes a mitad de frase" in prompt
     diag = voice_prompt_diagnostics()
     assert diag["includes_ced"] is True
     assert diag["includes_strict_tool_execution"] is True
     assert diag["prompt_version"] == "v43"
-    assert diag["llm_provider"] == "openai_gpt41_mini"
+    assert diag["llm_provider"] == "gemini_2.5_flash"
     assert diag["prompt_chars"] > 4000
 
 

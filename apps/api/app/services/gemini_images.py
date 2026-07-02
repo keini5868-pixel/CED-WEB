@@ -1,4 +1,4 @@
-"""Generación de imágenes vía Gemini (GOOGLE_API_KEY) — alternativa sin OpenAI."""
+"""Generación de imágenes vía Gemini (GOOGLE_API_KEY) — único path de imágenes CED."""
 
 from __future__ import annotations
 
@@ -7,6 +7,10 @@ import logging
 from typing import Any
 
 from app.config import get_settings
+from app.deps.auth import is_super_admin
+from app.deps.plan_access import effective_plan_limits
+from app.domain.plans import PlanId, get_plan_limits
+from app.services import supabase_db
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +20,25 @@ DEFAULT_GEMINI_IMAGE_MODELS = (
 )
 GEMINI_STD_COST_USD = 0.01
 GEMINI_HD_COST_USD = 0.02
+
+
+def _pick_quality(prompt: str, requested: str | None) -> str:
+    if requested in ("standard", "hd", "low", "medium", "high"):
+        if requested in ("hd", "high"):
+            return "hd"
+        if requested in ("low", "medium", "standard"):
+            return "standard"
+    p = (prompt or "").lower()
+    if any(k in p for k in ("logo", "4k", "ultra", "profesional", "detalle", "hd")):
+        return "hd"
+    return "standard"
+
+
+def _day_image_counts(user_id: str) -> tuple[int, int]:
+    try:
+        return supabase_db.count_generated_images_today(user_id)
+    except Exception:  # noqa: BLE001
+        return 0, 0
 
 
 def _image_models() -> tuple[str, ...]:
@@ -193,3 +216,94 @@ def generate_image_with_reference_gemini(
             logger.warning("[GEMINI:REF-IMG] model=%s error: %s", model, last_error)
 
     return {"ok": False, "error": last_error, "code": "gemini_error"}
+
+
+def generate_image(
+    *,
+    user_id: str,
+    plan_id: str | None,
+    prompt: str,
+    quality: str | None = "auto",
+) -> dict[str, Any]:
+    """Genera imagen con Gemini — único provider de imágenes CED."""
+    settings = get_settings()
+    google_key = settings.google_api_key.strip()
+    topic = (prompt or "").strip()
+    if not topic:
+        return {"ok": False, "error": "Prompt vacío"}
+    if not google_key:
+        return {
+            "ok": False,
+            "error": "Configura GOOGLE_API_KEY en Railway para generar imágenes.",
+            "code": "config_error",
+        }
+
+    profile = supabase_db.get_profile(user_id) or {}
+    if is_super_admin(profile.get("email"), profile.get("role")):
+        limits = get_plan_limits(PlanId.FOUNDING.value)
+    else:
+        limits, _reason, _trial = effective_plan_limits(user_id)
+
+    std_used, hd_used = _day_image_counts(user_id)
+    picked = _pick_quality(topic, None if quality == "auto" else quality)
+
+    if picked == "hd":
+        cap = limits.ai_images_hd_per_day
+        used = hd_used
+    else:
+        cap = limits.ai_images_standard_per_day
+        used = std_used
+
+    if cap <= 0:
+        return {
+            "ok": False,
+            "error": "Tu plan actual no incluye generación de imágenes. Mejora tu plan en Precios.",
+            "code": "plan_limit",
+        }
+    if used >= cap:
+        return {
+            "ok": False,
+            "error": f"Límite diario de imágenes {picked} alcanzado ({cap}/día). Mañana se reinicia tu cupo.",
+            "code": "quota_exhausted",
+        }
+
+    gemini_result = generate_image_gemini(prompt=topic, quality=picked)
+    if not gemini_result.get("ok"):
+        err_detail = str(gemini_result.get("error") or "Gemini falló")
+        logger.error("[GEMINI:IMAGE] failed user=%s error=%s", user_id[:8], err_detail[:200])
+        return {
+            "ok": False,
+            "error": err_detail,
+            "code": str(gemini_result.get("code") or "gemini_error"),
+        }
+
+    raw = gemini_result.get("raw_bytes")
+    mime = str(gemini_result.get("mime_type") or "image/png")
+    model = str(gemini_result.get("model") or "gemini-2.5-flash-image")
+    if not isinstance(raw, (bytes, bytearray)) or not raw:
+        return {"ok": False, "error": "Gemini no devolvió imagen usable", "code": "gemini_error"}
+
+    from app.services.publish_media import store_publish_image_for_client
+
+    public_url = store_publish_image_for_client(user_id, bytes(raw), mime)
+    cost = float(gemini_result.get("estimated_cost_usd") or GEMINI_STD_COST_USD)
+    try:
+        supabase_db.insert_generated_image(
+            user_id=user_id,
+            prompt=topic,
+            quality=picked,
+            model=model,
+            public_url=public_url,
+            estimated_cost_usd=cost,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("[GEMINI:IMAGE] log insert failed")
+
+    return {
+        "ok": True,
+        "url": public_url,
+        "quality": picked,
+        "model": model,
+        "provider": "gemini",
+        "estimated_cost_usd": cost,
+    }

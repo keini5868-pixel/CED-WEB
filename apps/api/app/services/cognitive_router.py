@@ -12,7 +12,6 @@ from app.services.cognitive_intents import (
     analyze_intent,
 )
 from app.services.cognitive_memory import memory_context_for_voice, save_memory, search_memory
-from app.services.claude_deep_analysis import consultar_sistema_avanzado
 from app.services.gemini_grounded import execute_search_web_sync
 from app.services.internal_knowledge import (
     format_hits_for_prompt,
@@ -175,43 +174,7 @@ def route_message(
             meta={"fallback": True, "status": brief.get("status")},
         )
 
-    if analysis.primary == CognitiveIntent.ADVANCED_ANALYSIS:
-        if analysis.needs_advanced_confirm:
-            return CognitiveRouteResult(
-                intent=CognitiveIntent.ADVANCED_ANALYSIS.value,
-                channel=channel,
-                confidence=0.5,
-                needs_advanced_confirm=True,
-                advanced_prompt=raw,
-                speakable="¿Quieres que consulte al sistema avanzado? Confirma con un sí.",
-            )
-        if execute_side_effects:
-            deep = consultar_sistema_avanzado(raw)
-            if deep.get("ok"):
-                result = str(deep.get("result") or "")
-                return CognitiveRouteResult(
-                    intent=CognitiveIntent.ADVANCED_ANALYSIS.value,
-                    channel=channel,
-                    confidence=0.92,
-                    speakable=result,
-                    context_for_llm=result,
-                    source="advanced_system",
-                )
-            return CognitiveRouteResult(
-                intent=CognitiveIntent.ADVANCED_ANALYSIS.value,
-                channel=channel,
-                confidence=0.2,
-                speakable=str(deep.get("error") or "El sistema avanzado no respondió."),
-            )
-        return CognitiveRouteResult(
-            intent=CognitiveIntent.ADVANCED_ANALYSIS.value,
-            channel=channel,
-            confidence=0.8,
-            advanced_prompt=raw,
-            needs_advanced_confirm=False,
-        )
-
-    # Respuesta directa con contexto parcial interno + memoria
+    # Guiones, estrategia y análisis los responde Gemini directamente (sin sistema avanzado).
     partial = format_hits_for_prompt(hits[:1]) if hits else ""
     ctx_parts = [p for p in (mem_ctx, partial) if p]
     ctx = "\n\n".join(ctx_parts) if ctx_parts else None
@@ -347,8 +310,4 @@ def build_chat_system_extras(user_id: str, routed: CognitiveRouteResult | None =
                 f"{ctx}"
             )
         parts.append(ctx)
-    if routed and routed.needs_advanced_confirm:
-        parts.append(
-            "El usuario pidió análisis profundo. Pregunta si desea activar el sistema avanzado antes de profundizar."
-        )
     return "\n\n".join(parts)

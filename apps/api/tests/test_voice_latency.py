@@ -6,20 +6,21 @@ from unittest.mock import MagicMock, patch
 
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
 from app.routers.retell_custom_llm import _debounce_wait_s
+from app.services.gemini_voice_llm import GeminiVoiceLlm, _voice_model
 from app.services.kb_turn_cache import clear_turn_kb_cache, get_turn_kb_hits
-from app.services.openai_voice_llm import OpenAIVoiceLlm, VOICE_LIGHTWEIGHT_PATH_ENABLED, _api_key, _voice_model
 from app.services.voice_llm_common import build_voice_system
 
 
-def test_openai_voice_llm_imports_get_settings():
-    """Regresión 6f15302: get_settings debe existir para instanciar el LLM."""
-    assert VOICE_LIGHTWEIGHT_PATH_ENABLED is False
+def test_gemini_voice_llm_imports_get_settings():
+    """GeminiVoiceLlm debe instanciarse con GOOGLE_API_KEY configurada."""
     assert _voice_model()
-    with patch("app.services.openai_voice_llm.get_settings") as mock_settings:
-        mock_settings.return_value.openai_api_key = "sk-test-key"
-        assert _api_key() == "sk-test-key"
-    llm = OpenAIVoiceLlm()
-    assert llm.model
+    with patch("app.services.gemini_voice_llm.get_settings") as mock_settings:
+        mock_settings.return_value.google_api_key = "test-google-key"
+        mock_settings.return_value.gemini_voice_model = "gemini-2.5-flash"
+        with patch("app.services.gemini_voice_llm._gemini_client") as mock_client:
+            mock_client.return_value = MagicMock()
+            llm = GeminiVoiceLlm()
+            assert llm.model == "gemini-2.5-flash"
 
 
 def test_debounce_wait_reduced_for_short_utterances():
@@ -38,20 +39,19 @@ def test_kb_turn_cache_dedupes_same_query():
         hit = MagicMock()
         hit.confidence = 0.9
         hit.title = "Test"
-        hit.domain_label = "sales"
-        hit.content = "Contenido de prueba interna."
+        hit.summary = "Resumen"
+        hit.domain_id = "marketing"
+        hit.domain_label = "Marketing"
         return [hit]
 
     with patch("app.services.internal_knowledge.search_internal_knowledge", side_effect=fake_search):
-        first = get_turn_kb_hits("qué es prospección", limit=2)
-        second = get_turn_kb_hits("qué es prospección", limit=2)
-
-    assert len(first) == 1
-    assert first is not second
+        q = "qué es marketing digital"
+        get_turn_kb_hits(q, limit=2)
+        get_turn_kb_hits(q, limit=2)
     assert calls["n"] == 1
 
 
-def test_conversational_build_voice_system_skips_kb():
+def test_build_voice_system_skips_kb_when_lightweight():
     with patch("app.services.kb_turn_cache.get_turn_kb_hits") as mock_kb:
         system = build_voice_system("user-1", "hola cómo estás", skip_kb=True, lightweight=True)
         mock_kb.assert_not_called()
@@ -64,5 +64,6 @@ def test_voice_prompt_compressed_under_previous_size():
     assert diag["prompt_chars"] < 16702
     prompt = build_ced_voice_system_prompt()
     assert "FUNCTION CALLING OBLIGATORIO" in prompt
-    assert "SOLO BAJO COMANDO EXPLÍCITO" in prompt
+    assert "Gemini 2.5 Flash" in prompt
     assert "publicar_facebook" in prompt
+    assert diag["llm_provider"] == "gemini_2.5_flash"

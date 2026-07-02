@@ -6,8 +6,7 @@ import asyncio
 import logging
 import uuid
 from typing import Any
-from app.services.claude_deep_analysis import consultar_sistema_avanzado
-from app.services.cognitive_memory import save_memory, search_memory
+from app.services.gemini_images import generate_image
 from app.services.conversation_memory import (
     format_recall_for_voice,
     recall_previous_conversations,
@@ -29,7 +28,7 @@ from app.services.navigation_session import (
     push_client_action,
     set_route,
 )
-from app.services.openai_images import generate_image
+from app.services.cognitive_memory import save_memory, search_memory
 from app.services.pdf_report import assistant_fallback_texts_from_messages
 from app.services.prospection import get_prospection_report, set_prospection_enabled
 from app.services.social_comments import fetch_social_comments
@@ -311,19 +310,6 @@ async def execute_voice_tool(
                 "spoken": "Sin resultados actuales disponibles.",
             }
 
-        if name == "consultar_claude":
-            prompt = str(params.get("prompt") or "").strip()
-            result = await asyncio.to_thread(consultar_sistema_avanzado, prompt)
-            if result.get("ok"):
-                text = str(result.get("result") or "").strip()
-                return {
-                    "ok": True,
-                    "spoken": text if text else "Análisis completado, señor.",
-                }
-            return _spoken_err(
-                f"No fue posible el análisis, señor. {result.get('error', '')}".strip(),
-                error=str(result.get("error") or "analysis_failed"),
-            )
 
         if name == "generate_image":
             prompt = str(params.get("prompt") or "").strip()

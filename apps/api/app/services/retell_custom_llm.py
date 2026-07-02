@@ -9,11 +9,8 @@ from collections.abc import Callable
 logger = logging.getLogger(__name__)
 
 from app.services.cognitive_intents import (
-    has_advanced_confirmation,
     is_advanced_request,
     is_camera_voice_command,
-    is_explicit_advanced,
-    is_explicit_advanced_activation,
     is_internal_knowledge_query,
     is_meta_publish_intent,
     is_script_demo_request,
@@ -389,7 +386,7 @@ def resolve_instagram_caption_request(
     last = (user_text or "").strip()
     if not last or is_inaudible_or_noise(last):
         return None
-    if has_advanced_confirmation(last) and len(_normalize(last).split()) <= 2:
+    if _is_pure_ack(last) and len(_normalize(last).split()) <= 2:
         return None
 
     from app.services import voice_client_session as vcs
@@ -423,140 +420,13 @@ def resolve_instagram_caption_request(
     return {"platform": "instagram", "caption": caption}
 
 
-def fallback_advanced_topic(
-    transcript: list[Utterance],
-    *,
-    pending_topic: str | None = None,
-) -> str:
-    if pending_topic:
-        return pending_topic
-    for line in reversed(_user_lines(transcript)):
-        cleaned = line.strip()
-        if not cleaned or _is_pure_ack(cleaned):
-            continue
-        if is_script_demo_request(cleaned) or is_advanced_request(cleaned):
-            return cleaned
-        norm = _normalize(cleaned)
-        if len(norm.split()) >= 5:
-            return cleaned
-    return DEFAULT_SCRIPT_TOPIC
-
-
-def advanced_analysis_hold_phrase() -> str:
-    return "Activo el sistema avanzado, señor. Un momento."
-
-
-_AGENT_ADVANCED_CONFIRM = re.compile(
-    r"sistema avanzado|an[aá]lisis avanzado|an[aá]lisis profundo|"
-    r"modo avanzado|confirma|desea que|perfeccion|generar el guion|generar el gui[oó]n",
-    re.I,
-)
-
-
-def agent_asked_advanced_confirm(transcript: list[Utterance]) -> bool:
-    for utterance in transcript:
-        if utterance.role == "user":
-            continue
-        content = (utterance.content or "").strip()
-        if content and _AGENT_ADVANCED_CONFIRM.search(content):
-            return True
-    return False
-
-
-def _substantive_user_lines(transcript: list[Utterance]) -> list[str]:
-    lines: list[str] = []
-    for line in _user_lines(transcript):
-        cleaned = line.strip()
-        if not cleaned or _is_pure_ack(cleaned):
-            continue
-        if has_advanced_confirmation(cleaned) and not (
-            is_script_demo_request(cleaned)
-            or is_explicit_advanced_activation(cleaned)
-            or len(_normalize(cleaned).split()) >= 5
-        ):
-            continue
-        lines.append(cleaned)
-    return lines
-
-
-def should_execute_advanced_now(user_text: str, topic: str) -> bool:
-    """Ejecuta Claude SOLO tras comando explícito de sistema avanzado (v38)."""
-    if is_camera_voice_command(user_text):
-        return False
-    if is_meta_publish_intent(user_text) or is_meta_publish_intent(topic):
-        return False
-    return is_explicit_advanced_activation(user_text)
-
-
-def resolve_advanced_analysis_request(
-    user_text: str,
-    transcript: list[Utterance],
-    *,
-    pending_topic: str | None = None,
-) -> str | None:
-    """Detecta confirmación de sistema avanzado o petición directa de guion/análisis."""
-    last = (user_text or "").strip()
-    if not last:
-        return pending_topic
-
-    if is_camera_voice_command(last):
-        return None
-
-    if is_meta_publish_intent(last):
-        return None
-
-    if is_explicit_advanced_activation(last):
-        return fallback_advanced_topic(transcript, pending_topic=pending_topic)
-
-    if is_explicit_advanced(last):
-        return last
-
-    if has_advanced_confirmation(last) or is_explicit_advanced_activation(last) or _is_pure_ack(last):
-        if transcript_has_meta_publish_context(transcript):
-            return None
-        if pending_topic:
-            return pending_topic
-
-        seen_agent_confirm = False
-        for utterance in reversed(transcript):
-            content = (utterance.content or "").strip()
-            if not content:
-                continue
-            role = utterance.role
-            if role != "user":
-                if seen_agent_confirm:
-                    continue
-                if _AGENT_ADVANCED_CONFIRM.search(content):
-                    seen_agent_confirm = True
-            elif seen_agent_confirm:
-                if _is_pure_ack(content):
-                    continue
-                return content
-
-        substantive = _substantive_user_lines(transcript)
-        if substantive:
-            return substantive[-1]
-
-        if has_advanced_confirmation(last) or is_explicit_advanced_activation(last):
-            return fallback_advanced_topic(transcript, pending_topic=pending_topic)
-
-    return None
-
-
 def is_unwanted_voice_reply(text: str, *, user_text: str = "") -> bool:
     """Detecta relleno tipo chatbot o re-preguntas de confirmación."""
     if is_generic_agent_line(text):
         return True
     norm = _normalize(text)
-    if re.search(r"activo an[aá]lisis avanzado|sistema avanzado.*\?", norm):
-        return True
     if re.search(r"sigo atento|continuamos|en qu[eé] m[aá]s puedo", norm):
         return True
-    if user_text and (
-        has_advanced_confirmation(user_text) or is_explicit_advanced_activation(user_text)
-    ):
-        if "en qué puedo ayudarle" in norm or "en que puedo ayudarle" in norm:
-            return True
     return False
 
 
@@ -626,8 +496,6 @@ def should_clear_pending_script(user_text: str) -> bool:
     if _is_concept_question(last):
         return True
     if _current_turn_wants_script(last):
-        return False
-    if has_advanced_confirmation(last) or is_explicit_advanced_activation(last):
         return False
     return True
 
@@ -751,16 +619,10 @@ def should_respond_to_transcript(
     if interaction_type == "reminder_required":
         return True
 
-    if has_advanced_confirmation(last) or is_explicit_advanced_activation(last):
-        return True
-
     if resolve_camera_voice_request(last) is not None:
         return True
 
     if resolve_web_search_request(last, transcript) is not None:
-        return True
-
-    if resolve_advanced_analysis_request(last, transcript) is not None:
         return True
 
     if _is_concept_question(last):
@@ -838,15 +700,7 @@ def is_casual_conversation(text: str) -> bool:
 def is_small_talk(text: str, transcript: list[Utterance] | None = None) -> bool:
     if _is_task_or_info_query(text):
         return False
-    if is_explicit_advanced_activation(text):
-        return False
-    if transcript and resolve_advanced_analysis_request(text, transcript) is not None:
-        return False
-    if transcript and (
-        has_advanced_confirmation(text)
-        or _is_pure_ack(text)
-        or is_explicit_advanced_activation(text)
-    ):
+    if transcript and _is_pure_ack(text):
         return False
     norm = _normalize(text)
     if norm in _SMALL_TALK or norm in _ACK_ONLY:
@@ -873,8 +727,6 @@ def is_generic_agent_line(text: str) -> bool:
     if "en qué puedo ayudarle" in norm or "en que puedo ayudarle" in norm:
         return True
     if "sigo atento" in norm:
-        return True
-    if re.search(r"activo an[aá]lisis avanzado", norm):
         return True
     if norm in {"muy bien, señor", "muy bien señor"}:
         return True

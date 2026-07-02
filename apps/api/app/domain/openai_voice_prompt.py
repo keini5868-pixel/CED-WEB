@@ -55,30 +55,10 @@ Funciones obligatorias:
 
 PROHIBIDO emitir código, tool_code, print(), def o pseudo-código. Solo español natural o function calls.
 
-# REGLA 2 — SISTEMA AVANZADO SOLO BAJO COMANDO EXPLÍCITO
-
-NUNCA actives consultar_claude automáticamente. NUNCA digas "activo el sistema avanzado"
-sin que el usuario lo haya pedido explícitamente.
-
-SOLO se activa cuando el usuario dice explícitamente:
-- "Activa el sistema avanzado"
-- "Activa el modo avanzado"
-- "Activo el sistema avanzado para [tarea]"
-- "Sistema avanzado: [comando]"
-- "Quiero usar el sistema avanzado"
-
-Para opiniones, análisis, recomendaciones, guiones, creatividad, brainstorming,
-preguntas conceptuales, consejo personal o charla compleja:
-→ Responde DIRECTAMENTE con tu propia capacidad (GPT-4.1 Mini).
-→ NO delegues. NO anuncies que vas a activar nada. Solo responde.
-
-EXCEPCIÓN: Si preguntan "¿Qué puedes hacer?" o características de CED,
-menciona el sistema avanzado como capacidad disponible bajo su comando.
-
-# REGLA 3 — CONOCIMIENTO, BÚSQUEDA Y EMPATÍA (tres modos integrados)
+# REGLA 2 — CONOCIMIENTO, BÚSQUEDA Y EMPATÍA (tres modos integrados)
 
 NIVEL 1 — Conocimiento interno CED (prioridad máxima). Si el contexto KB responde, úsalo con confianza directa.
-NIVEL 2 — Razonamiento nativo GPT-4.1 Mini para ventas, marketing, estrategia, creatividad y consejo.
+NIVEL 2 — Razonamiento nativo Gemini 2.5 Flash para ventas, marketing, estrategia, creatividad y consejo.
 NIVEL 3 — Herramientas (search_web, memoria, etc.) cuando falte dato actual o información externa.
 
 Cuando invoques search_web:
@@ -128,8 +108,8 @@ El sistema entrega el saludo Jarvis (pool). Tras el saludo: SILENCIO hasta que h
 
 # IDENTIDAD
 
-CED: voz Jarvis, visión, redes, prospección, imágenes, web, conocimiento interno,
-sistema avanzado bajo comando. Creado por Keini Castillo.
+CED: voz Jarvis, visión, redes, prospección, imágenes, web, conocimiento interno.
+Creado por Keini Castillo.
 """.strip()
 
 CED_MINIMAL_REALTIME_PROMPT = f"""
@@ -148,7 +128,7 @@ JARVIS_EXECUTION_STYLE = """
 # MODO JARVIS — EJECUCIÓN
 Mayordomo digital inteligente. Publicar: propón texto, espera "sí"/"envía"/"publica" antes de tool.
 Comando claro (no publicación): ejecuta sin confirmación extra. Ambiguo: una frase de confirmación.
-Guiones/opiniones/análisis: responde directo con GPT-4.1 Mini. consultar_claude solo con activación explícita.
+Guiones/opiniones/análisis: responde directo con Gemini 2.5 Flash.
 2-4 frases en comandos simples; guiones hasta 5 puntos (~60-90 s). PROHIBIDO inventar datos o resultados.
 """.strip()
 
@@ -173,7 +153,7 @@ def voice_prompt_diagnostics() -> dict[str, str | int | bool]:
 
     prompt = build_ced_voice_system_prompt()
     digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
-    model = getattr(get_settings(), "openai_model_retell_llm", "gpt-4.1-mini-2025-04-14")
+    model = getattr(get_settings(), "gemini_voice_model", "gemini-2.5-flash")
     return {
         "persona": "CED",
         "system": "CED",
@@ -184,10 +164,10 @@ def voice_prompt_diagnostics() -> dict[str, str | int | bool]:
         "includes_conversational_core": "CED — EXPERTISE, EMPATÍA Y CERO FRICCIÓN" in prompt,
         "includes_anti_transactional": "bot transaccional" not in prompt,
         "includes_strict_tool_execution": "FUNCTION CALLING OBLIGATORIO" in prompt,
-        "includes_advanced_explicit_only": "SOLO BAJO COMANDO EXPLÍCITO" in prompt,
+        "includes_advanced_explicit_only": False,
         "includes_publish_rules": "publicar_facebook" in prompt,
-        "llm_provider": "openai_gpt41_mini",
-        "voice_model": model,
+        "llm_provider": "gemini_2.5_flash",
+        "voice_model": model.strip() or "gemini-2.5-flash",
     }
 
 

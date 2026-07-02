@@ -507,30 +507,6 @@ class OpenAIVoiceLlm:
             if not self.user_id:
                 spoken = "No identifiqué al usuario, señor."
                 content = spoken
-            elif name == "consultar_claude":
-                from app.services.cognitive_intents import is_explicit_advanced_activation
-
-                if not is_explicit_advanced_activation(self._current_user_text):
-                    logger.info(
-                        "[RETELL-OPENAI] blocked consultar_claude — no explicit activation user=%s",
-                        (self.user_id or "?")[:8],
-                    )
-                    spoken = (
-                        "Respondo directamente, señor. El sistema avanzado solo se activa "
-                        "cuando usted lo solicite explícitamente."
-                    )
-                    content = spoken
-                else:
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(name, self.user_id, args),
-                            timeout=TOOL_TIMEOUT_SEC,
-                        )
-                        spoken = str(tool_result.get("spoken") or "Completado, señor.")
-                    except asyncio.TimeoutError:
-                        logger.warning("[RETELL-OPENAI] tool timeout name=%s", name)
-                        spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
-                    content = spoken
             else:
                 timeout = SEARCH_WEB_TIMEOUT_SEC if name == "search_web" else TOOL_TIMEOUT_SEC
                 try:
@@ -712,11 +688,7 @@ class OpenAIVoiceLlm:
                     tool_names = [
                         str((tc.get("function") or {}).get("name") or "") for tc in tool_calls
                     ]
-                    only_claude = all(n == "consultar_claude" for n in tool_names)
                     only_pdf = all(n == "generar_pdf" for n in tool_names)
-                    if only_claude:
-                        logger.info("[RETELL-OPENAI] consultar_claude direct spoken")
-                        break
                     if only_pdf:
                         logger.info("[RETELL-OPENAI] generar_pdf direct spoken")
                         break

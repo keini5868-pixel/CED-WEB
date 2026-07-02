@@ -113,13 +113,6 @@ SCRIPT_DEMO_PATTERNS = [
     r"\bguion\b.*\b(veinte|veinticinco|25|segund)",
 ]
 
-EXPLICIT_ADVANCED_ACTIVATION_PATTERNS = [
-    r"\b(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado|modo avanzado)\b",
-    r"\bs[ií]\s*,?\s*(activa(r|me|do)?|activo)\s+(el\s+)?(an[aá]lisis avanzado|sistema avanzado|modo avanzado|guion|gui[oó]n)\b",
-    r"\b(activa(r|me|do)?|activo)\s+(el\s+)?guion\b",
-    r"\bprocede\b.*\b(an[aá]lisis avanzado|sistema avanzado|guion|gui[oó]n)\b",
-]
-
 CAMERA_VOICE_PATTERNS = [
     r"\b(activa(r|me|do)?|activo|enciende|prende|abre)\s+(la\s+)?c[aá]mara\b",
     r"\b(apaga(r|me|do)?|desactiva(r|me|do)?|cierra|deja de mirar)\s+(la\s+)?c[aá]mara\b",
@@ -162,16 +155,6 @@ META_PATTERNS = [
     r"\bpostea(r|me)?\b",
     r"\bsube(r)?\b.*\b(instagram|historia|reel)\b",
 ]
-
-ADVANCED_CONFIRM_PATTERNS = [
-    r"\b(s[ií]|ok|vale|dale|adelante)\b",
-    r"\bconfirma(do)?\b",
-    r"\bhazlo\b",
-    r"\bde acuerdo\b",
-    r"\bconsulta(lo|me)?\b",
-    *EXPLICIT_ADVANCED_ACTIVATION_PATTERNS,
-]
-
 
 @dataclass
 class IntentAnalysis:
@@ -265,7 +248,7 @@ def is_volatile_query(text: str) -> bool:
 
 
 def is_meta_publish_intent(text: str) -> bool:
-    """Publicar en redes — no confundir con guion / sistema avanzado."""
+    """Publicar en redes — no confundir con guion."""
     t = normalize_text(text)
     if len(t) < 6:
         return False
@@ -282,35 +265,20 @@ def is_script_demo_request(text: str) -> bool:
     return _matches(normalize_text(text), SCRIPT_DEMO_PATTERNS)
 
 
-def is_explicit_advanced_activation(text: str) -> bool:
-    if is_camera_voice_command(text):
-        return False
-    return _matches(normalize_text(text), EXPLICIT_ADVANCED_ACTIVATION_PATTERNS)
-
-
 def is_camera_voice_command(text: str) -> bool:
     return _matches(normalize_text(text), CAMERA_VOICE_PATTERNS)
 
 
+def is_explicit_advanced_activation(text: str) -> bool:
+    return False
+
+
 def has_advanced_confirmation(text: str) -> bool:
-    if is_camera_voice_command(text):
-        return False
-    if is_meta_publish_intent(text):
-        return False
-    t = normalize_text(text).strip()
-    if is_explicit_advanced_activation(text):
-        return True
-    # "sí" dentro de una frase larga (caption, texto de post) NO es confirmación de guion.
-    if len(t.split()) >= 3 and re.search(r"\b(s[ií]|ok|vale)\b", t):
-        if not _matches(t, EXPLICIT_ADVANCED_ACTIVATION_PATTERNS):
-            return False
-    if re.fullmatch(
-        r"(s[ií]|ok|okay|vale|dale|adelante|confirma(do)?|hazlo|de acuerdo|"
-        r"consulta(lo|me)?|ahora s[ií]|s[ií],?\s*adelante|s[ií],?\s*activa)",
-        t,
-    ):
-        return True
-    return _matches(t, EXPLICIT_ADVANCED_ACTIVATION_PATTERNS)
+    return False
+
+
+def is_explicit_advanced(text: str) -> bool:
+    return False
 
 
 def parse_memory_save(text: str) -> str | None:
@@ -370,8 +338,6 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
         )
 
     volatile = is_volatile_query(raw)
-    advanced = is_advanced_request(raw)
-    confirmed = has_advanced_confirmation(raw) or (confirm_pending and has_advanced_confirmation(raw))
 
     if requires_live_web(raw):
         kind = "weather" if is_weather_intent(raw) else "news" if is_news_intent(raw) else "general"
@@ -381,19 +347,8 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
             needs_web=True,
             needs_advanced=False,
             needs_advanced_confirm=False,
-            has_advanced_confirm=confirmed,
+            has_advanced_confirm=False,
             is_volatile=True,
-        )
-
-    if advanced:
-        return IntentAnalysis(
-            primary=CognitiveIntent.ADVANCED_ANALYSIS,
-            web_kind="general",
-            needs_web=False,
-            needs_advanced=True,
-            needs_advanced_confirm=not confirmed and not is_explicit_advanced(raw),
-            has_advanced_confirm=confirmed,
-            is_volatile=False,
         )
 
     return IntentAnalysis(
@@ -402,15 +357,6 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
         needs_web=False,
         needs_advanced=False,
         needs_advanced_confirm=False,
-        has_advanced_confirm=confirmed,
+        has_advanced_confirm=False,
         is_volatile=volatile,
     )
-
-
-def is_explicit_advanced(text: str) -> bool:
-    if is_meta_publish_intent(text):
-        return False
-    t = normalize_text(text)
-    if _matches(t, EXPLICIT_ADVANCED_ACTIVATION_PATTERNS):
-        return True
-    return bool(re.search(r"\b(activa(r|me|do)?|activo)\s+(el\s+)?(modo avanzado|sistema avanzado)\b", t))
