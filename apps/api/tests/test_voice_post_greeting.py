@@ -19,6 +19,22 @@ def test_hola_after_greeting_should_respond():
     assert should_respond_to_transcript(tx, interaction_type="response_required") is True
 
 
+def test_como_estas_after_greeting_should_respond():
+    tx = [
+        Utterance(role="agent", content="CED en línea, señor."),
+        Utterance(role="user", content="¿Cómo estás?"),
+    ]
+    assert should_respond_to_transcript(tx, interaction_type="response_required") is True
+
+
+def test_partial_stt_fragment_should_not_respond():
+    tx = [
+        Utterance(role="agent", content="CED en línea, señor."),
+        Utterance(role="user", content="¿C"),
+    ]
+    assert should_respond_to_transcript(tx, interaction_type="response_required") is False
+
+
 def test_draft_response_yields_when_agent_is_last_in_transcript():
     """Retell a veces envía el saludo del agente como último turno del transcript."""
     with patch("app.services.gemini_voice_llm.get_settings") as mock_settings:

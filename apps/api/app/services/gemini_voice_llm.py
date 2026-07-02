@@ -684,13 +684,20 @@ class GeminiVoiceLlm:
     ) -> str | None:
         """Gemini + prompt CED, sin tools — charla personal y saludos."""
         contents = _transcript_to_contents(request.transcript)
+        user_text = merged_user_query(request.transcript)
         if not contents:
-            return None
+            if not user_text:
+                return None
+            contents = [types.Content(role="user", parts=[types.Part(text=user_text)])]
+        elif contents[-1].role != "user":
+            if not user_text:
+                return None
+            contents = [*contents, types.Content(role="user", parts=[types.Part(text=user_text)])]
+
         last = contents[-1]
         if last.role != "user":
             return None
 
-        user_text = merged_user_query(request.transcript)
         if not user_text and last.parts and last.parts[0].text:
             user_text = last.parts[0].text.strip()
         if not user_text:

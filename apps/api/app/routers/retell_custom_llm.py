@@ -357,6 +357,31 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         )
         return True
 
+    async def ack_empty_response(*, response_id: int, reason: str) -> None:
+        """Retell exige content_complete=True en cada response_required, aunque no hablemos."""
+        nonlocal answered_response_ids
+        if response_id in answered_response_ids:
+            return
+        async with response_lock:
+            if response_id in answered_response_ids:
+                return
+            await websocket.send_json(
+                {
+                    "response_type": "response",
+                    "response_id": response_id,
+                    "content": "",
+                    "content_complete": True,
+                    "end_call": False,
+                }
+            )
+            answered_response_ids.add(response_id)
+        logger.info(
+            "[RETELL-GEMINI] ack_empty rid=%s reason=%s call=%s",
+            response_id,
+            reason,
+            call_id,
+        )
+
     async def handle_message(request_json: dict) -> None:
         nonlocal active_response_id, debounce_task, last_scheduled_user_key, generation_seq
         nonlocal turn_draft_in_progress, turn_draft_user_key, latest_incoming_rid
@@ -445,12 +470,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         ]
 
         if not should_respond_to_transcript(transcript, interaction_type=interaction):
-            logger.info("[RETELL-GEMINI] skip interaction=%s call=%s", interaction, call_id)
+            logger.info(
+                "[RETELL-GEMINI] skip interaction=%s call=%s text=%s",
+                interaction,
+                call_id,
+                merged_user_query(transcript)[:60],
+            )
+            if interaction == "response_required":
+                await ack_empty_response(response_id=response_id, reason="should_respond_false")
             return
 
         user_text = merged_user_query(transcript)
         if is_inaudible_or_noise(user_text):
             logger.info("[RETELL-GEMINI] skip inaudible/noise call=%s text=%s", call_id, user_text[:40])
+            if interaction == "response_required":
+                await ack_empty_response(response_id=response_id, reason="inaudible")
             return
         if should_clear_pending_script(user_text):
             clear_pending_advanced_topic(call_id)
@@ -465,6 +499,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         pending_web = resolve_web_search_request(user_text, transcript)
         if user_key and user_key == last_answered_user_key and not pending_web:
             logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
+            await ack_empty_response(response_id=response_id, reason="duplicate_user_key")
             return
         if (
             pending_web
@@ -479,9 +514,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         elif user_key and last_answered_user_key and user_key != last_answered_user_key:
             if not pending_web and user_key.startswith(last_answered_user_key) and len(user_key) - len(last_answered_user_key) < 24:
                 logger.info("[RETELL-GEMINI] skip partial extension call=%s", call_id)
+                await ack_empty_response(response_id=response_id, reason="partial_extension")
                 return
             if not pending_web and last_answered_user_key.startswith(user_key) and len(last_answered_user_key) - len(user_key) < 24:
                 logger.info("[RETELL-GEMINI] skip shorter repeat call=%s", call_id)
+                await ack_empty_response(response_id=response_id, reason="shorter_repeat")
                 return
 
         latest_incoming_rid = max(latest_incoming_rid, response_id)
@@ -498,6 +535,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         last_scheduled_user_key = user_key
         wait_s = _debounce_wait_s(user_text)
         start_turn(call_id, response_id)
+
+        logger.info(
+            "[RETELL-TURN] schedule rid=%s call=%s text=%s key=%s",
+            response_id,
+            call_id,
+            user_text[:80],
+            user_key[:48],
+        )
 
         async def run_debounced() -> None:
             nonlocal active_response_id, last_answered_user_key, turn_draft_in_progress, turn_draft_user_key
@@ -527,19 +572,28 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         response_id=rid,
                         content=content,
                         user_key=scheduled_key,
-                        generation=generation_seq,
+                        generation=None,
                     )
 
             async def anti_silence_if_unanswered(*, reason: str) -> None:
                 """Nunca dejar response_required sin respuesta audible."""
+                if scheduled_rid in answered_response_ids:
+                    return
                 if not _can_deliver_turn():
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason=f"{reason}_stale_rid",
+                    )
                     return
                 fallback_content = WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
                 if is_duplicate_voice_delivery(
                     last_delivered_voice_content,
                     fallback_content,
                 ):
-                    answered_response_ids.add(scheduled_rid)
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason=f"{reason}_duplicate_fallback",
+                    )
                     return
                 logger.warning(
                     "[RETELL-VOICE] anti-silence rid=%s reason=%s call=%s text=%s",
@@ -597,6 +651,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 return
 
+            conversational_turn = is_small_talk(user_text, transcript)
+
             superseded, latest_rid = _is_superseded_turn_rid(
                 scheduled_rid,
                 scheduled_key,
@@ -647,7 +703,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             response_id=scheduled_rid,
                             content=web_search_hold_phrase(kind),
                             content_complete=False,
-                            generation=generation_seq,
+                            generation=None,
                         )
                         partial_sent = True
                     try:
@@ -724,10 +780,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 if await deliver_voice(WEB_SEARCH_VOICE_FALLBACK):
                     return
 
-            # Path conversacional ligero DESACTIVADO (regresión 6f15302 — silencio post-saludo).
-            # Todos los turnos usan draft_response con tools y system prompt completo.
-            conversational_turn = False
+            # Path conversacional para saludos y charla corta post-saludo.
             if conversational_turn:
+                skip_conversational = False
                 async with response_lock:
                     superseded, latest_rid = _is_superseded_turn_rid(
                         scheduled_rid,
@@ -741,15 +796,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             latest_rid,
                             call_id,
                         )
-                        return
-                    if scheduled_key and scheduled_key == last_answered_user_key:
+                        skip_conversational = True
+                    elif scheduled_key and scheduled_key == last_answered_user_key:
                         logger.info(
                             "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
                             scheduled_rid,
                             call_id,
                         )
-                        return
-                    if turn_draft_in_progress and scheduled_key == turn_draft_user_key:
+                        skip_conversational = True
+                    elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
                         latest_for_key = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
                         if scheduled_rid < latest_for_key:
                             logger.info(
@@ -757,9 +812,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 scheduled_rid,
                                 call_id,
                             )
-                            return
-                    turn_draft_in_progress = True
-                    turn_draft_user_key = scheduled_key
+                            skip_conversational = True
+                    else:
+                        turn_draft_in_progress = True
+                        turn_draft_user_key = scheduled_key
+                if skip_conversational:
+                    await anti_silence_if_unanswered(reason="conversational_superseded")
+                    return
                 try:
                     conv_request = ResponseRequiredRequest(
                         interaction_type=interaction,
@@ -780,21 +839,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     )
                     reply = None
                 if reply:
-                    async with response_lock:
-                        await send_voice_response(
-                            response_id=scheduled_rid,
-                            content=reply,
-                            user_key=scheduled_key,
-                            generation=my_generation,
+                    if await deliver_voice(reply):
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=conversational",
+                            scheduled_rid,
+                            turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
+                            gpt_calls,
+                            call_id,
                         )
-                    logger.info(
-                        "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=conversational",
-                        scheduled_rid,
-                        turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
-                        gpt_calls,
-                        call_id,
-                    )
-                    logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
+                        logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
+                        return
+                    await anti_silence_if_unanswered(reason="conversational_deliver_failed")
                     return
                 logger.warning(
                     "[RETELL-GEMINI] conversational miss — fallthrough draft_response call=%s",
