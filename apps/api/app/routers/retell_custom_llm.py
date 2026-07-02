@@ -457,10 +457,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             script_already_delivered=is_script_delivered(call_id),
         )
         user_key = _normalize_user_key(user_text)
-        if user_key and user_key == last_answered_user_key:
+        pending_web = resolve_web_search_request(user_text, transcript)
+        if user_key and user_key == last_answered_user_key and not pending_web:
             logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
             return
-        if user_key and last_answered_user_key and user_key != last_answered_user_key:
+        if (
+            pending_web
+            and user_key
+            and last_answered_user_key
+            and user_key == last_answered_user_key
+        ):
+            logger.info(
+                "[RETELL-GEMINI] repeat web query after prior answer call=%s",
+                call_id,
+            )
+        elif user_key and last_answered_user_key and user_key != last_answered_user_key:
             if user_key.startswith(last_answered_user_key) and len(user_key) - len(last_answered_user_key) < 24:
                 logger.info("[RETELL-GEMINI] skip partial extension call=%s", call_id)
                 return
@@ -572,6 +583,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             web_req = resolve_web_search_request(user_text, transcript)
+            skip_fast_web = False
             if web_req and uid:
                 query_norm = " ".join(str(web_req.get("query") or "").lower().split())
                 now = time.time()
@@ -587,17 +599,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     )
                 ):
                     logger.info(
-                        "[RETELL-WEB] skip duplicate web query call=%s query=%s",
+                        "[RETELL-WEB] skip duplicate web fast-path call=%s query=%s — draft fallback",
                         call_id,
                         query_norm[:60],
                     )
-                    await anti_silence_if_unanswered(reason="web_duplicate_skip")
-                    return
+                    skip_fast_web = True
+            if web_req and uid and not skip_fast_web:
                 clear_pending_advanced_topic(call_id)
                 kind = web_req["kind"]
                 web_delivered = False
                 async with response_lock:
                     if _turn_stale():
+                        await anti_silence_if_unanswered(reason="web_stale_before")
                         return
                     try:
                         tool_result = await asyncio.wait_for(
@@ -613,10 +626,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         tool_result = {
                             "status": "timeout",
                             "fallback": True,
-                            "spoken": "Búsqueda agotada.",
+                            "spoken": (
+                                "La búsqueda tardó demasiado, señor. "
+                                "Le respondo con lo que tengo disponible."
+                            ),
                         }
                     if _turn_stale():
                         logger.info("[RETELL-GEMINI] drop stale web rid=%s", scheduled_rid)
+                        await anti_silence_if_unanswered(reason="web_stale_after")
                         return
                     if tool_result.get("fallback") or tool_result.get("status") == "timeout":
                         llm._web_search_fallback = True

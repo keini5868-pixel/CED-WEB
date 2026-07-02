@@ -70,7 +70,14 @@ def voice_generation_limits(user_text: str) -> tuple[int, float]:
         return 2048, 28.0
     if is_advisory_voice_query(user_text):
         return 1536, 22.0
-    return 640, 14.0
+    try:
+        from app.services.cognitive_intents import is_news_intent, requires_live_web
+
+        if is_news_intent(user_text) or requires_live_web(user_text):
+            return 1536, 22.0
+    except Exception:  # noqa: BLE001
+        pass
+    return 896, 16.0
 
 
 def delivery_text(text: str) -> str:

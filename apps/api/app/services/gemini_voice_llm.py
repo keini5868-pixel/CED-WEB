@@ -22,7 +22,12 @@ from app.services.retell_custom_llm import (
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_response_guard import guard_voice_response
-from app.services.voice_spoken import is_advisory_voice_query
+from app.services.voice_spoken import (
+    chunk_ends_with_punctuation,
+    fit_voice_spoken,
+    is_advisory_voice_query,
+    voice_spoken_limit,
+)
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_llm_common import (
     CONVERSATIONAL_TURN_OVERLAY,
@@ -47,7 +52,20 @@ GEMINI_TIMEOUT_SEC = 14.0
 GEMINI_ADVISORY_TIMEOUT_SEC = 20.0
 GEMINI_CONVERSATIONAL_TIMEOUT_SEC = 18.0
 GEMINI_GREETING_TIMEOUT_SEC = 12.0
+GEMINI_WEB_TIMEOUT_SEC = 22.0
 TOOL_TIMEOUT_SEC = 45.0
+
+WEB_SEARCH_FALLBACK_OVERLAY = (
+    "[Contexto: search_web devolvió status=timeout con fallback=True. "
+    "Responde con conocimiento integrado y el disclaimer obligatorio de REGLA 3. "
+    "Invoca search_web si aún necesitas datos actuales.]"
+)
+
+TRUNCATION_COMPLETE_OVERLAY = (
+    "Tu respuesta anterior quedó cortada a mitad de frase. "
+    "Completa SOLO lo que falta en 1-2 oraciones naturales. "
+    "No repitas el texto ya dicho. Cierra con punto final."
+)
 
 
 def _delivery_text(text: str) -> str:
@@ -115,6 +133,27 @@ def _extract_function_calls(response: types.GenerateContentResponse) -> list[typ
     return calls
 
 
+def _response_finish_reason(response: types.GenerateContentResponse) -> str:
+    if not response.candidates:
+        return ""
+    finish = getattr(response.candidates[0], "finish_reason", None)
+    return str(finish or "")
+
+
+def _response_hit_max_tokens(response: types.GenerateContentResponse) -> bool:
+    finish = _response_finish_reason(response).upper()
+    return "MAX" in finish and "TOKEN" in finish
+
+
+def _looks_incomplete_voice_reply(text: str) -> bool:
+    cleaned = _delivery_text(text)
+    if not cleaned:
+        return False
+    if cleaned.endswith("..."):
+        return True
+    return not chunk_ends_with_punctuation(cleaned)
+
+
 def _extract_text(response: types.GenerateContentResponse) -> str:
     if response.text:
         return response.text.strip()
@@ -171,6 +210,7 @@ class GeminiVoiceLlm:
         self._context_loaded_for: str | None = None
         self._latency_call_id: str = ""
         self._latency_response_id: int = 0
+        self._web_search_fallback: bool = False
 
     def set_latency_context(self, call_id: str, response_id: int) -> None:
         self._latency_call_id = call_id
@@ -282,6 +322,61 @@ class GeminiVoiceLlm:
             time.time(),
         )
         return response
+
+    def _build_draft_system(self, user_text: str) -> str:
+        system = build_voice_system(self.user_id, user_text)
+        if self._web_search_fallback:
+            self._web_search_fallback = False
+            system = f"{system}\n\n{WEB_SEARCH_FALLBACK_OVERLAY}"
+        return system
+
+    async def _ensure_complete_voice_reply(
+        self,
+        text: str,
+        *,
+        response: types.GenerateContentResponse | None,
+        contents: list[types.Content],
+        user_text: str,
+        max_tokens: int,
+        timeout_sec: float,
+        path: str,
+    ) -> str:
+        cleaned = _delivery_text(text)
+        if not cleaned:
+            return cleaned
+        truncated = (
+            response is not None
+            and (_response_hit_max_tokens(response) or _looks_incomplete_voice_reply(cleaned))
+        )
+        if truncated:
+            logger.info(
+                "[RETELL-GEMINI] truncated reply path=%s finish=%s preview=%s",
+                path,
+                _response_finish_reason(response) if response else "?",
+                cleaned[:80],
+            )
+            try:
+                continuation = await self._raw_natural_reply(
+                    contents=[
+                        *contents,
+                        types.Content(role="model", parts=[types.Part(text=cleaned)]),
+                    ],
+                    user_text=user_text,
+                    overlay=TRUNCATION_COMPLETE_OVERLAY,
+                    path=f"{path}_complete",
+                    timeout_sec=min(timeout_sec, GEMINI_CONVERSATIONAL_TIMEOUT_SEC),
+                    max_tokens=min(320, max_tokens),
+                    temperature=0.35,
+                )
+                if continuation:
+                    merged = _delivery_text(f"{cleaned.rstrip('.')} {continuation.lstrip()}".strip())
+                    if merged and chunk_ends_with_punctuation(merged):
+                        cleaned = merged
+            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
+                logger.warning("[RETELL-GEMINI] truncation completion failed path=%s", path)
+        if not chunk_ends_with_punctuation(cleaned):
+            cleaned = fit_voice_spoken(cleaned, max_chars=voice_spoken_limit(user_text))
+        return cleaned
 
     async def generate_natural_reply(
         self,
@@ -630,7 +725,6 @@ class GeminiVoiceLlm:
             return
 
         max_tokens, timeout_sec = _voice_generation_limits(user_text)
-
         from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
         from app.services.internal_knowledge import (
             best_internal_answer,
@@ -639,7 +733,8 @@ class GeminiVoiceLlm:
 
         internal_hit = best_internal_answer(user_text)
         use_internal = (
-            internal_hit
+            not requires_live_web(user_text)
+            and internal_hit
             and should_use_internal_brain(user_text, internal_hit)
             and (is_internal_knowledge_query(user_text) or not requires_live_web(user_text))
         )
@@ -691,8 +786,9 @@ class GeminiVoiceLlm:
             len(self._history),
         )
 
+        system = self._build_draft_system(user_text)
         config = types.GenerateContentConfig(
-            system_instruction=build_voice_system(self.user_id, user_text),
+            system_instruction=system,
             tools=[self.tools],
             temperature=0.4,
             max_output_tokens=max_tokens,
@@ -786,7 +882,7 @@ class GeminiVoiceLlm:
                 follow_up = await self._generate_with_timeout(
                     contents=follow_up_contents,
                     config=types.GenerateContentConfig(
-                        system_instruction=build_voice_system(self.user_id, user_text),
+                        system_instruction=self._build_draft_system(user_text),
                         temperature=0.4,
                         max_output_tokens=max_tokens,
                     ),
@@ -796,6 +892,15 @@ class GeminiVoiceLlm:
                 follow_text = _extract_text(follow_up)
                 if follow_text:
                     final_text = _delivery_text(follow_text)
+                    final_text = await self._ensure_complete_voice_reply(
+                        final_text,
+                        response=follow_up,
+                        contents=follow_up_contents,
+                        user_text=user_text,
+                        max_tokens=max_tokens,
+                        timeout_sec=timeout_sec,
+                        path="tool_follow_up",
+                    )
                     _log_gemini_delivery("tool_follow_up", final_text, user_text=user_text)
             except (asyncio.TimeoutError, Exception):  # noqa: BLE001
                 logger.warning("[RETELL-GEMINI] tool follow-up failed — using spoken tool result")
@@ -819,6 +924,15 @@ class GeminiVoiceLlm:
 
         text_response = _delivery_text(_extract_text(response))
         if text_response:
+            text_response = await self._ensure_complete_voice_reply(
+                text_response,
+                response=response,
+                contents=[*self._history, last],
+                user_text=user_text,
+                max_tokens=max_tokens,
+                timeout_sec=timeout_sec,
+                path="draft_main",
+            )
             _log_gemini_delivery("draft_main", text_response, user_text=user_text)
         if _needs_empathy_reformulation(text_response, user_text=user_text):
             reformed = await self.generate_empathetic_reformulation(
