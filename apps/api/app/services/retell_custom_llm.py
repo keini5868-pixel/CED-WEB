@@ -625,6 +625,9 @@ def should_respond_to_transcript(
     if resolve_web_search_request(last, transcript) is not None:
         return True
 
+    if is_small_talk(last, transcript):
+        return True
+
     if _is_concept_question(last):
         return True
 

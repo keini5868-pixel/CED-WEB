@@ -227,6 +227,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 post_greeting_ready.set()
         finally:
             greeting_in_flight = False
+            if not post_greeting_ready.is_set():
+                post_greeting_ready.set()
+                logger.info("[RETELL-GEMINI] post-greeting ready forced call=%s", call_id)
 
     async def greeting_fallback() -> None:
         try:
@@ -501,6 +504,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             scheduled_key = user_key
             scheduled_rid = response_id
             gpt_calls = 0
+            partial_sent = False
 
             def _turn_rid_stale(rid: int = scheduled_rid) -> bool:
                 stale, _ = _is_superseded_turn_rid(rid, scheduled_key, turn_latest_rid)
@@ -546,8 +550,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 await deliver_voice(fallback_content)
 
+            async def complete_partial_or_deliver(content: str) -> bool:
+                nonlocal partial_sent
+                partial_sent = False
+                return await deliver_voice(content)
+
             try:
-                await post_greeting_ready.wait()
+                try:
+                    await asyncio.wait_for(post_greeting_ready.wait(), timeout=8.0)
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[RETELL-GEMINI] post-greeting wait timeout rid=%s call=%s",
+                        scheduled_rid,
+                        call_id,
+                    )
+                    post_greeting_ready.set()
                 await asyncio.sleep(wait_s)
                 turn = get_turn(call_id, scheduled_rid)
                 if turn:
@@ -632,6 +649,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             content_complete=False,
                             generation=generation_seq,
                         )
+                        partial_sent = True
                     try:
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(
@@ -677,7 +695,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             else web_search_error_phrase(kind)
                         )
                         if not is_duplicate_voice_delivery(last_delivered_voice_content, full):
-                            delivered = await deliver_voice(full)
+                            delivered = await complete_partial_or_deliver(full)
                             if delivered:
                                 last_web_delivery_at = time.time()
                                 last_web_query_norm = query_norm
@@ -1088,6 +1106,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
                     gpt_calls,
                     call_id,
+                )
+
+            if partial_sent:
+                await complete_partial_or_deliver(
+                    WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
                 )
 
             await anti_silence_if_unanswered(reason="run_debounced_tail")

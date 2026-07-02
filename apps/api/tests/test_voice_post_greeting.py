@@ -7,7 +7,16 @@ from unittest.mock import MagicMock, patch
 
 from app.services.gemini_voice_llm import GeminiVoiceLlm
 from app.services.kb_turn_cache import clear_turn_kb_cache, get_turn_kb_hits
+from app.services.retell_custom_llm import should_respond_to_transcript
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
+
+
+def test_hola_after_greeting_should_respond():
+    tx = [
+        Utterance(role="agent", content="CED en línea, señor."),
+        Utterance(role="user", content="hola"),
+    ]
+    assert should_respond_to_transcript(tx, interaction_type="response_required") is True
 
 
 def test_draft_response_yields_when_agent_is_last_in_transcript():

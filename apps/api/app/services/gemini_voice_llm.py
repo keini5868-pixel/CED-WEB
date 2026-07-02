@@ -754,6 +754,16 @@ class GeminiVoiceLlm:
 
         if not contents:
             if not user_text:
+                logger.warning(
+                    "[RETELL-GEMINI] draft_response vacío rid=%s",
+                    request.response_id,
+                )
+                yield ResponseResponse(
+                    response_id=request.response_id,
+                    content=FALLBACK_REPLY,
+                    content_complete=True,
+                    end_call=False,
+                )
                 return
             contents = [types.Content(role="user", parts=[types.Part(text=user_text)])]
         elif contents[-1].role != "user":
@@ -777,8 +787,42 @@ class GeminiVoiceLlm:
 
         last = contents[-1]
         if last.role != "user":
+            logger.warning(
+                "[RETELL-GEMINI] draft_response sin turno usuario rid=%s",
+                request.response_id,
+            )
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=FALLBACK_REPLY,
+                content_complete=True,
+                end_call=False,
+            )
             return
 
+        try:
+            async for event in self._draft_response_body(request, contents=contents, user_text=user_text, last=last):
+                yield event
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "[RETELL-GEMINI] draft_response unhandled rid=%s user=%s",
+                request.response_id,
+                user_text[:80],
+            )
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=FALLBACK_REPLY,
+                content_complete=True,
+                end_call=False,
+            )
+
+    async def _draft_response_body(
+        self,
+        request: ResponseRequiredRequest,
+        *,
+        contents: list[types.Content],
+        user_text: str,
+        last: types.Content,
+    ) -> AsyncIterator[ResponseResponse]:
         self._history = self._resolve_history(contents)
         self._turn_count += 1
 
@@ -909,6 +953,15 @@ class GeminiVoiceLlm:
 
         function_calls = _extract_function_calls(response)
         if function_calls:
+            if not response.candidates:
+                logger.warning("[RETELL-GEMINI] tool calls without candidates rid=%s", request.response_id)
+                yield ResponseResponse(
+                    response_id=request.response_id,
+                    content=FALLBACK_REPLY,
+                    content_complete=True,
+                    end_call=False,
+                )
+                return
             function_response_parts: list[types.Part] = []
             model_parts: list[types.Part] = list(response.candidates[0].content.parts or [])
 
