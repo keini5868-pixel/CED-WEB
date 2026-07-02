@@ -563,12 +563,15 @@ def web_search_hold_phrase(kind: str) -> str:
 
 
 def format_web_delivery(kind: str, spoken: str) -> str:
-    cleaned = " ".join((spoken or "").split()).strip()
+    from app.services.voice_spoken import finalize_voice_delivery_text, strip_voice_filler_prefix
+
+    cleaned = strip_voice_filler_prefix(" ".join((spoken or "").split()).strip())
     if not cleaned:
         return cleaned
     lower = cleaned.lower()
+    result = cleaned
     if kind == "news":
-        if any(
+        if not any(
             lower.startswith(prefix)
             for prefix in (
                 "señor",
@@ -580,13 +583,11 @@ def format_web_delivery(kind: str, spoken: str) -> str:
                 "sobre ",
             )
         ):
-            return cleaned
-        return f"Señor, sobre su consulta: {cleaned}"
-    if kind == "weather":
-        if lower.startswith(("señor", "senor", "el clima")):
-            return cleaned
-        return f"Señor, el clima es el siguiente: {cleaned}"
-    return cleaned
+            result = f"Señor, sobre su consulta: {cleaned}"
+    elif kind == "weather":
+        if not lower.startswith(("señor", "senor", "el clima")):
+            result = f"Señor, el clima es el siguiente: {cleaned}"
+    return finalize_voice_delivery_text(result)
 
 
 def web_search_error_phrase(kind: str) -> str:

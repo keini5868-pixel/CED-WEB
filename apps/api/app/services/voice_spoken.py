@@ -104,6 +104,39 @@ def chunk_ends_with_punctuation(text: str) -> bool:
     return bool(cleaned and _SENTENCE_END_RE.search(cleaned))
 
 
+_VOICE_FILLER_PREFIX_RE = re.compile(
+    r"^(?:(?:un momento|consultando|perm[ií]tame(?: un momento)?),?\s*)+"
+    r"(?:se[nñ]or|senor)[.!]?\s*",
+    re.I,
+)
+
+
+def strip_voice_filler_prefix(text: str) -> str:
+    """Quita muletillas iniciales duplicadas («Un momento, señor.») antes de TTS/transcript."""
+    cleaned = " ".join((text or "").split()).strip()
+    while cleaned:
+        nxt = _VOICE_FILLER_PREFIX_RE.sub("", cleaned, count=1).strip()
+        if nxt == cleaned:
+            break
+        cleaned = nxt
+    return cleaned
+
+
+def finalize_voice_delivery_text(text: str) -> str:
+    """Una sola respuesta hablable: sin filler duplicado y con cierre de oración."""
+    cleaned = strip_voice_filler_prefix(normalize_numbers_for_speech(text))
+    if not cleaned:
+        return cleaned
+    if chunk_ends_with_punctuation(cleaned):
+        return cleaned
+    for sep in (". ", "! ", "? ", "… "):
+        idx = cleaned.rfind(sep)
+        if idx >= max(24, len(cleaned) // 3):
+            return cleaned[: idx + 1].strip()
+    trimmed = cleaned.rstrip(",;:")
+    return f"{trimmed}." if trimmed else cleaned
+
+
 def fit_voice_spoken(text: str, *, max_chars: int | None = None) -> str:
     """Recorta al límite de voz sin cortar a mitad de oración cuando es posible."""
     cleaned = normalize_numbers_for_speech(" ".join((text or "").split()).strip())

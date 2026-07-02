@@ -3,8 +3,10 @@
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_spoken import (
     chunk_ends_with_punctuation,
+    finalize_voice_delivery_text,
     normalize_numbers_for_speech,
     split_voice_delivery_chunks,
+    strip_voice_filler_prefix,
 )
 
 
@@ -58,3 +60,15 @@ def test_long_sentence_splits_on_comma_not_mid_word():
     for part, _ in chunks:
         assert " " not in part or not part.endswith(" ")
         assert not part.endswith(" en") and not part.endswith(" de")
+
+
+def test_strip_voice_filler_prefix_removes_duplicate_hold():
+    raw = "Un momento, señor. Un momento, señor. Algunas investigaciones sugieren."
+    assert strip_voice_filler_prefix(raw).startswith("Algunas investigaciones")
+
+
+def test_finalize_voice_delivery_text_trims_incomplete_tail():
+    raw = "Me encuentro muy bien, gracias por preguntar. ¿En qué"
+    out = finalize_voice_delivery_text(raw)
+    assert out == "Me encuentro muy bien, gracias por preguntar."
+    assert chunk_ends_with_punctuation(out)

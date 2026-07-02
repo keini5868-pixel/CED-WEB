@@ -43,7 +43,11 @@ from app.services.voice_llm_common import (
     normalize_voice_delivery_text,
 )
 from app.services.voice_tool_executor import execute_voice_tool
-from app.services.voice_spoken import split_voice_delivery_chunks, voice_delivery_chunks
+from app.services.voice_spoken import (
+    finalize_voice_delivery_text,
+    split_voice_delivery_chunks,
+    voice_delivery_chunks,
+)
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_latency import get_turn, start_turn
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
@@ -303,6 +307,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
             safe = FALLBACK_REPLY
         content = safe or FALLBACK_REPLY
+        content = finalize_voice_delivery_text(content)
+        if not content:
+            content = FALLBACK_REPLY
         if is_duplicate_voice_delivery(last_delivered_voice_content, content):
             logger.warning(
                 "[RETELL-DELIVERY] skip duplicate voice content rid=%s call=%s preview=%s",
@@ -727,29 +734,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             await anti_silence_if_unanswered(reason=f"web_finish_{reason}")
 
                     try:
-                        stale_before = False
-                        async with response_lock:
-                            if _turn_rid_stale():
-                                stale_before = True
-                            else:
-                                await send_voice_partial(
-                                    response_id=scheduled_rid,
-                                    content=web_search_hold_phrase(kind),
-                                    content_complete=False,
-                                    generation=None,
-                                )
-                                partial_sent = True
-                                logger.info(
-                                    "[RETELL-WEB] hold rid=%s call=%s kind=%s query=%s",
-                                    scheduled_rid,
-                                    call_id,
-                                    kind,
-                                    query[:80],
-                                )
-                        if stale_before:
-                            await anti_silence_if_unanswered(reason="web_stale_before")
-                            return
-
                         tool_result: dict[str, Any]
                         try:
                             tool_result = await asyncio.wait_for(

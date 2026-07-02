@@ -710,6 +710,7 @@ class GeminiVoiceLlm:
             overlay=CONVERSATIONAL_TURN_OVERLAY,
             path="conversational",
             timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
+            max_tokens=480,
         )
         if reply and _needs_empathy_reformulation(reply, user_text=user_text):
             reply = await self.generate_empathetic_reformulation(
@@ -744,7 +745,9 @@ class GeminiVoiceLlm:
         )
         self._turn_count += 1
         logger.info("[RETELL-GEMINI] conversational delivered user=%s", user_text[:80])
-        return reply
+        from app.services.voice_spoken import finalize_voice_delivery_text
+
+        return finalize_voice_delivery_text(reply)
 
     async def draft_response(
         self,
