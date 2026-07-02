@@ -240,11 +240,18 @@ async def execute_voice_tool(
         if name == "search_web":
             query = str(params.get("query") or "").strip()
             kind = str(params.get("kind") or "general")
-            from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
+            from app.services.cognitive_intents import (
+                is_internal_knowledge_query,
+                is_web_research_intent,
+                requires_live_web,
+            )
 
-            if is_internal_knowledge_query(query) or (
-                not requires_live_web(query) and kind == "general"
-            ):
+            must_use_live_web = (
+                kind in ("news", "weather")
+                or requires_live_web(query)
+                or is_web_research_intent(query)
+            )
+            if not must_use_live_web and is_internal_knowledge_query(query):
                 hits = search_internal_knowledge(query, limit=2)
                 if hits:
                     internal = format_hits_for_prompt(hits)

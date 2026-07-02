@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.routers.retell_custom_llm import WEB_SEARCH_FAST_PATH_TIMEOUT_SEC
 from app.services.retell_custom_llm import resolve_web_search_request
 from app.services.retell_llm_types import Utterance
+from app.services.voice_tool_executor import execute_voice_tool
 
 
 def test_trump_news_resolves_web_search():
@@ -42,3 +43,39 @@ def test_marketing_digital_routes_to_draft_not_web():
     ]
     assert resolve_web_search_request(text, tx) is None
     assert should_respond_to_transcript(tx, interaction_type="response_required") is True
+
+
+def test_research_question_uses_live_web_not_internal_kb():
+    import asyncio
+    from unittest.mock import patch
+
+    query = "han investigado esta teoria de terremotos y energias humanas"
+    internal_called = {"v": False}
+    web_called = {"v": False}
+
+    async def fake_internal(*_a, **_k):
+        internal_called["v"] = True
+        return [{"summary": "Keini Castillo es el creador"}]
+
+    async def fake_brief(*_a, **_k):
+        web_called["v"] = True
+        return {
+            "ok": True,
+            "summary": "Existen estudios sobre geoenergía y sismicidad, señor.",
+            "source": "tavily",
+        }
+
+    with patch("app.services.voice_tool_executor.search_internal_knowledge", fake_internal):
+        with patch("app.services.voice_tool_executor.fetch_voice_brief_parallel", fake_brief):
+            result = asyncio.run(
+                execute_voice_tool(
+                    "search_web",
+                    "user-test-123",
+                    {"query": query, "kind": "general"},
+                )
+            )
+
+    assert web_called["v"] is True
+    assert internal_called["v"] is False
+    assert result.get("status") == "success"
+    assert "estudios" in str(result.get("spoken") or "").lower()

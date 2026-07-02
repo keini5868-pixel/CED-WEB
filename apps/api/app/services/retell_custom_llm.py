@@ -427,6 +427,17 @@ def is_unwanted_voice_reply(text: str, *, user_text: str = "") -> bool:
     norm = _normalize(text)
     if re.search(r"sigo atento|continuamos|en qu[eé] m[aá]s puedo", norm):
         return True
+    if user_text and (_needs_internet_lookup(user_text) or is_web_research_intent(user_text)):
+        if re.search(
+            r"keini castillo es el creador|su proposito es ayudar a las personas a desarrollar|"
+            r"repeticion en contexto estable refuerza conexiones neuronales",
+            norm,
+        ):
+            return True
+        from app.services.internal_kb_guard import contains_internal_kb_leak
+
+        if contains_internal_kb_leak(text):
+            return True
     return False
 
 

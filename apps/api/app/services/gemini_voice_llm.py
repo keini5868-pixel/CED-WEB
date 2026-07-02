@@ -54,11 +54,11 @@ from app.services.voice_llm_common import (
 logger = logging.getLogger(__name__)
 
 PROVIDER = "gemini"
-GEMINI_TIMEOUT_SEC = 14.0
-GEMINI_ADVISORY_TIMEOUT_SEC = 20.0
-GEMINI_CONVERSATIONAL_TIMEOUT_SEC = 18.0
-GEMINI_GREETING_TIMEOUT_SEC = 12.0
-GEMINI_WEB_TIMEOUT_SEC = 22.0
+GEMINI_TIMEOUT_SEC = 10.0
+GEMINI_ADVISORY_TIMEOUT_SEC = 16.0
+GEMINI_CONVERSATIONAL_TIMEOUT_SEC = 12.0
+GEMINI_GREETING_TIMEOUT_SEC = 8.0
+GEMINI_WEB_TIMEOUT_SEC = 18.0
 TOOL_TIMEOUT_SEC = 45.0
 SEARCH_WEB_TOOL_TIMEOUT_SEC = 15.0
 
@@ -846,18 +846,27 @@ class GeminiVoiceLlm:
             return
 
         max_tokens, timeout_sec = _voice_generation_limits(user_text)
-        from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
+        from app.services.cognitive_intents import (
+            is_internal_knowledge_query,
+            is_web_research_intent,
+            requires_live_web,
+        )
         from app.services.internal_knowledge import (
             best_internal_answer,
             should_use_internal_brain,
         )
 
+        needs_external_data = (
+            requires_live_web(user_text)
+            or is_web_research_intent(user_text)
+            or _needs_internet_lookup(user_text)
+        )
         internal_hit = best_internal_answer(user_text)
         use_internal = (
-            not requires_live_web(user_text)
+            not needs_external_data
             and internal_hit
             and should_use_internal_brain(user_text, internal_hit)
-            and (is_internal_knowledge_query(user_text) or not requires_live_web(user_text))
+            and is_internal_knowledge_query(user_text)
         )
         if use_internal:
             internal_config = types.GenerateContentConfig(
@@ -879,6 +888,10 @@ class GeminiVoiceLlm:
                 internal_text = _extract_text(internal_response)
                 if internal_text and not is_generic_agent_line(internal_text):
                     internal_text = _delivery_text(internal_text)
+                if (
+                    internal_text
+                    and not is_unwanted_voice_reply(internal_text, user_text=user_text)
+                ):
                     _log_gemini_delivery("internal_brain", internal_text, user_text=user_text)
                     self._history = _truncate_contents(
                         [

@@ -24,10 +24,10 @@ def test_gemini_voice_llm_imports_get_settings():
 
 
 def test_debounce_wait_reduced_for_short_utterances():
-    assert _debounce_wait_s("hola") == 0.15
-    assert _debounce_wait_s("cómo estás hoy") == 0.15
-    assert _debounce_wait_s(" ".join(["palabra"] * 12)) == 0.25
-    assert _debounce_wait_s(" ".join(["palabra"] * 22)) == 0.30
+    assert _debounce_wait_s("hola") == 0.10
+    assert _debounce_wait_s("cómo estás hoy") == 0.10
+    assert _debounce_wait_s(" ".join(["palabra"] * 12)) == 0.18
+    assert _debounce_wait_s(" ".join(["palabra"] * 22)) == 0.22
 
 
 def test_kb_turn_cache_dedupes_same_query():

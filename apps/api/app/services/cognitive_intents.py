@@ -232,6 +232,14 @@ def requires_live_web(text: str) -> bool:
         return True
     if re.search(r"\b(hoy|ahora|actual)\b.*\b(precio|cuesta|cotiza|mercado)\b", t):
         return True
+    if re.search(
+        r"\b(han investigado|hay investigaciones|existen estudios|otras personas|"
+        r"alguien ha investigado|personas que han|quien ha investigado|"
+        r"se ha estudiado|evidencia cientifica|estudios sobre|"
+        r"has anyone researched|other people studied|scientific studies)\b",
+        t,
+    ):
+        return True
     return bool(
         re.search(
             r"\b(busca(r|me)?\s+(en\s+)?(internet|la web|google|l[ií]nea)|"

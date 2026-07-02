@@ -63,7 +63,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retell-custom-llm"])
 
-POST_GREETING_COOLDOWN_S = 2.0
+POST_GREETING_COOLDOWN_S = 1.0
 GREETING_FALLBACK_S = 2.0
 WEB_SEARCH_FAST_PATH_TIMEOUT_SEC = 15.0
 
@@ -88,10 +88,10 @@ def _normalize_user_key(text: str) -> str:
 def _debounce_wait_s(user_text: str) -> float:
     words = len(user_text.split())
     if words >= 20:
-        return 0.30
+        return 0.22
     if words >= 10:
-        return 0.25
-    return 0.15
+        return 0.18
+    return 0.10
 
 
 @router.get("/llm-websocket/active")
@@ -788,11 +788,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         if tool_result.get("status") == "success" or tool_result.get("ok"):
                             spoken = str(tool_result.get("spoken") or "").strip()
                             if spoken:
-                                await finish_web_voice(
-                                    format_web_delivery(kind, spoken),
-                                    reason="success",
+                                delivery = format_web_delivery(kind, spoken)
+                                if not is_unwanted_voice_reply(delivery, user_text=user_text):
+                                    await finish_web_voice(delivery, reason="success")
+                                    return
+                                logger.warning(
+                                    "[RETELL-WEB] discard internal kb leak in web result call=%s",
+                                    call_id,
                                 )
-                                return
 
                         llm._web_search_fallback = True
                         spoken = str(tool_result.get("spoken") or "").strip()
