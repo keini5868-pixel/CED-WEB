@@ -1,9 +1,10 @@
 # Railway — servicio API backend (CED-WEB-PRODUCTION / @ced/api)
 #
-# Alias de railway.api.toml — Railway lo detecta por defecto si no hay otro config path.
-# Recomendado en Settings → Config-as-code: /railway.api.toml
+# En Railway → servicio API → Settings → Config-as-code:
+#   Config file path: /railway.api.toml
 #
 # Root Directory: repo root (vacío). Dockerfile: apps/api/Dockerfile
+# NO usar railway.web.toml en este servicio.
 
 [build]
 builder = "DOCKERFILE"

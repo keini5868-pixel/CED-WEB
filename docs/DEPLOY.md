@@ -22,7 +22,7 @@ Documento maestro para las 7 fases. **Fase 1 completada en código.**
 | OpenAPI off en prod | `docs_url=None` si `APP_ENV=production` |
 | Headers Next.js | `apps/web/next.config.ts` |
 | Vercel monorepo | `vercel.json` |
-| Railway Docker API | `apps/api/Dockerfile` + `railway.toml` |
+| Railway Docker API | `apps/api/Dockerfile` + `railway.api.toml` (alias `railway.toml`) |
 | Railway Docker Web | `apps/web/Dockerfile` + `railway.web.toml` (fix: pnpm no está en runtime Railpack) |
 
 ### Validar localmente
@@ -141,14 +141,17 @@ Migración a live cuando:
 
 ## Fase 2 — Railway
 
-### Servicio API (`@ced/api`)
+### Servicio API (`@ced/api` / CED-WEB-PRODUCTION)
 
 1. Push repo a GitHub
 2. Railway → New Project → Deploy from GitHub
-3. Root: repo root; Dockerfile path: `apps/api/Dockerfile`
-4. Variables: copiar de `.env.production.example` (secretos Meta, Stripe, Anthropic, etc.)
-5. Dominio custom: `api.tudominio.com` → CNAME Railway
-6. Validar: `curl https://api.tudominio.com/health`
+3. Root: repo root (vacío); Dockerfile path: `apps/api/Dockerfile`
+4. **Settings → Config-as-code → Config file path:** `/railway.api.toml`  
+   (alternativa: `/railway.toml` — mismo contenido; **no** uses `railway.web.toml` en la API)
+5. **Watch paths:** déjalos vacíos en el dashboard si usas config-as-code (el TOML define `apps/api/**`)
+6. Variables: copiar de `.env.production.example` (secretos Meta, Stripe, Anthropic, etc.)
+7. Dominio custom: `api.tudominio.com` → CNAME Railway
+8. Validar: `curl https://api.tudominio.com/health/voice-prompt` → `llm_provider: gemini_2.5_flash`
 
 ### Servicio Web en Railway (alternativa a Vercel)
 
@@ -156,7 +159,7 @@ Si despliegas `@ced/web` en Railway **no uses Railpack** con `pnpm start` — el
 
 1. En el servicio `@ced/web` → **Settings** → **Build** → Builder: **Dockerfile**
 2. Dockerfile path: `apps/web/Dockerfile` (contexto: raíz del repo)
-3. Opcional: config file `railway.web.toml` en la raíz
+3. **Settings → Config-as-code → Config file path:** `/railway.web.toml`
 4. **Variables solo de frontend** (no pongas secretos de API aquí):
 
    | Variable | Ejemplo |

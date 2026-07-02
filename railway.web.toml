@@ -1,8 +1,18 @@
-# Railway — servicio @ced/web (Next.js)
+# Railway — servicio WEB frontend (CED-WEB / @ced/web)
+#
+# En Railway → servicio WEB → Settings → Config-as-code:
+#   Config file path: /railway.web.toml
+#
+# NO asignar este archivo al servicio API (CED-WEB-PRODUCTION).
+
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "apps/web/Dockerfile"
-watchPatterns = ["apps/web/**", "packages/**"]
+watchPatterns = [
+  "apps/web/**",
+  "packages/**",
+  "railway.web.toml",
+]
 
 [deploy]
 healthcheckPath = ""
