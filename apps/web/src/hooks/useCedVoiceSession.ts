@@ -30,7 +30,7 @@ import {
 import {
   endVoiceSession,
   startVoiceSession,
-  tickVoiceSession,
+  tickVoiceSessionDetailed,
 } from "@/lib/api/usage";
 import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
@@ -250,6 +250,9 @@ export function useCedVoiceSession(
   const cameraCaptureVideoRef = useRef<HTMLVideoElement | null>(null);
   const cameraCaptureCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const micOnRef = useRef(micOn);
+  const userInitiatedStopRef = useRef(false);
+  const retellCallStartedAtRef = useRef(0);
+  const retellEarlyEndRetriesRef = useRef(0);
 
   useEffect(() => {
     prefsRef.current = prefs;
@@ -584,6 +587,7 @@ export function useCedVoiceSession(
   }, [cameraOn]);
 
   const stopSession = useCallback(async () => {
+    userInitiatedStopRef.current = true;
     voiceSessionGenRef.current += 1;
     clearUsageInterval();
     clientRef.current?.disconnect();
@@ -637,6 +641,8 @@ export function useCedVoiceSession(
     setStatusLabel(ORB_STATE_LABELS.idle);
     saveMicPreference(false);
     onUsageRefresh?.();
+    retellEarlyEndRetriesRef.current = 0;
+    retellCallStartedAtRef.current = 0;
   }, [clearUsageInterval, onUsageRefresh]);
 
   const toggleCameraRef = useRef<(force?: boolean) => Promise<void>>(
@@ -744,6 +750,9 @@ export function useCedVoiceSession(
 
     const sessionGen = voiceSessionGenRef.current + 1;
     voiceSessionGenRef.current = sessionGen;
+    userInitiatedStopRef.current = false;
+    retellEarlyEndRetriesRef.current = 0;
+    retellCallStartedAtRef.current = 0;
     const isStale = () => voiceSessionGenRef.current !== sessionGen;
 
     try {
@@ -792,6 +801,7 @@ export function useCedVoiceSession(
         retell.setCallbacks({
           onCallStarted: () => {
             if (isStale()) return;
+            retellCallStartedAtRef.current = Date.now();
             lastPublishableImageRef.current = null;
             setRetellPollActive(true);
             lastVoiceActionIdRef.current = null;
@@ -801,6 +811,46 @@ export function useCedVoiceSession(
           },
           onCallEnded: () => {
             if (isStale()) return;
+            const elapsed =
+              retellCallStartedAtRef.current > 0
+                ? Date.now() - retellCallStartedAtRef.current
+                : 0;
+            const client = retellClientRef.current;
+            if (
+              !userInitiatedStopRef.current &&
+              client &&
+              elapsed > 0 &&
+              elapsed < 12_000 &&
+              retellEarlyEndRetriesRef.current < 1
+            ) {
+              retellEarlyEndRetriesRef.current += 1;
+              console.warn(
+                "[CED:RETELL] call_ended prematuro (%sms) — reintento único",
+                elapsed,
+              );
+              void (async () => {
+                try {
+                  const registration = await registerRetellCall();
+                  if (isStale() || !registration.ok) {
+                    setRetellPollActive(false);
+                    await stopSession();
+                    return;
+                  }
+                  retellCallStartedAtRef.current = Date.now();
+                  await client.startCall(
+                    registration.access_token,
+                    registration.call_id,
+                  );
+                  client.setMuted(mutedRef.current);
+                  setOrbState("listening");
+                  setStatusLabel(ORB_STATE_LABELS.listening);
+                } catch {
+                  setRetellPollActive(false);
+                  await stopSession();
+                }
+              })();
+              return;
+            }
             setRetellPollActive(false);
             void stopSession();
           },
@@ -856,8 +906,19 @@ export function useCedVoiceSession(
           if (!sid) return;
           void (async () => {
             try {
-              const data = await tickVoiceSession(sid, USAGE_TICK_SECONDS);
-              if (!data) return;
+              const result = await tickVoiceSessionDetailed(
+                sid,
+                USAGE_TICK_SECONDS,
+              );
+              if (!result.ok) {
+                if (result.authError) {
+                  console.warn(
+                    "[CED] usage/tick sin auth — la voz sigue activa",
+                  );
+                }
+                return;
+              }
+              const data = result.data;
               onUsageRefresh?.();
               if (data.blocked || data.should_disconnect) {
                 setErrorMessage(
@@ -871,7 +932,7 @@ export function useCedVoiceSession(
                 await stopSession();
               }
             } catch {
-              /* ignore */
+              /* ignore — no cerrar voz por fallo de red */
             }
           })();
         }, USAGE_TICK_SECONDS * 1000);
@@ -894,8 +955,17 @@ export function useCedVoiceSession(
         if (!sid) return;
         void (async () => {
           try {
-            const data = await tickVoiceSession(sid, USAGE_TICK_SECONDS);
-            if (!data) return;
+            const result = await tickVoiceSessionDetailed(
+              sid,
+              USAGE_TICK_SECONDS,
+            );
+            if (!result.ok) {
+              if (result.authError) {
+                console.warn("[CED] usage/tick sin auth — la voz sigue activa");
+              }
+              return;
+            }
+            const data = result.data;
             onUsageRefresh?.();
             if (data.blocked || data.should_disconnect) {
               setErrorMessage(
@@ -913,7 +983,7 @@ export function useCedVoiceSession(
               await stopSession();
             }
           } catch {
-            /* ignore */
+            /* ignore — no cerrar voz por fallo de red */
           }
         })();
       }, USAGE_TICK_SECONDS * 1000);

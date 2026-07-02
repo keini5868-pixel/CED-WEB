@@ -140,7 +140,9 @@ export function voiceLimitReasonFromBalance(balance: {
   accessDenied: boolean;
   accessMessage: string | null;
   plan: number;
+  authFailed?: boolean;
 }): VoiceLimitReason | null {
+  if (balance.authFailed) return null;
   if (balance.accessDenied && balance.accessMessage === "trial_expired") {
     return "trial_expired";
   }

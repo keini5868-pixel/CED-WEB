@@ -29,27 +29,43 @@ function createClientFromRequest(
   });
 }
 
+function bearerFromRequest(request: NextRequest): string | null {
+  const raw = request.headers.get("authorization")?.trim();
+  if (!raw || !raw.toLowerCase().startsWith("bearer ")) {
+    return null;
+  }
+  const token = raw.slice(7).trim();
+  return token || null;
+}
+
 async function resolveAccessToken(
   request: NextRequest,
 ): Promise<{ token: string | null; authResponse: NextResponse }> {
+  const headerToken = bearerFromRequest(request);
+  if (headerToken) {
+    return { token: headerToken, authResponse: new NextResponse() };
+  }
+
   const authResponse = new NextResponse();
   const supabase = createClientFromRequest(request, authResponse);
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+  if (userError || !user) {
+    return { token: null, authResponse };
+  }
 
   const { data: sessionData } = await supabase.auth.getSession();
   if (sessionData.session?.access_token) {
     return { token: sessionData.session.access_token, authResponse };
   }
 
-  const { data: refreshed } = await supabase.auth.refreshSession();
-  if (refreshed.session?.access_token) {
+  const { data: refreshed, error: refreshError } =
+    await supabase.auth.refreshSession();
+  if (!refreshError && refreshed.session?.access_token) {
     return { token: refreshed.session.access_token, authResponse };
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return { token: null, authResponse };
   }
 
   const { data: retry } = await supabase.auth.getSession();

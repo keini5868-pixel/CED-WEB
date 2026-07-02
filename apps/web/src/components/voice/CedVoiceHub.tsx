@@ -102,7 +102,10 @@ export function CedVoiceHub() {
   });
   const { errorMessage, clearError } = voice;
 
-  const voiceLimit = loaded ? voiceLimitReasonFromBalance(balance) : null;
+  const voiceLimit =
+    loaded && !balance.authFailed
+      ? voiceLimitReasonFromBalance(balance)
+      : null;
 
   useEffect(() => {
     if (!loaded) return;

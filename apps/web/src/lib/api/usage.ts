@@ -1,9 +1,9 @@
 import type { UsageBalance } from "@ced/types";
 
-import { cedApiPath } from "@/lib/api/ced-proxy";
+import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 
 const proxyFetch = (path: string, init?: RequestInit) =>
-  fetch(cedApiPath(path), { credentials: "same-origin", ...init });
+  proxyFetchAuthed(path, init);
 
 export type UsageBalanceApi = UsageBalance & {
   usage_percent?: number;
@@ -22,9 +22,7 @@ export async function fetchUsageBalance(): Promise<UsageBalanceApi | null> {
 
 export async function fetchUsageBalanceDetailed(): Promise<UsageBalanceResult> {
   try {
-    const res = await fetch(cedApiPath("usage/balance"), {
-      credentials: "same-origin",
-    });
+    const res = await proxyFetchAuthed("usage/balance");
     const raw = await res.json().catch(() => ({} as Record<string, unknown>));
     if (!res.ok) {
       const detail =
@@ -79,18 +77,37 @@ export type VoiceSessionTick = {
   should_disconnect?: boolean;
 };
 
-/** Registra uso; null si la API no responde (no debe tumbar la voz). */
-export async function tickVoiceSession(
+export type VoiceSessionTickResult =
+  | { ok: true; data: VoiceSessionTick }
+  | { ok: false; authError: boolean; status: number };
+
+/** Registra uso; fallo de auth/red no debe tumbar la voz activa. */
+export async function tickVoiceSessionDetailed(
   sessionId: string,
   seconds: number,
-): Promise<VoiceSessionTick | null> {
+): Promise<VoiceSessionTickResult> {
   const res = await proxyFetch("usage/session/tick", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, seconds }),
   });
-  if (!res.ok) return null;
-  return res.json();
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, authError: true, status: res.status };
+  }
+  if (!res.ok) {
+    return { ok: false, authError: false, status: res.status };
+  }
+  const data = (await res.json()) as VoiceSessionTick;
+  return { ok: true, data };
+}
+
+/** Registra uso; null si la API no responde (no debe tumbar la voz). */
+export async function tickVoiceSession(
+  sessionId: string,
+  seconds: number,
+): Promise<VoiceSessionTick | null> {
+  const result = await tickVoiceSessionDetailed(sessionId, seconds);
+  return result.ok ? result.data : null;
 }
 
 export async function endVoiceSession(sessionId: string): Promise<void> {
