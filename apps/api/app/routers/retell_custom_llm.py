@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from typing import Any
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -64,6 +65,7 @@ router = APIRouter(tags=["retell-custom-llm"])
 
 POST_GREETING_COOLDOWN_S = 2.0
 GREETING_FALLBACK_S = 2.0
+WEB_SEARCH_FAST_PATH_TIMEOUT_SEC = 15.0
 
 
 def _turn_slot(user_key: str) -> str:
@@ -669,10 +671,160 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             web_req = resolve_web_search_request(user_text, transcript)
-            skip_fast_web = False
             if web_req and uid:
+
+                async def handle_web_search_voice(
+                    *,
+                    web_req: dict[str, str],
+                    query_norm: str,
+                ) -> None:
+                    """Fast-path search_web — SIEMPRE cierra el turno con voz audible."""
+                    nonlocal partial_sent, last_web_delivery_at, last_web_query_norm
+                    kind = str(web_req.get("kind") or "general")
+                    query = str(web_req.get("query") or user_text).strip()
+
+                    async def finish_web_voice(content: str, *, reason: str) -> None:
+                        nonlocal last_web_delivery_at, last_web_query_norm
+                        safe = (content or WEB_SEARCH_VOICE_FALLBACK).strip() or WEB_SEARCH_VOICE_FALLBACK
+                        if _turn_rid_stale():
+                            logger.info(
+                                "[RETELL-GEMINI] web stale at finish rid=%s reason=%s call=%s",
+                                scheduled_rid,
+                                reason,
+                                call_id,
+                            )
+                            await complete_partial_or_deliver(WEB_SEARCH_VOICE_FALLBACK)
+                            return
+                        delivered = await complete_partial_or_deliver(safe)
+                        if delivered:
+                            last_web_delivery_at = time.time()
+                            last_web_query_norm = query_norm
+                            logger.info(
+                                "[RETELL-GEMINI] web_search call=%s kind=%s reason=%s spoken=%s",
+                                call_id,
+                                kind,
+                                reason,
+                                safe[:120],
+                            )
+                        else:
+                            logger.warning(
+                                "[RETELL-GEMINI] web_search deliver failed rid=%s call=%s reason=%s",
+                                scheduled_rid,
+                                call_id,
+                                reason,
+                            )
+                            await anti_silence_if_unanswered(reason=f"web_finish_{reason}")
+
+                    try:
+                        async with response_lock:
+                            if _turn_rid_stale():
+                                await anti_silence_if_unanswered(reason="web_stale_before")
+                                return
+                            await send_voice_partial(
+                                response_id=scheduled_rid,
+                                content=web_search_hold_phrase(kind),
+                                content_complete=False,
+                                generation=None,
+                            )
+                            partial_sent = True
+                            logger.info(
+                                "[RETELL-WEB] hold rid=%s call=%s kind=%s query=%s",
+                                scheduled_rid,
+                                call_id,
+                                kind,
+                                query[:80],
+                            )
+
+                        tool_result: dict[str, Any]
+                        try:
+                            tool_result = await asyncio.wait_for(
+                                execute_voice_tool(
+                                    "search_web",
+                                    uid,
+                                    {"query": query, "kind": kind},
+                                ),
+                                timeout=WEB_SEARCH_FAST_PATH_TIMEOUT_SEC,
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                "[RETELL-GEMINI] web_search timeout call=%s query=%s",
+                                call_id,
+                                query[:80],
+                            )
+                            await finish_web_voice(
+                                "Señor, la búsqueda tardó demasiado. "
+                                "¿Desea que lo intente de nuevo?",
+                                reason="timeout",
+                            )
+                            return
+                        except Exception:
+                            logger.exception(
+                                "[RETELL-GEMINI] web_search error call=%s query=%s",
+                                call_id,
+                                query[:80],
+                            )
+                            await finish_web_voice(
+                                "Disculpe señor, tuve un inconveniente buscando. "
+                                "¿Puede repetir la pregunta?",
+                                reason="error",
+                            )
+                            return
+
+                        if tool_result.get("status") == "success" or tool_result.get("ok"):
+                            spoken = str(tool_result.get("spoken") or "").strip()
+                            if spoken:
+                                await finish_web_voice(
+                                    format_web_delivery(kind, spoken),
+                                    reason="success",
+                                )
+                                return
+
+                        llm._web_search_fallback = True
+                        spoken = str(tool_result.get("spoken") or "").strip()
+                        if spoken and not tool_result.get("fallback"):
+                            await finish_web_voice(
+                                format_web_delivery(kind, spoken),
+                                reason="spoken_partial",
+                            )
+                            return
+
+                        kb_line = ""
+                        try:
+                            kb_line = await asyncio.wait_for(
+                                llm.generate_natural_reply(
+                                    transcript=transcript,
+                                    user_text=user_text,
+                                    overlay=(
+                                        "Responde en 2-4 frases con lo que sabes sobre la consulta. "
+                                        "PROHIBIDO prometer buscar en internet ni invocar herramientas."
+                                    ),
+                                    path="web_search_kb_fallback",
+                                    max_tokens=320,
+                                    timeout_sec=12.0,
+                                ),
+                                timeout=12.0,
+                            ) or ""
+                        except Exception:
+                            logger.warning(
+                                "[RETELL-GEMINI] web kb fallback failed call=%s",
+                                call_id,
+                            )
+
+                        if kb_line.strip():
+                            await finish_web_voice(
+                                "Señor, no pude obtener información actual en este momento. "
+                                f"Basándome en lo que tengo registrado: {kb_line.strip()}",
+                                reason="kb_fallback",
+                            )
+                        else:
+                            await finish_web_voice(WEB_SEARCH_VOICE_FALLBACK, reason="empty")
+                    except Exception:
+                        logger.exception("[RETELL-GEMINI] web fast-path failed call=%s", call_id)
+                        await finish_web_voice(WEB_SEARCH_VOICE_FALLBACK, reason="outer_error")
+
                 query_norm = " ".join(str(web_req.get("query") or "").lower().split())
                 now = time.time()
+                skip_fast_web = False
                 if (
                     last_web_delivery_at
                     and now - last_web_delivery_at < 15.0
@@ -685,96 +837,22 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     )
                 ):
                     logger.info(
-                        "[RETELL-WEB] skip duplicate web fast-path call=%s query=%s — draft fallback",
+                        "[RETELL-WEB] skip duplicate web fast-path call=%s query=%s",
                         call_id,
                         query_norm[:60],
                     )
                     skip_fast_web = True
-            if web_req and uid and not skip_fast_web:
+
                 clear_pending_advanced_topic(call_id)
-                kind = web_req["kind"]
-                web_delivered = False
-                try:
-                    async with response_lock:
-                        if _turn_rid_stale():
-                            await anti_silence_if_unanswered(reason="web_stale_before")
-                            return
-                        await send_voice_partial(
-                            response_id=scheduled_rid,
-                            content=web_search_hold_phrase(kind),
-                            content_complete=False,
-                            generation=None,
-                        )
-                        partial_sent = True
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(
-                                "search_web",
-                                uid,
-                                {"query": web_req["query"], "kind": kind},
-                            ),
-                            timeout=20.0,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning("[RETELL-GEMINI] web_search timeout call=%s", call_id)
-                        tool_result = {
-                            "status": "timeout",
-                            "fallback": True,
-                            "spoken": WEB_SEARCH_VOICE_FALLBACK,
-                        }
-                    except Exception:  # noqa: BLE001
-                        logger.exception(
-                            "[RETELL-GEMINI] web_search error call=%s query=%s",
-                            call_id,
-                            web_req["query"][:80],
-                        )
-                        tool_result = {
-                            "status": "timeout",
-                            "fallback": True,
-                            "spoken": WEB_SEARCH_VOICE_FALLBACK,
-                        }
-                    if _turn_rid_stale():
-                        logger.info("[RETELL-GEMINI] drop stale web rid=%s", scheduled_rid)
-                        await anti_silence_if_unanswered(reason="web_stale_after")
+                if skip_fast_web:
+                    if await deliver_voice(WEB_SEARCH_VOICE_FALLBACK):
                         return
-                    if tool_result.get("fallback") or tool_result.get("status") == "timeout":
-                        llm._web_search_fallback = True
-                        logger.info(
-                            "[RETELL-GEMINI] web_search fallback -> draft call=%s",
-                            call_id,
-                        )
-                    elif tool_result.get("status") == "success" or tool_result.get("ok"):
-                        spoken = str(tool_result.get("spoken") or "").strip()
-                        full = (
-                            format_web_delivery(kind, spoken)
-                            if spoken
-                            else web_search_error_phrase(kind)
-                        )
-                        if not is_duplicate_voice_delivery(last_delivered_voice_content, full):
-                            delivered = await complete_partial_or_deliver(full)
-                            if delivered:
-                                last_web_delivery_at = time.time()
-                                last_web_query_norm = query_norm
-                                web_delivered = True
-                                logger.info(
-                                    "[RETELL-GEMINI] web_search call=%s kind=%s query=%s spoken=%s",
-                                    call_id,
-                                    web_req["kind"],
-                                    web_req["query"][:80],
-                                    full[:120],
-                                )
-                        else:
-                            logger.warning(
-                                "[RETELL-WEB] skip duplicate web delivery call=%s",
-                                call_id,
-                            )
-                            answered_response_ids.add(scheduled_rid)
-                            web_delivered = True
-                except Exception:  # noqa: BLE001
-                    logger.exception("[RETELL-GEMINI] web fast-path failed call=%s", call_id)
-                    llm._web_search_fallback = True
-                if web_delivered:
+                    await anti_silence_if_unanswered(reason="web_duplicate")
                     return
+
+                await handle_web_search_voice(web_req=web_req, query_norm=query_norm)
+                await anti_silence_if_unanswered(reason="web_tail_guard")
+                return
             elif web_req and not uid:
                 logger.warning("[RETELL-GEMINI] web intent without uid call=%s", call_id)
                 if await deliver_voice(WEB_SEARCH_VOICE_FALLBACK):
