@@ -124,7 +124,11 @@ def strip_voice_filler_prefix(text: str) -> str:
 
 def finalize_voice_delivery_text(text: str) -> str:
     """Una sola respuesta hablable: sin filler duplicado y con cierre de oración."""
-    cleaned = strip_voice_filler_prefix(normalize_numbers_for_speech(text))
+    raw = " ".join((text or "").split()).strip()
+    raw = re.sub(r"\*\*([^*]+)\*\*", r"\1", raw)
+    raw = re.sub(r"\*([^*]+)\*", r"\1", raw)
+    raw = re.sub(r"^#+\s*", "", raw, flags=re.MULTILINE)
+    cleaned = strip_voice_filler_prefix(normalize_numbers_for_speech(raw))
     if not cleaned:
         return cleaned
     if chunk_ends_with_punctuation(cleaned):

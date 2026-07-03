@@ -257,10 +257,11 @@ export class CedRetellClient {
     }
     if (partial) {
       const low = sanitized.toLowerCase();
-      if (incomplete && sanitized.length < 28) return;
+      if (incomplete && sanitized.length < 48) return;
       if (/^ced en[\s.!,?]*$/i.test(sanitized)) return;
       if (incomplete && /^hola,?\s*se[nñ]or[\s.!,?]*$/i.test(sanitized)) return;
       if (incomplete && low.startsWith("ced en ") && sanitized.length < 40) return;
+      if (incomplete && sanitized.length < 72 && !/[.!?…]["']?$/.test(sanitized)) return;
     }
     if (!this.currentAgentStreamKey) {
       this.agentTurnSeq += 1;

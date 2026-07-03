@@ -157,7 +157,7 @@ async def _run_camera_capture(
         request_id,
     )
     return _spoken_err(
-        "Señor, no pude procesar la imagen de la cámara. Intente mostrar de nuevo.",
+        "Señor, no pude capturar la imagen. Intente mostrar de nuevo.",
         error="camera_capture_timeout",
     )
 
@@ -545,7 +545,7 @@ async def execute_voice_tool(
                 )
             spoken = (
                 f"PDF listo, señor. Título: {artifact.title}. "
-                "Se guardó en su historial."
+                "¿Dónde desea guardarlo?"
             )
             try:
                 vcs.push_tool_event(

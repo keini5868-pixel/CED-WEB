@@ -599,6 +599,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 """Nunca dejar response_required sin respuesta audible."""
                 if scheduled_rid in answered_response_ids:
                     return
+                if _turn_rid_stale():
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason=f"{reason}_stale",
+                    )
+                    return
                 if not _can_deliver_turn():
                     await ack_empty_response(
                         response_id=scheduled_rid,
@@ -623,6 +629,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     user_text[:60],
                 )
                 await deliver_voice(fallback_content)
+
+            async def ack_superseded_turn(*, reason: str) -> None:
+                """Turno reemplazado por uno más nuevo — no hablar fallback."""
+                if scheduled_rid in answered_response_ids:
+                    return
+                await ack_empty_response(response_id=scheduled_rid, reason=reason)
 
             async def complete_partial_or_deliver(content: str) -> bool:
                 nonlocal partial_sent
@@ -655,12 +667,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     generation_seq,
                     call_id,
                 )
-                await anti_silence_if_unanswered(reason="gen_superseded")
+                await ack_superseded_turn(reason="gen_superseded")
                 return
 
             if scheduled_key != last_scheduled_user_key:
                 logger.info("[RETELL-TURN] rid=%s superseded=debounce gpt_calls=0 call=%s", scheduled_rid, call_id)
-                await anti_silence_if_unanswered(reason="debounce_superseded")
+                await ack_superseded_turn(reason="debounce_superseded")
                 return
 
             if scheduled_rid in answered_response_ids:
@@ -685,7 +697,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     latest_rid,
                     call_id,
                 )
-                await anti_silence_if_unanswered(reason="turn_superseded")
+                await ack_superseded_turn(reason="turn_superseded")
                 return
 
             web_req = resolve_web_search_request(user_text, transcript)
@@ -845,15 +857,23 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     )
                     skip_fast_web = True
 
-                clear_pending_advanced_topic(call_id)
                 if skip_fast_web:
                     if await deliver_voice(WEB_SEARCH_VOICE_FALLBACK):
                         return
                     await anti_silence_if_unanswered(reason="web_duplicate")
                     return
 
+                clear_pending_advanced_topic(call_id)
+                kind = str(web_req.get("kind") or "general")
+                async with response_lock:
+                    if not _turn_stale():
+                        partial_sent = await send_voice_partial(
+                            response_id=scheduled_rid,
+                            content=web_search_hold_phrase(kind),
+                            content_complete=False,
+                            generation=my_generation,
+                        )
                 await handle_web_search_voice(web_req=web_req, query_norm=query_norm)
-                await anti_silence_if_unanswered(reason="web_tail_guard")
                 return
             elif web_req and not uid:
                 logger.warning("[RETELL-GEMINI] web intent without uid call=%s", call_id)
@@ -897,7 +917,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         turn_draft_in_progress = True
                         turn_draft_user_key = scheduled_key
                 if skip_conversational:
-                    await anti_silence_if_unanswered(reason="conversational_superseded")
+                    await ack_superseded_turn(reason="conversational_superseded")
                     return
                 try:
                     conv_request = ResponseRequiredRequest(
@@ -1140,7 +1160,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     turn_draft_user_key = scheduled_key
 
             if skip_draft:
-                await anti_silence_if_unanswered(reason="draft_superseded_prelock")
+                await ack_superseded_turn(reason="draft_superseded_prelock")
                 return
 
             try:
@@ -1151,7 +1171,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     turn_latest_rid,
                 )
                 if superseded_now:
-                    await anti_silence_if_unanswered(reason="draft_superseded")
+                    await ack_superseded_turn(reason="draft_superseded")
                     return
 
                 try:

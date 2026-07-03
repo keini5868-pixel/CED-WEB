@@ -630,9 +630,15 @@ class GeminiVoiceLlm:
             path="reformulate_empathy",
             timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
             temperature=0.72,
+            max_tokens=320,
         )
         if reply and not _needs_empathy_reformulation(reply, user_text=user_text):
-            return reply
+            from app.services.voice_spoken import fit_voice_spoken, voice_spoken_limit
+            from app.services.voice_llm_common import ensure_voice_reply
+
+            return ensure_voice_reply(
+                fit_voice_spoken(reply, max_chars=voice_spoken_limit(user_text)),
+            )
         return None
 
     async def draft_greeting(self) -> str:
@@ -899,22 +905,32 @@ class GeminiVoiceLlm:
                 bad_reply="",
             )
             if empathetic:
+                from app.services.voice_llm_common import ensure_voice_reply
+
+                spoken = ensure_voice_reply(empathetic)
                 self._history = _truncate_contents(
                     [
                         *self._history,
                         last,
-                        types.Content(role="model", parts=[types.Part(text=empathetic)]),
+                        types.Content(role="model", parts=[types.Part(text=spoken)]),
                     ],
                     max_turns=MAX_HISTORY_TURNS,
                 )
                 logger.info("[RETELL-GEMINI] personal_vent user=%s", user_text[:80])
                 yield ResponseResponse(
                     response_id=request.response_id,
-                    content=_delivery_text(empathetic),
+                    content=_delivery_text(spoken),
                     content_complete=True,
                     end_call=False,
                 )
                 return
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=FALLBACK_REPLY,
+                content_complete=True,
+                end_call=False,
+            )
+            return
 
         needs_external_data = (
             requires_live_web(user_text)

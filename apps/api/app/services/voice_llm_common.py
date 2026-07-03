@@ -14,6 +14,8 @@ from app.services.voice_spoken import (
 MAX_HISTORY_TURNS = 10
 SESSION_MAX_MINUTES = 30.0
 FALLBACK_REPLY = "Disculpe, señor. Tuve un inconveniente técnico. ¿Puede repetir?"
+VOICE_TIMEOUT_REPLY = "Disculpe señor, tardé demasiado. ¿Puede repetir?"
+VOICE_ERROR_REPLY = "Disculpe señor, tuve un inconveniente. ¿Puede repetir?"
 WEB_SEARCH_VOICE_FALLBACK = (
     "Señor, no pude obtener información actual en este momento. "
     "Basándome en lo que tengo registrado, le oriento con lo disponible. "
@@ -63,12 +65,24 @@ NO listes capacidades ni uses "¿En qué puedo ayudarle?"
 """.strip()
 
 REFORMULATE_EMPATHY_OVERLAY = """
-# REFORMULAR CON MÁS EMPATÍA
+# REFORMULAR CON MÁS EMPATÍA (VOZ)
 Tu respuesta anterior fue demasiado genérica, transaccional o vacía.
 Reescribe con empatía genuina — la misma calidez que el chat de texto CED.
-1-3 oraciones naturales. Valida lo que compartió el usuario antes de ofrecer ayuda.
-PROHIBIDO: "¿En qué puedo ayudarle?", "operativo", "a su servicio", relleno de chatbot.
+Máximo 2-4 oraciones completas para voz. Valida lo que compartió antes de aconsejar.
+Si pide consejo, da 2-3 acciones concretas y breves — no un ensayo largo.
+PROHIBIDO: markdown, asteriscos, listas numeradas largas, "¿En qué puedo ayudarle?",
+"operativo", "a su servicio", relleno de chatbot.
 """.strip()
+
+
+def ensure_voice_reply(text: str | None, *, fallback: str | None = None) -> str:
+    """Garantiza texto hablable en cada turno de voz."""
+    from app.services.voice_spoken import finalize_voice_delivery_text
+
+    cleaned = finalize_voice_delivery_text(str(text or "").strip())
+    if cleaned:
+        return cleaned
+    return fallback or FALLBACK_REPLY
 
 
 def voice_generation_limits(user_text: str) -> tuple[int, float]:
