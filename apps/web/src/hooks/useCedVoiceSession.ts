@@ -506,8 +506,11 @@ export function useCedVoiceSession(
           }
           if (ev.type === "navigation_instruction" && ev.text) {
             const text = String(ev.text);
-            callbacks?.onTranscript?.(text, "model", { partial: false });
-            void persistVoiceTranscript("model", text);
+            window.dispatchEvent(
+              new CustomEvent("ced-navigation-voice", {
+                detail: { text },
+              }),
+            );
           }
           if (ev.type === "map_search_results" && ev.places) {
             window.dispatchEvent(

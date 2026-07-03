@@ -11,6 +11,8 @@ type NavigationPanelProps = {
   position: GeoPosition | null;
   onStop: () => void;
   busy?: boolean;
+  /** Instrucción GPS hablada — solo panel mapa, no diálogo. */
+  voiceCue?: string | null;
 };
 
 function stepInstruction(route: NavRoute, stepIndex: number): string {
@@ -26,6 +28,7 @@ export function NavigationPanel({
   position,
   onStop,
   busy = false,
+  voiceCue = null,
 }: NavigationPanelProps) {
   const stepIndexRef = useRef(0);
 
@@ -63,6 +66,12 @@ export function NavigationPanel({
           <p className="current-instruction text-xl font-bold leading-snug text-white">
             {instruction}
           </p>
+
+          {voiceCue ? (
+            <p className="nav-voice-cue mt-2 text-sm font-medium text-cyan-300/90">
+              {voiceCue}
+            </p>
+          ) : null}
 
           {turnLabel ? (
             <p className="next-turn mt-1 text-sm text-[#00ffff]">

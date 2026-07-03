@@ -27,6 +27,8 @@ def _fresh_session() -> dict[str, Any]:
         "publishable_images": [],
         "awaiting_instagram_caption": False,
         "active_voice_call_id": None,
+        "active_mode": None,
+        "map_search_results": [],
         "tool_events": [],
         "updated_at": _now(),
     }
@@ -58,7 +60,73 @@ def set_camera_active(
         elif not active:
             session["camera_stream_present"] = False
         session["camera_updated_at"] = _now()
+        if active:
+            session["active_mode"] = "camera"
+        elif session.get("active_mode") == "camera":
+            session["active_mode"] = None
         session["updated_at"] = _now()
+
+
+def set_active_mode(user_id: str, mode: str | None) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["active_mode"] = (mode or "").strip() or None
+        session["updated_at"] = _now()
+
+
+def get_active_mode(user_id: str) -> str | None:
+    mode = _get(user_id).get("active_mode")
+    return str(mode).strip() if mode else None
+
+
+def set_map_search_results(user_id: str, places: list[dict[str, Any]] | None) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["map_search_results"] = deepcopy(places or [])
+        session["updated_at"] = _now()
+
+
+def get_map_search_results(user_id: str) -> list[dict[str, Any]]:
+    rows = _get(user_id).get("map_search_results")
+    return deepcopy(rows) if isinstance(rows, list) else []
+
+
+def get_active_mode_prompt(user_id: str) -> str:
+    mode = get_active_mode(user_id)
+    if mode == "map":
+        count = len(get_map_search_results(user_id))
+        options = (
+            f"Opciones en pantalla: {count} lugares."
+            if count
+            else "Sin resultados de búsqueda activos."
+        )
+        return (
+            "# MODO ACTIVO: MAPA/NAVEGACIÓN\n"
+            "El usuario está en modo de conducción con el mapa activo.\n"
+            f"{options}\n"
+            "Comandos disponibles en este modo:\n"
+            '- "busca X" → search_nearby_places(X)\n'
+            '- "el primero/segundo/más cercano" → start_navigation(index)\n'
+            '- "inicia/arranca/dale/sí" → confirmar e iniciar navegación\n'
+            '- "¿cuánto falta?" → dar ETA actual\n'
+            '- "detener/parar/ya llegué" → stop_navigation()\n'
+            "Responde brevemente. El usuario está conduciendo.\n"
+            "NO mezcles instrucciones GPS paso a paso en tus respuestas."
+        )
+    if mode == "camera":
+        return (
+            "# MODO ACTIVO: CÁMARA\n"
+            "El usuario tiene la cámara activa.\n"
+            "Analiza automáticamente lo que muestra.\n"
+            'Si pregunta "¿qué ves?" → analyze_camera_frame()'
+        )
+    if mode == "prospect":
+        return (
+            "# MODO ACTIVO: PROSPECCIÓN\n"
+            "El usuario está en modo prospección comercial.\n"
+            "Responde con foco en leads, segmentación y seguimiento."
+        )
+    return ""
 
 
 def is_camera_active(user_id: str, *, max_age_sec: float = 45.0) -> bool:

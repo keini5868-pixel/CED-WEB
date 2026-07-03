@@ -49,6 +49,7 @@ from app.services.voice_llm_common import (
     normalize_voice_delivery_text,
 )
 from app.services.voice_tool_executor import NAVIGATION_TIMEOUT_SEC, execute_voice_tool
+from app.services.voice_tool_async import execute_deferred_tool_batch
 from app.services.voice_spoken import (
     finalize_voice_delivery_text,
     split_voice_delivery_chunks,
@@ -76,6 +77,7 @@ router = APIRouter(tags=["retell-custom-llm"])
 POST_GREETING_COOLDOWN_S = 0.35
 GREETING_FALLBACK_S = 2.0
 WEB_SEARCH_FAST_PATH_TIMEOUT_SEC = 15.0
+GPS_INSTRUCTION_CHANNEL = "navigation_instruction"
 
 
 def _turn_slot(user_key: str) -> str:
@@ -189,6 +191,35 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         await asyncio.sleep(POST_GREETING_COOLDOWN_S)
         post_greeting_ready.set()
         logger.info("[RETELL-GEMINI] post-greeting cooldown listo call=%s", call_id)
+
+    async def send_direct_retell_audio(text: str) -> None:
+        """Canal GPS — audio directo a Retell sin pasar por Gemini."""
+        msg = (text or "").strip()
+        if not msg:
+            return
+        await websocket.send_json(
+            {
+                "response_type": "agent_interrupt",
+                "content": msg,
+                "interrupt_prior_spoke_content": False,
+            }
+        )
+
+    async def handle_navigation_instruction_audio(uid: str, *, call: str) -> bool:
+        """Bypass total del LLM para instrucciones GPS habladas."""
+        from app.services.navigation_voice import pop_navigation_speech
+
+        nav_text = pop_navigation_speech(uid)
+        if not nav_text:
+            return False
+        await send_direct_retell_audio(nav_text)
+        logger.info(
+            "[RETELL-GEMINI] navigation %s call=%s text=%s",
+            GPS_INSTRUCTION_CHANNEL,
+            call,
+            nav_text[:80],
+        )
+        return True
 
     async def send_greeting(response_id: int = 0, *, reason: str) -> None:
         nonlocal greeting_sent, greeting_release_task, greeting_in_flight
@@ -447,22 +478,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if interaction == "ping_pong":
             uid = resolve_call_user(call_id, request_json)
             if uid:
-                from app.services.navigation_voice import pop_navigation_speech
-
-                nav_text = pop_navigation_speech(uid)
-                if nav_text:
-                    await websocket.send_json(
-                        {
-                            "response_type": "agent_interrupt",
-                            "content": nav_text,
-                            "interrupt_prior_spoke_content": False,
-                        }
-                    )
-                    logger.info(
-                        "[RETELL-GEMINI] navigation agent_interrupt call=%s text=%s",
-                        call_id,
-                        nav_text[:80],
-                    )
+                await handle_navigation_instruction_audio(uid, call=call_id)
             await websocket.send_json(
                 {
                     "response_type": "ping_pong",
@@ -594,6 +610,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             scheduled_rid = response_id
             gpt_calls = 0
             partial_sent = False
+            deferred_tools_pending = False
 
             def _turn_rid_stale(rid: int = scheduled_rid) -> bool:
                 stale, _ = _is_superseded_turn_rid(rid, scheduled_key, turn_latest_rid)
@@ -1306,7 +1323,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     return
 
                 try:
-                    final_event = None
+                    draft_events: list[Any] = []
                     async for event in llm.draft_response(request):
                         stale, _ = _is_superseded_turn_rid(
                             scheduled_rid,
@@ -1322,7 +1339,61 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 call_id,
                             )
                             break
-                        final_event = event
+                        draft_events.append(event)
+
+                    deferred_batch = llm.take_deferred_batch()
+                    if deferred_batch is not None and draft_events:
+                        ack_event = draft_events[-1]
+                        async with response_lock:
+                            if not _turn_stale():
+                                await send_voice_partial(
+                                    response_id=scheduled_rid,
+                                    content=(ack_event.content or "Un momento, señor.").strip(),
+                                    content_complete=False,
+                                    generation=my_generation,
+                                )
+
+                        async def deliver_tool_spoken(text: str) -> bool:
+                            if _turn_stale():
+                                return False
+                            return await deliver_voice(text)
+
+                        async def run_deferred_tools() -> None:
+                            try:
+                                results = await execute_deferred_tool_batch(
+                                    deferred_batch,
+                                    user_id=uid,
+                                    deliver=deliver_tool_spoken,
+                                    is_stale=_turn_stale,
+                                    build_tool_payload=llm.build_async_tool_payload,
+                                )
+                                if results and not _turn_stale():
+                                    await llm.apply_deferred_results(
+                                        deferred_batch,
+                                        results=results,
+                                    )
+                            except Exception:
+                                logger.exception(
+                                    "[RETELL-GEMINI] deferred tools failed call=%s rid=%s",
+                                    call_id,
+                                    scheduled_rid,
+                                )
+                                if not _turn_stale():
+                                    await deliver_voice(
+                                        "Disculpe señor, hubo un inconveniente."
+                                    )
+
+                        asyncio.create_task(run_deferred_tools())
+                        deferred_tools_pending = True
+                        logger.info(
+                            "[RETELL-GEMINI] deferred tools scheduled call=%s rid=%s count=%s",
+                            call_id,
+                            scheduled_rid,
+                            len(deferred_batch.calls),
+                        )
+                        return
+
+                    final_event = draft_events[-1] if draft_events else None
                     if final_event is not None:
                         content = (final_event.content or "").strip() or FALLBACK_REPLY
                         if pending_web and (
@@ -1387,7 +1458,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             finally:
                 turn_draft_in_progress = False
                 turn_draft_user_key = ""
-                await anti_silence_if_unanswered(reason="draft_finally")
+                if not deferred_tools_pending:
+                    await anti_silence_if_unanswered(reason="draft_finally")
                 logger.info(
                     "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft",
                     scheduled_rid,

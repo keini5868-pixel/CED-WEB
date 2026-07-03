@@ -685,6 +685,9 @@ async def execute_voice_tool(
             )
 
         if name == "activar_prospeccion":
+            from app.services import voice_client_session as vcs
+
+            vcs.set_active_mode(user_id, "prospect")
             result = await asyncio.to_thread(set_prospection_enabled, user_id, True)
             if result.get("ok"):
                 return _spoken_ok("Sistema de prospección activado, señor.")
@@ -811,6 +814,11 @@ async def execute_voice_tool(
             return _spoken_ok(spoken)
 
         if name == "activar_modo_conducir":
+            from app.services import voice_client_session as vcs
+
+            vcs.set_active_mode(user_id, "map")
+            vcs.set_map_search_results(user_id, [])
+            clear_navigation_pending(user_id)
             push_client_action(user_id, "open_drive", {})
             return {
                 "ok": True,
@@ -850,7 +858,11 @@ async def execute_voice_tool(
                     error="places_failed",
                 )
             places = list(found.get("places") or [])
+            from app.services import voice_client_session as vcs
+
+            vcs.set_active_mode(user_id, "map")
             set_place_options(user_id, places, query=query)
+            vcs.set_map_search_results(user_id, places)
             push_client_action(
                 user_id,
                 "show_place_options",
@@ -1009,8 +1021,11 @@ async def execute_voice_tool(
             }
 
         if name in {"stop_navigation", "cancelar_navegacion"}:
+            from app.services import voice_client_session as vcs
+
             clear_navigation(user_id)
             clear_place_options(user_id)
+            vcs.set_map_search_results(user_id, [])
             push_client_action(user_id, "cancel_navigation", {})
             return {
                 "ok": True,
@@ -1025,6 +1040,10 @@ async def execute_voice_tool(
             "salir_mapa",
             "cerrar_modo_conducir",
         }:
+            from app.services import voice_client_session as vcs
+
+            vcs.set_active_mode(user_id, None)
+            vcs.set_map_search_results(user_id, [])
             push_client_action(user_id, "close_drive", {})
             return {
                 "ok": True,

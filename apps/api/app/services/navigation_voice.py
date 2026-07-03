@@ -31,7 +31,12 @@ def enqueue_navigation_speech(user_id: str, text: str) -> None:
         _pending_speech[uid] = rows[-8:]
     vcs.push_tool_event(
         uid,
-        {"type": "navigation_instruction", "text": msg},
+        {
+            "type": "navigation_instruction",
+            "channel": "navigation_instruction",
+            "text": msg,
+            "hud_feed": False,
+        },
     )
     logger.info("[NAV:VOICE] queued user=%s text=%s", uid[:8], msg[:80])
 

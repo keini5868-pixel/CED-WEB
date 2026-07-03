@@ -34,6 +34,13 @@ from app.services.voice_spoken import (
     voice_spoken_limit,
 )
 from app.services.voice_tool_executor import execute_voice_tool
+from app.services.voice_tool_async import (
+    DeferredToolBatch,
+    DeferredToolCall,
+    combined_tool_acknowledgment,
+    execute_deferred_tool_batch,
+    format_search_web_spoken,
+)
 from app.services.voice_llm_common import (
     CONVERSATIONAL_TURN_OVERLAY,
     DELAY_ACK_OVERLAY,
@@ -243,6 +250,63 @@ class GeminiVoiceLlm:
         self._latency_call_id: str = ""
         self._latency_response_id: int = 0
         self._web_search_fallback: bool = False
+        self._deferred_batch: DeferredToolBatch | None = None
+        self._history_lock = asyncio.Lock()
+
+    def take_deferred_batch(self) -> DeferredToolBatch | None:
+        batch = self._deferred_batch
+        self._deferred_batch = None
+        return batch
+
+    def build_async_tool_payload(
+        self,
+        name: str,
+        tool_args: dict[str, Any],
+        tool_result: dict[str, Any],
+    ) -> tuple[str, dict[str, Any]]:
+        if name == "search_web":
+            if tool_result.get("fallback") or tool_result.get("status") == "timeout":
+                self._web_search_fallback = True
+            spoken, payload = format_search_web_spoken(tool_args, tool_result)
+            if payload.get("fallback"):
+                self._web_search_fallback = True
+            return spoken, payload
+        if tool_result.get("ok") is False:
+            spoken = str(
+                tool_result.get("spoken") or "No pude completar la operación, señor."
+            )
+            return spoken, {
+                "status": "error",
+                "spoken": spoken,
+                "error": tool_result.get("error"),
+            }
+        spoken = str(tool_result.get("spoken") or "Completado, señor.")
+        payload: dict[str, Any] = {"status": "success", "spoken": spoken}
+        if name == "generar_pdf" and tool_result.get("file_id"):
+            payload["file_id"] = tool_result.get("file_id")
+        return spoken, payload
+
+    async def apply_deferred_results(
+        self,
+        batch: DeferredToolBatch,
+        *,
+        results: list[tuple[str, dict[str, Any], str]],
+    ) -> None:
+        if not batch.last_content or not results:
+            return
+        function_response_parts: list[types.Part] = []
+        for name, tool_payload, _spoken in results:
+            function_response_parts.append(
+                types.Part.from_function_response(name=name, response=tool_payload),
+            )
+        follow_up_contents = [
+            *self._history,
+            batch.last_content,
+            types.Content(role="model", parts=batch.model_parts),
+            types.Content(role="user", parts=function_response_parts),
+        ]
+        async with self._history_lock:
+            self._history = _truncate_contents(follow_up_contents, max_turns=MAX_HISTORY_TURNS)
 
     def set_latency_context(self, call_id: str, response_id: int) -> None:
         self._latency_call_id = call_id
@@ -1058,154 +1122,48 @@ class GeminiVoiceLlm:
                     end_call=False,
                 )
                 return
-            function_response_parts: list[types.Part] = []
             model_parts: list[types.Part] = list(response.candidates[0].content.parts or [])
 
-            tool_spoken_parts: list[str] = []
-            pdf_tool_ok = False
+            deferred_calls: list[DeferredToolCall] = []
             for fc in function_calls:
                 name = str(fc.name or "")
                 args = _function_call_args(fc)
-                logger.info("[RETELL-GEMINI] tool=%s args=%s user=%s", name, args, (self.user_id or "?")[:8])
-
-                if not self.user_id:
-                    spoken = "No identifiqué al usuario, señor."
-                    tool_payload: dict[str, Any] = {"status": "error", "spoken": spoken}
-                else:
-                    if name == "search_web":
-                        tool_timeout = SEARCH_WEB_TOOL_TIMEOUT_SEC
-                    elif name == "generar_pdf":
-                        tool_timeout = PDF_TOOL_TIMEOUT_SEC
-                    else:
-                        tool_timeout = TOOL_TIMEOUT_SEC
-                    tool_args = dict(args)
-                    if name == "generar_pdf":
-                        fallbacks = _assistant_texts_from_gemini_history(self._history)
-                        if fallbacks:
-                            tool_args["_pdf_fallback_texts"] = fallbacks[-5:]
-                        user_texts = _user_texts_from_gemini_history(self._history)
-                        tool_args["_user_request"] = (
-                            user_text.strip()
-                            or (user_texts[-1] if user_texts else "")
-                            or str(args.get("titulo") or args.get("title") or "").strip()
-                        )
-                    tool_result: dict[str, Any] = {}
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(name, self.user_id, tool_args),
-                            timeout=tool_timeout,
-                        )
-                        if name == "search_web":
-                            spoken, tool_payload = self._search_web_tool_payload(tool_result)
-                            if tool_payload.get("status") == "success" and spoken:
-                                kind = str(args.get("kind") or "general")
-                                spoken = format_web_delivery(kind, spoken)
-                                tool_payload = {**tool_payload, "spoken": spoken}
-                            elif tool_payload.get("fallback"):
-                                self._web_search_fallback = True
-                        elif tool_result.get("ok") is False:
-                            spoken = str(
-                                tool_result.get("spoken") or "No pude completar la operación, señor."
-                            )
-                            tool_payload = {
-                                "status": "error",
-                                "spoken": spoken,
-                                "error": tool_result.get("error"),
-                            }
-                        else:
-                            spoken = str(tool_result.get("spoken") or "Completado, señor.")
-                            tool_payload = {"status": "success", "spoken": spoken}
-                            if name == "generar_pdf" and tool_result.get("file_id"):
-                                tool_payload["file_id"] = tool_result.get("file_id")
-                                pdf_tool_ok = True
-                    except asyncio.TimeoutError:
-                        logger.warning("[RETELL-GEMINI] tool timeout name=%s", name)
-                        if name == "search_web":
-                            self._web_search_fallback = True
-                            spoken = WEB_SEARCH_VOICE_FALLBACK
-                            tool_payload = {
-                                "status": "timeout",
-                                "fallback": True,
-                                "spoken": spoken,
-                            }
-                        elif name == "generar_pdf":
-                            spoken = (
-                                "El PDF está tardando más de lo habitual, señor. "
-                                "Puede pedirlo también en el chat mientras termino de prepararlo."
-                            )
-                            tool_payload = {"status": "timeout", "spoken": spoken}
-                        else:
-                            spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
-                            tool_payload = {"status": "timeout", "spoken": spoken}
-                tool_spoken_parts.append(spoken)
-
-                function_response_parts.append(
-                    types.Part.from_function_response(
-                        name=name,
-                        response=tool_payload,
+                logger.info(
+                    "[RETELL-GEMINI] tool defer=%s args=%s user=%s",
+                    name,
+                    args,
+                    (self.user_id or "?")[:8],
+                )
+                tool_args = dict(args)
+                if name == "generar_pdf":
+                    fallbacks = _assistant_texts_from_gemini_history(self._history)
+                    if fallbacks:
+                        tool_args["_pdf_fallback_texts"] = fallbacks[-5:]
+                    user_texts = _user_texts_from_gemini_history(self._history)
+                    tool_args["_user_request"] = (
+                        user_text.strip()
+                        or (user_texts[-1] if user_texts else "")
+                        or str(args.get("titulo") or args.get("title") or "").strip()
                     )
-                )
+                deferred_calls.append(DeferredToolCall(name=name, args=tool_args))
 
-            follow_up_contents = [
-                *self._history,
-                last,
-                types.Content(role="model", parts=model_parts),
-                types.Content(role="user", parts=function_response_parts),
-            ]
-
-            final_text = tool_spoken_parts[-1] if tool_spoken_parts else "Completado, señor."
-            only_pdf = len(function_calls) == 1 and str(function_calls[0].name or "") == "generar_pdf"
-            if only_pdf and pdf_tool_ok:
-                self._history = _truncate_contents(follow_up_contents, max_turns=MAX_HISTORY_TURNS)
-                logger.info("[RETELL-GEMINI] generar_pdf direct spoken user=%s", (self.user_id or "?")[:8])
-                yield ResponseResponse(
-                    response_id=request.response_id,
-                    content=_delivery_text(final_text),
-                    content_complete=True,
-                    end_call=False,
-                )
-                return
-
-            try:
-                follow_up = await self._generate_with_timeout(
-                    contents=follow_up_contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=self._build_draft_system(user_text),
-                        temperature=0.4,
-                        max_output_tokens=max_tokens,
-                    ),
-                    timeout_sec=timeout_sec,
-                    path="tool_follow_up",
-                )
-                follow_text = _extract_text(follow_up)
-                if follow_text:
-                    final_text = _delivery_text(follow_text)
-                    final_text = await self._ensure_complete_voice_reply(
-                        final_text,
-                        response=follow_up,
-                        contents=follow_up_contents,
-                        user_text=user_text,
-                        max_tokens=max_tokens,
-                        timeout_sec=timeout_sec,
-                        path="tool_follow_up",
-                    )
-                    _log_gemini_delivery("tool_follow_up", final_text, user_text=user_text)
-            except (asyncio.TimeoutError, Exception):  # noqa: BLE001
-                logger.warning("[RETELL-GEMINI] tool follow-up failed — using spoken tool result")
-
-            self._history = _truncate_contents(follow_up_contents, max_turns=MAX_HISTORY_TURNS)
-            final_text = await self._sanitize_voice_output(
-                final_text,
-                contents=follow_up_contents,
+            self._deferred_batch = DeferredToolBatch(
+                calls=deferred_calls,
                 user_text=user_text,
-                max_tokens=max_tokens,
-                path="tool_follow_up",
+                model_parts=model_parts,
+                last_content=last,
+                on_web_fallback=lambda: setattr(self, "_web_search_fallback", True),
             )
-            logger.info("[RETELL-GEMINI] tool agent=%s", final_text[:160])
+            ack = combined_tool_acknowledgment([c.name for c in deferred_calls])
+            logger.info(
+                "[RETELL-GEMINI] tool ack immediate user=%s ack=%s",
+                (self.user_id or "?")[:8],
+                ack[:60],
+            )
             yield ResponseResponse(
                 response_id=request.response_id,
-                content=_delivery_text(final_text),
-                content_complete=True,
+                content=_delivery_text(ack),
+                content_complete=False,
                 end_call=False,
             )
             return

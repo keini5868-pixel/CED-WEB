@@ -48,6 +48,17 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
   const [mapNav, setMapNav] = useState<NavigationMapState>(EMPTY_NAV);
   const [navBusy, setNavBusy] = useState(false);
   const [navError, setNavError] = useState<string | null>(null);
+  const [navVoiceCue, setNavVoiceCue] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onNavVoice = (event: Event) => {
+      const detail = (event as CustomEvent<{ text?: string }>).detail;
+      const text = String(detail?.text || "").trim();
+      if (text) setNavVoiceCue(text);
+    };
+    window.addEventListener("ced-navigation-voice", onNavVoice);
+    return () => window.removeEventListener("ced-navigation-voice", onNavVoice);
+  }, []);
 
   const mapState = useMemo(
     () =>
@@ -65,6 +76,7 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
   const resetToIdle = useCallback(() => {
     cancelBrowserNavigationSpeech();
     setNavError(null);
+    setNavVoiceCue(null);
     setMapNav(EMPTY_NAV);
   }, []);
 
@@ -408,6 +420,7 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
             position={position}
             onStop={() => void handleStopNavigation()}
             busy={navBusy}
+            voiceCue={navVoiceCue}
           />
         </div>
       ) : null}

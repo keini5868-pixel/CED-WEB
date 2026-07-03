@@ -222,6 +222,14 @@ def build_voice_system(
                     )
         except Exception:  # noqa: BLE001
             pass
+        try:
+            from app.services import voice_client_session as vcs
+
+            mode_prompt = vcs.get_active_mode_prompt(uid)
+            if mode_prompt:
+                base = f"{base}\n\n{mode_prompt}"
+        except Exception:  # noqa: BLE001
+            pass
     return base
 
 

@@ -50,6 +50,8 @@ export interface HudVoiceImageOptions {
 export interface HudVoiceLineOptions {
   partial?: boolean;
   streamKey?: string;
+  /** Canal separado — p. ej. navigation_instruction no va al diálogo. */
+  source?: string;
 }
 
 interface HudFeedContextValue {
@@ -95,6 +97,9 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
 
   const pushVoiceLine = useCallback(
     (text: string, role: "user" | "model", options?: HudVoiceLineOptions) => {
+      if (options?.source === "navigation_instruction") {
+        return;
+      }
       const trimmed = sanitizeHudTranscript(text);
       const partial = options?.partial ?? false;
       const streamKey = options?.streamKey;
