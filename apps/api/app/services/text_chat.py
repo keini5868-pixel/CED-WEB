@@ -33,8 +33,8 @@ from app.services.meta_social import MetaSocialError, publish_facebook, publish_
 from app.services.pdf_report import (
     assistant_fallback_texts_from_messages,
     normalize_pdf_fields,
-    resolve_pdf_content,
     store_pdf,
+    user_texts_from_messages,
 )
 from app.services.internal_kb_guard import (
     contains_internal_kb_leak as _contains_internal_kb_leak,
@@ -970,13 +970,15 @@ def _run_chat_tool(
                 )
             title, content = normalize_pdf_fields(tool_input)
             fallbacks = assistant_fallback_texts_from_messages(chat_messages or [])
-            resolved = resolve_pdf_content(title, content, fallback_texts=fallbacks)
+            user_texts = user_texts_from_messages(chat_messages or [])
+            user_request = user_texts[-1] if user_texts else title
             artifact = store_pdf(
                 user_id=user_id,
                 title=title,
-                content=resolved,
+                content=content,
                 conversation_id=conversation_id,
                 fallback_texts=fallbacks,
+                user_request=user_request,
             )
             return json.dumps(
                 {
@@ -1689,13 +1691,15 @@ def send_message(
         if pdf_title == "Documento CED" and pdf_body:
             pdf_title = pdf_body[:60].strip()
         fallbacks = assistant_fallback_texts_from_messages(_anthropic_messages(history))
-        resolved_body = resolve_pdf_content(pdf_title, pdf_body, fallback_texts=fallbacks)
+        user_texts = user_texts_from_messages(_anthropic_messages(history))
+        user_request = user_texts[-1] if user_texts else pdf_title
         artifact = store_pdf(
             user_id=user_id,
             title=pdf_title,
-            content=resolved_body,
+            content=pdf_body,
             conversation_id=conversation_id,
             fallback_texts=fallbacks,
+            user_request=user_request,
         )
         return _finish(
             f'Listo. PDF "{artifact.title}" generado. Usa el botón Descargar abajo.',

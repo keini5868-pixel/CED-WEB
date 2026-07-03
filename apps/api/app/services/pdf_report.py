@@ -20,6 +20,8 @@ _USER_INDEX: dict[str, list[dict[str, str]]] = {}
 _TTL = timedelta(hours=48)
 _CED_PDF_PREFIX = "[CED_PDF]"
 _PDF_BODY_MAX_CHARS = 50_000
+_PDF_COMPOSE_MIN_CHARS = 160
+_PDF_COMPOSE_MODEL = "gemini-2.5-flash"
 
 
 def normalize_pdf_fields(params: dict[str, Any]) -> tuple[str, str]:
@@ -58,7 +60,110 @@ def resolve_pdf_content(
             return text[:_PDF_BODY_MAX_CHARS]
     if body:
         return body[:_PDF_BODY_MAX_CHARS]
-    return safe_title
+    return ""
+
+
+def user_texts_from_messages(messages: list[dict[str, Any]]) -> list[str]:
+    texts: list[str] = []
+    for row in messages:
+        if str(row.get("role") or "") != "user":
+            continue
+        content = row.get("content")
+        if isinstance(content, str) and content.strip():
+            texts.append(content.strip())
+    return texts
+
+
+def pdf_content_needs_composition(
+    title: str,
+    body: str,
+    *,
+    user_request: str = "",
+) -> bool:
+    """True si el PDF solo repite la petición/título y hay que redactar contenido real."""
+    t = (title or "").strip().lower()
+    b = (body or "").strip().lower()
+    if not b:
+        return True
+    if b == t:
+        return True
+    if len(b) < _PDF_COMPOSE_MIN_CHARS:
+        return True
+    req = (user_request or "").strip().lower()
+    if req and len(b) <= len(req) + 20 and (b in req or req in b):
+        return True
+    if re.search(r"\b(pdf|documento|exporta(?:r|me)?)\b", b) and len(b) < 220:
+        return True
+    return False
+
+
+def compose_pdf_body(
+    *,
+    title: str,
+    user_request: str,
+    draft_content: str = "",
+    context_snippets: list[str] | None = None,
+) -> str:
+    """Redacta el cuerpo del PDF con Gemini cuando el modelo no pasó contenido sustantivo."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    api_key = settings.google_api_key.strip()
+    if not api_key:
+        logger.warning("[PDF] compose skipped — no GOOGLE_API_KEY")
+        return ""
+
+    req = (user_request or title or "").strip()
+    safe_title = (title or "Documento CED").strip()
+    draft = (draft_content or "").strip()
+    context_lines = [
+        (snippet or "").strip()[:500]
+        for snippet in (context_snippets or [])
+        if (snippet or "").strip()
+    ][-6:]
+    context_block = "\n".join(f"- {line}" for line in context_lines) if context_lines else "(sin contexto previo)"
+
+    prompt = f"""Redacta el CONTENIDO COMPLETO de un documento PDF en español.
+
+Título del documento: {safe_title}
+
+Petición del usuario: {req}
+
+Borrador recibido (puede ser solo el título o la petición — NO lo copies tal cual):
+{draft[:900] if draft else "(vacío)"}
+
+Contexto de la conversación:
+{context_block}
+
+INSTRUCCIONES:
+- Entrega el documento que el usuario pidió (consejos, resumen, guía, listado, análisis, etc.).
+- PROHIBIDO devolver solo el título o repetir la petición del usuario.
+- Si piden consejos de "El Alquimista", escribe consejos reales inspirados en la obra de Paulo Coelho (Leyenda Personal, señales, miedo, viaje, tesoro, etc.).
+- Usa secciones numeradas o viñetas cuando ayude.
+- Mínimo 350 palabras cuando el tema lo permita.
+- Texto plano legible (sin markdown con asteriscos).
+- Entrega SOLO el cuerpo del documento, sin saludo ni despedida."""
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model=_PDF_COMPOSE_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                temperature=0.55,
+                max_output_tokens=4096,
+            ),
+        )
+        text = (response.text or "").strip()
+        if text and len(text) >= 80:
+            logger.info("[PDF] composed body chars=%s title=%s", len(text), safe_title[:60])
+            return text[:_PDF_BODY_MAX_CHARS]
+    except Exception:  # noqa: BLE001
+        logger.exception("[PDF] compose_pdf_body failed title=%s", safe_title[:60])
+    return ""
 
 
 def assistant_fallback_texts_from_messages(messages: list[dict[str, Any]]) -> list[str]:
@@ -152,15 +257,36 @@ def store_pdf(
     content: str,
     conversation_id: str | None = None,
     fallback_texts: list[str] | None = None,
+    user_request: str | None = None,
 ) -> PdfArtifact:
     _purge_expired()
     file_id = uuid.uuid4().hex
     safe_title = _strip_markdown(title) or "Documento CED"
-    safe_content = resolve_pdf_content(
+    raw_body = _strip_markdown(content)
+    req = (user_request or safe_title).strip()
+    resolved = resolve_pdf_content(
         safe_title,
-        _strip_markdown(content),
+        raw_body,
         fallback_texts=fallback_texts,
     )
+    context = [*(fallback_texts or [])]
+    if req and req not in context:
+        context.append(req)
+
+    if pdf_content_needs_composition(safe_title, resolved, user_request=req):
+        composed = compose_pdf_body(
+            title=safe_title,
+            user_request=req,
+            draft_content=raw_body or resolved,
+            context_snippets=context,
+        )
+        if composed:
+            resolved = composed
+
+    if pdf_content_needs_composition(safe_title, resolved, user_request=req):
+        raise ValueError("No se pudo redactar el contenido del PDF")
+
+    safe_content = resolved[:_PDF_BODY_MAX_CHARS]
     filename = _sanitize_filename(safe_title)
     data = generate_pdf_bytes(title=safe_title, content=safe_content)
     now = datetime.now(timezone.utc)

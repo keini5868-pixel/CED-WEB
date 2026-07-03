@@ -79,6 +79,18 @@ def _delivery_text(text: str) -> str:
     return " ".join((text or "").split()).strip()
 
 
+def _user_texts_from_gemini_history(history: list[types.Content]) -> list[str]:
+    texts: list[str] = []
+    for content in history:
+        if str(content.role or "") != "user":
+            continue
+        for part in content.parts or []:
+            text = getattr(part, "text", None)
+            if text and str(text).strip():
+                texts.append(str(text).strip())
+    return texts
+
+
 def _assistant_texts_from_gemini_history(history: list[types.Content]) -> list[str]:
     texts: list[str] = []
     for content in history:
@@ -1024,6 +1036,9 @@ class GeminiVoiceLlm:
                         fallbacks = _assistant_texts_from_gemini_history(self._history)
                         if fallbacks:
                             tool_args["_pdf_fallback_texts"] = fallbacks[-5:]
+                        user_texts = _user_texts_from_gemini_history(self._history)
+                        if user_texts:
+                            tool_args["_user_request"] = user_texts[-1]
                     try:
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(name, self.user_id, tool_args),

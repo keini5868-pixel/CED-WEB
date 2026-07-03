@@ -38,6 +38,7 @@ from app.services.voice_llm_common import (
     voice_repeats_last_assistant,
 )
 from app.services.internal_kb_guard import VOICE_KB_LEAK_OVERLAY, contains_internal_kb_leak
+from app.services.pdf_report import assistant_fallback_texts_from_messages, user_texts_from_messages
 from app.services.voice_spoken import is_prompt_creation_request
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_tool_executor import execute_voice_tool
@@ -491,12 +492,16 @@ class OpenAIVoiceLlm:
         tool_messages: list[dict[str, Any]] = []
         spoken_parts: list[str] = []
         pdf_fallbacks = assistant_fallback_texts_from_messages(context_messages or [])
+        user_texts = user_texts_from_messages(context_messages or [])
         for tc in tool_calls:
             fn = tc.get("function") or {}
             name = str(fn.get("name") or "")
             args = _parse_tool_args(fn.get("arguments"))
-            if name == "generar_pdf" and pdf_fallbacks:
-                args = {**args, "_pdf_fallback_texts": pdf_fallbacks[-3:]}
+            if name == "generar_pdf":
+                if pdf_fallbacks:
+                    args = {**args, "_pdf_fallback_texts": pdf_fallbacks[-3:]}
+                if user_texts:
+                    args = {**args, "_user_request": user_texts[-1]}
             call_id = str(tc.get("id") or "")
             logger.info(
                 "[RETELL-OPENAI] tool=%s args=%s user=%s",

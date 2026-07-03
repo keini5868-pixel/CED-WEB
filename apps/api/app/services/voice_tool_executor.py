@@ -29,7 +29,11 @@ from app.services.navigation_session import (
     set_route,
 )
 from app.services.cognitive_memory import save_memory, search_memory
-from app.services.pdf_report import assistant_fallback_texts_from_messages
+from app.services.pdf_report import (
+    assistant_fallback_texts_from_messages,
+    normalize_pdf_fields,
+    store_pdf,
+)
 from app.services.prospection import get_prospection_report, set_prospection_enabled
 from app.services.social_comments import fetch_social_comments
 from app.services.user_address import sync_address_from_memory_key
@@ -511,20 +515,26 @@ async def execute_voice_tool(
             titulo, contenido = normalize_pdf_fields(params)
             fallbacks = params.get("_pdf_fallback_texts")
             fallback_list = fallbacks if isinstance(fallbacks, list) else None
-            resolved = resolve_pdf_content(titulo, contenido, fallback_texts=fallback_list)
-            if not resolved or len(resolved.strip()) < 8:
-                return _spoken_err(
-                    "No pude armar el contenido del PDF, señor. "
-                    "Dígame qué texto desea guardar o repita la petición.",
-                    error="pdf_empty_content",
-                )
+            user_request = str(
+                params.get("_user_request")
+                or params.get("user_request")
+                or params.get("query")
+                or titulo
+            ).strip()
             try:
                 artifact = await asyncio.to_thread(
                     store_pdf,
                     user_id=user_id,
                     title=titulo,
-                    content=resolved,
+                    content=contenido,
                     fallback_texts=fallback_list,
+                    user_request=user_request,
+                )
+            except ValueError:
+                return _spoken_err(
+                    "No pude redactar el contenido del PDF, señor. "
+                    "Repita qué desea incluir en el documento.",
+                    error="pdf_empty_content",
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.exception("[VOICE:PDF] store failed user=%s", user_id[:8])
