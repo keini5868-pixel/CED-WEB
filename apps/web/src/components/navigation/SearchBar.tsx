@@ -3,7 +3,14 @@
 import { ArrowRight, Search } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import { loadGoogleMaps } from "@/lib/maps/loadGoogleMaps";
+import { suggestNavigationPlaces } from "@/lib/api/navigation";
+
+type Suggestion = {
+  label: string;
+  address?: string;
+  lat: number;
+  lng: number;
+};
 
 type SearchBarProps = {
   onSearch: (query: string) => void;
@@ -18,79 +25,116 @@ export function SearchBar({
   disabled = false,
   placeholder = "Escribe una dirección o lugar...",
 }: SearchBarProps) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const debounceRef = useRef<number | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    let cancelled = false;
+    const onDocClick = (ev: MouseEvent) => {
+      if (!containerRef.current?.contains(ev.target as Node)) {
+        setSuggestOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
 
-    void loadGoogleMaps()
-      .then(() => {
-        if (cancelled || !inputRef.current || autocompleteRef.current) return;
+  useEffect(() => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    const q = query.trim();
+    if (q.length < 2 || disabled) {
+      setSuggestions([]);
+      setSuggestOpen(false);
+      return;
+    }
 
-        autocompleteRef.current = new google.maps.places.Autocomplete(
-          inputRef.current,
-          {
-            fields: ["formatted_address", "geometry", "name"],
-            types: ["geocode", "establishment"],
-          },
-        );
-
-        autocompleteRef.current.addListener("place_changed", () => {
-          const place = autocompleteRef.current?.getPlace();
-          const loc = place?.geometry?.location;
-          if (!loc) return;
-          const label =
-            place?.formatted_address || place?.name || inputRef.current?.value || "";
-          setQuery(label);
-          onPlaceSelect?.({
-            lat: loc.lat(),
-            lng: loc.lng(),
-            label,
-          });
+    debounceRef.current = window.setTimeout(() => {
+      void suggestNavigationPlaces(q)
+        .then((res) => {
+          const items = res.suggestions || [];
+          setSuggestions(items);
+          setSuggestOpen(items.length > 0);
+        })
+        .catch(() => {
+          setSuggestions([]);
+          setSuggestOpen(false);
         });
-      })
-      .catch(() => {
-        /* autocompletado opcional si falla la carga */
-      });
+    }, 320);
 
     return () => {
-      cancelled = true;
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
-  }, [onPlaceSelect]);
+  }, [query, disabled]);
 
   const submit = () => {
     const q = query.trim();
     if (!q || disabled) return;
+    setSuggestOpen(false);
     onSearch(q);
   };
 
+  const pickSuggestion = (item: Suggestion) => {
+    setQuery(item.label);
+    setSuggestOpen(false);
+    setSuggestions([]);
+    onPlaceSelect?.({
+      lat: item.lat,
+      lng: item.lng,
+      label: item.label,
+    });
+  };
+
   return (
-    <div className="flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-black/85 px-3 py-2 shadow-lg backdrop-blur-md">
-      <Search className="h-4 w-4 shrink-0 text-cyan-400" />
-      <input
-        ref={inputRef}
-        type="text"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") submit();
-        }}
-        disabled={disabled}
-        placeholder={placeholder}
-        className="min-w-0 flex-1 bg-transparent text-sm text-cyan-50 placeholder:text-cyan-700 focus:outline-none"
-        autoComplete="off"
-      />
-      <button
-        type="button"
-        onClick={submit}
-        disabled={disabled || !query.trim()}
-        className="rounded border border-cyan-500/50 bg-cyan-950/60 p-2 text-cyan-300 transition hover:bg-cyan-900/60 disabled:opacity-40"
-        aria-label="Buscar"
-      >
-        <ArrowRight className="h-4 w-4" />
-      </button>
+    <div ref={containerRef} className="relative">
+      <div className="flex items-center gap-2 rounded-lg border border-cyan-500/40 bg-black/85 px-3 py-2 shadow-lg backdrop-blur-md">
+        <Search className="h-4 w-4 shrink-0 text-cyan-400" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => {
+            if (suggestions.length) setSuggestOpen(true);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+            if (e.key === "Escape") setSuggestOpen(false);
+          }}
+          disabled={disabled}
+          placeholder={placeholder}
+          className="min-w-0 flex-1 bg-transparent text-sm text-cyan-50 placeholder:text-cyan-700 focus:outline-none"
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={disabled || !query.trim()}
+          className="rounded border border-cyan-500/50 bg-cyan-950/60 p-2 text-cyan-300 transition hover:bg-cyan-900/60 disabled:opacity-40"
+          aria-label="Buscar"
+        >
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+
+      {suggestOpen && suggestions.length > 0 ? (
+        <ul className="absolute left-0 right-0 top-full z-[120] mt-1 max-h-52 overflow-y-auto rounded-lg border border-cyan-500/30 bg-black/95 py-1 shadow-xl">
+          {suggestions.map((item, idx) => (
+            <li key={`${item.label}-${idx}`}>
+              <button
+                type="button"
+                onClick={() => pickSuggestion(item)}
+                className="block w-full px-3 py-2 text-left hover:bg-cyan-950/50"
+              >
+                <span className="block text-sm text-cyan-100">{item.label}</span>
+                {item.address && item.address !== item.label ? (
+                  <span className="block text-xs text-cyan-600">{item.address}</span>
+                ) : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

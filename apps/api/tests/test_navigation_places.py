@@ -6,7 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.services.navigation_maps import format_distance_imperial, search_nearby_places
+from app.services.navigation_maps import (
+    format_distance_imperial,
+    search_nearby_places,
+    _search_via_geocode,
+    _search_via_places_legacy,
+)
 from app.services.voice_tool_executor import _parse_place_option_index
 
 
@@ -32,7 +37,7 @@ def test_parse_place_option_index(params, expected):
     assert _parse_place_option_index(params) == expected
 
 
-def test_search_nearby_places_sorts_by_distance():
+def test_search_via_places_legacy_sorts_by_distance():
     mock_response = MagicMock()
     mock_response.json.return_value = {
         "status": "OK",
@@ -59,6 +64,68 @@ def test_search_nearby_places_sorts_by_distance():
     with patch("app.services.navigation_maps._maps_key", return_value="test-key"), patch(
         "app.services.navigation_maps.httpx.Client", return_value=mock_client
     ):
+        result = _search_via_places_legacy(
+            "Walmart",
+            origin_lat=35.2271,
+            origin_lng=-80.8431,
+            limit=3,
+            radius_m=50_000,
+        )
+
+    assert result["ok"] is True
+    places = result["places"]
+    assert len(places) == 2
+    assert places[0]["name"] == "Walmart Near"
+    assert places[0]["distance_text"]
+
+
+def test_search_nearby_places_falls_back_to_geocode_on_request_denied():
+    denied = MagicMock()
+    denied.json.return_value = {
+        "status": "REQUEST_DENIED",
+        "error_message": "This API project is not authorized to use this API.",
+    }
+    denied_post = MagicMock()
+    denied_post.status_code = 403
+    denied_post.json.return_value = {
+        "error": {"status": "PERMISSION_DENIED", "message": "Places API (New) has not been used"},
+    }
+
+    geocode_ok = MagicMock()
+    geocode_ok.json.return_value = {
+        "status": "OK",
+        "results": [
+            {
+                "formatted_address": "8008 Providence Rd, Charlotte, NC",
+                "place_id": "geo1",
+                "types": ["establishment", "store"],
+                "address_components": [
+                    {"long_name": "Walmart", "types": ["establishment"]},
+                ],
+                "geometry": {"location": {"lat": 35.15, "lng": -80.77}},
+            }
+        ],
+    }
+
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+
+    def route_request(method, url, **kwargs):
+        if method == "post" and "places.googleapis.com" in url:
+            return denied_post
+        if method == "get" and "place/textsearch" in url:
+            return denied
+        if method == "get" and "geocode" in url:
+            return geocode_ok
+        raise AssertionError(f"unexpected request {method} {url}")
+
+    mock_client.post.side_effect = lambda url, **kw: route_request("post", url, **kw)
+    mock_client.get.side_effect = lambda url, **kw: route_request("get", url, **kw)
+
+    with patch("app.services.navigation_maps._maps_key", return_value="test-key"), patch(
+        "app.services.navigation_maps.httpx.Client", return_value=mock_client
+    ):
         result = search_nearby_places(
             "Walmart",
             origin_lat=35.2271,
@@ -67,7 +134,42 @@ def test_search_nearby_places_sorts_by_distance():
         )
 
     assert result["ok"] is True
-    places = result["places"]
-    assert len(places) == 2
-    assert places[0]["name"] == "Walmart Near"
-    assert places[0]["distance_text"]
+    assert result["source"] == "geocode"
+    assert len(result["places"]) == 1
+
+
+def test_search_via_geocode_respects_radius():
+    geocode_ok = MagicMock()
+    geocode_ok.json.return_value = {
+        "status": "OK",
+        "results": [
+            {
+                "formatted_address": "Near",
+                "place_id": "n",
+                "geometry": {"location": {"lat": 35.23, "lng": -80.84}},
+            },
+            {
+                "formatted_address": "Far away",
+                "place_id": "f",
+                "geometry": {"location": {"lat": 40.0, "lng": -75.0}},
+            },
+        ],
+    }
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.get.return_value = geocode_ok
+
+    with patch("app.services.navigation_maps._maps_key", return_value="test-key"), patch(
+        "app.services.navigation_maps.httpx.Client", return_value=mock_client
+    ):
+        result = _search_via_geocode(
+            "Walmart",
+            origin_lat=35.2271,
+            origin_lng=-80.8431,
+            limit=3,
+            radius_m=50_000,
+        )
+
+    assert result["ok"] is True
+    assert len(result["places"]) == 1

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 import re
-from typing import Any
+from typing import Any, Callable
 
 import httpx
 
@@ -16,6 +16,16 @@ logger = logging.getLogger(__name__)
 _GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
 _PLACES_TEXT_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
+_PLACES_NEW_URL = "https://places.googleapis.com/v1/places:searchText"
+
+_PLACES_DENIED = frozenset(
+    {
+        "REQUEST_DENIED",
+        "PERMISSION_DENIED",
+        "INVALID_REQUEST",
+        "API_KEY_INVALID",
+    }
+)
 
 
 def _maps_key() -> str:
@@ -45,6 +55,36 @@ def format_distance_imperial(meters: float) -> str:
         feet = meters * 3.28084
         return f"{int(feet)} ft"
     return f"{miles:.1f} mi"
+
+
+def _place_name_from_geocode(row: dict[str, Any], query: str) -> str:
+    for comp in row.get("address_components") or []:
+        if "establishment" in (comp.get("types") or []):
+            return str(comp.get("long_name") or comp.get("short_name") or query)
+    formatted = str(row.get("formatted_address") or query)
+    return formatted.split(",")[0].strip() or query
+
+
+def _build_place_row(
+    *,
+    name: str,
+    address: str,
+    lat: float,
+    lng: float,
+    origin_lat: float,
+    origin_lng: float,
+    place_id: str = "",
+) -> dict[str, Any]:
+    dist_m = _haversine_m(origin_lat, origin_lng, lat, lng)
+    return {
+        "name": name,
+        "address": address,
+        "lat": lat,
+        "lng": lng,
+        "place_id": place_id,
+        "distance_m": int(dist_m),
+        "distance_text": format_distance_imperial(dist_m),
+    }
 
 
 def decode_polyline(encoded: str) -> list[dict[str, float]]:
@@ -85,7 +125,12 @@ def decode_polyline(encoded: str) -> list[dict[str, float]]:
     return points
 
 
-def geocode_address(query: str, *, bias_lat: float | None = None, bias_lng: float | None = None) -> dict[str, Any]:
+def geocode_address(
+    query: str,
+    *,
+    bias_lat: float | None = None,
+    bias_lng: float | None = None,
+) -> dict[str, Any]:
     q = (query or "").strip()
     if not q:
         return {"ok": False, "error": "Dirección vacía"}
@@ -102,10 +147,12 @@ def geocode_address(query: str, *, bias_lat: float | None = None, bias_lng: floa
         logger.exception("[NAV] geocode failed")
         return {"ok": False, "error": str(exc)}
 
-    if data.get("status") != "OK" or not data.get("results"):
+    status = str(data.get("status") or "")
+    if status != "OK" or not data.get("results"):
         return {
             "ok": False,
-            "error": f"No encontré esa dirección ({data.get('status', 'ZERO_RESULTS')}).",
+            "error": f"No encontré esa dirección ({status or 'ZERO_RESULTS'}).",
+            "status": status,
         }
 
     top = data["results"][0]
@@ -119,21 +166,78 @@ def geocode_address(query: str, *, bias_lat: float | None = None, bias_lng: floa
     }
 
 
-def search_nearby_places(
+def _search_via_geocode(
     query: str,
     *,
     origin_lat: float,
     origin_lng: float,
-    limit: int = 3,
-    radius_m: int = 50_000,
+    limit: int,
+    radius_m: int,
 ) -> dict[str, Any]:
-    """Busca lugares cercanos con Places Text Search (sin pedir dirección completa)."""
-    q = (query or "").strip()
-    if not q:
-        return {"ok": False, "error": "Indique qué lugar buscar."}
+    """Geocoding API con sesgo de ubicación — no requiere Places API."""
+    params: dict[str, str] = {
+        "address": query,
+        "key": _maps_key(),
+        "language": "es",
+        "location": f"{origin_lat},{origin_lng}",
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            res = client.get(_GEOCODE_URL, params=params)
+            data = res.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[NAV] geocode places search failed")
+        return {"ok": False, "error": str(exc)}
 
+    status = str(data.get("status") or "")
+    if status != "OK" or not data.get("results"):
+        return {
+            "ok": False,
+            "error": f"No encontré {query} cerca ({status or 'ZERO_RESULTS'}).",
+            "status": status,
+        }
+
+    places: list[dict[str, Any]] = []
+    for row in data.get("results") or []:
+        loc = (row.get("geometry") or {}).get("location") or {}
+        lat = float(loc.get("lat", 0))
+        lng = float(loc.get("lng", 0))
+        if not lat and not lng:
+            continue
+        dist_m = _haversine_m(origin_lat, origin_lng, lat, lng)
+        if dist_m > radius_m:
+            continue
+        address = str(row.get("formatted_address") or "")
+        name = _place_name_from_geocode(row, query)
+        places.append(
+            _build_place_row(
+                name=name,
+                address=address,
+                lat=lat,
+                lng=lng,
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
+                place_id=str(row.get("place_id") or ""),
+            )
+        )
+
+    if not places:
+        return {"ok": False, "error": f"No encontré {query} cerca.", "status": status}
+
+    places.sort(key=lambda p: int(p.get("distance_m") or 0))
+    return {"ok": True, "query": query, "places": places[:limit], "source": "geocode"}
+
+
+def _search_via_places_legacy(
+    query: str,
+    *,
+    origin_lat: float,
+    origin_lng: float,
+    limit: int,
+    radius_m: int,
+) -> dict[str, Any]:
     params = {
-        "query": q,
+        "query": query,
         "location": f"{origin_lat},{origin_lng}",
         "radius": str(radius_m),
         "key": _maps_key(),
@@ -144,14 +248,19 @@ def search_nearby_places(
             res = client.get(_PLACES_TEXT_URL, params=params)
             data = res.json()
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[NAV] places search failed")
+        logger.exception("[NAV] legacy places search failed")
         return {"ok": False, "error": str(exc)}
 
     status = str(data.get("status") or "")
+    if status in _PLACES_DENIED:
+        logger.warning("[NAV] legacy Places API denied (%s) — probando fallback", status)
+        return {"ok": False, "error": status, "status": status}
+
     if status not in {"OK", "ZERO_RESULTS"} or not data.get("results"):
         return {
             "ok": False,
-            "error": f"No encontré {q} cerca ({status or 'ZERO_RESULTS'}).",
+            "error": f"No encontré {query} cerca ({status or 'ZERO_RESULTS'}).",
+            "status": status,
         }
 
     places: list[dict[str, Any]] = []
@@ -161,24 +270,142 @@ def search_nearby_places(
         lng = float(loc.get("lng", 0))
         if not lat and not lng:
             continue
-        dist_m = _haversine_m(origin_lat, origin_lng, lat, lng)
         places.append(
-            {
-                "name": str(row.get("name") or q),
-                "address": str(row.get("formatted_address") or ""),
-                "lat": lat,
-                "lng": lng,
-                "place_id": str(row.get("place_id") or ""),
-                "distance_m": int(dist_m),
-                "distance_text": format_distance_imperial(dist_m),
-            }
+            _build_place_row(
+                name=str(row.get("name") or query),
+                address=str(row.get("formatted_address") or ""),
+                lat=lat,
+                lng=lng,
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
+                place_id=str(row.get("place_id") or ""),
+            )
         )
 
     if not places:
-        return {"ok": False, "error": f"No encontré {q} cerca."}
+        return {"ok": False, "error": f"No encontré {query} cerca.", "status": status}
 
     places.sort(key=lambda p: int(p.get("distance_m") or 0))
-    return {"ok": True, "query": q, "places": places[:limit]}
+    return {"ok": True, "query": query, "places": places[:limit], "source": "places_legacy"}
+
+
+def _search_via_places_new(
+    query: str,
+    *,
+    origin_lat: float,
+    origin_lng: float,
+    limit: int,
+    radius_m: int,
+) -> dict[str, Any]:
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": _maps_key(),
+        "X-Goog-FieldMask": (
+            "places.displayName,places.formattedAddress,places.location,places.id"
+        ),
+    }
+    body = {
+        "textQuery": query,
+        "languageCode": "es",
+        "locationBias": {
+            "circle": {
+                "center": {"latitude": origin_lat, "longitude": origin_lng},
+                "radius": float(radius_m),
+            }
+        },
+        "maxResultCount": max(1, min(limit, 5)),
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            res = client.post(_PLACES_NEW_URL, headers=headers, json=body)
+            if res.status_code in {403, 401}:
+                logger.warning(
+                    "[NAV] Places API (New) HTTP %s — probando fallback",
+                    res.status_code,
+                )
+                return {"ok": False, "error": "REQUEST_DENIED", "status": "REQUEST_DENIED"}
+            data = res.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[NAV] Places API (New) search failed")
+        return {"ok": False, "error": str(exc)}
+
+    if data.get("error"):
+        err_status = str((data.get("error") or {}).get("status") or "REQUEST_DENIED")
+        if err_status in _PLACES_DENIED:
+            logger.warning("[NAV] Places API (New) denied (%s) — probando fallback", err_status)
+        return {"ok": False, "error": err_status, "status": err_status}
+
+    rows = data.get("places") or []
+    if not rows:
+        return {"ok": False, "error": f"No encontré {query} cerca.", "status": "ZERO_RESULTS"}
+
+    places: list[dict[str, Any]] = []
+    for row in rows:
+        loc = row.get("location") or {}
+        lat = float(loc.get("latitude", 0))
+        lng = float(loc.get("longitude", 0))
+        if not lat and not lng:
+            continue
+        display = row.get("displayName") or {}
+        name = str(display.get("text") or query)
+        address = str(row.get("formattedAddress") or name)
+        places.append(
+            _build_place_row(
+                name=name,
+                address=address,
+                lat=lat,
+                lng=lng,
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
+                place_id=str(row.get("id") or ""),
+            )
+        )
+
+    if not places:
+        return {"ok": False, "error": f"No encontré {query} cerca.", "status": "ZERO_RESULTS"}
+
+    places.sort(key=lambda p: int(p.get("distance_m") or 0))
+    return {"ok": True, "query": query, "places": places[:limit], "source": "places_new"}
+
+
+def search_nearby_places(
+    query: str,
+    *,
+    origin_lat: float,
+    origin_lng: float,
+    limit: int = 3,
+    radius_m: int = 50_000,
+) -> dict[str, Any]:
+    """Busca lugares cercanos: Places (New) → Places legacy → Geocoding."""
+    q = (query or "").strip()
+    if not q:
+        return {"ok": False, "error": "Indique qué lugar buscar."}
+
+    search_fns: list[tuple[str, Callable[..., dict[str, Any]]]] = [
+        ("places_new", _search_via_places_new),
+        ("places_legacy", _search_via_places_legacy),
+        ("geocode", _search_via_geocode),
+    ]
+    last_error = "No encontré resultados cerca."
+    for source, fn in search_fns:
+        result = fn(
+            q,
+            origin_lat=origin_lat,
+            origin_lng=origin_lng,
+            limit=limit,
+            radius_m=radius_m,
+        )
+        if result.get("ok"):
+            logger.info("[NAV] nearby search ok source=%s query=%r", source, q[:40])
+            return result
+        last_error = str(result.get("error") or last_error)
+        status = str(result.get("status") or "")
+        if status in _PLACES_DENIED or source != "geocode":
+            logger.info("[NAV] nearby search fallback from %s status=%s", source, status)
+            continue
+        break
+
+    return {"ok": False, "error": last_error}
 
 
 def compute_route(

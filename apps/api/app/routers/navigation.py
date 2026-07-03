@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
@@ -164,6 +164,63 @@ async def navigation_nearby(
         },
     )
     return result
+
+
+@router.get("/suggest")
+async def navigation_suggest(
+    q: str = Query(min_length=2, max_length=200),
+    user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    """Sugerencias de direcciones vía Geocoding (sin Places API en el cliente)."""
+    loc = nav_session.get_location(user_id)
+    bias_lat = float(loc["lat"]) if loc else None
+    bias_lng = float(loc["lng"]) if loc else None
+    if bias_lat is None or bias_lng is None:
+        geo = maps_svc.geocode_address(q)
+        if not geo.get("ok"):
+            return {"ok": False, "suggestions": []}
+        return {
+            "ok": True,
+            "suggestions": [
+                {
+                    "label": geo.get("formatted_address") or q,
+                    "address": geo.get("formatted_address") or q,
+                    "lat": geo["lat"],
+                    "lng": geo["lng"],
+                }
+            ],
+        }
+    found = maps_svc.search_nearby_places(
+        q,
+        origin_lat=bias_lat,
+        origin_lng=bias_lng,
+        limit=5,
+    )
+    if not found.get("ok"):
+        geo = maps_svc.geocode_address(q, bias_lat=bias_lat, bias_lng=bias_lng)
+        if not geo.get("ok"):
+            return {"ok": False, "suggestions": []}
+        return {
+            "ok": True,
+            "suggestions": [
+                {
+                    "label": geo.get("formatted_address") or q,
+                    "address": geo.get("formatted_address") or q,
+                    "lat": geo["lat"],
+                    "lng": geo["lng"],
+                }
+            ],
+        }
+    suggestions = [
+        {
+            "label": str(p.get("name") or p.get("address") or q),
+            "address": str(p.get("address") or ""),
+            "lat": p["lat"],
+            "lng": p["lng"],
+        }
+        for p in found.get("places") or []
+    ]
+    return {"ok": True, "suggestions": suggestions}
 
 
 @router.post("/start-option")

@@ -138,6 +138,26 @@ export async function searchNearbyPlaces(query: string): Promise<{
   return parseApiJson(res);
 }
 
+export async function suggestNavigationPlaces(query: string): Promise<{
+  ok: boolean;
+  suggestions?: Array<{
+    label: string;
+    address?: string;
+    lat: number;
+    lng: number;
+  }>;
+}> {
+  const qs = encodeURIComponent(query.trim());
+  const res = await proxyFetch(`navigation/suggest?q=${qs}`);
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, suggestions: [] };
+  }
+  if (!res.ok) {
+    return { ok: false, suggestions: [] };
+  }
+  return parseApiJson(res);
+}
+
 export async function startNavigationOption(index: number): Promise<{
   ok: boolean;
   route?: NavRoute;

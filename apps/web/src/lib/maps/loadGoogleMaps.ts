@@ -17,12 +17,7 @@ export function loadGoogleMaps(): Promise<typeof google> {
   if (!mapsReadyPromise) {
     mapsReadyPromise = (async () => {
       setOptions({ key, v: "weekly" });
-      await Promise.all([
-        importLibrary("maps"),
-        importLibrary("marker"),
-        importLibrary("places"),
-        importLibrary("geometry"),
-      ]);
+      await Promise.all([importLibrary("maps"), importLibrary("marker")]);
       return google;
     })();
   }
