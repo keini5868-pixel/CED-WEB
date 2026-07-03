@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export type GeoPosition = {
   lat: number;
@@ -16,16 +16,36 @@ type GeolocationState = {
   loading: boolean;
 };
 
-const DEFAULT_OPTIONS: PositionOptions = {
+const WATCH_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
-  maximumAge: 5000,
-  timeout: 20000,
+  maximumAge: 1000,
+  timeout: 5000,
 };
+
+function headingFromMovement(
+  prev: { lat: number; lng: number } | null,
+  next: { lat: number; lng: number },
+): number | null {
+  if (!prev) return null;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const toDeg = (rad: number) => ((rad * 180) / Math.PI + 360) % 360;
+  const lat1 = toRad(prev.lat);
+  const lat2 = toRad(next.lat);
+  const dLng = toRad(next.lng - prev.lng);
+  const y = Math.sin(dLng) * Math.cos(lat2);
+  const x =
+    Math.cos(lat1) * Math.sin(lat2) -
+    Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLng);
+  const dist = (next.lat - prev.lat) ** 2 + (next.lng - prev.lng) ** 2;
+  if (dist < 1e-8) return null;
+  return toDeg(Math.atan2(y, x));
+}
 
 export function useGeolocation(enabled = true): GeolocationState {
   const [position, setPosition] = useState<GeoPosition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const prevRef = useRef<{ lat: number; lng: number } | null>(null);
 
   useEffect(() => {
     if (!enabled) return;
@@ -36,11 +56,23 @@ export function useGeolocation(enabled = true): GeolocationState {
     }
 
     const onSuccess = (pos: GeolocationPosition) => {
-      setPosition({
+      const coords = {
         lat: pos.coords.latitude,
         lng: pos.coords.longitude,
+      };
+      const computedHeading = headingFromMovement(prevRef.current, coords);
+      prevRef.current = coords;
+
+      const heading =
+        pos.coords.heading != null && !Number.isNaN(pos.coords.heading)
+          ? pos.coords.heading
+          : computedHeading;
+
+      setPosition({
+        lat: coords.lat,
+        lng: coords.lng,
         accuracy: pos.coords.accuracy,
-        heading: pos.coords.heading,
+        heading,
         speed: pos.coords.speed,
       });
       setLoading(false);
@@ -60,7 +92,7 @@ export function useGeolocation(enabled = true): GeolocationState {
     const watchId = navigator.geolocation.watchPosition(
       onSuccess,
       onError,
-      DEFAULT_OPTIONS,
+      WATCH_OPTIONS,
     );
 
     return () => navigator.geolocation.clearWatch(watchId);

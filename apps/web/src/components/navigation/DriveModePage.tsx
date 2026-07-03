@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MapPin, Mic, Navigation } from "lucide-react";
 
 import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
@@ -29,25 +29,74 @@ import {
   type NavRoute,
 } from "@/lib/api/navigation";
 import type { NavigationMapState } from "@/lib/api/navigation";
+import { MAP_UI_VISIBILITY, deriveMapState } from "@/lib/navigation/mapState";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
+
+const EMPTY_NAV: NavigationMapState = {
+  route: null,
+  destinationPin: null,
+  placeOptions: [],
+  placeQuery: "",
+};
 
 export function DriveModePage() {
   const { refresh: refreshUsage } = useUsageBalance();
   const { position, error: geoError, loading: geoLoading } = useGeolocation(true);
   const voice = useCedVoiceSession(refreshUsage);
-  const [mapNav, setMapNav] = useState<NavigationMapState>({
-    route: null,
-    destinationPin: null,
-    placeOptions: [],
-    placeQuery: "",
-  });
+  const [mapNav, setMapNav] = useState<NavigationMapState>(EMPTY_NAV);
   const [navBusy, setNavBusy] = useState(false);
   const [navError, setNavError] = useState<string | null>(null);
+
+  const mapState = useMemo(
+    () =>
+      deriveMapState({
+        route: mapNav.route,
+        placeOptions: mapNav.placeOptions,
+        isSearching: navBusy && !mapNav.route,
+      }),
+    [mapNav.route, mapNav.placeOptions, navBusy],
+  );
+
+  const ui = MAP_UI_VISIBILITY[mapState];
+
+  const resetToIdle = useCallback(() => {
+    setNavError(null);
+    setMapNav(EMPTY_NAV);
+  }, []);
+
+  const applyRoute = useCallback((route: NavRoute) => {
+    setNavError(null);
+    setMapNav({
+      route,
+      destinationPin: route.destination
+        ? {
+            lat: route.destination.lat,
+            lng: route.destination.lng,
+            label: route.destination.label,
+          }
+        : null,
+      placeOptions: [],
+      placeQuery: "",
+    });
+  }, []);
+
+  const handleStopNavigation = useCallback(async () => {
+    setNavBusy(true);
+    try {
+      await cancelNavigation();
+      resetToIdle();
+    } finally {
+      setNavBusy(false);
+    }
+  }, [resetToIdle]);
 
   useNavigationGuide({
     position,
     route: mapNav.route,
-    enabled: voice.micOn && Boolean(mapNav.route),
+    enabled: mapState === "navigating",
+    onArrival: () => {
+      void handleStopNavigation();
+    },
   });
 
   useEffect(() => {
@@ -65,29 +114,13 @@ export function DriveModePage() {
     });
   }, [position]);
 
-  const applyRoute = useCallback((route: NavRoute) => {
-    setNavError(null);
-    setMapNav((prev) => ({
-      ...prev,
-      route,
-      destinationPin: route.destination
-        ? {
-            lat: route.destination.lat,
-            lng: route.destination.lng,
-            label: route.destination.label,
-          }
-        : null,
-      placeOptions: [],
-      placeQuery: "",
-    }));
-  }, []);
-
   useEffect(() => {
     const syncRoute = async () => {
       try {
         const state = await fetchNavigationState(false);
         if (state.route) {
           applyRoute(state.route as NavRoute);
+          return;
         }
         if (state.place_options?.length) {
           setMapNav((prev) => ({
@@ -113,12 +146,7 @@ export function DriveModePage() {
         applyRoute(detail.payload as NavRoute);
       }
       if (detail?.action === "cancel_navigation") {
-        setMapNav({
-          route: null,
-          destinationPin: null,
-          placeOptions: [],
-          placeQuery: "",
-        });
+        resetToIdle();
       }
       if (detail?.action === "show_destination" && detail.payload) {
         const p = detail.payload as { lat: number; lng: number; label?: string };
@@ -130,13 +158,17 @@ export function DriveModePage() {
             lng: p.lng,
             label: p.label || "Destino",
           },
+          placeOptions: [],
+          placeQuery: "",
         }));
       }
       if (detail?.action === "show_place_options" && detail.payload) {
         const p = detail.payload as { query?: string; places?: NavPlaceOption[] };
+        setNavError(null);
         setMapNav((prev) => ({
           ...prev,
           route: null,
+          destinationPin: null,
           placeOptions: p.places || [],
           placeQuery: p.query || "",
         }));
@@ -144,7 +176,7 @@ export function DriveModePage() {
     };
     window.addEventListener("ced-navigation-event", onNavEvent);
     return () => window.removeEventListener("ced-navigation-event", onNavEvent);
-  }, [applyRoute]);
+  }, [applyRoute, resetToIdle]);
 
   useEffect(() => {
     type WakeLockSentinel = { release: () => Promise<void> };
@@ -169,6 +201,15 @@ export function DriveModePage() {
     };
   }, []);
 
+  const tryApplyRouteFromServer = async (): Promise<NavRoute | null> => {
+    try {
+      const state = await fetchNavigationState(false);
+      return (state.route as NavRoute | null | undefined) ?? null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleSearch = async (query: string) => {
     setNavError(null);
     setNavBusy(true);
@@ -181,6 +222,7 @@ export function DriveModePage() {
       setMapNav((prev) => ({
         ...prev,
         route: null,
+        destinationPin: null,
         placeOptions: result.places || [],
         placeQuery: result.query || query,
       }));
@@ -204,12 +246,22 @@ export function DriveModePage() {
         lng: place.lng,
         label: place.label,
       });
-      if (!result.ok || !result.route) {
-        setNavError(result.error || "No pude calcular la ruta.");
+      if (result.ok && result.route) {
+        applyRoute(result.route);
         return;
       }
-      applyRoute(result.route);
+      const synced = await tryApplyRouteFromServer();
+      if (synced) {
+        applyRoute(synced);
+        return;
+      }
+      setNavError(result.error || "No pude calcular la ruta.");
     } catch {
+      const synced = await tryApplyRouteFromServer();
+      if (synced) {
+        applyRoute(synced);
+        return;
+      }
       setNavError("No pude iniciar la navegación.");
     } finally {
       setNavBusy(false);
@@ -221,12 +273,22 @@ export function DriveModePage() {
     setNavBusy(true);
     try {
       const result = await startNavigationOption(index);
-      if (!result.ok || !result.route) {
-        setNavError(result.error || "No pude iniciar el viaje.");
+      if (result.ok && result.route) {
+        applyRoute(result.route);
         return;
       }
-      applyRoute(result.route);
+      const synced = await tryApplyRouteFromServer();
+      if (synced) {
+        applyRoute(synced);
+        return;
+      }
+      setNavError(result.error || "No pude iniciar el viaje.");
     } catch {
+      const synced = await tryApplyRouteFromServer();
+      if (synced) {
+        applyRoute(synced);
+        return;
+      }
       setNavError("No pude iniciar el viaje.");
     } finally {
       setNavBusy(false);
@@ -236,22 +298,6 @@ export function DriveModePage() {
   const handleCancelOptions = () => {
     setMapNav((prev) => ({ ...prev, placeOptions: [], placeQuery: "" }));
     setNavError(null);
-  };
-
-  const handleStopNavigation = async () => {
-    setNavBusy(true);
-    try {
-      await cancelNavigation();
-      setNavError(null);
-      setMapNav({
-        route: null,
-        destinationPin: null,
-        placeOptions: [],
-        placeQuery: "",
-      });
-    } finally {
-      setNavBusy(false);
-    }
   };
 
   const gpsLabel = geoLoading
@@ -266,15 +312,14 @@ export function DriveModePage() {
     ? `${mapNav.route.duration_text} · ${mapNav.route.distance_text}`
     : null;
 
-  const showOptions = mapNav.placeOptions.length > 0 && !mapNav.route;
-  const showNavPanel = Boolean(mapNav.route);
-
   return (
     <div className="fixed inset-0 flex flex-col bg-black">
       <DriveMapView
         position={position}
         route={mapNav.route}
         destinationPin={mapNav.destinationPin}
+        placeOptions={mapNav.placeOptions}
+        mapState={mapState}
         className="absolute inset-0"
       />
 
@@ -309,7 +354,7 @@ export function DriveModePage() {
         </header>
 
         <div className="pointer-events-auto space-y-2 px-3 sm:px-4">
-          {!showNavPanel ? (
+          {ui.searchBar ? (
             <>
               <SearchBar
                 onSearch={(q) => void handleSearch(q)}
@@ -321,18 +366,18 @@ export function DriveModePage() {
                   {navError}
                 </p>
               ) : null}
-              {showOptions ? (
-                <PlaceOptionsList
-                  query={mapNav.placeQuery}
-                  places={mapNav.placeOptions}
-                  onStart={(i) => void handleStartOption(i)}
-                  onCancel={handleCancelOptions}
-                  busy={navBusy}
-                />
-              ) : null}
             </>
           ) : null}
-          {showNavPanel && mapNav.route ? (
+          {ui.results && mapNav.placeOptions.length > 0 ? (
+            <PlaceOptionsList
+              query={mapNav.placeQuery}
+              places={mapNav.placeOptions}
+              onStart={(i) => void handleStartOption(i)}
+              onCancel={handleCancelOptions}
+              busy={navBusy}
+            />
+          ) : null}
+          {ui.navPanel && mapNav.route ? (
             <NavigationPanel
               route={mapNav.route}
               position={position}

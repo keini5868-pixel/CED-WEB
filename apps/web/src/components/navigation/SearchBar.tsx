@@ -23,7 +23,7 @@ export function SearchBar({
   onSearch,
   onPlaceSelect,
   disabled = false,
-  placeholder = "Escribe una dirección o lugar...",
+  placeholder = "Busca un lugar...",
 }: SearchBarProps) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);

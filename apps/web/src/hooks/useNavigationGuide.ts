@@ -10,6 +10,7 @@ type Options = {
   position: GeoPosition | null;
   route: NavRoute | null;
   enabled?: boolean;
+  onArrival?: () => void;
 };
 
 const ANNOUNCE_THRESHOLDS = [400, 150, 40] as const;
@@ -36,7 +37,12 @@ function maneuverPhrase(step: NavStep): string {
   return map[step.maneuver] ?? "Continúe por la ruta";
 }
 
-export function useNavigationGuide({ position, route, enabled = true }: Options) {
+export function useNavigationGuide({
+  position,
+  route,
+  enabled = true,
+  onArrival,
+}: Options) {
   const stepIndexRef = useRef(0);
   const announcedRef = useRef<Record<string, boolean>>({});
 
@@ -84,7 +90,8 @@ export function useNavigationGuide({ position, route, enabled = true }: Options)
     });
     if (destDist < 35 && !announcedRef.current.arrived) {
       announcedRef.current.arrived = true;
-      speakNavigation(`Ha llegado a ${route.destination.label}, señor.`);
+      speakNavigation("Ha llegado a su destino, señor.");
+      onArrival?.();
     }
-  }, [enabled, position, route]);
+  }, [enabled, position, route, onArrival]);
 }
