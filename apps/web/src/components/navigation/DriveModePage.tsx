@@ -66,6 +66,7 @@ export function DriveModePage() {
   }, [position]);
 
   const applyRoute = useCallback((route: NavRoute) => {
+    setNavError(null);
     setMapNav((prev) => ({
       ...prev,
       route,
@@ -237,6 +238,7 @@ export function DriveModePage() {
     setNavBusy(true);
     try {
       await cancelNavigation();
+      setNavError(null);
       setMapNav({
         route: null,
         destinationPin: null,
@@ -303,24 +305,28 @@ export function DriveModePage() {
         </header>
 
         <div className="pointer-events-auto space-y-2 px-3 sm:px-4">
-          <SearchBar
-            onSearch={(q) => void handleSearch(q)}
-            onPlaceSelect={(p) => void handlePlaceSelect(p)}
-            disabled={navBusy}
-          />
-          {navError ? (
-            <p className="rounded bg-red-950/50 px-2 py-1 text-center text-xs text-red-300">
-              {navError}
-            </p>
-          ) : null}
-          {showOptions ? (
-            <PlaceOptionsList
-              query={mapNav.placeQuery}
-              places={mapNav.placeOptions}
-              onStart={(i) => void handleStartOption(i)}
-              onCancel={handleCancelOptions}
-              busy={navBusy}
-            />
+          {!showNavPanel ? (
+            <>
+              <SearchBar
+                onSearch={(q) => void handleSearch(q)}
+                onPlaceSelect={(p) => void handlePlaceSelect(p)}
+                disabled={navBusy}
+              />
+              {navError ? (
+                <p className="rounded bg-red-950/50 px-2 py-1 text-center text-xs text-red-300">
+                  {navError}
+                </p>
+              ) : null}
+              {showOptions ? (
+                <PlaceOptionsList
+                  query={mapNav.placeQuery}
+                  places={mapNav.placeOptions}
+                  onStart={(i) => void handleStartOption(i)}
+                  onCancel={handleCancelOptions}
+                  busy={navBusy}
+                />
+              ) : null}
+            </>
           ) : null}
           {showNavPanel && mapNav.route ? (
             <NavigationPanel

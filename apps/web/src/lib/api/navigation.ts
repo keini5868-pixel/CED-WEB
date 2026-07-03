@@ -58,6 +58,47 @@ export type NavigationMapState = {
   placeQuery: string;
 };
 
+type RouteApiPayload = {
+  ok?: boolean;
+  error?: string;
+  route?: NavRoute;
+  destination?: NavRoute["destination"];
+  path?: NavLatLng[];
+  steps?: NavStep[];
+  distance_text?: string;
+  duration_text?: string;
+  distance_m?: number;
+  duration_s?: number;
+};
+
+function parseRouteResponse(data: RouteApiPayload): {
+  ok: boolean;
+  route?: NavRoute;
+  error?: string;
+} {
+  if (data.ok === false) {
+    return { ok: false, error: data.error || "No pude calcular la ruta." };
+  }
+  if (data.route?.destination) {
+    return { ok: true, route: data.route };
+  }
+  if (data.destination && Array.isArray(data.path)) {
+    return {
+      ok: true,
+      route: {
+        destination: data.destination,
+        path: data.path,
+        steps: data.steps || [],
+        distance_text: data.distance_text || "",
+        duration_text: data.duration_text || "",
+        distance_m: data.distance_m || 0,
+        duration_s: data.duration_s || 0,
+      },
+    };
+  }
+  return { ok: false, error: data.error || "Respuesta de ruta inválida." };
+}
+
 export async function fetchNavigationState(consume = false): Promise<NavigationState> {
   const qs = consume ? "?consume=true" : "";
   const res = await proxyFetch(`navigation/state${qs}`);
@@ -117,7 +158,8 @@ export async function computeNavigationRoute(destination: string): Promise<{
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ destination }),
   });
-  return parseApiJson(res);
+  const data = await parseApiJson<RouteApiPayload>(res);
+  return parseRouteResponse(data);
 }
 
 export async function cancelNavigation(): Promise<void> {
@@ -168,5 +210,6 @@ export async function startNavigationOption(index: number): Promise<{
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ index }),
   });
-  return parseApiJson(res);
+  const data = await parseApiJson<RouteApiPayload>(res);
+  return parseRouteResponse(data);
 }
