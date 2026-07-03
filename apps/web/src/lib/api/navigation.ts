@@ -71,6 +71,17 @@ type RouteApiPayload = {
   duration_s?: number;
 };
 
+function buildPathFromSteps(steps: NavStep[] | undefined): NavLatLng[] {
+  if (!steps?.length) return [];
+  const pts: NavLatLng[] = [];
+  for (const step of steps) {
+    if (step.start) pts.push(step.start);
+  }
+  const last = steps[steps.length - 1];
+  if (last?.end) pts.push(last.end);
+  return pts;
+}
+
 function parseRouteResponse(data: RouteApiPayload): {
   ok: boolean;
   route?: NavRoute;
@@ -80,15 +91,27 @@ function parseRouteResponse(data: RouteApiPayload): {
     return { ok: false, error: data.error || "No pude calcular la ruta." };
   }
   if (data.route?.destination) {
-    return { ok: true, route: data.route };
+    const path =
+      data.route.path?.length > 1
+        ? data.route.path
+        : buildPathFromSteps(data.route.steps);
+    return {
+      ok: true,
+      route: { ...data.route, path: path.length > 1 ? path : data.route.path ?? [] },
+    };
   }
-  if (data.destination && Array.isArray(data.path)) {
+  if (data.destination) {
+    const steps = data.steps || [];
+    const path =
+      Array.isArray(data.path) && data.path.length > 1
+        ? data.path
+        : buildPathFromSteps(steps);
     return {
       ok: true,
       route: {
         destination: data.destination,
-        path: data.path,
-        steps: data.steps || [],
+        path,
+        steps,
         distance_text: data.distance_text || "",
         duration_text: data.duration_text || "",
         distance_m: data.distance_m || 0,

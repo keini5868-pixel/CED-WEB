@@ -34,6 +34,51 @@ const MAP_STYLES: google.maps.MapTypeStyle[] = [
   { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
 ];
 
+function routePathPoints(
+  route: NavRoute,
+  position: GeoPosition | null,
+): NavLatLng[] {
+  if (route.path?.length > 1) return route.path;
+
+  const steps = route.steps ?? [];
+  if (steps.length > 0) {
+    const pts: NavLatLng[] = [];
+    for (const step of steps) {
+      if (step.start) pts.push(step.start);
+    }
+    const last = steps[steps.length - 1];
+    if (last?.end) pts.push(last.end);
+    if (pts.length > 1) return pts;
+  }
+
+  if (position && route.destination) {
+    return [
+      { lat: position.lat, lng: position.lng },
+      { lat: route.destination.lat, lng: route.destination.lng },
+    ];
+  }
+  return [];
+}
+
+function splitRoutePath(
+  path: NavLatLng[],
+  position: GeoPosition | null,
+): { consumed: NavLatLng[]; remaining: NavLatLng[] } {
+  if (!position || path.length < 2) {
+    return { consumed: [], remaining: path };
+  }
+  const idx = closestPathIndex(path, position);
+  const consumed = path.slice(0, idx + 1);
+  let remaining = path.slice(idx);
+  if (remaining.length < 2) {
+    remaining = [
+      { lat: position.lat, lng: position.lng },
+      ...(remaining.length ? remaining : [path[path.length - 1]!]),
+    ];
+  }
+  return { consumed, remaining };
+}
+
 function userIcon(
   google: typeof globalThis.google,
   heading: number | null,
@@ -78,6 +123,9 @@ export function DriveMapView({
   const routeFittedRef = useRef(false);
   const searchFittedRef = useRef(false);
   const idleCenteredRef = useRef(false);
+  const followUserRef = useRef(false);
+  const routePathRef = useRef<NavLatLng[]>([]);
+  const [mapsReady, setMapsReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -106,6 +154,7 @@ export function DriveMapView({
           icon: userIcon(google, null, false),
           zIndex: 999,
         });
+        setMapsReady(true);
       })
       .catch((err: unknown) => {
         const msg =
@@ -119,7 +168,11 @@ export function DriveMapView({
   }, []);
 
   useEffect(() => {
-    if (mapState !== "navigating") routeFittedRef.current = false;
+    if (mapState !== "navigating") {
+      routeFittedRef.current = false;
+      followUserRef.current = false;
+      routePathRef.current = [];
+    }
     if (mapState !== "searching") searchFittedRef.current = false;
     if (mapState === "idle") idleCenteredRef.current = false;
   }, [mapState]);
@@ -134,7 +187,7 @@ export function DriveMapView({
     marker.setIcon(userIcon(google, position.heading, mapState === "navigating"));
 
     if (mapState === "navigating") {
-      map.panTo(latLng);
+      if (followUserRef.current) map.panTo(latLng);
       return;
     }
 
@@ -189,56 +242,74 @@ export function DriveMapView({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    if (!mapsReady || !map || mapState !== "navigating" || !route) return;
+
+    const path = routePathPoints(route, position);
+    if (path.length < 2) return;
+    routePathRef.current = path;
+
+    const { consumed, remaining } = splitRoutePath(path, position);
+    const drawRemaining = remaining.length > 1 ? remaining : path;
 
     if (routePolylineRef.current) {
-      routePolylineRef.current.setMap(null);
-      routePolylineRef.current = null;
-    }
-    if (consumedPolylineRef.current) {
-      consumedPolylineRef.current.setMap(null);
-      consumedPolylineRef.current = null;
-    }
-
-    const path: NavLatLng[] = route?.path?.length ? route.path : [];
-    if (path.length < 2 || mapState !== "navigating") return;
-
-    let remaining = path;
-    let consumed: NavLatLng[] = [];
-    if (position) {
-      const idx = closestPathIndex(path, position);
-      consumed = path.slice(0, idx + 1);
-      remaining = path.slice(idx);
-    }
-
-    if (consumed.length > 1) {
-      consumedPolylineRef.current = new google.maps.Polyline({
-        map,
-        path: consumed,
-        strokeColor: "#334155",
-        strokeOpacity: 0.55,
-        strokeWeight: 4,
-      });
-    }
-
-    if (remaining.length > 1) {
+      routePolylineRef.current.setPath(drawRemaining);
+    } else {
       routePolylineRef.current = new google.maps.Polyline({
         map,
-        path: remaining,
+        path: drawRemaining,
         strokeColor: "#00e5ff",
         strokeOpacity: 0.95,
         strokeWeight: 5,
+        zIndex: 50,
       });
+    }
+
+    if (consumed.length > 1) {
+      if (consumedPolylineRef.current) {
+        consumedPolylineRef.current.setPath(consumed);
+      } else {
+        consumedPolylineRef.current = new google.maps.Polyline({
+          map,
+          path: consumed,
+          strokeColor: "#334155",
+          strokeOpacity: 0.55,
+          strokeWeight: 4,
+          zIndex: 40,
+        });
+      }
+    } else if (consumedPolylineRef.current) {
+      consumedPolylineRef.current.setMap(null);
+      consumedPolylineRef.current = null;
     }
 
     if (!routeFittedRef.current) {
       const bounds = new google.maps.LatLngBounds();
       for (const p of path) bounds.extend(p);
       if (position) bounds.extend({ lat: position.lat, lng: position.lng });
-      map.fitBounds(bounds, 48);
+      if (route.destination) {
+        bounds.extend({ lat: route.destination.lat, lng: route.destination.lng });
+      }
+      map.fitBounds(bounds, 56);
       routeFittedRef.current = true;
+      followUserRef.current = false;
+      window.setTimeout(() => {
+        followUserRef.current = true;
+      }, 900);
     }
-  }, [route, mapState, position?.lat, position?.lng]);
+  }, [mapsReady, route, mapState, position?.lat, position?.lng]);
+
+  useEffect(() => {
+    if (mapState !== "navigating") {
+      if (routePolylineRef.current) {
+        routePolylineRef.current.setMap(null);
+        routePolylineRef.current = null;
+      }
+      if (consumedPolylineRef.current) {
+        consumedPolylineRef.current.setMap(null);
+        consumedPolylineRef.current = null;
+      }
+    }
+  }, [mapState]);
 
   useEffect(() => {
     const map = mapRef.current;
