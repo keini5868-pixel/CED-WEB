@@ -10,6 +10,9 @@ from typing import Any, Literal
 from app.services.cognitive_intents import (
     CognitiveIntent,
     analyze_intent,
+    is_internal_knowledge_query,
+    is_web_research_intent,
+    requires_live_web,
 )
 from app.services.cognitive_memory import memory_context_for_voice, save_memory, search_memory
 from app.services.gemini_grounded import execute_search_web_sync
@@ -124,7 +127,11 @@ def route_message(
     hit = hits[0] if hits else None
     mem_ctx = _memory_context(user_id, raw)
 
-    if hit and should_use_internal_brain(raw, hit):
+    prefers_web = requires_live_web(raw) or (
+        is_web_research_intent(raw) and not is_internal_knowledge_query(raw)
+    ) or analysis.primary == CognitiveIntent.WEB_SEARCH
+
+    if hit and should_use_internal_brain(raw, hit) and not prefers_web:
         ctx = format_hits_for_prompt(hits)
         if mem_ctx:
             ctx = f"{mem_ctx}\n\n{ctx}"

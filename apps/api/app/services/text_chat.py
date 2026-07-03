@@ -40,6 +40,7 @@ from app.services.internal_kb_guard import (
     contains_internal_kb_leak as _contains_internal_kb_leak,
     strip_internal_kb_from_reply as _strip_internal_kb_from_reply,
 )
+from app.services.voice_spoken import finalize_voice_delivery_text, strip_voice_filler_prefix
 from app.services.publish_text import PUBLISH_INSTRUCTION_ABSOLUTE_RULES
 
 logger = logging.getLogger(__name__)
@@ -522,10 +523,16 @@ def _hallucination_retry_message(kind: str) -> str:
 
 
 def _dedupe_chat_reply(text: str) -> str:
-    """Elimina bloques idénticos consecutivos en la respuesta."""
+    """Elimina bloques idénticos consecutivos y muletillas duplicadas en la respuesta."""
     cleaned = (text or "").strip()
     if not cleaned:
         return cleaned
+    cleaned = re.sub(
+        r"(Un momento,?\s*se[nñ]or\.?\s*){2,}",
+        r"\1",
+        cleaned,
+        flags=re.I,
+    )
     parts = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
     if len(parts) >= 2:
         deduped: list[str] = [parts[0]]
@@ -540,6 +547,34 @@ def _dedupe_chat_reply(text: str) -> str:
         if first == second:
             return first
     return cleaned
+
+
+def _finalize_chat_reply(text: str) -> str:
+    """Post-proceso alineado con voz: dedupe, sin filler duplicado, oración completa."""
+    cleaned = _dedupe_chat_reply(text)
+    cleaned = strip_voice_filler_prefix(cleaned)
+    cleaned = finalize_voice_delivery_text(cleaned)
+    return cleaned or (text or "").strip()
+
+
+def _ensure_chat_reply_quality(
+    reply: str,
+    *,
+    user_text: str,
+) -> str:
+    """Evita respuestas KB/genéricas cuando el usuario pidió investigación web."""
+    from app.services.cognitive_intents import is_web_research_intent, requires_live_web
+    from app.services.retell_custom_llm import is_unwanted_voice_reply
+
+    if not user_text or not reply:
+        return reply
+    if not (requires_live_web(user_text) or is_web_research_intent(user_text)):
+        return reply
+    if not is_unwanted_voice_reply(reply, user_text=user_text):
+        return reply
+    logger.warning("[CHAT] Unwanted reply for web query — direct search fallback")
+    direct = _reply_from_direct_search(user_text)
+    return direct or reply
 
 
 def _ensure_chat_reply_no_kb_leak(
@@ -1674,7 +1709,10 @@ def send_message(
         return _finish(route.speakable, route_meta=route.to_dict())
 
     if route.intent == "web_search" and route.speakable:
-        return _finish(route.speakable, route_meta=route.to_dict())
+        return _finish(
+            _finalize_chat_reply(route.speakable),
+            route_meta=route.to_dict(),
+        )
 
     from app.services.text_publish_flow import handle_publish_flow_turn
 
@@ -1688,7 +1726,7 @@ def send_message(
     )
     if publish_reply:
         return _finish(
-            publish_reply,
+            _finalize_chat_reply(publish_reply),
             route_meta={"intent": "publish_flow", "source": "conversation"},
         )
 
@@ -1756,7 +1794,8 @@ def send_message(
         pdf_attachment=pdf_attachment,
         image_attachment=image_attachment,
     )
-    reply = _dedupe_chat_reply(reply)
+    reply = _ensure_chat_reply_quality(reply, user_text=text)
+    reply = _finalize_chat_reply(reply)
 
     return _finish(
         reply,

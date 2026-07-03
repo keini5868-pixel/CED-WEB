@@ -6,7 +6,11 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from app.services.cognitive_intents import is_internal_knowledge_query, requires_live_web
+from app.services.cognitive_intents import (
+    is_internal_knowledge_query,
+    is_web_research_intent,
+    requires_live_web,
+)
 from app.services.internal_knowledge import (
     InternalKnowledgeHit,
     best_internal_answer,
@@ -17,6 +21,12 @@ from app.services.internal_knowledge import (
 logger = logging.getLogger(__name__)
 
 KB_CONFIDENCE_THRESHOLD = 0.70
+
+
+def _prefers_web_search(query: str) -> bool:
+    if requires_live_web(query):
+        return True
+    return is_web_research_intent(query) and not is_internal_knowledge_query(query)
 
 
 @dataclass(frozen=True)
@@ -43,7 +53,7 @@ def route_knowledge(
         hit = kb_hits[0] if kb_hits else None
     else:
         hit = best_internal_answer(query)
-    if hit and should_use_internal_brain(query, hit):
+    if hit and should_use_internal_brain(query, hit) and not _prefers_web_search(query):
         confidence = float(hit.confidence or 0.0)
         if confidence >= KB_CONFIDENCE_THRESHOLD or is_internal_knowledge_query(query):
             module = str(getattr(hit, "domain", None) or hit.domain_label or "internal")
@@ -63,7 +73,7 @@ def route_knowledge(
             )
             return KnowledgeRoute("LEVEL-1", inject, module, confidence, False)
 
-    if requires_live_web(query):
+    if _prefers_web_search(query):
         logger.info("[LEVEL-3] web_search query=%s", query[:120])
         return KnowledgeRoute("LEVEL-3", None, None, None, True)
 

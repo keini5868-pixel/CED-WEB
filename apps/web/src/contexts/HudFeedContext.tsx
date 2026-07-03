@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
+import { mergeTranscriptChunk } from "@/lib/voice/transcriptAccumulator";
 
 function sameVoiceBlockPrefix(a: string, b: string): boolean {
   const na = a.trim().toLowerCase();
@@ -119,7 +120,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
             if (!existing) return prev;
             const merged: HudFeedItem = {
               ...existing,
-              text: trimmed,
+              text: mergeTranscriptChunk(existing.text, trimmed),
               at: Date.now(),
               partial,
               kind,
@@ -142,7 +143,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
             ) {
               const merged: HudFeedItem = {
                 ...head,
-                text: trimmed,
+                text: mergeTranscriptChunk(head.text, trimmed),
                 at: Date.now(),
                 partial,
                 role: "model",

@@ -12,6 +12,21 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+_VOICE_STREAM_COALESCE_SEC = 120
+
+
+def _should_coalesce_voice_model_message(previous: str, incoming: str) -> str | None:
+    """Decide si un parcial de voz debe actualizar, omitir o insertar nuevo."""
+    prev = (previous or "").strip()
+    new = (incoming or "").strip()
+    if not prev or not new:
+        return None
+    if new.startswith(prev) and len(new) > len(prev):
+        return "update"
+    if prev.startswith(new) and len(prev) >= len(new):
+        return "skip"
+    return None
+
 
 def _client():
     from supabase import create_client
@@ -132,7 +147,8 @@ def append_message(
     session_id: str | None = None,
     channel: str = "voice",
 ) -> None:
-    if not content.strip():
+    content = (content or "").strip()
+    if not content:
         return
     client = _client()
     owner = (
@@ -146,6 +162,45 @@ def append_message(
     if not owner.data:
         raise PermissionError("Conversación no encontrada")
     conv_channel = str((owner.data[0] or {}).get("channel") or channel)
+
+    if conv_channel == "voice" and role in ("model", "assistant"):
+        last = (
+            client.table("voice_messages")
+            .select("id, content, role, created_at")
+            .eq("conversation_id", conversation_id)
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if last.data:
+            row = last.data[0] or {}
+            if str(row.get("role") or "") in ("model", "assistant"):
+                prev = str(row.get("content") or "").strip()
+                created_raw = row.get("created_at")
+                recent = True
+                if created_raw:
+                    try:
+                        created_at = datetime.fromisoformat(
+                            str(created_raw).replace("Z", "+00:00")
+                        )
+                        recent = (
+                            datetime.now(timezone.utc) - created_at
+                        ).total_seconds() <= _VOICE_STREAM_COALESCE_SEC
+                    except ValueError:
+                        recent = True
+                if recent and prev:
+                    action = _should_coalesce_voice_model_message(prev, content)
+                    if action == "update":
+                        client.table("voice_messages").update(
+                            {"content": content}
+                        ).eq("id", row["id"]).execute()
+                        client.table("voice_conversations").update(
+                            {"updated_at": datetime.now(timezone.utc).isoformat()}
+                        ).eq("id", conversation_id).execute()
+                        return
+                    if action == "skip":
+                        return
+
     client.table("voice_messages").insert(
         {
             "conversation_id": conversation_id,

@@ -79,6 +79,18 @@ def _delivery_text(text: str) -> str:
     return " ".join((text or "").split()).strip()
 
 
+def _assistant_texts_from_gemini_history(history: list[types.Content]) -> list[str]:
+    texts: list[str] = []
+    for content in history:
+        if str(content.role or "") != "model":
+            continue
+        for part in content.parts or []:
+            text = getattr(part, "text", None)
+            if text and str(text).strip():
+                texts.append(str(text).strip())
+    return texts
+
+
 def _prompt_sha_prefix() -> str:
     return str(prompt_sha_prefix())
 
@@ -1001,9 +1013,14 @@ class GeminiVoiceLlm:
                     tool_timeout = (
                         SEARCH_WEB_TOOL_TIMEOUT_SEC if name == "search_web" else TOOL_TIMEOUT_SEC
                     )
+                    tool_args = dict(args)
+                    if name == "generar_pdf":
+                        fallbacks = _assistant_texts_from_gemini_history(self._history)
+                        if fallbacks:
+                            tool_args["_pdf_fallback_texts"] = fallbacks[-5:]
                     try:
                         tool_result = await asyncio.wait_for(
-                            execute_voice_tool(name, self.user_id, args),
+                            execute_voice_tool(name, self.user_id, tool_args),
                             timeout=tool_timeout,
                         )
                         if name == "search_web":

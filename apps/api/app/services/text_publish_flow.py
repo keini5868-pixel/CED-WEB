@@ -18,6 +18,7 @@ from app.services.publish_text import (
     detect_publish_platform,
     extract_caption_from_turn,
     extract_inline_publish_caption,
+    extract_user_caption_for_publish,
     is_publish_confirm,
     is_publish_help_request,
     is_social_publish_intent,
@@ -25,6 +26,24 @@ from app.services.publish_text import (
 )
 
 _PLATFORM_LABEL = {"instagram": "Instagram", "facebook": "Facebook"}
+
+
+def _publish_turn_is_off_topic(text: str) -> bool:
+    """Cierra flujo de publicación si el usuario cambió a investigación o charla larga."""
+    from app.services.cognitive_intents import is_web_research_intent, requires_live_web
+
+    t = (text or "").strip()
+    if not t:
+        return False
+    if is_social_publish_intent(t) or wants_publish_now(t) or is_publish_confirm(t):
+        return False
+    if extract_user_caption_for_publish(t):
+        return False
+    if requires_live_web(t) or is_web_research_intent(t):
+        return True
+    if len(t) > 180:
+        return True
+    return False
 
 
 def publish_flow_opening(platform: str, *, has_caption: bool = False) -> str:
@@ -76,6 +95,10 @@ def handle_publish_flow_turn(
 ) -> str | None:
     """Devuelve respuesta si el turno pertenece al flujo de publicación; si no, None."""
     flow = get_publish_flow(user_id, conversation_id)
+    if flow and has_publishable_image(user_id, conversation_id) and _publish_turn_is_off_topic(text):
+        clear_publish_flow(user_id, conversation_id)
+        flow = None
+
     if not flow and is_social_publish_intent(text) and has_publishable_image(user_id, conversation_id):
         platform = detect_publish_platform(text)
         inline = extract_inline_publish_caption(text, platform=platform)

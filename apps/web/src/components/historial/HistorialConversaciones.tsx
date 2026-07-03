@@ -11,6 +11,7 @@ import {
   type ConversationMessage,
   type ConversationRow,
 } from "@/lib/api/conversations";
+import { collapseStreamingMessages } from "@/lib/voice/collapseStreamingMessages";
 
 type ChannelFilter = "" | "voice" | "text";
 
@@ -50,7 +51,7 @@ export function HistorialConversaciones() {
     setMessages([]);
     try {
       const data = await getConversationMessages(conv.id);
-      setMessages(data.messages);
+      setMessages(collapseStreamingMessages(data.messages));
     } catch {
       setMessages([]);
     } finally {

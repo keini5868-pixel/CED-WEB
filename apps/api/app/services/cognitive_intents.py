@@ -347,7 +347,10 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
 
     volatile = is_volatile_query(raw)
 
-    if requires_live_web(raw):
+    prefers_web = requires_live_web(raw) or (
+        is_web_research_intent(raw) and not is_internal_knowledge_query(raw)
+    )
+    if prefers_web:
         kind = "weather" if is_weather_intent(raw) else "news" if is_news_intent(raw) else "general"
         return IntentAnalysis(
             primary=CognitiveIntent.WEB_SEARCH,

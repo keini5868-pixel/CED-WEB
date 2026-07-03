@@ -253,6 +253,7 @@ export function useCedVoiceSession(
   const userInitiatedStopRef = useRef(false);
   const retellCallStartedAtRef = useRef(0);
   const retellEarlyEndRetriesRef = useRef(0);
+  const lastPersistedAgentLineRef = useRef("");
 
   useEffect(() => {
     prefsRef.current = prefs;
@@ -269,6 +270,42 @@ export function useCedVoiceSession(
   useEffect(() => {
     micOnRef.current = micOn;
   }, [micOn]);
+
+  const persistMessage = useCallback(
+    async (role: "user" | "model", text: string) => {
+      const cid = conversationRef.current;
+      if (!cid || !text.trim()) return;
+      try {
+        await appendConversationMessage(
+          cid,
+          role,
+          text,
+          usageSessionRef.current ?? undefined,
+        );
+      } catch {
+        /* ignore */
+      }
+    },
+    [],
+  );
+
+  const persistVoiceTranscript = useCallback(
+    (
+      role: "user" | "model",
+      text: string,
+      options?: { partial?: boolean },
+    ) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      if (role === "model" && options?.partial) return;
+      if (role === "model") {
+        if (trimmed === lastPersistedAgentLineRef.current) return;
+        lastPersistedAgentLineRef.current = trimmed;
+      }
+      void persistMessage(role, trimmed);
+    },
+    [persistMessage],
+  );
 
   useEffect(() => {
     if (!isRetellVoice()) return;
@@ -454,11 +491,18 @@ export function useCedVoiceSession(
             callbacks?.onGeneratedImage?.(normalized, ev.prompt);
           }
           if (ev.type === "pdf_created" && ev.title) {
+            if (ev.file_id) {
+              void downloadPdfBlob(
+                String(ev.file_id),
+                `${String(ev.title).slice(0, 80)}.pdf`,
+              ).catch(() => undefined);
+            }
             callbacks?.onTranscript?.(
-              `PDF listo, señor. Título: ${String(ev.title)}. ¿Dónde desea guardarlo?`,
+              `PDF listo, señor. Título: ${String(ev.title)}. Ya está en su historial y descargándose.`,
               "model",
               { partial: false },
             );
+            void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
           }
         }
         const action = state.client_action;
@@ -476,7 +520,7 @@ export function useCedVoiceSession(
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [retellPollActive, waitForCameraFrame, cameraOn, callbacks]);
+  }, [retellPollActive, waitForCameraFrame, cameraOn, callbacks, persistVoiceTranscript]);
 
   const resolvePublishImage = useCallback(
     async (
@@ -547,24 +591,6 @@ export function useCedVoiceSession(
           ? 0.5
           : 0.15;
 
-  const persistMessage = useCallback(
-    async (role: "user" | "model", text: string) => {
-      const cid = conversationRef.current;
-      if (!cid || !text.trim()) return;
-      try {
-        await appendConversationMessage(
-          cid,
-          role,
-          text,
-          usageSessionRef.current ?? undefined,
-        );
-      } catch {
-        /* ignore */
-      }
-    },
-    [],
-  );
-
   const clearUsageInterval = useCallback(() => {
     if (usageIntervalRef.current) {
       clearInterval(usageIntervalRef.current);
@@ -589,6 +615,7 @@ export function useCedVoiceSession(
   const stopSession = useCallback(async () => {
     userInitiatedStopRef.current = true;
     voiceSessionGenRef.current += 1;
+    lastPersistedAgentLineRef.current = "";
     clearUsageInterval();
     clientRef.current?.disconnect();
     clientRef.current = null;
@@ -885,7 +912,11 @@ export function useCedVoiceSession(
             } else {
               modelRepliedTurnRef.current = true;
             }
-            void persistMessage(role === "user" ? "user" : "model", text);
+            persistVoiceTranscript(
+              role === "user" ? "user" : "model",
+              text,
+              options,
+            );
           },
           onClearAgentPartial: () => {
             callbacks?.onClearAgentPartial?.();
@@ -1701,7 +1732,7 @@ export function useCedVoiceSession(
             return;
           }
           callbacks?.onTranscript?.(trimmed, role);
-          void persistMessage(role, trimmed);
+          persistVoiceTranscript(role, trimmed);
           if (role === "user") {
             if (client.isGreetingInProgress()) {
               return;

@@ -499,6 +499,15 @@ async def execute_voice_tool(
             )
 
         if name == "generar_pdf":
+            from app.deps.plan_access import effective_plan_limits
+
+            limits, reason, _ = effective_plan_limits(user_id)
+            if reason == "trial_expired":
+                return _spoken_err("Tu prueba terminó, señor. Elige un plan en Precios.")
+            if not limits.pdf_reports:
+                return _spoken_err(
+                    "Los PDFs requieren plan Élite o Founding, señor. Mejora en Precios."
+                )
             titulo, contenido = normalize_pdf_fields(params)
             fallbacks = params.get("_pdf_fallback_texts")
             fallback_list = fallbacks if isinstance(fallbacks, list) else None
@@ -512,7 +521,7 @@ async def execute_voice_tool(
             )
             spoken = (
                 f"PDF listo, señor. Título: {artifact.title}. "
-                "¿Dónde desea que lo guarde?"
+                "Se guardó en su historial."
             )
             vcs.push_tool_event(
                 user_id,

@@ -419,6 +419,9 @@ def extract_user_caption_for_publish(text: str) -> str:
     return ""
 
 
+_CAPTION_PLAIN_MAX_CHARS = 280
+
+
 def _plain_caption_fallback(text: str) -> str:
     t = (text or "").strip()
     if not t:
@@ -430,6 +433,8 @@ def _plain_caption_fallback(text: str) -> str:
     if _is_instruction_garbage_caption(t):
         return ""
     if re.fullmatch(r"s[ií][\s!.]*", t, re.I):
+        return ""
+    if len(t) > _CAPTION_PLAIN_MAX_CHARS:
         return ""
     words = [w for w in t.split() if w]
     if len(words) < 2 and len(t) < 6:
