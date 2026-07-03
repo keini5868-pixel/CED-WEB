@@ -40,7 +40,9 @@ export function closestPathIndex(path: NavLatLng[], point: NavLatLng): number {
   let bestIdx = 0;
   let bestDist = Infinity;
   for (let i = 0; i < path.length; i += 1) {
-    const d = distanceMeters(point, path[i]);
+    const node = path[i];
+    if (!node) continue;
+    const d = distanceMeters(point, node);
     if (d < bestDist) {
       bestDist = d;
       bestIdx = i;
