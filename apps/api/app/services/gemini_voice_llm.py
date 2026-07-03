@@ -61,6 +61,7 @@ GEMINI_GREETING_TIMEOUT_SEC = 8.0
 GEMINI_WEB_TIMEOUT_SEC = 18.0
 TOOL_TIMEOUT_SEC = 45.0
 SEARCH_WEB_TOOL_TIMEOUT_SEC = 15.0
+PDF_TOOL_TIMEOUT_SEC = 90.0
 
 WEB_SEARCH_FALLBACK_OVERLAY = (
     "[Contexto: search_web devolvió status=timeout con fallback=True. "
@@ -1019,6 +1020,7 @@ class GeminiVoiceLlm:
             model_parts: list[types.Part] = list(response.candidates[0].content.parts or [])
 
             tool_spoken_parts: list[str] = []
+            pdf_tool_ok = False
             for fc in function_calls:
                 name = str(fc.name or "")
                 args = _function_call_args(fc)
@@ -1028,17 +1030,24 @@ class GeminiVoiceLlm:
                     spoken = "No identifiqué al usuario, señor."
                     tool_payload: dict[str, Any] = {"status": "error", "spoken": spoken}
                 else:
-                    tool_timeout = (
-                        SEARCH_WEB_TOOL_TIMEOUT_SEC if name == "search_web" else TOOL_TIMEOUT_SEC
-                    )
+                    if name == "search_web":
+                        tool_timeout = SEARCH_WEB_TOOL_TIMEOUT_SEC
+                    elif name == "generar_pdf":
+                        tool_timeout = PDF_TOOL_TIMEOUT_SEC
+                    else:
+                        tool_timeout = TOOL_TIMEOUT_SEC
                     tool_args = dict(args)
                     if name == "generar_pdf":
                         fallbacks = _assistant_texts_from_gemini_history(self._history)
                         if fallbacks:
                             tool_args["_pdf_fallback_texts"] = fallbacks[-5:]
                         user_texts = _user_texts_from_gemini_history(self._history)
-                        if user_texts:
-                            tool_args["_user_request"] = user_texts[-1]
+                        tool_args["_user_request"] = (
+                            user_text.strip()
+                            or (user_texts[-1] if user_texts else "")
+                            or str(args.get("titulo") or args.get("title") or "").strip()
+                        )
+                    tool_result: dict[str, Any] = {}
                     try:
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(name, self.user_id, tool_args),
@@ -1052,9 +1061,21 @@ class GeminiVoiceLlm:
                                 tool_payload = {**tool_payload, "spoken": spoken}
                             elif tool_payload.get("fallback"):
                                 self._web_search_fallback = True
+                        elif tool_result.get("ok") is False:
+                            spoken = str(
+                                tool_result.get("spoken") or "No pude completar la operación, señor."
+                            )
+                            tool_payload = {
+                                "status": "error",
+                                "spoken": spoken,
+                                "error": tool_result.get("error"),
+                            }
                         else:
                             spoken = str(tool_result.get("spoken") or "Completado, señor.")
                             tool_payload = {"status": "success", "spoken": spoken}
+                            if name == "generar_pdf" and tool_result.get("file_id"):
+                                tool_payload["file_id"] = tool_result.get("file_id")
+                                pdf_tool_ok = True
                     except asyncio.TimeoutError:
                         logger.warning("[RETELL-GEMINI] tool timeout name=%s", name)
                         if name == "search_web":
@@ -1065,6 +1086,12 @@ class GeminiVoiceLlm:
                                 "fallback": True,
                                 "spoken": spoken,
                             }
+                        elif name == "generar_pdf":
+                            spoken = (
+                                "El PDF está tardando más de lo habitual, señor. "
+                                "Puede pedirlo también en el chat mientras termino de prepararlo."
+                            )
+                            tool_payload = {"status": "timeout", "spoken": spoken}
                         else:
                             spoken = "La operación tardó demasiado, señor. ¿Desea que lo intente de nuevo?"
                             tool_payload = {"status": "timeout", "spoken": spoken}
@@ -1085,6 +1112,17 @@ class GeminiVoiceLlm:
             ]
 
             final_text = tool_spoken_parts[-1] if tool_spoken_parts else "Completado, señor."
+            only_pdf = len(function_calls) == 1 and str(function_calls[0].name or "") == "generar_pdf"
+            if only_pdf and pdf_tool_ok:
+                self._history = _truncate_contents(follow_up_contents, max_turns=MAX_HISTORY_TURNS)
+                logger.info("[RETELL-GEMINI] generar_pdf direct spoken user=%s", (self.user_id or "?")[:8])
+                yield ResponseResponse(
+                    response_id=request.response_id,
+                    content=_delivery_text(final_text),
+                    content_complete=True,
+                    end_call=False,
+                )
+                return
 
             try:
                 follow_up = await self._generate_with_timeout(

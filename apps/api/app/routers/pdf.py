@@ -20,6 +20,7 @@ class GeneratePdfBody(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     content: str = Field(min_length=1, max_length=12000)
     conversation_id: str | None = None
+    user_request: str | None = Field(default=None, max_length=4000)
 
 
 @router.post("/generate")
@@ -28,12 +29,17 @@ def post_generate_pdf(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     require_pdf_reports(user_id)
-    artifact = store_pdf(
-        user_id=user_id,
-        title=body.title.strip(),
-        content=body.content.strip(),
-        conversation_id=body.conversation_id,
-    )
+    user_request = (body.user_request or body.content or body.title).strip()
+    try:
+        artifact = store_pdf(
+            user_id=user_id,
+            title=body.title.strip(),
+            content=body.content.strip(),
+            conversation_id=body.conversation_id,
+            user_request=user_request,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {
         "ok": True,
         "file_id": artifact.file_id,

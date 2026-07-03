@@ -1342,7 +1342,7 @@ export function useCedVoiceSession(
         })();
       };
 
-      const runGeneratePdf = (title: string, content: string) => {
+      const runGeneratePdf = (title: string, content: string, userRequest?: string) => {
         if (webFetchRef.current) return;
         webFetchRef.current = true;
         setOrbState("processing");
@@ -1350,7 +1350,7 @@ export function useCedVoiceSession(
         void (async () => {
           try {
             const cid = conversationRef.current;
-            const pdf = await generatePdf(title, content, cid);
+            const pdf = await generatePdf(title, content, cid, userRequest ?? content);
             if (isStale()) return;
             void downloadPdfBlob(pdf.file_id, pdf.filename).catch(() => undefined);
             client.sendNarrationBrief(
@@ -1595,7 +1595,7 @@ export function useCedVoiceSession(
 
         const pdfRequest = parsePdfRequest(t);
         if (pdfRequest && isPdfIntent(t)) {
-          runGeneratePdf(pdfRequest.title, pdfRequest.content);
+          runGeneratePdf(pdfRequest.title, pdfRequest.content, t);
           return;
         }
 
@@ -2186,9 +2186,12 @@ export function useCedVoiceSession(
             const title = String(args.titulo ?? args.title ?? "Documento CED").trim();
             let content = String(args.contenido ?? args.content ?? "").trim();
             if (!content) content = title;
+            const userRequest = String(
+              args._user_request ?? args.user_request ?? content ?? title,
+            ).trim();
             const cid = conversationRef.current;
             try {
-              const pdf = await generatePdf(title, content, cid);
+              const pdf = await generatePdf(title, content, cid, userRequest);
               void downloadPdfBlob(pdf.file_id, pdf.filename).catch(() => undefined);
               return {
                 spoken: `Listo. PDF "${pdf.title}" generado y guardado en tu historial.`,

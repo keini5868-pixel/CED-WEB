@@ -14,6 +14,7 @@ export async function generatePdf(
   title: string,
   content: string,
   conversationId?: string | null,
+  userRequest?: string | null,
 ): Promise<PdfArtifact> {
   const res = await fetch(cedApiPath("pdf/generate"), {
     method: "POST",
@@ -23,6 +24,7 @@ export async function generatePdf(
       title,
       content,
       conversation_id: conversationId ?? undefined,
+      user_request: userRequest?.trim() || content || title,
     }),
   });
   const data = await parseApiJson<PdfArtifact & { ok?: boolean; detail?: string }>(res);

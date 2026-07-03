@@ -36,7 +36,7 @@ EXECUTION_MESSAGES: dict[str, str] = {
 TIMEOUT_MS: dict[str, int] = {
     "generate_image": 60_000,
     "generate_image_with_reference": 60_000,
-    "generar_pdf": 45_000,
+    "generar_pdf": 90_000,
     "search_web": 17_000,
     "publicar_facebook": 35_000,
     "publicar_instagram": 35_000,

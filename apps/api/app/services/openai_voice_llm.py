@@ -49,6 +49,7 @@ OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 CONVERSATIONAL_TIMEOUT_SEC = 18.0
 GREETING_TIMEOUT_SEC = 12.0
 TOOL_TIMEOUT_SEC = 25.0
+PDF_TOOL_TIMEOUT_SEC = 90.0
 SEARCH_WEB_TIMEOUT_SEC = 17.0
 MAX_TOOL_ROUNDS = 3
 PROVIDER = "openai"
@@ -488,6 +489,7 @@ class OpenAIVoiceLlm:
         tool_calls: list[dict[str, Any]],
         *,
         context_messages: list[dict[str, Any]] | None = None,
+        user_text: str = "",
     ) -> tuple[list[dict[str, Any]], list[str]]:
         tool_messages: list[dict[str, Any]] = []
         spoken_parts: list[str] = []
@@ -500,8 +502,12 @@ class OpenAIVoiceLlm:
             if name == "generar_pdf":
                 if pdf_fallbacks:
                     args = {**args, "_pdf_fallback_texts": pdf_fallbacks[-3:]}
-                if user_texts:
-                    args = {**args, "_user_request": user_texts[-1]}
+                last_user = user_text.strip() or (user_texts[-1] if user_texts else "")
+                args = {
+                    **args,
+                    "_user_request": last_user
+                    or str(args.get("titulo") or args.get("title") or "").strip(),
+                }
             call_id = str(tc.get("id") or "")
             logger.info(
                 "[RETELL-OPENAI] tool=%s args=%s user=%s",
@@ -513,7 +519,12 @@ class OpenAIVoiceLlm:
                 spoken = "No identifiqué al usuario, señor."
                 content = spoken
             else:
-                timeout = SEARCH_WEB_TIMEOUT_SEC if name == "search_web" else TOOL_TIMEOUT_SEC
+                if name == "search_web":
+                    timeout = SEARCH_WEB_TIMEOUT_SEC
+                elif name == "generar_pdf":
+                    timeout = PDF_TOOL_TIMEOUT_SEC
+                else:
+                    timeout = TOOL_TIMEOUT_SEC
                 try:
                     tool_result = await asyncio.wait_for(
                         execute_voice_tool(name, self.user_id, args),
@@ -686,6 +697,7 @@ class OpenAIVoiceLlm:
                     tool_messages, spoken_parts = await self._execute_tool_calls(
                         tool_calls,
                         context_messages=working_messages,
+                        user_text=user_text,
                     )
                     working_messages = [*working_messages, assistant_msg, *tool_messages]
                     final_text = spoken_parts[-1] if spoken_parts else "Completado, señor."

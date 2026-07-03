@@ -547,14 +547,17 @@ async def execute_voice_tool(
                 f"PDF listo, señor. Título: {artifact.title}. "
                 "Se guardó en su historial."
             )
-            vcs.push_tool_event(
-                user_id,
-                {
-                    "type": "pdf_created",
-                    "title": artifact.title,
-                    "file_id": artifact.file_id,
-                },
-            )
+            try:
+                vcs.push_tool_event(
+                    user_id,
+                    {
+                        "type": "pdf_created",
+                        "title": artifact.title,
+                        "file_id": artifact.file_id,
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("[VOICE:PDF] push_tool_event failed user=%s", user_id[:8])
             return {
                 "ok": True,
                 "spoken": spoken,
