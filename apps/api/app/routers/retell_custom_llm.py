@@ -67,7 +67,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["retell-custom-llm"])
 
-POST_GREETING_COOLDOWN_S = 1.0
+POST_GREETING_COOLDOWN_S = 0.35
 GREETING_FALLBACK_S = 2.0
 WEB_SEARCH_FAST_PATH_TIMEOUT_SEC = 15.0
 

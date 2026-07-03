@@ -130,6 +130,32 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
           }
         }
 
+        if (role === "user" && prev.length > 0) {
+          const head = prev[0];
+          if (head?.role === "user" && head.kind === "voice") {
+            const sameTurn =
+              partial ||
+              head.partial ||
+              Date.now() - head.at < 45_000;
+            if (
+              sameTurn &&
+              (streamKey ? head.streamKey === streamKey : true) &&
+              (mergeTranscriptChunk(head.text, trimmed).length >= head.text.length ||
+                trimmed.startsWith(head.text.trim()))
+            ) {
+              const merged: HudFeedItem = {
+                ...head,
+                text: mergeTranscriptChunk(head.text, trimmed),
+                at: Date.now(),
+                partial,
+                role: "user",
+                streamKey: streamKey ?? head.streamKey,
+              };
+              return [merged, ...prev.slice(1)];
+            }
+          }
+        }
+
         if (role === "model" && prev.length > 0) {
           const head = prev[0];
           if (head?.role === "model" && head.kind === "report") {

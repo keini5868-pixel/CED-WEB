@@ -623,6 +623,12 @@ class GeminiVoiceLlm:
         return None
 
     async def draft_greeting(self) -> str:
+        from app.services.voice_greetings import pick_jarvis_greeting
+
+        greeting = pick_jarvis_greeting(self.user_id)
+        if greeting and not _needs_empathy_reformulation(greeting):
+            logger.info("[RETELL-GEMINI] greeting pool instant user=%s", (self.user_id or "?")[:8])
+            return greeting
         contents = [
             types.Content(
                 role="user",

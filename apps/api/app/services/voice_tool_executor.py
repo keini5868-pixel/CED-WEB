@@ -512,13 +512,27 @@ async def execute_voice_tool(
             fallbacks = params.get("_pdf_fallback_texts")
             fallback_list = fallbacks if isinstance(fallbacks, list) else None
             resolved = resolve_pdf_content(titulo, contenido, fallback_texts=fallback_list)
-            artifact = await asyncio.to_thread(
-                store_pdf,
-                user_id=user_id,
-                title=titulo,
-                content=resolved,
-                fallback_texts=fallback_list,
-            )
+            if not resolved or len(resolved.strip()) < 8:
+                return _spoken_err(
+                    "No pude armar el contenido del PDF, señor. "
+                    "Dígame qué texto desea guardar o repita la petición.",
+                    error="pdf_empty_content",
+                )
+            try:
+                artifact = await asyncio.to_thread(
+                    store_pdf,
+                    user_id=user_id,
+                    title=titulo,
+                    content=resolved,
+                    fallback_texts=fallback_list,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("[VOICE:PDF] store failed user=%s", user_id[:8])
+                msg = str(exc).strip() or "pdf_store_failed"
+                return _spoken_err(
+                    f"No pude generar el PDF, señor. Detalle: {msg[:100]}.",
+                    error="pdf_store_failed",
+                )
             spoken = (
                 f"PDF listo, señor. Título: {artifact.title}. "
                 "Se guardó en su historial."

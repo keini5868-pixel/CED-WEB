@@ -163,7 +163,7 @@ def append_message(
         raise PermissionError("Conversación no encontrada")
     conv_channel = str((owner.data[0] or {}).get("channel") or channel)
 
-    if conv_channel == "voice" and role in ("model", "assistant"):
+    if conv_channel == "voice" and role in ("model", "assistant", "user"):
         last = (
             client.table("voice_messages")
             .select("id, content, role, created_at")
@@ -174,7 +174,7 @@ def append_message(
         )
         if last.data:
             row = last.data[0] or {}
-            if str(row.get("role") or "") in ("model", "assistant"):
+            if str(row.get("role") or "") in ("model", "assistant", "user"):
                 prev = str(row.get("content") or "").strip()
                 created_raw = row.get("created_at")
                 recent = True

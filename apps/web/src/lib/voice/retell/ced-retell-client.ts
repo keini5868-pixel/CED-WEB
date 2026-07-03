@@ -79,6 +79,8 @@ export class CedRetellClient {
   private agentMutedForBargeIn = false;
   private agentTurnSeq = 0;
   private currentAgentStreamKey = "";
+  private userTurnSeq = 0;
+  private currentUserStreamKey = "";
 
   constructor() {
     this.client = new RetellWebClient();
@@ -158,19 +160,31 @@ export class CedRetellClient {
     const trimmed = text.trim();
     if (!trimmed) return;
     if (trimmed === this.lastPersistedUserLine) return;
-    if (
-      this.lastPersistedUserLine &&
-      trimmed.startsWith(this.lastPersistedUserLine) &&
-      trimmed.length - this.lastPersistedUserLine.length < 4
-    ) {
+
+    const prev = this.lastPersistedUserLine.trim();
+    if (prev && trimmed.startsWith(prev) && trimmed.length > prev.length) {
+      // Extensión del mismo turno (STT refinando texto).
+    } else if (prev && prev.startsWith(trimmed)) {
       return;
+    } else {
+      this.userTurnSeq += 1;
+      this.currentUserStreamKey = `user-${this.userTurnSeq}`;
     }
+
+    if (!this.currentUserStreamKey) {
+      this.userTurnSeq += 1;
+      this.currentUserStreamKey = `user-${this.userTurnSeq}`;
+    }
+
     this.lastPersistedUserLine = trimmed;
     this.lastUserLine = trimmed;
     this.currentAgentStreamKey = "";
     this.lastAgentLine = "";
     this.callbacks.onClearAgentPartial?.();
-    this.callbacks.onTranscript?.(trimmed, "user");
+    this.callbacks.onTranscript?.(trimmed, "user", {
+      partial: false,
+      streamKey: this.currentUserStreamKey,
+    });
   }
 
   private scheduleUserTranscript(text: string): void {
@@ -240,6 +254,13 @@ export class CedRetellClient {
         });
       }
       return;
+    }
+    if (partial) {
+      const low = sanitized.toLowerCase();
+      if (incomplete && sanitized.length < 28) return;
+      if (/^ced en[\s.!,?]*$/i.test(sanitized)) return;
+      if (incomplete && /^hola,?\s*se[nñ]or[\s.!,?]*$/i.test(sanitized)) return;
+      if (incomplete && low.startsWith("ced en ") && sanitized.length < 40) return;
     }
     if (!this.currentAgentStreamKey) {
       this.agentTurnSeq += 1;
@@ -387,6 +408,8 @@ export class CedRetellClient {
     this.agentMutedForBargeIn = false;
     this.agentTurnSeq = 0;
     this.currentAgentStreamKey = "";
+    this.userTurnSeq = 0;
+    this.currentUserStreamKey = "";
     retellLog("startCall", { callId: this.callId });
 
     await this.client.startCall({
