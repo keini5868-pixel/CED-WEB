@@ -1,11 +1,11 @@
-"""Geocodificación y rutas — Google Maps Directions / Geocoding."""
+"""Geocodificación, Places y rutas — Google Maps."""
 
 from __future__ import annotations
 
 import logging
+import math
 import re
 from typing import Any
-from urllib.parse import quote
 
 import httpx
 
@@ -15,17 +15,36 @@ logger = logging.getLogger(__name__)
 
 _GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
+_PLACES_TEXT_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 
 
 def _maps_key() -> str:
-    key = get_settings().google_api_key.strip()
+    settings = get_settings()
+    key = (settings.google_maps_api_key or settings.google_api_key or "").strip()
     if not key:
-        raise ValueError("GOOGLE_API_KEY no configurada para navegación.")
+        raise ValueError("GOOGLE_MAPS_API_KEY no configurada para navegación.")
     return key
 
 
 def _strip_html(text: str) -> str:
     return re.sub(r"<[^>]+>", "", text or "").strip()
+
+
+def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
+    r = 6_371_000.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlng = math.radians(lng2 - lng1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlng / 2) ** 2
+    return 2 * r * math.asin(math.sqrt(a))
+
+
+def format_distance_imperial(meters: float) -> str:
+    miles = meters / 1609.344
+    if miles < 0.2:
+        feet = meters * 3.28084
+        return f"{int(feet)} ft"
+    return f"{miles:.1f} mi"
 
 
 def decode_polyline(encoded: str) -> list[dict[str, float]]:
@@ -98,6 +117,68 @@ def geocode_address(query: str, *, bias_lat: float | None = None, bias_lng: floa
         "lng": float(loc["lng"]),
         "place_id": top.get("place_id"),
     }
+
+
+def search_nearby_places(
+    query: str,
+    *,
+    origin_lat: float,
+    origin_lng: float,
+    limit: int = 3,
+    radius_m: int = 50_000,
+) -> dict[str, Any]:
+    """Busca lugares cercanos con Places Text Search (sin pedir dirección completa)."""
+    q = (query or "").strip()
+    if not q:
+        return {"ok": False, "error": "Indique qué lugar buscar."}
+
+    params = {
+        "query": q,
+        "location": f"{origin_lat},{origin_lng}",
+        "radius": str(radius_m),
+        "key": _maps_key(),
+        "language": "es",
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            res = client.get(_PLACES_TEXT_URL, params=params)
+            data = res.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[NAV] places search failed")
+        return {"ok": False, "error": str(exc)}
+
+    status = str(data.get("status") or "")
+    if status not in {"OK", "ZERO_RESULTS"} or not data.get("results"):
+        return {
+            "ok": False,
+            "error": f"No encontré {q} cerca ({status or 'ZERO_RESULTS'}).",
+        }
+
+    places: list[dict[str, Any]] = []
+    for row in data["results"][: max(1, min(limit, 5))]:
+        loc = (row.get("geometry") or {}).get("location") or {}
+        lat = float(loc.get("lat", 0))
+        lng = float(loc.get("lng", 0))
+        if not lat and not lng:
+            continue
+        dist_m = _haversine_m(origin_lat, origin_lng, lat, lng)
+        places.append(
+            {
+                "name": str(row.get("name") or q),
+                "address": str(row.get("formatted_address") or ""),
+                "lat": lat,
+                "lng": lng,
+                "place_id": str(row.get("place_id") or ""),
+                "distance_m": int(dist_m),
+                "distance_text": format_distance_imperial(dist_m),
+            }
+        )
+
+    if not places:
+        return {"ok": False, "error": f"No encontré {q} cerca."}
+
+    places.sort(key=lambda p: int(p.get("distance_m") or 0))
+    return {"ok": True, "query": q, "places": places[:limit]}
 
 
 def compute_route(

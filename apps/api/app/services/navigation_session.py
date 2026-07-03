@@ -20,6 +20,8 @@ def _fresh_session() -> dict[str, Any]:
     return {
         "location": None,
         "route": None,
+        "place_options": None,
+        "place_query": "",
         "client_action": None,
         "updated_at": _now(),
     }
@@ -76,6 +78,32 @@ def get_route(user_id: str) -> dict[str, Any] | None:
     return deepcopy(route) if route else None
 
 
+def set_place_options(
+    user_id: str,
+    places: list[dict[str, Any]],
+    *,
+    query: str = "",
+) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["place_options"] = deepcopy(places)
+        session["place_query"] = (query or "").strip()
+        session["updated_at"] = _now()
+
+
+def get_place_options(user_id: str) -> list[dict[str, Any]]:
+    opts = _get(user_id).get("place_options")
+    return deepcopy(opts) if isinstance(opts, list) else []
+
+
+def clear_place_options(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["place_options"] = None
+        session["place_query"] = ""
+        session["updated_at"] = _now()
+
+
 def push_client_action(user_id: str, action: str, payload: dict[str, Any] | None = None) -> None:
     session = _get(user_id)
     with _lock:
@@ -113,6 +141,8 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
         return {
             "location": deepcopy(session.get("location")),
             "route": deepcopy(session.get("route")),
+            "place_options": deepcopy(session.get("place_options")),
+            "place_query": str(session.get("place_query") or ""),
             "client_action": deepcopy(action) if action else None,
             "navigating": bool(session.get("route")),
         }
@@ -122,4 +152,6 @@ def clear_navigation(user_id: str) -> None:
     session = _get(user_id)
     with _lock:
         session["route"] = None
+        session["place_options"] = None
+        session["place_query"] = ""
         session["updated_at"] = _now()

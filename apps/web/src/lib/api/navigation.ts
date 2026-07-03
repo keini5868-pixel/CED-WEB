@@ -31,10 +31,22 @@ export type NavClientAction = {
   id: number;
 };
 
+export type NavPlaceOption = {
+  name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  place_id?: string;
+  distance_m?: number;
+  distance_text?: string;
+};
+
 export type NavigationState = {
   ok?: boolean;
   location?: Record<string, unknown> | null;
   route?: NavRoute | null;
+  place_options?: NavPlaceOption[] | null;
+  place_query?: string;
   client_action?: NavClientAction | null;
   navigating?: boolean;
 };
@@ -42,6 +54,8 @@ export type NavigationState = {
 export type NavigationMapState = {
   route: NavRoute | null;
   destinationPin: { lat: number; lng: number; label: string } | null;
+  placeOptions: NavPlaceOption[];
+  placeQuery: string;
 };
 
 export async function fetchNavigationState(consume = false): Promise<NavigationState> {
@@ -108,4 +122,31 @@ export async function computeNavigationRoute(destination: string): Promise<{
 
 export async function cancelNavigation(): Promise<void> {
   await proxyFetch("navigation/cancel", { method: "POST" });
+}
+
+export async function searchNearbyPlaces(query: string): Promise<{
+  ok: boolean;
+  query?: string;
+  places?: NavPlaceOption[];
+  error?: string;
+}> {
+  const res = await proxyFetch("navigation/nearby", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ query }),
+  });
+  return parseApiJson(res);
+}
+
+export async function startNavigationOption(index: number): Promise<{
+  ok: boolean;
+  route?: NavRoute;
+  error?: string;
+}> {
+  const res = await proxyFetch("navigation/start-option", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ index }),
+  });
+  return parseApiJson(res);
 }

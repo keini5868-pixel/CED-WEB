@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from typing import Any
 from app.services.gemini_images import generate_image
@@ -20,12 +21,15 @@ from app.services.voice_spoken import (
 )
 from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
-from app.services.navigation_maps import compute_route, geocode_address
+from app.services.navigation_maps import compute_route, geocode_address, search_nearby_places
 from app.services.navigation_session import (
     clear_navigation,
+    clear_place_options,
     get_location,
+    get_place_options,
     get_route,
     push_client_action,
+    set_place_options,
     set_route,
 )
 from app.services.cognitive_memory import save_memory, search_memory
@@ -45,6 +49,98 @@ logger = logging.getLogger(__name__)
 SEARCH_WEB_TIMEOUT_SEC = 17.0
 VISION_PIPELINE_TIMEOUT_SEC = 45.0
 PUBLISH_TIMEOUT_SEC = 30.0
+NAVIGATION_TIMEOUT_SEC = 25.0
+
+
+def _parse_place_option_index(params: dict[str, Any]) -> int | None:
+    raw = params.get("index")
+    if raw is not None:
+        try:
+            idx = int(raw)
+            if idx >= 0:
+                return idx
+        except (TypeError, ValueError):
+            pass
+    text = " ".join(
+        str(params.get(k) or "")
+        for k in ("opcion", "option", "eleccion", "destino", "query", "texto")
+    ).lower()
+    if re.search(r"\b(primero|primera|1|uno)\b", text):
+        return 0
+    if re.search(r"\b(segundo|segunda|2|dos)\b", text):
+        return 1
+    if re.search(r"\b(tercero|tercera|3|tres)\b", text):
+        return 2
+    if re.search(r"\b(m[aá]s cercano|m[aá]s pr[oó]ximo|el cercano|la cercana)\b", text):
+        return 0
+    return None
+
+
+def _format_places_spoken(places: list[dict[str, Any]], *, query: str) -> str:
+    if not places:
+        return f"No encontré {query} cerca, señor."
+    count = len(places)
+    lead = (
+        f"Señor, encontré {count} {query} cercanos."
+        if count > 1
+        else f"Señor, encontré un {query} cercano."
+    )
+    first = places[0]
+    name = str(first.get("name") or query)
+    dist = str(first.get("distance_text") or "")
+    addr = str(first.get("address") or "")
+    street = addr.split(",")[0].strip() if addr else name
+    detail = f" El más próximo está a {dist} en {street}." if dist else f" El más próximo es {name}."
+    if count > 1:
+        detail += " ¿Cuál prefiere o iniciamos con el más cercano?"
+    else:
+        detail += " ¿Inicio el viaje?"
+    return fit_voice_spoken(f"{lead}{detail}")
+
+
+async def _start_route_for_user(
+    user_id: str,
+    *,
+    dest_lat: float,
+    dest_lng: float,
+    dest_label: str,
+) -> dict[str, Any]:
+    loc = get_location(user_id)
+    if not loc:
+        push_client_action(user_id, "open_drive", {})
+        return {
+            "ok": True,
+            "spoken": "Abro el mapa primero, señor. Active ubicación y repita el destino.",
+            "client_action": "open_drive",
+        }
+    route = await asyncio.to_thread(
+        compute_route,
+        origin_lat=float(loc["lat"]),
+        origin_lng=float(loc["lng"]),
+        dest_lat=dest_lat,
+        dest_lng=dest_lng,
+        dest_label=dest_label,
+    )
+    if not route.get("ok"):
+        return _spoken_err(
+            str(route.get("error") or "No pude calcular la ruta, señor."),
+            error="route_failed",
+        )
+    set_route(user_id, route)
+    clear_place_options(user_id)
+    push_client_action(user_id, "apply_route", route)
+    first = (route.get("steps") or [{}])[0]
+    first_line = str(first.get("instruction") or "Siga la ruta indicada").strip()
+    spoken = fit_voice_spoken(
+        f"Iniciando navegación, señor. {first_line}. "
+        f"Tiempo estimado: {route.get('duration_text', '')}."
+    )
+    return {
+        "ok": True,
+        "spoken": spoken,
+        "client_action": "apply_route",
+        "route": route,
+    }
 
 
 class SearchWebState:
@@ -718,6 +814,119 @@ async def execute_voice_tool(
                 "client_action": "open_drive",
             }
 
+        if name == "search_nearby_places":
+            query = str(
+                params.get("query") or params.get("place") or params.get("destino") or ""
+            ).strip()
+            if not query:
+                return _spoken_err("No escuché qué lugar buscar cerca, señor.")
+            loc = get_location(user_id)
+            if not loc:
+                push_client_action(user_id, "open_drive", {})
+                return {
+                    "ok": True,
+                    "spoken": (
+                        "Abro el mapa, señor. Active ubicación y repita a dónde desea ir."
+                    ),
+                    "client_action": "open_drive",
+                }
+            found = await asyncio.to_thread(
+                search_nearby_places,
+                query,
+                origin_lat=float(loc["lat"]),
+                origin_lng=float(loc["lng"]),
+                limit=3,
+            )
+            if not found.get("ok"):
+                return _spoken_err(
+                    str(found.get("error") or "No encontré ese lugar cerca, señor."),
+                    error="places_failed",
+                )
+            places = list(found.get("places") or [])
+            set_place_options(user_id, places, query=query)
+            push_client_action(
+                user_id,
+                "show_place_options",
+                {"query": query, "places": places},
+            )
+            return {
+                "ok": True,
+                "spoken": _format_places_spoken(places, query=query),
+                "client_action": "show_place_options",
+                "places": places,
+            }
+
+        if name in {"start_navigation", "iniciar_navegacion"}:
+            option_idx = _parse_place_option_index(params)
+            options = get_place_options(user_id)
+            if option_idx is not None and options:
+                if option_idx >= len(options):
+                    return _spoken_err("Esa opción no está disponible, señor.")
+                place = options[option_idx]
+                return await _start_route_for_user(
+                    user_id,
+                    dest_lat=float(place["lat"]),
+                    dest_lng=float(place["lng"]),
+                    dest_label=str(place.get("name") or place.get("address") or "Destino"),
+                )
+            destino = str(params.get("destino") or params.get("query") or "").strip()
+            if not destino:
+                if options:
+                    return _spoken_ok(
+                        "Tiene opciones en pantalla, señor. Diga el primero, el segundo "
+                        "o toque Iniciar viaje."
+                    )
+                return _spoken_err("No escuché el destino, señor.")
+            loc = get_location(user_id)
+            if not loc:
+                push_client_action(user_id, "open_drive", {})
+                return {
+                    "ok": True,
+                    "spoken": (
+                        "Abro el mapa primero, señor. Active ubicación y repita el destino."
+                    ),
+                    "client_action": "open_drive",
+                }
+            if len(destino.split()) <= 4 and not re.search(r"\d", destino):
+                found = await asyncio.to_thread(
+                    search_nearby_places,
+                    destino,
+                    origin_lat=float(loc["lat"]),
+                    origin_lng=float(loc["lng"]),
+                    limit=3,
+                )
+                if found.get("ok") and found.get("places"):
+                    places = list(found.get("places") or [])
+                    set_place_options(user_id, places, query=destino)
+                    push_client_action(
+                        user_id,
+                        "show_place_options",
+                        {"query": destino, "places": places},
+                    )
+                    return {
+                        "ok": True,
+                        "spoken": _format_places_spoken(places, query=destino),
+                        "client_action": "show_place_options",
+                        "places": places,
+                    }
+            geo = await asyncio.to_thread(
+                geocode_address,
+                destino,
+                bias_lat=float(loc["lat"]),
+                bias_lng=float(loc["lng"]),
+            )
+            if not geo.get("ok"):
+                return _spoken_err(
+                    str(geo.get("error") or "No encontré el destino, señor."),
+                    error="geocode_failed",
+                )
+            return await _start_route_for_user(
+                user_id,
+                dest_lat=float(geo["lat"]),
+                dest_lng=float(geo["lng"]),
+                dest_label=str(geo.get("formatted_address") or destino),
+            )
+
         if name == "buscar_direccion":
             query = str(params.get("query") or params.get("destino") or "").strip()
             if not query:
@@ -744,74 +953,33 @@ async def execute_voice_tool(
                 "destination": payload,
             }
 
-        if name == "iniciar_navegacion":
-            destino = str(params.get("destino") or params.get("query") or "").strip()
-            if not destino:
-                return _spoken_err("No escuché el destino, señor.")
-            loc = get_location(user_id)
-            if not loc:
-                push_client_action(user_id, "open_drive", {})
-                return {
-                    "ok": True,
-                    "spoken": (
-                        "Abro el mapa primero, señor. Active ubicación y repita el destino."
-                    ),
-                    "client_action": "open_drive",
-                }
-            geo = await asyncio.to_thread(
-                geocode_address,
-                destino,
-                bias_lat=float(loc["lat"]),
-                bias_lng=float(loc["lng"]),
-            )
-            if not geo.get("ok"):
-                return _spoken_err(
-                    str(geo.get("error") or "No encontré el destino, señor."),
-                    error="geocode_failed",
-                )
-            route = await asyncio.to_thread(
-                compute_route,
-                origin_lat=float(loc["lat"]),
-                origin_lng=float(loc["lng"]),
-                dest_lat=float(geo["lat"]),
-                dest_lng=float(loc["lng"]),
-                dest_label=str(geo.get("formatted_address") or destino),
-            )
-            if not route.get("ok"):
-                return _spoken_err(
-                    str(route.get("error") or "No pude calcular la ruta, señor."),
-                    error="route_failed",
-                )
-            set_route(user_id, route)
-            push_client_action(user_id, "apply_route", route)
-            spoken = fit_voice_spoken(
-                f"Ruta lista, señor. {route.get('duration_text', '')} "
-                f"({route.get('distance_text', '')}). Le guiaré paso a paso."
-            )
-            return {
-                "ok": True,
-                "spoken": spoken,
-                "client_action": "apply_route",
-                "route": route,
-            }
-
-        if name == "cancelar_navegacion":
+        if name in {"stop_navigation", "cancelar_navegacion"}:
             clear_navigation(user_id)
+            clear_place_options(user_id)
             push_client_action(user_id, "cancel_navigation", {})
             return {
                 "ok": True,
-                "spoken": "Navegación cancelada, señor.",
+                "spoken": "Navegación detenida, señor.",
                 "client_action": "cancel_navigation",
             }
 
-        if name == "estado_navegacion":
+        if name in {"navigation_status", "estado_navegacion", "next_instruction"}:
             route = get_route(user_id)
             if not route:
+                options = get_place_options(user_id)
+                if options:
+                    return _spoken_ok(
+                        "Hay destinos en pantalla, señor. Diga cuál prefiere o toque "
+                        "Iniciar viaje."
+                    )
                 return _spoken_ok("No hay ruta activa en este momento, señor.")
+            steps = route.get("steps") or []
+            first = steps[0] if steps else {}
+            instr = str(first.get("instruction") or "Continúe por la ruta").strip()
             return _spoken_ok(
-                f"Ruta activa hacia {route.get('destination', {}).get('label', 'su destino')}. "
-                f"Quedan aproximadamente {route.get('duration_text', '')} "
-                f"({route.get('distance_text', '')}), señor."
+                f"Ruta hacia {route.get('destination', {}).get('label', 'su destino')}. "
+                f"Quedan {route.get('duration_text', '')} ({route.get('distance_text', '')}). "
+                f"Próximo paso: {instr}, señor."
             )
 
         return _spoken_err(f"Herramienta no reconocida: {name}", error="unknown_tool")

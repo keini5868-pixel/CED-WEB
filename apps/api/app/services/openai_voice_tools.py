@@ -366,6 +366,71 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "search_nearby_places",
+        "description": (
+            "Busca lugares cercanos SIN pedir dirección completa al usuario. "
+            "OBLIGATORIO cuando digan: llévame a X, busca X cerca, dónde hay X, "
+            "quiero ir a un Walmart/gasolinera/farmacia. "
+            "Muestra hasta 3 opciones en pantalla y explícalas por voz. "
+            "NUNCA pidas la dirección — búscala tú."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Nombre del lugar o negocio (ej. Walmart, Starbucks)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "start_navigation",
+        "description": (
+            "Inicia navegación paso a paso hacia el destino elegido. "
+            "Usar cuando digan: el primero, el segundo, el tercero, iniciar viaje, "
+            "vamos al más cercano, o confirmen una opción de la lista en pantalla. "
+            "Si piden ir a un lugar genérico (ej. Walmart), primero usa search_nearby_places."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "destino": {
+                    "type": "string",
+                    "description": "Destino o elección (ej. el primero, Walmart)",
+                },
+                "index": {
+                    "type": "integer",
+                    "description": "Índice 0-based de la opción en pantalla",
+                },
+                "opcion": {"type": "string", "description": "primero, segundo, tercero"},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "name": "stop_navigation",
+        "description": (
+            "Detiene la navegación activa. "
+            "Usar cuando digan: detén la navegación, ya llegué, cancela el viaje, "
+            "para de guiarme."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
+        "name": "navigation_status",
+        "description": (
+            "Informa el estado de la navegación: próximo paso, distancia al giro, "
+            "tiempo restante. Usar cuando digan: ¿cuánto falta?, ¿qué sigue?, "
+            "¿cuánto tiempo?"
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
         "name": "activar_modo_conducir",
         "description": (
             "Abre el mapa GPS / modo conducir de CED. "
@@ -394,9 +459,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "iniciar_navegacion",
         "description": (
-            "Calcula ruta de manejo y activa guía paso a paso como copiloto. "
-            "Usar cuando digan: llévame a, navega a, guíame a, ruta a, cómo llego a. "
-            "Requiere modo mapa con GPS activo. Anuncia distancia y tiempo estimado."
+            "Alias de start_navigation — calcula ruta y activa guía paso a paso. "
+            "Para lugares genéricos (Walmart, farmacia): primero search_nearby_places. "
+            "NUNCA pidas dirección completa al usuario."
         ),
         "parameters": {
             "type": "object",

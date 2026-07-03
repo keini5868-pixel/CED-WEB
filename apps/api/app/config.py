@@ -81,6 +81,7 @@ class Settings(BaseSettings):
     cache_ttl_static: int = 86400
 
     google_api_key: str = ""
+    google_maps_api_key: str = ""
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     gemini_voice_model: str = "gemini-2.5-flash"
     gemini_image_model: str = "gemini-2.5-flash-image"
@@ -133,6 +134,19 @@ class Settings(BaseSettings):
             if val:
                 self.openai_api_key = val
                 break
+        return self
+
+    @model_validator(mode="after")
+    def resolve_google_maps_key(self) -> Settings:
+        if self.google_maps_api_key.strip():
+            return self
+        for alt in ("GOOGLE_MAPS_API_KEY",):
+            val = os.environ.get(alt, "").strip()
+            if val:
+                self.google_maps_api_key = val
+                break
+        if not self.google_maps_api_key.strip() and self.google_api_key.strip():
+            self.google_maps_api_key = self.google_api_key.strip()
         return self
 
     def is_production(self) -> bool:

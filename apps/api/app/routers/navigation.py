@@ -32,6 +32,14 @@ class RouteBody(BaseModel):
     origin_lng: float | None = None
 
 
+class NearbyBody(BaseModel):
+    query: str = Field(min_length=2, max_length=200)
+
+
+class StartOptionBody(BaseModel):
+    index: int = Field(ge=0, le=4)
+
+
 class AckActionBody(BaseModel):
     action_id: int
 
@@ -119,6 +127,71 @@ async def navigation_route(
         return route
 
     nav_session.set_route(user_id, route)
+    nav_session.push_client_action(user_id, "apply_route", route)
+    return route
+
+
+@router.post("/nearby")
+async def navigation_nearby(
+    body: NearbyBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    loc = nav_session.get_location(user_id)
+    if not loc:
+        return {
+            "ok": False,
+            "error": "No tengo tu ubicación GPS. Abre el modo mapa y activa ubicación.",
+        }
+    result = maps_svc.search_nearby_places(
+        body.query,
+        origin_lat=float(loc["lat"]),
+        origin_lng=float(loc["lng"]),
+        limit=3,
+    )
+    if not result.get("ok"):
+        return result
+    nav_session.set_place_options(
+        user_id,
+        list(result.get("places") or []),
+        query=str(result.get("query") or body.query),
+    )
+    nav_session.push_client_action(
+        user_id,
+        "show_place_options",
+        {
+            "query": result.get("query") or body.query,
+            "places": result.get("places") or [],
+        },
+    )
+    return result
+
+
+@router.post("/start-option")
+async def navigation_start_option(
+    body: StartOptionBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    options = nav_session.get_place_options(user_id)
+    if not options or body.index >= len(options):
+        return {"ok": False, "error": "No hay opción de destino pendiente."}
+    loc = nav_session.get_location(user_id)
+    if not loc:
+        return {
+            "ok": False,
+            "error": "No tengo tu ubicación GPS. Active ubicación en el mapa.",
+        }
+    place = options[body.index]
+    route = maps_svc.compute_route(
+        origin_lat=float(loc["lat"]),
+        origin_lng=float(loc["lng"]),
+        dest_lat=float(place["lat"]),
+        dest_lng=float(place["lng"]),
+        dest_label=str(place.get("name") or place.get("address") or "Destino"),
+    )
+    if not route.get("ok"):
+        return route
+    nav_session.set_route(user_id, route)
+    nav_session.clear_place_options(user_id)
     nav_session.push_client_action(user_id, "apply_route", route)
     return route
 

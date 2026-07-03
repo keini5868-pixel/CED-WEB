@@ -8,14 +8,21 @@ export function loadGoogleMaps(): Promise<typeof google> {
   const key = googleMapsKey();
   if (!key) {
     return Promise.reject(
-      new Error("NEXT_PUBLIC_GOOGLE_MAPS_KEY no configurada en Railway (@ced/web)"),
+      new Error(
+        "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY no configurada en Railway (@ced/web)",
+      ),
     );
   }
 
   if (!mapsReadyPromise) {
     mapsReadyPromise = (async () => {
       setOptions({ key, v: "weekly" });
-      await Promise.all([importLibrary("maps"), importLibrary("marker")]);
+      await Promise.all([
+        importLibrary("maps"),
+        importLibrary("marker"),
+        importLibrary("places"),
+        importLibrary("geometry"),
+      ]);
       return google;
     })();
   }

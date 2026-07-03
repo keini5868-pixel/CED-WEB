@@ -16,11 +16,16 @@ type DriveMapViewProps = {
 const DEFAULT_CENTER = { lat: 19.4326, lng: -99.1332 };
 
 const MAP_STYLES: google.maps.MapTypeStyle[] = [
-  { elementType: "geometry", stylers: [{ color: "#0b1220" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#8ec3e6" }] },
-  { elementType: "labels.text.stroke", stylers: [{ color: "#0b1220" }] },
-  { featureType: "road", elementType: "geometry", stylers: [{ color: "#1a2a44" }] },
-  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#2a4368" }] },
+  { elementType: "geometry", stylers: [{ color: "#0a0a0a" }] },
+  { elementType: "labels.text.stroke", stylers: [{ color: "#0a0a0a" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#00ffff" }] },
+  { featureType: "road", elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
+  {
+    featureType: "road",
+    elementType: "geometry.stroke",
+    stylers: [{ color: "#00ffff" }],
+  },
+  { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#16213e" }] },
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e7490" }] },
   { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
 ];

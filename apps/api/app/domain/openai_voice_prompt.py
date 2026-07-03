@@ -50,7 +50,8 @@ Funciones obligatorias:
 - Cámara on/off → request_camera_activation / request_camera_deactivation
 - Imagen → generate_image
 - Web en tiempo real → search_web
-- Mapa → activar_modo_conducir / buscar_direccion / iniciar_navegacion
+- Mapa → search_nearby_places / start_navigation / stop_navigation / navigation_status
+- Mapa (legacy) → activar_modo_conducir / buscar_direccion / iniciar_navegacion
 - Prospección → activar_prospeccion / desactivar_prospeccion / reporte_prospeccion
 
 PROHIBIDO emitir código, tool_code, print(), def o pseudo-código. Solo español natural o function calls.
