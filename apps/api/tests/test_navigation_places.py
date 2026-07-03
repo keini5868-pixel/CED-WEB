@@ -9,6 +9,7 @@ import pytest
 from app.services.navigation_maps import (
     format_distance_imperial,
     search_nearby_places,
+    _search_query_variants,
     _search_via_geocode,
     _search_via_places_legacy,
 )
@@ -136,6 +137,12 @@ def test_search_nearby_places_falls_back_to_geocode_on_request_denied():
     assert result["ok"] is True
     assert result["source"] == "geocode"
     assert len(result["places"]) == 1
+
+
+def test_search_query_variants_shortens_chain_names():
+    variants = _search_query_variants("Walmart Neighborhood Market")
+    assert variants[0] == "Walmart Neighborhood Market"
+    assert "Walmart" in variants
 
 
 def test_search_via_geocode_respects_radius():

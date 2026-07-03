@@ -20,7 +20,7 @@ import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { useUsageBalance } from "@/hooks/useUsageBalance";
 import {
   cancelNavigation,
-  computeNavigationRoute,
+  computeNavigationRouteTo,
   fetchNavigationState,
   postNavigationLocation,
   searchNearbyPlaces,
@@ -199,7 +199,11 @@ export function DriveModePage() {
     setNavError(null);
     setNavBusy(true);
     try {
-      const result = await computeNavigationRoute(place.label);
+      const result = await computeNavigationRouteTo({
+        lat: place.lat,
+        lng: place.lng,
+        label: place.label,
+      });
       if (!result.ok || !result.route) {
         setNavError(result.error || "No pude calcular la ruta.");
         return;

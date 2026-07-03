@@ -162,6 +162,28 @@ export async function computeNavigationRoute(destination: string): Promise<{
   return parseRouteResponse(data);
 }
 
+export async function computeNavigationRouteTo(body: {
+  lat: number;
+  lng: number;
+  label: string;
+}): Promise<{
+  ok: boolean;
+  route?: NavRoute;
+  error?: string;
+}> {
+  const res = await proxyFetch("navigation/route", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dest_lat: body.lat,
+      dest_lng: body.lng,
+      dest_label: body.label,
+    }),
+  });
+  const data = await parseApiJson<RouteApiPayload>(res);
+  return parseRouteResponse(data);
+}
+
 export async function cancelNavigation(): Promise<void> {
   await proxyFetch("navigation/cancel", { method: "POST" });
 }

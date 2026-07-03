@@ -368,6 +368,35 @@ def _search_via_places_new(
     return {"ok": True, "query": query, "places": places[:limit], "source": "places_new"}
 
 
+def _search_query_variants(query: str) -> list[str]:
+    """Genera variantes más cortas cuando el nombre completo no devuelve resultados."""
+    q = (query or "").strip()
+    if not q:
+        return []
+    variants: list[str] = [q]
+    lower = q.lower()
+    for suffix in (
+        " neighborhood market",
+        " supercenter",
+        " supermarket",
+        " store",
+        " market",
+        " express",
+    ):
+        idx = lower.find(suffix)
+        if idx > 0:
+            short = q[:idx].strip()
+            if short and short not in variants:
+                variants.append(short)
+    words = q.split()
+    if len(words) >= 2:
+        head = words[0].strip()
+        if len(head) >= 3 and head.lower() not in {"the", "los", "las", "una", "un"}:
+            if head not in variants:
+                variants.append(head)
+    return variants
+
+
 def search_nearby_places(
     query: str,
     *,
@@ -387,23 +416,35 @@ def search_nearby_places(
         ("geocode", _search_via_geocode),
     ]
     last_error = "No encontré resultados cerca."
-    for source, fn in search_fns:
-        result = fn(
-            q,
-            origin_lat=origin_lat,
-            origin_lng=origin_lng,
-            limit=limit,
-            radius_m=radius_m,
-        )
-        if result.get("ok"):
-            logger.info("[NAV] nearby search ok source=%s query=%r", source, q[:40])
-            return result
-        last_error = str(result.get("error") or last_error)
-        status = str(result.get("status") or "")
-        if status in _PLACES_DENIED or source != "geocode":
-            logger.info("[NAV] nearby search fallback from %s status=%s", source, status)
-            continue
-        break
+    for variant in _search_query_variants(q):
+        for source, fn in search_fns:
+            result = fn(
+                variant,
+                origin_lat=origin_lat,
+                origin_lng=origin_lng,
+                limit=limit,
+                radius_m=radius_m,
+            )
+            if result.get("ok"):
+                logger.info(
+                    "[NAV] nearby search ok source=%s query=%r variant=%r",
+                    source,
+                    q[:40],
+                    variant[:40],
+                )
+                result["query"] = q
+                return result
+            last_error = str(result.get("error") or last_error)
+            status = str(result.get("status") or "")
+            if status in _PLACES_DENIED or source != "geocode":
+                logger.info(
+                    "[NAV] nearby search fallback from %s status=%s variant=%r",
+                    source,
+                    status,
+                    variant[:40],
+                )
+                continue
+            break
 
     return {"ok": False, "error": last_error}
 

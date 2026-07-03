@@ -27,7 +27,10 @@ class GeocodeBody(BaseModel):
 
 
 class RouteBody(BaseModel):
-    destination: str = Field(min_length=2, max_length=500)
+    destination: str | None = Field(default=None, min_length=2, max_length=500)
+    dest_lat: float | None = None
+    dest_lng: float | None = None
+    dest_label: str | None = Field(default=None, max_length=500)
     origin_lat: float | None = None
     origin_lng: float | None = None
 
@@ -100,14 +103,10 @@ async def navigation_route(
     body: RouteBody,
     user_id: str = Depends(require_user_id),
 ) -> dict[str, Any]:
-    geo = maps_svc.geocode_address(body.destination)
-    if not geo.get("ok"):
-        return geo
-
+    loc = nav_session.get_location(user_id)
     origin_lat = body.origin_lat
     origin_lng = body.origin_lng
     if origin_lat is None or origin_lng is None:
-        loc = nav_session.get_location(user_id)
         if not loc:
             return {
                 "ok": False,
@@ -116,12 +115,30 @@ async def navigation_route(
         origin_lat = float(loc["lat"])
         origin_lng = float(loc["lng"])
 
+    if body.dest_lat is not None and body.dest_lng is not None:
+        dest_lat = float(body.dest_lat)
+        dest_lng = float(body.dest_lng)
+        dest_label = str(body.dest_label or body.destination or "Destino")
+    elif body.destination:
+        geo = maps_svc.geocode_address(
+            body.destination,
+            bias_lat=float(origin_lat),
+            bias_lng=float(origin_lng),
+        )
+        if not geo.get("ok"):
+            return geo
+        dest_lat = float(geo["lat"])
+        dest_lng = float(geo["lng"])
+        dest_label = str(geo.get("formatted_address") or body.destination)
+    else:
+        return {"ok": False, "error": "Indique un destino."}
+
     route = maps_svc.compute_route(
-        origin_lat=origin_lat,
-        origin_lng=origin_lng,
-        dest_lat=float(geo["lat"]),
-        dest_lng=float(geo["lng"]),
-        dest_label=str(geo.get("formatted_address") or body.destination),
+        origin_lat=float(origin_lat),
+        origin_lng=float(origin_lng),
+        dest_lat=dest_lat,
+        dest_lng=dest_lng,
+        dest_label=dest_label,
     )
     if not route.get("ok"):
         return route
