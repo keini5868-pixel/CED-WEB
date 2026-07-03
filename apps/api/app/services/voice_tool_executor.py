@@ -870,7 +870,43 @@ async def execute_voice_tool(
                     dest_label=str(place.get("name") or place.get("address") or "Destino"),
                 )
             destino = str(params.get("destino") or params.get("query") or "").strip()
+            confirm_words = {
+                "iniciar",
+                "ir",
+                "vamos",
+                "adelante",
+                "dale",
+                "listo",
+                "confirmar",
+                "start",
+                "go",
+                "arrancar",
+                "iniciar navegacion",
+                "iniciar navegación",
+                "iniciar ruta",
+            }
+            existing_route = get_route(user_id)
+            if existing_route and destino.lower() in confirm_words:
+                push_client_action(user_id, "begin_navigation", {})
+                dest_label = str(
+                    existing_route.get("destination", {}).get("label") or "su destino"
+                )
+                return {
+                    "ok": True,
+                    "spoken": f"Iniciando navegación hacia {dest_label}, señor.",
+                    "client_action": "begin_navigation",
+                }
             if not destino:
+                if existing_route:
+                    push_client_action(user_id, "begin_navigation", {})
+                    dest_label = str(
+                        existing_route.get("destination", {}).get("label") or "su destino"
+                    )
+                    return {
+                        "ok": True,
+                        "spoken": f"Iniciando navegación hacia {dest_label}, señor.",
+                        "client_action": "begin_navigation",
+                    }
                 if options:
                     return _spoken_ok(
                         "Tiene opciones en pantalla, señor. Diga el primero, el segundo "
@@ -961,6 +997,20 @@ async def execute_voice_tool(
                 "ok": True,
                 "spoken": "Navegación detenida, señor.",
                 "client_action": "cancel_navigation",
+            }
+
+        if name in {
+            "close_drive",
+            "cerrar_mapa",
+            "salir_del_mapa",
+            "salir_mapa",
+            "cerrar_modo_conducir",
+        }:
+            push_client_action(user_id, "close_drive", {})
+            return {
+                "ok": True,
+                "spoken": "Cierro el mapa, señor.",
+                "client_action": "close_drive",
             }
 
         if name in {"navigation_status", "estado_navegacion", "next_instruction"}:

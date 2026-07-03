@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { NavigationGlobalBridge } from "@/components/navigation/NavigationGlobalBridge";
 import { createClient } from "@/lib/supabase/client";
 
-const POLL_PREFIXES = ["/dashboard", "/drive", "/historial", "/admin"];
+const POLL_PREFIXES = ["/dashboard", "/drive", "/historial", "/admin", "/app"];
 
 function isProtectedRoute(pathname: string | null): boolean {
   if (!pathname) return false;

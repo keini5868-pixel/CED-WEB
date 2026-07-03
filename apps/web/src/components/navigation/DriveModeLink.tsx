@@ -1,15 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import { Navigation } from "lucide-react";
 
-import { DRIVE_PATH } from "@/lib/auth/paths";
+import { useDriveMap } from "@/contexts/DriveMapContext";
 
-/** Acceso al mapa fullscreen — visible en móvil y desktop. */
+/** Abre el mapa como overlay fullscreen — la sesión de voz del dashboard sigue activa. */
 export function DriveModeLink({ compact = false }: { compact?: boolean }) {
+  const { openDriveMap } = useDriveMap();
+
   return (
-    <Link
-      href={DRIVE_PATH}
+    <button
+      type="button"
+      onClick={openDriveMap}
       className={[
         "inline-flex items-center justify-center gap-2 rounded border font-[family-name:var(--font-orbitron)] font-bold tracking-wider transition",
         compact
@@ -19,6 +21,6 @@ export function DriveModeLink({ compact = false }: { compact?: boolean }) {
     >
       <Navigation className={compact ? "h-3.5 w-3.5" : "h-4 w-4"} />
       {compact ? "MAPA" : "MODO CONDUCIR — MAPA + GPS"}
-    </Link>
+    </button>
   );
 }

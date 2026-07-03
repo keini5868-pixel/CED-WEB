@@ -1,30 +1,74 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
-import { fetchNavigationState } from "@/lib/api/navigation";
+import { useDriveMap } from "@/contexts/DriveMapContext";
+import { fetchNavigationState, type NavClientAction } from "@/lib/api/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const POLL_MS = 2_000;
 
-const NAV_POLL_PREFIXES = ["/dashboard", "/drive", "/historial", "/admin"];
+const NAV_POLL_PREFIXES = ["/dashboard", "/drive", "/historial", "/admin", "/app"];
+
+const MAP_ACTIONS = new Set([
+  "open_drive",
+  "close_drive",
+  "begin_navigation",
+  "apply_route",
+  "show_place_options",
+  "show_destination",
+  "cancel_navigation",
+]);
 
 function shouldPollNavigation(pathname: string | null): boolean {
   if (!pathname) return false;
   return NAV_POLL_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }
 
+function shouldOpenMapForAction(action: string): boolean {
+  return (
+    action === "open_drive" ||
+    action === "begin_navigation" ||
+    action === "apply_route" ||
+    action === "show_place_options" ||
+    action === "show_destination"
+  );
+}
+
 /** Sincroniza acciones de voz (mapa, rutas) con la UI en rutas autenticadas. */
 export function NavigationGlobalBridge() {
-  const router = useRouter();
   const pathname = usePathname();
+  const { openDriveMap, closeDriveMap, isOpen } = useDriveMap();
   const lastActionIdRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!shouldPollNavigation(pathname)) return;
 
     let cancelled = false;
+
+    const dispatchAction = (action: NavClientAction) => {
+      const openingFresh = !isOpen && shouldOpenMapForAction(action.action);
+
+      if (action.action === "close_drive") {
+        if (isOpen) closeDriveMap();
+        return;
+      }
+
+      if (openingFresh) {
+        openDriveMap(action);
+        return;
+      }
+
+      if (action.action === "open_drive" && !isOpen) {
+        openDriveMap(action);
+        return;
+      }
+
+      window.dispatchEvent(
+        new CustomEvent("ced-navigation-event", { detail: action }),
+      );
+    };
 
     const poll = async () => {
       if (cancelled) return;
@@ -38,15 +82,9 @@ export function NavigationGlobalBridge() {
         const state = await fetchNavigationState(true);
         const action = state.client_action;
         if (!action || action.id === lastActionIdRef.current) return;
+        if (!MAP_ACTIONS.has(action.action)) return;
         lastActionIdRef.current = action.id;
-
-        if (action.action === "open_drive" && !pathname?.startsWith("/drive")) {
-          router.push("/drive");
-        }
-
-        window.dispatchEvent(
-          new CustomEvent("ced-navigation-event", { detail: action }),
-        );
+        dispatchAction(action);
       } catch {
         /* sin sesión o sin estado — ignorar */
       }
@@ -59,7 +97,7 @@ export function NavigationGlobalBridge() {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [pathname, router]);
+  }, [pathname, openDriveMap, closeDriveMap, isOpen]);
 
   return null;
 }

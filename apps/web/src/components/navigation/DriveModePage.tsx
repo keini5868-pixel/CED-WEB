@@ -1,24 +1,16 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MapPin, Mic, Navigation } from "lucide-react";
+import { MapPin, Navigation, X } from "lucide-react";
 
-import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
-import {
-  CedHistoryPanel,
-  CedSettingsModal,
-  CedStopConfirmModal,
-} from "@/components/voice/CedVoiceModals";
 import { DriveMapView } from "@/components/navigation/DriveMapView";
 import { NavigationPanel } from "@/components/navigation/NavigationPanel";
 import { PlaceOptionsList } from "@/components/navigation/PlaceOptionsList";
 import { RoutePreviewPanel } from "@/components/navigation/RoutePreviewPanel";
 import { SearchBar } from "@/components/navigation/SearchBar";
+import { useDriveMap } from "@/contexts/DriveMapContext";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useNavigationGuide } from "@/hooks/useNavigationGuide";
-import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
-import { useUsageBalance } from "@/hooks/useUsageBalance";
 import {
   cancelNavigation,
   computeNavigationRouteTo,
@@ -32,7 +24,6 @@ import {
 import type { NavigationMapState } from "@/lib/api/navigation";
 import { MAP_UI_VISIBILITY, deriveMapState } from "@/lib/navigation/mapState";
 import { cancelBrowserNavigationSpeech } from "@/lib/navigation/geo";
-import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
 
 const EMPTY_NAV: NavigationMapState = {
   route: null,
@@ -42,10 +33,17 @@ const EMPTY_NAV: NavigationMapState = {
   isNavigating: false,
 };
 
-export function DriveModePage() {
-  const { refresh: refreshUsage } = useUsageBalance();
+type DriveModePageProps = {
+  /** Overlay sobre el dashboard — la sesión de voz de CedVoiceHub sigue activa debajo. */
+  embedded?: boolean;
+  onClose?: () => void;
+};
+
+export function DriveModePage({ embedded = false, onClose }: DriveModePageProps) {
+  const { closeDriveMap, registerMapVoiceHandlers, consumeBootstrapAction } =
+    useDriveMap();
+  const closeMap = onClose ?? closeDriveMap;
   const { position, error: geoError, loading: geoLoading } = useGeolocation(true);
-  const voice = useCedVoiceSession(refreshUsage);
   const [mapNav, setMapNav] = useState<NavigationMapState>(EMPTY_NAV);
   const [navBusy, setNavBusy] = useState(false);
   const [navError, setNavError] = useState<string | null>(null);
@@ -125,6 +123,112 @@ export function DriveModePage() {
     }
   }, [resetToIdle]);
 
+  const tryApplyRouteFromServer = useCallback(async (): Promise<NavRoute | null> => {
+    try {
+      const state = await fetchNavigationState(false);
+      return (state.route as NavRoute | null | undefined) ?? null;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const handleSearch = useCallback(async (query: string) => {
+    setNavError(null);
+    setNavBusy(true);
+    try {
+      const result = await searchNearbyPlaces(query);
+      if (!result.ok || !result.places?.length) {
+        setNavError(result.error || "No encontré lugares cerca.");
+        return;
+      }
+      setMapNav((prev) => ({
+        ...prev,
+        route: null,
+        destinationPin: null,
+        placeOptions: result.places || [],
+        placeQuery: result.query || query,
+      }));
+    } catch {
+      setNavError("No pude buscar lugares cerca.");
+    } finally {
+      setNavBusy(false);
+    }
+  }, []);
+
+  const handlePlaceSelect = useCallback(
+    async (place: { lat: number; lng: number; label: string }) => {
+      setNavError(null);
+      setNavBusy(true);
+      try {
+        const result = await computeNavigationRouteTo({
+          lat: place.lat,
+          lng: place.lng,
+          label: place.label,
+        });
+        if (result.ok && result.route) {
+          prepareRoute(result.route);
+          return;
+        }
+        const synced = await tryApplyRouteFromServer();
+        if (synced) {
+          prepareRoute(synced);
+          return;
+        }
+        setNavError(result.error || "No pude calcular la ruta.");
+      } catch {
+        const synced = await tryApplyRouteFromServer();
+        if (synced) {
+          prepareRoute(synced);
+          return;
+        }
+        setNavError("No pude iniciar la navegación.");
+      } finally {
+        setNavBusy(false);
+      }
+    },
+    [prepareRoute, tryApplyRouteFromServer],
+  );
+
+  const handleStartOption = useCallback(
+    async (index: number) => {
+      setNavError(null);
+      setNavBusy(true);
+      try {
+        const result = await startNavigationOption(index);
+        if (result.ok && result.route) {
+          prepareRoute(result.route);
+          return;
+        }
+        const synced = await tryApplyRouteFromServer();
+        if (synced) {
+          prepareRoute(synced);
+          return;
+        }
+        setNavError(result.error || "No pude iniciar el viaje.");
+      } catch {
+        const synced = await tryApplyRouteFromServer();
+        if (synced) {
+          prepareRoute(synced);
+          return;
+        }
+        setNavError("No pude iniciar el viaje.");
+      } finally {
+        setNavBusy(false);
+      }
+    },
+    [prepareRoute, tryApplyRouteFromServer],
+  );
+
+  const handleCancelOptions = useCallback(() => {
+    setMapNav((prev) => ({ ...prev, placeOptions: [], placeQuery: "" }));
+    setNavError(null);
+  }, []);
+
+  const getRouteSummary = useCallback((): string | null => {
+    if (!mapNav.route) return null;
+    return `${mapNav.route.duration_text} · ${mapNav.route.distance_text} hacia ${mapNav.route.destination.label}`;
+  }, [mapNav.route]);
+
   useNavigationGuide({
     position,
     route: mapNav.route,
@@ -139,10 +243,6 @@ export function DriveModePage() {
       cancelBrowserNavigationSpeech();
     }
   }, [mapState]);
-
-  useEffect(() => {
-    prefetchEphemeralToken();
-  }, []);
 
   useEffect(() => {
     if (!position) return;
@@ -178,16 +278,36 @@ export function DriveModePage() {
   }, [applyRouteFromServer]);
 
   useEffect(() => {
-    const onNavEvent = (ev: Event) => {
-      const detail = (ev as CustomEvent).detail as {
-        action?: string;
-        payload?: unknown;
-      };
+    registerMapVoiceHandlers({
+      searchPlace: handleSearch,
+      selectOption: handleStartOption,
+      startNavigation: beginNavigation,
+      stopNavigation: handleStopNavigation,
+      getRouteSummary,
+    });
+    return () => registerMapVoiceHandlers(null);
+  }, [
+    registerMapVoiceHandlers,
+    handleSearch,
+    handleStartOption,
+    beginNavigation,
+    handleStopNavigation,
+    getRouteSummary,
+  ]);
+
+  useEffect(() => {
+    const processNavAction = (detail: { action?: string; payload?: unknown }) => {
       if (detail?.action === "apply_route" && detail.payload) {
         applyRouteFromServer(detail.payload as NavRoute);
       }
+      if (detail?.action === "begin_navigation") {
+        beginNavigation();
+      }
       if (detail?.action === "cancel_navigation") {
         resetToIdle();
+      }
+      if (detail?.action === "close_drive") {
+        closeMap();
       }
       if (detail?.action === "show_destination" && detail.payload) {
         const p = detail.payload as { lat: number; lng: number; label?: string };
@@ -217,9 +337,24 @@ export function DriveModePage() {
         }));
       }
     };
+
+    const bootstrap = consumeBootstrapAction();
+    if (bootstrap) {
+      processNavAction(bootstrap);
+    }
+
+    const onNavEvent = (ev: Event) => {
+      processNavAction((ev as CustomEvent).detail as { action?: string; payload?: unknown });
+    };
     window.addEventListener("ced-navigation-event", onNavEvent);
     return () => window.removeEventListener("ced-navigation-event", onNavEvent);
-  }, [applyRouteFromServer, resetToIdle]);
+  }, [
+    applyRouteFromServer,
+    beginNavigation,
+    resetToIdle,
+    closeMap,
+    consumeBootstrapAction,
+  ]);
 
   useEffect(() => {
     type WakeLockSentinel = { release: () => Promise<void> };
@@ -244,105 +379,6 @@ export function DriveModePage() {
     };
   }, []);
 
-  const tryApplyRouteFromServer = async (): Promise<NavRoute | null> => {
-    try {
-      const state = await fetchNavigationState(false);
-      return (state.route as NavRoute | null | undefined) ?? null;
-    } catch {
-      return null;
-    }
-  };
-
-  const handleSearch = async (query: string) => {
-    setNavError(null);
-    setNavBusy(true);
-    try {
-      const result = await searchNearbyPlaces(query);
-      if (!result.ok || !result.places?.length) {
-        setNavError(result.error || "No encontré lugares cerca.");
-        return;
-      }
-      setMapNav((prev) => ({
-        ...prev,
-        route: null,
-        destinationPin: null,
-        placeOptions: result.places || [],
-        placeQuery: result.query || query,
-      }));
-    } catch {
-      setNavError("No pude buscar lugares cerca.");
-    } finally {
-      setNavBusy(false);
-    }
-  };
-
-  const handlePlaceSelect = async (place: {
-    lat: number;
-    lng: number;
-    label: string;
-  }) => {
-    setNavError(null);
-    setNavBusy(true);
-    try {
-      const result = await computeNavigationRouteTo({
-        lat: place.lat,
-        lng: place.lng,
-        label: place.label,
-      });
-      if (result.ok && result.route) {
-        prepareRoute(result.route);
-        return;
-      }
-      const synced = await tryApplyRouteFromServer();
-      if (synced) {
-        prepareRoute(synced);
-        return;
-      }
-      setNavError(result.error || "No pude calcular la ruta.");
-    } catch {
-      const synced = await tryApplyRouteFromServer();
-      if (synced) {
-        prepareRoute(synced);
-        return;
-      }
-      setNavError("No pude iniciar la navegación.");
-    } finally {
-      setNavBusy(false);
-    }
-  };
-
-  const handleStartOption = async (index: number) => {
-    setNavError(null);
-    setNavBusy(true);
-    try {
-      const result = await startNavigationOption(index);
-      if (result.ok && result.route) {
-        prepareRoute(result.route);
-        return;
-      }
-      const synced = await tryApplyRouteFromServer();
-      if (synced) {
-        prepareRoute(synced);
-        return;
-      }
-      setNavError(result.error || "No pude iniciar el viaje.");
-    } catch {
-      const synced = await tryApplyRouteFromServer();
-      if (synced) {
-        prepareRoute(synced);
-        return;
-      }
-      setNavError("No pude iniciar el viaje.");
-    } finally {
-      setNavBusy(false);
-    }
-  };
-
-  const handleCancelOptions = () => {
-    setMapNav((prev) => ({ ...prev, placeOptions: [], placeQuery: "" }));
-    setNavError(null);
-  };
-
   const gpsLabel = geoLoading
     ? "Buscando GPS…"
     : geoError
@@ -350,10 +386,6 @@ export function DriveModePage() {
       : position
         ? `±${Math.round(position.accuracy)} m`
         : "GPS…";
-
-  const routeLabel = mapNav.route
-    ? `${mapNav.route.duration_text} · ${mapNav.route.distance_text}`
-    : null;
 
   return (
     <div className="fixed inset-0 flex flex-col bg-black">
@@ -379,34 +411,22 @@ export function DriveModePage() {
 
       <div className="pointer-events-none relative z-[110] flex h-full flex-col">
         {mapState !== "navegando" ? (
-        <header className="pointer-events-auto flex items-start justify-between gap-2 bg-gradient-to-b from-black/90 to-transparent px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4">
-          <Link
-            href="/dashboard"
-            className="rounded border border-cyan-500/40 bg-black/80 px-3 py-2 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-widest text-cyan-300 shadow-lg sm:text-xs"
-          >
-            ← VOLVER
-          </Link>
-          <div className="flex flex-col items-end gap-2">
+          <header className="pointer-events-auto flex items-start justify-between gap-2 bg-gradient-to-b from-black/90 to-transparent px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4">
             <button
               type="button"
-              onClick={() => void voice.toggleMic()}
-              disabled={voice.micBusy}
-              className="pointer-events-auto rounded-full border border-cyan-400/50 bg-black/80 p-3 text-cyan-300 shadow-lg hover:bg-cyan-950/60 disabled:opacity-50"
-              aria-label="Micrófono"
+              onClick={closeMap}
+              className="inline-flex items-center gap-1.5 rounded border border-cyan-500/40 bg-black/80 px-3 py-2 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-widest text-cyan-300 shadow-lg sm:text-xs"
             >
-              <Mic className={`h-5 w-5 ${voice.micOn ? "text-cyan-400" : ""}`} />
+              <X className="h-3.5 w-3.5" />
+              CERRAR
             </button>
-            <div className="flex items-center gap-2 rounded border border-cyan-500/30 bg-black/70 px-2 py-1.5">
-              <MapPin className="h-3.5 w-3.5 text-cyan-400" />
-              <span className="text-[10px] text-cyan-200 sm:text-xs">{gpsLabel}</span>
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2 rounded border border-cyan-500/30 bg-black/70 px-2 py-1.5">
+                <MapPin className="h-3.5 w-3.5 text-cyan-400" />
+                <span className="text-[10px] text-cyan-200 sm:text-xs">{gpsLabel}</span>
+              </div>
             </div>
-            {routeLabel && mapState === "idle" ? (
-              <span className="max-w-[200px] truncate rounded bg-purple-900/50 px-2 py-0.5 text-[10px] text-purple-200">
-                {mapNav.route?.destination.label} · {routeLabel}
-              </span>
-            ) : null}
-          </div>
-        </header>
+          </header>
         ) : null}
 
         <div className="pointer-events-auto space-y-2 px-3 sm:px-4">
@@ -455,61 +475,18 @@ export function DriveModePage() {
             </p>
           </div>
 
-          <p className="mb-3 text-center font-[family-name:var(--font-orbitron)] text-sm font-bold tracking-wide text-[#00e5ff]">
-            {voice.statusLabel}
-          </p>
+          {embedded ? (
+            <p className="text-center text-xs leading-relaxed text-cyan-400">
+              CED sigue escuchando en segundo plano. Di: &quot;busca Walmart&quot;,
+              &quot;el primero&quot;, &quot;iniciar&quot;, &quot;detener&quot; o &quot;cerrar mapa&quot;.
+            </p>
+          ) : null}
 
           {geoError ? (
-            <p className="mb-2 text-center text-xs text-amber-300">{geoError}</p>
+            <p className="mt-2 text-center text-xs text-amber-300">{geoError}</p>
           ) : null}
-
-          {voice.errorMessage ? (
-            <p className="mb-2 text-center text-xs text-red-300">{voice.errorMessage}</p>
-          ) : null}
-
-          <CedVoiceControls
-            micOn={voice.micOn}
-            micBusy={voice.micBusy}
-            cameraOn={voice.cameraOn}
-            muted={voice.muted}
-            paused={voice.paused}
-            onMic={() => void voice.toggleMic()}
-            onCamera={() => void voice.toggleCamera()}
-            onMute={() => voice.setMuted((m) => !m)}
-            onPause={voice.togglePause}
-            onStop={() => voice.setStopConfirmOpen(true)}
-            onHistory={() => voice.setHistoryOpen(true)}
-            onChat={() => undefined}
-            onSettings={() => voice.setSettingsOpen(true)}
-            onFiles={() => undefined}
-          />
-
-          <p className="mt-2 text-center text-[10px] text-cyan-600">
-            Di: &quot;Llévame a Walmart&quot;, &quot;el primero&quot; o escribe arriba
-          </p>
         </div>
       </div>
-
-      <CedStopConfirmModal
-        open={voice.stopConfirmOpen}
-        onClose={() => voice.setStopConfirmOpen(false)}
-        onConfirm={() => {
-          voice.stopSession();
-          voice.setStopConfirmOpen(false);
-        }}
-      />
-      <CedSettingsModal
-        open={voice.settingsOpen}
-        onClose={() => voice.setSettingsOpen(false)}
-        prefs={voice.prefs}
-        onSave={voice.updatePrefs}
-        micOn={voice.micOn}
-        onApplyVoice={voice.applyVoiceChange}
-      />
-      <CedHistoryPanel
-        open={voice.historyOpen}
-        onClose={() => voice.setHistoryOpen(false)}
-      />
     </div>
   );
 }
