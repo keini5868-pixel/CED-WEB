@@ -114,6 +114,30 @@ def test_casual_long_text_not_search():
     assert resolve_web_search_request(text, _tx(("user", text))) is None
 
 
+def test_personal_vent_not_weather_or_web():
+    from app.services.cognitive_intents import is_personal_vent_intent, is_weather_intent
+    from app.services.retell_custom_llm import is_casual_conversation
+
+    text = (
+        "Yo creo que me dejó un consejo, porque me siento mal. Últimamente las cosas "
+        "no se me dan. La semana pasada hice un trabajo, me lo tenían que pagar hoy "
+        "y no me lo pagaron. Cada vez que tengo que pagar la renta todo se complica "
+        "y quedo sin dinero. Mi esposa tiene que apoyarme y no quiero depender de nadie. "
+        "Ya tengo tanto tiempo en esta situación mes tras mes que estoy cansado."
+    )
+    assert is_personal_vent_intent(text)
+    assert not is_weather_intent(text)
+    assert is_casual_conversation(text)
+    assert resolve_web_search_request(text, _tx(("user", text))) is None
+
+
+def test_figurative_tiempo_en_not_weather():
+    from app.services.cognitive_intents import is_weather_intent
+
+    assert not is_weather_intent("Ya tengo tanto tiempo en esta situación mes tras mes")
+    assert is_weather_intent("¿Cómo está el clima en Ciudad de México hoy?")
+
+
 def test_search_promise_detection():
     from app.services.retell_custom_llm import promised_voice_search_without_result
 

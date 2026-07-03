@@ -13,6 +13,7 @@ from app.services.cognitive_intents import (
     is_camera_voice_command,
     is_internal_knowledge_query,
     is_meta_publish_intent,
+    is_personal_vent_intent,
     is_script_demo_request,
     is_news_intent,
     is_volatile_query,
@@ -155,7 +156,7 @@ def _is_fragment_continuation(last: str, prev: str) -> bool:
 
 
 def _needs_internet_lookup(text: str) -> bool:
-    if is_internal_knowledge_query(text):
+    if is_internal_knowledge_query(text) or is_personal_vent_intent(text):
         return False
     if is_weather_intent(text) or is_news_intent(text):
         return True
@@ -190,6 +191,8 @@ def resolve_web_search_request(
     """Detecta búsqueda web usando el último turno — sin mezclar noticias previas."""
     last = (user_text or "").strip()
     if not last or _normalize(last) in _ACK_ONLY:
+        return None
+    if is_personal_vent_intent(last):
         return None
 
     lines = _user_lines(transcript)
@@ -693,6 +696,8 @@ def is_casual_conversation(text: str) -> bool:
     """Charla natural / personal — no requiere tools ni web."""
     if is_meta_publish_intent(text) or _is_concept_question(text):
         return False
+    if is_personal_vent_intent(text):
+        return True
     if (
         _needs_internet_lookup(text)
         or is_web_research_intent(text)

@@ -880,8 +880,10 @@ class GeminiVoiceLlm:
             return
 
         max_tokens, timeout_sec = _voice_generation_limits(user_text)
+
         from app.services.cognitive_intents import (
             is_internal_knowledge_query,
+            is_personal_vent_intent,
             is_web_research_intent,
             requires_live_web,
         )
@@ -889,6 +891,30 @@ class GeminiVoiceLlm:
             best_internal_answer,
             should_use_internal_brain,
         )
+
+        if is_personal_vent_intent(user_text):
+            empathetic = await self.generate_empathetic_reformulation(
+                user_text,
+                transcript=request.transcript,
+                bad_reply="",
+            )
+            if empathetic:
+                self._history = _truncate_contents(
+                    [
+                        *self._history,
+                        last,
+                        types.Content(role="model", parts=[types.Part(text=empathetic)]),
+                    ],
+                    max_turns=MAX_HISTORY_TURNS,
+                )
+                logger.info("[RETELL-GEMINI] personal_vent user=%s", user_text[:80])
+                yield ResponseResponse(
+                    response_id=request.response_id,
+                    content=_delivery_text(empathetic),
+                    content_complete=True,
+                    end_call=False,
+                )
+                return
 
         needs_external_data = (
             requires_live_web(user_text)
@@ -1194,7 +1220,10 @@ class GeminiVoiceLlm:
             text_response = conv or FALLBACK_REPLY
 
         web_req = resolve_web_search_request(user_text, request.transcript)
-        needs_web = _needs_internet_lookup(user_text) or web_req is not None
+        needs_web = (
+            not is_personal_vent_intent(user_text)
+            and (_needs_internet_lookup(user_text) or web_req is not None)
+        )
         if needs_web and (
             not text_response
             or text_response == FALLBACK_REPLY

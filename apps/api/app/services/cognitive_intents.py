@@ -33,10 +33,28 @@ WEATHER_PATTERNS = [
     r"\bpron[oó]stico",
     r"\bqu[eé]\s+tiempo\s+hace\b",
     r"\bc[oó]mo\s+est[aá]\s+el\s+(tiempo|clima)\b",
-    r"\btiempo\s+(de|en|hoy|actual)",
+    r"\btiempo\s+en\s+(?!esta\b|mi\b|la\s+vida|el\s+trabajo|una\s+situacion|su\b|tu\b)",
+    r"\btiempo\s+(de\s+hoy|hoy|actual)\b",
+    r"\bel\s+tiempo\s+(hoy|actual|de\s+hoy)\b",
     r"\bllueve\b",
     r"\bgrados\b",
     r"\bweather\b",
+]
+
+PERSONAL_VENT_PATTERNS = [
+    r"\bme siento\b",
+    r"\bestoy cansad",
+    r"\bno quiero depender\b",
+    r"\bmes tras mes\b",
+    r"\b(pagaron|pagarme|me pag|no me pag|tenian que pag|tenían que pag)\b",
+    r"\b(renta|alquiler)\b",
+    r"\b(esposa|familia|pareja)\b.*\b(apoy|pag|depend|ayud)\b",
+    r"\b(situacion|situación)\b.*\b(cansad|agotad|dificil|difícil|complicad|frustrad)\b",
+    r"\btiempo en esta situacion\b",
+    r"\b(estres|estrés|ansiedad|preocup|agotad|frustrad|deprim)\b",
+    r"\b(consejo|ayudame|ayúdame|necesito hablar|hablar contigo)\b",
+    r"\b(dinero|gastos|deudas)\b.*\b(renta|pagar|complic|falta)\b",
+    r"\bquedo sin\b",
 ]
 
 NEWS_PATTERNS = [
@@ -173,9 +191,37 @@ def _matches(text: str, patterns: list[str]) -> bool:
     return any(re.search(p, text, re.I) for p in patterns)
 
 
+def is_personal_vent_intent(text: str) -> bool:
+    """Desahogo personal o emocional — no enrutar a clima, noticias ni web."""
+    t = normalize_text(text)
+    if not t:
+        return False
+    if re.search(r"\bme siento (mal|triste|solo|agotad|cansad|deprim)\b", t):
+        return True
+    if len(t.split()) < 6:
+        return False
+    if _matches(t, PERSONAL_VENT_PATTERNS):
+        return True
+    if len(t.split()) >= 35 and not re.search(
+        r"\b(clima|noticias|temperatura|pronostico|pronóstico|titulares)\b",
+        t,
+    ):
+        if re.search(
+            r"\b(siento|situacion|situación|cansad|trabajo|pagar|renta|dinero|familia|"
+            r"esposa|depend|agotad|frustrad|preocup|mal\b)\b",
+            t,
+        ):
+            return True
+    return False
+
+
 def is_weather_intent(text: str) -> bool:
     t = normalize_text(text)
-    return len(t) >= 6 and _matches(t, WEATHER_PATTERNS)
+    if len(t) < 6 or is_personal_vent_intent(text):
+        return False
+    if re.search(r"\b(mucho|tanto|poco|largo|breve|demasiado)\s+tiempo\b", t):
+        return False
+    return _matches(t, WEATHER_PATTERNS)
 
 
 def is_news_intent(text: str) -> bool:
