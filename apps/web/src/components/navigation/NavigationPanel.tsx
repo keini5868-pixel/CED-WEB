@@ -88,7 +88,7 @@ export function NavigationPanel({
         className="inline-flex items-center gap-2 rounded border border-red-500/50 bg-red-950/40 px-4 py-2 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-widest text-red-200 hover:bg-red-900/40 disabled:opacity-50"
       >
         <Square className="h-3.5 w-3.5" />
-        DETENER NAVEGACIÓN
+        DETENER RUTA
       </button>
     </div>
   );

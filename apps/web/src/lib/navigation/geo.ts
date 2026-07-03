@@ -51,11 +51,12 @@ export function closestPathIndex(path: NavLatLng[], point: NavLatLng): number {
   return bestIdx;
 }
 
-export function speakNavigation(text: string): void {
+export function cancelBrowserNavigationSpeech(): void {
   if (typeof window === "undefined" || !window.speechSynthesis) return;
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = "es-MX";
-  utterance.rate = 0.95;
   window.speechSynthesis.cancel();
-  window.speechSynthesis.speak(utterance);
+}
+
+/** @deprecated Solo CED habla — no usar TTS del navegador en el mapa. */
+export function speakNavigation(_text: string): void {
+  cancelBrowserNavigationSpeech();
 }

@@ -56,6 +56,7 @@ export type NavigationMapState = {
   destinationPin: { lat: number; lng: number; label: string } | null;
   placeOptions: NavPlaceOption[];
   placeQuery: string;
+  isNavigating: boolean;
 };
 
 type RouteApiPayload = {

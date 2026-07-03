@@ -13,6 +13,7 @@ import {
 import { DriveMapView } from "@/components/navigation/DriveMapView";
 import { NavigationPanel } from "@/components/navigation/NavigationPanel";
 import { PlaceOptionsList } from "@/components/navigation/PlaceOptionsList";
+import { RoutePreviewPanel } from "@/components/navigation/RoutePreviewPanel";
 import { SearchBar } from "@/components/navigation/SearchBar";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useNavigationGuide } from "@/hooks/useNavigationGuide";
@@ -30,6 +31,7 @@ import {
 } from "@/lib/api/navigation";
 import type { NavigationMapState } from "@/lib/api/navigation";
 import { MAP_UI_VISIBILITY, deriveMapState } from "@/lib/navigation/mapState";
+import { cancelBrowserNavigationSpeech } from "@/lib/navigation/geo";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
 
 const EMPTY_NAV: NavigationMapState = {
@@ -37,6 +39,7 @@ const EMPTY_NAV: NavigationMapState = {
   destinationPin: null,
   placeOptions: [],
   placeQuery: "",
+  isNavigating: false,
 };
 
 export function DriveModePage() {
@@ -53,18 +56,21 @@ export function DriveModePage() {
         route: mapNav.route,
         placeOptions: mapNav.placeOptions,
         isSearching: navBusy && !mapNav.route,
+        isNavigating: mapNav.isNavigating,
       }),
-    [mapNav.route, mapNav.placeOptions, navBusy],
+    [mapNav.route, mapNav.placeOptions, mapNav.isNavigating, navBusy],
   );
 
   const ui = MAP_UI_VISIBILITY[mapState];
 
   const resetToIdle = useCallback(() => {
+    cancelBrowserNavigationSpeech();
     setNavError(null);
     setMapNav(EMPTY_NAV);
   }, []);
 
-  const applyRoute = useCallback((route: NavRoute) => {
+  const prepareRoute = useCallback((route: NavRoute) => {
+    cancelBrowserNavigationSpeech();
     setNavError(null);
     setMapNav({
       route,
@@ -77,6 +83,32 @@ export function DriveModePage() {
         : null,
       placeOptions: [],
       placeQuery: "",
+      isNavigating: false,
+    });
+  }, []);
+
+  const beginNavigation = useCallback(() => {
+    cancelBrowserNavigationSpeech();
+    setMapNav((prev) =>
+      prev.route ? { ...prev, isNavigating: true, placeOptions: [], placeQuery: "" } : prev,
+    );
+  }, []);
+
+  const applyRouteFromVoice = useCallback((route: NavRoute) => {
+    cancelBrowserNavigationSpeech();
+    setNavError(null);
+    setMapNav({
+      route,
+      destinationPin: route.destination
+        ? {
+            lat: route.destination.lat,
+            lng: route.destination.lng,
+            label: route.destination.label,
+          }
+        : null,
+      placeOptions: [],
+      placeQuery: "",
+      isNavigating: true,
     });
   }, []);
 
@@ -93,11 +125,17 @@ export function DriveModePage() {
   useNavigationGuide({
     position,
     route: mapNav.route,
-    enabled: mapState === "navigating",
+    enabled: mapState === "navegando",
     onArrival: () => {
       void handleStopNavigation();
     },
   });
+
+  useEffect(() => {
+    if (mapState === "navegando") {
+      cancelBrowserNavigationSpeech();
+    }
+  }, [mapState]);
 
   useEffect(() => {
     prefetchEphemeralToken();
@@ -119,7 +157,7 @@ export function DriveModePage() {
       try {
         const state = await fetchNavigationState(false);
         if (state.route) {
-          applyRoute(state.route as NavRoute);
+          applyRouteFromVoice(state.route as NavRoute);
           return;
         }
         if (state.place_options?.length) {
@@ -134,7 +172,7 @@ export function DriveModePage() {
       }
     };
     void syncRoute();
-  }, [applyRoute]);
+  }, [applyRouteFromVoice]);
 
   useEffect(() => {
     const onNavEvent = (ev: Event) => {
@@ -143,7 +181,7 @@ export function DriveModePage() {
         payload?: unknown;
       };
       if (detail?.action === "apply_route" && detail.payload) {
-        applyRoute(detail.payload as NavRoute);
+        applyRouteFromVoice(detail.payload as NavRoute);
       }
       if (detail?.action === "cancel_navigation") {
         resetToIdle();
@@ -153,6 +191,7 @@ export function DriveModePage() {
         setMapNav((prev) => ({
           ...prev,
           route: null,
+          isNavigating: false,
           destinationPin: {
             lat: p.lat,
             lng: p.lng,
@@ -168,6 +207,7 @@ export function DriveModePage() {
         setMapNav((prev) => ({
           ...prev,
           route: null,
+          isNavigating: false,
           destinationPin: null,
           placeOptions: p.places || [],
           placeQuery: p.query || "",
@@ -176,7 +216,7 @@ export function DriveModePage() {
     };
     window.addEventListener("ced-navigation-event", onNavEvent);
     return () => window.removeEventListener("ced-navigation-event", onNavEvent);
-  }, [applyRoute, resetToIdle]);
+  }, [applyRouteFromVoice, resetToIdle]);
 
   useEffect(() => {
     type WakeLockSentinel = { release: () => Promise<void> };
@@ -247,19 +287,19 @@ export function DriveModePage() {
         label: place.label,
       });
       if (result.ok && result.route) {
-        applyRoute(result.route);
+        prepareRoute(result.route);
         return;
       }
       const synced = await tryApplyRouteFromServer();
       if (synced) {
-        applyRoute(synced);
+        prepareRoute(synced);
         return;
       }
       setNavError(result.error || "No pude calcular la ruta.");
     } catch {
       const synced = await tryApplyRouteFromServer();
       if (synced) {
-        applyRoute(synced);
+        prepareRoute(synced);
         return;
       }
       setNavError("No pude iniciar la navegación.");
@@ -274,19 +314,19 @@ export function DriveModePage() {
     try {
       const result = await startNavigationOption(index);
       if (result.ok && result.route) {
-        applyRoute(result.route);
+        prepareRoute(result.route);
         return;
       }
       const synced = await tryApplyRouteFromServer();
       if (synced) {
-        applyRoute(synced);
+        prepareRoute(synced);
         return;
       }
       setNavError(result.error || "No pude iniciar el viaje.");
     } catch {
       const synced = await tryApplyRouteFromServer();
       if (synced) {
-        applyRoute(synced);
+        prepareRoute(synced);
         return;
       }
       setNavError("No pude iniciar el viaje.");
@@ -374,6 +414,13 @@ export function DriveModePage() {
               places={mapNav.placeOptions}
               onStart={(i) => void handleStartOption(i)}
               onCancel={handleCancelOptions}
+              busy={navBusy}
+            />
+          ) : null}
+          {ui.routePreview && mapNav.route ? (
+            <RoutePreviewPanel
+              route={mapNav.route}
+              onStart={beginNavigation}
               busy={navBusy}
             />
           ) : null}
