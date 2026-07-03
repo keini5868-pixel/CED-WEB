@@ -94,21 +94,24 @@ export function DriveModePage() {
     );
   }, []);
 
-  const applyRouteFromVoice = useCallback((route: NavRoute) => {
+  const applyRouteFromServer = useCallback((route: NavRoute) => {
     cancelBrowserNavigationSpeech();
     setNavError(null);
-    setMapNav({
-      route,
-      destinationPin: route.destination
-        ? {
-            lat: route.destination.lat,
-            lng: route.destination.lng,
-            label: route.destination.label,
-          }
-        : null,
-      placeOptions: [],
-      placeQuery: "",
-      isNavigating: true,
+    setMapNav((prev) => {
+      if (prev.isNavigating) return prev;
+      return {
+        route,
+        destinationPin: route.destination
+          ? {
+              lat: route.destination.lat,
+              lng: route.destination.lng,
+              label: route.destination.label,
+            }
+          : null,
+        placeOptions: [],
+        placeQuery: "",
+        isNavigating: false,
+      };
     });
   }, []);
 
@@ -157,7 +160,7 @@ export function DriveModePage() {
       try {
         const state = await fetchNavigationState(false);
         if (state.route) {
-          applyRouteFromVoice(state.route as NavRoute);
+          applyRouteFromServer(state.route as NavRoute);
           return;
         }
         if (state.place_options?.length) {
@@ -172,7 +175,7 @@ export function DriveModePage() {
       }
     };
     void syncRoute();
-  }, [applyRouteFromVoice]);
+  }, [applyRouteFromServer]);
 
   useEffect(() => {
     const onNavEvent = (ev: Event) => {
@@ -181,7 +184,7 @@ export function DriveModePage() {
         payload?: unknown;
       };
       if (detail?.action === "apply_route" && detail.payload) {
-        applyRouteFromVoice(detail.payload as NavRoute);
+        applyRouteFromServer(detail.payload as NavRoute);
       }
       if (detail?.action === "cancel_navigation") {
         resetToIdle();
@@ -216,7 +219,7 @@ export function DriveModePage() {
     };
     window.addEventListener("ced-navigation-event", onNavEvent);
     return () => window.removeEventListener("ced-navigation-event", onNavEvent);
-  }, [applyRouteFromVoice, resetToIdle]);
+  }, [applyRouteFromServer, resetToIdle]);
 
   useEffect(() => {
     type WakeLockSentinel = { release: () => Promise<void> };
@@ -363,7 +366,19 @@ export function DriveModePage() {
         className="absolute inset-0"
       />
 
+      {ui.navPanel && mapNav.route ? (
+        <div className="pointer-events-auto absolute left-0 right-0 top-0 z-[120]">
+          <NavigationPanel
+            route={mapNav.route}
+            position={position}
+            onStop={() => void handleStopNavigation()}
+            busy={navBusy}
+          />
+        </div>
+      ) : null}
+
       <div className="pointer-events-none relative z-[110] flex h-full flex-col">
+        {mapState !== "navegando" ? (
         <header className="pointer-events-auto flex items-start justify-between gap-2 bg-gradient-to-b from-black/90 to-transparent px-3 pb-2 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-4">
           <Link
             href="/dashboard"
@@ -385,13 +400,14 @@ export function DriveModePage() {
               <MapPin className="h-3.5 w-3.5 text-cyan-400" />
               <span className="text-[10px] text-cyan-200 sm:text-xs">{gpsLabel}</span>
             </div>
-            {routeLabel ? (
+            {routeLabel && mapState === "idle" ? (
               <span className="max-w-[200px] truncate rounded bg-purple-900/50 px-2 py-0.5 text-[10px] text-purple-200">
                 {mapNav.route?.destination.label} · {routeLabel}
               </span>
             ) : null}
           </div>
         </header>
+        ) : null}
 
         <div className="pointer-events-auto space-y-2 px-3 sm:px-4">
           {ui.searchBar ? (
@@ -417,24 +433,19 @@ export function DriveModePage() {
               busy={navBusy}
             />
           ) : null}
-          {ui.routePreview && mapNav.route ? (
+        </div>
+
+        <div className="flex-1" />
+
+        {ui.routePreview && mapNav.route ? (
+          <div className="pointer-events-auto px-3 pb-2 sm:px-4">
             <RoutePreviewPanel
               route={mapNav.route}
               onStart={beginNavigation}
               busy={navBusy}
             />
-          ) : null}
-          {ui.navPanel && mapNav.route ? (
-            <NavigationPanel
-              route={mapNav.route}
-              position={position}
-              onStop={() => void handleStopNavigation()}
-              busy={navBusy}
-            />
-          ) : null}
-        </div>
-
-        <div className="flex-1" />
+          </div>
+        ) : null}
 
         <div className="pointer-events-auto border-t border-cyan-500/25 bg-black/85 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:px-4">
           <div className="mb-2 flex items-center gap-2">

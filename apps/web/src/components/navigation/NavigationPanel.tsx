@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { Navigation, Square } from "lucide-react";
 
 import type { GeoPosition } from "@/hooks/useGeolocation";
 import type { NavRoute } from "@/lib/api/navigation";
@@ -58,38 +57,33 @@ export function NavigationPanel({
     distanceToTurn != null ? formatDistanceMeters(distanceToTurn) : null;
 
   return (
-    <div className="rounded-lg border border-purple-500/40 bg-black/90 p-4 shadow-xl backdrop-blur-md">
-      <div className="mb-3 flex items-center gap-2">
-        <Navigation className="h-5 w-5 text-purple-400" />
-        <p className="font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-widest text-purple-300 sm:text-xs">
-          NAVEGACIÓN ACTIVA
-        </p>
+    <div className="nav-active-panel border-b border-cyan-500/20 bg-black/85 px-4 pb-4 pt-[max(1rem,env(safe-area-inset-top))] backdrop-blur-md">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="current-instruction text-xl font-bold leading-snug text-white">
+            {instruction}
+          </p>
+
+          {turnLabel ? (
+            <p className="next-turn mt-1 text-sm text-[#00ffff]">
+              Próximo giro en {turnLabel}
+            </p>
+          ) : null}
+
+          <p className="eta-bar mt-2 text-xs text-cyan-500">
+            ETA {route.duration_text} · {route.distance_text}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onStop}
+          disabled={busy}
+          className="stop-nav-btn shrink-0 rounded border border-red-500/50 bg-red-500/30 px-4 py-2 text-xs text-white hover:bg-red-500/40 disabled:opacity-50"
+        >
+          ⏹ DETENER
+        </button>
       </div>
-
-      <p className="mb-2 text-lg font-semibold leading-snug text-white sm:text-xl">
-        {instruction}
-      </p>
-
-      {turnLabel ? (
-        <p className="mb-2 text-sm text-cyan-300">
-          Próximo giro en {turnLabel}
-        </p>
-      ) : null}
-
-      <p className="mb-4 text-xs text-cyan-500">
-        ETA {route.duration_text} · {route.distance_text} ·{" "}
-        {route.destination.label}
-      </p>
-
-      <button
-        type="button"
-        onClick={onStop}
-        disabled={busy}
-        className="inline-flex items-center gap-2 rounded border border-red-500/50 bg-red-950/40 px-4 py-2 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-widest text-red-200 hover:bg-red-900/40 disabled:opacity-50"
-      >
-        <Square className="h-3.5 w-3.5" />
-        DETENER RUTA
-      </button>
     </div>
   );
 }

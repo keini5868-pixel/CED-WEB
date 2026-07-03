@@ -18,6 +18,7 @@ type DriveMapViewProps = {
 };
 
 const DEFAULT_CENTER = { lat: 35.2271, lng: -80.8431 };
+const NAV_ZOOM = 17;
 
 const MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: "geometry", stylers: [{ color: "#0a0a0a" }] },
@@ -60,15 +61,12 @@ function routePathPoints(
   return [];
 }
 
-function splitRoutePath(
+function remainingRoutePath(
   path: NavLatLng[],
   position: GeoPosition | null,
-): { consumed: NavLatLng[]; remaining: NavLatLng[] } {
-  if (!position || path.length < 2) {
-    return { consumed: [], remaining: path };
-  }
+): NavLatLng[] {
+  if (!position || path.length < 2) return path;
   const idx = closestPathIndex(path, position);
-  const consumed = path.slice(0, idx + 1);
   let remaining = path.slice(idx);
   if (remaining.length < 2) {
     remaining = [
@@ -76,13 +74,14 @@ function splitRoutePath(
       ...(remaining.length ? remaining : [path[path.length - 1]!]),
     ];
   }
-  return { consumed, remaining };
+  return remaining;
 }
 
 function userIcon(
   google: typeof globalThis.google,
   heading: number | null,
   navigating: boolean,
+  mapRotates: boolean,
 ): google.maps.Symbol {
   if (navigating) {
     return {
@@ -92,7 +91,7 @@ function userIcon(
       fillOpacity: 1,
       strokeColor: "#ffffff",
       strokeWeight: 2,
-      rotation: heading ?? 0,
+      rotation: mapRotates ? 0 : heading ?? 0,
     };
   }
   return {
@@ -103,6 +102,11 @@ function userIcon(
     strokeColor: "#ffffff",
     strokeWeight: 2,
   };
+}
+
+function resetMapBearing(map: google.maps.Map) {
+  map.setHeading(0);
+  map.setTilt(0);
 }
 
 export function DriveMapView({
@@ -119,11 +123,11 @@ export function DriveMapView({
   const destMarkerRef = useRef<google.maps.Marker | null>(null);
   const placeMarkersRef = useRef<google.maps.Marker[]>([]);
   const routePolylineRef = useRef<google.maps.Polyline | null>(null);
-  const consumedPolylineRef = useRef<google.maps.Polyline | null>(null);
   const routeFittedRef = useRef(false);
   const searchFittedRef = useRef(false);
   const idleCenteredRef = useRef(false);
   const followUserRef = useRef(false);
+  const mapRotatesRef = useRef(false);
   const routePathRef = useRef<NavLatLng[]>([]);
   const [mapsReady, setMapsReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -135,6 +139,7 @@ export function DriveMapView({
       .then((google) => {
         if (cancelled || !containerRef.current || mapRef.current) return;
 
+        const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID;
         mapRef.current = new google.maps.Map(containerRef.current, {
           center: DEFAULT_CENTER,
           zoom: 15,
@@ -145,13 +150,14 @@ export function DriveMapView({
           fullscreenControl: false,
           gestureHandling: "greedy",
           styles: MAP_STYLES,
+          ...(mapId ? { mapId } : {}),
         });
 
         markerRef.current = new google.maps.Marker({
           map: mapRef.current,
           position: DEFAULT_CENTER,
           title: "Tu ubicación",
-          icon: userIcon(google, null, false),
+          icon: userIcon(google, null, false, false),
           zIndex: 999,
         });
         setMapsReady(true);
@@ -168,10 +174,13 @@ export function DriveMapView({
   }, []);
 
   useEffect(() => {
+    const map = mapRef.current;
     if (mapState !== "navegando") {
       routeFittedRef.current = false;
       followUserRef.current = false;
+      mapRotatesRef.current = false;
       routePathRef.current = [];
+      if (map) resetMapBearing(map);
     }
     if (mapState !== "searching") searchFittedRef.current = false;
     if (mapState === "idle") idleCenteredRef.current = false;
@@ -194,11 +203,30 @@ export function DriveMapView({
 
     const latLng = { lat: position.lat, lng: position.lng };
     marker.setPosition(latLng);
-    marker.setIcon(userIcon(google, position.heading, mapState === "navegando"));
 
-    if (mapState === "navegando" && followUserRef.current) {
+    const navigating = mapState === "navegando";
+    const heading = position.heading;
+
+    if (navigating) {
+      if (!followUserRef.current) {
+        followUserRef.current = true;
+        map.setZoom(NAV_ZOOM);
+      }
+
       map.panTo(latLng);
+
+      if (heading != null) {
+        map.setHeading(heading);
+        mapRotatesRef.current = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID);
+      }
+
+      marker.setIcon(
+        userIcon(google, heading, true, mapRotatesRef.current),
+      );
+      return;
     }
+
+    marker.setIcon(userIcon(google, heading, false, false));
   }, [position, mapState]);
 
   useEffect(() => {
@@ -266,10 +294,6 @@ export function DriveMapView({
           zIndex: 50,
         });
       }
-      if (consumedPolylineRef.current) {
-        consumedPolylineRef.current.setMap(null);
-        consumedPolylineRef.current = null;
-      }
       if (!routeFittedRef.current) {
         const bounds = new google.maps.LatLngBounds();
         for (const p of path) bounds.extend(p);
@@ -283,15 +307,17 @@ export function DriveMapView({
       return;
     }
 
-    const { consumed, remaining } = splitRoutePath(path, position);
-    const drawRemaining = remaining.length > 1 ? remaining : path;
+    const drawPath =
+      position && routePathRef.current.length > 1
+        ? remainingRoutePath(routePathRef.current, position)
+        : path;
 
     if (routePolylineRef.current) {
-      routePolylineRef.current.setPath(drawRemaining);
+      routePolylineRef.current.setPath(drawPath);
     } else {
       routePolylineRef.current = new google.maps.Polyline({
         map,
-        path: drawRemaining,
+        path: drawPath,
         strokeColor: "#00e5ff",
         strokeOpacity: 0.95,
         strokeWeight: 5,
@@ -299,41 +325,23 @@ export function DriveMapView({
       });
     }
 
-    if (consumed.length > 1) {
-      if (consumedPolylineRef.current) {
-        consumedPolylineRef.current.setPath(consumed);
-      } else {
-        consumedPolylineRef.current = new google.maps.Polyline({
-          map,
-          path: consumed,
-          strokeColor: "#334155",
-          strokeOpacity: 0.55,
-          strokeWeight: 4,
-          zIndex: 40,
-        });
-      }
-    } else if (consumedPolylineRef.current) {
-      consumedPolylineRef.current.setMap(null);
-      consumedPolylineRef.current = null;
-    }
-
     if (!routeFittedRef.current && position) {
-      map.setZoom(17);
+      map.setZoom(NAV_ZOOM);
       map.panTo({ lat: position.lat, lng: position.lng });
+      if (position.heading != null) {
+        map.setHeading(position.heading);
+        mapRotatesRef.current = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID);
+      }
       routeFittedRef.current = true;
       followUserRef.current = true;
     }
-  }, [mapsReady, route, mapState, position?.lat, position?.lng]);
+  }, [mapsReady, route, mapState, position?.lat, position?.lng, position?.heading]);
 
   useEffect(() => {
     if (mapState !== "ruta_lista" && mapState !== "navegando") {
       if (routePolylineRef.current) {
         routePolylineRef.current.setMap(null);
         routePolylineRef.current = null;
-      }
-      if (consumedPolylineRef.current) {
-        consumedPolylineRef.current.setMap(null);
-        consumedPolylineRef.current = null;
       }
     }
   }, [mapState]);
