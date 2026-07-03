@@ -11,7 +11,7 @@ export function DriveModeLink({ compact = false }: { compact?: boolean }) {
   return (
     <button
       type="button"
-      onClick={openDriveMap}
+      onClick={() => openDriveMap()}
       className={[
         "inline-flex items-center justify-center gap-2 rounded border font-[family-name:var(--font-orbitron)] font-bold tracking-wider transition",
         compact
