@@ -417,3 +417,19 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
         has_advanced_confirm=False,
         is_volatile=volatile,
     )
+
+
+_NAV_CONFIRM_PATTERNS = [
+    re.compile(
+        r"\b(sí|si|dale|iniciar?|vamos|empezar?|el primero|correcto|ok|adelante|listo)\b",
+        re.I,
+    ),
+]
+
+
+def is_navigation_confirm(text: str) -> bool:
+    """True cuando el usuario confirma iniciar ruta o elegir la opción pendiente."""
+    t = normalize_text(text)
+    if not t:
+        return False
+    return any(p.search(t) for p in _NAV_CONFIRM_PATTERNS)

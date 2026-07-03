@@ -3,7 +3,15 @@
 from __future__ import annotations
 
 import re
+from typing import Any
 
+from app.services.cognitive_intents import is_navigation_confirm
+from app.services.navigation_session import (
+    get_navigation_pending,
+    get_place_options,
+    get_route,
+    is_navigating,
+)
 from app.services.retell_llm_types import Utterance
 
 # Retell/STT confunde "Walmart" con "arma(s)" con frecuencia en español.
@@ -19,6 +27,12 @@ _OPEN_MAP = re.compile(
     r"\b(?:activar|abre|abrir|muestra|mostrar|pon(?:er)?)\s+(?:el\s+)?mapa\b|"
     r"\bmodo\s+conducir\b|"
     r"\bnavegaci[oó]n\s+(?:gps|mapa)\b",
+    re.I,
+)
+
+_AGENT_ASK_START = re.compile(
+    r"\b(iniciamos|inicio el viaje|iniciar(?:\s+(?:el\s+)?viaje|ruta)?|"
+    r"m[aá]s cercano|cu[aá]l prefiere|toque iniciar)\b",
     re.I,
 )
 
@@ -170,3 +184,48 @@ def resolve_navigation_place_search(
         return None
 
     return {"query": place, "open_map": "true"}
+
+
+def resolve_navigation_confirm(
+    user_text: str,
+    transcript: list[Utterance],
+    *,
+    user_id: str | None = None,
+) -> dict[str, Any] | None:
+    """
+    Detecta confirmación para iniciar ruta tras búsqueda de lugares
+    o para arrancar guía cuando la ruta ya está calculada.
+    """
+    last = (user_text or "").strip()
+    if not last or not is_navigation_confirm(last):
+        return None
+
+    agent_last = _last_agent_line(transcript)
+    pending = get_navigation_pending(user_id) if user_id else {"pending": False, "index": 0}
+    agent_asked = bool(_AGENT_ASK_START.search(agent_last))
+    if not pending.get("pending") and not agent_asked:
+        return None
+
+    if user_id and is_navigating(user_id):
+        return None
+
+    route = get_route(user_id) if user_id else None
+    if route:
+        return {"action": "begin_navigation"}
+
+    options = get_place_options(user_id) if user_id else []
+    if not options and not pending.get("pending"):
+        return None
+
+    idx = int(pending.get("index") or 0)
+    if options and idx >= len(options):
+        idx = 0
+    destination = pending.get("destination")
+    if not destination and options:
+        destination = options[idx] if idx < len(options) else options[0]
+
+    return {
+        "action": "start_navigation",
+        "index": idx,
+        "destination": destination,
+    }

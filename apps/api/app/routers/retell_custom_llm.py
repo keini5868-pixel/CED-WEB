@@ -38,6 +38,7 @@ from app.services.retell_custom_llm import (
 )
 from app.services.navigation_voice_intent import (
     normalize_navigation_query,
+    resolve_navigation_confirm,
     resolve_navigation_place_search,
     resolve_open_map_request,
 )
@@ -47,7 +48,7 @@ from app.services.voice_llm_common import (
     is_duplicate_voice_delivery,
     normalize_voice_delivery_text,
 )
-from app.services.voice_tool_executor import execute_voice_tool
+from app.services.voice_tool_executor import NAVIGATION_TIMEOUT_SEC, execute_voice_tool
 from app.services.voice_spoken import (
     finalize_voice_delivery_text,
     split_voice_delivery_chunks,
@@ -760,6 +761,48 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         return
                     except Exception:
                         logger.exception("[RETELL-GEMINI] nav fast-path failed call=%s", call_id)
+
+            nav_confirm = resolve_navigation_confirm(user_text, transcript, user_id=uid)
+            if nav_confirm and uid:
+                try:
+                    action = str(nav_confirm.get("action") or "")
+                    if action == "begin_navigation":
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool("start_navigation", uid, {}),
+                            timeout=NAVIGATION_TIMEOUT_SEC,
+                        )
+                    else:
+                        idx = int(nav_confirm.get("index") or 0)
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "start_navigation",
+                                uid,
+                                {"index": idx},
+                            ),
+                            timeout=NAVIGATION_TIMEOUT_SEC,
+                        )
+                    spoken = str(tool_result.get("spoken") or "Iniciando ruta, señor.").strip()
+                    if _turn_rid_stale():
+                        await ack_superseded_turn(reason="nav_confirm_stale")
+                        return
+                    delivered = await complete_partial_or_deliver(spoken)
+                    if not delivered:
+                        await anti_silence_if_unanswered(reason="nav_confirm_deliver_failed")
+                    logger.info(
+                        "[RETELL-GEMINI] nav confirm fast-path call=%s action=%s ok=%s",
+                        call_id,
+                        action,
+                        tool_result.get("ok"),
+                    )
+                    return
+                except asyncio.TimeoutError:
+                    logger.warning("[RETELL-GEMINI] nav confirm timeout call=%s", call_id)
+                    await complete_partial_or_deliver(
+                        "Señor, calcular la ruta tardó demasiado. ¿Repito?"
+                    )
+                    return
+                except Exception:
+                    logger.exception("[RETELL-GEMINI] nav confirm fast-path failed call=%s", call_id)
 
             if resolve_open_map_request(user_text) and uid and not nav_req:
                 try:

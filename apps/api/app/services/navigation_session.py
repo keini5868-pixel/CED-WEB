@@ -22,6 +22,9 @@ def _fresh_session() -> dict[str, Any]:
         "route": None,
         "place_options": None,
         "place_query": "",
+        "navigation_pending": False,
+        "pending_navigation_index": 0,
+        "pending_destination": None,
         "client_action": None,
         "navigating": False,
         "current_step_index": 0,
@@ -91,6 +94,14 @@ def set_place_options(
     with _lock:
         session["place_options"] = deepcopy(places)
         session["place_query"] = (query or "").strip()
+        if places:
+            session["navigation_pending"] = True
+            session["pending_navigation_index"] = 0
+            session["pending_destination"] = deepcopy(places[0])
+        else:
+            session["navigation_pending"] = False
+            session["pending_navigation_index"] = 0
+            session["pending_destination"] = None
         session["updated_at"] = _now()
 
 
@@ -104,6 +115,28 @@ def clear_place_options(user_id: str) -> None:
     with _lock:
         session["place_options"] = None
         session["place_query"] = ""
+        session["navigation_pending"] = False
+        session["pending_navigation_index"] = 0
+        session["pending_destination"] = None
+        session["updated_at"] = _now()
+
+
+def get_navigation_pending(user_id: str) -> dict[str, Any]:
+    session = _get(user_id)
+    with _lock:
+        return {
+            "pending": bool(session.get("navigation_pending")),
+            "index": int(session.get("pending_navigation_index") or 0),
+            "destination": deepcopy(session.get("pending_destination")),
+        }
+
+
+def clear_navigation_pending(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["navigation_pending"] = False
+        session["pending_navigation_index"] = 0
+        session["pending_destination"] = None
         session["updated_at"] = _now()
 
 
@@ -146,6 +179,9 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
             "route": deepcopy(session.get("route")),
             "place_options": deepcopy(session.get("place_options")),
             "place_query": str(session.get("place_query") or ""),
+            "navigation_pending": bool(session.get("navigation_pending")),
+            "pending_navigation_index": int(session.get("pending_navigation_index") or 0),
+            "pending_destination": deepcopy(session.get("pending_destination")),
             "client_action": deepcopy(action) if action else None,
             "navigating": bool(session.get("navigating")),
         }
@@ -157,6 +193,9 @@ def clear_navigation(user_id: str) -> None:
         session["route"] = None
         session["place_options"] = None
         session["place_query"] = ""
+        session["navigation_pending"] = False
+        session["pending_navigation_index"] = 0
+        session["pending_destination"] = None
         session["navigating"] = False
         session["current_step_index"] = 0
         session["announced_steps"] = []

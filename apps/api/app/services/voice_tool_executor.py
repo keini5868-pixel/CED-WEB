@@ -24,6 +24,7 @@ from app.services.meta_social import MetaSocialError, publish_facebook, publish_
 from app.services.navigation_maps import compute_route, geocode_address, search_nearby_places
 from app.services.navigation_session import (
     clear_navigation,
+    clear_navigation_pending,
     clear_place_options,
     get_current_step_index,
     get_location,
@@ -130,6 +131,7 @@ async def _start_route_for_user(
         )
     set_route(user_id, route)
     clear_place_options(user_id)
+    clear_navigation_pending(user_id)
     push_client_action(user_id, "apply_route", route)
     first = (route.get("steps") or [{}])[0]
     first_line = str(first.get("instruction") or "Siga la ruta indicada").strip()
@@ -901,6 +903,7 @@ async def execute_voice_tool(
             existing_route = get_route(user_id)
             if existing_route and destino.lower() in confirm_words:
                 set_navigating(user_id, True)
+                clear_navigation_pending(user_id)
                 push_client_action(user_id, "begin_navigation", {})
                 dest_label = str(
                     existing_route.get("destination", {}).get("label") or "su destino"
@@ -913,6 +916,7 @@ async def execute_voice_tool(
             if not destino:
                 if existing_route:
                     set_navigating(user_id, True)
+                    clear_navigation_pending(user_id)
                     push_client_action(user_id, "begin_navigation", {})
                     dest_label = str(
                         existing_route.get("destination", {}).get("label") or "su destino"
