@@ -9,6 +9,7 @@ import pytest
 from app.services.navigation_maps import (
     format_distance_imperial,
     search_nearby_places,
+    _compute_route_routes_api,
     _search_query_variants,
     _search_via_geocode,
     _search_via_places_legacy,
@@ -180,3 +181,61 @@ def test_search_via_geocode_respects_radius():
 
     assert result["ok"] is True
     assert len(result["places"]) == 1
+
+
+def test_compute_route_routes_api_parses_steps():
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "routes": [
+            {
+                "distanceMeters": 16000,
+                "duration": "1200s",
+                "polyline": {"encodedPolyline": "abc"},
+                "legs": [
+                    {
+                        "distanceMeters": 16000,
+                        "duration": "1200s",
+                        "localizedValues": {
+                            "distance": {"text": "10.0 mi"},
+                            "duration": {"text": "20 min"},
+                        },
+                        "steps": [
+                            {
+                                "distanceMeters": 300,
+                                "staticDuration": "60s",
+                                "navigationInstruction": {
+                                    "instructions": "Gire a la derecha en Main St"
+                                },
+                                "startLocation": {
+                                    "latLng": {"latitude": 35.22, "longitude": -80.84}
+                                },
+                                "endLocation": {
+                                    "latLng": {"latitude": 35.23, "longitude": -80.83}
+                                },
+                            }
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    mock_client.post.return_value = mock_response
+
+    with patch("app.services.navigation_maps._maps_key", return_value="test-key"), patch(
+        "app.services.navigation_maps.decode_polyline", return_value=[{"lat": 35.22, "lng": -80.84}]
+    ), patch("app.services.navigation_maps.httpx.Client", return_value=mock_client):
+        result = _compute_route_routes_api(
+            origin_lat=35.22,
+            origin_lng=-80.84,
+            dest_lat=35.30,
+            dest_lng=-80.80,
+            dest_label="Walmart",
+        )
+
+    assert result["ok"] is True
+    assert result["source"] == "routes_api"
+    assert result["steps"][0]["instruction"] == "Gire a la derecha en Main St"

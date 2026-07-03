@@ -6,7 +6,7 @@ import type { GeoPosition } from "@/hooks/useGeolocation";
 import { loadGoogleMaps } from "@/lib/maps/loadGoogleMaps";
 import type { NavLatLng, NavPlaceOption, NavRoute } from "@/lib/api/navigation";
 import type { MapState } from "@/lib/navigation/mapState";
-import { closestPathIndex } from "@/lib/navigation/geo";
+import { closestPathIndex, installMapSpeechSilencer } from "@/lib/navigation/geo";
 
 type DriveMapViewProps = {
   position: GeoPosition | null;
@@ -131,6 +131,10 @@ export function DriveMapView({
   const routePathRef = useRef<NavLatLng[]>([]);
   const [mapsReady, setMapsReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
+
+  useEffect(() => {
+    installMapSpeechSilencer();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

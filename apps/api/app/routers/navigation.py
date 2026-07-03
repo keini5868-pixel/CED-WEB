@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.deps.auth import require_user_id
 from app.services import navigation_maps as maps_svc
 from app.services import navigation_session as nav_session
+from app.services.navigation_voice import process_navigation_voice
 
 router = APIRouter(prefix="/v1/navigation", tags=["navigation"])
 
@@ -20,6 +21,7 @@ class LocationBody(BaseModel):
     heading: float | None = None
     speed: float | None = None
     accuracy: float | None = None
+    is_navigating: bool | None = None
 
 
 class GeocodeBody(BaseModel):
@@ -68,6 +70,19 @@ async def navigation_location(
         speed=body.speed,
         accuracy=body.accuracy,
     )
+    if body.is_navigating is not None:
+        nav_session.set_navigating(user_id, bool(body.is_navigating))
+    if body.is_navigating:
+        process_navigation_voice(user_id, body.lat, body.lng)
+    return {"ok": True}
+
+
+@router.post("/begin")
+async def navigation_begin(user_id: str = Depends(require_user_id)) -> dict[str, bool]:
+    nav_session.set_navigating(user_id, True)
+    loc = nav_session.get_location(user_id)
+    if loc:
+        process_navigation_voice(user_id, float(loc["lat"]), float(loc["lng"]))
     return {"ok": True}
 
 

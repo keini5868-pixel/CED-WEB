@@ -439,6 +439,24 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             vcs.sync_voice_call(uid, call_id)
 
         if interaction == "ping_pong":
+            uid = resolve_call_user(call_id, request_json)
+            if uid:
+                from app.services.navigation_voice import pop_navigation_speech
+
+                nav_text = pop_navigation_speech(uid)
+                if nav_text:
+                    await websocket.send_json(
+                        {
+                            "response_type": "agent_interrupt",
+                            "content": nav_text,
+                            "interrupt_prior_spoke_content": False,
+                        }
+                    )
+                    logger.info(
+                        "[RETELL-GEMINI] navigation agent_interrupt call=%s text=%s",
+                        call_id,
+                        nav_text[:80],
+                    )
             await websocket.send_json(
                 {
                     "response_type": "ping_pong",

@@ -15,6 +15,7 @@ import {
   cancelNavigation,
   computeNavigationRouteTo,
   fetchNavigationState,
+  postNavigationBegin,
   postNavigationLocation,
   searchNearbyPlaces,
   startNavigationOption,
@@ -90,6 +91,7 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
     setMapNav((prev) =>
       prev.route ? { ...prev, isNavigating: true, placeOptions: [], placeQuery: "" } : prev,
     );
+    void postNavigationBegin();
   }, []);
 
   const applyRouteFromServer = useCallback((route: NavRoute) => {
@@ -252,8 +254,9 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
       heading: position.heading,
       speed: position.speed,
       accuracy: position.accuracy,
+      is_navigating: mapState === "navegando",
     });
-  }, [position]);
+  }, [position, mapState]);
 
   useEffect(() => {
     const syncRoute = async () => {

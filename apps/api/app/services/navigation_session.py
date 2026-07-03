@@ -23,6 +23,9 @@ def _fresh_session() -> dict[str, Any]:
         "place_options": None,
         "place_query": "",
         "client_action": None,
+        "navigating": False,
+        "current_step_index": 0,
+        "announced_steps": [],
         "updated_at": _now(),
     }
 
@@ -144,7 +147,7 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
             "place_options": deepcopy(session.get("place_options")),
             "place_query": str(session.get("place_query") or ""),
             "client_action": deepcopy(action) if action else None,
-            "navigating": bool(session.get("route")),
+            "navigating": bool(session.get("navigating")),
         }
 
 
@@ -154,4 +157,55 @@ def clear_navigation(user_id: str) -> None:
         session["route"] = None
         session["place_options"] = None
         session["place_query"] = ""
+        session["navigating"] = False
+        session["current_step_index"] = 0
+        session["announced_steps"] = []
+        session["updated_at"] = _now()
+
+
+def set_navigating(user_id: str, active: bool) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["navigating"] = bool(active)
+        if active:
+            session["current_step_index"] = 0
+            session["announced_steps"] = []
+        session["updated_at"] = _now()
+
+
+def is_navigating(user_id: str) -> bool:
+    return bool(_get(user_id).get("navigating"))
+
+
+def get_current_step_index(user_id: str) -> int:
+    return int(_get(user_id).get("current_step_index") or 0)
+
+
+def set_current_step_index(user_id: str, index: int) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["current_step_index"] = max(0, int(index))
+        session["updated_at"] = _now()
+
+
+def is_step_announced(user_id: str, step_index: int) -> bool:
+    announced = _get(user_id).get("announced_steps") or []
+    return int(step_index) in {int(x) for x in announced}
+
+
+def mark_step_announced(user_id: str, step_index: int) -> None:
+    session = _get(user_id)
+    with _lock:
+        announced = list(session.get("announced_steps") or [])
+        if int(step_index) not in announced:
+            announced.append(int(step_index))
+        session["announced_steps"] = announced[-32:]
+        session["updated_at"] = _now()
+
+
+def clear_step_announced(user_id: str, step_index: int) -> None:
+    session = _get(user_id)
+    with _lock:
+        announced = [x for x in (session.get("announced_steps") or []) if int(x) != int(step_index)]
+        session["announced_steps"] = announced
         session["updated_at"] = _now()

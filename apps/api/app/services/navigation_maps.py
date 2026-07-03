@@ -15,6 +15,14 @@ logger = logging.getLogger(__name__)
 
 _GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 _DIRECTIONS_URL = "https://maps.googleapis.com/maps/api/directions/json"
+_ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
+_ROUTES_FIELD_MASK = (
+    "routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline,"
+    "routes.legs.steps.navigationInstruction,routes.legs.steps.distanceMeters,"
+    "routes.legs.steps.staticDuration,routes.legs.steps.startLocation,"
+    "routes.legs.steps.endLocation,routes.legs.localizedValues,"
+    "routes.legs.distanceMeters,routes.legs.duration"
+)
 _PLACES_TEXT_URL = "https://maps.googleapis.com/maps/api/place/textsearch/json"
 _PLACES_NEW_URL = "https://places.googleapis.com/v1/places:searchText"
 
@@ -449,7 +457,14 @@ def search_nearby_places(
     return {"ok": False, "error": last_error}
 
 
-def compute_route(
+def _format_duration_text(seconds: int) -> str:
+    if seconds < 60:
+        return f"{seconds} min"
+    mins = max(1, round(seconds / 60))
+    return f"{mins} min"
+
+
+def _compute_route_directions_legacy(
     *,
     origin_lat: float,
     origin_lng: float,
@@ -512,4 +527,143 @@ def compute_route(
         "duration_s": int((leg.get("duration") or {}).get("value") or 0),
         "path": path,
         "steps": steps_out,
+        "source": "directions_legacy",
     }
+
+
+def _compute_route_routes_api(
+    *,
+    origin_lat: float,
+    origin_lng: float,
+    dest_lat: float,
+    dest_lng: float,
+    dest_label: str = "",
+) -> dict[str, Any]:
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": _maps_key(),
+        "X-Goog-FieldMask": _ROUTES_FIELD_MASK,
+    }
+    body = {
+        "origin": {
+            "location": {"latLng": {"latitude": origin_lat, "longitude": origin_lng}}
+        },
+        "destination": {
+            "location": {"latLng": {"latitude": dest_lat, "longitude": dest_lng}}
+        },
+        "travelMode": "DRIVE",
+        "routingPreference": "TRAFFIC_AWARE",
+        "languageCode": "es",
+        "units": "IMPERIAL",
+    }
+    try:
+        with httpx.Client(timeout=25.0) as client:
+            res = client.post(_ROUTES_URL, headers=headers, json=body)
+            data = res.json()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[NAV] Routes API failed")
+        return {"ok": False, "error": str(exc)}
+
+    if res.status_code >= 400 or data.get("error"):
+        err = data.get("error") or {}
+        msg = str(err.get("message") or err.get("status") or res.status_code)
+        logger.warning("[NAV] Routes API error: %s", msg[:120])
+        return {"ok": False, "error": msg}
+
+    routes = data.get("routes") or []
+    if not routes:
+        return {"ok": False, "error": "No pude calcular la ruta (ZERO_RESULTS)."}
+
+    route = routes[0]
+    leg = (route.get("legs") or [{}])[0]
+    encoded = (route.get("polyline") or {}).get("encodedPolyline") or ""
+    path = decode_polyline(encoded)
+
+    localized = leg.get("localizedValues") or {}
+    distance_text = str((localized.get("distance") or {}).get("text") or "")
+    duration_text = str((localized.get("duration") or {}).get("text") or "")
+    distance_m = int(route.get("distanceMeters") or leg.get("distanceMeters") or 0)
+    duration_raw = str(route.get("duration") or leg.get("duration") or "0s")
+    duration_s = int(duration_raw.rstrip("s") or 0)
+
+    if not distance_text and distance_m:
+        distance_text = _format_distance_text(distance_m)
+    if not duration_text and duration_s:
+        duration_text = _format_duration_text(duration_s)
+
+    steps_out: list[dict[str, Any]] = []
+    for step in leg.get("steps") or []:
+        nav = step.get("navigationInstruction") or {}
+        instruction = str(nav.get("instructions") or nav.get("instruction") or "").strip()
+        start = step.get("startLocation") or {}
+        end = step.get("endLocation") or {}
+        start_lat = (start.get("latLng") or {}).get("latitude")
+        start_lng = (start.get("latLng") or {}).get("longitude")
+        end_lat = (end.get("latLng") or {}).get("latitude")
+        end_lng = (end.get("latLng") or {}).get("longitude")
+        static_duration = str(step.get("staticDuration") or "0s")
+        step_duration_s = int(static_duration.rstrip("s") or 0)
+        steps_out.append(
+            {
+                "instruction": instruction or "Continúe por la ruta",
+                "distance_m": int(step.get("distanceMeters") or 0),
+                "duration_s": step_duration_s,
+                "maneuver": str(nav.get("maneuver") or "straight"),
+                "start": {
+                    "lat": float(start_lat or origin_lat),
+                    "lng": float(start_lng or origin_lng),
+                },
+                "end": {
+                    "lat": float(end_lat or dest_lat),
+                    "lng": float(end_lng or dest_lng),
+                },
+            }
+        )
+
+    return {
+        "ok": True,
+        "destination": {
+            "label": dest_label or "Destino",
+            "lat": dest_lat,
+            "lng": dest_lng,
+        },
+        "distance_text": distance_text,
+        "duration_text": duration_text,
+        "distance_m": distance_m,
+        "duration_s": duration_s,
+        "path": path,
+        "steps": steps_out,
+        "source": "routes_api",
+    }
+
+
+def compute_route(
+    *,
+    origin_lat: float,
+    origin_lng: float,
+    dest_lat: float,
+    dest_lng: float,
+    dest_label: str = "",
+) -> dict[str, Any]:
+    routes_result = _compute_route_routes_api(
+        origin_lat=origin_lat,
+        origin_lng=origin_lng,
+        dest_lat=dest_lat,
+        dest_lng=dest_lng,
+        dest_label=dest_label,
+    )
+    if routes_result.get("ok"):
+        logger.info("[NAV] route ok source=routes_api dest=%s", dest_label[:40])
+        return routes_result
+
+    logger.info(
+        "[NAV] Routes API fallback to Directions legacy: %s",
+        str(routes_result.get("error") or "")[:80],
+    )
+    return _compute_route_directions_legacy(
+        origin_lat=origin_lat,
+        origin_lng=origin_lng,
+        dest_lat=dest_lat,
+        dest_lng=dest_lng,
+        dest_label=dest_label,
+    )

@@ -4,7 +4,11 @@ import { useEffect, useRef } from "react";
 
 import type { GeoPosition } from "@/hooks/useGeolocation";
 import type { NavRoute } from "@/lib/api/navigation";
-import { cancelBrowserNavigationSpeech, distanceMeters } from "@/lib/navigation/geo";
+import {
+  cancelBrowserNavigationSpeech,
+  distanceMeters,
+  installMapSpeechSilencer,
+} from "@/lib/navigation/geo";
 
 type Options = {
   position: GeoPosition | null;
@@ -20,6 +24,10 @@ export function useNavigationGuide({
   onArrival,
 }: Options) {
   const announcedRef = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    installMapSpeechSilencer();
+  }, []);
 
   useEffect(() => {
     if (enabled) cancelBrowserNavigationSpeech();

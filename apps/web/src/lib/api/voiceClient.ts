@@ -22,6 +22,9 @@ export type VoiceClientState = {
     prompt?: string;
     title?: string;
     file_id?: string;
+    text?: string;
+    query?: string;
+    places?: unknown[];
   }>;
 };
 

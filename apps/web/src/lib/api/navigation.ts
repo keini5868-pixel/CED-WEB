@@ -141,12 +141,17 @@ export async function postNavigationLocation(body: {
   heading?: number | null;
   speed?: number | null;
   accuracy?: number | null;
+  is_navigating?: boolean;
 }): Promise<void> {
   await proxyFetch("navigation/location", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+}
+
+export async function postNavigationBegin(): Promise<void> {
+  await proxyFetch("navigation/begin", { method: "POST" });
 }
 
 export async function ackNavigationAction(actionId: number): Promise<void> {

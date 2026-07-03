@@ -25,10 +25,12 @@ from app.services.navigation_maps import compute_route, geocode_address, search_
 from app.services.navigation_session import (
     clear_navigation,
     clear_place_options,
+    get_current_step_index,
     get_location,
     get_place_options,
     get_route,
     push_client_action,
+    set_navigating,
     set_place_options,
     set_route,
 )
@@ -849,6 +851,14 @@ async def execute_voice_tool(
                 "show_place_options",
                 {"query": query, "places": places},
             )
+            vcs.push_tool_event(
+                user_id,
+                {
+                    "type": "map_search_results",
+                    "query": query,
+                    "places": places,
+                },
+            )
             return {
                 "ok": True,
                 "spoken": _format_places_spoken(places, query=query),
@@ -887,6 +897,7 @@ async def execute_voice_tool(
             }
             existing_route = get_route(user_id)
             if existing_route and destino.lower() in confirm_words:
+                set_navigating(user_id, True)
                 push_client_action(user_id, "begin_navigation", {})
                 dest_label = str(
                     existing_route.get("destination", {}).get("label") or "su destino"
@@ -898,6 +909,7 @@ async def execute_voice_tool(
                 }
             if not destino:
                 if existing_route:
+                    set_navigating(user_id, True)
                     push_client_action(user_id, "begin_navigation", {})
                     dest_label = str(
                         existing_route.get("destination", {}).get("label") or "su destino"
@@ -1024,8 +1036,9 @@ async def execute_voice_tool(
                     )
                 return _spoken_ok("No hay ruta activa en este momento, señor.")
             steps = route.get("steps") or []
-            first = steps[0] if steps else {}
-            instr = str(first.get("instruction") or "Continúe por la ruta").strip()
+            idx = min(get_current_step_index(user_id), max(0, len(steps) - 1))
+            active = steps[idx] if steps else {}
+            instr = str(active.get("instruction") or "Continúe por la ruta").strip()
             return _spoken_ok(
                 f"Ruta hacia {route.get('destination', {}).get('label', 'su destino')}. "
                 f"Quedan {route.get('duration_text', '')} ({route.get('distance_text', '')}). "

@@ -504,6 +504,24 @@ export function useCedVoiceSession(
             );
             void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
           }
+          if (ev.type === "navigation_instruction" && ev.text) {
+            const text = String(ev.text);
+            callbacks?.onTranscript?.(text, "model", { partial: false });
+            void persistVoiceTranscript("model", text);
+          }
+          if (ev.type === "map_search_results" && ev.places) {
+            window.dispatchEvent(
+              new CustomEvent("ced-navigation-event", {
+                detail: {
+                  action: "show_place_options",
+                  payload: {
+                    query: ev.query || "",
+                    places: ev.places,
+                  },
+                },
+              }),
+            );
+          }
         }
         const action = state.client_action;
         if (!action || action.id === lastVoiceActionIdRef.current) return;

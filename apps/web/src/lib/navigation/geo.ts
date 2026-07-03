@@ -56,6 +56,29 @@ export function cancelBrowserNavigationSpeech(): void {
   window.speechSynthesis.cancel();
 }
 
+let mapSpeechSilencerInstalled = false;
+
+/** Bloquea TTS del navegador/mapa — solo CED (Retell) habla durante navegación. */
+export function installMapSpeechSilencer(): void {
+  if (typeof window === "undefined" || !window.speechSynthesis || mapSpeechSilencerInstalled) {
+    return;
+  }
+  mapSpeechSilencerInstalled = true;
+  cancelBrowserNavigationSpeech();
+
+  const synth = window.speechSynthesis;
+  const originalSpeak = synth.speak.bind(synth);
+  synth.speak = (utterance: SpeechSynthesisUtterance) => {
+    const flagged = (utterance as SpeechSynthesisUtterance & { cedNavigation?: boolean })
+      .cedNavigation;
+    if (flagged) {
+      originalSpeak(utterance);
+      return;
+    }
+    console.debug("[MAP] voz silenciada:", utterance.text);
+  };
+}
+
 /** @deprecated Solo CED habla — no usar TTS del navegador en el mapa. */
 export function speakNavigation(_text: string): void {
   cancelBrowserNavigationSpeech();
