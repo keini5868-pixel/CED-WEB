@@ -36,6 +36,11 @@ from app.services.retell_custom_llm import (
     _is_concept_question,
     web_search_error_phrase,
 )
+from app.services.navigation_voice_intent import (
+    normalize_navigation_query,
+    resolve_navigation_place_search,
+    resolve_open_map_request,
+)
 from app.services.voice_llm_common import (
     FALLBACK_REPLY,
     WEB_SEARCH_VOICE_FALLBACK,
@@ -702,6 +707,71 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             conversational_turn = is_small_talk(user_text, transcript)
+
+            nav_req = resolve_navigation_place_search(user_text, transcript)
+            if nav_req and uid:
+                query = normalize_navigation_query(str(nav_req.get("query") or ""))
+                if query:
+                    try:
+                        if resolve_open_map_request(user_text) or nav_req.get("open_map"):
+                            open_result = await execute_voice_tool(
+                                "activar_modo_conducir",
+                                uid,
+                                {},
+                            )
+                            spoken_open = str(open_result.get("spoken") or "").strip()
+                        else:
+                            spoken_open = ""
+
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "search_nearby_places",
+                                uid,
+                                {"query": query, "place": query, "destino": query},
+                            ),
+                            timeout=20.0,
+                        )
+                        spoken = str(tool_result.get("spoken") or "").strip()
+                        if not spoken:
+                            spoken = f"No encontré {query} cerca, señor."
+                        if spoken_open and not tool_result.get("ok"):
+                            spoken = spoken_open
+                        elif spoken_open and tool_result.get("ok"):
+                            spoken = spoken
+
+                        if _turn_rid_stale():
+                            await ack_superseded_turn(reason="nav_stale")
+                            return
+                        delivered = await complete_partial_or_deliver(spoken)
+                        if not delivered:
+                            await anti_silence_if_unanswered(reason="nav_deliver_failed")
+                        logger.info(
+                            "[RETELL-GEMINI] nav fast-path call=%s query=%s ok=%s",
+                            call_id,
+                            query[:40],
+                            tool_result.get("ok"),
+                        )
+                        return
+                    except asyncio.TimeoutError:
+                        logger.warning("[RETELL-GEMINI] nav search timeout call=%s", call_id)
+                        await complete_partial_or_deliver(
+                            "Señor, la búsqueda en el mapa tardó demasiado. ¿Repito el lugar?"
+                        )
+                        return
+                    except Exception:
+                        logger.exception("[RETELL-GEMINI] nav fast-path failed call=%s", call_id)
+
+            if resolve_open_map_request(user_text) and uid and not nav_req:
+                try:
+                    tool_result = await execute_voice_tool("activar_modo_conducir", uid, {})
+                    spoken = str(tool_result.get("spoken") or "Abro el mapa, señor.").strip()
+                    if _turn_rid_stale():
+                        await ack_superseded_turn(reason="open_map_stale")
+                        return
+                    await complete_partial_or_deliver(spoken)
+                    return
+                except Exception:
+                    logger.exception("[RETELL-GEMINI] open map fast-path failed call=%s", call_id)
 
             superseded, latest_rid = _is_superseded_turn_rid(
                 scheduled_rid,

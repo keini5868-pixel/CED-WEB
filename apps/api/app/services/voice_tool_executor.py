@@ -822,6 +822,9 @@ async def execute_voice_tool(
             ).strip()
             if not query:
                 return _spoken_err("No escuché qué lugar buscar cerca, señor.")
+            from app.services.navigation_voice_intent import normalize_navigation_query
+
+            query = normalize_navigation_query(query)
             loc = get_location(user_id)
             if not loc:
                 push_client_action(user_id, "open_drive", {})
