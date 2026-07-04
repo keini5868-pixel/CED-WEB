@@ -394,8 +394,9 @@ def _generate_image_with_reference_impl(
         should_build_creative_brief,
     )
 
+    display_label = ""
     if should_build_creative_brief(topic, history=None, has_reference_image=True):
-        topic, _, brief_mode = build_marketing_creative_brief(
+        topic, display_label, brief_mode = build_marketing_creative_brief(
             topic,
             history=None,
             has_reference_image=True,
@@ -449,12 +450,15 @@ def _generate_image_with_reference_impl(
                 if store_err:
                     return store_err
                 cost = float(gemini_result.get("estimated_cost_usd") or GEMINI_STD_COST_USD)
+                caption = (display_label or "").strip() or topic[:120]
                 return {
                     "ok": True,
                     "success": True,
                     "image_url": public_url,
                     "url": public_url,
                     "prompt": topic,
+                    "display_label": caption,
+                    "caption": caption,
                     "style_mode": mode,
                     "quality": picked,
                     "model": model_used,

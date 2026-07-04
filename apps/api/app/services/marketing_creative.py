@@ -45,6 +45,9 @@ _CREATIVE_HEAD_NOISE = re.compile(
     r")",
     re.I,
 )
+_SUBJECT_NOISE = re.compile(
+    r"(?i)^(?:con\s+estas?\s+caracter[ií]sticas\s+|genera\s+(?:una?\s+)?(?:imagen|creativo|flyer)\s+)"
+)
 
 _CREATIVE_TYPO_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"vbeneficios?", re.I), "beneficios"),
@@ -229,8 +232,14 @@ def is_attachment_creative_request(
 
 def is_image_creation_request(text: str, history: list[dict[str, str]] | None = None) -> bool:
     """True si el usuario pide generar/editar un creativo, no publicar."""
+    from app.services.publish_text import is_explicit_social_publish_request, is_publish_platform_reply
+
     t = normalize_creative_request_text(text)
     if not t:
+        return False
+    if is_explicit_social_publish_request(t, with_image=True):
+        return False
+    if is_publish_platform_reply(t):
         return False
     if is_generate_image_intent(t):
         return True
@@ -245,6 +254,12 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
 
 def blocks_publish_intent(text: str, history: list[dict[str, str]] | None = None) -> bool:
     """Evita confundir «flyer/creativo» con flujo de publicación Meta."""
+    from app.services.publish_text import is_explicit_social_publish_request, is_publish_platform_reply
+
+    if is_explicit_social_publish_request(text, with_image=True):
+        return False
+    if is_publish_platform_reply(text):
+        return False
     if is_image_creation_request(text, history):
         return True
     normalized = normalize_creative_request_text(text or "")
@@ -299,13 +314,31 @@ def _subject_is_usable(subject: str) -> bool:
     return True
 
 
+def _clean_subject_candidate(raw: str) -> str:
+    subject = re.sub(r"\s+", " ", (raw or "").strip())
+    subject = _SUBJECT_NOISE.sub("", subject).strip()
+    return subject
+
+
 def _extract_creative_subject(context: str) -> str:
     blob = (context or "").strip()
     if not blob:
         return "tema"
+
+    best_es: str | None = None
+    for match in re.finditer(
+        r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ0-9][\w\s\-]{2,45})\s+es\s+(?:un|una)\b",
+        blob,
+        re.I,
+    ):
+        candidate = _clean_subject_candidate(match.group(1).strip())
+        if _subject_is_usable(candidate) and (not best_es or len(candidate) < len(best_es)):
+            best_es = candidate
+    if best_es:
+        return best_es[:80]
+
     for pattern in (
         r'["«“]([^"»”]{3,60})["»”]',
-        r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ0-9][\w\s\-]{2,45})\s+es\s+(?:un|una)\b",
         r"\b(?:producto|servicio|evento|curso|taller|marca|promoci[oó]n|invitaci[oó]n|flyer)\s+"
         r"([^\n,.:;]{3,60})",
         r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,30})\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,30})\b",
@@ -318,7 +351,7 @@ def _extract_creative_subject(context: str) -> str:
             subject = f"{match.group(1).strip()} de {match.group(2).strip()}"
         else:
             subject = (match.group(1) if match.lastindex else match.group(0)).strip()
-        subject = re.sub(r"\s+", " ", subject)
+        subject = _clean_subject_candidate(subject)
         if _subject_is_usable(subject):
             return subject[:80]
     return "tema"

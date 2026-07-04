@@ -209,7 +209,15 @@ export async function fetchDeepAnalysis(
 }
 
 export type GenerateImageResponse =
-  | { ok: true; url: string; quality?: string; model?: string; used_fallback?: boolean }
+  | {
+      ok: true;
+      url: string;
+      quality?: string;
+      model?: string;
+      used_fallback?: boolean;
+      display_label?: string;
+      caption?: string;
+    }
   | { ok: false; error: string; code?: string };
 
 export type ReferenceImageMode = "inspired" | "variation" | "edit";
@@ -286,6 +294,8 @@ export async function fetchGenerateImageWithReference(
       model?: string;
       used_fallback?: boolean;
       code?: string;
+      display_label?: string;
+      caption?: string;
     }>(response);
     if (!response.ok) {
       return {
@@ -308,6 +318,8 @@ export async function fetchGenerateImageWithReference(
       quality: data.quality,
       model: data.model,
       used_fallback: data.used_fallback,
+      display_label: data.display_label || data.caption,
+      caption: data.caption || data.display_label,
     };
   } catch (err) {
     clearTimeout(timer);

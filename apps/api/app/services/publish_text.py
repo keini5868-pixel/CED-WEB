@@ -418,10 +418,45 @@ def extract_publish_body(user_text: str, platform: str = "facebook") -> str:
     return strip_publish_instruction(last)
 
 
+def is_explicit_social_publish_request(text: str, *, with_image: bool = False) -> bool:
+    """Publicar en red social — distinto de generar creativo o flyer."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    has_verb = bool(_PUBLISH_VERB.search(t) or _PUBLISH_STEM.search(t))
+    has_platform = bool(_SOCIAL_PLATFORM.search(t) or is_publish_platform_reply(t))
+    has_image_ref = bool(re.search(r"\b(imagen|foto|esto|esta)\b", t, re.I))
+    if has_verb and (has_platform or has_image_ref):
+        return True
+    if with_image and has_platform and has_verb:
+        return True
+    if with_image and has_platform:
+        return True
+    if with_image and has_verb and has_image_ref:
+        return True
+    return False
+
+
+def is_publish_platform_reply(text: str) -> bool:
+    """Respuestas cortas al elegir red: «en face», «facebook», «ig»."""
+    t = re.sub(r"[^\w\sáéíóúñ]", "", (text or "").strip(), flags=re.I)
+    if not t or len(t) > 40:
+        return False
+    if re.fullmatch(
+        r"(?:en\s+)?(?:face(?:book)?|fb|instagram|insta|ig|meta)\.?",
+        t,
+        re.I,
+    ):
+        return True
+    return bool(_FACEBOOK_PLATFORM.search(t) or _INSTAGRAM_PLATFORM.search(t))
+
+
 def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    if is_explicit_social_publish_request(t, with_image=with_image):
+        return True
     from app.services.marketing_creative import blocks_publish_intent
 
     if blocks_publish_intent(t):
@@ -443,6 +478,11 @@ def detect_publish_platform_explicit(text: str) -> str | None:
     t = (text or "").strip()
     if not t:
         return None
+    if is_publish_platform_reply(t):
+        if _INSTAGRAM_PLATFORM.search(t) and not _FACEBOOK_PLATFORM.search(t):
+            return "instagram"
+        if _FACEBOOK_PLATFORM.search(t) or re.search(r"\bface\b|\bfb\b", t, re.I):
+            return "facebook"
     if _FACEBOOK_PLATFORM.search(t):
         return "facebook"
     if _INSTAGRAM_PLATFORM.search(t):

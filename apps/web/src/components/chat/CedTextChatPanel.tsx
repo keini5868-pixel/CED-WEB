@@ -163,8 +163,25 @@ function ImageLightbox({
 
 function isInternalImagePrompt(text: string): boolean {
   const t = text.trim();
-  if (!t || t.length < 40) return false;
-  return /^(Genera un creativo|Genera una imagen de alta calidad|Genera un flyer|Mockup fotorrealista|Usa la imagen adjunta)/i.test(
+  if (!t) return true;
+  if (t.startsWith("[[CREATIVO]]")) return true;
+  if (/^GENERA\s+(?:UNA?\s+)?IMAGEN/i.test(t)) return true;
+  if (t.length >= 80 && /caracter[ií]sticas|beneficios|ventajas|referencia|fondo|vbeneficios/i.test(t)) {
+    return true;
+  }
+  if (t.length >= 40 && /^(Genera un creativo|Genera una imagen de alta calidad|Genera un flyer|Mockup fotorrealista|Usa la imagen adjunta|Creativo cuadrado)/i.test(t)) {
+    return true;
+  }
+  return false;
+}
+
+/** Creativos con mucho texto deben pasar por chat (brief limpio + publicar después). */
+function shouldRouteAttachmentViaChat(text: string, mode: ImageActionMode): boolean {
+  if (mode === "analyze") return true;
+  const t = text.trim();
+  if (!t) return false;
+  if (t.length > 100) return true;
+  return /beneficios?|veneficios?|caracter[ií]sticas|puntos clave|ventajas|flyer|creativo|referencia|fondo|genera\s+una\s+imagen|vbeneficios|imegen/i.test(
     t,
   );
 }
@@ -425,6 +442,7 @@ export function CedTextChatPanel({
     try {
       if (
         imageFile &&
+        !shouldRouteAttachmentViaChat(text, currentMode) &&
         (currentMode === "variation" || currentMode === "inspired" || currentMode === "edit")
       ) {
         const prompt =
@@ -449,6 +467,9 @@ export function CedTextChatPanel({
           inspired: "versión inspirada",
           edit: "imagen editada",
         };
+        const imageLabel =
+          result.display_label?.trim() ||
+          (prompt.length <= 72 && !isInternalImagePrompt(prompt) ? prompt : "Imagen generada por CED");
         setMessages((prev) => [
           ...prev,
           {
@@ -457,7 +478,8 @@ export function CedTextChatPanel({
             created_at: new Date().toISOString(),
             image: {
               url: normalizeCedMediaUrl(result.url),
-              prompt,
+              caption: imageLabel,
+              prompt: imageLabel,
               quality: result.quality,
             },
           },

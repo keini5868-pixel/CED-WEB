@@ -1679,6 +1679,22 @@ def send_message(
             out["image"] = image
         return out
 
+    from app.services.text_publish_flow import handle_publish_flow_turn
+
+    publish_reply = handle_publish_flow_turn(
+        user_id,
+        conversation_id,
+        text,
+        history=history,
+        run_tool=_run_chat_tool,
+        suggest_caption=_suggest_social_caption,
+    )
+    if publish_reply:
+        return _finish(
+            _finalize_chat_reply(publish_reply),
+            route_meta={"intent": "publish_flow", "source": "conversation"},
+        )
+
     if image_bytes:
         try:
             from app.services.chat_multimedia import analyze_chat_image
@@ -1693,6 +1709,13 @@ def send_message(
                 image_bytes,
                 image_media_type or "image/jpeg",
             )
+
+            if is_social_publish_intent(text, with_image=True):
+                reply = start_publish_flow_from_image(user_id, conversation_id, text)
+                return _finish(
+                    reply,
+                    route_meta={"intent": "publish_flow", "source": "image_upload"},
+                )
 
             creation = resolve_image_creation_from_attachment(text, history)
             if creation:
@@ -1724,13 +1747,6 @@ def send_message(
                 return _finish(
                     _format_image_generation_error(err),
                     route_meta={"intent": "marketing_creative", "source": "attachment_error"},
-                )
-
-            if is_social_publish_intent(text, with_image=True):
-                reply = start_publish_flow_from_image(user_id, conversation_id, text)
-                return _finish(
-                    reply,
-                    route_meta={"intent": "publish_flow", "source": "image_upload"},
                 )
 
             reply = analyze_chat_image(
@@ -1871,22 +1887,6 @@ def send_message(
         return _finish(
             _finalize_chat_reply(route.speakable),
             route_meta=route.to_dict(),
-        )
-
-    from app.services.text_publish_flow import handle_publish_flow_turn
-
-    publish_reply = handle_publish_flow_turn(
-        user_id,
-        conversation_id,
-        text,
-        history=history,
-        run_tool=_run_chat_tool,
-        suggest_caption=_suggest_social_caption,
-    )
-    if publish_reply:
-        return _finish(
-            _finalize_chat_reply(publish_reply),
-            route_meta={"intent": "publish_flow", "source": "conversation"},
         )
 
     messages = _anthropic_messages(history)

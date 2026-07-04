@@ -96,6 +96,16 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
         return None
     if _FOLLOWUP_SKIP.search(t):
         return None
+    from app.services.publish_text import (
+        is_explicit_social_publish_request,
+        is_publish_platform_reply,
+        is_social_publish_intent,
+    )
+
+    if is_social_publish_intent(t) or is_explicit_social_publish_request(t):
+        return None
+    if is_publish_platform_reply(t):
+        return None
     recent: list[str] = []
     for row in (history or [])[-8:]:
         content = (row.get("content") or "").strip()
