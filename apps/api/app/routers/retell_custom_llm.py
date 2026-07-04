@@ -12,6 +12,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.services.cognitive_intents import (
     is_camera_voice_command,
     is_camera_activation_intent,
+    is_camera_deactivation_intent,
     is_meta_publish_intent,
     is_script_demo_request,
     is_web_research_intent,
@@ -706,7 +707,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         reason=f"{reason}_stale_rid",
                     )
                     return
-                fallback_content = WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
+                fallback_content = (
+                    "Disculpe señor, ¿en qué le puedo ayudar?"
+                    if not pending_web
+                    else WEB_SEARCH_VOICE_FALLBACK
+                )
                 if is_duplicate_voice_delivery(
                     last_delivered_voice_content,
                     fallback_content,
@@ -723,6 +728,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     call_id,
                     user_text[:60],
                 )
+                if uid:
+                    orch = get_orchestrator(call_id)
+                    if orch.active_module:
+                        await orch.deactivate_current(user_id=uid)
                 await deliver_voice(fallback_content)
 
             async def ack_superseded_turn(*, reason: str) -> None:
@@ -779,6 +788,22 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             conversational_turn = is_small_talk(user_text, transcript)
+
+            if uid and is_camera_deactivation_intent(user_text):
+                if not turn_already_handled(call_id, scheduled_rid):
+                    mark_turn_handled(call_id, scheduled_rid)
+                    orch = get_orchestrator(call_id)
+                    await execute_voice_tool("request_camera_deactivation", uid, {})
+                    if orch.active_module:
+                        await orch.deactivate_current(user_id=uid)
+                    delivered = await complete_partial_or_deliver(
+                        "Cámara desactivada, señor."
+                    )
+                    if not delivered:
+                        await anti_silence_if_unanswered(
+                            reason="camera_deactivate_deliver_failed"
+                        )
+                    return
 
             orch = get_orchestrator(call_id)
             orch_result = None

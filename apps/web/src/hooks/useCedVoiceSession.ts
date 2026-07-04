@@ -586,6 +586,11 @@ export function useCedVoiceSession(
           if (ev.type === "map_search_results" || ev.type === "map_start_navigation") {
             console.log("[MAP] tool_event recibido:", ev.type, ev);
           }
+          if (ev.type === "camera_deactivate") {
+            console.log("[CAMERA] tool_event recibido:", ev.type, ev);
+            void toggleCameraRef.current(false);
+            void postVoiceCameraStatus(false, false);
+          }
           if (ev.type === "map_search_results" && ev.places) {
             window.dispatchEvent(
               new CustomEvent("ced-navigation-event", {

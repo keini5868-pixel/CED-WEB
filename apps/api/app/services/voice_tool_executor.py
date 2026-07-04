@@ -304,6 +304,7 @@ async def _run_camera_capture(
             len(summary),
         )
         formatted = format_vision_response(summary) or summary.strip()
+        vcs.set_last_vision_summary(user_id, formatted)
         return _spoken_ok(formatted)
     logger.warning(
         "[VISION:GEMINI] capture_timeout user=%s request_id=%s",
@@ -600,7 +601,9 @@ async def execute_voice_tool(
         if name in ("request_camera_activation", "request_camera_deactivation"):
             if name == "request_camera_deactivation":
                 vcs.push_client_action(user_id, "camera_deactivate", {})
+                vcs.push_tool_event(user_id, {"type": "camera_deactivate"})
                 vcs.set_camera_active(user_id, False)
+                vcs.set_last_vision_summary(user_id, "")
                 return _spoken_ok("Cámara desactivada, señor.")
             fast = bool(params.get("fast"))
             return await handle_camera_activation(user_id, fast=fast)

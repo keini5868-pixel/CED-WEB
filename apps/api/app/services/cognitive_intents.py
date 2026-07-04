@@ -456,12 +456,67 @@ def is_camera_activation_intent(text: str) -> bool:
     raw = (text or "").strip()
     if not raw:
         return False
-    t = normalize_text(raw)
-    if re.search(r"\b(apaga|desactiva|cierra|deja de mirar)\b", t):
+    if is_camera_deactivation_intent(raw):
         return False
+    t = normalize_text(raw)
     if re.search(
         r"\b(qu[eé]\s+ves|analiza|visi[oó]n|busca.*visible|mira esto|observas)\b",
         t,
     ):
         return False
     return any(p.search(t) for p in _CAMERA_ACTIVATION_PATTERNS)
+
+
+_CAMERA_DEACTIVATION_PATTERNS = [
+    re.compile(
+        r"\b(apaga|apagar|desactiva|desactivar|cierra|cerrar)\b.*\b(c[aá]mara|cam)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(c[aá]mara|cam)\b.*\b(apaga|apagar|off|cierra|cerrar|desactiva|desactivar)\b",
+        re.I,
+    ),
+    re.compile(r"\bdeja de mirar\b", re.I),
+]
+
+
+def is_camera_deactivation_intent(text: str) -> bool:
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    t = normalize_text(raw)
+    return any(p.search(t) for p in _CAMERA_DEACTIVATION_PATTERNS)
+
+
+_BRAND_FOLLOWUP_PATTERNS = [
+    re.compile(r"\b(marca|brand|nombre del producto)\b", re.I),
+    re.compile(r"\bde qu[eé] marca\b", re.I),
+    re.compile(r"\bqu[eé] marca es\b", re.I),
+]
+
+
+def is_brand_followup_question(text: str) -> bool:
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    t = normalize_text(raw)
+    return any(p.search(t) for p in _BRAND_FOLLOWUP_PATTERNS)
+
+
+_TOPIC_CHANGE_PATTERNS = [
+    re.compile(r"^(d[ií]me|cu[eé]ntame|qu[eé] son|cu[aá]les)\b", re.I),
+    re.compile(r"\b(noticias|clima|precio|qui[eé]n es)\b", re.I),
+    re.compile(r"^(oye|hey|espera|cambiando)\b", re.I),
+]
+
+
+def is_topic_change(text: str) -> bool:
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    if is_brand_followup_question(raw):
+        return False
+    if is_camera_deactivation_intent(raw):
+        return False
+    t = normalize_text(raw)
+    return any(p.search(t) for p in _TOPIC_CHANGE_PATTERNS)

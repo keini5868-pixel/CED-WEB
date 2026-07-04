@@ -30,6 +30,7 @@ def _fresh_session() -> dict[str, Any]:
         "active_voice_call_id": None,
         "active_mode": None,
         "map_search_results": [],
+        "last_vision_summary": "",
         "tool_events": [],
         "updated_at": _now(),
     }
@@ -101,6 +102,17 @@ def set_map_search_results(user_id: str, places: list[dict[str, Any]] | None) ->
 def get_map_search_results(user_id: str) -> list[dict[str, Any]]:
     rows = _get(user_id).get("map_search_results")
     return deepcopy(rows) if isinstance(rows, list) else []
+
+
+def set_last_vision_summary(user_id: str, summary: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["last_vision_summary"] = str(summary or "").strip()[:500]
+        session["updated_at"] = _now()
+
+
+def get_last_vision_summary(user_id: str) -> str:
+    return str(_get(user_id).get("last_vision_summary") or "").strip()
 
 
 def get_active_mode_prompt(user_id: str) -> str:

@@ -9,7 +9,13 @@ from typing import Any
 from app.modules.base_module import BaseModule
 from app.modules.module_registry import MODULE_ACKS, MODULE_ORDER, MODULE_OVERLAYS, build_module
 from app.services import voice_client_session as vcs
-from app.services.cognitive_intents import is_camera_activation_intent, is_meta_publish_intent
+from app.services.cognitive_intents import (
+    is_brand_followup_question,
+    is_camera_activation_intent,
+    is_camera_deactivation_intent,
+    is_meta_publish_intent,
+    is_topic_change,
+)
 from app.services.navigation_voice_intent import (
     resolve_navigation_confirm,
     resolve_navigation_place_search,
@@ -90,6 +96,45 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
 
 _orchestrators: dict[str, "CedOrchestrator"] = {}
 
+_EPHEMERAL_MODULES = frozenset({"web_search", "image_gen", "pdf", "publish"})
+
+
+def is_module_command(
+    user_text: str,
+    module: str,
+    transcript: list[Utterance],
+    *,
+    user_id: str = "",
+) -> bool:
+    text = (user_text or "").strip()
+    if not text or not module:
+        return False
+    if module == "camera":
+        return bool(
+            is_camera_activation_intent(text)
+            or is_camera_deactivation_intent(text)
+            or is_brand_followup_question(text)
+            or resolve_camera_voice_request(text)
+        )
+    if module == "map":
+        return bool(
+            resolve_navigation_confirm(text, transcript, user_id=user_id)
+            or resolve_navigation_place_search(text, transcript)
+            or resolve_open_map_request(text)
+        )
+    if module == "publish":
+        return bool(
+            is_meta_publish_intent(text)
+            or resolve_meta_publish_request(text, transcript)
+            or resolve_social_comments_request(text)
+        )
+    if module == "web_search":
+        return resolve_web_search_request(text, transcript) is not None
+    if module in ("image_gen", "pdf", "prospection", "memory"):
+        detected = detect_module(text, transcript, user_id=user_id, active_module=module)
+        return detected == module
+    return False
+
 
 def detect_module_from_patterns(text: str) -> str | None:
     t = (text or "").strip().lower()
@@ -145,7 +190,12 @@ def detect_module(
             return "publish"
 
     if active_module == "camera":
-        if is_camera_activation_intent(text) or resolve_camera_voice_request(text):
+        if (
+            is_camera_activation_intent(text)
+            or is_camera_deactivation_intent(text)
+            or is_brand_followup_question(text)
+            or resolve_camera_voice_request(text)
+        ):
             return "camera"
 
     if active_module in ("web_search", "image_gen", "pdf", "prospection", "memory"):
@@ -282,6 +332,10 @@ class CedOrchestrator:
             self._emit_module_events(user_id, self.active_module, result)
         return result
 
+    async def _release_ephemeral_module(self, user_id: str) -> None:
+        if self.active_module in _EPHEMERAL_MODULES:
+            await self.deactivate_current(user_id=user_id)
+
     async def process(
         self,
         *,
@@ -290,6 +344,18 @@ class CedOrchestrator:
         call_id: str,
         user_id: str,
     ) -> OrchestratorResult:
+        if (
+            self.active_module
+            and is_topic_change(user_text)
+            and not is_module_command(
+                user_text,
+                self.active_module,
+                transcript,
+                user_id=user_id,
+            )
+        ):
+            await self.deactivate_current(user_id=user_id)
+
         overlay = get_context_overlay(self.active_module)
 
         if self.active_module:
@@ -299,11 +365,16 @@ class CedOrchestrator:
                 user_id=user_id,
             )
             if active_result and active_result.handles_response:
-                return self._to_orch_result(
+                result = self._to_orch_result(
                     active_result,
                     module_activated=None,
                     overlay=get_context_overlay(self.active_module),
                 )
+                if is_camera_deactivation_intent(user_text):
+                    await self.deactivate_current(user_id=user_id)
+                else:
+                    await self._release_ephemeral_module(user_id)
+                return result
 
         detected = detect_module(
             user_text,
@@ -332,11 +403,13 @@ class CedOrchestrator:
                 activated = None
 
             if result.handles_response:
-                return self._to_orch_result(
+                orch_result = self._to_orch_result(
                     result,
                     module_activated=activated,
                     overlay=get_context_overlay(detected),
                 )
+                await self._release_ephemeral_module(user_id)
+                return orch_result
             if activated:
                 return OrchestratorResult(
                     module_activated=activated,

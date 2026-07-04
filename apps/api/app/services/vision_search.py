@@ -16,9 +16,10 @@ VISION_MODEL = "gemini-2.5-flash"
 
 ANALYZE_PROMPT_DEFAULT = (
     "Visión CED. Español latino, MÁX 2 oraciones cortas:\n"
-    "1) Qué es — nombre concreto del objeto, producto o texto principal.\n"
-    "2) Un detalle útil — marca, color o texto legible entre comillas.\n"
-    "Directo. PROHIBIDO: 'parece', 'podría ser', 'no estoy seguro'."
+    "1) Qué es el objeto — nombre concreto del producto o texto principal.\n"
+    "2) Marca y nombre del producto si aparecen en la etiqueta (texto legible entre comillas).\n"
+    "Directo. Si no puedes leer la marca, dilo y ofrece buscarla en internet.\n"
+    "PROHIBIDO: 'parece', 'podría ser', 'no estoy seguro'."
 )
 
 
