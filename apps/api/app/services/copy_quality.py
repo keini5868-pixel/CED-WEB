@@ -35,7 +35,7 @@ _ENGLISH_REPLACEMENTS = {
 
 _TITLE_DESC_LINE = re.compile(
     r"(?:^|\n)\s*(?:[\*\-•]\s*)?"
-    r"([A-Za-zÁÉÍÓÚáéíóúÑñ0-9][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,35})\s*:\s*"
+    r"([A-Za-zÁÉÍÓÚáéíóúÑñ0-9][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,35}) *: +"
     r"(.{8,160}?)(?=\n|$|\*|\-|\•|[A-ZÁÉÍÓÚ][a-záéíóú]+:)",
     re.M,
 )
@@ -44,6 +44,9 @@ _SKIP_LINE_TITLES = frozenset(
         "características",
         "caracteristicas",
         "beneficios",
+        "principales beneficios",
+        "principales beneficios son",
+        "sus principales beneficios son",
         "referencia",
         "información",
         "informacion",
@@ -131,10 +134,30 @@ def compact_overlay_line(title: str, desc: str) -> str:
     return f"{label}: {phrase}"
 
 
+def _normalize_benefit_blob(text: str) -> str:
+    """Separa viñetas en línea («A: x. B: y.») para extracción fiable."""
+    t = (text or "").strip()
+    if not t:
+        return t
+    # «beneficios son: Salud intestinal: desc» → líneas separadas
+    t = re.sub(
+        r":\s+(?=[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,32}\s*:)",
+        ":\n",
+        t,
+    )
+    t = re.sub(
+        r"\.\s+(?=[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,32}\s*:)",
+        ".\n",
+        t,
+    )
+    t = re.sub(r" *: +", ": ", t)
+    return t
+
+
 def extract_structured_lines(text: str, *, max_lines: int = 5) -> list[str]:
     """Extrae líneas «Título: descripción» de cualquier texto."""
     lines: list[str] = []
-    for match in _TITLE_DESC_LINE.finditer(text or ""):
+    for match in _TITLE_DESC_LINE.finditer(_normalize_benefit_blob(text or "")):
         title = sanitize_label(match.group(1).strip())
         desc = normalize_spanish(re.sub(r"\s+", " ", match.group(2).strip()))
         if title.lower() in _SKIP_LINE_TITLES:
@@ -243,9 +266,13 @@ def collect_image_overlay_lines(prompt: str, context: str = "") -> list[str]:
         quotes = extract_quoted_phrases(f"{prompt}\n{context}")
         lines = quotes
     if not lines and image_prompt_needs_verbatim_text(prompt, context):
-        short = normalize_spanish(_first_phrase(prompt, max_chars=72))
-        if short:
-            lines = [short]
+        structured = extract_structured_lines(f"{prompt}\n{context}")
+        if structured:
+            lines = overlay_lines_from_strings(structured)
+        else:
+            short = normalize_spanish(_first_phrase(prompt, max_chars=72))
+            if short and len(short) >= 12:
+                lines = [short]
     return lines[:5]
 
 
@@ -264,6 +291,43 @@ def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None)
         "no parafrasear, no inventar palabras, no mezclar inglés):\n"
         + "\n".join(f"- {q}" for q in quoted)
         + "\nSi no puedes renderizar texto perfecto, usa MENOS texto pero sin errores ortográficos."
+    )
+
+
+_CREATIVE_NO_LEAK = (
+    "PROHIBIDO escribir en la imagen instrucciones del prompt, metadatos ni palabras como: "
+    "genera, imagen, características, referencia, instrucción, prompt, dietary supplement inventado."
+)
+
+
+def format_creative_image_copy(
+    lines: list[str],
+    *,
+    headline: str | None = None,
+    max_lines: int = 4,
+) -> str:
+    """Textos cortos para flyer — solo titulares; evita párrafos ilegibles en Gemini."""
+    short: list[str] = []
+    for line in lines:
+        if ":" in line:
+            short.append(sanitize_label(line.split(":", 1)[0]))
+        else:
+            short.append(sanitize_label(line[:32]))
+        if len(short) >= max_lines:
+            break
+    if headline:
+        head = sanitize_label(headline)
+        if head and head.lower() not in {s.lower() for s in short}:
+            short.insert(0, head)
+    short = short[:max_lines]
+    if not short:
+        return ""
+    quoted = [f'"{line}"' for line in short]
+    return (
+        f"{_CREATIVE_NO_LEAK}\n"
+        "TEXTOS EXACTOS EN LA IMAGEN (una línea cada uno; copiar tal cual):\n"
+        + "\n".join(f"- {q}" for q in quoted)
+        + "\nSi no puedes escribir perfecto, usa solo el titular y 2 viñetas cortas."
     )
 
 

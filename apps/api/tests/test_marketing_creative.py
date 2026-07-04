@@ -55,7 +55,7 @@ def test_build_brief_extracts_subject_and_benefits():
     assert "Salud intestinal" in internal or "intestinal" in internal.lower()
     assert "basics" in display.lower() or "fitline" in display.lower()
     assert "Genera un creativo publicitario" not in display
-    assert "Usa la imagen adjunta" in internal
+    assert "Usa la foto adjunta" in internal
 
 
 def test_attachment_resolver_for_product_photo():

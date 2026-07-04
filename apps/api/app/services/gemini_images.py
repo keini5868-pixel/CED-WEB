@@ -42,7 +42,8 @@ _IMAGE_INSTRUCTION_PREFIX = re.compile(
     r")"
     r"\s+(?:una?\s+)?"
     r"(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|creativo|arte|gr[aá]fico|banner|flyer|portada)"
-    r"\s+(?:de|con|para|que\s+)?\s*"
+    r"(?:\s+(?:de|con|para|que\s+)?(?:estas?\s+caracter[ií]sticas\s*)?)?"
+    r"\s*"
     r")+",
     re.I,
 )
@@ -279,6 +280,18 @@ def _reference_prompt(user_prompt: str, style_mode: str) -> str:
     return topic
 
 
+def _prepare_reference_gemini_prompt(prompt: str, mode: str) -> str:
+    """Evita doble envoltorio y fuga del prompt en creativos con texto."""
+    from app.services.copy_quality import augment_image_prompt
+    from app.services.marketing_creative import CREATIVO_PROMPT_MARKER
+
+    p = (prompt or "").strip()
+    if p.startswith(CREATIVO_PROMPT_MARKER):
+        return p[:3800]
+    base = _reference_prompt(p, mode)
+    return augment_image_prompt(base, "")
+
+
 def _generate_content_config(*, quality: str, temperature: float) -> Any:
     from google.genai import types
 
@@ -411,14 +424,15 @@ def generate_image_with_reference_gemini(
         mime = "image/jpeg"
 
     try:
-        from app.services.copy_quality import augment_image_prompt
-
-        enriched = augment_image_prompt(_reference_prompt(topic, mode), topic)
+        enriched = _prepare_reference_gemini_prompt(topic, mode)
         client = genai.Client(api_key=api_key)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[GEMINI:REF-IMG] setup failed: %s", exc)
         return {"ok": False, "error": _friendly_image_error(str(exc)), "code": "gemini_error"}
 
+    from app.services.marketing_creative import CREATIVO_PROMPT_MARKER
+
+    temp = 0.5 if topic.strip().startswith(CREATIVO_PROMPT_MARKER) else 0.85
     last_error = "No pude generar la imagen con referencia en Gemini."
 
     for model in _image_models():
@@ -430,11 +444,11 @@ def generate_image_with_reference_gemini(
                         role="user",
                         parts=[
                             types.Part.from_bytes(data=reference_image, mime_type=mime),
-                            types.Part.from_text(text=enriched[:4000]),
+                            types.Part.from_text(text=enriched[:3800]),
                         ],
                     )
                 ],
-                config=_generate_content_config(quality=quality, temperature=0.85),
+                config=_generate_content_config(quality=quality, temperature=temp),
             )
             payload = _extract_image_payload(response)
             if payload:

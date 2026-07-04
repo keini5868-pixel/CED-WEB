@@ -4,6 +4,7 @@ from app.services.copy_quality import (
     build_flyer_headline,
     build_image_headline,
     compact_overlay_line,
+    format_creative_image_copy,
     format_verbatim_image_copy,
     normalize_spanish,
     overlay_lines_from_benefit_strings,
@@ -54,6 +55,55 @@ def test_build_image_headline_from_any_context():
         "Charlotte",
     )
     assert "charlotte" in headline.lower() or "Charlotte" in headline
+
+
+def test_format_creative_image_copy_uses_short_titles_only():
+    block = format_creative_image_copy(
+        [
+            "Salud intestinal: Contribuye a mantener flora equilibrada gracias a fibras",
+            "Sistema inmune: Un intestino sano es clave para defensas fuertes",
+        ],
+        headline="FitLine Basics",
+        max_lines=4,
+    )
+    assert "FitLine Basics" in block
+    assert "Salud intestinal" in block
+    assert "Contribuye a mantener" not in block
+    assert "PROHIBIDO escribir" in block
+
+
+def test_marketing_brief_fitline_user_prompt_no_leakage():
+    from app.services.marketing_creative import (
+        build_marketing_creative_brief,
+        strip_creative_user_noise,
+    )
+
+    user_text = (
+        "GENERA UNA IMAGEN CON ESTAS CARACTERISTICAS FitLine Basics es un suplemento nutricional "
+        "diseñado para apoyar la salud digestiva. Sus principales beneficios son: "
+        "Salud intestinal: Contribuye a mantener una flora intestinal equilibrada. "
+        "Mejor absorción: Ayuda a optimizar la absorción de nutrientes. "
+        "Sistema inmune: Un intestino sano es clave para un sistema inmunológico fuerte. "
+        "Y QUE ESPLIQUE SUS VBENEFICIOS USANDO ESTA IMEGENE DE REFERENCIA DEL PRODUCTO EN EL FONDO"
+    )
+    cleaned = strip_creative_user_noise(user_text)
+    assert "referencia" not in cleaned.lower()
+    assert "imegen" not in cleaned.lower()
+    assert "FitLine Basics" in cleaned
+
+    internal, display, mode = build_marketing_creative_brief(
+        user_text,
+        history=None,
+        has_reference_image=True,
+    )
+    assert mode == "edit"
+    assert internal.startswith("[[CREATIVO]]")
+    assert "Instrucción del cliente" not in internal
+    assert "GENERA UNA IMAGEN" not in internal.upper()
+    assert "FitLine Basics" in internal or "fitline" in internal.lower()
+    assert "Salud intestinal" in internal
+    assert "Contribuye a mantener una flora" not in internal
+    assert "EN EL FONDO" not in display
 
 
 def test_marketing_brief_includes_verbatim_block():

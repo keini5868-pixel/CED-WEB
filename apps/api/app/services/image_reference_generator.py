@@ -388,6 +388,20 @@ def _generate_image_with_reference_impl(
         return {"ok": False, "error": "Indica qué quieres generar o cambiar", "code": "empty_prompt"}
 
     mode = style_mode if style_mode in ("inspired", "variation", "edit") else "inspired"
+
+    from app.services.copy_quality import extract_structured_lines
+    from app.services.marketing_creative import (
+        build_marketing_creative_brief,
+        is_marketing_creative_intent,
+    )
+
+    if is_marketing_creative_intent(topic) or len(extract_structured_lines(topic)) >= 2:
+        topic, _, brief_mode = build_marketing_creative_brief(
+            topic,
+            history=None,
+            has_reference_image=True,
+        )
+        mode = brief_mode
     mime = (content_type or "image/jpeg").split(";")[0].strip().lower()
 
     validation_err = validate_reference_image(reference_image, mime)

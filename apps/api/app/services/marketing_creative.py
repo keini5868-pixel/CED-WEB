@@ -10,15 +10,31 @@ from app.services.chat_intents import (
     parse_generate_image_prompt,
 )
 from app.services.copy_quality import (
-    augment_image_prompt,
     build_image_headline,
     collect_image_overlay_lines,
     extract_structured_lines,
     extract_structured_lines_from_history,
-    format_verbatim_image_copy,
+    format_creative_image_copy,
     normalize_spanish,
 )
 from app.services.gemini_images import strip_image_generation_instruction
+
+CREATIVO_PROMPT_MARKER = "[[CREATIVO]]"
+
+_CREATIVE_TAIL_NOISE = re.compile(
+    r"\s*(?:"
+    r"y\s+que\s+.*(?:referencia|fondo|imegen|imagen|imajen)"
+    r"|(?:expli|espli)\w*.*(?:referencia|fondo|imegen|imagen)"
+    r").*$",
+    re.I | re.S,
+)
+_CREATIVE_HEAD_NOISE = re.compile(
+    r"^(?:"
+    r"estas?\s+caracter[ií]sticas\s*"
+    r"|con\s+estas?\s+caracter[ií]sticas\s*"
+    r")",
+    re.I,
+)
 
 _CREATIVE_TYPO_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"vbeneficios?", re.I), "beneficios"),
@@ -61,6 +77,16 @@ def normalize_creative_request_text(text: str) -> str:
     for pattern, repl in _CREATIVE_TYPO_REPLACEMENTS:
         t = pattern.sub(repl, t)
     return t
+
+
+def strip_creative_user_noise(text: str) -> str:
+    """Quita instrucciones meta («genera imagen», «usa referencia en fondo») del contenido."""
+    t = strip_image_generation_instruction(text or "")
+    t = normalize_creative_request_text(t)
+    t = _CREATIVE_TAIL_NOISE.sub("", t).strip()
+    t = _CREATIVE_HEAD_NOISE.sub("", t).strip()
+    t = re.sub(r"^\*+\s*", "", t)
+    return t.strip()
 
 
 def is_marketing_creative_intent(text: str) -> bool:
@@ -239,23 +265,24 @@ def build_marketing_creative_brief(
     Devuelve (prompt_interno, etiqueta_visible, style_mode).
     style_mode: edit | inspired | variation
     """
-    raw = strip_image_generation_instruction(user_text)
+    raw = strip_creative_user_noise(user_text)
     parsed = parse_generate_image_prompt(user_text) or parse_followup_image_prompt(user_text, history)
     if parsed:
-        raw = strip_image_generation_instruction(parsed)
+        raw = strip_creative_user_noise(parsed)
 
     context = _history_blob(history)
     subject = normalize_spanish(_extract_product_subject(f"{context}\n{raw}\n{user_text}"))
-    overlay_lines = collect_image_overlay_lines(f"{raw}\n{user_text}", context)
+    overlay_lines = collect_image_overlay_lines(f"{raw}\n{context}", context)
     if not overlay_lines:
         overlay_lines = _extract_benefit_bullets_from_history(history)
     if not overlay_lines:
         overlay_lines = extract_structured_lines(context)
 
     headline = build_image_headline(context, subject)
-    verbatim_block = format_verbatim_image_copy(overlay_lines, headline=headline or None)
+    if not headline or headline.lower().startswith(subject.lower()[:8]):
+        headline = subject if _subject_is_usable(subject) else headline
+    verbatim_block = format_creative_image_copy(overlay_lines, headline=headline or subject)
 
-    user_note = normalize_spanish(raw[:240] if raw else user_text[:240])
     display = build_display_label(
         subject,
         kind="flyer" if re.search(r"\bflyer\b", user_text, re.I) else "creativo",
@@ -263,32 +290,35 @@ def build_marketing_creative_brief(
 
     if has_reference_image:
         internal = (
-            "Usa la imagen adjunta como base visual principal. "
-            "Crea un creativo cuadrado para redes sociales, estilo profesional. "
-            f"Tema: {subject}. "
+            f"{CREATIVO_PROMPT_MARKER} "
+            "Flyer publicitario cuadrado 1:1 para redes sociales. "
+            "Usa la foto adjunta: el envase/producto debe verse nítido (centro o fondo). "
+            "Diseño limpio, fondo suave desenfocado, tipografía sans-serif grande. "
+            "Máximo 4 textos cortos en la imagen. "
+            f"Producto: {subject}. "
         )
         if verbatim_block:
             internal += f"{verbatim_block} "
-        internal += f"Instrucción del cliente: {user_note}"
+        internal += (
+            "Ortografía española impecable. "
+            "No escribas párrafos largos ni texto en inglés inventado."
+        )
         style_mode = "edit"
     else:
         internal = (
+            f"{CREATIVO_PROMPT_MARKER} "
             "Genera un creativo cuadrado para redes sociales. "
-            f"Tema visual: {subject}. "
+            f"Producto o tema: {subject}. "
         )
         if verbatim_block:
             internal += f"{verbatim_block} "
-        internal += f"Referencia: {context[:500]}. Pedido: {user_note}"
+        internal += (
+            "Estilo premium, fondo limpio, máximo 4 textos cortos. "
+            "Ortografía española impecable."
+        )
         style_mode = "inspired"
 
-    if "TEXTOS EXACTOS" not in internal:
-        internal = augment_image_prompt(internal, context)
-    elif "Ortografía española impecable" not in internal:
-        internal = (
-            f"{internal} Ortografía española impecable en todo texto visible. "
-            "Sin anglicismos innecesarios ni palabras inventadas."
-        )
-    return internal[:4000], display, style_mode
+    return internal[:3800], display, style_mode
 
 
 def resolve_image_creation_from_attachment(
