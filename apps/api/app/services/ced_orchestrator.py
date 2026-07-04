@@ -34,8 +34,9 @@ from app.services.retell_llm_types import Utterance
 logger = logging.getLogger(__name__)
 
 _IMAGE_GEN_PATTERNS = (
-    r"\b(?:genera|generar|crea|crear|haz|diseña)\s+(?:una?\s+)?(?:imagen|foto|picture|ilustraci[oó]n)\b",
+    r"\b(?:genera(?:r|me)?|crea(?:r|me)?|cr[eé]ame|gener[aá]me|haz(?:me)?|dise[nñ]a(?:r|me)?|dibuja(?:r|me)?|pinta(?:r|me)?)\s+(?:una?\s+)?(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|arte|logo|banner|flyer|portada)\b",
     r"\b(?:imagen|foto)\s+(?:de|con|para)\b",
+    r"\b(?:necesito|quiero)\s+(?:una?\s+)?(?:imagen|foto|dise[nñ]o)\b",
 )
 _PDF_PATTERNS = (
     r"\b(?:genera|generar|crea|crear|haz|exporta)\s+(?:un\s+)?pdf\b",
@@ -75,9 +76,9 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\b(describe lo que|qué es esto)\b",
     ),
     "image_gen": (
-        r"\b(genera una imagen|crea una imagen)\b",
-        r"\b(diseña una imagen|hazme una imagen)\b",
-        r"\b(genera un diseño|crea un diseño)\b",
+        r"\b(genera(?:r|me)?|crea(?:r|me)?|cr[eé]ame|gener[aá]me|haz(?:me)?|dise[nñ]a(?:r|me)?)\s+(?:una?\s+)?(?:imagen|foto|dise[nñ]o)\b",
+        r"\b(dibuja(?:r|me)?|pinta(?:r|me)?)\s+(?:una?\s+)?(?:imagen|foto|dise[nñ]o)\b",
+        r"\b(genera un diseño|crea un diseño|hazme una imagen)\b",
     ),
     "pdf": (
         r"\b(genera un pdf|crea un pdf|hazme un pdf)\b",

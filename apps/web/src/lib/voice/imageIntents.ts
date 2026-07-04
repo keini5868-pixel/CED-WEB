@@ -1,11 +1,18 @@
-/** Intents para generar imágenes por voz. */
+/** Intents para generar imágenes por voz y chat. */
+
+const CREATE_VERBS =
+  "(?:genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|cr[eé]ame|gener[aá]me|haz(?:me|nos|lo|la)?|hacer(?:me)?|dise[nñ]a(?:r|me|nos|do)?|dibuja(?:r|me)?|pinta(?:r|me)?|dame|hazme)";
+
+const IMAGE_NOUN =
+  "(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|arte|gr[aá]fico|creativo|logo|banner|flyer|portada)";
 
 const GENERATE_IMAGE_PATTERNS = [
-  /\b(genera|generar|crea|cresa|crear|dise[nñ]a|haz(me)?|dame)\s+(?:una?\s+)?imagen\b/i,
-  /\b(genera|crea|haz|dame)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|arte|gr[aá]fico)\b/i,
-  /\bimagen\s+de\b/i,
+  new RegExp(`\\b${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`, "i"),
+  new RegExp(`\\b${IMAGE_NOUN}\\s+(?:de|con|para)\\b`, "i"),
+  new RegExp(`\\bquiero\\s+(?:que\\s+)?${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`, "i"),
+  new RegExp(`\\bnecesito\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`, "i"),
+  new RegExp(`\\bpuedes\\s+${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`, "i"),
   /\bpaint\s+(?:an?\s+)?image\b/i,
-  /\b(?:logo|banner|flyer)\s+(?:de|para|con)\b/i,
 ];
 
 export function isGenerateImageIntent(text: string): boolean {
@@ -17,9 +24,19 @@ export function isGenerateImageIntent(text: string): boolean {
 export function parseGenerateImagePrompt(text: string): string | null {
   const t = text.trim();
   const patterns = [
-    /\b(?:genera|generar|crea|cresa|crear|dise[nñ]a|haz|dame)\s+(?:una?\s+)?imagen\s+(?:de|con|que\s+diga|que\s+sea)?\s*[:.]?\s*(.+)$/i,
-    /\b(?:genera|crea|haz|dame)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|gr[aá]fico)\s+(?:de|con|para)?\s*[:.]?\s*(.+)$/i,
-    /\bimagen\s+de\s+(.+)$/i,
+    new RegExp(
+      `\\b${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\s+(?:de|con|para|que\\s+)?\\s*[:.]?\\s*(.+)$`,
+      "i",
+    ),
+    new RegExp(`\\b${IMAGE_NOUN}\\s+de\\s+(.+)$`, "i"),
+    new RegExp(
+      `\\bquiero\\s+(?:que\\s+)?${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\s+(?:de|con|para|que\\s+)?\\s*[:.]?\\s*(.+)$`,
+      "i",
+    ),
+    new RegExp(
+      `\\bnecesito\\s+(?:una?\\s+)?${IMAGE_NOUN}\\s+(?:de|con|para|que\\s+)?\\s*[:.]?\\s*(.+)$`,
+      "i",
+    ),
   ];
   for (const pattern of patterns) {
     const m = t.match(pattern);

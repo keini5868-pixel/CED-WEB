@@ -4,66 +4,44 @@ from __future__ import annotations
 
 import re
 
-_CREATE_VERBS = r"(?:crea(?:r|me|s|do)?|genera(?:r|me|s|do)?|haz(?:me|lo|la)?|dise[nñ]a(?:r|me|s|do)?|hacer|generar|crear|diseñar)"
+_CREATE_VERBS = (
+    r"(?:genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|cr[eé]ame|gener[aá]me|"
+    r"haz(?:me|nos|lo|la)?|hacer(?:me)?|dise[nñ]a(?:r|me|nos|do)?|"
+    r"dibuja(?:r|me)?|pinta(?:r|me)?|dame|hazme)"
+)
+_IMAGE_NOUN = r"(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|arte|gr[aá]fico|creativo|logo|banner|flyer|portada)"
 
 _IMAGE_PATTERNS = (
+    re.compile(rf"\b{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\b{_IMAGE_NOUN}\s+(?:de|con|para)\b", re.I),
+    re.compile(rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\bnecesito\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(
-        r"\b(genera|generar|crea|cresa|crear|dise[nñ]a|haz(me)?|dame|necesito)\s+(?:una?\s+)?imagen\b",
-        re.I,
-    ),
-    re.compile(
-        r"\b(genera|crea|haz|dame|dise[nñ]a)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|arte|gr[aá]fico|creativo|foto)\b",
-        re.I,
-    ),
-    re.compile(r"\b(imagen|foto)\s+de\b", re.I),
-    re.compile(r"\bcrea\s+una\s+foto\b", re.I),
-    re.compile(
-        rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?imagen\b",
-        re.I,
-    ),
-    re.compile(r"\bnecesito\s+(?:una?\s+)?imagen\b", re.I),
-    re.compile(
-        rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?imagen\b",
-        re.I,
-    ),
-    re.compile(
-        rf"\b(?:crea(?:me)?|dise[nñ]a(?:me)?|haz(?:me)?)\s+(?:una?\s+)?imagen\b",
-        re.I,
-    ),
-    re.compile(
-        rf"\bimagen\b.+\b{_CREATE_VERBS}\b|\b{_CREATE_VERBS}\b.+\bimagen\b",
+        rf"\b{_CREATE_VERBS}\b.+\b{_IMAGE_NOUN}\b|\b{_IMAGE_NOUN}\b.+\b{_CREATE_VERBS}\b",
         re.I,
     ),
 )
 
 _IMAGE_PROMPT_PATTERNS = (
     re.compile(
-        r"\b(?:genera|generar|crea|cresa|crear|dise[nñ]a|haz|dame)\s+(?:una?\s+)?imagen\s+(?:de|con|que\s+diga|que\s+sea)?\s*[:.]?\s*(.+)$",
+        rf"\b{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
+        re.I,
+    ),
+    re.compile(rf"\b{_IMAGE_NOUN}\s+de\s+(.+)$", re.I),
+    re.compile(
+        rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
         re.I,
     ),
     re.compile(
-        r"\b(?:genera|crea|haz|dame)\s+(?:un|una)\s+(?:logo|banner|flyer|portada|gr[aá]fico|creativo|foto)\s+(?:de|con|para)?\s*[:.]?\s*(.+)$",
-        re.I,
-    ),
-    re.compile(r"\bimagen\s+de\s+(.+)$", re.I),
-    re.compile(
-        rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?imagen\s+(?:de|con|que\s+)?\s*[:.]?\s*(.+)$",
+        rf"\bnecesito\s+(?:una?\s+)?{_IMAGE_NOUN}\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
         re.I,
     ),
     re.compile(
-        rf"\bnecesito\s+(?:una?\s+)?imagen\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
-        re.I,
-    ),
-    re.compile(
-        rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?imagen\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
-        re.I,
-    ),
-    re.compile(
-        rf"\b(?:crea(?:me)?|dise[nñ]a(?:me)?|haz(?:me)?)\s+(?:una?\s+)?imagen\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
+        rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
         re.I,
     ),
 )
-
 _PDF_PATTERNS = (
     re.compile(
         r"\b(genera|generar|crea|crear|exporta|exportar|convierte|convertir|guarda|haz(me)?)\s+(?:un(?:a)?\s+)?pdf\b",

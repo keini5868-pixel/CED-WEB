@@ -14,9 +14,12 @@ from app.services import supabase_db
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GEMINI_IMAGE_MODELS = (
-    "gemini-2.5-flash-image",
-    "gemini-2.0-flash-preview-image-generation",
+DEFAULT_GEMINI_IMAGE_MODELS = ("gemini-2.5-flash-image",)
+DEPRECATED_GEMINI_IMAGE_MODELS = frozenset(
+    {
+        "gemini-2.0-flash-preview-image-generation",
+        "gemini-2.5-flash-image-preview",
+    }
 )
 GEMINI_STD_COST_USD = 0.01
 GEMINI_HD_COST_USD = 0.02
@@ -44,9 +47,24 @@ def _day_image_counts(user_id: str) -> tuple[int, int]:
 def _image_models() -> tuple[str, ...]:
     settings = get_settings()
     primary = settings.gemini_image_model.strip()
-    if primary:
-        return (primary, *(m for m in DEFAULT_GEMINI_IMAGE_MODELS if m != primary))
-    return DEFAULT_GEMINI_IMAGE_MODELS
+    models: list[str] = []
+    if primary and primary not in DEPRECATED_GEMINI_IMAGE_MODELS:
+        models.append(primary)
+    for model in DEFAULT_GEMINI_IMAGE_MODELS:
+        if model not in models:
+            models.append(model)
+    return tuple(models) or DEFAULT_GEMINI_IMAGE_MODELS
+
+
+def _friendly_image_error(raw: str) -> str:
+    msg = (raw or "").strip()
+    lower = msg.lower()
+    if "404" in msg or "not found" in lower or "not supported" in lower:
+        return (
+            "El servicio de imágenes no respondió, señor. "
+            "Intente de nuevo en unos segundos."
+        )
+    return msg[:200] if msg else "No pude generar la imagen con Gemini."
 
 
 def _extract_image_payload(response: Any) -> tuple[bytes, str] | None:
@@ -141,7 +159,7 @@ def generate_image_gemini(
             last_error = str(exc)[:200]
             logger.warning("[GEMINI:IMAGE] model=%s error: %s", model, last_error)
 
-    return {"ok": False, "error": last_error, "code": "gemini_error"}
+    return {"ok": False, "error": _friendly_image_error(last_error), "code": "gemini_error"}
 
 
 def generate_image_with_reference_gemini(
@@ -215,7 +233,7 @@ def generate_image_with_reference_gemini(
             last_error = str(exc)[:200]
             logger.warning("[GEMINI:REF-IMG] model=%s error: %s", model, last_error)
 
-    return {"ok": False, "error": last_error, "code": "gemini_error"}
+    return {"ok": False, "error": _friendly_image_error(last_error), "code": "gemini_error"}
 
 
 def generate_image(
