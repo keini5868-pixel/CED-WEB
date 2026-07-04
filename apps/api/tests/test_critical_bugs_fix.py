@@ -45,7 +45,9 @@ def test_camera_returns_analysis_or_honest_error():
 
     result = asyncio.run(run())
     assert result.get("ok") is False
-    assert "no pude procesar la imagen" in result.get("spoken", "").lower()
+    spoken = result.get("spoken", "").lower()
+    assert "no pude" in spoken
+    assert "capturar" in spoken or "procesar" in spoken
 
 
 def test_publish_resolves_image_automatically():

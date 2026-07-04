@@ -34,6 +34,7 @@ import {
   tickVoiceSessionDetailed,
 } from "@/lib/api/usage";
 import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
+import { useDriveMap } from "@/contexts/DriveMapContext";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
 import { clearEphemeralTokenCache } from "@/lib/voice/ephemeralTokenCache";
 import {
@@ -245,6 +246,9 @@ export function useCedVoiceSession(
     useState<VoiceHeardIndicator>(INITIAL_HEARD);
   const [micStream, setMicStream] = useState<MediaStream | null>(null);
   const [micBusy, setMicBusy] = useState(false);
+  const { openDriveMap, isOpen: isDriveMapOpen } = useDriveMap();
+  const isDriveMapOpenRef = useRef(isDriveMapOpen);
+  const openDriveMapRef = useRef(openDriveMap);
   const micBusyRef = useRef(false);
 
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -389,6 +393,11 @@ export function useCedVoiceSession(
     },
     [captureCameraJpeg],
   );
+
+  useEffect(() => {
+    isDriveMapOpenRef.current = isDriveMapOpen;
+    openDriveMapRef.current = openDriveMap;
+  }, [isDriveMapOpen, openDriveMap]);
 
   useEffect(() => {
     if (!retellPollActive) return;
@@ -592,14 +601,17 @@ export function useCedVoiceSession(
           if (ev.type === "map_start_navigation") {
             const navAction =
               ev.action === "begin_navigation" ? "begin_navigation" : "apply_route";
-            window.dispatchEvent(
-              new CustomEvent("ced-navigation-event", {
-                detail:
-                  navAction === "apply_route" && ev.route
-                    ? { action: "apply_route", payload: ev.route }
-                    : { action: "begin_navigation" },
-              }),
-            );
+            const detail =
+              navAction === "apply_route" && ev.route
+                ? { action: "apply_route", payload: ev.route }
+                : { action: "begin_navigation" };
+            if (!isDriveMapOpenRef.current) {
+              openDriveMapRef.current(detail);
+            } else {
+              window.dispatchEvent(
+                new CustomEvent("ced-navigation-event", { detail }),
+              );
+            }
           }
         }
         const action = state.client_action;

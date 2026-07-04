@@ -154,6 +154,7 @@ async def _start_route_for_user(
             error="route_failed",
         )
     set_route(user_id, route)
+    set_navigating(user_id, True)
     clear_place_options(user_id)
     clear_navigation_pending(user_id)
     push_client_action(user_id, "apply_route", route)

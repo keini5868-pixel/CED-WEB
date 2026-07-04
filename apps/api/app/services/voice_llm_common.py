@@ -100,10 +100,10 @@ def voice_generation_limits(user_text: str) -> tuple[int, float]:
         if is_personal_vent_intent(user_text):
             return 1536, 22.0
         if is_news_intent(user_text) or requires_live_web(user_text):
-            return 1024, 15.0
+            return 1536, 22.0
     except Exception:  # noqa: BLE001
         pass
-    return 768, 12.0
+    return 896, 16.0
 
 
 def delivery_text(text: str) -> str:

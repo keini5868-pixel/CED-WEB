@@ -314,6 +314,7 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
     const processNavAction = (detail: { action?: string; payload?: unknown }) => {
       if (detail?.action === "apply_route" && detail.payload) {
         applyRouteFromServer(detail.payload as NavRoute);
+        beginNavigation();
       }
       if (detail?.action === "begin_navigation") {
         beginNavigation();

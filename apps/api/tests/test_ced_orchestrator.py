@@ -34,6 +34,15 @@ def test_dale_stays_on_active_map():
     assert mod == "map"
 
 
+def test_dale_stays_on_active_publish():
+    transcript = [
+        Utterance(role="agent", content="¿Publico este texto en Instagram, señor?"),
+        Utterance(role="user", content="dale"),
+    ]
+    mod = detect_module("dale", transcript, active_module="publish")
+    assert mod == "publish"
+
+
 def test_context_overlay_map():
     overlay = get_context_overlay("map")
     assert overlay and "NAVEGACIÓN" in overlay.upper()
