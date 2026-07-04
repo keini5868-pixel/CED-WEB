@@ -573,6 +573,9 @@ export function useCedVoiceSession(
               }),
             );
           }
+          if (ev.type === "map_search_results" || ev.type === "map_start_navigation") {
+            console.log("[MAP] tool_event recibido:", ev.type, ev);
+          }
           if (ev.type === "map_search_results" && ev.places) {
             window.dispatchEvent(
               new CustomEvent("ced-navigation-event", {
@@ -583,6 +586,18 @@ export function useCedVoiceSession(
                     places: ev.places,
                   },
                 },
+              }),
+            );
+          }
+          if (ev.type === "map_start_navigation") {
+            const navAction =
+              ev.action === "begin_navigation" ? "begin_navigation" : "apply_route";
+            window.dispatchEvent(
+              new CustomEvent("ced-navigation-event", {
+                detail:
+                  navAction === "apply_route" && ev.route
+                    ? { action: "apply_route", payload: ev.route }
+                    : { action: "begin_navigation" },
               }),
             );
           }

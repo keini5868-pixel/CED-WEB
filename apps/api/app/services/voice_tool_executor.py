@@ -102,12 +102,35 @@ def _format_places_spoken(places: list[dict[str, Any]], *, query: str) -> str:
     return fit_voice_spoken(f"{lead}{detail}")
 
 
+def _push_map_start_navigation(
+    user_id: str,
+    *,
+    destination: str,
+    index: int | None = None,
+    action: str = "apply_route",
+    route: dict[str, Any] | None = None,
+) -> None:
+    from app.services import voice_client_session as vcs
+
+    event: dict[str, Any] = {
+        "type": "map_start_navigation",
+        "destination": destination,
+        "action": action,
+    }
+    if index is not None:
+        event["index"] = index
+    if route is not None:
+        event["route"] = route
+    vcs.push_tool_event(user_id, event)
+
+
 async def _start_route_for_user(
     user_id: str,
     *,
     dest_lat: float,
     dest_lng: float,
     dest_label: str,
+    index: int | None = None,
 ) -> dict[str, Any]:
     loc = get_location(user_id)
     if not loc:
@@ -134,6 +157,13 @@ async def _start_route_for_user(
     clear_place_options(user_id)
     clear_navigation_pending(user_id)
     push_client_action(user_id, "apply_route", route)
+    _push_map_start_navigation(
+        user_id,
+        destination=dest_label,
+        index=index,
+        action="apply_route",
+        route=route,
+    )
     first = (route.get("steps") or [{}])[0]
     first_line = str(first.get("instruction") or "Siga la ruta indicada").strip()
     spoken = fit_voice_spoken(
@@ -916,6 +946,7 @@ async def execute_voice_tool(
                     dest_lat=float(place["lat"]),
                     dest_lng=float(place["lng"]),
                     dest_label=str(place.get("name") or place.get("address") or "Destino"),
+                    index=option_idx,
                 )
             destino = str(params.get("destino") or params.get("query") or "").strip()
             confirm_words = {
@@ -941,6 +972,11 @@ async def execute_voice_tool(
                 dest_label = str(
                     existing_route.get("destination", {}).get("label") or "su destino"
                 )
+                _push_map_start_navigation(
+                    user_id,
+                    destination=dest_label,
+                    action="begin_navigation",
+                )
                 return {
                     "ok": True,
                     "spoken": f"Iniciando navegación hacia {dest_label}, señor.",
@@ -953,6 +989,11 @@ async def execute_voice_tool(
                     push_client_action(user_id, "begin_navigation", {})
                     dest_label = str(
                         existing_route.get("destination", {}).get("label") or "su destino"
+                    )
+                    _push_map_start_navigation(
+                        user_id,
+                        destination=dest_label,
+                        action="begin_navigation",
                     )
                     return {
                         "ok": True,
