@@ -44,6 +44,47 @@ ALLOWED_IMAGE_TYPES = frozenset(
     {"image/jpeg", "image/png", "image/webp", "image/gif"},
 )
 
+CHAT_VISION_MAX_TOKENS = 2048
+
+_GENERIC_VISION_USER_TEXT = frozenset(
+    {
+        "",
+        "imagen adjunta",
+        "📷 imagen adjunta",
+        "analiza esta imagen",
+        "analiza la imagen",
+        "qué ves",
+        "que ves",
+    }
+)
+
+CHAT_VISION_ANALYSIS_PROMPT = """Analiza la imagen con detalle en español latino (tono profesional, claro, dirigido a «señor»).
+Estructura tu respuesta COMPLETA — no la dejes a medias ni truncada. Incluye:
+
+**Qué es** — identifica el objeto, escena o sujeto principal.
+**Detalle visible** — componentes, materiales, colores, estado, cableado, disposición y texto legible.
+**Contexto** — entorno, iluminación, perspectiva y condición aparente.
+**Observaciones** — detalles técnicos, implicaciones o puntos de atención si aplican (sin alarmismo innecesario).
+**Cierre** — conclusión breve o qué más podría revisar el usuario si es relevante.
+
+Sé específico y útil. Evita respuestas de una sola frase. Usa párrafos separados; no numeración tipo «1)»."""
+
+
+def _normalize_vision_user_text(user_text: str) -> str:
+    return (user_text or "").strip().lower().replace("📷", "").strip()
+
+
+def build_chat_vision_prompt(user_text: str) -> str:
+    cleaned = (user_text or "").strip()
+    norm = _normalize_vision_user_text(cleaned)
+    if cleaned and norm not in _GENERIC_VISION_USER_TEXT and len(norm) > 3:
+        return (
+            f"{CHAT_VISION_ANALYSIS_PROMPT}\n\n"
+            f"Pregunta o instrucción del usuario: {cleaned}\n"
+            "Responde de forma completa a esa petición, incorporando el análisis visual detallado."
+        )
+    return CHAT_VISION_ANALYSIS_PROMPT
+
 
 def _effective_plan_key(user_id: str) -> str:
     from app.deps.plan_access import effective_plan_limits
@@ -213,13 +254,10 @@ def _anthropic_vision_reply(
     user_text: str,
 ) -> str | None:
     b64 = base64.b64encode(image_bytes).decode("utf-8")
-    prompt = user_text.strip() or (
-        "Analiza esta imagen como mentor de ventas y marketing digital. "
-        "Sé específico, útil y directo en español latino."
-    )
+    prompt = build_chat_vision_prompt(user_text)
     payload = {
         "model": "claude-3-5-haiku-20241022",
-        "max_tokens": 900,
+        "max_tokens": CHAT_VISION_MAX_TOKENS,
         "messages": [
             {
                 "role": "user",
@@ -269,10 +307,7 @@ def _gemini_chat_vision_reply(
     api_key = settings.google_api_key.strip()
     if not api_key:
         return None
-    prompt = user_text.strip() or (
-        "Analiza esta imagen como mentor de ventas y marketing digital. "
-        "Sé específico, útil y directo en español latino. Máximo 4 oraciones."
-    )
+    prompt = build_chat_vision_prompt(user_text)
     mime = media_type if media_type in ALLOWED_IMAGE_TYPES else "image/jpeg"
     try:
         from google import genai
@@ -292,10 +327,12 @@ def _gemini_chat_vision_reply(
             ],
             config=types.GenerateContentConfig(
                 temperature=0.35,
-                max_output_tokens=900,
+                max_output_tokens=CHAT_VISION_MAX_TOKENS,
             ),
         )
         text = (getattr(response, "text", None) or "").strip()
+        if text and not text.endswith((".", "!", "?", "…", "»", "\"")):
+            logger.warning("[CHAT-MM] vision reply may be truncated len=%s", len(text))
         return text or None
     except Exception as exc:  # noqa: BLE001
         logger.warning("[CHAT-MM] gemini vision failed: %s", exc)

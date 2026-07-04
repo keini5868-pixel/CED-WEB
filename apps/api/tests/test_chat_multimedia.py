@@ -11,6 +11,7 @@ from app.services.chat_multimedia import (
     CHAT_VISION_DAILY,
     MAX_AUDIO_BYTES,
     MAX_IMAGE_BYTES,
+    build_chat_vision_prompt,
 )
 
 
@@ -34,3 +35,15 @@ def test_multimedia_limits_configured():
     assert MAX_AUDIO_BYTES == 5 * 1024 * 1024
     assert MAX_IMAGE_BYTES == 5 * 1024 * 1024
     assert "image/jpeg" in ALLOWED_IMAGE_TYPES
+
+
+def test_chat_vision_prompt_full_analysis_for_attachment_only():
+    prompt = build_chat_vision_prompt("")
+    assert "COMPLETA" in prompt
+    assert "4 oraciones" not in prompt.lower()
+
+
+def test_chat_vision_prompt_includes_user_question():
+    prompt = build_chat_vision_prompt("¿Está bien cableado?")
+    assert "¿Está bien cableado?" in prompt
+    assert "Pregunta o instrucción" in prompt
