@@ -52,7 +52,10 @@ from app.services.voice_llm_common import (
 from app.services.voice_tool_executor import NAVIGATION_TIMEOUT_SEC, execute_voice_tool
 from app.services.voice_tool_async import execute_deferred_tool_batch
 from app.services.voice_spoken import (
+    chunk_ends_with_punctuation,
+    compose_voice_tool_delivery,
     finalize_voice_delivery_text,
+    format_vision_response,
     split_voice_delivery_chunks,
     voice_delivery_chunks,
 )
@@ -77,8 +80,36 @@ router = APIRouter(tags=["retell-custom-llm"])
 
 POST_GREETING_COOLDOWN_S = 0.35
 GREETING_FALLBACK_S = 2.0
+GREETING_COMPLETE_FALLBACK = "CED en línea, señor. Estoy listo para asistirle."
 WEB_SEARCH_FAST_PATH_TIMEOUT_SEC = 15.0
 GPS_INSTRUCTION_CHANNEL = "navigation_instruction"
+
+_turn_filler_sent: dict[str, bool] = {}
+_turn_handled: dict[str, bool] = {}
+
+
+def _voice_turn_key(call_id: str, rid: int) -> str:
+    return f"{call_id}:{rid}"
+
+
+def mark_turn_handled(call_id: str, rid: int) -> None:
+    _turn_handled[_voice_turn_key(call_id, rid)] = True
+
+
+def turn_already_handled(call_id: str, rid: int) -> bool:
+    return _turn_handled.get(_voice_turn_key(call_id, rid), False)
+
+
+def reset_turn_filler_state(call_id: str, rid: int) -> None:
+    _turn_filler_sent.pop(_voice_turn_key(call_id, rid), None)
+
+
+def try_mark_turn_filler_sent(call_id: str, rid: int) -> bool:
+    key = _voice_turn_key(call_id, rid)
+    if _turn_filler_sent.get(key):
+        return False
+    _turn_filler_sent[key] = True
+    return True
 
 
 def _turn_slot(user_key: str) -> str:
@@ -232,7 +263,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if greeting_release_task and not greeting_release_task.done():
             greeting_release_task.cancel()
         try:
-            begin_text = await llm.draft_greeting()
+            begin_text = (await llm.draft_greeting() or "").strip()
+            if (
+                len(begin_text) < 20
+                or not chunk_ends_with_punctuation(begin_text)
+                or begin_text.lower() in {"ced en", "ced"}
+            ):
+                begin_text = GREETING_COMPLETE_FALLBACK
             if greeting_cancelled:
                 post_greeting_ready.set()
                 logger.info("[GREETING] aborted before send call=%s reason=%s", call_id, reason)
@@ -620,6 +657,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             def _turn_stale(rid: int = scheduled_rid) -> bool:
                 return _turn_rid_stale(rid) or my_generation != generation_seq
 
+            reset_turn_filler_state(call_id, scheduled_rid)
+
+            async def send_filler_once_partial(text: str) -> bool:
+                if not try_mark_turn_filler_sent(call_id, scheduled_rid):
+                    return False
+                if _turn_stale():
+                    return False
+                async with response_lock:
+                    return await send_voice_partial(
+                        response_id=scheduled_rid,
+                        content=text.strip(),
+                        content_complete=False,
+                        generation=my_generation,
+                    )
+
             def _can_deliver_turn(rid: int = scheduled_rid) -> bool:
                 if rid in answered_response_ids:
                     return False
@@ -835,6 +887,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     logger.exception("[RETELL-GEMINI] open map fast-path failed call=%s", call_id)
 
             if is_camera_activation_intent(user_text) and uid:
+                if turn_already_handled(call_id, scheduled_rid):
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason="camera_already_handled",
+                    )
+                    return
                 try:
                     from app.services import voice_client_session as vcs
 
@@ -847,6 +905,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         if _turn_rid_stale():
                             await ack_superseded_turn(reason="camera_no_permission_stale")
                             return
+                        mark_turn_handled(call_id, scheduled_rid)
                         await complete_partial_or_deliver(spoken)
                         return
 
@@ -856,6 +915,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     if _turn_rid_stale():
                         await ack_superseded_turn(reason="camera_activate_stale")
                         return
+                    mark_turn_handled(call_id, scheduled_rid)
                     delivered = await complete_partial_or_deliver(spoken)
                     if not delivered:
                         await anti_silence_if_unanswered(
@@ -1055,11 +1115,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 kind = str(web_req.get("kind") or "general")
                 async with response_lock:
                     if not _turn_stale():
-                        partial_sent = await send_voice_partial(
-                            response_id=scheduled_rid,
-                            content=web_search_hold_phrase(kind),
-                            content_complete=False,
-                            generation=my_generation,
+                        partial_sent = await send_filler_once_partial(
+                            web_search_hold_phrase(kind),
                         )
                 await handle_web_search_voice(web_req=web_req, query_norm=query_norm)
                 return
@@ -1146,10 +1203,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             camera_tool = resolve_camera_voice_request(user_text)
             if camera_tool and uid:
+                if turn_already_handled(call_id, scheduled_rid):
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason="camera_turn_handled",
+                    )
+                    return
                 if is_camera_activation_intent(user_text):
                     logger.info(
                         "[RETELL-GEMINI] camera activation already handled call=%s",
                         call_id,
+                    )
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason="camera_activation_handled",
                     )
                     return
                 clear_pending_advanced_topic(call_id)
@@ -1158,13 +1225,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     if _turn_stale():
                         await ack_superseded_turn(reason="camera_stale")
                         return
-                    if is_vision:
-                        await send_voice_partial(
-                            response_id=scheduled_rid,
-                            content="Un momento, señor. Analizo con visión.",
-                            content_complete=False,
-                            generation=my_generation,
-                        )
                     tool_args: dict = {}
                     if camera_tool == "request_camera_activation":
                         tool_args["fast"] = True
@@ -1188,17 +1248,22 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         }
                     spoken = str(tool_result.get("spoken") or "").strip()
                     if is_vision:
-                        await send_voice_partial(
+                        body = format_vision_response(spoken) or "No pude analizar la imagen, señor."
+                        delivery = finalize_voice_delivery_text(
+                            compose_voice_tool_delivery(
+                                "Un momento, señor. Analizo con visión.",
+                                body,
+                            )
+                        )
+                        mark_turn_handled(call_id, scheduled_rid)
+                        await send_voice_response(
                             response_id=scheduled_rid,
-                            content=spoken or "No pude analizar la imagen, señor.",
-                            content_complete=True,
+                            content=delivery,
+                            user_key=scheduled_key,
                             generation=my_generation,
                         )
-                        active_response_id = max(active_response_id, scheduled_rid)
-                        answered_response_ids.add(scheduled_rid)
-                        if scheduled_key:
-                            last_answered_user_key = scheduled_key
                     else:
+                        mark_turn_handled(call_id, scheduled_rid)
                         await send_voice_response(
                             response_id=scheduled_rid,
                             content=spoken or "Completado, señor.",
@@ -1315,6 +1380,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 return
 
+            if turn_already_handled(call_id, scheduled_rid):
+                await ack_empty_response(
+                    response_id=scheduled_rid,
+                    reason="turn_already_handled",
+                )
+                return
+
             request = ResponseRequiredRequest(
                 interaction_type=interaction,  # type: ignore[arg-type]
                 response_id=scheduled_rid,
@@ -1392,20 +1464,19 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
                     deferred_batch = llm.take_deferred_batch()
                     if deferred_batch is not None and draft_events:
-                        ack_event = draft_events[-1]
-                        async with response_lock:
-                            if not _turn_stale():
-                                await send_voice_partial(
-                                    response_id=scheduled_rid,
-                                    content=(ack_event.content or "Un momento, señor.").strip(),
-                                    content_complete=False,
-                                    generation=my_generation,
-                                )
+                        mark_turn_handled(call_id, scheduled_rid)
 
                         async def deliver_tool_spoken(text: str) -> bool:
                             if _turn_stale():
                                 return False
-                            return await deliver_voice(text)
+                            body = text
+                            if any(
+                                c.name in ("analyze_camera_frame", "buscar_lo_visible")
+                                for c in deferred_batch.calls
+                            ):
+                                body = format_vision_response(text) or text
+                            delivery = finalize_voice_delivery_text(body)
+                            return await deliver_voice(delivery)
 
                         async def run_deferred_tools() -> None:
                             try:

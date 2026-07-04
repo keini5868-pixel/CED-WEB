@@ -72,3 +72,15 @@ def test_finalize_voice_delivery_text_trims_incomplete_tail():
     out = finalize_voice_delivery_text(raw)
     assert out == "Me encuentro muy bien, gracias por preguntar."
     assert chunk_ends_with_punctuation(out)
+
+
+def test_format_vision_response_strips_numbered_prefix():
+    from app.services.voice_spoken import compose_voice_tool_delivery, format_vision_response
+
+    assert format_vision_response("1) Es un control remoto") == "Es un control remoto, señor."
+    joined = compose_voice_tool_delivery(
+        "Un momento, señor. Analizo con visión.",
+        format_vision_response("1) Es una botella de agua"),
+    )
+    assert "visión. Es una botella" in joined
+    assert "1)" not in joined

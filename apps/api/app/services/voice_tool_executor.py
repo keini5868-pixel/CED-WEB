@@ -16,6 +16,7 @@ from app.services.conversation_memory import (
 from app.services.gemini_grounded import fetch_voice_brief_parallel
 from app.services.voice_spoken import (
     fit_voice_spoken,
+    format_vision_response,
     voice_spoken_limit,
     voice_spoken_limit_for_kind,
 )
@@ -271,7 +272,8 @@ async def _run_camera_capture(
             request_id,
             len(summary),
         )
-        return _spoken_ok(summary)
+        formatted = format_vision_response(summary) or summary.strip()
+        return _spoken_ok(formatted)
     logger.warning(
         "[VISION:GEMINI] capture_timeout user=%s request_id=%s",
         user_id[:8],

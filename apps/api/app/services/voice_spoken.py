@@ -122,6 +122,37 @@ def strip_voice_filler_prefix(text: str) -> str:
     return cleaned
 
 
+_VISION_ENUM_PREFIX_RE = re.compile(r"^\d+\)\s*")
+
+
+def format_vision_response(raw: str) -> str:
+    """Limpia numeración tipo «1)» y cierra en tono CED para voz."""
+    cleaned = " ".join((raw or "").split()).strip()
+    if not cleaned:
+        return ""
+    cleaned = _VISION_ENUM_PREFIX_RE.sub("", cleaned)
+    cleaned = re.sub(r"\s+\d+\)\s+", ". ", cleaned).strip(" .")
+    if not cleaned:
+        return ""
+    clean = cleaned[0].upper() + cleaned[1:] if len(cleaned) > 1 else cleaned.upper()
+    if not chunk_ends_with_punctuation(clean):
+        clean = f"{clean.rstrip(',;:')}, señor."
+    return clean
+
+
+def compose_voice_tool_delivery(filler: str, body: str) -> str:
+    """Une filler y cuerpo con separación natural (evita «visión.1)»)."""
+    lead = " ".join((filler or "").split()).strip()
+    tail = " ".join((body or "").split()).strip()
+    if not tail:
+        return lead
+    if not lead:
+        return tail
+    if lead.endswith((".", "!", "?", "…")):
+        return f"{lead} {tail}"
+    return f"{lead}. {tail}"
+
+
 def finalize_voice_delivery_text(text: str) -> str:
     """Una sola respuesta hablable: sin filler duplicado y con cierre de oración."""
     raw = " ".join((text or "").split()).strip()
