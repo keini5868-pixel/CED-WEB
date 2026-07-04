@@ -36,6 +36,7 @@ export type ChatStatus = {
   remaining_today: number | null;
   blocked: boolean;
   trial_expired?: boolean;
+  welcome_message?: string;
 };
 
 export async function fetchChatStatus(): Promise<ChatStatus | null> {

@@ -881,6 +881,13 @@ def chat_status(user_id: str) -> dict[str, Any]:
     unlimited = limit < 0
     remaining = -1 if unlimited else max(0, limit - used)
     blocked = not unlimited and limit > 0 and used >= limit
+    welcome_message = ""
+    try:
+        from app.services.session_memory import build_text_chat_welcome
+
+        welcome_message = build_text_chat_welcome(user_id)
+    except Exception:  # noqa: BLE001
+        pass
     return {
         "messages_used_today": used,
         "messages_limit_daily": limit if limit >= 0 else None,
@@ -888,6 +895,7 @@ def chat_status(user_id: str) -> dict[str, Any]:
         "remaining_today": remaining if remaining >= 0 else None,
         "blocked": blocked,
         "trial_expired": trial_expired,
+        "welcome_message": welcome_message,
     }
 
 

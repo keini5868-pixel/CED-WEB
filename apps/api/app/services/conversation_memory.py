@@ -612,5 +612,15 @@ def finalize_voice_session_async(
             duration_minutes=round(duration, 2),
             conversation_id=conversation_id,
         )
+        try:
+            from app.services.session_memory import save_session_memory
+
+            save_session_memory(
+                user_id=user_id,
+                session_id=session_id,
+                conversation_id=conversation_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CONV_MEM] session_memory save failed: %s", exc)
 
     threading.Thread(target=_run, daemon=True).start()

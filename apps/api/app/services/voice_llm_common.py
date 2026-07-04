@@ -149,6 +149,14 @@ def build_voice_system(
                 base = f"{base}\n\n{ctx}"
         except Exception:  # noqa: BLE001
             pass
+        try:
+            from app.services.session_memory import get_session_memory_context
+
+            mem_ctx = get_session_memory_context(uid)
+            if mem_ctx:
+                base = f"{base}\n\n{mem_ctx}"
+        except Exception:  # noqa: BLE001
+            pass
     query = (user_text or "").strip()
     if query and is_advisory_voice_query(query):
         base = (

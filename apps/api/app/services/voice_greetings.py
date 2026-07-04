@@ -118,6 +118,17 @@ def pick_jarvis_greeting(user_id: str | None = None) -> str:
         logger.info("[GREETING] pool=continuity user=%s", user_id[:8])
         return CONTINUITY_GREETING
 
+    if user_id:
+        try:
+            from app.services.session_memory import build_memory_greeting
+
+            memory_greeting = build_memory_greeting(user_id)
+            if memory_greeting:
+                logger.info("[GREETING] pool=session_memory user=%s", user_id[:8])
+                return memory_greeting
+        except Exception:  # noqa: BLE001
+            pass
+
     idx = _pick_pool_index(user_id)
     greeting = JARVIS_GREETING_POOL[idx]
     tz_name = get_user_timezone(user_id)

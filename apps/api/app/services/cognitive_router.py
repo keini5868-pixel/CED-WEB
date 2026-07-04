@@ -287,6 +287,14 @@ def build_voice_system_extras(user_id: str) -> str:
             parts.append(ctx)
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from app.services.session_memory import get_session_memory_context
+
+        mem_ctx = get_session_memory_context(user_id)
+        if mem_ctx:
+            parts.append(mem_ctx)
+    except Exception:  # noqa: BLE001
+        pass
     return "\n\n".join(parts)
 
 
@@ -307,6 +315,14 @@ def build_chat_system_extras(user_id: str, routed: CognitiveRouteResult | None =
         ctx = load_user_context(user_id)
         if ctx:
             parts.append(ctx)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.services.session_memory import get_session_memory_context
+
+        mem_ctx = get_session_memory_context(user_id)
+        if mem_ctx:
+            parts.append(mem_ctx)
     except Exception:  # noqa: BLE001
         pass
     if routed and routed.context_for_llm:

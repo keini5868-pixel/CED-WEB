@@ -350,20 +350,23 @@ export function CedTextChatPanel({
   const refreshStatus = useCallback(async () => {
     const s = await fetchChatStatus();
     setStatus(s);
+    return s;
   }, []);
 
   useEffect(() => {
     if (!open) return;
-    void refreshStatus();
-    if (messages.length === 0) {
-      setMessages([
-        {
-          role: "model",
-          content:
-            "Hola, soy CED. Escríbeme aquí, dicta con el micrófono o adjunta una imagen. Puedo analizarla, generar variaciones o crear imágenes nuevas.",
-        },
-      ]);
-    }
+    void refreshStatus().then((s) => {
+      if (messages.length === 0) {
+        setMessages([
+          {
+            role: "model",
+            content:
+              s?.welcome_message?.trim() ||
+              "Hola, soy CED. Escríbeme aquí, dicta con el micrófono o adjunta una imagen. Puedo analizarla, generar variaciones o crear imágenes nuevas.",
+          },
+        ]);
+      }
+    });
   }, [open, messages.length, refreshStatus]);
 
   useEffect(() => {
