@@ -28,6 +28,7 @@ import {
   postVoiceSessionEnd,
   postVoiceVisionResult,
 } from "@/lib/api/voiceClient";
+import type { NavClientAction } from "@/lib/api/navigation";
 import {
   endVoiceSession,
   startVoiceSession,
@@ -601,10 +602,14 @@ export function useCedVoiceSession(
           if (ev.type === "map_start_navigation") {
             const navAction =
               ev.action === "begin_navigation" ? "begin_navigation" : "apply_route";
-            const detail =
-              navAction === "apply_route" && ev.route
-                ? { action: "apply_route", payload: ev.route }
-                : { action: "begin_navigation" };
+            const detail: NavClientAction = {
+              id: Number(ev.id || Date.now()),
+              action: navAction,
+              payload:
+                navAction === "apply_route" && ev.route
+                  ? (ev.route as unknown as Record<string, unknown>)
+                  : {},
+            };
             if (!isDriveMapOpenRef.current) {
               openDriveMapRef.current(detail);
             } else {

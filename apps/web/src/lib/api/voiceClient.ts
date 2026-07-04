@@ -1,5 +1,6 @@
 import { cedApiPath } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
+import type { NavRoute } from "@/lib/api/navigation";
 
 const proxyFetch = (path: string, init?: RequestInit) =>
   fetch(cedApiPath(path), { credentials: "same-origin", ...init });
@@ -10,23 +11,29 @@ export type VoiceClientAction = {
   payload: Record<string, unknown>;
 };
 
+export type VoiceToolEvent = {
+  id: number;
+  type?: string;
+  module?: string;
+  image_url?: string;
+  prompt?: string;
+  title?: string;
+  file_id?: string;
+  text?: string;
+  query?: string;
+  places?: unknown[];
+  action?: string;
+  destination?: string;
+  index?: number;
+  route?: NavRoute;
+};
+
 export type VoiceClientState = {
   ok: boolean;
   camera_active?: boolean;
   camera_stream_present?: boolean;
   client_action?: VoiceClientAction | null;
-  tool_events?: Array<{
-    id: number;
-    type?: string;
-    module?: string;
-    image_url?: string;
-    prompt?: string;
-    title?: string;
-    file_id?: string;
-    text?: string;
-    query?: string;
-    places?: unknown[];
-  }>;
+  tool_events?: VoiceToolEvent[];
 };
 
 export async function fetchVoiceClientState(consume = false): Promise<VoiceClientState> {
