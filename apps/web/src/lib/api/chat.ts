@@ -14,6 +14,7 @@ export type ChatPdfAttachment = {
 export type ChatImageAttachment = {
   url: string;
   prompt?: string;
+  caption?: string;
   quality?: string;
 };
 

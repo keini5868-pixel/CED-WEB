@@ -457,6 +457,7 @@ def generate_image(
     prompt: str,
     quality: str | None = "auto",
     context: str = "",
+    display_label: str | None = None,
 ) -> dict[str, Any]:
     """Genera imagen con Gemini — único provider de imágenes CED."""
     settings = get_settings()
@@ -532,10 +533,12 @@ def generate_image(
     except Exception:  # noqa: BLE001
         logger.warning("[GEMINI:IMAGE] log insert failed")
 
+    caption = (display_label or "").strip() or "Imagen generada"
     return {
         "ok": True,
         "url": public_url,
-        "prompt": topic,
+        "caption": caption,
+        "prompt": caption,
         "quality": picked,
         "model": model,
         "provider": "gemini",

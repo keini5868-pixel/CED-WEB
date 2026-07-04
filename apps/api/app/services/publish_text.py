@@ -422,6 +422,10 @@ def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    from app.services.marketing_creative import blocks_publish_intent
+
+    if blocks_publish_intent(t):
+        return False
     has_platform = bool(_SOCIAL_PLATFORM.search(t))
     has_image_ref = bool(re.search(r"\b(imagen|foto|esto|esta)\b", t, re.I))
     has_verb = bool(_PUBLISH_VERB.search(t) or _PUBLISH_STEM.search(t))

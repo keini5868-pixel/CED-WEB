@@ -729,6 +729,44 @@ def _format_image_generation_error(raw_error: str) -> str:
     return f"No pude generar la imagen: {err}"
 
 
+def _chat_image_attachment(
+    url: str,
+    *,
+    caption: str,
+    quality: str | None = None,
+) -> dict[str, Any]:
+    label = (caption or "Imagen generada").strip()
+    payload: dict[str, Any] = {
+        "url": url,
+        "caption": label,
+        "prompt": label,
+    }
+    if quality:
+        payload["quality"] = quality
+    return payload
+
+
+def _generate_chat_image_with_reference(
+    user_id: str,
+    *,
+    prompt: str,
+    reference_bytes: bytes,
+    media_type: str,
+    style_mode: str = "edit",
+    quality: str = "auto",
+) -> dict[str, Any]:
+    from app.services.image_reference_generator import generate_image_with_reference
+
+    return generate_image_with_reference(
+        user_id=user_id,
+        prompt=prompt,
+        reference_image=reference_bytes,
+        content_type=media_type,
+        style_mode=style_mode,
+        quality=quality,
+    )
+
+
 def _needs_chat_tools(text: str) -> bool:
     t = (text or "").strip()
     if not t:
@@ -1008,6 +1046,7 @@ def _run_chat_tool(
             )
         if name == "generate_image":
             from app.services.gemini_images import generate_image
+            from app.services.marketing_creative import resolve_image_creation_from_text
 
             plan_id = None
             try:
@@ -1016,25 +1055,33 @@ def _run_chat_tool(
             except Exception:  # noqa: BLE001
                 pass
             prompt = str(tool_input.get("prompt") or "").strip()
-            prior = ""
+            prior_rows: list[dict[str, str]] = []
             if chat_messages:
-                prior = _recent_chat_context(
-                    [
-                        {
-                            "content": str(m.get("content") or ""),
-                        }
-                        for m in chat_messages[:-1]
-                        if isinstance(m, dict)
-                    ]
-                )
+                prior_rows = [
+                    {"content": str(m.get("content") or "")}
+                    for m in chat_messages[:-1]
+                    if isinstance(m, dict)
+                ]
+            prior = _recent_chat_context(prior_rows)
+            creation = resolve_image_creation_from_text(prompt, prior_rows)
             quality = str(tool_input.get("quality") or "auto")
-            result = generate_image(
-                user_id=user_id,
-                plan_id=plan_id,
-                prompt=prompt,
-                quality=quality,
-                context=prior,
-            )
+            if creation:
+                result = generate_image(
+                    user_id=user_id,
+                    plan_id=plan_id,
+                    prompt=creation["internal_prompt"],
+                    quality=quality,
+                    context="",
+                    display_label=creation["display_label"],
+                )
+            else:
+                result = generate_image(
+                    user_id=user_id,
+                    plan_id=plan_id,
+                    prompt=prompt,
+                    quality=quality,
+                    context=prior,
+                )
             if result.get("ok") and result.get("url"):
                 result["prompt"] = prompt
                 if conversation_id:
@@ -1321,9 +1368,11 @@ def _extract_image_from_tool_result(result: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     if isinstance(data, dict) and data.get("ok") and data.get("url"):
+        caption = str(data.get("caption") or data.get("prompt") or "Imagen generada")
         return {
             "url": str(data["url"]),
-            "prompt": data.get("prompt"),
+            "caption": caption,
+            "prompt": caption,
             "quality": data.get("quality"),
         }
     return None
@@ -1628,12 +1677,10 @@ def send_message(
 
     if image_bytes:
         from app.services.chat_multimedia import analyze_chat_image
+        from app.services.marketing_creative import resolve_image_creation_from_attachment
         from app.services.publish_image_context import register_text_chat_image
         from app.services.publish_text import is_social_publish_intent
-        from app.services.text_publish_flow import (
-            handle_publish_flow_turn,
-            start_publish_flow_from_image,
-        )
+        from app.services.text_publish_flow import start_publish_flow_from_image
 
         register_text_chat_image(
             user_id,
@@ -1641,6 +1688,38 @@ def send_message(
             image_bytes,
             image_media_type or "image/jpeg",
         )
+
+        creation = resolve_image_creation_from_attachment(text, history)
+        if creation:
+            ref_result = _generate_chat_image_with_reference(
+                user_id,
+                prompt=creation["internal_prompt"],
+                reference_bytes=image_bytes,
+                media_type=image_media_type or "image/jpeg",
+                style_mode=creation.get("style_mode") or "edit",
+            )
+            if ref_result.get("ok") and ref_result.get("url"):
+                from app.services.publish_image_context import register_text_chat_image_url
+
+                register_text_chat_image_url(
+                    user_id,
+                    conversation_id,
+                    str(ref_result["url"]),
+                )
+                return _finish(
+                    creation.get("reply") or "Listo. Aquí está su creativo.",
+                    route_meta={"intent": "marketing_creative", "source": "attachment_reference"},
+                    image=_chat_image_attachment(
+                        str(ref_result["url"]),
+                        caption=creation["display_label"],
+                        quality=str(ref_result.get("quality") or ""),
+                    ),
+                )
+            err = str(ref_result.get("error") or "No pude generar el creativo.")
+            return _finish(
+                _format_image_generation_error(err),
+                route_meta={"intent": "marketing_creative", "source": "attachment_error"},
+            )
 
         if is_social_publish_intent(text, with_image=True):
             reply = start_publish_flow_from_image(user_id, conversation_id, text)
@@ -1669,6 +1748,12 @@ def send_message(
         and len(text.strip()) <= DIRECT_IMAGE_MAX_CHARS
     ):
         from app.services.gemini_images import generate_image
+        from app.services.marketing_creative import (
+            build_display_label,
+            extract_product_subject,
+            is_marketing_creative_intent,
+            resolve_image_creation_from_text,
+        )
 
         plan_id = None
         try:
@@ -1677,13 +1762,33 @@ def send_message(
         except Exception:  # noqa: BLE001
             pass
         chat_context = _recent_chat_context(history)
-        img_result = generate_image(
-            user_id=user_id,
-            plan_id=plan_id,
-            prompt=effective_img_prompt,
-            quality="auto",
-            context=chat_context,
-        )
+        creation = resolve_image_creation_from_text(text, history)
+        display_label = ""
+        success_reply = "Listo. Aquí está tu imagen generada."
+        if creation:
+            prompt_for_model = creation["internal_prompt"]
+            display_label = creation["display_label"]
+            success_reply = creation.get("reply") or "Listo. Aquí está su creativo."
+            img_result = generate_image(
+                user_id=user_id,
+                plan_id=plan_id,
+                prompt=prompt_for_model,
+                quality="auto",
+                context="",
+                display_label=display_label,
+            )
+        else:
+            if is_marketing_creative_intent(text):
+                display_label = build_display_label(extract_product_subject(chat_context))
+                success_reply = "Listo, señor. Aquí está su creativo publicitario."
+            img_result = generate_image(
+                user_id=user_id,
+                plan_id=plan_id,
+                prompt=effective_img_prompt,
+                quality="auto",
+                context=chat_context,
+                display_label=display_label or None,
+            )
         if img_result.get("ok") and img_result.get("url"):
             from app.services.publish_image_context import register_text_chat_image_url
 
@@ -1692,14 +1797,18 @@ def send_message(
                 conversation_id,
                 str(img_result["url"]),
             )
+            caption = str(img_result.get("caption") or display_label or "Imagen generada")
             return _finish(
-                "Listo. Aquí está tu imagen generada.",
-                route_meta={"intent": "generate_image", "source": "direct"},
-                image={
-                    "url": str(img_result["url"]),
-                    "prompt": img_result.get("prompt") or effective_img_prompt,
-                    "quality": img_result.get("quality"),
+                success_reply,
+                route_meta={
+                    "intent": "marketing_creative" if creation or is_marketing_creative_intent(text) else "generate_image",
+                    "source": "direct",
                 },
+                image=_chat_image_attachment(
+                    str(img_result["url"]),
+                    caption=caption,
+                    quality=str(img_result.get("quality") or ""),
+                ),
             )
         err = str(img_result.get("error") or "No pude generar la imagen.")
         return _finish(

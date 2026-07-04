@@ -161,8 +161,25 @@ function ImageLightbox({
   );
 }
 
+function isInternalImagePrompt(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length < 40) return false;
+  return /^(Genera un creativo|Genera una imagen de alta calidad|Genera un flyer|Mockup fotorrealista|Usa la imagen adjunta)/i.test(
+    t,
+  );
+}
+
+function imageUserLabel(image: ChatImageAttachment): string {
+  const caption = image.caption?.trim();
+  if (caption) return caption;
+  const prompt = image.prompt?.trim();
+  if (prompt && !isInternalImagePrompt(prompt)) return prompt;
+  return "Imagen generada por CED";
+}
+
 function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
   const src = normalizeCedMediaUrl(image.url);
+  const label = imageUserLabel(image);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -171,7 +188,7 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
     setBusy(true);
     setError(null);
     try {
-      await downloadGeneratedImage(image.url, image.prompt);
+      await downloadGeneratedImage(image.url, label);
     } catch (e) {
       setError(
         e instanceof Error ? e.message : "No se pudo descargar la imagen.",
@@ -187,16 +204,16 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
-          alt={image.prompt || "Imagen generada por CED"}
+          alt={label}
           className="max-h-64 w-full cursor-zoom-in object-contain transition hover:opacity-95"
           onClick={() => setLightboxOpen(true)}
           onError={(e) => {
             e.currentTarget.alt = "No se pudo cargar la imagen";
           }}
         />
-      {image.prompt ? (
+      {label ? (
         <p className="border-t border-cyan-900/40 px-2 py-1.5 text-[10px] text-cyan-600">
-          {image.prompt}
+          {label}
         </p>
       ) : null}
       <div className="border-t border-cyan-900/40 px-2 py-2">
@@ -213,7 +230,7 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
       </div>
       <ImageLightbox
         src={src}
-        alt={image.prompt || "Imagen generada por CED"}
+        alt={label}
         open={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
       />
