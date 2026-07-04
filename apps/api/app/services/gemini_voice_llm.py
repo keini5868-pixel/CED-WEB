@@ -250,8 +250,12 @@ class GeminiVoiceLlm:
         self._latency_call_id: str = ""
         self._latency_response_id: int = 0
         self._web_search_fallback: bool = False
+        self._module_overlay: str = ""
         self._deferred_batch: DeferredToolBatch | None = None
         self._history_lock = asyncio.Lock()
+
+    def set_module_overlay(self, overlay: str | None) -> None:
+        self._module_overlay = (overlay or "").strip()
 
     def take_deferred_batch(self) -> DeferredToolBatch | None:
         batch = self._deferred_batch
@@ -421,6 +425,8 @@ class GeminiVoiceLlm:
 
     def _build_draft_system(self, user_text: str) -> str:
         system = build_voice_system(self.user_id, user_text)
+        if getattr(self, "_module_overlay", ""):
+            system = f"{system}\n\n{self._module_overlay}"
         if self._web_search_fallback:
             self._web_search_fallback = False
             system = f"{system}\n\n{WEB_SEARCH_FALLBACK_OVERLAY}"

@@ -1,6 +1,11 @@
 """Tests — orquestador 3 capas."""
 
-from app.services.ced_orchestrator import detect_module, get_context_overlay
+from app.services.ced_orchestrator import (
+    detect_module,
+    detect_module_from_patterns,
+    get_context_overlay,
+    ced_orchestrator,
+)
 from app.services.retell_llm_types import Utterance
 
 
@@ -9,7 +14,8 @@ def test_detect_map_open():
     assert mod == "map"
 
 
-def test_detect_web_search():
+def test_detect_web_search_patterns():
+    assert detect_module_from_patterns("noticias de Venezuela") == "web_search"
     mod = detect_module("noticias de Venezuela hoy", [])
     assert mod == "web_search"
 
@@ -30,4 +36,10 @@ def test_dale_stays_on_active_map():
 
 def test_context_overlay_map():
     overlay = get_context_overlay("map")
-    assert overlay and "MAPA" in overlay.upper()
+    assert overlay and "NAVEGACIÓN" in overlay.upper()
+
+
+def test_ced_orchestrator_singleton():
+    orch_a = ced_orchestrator.get("call-test-1")
+    orch_b = ced_orchestrator.get("call-test-1")
+    assert orch_a is orch_b

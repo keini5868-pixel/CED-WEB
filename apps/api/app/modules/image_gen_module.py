@@ -22,6 +22,7 @@ class ImageGenModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        self._active = True
         self._state["activated"] = True
         return await self._generate(user_text, user_id)
 

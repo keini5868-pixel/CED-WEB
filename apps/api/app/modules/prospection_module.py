@@ -23,8 +23,9 @@ class ProspectionModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        self._active = True
         vcs.set_active_mode(user_id, "prospect")
-        self._state["activated"] = True
+        self._state = {"campaign_active": True, "prospects_list": []}
         t = user_text.lower()
         if "desactiv" in t:
             tool = "desactivar_prospeccion"

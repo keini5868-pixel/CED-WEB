@@ -28,7 +28,8 @@ class MemoryModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._state["activated"] = True
+        self._active = True
+        self._state = {"last_saved": None}
         return await self._save(user_text, user_id)
 
     async def handle_command(

@@ -33,8 +33,8 @@ class CameraModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        self._active = True
         vcs.set_active_mode(user_id, "camera")
-        self._state["activated"] = True
 
         if is_camera_activation_intent(user_text):
             return await self._activate_camera(user_id)

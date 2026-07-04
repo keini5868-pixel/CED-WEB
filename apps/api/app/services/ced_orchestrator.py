@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from app.modules.base_module import BaseModule
-from app.modules.module_registry import MODULE_ACKS, MODULE_OVERLAYS, build_module
+from app.modules.module_registry import MODULE_ACKS, MODULE_ORDER, MODULE_OVERLAYS, build_module
 from app.services import voice_client_session as vcs
 from app.services.cognitive_intents import is_camera_activation_intent, is_meta_publish_intent
 from app.services.navigation_voice_intent import (
@@ -44,7 +44,62 @@ _MEMORY_PATTERNS = (
     r"\b(?:no\s+olvides|no\s+te\s+olvides)\b",
 )
 
+DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
+    "web_search": (
+        r"\b(noticias|últimas noticias|qué pasó)\b",
+        r"\b(clima en|temperatura en)\b",
+        r"\b(precio de|cuánto cuesta)\b",
+        r"\b(busca información|busca en internet)\b",
+        r"\b(quién es|qué es|cómo funciona)\b.*\b(hoy|ahora|actual)\b",
+        r"\b(declaraciones de|dijo|anunció)\b",
+    ),
+    "publish": (
+        r"\b(publica|publicar|postea|postear)\b",
+        r"\b(sube a instagram|sube a facebook)\b",
+        r"\b(comparte en|publica esto|publica eso)\b",
+    ),
+    "map": (
+        r"\b(abre el mapa|activa el mapa|modo conducir)\b",
+        r"\b(llévame a|navega a|cómo llego a)\b",
+        r"\b(busca cerca|dónde hay|encuentra un)\b",
+    ),
+    "camera": (
+        r"\b(activa la cámara|enciende la cámara)\b",
+        r"\b(qué ves|qué me muestro|analiza esto)\b",
+        r"\b(describe lo que|qué es esto)\b",
+    ),
+    "image_gen": (
+        r"\b(genera una imagen|crea una imagen)\b",
+        r"\b(diseña una imagen|hazme una imagen)\b",
+        r"\b(genera un diseño|crea un diseño)\b",
+    ),
+    "pdf": (
+        r"\b(genera un pdf|crea un pdf|hazme un pdf)\b",
+        r"\b(genera el documento|crea el reporte)\b",
+    ),
+    "prospection": (
+        r"\b(modo prospección|activa prospección)\b",
+        r"\b(buscar prospectos|modo ventas)\b",
+        r"\b(activar castillo|modo ascenso)\b",
+    ),
+    "memory": (
+        r"\b(recuerda que|guarda esto|registra)\b",
+        r"\b(agrega al crm|nuevo cliente|añade contacto)\b",
+    ),
+}
+
 _orchestrators: dict[str, "CedOrchestrator"] = {}
+
+
+def detect_module_from_patterns(text: str) -> str | None:
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    for module in MODULE_ORDER:
+        for pattern in DETECTION_PATTERNS.get(module, ()):
+            if re.search(pattern, t):
+                return module
+    return None
 
 
 def detect_module(
@@ -117,6 +172,10 @@ def detect_module(
 
     if resolve_web_search_request(text, transcript):
         return "web_search"
+
+    patterned = detect_module_from_patterns(text)
+    if patterned:
+        return patterned
 
     return _detect_fresh_module(text, transcript, user_id=user_id)
 
@@ -356,3 +415,35 @@ def get_orchestrator(call_id: str) -> CedOrchestrator:
     if cid not in _orchestrators:
         _orchestrators[cid] = CedOrchestrator(call_id=cid)
     return _orchestrators[cid]
+
+
+class CedOrchestratorFacade:
+    """Singleton de acceso al orquestador por call_id."""
+
+    DETECTION_PATTERNS = DETECTION_PATTERNS
+    CONTEXT_OVERLAYS = MODULE_OVERLAYS
+
+    def get(self, call_id: str) -> CedOrchestrator:
+        return get_orchestrator(call_id)
+
+    async def process(
+        self,
+        *,
+        user_text: str,
+        transcript: list[Utterance],
+        call_id: str,
+        user_id: str,
+    ) -> OrchestratorResult:
+        return await self.get(call_id).process(
+            user_text=user_text,
+            transcript=transcript,
+            call_id=call_id,
+            user_id=user_id,
+        )
+
+    def get_context_overlay(self, call_id: str) -> str | None:
+        orch = self.get(call_id)
+        return get_context_overlay(orch.active_module)
+
+
+ced_orchestrator = CedOrchestratorFacade()

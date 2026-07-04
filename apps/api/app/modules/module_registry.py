@@ -1,4 +1,4 @@
-"""Registry de módulos Capa 3."""
+"""Registry de módulos Capa 3 — overlays y factory."""
 
 from __future__ import annotations
 
@@ -13,65 +13,87 @@ from app.modules.publish_module import PublishModule
 from app.modules.web_search_module import WebSearchModule
 
 MODULE_ACKS: dict[str, str] = {
+    "web_search": "Consultando, señor.",
+    "publish": "Un momento, señor.",
     "map": "Abriendo el mapa, señor.",
     "camera": "Activando cámara, señor.",
-    "publish": "Un momento, señor.",
     "image_gen": "Generando imagen, señor.",
     "pdf": "Preparando el documento, señor.",
-    "web_search": "Consultando, señor.",
     "prospection": "Activando prospección, señor.",
     "memory": "Un momento, señor.",
 }
 
 MODULE_OVERLAYS: dict[str, str] = {
-    "map": (
-        "# MÓDULO ACTIVO: NAVEGACIÓN/MAPA\n"
-        "El usuario está en modo de conducción con el mapa activo.\n"
-        "Responde brevemente — el usuario está conduciendo.\n"
-        "Comandos: buscar lugares, seleccionar opción, iniciar ruta, cuánto falta, detener.\n"
-        "NO mezcles instrucciones GPS paso a paso en tus respuestas."
-    ),
-    "camera": (
-        "# MÓDULO ACTIVO: CÁMARA/VISIÓN\n"
-        "La cámara está activa. Analiza lo que el usuario muestra.\n"
-        'Si pregunta qué ves → describe con precisión.'
-    ),
-    "publish": (
-        "# MÓDULO ACTIVO: PUBLICACIÓN EN REDES\n"
-        "Flujo: caption → proponer → confirmar → publicar.\n"
-        "NUNCA publiques sin confirmación explícita."
-    ),
-    "image_gen": (
-        "# MÓDULO ACTIVO: GENERACIÓN DE IMÁGENES\n"
-        "El usuario quiere crear una imagen con IA."
-    ),
-    "pdf": (
-        "# MÓDULO ACTIVO: GENERACIÓN DE PDF\n"
-        "El usuario quiere un documento PDF."
-    ),
-    "web_search": (
-        "# MÓDULO ACTIVO: BÚSQUEDA WEB\n"
-        "Información reciente de internet. Disclaimer si no hay datos."
-    ),
-    "prospection": (
-        "# MÓDULO ACTIVO: PROSPECCIÓN/VENTAS\n"
-        "Modo prospección digital activo."
-    ),
-    "memory": (
-        "# MÓDULO ACTIVO: MEMORIA/CRM\n"
-        "Registrar datos importantes del usuario."
-    ),
+    "web_search": """
+MÓDULO ACTIVO: BÚSQUEDA WEB
+Estás buscando información actual en internet.
+Responde con la información más reciente.
+Si no encuentras, usa conocimiento integrado con disclaimer.
+NUNCA digas que vas a buscar sin ejecutar la búsqueda.
+""".strip(),
+    "publish": """
+MÓDULO ACTIVO: PUBLICACIÓN EN REDES
+El usuario quiere publicar en Facebook o Instagram.
+Flujo OBLIGATORIO: generar caption → proponer → confirmar explícitamente → publicar.
+NUNCA publiques sin confirmación explícita.
+"dale/sí/ok" en este contexto = confirmar publicación.
+""".strip(),
+    "map": """
+MÓDULO ACTIVO: NAVEGACIÓN/MAPA
+El usuario está en modo conducción.
+Responde BREVEMENTE — está conduciendo.
+"dale/sí/el primero/inicia" = confirmar navegación.
+NUNCA mezcles instrucciones GPS en la conversación.
+""".strip(),
+    "camera": """
+MÓDULO ACTIVO: CÁMARA/VISIÓN
+La cámara está activa y analizando.
+Describe lo que ves con precisión.
+Responde preguntas sobre lo que muestra la cámara.
+""".strip(),
+    "image_gen": """
+MÓDULO ACTIVO: GENERACIÓN DE IMÁGENES
+El usuario quiere crear una imagen con IA.
+Genera la imagen y muéstrala al usuario.
+""".strip(),
+    "pdf": """
+MÓDULO ACTIVO: GENERACIÓN DE PDF
+El usuario quiere crear un documento PDF.
+Genera el PDF y confirma automáticamente cuando esté listo.
+""".strip(),
+    "prospection": """
+MÓDULO ACTIVO: PROSPECCIÓN/VENTAS
+El usuario está buscando prospectos digitales.
+Usa las herramientas de Facebook/Instagram disponibles.
+Ayuda a identificar y contactar clientes potenciales.
+""".strip(),
+    "memory": """
+MÓDULO ACTIVO: MEMORIA/CRM
+El usuario quiere guardar información importante.
+Registra los datos y confirma que se guardó correctamente.
+""".strip(),
 }
+
+MODULE_ORDER: tuple[str, ...] = (
+    "web_search",
+    "publish",
+    "map",
+    "camera",
+    "image_gen",
+    "pdf",
+    "prospection",
+    "memory",
+)
 
 
 def build_module(name: str) -> BaseModule:
     factories: dict[str, type[BaseModule]] = {
+        "web_search": WebSearchModule,
+        "publish": PublishModule,
         "map": MapModule,
         "camera": CameraModule,
-        "publish": PublishModule,
         "image_gen": ImageGenModule,
         "pdf": PdfModule,
-        "web_search": WebSearchModule,
         "prospection": ProspectionModule,
         "memory": MemoryModule,
     }

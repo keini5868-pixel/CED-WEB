@@ -49,7 +49,7 @@ from app.services.voice_llm_common import (
     is_duplicate_voice_delivery,
     normalize_voice_delivery_text,
 )
-from app.services.ced_orchestrator import get_orchestrator
+from app.services.ced_orchestrator import get_context_overlay, get_orchestrator
 from app.services.voice_tool_executor import NAVIGATION_TIMEOUT_SEC, execute_voice_tool
 from app.services.voice_tool_async import execute_deferred_tool_batch
 from app.services.voice_spoken import (
@@ -781,6 +781,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             conversational_turn = is_small_talk(user_text, transcript)
 
             orch = get_orchestrator(call_id)
+            orch_result = None
             if uid and (not conversational_turn or orch.active_module):
                 clear_pending_advanced_topic(call_id)
                 orch_result = await orch.process(
@@ -789,6 +790,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     call_id=call_id,
                     user_id=uid,
                 )
+                llm.set_module_overlay(orch_result.context_overlay or "")
                 if orch_result.handles_response:
                     if orch_result.send_filler and orch_result.filler:
                         async with response_lock:
@@ -819,6 +821,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             delivered,
                         )
                     return
+            elif uid:
+                llm.set_module_overlay(
+                    get_context_overlay(get_orchestrator(call_id).active_module) or ""
+                )
 
             superseded, latest_rid = _is_superseded_turn_rid(
                 scheduled_rid,

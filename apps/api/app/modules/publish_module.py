@@ -1,4 +1,4 @@
-"""Módulo publicación FB/IG — Capa 3."""
+"""Módulo publicación FB/IG — Capa 3 (orden 2)."""
 
 from __future__ import annotations
 
@@ -20,8 +20,22 @@ logger = logging.getLogger(__name__)
 _publish_guard: dict[str, float] = {}
 
 
+def _fresh_publish_state() -> dict:
+    return {
+        "pending": False,
+        "caption": None,
+        "platform": None,
+        "image": None,
+        "confirmed": False,
+    }
+
+
 class PublishModule(BaseModule):
     name = "publish"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._state = _fresh_publish_state()
 
     async def activate(
         self,
@@ -32,11 +46,21 @@ class PublishModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._state["activated"] = True
+        self._active = True
         comments = resolve_social_comments_request(user_text)
         if comments:
             return await self._read_comments(user_id, comments)
-        return await self._run_publish(user_text, utterances or [], user_id)
+        meta_req = resolve_meta_publish_request(user_text, utterances or [])
+        if meta_req:
+            return await self._run_publish(user_text, utterances or [], user_id, meta_req)
+        self._state.update(
+            {
+                "pending": True,
+                "platform": "facebook",
+                "confirmed": False,
+            }
+        )
+        return self._idle()
 
     async def handle_command(
         self,
@@ -52,8 +76,12 @@ class PublishModule(BaseModule):
             return await self._read_comments(user_id, comments)
         meta_req = resolve_meta_publish_request(user_text, utterances or [])
         if meta_req:
-            return await self._run_publish(user_text, utterances or [], user_id)
+            return await self._run_publish(user_text, utterances or [], user_id, meta_req)
         return self._idle()
+
+    async def deactivate(self, *, user_id: str, call_id: str) -> None:
+        self._state = _fresh_publish_state()
+        await super().deactivate(user_id=user_id, call_id=call_id)
 
     async def _read_comments(
         self, user_id: str, comments: dict[str, str]
@@ -88,28 +116,33 @@ class PublishModule(BaseModule):
         user_text: str,
         transcript: list[Utterance],
         user_id: str,
+        meta_req: dict,
     ) -> ModuleResult:
-        meta_req = resolve_meta_publish_request(user_text, transcript)
-        if not meta_req:
-            return self._idle()
+        caption = str(meta_req.get("caption") or "")
+        platform = str(meta_req.get("platform") or "facebook")
+        self._state.update(
+            {
+                "pending": True,
+                "caption": caption,
+                "platform": platform,
+                "confirmed": True,
+            }
+        )
 
-        guard_key = f"{user_id}:{meta_req.get('caption') or user_text}"[:120]
+        guard_key = f"{user_id}:{caption or user_text}"[:120]
         prev = _publish_guard.get(guard_key, 0.0)
         if time.time() - prev < 30.0:
             dup_spoken = (
                 "Publicación enviada con éxito a Instagram, señor."
-                if meta_req.get("platform") == "instagram"
+                if platform == "instagram"
                 else "Publicación enviada con éxito a Facebook, señor."
             )
             return ModuleResult(ok=True, spoken=dup_spoken, handles_response=True)
 
         tool_name = (
-            "publicar_instagram"
-            if meta_req.get("platform") == "instagram"
-            else "publicar_facebook"
+            "publicar_instagram" if platform == "instagram" else "publicar_facebook"
         )
         tool_args: dict = {"use_last_image": True}
-        caption = meta_req.get("caption")
         if caption:
             if tool_name == "publicar_instagram":
                 tool_args["caption"] = caption
@@ -126,6 +159,7 @@ class PublishModule(BaseModule):
                 ok=False,
                 spoken="La publicación tardó demasiado, señor. ¿Desea que lo intente de nuevo?",
                 handles_response=True,
+                error="timeout",
             )
 
         _publish_guard[guard_key] = time.time()
@@ -137,9 +171,14 @@ class PublishModule(BaseModule):
                 else "No pude publicar en Facebook, señor."
             )
 
+        ok = bool(tool_result.get("ok"))
+        if ok:
+            self._state.update({"pending": False, "confirmed": True})
+
         return ModuleResult(
-            ok=bool(tool_result.get("ok")),
+            ok=ok,
             spoken=spoken,
             handles_response=True,
             tool_events=[{"type": "module_activated", "module": self.name}],
+            error=None if ok else str(tool_result.get("error") or "publish_failed"),
         )

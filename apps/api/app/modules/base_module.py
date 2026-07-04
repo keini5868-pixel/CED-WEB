@@ -14,6 +14,7 @@ class BaseModule(ABC):
 
     def __init__(self) -> None:
         self._state: dict[str, Any] = {}
+        self._active: bool = False
 
     @abstractmethod
     async def activate(
@@ -41,9 +42,13 @@ class BaseModule(ABC):
 
     async def deactivate(self, *, user_id: str, call_id: str) -> None:
         self._state.clear()
+        self._active = False
 
     def get_state(self) -> dict[str, Any]:
         return dict(self._state)
+
+    def is_active(self) -> bool:
+        return self._active
 
     def _idle(self) -> ModuleResult:
         return ModuleResult(conversation_continues=True, handles_response=False)

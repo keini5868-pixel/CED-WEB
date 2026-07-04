@@ -20,8 +20,23 @@ from app.services.voice_tool_executor import NAVIGATION_TIMEOUT_SEC, execute_voi
 logger = logging.getLogger(__name__)
 
 
+def _fresh_map_state() -> dict:
+    return {
+        "navigation_active": False,
+        "pending_destination": None,
+        "pending_index": 0,
+        "search_results": [],
+        "current_step": 0,
+        "route": None,
+    }
+
+
 class MapModule(BaseModule):
     name = "map"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._state = _fresh_map_state()
 
     async def activate(
         self,
@@ -33,7 +48,8 @@ class MapModule(BaseModule):
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
         vcs.set_active_mode(user_id, "map")
-        self._state["activated"] = True
+        self._active = True
+        self._state.update({"navigation_active": False})
 
         if resolve_open_map_request(user_text) and not resolve_navigation_place_search(
             user_text, utterances or []
@@ -89,6 +105,7 @@ class MapModule(BaseModule):
         return self._idle()
 
     async def deactivate(self, *, user_id: str, call_id: str) -> None:
+        self._state = _fresh_map_state()
         await super().deactivate(user_id=user_id, call_id=call_id)
         from app.services.navigation_session import clear_navigation
 
@@ -122,6 +139,12 @@ class MapModule(BaseModule):
             )
             spoken = str(tool_result.get("spoken") or "").strip() or (
                 f"No encontré {query} cerca, señor."
+            )
+            self._state.update(
+                {
+                    "pending_destination": query,
+                    "search_results": tool_result.get("places") or [],
+                }
             )
             if spoken_open and not tool_result.get("ok"):
                 spoken = spoken_open
@@ -157,6 +180,13 @@ class MapModule(BaseModule):
                     timeout=NAVIGATION_TIMEOUT_SEC,
                 )
             spoken = str(tool_result.get("spoken") or "Iniciando ruta, señor.").strip()
+            self._state.update(
+                {
+                    "navigation_active": bool(tool_result.get("ok")),
+                    "route": tool_result.get("route"),
+                    "pending_index": int(nav_confirm.get("index") or 0),
+                }
+            )
         except asyncio.TimeoutError:
             spoken = "Señor, calcular la ruta tardó demasiado. ¿Repito?"
         except Exception:

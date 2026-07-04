@@ -16,6 +16,12 @@ class ModuleResult:
     send_filler: bool = False
     tool_events: list[dict[str, Any]] = field(default_factory=list)
     meta: dict[str, Any] = field(default_factory=dict)
+    tool_event: dict[str, Any] | None = None
+    error: str | None = None
+
+    @property
+    def success(self) -> bool:
+        return self.ok
 
 
 @dataclass
@@ -28,6 +34,10 @@ class OrchestratorResult:
     spoken: str = ""
     filler: str = ""
     send_filler: bool = False
+
+    @property
+    def module_handles_response(self) -> bool:
+        return self.handles_response
 
     @classmethod
     def conversation_only(cls, overlay: str | None = None) -> OrchestratorResult:

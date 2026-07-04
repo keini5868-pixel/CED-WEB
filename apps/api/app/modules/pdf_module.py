@@ -22,7 +22,8 @@ class PdfModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._state["activated"] = True
+        self._active = True
+        self._state = {"generating": False, "last_pdf_path": None}
         return await self._generate_pdf(user_text, user_id)
 
     async def handle_command(
