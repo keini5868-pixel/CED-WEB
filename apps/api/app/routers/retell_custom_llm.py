@@ -49,6 +49,7 @@ from app.services.voice_llm_common import (
     is_duplicate_voice_delivery,
     normalize_voice_delivery_text,
 )
+from app.services.ced_orchestrator import get_orchestrator
 from app.services.voice_tool_executor import NAVIGATION_TIMEOUT_SEC, execute_voice_tool
 from app.services.voice_tool_async import execute_deferred_tool_batch
 from app.services.voice_spoken import (
@@ -779,159 +780,45 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             conversational_turn = is_small_talk(user_text, transcript)
 
-            nav_req = resolve_navigation_place_search(user_text, transcript)
-            if nav_req and uid:
-                query = normalize_navigation_query(str(nav_req.get("query") or ""))
-                if query:
-                    try:
-                        if resolve_open_map_request(user_text) or nav_req.get("open_map"):
-                            open_result = await execute_voice_tool(
-                                "activar_modo_conducir",
-                                uid,
-                                {},
-                            )
-                            spoken_open = str(open_result.get("spoken") or "").strip()
-                        else:
-                            spoken_open = ""
-
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(
-                                "search_nearby_places",
-                                uid,
-                                {"query": query, "place": query, "destino": query},
-                            ),
-                            timeout=20.0,
+            orch = get_orchestrator(call_id)
+            if uid and (not conversational_turn or orch.active_module):
+                clear_pending_advanced_topic(call_id)
+                orch_result = await orch.process(
+                    user_text=user_text,
+                    transcript=transcript,
+                    call_id=call_id,
+                    user_id=uid,
+                )
+                if orch_result.handles_response:
+                    if orch_result.send_filler and orch_result.filler:
+                        async with response_lock:
+                            if not _turn_stale():
+                                partial_sent = await send_filler_once_partial(
+                                    orch_result.filler,
+                                )
+                    if turn_already_handled(call_id, scheduled_rid) and orch.active_module == "camera":
+                        await ack_empty_response(
+                            response_id=scheduled_rid,
+                            reason="orch_camera_handled",
                         )
-                        spoken = str(tool_result.get("spoken") or "").strip()
-                        if not spoken:
-                            spoken = f"No encontré {query} cerca, señor."
-                        if spoken_open and not tool_result.get("ok"):
-                            spoken = spoken_open
-                        elif spoken_open and tool_result.get("ok"):
-                            spoken = spoken
-
-                        if _turn_rid_stale():
-                            await ack_superseded_turn(reason="nav_stale")
-                            return
+                        return
+                    if _turn_rid_stale():
+                        await ack_superseded_turn(reason="orch_stale")
+                        return
+                    spoken = (orch_result.spoken or "").strip()
+                    if spoken:
+                        if orch.active_module in ("camera", "publish"):
+                            mark_turn_handled(call_id, scheduled_rid)
                         delivered = await complete_partial_or_deliver(spoken)
                         if not delivered:
-                            await anti_silence_if_unanswered(reason="nav_deliver_failed")
+                            await anti_silence_if_unanswered(reason="orch_deliver_failed")
                         logger.info(
-                            "[RETELL-GEMINI] nav fast-path call=%s query=%s ok=%s",
+                            "[RETELL-ORCH] module=%s call=%s delivered=%s",
+                            orch.active_module,
                             call_id,
-                            query[:40],
-                            tool_result.get("ok"),
+                            delivered,
                         )
-                        return
-                    except asyncio.TimeoutError:
-                        logger.warning("[RETELL-GEMINI] nav search timeout call=%s", call_id)
-                        await complete_partial_or_deliver(
-                            "Señor, la búsqueda en el mapa tardó demasiado. ¿Repito el lugar?"
-                        )
-                        return
-                    except Exception:
-                        logger.exception("[RETELL-GEMINI] nav fast-path failed call=%s", call_id)
-
-            nav_confirm = resolve_navigation_confirm(user_text, transcript, user_id=uid)
-            if nav_confirm and uid:
-                try:
-                    action = str(nav_confirm.get("action") or "")
-                    if action == "begin_navigation":
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool("start_navigation", uid, {}),
-                            timeout=NAVIGATION_TIMEOUT_SEC,
-                        )
-                    else:
-                        idx = int(nav_confirm.get("index") or 0)
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(
-                                "start_navigation",
-                                uid,
-                                {"index": idx},
-                            ),
-                            timeout=NAVIGATION_TIMEOUT_SEC,
-                        )
-                    spoken = str(tool_result.get("spoken") or "Iniciando ruta, señor.").strip()
-                    if _turn_rid_stale():
-                        await ack_superseded_turn(reason="nav_confirm_stale")
-                        return
-                    delivered = await complete_partial_or_deliver(spoken)
-                    if not delivered:
-                        await anti_silence_if_unanswered(reason="nav_confirm_deliver_failed")
-                    logger.info(
-                        "[RETELL-GEMINI] nav confirm fast-path call=%s action=%s ok=%s",
-                        call_id,
-                        action,
-                        tool_result.get("ok"),
-                    )
                     return
-                except asyncio.TimeoutError:
-                    logger.warning("[RETELL-GEMINI] nav confirm timeout call=%s", call_id)
-                    await complete_partial_or_deliver(
-                        "Señor, calcular la ruta tardó demasiado. ¿Repito?"
-                    )
-                    return
-                except Exception:
-                    logger.exception("[RETELL-GEMINI] nav confirm fast-path failed call=%s", call_id)
-
-            if resolve_open_map_request(user_text) and uid and not nav_req:
-                try:
-                    tool_result = await execute_voice_tool("activar_modo_conducir", uid, {})
-                    spoken = str(tool_result.get("spoken") or "Abro el mapa, señor.").strip()
-                    if _turn_rid_stale():
-                        await ack_superseded_turn(reason="open_map_stale")
-                        return
-                    await complete_partial_or_deliver(spoken)
-                    return
-                except Exception:
-                    logger.exception("[RETELL-GEMINI] open map fast-path failed call=%s", call_id)
-
-            if is_camera_activation_intent(user_text) and uid:
-                if turn_already_handled(call_id, scheduled_rid):
-                    await ack_empty_response(
-                        response_id=scheduled_rid,
-                        reason="camera_already_handled",
-                    )
-                    return
-                try:
-                    from app.services import voice_client_session as vcs
-
-                    if not vcs.is_camera_permission_granted(uid):
-                        spoken = (
-                            "Señor, no tengo permiso de cámara. "
-                            "Para activarla, reinicie la sesión y acepte el permiso "
-                            "de cámara cuando aparezca."
-                        )
-                        if _turn_rid_stale():
-                            await ack_superseded_turn(reason="camera_no_permission_stale")
-                            return
-                        mark_turn_handled(call_id, scheduled_rid)
-                        await complete_partial_or_deliver(spoken)
-                        return
-
-                    vcs.push_client_action(uid, "camera_activate", {})
-                    vcs.push_tool_event(uid, {"type": "camera_activate"})
-                    spoken = "Cámara activa, señor. Lista para analizar."
-                    if _turn_rid_stale():
-                        await ack_superseded_turn(reason="camera_activate_stale")
-                        return
-                    mark_turn_handled(call_id, scheduled_rid)
-                    delivered = await complete_partial_or_deliver(spoken)
-                    if not delivered:
-                        await anti_silence_if_unanswered(
-                            reason="camera_activate_deliver_failed"
-                        )
-                    logger.info(
-                        "[RETELL-GEMINI] camera activate fast-path call=%s delivered=%s",
-                        call_id,
-                        delivered,
-                    )
-                    return
-                except Exception:
-                    logger.exception(
-                        "[RETELL-GEMINI] camera activate fast-path failed call=%s",
-                        call_id,
-                    )
 
             superseded, latest_rid = _is_superseded_turn_rid(
                 scheduled_rid,
@@ -947,183 +834,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 await ack_superseded_turn(reason="turn_superseded")
                 return
-
-            web_req = resolve_web_search_request(user_text, transcript)
-            if web_req and uid:
-
-                async def handle_web_search_voice(
-                    *,
-                    web_req: dict[str, str],
-                    query_norm: str,
-                ) -> None:
-                    """Fast-path search_web — SIEMPRE cierra el turno con voz audible."""
-                    nonlocal partial_sent, last_web_delivery_at, last_web_query_norm
-                    kind = str(web_req.get("kind") or "general")
-                    query = str(web_req.get("query") or user_text).strip()
-
-                    async def finish_web_voice(content: str, *, reason: str) -> None:
-                        nonlocal last_web_delivery_at, last_web_query_norm
-                        safe = (content or WEB_SEARCH_VOICE_FALLBACK).strip() or WEB_SEARCH_VOICE_FALLBACK
-                        if _turn_rid_stale():
-                            logger.info(
-                                "[RETELL-GEMINI] web stale at finish rid=%s reason=%s call=%s",
-                                scheduled_rid,
-                                reason,
-                                call_id,
-                            )
-                            await complete_partial_or_deliver(WEB_SEARCH_VOICE_FALLBACK)
-                            return
-                        delivered = await complete_partial_or_deliver(safe)
-                        if delivered:
-                            last_web_delivery_at = time.time()
-                            last_web_query_norm = query_norm
-                            logger.info(
-                                "[RETELL-GEMINI] web_search call=%s kind=%s reason=%s spoken=%s",
-                                call_id,
-                                kind,
-                                reason,
-                                safe[:120],
-                            )
-                        else:
-                            logger.warning(
-                                "[RETELL-GEMINI] web_search deliver failed rid=%s call=%s reason=%s",
-                                scheduled_rid,
-                                call_id,
-                                reason,
-                            )
-                            await anti_silence_if_unanswered(reason=f"web_finish_{reason}")
-
-                    try:
-                        tool_result: dict[str, Any]
-                        try:
-                            tool_result = await asyncio.wait_for(
-                                execute_voice_tool(
-                                    "search_web",
-                                    uid,
-                                    {"query": query, "kind": kind},
-                                ),
-                                timeout=WEB_SEARCH_FAST_PATH_TIMEOUT_SEC,
-                            )
-                        except asyncio.TimeoutError:
-                            logger.warning(
-                                "[RETELL-GEMINI] web_search timeout call=%s query=%s",
-                                call_id,
-                                query[:80],
-                            )
-                            await finish_web_voice(
-                                "Señor, la búsqueda tardó demasiado. "
-                                "¿Desea que lo intente de nuevo?",
-                                reason="timeout",
-                            )
-                            return
-                        except Exception:
-                            logger.exception(
-                                "[RETELL-GEMINI] web_search error call=%s query=%s",
-                                call_id,
-                                query[:80],
-                            )
-                            await finish_web_voice(
-                                "Disculpe señor, tuve un inconveniente buscando. "
-                                "¿Puede repetir la pregunta?",
-                                reason="error",
-                            )
-                            return
-
-                        if tool_result.get("status") == "success" or tool_result.get("ok"):
-                            spoken = str(tool_result.get("spoken") or "").strip()
-                            if spoken:
-                                delivery = format_web_delivery(kind, spoken)
-                                if not is_unwanted_voice_reply(delivery, user_text=user_text):
-                                    await finish_web_voice(delivery, reason="success")
-                                    return
-                                logger.warning(
-                                    "[RETELL-WEB] discard internal kb leak in web result call=%s",
-                                    call_id,
-                                )
-
-                        llm._web_search_fallback = True
-                        spoken = str(tool_result.get("spoken") or "").strip()
-                        if spoken and not tool_result.get("fallback"):
-                            await finish_web_voice(
-                                format_web_delivery(kind, spoken),
-                                reason="spoken_partial",
-                            )
-                            return
-
-                        kb_line = ""
-                        try:
-                            kb_line = await asyncio.wait_for(
-                                llm.generate_natural_reply(
-                                    transcript=transcript,
-                                    user_text=user_text,
-                                    overlay=(
-                                        "Responde en 2-4 frases con lo que sabes sobre la consulta. "
-                                        "PROHIBIDO prometer buscar en internet ni invocar herramientas."
-                                    ),
-                                    path="web_search_kb_fallback",
-                                    max_tokens=320,
-                                    timeout_sec=12.0,
-                                ),
-                                timeout=12.0,
-                            ) or ""
-                        except Exception:
-                            logger.warning(
-                                "[RETELL-GEMINI] web kb fallback failed call=%s",
-                                call_id,
-                            )
-
-                        if kb_line.strip():
-                            await finish_web_voice(
-                                "Señor, no pude obtener información actual en este momento. "
-                                f"Basándome en lo que tengo registrado: {kb_line.strip()}",
-                                reason="kb_fallback",
-                            )
-                        else:
-                            await finish_web_voice(WEB_SEARCH_VOICE_FALLBACK, reason="empty")
-                    except Exception:
-                        logger.exception("[RETELL-GEMINI] web fast-path failed call=%s", call_id)
-                        await finish_web_voice(WEB_SEARCH_VOICE_FALLBACK, reason="outer_error")
-
-                query_norm = " ".join(str(web_req.get("query") or "").lower().split())
-                now = time.time()
-                skip_fast_web = False
-                if (
-                    last_web_delivery_at
-                    and now - last_web_delivery_at < 15.0
-                    and query_norm
-                    and (
-                        query_norm in last_web_query_norm
-                        or last_web_query_norm in query_norm
-                        or last_web_query_norm.startswith(query_norm[:24])
-                        or query_norm.startswith(last_web_query_norm[:24])
-                    )
-                ):
-                    logger.info(
-                        "[RETELL-WEB] skip duplicate web fast-path call=%s query=%s",
-                        call_id,
-                        query_norm[:60],
-                    )
-                    skip_fast_web = True
-
-                if skip_fast_web:
-                    if await deliver_voice(WEB_SEARCH_VOICE_FALLBACK):
-                        return
-                    await anti_silence_if_unanswered(reason="web_duplicate")
-                    return
-
-                clear_pending_advanced_topic(call_id)
-                kind = str(web_req.get("kind") or "general")
-                async with response_lock:
-                    if not _turn_stale():
-                        partial_sent = await send_filler_once_partial(
-                            web_search_hold_phrase(kind),
-                        )
-                await handle_web_search_voice(web_req=web_req, query_norm=query_norm)
-                return
-            elif web_req and not uid:
-                logger.warning("[RETELL-GEMINI] web intent without uid call=%s", call_id)
-                if await deliver_voice(WEB_SEARCH_VOICE_FALLBACK):
-                    return
 
             # Path conversacional para saludos y charla corta post-saludo.
             if conversational_turn:
@@ -1200,185 +910,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     "[RETELL-GEMINI] conversational miss — fallthrough draft_response call=%s",
                     call_id,
                 )
-
-            camera_tool = resolve_camera_voice_request(user_text)
-            if camera_tool and uid:
-                if turn_already_handled(call_id, scheduled_rid):
-                    await ack_empty_response(
-                        response_id=scheduled_rid,
-                        reason="camera_turn_handled",
-                    )
-                    return
-                if is_camera_activation_intent(user_text):
-                    logger.info(
-                        "[RETELL-GEMINI] camera activation already handled call=%s",
-                        call_id,
-                    )
-                    await ack_empty_response(
-                        response_id=scheduled_rid,
-                        reason="camera_activation_handled",
-                    )
-                    return
-                clear_pending_advanced_topic(call_id)
-                is_vision = camera_tool in ("analyze_camera_frame", "buscar_lo_visible")
-                async with response_lock:
-                    if _turn_stale():
-                        await ack_superseded_turn(reason="camera_stale")
-                        return
-                    tool_args: dict = {}
-                    if camera_tool == "request_camera_activation":
-                        tool_args["fast"] = True
-                    elif is_vision:
-                        tool_args["pregunta"] = user_text
-                    try:
-                        cam_timeout = 10.0 if camera_tool == "request_camera_activation" else (
-                            40.0 if is_vision else 12.0
-                        )
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(camera_tool, uid, tool_args),
-                            timeout=cam_timeout,
-                        )
-                    except asyncio.TimeoutError:
-                        tool_result = {
-                            "spoken": (
-                                "No pude activar la cámara, señor. ¿Intentamos de nuevo?"
-                                if camera_tool == "request_camera_activation"
-                                else "No pude completar el análisis visual, señor."
-                            ),
-                        }
-                    spoken = str(tool_result.get("spoken") or "").strip()
-                    if is_vision:
-                        body = format_vision_response(spoken) or "No pude analizar la imagen, señor."
-                        delivery = finalize_voice_delivery_text(
-                            compose_voice_tool_delivery(
-                                "Un momento, señor. Analizo con visión.",
-                                body,
-                            )
-                        )
-                        mark_turn_handled(call_id, scheduled_rid)
-                        await send_voice_response(
-                            response_id=scheduled_rid,
-                            content=delivery,
-                            user_key=scheduled_key,
-                            generation=my_generation,
-                        )
-                    else:
-                        mark_turn_handled(call_id, scheduled_rid)
-                        await send_voice_response(
-                            response_id=scheduled_rid,
-                            content=spoken or "Completado, señor.",
-                            user_key=scheduled_key,
-                            generation=my_generation,
-                        )
-                logger.info("[RETELL-GEMINI] camera call=%s tool=%s", call_id, camera_tool)
-                return
-
-            meta_req = resolve_meta_publish_request(user_text, transcript)
-            if meta_req and uid:
-                import time as _time
-
-                guard_key = f"{uid}:{_normalize_user_key(meta_req.get('caption') or user_text)}"
-                prev = meta_publish_guard.get(guard_key, 0.0)
-                if _time.time() - prev < 30.0:
-                    logger.info(
-                        "[RETELL-OPENAI] meta_publish skip duplicate turn call=%s key=%s",
-                        call_id,
-                        guard_key[:48],
-                    )
-                    dup_spoken = (
-                        "Publicación enviada con éxito a Instagram, señor."
-                        if meta_req.get("platform") == "instagram"
-                        else "Publicación enviada con éxito a Facebook, señor."
-                    )
-                    async with response_lock:
-                        await send_voice_response(
-                            response_id=scheduled_rid,
-                            content=dup_spoken,
-                            user_key=scheduled_key,
-                            generation=my_generation,
-                        )
-                    return
-                clear_pending_advanced_topic(call_id)
-                tool_name = (
-                    "publicar_instagram"
-                    if meta_req["platform"] == "instagram"
-                    else "publicar_facebook"
-                )
-                tool_args: dict = {}
-                if meta_req.get("caption"):
-                    if tool_name == "publicar_instagram":
-                        tool_args["caption"] = meta_req["caption"]
-                    else:
-                        tool_args["mensaje"] = meta_req["caption"]
-                tool_args["use_last_image"] = True
-                async with response_lock:
-                    if _turn_stale():
-                        return
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(tool_name, uid, tool_args),
-                            timeout=35.0,
-                        )
-                    except asyncio.TimeoutError:
-                        tool_result = {
-                            "spoken": "La publicación tardó demasiado, señor. ¿Desea que lo intente de nuevo?",
-                        }
-                    spoken = str(tool_result.get("spoken") or "").strip()
-                    if not spoken:
-                        spoken = (
-                            "No pude publicar, señor. Confirme que adjuntó la imagen en el chat."
-                            if tool_name == "publicar_instagram"
-                            else "No pude publicar en Facebook, señor."
-                        )
-                    await send_voice_response(
-                        response_id=scheduled_rid,
-                        content=spoken,
-                        user_key=scheduled_key,
-                        generation=my_generation,
-                    )
-                meta_publish_guard[guard_key] = _time.time()
-                logger.info(
-                    "[RETELL-OPENAI] meta_publish call=%s tool=%s caption=%s",
-                    call_id,
-                    tool_name,
-                    (meta_req.get("caption") or "")[:80],
-                )
-                return
-
-            comments_req = resolve_social_comments_request(user_text)
-            if comments_req and uid:
-                clear_pending_advanced_topic(call_id)
-                async with response_lock:
-                    if _turn_stale():
-                        return
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(
-                                "leer_comentarios_redes",
-                                uid,
-                                {"platform": comments_req["platform"]},
-                            ),
-                            timeout=20.0,
-                        )
-                    except asyncio.TimeoutError:
-                        tool_result = {
-                            "spoken": "No pude leer los comentarios a tiempo, señor.",
-                        }
-                    spoken = str(tool_result.get("spoken") or "").strip()
-                    if not spoken:
-                        spoken = "No pude consultar los comentarios, señor."
-                    await send_voice_response(
-                        response_id=scheduled_rid,
-                        content=spoken,
-                        user_key=scheduled_key,
-                        generation=my_generation,
-                    )
-                logger.info(
-                    "[RETELL-OPENAI] social_comments call=%s platform=%s",
-                    call_id,
-                    comments_req["platform"],
-                )
-                return
 
             if turn_already_handled(call_id, scheduled_rid):
                 await ack_empty_response(

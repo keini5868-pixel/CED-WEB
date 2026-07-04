@@ -56,7 +56,34 @@ export function CedVoiceHub() {
     prompt?: string;
   } | null>(null);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
-  const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial } = useHudFeed();
+  const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial, setActiveModule } =
+    useHudFeed();
+
+  useEffect(() => {
+    const onModuleActive = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ module?: string | null }>).detail;
+      const mod = detail?.module;
+      if (!mod) {
+        setActiveModule(null);
+        return;
+      }
+      const allowed = [
+        "map",
+        "camera",
+        "publish",
+        "image_gen",
+        "pdf",
+        "web_search",
+        "prospection",
+        "memory",
+      ] as const;
+      if ((allowed as readonly string[]).includes(mod)) {
+        setActiveModule(mod as (typeof allowed)[number]);
+      }
+    };
+    window.addEventListener("ced-module-active", onModuleActive);
+    return () => window.removeEventListener("ced-module-active", onModuleActive);
+  }, [setActiveModule]);
 
   useEffect(() => {
     prefetchEphemeralToken();

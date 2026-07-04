@@ -54,10 +54,23 @@ export interface HudVoiceLineOptions {
   source?: string;
 }
 
+export type CedActiveModule =
+  | "map"
+  | "camera"
+  | "publish"
+  | "image_gen"
+  | "pdf"
+  | "web_search"
+  | "prospection"
+  | "memory"
+  | null;
+
 interface HudFeedContextValue {
   items: HudFeedItem[];
   voiceItems: HudFeedItem[];
   marqueeText: string;
+  activeModule: CedActiveModule;
+  setActiveModule: (module: CedActiveModule) => void;
   pushLine: (text: string, kind?: HudFeedKind) => void;
   pushVoiceLine: (
     text: string,
@@ -77,6 +90,7 @@ const MAX_ITEMS = 48;
 export function HudFeedProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<HudFeedItem[]>([]);
   const [voiceItems, setVoiceItems] = useState<HudFeedItem[]>([]);
+  const [activeModule, setActiveModule] = useState<CedActiveModule>(null);
 
   const pushLine = useCallback((text: string, kind: HudFeedKind = "voice") => {
     const trimmed = sanitizeHudTranscript(text);
@@ -283,6 +297,8 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
       items,
       voiceItems,
       marqueeText,
+      activeModule,
+      setActiveModule,
       pushLine,
       pushVoiceLine,
       pushVoiceImage,
@@ -294,6 +310,7 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
       items,
       voiceItems,
       marqueeText,
+      activeModule,
       pushLine,
       pushVoiceLine,
       pushVoiceImage,

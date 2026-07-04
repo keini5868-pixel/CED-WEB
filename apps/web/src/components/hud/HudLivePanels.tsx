@@ -218,8 +218,19 @@ function HudVoiceImageUpload() {
   );
 }
 
+const MODULE_LABELS: Record<string, string> = {
+  map: "Mapa",
+  camera: "Cámara",
+  publish: "Publicación",
+  image_gen: "Imagen IA",
+  pdf: "PDF",
+  web_search: "Web",
+  prospection: "Prospección",
+  memory: "Memoria",
+};
+
 export function HudGlobalPanel() {
-  const { voiceItems, removeVoiceImage } = useHudFeed();
+  const { voiceItems, removeVoiceImage, activeModule } = useHudFeed();
   const [copied, setCopied] = useState(false);
   const [lightbox, setLightbox] = useState<string | null>(null);
 
@@ -250,6 +261,11 @@ export function HudGlobalPanel() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="ced-hud-text-secondary text-[10px] uppercase tracking-widest">
           Diálogo en vivo · {chronological.length} turnos
+          {activeModule ? (
+            <span className="ml-2 rounded border border-cyan-500/50 px-1.5 py-0.5 text-cyan-300">
+              {MODULE_LABELS[activeModule] ?? activeModule}
+            </span>
+          ) : null}
         </p>
         <div className="flex flex-wrap items-center gap-2">
           <HudVoiceImageUpload />

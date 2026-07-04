@@ -559,6 +559,20 @@ export function useCedVoiceSession(
               }),
             );
           }
+          if (ev.type === "module_activated" && ev.module) {
+            window.dispatchEvent(
+              new CustomEvent("ced-module-active", {
+                detail: { module: String(ev.module) },
+              }),
+            );
+          }
+          if (ev.type === "module_deactivated") {
+            window.dispatchEvent(
+              new CustomEvent("ced-module-active", {
+                detail: { module: null },
+              }),
+            );
+          }
           if (ev.type === "map_search_results" && ev.places) {
             window.dispatchEvent(
               new CustomEvent("ced-navigation-event", {
