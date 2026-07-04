@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.deps.auth import require_user_id
 from app.services import supabase_db
 from app.services.chat_multimedia import transcribe_audio
-from app.services.text_chat import TextChatError, chat_status, send_message
+from app.services.text_chat import TextChatError, chat_status, end_text_conversation, send_message
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,23 @@ def get_text_messages(
         return {"messages": messages, "conversation": conv}
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@router.post("/conversations/{conversation_id}/end")
+def post_end_text_conversation(
+    conversation_id: str,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    try:
+        return end_text_conversation(user_id, conversation_id)
+    except TextChatError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[CHAT] end conversation error")
+        raise HTTPException(
+            status_code=503,
+            detail="No pude cerrar la conversación.",
+        ) from exc
 
 
 @router.post("/send")

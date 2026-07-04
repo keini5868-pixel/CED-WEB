@@ -899,6 +899,46 @@ def chat_status(user_id: str) -> dict[str, Any]:
     }
 
 
+def end_text_conversation(user_id: str, conversation_id: str) -> dict[str, Any]:
+    """Cierra conversación de chat y guarda memoria sesión a sesión."""
+    from datetime import datetime, timezone
+
+    cid = (conversation_id or "").strip()
+    if not cid:
+        raise TextChatError("conversation_id requerido.", http_status=400)
+
+    conv = supabase_db.get_conversation(cid, user_id)
+    if not conv or conv.get("channel") != "text":
+        raise TextChatError("Conversación no encontrada.", http_status=404)
+
+    msgs = supabase_db.get_conversation_messages(cid, user_id, limit=80)
+    user_turns = sum(1 for m in msgs if str(m.get("role") or "") == "user")
+    if user_turns < 1:
+        return {"ok": True, "saved": False, "reason": "too_short"}
+
+    started_epoch = __import__("time").time()
+    created_raw = conv.get("created_at")
+    if created_raw:
+        try:
+            created = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            started_epoch = created.timestamp()
+        except ValueError:
+            pass
+
+    from app.services.conversation_memory import finalize_session_async
+
+    finalize_session_async(
+        user_id=user_id,
+        session_id=cid,
+        conversation_id=cid,
+        started_at_epoch=started_epoch,
+        channel="text",
+    )
+    return {"ok": True, "saved": True, "conversation_id": cid}
+
+
 def _anthropic_messages(history: list[dict[str, str]]) -> list[dict[str, str]]:
     out: list[dict[str, str]] = []
     for row in history:

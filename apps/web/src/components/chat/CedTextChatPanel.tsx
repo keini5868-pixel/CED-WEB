@@ -13,6 +13,7 @@ import {
 import { MicButton } from "@/components/chat/MicButton";
 import { fetchGenerateImageWithReference } from "@/lib/api/openai";
 import {
+  endChatConversation,
   fetchChatStatus,
   sendChatMessage,
   type ChatImageAttachment,
@@ -352,6 +353,14 @@ export function CedTextChatPanel({
     setStatus(s);
     return s;
   }, []);
+
+  useEffect(() => {
+    if (open) return;
+    const cid = conversationId;
+    const hasUserTurn = messages.some((m) => m.role === "user");
+    if (!cid || !hasUserTurn) return;
+    void endChatConversation(cid);
+  }, [open, conversationId, messages]);
 
   useEffect(() => {
     if (!open) return;

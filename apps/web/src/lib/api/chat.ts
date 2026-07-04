@@ -115,6 +115,19 @@ export async function sendChatMessage(
   };
 }
 
+export async function endChatConversation(conversationId: string): Promise<boolean> {
+  try {
+    const res = await proxyFetch(`chat/conversations/${conversationId}/end`, {
+      method: "POST",
+    });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { saved?: boolean };
+    return Boolean(data.saved);
+  } catch {
+    return false;
+  }
+}
+
 export async function transcribeChatAudio(audioBlob: Blob): Promise<string> {
   const formData = new FormData();
   formData.append("audio", audioBlob, "recording.webm");

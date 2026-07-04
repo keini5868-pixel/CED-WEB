@@ -594,20 +594,23 @@ def generate_session_summary(
                 )
 
 
-def finalize_voice_session_async(
+def finalize_session_async(
     *,
     user_id: str,
     session_id: str,
     conversation_id: str | None,
     started_at_epoch: float,
+    channel: str = "voice",
 ) -> None:
+    ch = channel if channel in ("voice", "text", "mixed") else "mixed"
+
     def _run() -> None:
         duration = max(0.0, (__import__("time").time() - started_at_epoch) / 60.0)
         started = datetime.fromtimestamp(started_at_epoch, tz=timezone.utc)
         generate_session_summary(
             user_id=user_id,
             session_id=session_id,
-            channel="voice",
+            channel=ch,
             started_at=started,
             duration_minutes=round(duration, 2),
             conversation_id=conversation_id,
@@ -624,3 +627,19 @@ def finalize_voice_session_async(
             logger.warning("[CONV_MEM] session_memory save failed: %s", exc)
 
     threading.Thread(target=_run, daemon=True).start()
+
+
+def finalize_voice_session_async(
+    *,
+    user_id: str,
+    session_id: str,
+    conversation_id: str | None,
+    started_at_epoch: float,
+) -> None:
+    finalize_session_async(
+        user_id=user_id,
+        session_id=session_id,
+        conversation_id=conversation_id,
+        started_at_epoch=started_at_epoch,
+        channel="voice",
+    )
