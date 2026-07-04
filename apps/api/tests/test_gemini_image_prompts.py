@@ -42,7 +42,30 @@ def test_prepare_image_prompt_uses_conversation_for_specs():
     assert "el producto y sus" not in prepared.lower()
 
 
-def test_build_image_generation_prompts_generic_subject():
+def test_generate_image_with_reference_gemini_imports_augment_prompt():
+    from unittest.mock import MagicMock, patch
+
+    from app.services.gemini_images import generate_image_with_reference_gemini
+
+    fake_client = MagicMock()
+    fake_response = MagicMock()
+    fake_response.candidates = []
+    fake_client.models.generate_content.return_value = fake_response
+
+    with patch("app.services.gemini_images.get_settings") as mock_settings:
+        mock_settings.return_value.google_api_key = "test-key"
+        mock_settings.return_value.gemini_image_model = "gemini-2.0-flash-preview-image-generation"
+        with patch("google.genai.Client", return_value=fake_client):
+            result = generate_image_with_reference_gemini(
+                prompt="creativo con beneficios del producto",
+                reference_image=b"\xff\xd8\xff\xd9",
+                content_type="image/jpeg",
+                style_mode="edit",
+            )
+    assert result["ok"] is False
+    assert "augment_image_prompt" not in str(result.get("error", ""))
+    assert "not defined" not in str(result.get("error", "")).lower()
+
     variants = build_image_generation_prompts("un castillo digital futurista al atardecer")
     assert len(variants) == 3
     joined = " ".join(variants).lower()

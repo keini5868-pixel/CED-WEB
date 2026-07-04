@@ -411,6 +411,8 @@ def generate_image_with_reference_gemini(
         mime = "image/jpeg"
 
     try:
+        from app.services.copy_quality import augment_image_prompt
+
         enriched = augment_image_prompt(_reference_prompt(topic, mode), topic)
         client = genai.Client(api_key=api_key)
     except Exception as exc:  # noqa: BLE001
