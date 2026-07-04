@@ -72,7 +72,7 @@ def test_format_creative_image_copy_uses_short_titles_only():
     assert "PROHIBIDO escribir" in block
 
 
-def test_marketing_brief_fitline_user_prompt_no_leakage():
+def test_marketing_brief_universal_user_prompt_no_leakage():
     from app.services.marketing_creative import (
         build_marketing_creative_brief,
         strip_creative_user_noise,
@@ -103,6 +103,27 @@ def test_marketing_brief_fitline_user_prompt_no_leakage():
     assert "FitLine Basics" in internal or "fitline" in internal.lower()
     assert "Salud intestinal" in internal
     assert "Contribuye a mantener una flora" not in internal
+    assert "Tema:" in internal
+    assert "EN EL FONDO" not in display
+
+
+def test_marketing_brief_real_estate_prompt_no_leakage():
+    user_text = (
+        "GENERA IMAGEN Vista Mar es un apartamento frente al mar. "
+        "Puntos clave: Ubicación: Zona exclusiva y tranquila. "
+        "Amenidades: Piscina, gym y seguridad 24h. "
+        "Precio: Opciones de financiamiento flexibles. "
+        "USA ESTA FOTO DE REFERENCIA EN EL FONDO"
+    )
+    internal, display, mode = build_marketing_creative_brief(
+        user_text,
+        history=None,
+        has_reference_image=True,
+    )
+    assert mode == "edit"
+    assert "GENERA IMAGEN" not in internal.upper()
+    assert "Ubicación" in internal or "Amenidades" in internal
+    assert "Vista Mar" in internal or "vista mar" in internal.lower()
     assert "EN EL FONDO" not in display
 
 

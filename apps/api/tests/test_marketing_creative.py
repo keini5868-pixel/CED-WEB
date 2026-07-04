@@ -8,6 +8,7 @@ from app.services.marketing_creative import (
     is_image_creation_request,
     is_marketing_creative_intent,
     resolve_image_creation_from_attachment,
+    should_build_creative_brief,
 )
 from app.services.publish_text import is_social_publish_intent
 
@@ -71,9 +72,47 @@ def test_attachment_resolver_for_product_photo():
     assert "Creativo" in resolved["display_label"] or "Flyer" in resolved["display_label"]
 
 
-def test_extract_product_subject_generic():
-    subject = extract_product_subject("producto basics de fitline con fibra y probioticos")
-    assert "fitline" in subject.lower()
+def test_event_creative_brief_without_product_words():
+    user_text = (
+        "GENERA UNA IMAGEN CON ESTAS CARACTERISTICAS AI Summit 2026 es un evento tech en Charlotte. "
+        "Puntos clave: Networking: Conecta con líderes del sector. "
+        "Talleres: Sesiones prácticas de IA aplicada. "
+        "Agenda: Charlas de 9am a 6pm. "
+        "Y QUE ESPLIQUE ESTOS PUNTOS USANDO ESTA IMAGEN DE REFERENCIA EN EL FONDO"
+    )
+    internal, display, mode = build_marketing_creative_brief(
+        user_text,
+        history=None,
+        has_reference_image=True,
+    )
+    assert mode == "edit"
+    assert internal.startswith("[[CREATIVO]]")
+    assert "GENERA UNA IMAGEN" not in internal.upper()
+    assert "Tema:" in internal
+    assert "Producto:" not in internal
+    assert "Networking" in internal or "Talleres" in internal
+    assert "AI Summit" in internal or "ai summit" in internal.lower()
+    assert "Creativo" in display or "Flyer" in display
+
+
+def test_attachment_creative_for_course_without_beneficios_word():
+    text = (
+        "Curso Python Pro es una formación online. "
+        "Módulo 1: Fundamentos claros y prácticos. "
+        "Módulo 2: Proyectos reales desde cero. "
+        "Usa esta imagen de referencia en el fondo del flyer"
+    )
+    assert is_attachment_creative_request(text, None)
+    assert should_build_creative_brief(text, has_reference_image=True)
+    internal, _, _ = build_marketing_creative_brief(text, has_reference_image=True)
+    assert "Módulo 1" in internal or "Fundamentos" in internal
+    assert "referencia" not in internal.lower() or "PROHIBIDO" in internal
+
+
+def test_extract_creative_subject_from_event_and_service():
+    assert "charlotte" in extract_product_subject("Tour Charlotte es un recorrido guiado").lower()
+    assert "python" in extract_product_subject("Curso Python Pro es una formación online").lower()
+    assert "fitline" in extract_product_subject("producto basics de fitline con fibra").lower()
 
 
 def test_attachment_detects_typo_benefits_and_reference_image():

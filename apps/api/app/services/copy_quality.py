@@ -44,9 +44,18 @@ _SKIP_LINE_TITLES = frozenset(
         "características",
         "caracteristicas",
         "beneficios",
+        "ventajas",
         "principales beneficios",
         "principales beneficios son",
+        "principales ventajas",
+        "principales ventajas son",
         "sus principales beneficios son",
+        "sus principales ventajas son",
+        "puntos clave",
+        "puntos clave son",
+        "aspectos principales",
+        "programa incluye",
+        "incluye",
         "referencia",
         "información",
         "informacion",
@@ -59,8 +68,9 @@ _IMAGE_TEXT_HINT = re.compile(
     r"\b("
     r"texto|escrito|frase|t[ií]tulo|caption|flyer|banner|letras|nombre|"
     r"quote|cita|eslogan|headline|subtitulo|subt[ií]tulo|"
-    r"beneficios|veneficios|especificaciones|caracter[ií]sticas|"
-    r"publicidad|anuncio|post|vender|vendiendo"
+    r"beneficios|veneficios|ventajas|puntos?\s+clave|especificaciones|caracter[ií]sticas|"
+    r"agenda|horarios?|m[oó]dulos?|programa|invitaci[oó]n|promoci[oó]n|"
+    r"publicidad|anuncio|post|vender|vendiendo|evento|curso|taller|servicio"
     r")\b",
     re.I,
 )
@@ -134,19 +144,19 @@ def compact_overlay_line(title: str, desc: str) -> str:
     return f"{label}: {phrase}"
 
 
-def _normalize_benefit_blob(text: str) -> str:
-    """Separa viñetas en línea («A: x. B: y.») para extracción fiable."""
+def _normalize_structured_blob(text: str) -> str:
+    """Separa viñetas en línea («A: x. B: y.») para extracción fiable en cualquier tema."""
     t = (text or "").strip()
     if not t:
         return t
-    # «beneficios son: Salud intestinal: desc» → líneas separadas
+    # Intro genérico («puntos clave son: A: …») → líneas separadas
     t = re.sub(
-        r":\s+(?=[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,32}\s*:)",
+        r":\s+(?=[A-ZÁÉÍÓÚÑ0-9][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,32}\s*:)",
         ":\n",
         t,
     )
     t = re.sub(
-        r"\.\s+(?=[A-ZÁÉÍÓÚÑ][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,32}\s*:)",
+        r"\.\s+(?=[A-ZÁÉÍÓÚÑ0-9][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,32}\s*:)",
         ".\n",
         t,
     )
@@ -154,10 +164,13 @@ def _normalize_benefit_blob(text: str) -> str:
     return t
 
 
+_normalize_benefit_blob = _normalize_structured_blob  # compat
+
+
 def extract_structured_lines(text: str, *, max_lines: int = 5) -> list[str]:
     """Extrae líneas «Título: descripción» de cualquier texto."""
     lines: list[str] = []
-    for match in _TITLE_DESC_LINE.finditer(_normalize_benefit_blob(text or "")):
+    for match in _TITLE_DESC_LINE.finditer(_normalize_structured_blob(text or "")):
         title = sanitize_label(match.group(1).strip())
         desc = normalize_spanish(re.sub(r"\s+", " ", match.group(2).strip()))
         if title.lower() in _SKIP_LINE_TITLES:
@@ -222,10 +235,14 @@ def build_image_headline(context: str = "", subject: str = "") -> str:
     skip = {
         "producto",
         "el producto",
+        "tema",
+        "el tema",
         "imagen",
         "creativo",
         "en el fondo",
         "referencia",
+        "evento",
+        "servicio",
     }
     subj = sanitize_label(subject)
     if subj and subj.lower() not in skip and not re.search(r"\bfondo\b", subj, re.I):
@@ -295,8 +312,8 @@ def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None)
 
 
 _CREATIVE_NO_LEAK = (
-    "PROHIBIDO escribir en la imagen instrucciones del prompt, metadatos ni palabras como: "
-    "genera, imagen, características, referencia, instrucción, prompt, dietary supplement inventado."
+    "PROHIBIDO escribir en la imagen instrucciones del prompt, metadatos, typos del usuario "
+    "ni palabras como: genera, imagen, características, referencia, instrucción, prompt."
 )
 
 

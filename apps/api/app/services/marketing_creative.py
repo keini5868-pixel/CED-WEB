@@ -1,4 +1,4 @@
-"""Detección y brief de creativos publicitarios (genérico — cualquier producto/marca)."""
+"""Detección y brief de creativos con imagen (genérico — producto, evento, servicio, curso…)."""
 
 from __future__ import annotations
 
@@ -25,8 +25,18 @@ _CREATIVE_TAIL_NOISE = re.compile(
     r"\s*(?:"
     r"y\s+que\s+.*(?:referencia|fondo|imegen|imagen|imajen)"
     r"|(?:expli|espli)\w*.*(?:referencia|fondo|imegen|imagen)"
+    r"|(?:usa|utiliza)\w*\s+(?:esta|ese|la|el|mi)?\s*(?:imagen|foto|imegen|fotograf[ií]a)?\s*"
+    r"(?:de\s+)?(?:referencia\s+)?(?:en\s+el\s+)?(?:fondo|detr[aá]s|base)(?:\s+(?:del|de\s+el)\s+\w+)?"
+    r"|(?:usa|pon)\s+.*(?:referencia|fondo|detr[aá]s|imagen\s+adjunta)"
     r").*$",
     re.I | re.S,
+)
+_META_INSTRUCTION_FRAGMENT = re.compile(
+    r"^(?:"
+    r"(?:usa|utiliza)\s+(?:esta|ese|la|el|mi)?\s*(?:imagen|foto|imegen)?\s*"
+    r"|(?:referencia|fondo|detr[aá]s)\b"
+    r")",
+    re.I,
 )
 _CREATIVE_HEAD_NOISE = re.compile(
     r"^(?:"
@@ -48,11 +58,29 @@ _CREATIVE_TYPO_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
 _MARKETING_CREATIVE = re.compile(
     r"\b("
     r"flyer|creativo|banner|publicidad|anuncio|post\s+de\s+venta|"
-    r"especificaciones|beneficios|veneficios|caracter[ií]sticas|"
+    r"especificaciones|beneficios|veneficios|ventajas|puntos?\s+clave|caracter[ií]sticas|"
+    r"agenda|horarios?|m[oó]dulos?|programa|invitaci[oó]n|promoci[oó]n|"
+    r"evento|curso|taller|servicio|"
     r"vender|vendiendo|dise[nñ]o\s+(?:de\s+)?venta|"
     r"pon\s+(?:de\s+)?fondo|usa\s+(?:esta|esta)\s+imagen|"
     r"textos?\s+(?:escritos|encima|sobre)|"
-    r"presentaci[oó]n\s+de\s+producto"
+    r"presentaci[oó]n\s+(?:de\s+)?(?:producto|servicio|evento|marca)"
+    r")\b",
+    re.I,
+)
+_STRUCTURED_CONTENT = re.compile(
+    r"\b("
+    r"beneficios?|veneficios?|ventajas?|puntos?\s+clave|caracter[ií]sticas|"
+    r"especificaciones|agenda|horarios?|m[oó]dulos?|temas?|programa|"
+    r"servicios?|promoci[oó]n|invitaci[oó]n|incluye"
+    r")\b",
+    re.I,
+)
+_VISUAL_REFERENCE = re.compile(
+    r"\b("
+    r"referencia|fondo|detr[aá]s|base|"
+    r"imagen|foto|flyer|creativo|"
+    r"expli[qc]\w*|muestra|present|adjunt"
     r")\b",
     re.I,
 )
@@ -89,17 +117,83 @@ def strip_creative_user_noise(text: str) -> str:
     return t.strip()
 
 
+def _is_meta_instruction_fragment(text: str) -> bool:
+    """Fragmento tipo «referencia en el fondo» sin contenido del tema."""
+    t = (text or "").strip()
+    if not t or len(t) > 100:
+        return False
+    if extract_structured_lines(t):
+        return False
+    if _META_INSTRUCTION_FRAGMENT.search(t):
+        return True
+    if re.fullmatch(
+        r"(?:referencia|fondo|imagen|imegen|detr[aá]s)(?:\s+\w+){0,10}",
+        t,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def _merge_creative_raw(primary: str, alternate: str | None) -> str:
+    """Conserva el texto con más contenido útil; evita perder viñetas por un tail meta."""
+    base = strip_creative_user_noise(primary)
+    if not alternate:
+        return base
+    alt = strip_creative_user_noise(alternate)
+    if not alt or alt == base:
+        return base
+    if _is_meta_instruction_fragment(alt) and extract_structured_lines(base):
+        return base
+    base_lines = extract_structured_lines(base)
+    alt_lines = extract_structured_lines(alt)
+    if base_lines and not alt_lines:
+        return base
+    if alt_lines and not base_lines:
+        return alt
+    if len(alt_lines) > len(base_lines):
+        return alt
+    if len(alt) > len(base) and not _is_meta_instruction_fragment(alt):
+        return alt
+    return base
+
+
 def is_marketing_creative_intent(text: str) -> bool:
     t = normalize_creative_request_text(text)
     if not t:
         return False
     if _MARKETING_CREATIVE.search(t):
         return True
-    if is_generate_image_intent(t) and re.search(
-        r"\b(beneficios|veneficios|especificaciones|caracter[ií]sticas|producto)\b",
-        t,
-        re.I,
-    ):
+    if is_generate_image_intent(t) and _STRUCTURED_CONTENT.search(t):
+        return True
+    return False
+
+
+def should_build_creative_brief(
+    text: str,
+    history: list[dict[str, str]] | None = None,
+    *,
+    has_reference_image: bool = False,
+) -> bool:
+    """True si conviene reescribir el pedido como brief [[CREATIVO]] (cualquier tema)."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    clean = strip_creative_user_noise(raw)
+    blob = f"{clean}\n{_history_blob(history)}\n{raw}"
+    overlay = (
+        extract_structured_lines(blob)
+        or extract_structured_lines_from_history(history)
+    )
+    if is_marketing_creative_intent(raw):
+        return True
+    if len(overlay) >= 2:
+        return True
+    if has_reference_image and overlay and _VISUAL_REFERENCE.search(normalize_creative_request_text(raw)):
+        return True
+    if has_reference_image and is_attachment_creative_request(raw, history):
+        return True
+    if overlay and is_image_creation_request(raw, history):
         return True
     return False
 
@@ -121,24 +215,14 @@ def is_attachment_creative_request(
         or extract_structured_lines(t)
         or extract_structured_lines_from_history(history)
     )
-    visual_ref = re.search(
-        r"\b("
-        r"referencia|fondo|detr[aá]s|base|"
-        r"imagen|foto|flyer|creativo|"
-        r"expli[qc]\w*|muestra|present"
-        r")\b",
-        t,
-        re.I,
-    )
+    visual_ref = _VISUAL_REFERENCE.search(t)
     if overlay_lines and visual_ref:
         return True
-    if overlay_lines and re.search(r"\bproducto\b", t, re.I):
+    if overlay_lines and _STRUCTURED_CONTENT.search(t):
         return True
-    if re.search(r"beneficios?", t, re.I) and re.search(
-        r"\b(imagen|referencia|fondo|producto)\b",
-        t,
-        re.I,
-    ):
+    if overlay_lines and is_generate_image_intent(t):
+        return True
+    if _STRUCTURED_CONTENT.search(t) and visual_ref:
         return True
     return False
 
@@ -191,11 +275,15 @@ _SKIP_SUBJECTS = frozenset(
     {
         "producto",
         "el producto",
+        "tema",
+        "el tema",
         "en el fondo",
         "referencia",
         "imagen",
         "creativo",
         "flyer",
+        "evento",
+        "servicio",
     }
 )
 
@@ -204,32 +292,40 @@ def _subject_is_usable(subject: str) -> bool:
     clean = re.sub(r"\s+", " ", (subject or "").strip()).lower()
     if len(clean) < 3 or clean in _SKIP_SUBJECTS:
         return False
-    if re.fullmatch(r"(fondo|referencia|imagen|producto)(?:\s+\w+){0,2}", clean):
+    if re.fullmatch(r"(fondo|referencia|imagen|producto|tema|evento|servicio)(?:\s+\w+){0,2}", clean):
+        return False
+    if re.search(r"\b(referencia|fondo|detr[aá]s|imegen|adjunt|instrucci[oó]n)\b", clean):
         return False
     return True
 
 
-def _extract_product_subject(context: str) -> str:
+def _extract_creative_subject(context: str) -> str:
     blob = (context or "").strip()
     if not blob:
-        return "producto"
+        return "tema"
     for pattern in (
-        r"\b(FitLine\s+[A-Za-zÁÉÍÓÚáéíóúÑñ0-9]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ0-9]+)?)\b",
-        r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{3,40})\s+es\s+(?:un|una)\b",
+        r'["«“]([^"»”]{3,60})["»”]',
+        r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ0-9][\w\s\-]{2,45})\s+es\s+(?:un|una)\b",
+        r"\b(?:producto|servicio|evento|curso|taller|marca|promoci[oó]n|invitaci[oó]n|flyer)\s+"
+        r"([^\n,.:;]{3,60})",
         r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,30})\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,30})\b",
         r"\bproducto\s+([^\n,.:;]{3,60})",
     ):
         match = re.search(pattern, blob, re.I)
         if not match:
             continue
-        if match.lastindex and match.lastindex >= 2:
+        if match.lastindex and match.lastindex >= 2 and match.group(2):
             subject = f"{match.group(1).strip()} de {match.group(2).strip()}"
         else:
             subject = (match.group(1) if match.lastindex else match.group(0)).strip()
         subject = re.sub(r"\s+", " ", subject)
         if _subject_is_usable(subject):
             return subject[:80]
-    return "producto"
+    return "tema"
+
+
+def _extract_product_subject(context: str) -> str:
+    return _extract_creative_subject(context)
 
 
 def _extract_benefit_bullets(text: str, *, max_bullets: int = 4) -> list[str]:
@@ -249,10 +345,10 @@ def extract_product_subject(context: str) -> str:
 
 
 def build_display_label(subject: str, *, kind: str = "creativo") -> str:
-    clean = re.sub(r"\s+", " ", (subject or "producto").strip())[:50]
+    clean = re.sub(r"\s+", " ", (subject or "tema").strip())[:50]
     if kind == "flyer":
-        return f"Flyer publicitario — {clean}"
-    return f"Creativo publicitario — {clean}"
+        return f"Flyer — {clean}"
+    return f"Creativo — {clean}"
 
 
 def build_marketing_creative_brief(
@@ -267,11 +363,10 @@ def build_marketing_creative_brief(
     """
     raw = strip_creative_user_noise(user_text)
     parsed = parse_generate_image_prompt(user_text) or parse_followup_image_prompt(user_text, history)
-    if parsed:
-        raw = strip_creative_user_noise(parsed)
+    raw = _merge_creative_raw(raw, parsed)
 
     context = _history_blob(history)
-    subject = normalize_spanish(_extract_product_subject(f"{context}\n{raw}\n{user_text}"))
+    subject = normalize_spanish(_extract_creative_subject(f"{context}\n{raw}\n{user_text}"))
     overlay_lines = collect_image_overlay_lines(f"{raw}\n{context}", context)
     if not overlay_lines:
         overlay_lines = _extract_benefit_bullets_from_history(history)
@@ -291,11 +386,11 @@ def build_marketing_creative_brief(
     if has_reference_image:
         internal = (
             f"{CREATIVO_PROMPT_MARKER} "
-            "Flyer publicitario cuadrado 1:1 para redes sociales. "
-            "Usa la foto adjunta: el envase/producto debe verse nítido (centro o fondo). "
+            "Creativo cuadrado 1:1 para redes sociales. "
+            "Usa la foto adjunta: el elemento principal del tema debe verse nítido (centro o fondo). "
             "Diseño limpio, fondo suave desenfocado, tipografía sans-serif grande. "
             "Máximo 4 textos cortos en la imagen. "
-            f"Producto: {subject}. "
+            f"Tema: {subject}. "
         )
         if verbatim_block:
             internal += f"{verbatim_block} "
@@ -308,7 +403,7 @@ def build_marketing_creative_brief(
         internal = (
             f"{CREATIVO_PROMPT_MARKER} "
             "Genera un creativo cuadrado para redes sociales. "
-            f"Producto o tema: {subject}. "
+            f"Tema: {subject}. "
         )
         if verbatim_block:
             internal += f"{verbatim_block} "

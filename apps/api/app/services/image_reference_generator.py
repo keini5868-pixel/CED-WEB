@@ -389,13 +389,12 @@ def _generate_image_with_reference_impl(
 
     mode = style_mode if style_mode in ("inspired", "variation", "edit") else "inspired"
 
-    from app.services.copy_quality import extract_structured_lines
     from app.services.marketing_creative import (
         build_marketing_creative_brief,
-        is_marketing_creative_intent,
+        should_build_creative_brief,
     )
 
-    if is_marketing_creative_intent(topic) or len(extract_structured_lines(topic)) >= 2:
+    if should_build_creative_brief(topic, history=None, has_reference_image=True):
         topic, _, brief_mode = build_marketing_creative_brief(
             topic,
             history=None,
