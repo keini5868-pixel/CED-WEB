@@ -1680,68 +1680,77 @@ def send_message(
         return out
 
     if image_bytes:
-        from app.services.chat_multimedia import analyze_chat_image
-        from app.services.marketing_creative import resolve_image_creation_from_attachment
-        from app.services.publish_image_context import register_text_chat_image
-        from app.services.publish_text import is_social_publish_intent
-        from app.services.text_publish_flow import start_publish_flow_from_image
+        try:
+            from app.services.chat_multimedia import analyze_chat_image
+            from app.services.marketing_creative import resolve_image_creation_from_attachment
+            from app.services.publish_image_context import register_text_chat_image
+            from app.services.publish_text import is_social_publish_intent
+            from app.services.text_publish_flow import start_publish_flow_from_image
 
-        register_text_chat_image(
-            user_id,
-            conversation_id,
-            image_bytes,
-            image_media_type or "image/jpeg",
-        )
-
-        creation = resolve_image_creation_from_attachment(text, history)
-        if creation:
-            ref_result = _generate_chat_image_with_reference(
+            register_text_chat_image(
                 user_id,
-                prompt=creation["internal_prompt"],
-                reference_bytes=image_bytes,
-                media_type=image_media_type or "image/jpeg",
-                style_mode=creation.get("style_mode") or "edit",
+                conversation_id,
+                image_bytes,
+                image_media_type or "image/jpeg",
             )
-            if ref_result.get("ok") and ref_result.get("url"):
-                from app.services.publish_image_context import register_text_chat_image_url
 
-                register_text_chat_image_url(
+            creation = resolve_image_creation_from_attachment(text, history)
+            if creation:
+                ref_result = _generate_chat_image_with_reference(
                     user_id,
-                    conversation_id,
-                    str(ref_result["url"]),
+                    prompt=creation["internal_prompt"],
+                    reference_bytes=image_bytes,
+                    media_type=image_media_type or "image/jpeg",
+                    style_mode=creation.get("style_mode") or "edit",
                 )
-                return _finish(
-                    creation.get("reply") or "Listo. Aquí está su creativo.",
-                    route_meta={"intent": "marketing_creative", "source": "attachment_reference"},
-                    image=_chat_image_attachment(
-                        str(ref_result["url"]),
-                        caption=creation["display_label"],
-                        quality=str(ref_result.get("quality") or ""),
-                    ),
-                )
-            err = str(ref_result.get("error") or "No pude generar el creativo.")
-            return _finish(
-                _format_image_generation_error(err),
-                route_meta={"intent": "marketing_creative", "source": "attachment_error"},
-            )
+                if ref_result.get("ok") and ref_result.get("url"):
+                    from app.services.publish_image_context import register_text_chat_image_url
 
-        if is_social_publish_intent(text, with_image=True):
-            reply = start_publish_flow_from_image(user_id, conversation_id, text)
+                    register_text_chat_image_url(
+                        user_id,
+                        conversation_id,
+                        str(ref_result["url"]),
+                    )
+                    return _finish(
+                        creation.get("reply") or "Listo. Aquí está su creativo.",
+                        route_meta={"intent": "marketing_creative", "source": "attachment_reference"},
+                        image=_chat_image_attachment(
+                            str(ref_result["url"]),
+                            caption=creation["display_label"],
+                            quality=str(ref_result.get("quality") or ""),
+                        ),
+                    )
+                err = str(ref_result.get("error") or "No pude generar el creativo.")
+                return _finish(
+                    _format_image_generation_error(err),
+                    route_meta={"intent": "marketing_creative", "source": "attachment_error"},
+                )
+
+            if is_social_publish_intent(text, with_image=True):
+                reply = start_publish_flow_from_image(user_id, conversation_id, text)
+                return _finish(
+                    reply,
+                    route_meta={"intent": "publish_flow", "source": "image_upload"},
+                )
+
+            reply = analyze_chat_image(
+                user_id,
+                image_bytes=image_bytes,
+                media_type=image_media_type or "image/jpeg",
+                user_text=text,
+            )
             return _finish(
                 reply,
-                route_meta={"intent": "publish_flow", "source": "image_upload"},
+                route_meta={"intent": "chat_vision", "source": "attachment"},
             )
-
-        reply = analyze_chat_image(
-            user_id,
-            image_bytes=image_bytes,
-            media_type=image_media_type or "image/jpeg",
-            user_text=text,
-        )
-        return _finish(
-            reply,
-            route_meta={"intent": "chat_vision", "source": "attachment"},
-        )
+        except TextChatError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[CHAT] image attachment failed user=%s", user_id[:8])
+            raise TextChatError(
+                "No pude procesar la imagen adjunta. Reintenta en unos segundos.",
+                http_status=503,
+            ) from exc
 
     img_prompt = parse_generate_image_prompt(text)
     followup_prompt = parse_followup_image_prompt(text, history) if not img_prompt else None

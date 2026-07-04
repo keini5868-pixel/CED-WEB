@@ -4,6 +4,7 @@ from app.services.marketing_creative import (
     blocks_publish_intent,
     build_marketing_creative_brief,
     extract_product_subject,
+    is_attachment_creative_request,
     is_image_creation_request,
     is_marketing_creative_intent,
     resolve_image_creation_from_attachment,
@@ -73,3 +74,17 @@ def test_attachment_resolver_for_product_photo():
 def test_extract_product_subject_generic():
     subject = extract_product_subject("producto basics de fitline con fibra y probioticos")
     assert "basics" in subject.lower()
+
+
+def test_attachment_detects_typo_benefits_and_reference_image():
+    text = (
+        "Salud intestinal: Contribuye a mantener flora equilibrada.\n"
+        "Sistema inmune: Fortalece defensas naturales.\n"
+        "Y QUE ESPLIQUE SUS VBENEFICIOS USANDO ESTA IMEGENE DE REFERENCIA DEL PRODUCTO EN EL FONDO"
+    )
+    assert is_attachment_creative_request(text)
+    assert is_marketing_creative_intent(text)
+    resolved = resolve_image_creation_from_attachment(text)
+    assert resolved is not None
+    assert resolved["style_mode"] == "edit"
+    assert "TEXTOS EXACTOS" in resolved["internal_prompt"]

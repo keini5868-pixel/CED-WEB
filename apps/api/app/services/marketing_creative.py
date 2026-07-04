@@ -20,6 +20,15 @@ from app.services.copy_quality import (
 )
 from app.services.gemini_images import strip_image_generation_instruction
 
+_CREATIVE_TYPO_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"vbeneficios?", re.I), "beneficios"),
+    (re.compile(r"veneficios?", re.I), "beneficios"),
+    (re.compile(r"imegenes?", re.I), "imagen"),
+    (re.compile(r"imajenes?", re.I), "imagen"),
+    (re.compile(r"especificaciones?", re.I), "especificaciones"),
+    (re.compile(r"caracteristicas?", re.I), "características"),
+)
+
 _MARKETING_CREATIVE = re.compile(
     r"\b("
     r"flyer|creativo|banner|publicidad|anuncio|post\s+de\s+venta|"
@@ -46,8 +55,16 @@ _PRODUCT_SUBJECT = re.compile(
 )
 
 
-def is_marketing_creative_intent(text: str) -> bool:
+def normalize_creative_request_text(text: str) -> str:
+    """Normaliza typos de voz/dictado antes de detectar creativos."""
     t = (text or "").strip()
+    for pattern, repl in _CREATIVE_TYPO_REPLACEMENTS:
+        t = pattern.sub(repl, t)
+    return t
+
+
+def is_marketing_creative_intent(text: str) -> bool:
+    t = normalize_creative_request_text(text)
     if not t:
         return False
     if _MARKETING_CREATIVE.search(t):
@@ -61,9 +78,48 @@ def is_marketing_creative_intent(text: str) -> bool:
     return False
 
 
+def is_attachment_creative_request(
+    text: str,
+    history: list[dict[str, str]] | None = None,
+) -> bool:
+    """Detecta pedido de creativo al adjuntar imagen (incluye typos y beneficios en el mensaje)."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    t = normalize_creative_request_text(raw)
+    if is_image_creation_request(t, history):
+        return True
+
+    overlay_lines = (
+        extract_structured_lines(raw)
+        or extract_structured_lines(t)
+        or extract_structured_lines_from_history(history)
+    )
+    visual_ref = re.search(
+        r"\b("
+        r"referencia|fondo|detr[aá]s|base|"
+        r"imagen|foto|flyer|creativo|"
+        r"expli[qc]\w*|muestra|present"
+        r")\b",
+        t,
+        re.I,
+    )
+    if overlay_lines and visual_ref:
+        return True
+    if overlay_lines and re.search(r"\bproducto\b", t, re.I):
+        return True
+    if re.search(r"beneficios?", t, re.I) and re.search(
+        r"\b(imagen|referencia|fondo|producto)\b",
+        t,
+        re.I,
+    ):
+        return True
+    return False
+
+
 def is_image_creation_request(text: str, history: list[dict[str, str]] | None = None) -> bool:
     """True si el usuario pide generar/editar un creativo, no publicar."""
-    t = (text or "").strip()
+    t = normalize_creative_request_text(text)
     if not t:
         return False
     if is_generate_image_intent(t):
@@ -81,7 +137,8 @@ def blocks_publish_intent(text: str, history: list[dict[str, str]] | None = None
     """Evita confundir «flyer/creativo» con flujo de publicación Meta."""
     if is_image_creation_request(text, history):
         return True
-    if _MARKETING_CREATIVE.search(text or "") and not _explicit_publish_only(text):
+    normalized = normalize_creative_request_text(text or "")
+    if _MARKETING_CREATIVE.search(normalized) and not _explicit_publish_only(text):
         return True
     return False
 
@@ -210,7 +267,7 @@ def resolve_image_creation_from_attachment(
     history: list[dict[str, str]] | None = None,
 ) -> dict[str, str] | None:
     """Si hay imagen adjunta + pedido de creativo, devuelve brief y metadatos."""
-    if not is_image_creation_request(user_text, history):
+    if not is_attachment_creative_request(user_text, history):
         return None
     internal, display, style_mode = build_marketing_creative_brief(
         user_text,
