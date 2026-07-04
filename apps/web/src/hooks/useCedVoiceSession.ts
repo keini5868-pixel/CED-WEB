@@ -136,6 +136,16 @@ const MIC_UNMUTE_AFTER_GREETING_MS = 4500;
 /** Tras saludo sin respuesta del usuario — una sola frase de presencia. */
 const IDLE_PRESENCE_MS = 50_000;
 
+function bindHudCameraFeed(stream: MediaStream): boolean {
+  const videoEl = document.querySelector<HTMLVideoElement>("#ced-camera-feed");
+  if (!videoEl) return false;
+  if (videoEl.srcObject !== stream) {
+    videoEl.srcObject = stream;
+  }
+  void videoEl.play().catch(() => undefined);
+  return true;
+}
+
 async function publishImageToBlob(image: {
   imageUrl?: string;
   imageData?: string;
@@ -215,6 +225,13 @@ export function useCedVoiceSession(
   const micStreamRef = useRef<MediaStream | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraFacingRef = useRef<"user" | "environment">("user");
+  const cameraActivateInFlightRef = useRef<Promise<void> | null>(null);
+  const activateCameraFromVoiceRef = useRef<
+    (opts?: {
+      ackActionId?: number;
+      showFeedback?: boolean;
+    }) => Promise<void>
+  >(async () => undefined);
   const cameraIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const clientRef = useRef<CedLiveClient | null>(null);
   const retellClientRef = useRef<CedRetellClient | null>(null);
@@ -388,29 +405,6 @@ export function useCedVoiceSession(
       return video.videoWidth > 0;
     };
 
-    const activateCameraFromVoice = async (opts?: {
-      ackActionId?: number;
-      showFeedback?: boolean;
-    }) => {
-      console.log("[CAMERA] activate from voice");
-      void postVoiceCameraStatus(true, false).catch(() => undefined);
-      await toggleCameraRef.current(true);
-      const live = await waitForCameraStream(4500);
-      console.log("[CAMERA] stream_ready live=%s", live);
-      await postVoiceCameraStatus(live, live);
-      if (opts?.showFeedback !== false) {
-        callbacks?.onTranscript?.(
-          "Cámara activa, señor. Lista para analizar.",
-          "model",
-          { partial: false },
-        );
-        void persistVoiceTranscript("model", "Cámara activa, señor. Lista para analizar.");
-      }
-      if (opts?.ackActionId) {
-        await ackVoiceClientAction(opts.ackActionId);
-      }
-    };
-
     const handleVoiceClientAction = async (action: {
       id: number;
       action: string;
@@ -418,7 +412,10 @@ export function useCedVoiceSession(
     }) => {
       if (action.action === "camera_activate") {
         console.log("[CAMERA] poll activate action_id=%s", action.id);
-        await activateCameraFromVoice({ ackActionId: action.id, showFeedback: true });
+        await activateCameraFromVoiceRef.current({
+          ackActionId: action.id,
+          showFeedback: false,
+        });
         return;
       }
       if (action.action === "camera_deactivate") {
@@ -523,7 +520,7 @@ export function useCedVoiceSession(
             void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
           }
           if (ev.type === "camera_activate") {
-            void activateCameraFromVoice({ showFeedback: true });
+            void activateCameraFromVoiceRef.current({ showFeedback: false });
           }
           if (ev.type === "navigation_instruction" && ev.text) {
             const text = String(ev.text);
@@ -562,7 +559,7 @@ export function useCedVoiceSession(
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [retellPollActive, waitForCameraFrame, cameraOn, callbacks, persistVoiceTranscript]);
+  }, [retellPollActive, waitForCameraFrame, callbacks, persistVoiceTranscript]);
 
   const resolvePublishImage = useCallback(
     async (
@@ -756,8 +753,18 @@ export function useCedVoiceSession(
         return;
       }
       const stream = cameraStreamRef.current;
-      if (stream && stream.active && stream.getVideoTracks().some((t) => t.readyState === "live")) {
+      const streamLive =
+        !!stream?.active &&
+        stream.getVideoTracks().some((t) => t.readyState === "live" && t.enabled);
+      if (streamLive) {
+        setCameraOn(true);
+        setCameraStream(stream);
         return;
+      }
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        cameraStreamRef.current = null;
+        setCameraStream(null);
       }
       try {
         await startCameraWithFacing(cameraFacingRef.current);
@@ -771,6 +778,81 @@ export function useCedVoiceSession(
     [cameraOn, startCameraWithFacing],
   );
   toggleCameraRef.current = toggleCamera;
+
+  const activateCameraFromVoice = useCallback(
+    async (opts?: { ackActionId?: number; showFeedback?: boolean }) => {
+      if (cameraActivateInFlightRef.current) {
+        await cameraActivateInFlightRef.current;
+        if (opts?.ackActionId) {
+          await ackVoiceClientAction(opts.ackActionId);
+        }
+        return;
+      }
+
+      const task = (async () => {
+        console.log("[CAMERA] activate from voice");
+        try {
+          if (
+            cameraStreamRef.current?.active &&
+            cameraStreamRef.current
+              .getVideoTracks()
+              .some((t) => t.readyState === "live" && t.enabled)
+          ) {
+            setCameraOn(true);
+            setCameraStream(cameraStreamRef.current);
+            bindHudCameraFeed(cameraStreamRef.current);
+            await postVoiceCameraStatus(true, true);
+            return;
+          }
+
+          void postVoiceCameraStatus(true, false).catch(() => undefined);
+          const stream = await startCameraWithFacing("environment");
+          await new Promise<void>((resolve) => {
+            window.requestAnimationFrame(() => {
+              window.requestAnimationFrame(() => resolve());
+            });
+          });
+          bindHudCameraFeed(stream);
+          setStatusLabel("Cámara activa — vista en vivo");
+          const live =
+            !!stream.active &&
+            stream.getVideoTracks().some((t) => t.readyState === "live" && t.enabled);
+          await postVoiceCameraStatus(live, live);
+          console.log("[CAMERA] activada desde voz live=%s", live);
+          if (!live) {
+            throw new Error("camera_stream_not_live");
+          }
+        } catch (error) {
+          console.error("[CAMERA] error activando:", error);
+          await postVoiceCameraStatus(false, false).catch(() => undefined);
+          setErrorMessage(
+            "Por favor permite el acceso a la cámara para que CED pueda ver.",
+          );
+          throw error;
+        }
+      })();
+
+      cameraActivateInFlightRef.current = task;
+      try {
+        await task;
+        if (opts?.showFeedback !== false) {
+          callbacks?.onTranscript?.(
+            "Cámara activa, señor. Lista para analizar.",
+            "model",
+            { partial: false },
+          );
+          void persistVoiceTranscript("model", "Cámara activa, señor. Lista para analizar.");
+        }
+        if (opts?.ackActionId) {
+          await ackVoiceClientAction(opts.ackActionId);
+        }
+      } finally {
+        cameraActivateInFlightRef.current = null;
+      }
+    },
+    [callbacks, persistVoiceTranscript, startCameraWithFacing],
+  );
+  activateCameraFromVoiceRef.current = activateCameraFromVoice;
 
   const flipCamera = useCallback(async () => {
     if (!cameraOn) return;

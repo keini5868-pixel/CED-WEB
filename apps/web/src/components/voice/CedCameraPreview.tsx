@@ -42,6 +42,7 @@ export function CedCameraPreview({
         >
           <div className="relative overflow-hidden rounded-xl border border-cyan-400/50 bg-black/80 ced-panel-glow shadow-[0_0_24px_rgba(0,229,255,0.15)]">
             <video
+              id="ced-camera-feed"
               ref={videoRef}
               autoPlay
               playsInline
