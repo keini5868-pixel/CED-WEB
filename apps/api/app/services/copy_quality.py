@@ -1,16 +1,15 @@
-"""Normalización y textos literales para redacción en español (chat e imágenes)."""
+"""Normalización y textos literales en español — chat, imágenes, captions (genérico)."""
 
 from __future__ import annotations
 
 import re
 import unicodedata
 
-# Correcciones frecuentes (usuario, voz, o modelos de imagen).
+# Correcciones frecuentes (usuario, voz, transcripción o modelos de imagen).
 _TYPO_MAP: dict[str, str] = {
     "veneficio": "beneficio",
     "veneficios": "beneficios",
     "caracteristicas": "características",
-    "especificaciones": "especificaciones",
     "immune": "inmune",
     "intesino": "intestino",
     "equilibibals": "equilibrada",
@@ -26,10 +25,6 @@ _TYPO_MAP: dict[str, str] = {
     "absorcion": "absorción",
 }
 
-_ENGLISH_IN_SPANISH = re.compile(
-    r"\b(immune|digestion|nutrition|energy|health)\b",
-    re.I,
-)
 _ENGLISH_REPLACEMENTS = {
     "immune": "inmune",
     "digestion": "digestión",
@@ -38,30 +33,83 @@ _ENGLISH_REPLACEMENTS = {
     "health": "salud",
 }
 
+_TITLE_DESC_LINE = re.compile(
+    r"(?:^|\n)\s*(?:[\*\-•]\s*)?"
+    r"([A-Za-zÁÉÍÓÚáéíóúÑñ0-9][A-Za-zÁÉÍÓÚáéíóúÑñ0-9\s]{2,35})\s*:\s*"
+    r"(.{8,160}?)(?=\n|$|\*|\-|\•|[A-ZÁÉÍÓÚ][a-záéíóú]+:)",
+    re.M,
+)
+_SKIP_LINE_TITLES = frozenset(
+    {
+        "características",
+        "caracteristicas",
+        "beneficios",
+        "referencia",
+        "información",
+        "informacion",
+        "nota",
+        "ejemplo",
+        "contexto",
+    },
+)
+_IMAGE_TEXT_HINT = re.compile(
+    r"\b("
+    r"texto|escrito|frase|t[ií]tulo|caption|flyer|banner|letras|nombre|"
+    r"quote|cita|eslogan|headline|subtitulo|subt[ií]tulo|"
+    r"beneficios|veneficios|especificaciones|caracter[ií]sticas|"
+    r"publicidad|anuncio|post|vender|vendiendo"
+    r")\b",
+    re.I,
+)
+_ORTHOGRAPHY_RULE = (
+    "Ortografía española impecable en todo texto visible. "
+    "Sin anglicismos innecesarios ni palabras inventadas."
+)
+
+
+def _replace_word_preserve_case(word: str, replacement: str) -> str:
+    if not word:
+        return replacement
+    if word.isupper():
+        return replacement.upper()
+    if word[:1].isupper():
+        return replacement[:1].upper() + replacement[1:]
+    return replacement
+
+
+def _apply_typo_fixes(text: str) -> str:
+    def fix_word(match: re.Match[str]) -> str:
+        word = match.group(0)
+        lower = word.lower()
+        for wrong, right in _TYPO_MAP.items():
+            if lower == wrong:
+                return _replace_word_preserve_case(word, right)
+        for eng, spa in _ENGLISH_REPLACEMENTS.items():
+            if lower == eng:
+                return _replace_word_preserve_case(word, spa)
+        return word
+
+    return re.sub(r"\b[\w\-áéíóúñü]+\b", fix_word, text, flags=re.I)
+
 
 def normalize_spanish(text: str) -> str:
-    """Corrige typos comunes y normaliza espacios."""
+    """Corrige typos comunes y normaliza espacios sin alterar nombres propios."""
     t = unicodedata.normalize("NFC", (text or "").strip())
     if not t:
         return t
     t = re.sub(r"\s+", " ", t)
-    for eng, spa in _ENGLISH_REPLACEMENTS.items():
-        t = re.sub(rf"\b{eng}\b", spa, t, flags=re.I)
-    lower = t.lower()
-    for wrong, right in _TYPO_MAP.items():
-        lower = re.sub(rf"\b{re.escape(wrong)}\b", right, lower, flags=re.I)
-    # Restaurar capitalización de oración si el original empezaba en mayúscula.
-    if text[:1].isupper() and lower:
-        lower = lower[0].upper() + lower[1:]
-    return lower
+    return _apply_typo_fixes(t)
 
 
-def sanitize_benefit_title(title: str) -> str:
-    clean = normalize_spanish(title.strip())
+def sanitize_label(text: str) -> str:
+    clean = normalize_spanish(text.strip())
     clean = re.sub(r"\s+", " ", clean)
     if not clean:
         return clean
     return clean[0].upper() + clean[1:]
+
+
+sanitize_benefit_title = sanitize_label  # compat
 
 
 def _first_phrase(desc: str, *, max_chars: int = 48) -> str:
@@ -73,8 +121,8 @@ def _first_phrase(desc: str, *, max_chars: int = 48) -> str:
 
 
 def compact_overlay_line(title: str, desc: str) -> str:
-    """Línea corta para gráfico — menos texto = menos errores del modelo de imagen."""
-    label = sanitize_benefit_title(title)
+    """Línea corta para gráfico — aplica a cualquier tema (producto, evento, servicio…)."""
+    label = sanitize_label(title)
     phrase = _first_phrase(desc, max_chars=44)
     if not phrase:
         return label
@@ -83,14 +131,58 @@ def compact_overlay_line(title: str, desc: str) -> str:
     return f"{label}: {phrase}"
 
 
-def overlay_lines_from_benefit_strings(bullets: list[str]) -> list[str]:
+def extract_structured_lines(text: str, *, max_lines: int = 5) -> list[str]:
+    """Extrae líneas «Título: descripción» de cualquier texto."""
+    lines: list[str] = []
+    for match in _TITLE_DESC_LINE.finditer(text or ""):
+        title = sanitize_label(match.group(1).strip())
+        desc = normalize_spanish(re.sub(r"\s+", " ", match.group(2).strip()))
+        if title.lower() in _SKIP_LINE_TITLES:
+            continue
+        if len(desc) < 8:
+            continue
+        line = compact_overlay_line(title, desc)
+        if line and line not in lines:
+            lines.append(line)
+        if len(lines) >= max_lines:
+            break
+    return lines
+
+
+def extract_structured_lines_from_history(
+    history: list[dict[str, str]] | None,
+    *,
+    max_lines: int = 5,
+) -> list[str]:
+    for row in reversed(history or []):
+        role = str(row.get("role") or "")
+        if role not in ("model", "assistant"):
+            continue
+        lines = extract_structured_lines(str(row.get("content") or ""), max_lines=max_lines)
+        if lines:
+            return lines
+    return []
+
+
+def extract_quoted_phrases(text: str, *, max_phrases: int = 5) -> list[str]:
+    phrases: list[str] = []
+    for match in re.finditer(r'["«“]([^"»”]{4,80})["»”]', text or ""):
+        phrase = normalize_spanish(match.group(1).strip())
+        if phrase and phrase not in phrases:
+            phrases.append(phrase)
+        if len(phrases) >= max_phrases:
+            break
+    return phrases
+
+
+def overlay_lines_from_strings(bullets: list[str]) -> list[str]:
     lines: list[str] = []
     for bullet in bullets:
         if ":" in bullet:
             title, _, desc = bullet.partition(":")
             line = compact_overlay_line(title, desc)
         else:
-            line = sanitize_benefit_title(bullet)
+            line = sanitize_label(bullet)
         line = normalize_spanish(line)
         if line and line not in lines:
             lines.append(line)
@@ -99,16 +191,63 @@ def overlay_lines_from_benefit_strings(bullets: list[str]) -> list[str]:
     return lines
 
 
-def build_flyer_headline(subject: str = "") -> str:
-    _ = subject
-    return normalize_spanish("Nutrición y digestión óptima")
+overlay_lines_from_benefit_strings = overlay_lines_from_strings  # compat
+
+
+def build_image_headline(context: str = "", subject: str = "") -> str:
+    """Titular genérico para imagen — deriva del tema o del contexto."""
+    subj = sanitize_label(subject)
+    if subj and subj.lower() not in {"producto", "el producto", "imagen", "creativo"}:
+        if len(subj) <= 60:
+            return subj
+    for block in (context or "").split("\n"):
+        line = block.strip()
+        if len(line) < 12:
+            continue
+        sentence = normalize_spanish(line.split(".")[0].strip())
+        if 12 <= len(sentence) <= 72:
+            return sentence
+    return ""
+
+
+build_flyer_headline = build_image_headline  # compat
+
+
+def image_prompt_needs_verbatim_text(prompt: str, context: str = "") -> bool:
+    blob = f"{prompt} {context}"
+    if _IMAGE_TEXT_HINT.search(blob):
+        return True
+    if _TITLE_DESC_LINE.search(blob):
+        return True
+    if extract_quoted_phrases(blob):
+        return True
+    return False
+
+
+def collect_image_overlay_lines(prompt: str, context: str = "") -> list[str]:
+    """Reúne textos literales desde prompt + contexto (cualquier dominio)."""
+    lines = extract_structured_lines(context)
+    if not lines:
+        lines = extract_structured_lines(prompt)
+    if not lines:
+        lines = overlay_lines_from_strings(extract_structured_lines(context, max_lines=8))
+    if not lines:
+        quotes = extract_quoted_phrases(f"{prompt}\n{context}")
+        lines = quotes
+    if not lines and image_prompt_needs_verbatim_text(prompt, context):
+        short = normalize_spanish(_first_phrase(prompt, max_chars=72))
+        if short:
+            lines = [short]
+    return lines[:5]
 
 
 def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None) -> str:
     """Bloque de instrucción con textos literales para modelos de imagen."""
     all_lines = [normalize_spanish(line) for line in lines if line.strip()]
     if headline:
-        all_lines.insert(0, normalize_spanish(headline))
+        head = normalize_spanish(headline)
+        if head and head not in all_lines:
+            all_lines.insert(0, head)
     if not all_lines:
         return ""
     quoted = [f'"{line}"' for line in all_lines]
@@ -120,8 +259,29 @@ def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None)
     )
 
 
+def augment_image_prompt(prompt: str, context: str = "") -> str:
+    """Capa universal de ortografía + textos literales para CUALQUIER imagen."""
+    base = (prompt or "").strip()
+    if not base:
+        return base
+    if "TEXTOS EXACTOS" in base:
+        if _ORTHOGRAPHY_RULE.split(".")[0] not in base:
+            return f"{base} {_ORTHOGRAPHY_RULE}"
+        return base
+
+    overlay = collect_image_overlay_lines(base, context)
+    headline = build_image_headline(context, overlay[0] if overlay else base[:60])
+
+    if overlay or image_prompt_needs_verbatim_text(base, context):
+        verbatim = format_verbatim_image_copy(overlay, headline=headline or None)
+        if verbatim:
+            return f"{base} {_ORTHOGRAPHY_RULE} {verbatim}"
+
+    return f"{base} {_ORTHOGRAPHY_RULE} Minimiza texto incrustado salvo que el pedido lo exija."
+
+
 def polish_spanish_for_user(text: str) -> str:
-    """Pulido ligero para respuestas visibles al usuario."""
+    """Pulido ortográfico para cualquier respuesta visible al usuario."""
     raw = (text or "").strip()
     if not raw:
         return raw

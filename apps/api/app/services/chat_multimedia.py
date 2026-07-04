@@ -390,4 +390,6 @@ def analyze_chat_image(
         "chat_vision",
         metadata={"bytes": len(image_bytes), "media_type": media_type},
     )
-    return reply
+    from app.services.copy_quality import polish_spanish_for_user
+
+    return polish_spanish_for_user(reply)

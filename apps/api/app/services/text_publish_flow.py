@@ -258,6 +258,8 @@ def handle_publish_flow_turn(
 
 
 def _clean_caption_draft(text: str) -> str:
+    from app.services.copy_quality import polish_spanish_for_user
+
     cleaned = (text or "").strip()
     cleaned = re.sub(r"^[-*_\s]+", "", cleaned)
     cleaned = re.sub(r"^(?:aquí tienes|claro|por supuesto)[^.!?]*[.:]\s*", "", cleaned, flags=re.I)
@@ -266,7 +268,7 @@ def _clean_caption_draft(text: str) -> str:
         return ""
     if cleaned in ("...", "…", "**", "---"):
         return ""
-    return cleaned
+    return polish_spanish_for_user(cleaned)
 
 
 def _execute_publish(

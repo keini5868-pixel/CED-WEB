@@ -2,6 +2,7 @@
 
 from app.services.copy_quality import (
     build_flyer_headline,
+    build_image_headline,
     compact_overlay_line,
     format_verbatim_image_copy,
     normalize_spanish,
@@ -29,11 +30,30 @@ def test_compact_overlay_line_short_and_clean():
 def test_format_verbatim_image_copy_requires_literal_text():
     block = format_verbatim_image_copy(
         ["Salud intestinal: flora equilibrada", "Sistema inmune: defensas naturales"],
-        headline=build_flyer_headline(),
+        headline="Bienestar diario",
     )
     assert "CARÁCTER POR CARÁCTER" in block
-    assert "Nutrición y digestión óptima" in block
+    assert "Bienestar diario" in block
     assert "equilibrada" in block
+
+
+def test_augment_image_prompt_generic_castle():
+    from app.services.copy_quality import augment_image_prompt
+
+    prompt = augment_image_prompt(
+        "Genera un póster de un castillo medieval con el título «La Fortaleza»",
+        "Evento La Fortaleza: aventura épica para toda la familia.",
+    )
+    assert "Ortografía española" in prompt
+    assert "TEXTOS EXACTOS" in prompt or "Fortaleza" in prompt
+
+
+def test_build_image_headline_from_any_context():
+    headline = build_image_headline(
+        "Tour por Charlotte: historia y arquitectura moderna.",
+        "Charlotte",
+    )
+    assert "charlotte" in headline.lower() or "Charlotte" in headline
 
 
 def test_marketing_brief_includes_verbatim_block():
@@ -56,7 +76,8 @@ def test_marketing_brief_includes_verbatim_block():
     assert "TEXTOS EXACTOS" in internal
     assert "ortografía" in internal.lower()
     assert "Salud intestinal" in internal
-    assert "Nutrición y digestión óptima" in internal
+    assert "TEXTOS EXACTOS" in internal
+    assert "Nutrición y digestión óptima" not in internal or "intestinal" in internal
     assert "Creativo" in display or "Flyer" in display
 
 

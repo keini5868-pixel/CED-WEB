@@ -113,17 +113,20 @@ def strip_image_generation_instruction(text: str) -> str:
 
 def _extract_visual_subject(text: str) -> str:
     for pattern in (
-        r"\b((?:fitline\s+)?(?:basics|activize(?:\s+oxyplus)?|restorate)\b(?:\s+de\s+fitline)?)",
-        r"\b(fitline\s+[a-záéíóúñ0-9]+)",
-        r"\b((?:[\wáéíóúñ]+(?:\s+de\s+[\wáéíóúñ]+)?)\s+(?:producto|suplemento|servicio))\b",
+        r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,40})\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,40})\b",
+        r"\b((?:[\wáéíóúñ]+(?:\s+de\s+[\wáéíóúñ]+)?)\s+(?:producto|servicio|marca|evento|personaje|logo))\b",
         r"\b(producto\s+[^\n,.]{3,60})",
         r"^([^\n.]{8,100})",
     ):
         match = re.search(pattern, text, re.I)
         if not match:
             continue
-        subject = (match.group(1) if match.lastindex else match.group(0)).strip()
-        if len(subject) >= 4 and subject.lower() not in {"el producto", "ese producto"}:
+        if match.lastindex and match.lastindex >= 2:
+            subject = f"{match.group(1).strip()} de {match.group(2).strip()}"
+        else:
+            subject = (match.group(1) if match.lastindex else match.group(0)).strip()
+        subject = re.sub(r"\s+", " ", subject)
+        if len(subject) >= 4 and subject.lower() not in {"el producto", "ese producto", "la imagen"}:
             return subject
     return text[:120].strip()
 
@@ -148,11 +151,7 @@ def _resolve_vague_subject(topic: str, context: str) -> str:
 
 def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
     """Convierte el pedido del usuario + contexto en un brief visual para Gemini."""
-    from app.services.copy_quality import (
-        build_flyer_headline,
-        format_verbatim_image_copy,
-        normalize_spanish,
-    )
+    from app.services.copy_quality import augment_image_prompt, normalize_spanish
 
     topic = strip_image_generation_instruction(user_prompt)
     ctx = (context or "").strip()
@@ -164,23 +163,8 @@ def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
         or (_SPECS_BENEFITS.search(topic) and len(ctx) > 80)
     ):
         merged = f"{topic}. Referencia: {ctx[:900]}"
-
-    if _SPECS_BENEFITS.search(merged):
-        subject = normalize_spanish(_extract_visual_subject(merged))
-        headline = build_flyer_headline(subject)
-        verbatim = format_verbatim_image_copy(
-            [normalize_spanish(subject)],
-            headline=headline,
-        )
-        return (
-            "Genera un creativo publicitario cuadrado para redes sociales. "
-            f"Sujeto visual: {subject[:400]}. "
-            "Ortografía española impecable en todo texto visible. "
-            f"{verbatim} "
-            "Composición: producto en primer plano, fondo limpio, estilo profesional. "
-            f"Información de referencia: {merged[:500]}"
-        )
-    return merged[:4000]
+    merged = normalize_spanish(merged)[:4000]
+    return augment_image_prompt(merged, ctx)
 
 
 def enrich_image_prompt_from_context(prompt: str, context: str = "") -> str:
@@ -312,9 +296,11 @@ def generate_image_gemini(
     *,
     prompt: str,
     quality: str = "standard",
+    context: str = "",
 ) -> dict[str, Any]:
     """Genera imagen con Gemini. Requiere GOOGLE_API_KEY."""
     from google import genai
+    from app.services.copy_quality import augment_image_prompt
 
     settings = get_settings()
     api_key = settings.google_api_key.strip()
@@ -326,7 +312,8 @@ def generate_image_gemini(
 
     client = genai.Client(api_key=api_key)
     last_error = "No pude generar la imagen con Gemini."
-    prompt_variants = build_image_generation_prompts(topic) or [topic[:4000]]
+    raw_variants = build_image_generation_prompts(topic) or [topic[:4000]]
+    prompt_variants = [augment_image_prompt(variant, context) for variant in raw_variants]
 
     for model in _image_models():
         for attempt, variant in enumerate(prompt_variants):
@@ -416,7 +403,7 @@ def generate_image_with_reference_gemini(
     if mime not in ("image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"):
         mime = "image/jpeg"
 
-    enriched = _reference_prompt(topic, mode)
+    enriched = augment_image_prompt(_reference_prompt(topic, mode), topic)
     client = genai.Client(api_key=api_key)
     last_error = "No pude generar la imagen con referencia en Gemini."
 
@@ -511,7 +498,7 @@ def generate_image(
             "code": "quota_exhausted",
         }
 
-    gemini_result = generate_image_gemini(prompt=topic, quality=picked)
+    gemini_result = generate_image_gemini(prompt=topic, quality=picked, context=context)
     if not gemini_result.get("ok"):
         err_detail = str(gemini_result.get("error") or "Gemini falló")
         logger.error("[GEMINI:IMAGE] failed user=%s error=%s", user_id[:8], err_detail[:200])

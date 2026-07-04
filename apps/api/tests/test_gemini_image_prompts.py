@@ -36,7 +36,7 @@ def test_prepare_image_prompt_uses_conversation_for_specs():
         "el producto y sus expecificaciones y veneficios",
         context,
     )
-    assert "creativo publicitario" in prepared.lower()
+    assert "Ortografía española" in prepared or "ortografía" in prepared.lower()
     assert "basics" in prepared.lower() or "fitline" in prepared.lower()
     assert "me generas una imagen" not in prepared.lower()
     assert "el producto y sus" not in prepared.lower()
