@@ -388,6 +388,29 @@ export function useCedVoiceSession(
       return video.videoWidth > 0;
     };
 
+    const activateCameraFromVoice = async (opts?: {
+      ackActionId?: number;
+      showFeedback?: boolean;
+    }) => {
+      console.log("[CAMERA] activate from voice");
+      void postVoiceCameraStatus(true, false).catch(() => undefined);
+      await toggleCameraRef.current(true);
+      const live = await waitForCameraStream(4500);
+      console.log("[CAMERA] stream_ready live=%s", live);
+      await postVoiceCameraStatus(live, live);
+      if (opts?.showFeedback !== false) {
+        callbacks?.onTranscript?.(
+          "Cámara activa, señor. Lista para analizar.",
+          "model",
+          { partial: false },
+        );
+        void persistVoiceTranscript("model", "Cámara activa, señor. Lista para analizar.");
+      }
+      if (opts?.ackActionId) {
+        await ackVoiceClientAction(opts.ackActionId);
+      }
+    };
+
     const handleVoiceClientAction = async (action: {
       id: number;
       action: string;
@@ -395,12 +418,7 @@ export function useCedVoiceSession(
     }) => {
       if (action.action === "camera_activate") {
         console.log("[CAMERA] poll activate action_id=%s", action.id);
-        void postVoiceCameraStatus(true, false).catch(() => undefined);
-        await toggleCameraRef.current(true);
-        const live = await waitForCameraStream(4500);
-        console.log("[CAMERA] stream_ready live=%s action_id=%s", live, action.id);
-        await postVoiceCameraStatus(live, live);
-        await ackVoiceClientAction(action.id);
+        await activateCameraFromVoice({ ackActionId: action.id, showFeedback: true });
         return;
       }
       if (action.action === "camera_deactivate") {
@@ -503,6 +521,9 @@ export function useCedVoiceSession(
               { partial: false },
             );
             void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
+          }
+          if (ev.type === "camera_activate") {
+            void activateCameraFromVoice({ showFeedback: true });
           }
           if (ev.type === "navigation_instruction" && ev.text) {
             const text = String(ev.text);

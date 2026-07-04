@@ -198,6 +198,27 @@ async def _wait_camera_active(user_id: str, timeout_sec: float = 5.0) -> bool:
     return await _wait_camera_ack(user_id, timeout_sec)
 
 
+async def handle_camera_activation(
+    user_id: str,
+    *,
+    fast: bool = False,
+) -> dict[str, Any]:
+    """Pide al cliente activar cámara; fast=True responde al instante sin bloquear."""
+    if vcs.is_camera_active(user_id):
+        return _spoken_ok("Cámara activa, señor. Lista para analizar.")
+    vcs.push_client_action(user_id, "camera_activate", {})
+    vcs.push_tool_event(user_id, {"type": "camera_activate"})
+    if fast:
+        return _spoken_ok("Cámara activa, señor. Lista para analizar.")
+    active = await _wait_camera_ack(user_id, 8.0)
+    if active or vcs.is_camera_active(user_id):
+        return _spoken_ok("Cámara activa, señor. Lista para analizar.")
+    return _spoken_err(
+        "No pude activar la cámara, señor. Verifique permisos.",
+        error="camera_activation_timeout",
+    )
+
+
 async def _wait_vision_result(
     user_id: str, request_id: int, timeout_sec: float = 24.0
 ) -> str | None:
@@ -548,16 +569,8 @@ async def execute_voice_tool(
                 vcs.push_client_action(user_id, "camera_deactivate", {})
                 vcs.set_camera_active(user_id, False)
                 return _spoken_ok("Cámara desactivada, señor.")
-            if vcs.is_camera_active(user_id):
-                return _spoken_ok("Cámara activa, señor. Lista para análisis.")
-            vcs.push_client_action(user_id, "camera_activate", {})
-            active = await _wait_camera_ack(user_id, 8.0)
-            if active or vcs.is_camera_active(user_id):
-                return _spoken_ok("Cámara activa, señor. Lista para análisis.")
-            return _spoken_err(
-                "No pude activar la cámara, señor. Verifique permisos.",
-                error="camera_activation_timeout",
-            )
+            fast = bool(params.get("fast"))
+            return await handle_camera_activation(user_id, fast=fast)
 
         if name == "analyze_uploaded_image":
             from app.services import voice_client_session as vcs

@@ -11,6 +11,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from app.services.cognitive_intents import (
     is_camera_voice_command,
+    is_camera_activation_intent,
     is_meta_publish_intent,
     is_script_demo_request,
     is_web_research_intent,
@@ -833,6 +834,31 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 except Exception:
                     logger.exception("[RETELL-GEMINI] open map fast-path failed call=%s", call_id)
 
+            if is_camera_activation_intent(user_text) and uid:
+                try:
+                    tool_result = await execute_voice_tool(
+                        "request_camera_activation",
+                        uid,
+                        {"fast": True},
+                    )
+                    spoken = str(
+                        tool_result.get("spoken") or "Cámara activa, señor. Lista para analizar."
+                    ).strip()
+                    if _turn_rid_stale():
+                        await ack_superseded_turn(reason="camera_activate_stale")
+                        return
+                    delivered = await complete_partial_or_deliver(spoken)
+                    if not delivered:
+                        await anti_silence_if_unanswered(reason="camera_activate_deliver_failed")
+                    logger.info(
+                        "[RETELL-GEMINI] camera activate fast-path call=%s ok=%s",
+                        call_id,
+                        tool_result.get("ok"),
+                    )
+                    return
+                except Exception:
+                    logger.exception("[RETELL-GEMINI] camera activate fast-path failed call=%s", call_id)
+
             superseded, latest_rid = _is_superseded_turn_rid(
                 scheduled_rid,
                 scheduled_key,
@@ -1110,6 +1136,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 is_vision = camera_tool in ("analyze_camera_frame", "buscar_lo_visible")
                 async with response_lock:
                     if _turn_stale():
+                        await ack_superseded_turn(reason="camera_stale")
                         return
                     if is_vision:
                         await send_voice_partial(
@@ -1119,7 +1146,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             generation=my_generation,
                         )
                     tool_args: dict = {}
-                    if is_vision:
+                    if camera_tool == "request_camera_activation":
+                        tool_args["fast"] = True
+                    elif is_vision:
                         tool_args["pregunta"] = user_text
                     try:
                         cam_timeout = 10.0 if camera_tool == "request_camera_activation" else (

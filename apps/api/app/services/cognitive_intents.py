@@ -433,3 +433,35 @@ def is_navigation_confirm(text: str) -> bool:
     if not t:
         return False
     return any(p.search(t) for p in _NAV_CONFIRM_PATTERNS)
+
+
+_CAMERA_ACTIVATION_PATTERNS = [
+    re.compile(
+        r"\b(activa|activar|enciende|encender|abre|abrir)\b.*\b(c[aá]mara|cam|video)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(c[aá]mara)\b.*\b(activa|on|encender)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(activa(r|me|do)?|activo|enciende|prende|abre)\s+(la\s+)?c[aá]mara\b",
+        re.I,
+    ),
+]
+
+
+def is_camera_activation_intent(text: str) -> bool:
+    """True cuando el usuario pide encender la cámara (no análisis ni apagado)."""
+    raw = (text or "").strip()
+    if not raw:
+        return False
+    t = normalize_text(raw)
+    if re.search(r"\b(apaga|desactiva|cierra|deja de mirar)\b", t):
+        return False
+    if re.search(
+        r"\b(qu[eé]\s+ves|analiza|visi[oó]n|busca.*visible|mira esto|observas)\b",
+        t,
+    ):
+        return False
+    return any(p.search(t) for p in _CAMERA_ACTIVATION_PATTERNS)
