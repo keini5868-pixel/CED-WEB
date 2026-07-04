@@ -51,6 +51,19 @@ export async function postVoiceCameraStatus(
   });
 }
 
+/** Pre-autorización de cámara al iniciar sesión (gesto de usuario). */
+export async function postVoiceCameraPermission(granted: boolean): Promise<void> {
+  await proxyFetch("voice/camera-status", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      active: false,
+      streamPresent: false,
+      permissionGranted: granted,
+    }),
+  });
+}
+
 export async function postVoiceVisionResult(
   requestId: number,
   summary: string,

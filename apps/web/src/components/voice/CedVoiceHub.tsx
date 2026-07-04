@@ -205,6 +205,7 @@ export function CedVoiceHub() {
         paused={voice.paused}
         onActivate={() => {
           unlockVoiceAudioOnGesture();
+          voice.primeSessionMediaFromGesture();
           void (async () => {
             const fresh = await refreshUsage();
             const snapshot = fresh ?? balance;

@@ -23,6 +23,7 @@ import {
   ackVoiceClientAction,
   fetchVoiceClientState,
   postVoiceCameraStatus,
+  postVoiceCameraPermission,
   postVoiceChatImage,
   postVoiceSessionEnd,
   postVoiceVisionResult,
@@ -153,11 +154,20 @@ const CAMERA_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   frameRate: { ideal: 24, max: 30 },
 };
 
-function requestCameraMediaStream(): Promise<MediaStream> {
+/** Pre-autorización al iniciar sesión — permiso en gesto de usuario, track pausado. */
+const SESSION_CAMERA_CONSTRAINTS: MediaTrackConstraints = {
+  facingMode: "user",
+  width: { ideal: VIDEO_CAPTURE_WIDTH },
+  height: { ideal: VIDEO_CAPTURE_HEIGHT },
+};
+
+function requestCameraMediaStream(
+  constraints: MediaTrackConstraints = CAMERA_VIDEO_CONSTRAINTS,
+): Promise<MediaStream> {
   if (!navigator.mediaDevices?.getUserMedia) {
     return Promise.reject(new Error("getUserMedia unavailable"));
   }
-  return navigator.mediaDevices.getUserMedia({ video: CAMERA_VIDEO_CONSTRAINTS });
+  return navigator.mediaDevices.getUserMedia({ video: constraints });
 }
 
 async function publishImageToBlob(image: {
@@ -228,6 +238,7 @@ export function useCedVoiceSession(
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [stopConfirmOpen, setStopConfirmOpen] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
+  const [cameraPermissionGranted, setCameraPermissionGranted] = useState(false);
   const [cameraFacing, setCameraFacing] = useState<"user" | "environment">("user");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [heardIndicator, setHeardIndicator] =
@@ -240,7 +251,8 @@ export function useCedVoiceSession(
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraFacingRef = useRef<"user" | "environment">("user");
   const cameraActivateInFlightRef = useRef<Promise<void> | null>(null);
-  const cameraGestureStreamRef = useRef<Promise<MediaStream> | null>(null);
+  const cameraPermissionGrantedRef = useRef(false);
+  const sessionMediaPreauthRef = useRef<Promise<void> | null>(null);
   const activateCameraFromVoiceRef = useRef<
     (opts?: {
       ackActionId?: number;
@@ -453,7 +465,9 @@ export function useCedVoiceSession(
       try {
         const hadStream =
           !!cameraStreamRef.current?.active &&
-          cameraStreamRef.current.getVideoTracks().some((t) => t.readyState === "live");
+          cameraStreamRef.current
+            .getVideoTracks()
+            .some((t) => t.readyState === "live" && t.enabled);
         if (!hadStream) {
           await toggleCameraRef.current(true);
           await waitForCameraStream();
@@ -657,7 +671,17 @@ export function useCedVoiceSession(
     if (!cameraOn) return;
     cameraIdleTimerRef.current = setTimeout(() => {
       clientRef.current?.detachCameraStream();
-      cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+      const stream = cameraStreamRef.current;
+      if (stream && cameraPermissionGrantedRef.current) {
+        stream.getVideoTracks().forEach((t) => {
+          t.enabled = false;
+        });
+        setCameraOn(false);
+        cameraPreviewRef.current = null;
+        void postVoiceCameraStatus(false, false).catch(() => undefined);
+        return;
+      }
+      stream?.getTracks().forEach((t) => t.stop());
       cameraStreamRef.current = null;
       setCameraOn(false);
       setCameraStream(null);
@@ -695,7 +719,9 @@ export function useCedVoiceSession(
     setMicStream(null);
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
     cameraStreamRef.current = null;
-    cameraGestureStreamRef.current = null;
+    sessionMediaPreauthRef.current = null;
+    cameraPermissionGrantedRef.current = false;
+    setCameraPermissionGranted(false);
     setMicOn(false);
     setCameraOn(false);
     setRetellInputLevel(0);
@@ -731,6 +757,92 @@ export function useCedVoiceSession(
     async () => undefined,
   );
 
+  const primeSessionMediaFromGesture = useCallback((): Promise<void> => {
+    if (sessionMediaPreauthRef.current) {
+      return sessionMediaPreauthRef.current;
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      cameraPermissionGrantedRef.current = false;
+      setCameraPermissionGranted(false);
+      void postVoiceCameraPermission(false).catch(() => undefined);
+      return Promise.resolve();
+    }
+
+    const task = (async () => {
+      const micPromise = isRetellVoice()
+        ? Promise.resolve<MediaStream | null>(null)
+        : navigator.mediaDevices.getUserMedia({
+            audio: {
+              channelCount: 1,
+              sampleRate: { ideal: 24000 },
+              echoCancellation: { ideal: true },
+              noiseSuppression: { ideal: true },
+              autoGainControl: { ideal: true },
+            },
+          });
+
+      const [micResult, camResult] = await Promise.allSettled([
+        micPromise,
+        requestCameraMediaStream(SESSION_CAMERA_CONSTRAINTS),
+      ]);
+
+      if (
+        !isRetellVoice() &&
+        micResult.status === "fulfilled" &&
+        micResult.value
+      ) {
+        micStreamRef.current = micResult.value;
+        setMicStream(micResult.value);
+      }
+
+      if (camResult.status === "fulfilled") {
+        const camStream = camResult.value;
+        camStream.getVideoTracks().forEach((t) => {
+          t.enabled = false;
+        });
+        cameraStreamRef.current = camStream;
+        setCameraStream(camStream);
+        cameraFacingRef.current = "user";
+        setCameraFacing("user");
+        cameraPermissionGrantedRef.current = true;
+        setCameraPermissionGranted(true);
+        console.log("[CAMERA] pre-auth granted — track paused until activation");
+        void postVoiceCameraPermission(true).catch(() => undefined);
+      } else {
+        cameraPermissionGrantedRef.current = false;
+        setCameraPermissionGranted(false);
+        console.warn("[CAMERA] pre-auth denied:", camResult.reason);
+        void postVoiceCameraPermission(false).catch(() => undefined);
+      }
+    })();
+
+    sessionMediaPreauthRef.current = task;
+    return task;
+  }, []);
+
+  const enablePreauthorizedCamera = useCallback((): boolean => {
+    const stream = cameraStreamRef.current;
+    if (!stream?.active || !cameraPermissionGrantedRef.current) {
+      return false;
+    }
+    stream.getVideoTracks().forEach((t) => {
+      t.enabled = true;
+    });
+    return true;
+  }, []);
+
+  const disablePreauthorizedCamera = useCallback(() => {
+    const stream = cameraStreamRef.current;
+    if (!stream) return;
+    stream.getVideoTracks().forEach((t) => {
+      t.enabled = false;
+    });
+    clientRef.current?.detachCameraStream();
+    setCameraOn(false);
+    cameraPreviewRef.current = null;
+    void postVoiceCameraStatus(false, false).catch(() => undefined);
+  }, []);
+
   const startCameraWithFacing = useCallback(
     async (facing: "user" | "environment") => {
       cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -746,8 +858,11 @@ export function useCedVoiceSession(
       setCameraFacing(facing);
       cameraStreamRef.current = stream;
       setCameraStream(stream);
+      cameraPermissionGrantedRef.current = true;
+      setCameraPermissionGranted(true);
       setCameraOn(true);
       resetCameraIdleTimer();
+      void postVoiceCameraPermission(true).catch(() => undefined);
       void postVoiceCameraStatus(true, true).catch(() => undefined);
       void clientRef.current?.attachCameraStream(stream);
       return stream;
@@ -755,50 +870,8 @@ export function useCedVoiceSession(
     [resetCameraIdleTimer],
   );
 
-  const toggleCamera = useCallback(
-    async (force?: boolean) => {
-      const next = force ?? !cameraOn;
-      if (!next) {
-        clientRef.current?.detachCameraStream();
-        cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
-        cameraStreamRef.current = null;
-        setCameraOn(false);
-        setCameraStream(null);
-        cameraPreviewRef.current = null;
-        void postVoiceCameraStatus(false, false).catch(() => undefined);
-        return;
-      }
-      const stream = cameraStreamRef.current;
-      const streamLive =
-        !!stream?.active &&
-        stream.getVideoTracks().some((t) => t.readyState === "live" && t.enabled);
-      if (streamLive) {
-        setCameraOn(true);
-        setCameraStream(stream);
-        return;
-      }
-      if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
-        cameraStreamRef.current = null;
-        setCameraStream(null);
-      }
-      try {
-        await startCameraWithFacing(cameraFacingRef.current);
-        setStatusLabel("Activando cámara…");
-      } catch {
-        setErrorMessage(
-          "Por favor permite el acceso a la cámara para que CED pueda ver.",
-        );
-      }
-    },
-    [cameraOn, startCameraWithFacing],
-  );
-  toggleCameraRef.current = toggleCamera;
-
   const applyCameraStreamFromVoice = useCallback(
     (stream: MediaStream) => {
-      cameraFacingRef.current = "environment";
-      setCameraFacing("environment");
       cameraStreamRef.current = stream;
       setCameraStream(stream);
       setCameraOn(true);
@@ -812,25 +885,88 @@ export function useCedVoiceSession(
     [resetCameraIdleTimer],
   );
 
-  const beginCameraStreamRequest = useCallback((): Promise<MediaStream> => {
-    const primed = cameraGestureStreamRef.current;
-    if (primed) {
-      cameraGestureStreamRef.current = null;
-      return primed;
-    }
-    return requestCameraMediaStream();
-  }, []);
+  const toggleCamera = useCallback(
+    async (force?: boolean) => {
+      const next = force ?? !cameraOn;
+      if (!next) {
+        if (
+          cameraPermissionGrantedRef.current &&
+          cameraStreamRef.current?.active
+        ) {
+          disablePreauthorizedCamera();
+          return;
+        }
+        clientRef.current?.detachCameraStream();
+        cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+        cameraStreamRef.current = null;
+        setCameraOn(false);
+        setCameraStream(null);
+        cameraPreviewRef.current = null;
+        void postVoiceCameraStatus(false, false).catch(() => undefined);
+        return;
+      }
+
+      if (
+        cameraPermissionGrantedRef.current &&
+        enablePreauthorizedCamera()
+      ) {
+        applyCameraStreamFromVoice(cameraStreamRef.current!);
+        return;
+      }
+
+      const stream = cameraStreamRef.current;
+      const streamLive =
+        !!stream?.active &&
+        stream.getVideoTracks().some((t) => t.readyState === "live" && t.enabled);
+      if (streamLive) {
+        setCameraOn(true);
+        setCameraStream(stream);
+        bindHudCameraFeed(stream);
+        return;
+      }
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+        cameraStreamRef.current = null;
+        setCameraStream(null);
+      }
+      try {
+        await startCameraWithFacing(cameraFacingRef.current);
+        bindHudCameraFeed(cameraStreamRef.current!);
+        setStatusLabel("Activando cámara…");
+      } catch {
+        setErrorMessage(
+          "Por favor permite el acceso a la cámara para que CED pueda ver.",
+        );
+      }
+    },
+    [
+      cameraOn,
+      applyCameraStreamFromVoice,
+      disablePreauthorizedCamera,
+      enablePreauthorizedCamera,
+      startCameraWithFacing,
+    ],
+  );
+  toggleCameraRef.current = toggleCamera;
 
   const activateCameraFromVoice = useCallback(
     (opts?: { ackActionId?: number; showFeedback?: boolean }) => {
-      const existing = cameraStreamRef.current;
+      const finish = (promise: Promise<void>) => {
+        if (cameraActivateInFlightRef.current === promise) {
+          cameraActivateInFlightRef.current = null;
+        }
+        return promise;
+      };
+
       if (
-        existing?.active &&
-        existing.getVideoTracks().some((t) => t.readyState === "live" && t.enabled)
+        cameraStreamRef.current?.active &&
+        cameraStreamRef.current
+          .getVideoTracks()
+          .some((t) => t.readyState === "live" && t.enabled)
       ) {
-        applyCameraStreamFromVoice(existing);
+        applyCameraStreamFromVoice(cameraStreamRef.current);
         if (opts?.ackActionId) {
-          return ackVoiceClientAction(opts.ackActionId);
+          return finish(ackVoiceClientAction(opts.ackActionId));
         }
         return Promise.resolve();
       }
@@ -844,34 +980,33 @@ export function useCedVoiceSession(
         });
       }
 
-      console.log("[CAMERA] activate from voice — requesting stream");
-      void postVoiceCameraStatus(true, false).catch(() => undefined);
-
-      const task = beginCameraStreamRequest()
-        .then((stream) => {
-          applyCameraStreamFromVoice(stream);
-          console.log("[CAMERA] activada desde voz");
-        })
+      const task = Promise.resolve().then(() => {
+        if (!enablePreauthorizedCamera()) {
+          console.warn(
+            "[CAMERA] activate from voice blocked — no pre-auth permission",
+          );
+          void postVoiceCameraStatus(false, false).catch(() => undefined);
+          return;
+        }
+        const stream = cameraStreamRef.current;
+        if (!stream) return;
+        applyCameraStreamFromVoice(stream);
+        console.log("[CAMERA] activada desde voz — track enabled");
+      })
         .then(async () => {
           if (opts?.ackActionId) {
             await ackVoiceClientAction(opts.ackActionId);
           }
         })
         .catch((error) => {
-          console.error("[CAMERA] permiso denegado:", error);
+          console.error("[CAMERA] activate error:", error);
           void postVoiceCameraStatus(false, false).catch(() => undefined);
-          setErrorMessage(
-            "Toque el botón CAM para permitir el acceso a la cámara.",
-          );
-        })
-        .finally(() => {
-          cameraActivateInFlightRef.current = null;
         });
 
       cameraActivateInFlightRef.current = task;
-      return task;
+      return finish(task);
     },
-    [applyCameraStreamFromVoice, beginCameraStreamRequest],
+    [applyCameraStreamFromVoice, enablePreauthorizedCamera],
   );
   activateCameraFromVoiceRef.current = activateCameraFromVoice;
 
@@ -900,14 +1035,7 @@ export function useCedVoiceSession(
     }
 
     unlockVoiceAudioOnGesture();
-
-    if (navigator.mediaDevices?.getUserMedia) {
-      cameraGestureStreamRef.current = requestCameraMediaStream().catch((err) => {
-        cameraGestureStreamRef.current = null;
-        console.warn("[CAMERA] prime on mic gesture failed:", err);
-        return Promise.reject(err);
-      });
-    }
+    const preauth = primeSessionMediaFromGesture();
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setErrorMessage("Tu navegador no soporta captura de micrófono.");
@@ -936,7 +1064,9 @@ export function useCedVoiceSession(
     const isStale = () => voiceSessionGenRef.current !== sessionGen;
 
     try {
-      if (!isRetellVoice()) {
+      await preauth;
+
+      if (!isRetellVoice() && !micStreamRef.current) {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
@@ -2581,6 +2711,7 @@ export function useCedVoiceSession(
   }, [
     micOn,
     micBusy,
+    primeSessionMediaFromGesture,
     stopSession,
     persistMessage,
     onUsageRefresh,
@@ -2767,6 +2898,7 @@ export function useCedVoiceSession(
     micOn,
     cameraOn,
     cameraFacing,
+    cameraPermissionGranted,
     muted,
     paused,
     prefs,
@@ -2782,6 +2914,7 @@ export function useCedVoiceSession(
     micBusy,
     inputLevel,
     toggleMic,
+    primeSessionMediaFromGesture,
     toggleCamera,
     flipCamera,
     togglePause,

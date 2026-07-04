@@ -32,6 +32,7 @@ ALLOWED_IMAGE_MIMES = frozenset(
 class CameraStatusBody(BaseModel):
     active: bool
     stream_present: bool = Field(default=True, alias="streamPresent")
+    permission_granted: bool | None = Field(default=None, alias="permissionGranted")
 
     model_config = {"populate_by_name": True}
 
@@ -69,6 +70,8 @@ async def voice_camera_status(
     body: CameraStatusBody,
     user_id: str = Depends(require_user_id),
 ) -> dict[str, str]:
+    if body.permission_granted is not None:
+        vcs.set_camera_permission_granted(user_id, body.permission_granted)
     vcs.set_camera_active(
         user_id,
         body.active,

@@ -21,6 +21,7 @@ def _fresh_session() -> dict[str, Any]:
         "client_action": None,
         "camera_active": False,
         "camera_stream_present": False,
+        "camera_permission_granted": False,
         "camera_updated_at": 0.0,
         "vision_results": {},
         "last_publishable_image": None,
@@ -44,6 +45,17 @@ def _get(user_id: str) -> dict[str, Any]:
             session = _fresh_session()
             _sessions[uid] = session
         return session
+
+
+def set_camera_permission_granted(user_id: str, granted: bool) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["camera_permission_granted"] = bool(granted)
+        session["updated_at"] = _now()
+
+
+def is_camera_permission_granted(user_id: str) -> bool:
+    return bool(_get(user_id).get("camera_permission_granted"))
 
 
 def set_camera_active(

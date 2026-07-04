@@ -838,6 +838,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 try:
                     from app.services import voice_client_session as vcs
 
+                    if not vcs.is_camera_permission_granted(uid):
+                        spoken = (
+                            "Señor, no tengo permiso de cámara. "
+                            "Para activarla, reinicie la sesión y acepte el permiso "
+                            "de cámara cuando aparezca."
+                        )
+                        if _turn_rid_stale():
+                            await ack_superseded_turn(reason="camera_no_permission_stale")
+                            return
+                        await complete_partial_or_deliver(spoken)
+                        return
+
                     vcs.push_client_action(uid, "camera_activate", {})
                     vcs.push_tool_event(uid, {"type": "camera_activate"})
                     spoken = "Cámara activa, señor. Lista para analizar."
