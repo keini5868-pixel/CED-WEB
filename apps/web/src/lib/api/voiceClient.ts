@@ -18,6 +18,7 @@ export type VoiceClientState = {
   tool_events?: Array<{
     id: number;
     type?: string;
+    module?: string;
     image_url?: string;
     prompt?: string;
     title?: string;
