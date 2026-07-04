@@ -148,6 +148,12 @@ def _resolve_vague_subject(topic: str, context: str) -> str:
 
 def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
     """Convierte el pedido del usuario + contexto en un brief visual para Gemini."""
+    from app.services.copy_quality import (
+        build_flyer_headline,
+        format_verbatim_image_copy,
+        normalize_spanish,
+    )
+
     topic = strip_image_generation_instruction(user_prompt)
     ctx = (context or "").strip()
     topic = _resolve_vague_subject(topic, ctx)
@@ -160,15 +166,19 @@ def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
         merged = f"{topic}. Referencia: {ctx[:900]}"
 
     if _SPECS_BENEFITS.search(merged):
-        subject = _extract_visual_subject(merged)
+        subject = normalize_spanish(_extract_visual_subject(merged))
+        headline = build_flyer_headline(subject)
+        verbatim = format_verbatim_image_copy(
+            [normalize_spanish(subject)],
+            headline=headline,
+        )
         return (
             "Genera un creativo publicitario cuadrado para redes sociales. "
             f"Sujeto visual: {subject[:400]}. "
-            "Composición: producto o envase premium en primer plano, fondo limpio, "
-            "estilo profesional. Incluye 3-4 frases cortas en español con beneficios clave "
-            "como diseño gráfico (texto breve, legible, no párrafos largos). "
-            "Sin logos de marcas registradas de terceros; diseño genérico elegante. "
-            f"Información de referencia: {merged[:700]}"
+            "Ortografía española impecable en todo texto visible. "
+            f"{verbatim} "
+            "Composición: producto en primer plano, fondo limpio, estilo profesional. "
+            f"Información de referencia: {merged[:500]}"
         )
     return merged[:4000]
 

@@ -304,6 +304,7 @@ CHAT_TOOLS: list[dict[str, Any]] = [
 CHAT_SYSTEM_BASE = f"""Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
 Español latinoamericano natural, cálido y directo.
 Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude, Gemini ni APIs internas.
+ORTOGRAFÍA: escribe siempre en español correcto (tildes, sin anglicismos innecesarios, sin typos).
 
 {CED_CORE_IDENTITY}
 
@@ -552,10 +553,13 @@ def _dedupe_chat_reply(text: str) -> str:
 
 def _finalize_chat_reply(text: str) -> str:
     """Post-proceso alineado con voz: dedupe, sin filler duplicado, oración completa."""
+    from app.services.copy_quality import polish_spanish_for_user
+
     cleaned = _dedupe_chat_reply(text)
     cleaned = strip_voice_filler_prefix(cleaned)
     cleaned = finalize_voice_delivery_text(cleaned)
-    return cleaned or (text or "").strip()
+    cleaned = cleaned or (text or "").strip()
+    return polish_spanish_for_user(cleaned)
 
 
 def _ensure_chat_reply_quality(

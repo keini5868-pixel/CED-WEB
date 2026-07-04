@@ -9,6 +9,15 @@ from app.services.chat_intents import (
     parse_followup_image_prompt,
     parse_generate_image_prompt,
 )
+from app.services.copy_quality import (
+    build_flyer_headline,
+    compact_overlay_line,
+    format_verbatim_image_copy,
+    normalize_spanish,
+    overlay_lines_from_benefit_strings,
+    polish_spanish_for_user,
+    sanitize_benefit_title,
+)
 from app.services.gemini_images import strip_image_generation_instruction
 
 _MARKETING_CREATIVE = re.compile(
@@ -138,16 +147,31 @@ def _extract_product_subject(context: str) -> str:
 def _extract_benefit_bullets(text: str, *, max_bullets: int = 4) -> list[str]:
     bullets: list[str] = []
     for match in _BENEFIT_LINE.finditer(text or ""):
-        title = match.group(1).strip()
-        desc = re.sub(r"\s+", " ", match.group(2).strip())
+        title = sanitize_benefit_title(match.group(1).strip())
+        desc = normalize_spanish(re.sub(r"\s+", " ", match.group(2).strip()))
         if title.lower() in _SKIP_BENEFIT_TITLES:
             continue
         if len(desc) < 8:
             continue
-        bullets.append(f"{title}: {desc[:90]}")
+        bullets.append(compact_overlay_line(title, desc))
         if len(bullets) >= max_bullets:
             break
     return bullets
+
+
+def _extract_benefit_bullets_from_history(
+    history: list[dict[str, str]] | None,
+    *,
+    max_bullets: int = 4,
+) -> list[str]:
+    for row in reversed(history or []):
+        role = str(row.get("role") or "")
+        if role not in ("model", "assistant"):
+            continue
+        bullets = _extract_benefit_bullets(str(row.get("content") or ""), max_bullets=max_bullets)
+        if bullets:
+            return bullets
+    return _extract_benefit_bullets(_history_blob(history), max_bullets=max_bullets)
 
 
 def extract_product_subject(context: str) -> str:
@@ -177,33 +201,38 @@ def build_marketing_creative_brief(
         raw = strip_image_generation_instruction(parsed)
 
     context = _history_blob(history)
-    subject = _extract_product_subject(f"{raw}\n{context}")
-    bullets = _extract_benefit_bullets(context)
+    subject = normalize_spanish(_extract_product_subject(f"{raw}\n{context}"))
+    bullets = _extract_benefit_bullets_from_history(history)
+    if not bullets:
+        bullets = _extract_benefit_bullets(context)
     if not bullets:
         bullets = _extract_benefit_bullets(raw)
 
-    bullet_block = ""
-    if bullets:
-        bullet_block = "Textos cortos en español para el diseño:\n" + "\n".join(
-            f"• {line}" for line in bullets
-        )
+    overlay_lines = overlay_lines_from_benefit_strings(bullets)
+    headline = build_flyer_headline(subject)
+    verbatim_block = format_verbatim_image_copy(overlay_lines, headline=headline)
 
-    user_note = raw[:240] if raw else user_text[:240]
+    user_note = normalize_spanish(raw[:240] if raw else user_text[:240])
     display = build_display_label(
         subject,
         kind="flyer" if re.search(r"\bflyer\b", user_text, re.I) else "creativo",
+    )
+
+    orthography_rule = (
+        "Ortografía española impecable en todo texto visible. "
+        "Usa SOLO los textos exactos indicados abajo. "
     )
 
     if has_reference_image:
         internal = (
             "Usa la imagen adjunta como base: producto/envase protagonista, fondo limpio. "
             "Crea un flyer publicitario cuadrado para redes sociales, estilo profesional de venta. "
-            f"Sujeto: {subject}. "
+            f"Sujeto: {subject}. {orthography_rule}"
         )
-        if bullet_block:
-            internal += f"{bullet_block} "
+        if verbatim_block:
+            internal += f"{verbatim_block} "
         internal += (
-            "Tipografía legible, pocos bloques de texto, composición atractiva. "
+            "Tipografía legible, máximo 5 bloques de texto cortos. "
             f"Instrucción del cliente: {user_note}"
         )
         style_mode = "edit"
@@ -211,13 +240,13 @@ def build_marketing_creative_brief(
         internal = (
             "Genera un flyer publicitario cuadrado para redes sociales. "
             f"Sujeto visual: {subject}. "
-            "Producto o envase premium en primer plano, estilo profesional de venta. "
+            f"Producto o envase premium en primer plano. {orthography_rule}"
         )
-        if bullet_block:
-            internal += f"{bullet_block} "
+        if verbatim_block:
+            internal += f"{verbatim_block} "
         internal += (
             "Sin logos de marcas registradas de terceros; diseño genérico elegante. "
-            f"Referencia: {context[:700]}. Pedido: {user_note}"
+            f"Referencia: {context[:500]}. Pedido: {user_note}"
         )
         style_mode = "inspired"
 
