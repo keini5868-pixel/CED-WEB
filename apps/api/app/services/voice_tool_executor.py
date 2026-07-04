@@ -853,11 +853,17 @@ async def execute_voice_tool(
             loc = get_location(user_id)
             if not loc:
                 push_client_action(user_id, "open_drive", {})
+                if vcs.get_active_mode(user_id) == "map":
+                    spoken = (
+                        "Señor, active la ubicación en el navegador y repita el destino."
+                    )
+                else:
+                    spoken = (
+                        "Abro el mapa, señor. Active ubicación y repita a dónde desea ir."
+                    )
                 return {
                     "ok": True,
-                    "spoken": (
-                        "Abro el mapa, señor. Active ubicación y repita a dónde desea ir."
-                    ),
+                    "spoken": spoken,
                     "client_action": "open_drive",
                 }
             found = await asyncio.to_thread(

@@ -90,6 +90,9 @@ class MapModule(BaseModule):
 
     async def deactivate(self, *, user_id: str, call_id: str) -> None:
         await super().deactivate(user_id=user_id, call_id=call_id)
+        from app.services.navigation_session import clear_navigation
+
+        clear_navigation(user_id)
         vcs.set_active_mode(user_id, None)
 
     async def _search_places(
@@ -101,7 +104,9 @@ class MapModule(BaseModule):
     ) -> ModuleResult:
         spoken_open = ""
         try:
-            if resolve_open_map_request(user_text) or nav_req.get("open_map"):
+            if (resolve_open_map_request(user_text) or nav_req.get("open_map")) and (
+                vcs.get_active_mode(user_id) != "map"
+            ):
                 open_result = await execute_voice_tool(
                     "activar_modo_conducir", user_id, {}
                 )

@@ -63,6 +63,11 @@ def detect_module(
     if active_module and _is_pure_ack(text):
         return active_module
 
+    if is_meta_publish_intent(text) or resolve_meta_publish_request(text, transcript):
+        return "publish"
+    if resolve_social_comments_request(text):
+        return "publish"
+
     if any(re.search(p, t) for p in _IMAGE_GEN_PATTERNS):
         return "image_gen"
     if any(re.search(p, t) for p in _PDF_PATTERNS):

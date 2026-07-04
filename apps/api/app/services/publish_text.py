@@ -9,7 +9,8 @@ _INSTRUCTION_PREFIX = re.compile(
     r"^(?:"
     r"(?:que\s+)?(?:diga|dice)\s+|"
     r"(?:con\s+el\s+)?texto\s*:?\s*|"
-    r"(?:hazme\s+)?(?:una\s+)?publicaci[oó]n\s+que\s+diga\s+|"
+    r"(?:hazme\s+)?(?:una\s+)?publicaci[oó]n\s+(?:en\s+)?(?:facebook|fb|instagram|ig|meta|redes)\s+que\s+diga\s*|"
+    r"(?:hazme\s+)?(?:una\s+)?publicaci[oó]n\s+que\s+diga\s*|"
     r"(?:un\s+)?post\s+que\s+diga\s+|"
     r"esto\s*:?\s*"
     r")",
@@ -31,7 +32,7 @@ _SOCIAL_PLATFORM = re.compile(
 _PUBLISH_CONFIRM = re.compile(
     r"\b(env[ií]a(?:la|lo|me|r)?|enviar|publica(?:la|lo|me|r)?|publ[ií]calo|dale|adelante|confirmo|"
     r"s[ií]\s*(?:env[ií]a|publica)|m[aá]ndala|mandala|hazlo|procede|env[ií]a\s+la\s+imagen|"
-    r"enviar\s+publicaci[oó]n)\b",
+    r"enviar\s+publicaci[oó]n|haz(?:me)?\s+la\s+publicaci[oó]n|haz(?:me)?\s+(?:el|la)\s+post)\b",
     re.I,
 )
 _CAPTION_IS = re.compile(
@@ -216,14 +217,69 @@ def extract_confirmed_publish_caption(
                 return cap
         if is_publish_confirm(text, allow_short_yes=True):
             continue
-        if is_publish_help_request(text) or is_vague_publish_instruction(text):
+        body = extract_publish_body(text, platform=platform)
+        if body:
+            cap = sanitize_publish_caption(body)
+            is_valid, _ = validate_caption(cap)
+            if is_valid:
+                return cap
+        if is_publish_help_request(text):
+            continue
+        if is_vague_publish_instruction(text):
             continue
         cap = extract_caption_from_turn(text, platform)
         cap = sanitize_publish_caption(cap)
         is_valid, _ = validate_caption(cap)
         if is_valid:
             return cap
+
+    for row in reversed(transcript or []):
+        role = str(getattr(row, "role", None) or (row.get("role") if isinstance(row, dict) else "") or "")
+        if role != "agent":
+            continue
+        text = str(getattr(row, "content", None) or (row.get("content") if isinstance(row, dict) else "") or "").strip()
+        if not text:
+            continue
+        cap = _extract_agent_proposed_caption(text)
+        if cap:
+            return cap
     return ""
+
+
+_AGENT_PROPOSED_CAPTION_PATTERNS = (
+    re.compile(
+        r'\bel\s+texto\s+(?:ser[aá]|será|es)\s*:?\s*["«“](.+?)["»”]',
+        re.I | re.DOTALL,
+    ),
+    re.compile(
+        r'\bel\s+texto\s+(?:ser[aá]|será|es)\s*:?\s*(.+?)(?:\.\s*(?:¿confirma|confirme)|\?\s*$|\.\s*$)',
+        re.I | re.DOTALL,
+    ),
+    re.compile(
+        r'\bvoy a publicar(?:\s+lo siguiente)?\s*:?\s*["«“](.+?)["»”]',
+        re.I | re.DOTALL,
+    ),
+    re.compile(
+        r'\btexto\s+(?:propuesto|ser[aá])\s*:?\s*["«“](.+?)["»”]',
+        re.I | re.DOTALL,
+    ),
+)
+
+
+def _extract_agent_proposed_caption(text: str) -> str:
+    raw = (text or "").strip()
+    if not raw:
+        return ""
+    for pattern in _AGENT_PROPOSED_CAPTION_PATTERNS:
+        match = pattern.search(raw)
+        if not match or not match.group(1):
+            continue
+        cap = sanitize_publish_caption(match.group(1))
+        is_valid, _ = validate_caption(cap)
+        if is_valid:
+            return cap
+    return ""
+
 
 
 PUBLISH_INTERPRETATION_RULES = """
@@ -259,16 +315,22 @@ def is_vague_publish_instruction(user_text: str) -> bool:
     t = (user_text or "").strip()
     if not t:
         return False
+    platform = detect_publish_platform(t)
+    body = extract_publish_body(t, platform=platform)
+    if body:
+        cap = sanitize_publish_caption(body)
+        is_valid, _ = validate_caption(cap)
+        if is_valid:
+            return False
     if _is_instruction_to_ced(t):
         return True
     if _is_literal_instruction(t):
         return True
     if _PUBLISH_ONLY.match(t):
         return True
-    body = extract_publish_body(t, platform=detect_publish_platform(t))
     if not body:
         return True
-    is_valid, _ = validate_caption(body)
+    is_valid, _ = validate_caption(sanitize_publish_caption(body))
     return not is_valid
 
 
@@ -323,12 +385,15 @@ def extract_publish_body(user_text: str, platform: str = "facebook") -> str:
     if not last:
         return ""
     patterns = (
-        r"\b(?:hazme\s+)?(?:una\s+)?publicaci[oó]n\s+que\s+diga\s+(.+)$",
+        r"\b(?:hazme\s+)?(?:una\s+)?publicaci[oó]n\s+(?:en\s+)?"
+        r"(?:facebook|fb|instagram|ig|meta|redes(?:\s+sociales)?)\s+que\s+diga\s*:?\s*(.+)$",
+        r"\b(?:hazme\s+)?(?:una\s+)?publicaci[oó]n\s+que\s+diga\s*:?\s*(.+)$",
         rf"\bpublica(?:r|me|lo|que|ar)?\s+(?:en\s+)?(?:{platform}|ig|fb|instagram|facebook)\s*[:.]?\s*"
         r"(?:que\s+)?(?:diga|dice|con\s+el\s+texto|esto)?\s*[:.]?\s*(.+)$",
         r"\b(?:sube|postea)(?:r|me|lo)?\s+(?:en\s+)?(?:instagram|ig|facebook|fb)\s*[:.]?\s*"
         r"(?:que\s+)?(?:diga|dice|con\s+el\s+texto|esto)?\s*[:.]?\s*(.+)$",
         r"\b(?:publica|postea)\s*[:.]?\s*(.+)$",
+        r"\bque\s+diga\s*:?\s*(.+)$",
     )
     for pat in patterns:
         m = re.search(pat, last, re.I)
@@ -386,7 +451,10 @@ def wants_publish_now(text: str) -> bool:
     t = (text or "").strip()
     if is_publish_confirm(t):
         return True
-    return bool(re.search(r"\bpublica(?:la|lo|me|r)?\b", t, re.I))
+    return bool(
+        re.search(r"\bpublica(?:la|lo|me|r)?\b", t, re.I)
+        or re.search(r"\bhaz(?:me)?\s+la\s+publicaci[oó]n\b", t, re.I)
+    )
 
 
 def _is_instruction_garbage_caption(text: str) -> bool:
