@@ -51,6 +51,8 @@ def _publish_turn_is_off_topic(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    if is_publish_help_request(t):
+        return False
     if is_social_publish_intent(t) or wants_publish_now(t) or is_publish_confirm(t):
         return False
     if extract_user_caption_for_publish(t):

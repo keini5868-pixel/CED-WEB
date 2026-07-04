@@ -232,7 +232,11 @@ def is_attachment_creative_request(
 
 def is_image_creation_request(text: str, history: list[dict[str, str]] | None = None) -> bool:
     """True si el usuario pide generar/editar un creativo, no publicar."""
-    from app.services.publish_text import is_explicit_social_publish_request, is_publish_platform_reply
+    from app.services.publish_text import (
+        is_explicit_social_publish_request,
+        is_publish_help_request,
+        is_publish_platform_reply,
+    )
 
     t = normalize_creative_request_text(text)
     if not t:
@@ -240,6 +244,8 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
     if is_explicit_social_publish_request(t, with_image=True):
         return False
     if is_publish_platform_reply(t):
+        return False
+    if is_publish_help_request(t):
         return False
     if is_generate_image_intent(t):
         return True
@@ -254,11 +260,17 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
 
 def blocks_publish_intent(text: str, history: list[dict[str, str]] | None = None) -> bool:
     """Evita confundir «flyer/creativo» con flujo de publicación Meta."""
-    from app.services.publish_text import is_explicit_social_publish_request, is_publish_platform_reply
+    from app.services.publish_text import (
+        is_explicit_social_publish_request,
+        is_publish_help_request,
+        is_publish_platform_reply,
+    )
 
     if is_explicit_social_publish_request(text, with_image=True):
         return False
     if is_publish_platform_reply(text):
+        return False
+    if is_publish_help_request(text):
         return False
     if is_image_creation_request(text, history):
         return True
