@@ -836,28 +836,30 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             if is_camera_activation_intent(user_text) and uid:
                 try:
-                    tool_result = await execute_voice_tool(
-                        "request_camera_activation",
-                        uid,
-                        {"fast": True},
-                    )
-                    spoken = str(
-                        tool_result.get("spoken") or "Cámara activa, señor. Lista para analizar."
-                    ).strip()
+                    from app.services import voice_client_session as vcs
+
+                    vcs.push_client_action(uid, "camera_activate", {})
+                    vcs.push_tool_event(uid, {"type": "camera_activate"})
+                    spoken = "Cámara activa, señor. Lista para analizar."
                     if _turn_rid_stale():
                         await ack_superseded_turn(reason="camera_activate_stale")
                         return
                     delivered = await complete_partial_or_deliver(spoken)
                     if not delivered:
-                        await anti_silence_if_unanswered(reason="camera_activate_deliver_failed")
+                        await anti_silence_if_unanswered(
+                            reason="camera_activate_deliver_failed"
+                        )
                     logger.info(
-                        "[RETELL-GEMINI] camera activate fast-path call=%s ok=%s",
+                        "[RETELL-GEMINI] camera activate fast-path call=%s delivered=%s",
                         call_id,
-                        tool_result.get("ok"),
+                        delivered,
                     )
                     return
                 except Exception:
-                    logger.exception("[RETELL-GEMINI] camera activate fast-path failed call=%s", call_id)
+                    logger.exception(
+                        "[RETELL-GEMINI] camera activate fast-path failed call=%s",
+                        call_id,
+                    )
 
             superseded, latest_rid = _is_superseded_turn_rid(
                 scheduled_rid,
@@ -1132,6 +1134,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             camera_tool = resolve_camera_voice_request(user_text)
             if camera_tool and uid:
+                if is_camera_activation_intent(user_text):
+                    logger.info(
+                        "[RETELL-GEMINI] camera activation already handled call=%s",
+                        call_id,
+                    )
+                    return
                 clear_pending_advanced_topic(call_id)
                 is_vision = camera_tool in ("analyze_camera_frame", "buscar_lo_visible")
                 async with response_lock:

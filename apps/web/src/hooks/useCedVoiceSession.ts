@@ -146,6 +146,20 @@ function bindHudCameraFeed(stream: MediaStream): boolean {
   return true;
 }
 
+const CAMERA_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  facingMode: { ideal: "environment" },
+  width: { ideal: 1280 },
+  height: { ideal: 720 },
+  frameRate: { ideal: 24, max: 30 },
+};
+
+function requestCameraMediaStream(): Promise<MediaStream> {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    return Promise.reject(new Error("getUserMedia unavailable"));
+  }
+  return navigator.mediaDevices.getUserMedia({ video: CAMERA_VIDEO_CONSTRAINTS });
+}
+
 async function publishImageToBlob(image: {
   imageUrl?: string;
   imageData?: string;
@@ -226,6 +240,7 @@ export function useCedVoiceSession(
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraFacingRef = useRef<"user" | "environment">("user");
   const cameraActivateInFlightRef = useRef<Promise<void> | null>(null);
+  const cameraGestureStreamRef = useRef<Promise<MediaStream> | null>(null);
   const activateCameraFromVoiceRef = useRef<
     (opts?: {
       ackActionId?: number;
@@ -520,7 +535,7 @@ export function useCedVoiceSession(
             void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
           }
           if (ev.type === "camera_activate") {
-            void activateCameraFromVoiceRef.current({ showFeedback: false });
+            activateCameraFromVoiceRef.current({ showFeedback: false });
           }
           if (ev.type === "navigation_instruction" && ev.text) {
             const text = String(ev.text);
@@ -680,6 +695,7 @@ export function useCedVoiceSession(
     setMicStream(null);
     cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
     cameraStreamRef.current = null;
+    cameraGestureStreamRef.current = null;
     setMicOn(false);
     setCameraOn(false);
     setRetellInputLevel(0);
@@ -779,78 +795,83 @@ export function useCedVoiceSession(
   );
   toggleCameraRef.current = toggleCamera;
 
+  const applyCameraStreamFromVoice = useCallback(
+    (stream: MediaStream) => {
+      cameraFacingRef.current = "environment";
+      setCameraFacing("environment");
+      cameraStreamRef.current = stream;
+      setCameraStream(stream);
+      setCameraOn(true);
+      resetCameraIdleTimer();
+      void clientRef.current?.attachCameraStream(stream);
+      void postVoiceCameraStatus(true, true).catch(() => undefined);
+      bindHudCameraFeed(stream);
+      setStatusLabel("Cámara activa — vista en vivo");
+      setErrorMessage(null);
+    },
+    [resetCameraIdleTimer],
+  );
+
+  const beginCameraStreamRequest = useCallback((): Promise<MediaStream> => {
+    const primed = cameraGestureStreamRef.current;
+    if (primed) {
+      cameraGestureStreamRef.current = null;
+      return primed;
+    }
+    return requestCameraMediaStream();
+  }, []);
+
   const activateCameraFromVoice = useCallback(
-    async (opts?: { ackActionId?: number; showFeedback?: boolean }) => {
-      if (cameraActivateInFlightRef.current) {
-        await cameraActivateInFlightRef.current;
+    (opts?: { ackActionId?: number; showFeedback?: boolean }) => {
+      const existing = cameraStreamRef.current;
+      if (
+        existing?.active &&
+        existing.getVideoTracks().some((t) => t.readyState === "live" && t.enabled)
+      ) {
+        applyCameraStreamFromVoice(existing);
         if (opts?.ackActionId) {
-          await ackVoiceClientAction(opts.ackActionId);
+          return ackVoiceClientAction(opts.ackActionId);
         }
-        return;
+        return Promise.resolve();
       }
 
-      const task = (async () => {
-        console.log("[CAMERA] activate from voice");
-        try {
-          if (
-            cameraStreamRef.current?.active &&
-            cameraStreamRef.current
-              .getVideoTracks()
-              .some((t) => t.readyState === "live" && t.enabled)
-          ) {
-            setCameraOn(true);
-            setCameraStream(cameraStreamRef.current);
-            bindHudCameraFeed(cameraStreamRef.current);
-            await postVoiceCameraStatus(true, true);
-            return;
+      if (cameraActivateInFlightRef.current) {
+        return cameraActivateInFlightRef.current.then(() => {
+          if (opts?.ackActionId) {
+            return ackVoiceClientAction(opts.ackActionId);
           }
+          return undefined;
+        });
+      }
 
-          void postVoiceCameraStatus(true, false).catch(() => undefined);
-          const stream = await startCameraWithFacing("environment");
-          await new Promise<void>((resolve) => {
-            window.requestAnimationFrame(() => {
-              window.requestAnimationFrame(() => resolve());
-            });
-          });
-          bindHudCameraFeed(stream);
-          setStatusLabel("Cámara activa — vista en vivo");
-          const live =
-            !!stream.active &&
-            stream.getVideoTracks().some((t) => t.readyState === "live" && t.enabled);
-          await postVoiceCameraStatus(live, live);
-          console.log("[CAMERA] activada desde voz live=%s", live);
-          if (!live) {
-            throw new Error("camera_stream_not_live");
+      console.log("[CAMERA] activate from voice — requesting stream");
+      void postVoiceCameraStatus(true, false).catch(() => undefined);
+
+      const task = beginCameraStreamRequest()
+        .then((stream) => {
+          applyCameraStreamFromVoice(stream);
+          console.log("[CAMERA] activada desde voz");
+        })
+        .then(async () => {
+          if (opts?.ackActionId) {
+            await ackVoiceClientAction(opts.ackActionId);
           }
-        } catch (error) {
-          console.error("[CAMERA] error activando:", error);
-          await postVoiceCameraStatus(false, false).catch(() => undefined);
+        })
+        .catch((error) => {
+          console.error("[CAMERA] permiso denegado:", error);
+          void postVoiceCameraStatus(false, false).catch(() => undefined);
           setErrorMessage(
-            "Por favor permite el acceso a la cámara para que CED pueda ver.",
+            "Toque el botón CAM para permitir el acceso a la cámara.",
           );
-          throw error;
-        }
-      })();
+        })
+        .finally(() => {
+          cameraActivateInFlightRef.current = null;
+        });
 
       cameraActivateInFlightRef.current = task;
-      try {
-        await task;
-        if (opts?.showFeedback !== false) {
-          callbacks?.onTranscript?.(
-            "Cámara activa, señor. Lista para analizar.",
-            "model",
-            { partial: false },
-          );
-          void persistVoiceTranscript("model", "Cámara activa, señor. Lista para analizar.");
-        }
-        if (opts?.ackActionId) {
-          await ackVoiceClientAction(opts.ackActionId);
-        }
-      } finally {
-        cameraActivateInFlightRef.current = null;
-      }
+      return task;
     },
-    [callbacks, persistVoiceTranscript, startCameraWithFacing],
+    [applyCameraStreamFromVoice, beginCameraStreamRequest],
   );
   activateCameraFromVoiceRef.current = activateCameraFromVoice;
 
@@ -879,6 +900,14 @@ export function useCedVoiceSession(
     }
 
     unlockVoiceAudioOnGesture();
+
+    if (navigator.mediaDevices?.getUserMedia) {
+      cameraGestureStreamRef.current = requestCameraMediaStream().catch((err) => {
+        cameraGestureStreamRef.current = null;
+        console.warn("[CAMERA] prime on mic gesture failed:", err);
+        return Promise.reject(err);
+      });
+    }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       setErrorMessage("Tu navegador no soporta captura de micrófono.");
