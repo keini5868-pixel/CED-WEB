@@ -3,6 +3,9 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
 
+/** Generación con imagen adjunta puede tardar varios minutos (Gemini). */
+export const maxDuration = 300;
+
 type CookieToSet = {
   name: string;
   value: string;
@@ -85,6 +88,15 @@ function mergeAuthCookies(
   return target;
 }
 
+function isLongRunningChatPath(path: string): boolean {
+  const normalized = path.toLowerCase();
+  return (
+    normalized.includes("chat/send-with-image") ||
+    normalized.includes("images/generate-with-reference") ||
+    normalized.includes("images/generate")
+  );
+}
+
 async function forward(request: NextRequest, pathSegments: string[]) {
   const { token, authResponse } = await resolveAccessToken(request);
 
@@ -121,20 +133,27 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   }
 
   let upstream: Response;
+  const timeoutMs = isLongRunningChatPath(path) ? 300_000 : 60_000;
   try {
     upstream = await fetch(target, {
       method: request.method,
       headers,
       body,
       cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
     });
-  } catch {
+  } catch (err) {
+    const timedOut =
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError");
     return mergeAuthCookies(
       NextResponse.json(
         {
-          detail: `No se pudo contactar la API en ${apiUrl()}. ¿Está activa en Railway?`,
+          detail: timedOut
+            ? "La operación tardó demasiado. Reintenta en unos segundos."
+            : `No se pudo contactar la API en ${apiUrl()}. ¿Está activa en Railway?`,
         },
-        { status: 502 },
+        { status: timedOut ? 504 : 502 },
       ),
       authResponse,
     );

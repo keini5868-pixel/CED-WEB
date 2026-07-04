@@ -385,8 +385,15 @@ def generate_image_with_reference_gemini(
     quality: str = "standard",
 ) -> dict[str, Any]:
     """Variación / inspiración / edición con imagen de referencia vía Gemini."""
-    from google import genai
-    from google.genai import types
+    try:
+        from google import genai
+        from google.genai import types
+    except ImportError:
+        return {
+            "ok": False,
+            "error": "Biblioteca Gemini no disponible en el servidor.",
+            "code": "config_error",
+        }
 
     settings = get_settings()
     api_key = settings.google_api_key.strip()
@@ -403,8 +410,13 @@ def generate_image_with_reference_gemini(
     if mime not in ("image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"):
         mime = "image/jpeg"
 
-    enriched = augment_image_prompt(_reference_prompt(topic, mode), topic)
-    client = genai.Client(api_key=api_key)
+    try:
+        enriched = augment_image_prompt(_reference_prompt(topic, mode), topic)
+        client = genai.Client(api_key=api_key)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[GEMINI:REF-IMG] setup failed: %s", exc)
+        return {"ok": False, "error": _friendly_image_error(str(exc)), "code": "gemini_error"}
+
     last_error = "No pude generar la imagen con referencia en Gemini."
 
     for model in _image_models():

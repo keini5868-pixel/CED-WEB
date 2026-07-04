@@ -73,7 +73,7 @@ def test_attachment_resolver_for_product_photo():
 
 def test_extract_product_subject_generic():
     subject = extract_product_subject("producto basics de fitline con fibra y probioticos")
-    assert "basics" in subject.lower()
+    assert "fitline" in subject.lower()
 
 
 def test_attachment_detects_typo_benefits_and_reference_image():
@@ -82,9 +82,16 @@ def test_attachment_detects_typo_benefits_and_reference_image():
         "Sistema inmune: Fortalece defensas naturales.\n"
         "Y QUE ESPLIQUE SUS VBENEFICIOS USANDO ESTA IMEGENE DE REFERENCIA DEL PRODUCTO EN EL FONDO"
     )
-    assert is_attachment_creative_request(text)
+    history = [
+        {
+            "role": "model",
+            "content": "FitLine Basics es un suplemento nutricional en polvo.",
+        },
+    ]
+    assert is_attachment_creative_request(text, history)
     assert is_marketing_creative_intent(text)
-    resolved = resolve_image_creation_from_attachment(text)
+    resolved = resolve_image_creation_from_attachment(text, history)
     assert resolved is not None
     assert resolved["style_mode"] == "edit"
     assert "TEXTOS EXACTOS" in resolved["internal_prompt"]
+    assert "EN EL FONDO" not in resolved["display_label"]

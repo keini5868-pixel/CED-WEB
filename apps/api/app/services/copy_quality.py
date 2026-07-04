@@ -196,8 +196,16 @@ overlay_lines_from_benefit_strings = overlay_lines_from_strings  # compat
 
 def build_image_headline(context: str = "", subject: str = "") -> str:
     """Titular genérico para imagen — deriva del tema o del contexto."""
+    skip = {
+        "producto",
+        "el producto",
+        "imagen",
+        "creativo",
+        "en el fondo",
+        "referencia",
+    }
     subj = sanitize_label(subject)
-    if subj and subj.lower() not in {"producto", "el producto", "imagen", "creativo"}:
+    if subj and subj.lower() not in skip and not re.search(r"\bfondo\b", subj, re.I):
         if len(subj) <= 60:
             return subj
     for block in (context or "").split("\n"):

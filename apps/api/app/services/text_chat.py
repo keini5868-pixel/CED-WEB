@@ -1748,7 +1748,7 @@ def send_message(
         except Exception as exc:  # noqa: BLE001
             logger.exception("[CHAT] image attachment failed user=%s", user_id[:8])
             raise TextChatError(
-                "No pude procesar la imagen adjunta. Reintenta en unos segundos.",
+                _format_image_generation_error(str(exc)),
                 http_status=503,
             ) from exc
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -99,7 +100,8 @@ async def post_chat_message_with_image(
             active = vcs.ensure_active_voice_call(user_id)
         except Exception:  # noqa: BLE001
             logger.warning("[CHAT] no se pudo consultar sesión de voz", exc_info=True)
-        result = send_message(
+        result = await asyncio.to_thread(
+            send_message,
             user_id,
             content=text,
             conversation_id=conversation_id,

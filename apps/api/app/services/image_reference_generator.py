@@ -352,6 +352,33 @@ def generate_image_with_reference(
 
     Modos: inspired | variation | edit
     """
+    try:
+        return _generate_image_with_reference_impl(
+            user_id=user_id,
+            prompt=prompt,
+            reference_image=reference_image,
+            content_type=content_type,
+            style_mode=style_mode,
+            quality=quality,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[REF-IMG] unexpected failure user=%s", user_id[:8])
+        return {
+            "ok": False,
+            "error": "No pude generar la imagen con referencia. Reintenta en unos segundos.",
+            "code": "internal_error",
+        }
+
+
+def _generate_image_with_reference_impl(
+    *,
+    user_id: str,
+    prompt: str,
+    reference_image: bytes,
+    content_type: str | None = "image/jpeg",
+    style_mode: str = "inspired",
+    quality: str | None = "standard",
+) -> dict[str, Any]:
     settings = get_settings()
     google_key = settings.google_api_key.strip()
     api_key = settings.openai_api_key.strip()

@@ -56,8 +56,8 @@ async def generate_with_reference(
     if not result.get("ok"):
         code = result.get("code", "")
         status = 429 if code == "quota_exhausted" else 403 if code == "plan_limit" else 400
-        if code in ("openai_error", "storage_error", "config_error"):
-            status = 500 if code == "config_error" else 502
+        if code in ("openai_error", "storage_error", "config_error", "internal_error", "gemini_error"):
+            status = 502 if code != "config_error" else 503
         raise HTTPException(status_code=status, detail=result.get("error", "Error generando imagen."))
 
     return result

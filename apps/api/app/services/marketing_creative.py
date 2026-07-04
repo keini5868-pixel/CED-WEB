@@ -161,14 +161,37 @@ def _history_blob(history: list[dict[str, str]] | None, *, limit: int = 8) -> st
     return "\n".join(chunks)
 
 
+_SKIP_SUBJECTS = frozenset(
+    {
+        "producto",
+        "el producto",
+        "en el fondo",
+        "referencia",
+        "imagen",
+        "creativo",
+        "flyer",
+    }
+)
+
+
+def _subject_is_usable(subject: str) -> bool:
+    clean = re.sub(r"\s+", " ", (subject or "").strip()).lower()
+    if len(clean) < 3 or clean in _SKIP_SUBJECTS:
+        return False
+    if re.fullmatch(r"(fondo|referencia|imagen|producto)(?:\s+\w+){0,2}", clean):
+        return False
+    return True
+
+
 def _extract_product_subject(context: str) -> str:
     blob = (context or "").strip()
     if not blob:
         return "producto"
     for pattern in (
-        r"\bproducto\s+([^\n,.:;]{3,60})",
-        r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,30})\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,30})\b",
+        r"\b(FitLine\s+[A-Za-zÁÉÍÓÚáéíóúÑñ0-9]+(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ0-9]+)?)\b",
         r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{3,40})\s+es\s+(?:un|una)\b",
+        r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,30})\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,30})\b",
+        r"\bproducto\s+([^\n,.:;]{3,60})",
     ):
         match = re.search(pattern, blob, re.I)
         if not match:
@@ -178,7 +201,7 @@ def _extract_product_subject(context: str) -> str:
         else:
             subject = (match.group(1) if match.lastindex else match.group(0)).strip()
         subject = re.sub(r"\s+", " ", subject)
-        if len(subject) >= 3 and subject.lower() not in {"producto", "el producto"}:
+        if _subject_is_usable(subject):
             return subject[:80]
     return "producto"
 
@@ -222,7 +245,7 @@ def build_marketing_creative_brief(
         raw = strip_image_generation_instruction(parsed)
 
     context = _history_blob(history)
-    subject = normalize_spanish(_extract_product_subject(f"{raw}\n{context}"))
+    subject = normalize_spanish(_extract_product_subject(f"{context}\n{raw}\n{user_text}"))
     overlay_lines = collect_image_overlay_lines(f"{raw}\n{user_text}", context)
     if not overlay_lines:
         overlay_lines = _extract_benefit_bullets_from_history(history)
@@ -258,7 +281,13 @@ def build_marketing_creative_brief(
         internal += f"Referencia: {context[:500]}. Pedido: {user_note}"
         style_mode = "inspired"
 
-    internal = augment_image_prompt(internal, context)
+    if "TEXTOS EXACTOS" not in internal:
+        internal = augment_image_prompt(internal, context)
+    elif "Ortografía española impecable" not in internal:
+        internal = (
+            f"{internal} Ortografía española impecable en todo texto visible. "
+            "Sin anglicismos innecesarios ni palabras inventadas."
+        )
     return internal[:4000], display, style_mode
 
 
