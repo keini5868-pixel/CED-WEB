@@ -267,6 +267,7 @@ export function CedTextChatPanel({
   const [status, setStatus] = useState<ChatStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const keepInputFocusRef = useRef(false);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
   const { setTextChatOpen } = useCedOverlay();
 
@@ -350,12 +351,39 @@ export function CedTextChatPanel({
   }, [seedImage?.url, open]);
 
   useEffect(() => {
+    if (!open) return;
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+    });
+  }, [open]);
+
+  useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, typing]);
+
+  const focusInput = useCallback(() => {
+    const run = () => {
+      const el = textareaRef.current;
+      if (!el || status?.blocked) return;
+      el.focus({ preventScroll: true });
+      const len = el.value.length;
+      el.selectionStart = len;
+      el.selectionEnd = len;
+    };
+    requestAnimationFrame(() => {
+      run();
+      requestAnimationFrame(run);
+    });
+  }, [status?.blocked]);
+
+  useEffect(() => {
+    if (!busy) focusInput();
+  }, [busy, focusInput]);
 
   const submit = async () => {
     const text = input.trim();
     if ((!text && !attachedImage) || busy) return;
+    keepInputFocusRef.current = true;
     setError(null);
     const imageFile = attachedImage?.file ?? null;
     const imagePreview = attachedImage?.preview ?? null;
@@ -365,6 +393,7 @@ export function CedTextChatPanel({
     setImageMode("analyze");
     setBusy(true);
     setTyping(true);
+    focusInput();
     const userMsg: ChatMessage = {
       role: "user",
       content: text || "📷 Imagen adjunta",
@@ -447,6 +476,8 @@ export function CedTextChatPanel({
     } finally {
       setBusy(false);
       setTyping(false);
+      keepInputFocusRef.current = false;
+      focusInput();
     }
   };
 
@@ -574,7 +605,7 @@ export function CedTextChatPanel({
 
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className="shrink-0 border-t border-cyan-500/20 bg-[#060a0f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+        <footer className="relative z-10 shrink-0 border-t border-cyan-500/20 bg-[#060a0f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
           {attachedImage ? (
             <ImageActionBar
               preview={attachedImage.preview}
@@ -589,6 +620,7 @@ export function CedTextChatPanel({
           <div className="flex w-full max-w-full items-end gap-1.5 sm:gap-2">
             <textarea
               ref={textareaRef}
+              autoFocus
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -606,24 +638,31 @@ export function CedTextChatPanel({
                 }, 300);
               }}
               onBlur={() => {
-                document.documentElement.style.setProperty("--ced-keyboard-height", "0px");
-                if (window.matchMedia("(max-width: 640px)").matches && window.visualViewport) {
-                  setMobilePanelHeight(Math.round(window.visualViewport.height));
-                }
+                if (!busy && !keepInputFocusRef.current) return;
+                window.setTimeout(() => {
+                  if (busy || keepInputFocusRef.current) focusInput();
+                }, 10);
               }}
               rows={1}
+              enterKeyHint="send"
+              inputMode="text"
+              aria-label="Escribe tu mensaje a CED"
               placeholder={
                 isDictating
                   ? "Escuchando… habla ahora"
                   : attachedImage
                     ? imageActionPlaceholder(imageMode)
-                    : "Escribe a CED o usa el micrófono…"
+                    : busy
+                      ? "CED responde… escribe el siguiente mensaje aquí"
+                      : "Escribe a CED o usa el micrófono…"
               }
-              disabled={busy || status?.blocked}
-              className={`box-border min-h-[44px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded border bg-black/50 px-3 py-2.5 text-base leading-snug text-white placeholder:text-cyan-800 focus:outline-none disabled:opacity-50 sm:text-sm ${
+              disabled={Boolean(status?.blocked)}
+              className={`box-border min-h-[48px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-lg border bg-black/60 px-3 py-2.5 text-base leading-snug text-white caret-cyan-300 placeholder:text-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 disabled:opacity-50 sm:text-sm ${
                 isDictating
                   ? "border-red-500/50 focus:border-red-400"
-                  : "border-cyan-800/50 focus:border-cyan-500"
+                  : busy
+                    ? "border-cyan-500/40"
+                    : "border-cyan-700/60 focus:border-cyan-400"
               }`}
               style={{ WebkitAppearance: "none" }}
             />
@@ -635,11 +674,15 @@ export function CedTextChatPanel({
               getBaseText={() => input}
               onTextUpdate={handleDictationText}
               onDictatingChange={handleDictatingChange}
-              disabled={busy || status?.blocked}
+              disabled={status?.blocked}
             />
             <button
               type="button"
               disabled={busy || (!input.trim() && !attachedImage) || status?.blocked}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                keepInputFocusRef.current = true;
+              }}
               onClick={() => void submit()}
               className="box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full border border-cyan-400/60 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px]"
               aria-label="Enviar"
