@@ -62,6 +62,20 @@ _CAPTION_MESSAGE_WILL = re.compile(
     r"\b(?:el\s+)?mensaje\s+ser[aá]\s+(.+)$",
     re.I,
 )
+_CAPTION_WITH_DESCRIPTION = re.compile(
+    r"\b(?:con\s+(?:esta|este|la|el|mi)?\s*(?:descripci[oó]n|descricion|texto|mensaje)|"
+    r"(?:descripci[oó]n|descricion|texto|mensaje)\s*(?:es|:))\s*(.+)$",
+    re.I,
+)
+_DEICTIC_CAPTION_REF = re.compile(
+    r"(?:"
+    r"(?:pub|pob)lica(?:la|lo|me|r)?\s+con\s+(?:eso|lo)\s+que\s+(?:te\s+)?(?:di|dije|dec[ií]a|dice|mand[eé]|envi[eé]|ped[ií])|"
+    r"usa(?:r|)\s+(?:ese|este|el\s+mismo)\s+(?:texto|caption|descripci[oó]n|descricion|mensaje)|"
+    r"lo\s+que\s+(?:te\s+)?(?:di|dije|mand[eé]|ped[ií])|"
+    r"(?:eso|lo)\s+que\s+(?:te\s+)?(?:di|dije)"
+    r")",
+    re.I,
+)
 _PUBLISH_TRAILING = re.compile(
     r"\s+(?:y\s+)?(?:public[a-záéíóú]*|env[ií]a[a-záéíóú]*|postea[a-záéíóú]*|sube[a-záéíóú]*)\b.*$",
     re.I,
@@ -227,7 +241,12 @@ def extract_confirmed_publish_caption(
             if is_valid:
                 return cap
         if is_publish_confirm(text, allow_short_yes=True):
-            continue
+            cap_hint = extract_user_caption_for_publish(text) or extract_publish_body(
+                text,
+                platform=platform,
+            )
+            if not cap_hint:
+                continue
         body = extract_publish_body(text, platform=platform)
         if body:
             cap = sanitize_publish_caption(body)
@@ -321,6 +340,69 @@ def _is_literal_instruction(caption: str) -> bool:
     return False
 
 
+def is_deictic_caption_reference(text: str) -> bool:
+    """«publícala con eso que te di» — referencia al caption previo, no el caption."""
+    return bool(_DEICTIC_CAPTION_REF.search((text or "").strip()))
+
+
+def _sanitize_caption_candidate(raw: str) -> str:
+    cap = sanitize_publish_caption(raw)
+    if validate_caption(cap)[0]:
+        return cap
+    return ""
+
+
+def extract_caption_from_history(
+    history: list[dict[str, str]] | None,
+    *,
+    platform: str = "instagram",
+) -> str:
+    """Recupera el caption acordado desde turnos previos del chat."""
+    for row in reversed(history or []):
+        if str(row.get("role") or "") != "user":
+            continue
+        text = str(row.get("content") or "").strip()
+        if not text or is_deictic_caption_reference(text):
+            continue
+        cap = extract_user_caption_for_publish(text)
+        if cap:
+            cleaned = _sanitize_caption_candidate(cap)
+            if cleaned:
+                return cleaned
+        if is_publish_help_request(text):
+            continue
+        if is_publish_confirm(text, allow_short_yes=True):
+            body = extract_publish_body(text, platform=platform)
+            if body:
+                cleaned = _sanitize_caption_candidate(body)
+                if cleaned:
+                    return cleaned
+            continue
+        body = extract_publish_body(text, platform=platform)
+        if body:
+            cleaned = _sanitize_caption_candidate(body)
+            if cleaned:
+                return cleaned
+        cap = extract_caption_from_turn(text, platform=platform)
+        cleaned = _sanitize_caption_candidate(cap)
+        if cleaned:
+            return cleaned
+    for row in reversed(history or []):
+        if str(row.get("role") or "") not in ("model", "assistant"):
+            continue
+        text = str(row.get("content") or "").strip()
+        cap = _extract_agent_proposed_caption(text)
+        if cap:
+            return cap
+    return ""
+
+
+def extract_initial_publish_caption(text: str, *, platform: str = "instagram") -> str:
+    """Caption explícito en el primer mensaje con imagen adjunta."""
+    cap = extract_caption_from_turn(text, platform=platform)
+    return _sanitize_caption_candidate(cap)
+
+
 def is_vague_publish_instruction(user_text: str) -> bool:
     """True si el usuario pide publicar un tema, no un caption final."""
     t = (user_text or "").strip()
@@ -356,6 +438,8 @@ def validate_caption(caption: str) -> tuple[bool, str]:
         return False, "Caption vacío"
     if _is_instruction_to_ced(text):
         return False, "Caption parece ser una instrucción al asistente, no contenido a publicar"
+    if is_deictic_caption_reference(text):
+        return False, "Caption parece referirse a un texto previo, no contenido final"
     if _is_ui_label(text):
         return False, "Caption parece ser un label de UI, no contenido"
     if _is_literal_instruction(text):
@@ -396,6 +480,8 @@ def extract_publish_body(user_text: str, platform: str = "facebook") -> str:
     if not last:
         return ""
     patterns = (
+        r"\bpublica(?:r|me|lo|ar)?\s+(?:esta\s+)?(?:imagen|foto)\s+con\s+(?:esta\s+)?"
+        r"(?:descripci[oó]n|descricion|texto)\s+(.+)$",
         r"\b(?:hazme\s+)?(?:una\s+)?publicaci[oó]n\s+(?:en\s+)?"
         r"(?:facebook|fb|instagram|ig|meta|redes(?:\s+sociales)?)\s+que\s+diga\s*:?\s*(.+)$",
         r"\b(?:hazme\s+)?(?:una\s+)?publicaci[oó]n\s+que\s+diga\s*:?\s*(.+)$",
@@ -519,6 +605,8 @@ def _is_instruction_garbage_caption(text: str) -> bool:
     t = (text or "").strip()
     if not t or _PUBLISH_ONLY.match(t):
         return True
+    if is_deictic_caption_reference(t):
+        return True
     if _is_instruction_to_ced(t):
         return True
     if is_publish_confirm(t):
@@ -533,7 +621,13 @@ def extract_user_caption_for_publish(text: str) -> str:
     t = (text or "").strip()
     if not t:
         return ""
-    for pattern in (_CAPTION_IS, _CAPTION_TITLE, _CAPTION_NAMED, _CAPTION_MESSAGE_WILL):
+    for pattern in (
+        _CAPTION_IS,
+        _CAPTION_TITLE,
+        _CAPTION_NAMED,
+        _CAPTION_MESSAGE_WILL,
+        _CAPTION_WITH_DESCRIPTION,
+    ):
         match = pattern.search(t)
         if not match:
             continue
@@ -551,6 +645,8 @@ _CAPTION_PLAIN_MAX_CHARS = 280
 def _plain_caption_fallback(text: str) -> str:
     t = (text or "").strip()
     if not t:
+        return ""
+    if is_deictic_caption_reference(t):
         return ""
     if is_publish_help_request(t) or wants_publish_now(t) or is_social_publish_intent(t):
         return ""

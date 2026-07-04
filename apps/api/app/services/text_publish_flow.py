@@ -9,7 +9,6 @@ from typing import Any, Callable
 from app.services.publish_image_context import (
     begin_publish_flow,
     clear_publish_flow,
-    clear_session_image,
     get_publish_flow,
     has_publishable_image,
     update_publish_flow,
@@ -17,9 +16,12 @@ from app.services.publish_image_context import (
 from app.services.publish_text import (
     detect_publish_platform,
     detect_publish_platform_explicit,
+    extract_caption_from_history,
     extract_caption_from_turn,
+    extract_initial_publish_caption,
     extract_inline_publish_caption,
     extract_user_caption_for_publish,
+    is_deictic_caption_reference,
     is_publish_confirm,
     is_publish_help_request,
     is_social_publish_intent,
@@ -88,14 +90,46 @@ def publish_flow_opening(platform: str, *, has_caption: bool = False) -> str:
     )
 
 
+def _resolve_flow_caption(
+    user_text: str,
+    *,
+    platform: str,
+    history: list[dict[str, str]],
+    existing: str = "",
+) -> str:
+    """Resuelve caption del turno, del historial o del borrador previo."""
+    from app.services.publish_text import sanitize_publish_caption, validate_caption
+
+    cap = extract_caption_from_turn(user_text, platform=platform)
+    if cap:
+        cleaned = sanitize_publish_caption(cap)
+        if validate_caption(cleaned)[0]:
+            return cleaned
+    if is_deictic_caption_reference(user_text):
+        from_history = extract_caption_from_history(history, platform=platform)
+        if from_history:
+            return from_history
+        return existing.strip()
+    if existing.strip():
+        return existing.strip()
+    return extract_caption_from_history(history, platform=platform)
+
+
 def start_publish_flow_from_image(
     user_id: str,
     conversation_id: str,
     text: str,
+    *,
+    history: list[dict[str, str]] | None = None,
 ) -> str:
     explicit = detect_publish_platform_explicit(text)
     platform = explicit or detect_publish_platform(text)
-    inline = extract_inline_publish_caption(text, platform=platform)
+    inline = extract_initial_publish_caption(text, platform=platform) or extract_inline_publish_caption(
+        text,
+        platform=platform,
+    )
+    if not inline and history:
+        inline = extract_caption_from_history(history, platform=platform)
     if inline:
         begin_publish_flow(
             user_id,
@@ -132,7 +166,11 @@ def handle_publish_flow_turn(
     if not flow and is_social_publish_intent(text) and has_publishable_image(user_id, conversation_id):
         explicit = detect_publish_platform_explicit(text)
         platform = explicit or detect_publish_platform(text)
-        inline = extract_inline_publish_caption(text, platform=platform)
+        inline = (
+            extract_initial_publish_caption(text, platform=platform)
+            or extract_inline_publish_caption(text, platform=platform)
+            or extract_caption_from_history(history, platform=platform)
+        )
         if inline:
             begin_publish_flow(
                 user_id,
@@ -187,7 +225,12 @@ def handle_publish_flow_turn(
                 f"{draft}\n\n"
                 f"¿Publico así o desea ajustar algo? Cuando esté listo, dígame «envía» o «publica»."
             )
-        new_caption = extract_caption_from_turn(user_text, platform=platform)
+        new_caption = _resolve_flow_caption(
+            user_text,
+            platform=platform,
+            history=history,
+            existing=caption,
+        )
         if new_caption:
             update_publish_flow(
                 user_id,
@@ -220,9 +263,14 @@ def handle_publish_flow_turn(
         )
 
     if stage == "awaiting_confirm":
-        new_caption = extract_caption_from_turn(user_text, platform=platform)
-        if new_caption:
-            caption = new_caption
+        resolved = _resolve_flow_caption(
+            user_text,
+            platform=platform,
+            history=history,
+            existing=caption,
+        )
+        if resolved:
+            caption = resolved
             update_publish_flow(user_id, conversation_id, caption_draft=caption)
 
         if wants_publish_now(user_text) or is_publish_confirm(user_text, allow_short_yes=True):
@@ -282,14 +330,28 @@ def _execute_publish(
     run_tool: Callable[..., str],
 ) -> str:
     label = _PLATFORM_LABEL.get(platform, platform)
+    if not has_publishable_image(user_id, conversation_id):
+        return (
+            f"No encuentro la imagen para publicar en {label}, señor. "
+            "Adjúntela de nuevo o genere el creativo otra vez."
+        )
+    from app.services.publish_text import sanitize_publish_caption, validate_caption
+
+    clean_caption = sanitize_publish_caption(caption)
+    is_valid, reason = validate_caption(clean_caption)
+    if not is_valid:
+        return (
+            f"El texto para {label} no parece correcto ({reason}). "
+            "¿Me indica el caption exacto que desea publicar?"
+        )
     tool_name = "publicar_instagram" if platform == "instagram" else "publicar_facebook"
     payload: dict[str, Any] = {
         "use_last_uploaded_image": True,
     }
     if platform == "instagram":
-        payload["caption"] = caption
+        payload["caption"] = clean_caption
     else:
-        payload["message"] = caption
+        payload["message"] = clean_caption
 
     raw = run_tool(user_id, tool_name, payload, conversation_id=conversation_id)
     try:
@@ -299,7 +361,6 @@ def _execute_publish(
 
     clear_publish_flow(user_id, conversation_id)
     if data.get("ok"):
-        clear_session_image(user_id, conversation_id)
         return f"Un momento, señor…\n\nListo. Publicación enviada a {label}."
     err = str(data.get("error") or data.get("message") or "No pude completar la publicación.")
     return f"No pude publicar en {label}, señor. {err}"

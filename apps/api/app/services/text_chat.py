@@ -936,49 +936,34 @@ def _run_chat_tool(
                 }
             )
         if name == "publicar_facebook":
-            from app.services.publish_image_context import (
-                clear_session_image,
-                resolve_image_for_publishing,
-            )
+            from app.services.publish_image_context import resolve_image_for_publishing
             from app.services.publish_text import sanitize_publish_caption
 
             use_last = tool_input.get("use_last_uploaded_image", True)
-            resolved_url: str | None = None
-            resolved_data: str | None = None
-            if tool_input.get("image_url") or tool_input.get("image_data"):
-                resolved = resolve_image_for_publishing(
-                    user_id,
-                    conversation_id,
-                    use_last_uploaded_image=False,
-                    image_url=tool_input.get("image_url"),
-                    image_data=tool_input.get("image_data"),
+            resolved = resolve_image_for_publishing(
+                user_id,
+                conversation_id,
+                use_last_uploaded_image=use_last is not False,
+                image_url=tool_input.get("image_url"),
+                image_data=tool_input.get("image_data"),
+            )
+            if not resolved.get("ok"):
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": resolved.get("error"),
+                        "message": resolved.get("message"),
+                    }
                 )
-                if resolved.get("ok"):
-                    resolved_url = resolved.get("url")
-                    resolved_data = resolved.get("data")
-            elif use_last is not False:
-                resolved = resolve_image_for_publishing(
-                    user_id,
-                    conversation_id,
-                    use_last_uploaded_image=True,
-                )
-                if resolved.get("ok"):
-                    resolved_url = resolved.get("url")
-                    resolved_data = resolved.get("data")
             result = publish_facebook(
                 user_id,
                 sanitize_publish_caption(str(tool_input.get("message") or "")),
-                image_url=resolved_url,
-                image_data=resolved_data,
+                image_url=resolved.get("url"),
+                image_data=resolved.get("data"),
             )
-            if result.get("ok") and (resolved_url or resolved_data):
-                clear_session_image(user_id, conversation_id)
             return json.dumps(result)
         if name == "publicar_instagram":
-            from app.services.publish_image_context import (
-                clear_session_image,
-                resolve_image_for_publishing,
-            )
+            from app.services.publish_image_context import resolve_image_for_publishing
             from app.services.publish_text import sanitize_publish_caption
 
             use_last = tool_input.get("use_last_uploaded_image", True)
@@ -1003,14 +988,6 @@ def _run_chat_tool(
                 image_url=resolved.get("url"),
                 image_data=resolved.get("data"),
             )
-            if result.get("ok"):
-                clear_session_image(user_id, conversation_id)
-                try:
-                    from app.services import voice_client_session as vcs
-
-                    vcs.clear_last_publishable_image(user_id)
-                except Exception:  # noqa: BLE001
-                    pass
             return json.dumps(result)
         if name == "generar_pdf":
             from app.deps.plan_access import effective_plan_limits
@@ -1711,7 +1688,12 @@ def send_message(
             )
 
             if is_social_publish_intent(text, with_image=True):
-                reply = start_publish_flow_from_image(user_id, conversation_id, text)
+                reply = start_publish_flow_from_image(
+                    user_id,
+                    conversation_id,
+                    text,
+                    history=history,
+                )
                 return _finish(
                     reply,
                     route_meta={"intent": "publish_flow", "source": "image_upload"},
