@@ -5,9 +5,13 @@ from __future__ import annotations
 import re
 
 _CREATE_VERBS = (
-    r"(?:genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|cr[eé]ame|gener[aá]me|"
-    r"haz(?:me|nos|lo|la)?|hacer(?:me)?|dise[nñ]a(?:r|me|nos|do)?|"
-    r"dibuja(?:r|me)?|pinta(?:r|me)?|dame|hazme)"
+    r"(?:gener(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|"
+    r"cre(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|"
+    r"cr[eé]ame|gener[aá]me|"
+    r"haz(?:me|nos|lo|la|es|emos|er|go)?|hacer(?:me|lo)?|"
+    r"dise[nñ]a(?:r|me|mos|s|is|n|do)?|"
+    r"dibuja(?:r|me|mos|s)?|pinta(?:r|me|mos|s)?|"
+    r"dame|hazme)"
 )
 _IMAGE_NOUN = r"(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|arte|gr[aá]fico|creativo|logo|banner|flyer|portada)"
 
@@ -25,7 +29,8 @@ _IMAGE_PATTERNS = (
 
 _IMAGE_PROMPT_PATTERNS = (
     re.compile(
-        rf"\b{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\s+(?:de|con|para|que\s+)?\s*[:.]?\s*(.+)$",
+        rf"(?:\b(?:me\s+)?(?:puedes\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\s+"
+        rf"(?:de|con|para|que\s+)?\s*[:.]?\s*(.+))$",
         re.I,
     ),
     re.compile(rf"\b{_IMAGE_NOUN}\s+de\s+(.+)$", re.I),
@@ -71,6 +76,35 @@ def parse_generate_image_prompt(text: str) -> str | None:
     if len(t) >= 12:
         return t
     return None
+
+
+_FOLLOWUP_IMAGE_CONTEXT = re.compile(
+    r"\b(genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|imagen|foto|dise[nñ]o|"
+    r"creativo|ilustraci[oó]n|face(?:book)?|instagram|publicar|banner|flyer)\b",
+    re.I,
+)
+_FOLLOWUP_SKIP = re.compile(
+    r"^(?:ok|gracias|s[ií]|no|vale|perfecto|listo|env[ií]a|publica|dale|hola|buenas)\b",
+    re.I,
+)
+
+
+def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None = None) -> str | None:
+    """Detecta pedidos cortos de imagen que continúan un tema visual reciente."""
+    t = (text or "").strip()
+    if not t or is_generate_image_intent(t) or len(t) > 120 or len(t) < 6:
+        return None
+    if _FOLLOWUP_SKIP.search(t):
+        return None
+    recent: list[str] = []
+    for row in (history or [])[-8:]:
+        content = (row.get("content") or "").strip()
+        if content:
+            recent.append(content)
+    blob = " ".join(recent[-6:]).lower()
+    if not _FOLLOWUP_IMAGE_CONTEXT.search(blob):
+        return None
+    return t
 
 
 def is_pdf_intent(text: str) -> bool:

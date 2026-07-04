@@ -202,3 +202,55 @@ def test_publish_flow_title_then_confirm():
     )
     assert published == ["ced esta aqui"]
     assert reply2 and "enviada" in reply2.lower()
+
+
+def test_detect_publish_platform_facebook_typos():
+    from app.services.publish_text import detect_publish_platform, detect_publish_platform_explicit
+
+    assert detect_publish_platform("publica en facebo") == "facebook"
+    assert detect_publish_platform("es para facebo que quiero publicarla") == "facebook"
+    assert detect_publish_platform_explicit("si ayudame") is None
+    assert detect_publish_platform_explicit("para facebook por favor") == "facebook"
+
+
+def test_publish_flow_switches_platform_on_help_request():
+    from app.services.publish_image_context import (
+        begin_publish_flow,
+        clear_publish_flow,
+        get_publish_flow,
+        register_text_chat_image_url,
+    )
+    from app.services.text_publish_flow import handle_publish_flow_turn
+
+    uid = "user-fb-switch"
+    cid = "conv-fb-switch"
+    clear_publish_flow(uid, cid)
+    register_text_chat_image_url(uid, cid, "https://cdn.example.com/fb.jpg")
+    begin_publish_flow(uid, cid, platform="instagram", stage="awaiting_caption_choice")
+
+    reply = handle_publish_flow_turn(
+        uid,
+        cid,
+        "si ayudame es para facebo que quiero que la publiques",
+        history=[],
+        run_tool=lambda *a, **k: "{}",
+        suggest_caption=lambda platform, *_: f"Texto para {platform}",
+    )
+    assert reply is not None
+    assert "Facebook" in reply
+    assert "Instagram" not in reply
+    flow = get_publish_flow(uid, cid)
+    assert flow is not None
+    assert flow["platform"] == "facebook"
+
+
+def test_publish_flow_neutral_opening_without_platform():
+    from app.services.publish_image_context import clear_publish_flow
+    from app.services.text_publish_flow import start_publish_flow_from_image
+
+    uid = "user-neutral"
+    cid = "conv-neutral"
+    clear_publish_flow(uid, cid)
+    reply = start_publish_flow_from_image(uid, cid, "publica esta imagen")
+    assert "Facebook o Instagram" in reply
+    assert "para Instagram" not in reply

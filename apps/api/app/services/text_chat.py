@@ -18,6 +18,7 @@ from app.services.cognitive_router import build_chat_system_extras, route_messag
 from app.services.chat_intents import (
     is_generate_image_intent,
     is_pdf_intent,
+    parse_followup_image_prompt,
     parse_generate_image_prompt,
     parse_pdf_request,
 )
@@ -712,6 +713,22 @@ def _suggest_social_caption(
         return "Un momento especial compartido desde CED. #CED #EvoluciónDigital"
 
 
+def _recent_chat_context(history: list[dict[str, str]], *, limit: int = 6) -> str:
+    chunks: list[str] = []
+    for row in history[-limit:]:
+        content = (row.get("content") or "").strip()
+        if content:
+            chunks.append(content)
+    return " ".join(chunks)
+
+
+def _format_image_generation_error(raw_error: str) -> str:
+    err = (raw_error or "").strip() or "No pude generar la imagen."
+    if err.lower().startswith("no pude generar la imagen"):
+        return err
+    return f"No pude generar la imagen: {err}"
+
+
 def _needs_chat_tools(text: str) -> bool:
     t = (text or "").strip()
     if not t:
@@ -999,12 +1016,24 @@ def _run_chat_tool(
             except Exception:  # noqa: BLE001
                 pass
             prompt = str(tool_input.get("prompt") or "").strip()
+            prior = ""
+            if chat_messages:
+                prior = _recent_chat_context(
+                    [
+                        {
+                            "content": str(m.get("content") or ""),
+                        }
+                        for m in chat_messages[:-1]
+                        if isinstance(m, dict)
+                    ]
+                )
             quality = str(tool_input.get("quality") or "auto")
             result = generate_image(
                 user_id=user_id,
                 plan_id=plan_id,
                 prompt=prompt,
                 quality=quality,
+                context=prior,
             )
             if result.get("ok") and result.get("url"):
                 result["prompt"] = prompt
@@ -1632,9 +1661,11 @@ def send_message(
         )
 
     img_prompt = parse_generate_image_prompt(text)
+    followup_prompt = parse_followup_image_prompt(text, history) if not img_prompt else None
+    effective_img_prompt = img_prompt or followup_prompt
     if (
-        img_prompt
-        and is_generate_image_intent(text)
+        effective_img_prompt
+        and (is_generate_image_intent(text) or followup_prompt)
         and len(text.strip()) <= DIRECT_IMAGE_MAX_CHARS
     ):
         from app.services.gemini_images import generate_image
@@ -1645,11 +1676,13 @@ def send_message(
             plan_id = sub.get("plan_id") if sub else None
         except Exception:  # noqa: BLE001
             pass
+        chat_context = _recent_chat_context(history)
         img_result = generate_image(
             user_id=user_id,
             plan_id=plan_id,
-            prompt=img_prompt,
+            prompt=effective_img_prompt,
             quality="auto",
+            context=chat_context,
         )
         if img_result.get("ok") and img_result.get("url"):
             from app.services.publish_image_context import register_text_chat_image_url
@@ -1664,13 +1697,13 @@ def send_message(
                 route_meta={"intent": "generate_image", "source": "direct"},
                 image={
                     "url": str(img_result["url"]),
-                    "prompt": img_prompt,
+                    "prompt": img_result.get("prompt") or effective_img_prompt,
                     "quality": img_result.get("quality"),
                 },
             )
         err = str(img_result.get("error") or "No pude generar la imagen.")
         return _finish(
-            f"No pude generar la imagen: {err}",
+            _format_image_generation_error(err),
             route_meta={"intent": "generate_image", "source": "direct_error"},
         )
 

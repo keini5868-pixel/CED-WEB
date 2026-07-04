@@ -25,9 +25,12 @@ def test_generate_image_intent_keywords():
     assert parse_generate_image_prompt("Generame una imagen de un castillo digital") == (
         "un castillo digital"
     )
+    assert parse_generate_image_prompt("creame una imagen de venezuela llena de empatia") == (
+        "venezuela llena de empatia"
+    )
     assert parse_generate_image_prompt(
-        "creame una imagen de venezuela llena de empatia"
-    ) == "venezuela llena de empatia"
+        "me generas una imagen con el producto y sus beneficios"
+    ) == "el producto y sus beneficios"
 
 
 def test_generate_image_intent_rejects_short():

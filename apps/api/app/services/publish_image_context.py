@@ -349,6 +349,7 @@ def update_publish_flow(
     *,
     caption_draft: str | None = None,
     stage: str | None = None,
+    platform: str | None = None,
 ) -> None:
     key = _conv_key(user_id, conversation_id)
     with _lock:
@@ -359,6 +360,8 @@ def update_publish_flow(
             row["caption_draft"] = caption_draft.strip()
         if stage is not None:
             row["stage"] = stage
+        if platform is not None:
+            row["platform"] = platform.strip()
         row["at"] = _now()
 
 

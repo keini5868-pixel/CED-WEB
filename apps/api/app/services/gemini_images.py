@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from typing import Any
 
 from app.config import get_settings
@@ -23,6 +24,38 @@ DEPRECATED_GEMINI_IMAGE_MODELS = frozenset(
 )
 GEMINI_STD_COST_USD = 0.01
 GEMINI_HD_COST_USD = 0.02
+
+_SOCIAL_AD_CONTEXT = re.compile(
+    r"\b(facebook|instagram|meta|anuncio|ads|publicidad|redes|post|flyer|banner)\b",
+    re.I,
+)
+_PRODUCT_CONTEXT = re.compile(
+    r"\b(producto|empaque|mockup|marca|logo|botella|lata|bolsa|servicio)\b",
+    re.I,
+)
+_IMAGE_INSTRUCTION_PREFIX = re.compile(
+    r"^(?:"
+    r"(?:me\s+)?(?:puedes\s+|podr[ií]as\s+)?"
+    r"(?:gener(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|cre(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|"
+    r"haz(?:me|nos|lo|la|es|emos|er|go)?|hacer(?:me|lo)?|"
+    r"dise[nñ]a(?:r|me|mos|s|is|n|do)?|dibuja(?:r|me|mos|s)?|pinta(?:r|me|mos|s)?"
+    r")"
+    r"\s+(?:una?\s+)?"
+    r"(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|creativo|arte|gr[aá]fico|banner|flyer|portada)"
+    r"\s+(?:de|con|para|que\s+)?\s*"
+    r")+",
+    re.I,
+)
+_VAGUE_PRODUCT_REF = re.compile(
+    r"\b(el producto|ese producto|esta producto|lo mismo|"
+    r"esa informaci[oó]n|esos beneficios|esas caracter[ií]sticas|"
+    r"sus?\s+(?:especificaciones|beneficios|veneficios|caracter[ií]sticas))\b",
+    re.I,
+)
+_SPECS_BENEFITS = re.compile(
+    r"\b(especificaciones|beneficios|veneficios|ingredientes|caracter[ií]sticas)\b",
+    re.I,
+)
 
 
 def _pick_quality(prompt: str, requested: str | None) -> str:
@@ -67,6 +100,150 @@ def _friendly_image_error(raw: str) -> str:
     return msg[:200] if msg else "No pude generar la imagen con Gemini."
 
 
+def strip_image_generation_instruction(text: str) -> str:
+    """Quita verbos de pedido («genera una imagen de…») y deja el contenido visual."""
+    t = (text or "").strip()
+    while t:
+        stripped = _IMAGE_INSTRUCTION_PREFIX.sub("", t, count=1).strip()
+        if stripped == t:
+            break
+        t = stripped.strip(" ,.:;")
+    return t or (text or "").strip()
+
+
+def _extract_visual_subject(text: str) -> str:
+    for pattern in (
+        r"\b((?:fitline\s+)?(?:basics|activize(?:\s+oxyplus)?|restorate)\b(?:\s+de\s+fitline)?)",
+        r"\b(fitline\s+[a-záéíóúñ0-9]+)",
+        r"\b((?:[\wáéíóúñ]+(?:\s+de\s+[\wáéíóúñ]+)?)\s+(?:producto|suplemento|servicio))\b",
+        r"\b(producto\s+[^\n,.]{3,60})",
+        r"^([^\n.]{8,100})",
+    ):
+        match = re.search(pattern, text, re.I)
+        if not match:
+            continue
+        subject = (match.group(1) if match.lastindex else match.group(0)).strip()
+        if len(subject) >= 4 and subject.lower() not in {"el producto", "ese producto"}:
+            return subject
+    return text[:120].strip()
+
+
+def _resolve_vague_subject(topic: str, context: str) -> str:
+    if not _VAGUE_PRODUCT_REF.search(topic):
+        return topic
+    subject = _extract_visual_subject(context)
+    if re.search(r"\b(esa informaci[oó]n|esos beneficios|esas caracter[ií]sticas)\b", topic, re.I):
+        if subject:
+            return f"{subject} con sus beneficios y características principales"
+    if subject and subject.lower() not in {"el producto", "ese producto"}:
+        return re.sub(
+            r"\b(el producto|ese producto|esta producto)\b",
+            subject,
+            topic,
+            count=1,
+            flags=re.I,
+        )
+    return topic
+
+
+def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
+    """Convierte el pedido del usuario + contexto en un brief visual para Gemini."""
+    topic = strip_image_generation_instruction(user_prompt)
+    ctx = (context or "").strip()
+    topic = _resolve_vague_subject(topic, ctx)
+    merged = topic
+    if ctx and (
+        len(topic) < 120
+        or _VAGUE_PRODUCT_REF.search(topic)
+        or (_SPECS_BENEFITS.search(topic) and len(ctx) > 80)
+    ):
+        merged = f"{topic}. Referencia: {ctx[:900]}"
+
+    if _SPECS_BENEFITS.search(merged):
+        subject = _extract_visual_subject(merged)
+        return (
+            "Genera un creativo publicitario cuadrado para redes sociales. "
+            f"Sujeto visual: {subject[:400]}. "
+            "Composición: producto o envase premium en primer plano, fondo limpio, "
+            "estilo profesional. Incluye 3-4 frases cortas en español con beneficios clave "
+            "como diseño gráfico (texto breve, legible, no párrafos largos). "
+            "Sin logos de marcas registradas de terceros; diseño genérico elegante. "
+            f"Información de referencia: {merged[:700]}"
+        )
+    return merged[:4000]
+
+
+def enrich_image_prompt_from_context(prompt: str, context: str = "") -> str:
+    """Compat: delega en prepare_image_prompt."""
+    return prepare_image_prompt(prompt, context)
+
+
+def build_image_generation_prompts(user_prompt: str) -> list[str]:
+    """Variantes genéricas de prompt para maximizar respuesta con imagen de Gemini."""
+    topic = (user_prompt or "").strip()
+    if not topic:
+        return []
+
+    variants: list[str] = []
+    faithful = (
+        f"Genera una imagen de alta calidad según este pedido: {topic}. "
+        "Composición clara, buena iluminación, resultado profesional."
+    )
+    variants.append(faithful)
+
+    if _SPECS_BENEFITS.search(topic):
+        variants.append(
+            "Fotografía de producto premium sobre fondo neutro, composición 1:1, "
+            "iluminación de estudio, sin texto incrustado. "
+            f"Concepto: {_extract_visual_subject(topic)[:350]}."
+        )
+
+    if _SOCIAL_AD_CONTEXT.search(topic):
+        social = (
+            f"Crea una imagen cuadrada profesional para redes sociales. "
+            f"Sujeto: {topic}. Estilo publicitario, fondo limpio, fotorrealista o ilustrado según corresponda."
+        )
+        product = (
+            f"Mockup o fotografía de producto/servicio sobre fondo neutro, composición 1:1. "
+            f"{topic[:700]}. Calidad publicitaria, poca tipografía incrustada."
+        )
+        variants.extend([social, product])
+        return variants
+
+    if _PRODUCT_CONTEXT.search(topic):
+        product = (
+            f"Fotografía o mockup profesional de producto/servicio. "
+            f"{topic[:700]}. Iluminación de estudio, fondo limpio."
+        )
+        clean = (
+            f"Imagen comercial elegante, enfoque en el sujeto principal: {topic[:600]}."
+        )
+        variants.extend([product, clean])
+        return variants
+
+    illustrated = (
+        f"Ilustración o fotografía detallada: {topic[:650]}. "
+        "Estilo coherente con el tema, sin marcas de agua."
+    )
+    simplified = f"Imagen visual clara y atractiva: {topic[:500]}."
+    variants.extend([illustrated, simplified])
+    return variants
+
+
+def _extract_text_from_response(response: Any) -> str:
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        return ""
+    content = getattr(candidates[0], "content", None)
+    parts = getattr(content, "parts", None) or []
+    chunks: list[str] = []
+    for part in parts:
+        text = getattr(part, "text", None)
+        if text:
+            chunks.append(str(text).strip())
+    return " ".join(chunks).strip()
+
+
 def _extract_image_payload(response: Any) -> tuple[bytes, str] | None:
     candidates = getattr(response, "candidates", None) or []
     if not candidates:
@@ -108,6 +285,19 @@ def _reference_prompt(user_prompt: str, style_mode: str) -> str:
     return topic
 
 
+def _generate_content_config(*, quality: str, temperature: float) -> Any:
+    from google.genai import types
+
+    image_config = None
+    if hasattr(types, "ImageConfig"):
+        image_config = types.ImageConfig(aspect_ratio="1:1")
+    return types.GenerateContentConfig(
+        response_modalities=["TEXT", "IMAGE"],
+        temperature=temperature,
+        **({"image_config": image_config} if image_config else {}),
+    )
+
+
 def generate_image_gemini(
     *,
     prompt: str,
@@ -115,7 +305,6 @@ def generate_image_gemini(
 ) -> dict[str, Any]:
     """Genera imagen con Gemini. Requiere GOOGLE_API_KEY."""
     from google import genai
-    from google.genai import types
 
     settings = get_settings()
     api_key = settings.google_api_key.strip()
@@ -127,39 +316,67 @@ def generate_image_gemini(
 
     client = genai.Client(api_key=api_key)
     last_error = "No pude generar la imagen con Gemini."
+    prompt_variants = build_image_generation_prompts(topic) or [topic[:4000]]
 
     for model in _image_models():
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=topic[:4000],
-                config=types.GenerateContentConfig(
-                    response_modalities=["TEXT", "IMAGE"],
-                    temperature=0.9,
-                ),
-            )
-            payload = _extract_image_payload(response)
-            if payload:
-                raw, mime = payload
-                logger.info("[GEMINI:IMAGE] ok model=%s bytes=%s", model, len(raw))
-                return {
-                    "ok": True,
-                    "raw_bytes": raw,
-                    "mime_type": mime,
-                    "model": model,
-                    "quality": quality,
-                    "provider": "gemini",
-                    "estimated_cost_usd": (
-                        GEMINI_HD_COST_USD if quality == "hd" else GEMINI_STD_COST_USD
+        for attempt, variant in enumerate(prompt_variants):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=variant[:4000],
+                    config=_generate_content_config(
+                        quality=quality,
+                        temperature=0.85 if attempt else 0.9,
                     ),
-                }
-            last_error = f"Gemini ({model}) no devolvió imagen usable"
-            logger.warning("[GEMINI:IMAGE] empty model=%s", model)
-        except Exception as exc:  # noqa: BLE001
-            last_error = str(exc)[:200]
-            logger.warning("[GEMINI:IMAGE] model=%s error: %s", model, last_error)
+                )
+                payload = _extract_image_payload(response)
+                if payload:
+                    raw, mime = payload
+                    logger.info(
+                        "[GEMINI:IMAGE] ok model=%s attempt=%s bytes=%s",
+                        model,
+                        attempt,
+                        len(raw),
+                    )
+                    return {
+                        "ok": True,
+                        "raw_bytes": raw,
+                        "mime_type": mime,
+                        "model": model,
+                        "quality": quality,
+                        "provider": "gemini",
+                        "estimated_cost_usd": (
+                            GEMINI_HD_COST_USD if quality == "hd" else GEMINI_STD_COST_USD
+                        ),
+                    }
+                text_part = _extract_text_from_response(response)
+                if text_part:
+                    last_error = text_part[:200]
+                else:
+                    last_error = f"Gemini ({model}) no devolvió imagen usable"
+                logger.warning(
+                    "[GEMINI:IMAGE] empty model=%s attempt=%s text=%s",
+                    model,
+                    attempt,
+                    (text_part or "")[:120],
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)[:200]
+                logger.warning(
+                    "[GEMINI:IMAGE] model=%s attempt=%s error: %s",
+                    model,
+                    attempt,
+                    last_error,
+                )
 
-    return {"ok": False, "error": _friendly_image_error(last_error), "code": "gemini_error"}
+    hint = (
+        " Intente un pedido más concreto, por ejemplo: "
+        "'genera una imagen de un atardecer en la playa con estilo fotorrealista'."
+    )
+    friendly = _friendly_image_error(last_error)
+    if "no devolvió imagen" in last_error.lower() or "no devolvió imagen" in friendly.lower():
+        friendly = f"{friendly}{hint}"
+    return {"ok": False, "error": friendly, "code": "gemini_error"}
 
 
 def generate_image_with_reference_gemini(
@@ -206,10 +423,7 @@ def generate_image_with_reference_gemini(
                         ],
                     )
                 ],
-                config=types.GenerateContentConfig(
-                    response_modalities=["TEXT", "IMAGE"],
-                    temperature=0.85,
-                ),
+                config=_generate_content_config(quality=quality, temperature=0.85),
             )
             payload = _extract_image_payload(response)
             if payload:
@@ -242,11 +456,12 @@ def generate_image(
     plan_id: str | None,
     prompt: str,
     quality: str | None = "auto",
+    context: str = "",
 ) -> dict[str, Any]:
     """Genera imagen con Gemini — único provider de imágenes CED."""
     settings = get_settings()
     google_key = settings.google_api_key.strip()
-    topic = (prompt or "").strip()
+    topic = prepare_image_prompt(prompt, context)
     if not topic:
         return {"ok": False, "error": "Prompt vacío"}
     if not google_key:
@@ -320,6 +535,7 @@ def generate_image(
     return {
         "ok": True,
         "url": public_url,
+        "prompt": topic,
         "quality": picked,
         "model": model,
         "provider": "gemini",

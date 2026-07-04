@@ -25,8 +25,19 @@ _PUBLISH_VERB = re.compile(
     re.I,
 )
 _PUBLISH_STEM = re.compile(r"\b(?:public\w*|p[uúií]+blic\w*)\b", re.I)
+_FACEBOOK_PLATFORM = re.compile(
+    r"\b(?:facebook|facebo(?:ok|ok)?|face\s*book|fb)\b",
+    re.I,
+)
+_INSTAGRAM_PLATFORM = re.compile(
+    r"\b(?:instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram)\b",
+    re.I,
+)
 _SOCIAL_PLATFORM = re.compile(
-    r"\b(instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram|facebook|fb|meta|redes)\b",
+    r"\b(?:"
+    r"instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram|"
+    r"facebook|facebo(?:ok|ok)?|face\s*book|fb|meta|redes"
+    r")\b",
     re.I,
 )
 _PUBLISH_CONFIRM = re.compile(
@@ -423,17 +434,20 @@ def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     return False
 
 
-def detect_publish_platform(text: str) -> str:
+def detect_publish_platform_explicit(text: str) -> str | None:
+    """Devuelve la red solo si el usuario la menciona explícitamente."""
     t = (text or "").strip()
-    if re.search(r"\b(facebook|fb)\b", t, re.I):
+    if not t:
+        return None
+    if _FACEBOOK_PLATFORM.search(t):
         return "facebook"
-    if re.search(
-        r"\b(instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram)\b",
-        t,
-        re.I,
-    ):
+    if _INSTAGRAM_PLATFORM.search(t):
         return "instagram"
-    return "instagram"
+    return None
+
+
+def detect_publish_platform(text: str, *, default: str = "instagram") -> str:
+    return detect_publish_platform_explicit(text) or default
 
 
 def is_publish_confirm(text: str, *, allow_short_yes: bool = False) -> bool:

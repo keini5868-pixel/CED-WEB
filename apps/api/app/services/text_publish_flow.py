@@ -16,6 +16,7 @@ from app.services.publish_image_context import (
 )
 from app.services.publish_text import (
     detect_publish_platform,
+    detect_publish_platform_explicit,
     extract_caption_from_turn,
     extract_inline_publish_caption,
     extract_user_caption_for_publish,
@@ -26,6 +27,21 @@ from app.services.publish_text import (
 )
 
 _PLATFORM_LABEL = {"instagram": "Instagram", "facebook": "Facebook"}
+
+
+def _sync_platform_from_user_text(
+    user_id: str,
+    conversation_id: str,
+    user_text: str,
+    current_platform: str,
+) -> str:
+    """Actualiza la red del flujo si el usuario la menciona en este turno."""
+    explicit = detect_publish_platform_explicit(user_text)
+    if not explicit:
+        return current_platform
+    if explicit != current_platform:
+        update_publish_flow(user_id, conversation_id, platform=explicit)
+    return explicit
 
 
 def _publish_turn_is_off_topic(text: str) -> bool:
@@ -47,7 +63,18 @@ def _publish_turn_is_off_topic(text: str) -> bool:
 
 
 def publish_flow_opening(platform: str, *, has_caption: bool = False) -> str:
-    label = _PLATFORM_LABEL.get(platform, platform)
+    label = _PLATFORM_LABEL.get(platform, "")
+    if not label:
+        if has_caption:
+            return (
+                "Imagen recibida, señor. La publicaré cuando usted confirme.\n\n"
+                "¿Desea publicar en Facebook o Instagram? "
+                "¿Envío la publicación ahora o quiere ajustar el texto?"
+            )
+        return (
+            "Imagen recibida, señor. ¿Desea publicar en Facebook o Instagram? "
+            "¿Necesita que le ayude con el título y la descripción, o ya tiene su texto listo?"
+        )
     if has_caption:
         return (
             f"Imagen recibida, señor. La publicaré en {label} cuando usted confirme.\n\n"
@@ -64,7 +91,8 @@ def start_publish_flow_from_image(
     conversation_id: str,
     text: str,
 ) -> str:
-    platform = detect_publish_platform(text)
+    explicit = detect_publish_platform_explicit(text)
+    platform = explicit or detect_publish_platform(text)
     inline = extract_inline_publish_caption(text, platform=platform)
     if inline:
         begin_publish_flow(
@@ -80,8 +108,8 @@ def start_publish_flow_from_image(
             f"{inline}\n\n"
             f"Cuando esté listo, dígame «envía» o «publica»."
         )
-    begin_publish_flow(user_id, conversation_id, platform=platform)
-    return publish_flow_opening(platform)
+    begin_publish_flow(user_id, conversation_id, platform=explicit or "")
+    return publish_flow_opening(explicit or "")
 
 
 def handle_publish_flow_turn(
@@ -100,7 +128,8 @@ def handle_publish_flow_turn(
         flow = None
 
     if not flow and is_social_publish_intent(text) and has_publishable_image(user_id, conversation_id):
-        platform = detect_publish_platform(text)
+        explicit = detect_publish_platform_explicit(text)
+        platform = explicit or detect_publish_platform(text)
         inline = extract_inline_publish_caption(text, platform=platform)
         if inline:
             begin_publish_flow(
@@ -116,17 +145,20 @@ def handle_publish_flow_turn(
                 f"{inline}\n\n"
                 f"Cuando quiera enviarla, dígame «envía» o «publica»."
             )
-        begin_publish_flow(user_id, conversation_id, platform=platform)
-        return publish_flow_opening(platform)
+        begin_publish_flow(user_id, conversation_id, platform=explicit or "")
+        return publish_flow_opening(explicit or "")
 
     if not flow or not has_publishable_image(user_id, conversation_id):
         return None
 
-    platform = str(flow.get("platform") or "instagram")
+    platform = str(flow.get("platform") or "").strip()
+    user_text = (text or "").strip()
+    platform = _sync_platform_from_user_text(user_id, conversation_id, user_text, platform)
+    if not platform:
+        platform = detect_publish_platform(user_text)
     label = _PLATFORM_LABEL.get(platform, platform)
     stage = str(flow.get("stage") or "awaiting_caption_choice")
     caption = str(flow.get("caption_draft") or "").strip()
-    user_text = (text or "").strip()
 
     if stage == "awaiting_caption_choice":
         if is_publish_confirm(user_text, allow_short_yes=True) and caption:

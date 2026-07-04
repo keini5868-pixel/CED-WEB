@@ -39,10 +39,13 @@ def test_extract_publish_body_instagram():
 
 
 def test_is_social_publish_intent_typo_instagram():
+    from app.services.publish_text import detect_publish_platform_explicit
+
     assert is_social_publish_intent("ced publica esta imagen en mi imtagram")
     assert is_social_publish_intent("publicame esta imagen en imtagram", with_image=True)
     assert is_social_publish_intent("publicame esta imagen en intagran", with_image=True)
     assert detect_publish_platform("publica en intagran") == "instagram"
+    assert detect_publish_platform_explicit("publica en intagran") == "instagram"
 
 
 def test_extract_user_caption():

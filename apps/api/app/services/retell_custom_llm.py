@@ -294,20 +294,18 @@ def _detect_publish_platform_from_transcript(
     transcript: list[Utterance],
     user_text: str,
 ) -> str:
+    from app.services.publish_text import detect_publish_platform_explicit
+
     for utterance in reversed(transcript[-16:]):
         content = (utterance.content or "").strip()
         if not content:
             continue
-        norm = content.lower()
-        if re.search(r"\b(facebook|fb)\b", norm):
-            return "facebook"
-        if re.search(r"\b(instagram|insta|ig)\b", norm):
-            return "instagram"
-    norm = (user_text or "").lower()
-    if re.search(r"\b(facebook|fb)\b", norm):
-        return "facebook"
-    if re.search(r"\b(instagram|insta|ig)\b", norm):
-        return "instagram"
+        explicit = detect_publish_platform_explicit(content)
+        if explicit:
+            return explicit
+    explicit = detect_publish_platform_explicit(user_text)
+    if explicit:
+        return explicit
     return "facebook"
 
 
