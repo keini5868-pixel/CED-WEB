@@ -16,7 +16,7 @@ export function deriveMapState(input: {
   isNavigating: boolean;
 }): MapState {
   if (input.route && input.isNavigating) return "navegando";
-  if (input.route) return "ruta_lista";
   if (input.isSearching || input.placeOptions.length > 0) return "searching";
+  if (input.route) return "ruta_lista";
   return "idle";
 }

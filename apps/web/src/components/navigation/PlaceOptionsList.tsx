@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, Navigation, Phone, Star } from "lucide-react";
 
 import type { NavPlaceOption } from "@/lib/api/navigation";
+import { formatMiles } from "@/lib/navigation/maneuvers";
 
 import { NavigationBottomSheet } from "./NavigationBottomSheet";
 
@@ -32,7 +33,11 @@ function statusLine(place: NavPlaceOption): string {
   } else if (place.open_now === false) {
     parts.push("Cerrado");
   }
-  if (place.distance_text) parts.push(place.distance_text);
+  if (place.distance_m != null && place.distance_m > 0) {
+    parts.push(formatMiles(place.distance_m));
+  } else if (place.distance_text) {
+    parts.push(place.distance_text);
+  }
   return parts.join(" · ");
 }
 
@@ -125,7 +130,7 @@ export function PlaceOptionsList({
                   className="inline-flex min-h-10 flex-1 items-center justify-center gap-2 rounded-full bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700 disabled:opacity-50 sm:flex-none sm:px-5"
                 >
                   <Navigation className="h-4 w-4" />
-                  Cómo llegar
+                  Iniciar viaje
                 </button>
                 {phone ? (
                   <a

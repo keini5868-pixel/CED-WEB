@@ -183,6 +183,8 @@ async def navigation_nearby(
     )
     if not result.get("ok"):
         return result
+    nav_session.set_route(user_id, None)
+    nav_session.set_navigating(user_id, False)
     nav_session.set_place_options(
         user_id,
         list(result.get("places") or []),

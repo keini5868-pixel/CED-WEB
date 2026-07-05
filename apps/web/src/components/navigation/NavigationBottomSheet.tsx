@@ -18,7 +18,7 @@ export function NavigationBottomSheet({
 }: NavigationBottomSheetProps) {
   return (
     <div
-      className={`pointer-events-auto fixed inset-x-0 bottom-0 z-[115] flex max-h-[min(62vh,520px)] flex-col rounded-t-2xl bg-white text-gray-900 shadow-[0_-8px_40px_rgba(0,0,0,0.35)] ${className}`}
+      className={`pointer-events-auto fixed inset-x-0 bottom-0 z-[130] flex max-h-[min(62vh,520px)] flex-col rounded-t-2xl bg-white text-gray-900 shadow-[0_-8px_40px_rgba(0,0,0,0.35)] ${className}`}
     >
       <div className="flex shrink-0 justify-center pt-2.5">
         <div className="h-1 w-10 rounded-full bg-gray-300" aria-hidden />

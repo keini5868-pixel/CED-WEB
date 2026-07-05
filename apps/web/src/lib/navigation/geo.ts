@@ -10,13 +10,9 @@ export const NAV_STEP_COMPLETE_M = 50;
 export const NAV_ARRIVAL_DISTANCE_M = 50;
 
 /** Zoom / cámara en navegación activa (estilo Google Maps). */
-export const NAV_FOLLOW_ZOOM = 19;
-export const NAV_FOLLOW_TILT = 55;
+export const NAV_FOLLOW_ZOOM = 18;
+export const NAV_FOLLOW_TILT = 0;
 export const NAV_IDLE_ZOOM = 15;
-/** Desplaza el centro de cámara hacia adelante — la flecha queda en el tercio inferior. */
-export const NAV_CAMERA_OFFSET_M = 110;
-/** Padding para centrar la flecha entre paneles superior e inferior. */
-export const NAV_MAP_PADDING = { top: 140, bottom: 260, left: 0, right: 0 };
 
 export function distanceMeters(a: NavLatLng, b: NavLatLng): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -65,21 +61,6 @@ export function closestPathIndex(path: NavLatLng[], point: NavLatLng): number {
     }
   }
   return bestIdx;
-}
-
-/** Desplaza un punto en la dirección del rumbo (metros). */
-export function offsetLatLng(
-  point: NavLatLng,
-  headingDeg: number,
-  distanceM: number,
-): NavLatLng {
-  if (distanceM <= 0) return point;
-  const rad = (headingDeg * Math.PI) / 180;
-  const angular = distanceM / EARTH_RADIUS_M;
-  const latRad = (point.lat * Math.PI) / 180;
-  const dLat = angular * Math.cos(rad) * (180 / Math.PI);
-  const dLng = (angular * Math.sin(rad) * (180 / Math.PI)) / Math.max(0.2, Math.cos(latRad));
-  return { lat: point.lat + dLat, lng: point.lng + dLng };
 }
 
 export function navigationHeading(

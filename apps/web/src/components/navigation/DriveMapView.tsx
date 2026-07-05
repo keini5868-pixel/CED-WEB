@@ -16,13 +16,10 @@ import type { MapState } from "@/lib/navigation/mapState";
 import {
   closestPathIndex,
   installMapSpeechSilencer,
-  NAV_CAMERA_OFFSET_M,
   NAV_FOLLOW_TILT,
   NAV_FOLLOW_ZOOM,
   NAV_IDLE_ZOOM,
-  NAV_MAP_PADDING,
   navigationHeading,
-  offsetLatLng,
 } from "@/lib/navigation/geo";
 
 type DriveMapViewProps = {
@@ -122,11 +119,7 @@ function resetMapPadding(map: google.maps.Map) {
   map.setOptions({ padding: { top: 0, bottom: 0, left: 0, right: 0 } } as google.maps.MapOptions);
 }
 
-function applyNavigationPadding(map: google.maps.Map) {
-  map.setOptions({ padding: NAV_MAP_PADDING } as google.maps.MapOptions);
-}
-
-/** Mapa se mueve debajo de la flecha — zoom cercano + inclinación + offset adelante. */
+/** Flecha fija en el centro visual — el mapa se mueve debajo. */
 function followNavigationCamera(
   map: google.maps.Map,
   position: GeoPosition,
@@ -134,22 +127,28 @@ function followNavigationCamera(
 ) {
   const user = { lat: position.lat, lng: position.lng };
   const heading = navigationHeading(user, path, position.heading, position.speed);
-  const center = offsetLatLng(user, heading, NAV_CAMERA_OFFSET_M);
+
+  map.setCenter(user);
+  map.panTo(user);
+
+  if (heading != null && !Number.isNaN(heading)) {
+    map.setHeading(heading);
+  }
+
+  if ((map.getZoom() ?? 0) < NAV_FOLLOW_ZOOM) {
+    map.setZoom(NAV_FOLLOW_ZOOM);
+  }
+
+  map.setTilt(NAV_FOLLOW_TILT);
 
   if (typeof map.moveCamera === "function") {
     map.moveCamera({
-      center,
-      zoom: NAV_FOLLOW_ZOOM,
-      heading,
+      center: user,
+      zoom: Math.max(map.getZoom() ?? NAV_FOLLOW_ZOOM, NAV_FOLLOW_ZOOM),
+      heading: heading ?? 0,
       tilt: NAV_FOLLOW_TILT,
     });
-    return;
   }
-
-  map.setZoom(NAV_FOLLOW_ZOOM);
-  map.setTilt(NAV_FOLLOW_TILT);
-  map.setHeading(heading);
-  map.panTo(center);
 }
 
 export function DriveMapView({
@@ -223,7 +222,7 @@ export function DriveMapView({
       resetMapBearing(map);
       resetMapPadding(map);
     } else {
-      applyNavigationPadding(map);
+      resetMapPadding(map);
       if (position) {
         const path =
           routePathRef.current.length > 1

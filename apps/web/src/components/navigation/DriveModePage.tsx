@@ -274,16 +274,19 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
     const syncRoute = async () => {
       try {
         const state = await fetchNavigationState(false);
-        if (state.route) {
-          applyRouteFromServer(state.route as NavRoute);
-          return;
-        }
         if (state.place_options?.length) {
           setMapNav((prev) => ({
             ...prev,
+            route: null,
+            isNavigating: false,
+            destinationPin: null,
             placeOptions: state.place_options as NavPlaceOption[],
             placeQuery: state.place_query || "",
           }));
+          return;
+        }
+        if (state.route) {
+          applyRouteFromServer(state.route as NavRoute);
         }
       } catch {
         /* ignore */
