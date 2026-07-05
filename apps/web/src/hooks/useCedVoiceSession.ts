@@ -285,6 +285,7 @@ export function useCedVoiceSession(
   const webFetchRef = useRef(false);
   const lastWebQueryRef = useRef("");
   const lastUserUtteranceRef = useRef("");
+  const recentAssistantTextsRef = useRef<string[]>([]);
   const advancedConfirmPendingRef = useRef(false);
   const advancedConfirmAskedRef = useRef(false);
   const pendingAdvancedPromptRef = useRef("");
@@ -1245,6 +1246,13 @@ export function useCedVoiceSession(
               }
             } else {
               modelRepliedTurnRef.current = true;
+              const cleaned = text.trim();
+              if (cleaned.length >= 40) {
+                recentAssistantTextsRef.current = [
+                  ...recentAssistantTextsRef.current.slice(-4),
+                  cleaned,
+                ];
+              }
             }
             persistVoiceTranscript(
               role === "user" ? "user" : "model",
@@ -1927,7 +1935,7 @@ export function useCedVoiceSession(
           return;
         }
 
-        const pdfRequest = parsePdfRequest(t);
+        const pdfRequest = parsePdfRequest(t, recentAssistantTextsRef.current);
         if (pdfRequest && isPdfIntent(t)) {
           runGeneratePdf(pdfRequest.title, pdfRequest.content, t);
           return;

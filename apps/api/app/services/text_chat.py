@@ -21,6 +21,7 @@ from app.services.chat_intents import (
     parse_followup_image_prompt,
     parse_generate_image_prompt,
     parse_pdf_request,
+    resolve_pdf_request,
 )
 from app.domain.ced_identity import (
     CED_CORE_IDENTITY,
@@ -100,9 +101,12 @@ HALLUCINATED_TOOL_CODE_PATTERNS = (
     r"```\s*tool_code",
     r"print\(search_web\(",
     r"print\(generate_image\(",
+    r"print\s*\(\s*generar_pdf\s*\(",
+    r"print\(generar_pdf\(",
     r"tool_code\s*\n\s*print\(",
     r"search_web\(query=",
     r"generate_image\(prompt=",
+    r"generar_pdf\s*\(\s*content\s*=",
 )
 
 TOOL_CODE_HALLUCINATION_RETRY_MESSAGE = (
@@ -493,6 +497,143 @@ def _last_user_text(messages: list[dict[str, Any]]) -> str:
     return ""
 
 
+def _hallucinated_generar_pdf_fields(text: str) -> tuple[str, str] | None:
+    """Extrae título/contenido de un print(generar_pdf(...)) alucinado."""
+    blob = text or ""
+    if not re.search(r"generar_pdf", blob, re.I):
+        return None
+    title = "Documento CED"
+    title_match = re.search(
+        r'(?:title|titulo)\s*=\s*"((?:\\.|[^"\\])*)"',
+        blob,
+        re.I,
+    )
+    if title_match:
+        title = title_match.group(1).replace("\\n", "\n").replace('\\"', '"').strip()
+    content_match = re.search(
+        r'(?:content|contenido)\s*=\s*"((?:\\.|[^"\\])*)"',
+        blob,
+        re.I | re.S,
+    )
+    if content_match:
+        content = content_match.group(1).replace("\\n", "\n").replace('\\"', '"').strip()
+        if len(content) >= 20:
+            return title[:200], content[:12000]
+    return None
+
+
+def _execute_direct_pdf(
+    user_id: str,
+    *,
+    title: str,
+    content: str,
+    history: list[dict[str, Any]],
+    conversation_id: str | None,
+    user_request: str,
+) -> tuple[str, dict[str, Any]] | None:
+    """Genera PDF real y devuelve mensaje + adjunto para el chat."""
+    from app.deps.plan_access import effective_plan_limits
+
+    limits, reason, _trial = effective_plan_limits(user_id)
+    if reason == "trial_expired":
+        return (
+            "Tu prueba terminó. Elige un plan en Precios o continúa con el plan Básico gratis.",
+            {},
+        )
+    if not limits.pdf_reports:
+        return ("Los PDFs requieren plan Élite o Founding. Mejora tu plan en /pricing.", {})
+
+    pdf_title = (title or "Documento CED").strip()[:200]
+    pdf_body = (content or "").strip()
+    fallbacks = assistant_fallback_texts_from_messages(_anthropic_messages(history))
+    user_texts = user_texts_from_messages(_anthropic_messages(history))
+    resolved_request = user_request or (user_texts[-1] if user_texts else pdf_title)
+    try:
+        artifact = store_pdf(
+            user_id=user_id,
+            title=pdf_title,
+            content=pdf_body,
+            conversation_id=conversation_id,
+            fallback_texts=fallbacks,
+            user_request=resolved_request,
+        )
+    except ValueError:
+        return (
+            "No pude armar el contenido del PDF. ¿Puedes indicar qué quieres incluir?",
+            {},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[CHAT] direct PDF failed: %s", exc)
+        return ("No pude generar el PDF en este momento. Intenta de nuevo.", {})
+
+    attachment = _pdf_attachment_from_artifact(artifact)
+    return (
+        f'Listo. PDF "{artifact.title}" generado. Usa el botón Descargar abajo.',
+        attachment,
+    )
+
+
+def _try_direct_pdf_from_context(
+    user_id: str,
+    *,
+    text: str,
+    history: list[dict[str, Any]],
+    conversation_id: str | None,
+) -> tuple[str, dict[str, Any]] | None:
+    req = resolve_pdf_request(text, history)
+    if not req:
+        return None
+    title, body = req
+    result = _execute_direct_pdf(
+        user_id,
+        title=title,
+        content=body,
+        history=history,
+        conversation_id=conversation_id,
+        user_request=text,
+    )
+    if not result:
+        return None
+    message, attachment = result
+    if not attachment.get("file_id"):
+        return message, {}
+    return message, attachment
+
+
+def _try_pdf_from_hallucinated_reply(
+    user_id: str,
+    *,
+    reply: str,
+    user_text: str,
+    messages: list[dict[str, Any]],
+    conversation_id: str | None,
+) -> tuple[str, dict[str, Any] | None, None] | None:
+    if not _has_hallucinated_tool_code(reply):
+        return None
+    extracted = _hallucinated_generar_pdf_fields(reply)
+    if extracted:
+        title, body = extracted
+    else:
+        req = resolve_pdf_request(user_text, messages)
+        if not req:
+            return None
+        title, body = req
+    result = _execute_direct_pdf(
+        user_id,
+        title=title,
+        content=body,
+        history=messages,
+        conversation_id=conversation_id,
+        user_request=user_text,
+    )
+    if not result:
+        return None
+    message, attachment = result
+    if not attachment.get("file_id"):
+        return message, None, None
+    return message, attachment, None
+
+
 def _reply_from_direct_search(query: str, *, kind: str = "news") -> str:
     """Ejecuta búsqueda directamente si Claude alucinó tool_code."""
     q = (query or "").strip()
@@ -515,6 +656,8 @@ def _resolve_hallucinated_tool_code_reply(
     messages: list[dict[str, Any]],
 ) -> str | None:
     if not _has_hallucinated_tool_code(reply):
+        return None
+    if re.search(r"generar_pdf", reply or "", re.I):
         return None
     query = _extract_query_from_hallucination(reply) or _last_user_text(messages)
     return _reply_from_direct_search(query)
@@ -1547,6 +1690,15 @@ def _complete_chat_with_tools(
                     and not image_attachment
                     and not pdf_attachment
                 ):
+                    pdf_fix = _try_pdf_from_hallucinated_reply(
+                        user_id,
+                        reply=reply,
+                        user_text=_last_user_text(messages),
+                        messages=messages,
+                        conversation_id=conversation_id,
+                    )
+                    if pdf_fix:
+                        return pdf_fix
                     logger.warning("[CHAT] tool_code alucinado tras retry — búsqueda directa")
                     direct = _resolve_hallucinated_tool_code_reply(reply, messages)
                     if direct:
@@ -1630,6 +1782,15 @@ def _complete_chat_resilient(
             user_text=user_text,
         )
         if _has_hallucinated_tool_code(reply):
+            pdf_fix = _try_pdf_from_hallucinated_reply(
+                user_id,
+                reply=reply,
+                user_text=user_text,
+                messages=messages,
+                conversation_id=conversation_id,
+            )
+            if pdf_fix:
+                return pdf_fix
             logger.warning("[CHAT] tool_code alucinado en simple path — búsqueda directa")
             direct = _resolve_hallucinated_tool_code_reply(reply, messages)
             if direct:
@@ -1983,38 +2144,26 @@ def send_message(
             route_meta={"intent": "generate_image", "source": "direct_error"},
         )
 
-    pdf_req = parse_pdf_request(text)
+    pdf_req = resolve_pdf_request(text, history)
     if pdf_req and is_pdf_intent(text):
-        from app.deps.plan_access import effective_plan_limits
-
-        limits, reason, _trial = effective_plan_limits(user_id)
-        if reason == "trial_expired":
-            return _finish(
-                "Tu prueba terminó. Elige un plan en Precios o continúa con el plan Básico gratis.",
-            )
-        if not limits.pdf_reports:
-            return _finish(
-                "Los PDFs requieren plan Élite o Founding. Mejora tu plan en /pricing.",
-            )
         pdf_title, pdf_body = pdf_req
-        if pdf_title == "Documento CED" and pdf_body:
-            pdf_title = pdf_body[:60].strip()
-        fallbacks = assistant_fallback_texts_from_messages(_anthropic_messages(history))
-        user_texts = user_texts_from_messages(_anthropic_messages(history))
-        user_request = user_texts[-1] if user_texts else pdf_title
-        artifact = store_pdf(
-            user_id=user_id,
+        pdf_result = _execute_direct_pdf(
+            user_id,
             title=pdf_title,
             content=pdf_body,
+            history=history,
             conversation_id=conversation_id,
-            fallback_texts=fallbacks,
-            user_request=user_request,
+            user_request=text,
         )
-        return _finish(
-            f'Listo. PDF "{artifact.title}" generado. Usa el botón Descargar abajo.',
-            route_meta={"intent": "generar_pdf", "source": "direct"},
-            pdf=_pdf_attachment_from_artifact(artifact),
-        )
+        if pdf_result:
+            message, attachment = pdf_result
+            if attachment.get("file_id"):
+                return _finish(
+                    message,
+                    route_meta={"intent": "generar_pdf", "source": "direct"},
+                    pdf=attachment,
+                )
+            return _finish(message)
 
     route = route_message(user_id, text, channel="text")
 

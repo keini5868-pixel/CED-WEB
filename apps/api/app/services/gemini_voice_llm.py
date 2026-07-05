@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -655,6 +656,74 @@ class GeminiVoiceLlm:
         _log_gemini_delivery(path, text, user_text=user_text)
         return text
 
+    async def _maybe_generate_pdf_inline(
+        self,
+        text: str,
+        *,
+        user_text: str,
+        transcript: list[Utterance] | None = None,
+    ) -> str | None:
+        from app.services.chat_intents import is_pdf_intent, resolve_pdf_request
+        from app.services.text_chat import (
+            _hallucinated_generar_pdf_fields,
+            _has_hallucinated_tool_code,
+        )
+
+        history: list[dict[str, str]] = []
+        for utterance in transcript or []:
+            role = "assistant" if utterance.role != "user" else "user"
+            content = (utterance.content or "").strip()
+            if content:
+                history.append({"role": role, "content": content})
+
+        title = ""
+        body = ""
+        if _has_hallucinated_tool_code(text) and re.search(r"generar_pdf", text, re.I):
+            extracted = _hallucinated_generar_pdf_fields(text)
+            if extracted:
+                title, body = extracted
+        if not body:
+            req = resolve_pdf_request(user_text, history)
+            if not req:
+                return None
+            title, body = req
+        elif not is_pdf_intent(user_text) and not re.search(r"generar_pdf", text, re.I):
+            return None
+
+        if not self.user_id:
+            return "No identifiqué al usuario, señor."
+        try:
+            tool_result = await asyncio.wait_for(
+                execute_voice_tool(
+                    "generar_pdf",
+                    self.user_id,
+                    {
+                        "titulo": title,
+                        "title": title,
+                        "contenido": body,
+                        "content": body,
+                        "_user_request": user_text,
+                        "_pdf_fallback_texts": [
+                            row["content"]
+                            for row in history
+                            if row.get("role") == "assistant" and row.get("content")
+                        ],
+                    },
+                ),
+                timeout=PDF_TOOL_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:
+            return "Señor, tardé demasiado generando el PDF. ¿Lo intento de nuevo?"
+        except Exception:  # noqa: BLE001
+            logger.exception("[RETELL-GEMINI] inline generar_pdf failed")
+            return None
+
+        if isinstance(tool_result, dict) and tool_result.get("ok"):
+            spoken = str(tool_result.get("spoken") or "").strip()
+            return spoken or f"PDF listo, señor. Título: {title}."
+        spoken = str(tool_result.get("spoken") or tool_result.get("error") or "").strip()
+        return spoken or None
+
     async def _sanitize_voice_output(
         self,
         text: str,
@@ -1251,6 +1320,19 @@ class GeminiVoiceLlm:
                 )
             elif not text_response or text_response == FALLBACK_REPLY:
                 text_response = WEB_SEARCH_VOICE_FALLBACK
+
+        from app.services.chat_intents import is_pdf_intent
+
+        if re.search(r"generar_pdf|tool_code", text_response or "", re.I) or is_pdf_intent(
+            user_text
+        ):
+            pdf_spoken = await self._maybe_generate_pdf_inline(
+                text_response or "",
+                user_text=user_text,
+                transcript=request.transcript,
+            )
+            if pdf_spoken:
+                text_response = pdf_spoken
 
         text_response = await self._sanitize_voice_output(
             text_response,

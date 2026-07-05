@@ -49,10 +49,21 @@ _IMAGE_PROMPT_PATTERNS = (
 )
 _PDF_PATTERNS = (
     re.compile(
-        r"\b(genera|generar|crea|crear|exporta|exportar|convierte|convertir|guarda|haz(me)?)\s+(?:un(?:a)?\s+)?pdf\b",
+        r"\b(genera|generar|crea|crear|exporta|exportar|convierte|convertir|guarda|guárdame|haz(me)?|dame|pon|pásalo|pasalo)\s+"
+        r"(?:.{0,48}?\s+)?(?:en\s+)?(?:un(?:a)?\s+)?pdf\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:esto|lo|el\s+plan|la\s+estrategia|ese\s+plan)\s+(?:en\s+)?(?:un(?:a)?\s+)?pdf\b",
         re.I,
     ),
     re.compile(r"\bpdf\s+(?:de|con|sobre|que\s+diga)\b", re.I),
+    re.compile(r"\b(?:en|como)\s+(?:un(?:a)?\s+)?pdf\b", re.I),
+)
+
+_PDF_THIS_REF = re.compile(
+    r"\b(esto|lo|el\s+plan|la\s+estrategia|ese\s+plan|el\s+documento|aqu[ií]\s+(?:presentado|mostrado))\b",
+    re.I,
 )
 
 
@@ -153,7 +164,8 @@ def parse_pdf_request(text: str) -> tuple[str, str] | None:
 
     if not content:
         content = re.sub(
-            r"^(?:genera|generar|crea|crear|exporta|exportar|convierte|convertir|guarda|haz(me)?)\s+(?:un(?:a)?\s+)?pdf\s*(?:de|con|sobre|que\s+diga)?\s*",
+            r"^(?:genera|generar|crea|crear|exporta|exportar|convierte|convertir|guarda|guárdame|haz(me)?|dame|pon|pásalo|pasalo)\s+"
+            r"(?:.{0,48}?\s+)?(?:en\s+)?(?:un(?:a)?\s+)?pdf\s*(?:de|con|sobre|que\s+diga)?\s*",
             "",
             t,
             flags=re.I,
@@ -161,5 +173,67 @@ def parse_pdf_request(text: str) -> tuple[str, str] | None:
 
     if not content or len(content) < 1:
         content = title if title != "Documento CED" else "Hola"
+
+    return title[:200], content[:12000]
+
+
+def _last_assistant_text(history: list[dict] | None, *, min_len: int = 120) -> str:
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        if role not in ("assistant", "model"):
+            continue
+        content = row.get("content")
+        if isinstance(content, str):
+            text = content.strip()
+            if len(text) >= min_len:
+                return text
+    return ""
+
+
+def _infer_pdf_title(user_text: str, content: str) -> str:
+    blob = f"{user_text}\n{content[:600]}"
+    if re.search(r"plan\s+semanal|estrategia\s+semanal", blob, re.I):
+        return "Plan Semanal de Estrategia CED"
+    if re.search(r"lanzamiento\s+(?:de\s+)?ced", blob, re.I):
+        return "Plan de Lanzamiento CED"
+    if re.search(r"estrategia", blob, re.I):
+        return "Estrategia CED"
+    return "Documento CED"
+
+
+def resolve_pdf_request(
+    text: str,
+    history: list[dict] | None = None,
+) -> tuple[str, str] | None:
+    """Título y cuerpo del PDF a partir del mensaje y del historial del chat."""
+    t = (text or "").strip()
+    if not is_pdf_intent(t):
+        return None
+
+    parsed = parse_pdf_request(t)
+    title = parsed[0] if parsed else "Documento CED"
+    content = parsed[1] if parsed else ""
+
+    pasted = re.search(r"(?:en\s+)?(?:un(?:a)?\s+)?pdf\s*\n?\s*(.+)$", t, re.I | re.S)
+    if pasted:
+        body = pasted.group(1).strip()
+        if len(body) >= 80:
+            content = body
+
+    if len(content) < 200 and _PDF_THIS_REF.search(t):
+        previous = _last_assistant_text(history, min_len=80)
+        if previous:
+            content = previous
+
+    if title == "Documento CED" or len(title) < 8:
+        title = _infer_pdf_title(t, content)
+
+    if not content or len(content) < 40:
+        previous = _last_assistant_text(history, min_len=80)
+        if previous:
+            content = previous
+
+    if not content:
+        return title[:200], ""
 
     return title[:200], content[:12000]
