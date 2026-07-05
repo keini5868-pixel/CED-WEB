@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef } from "react";
 
 import type { GeoPosition } from "@/hooks/useGeolocation";
 import type { NavRoute } from "@/lib/api/navigation";
-import { distanceMeters, formatDistanceMeters } from "@/lib/navigation/geo";
+import { distanceMeters, formatDistanceMeters, NAV_STEP_COMPLETE_M } from "@/lib/navigation/geo";
 
 type NavigationPanelProps = {
   route: NavRoute;
@@ -46,7 +46,7 @@ export function NavigationPanel({
     if (!step) return { stepIndex: 0, distanceToTurn: null };
 
     const dist = distanceMeters(position, step.end);
-    if (dist < 25 && idx < route.steps.length - 1) {
+    if (dist < NAV_STEP_COMPLETE_M && idx < route.steps.length - 1) {
       stepIndexRef.current = idx + 1;
       idx = stepIndexRef.current;
     }

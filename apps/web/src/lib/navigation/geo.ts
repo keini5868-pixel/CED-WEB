@@ -2,6 +2,13 @@ import type { NavLatLng } from "@/lib/api/navigation";
 
 const EARTH_RADIUS_M = 6_371_000;
 
+/** Distancia para anunciar el giro (CED habla la instrucción). */
+export const NAV_ANNOUNCE_DISTANCE_M = 200;
+/** Distancia para marcar un step como completado. */
+export const NAV_STEP_COMPLETE_M = 50;
+/** Distancia para considerar llegada al destino. */
+export const NAV_ARRIVAL_DISTANCE_M = 50;
+
 export function distanceMeters(a: NavLatLng, b: NavLatLng): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
   const dLat = toRad(b.lat - a.lat);
@@ -67,16 +74,8 @@ export function installMapSpeechSilencer(): void {
   cancelBrowserNavigationSpeech();
 
   const synth = window.speechSynthesis;
-  const originalSpeak = synth.speak.bind(synth);
-  synth.speak = (utterance: SpeechSynthesisUtterance) => {
-    const flagged = (utterance as SpeechSynthesisUtterance & { cedNavigation?: boolean })
-      .cedNavigation;
-    if (flagged) {
-      originalSpeak(utterance);
-      return;
-    }
-    console.debug("[MAP] voz silenciada:", utterance.text);
-  };
+  synth.cancel();
+  synth.speak = () => {};
 }
 
 /** @deprecated Solo CED habla — no usar TTS del navegador en el mapa. */

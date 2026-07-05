@@ -8,6 +8,7 @@ import {
   cancelBrowserNavigationSpeech,
   distanceMeters,
   installMapSpeechSilencer,
+  NAV_ARRIVAL_DISTANCE_M,
 } from "@/lib/navigation/geo";
 
 type Options = {
@@ -46,7 +47,7 @@ export function useNavigationGuide({
       lat: route.destination.lat,
       lng: route.destination.lng,
     });
-    if (destDist < 35 && !announcedRef.current.arrived) {
+    if (destDist < NAV_ARRIVAL_DISTANCE_M && !announcedRef.current.arrived) {
       announcedRef.current.arrived = true;
       onArrival?.();
     }

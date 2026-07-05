@@ -12,8 +12,8 @@ from app.services.navigation_maps import _haversine_m
 
 logger = logging.getLogger(__name__)
 
-ANNOUNCE_DISTANCE_M = 300
-ADVANCE_STEP_M = 30
+ANNOUNCE_DISTANCE_M = 200
+ADVANCE_STEP_M = 50
 ARRIVAL_DISTANCE_M = 50
 
 _lock = threading.Lock()

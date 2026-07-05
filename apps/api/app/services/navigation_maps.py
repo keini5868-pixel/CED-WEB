@@ -555,6 +555,8 @@ def _compute_route_routes_api(
         "routingPreference": "TRAFFIC_AWARE",
         "languageCode": "es",
         "units": "IMPERIAL",
+        "computeAlternativeRoutes": False,
+        "routeModifiers": {"avoidTolls": False},
     }
     try:
         with httpx.Client(timeout=25.0) as client:

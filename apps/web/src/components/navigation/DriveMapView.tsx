@@ -4,6 +4,13 @@ import { useEffect, useRef, useState } from "react";
 
 import type { GeoPosition } from "@/hooks/useGeolocation";
 import { loadGoogleMaps } from "@/lib/maps/loadGoogleMaps";
+import {
+  CED_MAP_ID,
+  createDestinationMarker,
+  createNumberedPlaceMarker,
+  createUserLocationContent,
+  createUserLocationMarker,
+} from "@/lib/maps/advancedMarkers";
 import type { NavLatLng, NavPlaceOption, NavRoute } from "@/lib/api/navigation";
 import type { MapState } from "@/lib/navigation/mapState";
 import { closestPathIndex, installMapSpeechSilencer } from "@/lib/navigation/geo";
@@ -77,33 +84,6 @@ function remainingRoutePath(
   return remaining;
 }
 
-function userIcon(
-  google: typeof globalThis.google,
-  heading: number | null,
-  navigating: boolean,
-  mapRotates: boolean,
-): google.maps.Symbol {
-  if (navigating) {
-    return {
-      path: google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
-      scale: 6,
-      fillColor: "#00ffff",
-      fillOpacity: 1,
-      strokeColor: "#ffffff",
-      strokeWeight: 2,
-      rotation: mapRotates ? 0 : heading ?? 0,
-    };
-  }
-  return {
-    path: google.maps.SymbolPath.CIRCLE,
-    scale: 10,
-    fillColor: "#00e5ff",
-    fillOpacity: 1,
-    strokeColor: "#ffffff",
-    strokeWeight: 2,
-  };
-}
-
 function resetMapBearing(map: google.maps.Map) {
   map.setHeading(0);
   map.setTilt(0);
@@ -119,15 +99,15 @@ export function DriveMapView({
 }: DriveMapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
-  const markerRef = useRef<google.maps.Marker | null>(null);
-  const destMarkerRef = useRef<google.maps.Marker | null>(null);
-  const placeMarkersRef = useRef<google.maps.Marker[]>([]);
+  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const destMarkerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
+  const placeMarkersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
   const routePolylineRef = useRef<google.maps.Polyline | null>(null);
   const routeFittedRef = useRef(false);
   const searchFittedRef = useRef(false);
   const idleCenteredRef = useRef(false);
   const followUserRef = useRef(false);
-  const mapRotatesRef = useRef(false);
+  const mapRotatesRef = useRef(true);
   const routePathRef = useRef<NavLatLng[]>([]);
   const [mapsReady, setMapsReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -140,13 +120,13 @@ export function DriveMapView({
     let cancelled = false;
 
     void loadGoogleMaps()
-      .then((google) => {
+      .then(async () => {
         if (cancelled || !containerRef.current || mapRef.current) return;
 
-        const mapId = process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID;
         mapRef.current = new google.maps.Map(containerRef.current, {
           center: DEFAULT_CENTER,
           zoom: 15,
+          mapId: CED_MAP_ID,
           disableDefaultUI: false,
           zoomControl: true,
           mapTypeControl: false,
@@ -154,16 +134,9 @@ export function DriveMapView({
           fullscreenControl: false,
           gestureHandling: "greedy",
           styles: MAP_STYLES,
-          ...(mapId ? { mapId } : {}),
         });
 
-        markerRef.current = new google.maps.Marker({
-          map: mapRef.current,
-          position: DEFAULT_CENTER,
-          title: "Tu ubicación",
-          icon: userIcon(google, null, false, false),
-          zIndex: 999,
-        });
+        markerRef.current = await createUserLocationMarker(mapRef.current, DEFAULT_CENTER);
         setMapsReady(true);
       })
       .catch((err: unknown) => {
@@ -182,7 +155,6 @@ export function DriveMapView({
     if (mapState !== "navegando") {
       routeFittedRef.current = false;
       followUserRef.current = false;
-      mapRotatesRef.current = false;
       routePathRef.current = [];
       if (map) resetMapBearing(map);
     }
@@ -206,10 +178,11 @@ export function DriveMapView({
     if (!map || !marker || !position) return;
 
     const latLng = { lat: position.lat, lng: position.lng };
-    marker.setPosition(latLng);
+    marker.position = latLng;
 
     const navigating = mapState === "navegando";
     const heading = position.heading;
+    mapRotatesRef.current = true;
 
     if (navigating) {
       if (!followUserRef.current) {
@@ -221,49 +194,43 @@ export function DriveMapView({
 
       if (heading != null) {
         map.setHeading(heading);
-        mapRotatesRef.current = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID);
       }
 
-      marker.setIcon(
-        userIcon(google, heading, true, mapRotatesRef.current),
-      );
+      marker.content = createUserLocationContent(heading, true, mapRotatesRef.current);
       return;
     }
 
-    marker.setIcon(userIcon(google, heading, false, false));
+    marker.content = createUserLocationContent(heading, false, false);
   }, [position, mapState]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    for (const m of placeMarkersRef.current) m.setMap(null);
+    for (const m of placeMarkersRef.current) m.map = null;
     placeMarkersRef.current = [];
 
     if (mapState !== "searching" || !placeOptions.length) return;
 
-    placeOptions.forEach((place, index) => {
-      const marker = new google.maps.Marker({
-        map,
-        position: { lat: place.lat, lng: place.lng },
-        title: place.name,
-        label: {
-          text: String(index + 1),
-          color: "#0a0a0a",
-          fontWeight: "700",
-        },
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 9,
-          fillColor: "#a855f7",
-          fillOpacity: 0.95,
-          strokeColor: "#ffffff",
-          strokeWeight: 1.5,
-        },
-        zIndex: 100 + index,
-      });
-      placeMarkersRef.current.push(marker);
-    });
+    let cancelled = false;
+    void (async () => {
+      const markers: google.maps.marker.AdvancedMarkerElement[] = [];
+      for (let index = 0; index < placeOptions.length; index += 1) {
+        const place = placeOptions[index]!;
+        const marker = await createNumberedPlaceMarker(
+          { lat: place.lat, lng: place.lng },
+          map,
+          index,
+          place.name,
+        );
+        if (cancelled) {
+          marker.map = null;
+          return;
+        }
+        markers.push(marker);
+      }
+      if (!cancelled) placeMarkersRef.current = markers;
+    })();
 
     if (!searchFittedRef.current) {
       const bounds = new google.maps.LatLngBounds();
@@ -274,6 +241,10 @@ export function DriveMapView({
       map.fitBounds(bounds, 56);
       searchFittedRef.current = true;
     }
+
+    return () => {
+      cancelled = true;
+    };
   }, [mapState, placeOptions, position?.lat, position?.lng]);
 
   useEffect(() => {
@@ -334,7 +305,6 @@ export function DriveMapView({
       map.panTo({ lat: position.lat, lng: position.lng });
       if (position.heading != null) {
         map.setHeading(position.heading);
-        mapRotatesRef.current = Boolean(process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID);
       }
       routeFittedRef.current = true;
       followUserRef.current = true;
@@ -355,27 +325,29 @@ export function DriveMapView({
     if (!map) return;
 
     if (destMarkerRef.current) {
-      destMarkerRef.current.setMap(null);
+      destMarkerRef.current.map = null;
       destMarkerRef.current = null;
     }
 
     const pin = destinationPin ?? route?.destination ?? null;
     if (!pin || (mapState !== "ruta_lista" && mapState !== "navegando")) return;
 
-    destMarkerRef.current = new google.maps.Marker({
+    let cancelled = false;
+    void createDestinationMarker(
+      { lat: pin.lat, lng: pin.lng },
       map,
-      position: { lat: pin.lat, lng: pin.lng },
-      title: "label" in pin ? pin.label : "Destino",
-      icon: {
-        path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-        scale: 6,
-        fillColor: "#a855f7",
-        fillOpacity: 1,
-        strokeColor: "#ffffff",
-        strokeWeight: 1.5,
-        rotation: 180,
-      },
+      "label" in pin ? pin.label : "Destino",
+    ).then((marker) => {
+      if (cancelled) {
+        marker.map = null;
+        return;
+      }
+      destMarkerRef.current = marker;
     });
+
+    return () => {
+      cancelled = true;
+    };
   }, [destinationPin, route?.destination?.lat, route?.destination?.lng, mapState]);
 
   if (mapError) {
