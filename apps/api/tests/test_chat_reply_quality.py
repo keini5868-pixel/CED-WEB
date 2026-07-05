@@ -11,6 +11,8 @@ from app.services.text_chat import (
     _dedupe_chat_reply,
     _ensure_chat_reply_quality,
     _finalize_chat_reply,
+    _is_deliverable_request,
+    _is_incomplete_deliverable,
 )
 from app.services.text_publish_flow import _publish_turn_is_off_topic
 
@@ -82,3 +84,39 @@ def test_publish_flow_off_topic_clears_long_research():
 def test_long_monologue_not_plain_caption():
     long_text = " ".join(["palabra"] * 80)
     assert extract_caption_from_turn(long_text) == ""
+
+
+def test_is_deliverable_request_detects_strategy():
+    assert _is_deliverable_request(
+        "ok perfecto crea una estrategia semanal para estas soluciones"
+    )
+
+
+def test_is_incomplete_deliverable_intro_only():
+    user = "crea una estrategia semanal y a que publico dirigirla"
+    reply = (
+        "Entendido, señor. Aquí le presento una estrategia semanal enfocada "
+        "en las soluciones más relevantes de CED, dirigida a un público"
+    )
+    assert _is_incomplete_deliverable(reply, user) is True
+
+
+def test_is_complete_deliverable_with_weekly_structure():
+    user = "crea una estrategia semanal"
+    reply = (
+        "## Público objetivo\nEmprendedores de marketing digital.\n\n"
+        "## Semana\n"
+        "**Lunes:** Prospección en Instagram.\n"
+        "**Martes:** Publicar reel educativo.\n"
+        "**Miércoles:** Análisis de métricas.\n"
+        "**Jueves:** Generar creativos con CED.\n"
+        "**Viernes:** Seguimiento de leads.\n"
+    )
+    assert _is_incomplete_deliverable(reply, user) is False
+
+
+def test_finalize_chat_reply_preserves_markdown_newlines():
+    raw = "## Plan\n\n**Lunes:** acción 1.\n\n**Martes:** acción 2."
+    out = _finalize_chat_reply(raw)
+    assert "\n" in out
+    assert "**Lunes:**" in out or "Lunes" in out
