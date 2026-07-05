@@ -9,6 +9,7 @@ import { CAROUSEL_PANEL_HEIGHT_PX } from "@/components/dashboard/carousel/carous
 import { LeftPanel3DCarousel } from "@/components/dashboard/LeftPanel3DCarousel";
 import { HudCollapsible } from "@/components/hud/HudCollapsible";
 import { MetaOAuthCallbackBanner } from "@/components/hud/ConnectNetworksButton";
+import { GoogleOAuthCallbackBanner } from "@/components/voice/ConnectGoogleServices";
 import { TrialExpiredBanner } from "@/components/billing/TrialExpiredBanner";
 import { BillingFeedback } from "@/components/billing/BillingFeedback";
 import { HudDronesPanel } from "@/components/hud/HudDronesPanel";
@@ -43,6 +44,7 @@ export function HudDashboardGrid() {
             <Suspense fallback={null}>
               <BillingFeedback />
               <MetaOAuthCallbackBanner />
+              <GoogleOAuthCallbackBanner />
               <TrialExpiredBanner />
             </Suspense>
           </div>
@@ -98,6 +100,7 @@ export function HudDashboardGrid() {
           <Suspense fallback={null}>
             <BillingFeedback />
             <MetaOAuthCallbackBanner />
+            <GoogleOAuthCallbackBanner />
             <TrialExpiredBanner />
           </Suspense>
           <DriveModeLink />

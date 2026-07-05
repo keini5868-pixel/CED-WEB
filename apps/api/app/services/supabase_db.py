@@ -405,6 +405,52 @@ def upsert_meta_connection(user_id: str, data: dict[str, Any]) -> dict[str, Any]
     return (result.data or [row])[0]
 
 
+def get_calendar_tokens(user_id: str) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        result = (
+            client.table("calendar_tokens")
+            .select("access_token, refresh_token, expires_at, connected_at")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def upsert_calendar_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    client = _client()
+    row = {"user_id": user_id, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
+    result = client.table("calendar_tokens").upsert(row, on_conflict="user_id").execute()
+    return (result.data or [row])[0]
+
+
+def get_gmail_tokens(user_id: str) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        result = (
+            client.table("gmail_tokens")
+            .select("access_token, refresh_token, expires_at, connected_at")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def upsert_gmail_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    client = _client()
+    row = {"user_id": user_id, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
+    result = client.table("gmail_tokens").upsert(row, on_conflict="user_id").execute()
+    return (result.data or [row])[0]
+
+
 def list_leads_today(user_id: str, limit: int = 5) -> list[dict[str, Any]]:
     try:
         client = _client()

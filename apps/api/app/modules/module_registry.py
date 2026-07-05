@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from app.modules.base_module import BaseModule
 from app.modules.camera_module import CameraModule
+from app.modules.calendar_module import CalendarModule
 from app.modules.environment_module import EnvironmentModule
+from app.modules.gmail_module import GmailModule
 from app.modules.image_gen_module import ImageGenModule
 from app.modules.map_module import MapModule
 from app.modules.memory_module import MemoryModule
@@ -14,6 +16,8 @@ from app.modules.publish_module import PublishModule
 from app.modules.web_search_module import WebSearchModule
 
 MODULE_ACKS: dict[str, str] = {
+    "calendar": "Consultando su calendario, señor.",
+    "gmail": "Revisando su correo, señor.",
     "environment": "Consultando el ambiente, señor.",
     "web_search": "Consultando, señor.",
     "publish": "Un momento, señor.",
@@ -26,11 +30,20 @@ MODULE_ACKS: dict[str, str] = {
 }
 
 MODULE_OVERLAYS: dict[str, str] = {
+    "calendar": """
+MÓDULO ACTIVO: GOOGLE CALENDAR
+Consulta eventos (hoy, mañana, semana) o agenda citas.
+Si no está conectado, indica conectar Google Calendar en configuración.
+""".strip(),
+    "gmail": """
+MÓDULO ACTIVO: GMAIL
+Lee correos importantes, lee mensajes de un remitente o envía email.
+Si no está conectado, indica conectar Gmail en configuración.
+""".strip(),
     "environment": """
-MÓDULO ACTIVO: AMBIENTE (CLIMA, AIRE, SOL, POLEN)
-Responde con datos reales del entorno local del usuario.
-Sé breve y natural — temperatura, condición, calidad del aire, sol o polen según la pregunta.
-Si falta ubicación, indica que no pudiste obtener datos ambientales.
+MÓDULO ACTIVO: AMBIENTE (CLIMA Y ENTORNO)
+Responde con datos actuales obtenidos por búsqueda web.
+Sé breve y natural — temperatura, condición, aire o polen según la pregunta.
 """.strip(),
     "web_search": """
 MÓDULO ACTIVO: BÚSQUEDA WEB
@@ -83,6 +96,8 @@ Registra los datos y confirma que se guardó correctamente.
 }
 
 MODULE_ORDER: tuple[str, ...] = (
+    "calendar",
+    "gmail",
     "environment",
     "web_search",
     "publish",
@@ -97,6 +112,8 @@ MODULE_ORDER: tuple[str, ...] = (
 
 def build_module(name: str) -> BaseModule:
     factories: dict[str, type[BaseModule]] = {
+        "calendar": CalendarModule,
+        "gmail": GmailModule,
         "environment": EnvironmentModule,
         "web_search": WebSearchModule,
         "publish": PublishModule,

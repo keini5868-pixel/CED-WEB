@@ -29,6 +29,7 @@ from app.routers import (
     image_with_reference,
     media,
     memory,
+    google_auth,
     meta,
     openai,
     panels,
@@ -116,6 +117,8 @@ def create_app() -> FastAPI:
     application.include_router(hud.router)
     application.include_router(panels.router)
     application.include_router(meta.router)
+    application.include_router(google_auth.router)
+    application.include_router(google_auth.auth_router)
     application.include_router(media.router)
     application.include_router(retell.router)
     application.include_router(retell_custom_llm.router)

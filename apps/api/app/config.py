@@ -82,6 +82,10 @@ class Settings(BaseSettings):
 
     google_api_key: str = ""
     google_maps_api_key: str = ""
+    google_calendar_client_id: str = ""
+    google_calendar_client_secret: str = ""
+    google_calendar_redirect_uri: str = ""
+    google_gmail_redirect_uri: str = ""
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     gemini_voice_model: str = "gemini-2.5-flash"
     gemini_image_model: str = "gemini-2.5-flash-image"

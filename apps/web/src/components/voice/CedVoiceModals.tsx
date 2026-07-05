@@ -18,6 +18,7 @@ import {
   isJarvisPreset,
 } from "@/lib/voice/voicePresets";
 import { fetchUserAddress, updateUserAddress } from "@/lib/api/profile";
+import { ConnectGoogleServicesPanel } from "@/components/voice/ConnectGoogleServices";
 import { clearEphemeralTokenCache } from "@/lib/voice/ephemeralTokenCache";
 import type { UserGender } from "@/lib/voice/addressPreferenceIntent";
 import { isRetellVoice } from "@/lib/voice/voiceProvider";
@@ -369,6 +370,8 @@ export function CedSettingsModal({
             </span>
           </label>
         </div>
+
+        <ConnectGoogleServicesPanel />
 
         <label className="block">
           <span className="ced-hud-text-muted text-xs">Velocidad</span>

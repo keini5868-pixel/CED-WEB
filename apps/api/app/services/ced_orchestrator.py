@@ -7,6 +7,8 @@ import re
 from typing import Any
 
 from app.modules.environment_module import is_environment_intent
+from app.modules.calendar_module import is_calendar_intent
+from app.modules.gmail_module import is_gmail_intent
 from app.modules.base_module import BaseModule
 from app.modules.module_registry import MODULE_ACKS, MODULE_ORDER, MODULE_OVERLAYS, build_module
 from app.services import voice_client_session as vcs
@@ -53,6 +55,17 @@ _MEMORY_PATTERNS = (
 )
 
 DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
+    "calendar": (
+        r"\b(?:qu[eé]|que)\s+tengo\s+ma[nñ]ana\b",
+        r"\b(?:ag[eé]ndame|agendar|programa(?:r|me))\s+(?:una\s+)?cita\b",
+        r"\b(?:qu[eé]|que)\s+eventos\s+tengo\b",
+        r"\b(?:mi\s+)?calendario\b",
+    ),
+    "gmail": (
+        r"\b(?:emails?|correos?|gmail)\b.*\bimportant",
+        r"\bl[eé]eme\s+(?:el\s+)?(?:email|correo)\b",
+        r"\benv[ií]a\s+(?:un\s+)?(?:email|correo)\b",
+    ),
     "environment": (
         r"\b(clima|tiempo|temperatura|calor|fr[ií]o)\b",
         r"\b(va a llover|lluvia|nublado|despejado)\b",
@@ -106,7 +119,9 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
 
 _orchestrators: dict[str, "CedOrchestrator"] = {}
 
-_EPHEMERAL_MODULES = frozenset({"environment", "web_search", "image_gen", "pdf", "publish"})
+_EPHEMERAL_MODULES = frozenset(
+    {"calendar", "gmail", "environment", "web_search", "image_gen", "pdf", "publish"}
+)
 
 
 def is_module_command(
@@ -140,6 +155,10 @@ def is_module_command(
         )
     if module == "web_search":
         return resolve_web_search_request(text, transcript) is not None
+    if module == "calendar":
+        return is_calendar_intent(text)
+    if module == "gmail":
+        return is_gmail_intent(text)
     if module == "environment":
         return is_environment_intent(text)
     if module in ("image_gen", "pdf", "prospection", "memory"):
@@ -210,7 +229,16 @@ def detect_module(
         ):
             return "camera"
 
-    if active_module in ("environment", "web_search", "image_gen", "pdf", "prospection", "memory"):
+    if active_module in (
+        "calendar",
+        "gmail",
+        "environment",
+        "web_search",
+        "image_gen",
+        "pdf",
+        "prospection",
+        "memory",
+    ):
         detected = _detect_fresh_module(text, transcript, user_id=user_id)
         if detected == active_module:
             return active_module
@@ -231,6 +259,12 @@ def detect_module(
 
     if resolve_social_comments_request(text):
         return "publish"
+
+    if is_calendar_intent(text):
+        return "calendar"
+
+    if is_gmail_intent(text):
+        return "gmail"
 
     if is_environment_intent(text):
         return "environment"
