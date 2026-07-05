@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.modules.base_module import BaseModule
 from app.modules.camera_module import CameraModule
+from app.modules.environment_module import EnvironmentModule
 from app.modules.image_gen_module import ImageGenModule
 from app.modules.map_module import MapModule
 from app.modules.memory_module import MemoryModule
@@ -13,6 +14,7 @@ from app.modules.publish_module import PublishModule
 from app.modules.web_search_module import WebSearchModule
 
 MODULE_ACKS: dict[str, str] = {
+    "environment": "Consultando el ambiente, señor.",
     "web_search": "Consultando, señor.",
     "publish": "Un momento, señor.",
     "map": "Abriendo el mapa, señor.",
@@ -24,6 +26,12 @@ MODULE_ACKS: dict[str, str] = {
 }
 
 MODULE_OVERLAYS: dict[str, str] = {
+    "environment": """
+MÓDULO ACTIVO: AMBIENTE (CLIMA, AIRE, SOL, POLEN)
+Responde con datos reales del entorno local del usuario.
+Sé breve y natural — temperatura, condición, calidad del aire, sol o polen según la pregunta.
+Si falta ubicación, indica que no pudiste obtener datos ambientales.
+""".strip(),
     "web_search": """
 MÓDULO ACTIVO: BÚSQUEDA WEB
 Estás buscando información actual en internet.
@@ -75,6 +83,7 @@ Registra los datos y confirma que se guardó correctamente.
 }
 
 MODULE_ORDER: tuple[str, ...] = (
+    "environment",
     "web_search",
     "publish",
     "map",
@@ -88,6 +97,7 @@ MODULE_ORDER: tuple[str, ...] = (
 
 def build_module(name: str) -> BaseModule:
     factories: dict[str, type[BaseModule]] = {
+        "environment": EnvironmentModule,
         "web_search": WebSearchModule,
         "publish": PublishModule,
         "map": MapModule,

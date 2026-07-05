@@ -6,6 +6,7 @@ import logging
 import re
 from typing import Any
 
+from app.modules.environment_module import is_environment_intent
 from app.modules.base_module import BaseModule
 from app.modules.module_registry import MODULE_ACKS, MODULE_ORDER, MODULE_OVERLAYS, build_module
 from app.services import voice_client_session as vcs
@@ -52,6 +53,14 @@ _MEMORY_PATTERNS = (
 )
 
 DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
+    "environment": (
+        r"\b(clima|tiempo|temperatura|calor|fr[ií]o)\b",
+        r"\b(va a llover|lluvia|nublado|despejado)\b",
+        r"\b(calidad del aire|contaminaci[oó]n|aire)\b",
+        r"\b(horas de sol|sol hoy|trabajar afuera)\b",
+        r"\b(polen|alergia|al[eé]rgico)\b",
+        r"\b(c[oó]mo est[aá] el tiempo|qu[eé] clima)\b",
+    ),
     "web_search": (
         r"\b(noticias|últimas noticias|qué pasó)\b",
         r"\b(clima en|temperatura en)\b",
@@ -97,7 +106,7 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
 
 _orchestrators: dict[str, "CedOrchestrator"] = {}
 
-_EPHEMERAL_MODULES = frozenset({"web_search", "image_gen", "pdf", "publish"})
+_EPHEMERAL_MODULES = frozenset({"environment", "web_search", "image_gen", "pdf", "publish"})
 
 
 def is_module_command(
@@ -131,6 +140,8 @@ def is_module_command(
         )
     if module == "web_search":
         return resolve_web_search_request(text, transcript) is not None
+    if module == "environment":
+        return is_environment_intent(text)
     if module in ("image_gen", "pdf", "prospection", "memory"):
         detected = detect_module(text, transcript, user_id=user_id, active_module=module)
         return detected == module
@@ -199,7 +210,7 @@ def detect_module(
         ):
             return "camera"
 
-    if active_module in ("web_search", "image_gen", "pdf", "prospection", "memory"):
+    if active_module in ("environment", "web_search", "image_gen", "pdf", "prospection", "memory"):
         detected = _detect_fresh_module(text, transcript, user_id=user_id)
         if detected == active_module:
             return active_module
@@ -220,6 +231,9 @@ def detect_module(
 
     if resolve_social_comments_request(text):
         return "publish"
+
+    if is_environment_intent(text):
+        return "environment"
 
     if resolve_web_search_request(text, transcript):
         return "web_search"

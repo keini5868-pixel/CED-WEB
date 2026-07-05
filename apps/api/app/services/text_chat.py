@@ -2093,6 +2093,7 @@ def send_message(
 
     from app.services.chat_intents import is_casual_chat_interrupt
     from app.services.cognitive_intents import is_conversation_recall_intent
+    from app.modules.environment_module import is_environment_intent
     from app.services.session_memory import build_conversation_recall_reply
 
     if is_conversation_recall_intent(text):
@@ -2105,6 +2106,15 @@ def send_message(
         return _finish(
             _finalize_chat_reply(recall_reply),
             route_meta={"intent": "memory_recall", "source": "direct"},
+        )
+
+    if is_environment_intent(text):
+        from app.modules.environment_module import handle_environment_query_sync
+
+        env_result = handle_environment_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(env_result.get("spoken") or "")),
+            route_meta={"intent": "environment", "source": "direct"},
         )
 
     img_prompt = parse_generate_image_prompt(text)
