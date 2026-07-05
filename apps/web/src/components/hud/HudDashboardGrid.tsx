@@ -21,6 +21,7 @@ import {
   HudWavesPanel,
 } from "@/components/hud/HudLivePanels";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
+import { LifeDashboardPanel } from "@/components/hud/LifeDashboardPanel";
 import { DriveModeLink } from "@/components/navigation/DriveModeLink";
 import { HudFeedProvider } from "@/contexts/HudFeedContext";
 import { HudPanelProvider } from "@/contexts/HudPanelContext";
@@ -90,6 +91,11 @@ export function HudDashboardGrid() {
             </HudPanel>
           </div>
           <div className="col-span-12">
+            <HudPanel title="LIFE" className="min-h-[280px]">
+              <LifeDashboardPanel />
+            </HudPanel>
+          </div>
+          <div className="col-span-12">
             <HudPanel title="USAGE" state="idle">
               <HudUsageBar />
             </HudPanel>
@@ -119,6 +125,9 @@ export function HudDashboardGrid() {
           </HudCollapsible>
           <HudCollapsible title="WAVES">
             <HudWavesPanel />
+          </HudCollapsible>
+          <HudCollapsible title="LIFE" defaultOpen>
+            <LifeDashboardPanel />
           </HudCollapsible>
           <HudCollapsible title="USAGE" defaultOpen>
             <HudUsageBar />

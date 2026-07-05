@@ -27,6 +27,7 @@ from app.domain.ced_identity import (
     CED_CORE_IDENTITY,
     CED_CREATOR_IDENTITY,
     CED_HUMAN_VOICE_STYLE,
+    CED_UNIVERSAL_CONVERSATION,
 )
 from app.domain.ced_memory_prompt import CED_MEMORY_USAGE_RULES
 from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_CORE
@@ -329,6 +330,8 @@ ORTOGRAFÍA: escribe siempre en español correcto (tildes, sin anglicismos innec
 {CED_SALES_MENTOR_CORE}
 
 {CED_STRATEGY_CONSULTATION_CORE}
+
+{CED_UNIVERSAL_CONVERSATION}
 
 IMPORTANTE — tratamiento del usuario:
 - Usa el nombre y título del bloque "USUARIO ACTUAL — TRATAMIENTO" inyectado abajo.

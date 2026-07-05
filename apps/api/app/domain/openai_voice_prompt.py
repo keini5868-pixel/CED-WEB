@@ -140,8 +140,11 @@ OPENAI_REALTIME_SYSTEM_PROMPT = CED_MINIMAL_REALTIME_PROMPT
 
 def build_ced_voice_system_prompt() -> str:
     """Prompt completo voz Retell: CED expertise + CED v43 + capacidades + modo Jarvis."""
+    from app.domain.ced_identity import CED_UNIVERSAL_CONVERSATION
+
     return (
         f"{CED_CONVERSATIONAL_CORE}\n\n"
+        f"{CED_UNIVERSAL_CONVERSATION}\n\n"
         f"{CED_STRATEGY_CONSULTATION_CORE}\n\n"
         f"{CED_MINIMAL_REALTIME_PROMPT}\n\n"
         f"{CED_VOICE_CAPABILITIES}\n\n"
@@ -168,6 +171,7 @@ def voice_prompt_diagnostics() -> dict[str, str | int | bool]:
         "includes_conversational_core": "CED — EXPERTISE, EMPATÍA Y CERO FRICCIÓN" in prompt,
         "includes_anti_transactional": "bot transaccional" not in prompt,
         "includes_strict_tool_execution": "FUNCTION CALLING OBLIGATORIO" in prompt,
+        "includes_universal_conversation": "CONVERSACIÓN UNIVERSAL" in prompt,
         "includes_advanced_explicit_only": False,
         "includes_publish_rules": "publicar_facebook" in prompt,
         "llm_provider": "gemini_2.5_flash",

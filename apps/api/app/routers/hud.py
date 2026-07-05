@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends
 from app.deps.auth import require_user_id
 from app.services.hud_carousel import build_carousel_snapshot
 from app.services.hud_health import build_detailed_health
+from app.services.hud_life import build_life_dashboard
 
 logger = logging.getLogger(__name__)
 
@@ -36,3 +37,17 @@ async def hud_carousel(user_id: str = Depends(require_user_id)) -> dict:
 async def health_detailed(_user_id: str = Depends(require_user_id)) -> dict:
     """Health agregado SaaS — tarjeta SYSTEM."""
     return build_detailed_health()
+
+
+@router.get("/hud/life")
+async def hud_life(user_id: str = Depends(require_user_id)) -> dict:
+    """Dashboard LIFE — clima, calendario, gmail, aire y polen."""
+    try:
+        return build_life_dashboard(user_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[LIFE] error: %s", exc)
+        return {
+            "date_label": "",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "error": "life_unavailable",
+        }

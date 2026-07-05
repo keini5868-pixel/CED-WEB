@@ -1,7 +1,30 @@
 import type { CarouselSnapshot } from "@/components/dashboard/carousel/types";
 
+import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 import { apiUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/client";
+
+export type LifeDashboardSnapshot = {
+  date_label: string;
+  place?: string;
+  updated_at: string;
+  weather: { title: string; lines: string[] };
+  calendar: {
+    title: string;
+    connected: boolean;
+    events: string[];
+    hint?: string;
+  };
+  gmail: {
+    title: string;
+    connected: boolean;
+    unread_count: number;
+    messages: string[];
+    hint?: string;
+  };
+  air_quality: { title: string; lines: string[] };
+  pollen: { title: string; lines: string[] };
+};
 
 async function authHeaders(): Promise<HeadersInit | null> {
   const supabase = createClient();
@@ -52,6 +75,17 @@ export async function fetchHudCarousel(): Promise<CarouselSnapshot | null> {
     const raw = (await res.json()) as Record<string, unknown>;
     const snapshot = mapSnapshot(raw);
     return snapshot.cards.length ? snapshot : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Dashboard LIFE — clima, calendario, gmail, aire, polen. */
+export async function fetchHudLife(): Promise<LifeDashboardSnapshot | null> {
+  try {
+    const res = await proxyFetchAuthed("hud/life");
+    if (!res.ok) return null;
+    return (await res.json()) as LifeDashboardSnapshot;
   } catch {
     return null;
   }
