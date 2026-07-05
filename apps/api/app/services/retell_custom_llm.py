@@ -533,13 +533,20 @@ def remember_pending_script_topic(
 
 
 def split_progressive_voice(text: str, *, topic: str) -> list[tuple[str, bool]]:
-    """Parte respuestas largas de guion en dos bloques secuenciales (sin solaparse)."""
-    from app.services.voice_spoken import is_advisory_voice_query, voice_spoken_limit
+    """Parte respuestas largas de guion en bloques secuenciales (sin solaparse)."""
+    from app.services.deliverable_replies import is_deliverable_request
+    from app.services.voice_spoken import (
+        is_advisory_voice_query,
+        split_voice_delivery_chunks,
+        voice_spoken_limit,
+    )
 
     limit = voice_spoken_limit(topic)
     cleaned = fit_voice_spoken(" ".join((text or "").split()).strip(), max_chars=limit)
     if not cleaned:
         return []
+    if is_deliverable_request(topic) and len(cleaned) > 520:
+        return split_voice_delivery_chunks(cleaned)
     if not is_advisory_voice_query(topic) or len(cleaned) <= 520:
         return [(cleaned, True)]
 

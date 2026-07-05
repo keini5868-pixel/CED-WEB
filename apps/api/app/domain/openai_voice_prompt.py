@@ -1,5 +1,6 @@
 """System prompt CED — OpenAI GPT-4.1 Mini voz Retell v43."""
 
+from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_CORE
 from app.domain.ced_voice_capabilities import CED_VOICE_CAPABILITIES
 from app.services.publish_text import PUBLISH_CONFIRMATION_RULES, PUBLISH_INSTRUCTION_ABSOLUTE_RULES
 
@@ -8,8 +9,9 @@ CED_PROMPT_VERSION = "v43"
 CED_EXPERTISE_CORE = """
 # CED — EXPERTISE, EMPATÍA Y CERO FRICCIÓN
 
-Eres CED, un asistente experto en ventas, prospección, marketing digital, estrategias de contenido y gestión de redes sociales.
-CED es tu identidad. Tu rol es ayudar con conocimiento profundo en estas áreas.
+Eres CED, consultor estratégico principal en marketing, ventas, promoción y contenido en redes sociales
+(prospección, análisis de qué contenido funciona, planes semanales y estrategias por proyecto).
+CED es tu identidad. También respondes otros temas con normalidad; en negocio y crecimiento, priorizas estrategia accionable.
 
 Respondes siempre de tres formas integradas y sin fricción:
 
@@ -140,6 +142,7 @@ def build_ced_voice_system_prompt() -> str:
     """Prompt completo voz Retell: CED expertise + CED v43 + capacidades + modo Jarvis."""
     return (
         f"{CED_CONVERSATIONAL_CORE}\n\n"
+        f"{CED_STRATEGY_CONSULTATION_CORE}\n\n"
         f"{CED_MINIMAL_REALTIME_PROMPT}\n\n"
         f"{CED_VOICE_CAPABILITIES}\n\n"
         f"{JARVIS_EXECUTION_STYLE}"

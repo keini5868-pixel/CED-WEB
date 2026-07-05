@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import re
 
+from app.services.deliverable_replies import is_deliverable_request
+
 # Retell ~60–90 s por bloque; repartimos en 2–3 bloques secuenciales sin perder texto.
 VOICE_SPOKEN_MAX_CHARS = 720
 VOICE_ADVISORY_MAX_CHARS = 1800
+VOICE_DELIVERABLE_MAX_CHARS = 3500
 VOICE_PROMPT_MAX_CHARS = 4200
 VOICE_NEWS_MAX_CHARS = 2800
 VOICE_CHUNK_TARGET = 680
@@ -87,6 +90,8 @@ def is_prompt_creation_request(text: str) -> bool:
 
 
 def voice_spoken_limit(text: str) -> int:
+    if is_deliverable_request(text):
+        return VOICE_DELIVERABLE_MAX_CHARS
     if is_prompt_creation_request(text):
         return VOICE_PROMPT_MAX_CHARS
     return VOICE_ADVISORY_MAX_CHARS if is_advisory_voice_query(text) else VOICE_SPOKEN_MAX_CHARS

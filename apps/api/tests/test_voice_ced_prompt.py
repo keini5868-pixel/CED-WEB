@@ -10,6 +10,7 @@ def test_voice_prompt_includes_ced_v43_gemini_strict_execution():
     assert "CED" in prompt
     assert "Seth" not in prompt
     assert "CED — EXPERTISE" in prompt
+    assert "CONSULTOR ESTRATÉGICO" in prompt
     assert "Castillo Evolución Digital" in prompt
     assert "FUNCTION CALLING OBLIGATORIO" in prompt
     assert "NUNCA inventes comentarios" in prompt

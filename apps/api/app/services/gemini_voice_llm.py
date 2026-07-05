@@ -13,6 +13,11 @@ from google import genai
 from google.genai import types
 
 from app.config import get_settings
+from app.services.deliverable_replies import (
+    VOICE_DELIVERABLE_CONTINUATION_OVERLAY,
+    is_incomplete_deliverable,
+    merge_deliverable_continuation,
+)
 from app.services.internal_kb_guard import VOICE_KB_LEAK_OVERLAY, contains_internal_kb_leak
 from app.services.gemini_voice_tools import build_gemini_voice_tools
 from app.services.retell_custom_llm import (
@@ -446,14 +451,22 @@ class GeminiVoiceLlm:
         cleaned = _delivery_text(text)
         if not cleaned:
             return cleaned
-        truncated = (
+        incomplete_deliverable = is_incomplete_deliverable(cleaned, user_text)
+        truncated = incomplete_deliverable or (
             response is not None
             and (_response_hit_max_tokens(response) or _looks_incomplete_voice_reply(cleaned))
         )
         if truncated:
+            overlay = (
+                VOICE_DELIVERABLE_CONTINUATION_OVERLAY
+                if incomplete_deliverable
+                else TRUNCATION_COMPLETE_OVERLAY
+            )
+            cont_max_tokens = max(1536, min(3200, max_tokens)) if incomplete_deliverable else min(320, max_tokens)
             logger.info(
-                "[RETELL-GEMINI] truncated reply path=%s finish=%s preview=%s",
+                "[RETELL-GEMINI] incomplete reply path=%s deliverable=%s finish=%s preview=%s",
                 path,
+                incomplete_deliverable,
                 _response_finish_reason(response) if response else "?",
                 cleaned[:80],
             )
@@ -464,14 +477,19 @@ class GeminiVoiceLlm:
                         types.Content(role="model", parts=[types.Part(text=cleaned)]),
                     ],
                     user_text=user_text,
-                    overlay=TRUNCATION_COMPLETE_OVERLAY,
+                    overlay=overlay,
                     path=f"{path}_complete",
-                    timeout_sec=min(timeout_sec, GEMINI_CONVERSATIONAL_TIMEOUT_SEC),
-                    max_tokens=min(320, max_tokens),
+                    timeout_sec=min(timeout_sec, GEMINI_ADVISORY_TIMEOUT_SEC if incomplete_deliverable else GEMINI_CONVERSATIONAL_TIMEOUT_SEC),
+                    max_tokens=cont_max_tokens,
                     temperature=0.35,
                 )
                 if continuation:
-                    merged = _delivery_text(f"{cleaned.rstrip('.')} {continuation.lstrip()}".strip())
+                    if incomplete_deliverable:
+                        merged = _delivery_text(merge_deliverable_continuation(cleaned, continuation))
+                    else:
+                        merged = _delivery_text(
+                            f"{cleaned.rstrip('.')} {continuation.lstrip()}".strip()
+                        )
                     if merged and chunk_ends_with_punctuation(merged):
                         cleaned = merged
             except (asyncio.TimeoutError, Exception):  # noqa: BLE001
@@ -811,13 +829,14 @@ class GeminiVoiceLlm:
             return None
 
         history = self._resolve_history(contents)
+        max_tokens, timeout_sec = _voice_generation_limits(user_text)
         reply = await self.generate_natural_reply(
             contents=[*history, last],
             user_text=user_text,
             overlay=CONVERSATIONAL_TURN_OVERLAY,
             path="conversational",
-            timeout_sec=GEMINI_CONVERSATIONAL_TIMEOUT_SEC,
-            max_tokens=480,
+            timeout_sec=timeout_sec,
+            max_tokens=max_tokens,
         )
         if reply and _needs_empathy_reformulation(reply, user_text=user_text):
             reply = await self.generate_empathetic_reformulation(
@@ -841,6 +860,16 @@ class GeminiVoiceLlm:
             )
         if not reply:
             return None
+
+        reply = await self._ensure_complete_voice_reply(
+            reply,
+            response=None,
+            contents=[*history, last],
+            user_text=user_text,
+            max_tokens=max_tokens,
+            timeout_sec=timeout_sec,
+            path="conversational",
+        )
 
         self._history = _truncate_contents(
             [

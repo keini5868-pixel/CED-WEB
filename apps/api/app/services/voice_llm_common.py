@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_OVERLAY
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
+from app.services.deliverable_replies import VOICE_DELIVERABLE_OVERLAY, is_deliverable_request, is_strategy_consultation_topic
 from app.services.retell_custom_llm import is_generic_agent_line, is_unwanted_voice_reply
 from app.services.retell_llm_types import Utterance
 from app.services.voice_spoken import (
@@ -86,6 +88,8 @@ def ensure_voice_reply(text: str | None, *, fallback: str | None = None) -> str:
 
 
 def voice_generation_limits(user_text: str) -> tuple[int, float]:
+    if is_deliverable_request(user_text):
+        return 3200, 28.0
     if is_prompt_creation_request(user_text):
         return 2048, 28.0
     if is_advisory_voice_query(user_text):
@@ -158,7 +162,11 @@ def build_voice_system(
         except Exception:  # noqa: BLE001
             pass
     query = (user_text or "").strip()
-    if query and is_advisory_voice_query(query):
+    if query and is_strategy_consultation_topic(query):
+        base = f"{base}\n\n{CED_STRATEGY_CONSULTATION_OVERLAY}"
+    if query and is_deliverable_request(query):
+        base = f"{base}\n\n{VOICE_DELIVERABLE_OVERLAY}"
+    elif query and is_advisory_voice_query(query):
         base = (
             f"{base}\n\n"
             "# MODO ASESORÍA (demo / video / estrategia)\n"

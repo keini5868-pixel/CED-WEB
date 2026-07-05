@@ -90,6 +90,16 @@ def test_is_deliverable_request_detects_strategy():
     assert _is_deliverable_request(
         "ok perfecto crea una estrategia semanal para estas soluciones"
     )
+    assert _is_deliverable_request("hagamos un plan para la semana")
+    assert _is_deliverable_request("dame una estrategia de contenido")
+
+
+def test_is_strategy_consultation_topic():
+    from app.services.deliverable_replies import is_strategy_consultation_topic
+
+    assert is_strategy_consultation_topic("¿cuál es mi público ideal para Instagram?")
+    assert is_strategy_consultation_topic("quiero promocionar mis soluciones en redes")
+    assert not is_strategy_consultation_topic("hola")
 
 
 def test_is_incomplete_deliverable_intro_only():

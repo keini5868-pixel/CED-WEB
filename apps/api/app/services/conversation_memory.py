@@ -19,7 +19,7 @@ from app.services.cognitive_memory import save_memory
 logger = logging.getLogger(__name__)
 
 MAX_CONTENT = 8000
-MAX_CONTEXT_CHARS = 2200
+MAX_CONTEXT_CHARS = 8000
 CONTEXT_CACHE_TTL_SEC = 90
 _ROLE_MAP = {"model": "assistant", "assistant": "assistant", "user": "user", "system": "system"}
 _context_cache: dict[str, tuple[float, str]] = {}
@@ -409,10 +409,12 @@ def load_user_context(user_id: str) -> str:
     parts: list[str] = ["# CONTEXTO DEL USUARIO (SESIONES ANTERIORES)"]
 
     if summaries:
+        from app.services.session_memory import sanitize_public_summary
+
         lines = []
         for s in summaries[:5]:
             when = str(s.get("started_at") or "")[:10]
-            snippet = str(s.get("summary") or "")[:280]
+            snippet = sanitize_public_summary(str(s.get("summary") or "")) or str(s.get("summary") or "")[:280]
             topics = ", ".join(str(t) for t in (s.get("topics") or [])[:4])
             line = f"- [{when}] {snippet}"
             if topics:
@@ -431,7 +433,8 @@ def load_user_context(user_id: str) -> str:
         parts.append("## ACCIONES PENDIENTES\n" + "\n".join(f"- {p}" for p in pending))
 
     parts.append(
-        "Usa este contexto solo cuando sea relevante. NO recites todo. Conecta con naturalidad."
+        "Usa este contexto solo cuando sea relevante. NO recites todo. NO digas que no recuerdas "
+        "conversaciones previas si aquí hay datos. Conecta con naturalidad."
     )
     text = "\n\n".join(parts)
     if len(text) > MAX_CONTEXT_CHARS:
@@ -552,18 +555,28 @@ def generate_session_summary(
     transcript = "\n".join(lines)[-12000:]
     summary_data = _summarize_with_claude(transcript)
     if not summary_data:
+        from app.services.session_memory import fallback_summary_from_history, sanitize_public_summary
+
+        history: list[dict[str, str]] = []
+        for line in lines:
+            lower = line.lower()
+            if lower.startswith("user:"):
+                history.append({"role": "user", "content": line.split(":", 1)[-1].strip()})
+            elif lower.startswith("assistant:") or lower.startswith("model:"):
+                history.append({"role": "assistant", "content": line.split(":", 1)[-1].strip()})
+        fb = fallback_summary_from_history(history)
         summary_data = {
-            "summary": transcript[:800],
-            "topics": [],
-            "key_facts": {},
-            "pending_actions": [],
+            "summary": sanitize_public_summary(str(fb.get("summary_short") or "")),
+            "topics": fb.get("topics") or [],
+            "key_facts": fb.get("user_context") or {},
+            "pending_actions": fb.get("tasks") or [],
         }
 
     now = datetime.now(timezone.utc)
     row = {
         "user_id": user_id,
         "session_id": sid,
-        "summary": str(summary_data.get("summary") or transcript[:600])[:6000],
+        "summary": str(summary_data.get("summary") or "")[:6000],
         "topics": summary_data.get("topics") or [],
         "key_facts": summary_data.get("key_facts") or {},
         "pending_actions": summary_data.get("pending_actions") or [],

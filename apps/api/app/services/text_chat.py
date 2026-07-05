@@ -28,6 +28,7 @@ from app.domain.ced_identity import (
     CED_HUMAN_VOICE_STYLE,
 )
 from app.domain.ced_memory_prompt import CED_MEMORY_USAGE_RULES
+from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_CORE
 from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE
 from app.domain.ced_viral_knowledge import CED_VIRAL_KNOWLEDGE_2026
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
@@ -40,6 +41,14 @@ from app.services.pdf_report import (
 from app.services.internal_kb_guard import (
     contains_internal_kb_leak as _contains_internal_kb_leak,
     strip_internal_kb_from_reply as _strip_internal_kb_from_reply,
+)
+from app.services.deliverable_replies import (
+    CHAT_DELIVERABLE_RULES,
+    DELIVERABLE_CONTINUATION_MESSAGE,
+    is_deliverable_request as _is_deliverable_request,
+    has_deliverable_structure as _has_deliverable_structure,
+    is_incomplete_deliverable as _is_incomplete_deliverable,
+    merge_deliverable_continuation,
 )
 from app.services.voice_spoken import strip_voice_filler_prefix
 from app.services.publish_text import PUBLISH_INSTRUCTION_ABSOLUTE_RULES
@@ -62,32 +71,6 @@ CHAT_SIMPLE_MAX_TOKENS = 1400
 CHAT_DELIVERABLE_MAX_TOKENS = 3200
 CHAT_TOOLS_MAX_TOKENS = 1600
 DIRECT_IMAGE_MAX_CHARS = 500
-
-_DELIVERABLE_REQUEST = re.compile(
-    r"\b("
-    r"crea(r|me)?|hazme|haz|elabora(r|me)?|dise[nñ]a(r|me)?|escribe(r|me)?|"
-    r"prepara(r|me)?|desarrolla(r|me)?|pl[aá]n|estrategia|calendario|cronograma|"
-    r"semanal|mensual|lista de|paso a paso|gu[ií]a completa|roadmap|"
-    r"propuesta|plan de acci[oó]n|plan de marketing"
-    r")\b",
-    re.I,
-)
-
-_INTRO_ONLY_DELIVERABLE = re.compile(
-    r"\b("
-    r"aqu[ií] le presento|a continuaci[oó]n|te comparto|le presento|"
-    r"aqu[ií] tiene|te dejo|a continuación"
-    r")\b",
-    re.I,
-)
-
-DELIVERABLE_CONTINUATION_MESSAGE = (
-    "Tu respuesta anterior quedó INCOMPLETA: solo escribiste la introducción "
-    "y no entregaste el contenido que pedí. "
-    "Continúa AHORA con el entregable COMPLETO (estrategia, plan, lista o análisis). "
-    "No repitas la introducción. Incluye público objetivo y detalle accionable "
-    "(por ejemplo Lunes–Domingo si es semanal)."
-)
 
 _VIRAL_KEYWORDS = re.compile(
     r"\b(instagram|tiktok|reels?|viral|horario|publicar|contenido|linkedin|facebook|"
@@ -341,6 +324,8 @@ ORTOGRAFÍA: escribe siempre en español correcto (tildes, sin anglicismos innec
 
 {CED_SALES_MENTOR_CORE}
 
+{CED_STRATEGY_CONSULTATION_CORE}
+
 IMPORTANTE — tratamiento del usuario:
 - Usa el nombre y título del bloque "USUARIO ACTUAL — TRATAMIENTO" inyectado abajo.
 - Si piden "llámame señor/señora/jefe/etc.", confirma y recuerda con save_memory key "tratamiento".
@@ -374,12 +359,7 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Tras generar una imagen, preséntala y pregunta si quiere ajustes.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
-IMPORTANTE — ENTREGAS COMPLETAS (estrategia, plan, análisis, listas, guiones):
-- Si el usuario pide CREAR o ELABORAR algo, entrégalo COMPLETO en el mismo mensaje.
-- PROHIBIDO quedarse solo en la introducción («Aquí le presento…», «A continuación…») sin el contenido real.
-- Para plan o estrategia semanal: incluye público objetivo + calendario día a día (Lunes–Domingo) con acciones concretas por herramienta/solución.
-- No preguntes «¿quieres que continúe?» si ya pidieron el entregable — entrégalo de una vez.
-- Usa markdown con títulos, listas numeradas o días de la semana para que sea fácil de leer y copiar.
+{CHAT_DELIVERABLE_RULES}
 
 INVOCACIÓN OBLIGATORIA DE HERRAMIENTAS (BÚSQUEDA WEB):
 
@@ -585,55 +565,12 @@ def _dedupe_chat_reply(text: str) -> str:
     return cleaned
 
 
-def _is_deliverable_request(text: str) -> bool:
-    return bool(_DELIVERABLE_REQUEST.search(text or ""))
-
-
 def _chat_max_tokens(user_text: str, *, with_tools: bool = False) -> int:
     if with_tools:
         return CHAT_TOOLS_MAX_TOKENS
     if _is_deliverable_request(user_text):
         return CHAT_DELIVERABLE_MAX_TOKENS
     return CHAT_SIMPLE_MAX_TOKENS
-
-
-def _has_deliverable_structure(text: str) -> bool:
-    cleaned = (text or "").strip()
-    if not cleaned:
-        return False
-    if re.search(
-        r"(?m)^\s*(#{1,3}\s|\d+[\.)]\s|[-*]\s+|"
-        r"(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b)",
-        cleaned,
-        re.I,
-    ):
-        return True
-    return cleaned.count("\n") >= 4 and len(cleaned) >= 400
-
-
-def _is_incomplete_deliverable(reply: str, user_text: str) -> bool:
-    if not _is_deliverable_request(user_text):
-        return False
-    cleaned = (reply or "").strip()
-    if len(cleaned) < 120:
-        return True
-    if _has_deliverable_structure(cleaned):
-        weekday_hits = len(
-            re.findall(
-                r"\b(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo)\b",
-                cleaned,
-                re.I,
-            )
-        )
-        if weekday_hits >= 3 and len(cleaned) >= 200:
-            return False
-        if len(cleaned) >= 280:
-            return False
-    if _INTRO_ONLY_DELIVERABLE.search(cleaned) and not _has_deliverable_structure(cleaned):
-        return True
-    if re.search(r"\b(dirigida? a un p[uú]blico|para un p[uú]blico)\s*$", cleaned, re.I):
-        return True
-    return len(cleaned) < 420
 
 
 def _strip_chat_filler_prefix(text: str) -> str:
@@ -1479,9 +1416,7 @@ def _maybe_complete_deliverable_reply(
         return reply
     if not cont_reply or len(cont_reply.strip()) <= len(reply.strip()):
         return reply
-    if _INTRO_ONLY_DELIVERABLE.search(reply) and not _has_deliverable_structure(reply):
-        return cont_reply
-    return f"{reply.rstrip()}\n\n{cont_reply.strip()}"
+    return merge_deliverable_continuation(reply, cont_reply)
 
 
 def _final_text_from_response(data: dict[str, Any]) -> str:
