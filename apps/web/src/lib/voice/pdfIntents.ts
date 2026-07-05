@@ -44,8 +44,9 @@ export function parsePdfRequest(
   }
 
   const pasted = t.match(/(?:en\s+)?(?:un(?:a)?\s+)?pdf\s*\n?\s*(.+)$/is);
-  if (pasted && pasted[1].trim().length >= 80) {
-    content = pasted[1].trim();
+  const pastedBody = pasted?.[1]?.trim() ?? "";
+  if (pastedBody.length >= 80) {
+    content = pastedBody;
   }
 
   if (content.length < 200 && PDF_THIS_REF.test(t)) {
