@@ -129,7 +129,7 @@ export function CedSettingsModal({
         </div>
       }
     >
-      <div className="space-y-4">
+      <div className="max-h-[min(62vh,520px)] space-y-4 overflow-y-auto overscroll-y-contain pr-1 [-webkit-overflow-scrolling:touch]">
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -162,6 +162,8 @@ export function CedSettingsModal({
             </div>
           </button>
         </div>
+
+        <ConnectGoogleServicesPanel />
 
         {retellMode ? (
           <div className="rounded border border-amber-500/30 bg-amber-950/20 px-3 py-3 text-xs text-amber-100/90">
@@ -370,8 +372,6 @@ export function CedSettingsModal({
             </span>
           </label>
         </div>
-
-        <ConnectGoogleServicesPanel />
 
         <label className="block">
           <span className="ced-hud-text-muted text-xs">Velocidad</span>

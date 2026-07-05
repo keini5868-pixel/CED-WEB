@@ -152,8 +152,8 @@ export function ConnectGoogleServicesPanel() {
           {busy === "calendar"
             ? "CONECTANDO…"
             : calendarConnected
-              ? "CALENDAR · CONECTADO"
-              : "CONECTAR GOOGLE CALENDAR"}
+              ? "📅 CALENDAR · CONECTADO"
+              : "📅 Conectar Google Calendar"}
         </CedButton>
         <CedButton
           type="button"
@@ -165,8 +165,8 @@ export function ConnectGoogleServicesPanel() {
           {busy === "gmail"
             ? "CONECTANDO…"
             : gmailConnected
-              ? "GMAIL · CONECTADO"
-              : "CONECTAR GMAIL"}
+              ? "📧 GMAIL · CONECTADO"
+              : "📧 Conectar Gmail"}
         </CedButton>
       </div>
       {error ? (
