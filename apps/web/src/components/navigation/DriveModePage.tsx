@@ -461,49 +461,51 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
               ) : null}
             </>
           ) : null}
-          {ui.results && mapNav.placeOptions.length > 0 ? (
-            <PlaceOptionsList
-              query={mapNav.placeQuery}
-              places={mapNav.placeOptions}
-              onStart={(i) => void handleStartOption(i)}
-              onCancel={handleCancelOptions}
-              busy={navBusy}
-            />
-          ) : null}
         </div>
 
         <div className="flex-1" />
 
-        {ui.routePreview && mapNav.route ? (
-          <div className="pointer-events-auto px-3 pb-2 sm:px-4">
-            <RoutePreviewPanel
-              route={mapNav.route}
-              onStart={beginNavigation}
-              busy={navBusy}
-            />
+        {!ui.results && !ui.routePreview ? (
+          <div className="pointer-events-auto border-t border-cyan-500/25 bg-black/85 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:px-4">
+            <div className="mb-2 flex items-center gap-2">
+              <Navigation className="h-4 w-4 text-cyan-400" />
+              <p className="font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-widest text-cyan-300">
+                MODO CONDUCIR · GPS + GUÍA
+              </p>
+            </div>
+
+            {embedded ? (
+              <p className="text-center text-xs leading-relaxed text-cyan-400">
+                CED sigue escuchando en segundo plano. Di: &quot;busca Walmart&quot;,
+                &quot;el primero&quot;, &quot;iniciar&quot;, &quot;detener&quot; o &quot;cerrar mapa&quot;.
+              </p>
+            ) : null}
+
+            {geoError ? (
+              <p className="mt-2 text-center text-xs text-amber-300">{geoError}</p>
+            ) : null}
           </div>
         ) : null}
-
-        <div className="pointer-events-auto border-t border-cyan-500/25 bg-black/85 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:px-4">
-          <div className="mb-2 flex items-center gap-2">
-            <Navigation className="h-4 w-4 text-cyan-400" />
-            <p className="font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-widest text-cyan-300">
-              MODO CONDUCIR · GPS + GUÍA
-            </p>
-          </div>
-
-          {embedded ? (
-            <p className="text-center text-xs leading-relaxed text-cyan-400">
-              CED sigue escuchando en segundo plano. Di: &quot;busca Walmart&quot;,
-              &quot;el primero&quot;, &quot;iniciar&quot;, &quot;detener&quot; o &quot;cerrar mapa&quot;.
-            </p>
-          ) : null}
-
-          {geoError ? (
-            <p className="mt-2 text-center text-xs text-amber-300">{geoError}</p>
-          ) : null}
-        </div>
       </div>
+
+      {ui.results && mapNav.placeOptions.length > 0 ? (
+        <PlaceOptionsList
+          query={mapNav.placeQuery}
+          places={mapNav.placeOptions}
+          onStart={(i) => void handleStartOption(i)}
+          onCancel={handleCancelOptions}
+          busy={navBusy}
+        />
+      ) : null}
+
+      {ui.routePreview && mapNav.route ? (
+        <RoutePreviewPanel
+          route={mapNav.route}
+          onStart={beginNavigation}
+          onCancel={resetToIdle}
+          busy={navBusy}
+        />
+      ) : null}
     </div>
   );
 }

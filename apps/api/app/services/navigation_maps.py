@@ -82,9 +82,15 @@ def _build_place_row(
     origin_lat: float,
     origin_lng: float,
     place_id: str = "",
+    rating: float | None = None,
+    rating_count: int | None = None,
+    phone: str = "",
+    category: str = "",
+    open_now: bool | None = None,
+    hours_text: str = "",
 ) -> dict[str, Any]:
     dist_m = _haversine_m(origin_lat, origin_lng, lat, lng)
-    return {
+    row: dict[str, Any] = {
         "name": name,
         "address": address,
         "lat": lat,
@@ -93,6 +99,19 @@ def _build_place_row(
         "distance_m": int(dist_m),
         "distance_text": format_distance_imperial(dist_m),
     }
+    if rating is not None:
+        row["rating"] = round(float(rating), 1)
+    if rating_count is not None:
+        row["rating_count"] = int(rating_count)
+    if phone:
+        row["phone"] = phone
+    if category:
+        row["category"] = category
+    if open_now is not None:
+        row["open_now"] = open_now
+    if hours_text:
+        row["hours_text"] = hours_text
+    return row
 
 
 def decode_polyline(encoded: str) -> list[dict[str, float]]:
@@ -309,7 +328,9 @@ def _search_via_places_new(
         "Content-Type": "application/json",
         "X-Goog-Api-Key": _maps_key(),
         "X-Goog-FieldMask": (
-            "places.displayName,places.formattedAddress,places.location,places.id"
+            "places.displayName,places.formattedAddress,places.location,places.id,"
+            "places.rating,places.userRatingCount,places.nationalPhoneNumber,"
+            "places.primaryTypeDisplayName,places.currentOpeningHours"
         ),
     }
     body = {
@@ -357,6 +378,26 @@ def _search_via_places_new(
         display = row.get("displayName") or {}
         name = str(display.get("text") or query)
         address = str(row.get("formattedAddress") or name)
+        category_row = row.get("primaryTypeDisplayName") or {}
+        category = str(category_row.get("text") or "").strip()
+        hours = row.get("currentOpeningHours") or {}
+        open_now = hours.get("openNow")
+        hours_text = ""
+        if open_now is True:
+            close_raw = str(hours.get("nextCloseTime") or "")
+            if close_raw:
+                try:
+                    from datetime import datetime
+
+                    close_dt = datetime.fromisoformat(close_raw.replace("Z", "+00:00"))
+                    hour = close_dt.hour % 12 or 12
+                    suffix = "a. m." if close_dt.hour < 12 else "p. m."
+                    hours_text = f"Cierra a las {hour}:{close_dt.minute:02d} {suffix}"
+                except ValueError:
+                    hours_text = "Cierra pronto"
+        rating = row.get("rating")
+        rating_count = row.get("userRatingCount")
+        phone = str(row.get("nationalPhoneNumber") or "").strip()
         places.append(
             _build_place_row(
                 name=name,
@@ -366,6 +407,12 @@ def _search_via_places_new(
                 origin_lat=origin_lat,
                 origin_lng=origin_lng,
                 place_id=str(row.get("id") or ""),
+                rating=float(rating) if rating is not None else None,
+                rating_count=int(rating_count) if rating_count is not None else None,
+                phone=phone,
+                category=category,
+                open_now=open_now if isinstance(open_now, bool) else None,
+                hours_text=hours_text,
             )
         )
 

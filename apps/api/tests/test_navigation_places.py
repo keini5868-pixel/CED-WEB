@@ -9,6 +9,7 @@ import pytest
 from app.services.navigation_maps import (
     format_distance_imperial,
     search_nearby_places,
+    _build_place_row,
     _compute_route_routes_api,
     _search_query_variants,
     _search_via_geocode,
@@ -23,6 +24,27 @@ def test_format_distance_imperial_miles():
 
 def test_format_distance_imperial_feet():
     assert "ft" in format_distance_imperial(50)
+
+
+def test_build_place_row_includes_rich_fields():
+    row = _build_place_row(
+        name="Walmart",
+        address="8322 Pineville Rd",
+        lat=35.0,
+        lng=-80.8,
+        origin_lat=35.1,
+        origin_lng=-80.9,
+        rating=4.0,
+        rating_count=1401,
+        phone="+17045551234",
+        category="Tienda de alimentación",
+        open_now=True,
+        hours_text="Cierra a las 11:00 p. m.",
+    )
+    assert row["rating"] == 4.0
+    assert row["rating_count"] == 1401
+    assert row["phone"] == "+17045551234"
+    assert row["open_now"] is True
 
 
 @pytest.mark.parametrize(

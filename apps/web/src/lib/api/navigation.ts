@@ -39,6 +39,12 @@ export type NavPlaceOption = {
   place_id?: string;
   distance_m?: number;
   distance_text?: string;
+  rating?: number;
+  rating_count?: number;
+  phone?: string;
+  category?: string;
+  open_now?: boolean;
+  hours_text?: string;
 };
 
 export type NavigationState = {
