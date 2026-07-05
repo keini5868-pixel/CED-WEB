@@ -83,6 +83,33 @@ def test_parse_followup_image_prompt_after_any_image_thread():
     assert parse_followup_image_prompt("ok gracias", history) is None
 
 
+def test_parse_followup_image_prompt_not_after_strategy_plan_only():
+    """Plan estratégico menciona creativo/imagen pero no hubo generación real."""
+    history = [
+        {
+            "role": "user",
+            "content": "me das esta info en un pdf ### Plan Semanal ... creativo para anuncio ...",
+        },
+        {
+            "role": "assistant",
+            "content": 'Listo. PDF "Plan Semanal de Estrategia CED" generado. Usa el botón Descargar.',
+        },
+    ]
+    msg = "sabes hoy estoy con un dolor de cabeza cambiando el tema"
+    assert parse_followup_image_prompt(msg, history) is None
+
+
+def test_casual_chat_interrupt_blocks_followup_even_with_image_thread():
+    history = [
+        {"role": "user", "content": "genera una imagen de un castillo medieval"},
+        {"role": "model", "content": "Listo. Aquí está tu imagen generada."},
+    ]
+    assert (
+        parse_followup_image_prompt("cambiando el tema, hoy estoy mal de cabeza", history)
+        is None
+    )
+
+
 def test_prepare_image_prompt_resolves_esa_informacion():
     context = (
         "FitLine Basics: fibra, probióticos, vitaminas C y E. "

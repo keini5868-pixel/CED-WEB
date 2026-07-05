@@ -54,3 +54,8 @@ def test_topic_change_clears_camera_for_news():
         "camera",
         transcript,
     )
+
+
+def test_topic_change_detects_cambiando_el_tema_mid_sentence():
+    assert is_topic_change("sabes hoy estoy con un dolor de cabeza cambiando el tema")
+    assert is_topic_change("hablemos de otra cosa")

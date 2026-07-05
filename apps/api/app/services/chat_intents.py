@@ -98,6 +98,54 @@ _FOLLOWUP_SKIP = re.compile(
     r"^(?:ok|gracias|s[ií]|no|vale|perfecto|listo|env[ií]a|publica|dale|hola|buenas)\b",
     re.I,
 )
+_IMAGE_THREAD_USER = re.compile(
+    r"\b(?:genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|haz(?:me|nos|lo|la)?|dise[nñ]a(?:r|me|mos|s|is|n|do)?)"
+    r"\s+(?:una?\s+)?(?:imagen|foto|creativo|flyer|logo|banner|portada|dise[nñ]o)\b",
+    re.I,
+)
+_IMAGE_THREAD_ASSISTANT = re.compile(
+    r"(?:Descargar imagen|Creativo\s+[—\-]|imagen generada|"
+    r"aqu[ií]\s+est[aá]\s+(?:tu|su)\s+(?:imagen|creativo))",
+    re.I,
+)
+_CASUAL_CHAT_BLOCK = re.compile(
+    r"\b("
+    r"cambiando\s+(?:de\s+|el\s+)?tema|otro\s+tema|hablemos\s+de\s+otra|"
+    r"dolor\s+de\s+cabeza|mal\s+de\s+cabeza|me\s+duele\s+la\s+cabeza|"
+    r"solo\s+quiero\s+charlar|charlar\s+un\s+rato|conversar|platique|platicar|"
+    r"estoy\s+(?:mal|enferm|cansad|triste)|me\s+siento|"
+    r"por\s+cierto|a\s+prop[oó]sito|"
+    r"olvida(?:lo|mos)?|dejemos\s+(?:eso|lo)|"
+    r"no\s+(?:sobre|de)\s+(?:eso|marketing|estrategia)"
+    r")\b",
+    re.I,
+)
+
+
+def is_casual_chat_interrupt(text: str) -> bool:
+    """Charla personal o cambio de tema — no enrutar a creativos ni herramientas."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _CASUAL_CHAT_BLOCK.search(t):
+        return True
+    from app.services.cognitive_intents import is_personal_vent_intent, is_topic_change
+
+    return is_personal_vent_intent(t) or is_topic_change(t)
+
+
+def history_has_active_image_thread(history: list[dict[str, str]] | None) -> bool:
+    """True solo si hubo un pedido o entrega real de imagen/creativo en el hilo reciente."""
+    for row in (history or [])[-8:]:
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        role = str(row.get("role") or "").lower()
+        if role == "user" and _IMAGE_THREAD_USER.search(content):
+            return True
+        if role in ("assistant", "model") and _IMAGE_THREAD_ASSISTANT.search(content):
+            return True
+    return False
 
 
 def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None = None) -> str | None:
@@ -105,7 +153,11 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
     t = (text or "").strip()
     if not t or is_generate_image_intent(t) or len(t) > 120 or len(t) < 6:
         return None
+    if is_casual_chat_interrupt(t):
+        return None
     if _FOLLOWUP_SKIP.search(t):
+        return None
+    if not history_has_active_image_thread(history):
         return None
     from app.services.publish_text import (
         is_explicit_social_publish_request,

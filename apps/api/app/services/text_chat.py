@@ -2067,11 +2067,18 @@ def send_message(
                 http_status=503,
             ) from exc
 
+    from app.services.chat_intents import is_casual_chat_interrupt
+
     img_prompt = parse_generate_image_prompt(text)
-    followup_prompt = parse_followup_image_prompt(text, history) if not img_prompt else None
+    followup_prompt = (
+        parse_followup_image_prompt(text, history)
+        if not img_prompt and not is_casual_chat_interrupt(text)
+        else None
+    )
     effective_img_prompt = img_prompt or followup_prompt
     if (
         effective_img_prompt
+        and not is_casual_chat_interrupt(text)
         and (is_generate_image_intent(text) or followup_prompt)
         and len(text.strip()) <= DIRECT_IMAGE_MAX_CHARS
     ):

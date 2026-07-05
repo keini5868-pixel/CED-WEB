@@ -493,7 +493,7 @@ def build_memory_greeting(user_id: str) -> str | None:
         body = f"La última vez, {when}, hablamos de {topic_label}."
     return (
         f"Bienvenido de nuevo. {body} "
-        "¿Seguimos con eso o hay algo nuevo en lo que pueda ayudarle?"
+        "¿En qué te ayudo hoy? Puedo seguir con eso o lo que necesites."
     )
 
 
