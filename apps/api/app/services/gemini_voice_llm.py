@@ -1100,6 +1100,35 @@ class GeminiVoiceLlm:
             )
             return
 
+        from app.services.cognitive_intents import is_conversation_recall_intent
+        from app.services.session_memory import build_conversation_recall_reply
+
+        if is_conversation_recall_intent(user_text):
+            recall_reply = build_conversation_recall_reply(
+                self.user_id,
+                user_text,
+                channel="voice",
+            )
+            from app.services.voice_llm_common import ensure_voice_reply
+
+            spoken = ensure_voice_reply(recall_reply)
+            self._history = _truncate_contents(
+                [
+                    *self._history,
+                    last,
+                    types.Content(role="model", parts=[types.Part(text=spoken)]),
+                ],
+                max_turns=MAX_HISTORY_TURNS,
+            )
+            logger.info("[RETELL-GEMINI] memory_recall user=%s", user_text[:80])
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content=_delivery_text(spoken),
+                content_complete=True,
+                end_call=False,
+            )
+            return
+
         needs_external_data = (
             requires_live_web(user_text)
             or is_web_research_intent(user_text)

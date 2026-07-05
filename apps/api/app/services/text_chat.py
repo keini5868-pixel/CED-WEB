@@ -654,11 +654,25 @@ def _reply_from_direct_search(query: str, *, kind: str = "news") -> str:
 def _resolve_hallucinated_tool_code_reply(
     reply: str,
     messages: list[dict[str, Any]],
+    *,
+    user_id: str = "",
+    user_text: str = "",
 ) -> str | None:
     if not _has_hallucinated_tool_code(reply):
         return None
     if re.search(r"generar_pdf", reply or "", re.I):
         return None
+    if re.search(r"recall_memory|recall_previous_conversations", reply or "", re.I):
+        from app.services.cognitive_intents import is_conversation_recall_intent
+        from app.services.session_memory import build_conversation_recall_reply
+
+        prompt = user_text or _last_user_text(messages)
+        if is_conversation_recall_intent(prompt) or re.search(
+            r"recall_memory|recall_previous",
+            reply or "",
+            re.I,
+        ):
+            return build_conversation_recall_reply(user_id, prompt, channel="text")
     query = _extract_query_from_hallucination(reply) or _last_user_text(messages)
     return _reply_from_direct_search(query)
 
@@ -1700,7 +1714,12 @@ def _complete_chat_with_tools(
                     if pdf_fix:
                         return pdf_fix
                     logger.warning("[CHAT] tool_code alucinado tras retry — búsqueda directa")
-                    direct = _resolve_hallucinated_tool_code_reply(reply, messages)
+                    direct = _resolve_hallucinated_tool_code_reply(
+                        reply,
+                        messages,
+                        user_id=user_id,
+                        user_text=_last_user_text(messages),
+                    )
                     if direct:
                         return direct, pdf_attachment, image_attachment
                 if (
@@ -1792,7 +1811,12 @@ def _complete_chat_resilient(
             if pdf_fix:
                 return pdf_fix
             logger.warning("[CHAT] tool_code alucinado en simple path — búsqueda directa")
-            direct = _resolve_hallucinated_tool_code_reply(reply, messages)
+            direct = _resolve_hallucinated_tool_code_reply(
+                reply,
+                messages,
+                user_id=user_id,
+                user_text=user_text,
+            )
             if direct:
                 return direct, pdf_attachment, image_attachment
         if anthropic_key and (
@@ -2068,6 +2092,20 @@ def send_message(
             ) from exc
 
     from app.services.chat_intents import is_casual_chat_interrupt
+    from app.services.cognitive_intents import is_conversation_recall_intent
+    from app.services.session_memory import build_conversation_recall_reply
+
+    if is_conversation_recall_intent(text):
+        recall_reply = build_conversation_recall_reply(
+            user_id,
+            text,
+            channel="text",
+            history=history,
+        )
+        return _finish(
+            _finalize_chat_reply(recall_reply),
+            route_meta={"intent": "memory_recall", "source": "direct"},
+        )
 
     img_prompt = parse_generate_image_prompt(text)
     followup_prompt = (
@@ -2176,6 +2214,12 @@ def send_message(
 
     if route.intent == "memory_save" and route.speakable:
         return _finish(route.speakable, route_meta=route.to_dict())
+
+    if route.intent == "memory_recall" and route.speakable:
+        return _finish(
+            _finalize_chat_reply(route.speakable),
+            route_meta=route.to_dict(),
+        )
 
     if route.intent == "web_search" and route.speakable:
         return _finish(

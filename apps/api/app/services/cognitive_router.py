@@ -105,13 +105,14 @@ def route_message(
         )
 
     if analysis.primary == CognitiveIntent.MEMORY_RECALL:
-        ctx = _memory_context(user_id, raw)
+        from app.services.session_memory import build_conversation_recall_reply
+
+        reply = build_conversation_recall_reply(user_id, raw, channel=channel)
         return CognitiveRouteResult(
             intent=analysis.primary.value,
             channel=channel,
-            confidence=0.9 if ctx else 0.3,
-            context_for_llm=ctx or "No encontré memorias sobre eso todavía.",
-            speakable=None,
+            confidence=0.95 if reply else 0.3,
+            speakable=reply,
         )
 
     if analysis.primary == CognitiveIntent.META_PUBLISH:

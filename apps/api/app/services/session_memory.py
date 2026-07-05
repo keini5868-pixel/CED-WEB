@@ -477,6 +477,159 @@ def get_session_memory_context(user_id: str) -> str:
     return "\n".join(parts)
 
 
+_WELCOME_SUMMARY_MAX = 140
+
+
+def _friendly_topic_phrase(topics: list[str], summary: str = "") -> str:
+    blob = f"{' '.join(topics)} {summary}".lower()
+    if re.search(r"plan\s+semanal|estrategia\s+semanal", blob):
+        if "lanzamiento" in blob and "ced" in blob:
+            return "su plan semanal de estrategia para el lanzamiento de CED"
+        return "su plan semanal de estrategia"
+    if topics:
+        return ", ".join(str(t).strip() for t in topics[:2] if str(t).strip())
+    return ""
+
+
+def humanize_session_summary_for_user(summary: str, topics: list[str] | None = None) -> str:
+    """Convierte resumen interno (a veces en tercera persona) a lenguaje natural para el usuario."""
+    topics = topics or []
+    raw = sanitize_public_summary(summary)
+    verbose_third_person = bool(raw and re.search(r"\bel usuario\b", raw, re.I) and len(raw) > 100)
+    friendly = _friendly_topic_phrase(topics, raw)
+    if friendly and (not raw or verbose_third_person):
+        phrase = friendly
+        blob = raw.lower()
+        if "pdf" in blob:
+            phrase += ", que le entregamos en PDF"
+        if re.search(r"dolor de cabeza|mal de cabeza|cambiando el tema", blob):
+            phrase += ", y después comentó que tenía dolor de cabeza"
+        return f"hablamos de {phrase}"
+
+    if not raw:
+        if friendly:
+            return f"hablamos de {friendly}"
+        return ""
+
+    t = raw
+    t = re.sub(r"^El usuario solicitó\s+", "", t, flags=re.I)
+    t = re.sub(r"^El usuario pidió\s+", "", t, flags=re.I)
+    t = re.sub(r"^El usuario mencionó\s+", "también comentó que ", t, flags=re.I)
+    t = re.sub(
+        r"Posteriormente, el usuario mencionó\s+",
+        "Después comentó que ",
+        t,
+        flags=re.I,
+    )
+    t = re.sub(r", el cual fue generado y entregado\.?", ", que le entregamos en PDF", t, flags=re.I)
+    t = re.sub(r"\bel usuario\b", "usted", t, flags=re.I)
+    t = re.sub(r"\s+", " ", t).strip()
+
+    if not re.match(r"^(hablamos|trabajamos|coment|mencion|después|su |el plan|la estrategia|también)", t, re.I):
+        t = f"hablamos de {t[0].lower()}{t[1:]}" if t else t
+
+    if len(t) > 240:
+        t = t[:237].rsplit(" ", 1)[0] + "…"
+    return t.rstrip(".")
+
+
+def _extract_recall_query(text: str) -> str:
+    t = (text or "").strip()
+    for pat in (
+        r"recuerdas\s+cuando\s+(.+?)[?.!]*$",
+        r"te acuerdas\s+(?:de\s+|cuando\s+)?(.+?)[?.!]*$",
+        r"de qu[eé] hablamos\s+(?:de\s+|sobre\s+)?(.+?)[?.!]*$",
+    ):
+        match = re.search(pat, t, re.I)
+        if match:
+            return match.group(1).strip()[:200]
+    return ""
+
+
+def _recall_from_current_history(history: list[dict[str, str]] | None) -> str | None:
+    if not history or len(history) < 2:
+        return None
+    from app.services.chat_intents import is_casual_chat_interrupt, is_pdf_intent
+    from app.services.deliverable_replies import is_deliverable_request
+
+    parts: list[str] = []
+    for row in history[-10:]:
+        if str(row.get("role") or "").lower() not in ("user",):
+            continue
+        msg = str(row.get("content") or "").strip()
+        if len(msg) < 12:
+            continue
+        if is_deliverable_request(msg) or is_pdf_intent(msg):
+            if "plan semanal" in msg.lower() or "estrategia" in msg.lower():
+                parts.append("su plan semanal de estrategia")
+            else:
+                parts.append("un plan o entregable que pidió")
+        elif is_casual_chat_interrupt(msg):
+            parts.append("algo personal, como un dolor de cabeza")
+    if not parts:
+        return None
+    unique: list[str] = []
+    for part in parts:
+        if part not in unique:
+            unique.append(part)
+    return "Claro. En esta misma charla, " + " y ".join(unique[:2]) + "."
+
+
+def build_conversation_recall_reply(
+    user_id: str,
+    text: str,
+    *,
+    channel: str = "text",
+    history: list[dict[str, str]] | None = None,
+) -> str:
+    """Respuesta natural cuando preguntan por la conversación anterior — sin tool_code."""
+    memory = get_last_session_memory(user_id)
+    prefix = "Sí, señor." if channel == "voice" else "Claro."
+    closing = (
+        " ¿Desea retomarlo o hay algo nuevo?"
+        if channel == "voice"
+        else " ¿Quiere retomarlo o hay algo en lo que le ayude ahora?"
+    )
+
+    if memory:
+        when = calculate_days_ago(memory.get("created_at"))
+        topics = memory.get("topics") or []
+        snippet = humanize_session_summary_for_user(str(memory.get("summary") or ""), topics)
+        if snippet:
+            when_label = when[0].upper() + when[1:] if when.startswith("hace") else when
+            body = f"{prefix} {when_label}, {snippet.rstrip('.')}."
+            return body + closing
+
+    same_session = _recall_from_current_history(history)
+    if same_session:
+        return same_session + closing
+
+    query = _extract_recall_query(text)
+    from app.services.conversation_memory import format_recall_for_voice, recall_previous_conversations
+
+    conv = recall_previous_conversations(user_id, query or text, days_back=30)
+    if conv.get("ok") and conv.get("results"):
+        spoken = format_recall_for_voice(conv)
+        if spoken and "no encontré" not in spoken.lower():
+            natural = spoken.replace("Recuerdo esto: ", "recuerdo que ", 1)
+            return f"{prefix} {natural.rstrip('.')}.{closing}"
+
+    from app.services.cognitive_memory import search_memory
+
+    mem = search_memory(user_id, query or text, limit=3)
+    items = mem.get("results") or []
+    if items:
+        bits = [f"{i.get('key', 'dato')}: {str(i.get('content') or '')[:120]}" for i in items[:2]]
+        return f"{prefix} Recuerdo que {'; '.join(bits)}.{closing}"
+
+    if channel == "voice":
+        return "Aún no tengo una sesión anterior guardada con detalle, señor."
+    return (
+        "Todavía no tengo guardada una conversación anterior con detalle. "
+        "Cuando cerremos esta charla, la recordaré la próxima vez."
+    )
+
+
 def build_memory_greeting(user_id: str) -> str | None:
     memory = get_last_session_memory(user_id)
     if not memory:
@@ -484,13 +637,15 @@ def build_memory_greeting(user_id: str) -> str | None:
 
     when = calculate_days_ago(memory.get("created_at"))
     topics = memory.get("topics") or []
-    topic_label = str(topics[0]).strip() if topics else "nuestro último tema"
-    summary = sanitize_public_summary(str(memory.get("summary") or ""))
+    snippet = humanize_session_summary_for_user(str(memory.get("summary") or ""), topics)
+    if not snippet:
+        topic_label = str(topics[0]).strip() if topics else "nuestro último tema"
+        snippet = f"hablamos de {topic_label}"
 
-    if summary:
-        body = f"La última vez, {when}, {summary}"
-    else:
-        body = f"La última vez, {when}, hablamos de {topic_label}."
+    if len(snippet) > _WELCOME_SUMMARY_MAX:
+        snippet = snippet[: _WELCOME_SUMMARY_MAX - 1].rsplit(" ", 1)[0] + "…"
+
+    body = f"La última vez, {when}, {snippet.rstrip('.')}."
     return (
         f"Bienvenido de nuevo. {body} "
         "¿En qué te ayudo hoy? Puedo seguir con eso o lo que necesites."

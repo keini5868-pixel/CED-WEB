@@ -455,7 +455,7 @@ def format_recall_for_voice(data: dict[str, Any]) -> str:
             lines.append(f"{hit.get('key')}: {hit.get('content')}")
         else:
             lines.append(str(hit.get("content") or "")[:200])
-    return "Recuerdo esto: " + ". ".join(lines)
+    return "recuerdo que " + ". ".join(lines)
 
 
 def _summarize_with_claude(messages_text: str) -> dict[str, Any] | None:

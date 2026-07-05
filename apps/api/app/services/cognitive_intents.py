@@ -164,10 +164,25 @@ MEMORY_SAVE_PATTERNS = [
 
 MEMORY_RECALL_PATTERNS = [
     r"\bqu[eé] recuerdas\b",
+    r"\bme recuerdas\b",
+    r"\brecuerdas\b.*\b(conversaci[oó]n|charla|sesi[oó]n|hablamos|cuando)\b",
+    r"\bconversaci[oó]n\s+anterior\b",
+    r"\b[uú]ltima\s+conversaci[oó]n\b",
+    r"\bte acuerdas\b",
+    r"\bde qu[eé] hablamos\b",
+    r"\bqu[eé] hablamos\b",
     r"\bqu[eé] guardaste\b",
     r"\brecupera\b.*\bmemoria\b",
     r"\bbusca(r)?\s+en memoria\b",
 ]
+
+
+def is_conversation_recall_intent(text: str) -> bool:
+    """Pregunta explícita por conversaciones o memorias previas."""
+    t = normalize_text(text)
+    if len(t) < 8:
+        return False
+    return _matches(t, MEMORY_RECALL_PATTERNS)
 
 META_PATTERNS = [
     r"\bpublica(r|me)?\b.*\b(instagram|facebook|ig|fb|redes)\b",
