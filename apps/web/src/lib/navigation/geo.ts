@@ -3,11 +3,16 @@ import type { NavLatLng } from "@/lib/api/navigation";
 const EARTH_RADIUS_M = 6_371_000;
 
 /** Distancia para anunciar el giro (CED habla la instrucción). */
-export const NAV_ANNOUNCE_DISTANCE_M = 200;
+export const NAV_ANNOUNCE_DISTANCE_M = 300;
 /** Distancia para marcar un step como completado. */
 export const NAV_STEP_COMPLETE_M = 50;
 /** Distancia para considerar llegada al destino. */
 export const NAV_ARRIVAL_DISTANCE_M = 50;
+
+/** Zoom / cámara en navegación activa (estilo Google Maps). */
+export const NAV_FOLLOW_ZOOM = 18;
+export const NAV_FOLLOW_TILT = 0;
+export const NAV_IDLE_ZOOM = 15;
 
 export function distanceMeters(a: NavLatLng, b: NavLatLng): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -56,6 +61,36 @@ export function closestPathIndex(path: NavLatLng[], point: NavLatLng): number {
     }
   }
   return bestIdx;
+}
+
+export function navigationHeading(
+  position: NavLatLng,
+  path: NavLatLng[],
+  gpsHeading: number | null | undefined,
+  speedMps: number | null | undefined = null,
+): number {
+  let routeHeading: number | null = null;
+  if (path.length) {
+    const idx = closestPathIndex(path, position);
+    const next = path[Math.min(idx + 1, path.length - 1)] ?? position;
+    if (next.lat !== position.lat || next.lng !== position.lng) {
+      routeHeading = bearingDegrees(position, next);
+    }
+  }
+
+  if (
+    speedMps != null &&
+    speedMps > 2 &&
+    gpsHeading != null &&
+    !Number.isNaN(gpsHeading)
+  ) {
+    return gpsHeading;
+  }
+  if (routeHeading != null) return routeHeading;
+  if (gpsHeading != null && !Number.isNaN(gpsHeading)) {
+    return gpsHeading;
+  }
+  return 0;
 }
 
 export function cancelBrowserNavigationSpeech(): void {

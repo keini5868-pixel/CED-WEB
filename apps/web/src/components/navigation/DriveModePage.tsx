@@ -314,7 +314,6 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
     const processNavAction = (detail: { action?: string; payload?: unknown }) => {
       if (detail?.action === "apply_route" && detail.payload) {
         applyRouteFromServer(detail.payload as NavRoute);
-        beginNavigation();
       }
       if (detail?.action === "begin_navigation") {
         beginNavigation();
@@ -415,15 +414,13 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
       />
 
       {ui.navPanel && mapNav.route ? (
-        <div className="pointer-events-auto absolute left-0 right-0 top-0 z-[120]">
-          <NavigationPanel
-            route={mapNav.route}
-            position={position}
-            onStop={() => void handleStopNavigation()}
-            busy={navBusy}
-            voiceCue={navVoiceCue}
-          />
-        </div>
+        <NavigationPanel
+          route={mapNav.route}
+          position={position}
+          onStop={() => void handleStopNavigation()}
+          busy={navBusy}
+          voiceCue={navVoiceCue}
+        />
       ) : null}
 
       <div className="pointer-events-none relative z-[110] flex h-full flex-col">

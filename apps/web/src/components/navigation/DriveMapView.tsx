@@ -13,7 +13,14 @@ import {
 } from "@/lib/maps/advancedMarkers";
 import type { NavLatLng, NavPlaceOption, NavRoute } from "@/lib/api/navigation";
 import type { MapState } from "@/lib/navigation/mapState";
-import { closestPathIndex, installMapSpeechSilencer } from "@/lib/navigation/geo";
+import {
+  closestPathIndex,
+  installMapSpeechSilencer,
+  NAV_FOLLOW_TILT,
+  NAV_FOLLOW_ZOOM,
+  NAV_IDLE_ZOOM,
+  navigationHeading,
+} from "@/lib/navigation/geo";
 
 type DriveMapViewProps = {
   position: GeoPosition | null;
@@ -25,17 +32,17 @@ type DriveMapViewProps = {
 };
 
 const DEFAULT_CENTER = { lat: 35.2271, lng: -80.8431 };
-const NAV_ZOOM = 17;
+const ROUTE_STROKE = "#4285F4";
 
 const MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: "geometry", stylers: [{ color: "#0a0a0a" }] },
   { elementType: "labels.text.stroke", stylers: [{ color: "#0a0a0a" }] },
-  { elementType: "labels.text.fill", stylers: [{ color: "#00ffff" }] },
+  { elementType: "labels.text.fill", stylers: [{ color: "#9ca3af" }] },
   { featureType: "road", elementType: "geometry", stylers: [{ color: "#1a1a2e" }] },
   {
     featureType: "road",
     elementType: "geometry.stroke",
-    stylers: [{ color: "#00ffff" }],
+    stylers: [{ color: "#334155" }],
   },
   { featureType: "road.highway", elementType: "geometry", stylers: [{ color: "#16213e" }] },
   { featureType: "water", elementType: "geometry", stylers: [{ color: "#0e7490" }] },
@@ -89,6 +96,50 @@ function resetMapBearing(map: google.maps.Map) {
   map.setTilt(0);
 }
 
+function applyMapAppearance(map: google.maps.Map, mapState: MapState) {
+  const dark = { colorScheme: google.maps.ColorScheme.DARK };
+
+  if (mapState === "ruta_lista") {
+    map.setMapTypeId(google.maps.MapTypeId.SATELLITE);
+    map.setOptions({ ...dark, gestureHandling: "greedy" });
+    return;
+  }
+
+  if (mapState === "navegando") {
+    map.setMapTypeId(google.maps.MapTypeId.HYBRID);
+    map.setOptions({ ...dark, gestureHandling: "none" });
+    return;
+  }
+
+  map.setMapTypeId(google.maps.MapTypeId.ROADMAP);
+  map.setOptions({ ...dark, gestureHandling: "greedy" });
+}
+
+/** Mapa se mueve debajo de la flecha — usuario siempre centrado. */
+function followNavigationCamera(
+  map: google.maps.Map,
+  position: GeoPosition,
+  path: NavLatLng[],
+) {
+  const user = { lat: position.lat, lng: position.lng };
+  const heading = navigationHeading(user, path, position.heading, position.speed);
+
+  if (typeof map.moveCamera === "function") {
+    map.moveCamera({
+      center: user,
+      zoom: NAV_FOLLOW_ZOOM,
+      heading,
+      tilt: NAV_FOLLOW_TILT,
+    });
+    return;
+  }
+
+  map.setZoom(NAV_FOLLOW_ZOOM);
+  map.setTilt(NAV_FOLLOW_TILT);
+  map.setHeading(heading);
+  map.panTo(user);
+}
+
 export function DriveMapView({
   position,
   route = null,
@@ -106,8 +157,7 @@ export function DriveMapView({
   const routeFittedRef = useRef(false);
   const searchFittedRef = useRef(false);
   const idleCenteredRef = useRef(false);
-  const followUserRef = useRef(false);
-  const mapRotatesRef = useRef(true);
+  const navCameraReadyRef = useRef(false);
   const routePathRef = useRef<NavLatLng[]>([]);
   const [mapsReady, setMapsReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -125,15 +175,14 @@ export function DriveMapView({
 
         mapRef.current = new google.maps.Map(containerRef.current, {
           center: DEFAULT_CENTER,
-          zoom: 15,
+          zoom: NAV_IDLE_ZOOM,
           mapId: CED_MAP_ID,
-          disableDefaultUI: false,
-          zoomControl: true,
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: false,
-          gestureHandling: "greedy",
+          mapTypeId: google.maps.MapTypeId.ROADMAP,
+          colorScheme: google.maps.ColorScheme.DARK,
+          backgroundColor: "#0a0a0a",
           styles: MAP_STYLES,
+          disableDefaultUI: true,
+          gestureHandling: "greedy",
         });
 
         markerRef.current = await createUserLocationMarker(mapRef.current, DEFAULT_CENTER);
@@ -152,21 +201,26 @@ export function DriveMapView({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!mapsReady || !map) return;
+    applyMapAppearance(map, mapState);
+
     if (mapState !== "navegando") {
       routeFittedRef.current = false;
-      followUserRef.current = false;
+      navCameraReadyRef.current = false;
       routePathRef.current = [];
-      if (map) resetMapBearing(map);
+      resetMapBearing(map);
     }
     if (mapState !== "searching") searchFittedRef.current = false;
     if (mapState === "idle") idleCenteredRef.current = false;
-  }, [mapState]);
+  }, [mapsReady, mapState]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!mapsReady || !map || !position || mapState !== "idle") return;
     if (!idleCenteredRef.current) {
-      map.setZoom(14);
+      map.setZoom(NAV_IDLE_ZOOM);
+      map.setTilt(0);
+      map.setHeading(0);
       map.panTo({ lat: position.lat, lng: position.lng });
       idleCenteredRef.current = true;
     }
@@ -180,28 +234,42 @@ export function DriveMapView({
     const latLng = { lat: position.lat, lng: position.lng };
     marker.position = latLng;
 
-    const navigating = mapState === "navegando";
-    const heading = position.heading;
-    mapRotatesRef.current = true;
-
-    if (navigating) {
-      if (!followUserRef.current) {
-        followUserRef.current = true;
-        map.setZoom(NAV_ZOOM);
-      }
-
-      map.panTo(latLng);
-
-      if (heading != null) {
-        map.setHeading(heading);
-      }
-
-      marker.content = createUserLocationContent(heading, true, mapRotatesRef.current);
+    if (mapState === "navegando") {
+      const path =
+        routePathRef.current.length > 1
+          ? routePathRef.current
+          : route
+            ? routePathPoints(route, position)
+            : [];
+      const heading = navigationHeading(latLng, path, position.heading, position.speed);
+      followNavigationCamera(map, position, path);
+      navCameraReadyRef.current = true;
+      marker.content = createUserLocationContent(heading, true, true);
       return;
     }
 
-    marker.content = createUserLocationContent(heading, false, false);
-  }, [position, mapState]);
+    marker.content = createUserLocationContent(position.heading, false, false);
+  }, [
+    position?.lat,
+    position?.lng,
+    position?.heading,
+    position?.speed,
+    mapState,
+    route,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || mapState !== "navegando" || !position) return;
+    const path =
+      routePathRef.current.length > 1
+        ? routePathRef.current
+        : route
+          ? routePathPoints(route, position)
+          : [];
+    if (path.length < 2) return;
+    followNavigationCamera(map, position, path);
+  }, [mapState, route, position?.lat, position?.lng, position?.heading]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -263,9 +331,9 @@ export function DriveMapView({
         routePolylineRef.current = new google.maps.Polyline({
           map,
           path,
-          strokeColor: "#00e5ff",
+          strokeColor: ROUTE_STROKE,
           strokeOpacity: 0.95,
-          strokeWeight: 5,
+          strokeWeight: 6,
           zIndex: 50,
         });
       }
@@ -293,21 +361,11 @@ export function DriveMapView({
       routePolylineRef.current = new google.maps.Polyline({
         map,
         path: drawPath,
-        strokeColor: "#00e5ff",
+        strokeColor: ROUTE_STROKE,
         strokeOpacity: 0.95,
-        strokeWeight: 5,
+        strokeWeight: 6,
         zIndex: 50,
       });
-    }
-
-    if (!routeFittedRef.current && position) {
-      map.setZoom(NAV_ZOOM);
-      map.panTo({ lat: position.lat, lng: position.lng });
-      if (position.heading != null) {
-        map.setHeading(position.heading);
-      }
-      routeFittedRef.current = true;
-      followUserRef.current = true;
     }
   }, [mapsReady, route, mapState, position?.lat, position?.lng, position?.heading]);
 

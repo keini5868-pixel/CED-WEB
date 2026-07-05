@@ -124,6 +124,23 @@ def _push_map_start_navigation(
     vcs.push_tool_event(user_id, event)
 
 
+def _begin_active_navigation(user_id: str, route: dict[str, Any]) -> dict[str, Any]:
+    set_navigating(user_id, True)
+    clear_navigation_pending(user_id)
+    push_client_action(user_id, "begin_navigation", {})
+    dest_label = str(route.get("destination", {}).get("label") or "su destino")
+    _push_map_start_navigation(
+        user_id,
+        destination=dest_label,
+        action="begin_navigation",
+    )
+    return {
+        "ok": True,
+        "spoken": f"Iniciando navegación hacia {dest_label}, señor.",
+        "client_action": "begin_navigation",
+    }
+
+
 async def _start_route_for_user(
     user_id: str,
     *,
@@ -154,7 +171,7 @@ async def _start_route_for_user(
             error="route_failed",
         )
     set_route(user_id, route)
-    set_navigating(user_id, True)
+    set_navigating(user_id, False)
     clear_place_options(user_id)
     clear_navigation_pending(user_id)
     push_client_action(user_id, "apply_route", route)
@@ -165,11 +182,10 @@ async def _start_route_for_user(
         action="apply_route",
         route=route,
     )
-    first = (route.get("steps") or [{}])[0]
-    first_line = str(first.get("instruction") or "Siga la ruta indicada").strip()
     spoken = fit_voice_spoken(
-        f"Iniciando navegación, señor. {first_line}. "
-        f"Tiempo estimado: {route.get('duration_text', '')}."
+        f"Ruta lista hacia {dest_label}, señor. "
+        f"{route.get('duration_text', '')} · {route.get('distance_text', '')}. "
+        f"Dígame «iniciar» o pulse Iniciar cuando quiera."
     )
     return {
         "ok": True,
@@ -969,41 +985,20 @@ async def execute_voice_tool(
                 "iniciar ruta",
             }
             existing_route = get_route(user_id)
-            if existing_route and destino.lower() in confirm_words:
-                set_navigating(user_id, True)
-                clear_navigation_pending(user_id)
-                push_client_action(user_id, "begin_navigation", {})
-                dest_label = str(
-                    existing_route.get("destination", {}).get("label") or "su destino"
-                )
-                _push_map_start_navigation(
-                    user_id,
-                    destination=dest_label,
-                    action="begin_navigation",
-                )
-                return {
-                    "ok": True,
-                    "spoken": f"Iniciando navegación hacia {dest_label}, señor.",
-                    "client_action": "begin_navigation",
-                }
+            explicit_confirm = params.get("confirm") is True
+            if existing_route and (
+                explicit_confirm or destino.lower() in confirm_words
+            ):
+                return _begin_active_navigation(user_id, existing_route)
             if not destino:
                 if existing_route:
-                    set_navigating(user_id, True)
-                    clear_navigation_pending(user_id)
-                    push_client_action(user_id, "begin_navigation", {})
                     dest_label = str(
                         existing_route.get("destination", {}).get("label") or "su destino"
                     )
-                    _push_map_start_navigation(
-                        user_id,
-                        destination=dest_label,
-                        action="begin_navigation",
+                    return _spoken_ok(
+                        f"Ruta lista hacia {dest_label}, señor. "
+                        f"Dígame «iniciar» o pulse Iniciar cuando quiera."
                     )
-                    return {
-                        "ok": True,
-                        "spoken": f"Iniciando navegación hacia {dest_label}, señor.",
-                        "client_action": "begin_navigation",
-                    }
                 if options:
                     return _spoken_ok(
                         "Tiene opciones en pantalla, señor. Diga el primero, el segundo "

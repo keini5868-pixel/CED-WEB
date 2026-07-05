@@ -168,7 +168,9 @@ class MapModule(BaseModule):
             action = str(nav_confirm.get("action") or "")
             if action == "begin_navigation":
                 tool_result = await asyncio.wait_for(
-                    execute_voice_tool("start_navigation", user_id, {}),
+                    execute_voice_tool(
+                        "start_navigation", user_id, {"confirm": True}
+                    ),
                     timeout=NAVIGATION_TIMEOUT_SEC,
                 )
             else:

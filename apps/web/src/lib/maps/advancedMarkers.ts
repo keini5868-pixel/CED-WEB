@@ -28,14 +28,18 @@ export function createUserLocationContent(
 
   if (navigating) {
     const arrow = document.createElement("div");
-    arrow.textContent = "▲";
-    arrow.style.color = "#00ffff";
-    arrow.style.fontSize = "24px";
-    arrow.style.fontWeight = "700";
-    arrow.style.lineHeight = "1";
-    arrow.style.textShadow = "0 1px 4px rgba(0,0,0,0.85)";
-    arrow.style.transform = mapRotates ? "rotate(0deg)" : `rotate(${heading ?? 0}deg)`;
+    arrow.style.width = "0";
+    arrow.style.height = "0";
+    arrow.style.borderLeft = "12px solid transparent";
+    arrow.style.borderRight = "12px solid transparent";
+    arrow.style.borderBottom = "24px solid #4285F4";
+    arrow.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.5))";
     arrow.style.transformOrigin = "center center";
+    if (!mapRotates) {
+      arrow.style.transform = `rotate(${heading ?? 0}deg)`;
+    }
+    wrap.style.width = "28px";
+    wrap.style.height = "28px";
     wrap.appendChild(arrow);
   } else {
     const dot = document.createElement("div");

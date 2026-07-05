@@ -159,6 +159,7 @@ async def navigation_route(
         return route
 
     nav_session.set_route(user_id, route)
+    nav_session.set_navigating(user_id, False)
     nav_session.push_client_action(user_id, "apply_route", route)
     return route
 
@@ -280,6 +281,7 @@ async def navigation_start_option(
     if not route.get("ok"):
         return route
     nav_session.set_route(user_id, route)
+    nav_session.set_navigating(user_id, False)
     nav_session.clear_place_options(user_id)
     nav_session.push_client_action(user_id, "apply_route", route)
     return route

@@ -18,7 +18,7 @@ type GeolocationState = {
 
 const WATCH_OPTIONS: PositionOptions = {
   enableHighAccuracy: true,
-  maximumAge: 1000,
+  maximumAge: 500,
   timeout: 5000,
 };
 

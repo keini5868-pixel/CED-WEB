@@ -8,6 +8,6 @@ from app.services.navigation_voice import (
 
 
 def test_navigation_voice_distance_thresholds():
-    assert ANNOUNCE_DISTANCE_M == 200
+    assert ANNOUNCE_DISTANCE_M == 300
     assert ADVANCE_STEP_M == 50
     assert ARRIVAL_DISTANCE_M == 50
