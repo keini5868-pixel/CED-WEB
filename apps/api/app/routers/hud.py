@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
@@ -121,6 +121,25 @@ async def hud_create_calendar_event(
     except Exception as exc:  # noqa: BLE001
         logger.exception("[HUD] calendar event failed")
         raise HTTPException(status_code=502, detail="No se pudo crear el evento.") from exc
+
+
+@router.get("/hud/gmail/messages")
+async def hud_gmail_messages(
+    category: str = Query(default="primary"),
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    from app.services.google_gmail_api import get_gmail_emails
+
+    allowed = {"primary", "promotions", "social", "updates", "forums"}
+    cat = category if category in allowed else "primary"
+    return get_gmail_emails(user_id, cat)  # type: ignore[arg-type]
+
+
+@router.get("/hud/calendar/events")
+async def hud_calendar_events(user_id: str = Depends(require_user_id)) -> dict:
+    from app.services.google_calendar_api import get_calendar_events
+
+    return get_calendar_events(user_id)
 
 
 @router.post("/hud/gmail/send")

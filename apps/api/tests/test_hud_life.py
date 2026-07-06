@@ -82,12 +82,23 @@ def test_calendar_connected_when_token_exists():
                 return_value=(datetime.now(timezone.utc), datetime.now(timezone.utc)),
             ):
                 with patch(
-                    "app.services.google_calendar_api.list_events",
-                    return_value=["9:00 AM — Reunión"],
+                    "app.services.google_calendar_api.list_events_structured",
+                    return_value=[
+                        {
+                            "id": "1",
+                            "title": "Reunión",
+                            "display": "9:00 AM — Reunión",
+                            "is_today": True,
+                        }
+                    ],
                 ):
-                    from app.services.hud_life import _calendar_section
+                    with patch(
+                        "app.services.google_oauth.get_connection_status",
+                        return_value={"connected": True},
+                    ):
+                        from app.services.hud_life import _calendar_section
 
-                    section = _calendar_section("user-1")
+                        section = _calendar_section("user-1")
     assert section["connected"] is True
     assert "Reunión" in section["events"][0]
 

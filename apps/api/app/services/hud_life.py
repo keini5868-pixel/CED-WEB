@@ -108,53 +108,66 @@ def check_gmail_token(user_id: str) -> bool:
 
 
 def _calendar_section(user_id: str) -> dict[str, Any]:
-    connected = check_calendar_token(user_id)
+    from app.services.google_calendar_api import get_calendar_events
+
+    snapshot = get_calendar_events(user_id)
+    connected = bool(snapshot.get("connected"))
     section: dict[str, Any] = {
         "connected": connected,
         "events": [],
+        "today_events": [],
+        "week_events": [],
         "hint": "" if connected else "Conectar Calendar en CFG ⚙️",
     }
     if not connected:
         return section
-    try:
-        from app.services.google_calendar_api import list_events, resolve_window
-        from app.services.google_oauth import get_valid_access_token
 
-        token = get_valid_access_token("calendar", user_id)
-        start, end = resolve_window("today")
-        events = list_events(token, time_min=start, time_max=end, max_results=6)
-        section["events"] = events or ["Sin eventos programados para hoy."]
-    except Exception:  # noqa: BLE001
-        logger.warning("[LIFE] calendar load failed user=%s", user_id[:8], exc_info=True)
-        section["events"] = ["No se pudieron cargar eventos ahora."]
+    today_events = snapshot.get("today_events") or []
+    week_events = snapshot.get("week_events") or []
+    all_events = snapshot.get("events") or []
+
+    section["today_events"] = [
+        e.get("display", e.get("title", "")) if isinstance(e, dict) else str(e)
+        for e in today_events
+    ]
+    section["week_events"] = [
+        e.get("display", e.get("title", "")) if isinstance(e, dict) else str(e)
+        for e in week_events
+    ]
+    section["events"] = [
+        e.get("display", e.get("title", "")) if isinstance(e, dict) else str(e)
+        for e in all_events
+    ]
+    if snapshot.get("error"):
+        section["error"] = str(snapshot["error"])[:200]
     return section
 
 
 def _gmail_section(user_id: str) -> dict[str, Any]:
-    connected = check_gmail_token(user_id)
+    from app.services.google_gmail_api import get_gmail_emails
+
+    primary = get_gmail_emails(user_id, "primary")
+    connected = bool(primary.get("connected"))
     section: dict[str, Any] = {
         "connected": connected,
-        "unread_count": 0,
+        "unread_count": primary.get("count", 0),
         "messages": [],
+        "category": "primary",
+        "items": primary.get("messages") or [],
         "hint": "" if connected else "Conectar Gmail en CFG ⚙️",
     }
     if not connected:
         return section
-    try:
-        from app.services.google_gmail_api import list_messages
-        from app.services.google_oauth import get_valid_access_token
 
-        token = get_valid_access_token("gmail", user_id)
-        msgs = list_messages(token, query="is:unread", max_results=5)
-        section["unread_count"] = len(msgs)
-        section["messages"] = [
-            f"{m.get('from', '?')} — {m.get('subject', '(sin asunto)')}" for m in msgs[:3]
-        ]
-        if not msgs:
-            section["messages"] = ["Bandeja al día — sin correos sin leer."]
-    except Exception:  # noqa: BLE001
-        logger.warning("[LIFE] gmail load failed user=%s", user_id[:8], exc_info=True)
-        section["messages"] = ["No se pudieron cargar correos ahora."]
+    items = primary.get("messages") or []
+    section["messages"] = [
+        f"{m.get('from', '?')} — {m.get('subject', '(sin asunto)')}"
+        for m in items[:3]
+    ]
+    if not items:
+        section["messages"] = ["Bandeja Principal al día — sin correos recientes."]
+    if primary.get("error"):
+        section["error"] = str(primary["error"])[:200]
     return section
 
 

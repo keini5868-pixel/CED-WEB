@@ -40,8 +40,19 @@ function mergeConnectionSlice(
   return {
     ...prev,
     updated_at: conn.updated_at || prev.updated_at,
-    calendar: { ...prev.calendar, ...conn.calendar, title: "CALENDARIO" },
-    gmail: { ...prev.gmail, ...conn.gmail, title: "GMAIL" },
+    calendar: {
+      ...prev.calendar,
+      ...conn.calendar,
+      title: "CALENDARIO",
+      today_events: conn.calendar.today_events ?? prev.calendar.today_events,
+      week_events: conn.calendar.week_events ?? prev.calendar.week_events,
+    },
+    gmail: {
+      ...prev.gmail,
+      ...conn.gmail,
+      title: "GMAIL",
+      items: conn.gmail.items ?? prev.gmail.items,
+    },
   };
 }
 

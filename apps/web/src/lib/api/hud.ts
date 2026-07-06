@@ -17,17 +17,47 @@ export type LifeDashboardSnapshot = {
     title: string;
     connected: boolean;
     events: string[];
+    today_events?: string[];
+    week_events?: string[];
     hint?: string;
+    error?: string;
   };
   gmail: {
     title: string;
     connected: boolean;
     unread_count: number;
     messages: string[];
+    items?: GmailHudMessage[];
+    category?: GmailCategory;
     hint?: string;
+    error?: string;
   };
   air_quality: { title: string; lines: string[] };
   pollen: { title: string; lines: string[] };
+};
+
+export type GmailCategory =
+  | "primary"
+  | "promotions"
+  | "social"
+  | "updates"
+  | "forums";
+
+export type GmailHudMessage = {
+  id: string;
+  from: string;
+  subject: string;
+  date: string;
+  snippet?: string;
+};
+
+export type CalendarHudEvent = {
+  id?: string;
+  title: string;
+  datetime?: string;
+  location?: string;
+  display?: string;
+  is_today?: boolean;
 };
 
 async function authHeaders(): Promise<HeadersInit | null> {
@@ -144,10 +174,18 @@ function normalizeLifeSnapshot(raw: Record<string, unknown>): LifeDashboardSnaps
       events: Array.isArray(calendarRaw.events)
         ? calendarRaw.events.map((e) => String(e))
         : [],
+      today_events: Array.isArray(calendarRaw.today_events)
+        ? calendarRaw.today_events.map((e) => String(e))
+        : [],
+      week_events: Array.isArray(calendarRaw.week_events)
+        ? calendarRaw.week_events.map((e) => String(e))
+        : [],
       hint:
         typeof calendarRaw.hint === "string" && calendarRaw.hint
           ? calendarRaw.hint
           : fallback.calendar.hint,
+      error:
+        typeof calendarRaw.error === "string" ? calendarRaw.error : undefined,
     },
     gmail: {
       title: "GMAIL",
@@ -156,10 +194,18 @@ function normalizeLifeSnapshot(raw: Record<string, unknown>): LifeDashboardSnaps
       messages: Array.isArray(gmailRaw.messages)
         ? gmailRaw.messages.map((m) => String(m))
         : [],
+      items: Array.isArray(gmailRaw.items)
+        ? (gmailRaw.items as GmailHudMessage[])
+        : [],
+      category:
+        typeof gmailRaw.category === "string"
+          ? (gmailRaw.category as GmailCategory)
+          : "primary",
       hint:
         typeof gmailRaw.hint === "string" && gmailRaw.hint
           ? gmailRaw.hint
           : fallback.gmail.hint,
+      error: typeof gmailRaw.error === "string" ? gmailRaw.error : undefined,
     },
     air_quality: {
       title: "CALIDAD DEL AIRE",
@@ -225,8 +271,16 @@ export async function fetchHudConnections(): Promise<
         events: Array.isArray(calendarRaw.events)
           ? calendarRaw.events.map((e) => String(e))
           : [],
+        today_events: Array.isArray(calendarRaw.today_events)
+          ? calendarRaw.today_events.map((e) => String(e))
+          : [],
+        week_events: Array.isArray(calendarRaw.week_events)
+          ? calendarRaw.week_events.map((e) => String(e))
+          : [],
         hint:
           typeof calendarRaw.hint === "string" ? calendarRaw.hint : undefined,
+        error:
+          typeof calendarRaw.error === "string" ? calendarRaw.error : undefined,
       },
       gmail: {
         title: "GMAIL",
@@ -235,7 +289,16 @@ export async function fetchHudConnections(): Promise<
         messages: Array.isArray(gmailRaw.messages)
           ? gmailRaw.messages.map((m) => String(m))
           : [],
+        items: Array.isArray(gmailRaw.items)
+          ? (gmailRaw.items as GmailHudMessage[])
+          : [],
+        category:
+          typeof gmailRaw.category === "string"
+            ? (gmailRaw.category as GmailCategory)
+            : "primary",
         hint: typeof gmailRaw.hint === "string" ? gmailRaw.hint : undefined,
+        error:
+          typeof gmailRaw.error === "string" ? gmailRaw.error : undefined,
       },
     };
   } catch {
@@ -265,6 +328,82 @@ export async function fetchHudLife(): Promise<LifeDashboardSnapshot> {
     return mergeGoogleConnectionStatus(normalizeLifeSnapshot(raw));
   } catch {
     return mergeGoogleConnectionStatus(createLifeFallback());
+  }
+}
+
+export async function fetchHudGmailMessages(
+  category: GmailCategory = "primary",
+): Promise<{
+  connected: boolean;
+  messages: GmailHudMessage[];
+  count: number;
+  error?: string;
+}> {
+  try {
+    const res = await proxyFetchAuthed(
+      `hud/gmail/messages?category=${encodeURIComponent(category)}`,
+    );
+    if (!res.ok) {
+      return { connected: false, messages: [], count: 0 };
+    }
+    const raw = (await res.json()) as Record<string, unknown>;
+    const items = Array.isArray(raw.messages) ? raw.messages : [];
+    return {
+      connected: Boolean(raw.connected),
+      messages: items.map((m) => {
+        const msg = m as Record<string, unknown>;
+        return {
+          id: String(msg.id ?? ""),
+          from: String(msg.from ?? "?"),
+          subject: String(msg.subject ?? "(sin asunto)"),
+          date: String(msg.date ?? ""),
+          snippet: msg.snippet ? String(msg.snippet) : undefined,
+        };
+      }),
+      count: Number(raw.count ?? items.length),
+      error: typeof raw.error === "string" ? raw.error : undefined,
+    };
+  } catch {
+    return { connected: false, messages: [], count: 0 };
+  }
+}
+
+export async function fetchHudCalendarEvents(): Promise<{
+  connected: boolean;
+  today_events: string[];
+  week_events: string[];
+  events: CalendarHudEvent[];
+  error?: string;
+}> {
+  try {
+    const res = await proxyFetchAuthed("hud/calendar/events");
+    if (!res.ok) {
+      return { connected: false, today_events: [], week_events: [], events: [] };
+    }
+    const raw = (await res.json()) as Record<string, unknown>;
+    const mapDisplay = (value: unknown) => {
+      if (typeof value === "string") return value;
+      if (value && typeof value === "object") {
+        const row = value as Record<string, unknown>;
+        return String(row.display ?? row.title ?? "");
+      }
+      return "";
+    };
+    return {
+      connected: Boolean(raw.connected),
+      today_events: Array.isArray(raw.today_events)
+        ? raw.today_events.map(mapDisplay).filter(Boolean)
+        : [],
+      week_events: Array.isArray(raw.week_events)
+        ? raw.week_events.map(mapDisplay).filter(Boolean)
+        : [],
+      events: Array.isArray(raw.events)
+        ? (raw.events as CalendarHudEvent[])
+        : [],
+      error: typeof raw.error === "string" ? raw.error : undefined,
+    };
+  } catch {
+    return { connected: false, today_events: [], week_events: [], events: [] };
   }
 }
 

@@ -62,9 +62,17 @@ def test_gmail_module_lists_important():
             return_value="token",
         ):
             with patch(
-                "app.modules.gmail_module.list_messages",
+                "app.modules.gmail_module.list_messages_by_category",
                 return_value=[
-                    {"id": "1", "from": "a@x.com", "subject": "Urgente", "date": "", "snippet": ""},
+                    {
+                        "id": "1",
+                        "from": "a@x.com",
+                        "from_name": "a",
+                        "subject": "Urgente",
+                        "date": "",
+                        "relative_date": "",
+                        "snippet": "",
+                    },
                 ],
             ):
                 return await module.activate(

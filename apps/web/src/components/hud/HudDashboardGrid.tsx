@@ -81,9 +81,9 @@ export function HudDashboardGrid() {
             </HudPanel>
           </div>
           <div className="col-span-6">
-            <HudSummaryPanelFrame>
-              <HudSummaryPanel />
-            </HudSummaryPanelFrame>
+            <HudPanel title="LIFE" className="min-h-[200px]">
+              <LifeDashboardPanel />
+            </HudPanel>
           </div>
           <div className="col-span-3">
             <HudPanel title="WAVES" className="min-h-[150px]">
@@ -91,9 +91,9 @@ export function HudDashboardGrid() {
             </HudPanel>
           </div>
           <div className="col-span-12">
-            <HudPanel title="LIFE" className="min-h-[280px]">
-              <LifeDashboardPanel />
-            </HudPanel>
+            <HudSummaryPanelFrame>
+              <HudSummaryPanel />
+            </HudSummaryPanelFrame>
           </div>
           <div className="col-span-12">
             <HudPanel title="USAGE" state="idle">

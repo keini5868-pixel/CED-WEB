@@ -2349,3 +2349,247 @@ def send_message(
         pdf=pdf_attachment,
         image=image_attachment,
     )
+
+
+def _sse_event(name: str, payload: dict[str, Any]) -> str:
+    return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _can_stream_chat_text(text: str) -> bool:
+    from app.modules.calendar_module import is_calendar_intent
+    from app.modules.environment_module import is_environment_intent
+    from app.modules.gmail_module import is_gmail_intent
+    from app.services.cognitive_intents import is_conversation_recall_intent
+    from app.services.hud_reminders import is_reminder_intent
+
+    if is_gmail_intent(text) or is_calendar_intent(text):
+        return False
+    if is_reminder_intent(text) or is_environment_intent(text):
+        return False
+    if is_conversation_recall_intent(text):
+        return False
+    if is_generate_image_intent(text) or is_pdf_intent(text):
+        return False
+    if _needs_chat_tools(text):
+        return False
+    return True
+
+
+def _gemini_simple_reply_stream(
+    *,
+    api_key: str,
+    model: str,
+    system: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
+):
+    from google import genai
+    from google.genai import types
+
+    contents: list[types.Content] = []
+    for msg in messages:
+        role = msg.get("role")
+        content = msg.get("content")
+        if not isinstance(content, str) or not content.strip():
+            continue
+        if role == "user":
+            contents.append(types.Content(role="user", parts=[types.Part(text=content)]))
+        elif role == "assistant":
+            contents.append(types.Content(role="model", parts=[types.Part(text=content)]))
+
+    if not contents:
+        raise TextChatError("Sin mensajes para el asistente.")
+
+    model_name = (model or CHAT_GEMINI_MODEL).strip() or CHAT_GEMINI_MODEL
+    client = genai.Client(api_key=api_key)
+    stream = client.models.generate_content_stream(
+        model=model_name,
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=_trim_system(system),
+            temperature=0.4,
+            max_output_tokens=max_tokens,
+        ),
+    )
+    for chunk in stream:
+        piece = getattr(chunk, "text", None) or ""
+        if piece:
+            yield piece
+
+
+def iter_send_message_stream(
+    user_id: str,
+    *,
+    content: str,
+    conversation_id: str | None = None,
+):
+    """Generador SSE — streaming Gemini para chat conversacional."""
+    text = content.strip()
+    if not text:
+        raise TextChatError("Mensaje vacío.")
+    if len(text) > 8000:
+        raise TextChatError("Mensaje demasiado largo.")
+
+    if not _can_stream_chat_text(text):
+        result = send_message(user_id, content=text, conversation_id=conversation_id)
+        yield _sse_event("done", result)
+        return
+
+    status = chat_status(user_id)
+    if status["blocked"]:
+        raise TextChatError(
+            "Alcanzaste el límite de mensajes de hoy. Mejora tu plan o vuelve mañana.",
+            http_status=429,
+        )
+
+    from app.deps.auth import is_super_admin
+    from app.deps.plan_access import chat_message_limit
+    from app.services.chat_rate_limit import check_chat_rate_limit
+
+    profile = supabase_db.get_profile(user_id) or {}
+    admin = is_super_admin(profile.get("email"), profile.get("role"))
+    unlimited_plan = chat_message_limit(user_id) < 0
+    if not admin and not unlimited_plan:
+        allowed, retry_after = check_chat_rate_limit(
+            user_id,
+            is_admin=admin,
+            unlimited_plan=unlimited_plan,
+        )
+        if not allowed:
+            raise TextChatError(
+                f"Has alcanzado el límite de mensajes. Espera {retry_after} segundos e intenta de nuevo.",
+                http_status=429,
+            )
+
+    settings = get_settings()
+    google_key = settings.google_api_key.strip()
+    anthropic_key = settings.anthropic_api_key.strip()
+    gemini_model = _gemini_chat_model()
+    if not google_key:
+        raise TextChatError(
+            "Servicio de chat no disponible. Configura GOOGLE_API_KEY en Railway.",
+            http_status=503,
+        )
+
+    if conversation_id:
+        conv = supabase_db.get_conversation(conversation_id, user_id)
+        if not conv or conv.get("channel") != "text":
+            raise TextChatError("Conversación no encontrada.")
+    else:
+        title = text[:48] + ("…" if len(text) > 48 else "")
+        conv = supabase_db.create_conversation(user_id, title=title, channel="text")
+        conversation_id = str(conv["id"])
+
+    history = supabase_db.get_conversation_messages(
+        conversation_id, user_id, limit=CHAT_HISTORY_LIMIT,
+    )
+    supabase_db.append_message(
+        conversation_id,
+        user_id,
+        "user",
+        text,
+        session_id=conversation_id,
+        channel="text",
+    )
+
+    route = route_message(user_id, text, channel="text")
+    if route.intent in ("memory_save", "memory_recall", "web_search") and route.speakable:
+        reply = _finalize_chat_reply(route.speakable)
+        supabase_db.append_message(
+            conversation_id, user_id, "model", reply,
+            session_id=conversation_id, channel="text",
+        )
+        yield _sse_event(
+            "done",
+            {
+                "conversation_id": conversation_id,
+                "reply": reply,
+                "usage": chat_status(user_id),
+                "cognitive": route.to_dict(),
+            },
+        )
+        return
+
+    messages = _anthropic_messages(history)
+    messages.append({"role": "user", "content": text})
+    try:
+        system = _build_chat_system(user_id, text, route, conversation_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("[CHAT] fallo armando system prompt — usando base")
+        system = _chat_system_for_user(user_id)
+
+    token_budget = _chat_max_tokens(text)
+    accumulated: list[str] = []
+    try:
+        for piece in _gemini_simple_reply_stream(
+            api_key=google_key,
+            model=gemini_model,
+            system=system,
+            messages=messages,
+            max_tokens=token_budget,
+        ):
+            accumulated.append(piece)
+            yield _sse_event("token", {"text": piece})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[CHAT] stream failed, fallback resilient: %s", exc)
+        accumulated = []
+
+    reply = "".join(accumulated).strip()
+    pdf_attachment: dict[str, Any] | None = None
+    image_attachment: dict[str, Any] | None = None
+    if not reply:
+        try:
+            reply, pdf_attachment, image_attachment = _complete_chat_resilient(
+                user_id,
+                user_text=text,
+                anthropic_key=anthropic_key,
+                google_key=google_key,
+                gemini_model=gemini_model,
+                system=system,
+                messages=messages,
+                conversation_id=conversation_id,
+            )
+        except TextChatError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[CHAT] stream fallback failed")
+            raise TextChatError(
+                "No pude conectar con el asistente. Intenta de nuevo en un momento.",
+                http_status=503,
+            ) from exc
+
+    reply, pdf_attachment, image_attachment = _ensure_chat_reply_no_kb_leak(
+        reply,
+        user_id=user_id,
+        user_text=text,
+        anthropic_key=anthropic_key,
+        google_key=google_key,
+        gemini_model=gemini_model,
+        system=system,
+        messages=messages,
+        conversation_id=conversation_id,
+        pdf_attachment=pdf_attachment,
+        image_attachment=image_attachment,
+    )
+    reply = _ensure_chat_reply_quality(reply, user_text=text)
+    reply = _finalize_chat_reply(reply)
+
+    supabase_db.append_message(
+        conversation_id,
+        user_id,
+        "model",
+        reply,
+        session_id=conversation_id,
+        channel="text",
+    )
+    payload: dict[str, Any] = {
+        "conversation_id": conversation_id,
+        "reply": reply,
+        "usage": chat_status(user_id),
+        "cognitive": route.to_dict(),
+    }
+    if pdf_attachment:
+        payload["pdf"] = pdf_attachment
+    if image_attachment:
+        payload["image"] = image_attachment
+    yield _sse_event("done", payload)

@@ -7,10 +7,12 @@ import re
 
 from app.modules.base_module import BaseModule
 from app.services.google_gmail_api import (
+    detect_gmail_category,
     extract_recipient,
     extract_sender_query,
     get_message_body,
     list_messages,
+    list_messages_by_category,
     send_message,
 )
 from app.services.google_oauth import get_valid_access_token
@@ -23,10 +25,21 @@ GMAIL_PATTERNS: tuple[str, ...] = (
     r"\b(?:emails?|correos?|gmail)\b",
     r"\b(?:tengo|hay)\s+.*(?:emails?|correos?)\b",
     r"\b(?:tengo|hay)\s+.*(?:emails?|correos?)\s+importantes\b",
+    r"\bl[eé]eme\s+(?:mis\s+)?(?:emails?|correos?)\b",
+    r"\b(?:qu[eé]|cu[aá]ntos)\s+.*(?:emails?|correos?)\b",
     r"\bl[eé]eme\s+(?:el\s+)?(?:email|correo)\b",
+    r"\bl[eé]e\s+(?:el\s+)?(?:de\s+)?",
     r"\benv[ií]a\s+(?:un\s+)?(?:email|correo)\b",
     r"\bmandar\s+(?:un\s+)?(?:email|correo)\b",
 )
+
+CATEGORY_LABELS = {
+    "primary": "Principal",
+    "promotions": "Promociones",
+    "social": "Social",
+    "updates": "Actualizaciones",
+    "forums": "Foros",
+}
 
 
 def is_gmail_intent(text: str) -> bool:
@@ -40,6 +53,48 @@ def _not_connected_message() -> str:
     return (
         "Señor, aún no tiene Gmail conectado. "
         "Use el botón Conectar Gmail en configuración de voz."
+    )
+
+
+def _summarize_inbox(access: str, category: str, *, max_results: int = 4) -> str:
+    messages = list_messages_by_category(access, category, max_results=max_results)  # type: ignore[arg-type]
+    label = CATEGORY_LABELS.get(category, "Principal")
+    if not messages:
+        return f"Señor, no tiene correos recientes en {label}."
+    count = len(messages)
+    parts: list[str] = []
+    for msg in messages[:3]:
+        from_name = msg.get("from_name") or msg.get("from", "?")
+        subject = msg.get("subject", "(sin asunto)")
+        when = msg.get("relative_date") or ""
+        segment = f"Uno de {from_name} con asunto «{subject}»"
+        if when:
+            segment += f", recibido {when.lower()}"
+        parts.append(segment)
+    nuevo = "nuevo" if count == 1 else "nuevos"
+    intro = f"Señor, tiene {count} email{'s' if count != 1 else ''} {nuevo} en {label}: "
+    body = ". ".join(parts)
+    return intro + body + ". ¿Desea que lea alguno completo?"
+
+
+def _read_sender_email(access: str, text: str) -> str:
+    sender = extract_sender_query(text)
+    query = f"from:{sender}" if sender else ""
+    messages = list_messages(access, query=query, max_results=3)
+    if not messages and sender:
+        for msg in list_messages_by_category(access, "primary", max_results=10):
+            haystack = f"{msg.get('from', '')} {msg.get('from_name', '')} {msg.get('subject', '')}".lower()
+            if sender.lower() in haystack:
+                messages = [msg]
+                break
+    if not messages:
+        return "Señor, no encontré correos con ese criterio."
+    msg = messages[0]
+    body = get_message_body(access, msg["id"])
+    from_name = msg.get("from_name") or msg.get("from", "?")
+    return (
+        f"Señor, de {from_name}: asunto «{msg['subject']}». "
+        f"{body[:800]}"
     )
 
 
@@ -63,28 +118,21 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
         )
         return f"Señor, envié el correo a {recipient}."
 
-    if re.search(r"l[eé]eme", t):
-        sender = extract_sender_query(text)
-        query = f"from:{sender}" if sender else ""
-        messages = list_messages(access, query=query, max_results=1)
-        if not messages:
-            return "Señor, no encontré correos con ese criterio."
-        msg = messages[0]
-        body = get_message_body(access, msg["id"])
-        return (
-            f"Señor, de {msg['from']}: asunto «{msg['subject']}». "
-            f"{body[:400]}"
-        )
+    if re.search(r"l[eé]eme\s+(?:el\s+)?(?:email|correo)|l[eé]e\s+(?:el\s+)?(?:de\s+)?", t):
+        return _read_sender_email(access, text)
 
-    query = "is:unread"
+    category = detect_gmail_category(text)
+    if re.search(
+        r"l[eé]eme\s+mis|qu[eé]\s+emails|qu[eé]\s+correos|cu[aá]ntos\s+emails|"
+        r"emails?\s+tengo|correos?\s+tengo",
+        t,
+    ):
+        return _summarize_inbox(access, category)
+
     if re.search(r"important", t):
-        query = "is:important"
-    messages = list_messages(access, query=query, max_results=4)
-    if not messages:
-        return "Señor, no tiene correos sin leer pendientes."
-    count = len(messages)
-    parts = [f"«{m['subject']}» de {m['from']}" for m in messages[:3]]
-    return f"Señor, tiene {count} correos sin leer. " + "; ".join(parts) + "."
+        return _summarize_inbox(access, "primary")
+
+    return _summarize_inbox(access, category)
 
 
 def handle_gmail_query_sync(user_id: str, text: str) -> dict[str, str]:

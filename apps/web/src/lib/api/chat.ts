@@ -67,6 +67,33 @@ export async function sendChatMessage(
   conversationId?: string | null,
   image?: File | null,
   voicePublish?: boolean,
+  onToken?: (chunk: string) => void,
+): Promise<{
+  conversation_id: string;
+  reply: string;
+  usage: ChatStatus;
+  pdf?: ChatPdfAttachment | null;
+  image?: ChatImageAttachment | null;
+}> {
+  if (image) {
+    return sendChatMessageBlocking(
+      content,
+      conversationId,
+      image,
+      voicePublish,
+    );
+  }
+  if (onToken) {
+    return sendChatMessageStream(content, conversationId, onToken);
+  }
+  return sendChatMessageBlocking(content, conversationId, null, voicePublish);
+}
+
+async function sendChatMessageBlocking(
+  content: string,
+  conversationId?: string | null,
+  image?: File | null,
+  voicePublish?: boolean,
 ): Promise<{
   conversation_id: string;
   reply: string;
@@ -119,6 +146,103 @@ export async function sendChatMessage(
     pdf: data.pdf ?? null,
     image: data.image ?? null,
   };
+}
+
+type StreamDonePayload = {
+  conversation_id: string;
+  reply: string;
+  usage: ChatStatus;
+  pdf?: ChatPdfAttachment | null;
+  image?: ChatImageAttachment | null;
+};
+
+/** Chat con streaming SSE — primer token en <1s. */
+export async function sendChatMessageStream(
+  content: string,
+  conversationId: string | null | undefined,
+  onToken: (chunk: string) => void,
+): Promise<StreamDonePayload> {
+  const res = await fetch("/api/ced/chat/send/stream", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      content,
+      conversation_id: conversationId ?? undefined,
+    }),
+  });
+
+  if (!res.ok) {
+    const data = await parseApiJson<{ detail?: string }>(res);
+    throw new Error(data.detail || "No se pudo enviar el mensaje.");
+  }
+
+  if (!res.body) {
+    throw new Error("Stream no disponible.");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let donePayload: StreamDonePayload | null = null;
+
+  const parseEventBlock = (block: string) => {
+    const lines = block.split("\n");
+    let eventName = "message";
+    let dataLine = "";
+    for (const line of lines) {
+      if (line.startsWith("event:")) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith("data:")) {
+        dataLine += line.slice(5).trim();
+      }
+    }
+    if (!dataLine) return;
+    const parsed = JSON.parse(dataLine) as Record<string, unknown>;
+    if (eventName === "token") {
+      const text = String(parsed.text ?? "");
+      if (text) onToken(text);
+      return;
+    }
+    if (eventName === "done") {
+      donePayload = {
+        conversation_id: String(parsed.conversation_id ?? ""),
+        reply: String(parsed.reply ?? ""),
+        usage: parsed.usage as ChatStatus,
+        pdf: (parsed.pdf as ChatPdfAttachment | undefined) ?? null,
+        image: (parsed.image as ChatImageAttachment | undefined) ?? null,
+      };
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop() ?? "";
+    for (const part of parts) {
+      if (!part.trim()) continue;
+      try {
+        parseEventBlock(part);
+      } catch {
+        /* ignore malformed SSE chunk */
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    try {
+      parseEventBlock(buffer);
+    } catch {
+      /* ignore trailing partial */
+    }
+  }
+
+  if (!donePayload?.conversation_id) {
+    throw new Error("Respuesta incompleta del chat.");
+  }
+  return donePayload;
 }
 
 export async function endChatConversation(conversationId: string): Promise<boolean> {

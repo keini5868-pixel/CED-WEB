@@ -6,12 +6,19 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services import supabase_db
 from app.services.chat_multimedia import transcribe_audio
-from app.services.text_chat import TextChatError, chat_status, end_text_conversation, send_message
+from app.services.text_chat import (
+    TextChatError,
+    chat_status,
+    end_text_conversation,
+    iter_send_message_stream,
+    send_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -89,6 +96,35 @@ def post_chat_message(
         raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("[CHAT] unexpected error")
+        raise HTTPException(
+            status_code=503,
+            detail="Error procesando mensaje. Reintenta.",
+        ) from exc
+
+
+@router.post("/send/stream")
+def post_chat_message_stream(
+    body: SendChatBody,
+    user_id: str = Depends(require_user_id),
+) -> StreamingResponse:
+    try:
+        return StreamingResponse(
+            iter_send_message_stream(
+                user_id,
+                content=body.content,
+                conversation_id=body.conversation_id,
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+    except TextChatError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[CHAT] stream error")
         raise HTTPException(
             status_code=503,
             detail="Error procesando mensaje. Reintenta.",

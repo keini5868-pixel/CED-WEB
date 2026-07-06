@@ -548,27 +548,69 @@ export function CedTextChatPanel({
         return;
       }
 
+      if (!imageFile) {
+        setMessages((prev) =>
+          dedupeChatMessages([
+            ...prev,
+            { role: "model", content: "", created_at: new Date().toISOString() },
+          ]),
+        );
+        setTyping(false);
+      }
+
       const result = await sendChatMessage(
         text,
         conversationId,
         imageFile,
         voicePublishActive || Boolean(onVoiceImageAttached),
+        !imageFile
+          ? (chunk) => {
+              setMessages((prev) => {
+                const next = [...prev];
+                const last = next[next.length - 1];
+                if (!last || last.role !== "model") return prev;
+                next[next.length - 1] = {
+                  ...last,
+                  content: `${last.content}${chunk}`,
+                };
+                return dedupeChatMessages(next);
+              });
+            }
+          : undefined,
       );
       setConversationId(result.conversation_id);
-      setMessages((prev) =>
-        dedupeChatMessages([
-          ...prev,
-          {
-            role: "model",
-            content: result.reply,
-            created_at: new Date().toISOString(),
-            pdf: result.pdf ?? null,
-            image: result.image
-              ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
-              : null,
-          },
-        ]),
-      );
+      if (imageFile) {
+        setMessages((prev) =>
+          dedupeChatMessages([
+            ...prev,
+            {
+              role: "model",
+              content: result.reply,
+              created_at: new Date().toISOString(),
+              pdf: result.pdf ?? null,
+              image: result.image
+                ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
+                : null,
+            },
+          ]),
+        );
+      } else {
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last?.role === "model") {
+            next[next.length - 1] = {
+              ...last,
+              content: result.reply,
+              pdf: result.pdf ?? null,
+              image: result.image
+                ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
+                : null,
+            };
+          }
+          return dedupeChatMessages(next);
+        });
+      }
       setStatus(result.usage);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al enviar.");
