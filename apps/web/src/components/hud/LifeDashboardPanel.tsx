@@ -203,25 +203,32 @@ function CalendarHudPanel({
     if (!title.trim() || !date.trim()) return;
     setSaving(true);
     setDetailError(null);
-    const result = await createHudCalendarEvent({
-      title: title.trim(),
-      date: date.trim(),
-      time: time.trim() || "09:00",
-    });
-    setSaving(false);
-    if (!result.ok) {
-      const msg = result.error || "No se pudo guardar.";
-      setDetailError(msg);
-      setNeedsReconnect(/permiso|reconecte|conectar calendar/i.test(msg));
-      return;
+    try {
+      const result = await createHudCalendarEvent({
+        title: title.trim(),
+        date: date.trim(),
+        time: time.trim() || "09:00",
+      });
+      if (!result.ok) {
+        const msg = result.error || "No se pudo guardar.";
+        setDetailError(msg);
+        setNeedsReconnect(/permiso|reconecte|conectar calendar/i.test(msg));
+        return;
+      }
+      setDetailError(null);
+      setNeedsReconnect(false);
+      setTitle("");
+      onRefresh();
+      const data = await fetchHudCalendarEvents();
+      if (data.error) {
+        setDetailError(data.error);
+        setNeedsReconnect(Boolean(data.needs_reconnect));
+      }
+      setLocalToday(data.today_events);
+      setLocalWeek(data.week_events);
+    } finally {
+      setSaving(false);
     }
-    setDetailError(null);
-    setNeedsReconnect(false);
-    setTitle("");
-    onRefresh();
-    const data = await fetchHudCalendarEvents();
-    setLocalToday(data.today_events);
-    setLocalWeek(data.week_events);
   };
 
   if (!connected) {
@@ -367,8 +374,12 @@ export function LifeDashboardPanel() {
         </p>
         <div className="flex items-center gap-2">
           {refreshing ? (
-            <span className="ced-hud-text-muted text-[8px]">Actualizando…</span>
-          ) : null}
+            <span className="ced-hud-text-muted animate-pulse text-[8px]">
+              Actualizando…
+            </span>
+          ) : (
+            <span className="ced-hud-text-muted text-[8px] opacity-60">Auto</span>
+          )}
           <LifeActionButton label="↻" onClick={() => void refresh()} />
         </div>
       </header>

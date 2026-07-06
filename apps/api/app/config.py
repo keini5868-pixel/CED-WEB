@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     google_maps_api_key: str = ""
     google_calendar_client_id: str = ""
     google_calendar_client_secret: str = ""
+    """OAuth Google de Supabase Auth — si difiere del client de Railway, refresh dual."""
+    google_supabase_oauth_client_id: str = ""
+    google_supabase_oauth_client_secret: str = ""
     google_calendar_redirect_uri: str = ""
     google_gmail_redirect_uri: str = ""
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
@@ -151,6 +154,25 @@ class Settings(BaseSettings):
                 break
         if not self.google_maps_api_key.strip() and self.google_api_key.strip():
             self.google_maps_api_key = self.google_api_key.strip()
+        return self
+
+    @model_validator(mode="after")
+    def resolve_google_supabase_oauth_aliases(self) -> Settings:
+        if not self.google_supabase_oauth_client_id.strip():
+            for alt in ("GOOGLE_SUPABASE_OAUTH_CLIENT_ID", "SUPABASE_GOOGLE_CLIENT_ID"):
+                val = os.environ.get(alt, "").strip()
+                if val:
+                    self.google_supabase_oauth_client_id = val
+                    break
+        if not self.google_supabase_oauth_client_secret.strip():
+            for alt in (
+                "GOOGLE_SUPABASE_OAUTH_CLIENT_SECRET",
+                "SUPABASE_GOOGLE_CLIENT_SECRET",
+            ):
+                val = os.environ.get(alt, "").strip()
+                if val:
+                    self.google_supabase_oauth_client_secret = val
+                    break
         return self
 
     @model_validator(mode="after")

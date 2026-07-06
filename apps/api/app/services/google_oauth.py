@@ -32,8 +32,13 @@ _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_TOKENINFO_URL = "https://www.googleapis.com/oauth2/v3/tokeninfo"
 
 CALENDAR_RECONNECT_MSG = (
-    "Permisos de Calendar insuficientes. Pulse «Conectar Calendar» de nuevo "
-    "y acepte todos los permisos de Google."
+    "Permisos de Calendar insuficientes. Pulse «Reconectar Calendar», acepte "
+    "todos los permisos de Google y confirme en Supabase → Auth → Google que "
+    "estén habilitados calendar y calendar.events."
+)
+CALENDAR_WRITE_SCOPE_MSG = (
+    "Falta permiso para crear eventos. Reconecte Calendar y acepte el permiso "
+    "de gestión de calendario (calendar.events)."
 )
 GMAIL_RECONNECT_MSG = (
     "Permisos de Gmail insuficientes. Pulse «Conectar Gmail» de nuevo "
@@ -58,12 +63,32 @@ def _gmail_redirect_uri() -> str:
 
 
 def _oauth_client_config() -> tuple[str, str]:
+    pairs = _oauth_client_pairs()
+    return pairs[0]
+
+
+def _oauth_client_pairs() -> list[tuple[str, str]]:
+    """Clientes OAuth para refresh — Railway y/o Supabase Auth (mismo Google Cloud app)."""
     settings = get_settings()
-    client_id = settings.google_calendar_client_id.strip()
-    client_secret = settings.google_calendar_client_secret.strip()
-    if not client_id or not client_secret:
+    seen: set[str] = set()
+    pairs: list[tuple[str, str]] = []
+    for client_id, client_secret in (
+        (
+            settings.google_calendar_client_id.strip(),
+            settings.google_calendar_client_secret.strip(),
+        ),
+        (
+            settings.google_supabase_oauth_client_id.strip(),
+            settings.google_supabase_oauth_client_secret.strip(),
+        ),
+    ):
+        if not client_id or not client_secret or client_id in seen:
+            continue
+        seen.add(client_id)
+        pairs.append((client_id, client_secret))
+    if not pairs:
         raise ValueError("Google Calendar OAuth no configurado en Railway.")
-    return client_id, client_secret
+    return pairs
 
 
 def oauth_configured() -> bool:
@@ -173,6 +198,12 @@ def google_oauth_diagnostics() -> dict[str, Any]:
         "calendar_client_secret": (
             "OK" if settings.google_calendar_client_secret.strip() else "MISSING"
         ),
+        "supabase_oauth_client_id": (
+            "OK" if settings.google_supabase_oauth_client_id.strip() else "MISSING"
+        ),
+        "supabase_oauth_client_secret": (
+            "OK" if settings.google_supabase_oauth_client_secret.strip() else "MISSING"
+        ),
         "calendar_redirect_env": (
             "SET" if settings.google_calendar_redirect_uri.strip() else "AUTO"
         ),
@@ -272,26 +303,37 @@ def exchange_code(service: GoogleService, code: str) -> dict[str, Any]:
 
 
 def refresh_access_token(service: GoogleService, refresh_token: str) -> dict[str, Any]:
-    client_id, client_secret = _oauth_client_config()
+    last_error: str | None = None
     with httpx.Client(timeout=20.0) as client:
-        res = client.post(
-            _GOOGLE_TOKEN_URL,
-            data={
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "refresh_token": refresh_token,
-                "grant_type": "refresh_token",
-            },
-        )
-        if res.status_code >= 400:
-            logger.error(
-                "[GOOGLE-OAUTH] refresh failed service=%s status=%s body=%s",
-                service,
-                res.status_code,
-                res.text[:300],
+        for client_id, client_secret in _oauth_client_pairs():
+            res = client.post(
+                _GOOGLE_TOKEN_URL,
+                data={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "refresh_token": refresh_token,
+                    "grant_type": "refresh_token",
+                },
             )
-        res.raise_for_status()
-        return res.json()
+            if res.status_code < 400:
+                return res.json()
+            last_error = res.text[:300]
+            logger.warning(
+                "[GOOGLE-OAUTH] refresh failed service=%s client=%s… status=%s",
+                service,
+                client_id[:12],
+                res.status_code,
+            )
+    logger.error(
+        "[GOOGLE-OAUTH] refresh exhausted service=%s body=%s",
+        service,
+        last_error or "",
+    )
+    raise httpx.HTTPStatusError(
+        "refresh_failed",
+        request=httpx.Request("POST", _GOOGLE_TOKEN_URL),
+        response=httpx.Response(400, text=last_error or "refresh_failed"),
+    )
 
 
 def inspect_access_token(access_token: str) -> dict[str, Any]:
@@ -307,15 +349,38 @@ def inspect_access_token(access_token: str) -> dict[str, Any]:
         return res.json()
 
 
-def token_has_calendar_scope(access_token: str) -> bool:
+def _scope_parts(access_token: str) -> set[str]:
     scope = str(inspect_access_token(access_token).get("scope") or "")
-    return any(
-        marker in scope
-        for marker in (
-            "auth/calendar.events",
-            "auth/calendar.readonly",
-            "auth/calendar",
-        )
+    return {part.strip() for part in scope.split() if part.strip()}
+
+
+def token_has_calendar_read_scope(access_token: str) -> bool:
+    parts = _scope_parts(access_token)
+    return bool(
+        parts
+        & {
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.readonly",
+            "https://www.googleapis.com/auth/calendar.events",
+        }
+    )
+
+
+def token_has_calendar_write_scope(access_token: str) -> bool:
+    parts = _scope_parts(access_token)
+    return bool(
+        parts
+        & {
+            "https://www.googleapis.com/auth/calendar",
+            "https://www.googleapis.com/auth/calendar.events",
+        }
+    )
+
+
+def token_has_calendar_scope(access_token: str) -> bool:
+    """Guardar token Calendar — requiere lectura y escritura (HUD crea eventos)."""
+    return token_has_calendar_read_scope(access_token) and token_has_calendar_write_scope(
+        access_token
     )
 
 

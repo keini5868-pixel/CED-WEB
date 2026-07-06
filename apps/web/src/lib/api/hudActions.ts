@@ -33,6 +33,7 @@ export async function createHudCalendarEvent(payload: {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(45_000),
     });
     const data = await parseApiJson<{ ok?: boolean; detail?: string; error?: string }>(res);
     if (!res.ok) {

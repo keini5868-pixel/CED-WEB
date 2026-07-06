@@ -16,10 +16,13 @@ def test_advanced_chat_endpoint():
     app = create_app()
     app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
 
-    async def fake_chat(message, history, user_id):
-        return f"Análisis de: {message}", "claude-opus-4-6"
+    def fake_send(user_id, *, message, history, conversation_id=None):
+        return {
+            "response": f"Análisis de: {message}",
+            "model": "claude-sonnet-4-6",
+        }
 
-    with patch("app.routers.advanced_chat.claude_advanced_chat", fake_chat):
+    with patch("app.routers.advanced_chat.send_advanced_message", fake_send):
         client = TestClient(app)
         res = client.post(
             "/v1/advanced/chat",
@@ -30,7 +33,7 @@ def test_advanced_chat_endpoint():
     assert res.status_code == 200
     body = res.json()
     assert "estrategia" in body["response"]
-    assert body["model"] == "claude-opus-4-6"
+    assert body["model"] == "claude-sonnet-4-6"
 
     app.dependency_overrides.clear()
 

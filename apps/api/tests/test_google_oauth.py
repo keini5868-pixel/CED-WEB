@@ -67,24 +67,25 @@ def test_save_google_token_endpoint():
     app = create_app()
     app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
 
-    with patch("app.routers.google_auth.token_has_calendar_scope", return_value=True):
-        with patch("app.routers.google_auth.store_tokens") as mock_store:
-            with patch(
-                "app.routers.google_auth.get_connection_status",
-                return_value={"connected": True, "service": "calendar"},
-            ):
-                client = TestClient(app)
-                res = client.post(
-                    "/v1/google/save-token",
-                    json={
-                        "type": "calendar",
-                        "provider_token": "ya29.provider-token",
-                        "provider_refresh_token": "1//refresh",
-                    },
-                    headers={"Authorization": "Bearer test"},
-                )
-                assert res.status_code == 200
-                assert res.json()["connected"] is True
-                mock_store.assert_called_once()
+    with patch("app.routers.google_auth.token_has_calendar_read_scope", return_value=True):
+        with patch("app.routers.google_auth.token_has_calendar_write_scope", return_value=True):
+            with patch("app.routers.google_auth.store_tokens") as mock_store:
+                with patch(
+                    "app.routers.google_auth.get_connection_status",
+                    return_value={"connected": True, "service": "calendar"},
+                ):
+                    client = TestClient(app)
+                    res = client.post(
+                        "/v1/google/save-token",
+                        json={
+                            "type": "calendar",
+                            "provider_token": "ya29.provider-token",
+                            "provider_refresh_token": "1//refresh",
+                        },
+                        headers={"Authorization": "Bearer test"},
+                    )
+                    assert res.status_code == 200
+                    assert res.json()["connected"] is True
+                    mock_store.assert_called_once()
 
     app.dependency_overrides.clear()

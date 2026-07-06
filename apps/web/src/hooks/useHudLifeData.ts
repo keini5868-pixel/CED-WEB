@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   GOOGLE_CALENDAR_CONNECTED_EVENT,
@@ -12,8 +12,13 @@ import {
   fetchHudLife,
   type LifeDashboardSnapshot,
 } from "@/lib/api/hud";
+import { syncPendingGoogleProviderToken } from "@/lib/api/google";
+import { createClient } from "@/lib/supabase/client";
 
-const REFRESH_MS = 30 * 60 * 1000;
+/** Conexiones Google — poll frecuente. */
+const CONNECTION_REFRESH_MS = 90 * 1000;
+/** Clima / aire / polen — menos frecuente. */
+const FULL_REFRESH_MS = 15 * 60 * 1000;
 
 function capitalizeDateLabel(label: string): string {
   const trimmed = label.trim();
@@ -44,6 +49,7 @@ function mergeConnectionSlice(
       ...prev.calendar,
       ...conn.calendar,
       title: "CALENDARIO",
+      connected: prev.calendar.connected || conn.calendar.connected,
       today_events: conn.calendar.today_events ?? prev.calendar.today_events,
       week_events: conn.calendar.week_events ?? prev.calendar.week_events,
     },
@@ -51,6 +57,7 @@ function mergeConnectionSlice(
       ...prev.gmail,
       ...conn.gmail,
       title: "GMAIL",
+      connected: prev.gmail.connected || conn.gmail.connected,
       items: conn.gmail.items ?? prev.gmail.items,
     },
   };
@@ -59,6 +66,8 @@ function mergeConnectionSlice(
 export function useHudLifeData() {
   const [data, setData] = useState<LifeDashboardSnapshot>(() => createLifeFallback());
   const [refreshing, setRefreshing] = useState(false);
+  const [sessionReady, setSessionReady] = useState(false);
+  const bootstrappedRef = useRef(false);
 
   /** Rápido — Calendar/Gmail OAuth (~1s). Siempre primero. */
   const refreshConnections = useCallback(async () => {
@@ -78,6 +87,15 @@ export function useHudLifeData() {
           events: snapshot.calendar.connected
             ? snapshot.calendar.events
             : prev.calendar.events,
+          today_events:
+            snapshot.calendar.today_events?.length
+              ? snapshot.calendar.today_events
+              : prev.calendar.today_events,
+          week_events:
+            snapshot.calendar.week_events?.length
+              ? snapshot.calendar.week_events
+              : prev.calendar.week_events,
+          error: snapshot.calendar.error ?? prev.calendar.error,
         },
         gmail: {
           ...snapshot.gmail,
@@ -109,22 +127,99 @@ export function useHudLifeData() {
   );
 
   useEffect(() => {
-    void refreshConnections();
-    void refreshLifeContent();
-    const id = setInterval(() => {
+    const supabase = createClient();
+    let cancelled = false;
+
+    const runFull = async () => {
+      await refreshConnections();
+      await refreshLifeContent();
+    };
+
+    const bootstrap = async () => {
+      const oauth = await syncPendingGoogleProviderToken();
+      if (oauth.ok && oauth.type) {
+        window.dispatchEvent(
+          new Event(
+            oauth.type === "calendar"
+              ? GOOGLE_CALENDAR_CONNECTED_EVENT
+              : GOOGLE_GMAIL_CONNECTED_EVENT,
+          ),
+        );
+      }
+      if (!cancelled) {
+        await runFull();
+        bootstrappedRef.current = true;
+      }
+    };
+
+    void supabase.auth.getSession().then(({ data }) => {
+      if (data.session?.access_token) {
+        setSessionReady(true);
+      }
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.access_token) {
+        setSessionReady(true);
+      }
+      if (
+        session?.access_token &&
+        (event === "SIGNED_IN" ||
+          event === "TOKEN_REFRESHED" ||
+          event === "INITIAL_SESSION")
+      ) {
+        void refreshConnections();
+        if (bootstrappedRef.current) {
+          void refreshLifeContent();
+        }
+      }
+    });
+
+    void bootstrap();
+
+    const connInterval = setInterval(() => {
       void refreshConnections();
-      void refreshLifeContent();
-    }, REFRESH_MS);
-    const onCal = () => void refreshConnections();
-    const onMail = () => void refreshConnections();
-    window.addEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onCal);
-    window.addEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onMail);
+    }, CONNECTION_REFRESH_MS);
+    const fullInterval = setInterval(() => {
+      void runFull();
+    }, FULL_REFRESH_MS);
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        void refreshConnections();
+      }
+    };
+    const onFocus = () => {
+      void refreshConnections();
+    };
+
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onFocus);
+
+    const onGoogleConnected = () => {
+      void runFull();
+    };
+    window.addEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onGoogleConnected);
+    window.addEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onGoogleConnected);
+
     return () => {
-      clearInterval(id);
-      window.removeEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onCal);
-      window.removeEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onMail);
+      cancelled = true;
+      subscription.unsubscribe();
+      clearInterval(connInterval);
+      clearInterval(fullInterval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onGoogleConnected);
+      window.removeEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onGoogleConnected);
     };
   }, [refreshConnections, refreshLifeContent]);
+
+  useEffect(() => {
+    if (!sessionReady) return;
+    void refreshConnections();
+  }, [sessionReady, refreshConnections]);
 
   const weatherSummary = () => {
     const line = data.weather.lines[0] ?? "Charlotte NC";
