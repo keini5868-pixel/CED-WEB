@@ -120,3 +120,45 @@ async def hud_send_gmail(body: GmailSendBody, user_id: str = Depends(require_use
     except Exception as exc:  # noqa: BLE001
         logger.exception("[HUD] gmail send failed")
         raise HTTPException(status_code=502, detail="No se pudo enviar el email.") from exc
+
+
+class ReminderBody(BaseModel):
+    text: str = Field(min_length=1, max_length=500)
+    date: str = Field(description="YYYY-MM-DD")
+    time: str = Field(default="09:00", description="HH:MM")
+
+
+@router.get("/hud/reminders")
+async def hud_list_reminders(user_id: str = Depends(require_user_id)) -> dict:
+    from app.services.hud_reminders import upcoming_reminders
+
+    items = upcoming_reminders(user_id, limit=20)
+    return {
+        "reminders": [
+            {
+                "id": item["id"],
+                "text": item["text"],
+                "date": item["date"],
+                "time": item["time"],
+            }
+            for item in items
+        ]
+    }
+
+
+@router.post("/hud/reminders")
+async def hud_create_reminder(
+    body: ReminderBody,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    from app.services.hud_reminders import create_reminder
+
+    ok = create_reminder(
+        user_id,
+        text=body.text.strip(),
+        reminder_date=body.date,
+        reminder_time=body.time or "09:00",
+    )
+    if not ok:
+        raise HTTPException(status_code=502, detail="No se pudo guardar el recordatorio.")
+    return {"ok": True}

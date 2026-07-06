@@ -2120,6 +2120,42 @@ def send_message(
             route_meta={"intent": "environment", "source": "direct"},
         )
 
+    from app.services.hud_reminders import (
+        handle_reminder_create_sync,
+        handle_reminder_query_sync,
+        is_reminder_intent,
+    )
+    from app.modules.calendar_module import handle_calendar_query_sync, is_calendar_intent
+    from app.modules.gmail_module import handle_gmail_query_sync, is_gmail_intent
+
+    if is_reminder_intent(text) and re.search(r"recu[eé]rdame", text, re.I):
+        reminder_result = handle_reminder_create_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
+            route_meta={"intent": "reminder_create", "source": "direct"},
+        )
+
+    if is_reminder_intent(text):
+        reminder_result = handle_reminder_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
+            route_meta={"intent": "reminder_list", "source": "direct"},
+        )
+
+    if is_calendar_intent(text):
+        calendar_result = handle_calendar_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(calendar_result.get("spoken") or "")),
+            route_meta={"intent": "calendar", "source": "direct"},
+        )
+
+    if is_gmail_intent(text):
+        gmail_result = handle_gmail_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(gmail_result.get("spoken") or "")),
+            route_meta={"intent": "gmail", "source": "direct"},
+        )
+
     img_prompt = parse_generate_image_prompt(text)
     followup_prompt = (
         parse_followup_image_prompt(text, history)

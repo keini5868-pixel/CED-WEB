@@ -1,4 +1,4 @@
-import { cedApiPath } from "@/lib/api/ced-proxy";
+import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
 export type GoogleConnectionStatus = {
@@ -11,12 +11,9 @@ export type GoogleOAuthResult = {
   error?: string;
 };
 
-const proxyFetch = (path: string) =>
-  fetch(cedApiPath(path), { credentials: "same-origin" });
-
 export async function fetchGoogleCalendarStatus(): Promise<GoogleConnectionStatus | null> {
   try {
-    const res = await proxyFetch("google/calendar/status");
+    const res = await proxyFetchAuthed("google/calendar/status");
     if (!res.ok) return null;
     return (await res.json()) as GoogleConnectionStatus;
   } catch {
@@ -26,7 +23,7 @@ export async function fetchGoogleCalendarStatus(): Promise<GoogleConnectionStatu
 
 export async function fetchGoogleGmailStatus(): Promise<GoogleConnectionStatus | null> {
   try {
-    const res = await proxyFetch("google/gmail/status");
+    const res = await proxyFetchAuthed("google/gmail/status");
     if (!res.ok) return null;
     return (await res.json()) as GoogleConnectionStatus;
   } catch {
@@ -36,7 +33,7 @@ export async function fetchGoogleGmailStatus(): Promise<GoogleConnectionStatus |
 
 export async function fetchGoogleCalendarOAuthUrl(): Promise<GoogleOAuthResult> {
   try {
-    const res = await proxyFetch("google/calendar/oauth/url");
+    const res = await proxyFetchAuthed("google/calendar/oauth/url");
     const data = await parseApiJson<{ url?: string; detail?: string }>(res);
     if (!res.ok) {
       return {
@@ -52,7 +49,7 @@ export async function fetchGoogleCalendarOAuthUrl(): Promise<GoogleOAuthResult> 
 
 export async function fetchGoogleGmailOAuthUrl(): Promise<GoogleOAuthResult> {
   try {
-    const res = await proxyFetch("google/gmail/oauth/url");
+    const res = await proxyFetchAuthed("google/gmail/oauth/url");
     const data = await parseApiJson<{ url?: string; detail?: string }>(res);
     if (!res.ok) {
       return {

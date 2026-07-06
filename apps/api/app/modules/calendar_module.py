@@ -24,7 +24,8 @@ CALENDAR_PATTERNS: tuple[str, ...] = (
     r"\b(?:mi\s+)?calendario\b",
     r"\bcita\s+(?:para|el|ma[nñ]ana)\b",
     r"\brecu[eé]rdame\b",
-    r"\b(?:qu[eé]|que)\s+recordatorios\s+tengo\b",
+    r"\b(?:qu[eé]|que)\s+recordatorios?\s+tengo\b",
+    r"\b(?:qu[eé]|que)\s+tengo\s+(?:de\s+)?recordatorios?\b",
 )
 
 
@@ -102,12 +103,43 @@ def _not_connected_message() -> str:
     )
 
 
+def handle_calendar_query_sync(user_id: str, text: str) -> dict[str, str]:
+    try:
+        if re.search(r"recu[eé]rdame", text, re.I):
+            return handle_calendar_create_sync(user_id, text, reminder=True)
+        if re.search(r"ag[eé]ndame|agendar|programa", text, re.I):
+            return handle_calendar_create_sync(user_id, text, reminder=False)
+        spoken = _handle_calendar_query(user_id, text)
+        return {"spoken": spoken}
+    except ValueError as exc:
+        if str(exc) == "not_connected":
+            return {"spoken": _not_connected_message()}
+        return {"spoken": "Señor, no pude acceder a su calendario. Revise la conexión."}
+    except Exception:  # noqa: BLE001
+        logger.exception("[CALENDAR] sync query failed user=%s", user_id[:8])
+        return {"spoken": "Señor, no pude consultar su calendario en este momento."}
+
+
+def handle_calendar_create_sync(user_id: str, text: str, *, reminder: bool = False) -> dict[str, str]:
+    try:
+        spoken = _handle_create_appointment(user_id, text, reminder=reminder)
+        return {"spoken": spoken}
+    except ValueError as exc:
+        if str(exc) == "not_connected":
+            return {"spoken": _not_connected_message()}
+        return {"spoken": "Señor, no pude acceder a su calendario. Revise la conexión."}
+    except Exception:  # noqa: BLE001
+        logger.exception("[CALENDAR] sync create failed user=%s", user_id[:8])
+        return {"spoken": "Señor, no pude agendar en su calendario en este momento."}
+
+
 def _handle_calendar_query(user_id: str, text: str) -> str:
     access = get_valid_access_token("calendar", user_id)
     t = text.lower()
-    if re.search(r"recordatorios", t):
-        start, end = resolve_window("week")
-        label = "sus recordatorios"
+    if re.search(r"recordatorios?", t):
+        from app.services.hud_reminders import format_reminders_spoken
+
+        return format_reminders_spoken(user_id)
     elif re.search(r"ma[nñ]ana", t):
         start, end = resolve_window("tomorrow")
         label = "mañana"

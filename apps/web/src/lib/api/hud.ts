@@ -3,6 +3,10 @@ import type { CarouselSnapshot } from "@/components/dashboard/carousel/types";
 import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 import { apiUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/client";
+import {
+  fetchGoogleCalendarStatus,
+  fetchGoogleGmailStatus,
+} from "@/lib/api/google";
 
 export type LifeDashboardSnapshot = {
   date_label: string;
@@ -168,14 +172,41 @@ function normalizeLifeSnapshot(raw: Record<string, unknown>): LifeDashboardSnaps
   };
 }
 
+/** Fusiona estado OAuth real aunque /hud/life falle o devuelva fallback. */
+async function mergeGoogleConnectionStatus(
+  snapshot: LifeDashboardSnapshot,
+): Promise<LifeDashboardSnapshot> {
+  const [cal, mail] = await Promise.all([
+    fetchGoogleCalendarStatus(),
+    fetchGoogleGmailStatus(),
+  ]);
+  if (cal?.connected) {
+    snapshot.calendar.connected = true;
+    snapshot.calendar.hint = "";
+    if (!snapshot.calendar.events.length) {
+      snapshot.calendar.events = ["Sin eventos programados para hoy."];
+    }
+  }
+  if (mail?.connected) {
+    snapshot.gmail.connected = true;
+    snapshot.gmail.hint = "";
+    if (!snapshot.gmail.messages.length) {
+      snapshot.gmail.messages = ["Bandeja al día — sin correos sin leer."];
+    }
+  }
+  return snapshot;
+}
+
 /** Dashboard LIFE — nunca devuelve null; fallback local si la API falla. */
 export async function fetchHudLife(): Promise<LifeDashboardSnapshot> {
   try {
     const res = await proxyFetchAuthed("hud/life");
-    if (!res.ok) return createLifeFallback();
+    if (!res.ok) {
+      return mergeGoogleConnectionStatus(createLifeFallback());
+    }
     const raw = (await res.json()) as Record<string, unknown>;
-    return normalizeLifeSnapshot(raw);
+    return mergeGoogleConnectionStatus(normalizeLifeSnapshot(raw));
   } catch {
-    return createLifeFallback();
+    return mergeGoogleConnectionStatus(createLifeFallback());
   }
 }

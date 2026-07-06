@@ -9,7 +9,7 @@ import {
   dispatchLifeVoicePrompt,
 } from "@/lib/lifeActions";
 import {
-  saveReminder,
+  saveReminderWithSync,
   upcomingReminders,
   type CedReminder,
 } from "@/lib/hud/remindersStorage";
@@ -94,15 +94,23 @@ export function CedHudQuickPopups({
     }
   };
 
-  const saveReminderItem = () => {
+  const saveReminderItem = async () => {
     if (!remText.trim() || !remDate) {
       setStatus("Complete recordatorio y fecha.");
       return;
     }
-    saveReminder({ text: remText.trim(), date: remDate, time: remTime || "09:00" });
+    const result = await saveReminderWithSync({
+      text: remText.trim(),
+      date: remDate,
+      time: remTime || "09:00",
+    });
     setRemText("");
     reloadReminders();
-    setStatus("Recordatorio creado.");
+    if (result.synced) {
+      setStatus("Recordatorio creado.");
+    } else {
+      setStatus(result.error || "Guardado localmente; CED puede no verlo aún.");
+    }
   };
 
   const sendMail = async () => {

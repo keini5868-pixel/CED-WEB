@@ -80,7 +80,24 @@ def _web_search_environment(user_id: str, transcript: str) -> str:
 
 
 def handle_environment_query_sync(user_id: str, transcript: str) -> dict[str, str]:
-    return {"spoken": _web_search_environment(user_id, transcript)}
+    import concurrent.futures
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_web_search_environment, user_id, transcript)
+        try:
+            spoken = future.result(timeout=22)
+        except concurrent.futures.TimeoutError:
+            spoken = (
+                "Señor, la consulta del clima está tardando. "
+                "Intente de nuevo en unos segundos o use el botón CLIMA en la barra."
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[ENV] sync query failed user=%s", user_id[:8])
+            spoken = (
+                "No pude obtener datos ambientales en este momento, señor. "
+                "Intente de nuevo en unos minutos."
+            )
+    return {"spoken": spoken}
 
 
 class EnvironmentModule(BaseModule):

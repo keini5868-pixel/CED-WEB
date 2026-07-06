@@ -451,6 +451,45 @@ def upsert_gmail_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
     return (result.data or [row])[0]
 
 
+def list_hud_reminders(user_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
+    try:
+        client = _client()
+        result = (
+            client.table("hud_reminders")
+            .select("id, text, reminder_date, reminder_time, created_at")
+            .eq("user_id", user_id)
+            .order("reminder_date")
+            .order("reminder_time")
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def insert_hud_reminder(
+    user_id: str,
+    *,
+    text: str,
+    reminder_date: str,
+    reminder_time: str = "09:00",
+) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        row = {
+            "user_id": user_id,
+            "text": text[:500],
+            "reminder_date": reminder_date,
+            "reminder_time": reminder_time or "09:00",
+        }
+        result = client.table("hud_reminders").insert(row).execute()
+        rows = result.data or []
+        return rows[0] if rows else row
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def list_leads_today(user_id: str, limit: int = 5) -> list[dict[str, Any]]:
     try:
         client = _client()

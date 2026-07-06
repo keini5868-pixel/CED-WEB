@@ -1,8 +1,14 @@
 import { cedApiPath } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
+const CHAT_TIMEOUT_MS = 90_000;
+
 const proxyFetch = (path: string, init?: RequestInit) =>
-  fetch(cedApiPath(path), { credentials: "same-origin", ...init });
+  fetch(cedApiPath(path), {
+    credentials: "same-origin",
+    ...init,
+    signal: init?.signal ?? AbortSignal.timeout(CHAT_TIMEOUT_MS),
+  });
 
 export type ChatPdfAttachment = {
   file_id: string;

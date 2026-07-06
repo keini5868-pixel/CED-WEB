@@ -87,6 +87,19 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
     return f"Señor, tiene {count} correos sin leer. " + "; ".join(parts) + "."
 
 
+def handle_gmail_query_sync(user_id: str, text: str) -> dict[str, str]:
+    try:
+        spoken = _handle_gmail_query(user_id, text)
+        return {"spoken": spoken}
+    except ValueError as exc:
+        if str(exc) == "not_connected":
+            return {"spoken": _not_connected_message()}
+        return {"spoken": "Señor, no pude acceder a su Gmail. Revise la conexión."}
+    except Exception:  # noqa: BLE001
+        logger.exception("[GMAIL] sync query failed user=%s", user_id[:8])
+        return {"spoken": "Señor, no pude consultar su correo en este momento."}
+
+
 class GmailModule(BaseModule):
     name = "gmail"
 

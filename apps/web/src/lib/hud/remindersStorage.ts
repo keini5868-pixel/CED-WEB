@@ -50,3 +50,22 @@ export function upcomingReminders(): CedReminder[] {
         new Date(`${b.date}T${b.time}`).getTime(),
     );
 }
+
+export async function saveReminderWithSync(input: {
+  text: string;
+  date: string;
+  time: string;
+}): Promise<{ item: CedReminder; synced: boolean; error?: string }> {
+  const item = saveReminder(input);
+  try {
+    const { createHudReminder } = await import("@/lib/api/hudActions");
+    const result = await createHudReminder({
+      text: input.text,
+      date: input.date,
+      time: input.time,
+    });
+    return { item, synced: result.ok, error: result.error };
+  } catch {
+    return { item, synced: false, error: "No se pudo sincronizar con el servidor." };
+  }
+}
