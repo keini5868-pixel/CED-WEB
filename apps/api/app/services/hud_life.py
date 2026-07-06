@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -42,6 +43,17 @@ _MONTHS_ES = (
 _DEFAULT_PLACE = "Charlotte NC"
 
 
+def clean_life_text(text: str) -> str:
+    """Quita artefactos [cite...] de resúmenes web."""
+    cleaned = str(text or "")
+    cleaned = re.sub(r"\[cite[^\]]*\]", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\[cite\s*", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\[cite\s*$", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\[\d+\]", "", cleaned)
+    cleaned = re.sub(r"\s{2,}", " ", cleaned)
+    return cleaned.strip()
+
+
 def _date_label() -> str:
     now = datetime.now(_TZ)
     day = _DAYS_ES[now.weekday()]
@@ -53,16 +65,27 @@ def _web_lines(query: str, *, kind: str = "weather") -> list[str]:
     from app.services.gemini_grounded import execute_search_web_sync
 
     result = execute_search_web_sync(query, kind=kind)
-    summary = str(result.get("summary") or result.get("message") or "").strip()
+    summary = clean_life_text(
+        str(result.get("summary") or result.get("message") or "").strip()
+    )
     if not summary:
         return []
-    parts = [p.strip() for p in summary.replace("·", ".").split(".") if p.strip()]
+    parts = [
+        clean_life_text(p.strip())
+        for p in summary.replace("·", ".").split(".")
+        if clean_life_text(p.strip())
+    ]
     if parts:
         return parts[:4]
     return [summary[:240]]
 
 
-def _safe_web_lines(query: str, fallback: str, *, kind: str = "weather") -> list[str]:
+def _safe_web_lines(
+    query: str,
+    fallback: str,
+    *,
+    kind: str = "weather",
+) -> list[str]:
     try:
         lines = _web_lines(query, kind=kind)
         if lines:
@@ -72,12 +95,27 @@ def _safe_web_lines(query: str, fallback: str, *, kind: str = "weather") -> list
     return [fallback]
 
 
+def check_calendar_token(user_id: str) -> bool:
+    from app.services.google_oauth import get_connection_status
+
+    return bool(get_connection_status("calendar", user_id).get("connected"))
+
+
+def check_gmail_token(user_id: str) -> bool:
+    from app.services.google_oauth import get_connection_status
+
+    return bool(get_connection_status("gmail", user_id).get("connected"))
+
+
 def _calendar_section(user_id: str) -> dict[str, Any]:
+    connected = check_calendar_token(user_id)
     section: dict[str, Any] = {
-        "connected": False,
+        "connected": connected,
         "events": [],
-        "hint": "Conectar Calendar en CFG ⚙️",
+        "hint": "" if connected else "Conectar Calendar en CFG ⚙️",
     }
+    if not connected:
+        return section
     try:
         from app.services.google_calendar_api import list_events, resolve_window
         from app.services.google_oauth import get_valid_access_token
@@ -85,59 +123,57 @@ def _calendar_section(user_id: str) -> dict[str, Any]:
         token = get_valid_access_token("calendar", user_id)
         start, end = resolve_window("today")
         events = list_events(token, time_min=start, time_max=end, max_results=6)
-        section["connected"] = True
         section["events"] = events or ["Sin eventos programados para hoy."]
-        section["hint"] = ""
-    except ValueError:
-        pass
     except Exception:  # noqa: BLE001
         logger.warning("[LIFE] calendar load failed user=%s", user_id[:8], exc_info=True)
-        section["hint"] = "Conectar Calendar en CFG ⚙️"
+        section["events"] = ["No se pudieron cargar eventos ahora."]
     return section
 
 
 def _gmail_section(user_id: str) -> dict[str, Any]:
+    connected = check_gmail_token(user_id)
     section: dict[str, Any] = {
-        "connected": False,
+        "connected": connected,
         "unread_count": 0,
         "messages": [],
-        "hint": "Conectar Gmail en CFG ⚙️",
+        "hint": "" if connected else "Conectar Gmail en CFG ⚙️",
     }
+    if not connected:
+        return section
     try:
         from app.services.google_gmail_api import list_messages
         from app.services.google_oauth import get_valid_access_token
 
         token = get_valid_access_token("gmail", user_id)
         msgs = list_messages(token, query="is:unread", max_results=5)
-        section["connected"] = True
         section["unread_count"] = len(msgs)
         section["messages"] = [
             f"{m.get('from', '?')} — {m.get('subject', '(sin asunto)')}" for m in msgs[:3]
         ]
-        section["hint"] = ""
         if not msgs:
             section["messages"] = ["Bandeja al día — sin correos sin leer."]
-    except ValueError:
-        pass
     except Exception:  # noqa: BLE001
         logger.warning("[LIFE] gmail load failed user=%s", user_id[:8], exc_info=True)
-        section["hint"] = "Conectar Gmail en CFG ⚙️"
+        section["messages"] = ["No se pudieron cargar correos ahora."]
     return section
 
 
 def _fetch_web_sections(place: str) -> tuple[list[str], list[str], list[str]]:
-    tasks = {
+    tasks: dict[str, tuple[str, str, str]] = {
         "weather": (
-            f"clima {place} hoy temperatura humedad viento",
+            f"temperatura clima {place} hoy",
             "Clima no disponible.",
+            "weather",
         ),
         "air": (
-            f"calidad del aire {place} hoy índice",
+            f"calidad del aire {place} hoy",
             "Calidad del aire no disponible.",
+            "general",
         ),
         "pollen": (
-            f"polen {place} hoy niveles árbol pasto",
+            f"niveles de polen {place} hoy",
             "Polen no disponible.",
+            "general",
         ),
     }
     results: dict[str, list[str]] = {
@@ -147,8 +183,8 @@ def _fetch_web_sections(place: str) -> tuple[list[str], list[str], list[str]]:
     }
     with ThreadPoolExecutor(max_workers=3) as pool:
         futures = {
-            pool.submit(_safe_web_lines, query, fallback, kind="weather"): key
-            for key, (query, fallback) in tasks.items()
+            pool.submit(_safe_web_lines, query, fallback, kind=kind): key
+            for key, (query, fallback, kind) in tasks.items()
         }
         for future in as_completed(futures, timeout=22):
             key = futures[future]

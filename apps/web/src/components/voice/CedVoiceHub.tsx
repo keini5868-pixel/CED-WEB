@@ -4,8 +4,8 @@ import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
+import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
-
 import { CedOrbOverlay } from "@/components/orb/CedOrbOverlay";
 import { useHudFeed } from "@/contexts/HudFeedContext";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
@@ -51,6 +51,7 @@ export function CedVoiceHub() {
     url: string;
     prompt?: string;
   } | null>(null);
+  const [chatSeedPrompt, setChatSeedPrompt] = useState<string | null>(null);
   const [voiceImagePreview, setVoiceImagePreview] = useState<{
     url: string;
     prompt?: string;
@@ -127,6 +128,23 @@ export function CedVoiceHub() {
       setChatOpen(true);
     },
   });
+
+  useEffect(() => {
+    const onLifeAction = (ev: Event) => {
+      const detail = (ev as CustomEvent<LifeActionDetail>).detail;
+      const prompt = detail?.prompt?.trim();
+      if (!prompt) return;
+      unlockVoiceAudioOnGesture();
+      voice.primeSessionMediaFromGesture();
+      if (detail.activateVoice !== false && !voice.micOn) {
+        void voice.toggleMic();
+      }
+      setChatSeedPrompt(prompt);
+      setChatOpen(true);
+    };
+    window.addEventListener(CED_LIFE_ACTION_EVENT, onLifeAction);
+    return () => window.removeEventListener(CED_LIFE_ACTION_EVENT, onLifeAction);
+  }, [voice.micOn, voice.primeSessionMediaFromGesture, voice.toggleMic]);
   const { errorMessage, clearError } = voice;
 
   const voiceLimit =
@@ -307,6 +325,8 @@ export function CedVoiceHub() {
         onClose={() => setChatOpen(false)}
         seedImage={chatSeedImage}
         onSeedConsumed={() => setChatSeedImage(null)}
+        seedPrompt={chatSeedPrompt}
+        onSeedPromptConsumed={() => setChatSeedPrompt(null)}
         onVoiceImageAttached={
           voice.voiceSessionActive
             ? (preview, file) => {

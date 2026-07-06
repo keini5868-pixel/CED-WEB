@@ -75,7 +75,10 @@ def create_event(
 
 
 def resolve_window(kind: str, *, tz_name: str = "America/New_York") -> tuple[datetime, datetime]:
-    tz = ZoneInfo(tz_name)
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001
+        tz = timezone(timedelta(hours=-4))
     now = datetime.now(tz)
     if kind == "tomorrow":
         start = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)

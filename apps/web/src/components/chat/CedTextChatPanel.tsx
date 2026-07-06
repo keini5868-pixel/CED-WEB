@@ -32,6 +32,9 @@ type CedTextChatPanelProps = {
   /** Imagen generada por voz — se muestra al abrir el chat */
   seedImage?: ChatImageAttachment | null;
   onSeedConsumed?: () => void;
+  /** Prompt desde panel LIFE — se envía al abrir el chat */
+  seedPrompt?: string | null;
+  onSeedPromptConsumed?: () => void;
   /** Mientras hay sesión de voz activa, registra imagen para publicar en Instagram */
   onVoiceImageAttached?: (preview: string, file?: File) => void;
   voicePublishActive?: boolean;
@@ -284,6 +287,8 @@ export function CedTextChatPanel({
   onClose,
   seedImage,
   onSeedConsumed,
+  seedPrompt,
+  onSeedPromptConsumed,
   onVoiceImageAttached,
   voicePublishActive = false,
 }: CedTextChatPanelProps) {
@@ -395,6 +400,49 @@ export function CedTextChatPanel({
     onSeedConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- consumir seed una vez por URL
   }, [seedImage?.url, open]);
+
+  useEffect(() => {
+    if (!open || !seedPrompt?.trim() || busy) return;
+    const prompt = seedPrompt.trim();
+    onSeedPromptConsumed?.();
+    setInput(prompt);
+    void (async () => {
+      setError(null);
+      setBusy(true);
+      setTyping(true);
+      const userMsg: ChatMessage = { role: "user", content: prompt };
+      setMessages((prev) => dedupeChatMessages([...prev, userMsg]));
+      try {
+        const result = await sendChatMessage(
+          prompt,
+          conversationId,
+          null,
+          voicePublishActive || Boolean(onVoiceImageAttached),
+        );
+        if (result.conversation_id) setConversationId(result.conversation_id);
+        setMessages((prev) =>
+          dedupeChatMessages([
+            ...prev,
+            {
+              role: "model",
+              content: result.reply,
+              created_at: new Date().toISOString(),
+              pdf: result.pdf,
+              image: result.image,
+            },
+          ]),
+        );
+        await refreshStatus();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Error al enviar mensaje.");
+      } finally {
+        setBusy(false);
+        setTyping(false);
+        setInput("");
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- consumir seed una vez
+  }, [seedPrompt, open]);
 
   useEffect(() => {
     if (!open) return;
