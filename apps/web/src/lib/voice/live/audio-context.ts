@@ -64,8 +64,9 @@ export async function getAudioContext(
   });
 
   const create = () => {
-    const { id: _id, ...ctxOpts } = options ?? {};
-    const ctx = new AudioContext(ctxOpts);
+    const opts: AudioContextOptionsWithId = { ...(options ?? {}) };
+    delete opts.id;
+    const ctx = new AudioContext(opts);
     if (id) contexts.set(id, ctx);
     return ctx;
   };

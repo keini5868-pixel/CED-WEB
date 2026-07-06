@@ -127,9 +127,8 @@ export class CedRetellClient {
     }
   }
 
-  private maybeBargeIn(_userText: string): void {
+  private maybeBargeIn(): void {
     // Retell gestiona interrupciones en servidor; silenciar aquí cortaba el audio a medias.
-    return;
   }
 
   private stopAudioRetry(): void {
@@ -339,12 +338,12 @@ export class CedRetellClient {
         }
       }
       if (update.turntaking === "user_turn") {
-        this.maybeBargeIn(this.pendingUserText);
+        this.maybeBargeIn();
       }
 
       const userText = this.latestLine(lines, "user");
       if (userText && userText !== this.pendingUserText) {
-        this.maybeBargeIn(userText);
+        this.maybeBargeIn();
         if (update.turntaking === "user_turn") {
           this.scheduleUserTranscript(userText);
         }

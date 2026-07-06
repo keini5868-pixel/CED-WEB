@@ -5,7 +5,7 @@ export const PRODUCTION_API_URL = "https://ced-web-production.up.railway.app";
 
 /** Corrige typos habituales (cedweb / ced-api → ced-web-production). */
 export function normalizeApiUrl(raw: string): string {
-  let url = raw.trim().replace(/\/$/, "");
+  const url = raw.trim().replace(/\/$/, "");
   if (!url) return url;
   if (
     url.includes("cedweb-production.up.railway.app") ||
@@ -29,7 +29,7 @@ export function appUrl(): string {
 export function apiUrl(): string {
   const serverOverride =
     typeof window === "undefined" ? process.env.CED_API_URL?.trim() : undefined;
-  let raw =
+  const raw =
     serverOverride ||
     process.env.NEXT_PUBLIC_API_URL?.trim() ||
     "";
