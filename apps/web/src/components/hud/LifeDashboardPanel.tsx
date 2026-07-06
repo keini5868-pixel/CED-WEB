@@ -172,6 +172,7 @@ function CalendarHudPanel({
   const [time, setTime] = useState("09:00");
   const [saving, setSaving] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [needsReconnect, setNeedsReconnect] = useState(false);
   const [localToday, setLocalToday] = useState(todayEvents);
   const [localWeek, setLocalWeek] = useState(weekEvents);
 
@@ -184,7 +185,13 @@ function CalendarHudPanel({
     if (!connected) return;
     void (async () => {
       const data = await fetchHudCalendarEvents();
-      if (data.error) setDetailError(data.error);
+      if (data.error) {
+        setDetailError(data.error);
+        setNeedsReconnect(Boolean(data.needs_reconnect));
+      } else {
+        setDetailError(null);
+        setNeedsReconnect(false);
+      }
       if (data.connected) {
         setLocalToday(data.today_events);
         setLocalWeek(data.week_events);
@@ -203,9 +210,13 @@ function CalendarHudPanel({
     });
     setSaving(false);
     if (!result.ok) {
-      setDetailError(result.error || "No se pudo guardar.");
+      const msg = result.error || "No se pudo guardar.";
+      setDetailError(msg);
+      setNeedsReconnect(/permiso|reconecte|conectar calendar/i.test(msg));
       return;
     }
+    setDetailError(null);
+    setNeedsReconnect(false);
     setTitle("");
     onRefresh();
     const data = await fetchHudCalendarEvents();
@@ -250,7 +261,15 @@ function CalendarHudPanel({
         )}
       </ul>
       {detailError ? (
-        <p className="mt-1 text-[9px] text-amber-400">{detailError}</p>
+        <div className="mt-1 space-y-1">
+          <p className="text-[9px] text-amber-400">{detailError}</p>
+          {needsReconnect ? (
+            <LifeActionButton
+              label="↻ Reconectar Calendar"
+              onClick={() => void connectGoogleCalendarFromLife()}
+            />
+          ) : null}
+        </div>
       ) : null}
       <div className="mt-2 space-y-1">
         <p className="text-[9px] text-cyan-400/80">➕ Nuevo evento</p>

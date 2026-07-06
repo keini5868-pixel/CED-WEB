@@ -10,9 +10,13 @@ from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services.google_oauth import (
+    CALENDAR_RECONNECT_MSG,
+    GMAIL_RECONNECT_MSG,
     get_connection_status,
     google_oauth_diagnostics,
     store_tokens,
+    token_has_calendar_scope,
+    token_has_gmail_scope,
 )
 
 logger = logging.getLogger(__name__)
@@ -45,6 +49,16 @@ def save_google_token(
         len(body.provider_token),
         bool(body.provider_refresh_token),
     )
+    if body.type == "calendar" and not token_has_calendar_scope(body.provider_token):
+        raise HTTPException(
+            status_code=400,
+            detail=CALENDAR_RECONNECT_MSG,
+        )
+    if body.type == "gmail" and not token_has_gmail_scope(body.provider_token):
+        raise HTTPException(
+            status_code=400,
+            detail=GMAIL_RECONNECT_MSG,
+        )
     try:
         store_tokens(
             body.type,

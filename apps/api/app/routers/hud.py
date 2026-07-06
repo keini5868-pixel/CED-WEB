@@ -88,10 +88,15 @@ async def hud_create_calendar_event(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     from app.services.google_calendar_api import create_event
-    from app.services.google_oauth import get_valid_access_token
+    from app.services.google_oauth import (
+        CALENDAR_RECONNECT_MSG,
+        force_refresh_access_token,
+        get_valid_access_token,
+    )
 
-    try:
-        token = get_valid_access_token("calendar", user_id)
+    import httpx
+
+    def _create_with_token(token: str) -> None:
         from datetime import timedelta
 
         start = datetime.fromisoformat(f"{body.date}T{body.time or '09:00'}:00")
@@ -113,11 +118,28 @@ async def hud_create_calendar_event(
                 else "Evento creado desde CED HUD"
             ),
         )
+
+    try:
+        token = get_valid_access_token("calendar", user_id)
+        try:
+            _create_with_token(token)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code not in (401, 403):
+                raise
+            token = force_refresh_access_token("calendar", user_id)
+            _create_with_token(token)
         return {"ok": True}
     except ValueError as exc:
         if str(exc) == "not_connected":
             raise HTTPException(status_code=401, detail="Calendar no conectado.") from exc
+        if str(exc) == "reconnect_required":
+            raise HTTPException(status_code=403, detail=CALENDAR_RECONNECT_MSG) from exc
         raise HTTPException(status_code=400, detail="Fecha u hora inválida.") from exc
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403):
+            raise HTTPException(status_code=403, detail=CALENDAR_RECONNECT_MSG) from exc
+        logger.exception("[HUD] calendar event HTTP error")
+        raise HTTPException(status_code=502, detail="No se pudo crear el evento.") from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("[HUD] calendar event failed")
         raise HTTPException(status_code=502, detail="No se pudo crear el evento.") from exc

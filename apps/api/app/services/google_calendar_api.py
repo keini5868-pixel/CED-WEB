@@ -12,6 +12,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _CALENDAR_BASE = "https://www.googleapis.com/calendar/v3"
+_DEFAULT_TZ = "America/New_York"
 _DAYS_ES = (
     "Lunes",
     "Martes",
@@ -39,6 +40,31 @@ _MONTHS_ES = (
 
 def _headers(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
+
+
+def _event_time_payload(dt: datetime, tz_name: str = _DEFAULT_TZ) -> dict[str, str]:
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception:  # noqa: BLE001
+        tz = timezone.utc
+        tz_name = "UTC"
+    local = dt.astimezone(tz) if dt.tzinfo else dt.replace(tzinfo=tz)
+    return {
+        "dateTime": local.strftime("%Y-%m-%dT%H:%M:%S"),
+        "timeZone": tz_name,
+    }
+
+
+def _friendly_calendar_error(exc: Exception) -> tuple[str, bool]:
+    from app.services.google_oauth import CALENDAR_RECONNECT_MSG
+
+    if isinstance(exc, httpx.HTTPStatusError):
+        if exc.response.status_code in (401, 403):
+            return CALENDAR_RECONNECT_MSG, True
+    text = str(exc)
+    if "403" in text or "401" in text:
+        return CALENDAR_RECONNECT_MSG, True
+    return "No se pudo acceder a Calendar. Reintente en unos segundos.", False
 
 
 def _parse_event_start(start: dict[str, Any], tz_name: str = "America/New_York") -> datetime | None:
@@ -157,7 +183,11 @@ def list_events(
 
 def get_calendar_events(user_id: str) -> dict[str, Any]:
     """Eventos Calendar para HUD — hoy y próximos 7 días."""
-    from app.services.google_oauth import get_connection_status, get_valid_access_token
+    from app.services.google_oauth import (
+        force_refresh_access_token,
+        get_connection_status,
+        get_valid_access_token,
+    )
 
     if not get_connection_status("calendar", user_id).get("connected"):
         return {"connected": False, "events": [], "today_events": [], "week_events": [], "count": 0}
@@ -181,8 +211,9 @@ def get_calendar_events(user_id: str) -> dict[str, Any]:
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code not in (401, 403):
                 raise
-            token = get_valid_access_token("calendar", user_id)
+            token = force_refresh_access_token("calendar", user_id)
             today_events, week_events = _load_events(token)
+
         today_ids = {e.get("id") for e in today_events}
         upcoming = [e for e in week_events if e.get("id") not in today_ids]
         return {
@@ -193,18 +224,41 @@ def get_calendar_events(user_id: str) -> dict[str, Any]:
             "count": len(week_events),
         }
     except ValueError as exc:
-        if str(exc) == "not_connected":
-            return {"connected": False, "events": [], "today_events": [], "week_events": [], "count": 0}
+        if str(exc) in ("not_connected", "reconnect_required"):
+            msg, needs = _friendly_calendar_error(exc)
+            return {
+                "connected": True,
+                "events": [],
+                "today_events": [],
+                "week_events": [],
+                "count": 0,
+                "error": msg,
+                "needs_reconnect": needs or str(exc) == "reconnect_required",
+            }
         raise
-    except Exception as exc:  # noqa: BLE001
-        logger.error("[CALENDAR] error: %s", exc)
+    except httpx.HTTPStatusError as exc:
+        logger.error("[CALENDAR] HTTP %s: %s", exc.response.status_code, exc.response.text[:200])
+        msg, needs = _friendly_calendar_error(exc)
         return {
             "connected": True,
             "events": [],
             "today_events": [],
             "week_events": [],
             "count": 0,
-            "error": str(exc)[:200],
+            "error": msg,
+            "needs_reconnect": needs,
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[CALENDAR] error: %s", exc)
+        msg, needs = _friendly_calendar_error(exc)
+        return {
+            "connected": True,
+            "events": [],
+            "today_events": [],
+            "week_events": [],
+            "count": 0,
+            "error": msg,
+            "needs_reconnect": needs,
         }
 
 
@@ -215,12 +269,13 @@ def create_event(
     start: datetime,
     end: datetime,
     description: str = "",
+    tz_name: str = _DEFAULT_TZ,
 ) -> dict[str, Any]:
     body = {
         "summary": summary[:200],
         "description": description[:2000],
-        "start": {"dateTime": start.isoformat(), "timeZone": str(start.tzinfo or "UTC")},
-        "end": {"dateTime": end.isoformat(), "timeZone": str(end.tzinfo or "UTC")},
+        "start": _event_time_payload(start, tz_name),
+        "end": _event_time_payload(end, tz_name),
     }
     with httpx.Client(timeout=20.0) as client:
         res = client.post(
@@ -228,6 +283,8 @@ def create_event(
             headers=_headers(access_token),
             json=body,
         )
+        if res.status_code >= 400:
+            logger.error("[CALENDAR] create %s: %s", res.status_code, res.text[:240])
         res.raise_for_status()
         return res.json()
 

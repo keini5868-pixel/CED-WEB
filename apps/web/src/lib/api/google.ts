@@ -15,9 +15,9 @@ const PENDING_LINK_KEY = "ced_pending_google_link";
 
 const GOOGLE_SCOPES: Record<GoogleLinkType, string> = {
   calendar:
-    "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
   gmail:
-    "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose",
 };
 
 async function sessionAccessToken(): Promise<string | null> {

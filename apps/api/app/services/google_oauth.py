@@ -29,6 +29,16 @@ GMAIL_SCOPES = (
 
 _GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_TOKENINFO_URL = "https://www.googleapis.com/oauth2/v3/tokeninfo"
+
+CALENDAR_RECONNECT_MSG = (
+    "Permisos de Calendar insuficientes. Pulse «Conectar Calendar» de nuevo "
+    "y acepte todos los permisos de Google."
+)
+GMAIL_RECONNECT_MSG = (
+    "Permisos de Gmail insuficientes. Pulse «Conectar Gmail» de nuevo "
+    "y acepte todos los permisos."
+)
 
 
 def _calendar_redirect_uri() -> str:
@@ -273,8 +283,74 @@ def refresh_access_token(service: GoogleService, refresh_token: str) -> dict[str
                 "grant_type": "refresh_token",
             },
         )
+        if res.status_code >= 400:
+            logger.error(
+                "[GOOGLE-OAUTH] refresh failed service=%s status=%s body=%s",
+                service,
+                res.status_code,
+                res.text[:300],
+            )
         res.raise_for_status()
         return res.json()
+
+
+def inspect_access_token(access_token: str) -> dict[str, Any]:
+    """Metadatos del token (scopes) vía Google tokeninfo."""
+    with httpx.Client(timeout=12.0) as client:
+        res = client.get(
+            _GOOGLE_TOKENINFO_URL,
+            params={"access_token": access_token},
+        )
+        if res.status_code >= 400:
+            logger.warning("[GOOGLE-OAUTH] tokeninfo %s: %s", res.status_code, res.text[:200])
+            return {}
+        return res.json()
+
+
+def token_has_calendar_scope(access_token: str) -> bool:
+    scope = str(inspect_access_token(access_token).get("scope") or "")
+    return any(
+        marker in scope
+        for marker in (
+            "auth/calendar.events",
+            "auth/calendar.readonly",
+            "auth/calendar",
+        )
+    )
+
+
+def token_has_gmail_scope(access_token: str) -> bool:
+    scope = str(inspect_access_token(access_token).get("scope") or "")
+    return any(
+        marker in scope
+        for marker in (
+            "auth/gmail.readonly",
+            "auth/gmail.send",
+            "auth/gmail.compose",
+            "auth/gmail.modify",
+        )
+    )
+
+
+def force_refresh_access_token(service: GoogleService, user_id: str) -> str:
+    """Fuerza refresh — útil tras 401/403 de la API de Google."""
+    uid = normalize_user_id(user_id)
+    row = (
+        supabase_db.get_calendar_tokens(uid)
+        if service == "calendar"
+        else supabase_db.get_gmail_tokens(uid)
+    )
+    if not row or not row.get("access_token"):
+        raise ValueError("not_connected")
+    refresh = str(row.get("refresh_token") or "").strip()
+    if not refresh:
+        raise ValueError("reconnect_required")
+    payload = refresh_access_token(service, refresh)
+    store_tokens(service, uid, {**payload, "refresh_token": refresh})
+    new_access = str(payload.get("access_token") or "").strip()
+    if not new_access:
+        raise ValueError("reconnect_required")
+    return new_access
 
 
 def _expires_at_from_token(payload: dict[str, Any]) -> str | None:

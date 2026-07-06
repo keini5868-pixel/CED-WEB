@@ -374,6 +374,7 @@ export async function fetchHudCalendarEvents(): Promise<{
   week_events: string[];
   events: CalendarHudEvent[];
   error?: string;
+  needs_reconnect?: boolean;
 }> {
   try {
     const res = await proxyFetchAuthed("hud/calendar/events");
@@ -401,6 +402,7 @@ export async function fetchHudCalendarEvents(): Promise<{
         ? (raw.events as CalendarHudEvent[])
         : [],
       error: typeof raw.error === "string" ? raw.error : undefined,
+      needs_reconnect: Boolean(raw.needs_reconnect),
     };
   } catch {
     return { connected: false, today_events: [], week_events: [], events: [] };
