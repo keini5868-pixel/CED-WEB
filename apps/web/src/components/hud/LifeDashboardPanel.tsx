@@ -14,7 +14,7 @@ import {
   type GmailHudMessage,
 } from "@/lib/api/hud";
 import { createHudCalendarEvent } from "@/lib/api/hudActions";
-import { useHudLifeData } from "@/hooks/useHudLifeData";
+import { useHudLifeData, hasRealWeatherData } from "@/hooks/useHudLifeData";
 
 const lifeBtnClass =
   "rounded border border-cyan-400/30 bg-transparent px-2 py-0.5 text-[10px] text-[#00ffff] transition hover:bg-cyan-400/10";
@@ -352,10 +352,21 @@ function CompactLifeSection({
 }
 
 export function LifeDashboardPanel() {
-  const { data, refreshing, refresh, refreshConnections } = useHudLifeData();
+  const {
+    data,
+    refreshingConnections,
+    loadingWeather,
+    refresh,
+    refreshConnections,
+  } = useHudLifeData();
 
   const place = data.place || "Charlotte NC";
-  const weatherHeadline = data.weather.lines[0] ?? "Buscando clima…";
+  const weatherReady = hasRealWeatherData(data.weather.lines);
+  const weatherHeadline = weatherReady
+    ? data.weather.lines[0] ?? "Charlotte NC"
+    : loadingWeather
+      ? "Cargando clima…"
+      : "Charlotte NC";
 
   const todayEvents =
     data.calendar.today_events?.length
@@ -373,10 +384,12 @@ export function LifeDashboardPanel() {
           📅 {data.date_label}
         </p>
         <div className="flex items-center gap-2">
-          {refreshing ? (
+          {refreshingConnections ? (
             <span className="ced-hud-text-muted animate-pulse text-[8px]">
-              Actualizando…
+              Gmail/Calendar…
             </span>
+          ) : loadingWeather ? (
+            <span className="ced-hud-text-muted text-[8px] opacity-50">Clima en fondo</span>
           ) : (
             <span className="ced-hud-text-muted text-[8px] opacity-60">Auto</span>
           )}

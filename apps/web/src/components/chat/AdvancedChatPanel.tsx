@@ -108,7 +108,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   const [streaming, setStreaming] = useState(false);
   const [statusHint, setStatusHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [modelLabel, setModelLabel] = useState("Claude Sonnet");
+  const [modelLabel, setModelLabel] = useState("Claude Haiku");
   const [configured, setConfigured] = useState<boolean | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -123,7 +123,11 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     void fetchAdvancedChatStatus().then((status) => {
       setConfigured(status?.configured ?? false);
       if (status?.model) {
-        setModelLabel(status.model.replace("claude-", "Claude ").replace(/-/g, " "));
+        setModelLabel(
+          (status.stream_model ?? status.model)
+            .replace("claude-", "Claude ")
+            .replace(/-/g, " "),
+        );
       }
       if (messages.length === 0) {
         setMessages([

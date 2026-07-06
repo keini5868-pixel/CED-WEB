@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services.claude_advanced import (
+    ADVANCED_DEEP_MODEL_LABEL,
     ADVANCED_MODEL_LABEL,
+    ADVANCED_STREAM_MODEL_LABEL,
     iter_advanced_message_stream,
     send_advanced_message,
 )
@@ -101,5 +103,6 @@ def advanced_chat_status(_user_id: str = Depends(require_user_id)) -> dict:
     configured = bool(settings.anthropic_api_key.strip())
     return {
         "configured": configured,
-        "model": ADVANCED_MODEL_LABEL if configured else None,
+        "model": ADVANCED_DEEP_MODEL_LABEL if configured else None,
+        "stream_model": ADVANCED_STREAM_MODEL_LABEL if configured else None,
     }

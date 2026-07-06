@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any, Iterator
 
 import httpx
@@ -33,10 +34,15 @@ from app.services.text_chat import (
 
 logger = logging.getLogger(__name__)
 
-# Sonnet — rápido e interactivo; Opus era demasiado lento en producción.
-ADVANCED_MODEL = CHAT_MODEL
-ADVANCED_MODEL_FALLBACK = CHAT_MODEL_FAST
-ADVANCED_MODEL_LABEL = "claude-sonnet-4-6"
+# Haiku en streaming conversacional; Sonnet en PDF/planes/herramientas.
+ADVANCED_STREAM_MODEL = CHAT_MODEL_FAST
+ADVANCED_DEEP_MODEL = CHAT_MODEL
+ADVANCED_STREAM_MODEL_LABEL = "claude-haiku"
+ADVANCED_DEEP_MODEL_LABEL = "claude-sonnet-4-6"
+# Compat — herramientas y PDF usan Sonnet.
+ADVANCED_MODEL = ADVANCED_DEEP_MODEL
+ADVANCED_MODEL_FALLBACK = ADVANCED_STREAM_MODEL
+ADVANCED_MODEL_LABEL = ADVANCED_DEEP_MODEL_LABEL
 
 ADVANCED_SYSTEM_PROMPT = f"""Eres el sistema AVANZADO de CED — Castillo Evolución Digital.
 Analista experto en negocios, marketing digital, ventas, estrategia empresarial y tecnología.
@@ -54,6 +60,30 @@ CAPACIDADES (usa las herramientas cuando corresponda):
 
 {CHAT_DELIVERABLE_RULES}
 """
+
+
+def _needs_sonnet_stream(text: str) -> bool:
+    """Planes largos / entregables → Sonnet aunque sea streaming."""
+    from app.services.text_chat import _is_deliverable_request
+
+    if len(text.strip()) > 420:
+        return True
+    if _is_deliverable_request(text):
+        return True
+    return bool(
+        re.search(
+            r"estrategia\s+completa|plan\s+de\s+negocio|an[aá]lisis\s+profundo|"
+            r"informe\s+detallado|roadmap|plan\s+maestro|plan\s+ejecutivo",
+            text,
+            re.I,
+        )
+    )
+
+
+def _pick_stream_model(text: str) -> tuple[str, str]:
+    if _needs_sonnet_stream(text):
+        return ADVANCED_DEEP_MODEL, ADVANCED_DEEP_MODEL_LABEL
+    return ADVANCED_STREAM_MODEL, ADVANCED_STREAM_MODEL_LABEL
 
 
 def _normalize_history(history: list[dict[str, Any]]) -> list[dict[str, str]]:
@@ -280,27 +310,41 @@ def _iter_anthropic_text_stream(
     system: str,
     messages: list[dict[str, Any]],
     max_tokens: int,
-) -> Iterator[str]:
+    user_text: str,
+) -> Iterator[tuple[str, str]]:
+    """Yield (text_chunk, model_label)."""
+    primary, label = _pick_stream_model(user_text)
+    fallback = (
+        ADVANCED_STREAM_MODEL
+        if primary == ADVANCED_DEEP_MODEL
+        else ADVANCED_DEEP_MODEL
+    )
     last_exc: Exception | None = None
-    for model in (ADVANCED_MODEL, ADVANCED_MODEL_FALLBACK):
+    for model in (primary, fallback):
         try:
-            yield from _stream_model_text(
+            for piece in _stream_model_text(
                 api_key=api_key,
                 system=system,
                 messages=messages,
                 max_tokens=max_tokens,
                 model=model,
-            )
+            ):
+                model_label = label if model == primary else (
+                    ADVANCED_DEEP_MODEL_LABEL
+                    if model == ADVANCED_DEEP_MODEL
+                    else ADVANCED_STREAM_MODEL_LABEL
+                )
+                yield piece, model_label
             return
         except httpx.HTTPStatusError as exc:
             last_exc = exc
-            if exc.response.status_code in (400, 404) and model != ADVANCED_MODEL_FALLBACK:
+            if exc.response.status_code in (400, 404) and model != fallback:
                 logger.warning("[ADVANCED] stream model %s unavailable, fallback", model)
                 continue
             raise
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
-            if model != ADVANCED_MODEL_FALLBACK:
+            if model != fallback:
                 continue
             raise
     if last_exc:
@@ -395,13 +439,16 @@ def iter_advanced_message_stream(
         max_tokens = min(CHAT_DELIVERABLE_MAX_TOKENS, max_tokens + 800)
 
     accumulated: list[str] = []
+    stream_label = ADVANCED_STREAM_MODEL_LABEL
     try:
-        for piece in _iter_anthropic_text_stream(
+        for piece, model_label in _iter_anthropic_text_stream(
             api_key=api_key,
             system=ADVANCED_SYSTEM_PROMPT,
             messages=stream_messages,
             max_tokens=max_tokens,
+            user_text=text,
         ):
+            stream_label = model_label
             accumulated.append(piece)
             yield _sse_event("token", {"text": piece})
     except Exception as exc:  # noqa: BLE001
@@ -428,7 +475,7 @@ def iter_advanced_message_stream(
 
     yield _sse_event(
         "done",
-        _finish_payload(response=reply, model=ADVANCED_MODEL_LABEL),
+        _finish_payload(response=reply, model=stream_label),
     )
 
 

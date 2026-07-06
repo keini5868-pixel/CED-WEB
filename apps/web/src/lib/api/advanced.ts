@@ -13,6 +13,7 @@ export type AdvancedChatMessage = {
 export type AdvancedChatStatus = {
   configured: boolean;
   model: string | null;
+  stream_model?: string | null;
 };
 
 export type AdvancedChatResult = {

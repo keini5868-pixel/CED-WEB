@@ -15,10 +15,10 @@ import {
 import { syncPendingGoogleProviderToken } from "@/lib/api/google";
 import { createClient } from "@/lib/supabase/client";
 
-/** Conexiones Google — poll frecuente. */
+/** Gmail/Calendar — poll frecuente. */
 const CONNECTION_REFRESH_MS = 90 * 1000;
-/** Clima / aire / polen — menos frecuente. */
-const FULL_REFRESH_MS = 15 * 60 * 1000;
+/** Clima / aire / polen — en segundo plano. */
+const WEATHER_REFRESH_MS = 15 * 60 * 1000;
 
 function capitalizeDateLabel(label: string): string {
   const trimmed = label.trim();
@@ -26,7 +26,7 @@ function capitalizeDateLabel(label: string): string {
   return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
 }
 
-function hasRealWeatherData(lines: string[]): boolean {
+export function hasRealWeatherData(lines: string[]): boolean {
   const line = (lines[0] ?? "").trim();
   if (!line) return false;
   if (/\d+\s*°[CF]?/i.test(line)) return true;
@@ -65,18 +65,28 @@ function mergeConnectionSlice(
 
 export function useHudLifeData() {
   const [data, setData] = useState<LifeDashboardSnapshot>(() => createLifeFallback());
-  const [refreshing, setRefreshing] = useState(false);
+  const [refreshingConnections, setRefreshingConnections] = useState(false);
+  const [loadingWeather, setLoadingWeather] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const bootstrappedRef = useRef(false);
+  const weatherBusyRef = useRef(false);
 
-  /** Rápido — Calendar/Gmail OAuth (~1s). Siempre primero. */
-  const refreshConnections = useCallback(async () => {
-    const conn = await fetchHudConnections();
-    setData((prev) => mergeConnectionSlice(prev, conn));
+  /** Rápido — Calendar/Gmail (~1s). */
+  const refreshConnections = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setRefreshingConnections(true);
+    try {
+      const conn = await fetchHudConnections();
+      setData((prev) => mergeConnectionSlice(prev, conn));
+    } finally {
+      if (showSpinner) setRefreshingConnections(false);
+    }
   }, []);
 
-  /** Lento — clima, aire, polen. No resetea conexiones si falla. */
+  /** Lento — clima, aire, polen (no bloquea Gmail/Calendar). */
   const refreshLifeContent = useCallback(async () => {
+    if (weatherBusyRef.current) return;
+    weatherBusyRef.current = true;
+    setLoadingWeather(true);
     try {
       const snapshot = await fetchHudLife();
       setData((prev) => ({
@@ -109,31 +119,30 @@ export function useHudLifeData() {
         },
       }));
     } catch {
-      /* Mantener calendar/gmail ya cargados por refreshConnections */
+      /* Mantener datos previos */
+    } finally {
+      weatherBusyRef.current = false;
+      setLoadingWeather(false);
     }
   }, []);
 
-  const refresh = useCallback(
-    async (showSpinner = false) => {
-      if (showSpinner) setRefreshing(true);
-      try {
-        await refreshConnections();
-        await refreshLifeContent();
-      } finally {
-        if (showSpinner) setRefreshing(false);
-      }
-    },
-    [refreshConnections, refreshLifeContent],
-  );
+  const refreshConnectionsBg = useCallback(() => {
+    void refreshConnections(false);
+  }, [refreshConnections]);
+
+  const refreshWeatherBg = useCallback(() => {
+    void refreshLifeContent();
+  }, [refreshLifeContent]);
+
+  /** Manual ↻ — solo espera conexiones; clima en background. */
+  const refresh = useCallback(async () => {
+    await refreshConnections(true);
+    refreshWeatherBg();
+  }, [refreshConnections, refreshWeatherBg]);
 
   useEffect(() => {
     const supabase = createClient();
     let cancelled = false;
-
-    const runFull = async () => {
-      await refreshConnections();
-      await refreshLifeContent();
-    };
 
     const bootstrap = async () => {
       const oauth = await syncPendingGoogleProviderToken();
@@ -146,10 +155,10 @@ export function useHudLifeData() {
           ),
         );
       }
-      if (!cancelled) {
-        await runFull();
-        bootstrappedRef.current = true;
-      }
+      if (cancelled) return;
+      await refreshConnections(false);
+      bootstrappedRef.current = true;
+      refreshWeatherBg();
     };
 
     void supabase.auth.getSession().then(({ data }) => {
@@ -170,36 +179,32 @@ export function useHudLifeData() {
           event === "TOKEN_REFRESHED" ||
           event === "INITIAL_SESSION")
       ) {
-        void refreshConnections();
+        refreshConnectionsBg();
         if (bootstrappedRef.current) {
-          void refreshLifeContent();
+          refreshWeatherBg();
         }
       }
     });
 
     void bootstrap();
 
-    const connInterval = setInterval(() => {
-      void refreshConnections();
-    }, CONNECTION_REFRESH_MS);
-    const fullInterval = setInterval(() => {
-      void runFull();
-    }, FULL_REFRESH_MS);
+    const connInterval = setInterval(refreshConnectionsBg, CONNECTION_REFRESH_MS);
+    const weatherInterval = setInterval(refreshWeatherBg, WEATHER_REFRESH_MS);
 
     const onVisible = () => {
       if (document.visibilityState === "visible") {
-        void refreshConnections();
+        refreshConnectionsBg();
       }
     };
     const onFocus = () => {
-      void refreshConnections();
+      refreshConnectionsBg();
     };
 
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onFocus);
 
     const onGoogleConnected = () => {
-      void runFull();
+      void refreshConnections(false).then(() => refreshWeatherBg());
     };
     window.addEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onGoogleConnected);
     window.addEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onGoogleConnected);
@@ -208,18 +213,18 @@ export function useHudLifeData() {
       cancelled = true;
       subscription.unsubscribe();
       clearInterval(connInterval);
-      clearInterval(fullInterval);
+      clearInterval(weatherInterval);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onFocus);
       window.removeEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onGoogleConnected);
       window.removeEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onGoogleConnected);
     };
-  }, [refreshConnections, refreshLifeContent]);
+  }, [refreshConnections, refreshConnectionsBg, refreshWeatherBg]);
 
   useEffect(() => {
     if (!sessionReady) return;
-    void refreshConnections();
-  }, [sessionReady, refreshConnections]);
+    refreshConnectionsBg();
+  }, [sessionReady, refreshConnectionsBg]);
 
   const weatherSummary = () => {
     const line = data.weather.lines[0] ?? "Charlotte NC";
@@ -263,9 +268,11 @@ export function useHudLifeData() {
 
   return {
     data,
-    refreshing,
-    refresh: () => refresh(true),
-    refreshConnections,
+    refreshing: refreshingConnections,
+    refreshingConnections,
+    loadingWeather,
+    refresh,
+    refreshConnections: refreshConnectionsBg,
     weatherSummary,
     calendarSummary,
     castilloStripText,
