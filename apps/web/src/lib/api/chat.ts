@@ -83,10 +83,7 @@ export async function sendChatMessage(
       voicePublish,
     );
   }
-  if (onToken) {
-    return sendChatMessageStream(content, conversationId, onToken);
-  }
-  return sendChatMessageBlocking(content, conversationId, null, voicePublish);
+  return sendChatMessageStream(content, conversationId, onToken ?? (() => {}));
 }
 
 async function sendChatMessageBlocking(

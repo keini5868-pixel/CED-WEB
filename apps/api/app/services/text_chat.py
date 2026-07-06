@@ -79,6 +79,12 @@ _VIRAL_KEYWORDS = re.compile(
     r"hooks?|stories|algoritmo|engagement|redes\s+sociales)\b",
     re.I,
 )
+
+_GREETING_ONLY = re.compile(
+    r"^(?:hola|buenos?\s+d[ií]as|buenas?\s+tardes|buenas?\s+noches|hey|hi|hello|"
+    r"qué\s+tal|que\s+tal|saludos)[\s!.?]*$",
+    re.I,
+)
 _TOOLS_KEYWORDS = re.compile(
     r"\b(publica|publicar|instagram|facebook|meta|recuerdas|guarda|memoria|"
     r"lead|cliente|pdf|imagen|conectad|busca|buscar|búsqueda|noticias|clima|"
@@ -461,6 +467,14 @@ Cuando prepares contenido para redes, entrégalo listo y ofrece publicarlo con C
 def _wants_viral_knowledge(text: str) -> bool:
     return bool(_VIRAL_KEYWORDS.search(text or ""))
 
+
+def _instant_chat_greeting_reply(text: str) -> str | None:
+    if _GREETING_ONLY.match((text or "").strip()):
+        return (
+            "Hola, señor. Soy CED — su asistente de negocios y marketing. "
+            "¿En qué le ayudo hoy?"
+        )
+    return None
 
 def _has_hallucinated_tool(text: str) -> bool:
     for pattern in HALLUCINATED_TOOL_PATTERNS:
@@ -1005,6 +1019,20 @@ def _build_chat_system(
     extras = build_chat_system_extras(user_id, route)
     if extras:
         parts.append(extras)
+    return "\n\n".join(parts)
+
+
+def _build_chat_system_light(user_id: str, user_text: str) -> str:
+    """System prompt mínimo para streaming — sin KB ni memoria pesada."""
+    from app.services.user_address import address_context_for_prompt
+
+    parts = [_chat_system_for_user(user_id)]
+    addr = address_context_for_prompt(user_id)
+    if addr:
+        parts.append(addr)
+    if _wants_viral_knowledge(user_text):
+        parts.append(CED_VIRAL_KNOWLEDGE_2026)
+        parts.append(CED_MEMORY_USAGE_RULES)
     return "\n\n".join(parts)
 
 
@@ -2016,6 +2044,14 @@ def send_message(
             route_meta={"intent": "publish_flow", "source": "conversation"},
         )
 
+    if not image_bytes:
+        instant = _instant_chat_greeting_reply(text)
+        if instant:
+            return _finish(
+                _finalize_chat_reply(instant),
+                route_meta={"intent": "greeting", "source": "instant"},
+            )
+
     if image_bytes:
         try:
             from app.services.chat_multimedia import analyze_chat_image
@@ -2259,7 +2295,15 @@ def send_message(
                 )
             return _finish(message)
 
-    route = route_message(user_id, text, channel="text")
+    route = route_message(
+        user_id,
+        text,
+        channel="text",
+        defer_enrichment=bool(
+            _instant_chat_greeting_reply(text)
+            or is_casual_chat_interrupt(text)
+        ),
+    )
 
     if route.intent == "memory_save" and route.speakable:
         return _finish(route.speakable, route_meta=route.to_dict())
@@ -2359,7 +2403,13 @@ def _can_stream_chat_text(text: str) -> bool:
     from app.modules.calendar_module import is_calendar_intent
     from app.modules.environment_module import is_environment_intent
     from app.modules.gmail_module import is_gmail_intent
-    from app.services.cognitive_intents import is_conversation_recall_intent
+    from app.services.cognitive_intents import (
+        is_conversation_recall_intent,
+        is_news_intent,
+        is_weather_intent,
+        is_web_research_intent,
+        requires_live_web,
+    )
     from app.services.hud_reminders import is_reminder_intent
 
     if is_gmail_intent(text) or is_calendar_intent(text):
@@ -2369,6 +2419,10 @@ def _can_stream_chat_text(text: str) -> bool:
     if is_conversation_recall_intent(text):
         return False
     if is_generate_image_intent(text) or is_pdf_intent(text):
+        return False
+    if requires_live_web(text) or is_web_research_intent(text):
+        return False
+    if is_news_intent(text) or is_weather_intent(text):
         return False
     if _needs_chat_tools(text):
         return False
@@ -2492,13 +2546,37 @@ def iter_send_message_stream(
         channel="text",
     )
 
-    route = route_message(user_id, text, channel="text")
-    if route.intent in ("memory_save", "memory_recall", "web_search") and route.speakable:
+    instant = _instant_chat_greeting_reply(text)
+    if instant:
+        reply = _finalize_chat_reply(instant)
+        supabase_db.append_message(
+            conversation_id,
+            user_id,
+            "model",
+            reply,
+            session_id=conversation_id,
+            channel="text",
+        )
+        yield _sse_event("token", {"text": reply})
+        yield _sse_event(
+            "done",
+            {
+                "conversation_id": conversation_id,
+                "reply": reply,
+                "usage": chat_status(user_id),
+                "cognitive": {"intent": "greeting", "source": "instant"},
+            },
+        )
+        return
+
+    route = route_message(user_id, text, channel="text", defer_enrichment=True)
+    if route.intent in ("memory_save", "memory_recall") and route.speakable:
         reply = _finalize_chat_reply(route.speakable)
         supabase_db.append_message(
             conversation_id, user_id, "model", reply,
             session_id=conversation_id, channel="text",
         )
+        yield _sse_event("token", {"text": reply})
         yield _sse_event(
             "done",
             {
@@ -2513,7 +2591,7 @@ def iter_send_message_stream(
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
     try:
-        system = _build_chat_system(user_id, text, route, conversation_id)
+        system = _build_chat_system_light(user_id, text)
     except Exception:  # noqa: BLE001
         logger.exception("[CHAT] fallo armando system prompt — usando base")
         system = _chat_system_for_user(user_id)

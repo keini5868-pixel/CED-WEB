@@ -412,26 +412,46 @@ export function CedTextChatPanel({
       setTyping(true);
       const userMsg: ChatMessage = { role: "user", content: prompt };
       setMessages((prev) => dedupeChatMessages([...prev, userMsg]));
+      setMessages((prev) =>
+        dedupeChatMessages([
+          ...prev,
+          { role: "model", content: "", created_at: new Date().toISOString() },
+        ]),
+      );
+      setTyping(false);
       try {
         const result = await sendChatMessage(
           prompt,
           conversationId,
           null,
           voicePublishActive || Boolean(onVoiceImageAttached),
+          (chunk) => {
+            setMessages((prev) => {
+              const next = [...prev];
+              const last = next[next.length - 1];
+              if (!last || last.role !== "model") return prev;
+              next[next.length - 1] = {
+                ...last,
+                content: `${last.content}${chunk}`,
+              };
+              return dedupeChatMessages(next);
+            });
+          },
         );
         if (result.conversation_id) setConversationId(result.conversation_id);
-        setMessages((prev) =>
-          dedupeChatMessages([
-            ...prev,
-            {
-              role: "model",
+        setMessages((prev) => {
+          const next = [...prev];
+          const last = next[next.length - 1];
+          if (last?.role === "model") {
+            next[next.length - 1] = {
+              ...last,
               content: result.reply,
-              created_at: new Date().toISOString(),
               pdf: result.pdf,
               image: result.image,
-            },
-          ]),
-        );
+            };
+          }
+          return dedupeChatMessages(next);
+        });
         await refreshStatus();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Error al enviar mensaje.");

@@ -3,6 +3,9 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
 
+/** Proxy SSE — chat streaming desde la API. */
+export const maxDuration = 300;
+
 type CookieToSet = {
   name: string;
   value: string;

@@ -80,8 +80,13 @@ def route_message(
     channel: Channel = "text",
     confirm_pending: bool = False,
     execute_side_effects: bool = True,
+    defer_enrichment: bool = False,
 ) -> CognitiveRouteResult:
-    """Decide cómo responder sin adivinar: interno → web → avanzado."""
+    """Decide cómo responder sin adivinar: interno → web → avanzado.
+
+    defer_enrichment=True omite KB interna y búsqueda web síncrona para no
+    bloquear el primer token en streaming.
+    """
     raw = (text or "").strip()
     if not raw:
         return CognitiveRouteResult(
@@ -122,6 +127,15 @@ def route_message(
             confidence=1.0,
             context_for_llm="El usuario quiere publicar en redes. Usa herramientas Meta si están conectadas.",
             meta={"hint": "meta_tools"},
+        )
+
+    if defer_enrichment:
+        return CognitiveRouteResult(
+            intent=CognitiveIntent.DIRECT_REPLY.value,
+            channel=channel,
+            confidence=0.85,
+            source="stream_fast",
+            meta={"defer_enrichment": True},
         )
 
     hits = search_internal_knowledge(raw, limit=3)
