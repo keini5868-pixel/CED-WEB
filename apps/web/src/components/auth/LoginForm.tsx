@@ -6,9 +6,10 @@ import { useEffect, useState } from "react";
 
 import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
-import { DASHBOARD_PATH, SIGNUP_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
+import { AuthDivider, GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
+import { SIGNUP_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
 import { createClient } from "@/lib/supabase/client";
-import { appUrl, isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
+import { isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
 
 export function LoginForm() {
   const router = useRouter();
@@ -63,25 +64,6 @@ export function LoginForm() {
     router.refresh();
   }
 
-  async function handleGoogle() {
-    if (!configured) {
-      setError("Supabase no configurado.");
-      return;
-    }
-    setLoading(true);
-    const supabase = createClient();
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${appUrl()}/auth/callback?next=${encodeURIComponent(next)}`,
-      },
-    });
-    if (authError) {
-      setError(authError.message);
-      setLoading(false);
-    }
-  }
-
   return (
     <AuthCard title="AUTENTICACIÓN" subtitle="Acceso CED Élite">
       {!configured ? (
@@ -123,20 +105,13 @@ export function LoginForm() {
       </form>
       {isGoogleAuthEnabled() ? (
         <>
-          <div className="my-6 flex items-center gap-3">
-            <div className="h-px flex-1 bg-cyan-900" />
-            <span className="text-[10px] text-cyan-700">O</span>
-            <div className="h-px flex-1 bg-cyan-900" />
-          </div>
-          <CedButton
-            type="button"
-            variant="secondary"
-            fullWidth
-            disabled={loading}
-            onClick={handleGoogle}
-          >
-            GOOGLE
-          </CedButton>
+          <AuthDivider />
+          <GoogleAuthButton
+            label="Iniciar sesión con Google"
+            next={next}
+            disabled={loading || !configured}
+            onError={setError}
+          />
         </>
       ) : null}
       <p className="mt-6 text-center text-xs text-cyan-600">

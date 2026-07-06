@@ -56,9 +56,12 @@ export function googleMapsKey(): string {
   );
 }
 
-/** OAuth Google — deshabilitado hasta configurar proveedor en Supabase. */
+/** OAuth Google — activo cuando Supabase está configurado (opt-out con false). */
 export function isGoogleAuthEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "true";
+  if (process.env.NEXT_PUBLIC_GOOGLE_AUTH_ENABLED === "false") {
+    return false;
+  }
+  return isSupabaseConfigured();
 }
 
 /** Soporte flotante — activo salvo NEXT_PUBLIC_SUPPORT_CHAT_ENABLED=false */

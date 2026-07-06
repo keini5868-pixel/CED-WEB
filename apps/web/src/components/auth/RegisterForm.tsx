@@ -6,7 +6,8 @@ import { useState } from "react";
 
 import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
-import { DASHBOARD_PATH, LOGIN_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
+import { AuthDivider, GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
+import { LOGIN_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
 import { createClient } from "@/lib/supabase/client";
 import { appUrl, isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
 
@@ -54,21 +55,6 @@ export function RegisterForm() {
     }
     router.push(next);
     router.refresh();
-  }
-
-  async function handleGoogle() {
-    if (!configured) {
-      setError("Supabase no configurado.");
-      return;
-    }
-    setLoading(true);
-    const supabase = createClient();
-    await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${appUrl()}/auth/callback?next=${callbackNext}`,
-      },
-    });
   }
 
   const payingFlow = next.startsWith("/pricing");
@@ -120,16 +106,15 @@ export function RegisterForm() {
         </CedButton>
       </form>
       {isGoogleAuthEnabled() ? (
-        <CedButton
-          type="button"
-          variant="secondary"
-          fullWidth
-          className="mt-4"
-          disabled={loading}
-          onClick={handleGoogle}
-        >
-          REGISTRO CON GOOGLE
-        </CedButton>
+        <>
+          <AuthDivider />
+          <GoogleAuthButton
+            label="Registrarse con Google"
+            next={next}
+            disabled={loading || !configured}
+            onError={setError}
+          />
+        </>
       ) : null}
       <p className="mt-6 text-center text-xs text-cyan-600">
         ¿Ya tienes cuenta?{" "}
