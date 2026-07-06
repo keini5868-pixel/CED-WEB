@@ -51,6 +51,31 @@ def get_supabase_admin(*, require_service_role: bool = False):
     raise RuntimeError("Supabase no configurado (falta service_role y anon key)")
 
 
+def _verify_token_row(table: str, user_id: str) -> None:
+    from app.services.user_id_utils import normalize_user_id
+
+    uid = normalize_user_id(user_id)
+    verify = (
+        get_supabase_admin(require_service_role=True)
+        .table(table)
+        .select("user_id, access_token, updated_at")
+        .eq("user_id", uid)
+        .limit(1)
+        .execute()
+    )
+    rows = verify.data or []
+    logger.info(
+        "[OAUTH CALLBACK] verify %s user_id=%s rows=%s",
+        table,
+        uid,
+        len(rows),
+    )
+    if not rows or not rows[0].get("access_token"):
+        raise RuntimeError(
+            f"{table}: fila no encontrada tras upsert para user_id={uid}"
+        )
+
+
 def save_calendar_tokens(user_id: str, tokens: dict[str, Any]) -> dict[str, Any]:
     from app.services.user_id_utils import normalize_user_id
 
@@ -59,7 +84,7 @@ def save_calendar_tokens(user_id: str, tokens: dict[str, Any]) -> dict[str, Any]
         raise RuntimeError(
             "SUPABASE_SERVICE_ROLE_KEY ausente — no se puede guardar calendar_tokens"
         )
-    logger.info("[OAUTH CALLBACK] guardando token calendar para user: %s", uid)
+    logger.info("[CALENDAR CALLBACK] guardando token para user_id=%s", uid)
     try:
         expires_at = tokens.get("expires_at")
         if not expires_at and tokens.get("expires_in"):
@@ -76,20 +101,35 @@ def save_calendar_tokens(user_id: str, tokens: dict[str, Any]) -> dict[str, Any]
         if tokens.get("refresh_token"):
             data["refresh_token"] = tokens["refresh_token"]
 
+        logger.info(
+            "[CALENDAR CALLBACK] upsert keys=%s has_refresh=%s",
+            list(data.keys()),
+            bool(data.get("refresh_token")),
+        )
         result = (
             get_supabase_admin(require_service_role=True)
             .table("calendar_tokens")
             .upsert(data, on_conflict="user_id")
+            .select("user_id, access_token, updated_at")
             .execute()
         )
         rows = result.data or []
-        saved = rows[0] if rows else data
-        if not saved.get("access_token"):
-            raise RuntimeError("calendar_tokens upsert sin access_token")
-        logger.info("[OAUTH CALLBACK] token calendar guardado exitosamente user=%s", uid[:8])
+        logger.info("[CALENDAR CALLBACK] upsert response rows=%s", len(rows))
+        saved = rows[0] if rows else None
+        if not saved or not saved.get("access_token"):
+            _verify_token_row("calendar_tokens", uid)
+            saved = saved or {"user_id": uid, "access_token": data["access_token"]}
+        else:
+            _verify_token_row("calendar_tokens", uid)
+        logger.info("[CALENDAR CALLBACK] token guardado exitosamente user_id=%s", uid)
         return saved
     except Exception as exc:
-        logger.error("[CALENDAR] error guardando token user=%s: %s", uid[:8], exc)
+        logger.error(
+            "[CALENDAR CALLBACK] ERROR user_id=%s %s: %s",
+            uid,
+            type(exc).__name__,
+            exc,
+        )
         raise
 
 
@@ -101,7 +141,7 @@ def save_gmail_tokens(user_id: str, tokens: dict[str, Any]) -> dict[str, Any]:
         raise RuntimeError(
             "SUPABASE_SERVICE_ROLE_KEY ausente — no se puede guardar gmail_tokens"
         )
-    logger.info("[OAUTH CALLBACK] guardando token gmail para user: %s", uid)
+    logger.info("[GMAIL CALLBACK] guardando token para user_id=%s", uid)
     try:
         expires_at = tokens.get("expires_at")
         if not expires_at and tokens.get("expires_in"):
@@ -118,18 +158,33 @@ def save_gmail_tokens(user_id: str, tokens: dict[str, Any]) -> dict[str, Any]:
         if tokens.get("refresh_token"):
             data["refresh_token"] = tokens["refresh_token"]
 
+        logger.info(
+            "[GMAIL CALLBACK] upsert keys=%s has_refresh=%s",
+            list(data.keys()),
+            bool(data.get("refresh_token")),
+        )
         result = (
             get_supabase_admin(require_service_role=True)
             .table("gmail_tokens")
             .upsert(data, on_conflict="user_id")
+            .select("user_id, access_token, updated_at")
             .execute()
         )
         rows = result.data or []
-        saved = rows[0] if rows else data
-        if not saved.get("access_token"):
-            raise RuntimeError("gmail_tokens upsert sin access_token")
-        logger.info("[OAUTH CALLBACK] token gmail guardado exitosamente user=%s", uid[:8])
+        logger.info("[GMAIL CALLBACK] upsert response rows=%s", len(rows))
+        saved = rows[0] if rows else None
+        if not saved or not saved.get("access_token"):
+            _verify_token_row("gmail_tokens", uid)
+            saved = saved or {"user_id": uid, "access_token": data["access_token"]}
+        else:
+            _verify_token_row("gmail_tokens", uid)
+        logger.info("[GMAIL CALLBACK] token guardado exitosamente user_id=%s", uid)
         return saved
     except Exception as exc:
-        logger.error("[GMAIL] error guardando token user=%s: %s", uid[:8], exc)
+        logger.error(
+            "[GMAIL CALLBACK] ERROR user_id=%s %s: %s",
+            uid,
+            type(exc).__name__,
+            exc,
+        )
         raise

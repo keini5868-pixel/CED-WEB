@@ -179,8 +179,11 @@ def google_oauth_diagnostics() -> dict[str, Any]:
 def ensure_profile_for_oauth(user_id: str) -> None:
     """Garantiza fila en profiles antes del FK de calendar_tokens/gmail_tokens."""
     uid = normalize_user_id(user_id)
-    if supabase_db.get_profile(uid):
+    existing = supabase_db.get_profile(uid)
+    if existing:
+        logger.info("[GOOGLE-OAUTH] profile exists user_id=%s", uid)
         return
+    logger.info("[GOOGLE-OAUTH] creating profile user_id=%s", uid)
     try:
         client = supabase_db._client()
         auth_res = client.auth.admin.get_user_by_id(uid)
@@ -284,6 +287,7 @@ def _expires_at_from_token(payload: dict[str, Any]) -> str | None:
 
 def store_tokens(service: GoogleService, user_id: str, payload: dict[str, Any]) -> None:
     uid = normalize_user_id(user_id)
+    logger.info("[GOOGLE-OAUTH] store_tokens start service=%s user_id=%s", service, uid)
     ensure_profile_for_oauth(uid)
     access = str(payload.get("access_token") or "").strip()
     if not access:
@@ -297,6 +301,7 @@ def store_tokens(service: GoogleService, user_id: str, payload: dict[str, Any]) 
         )
         if existing and existing.get("refresh_token"):
             refresh = existing.get("refresh_token")
+            logger.info("[GOOGLE-OAUTH] reutilizando refresh_token existente user=%s", uid)
     row = {
         "access_token": access,
         "refresh_token": refresh,
@@ -306,17 +311,25 @@ def store_tokens(service: GoogleService, user_id: str, payload: dict[str, Any]) 
     if service == "calendar":
         from app.services.supabase_client import save_calendar_tokens
 
-        save_calendar_tokens(uid, row)
+        saved = save_calendar_tokens(uid, row)
     else:
         from app.services.supabase_client import save_gmail_tokens
 
-        save_gmail_tokens(uid, row)
+        saved = save_gmail_tokens(uid, row)
+    logger.info(
+        "[GOOGLE-OAUTH] upsert ok service=%s user_id=%s saved_user_id=%s has_token=%s",
+        service,
+        uid,
+        saved.get("user_id"),
+        bool(saved.get("access_token")),
+    )
     status = get_connection_status(service, uid)
     if not status.get("connected"):
         raise RuntimeError(
-            f"Verificación falló: token {service} no legible en Supabase tras guardar"
+            f"Verificación falló: token {service} no legible en Supabase tras guardar "
+            f"(user_id={uid})"
         )
-    logger.info("[GOOGLE-OAUTH] tokens stored service=%s user=%s", service, uid[:8])
+    logger.info("[GOOGLE-OAUTH] tokens stored service=%s user_id=%s", service, uid)
 
 
 def get_connection_status(service: GoogleService, user_id: str) -> dict[str, Any]:
