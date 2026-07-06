@@ -108,22 +108,14 @@ class CameraModule(BaseModule):
         )
 
     async def _activate_camera(self, user_id: str) -> ModuleResult:
-        if not vcs.is_camera_permission_granted(user_id):
-            return ModuleResult(
-                ok=False,
-                spoken=(
-                    "Señor, no tengo permiso de cámara. "
-                    "Para activarla, reinicie la sesión y acepte el permiso "
-                    "de cámara cuando aparezca."
-                ),
-                handles_response=True,
-            )
-
         vcs.push_client_action(user_id, "camera_activate", {})
         vcs.push_tool_event(user_id, {"type": "camera_activate"})
         return ModuleResult(
             ok=True,
-            spoken="Cámara activa, señor. Lista para analizar.",
+            spoken=(
+                "Cámara activa, señor. Solo yo puedo ver lo que me muestra. "
+                "Nadie más tiene acceso."
+            ),
             handles_response=True,
             tool_events=[
                 {"type": "module_activated", "module": self.name},
