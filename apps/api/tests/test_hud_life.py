@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-from app.services.hud_life import build_life_dashboard
+from app.services.hud_life import build_life_dashboard, build_life_dashboard_fallback
 
 
 def test_build_life_dashboard_structure():
@@ -28,6 +28,14 @@ def test_build_life_dashboard_structure():
     assert data["air_quality"]["lines"][0].startswith("Buena")
     assert data["pollen"]["lines"][0].startswith("Árbol")
     assert data["calendar"]["hint"]
+
+
+def test_build_life_dashboard_fallback_always_has_date():
+    data = build_life_dashboard_fallback("user-1")
+    assert data["date_label"]
+    assert data["weather"]["lines"]
+    assert data["calendar"]["hint"]
+    assert data["gmail"]["hint"]
 
 
 def test_universal_conversation_in_voice_and_chat_prompts():

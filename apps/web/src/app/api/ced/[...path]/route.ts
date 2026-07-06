@@ -93,7 +93,8 @@ function isLongRunningChatPath(path: string): boolean {
   return (
     normalized.includes("chat/send-with-image") ||
     normalized.includes("images/generate-with-reference") ||
-    normalized.includes("images/generate")
+    normalized.includes("images/generate") ||
+    normalized.includes("hud/life")
   );
 }
 

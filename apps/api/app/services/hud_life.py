@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 try:
     from zoneinfo import ZoneInfo
@@ -11,6 +15,7 @@ try:
     _TZ = ZoneInfo("America/New_York")
 except Exception:  # noqa: BLE001
     _TZ = timezone(timedelta(hours=-4))
+
 _DAYS_ES = (
     "Lunes",
     "Martes",
@@ -34,6 +39,7 @@ _MONTHS_ES = (
     "Noviembre",
     "Diciembre",
 )
+_DEFAULT_PLACE = "Charlotte NC"
 
 
 def _date_label() -> str:
@@ -49,18 +55,28 @@ def _web_lines(query: str, *, kind: str = "weather") -> list[str]:
     result = execute_search_web_sync(query, kind=kind)
     summary = str(result.get("summary") or result.get("message") or "").strip()
     if not summary:
-        return ["Datos no disponibles en este momento."]
+        return []
     parts = [p.strip() for p in summary.replace("·", ".").split(".") if p.strip()]
     if parts:
         return parts[:4]
     return [summary[:240]]
 
 
+def _safe_web_lines(query: str, fallback: str, *, kind: str = "weather") -> list[str]:
+    try:
+        lines = _web_lines(query, kind=kind)
+        if lines:
+            return lines
+    except Exception:  # noqa: BLE001
+        logger.warning("[LIFE] web search failed query=%s", query[:80], exc_info=True)
+    return [fallback]
+
+
 def _calendar_section(user_id: str) -> dict[str, Any]:
     section: dict[str, Any] = {
         "connected": False,
         "events": [],
-        "hint": "Conecte Google Calendar en CFG de voz para ver eventos.",
+        "hint": "Conectar Calendar en CFG ⚙️",
     }
     try:
         from app.services.google_calendar_api import list_events, resolve_window
@@ -70,14 +86,13 @@ def _calendar_section(user_id: str) -> dict[str, Any]:
         start, end = resolve_window("today")
         events = list_events(token, time_min=start, time_max=end, max_results=6)
         section["connected"] = True
-        section["events"] = events
+        section["events"] = events or ["Sin eventos programados para hoy."]
         section["hint"] = ""
-        if not events:
-            section["events"] = ["Sin eventos programados para hoy."]
     except ValueError:
         pass
     except Exception:  # noqa: BLE001
-        section["hint"] = "No se pudo cargar Google Calendar."
+        logger.warning("[LIFE] calendar load failed user=%s", user_id[:8], exc_info=True)
+        section["hint"] = "Conectar Calendar en CFG ⚙️"
     return section
 
 
@@ -86,7 +101,7 @@ def _gmail_section(user_id: str) -> dict[str, Any]:
         "connected": False,
         "unread_count": 0,
         "messages": [],
-        "hint": "Conecte Gmail en CFG de voz para ver correos.",
+        "hint": "Conectar Gmail en CFG ⚙️",
     }
     try:
         from app.services.google_gmail_api import list_messages
@@ -105,41 +120,95 @@ def _gmail_section(user_id: str) -> dict[str, Any]:
     except ValueError:
         pass
     except Exception:  # noqa: BLE001
-        section["hint"] = "No se pudo cargar Gmail."
+        logger.warning("[LIFE] gmail load failed user=%s", user_id[:8], exc_info=True)
+        section["hint"] = "Conectar Gmail en CFG ⚙️"
     return section
 
 
+def _fetch_web_sections(place: str) -> tuple[list[str], list[str], list[str]]:
+    tasks = {
+        "weather": (
+            f"clima {place} hoy temperatura humedad viento",
+            "Clima no disponible.",
+        ),
+        "air": (
+            f"calidad del aire {place} hoy índice",
+            "Calidad del aire no disponible.",
+        ),
+        "pollen": (
+            f"polen {place} hoy niveles árbol pasto",
+            "Polen no disponible.",
+        ),
+    }
+    results: dict[str, list[str]] = {
+        "weather": ["Buscando clima…"],
+        "air": ["Calidad del aire no disponible."],
+        "pollen": ["Polen no disponible."],
+    }
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        futures = {
+            pool.submit(_safe_web_lines, query, fallback, kind="weather"): key
+            for key, (query, fallback) in tasks.items()
+        }
+        for future in as_completed(futures, timeout=22):
+            key = futures[future]
+            try:
+                results[key] = future.result()
+            except Exception:  # noqa: BLE001
+                logger.warning("[LIFE] web section timeout key=%s", key)
+    return results["weather"], results["air"], results["pollen"]
+
+
 def build_life_dashboard(user_id: str) -> dict[str, Any]:
-    """Snapshot LIFE — clima vía web; calendar/gmail vía OAuth."""
+    """Snapshot LIFE — cada sección tolera fallos parciales."""
     from app.modules.environment_module import resolve_environment_place
 
-    place = resolve_environment_place(user_id, "")
-    weather_lines = _web_lines(f"clima {place} hoy temperatura humedad viento", kind="weather")
-    air_lines = _web_lines(f"calidad del aire {place} hoy índice", kind="weather")
-    pollen_lines = _web_lines(f"polen {place} hoy niveles árbol pasto", kind="weather")
+    place = resolve_environment_place(user_id, "") or _DEFAULT_PLACE
+
+    try:
+        weather_lines, air_lines, pollen_lines = _fetch_web_sections(place)
+    except Exception:  # noqa: BLE001
+        logger.warning("[LIFE] web sections failed user=%s", user_id[:8], exc_info=True)
+        weather_lines = ["Clima no disponible."]
+        air_lines = ["Calidad del aire no disponible."]
+        pollen_lines = ["Polen no disponible."]
+
+    calendar = _calendar_section(user_id)
+    gmail = _gmail_section(user_id)
 
     return {
         "date_label": _date_label(),
         "place": place,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "weather": {
-            "title": "CLIMA",
-            "lines": weather_lines,
-        },
-        "calendar": {
-            "title": "CALENDARIO",
-            **_calendar_section(user_id),
-        },
-        "gmail": {
-            "title": "GMAIL",
-            **_gmail_section(user_id),
-        },
-        "air_quality": {
-            "title": "CALIDAD DEL AIRE",
-            "lines": air_lines,
-        },
-        "pollen": {
-            "title": "POLEN",
-            "lines": pollen_lines,
-        },
+        "weather": {"title": "CLIMA", "lines": weather_lines},
+        "calendar": {"title": "CALENDARIO", **calendar},
+        "gmail": {"title": "GMAIL", **gmail},
+        "air_quality": {"title": "CALIDAD DEL AIRE", "lines": air_lines},
+        "pollen": {"title": "POLEN", "lines": pollen_lines},
+    }
+
+
+def build_life_dashboard_fallback(user_id: str = "") -> dict[str, Any]:
+    """Respuesta mínima útil cuando el handler falla por completo."""
+    calendar = _calendar_section(user_id) if user_id else {
+        "connected": False,
+        "events": [],
+        "hint": "Conectar Calendar en CFG ⚙️",
+    }
+    gmail = _gmail_section(user_id) if user_id else {
+        "connected": False,
+        "unread_count": 0,
+        "messages": [],
+        "hint": "Conectar Gmail en CFG ⚙️",
+    }
+    return {
+        "date_label": _date_label(),
+        "place": _DEFAULT_PLACE,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "partial": True,
+        "weather": {"title": "CLIMA", "lines": ["Buscando clima…"]},
+        "calendar": {"title": "CALENDARIO", **calendar},
+        "gmail": {"title": "GMAIL", **gmail},
+        "air_quality": {"title": "CALIDAD DEL AIRE", "lines": ["No disponible."]},
+        "pollen": {"title": "POLEN", "lines": ["No disponible."]},
     }

@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { fetchHudLife, type LifeDashboardSnapshot } from "@/lib/api/hud";
+import {
+  createLifeFallback,
+  fetchHudLife,
+  type LifeDashboardSnapshot,
+} from "@/lib/api/hud";
 
 const REFRESH_MS = 30 * 60 * 1000;
 
@@ -23,8 +27,8 @@ function LifeSection({
         {icon} {title}
       </h3>
       <ul className="mt-2 space-y-1 text-xs leading-relaxed text-zinc-200">
-        {lines.map((line) => (
-          <li key={line} className="flex gap-2">
+        {lines.map((line, idx) => (
+          <li key={`${title}-${idx}-${line.slice(0, 24)}`} className="flex gap-2">
             <span className="text-cyan-600">•</span>
             <span>{line}</span>
           </li>
@@ -38,16 +42,16 @@ function LifeSection({
 }
 
 export function LifeDashboardPanel() {
-  const [data, setData] = useState<LifeDashboardSnapshot | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<LifeDashboardSnapshot>(() => createLifeFallback());
+  const [refreshing, setRefreshing] = useState(false);
 
   const refresh = useCallback(async () => {
-    setLoading(true);
+    setRefreshing(true);
     try {
       const snapshot = await fetchHudLife();
       setData(snapshot);
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }, []);
 
@@ -57,24 +61,22 @@ export function LifeDashboardPanel() {
     return () => clearInterval(id);
   }, [refresh]);
 
-  if (loading && !data) {
-    return (
-      <p className="ced-hud-text-muted py-6 text-center text-xs tracking-widest">
-        CARGANDO LIFE…
-      </p>
-    );
-  }
-
-  if (!data) {
-    return (
-      <p className="ced-hud-text-muted py-6 text-center text-xs">
-        No se pudo cargar el dashboard LIFE.
-      </p>
-    );
-  }
-
-  const weatherHeadline = data.weather.lines[0] ?? "Consultando clima…";
+  const weatherHeadline = data.weather.lines[0] ?? "Buscando clima…";
   const weatherExtra = data.weather.lines.slice(1);
+
+  const calendarLines =
+    data.calendar.connected && data.calendar.events.length
+      ? data.calendar.events
+      : data.calendar.connected
+        ? ["Sin eventos para hoy."]
+        : [data.calendar.hint || "Conectar Calendar en CFG ⚙️"];
+
+  const gmailLines = data.gmail.connected
+    ? [
+        `${data.gmail.unread_count} email${data.gmail.unread_count === 1 ? "" : "s"} sin leer`,
+        ...data.gmail.messages,
+      ]
+    : [data.gmail.hint || "Conectar Gmail en CFG ⚙️"];
 
   return (
     <div className="space-y-3">
@@ -85,6 +87,9 @@ export function LifeDashboardPanel() {
         {data.place ? (
           <p className="ced-hud-text-muted mt-1 text-[10px]">{data.place}</p>
         ) : null}
+        {refreshing ? (
+          <p className="ced-hud-text-muted mt-1 text-[9px]">Actualizando…</p>
+        ) : null}
       </header>
 
       <LifeSection
@@ -93,42 +98,19 @@ export function LifeDashboardPanel() {
         lines={[weatherHeadline, ...weatherExtra]}
       />
 
-      <LifeSection
-        icon="📅"
-        title="CALENDARIO"
-        lines={
-          data.calendar.events.length
-            ? data.calendar.events
-            : ["Sin eventos para hoy."]
-        }
-        hint={data.calendar.connected ? undefined : data.calendar.hint}
-      />
+      <LifeSection icon="📅" title="CALENDARIO" lines={calendarLines} />
 
-      <LifeSection
-        icon="📧"
-        title="GMAIL"
-        lines={
-          data.gmail.connected
-            ? [
-                `${data.gmail.unread_count} email${data.gmail.unread_count === 1 ? "" : "s"} sin leer`,
-                ...data.gmail.messages,
-              ]
-            : [data.gmail.hint || "Conecte Gmail en CFG de voz."]
-        }
-        hint={data.gmail.connected ? undefined : data.gmail.hint}
-      />
+      <LifeSection icon="📧" title="GMAIL" lines={gmailLines} />
 
       <LifeSection icon="🌬️" title="CALIDAD DEL AIRE" lines={data.air_quality.lines} />
 
       <LifeSection icon="🌿" title="POLEN" lines={data.pollen.lines} />
 
-      {data.updated_at ? (
-        <p className="ced-hud-text-muted text-center text-[9px]">
-          Actualizado {new Date(data.updated_at).toLocaleTimeString("es-MX")}
-          {" · "}
-          refresh 30 min
-        </p>
-      ) : null}
+      <p className="ced-hud-text-muted text-center text-[9px]">
+        Actualizado {new Date(data.updated_at).toLocaleTimeString("es-MX")}
+        {" · "}
+        refresh 30 min
+      </p>
     </div>
   );
 }

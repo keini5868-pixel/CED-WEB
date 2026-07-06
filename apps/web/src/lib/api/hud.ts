@@ -80,13 +80,102 @@ export async function fetchHudCarousel(): Promise<CarouselSnapshot | null> {
   }
 }
 
-/** Dashboard LIFE — clima, calendario, gmail, aire, polen. */
-export async function fetchHudLife(): Promise<LifeDashboardSnapshot | null> {
+/** Fallback local — siempre muestra algo útil aunque falle la API. */
+export function createLifeFallback(): LifeDashboardSnapshot {
+  const date_label = new Date().toLocaleDateString("es", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+  return {
+    date_label,
+    place: "Charlotte NC",
+    updated_at: new Date().toISOString(),
+    weather: { title: "CLIMA", lines: ["Buscando clima…"] },
+    calendar: {
+      title: "CALENDARIO",
+      connected: false,
+      events: [],
+      hint: "Conectar Calendar en CFG ⚙️",
+    },
+    gmail: {
+      title: "GMAIL",
+      connected: false,
+      unread_count: 0,
+      messages: [],
+      hint: "Conectar Gmail en CFG ⚙️",
+    },
+    air_quality: { title: "CALIDAD DEL AIRE", lines: ["No disponible."] },
+    pollen: { title: "POLEN", lines: ["No disponible."] },
+  };
+}
+
+function normalizeLifeSnapshot(raw: Record<string, unknown>): LifeDashboardSnapshot {
+  const fallback = createLifeFallback();
+  const asLines = (value: unknown, fb: string[]): string[] => {
+    if (!value || typeof value !== "object") return fb;
+    const lines = (value as { lines?: unknown }).lines;
+    return Array.isArray(lines) && lines.length
+      ? lines.map((line) => String(line))
+      : fb;
+  };
+  const calendarRaw = (raw.calendar ?? {}) as Record<string, unknown>;
+  const gmailRaw = (raw.gmail ?? {}) as Record<string, unknown>;
+  return {
+    date_label:
+      typeof raw.date_label === "string" && raw.date_label.trim()
+        ? raw.date_label
+        : fallback.date_label,
+    place: typeof raw.place === "string" ? raw.place : fallback.place,
+    updated_at:
+      typeof raw.updated_at === "string" ? raw.updated_at : fallback.updated_at,
+    weather: {
+      title: "CLIMA",
+      lines: asLines(raw.weather, fallback.weather.lines),
+    },
+    calendar: {
+      title: "CALENDARIO",
+      connected: Boolean(calendarRaw.connected),
+      events: Array.isArray(calendarRaw.events)
+        ? calendarRaw.events.map((e) => String(e))
+        : [],
+      hint:
+        typeof calendarRaw.hint === "string" && calendarRaw.hint
+          ? calendarRaw.hint
+          : fallback.calendar.hint,
+    },
+    gmail: {
+      title: "GMAIL",
+      connected: Boolean(gmailRaw.connected),
+      unread_count: Number(gmailRaw.unread_count ?? 0),
+      messages: Array.isArray(gmailRaw.messages)
+        ? gmailRaw.messages.map((m) => String(m))
+        : [],
+      hint:
+        typeof gmailRaw.hint === "string" && gmailRaw.hint
+          ? gmailRaw.hint
+          : fallback.gmail.hint,
+    },
+    air_quality: {
+      title: "CALIDAD DEL AIRE",
+      lines: asLines(raw.air_quality, fallback.air_quality.lines),
+    },
+    pollen: {
+      title: "POLEN",
+      lines: asLines(raw.pollen, fallback.pollen.lines),
+    },
+  };
+}
+
+/** Dashboard LIFE — nunca devuelve null; fallback local si la API falla. */
+export async function fetchHudLife(): Promise<LifeDashboardSnapshot> {
   try {
     const res = await proxyFetchAuthed("hud/life");
-    if (!res.ok) return null;
-    return (await res.json()) as LifeDashboardSnapshot;
+    if (!res.ok) return createLifeFallback();
+    const raw = (await res.json()) as Record<string, unknown>;
+    return normalizeLifeSnapshot(raw);
   } catch {
-    return null;
+    return createLifeFallback();
   }
 }

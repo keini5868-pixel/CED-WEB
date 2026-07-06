@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends
 from app.deps.auth import require_user_id
 from app.services.hud_carousel import build_carousel_snapshot
 from app.services.hud_health import build_detailed_health
-from app.services.hud_life import build_life_dashboard
+from app.services.hud_life import build_life_dashboard, build_life_dashboard_fallback
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +46,4 @@ async def hud_life(user_id: str = Depends(require_user_id)) -> dict:
         return build_life_dashboard(user_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[LIFE] error: %s", exc)
-        return {
-            "date_label": "",
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "error": "life_unavailable",
-        }
+        return build_life_dashboard_fallback(user_id)
