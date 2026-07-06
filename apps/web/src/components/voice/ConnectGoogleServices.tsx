@@ -10,6 +10,7 @@ import {
   fetchGoogleCalendarStatus,
   fetchGoogleGmailOAuthUrl,
   fetchGoogleGmailStatus,
+  googleCalendarLoginApiUrl,
 } from "@/lib/api/google";
 
 export const GOOGLE_CALENDAR_CONNECTED_EVENT = "ced:google-calendar-connected";
@@ -111,7 +112,10 @@ export function ConnectGoogleServicesPanel() {
     try {
       const { url, error: oauthError } = await fetchGoogleCalendarOAuthUrl();
       if (!url) {
-        setError(oauthError || "No se pudo iniciar OAuth Calendar.");
+        setError(
+          oauthError ||
+            `No se pudo iniciar OAuth Calendar (API: ${googleCalendarLoginApiUrl().split("?")[0]}).`,
+        );
         return;
       }
       window.location.href = url;

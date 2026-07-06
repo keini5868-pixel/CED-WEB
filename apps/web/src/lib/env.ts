@@ -1,5 +1,21 @@
 /** Variables públicas y comprobaciones de configuración. */
 
+/** API Railway producción — dominio con guion (servicio CED API). */
+export const PRODUCTION_API_URL = "https://ced-web-production.up.railway.app";
+
+/** Corrige typos habituales (cedweb / ced-api → ced-web-production). */
+export function normalizeApiUrl(raw: string): string {
+  let url = raw.trim().replace(/\/$/, "");
+  if (!url) return url;
+  if (
+    url.includes("cedweb-production.up.railway.app") ||
+    url.includes("ced-api-production.up.railway.app")
+  ) {
+    return PRODUCTION_API_URL;
+  }
+  return url;
+}
+
 export function isSupabaseConfigured(): boolean {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
@@ -11,7 +27,25 @@ export function appUrl(): string {
 }
 
 export function apiUrl(): string {
-  return process.env.NEXT_PUBLIC_API_URL?.trim() || "http://localhost:8000";
+  const serverOverride =
+    typeof window === "undefined" ? process.env.CED_API_URL?.trim() : undefined;
+  let raw =
+    serverOverride ||
+    process.env.NEXT_PUBLIC_API_URL?.trim() ||
+    "";
+
+  if (raw) {
+    return normalizeApiUrl(raw);
+  }
+
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (host.includes("railway.app") || host.includes("castillodigital.com")) {
+      return PRODUCTION_API_URL;
+    }
+  }
+
+  return "http://localhost:8000";
 }
 
 export function googleMapsKey(): string {
