@@ -209,11 +209,16 @@ def store_tokens(service: GoogleService, user_id: str, payload: dict[str, Any]) 
         "access_token": access,
         "refresh_token": refresh,
         "expires_at": _expires_at_from_token(payload),
+        "expires_in": payload.get("expires_in"),
     }
     if service == "calendar":
-        supabase_db.upsert_calendar_tokens(uid, row)
+        from app.services.supabase_client import save_calendar_tokens
+
+        save_calendar_tokens(uid, row)
     else:
-        supabase_db.upsert_gmail_tokens(uid, row)
+        from app.services.supabase_client import save_gmail_tokens
+
+        save_gmail_tokens(uid, row)
     logger.info("[GOOGLE-OAUTH] tokens stored service=%s user=%s", service, uid[:8])
 
 

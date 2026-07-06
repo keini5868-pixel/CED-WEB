@@ -96,7 +96,7 @@ export function createLifeFallback(): LifeDashboardSnapshot {
     date_label,
     place: "Charlotte NC",
     updated_at: new Date().toISOString(),
-    weather: { title: "CLIMA", lines: ["Buscando clima…"] },
+    weather: { title: "CLIMA", lines: ["Charlotte NC"] },
     calendar: {
       title: "CALENDARIO",
       connected: false,
@@ -208,5 +208,22 @@ export async function fetchHudLife(): Promise<LifeDashboardSnapshot> {
     return mergeGoogleConnectionStatus(normalizeLifeSnapshot(raw));
   } catch {
     return mergeGoogleConnectionStatus(createLifeFallback());
+  }
+}
+
+/** LIFE con timeout — franja CASTILLO no espera al carrusel web completo. */
+export async function fetchHudLifeWithTimeout(
+  timeoutMs = 5000,
+): Promise<LifeDashboardSnapshot> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      fetchHudLife(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }

@@ -29,12 +29,9 @@ def _should_coalesce_voice_model_message(previous: str, incoming: str) -> str | 
 
 
 def _client():
-    from supabase import create_client
+    from app.services.supabase_client import get_supabase_admin
 
-    settings = get_settings()
-    if not settings.supabase_url or not settings.supabase_service_role_key:
-        raise RuntimeError("Supabase no configurado")
-    return create_client(settings.supabase_url, settings.supabase_service_role_key)
+    return get_supabase_admin()
 
 
 def today_utc() -> date:
@@ -426,16 +423,9 @@ def get_calendar_tokens(user_id: str) -> dict[str, Any] | None:
 
 
 def upsert_calendar_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    from app.services.user_id_utils import normalize_user_id
+    from app.services.supabase_client import save_calendar_tokens
 
-    uid = normalize_user_id(user_id)
-    client = _client()
-    row = {"user_id": uid, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
-    result = client.table("calendar_tokens").upsert(row, on_conflict="user_id").execute()
-    saved = (result.data or [row])[0]
-    if not saved.get("access_token"):
-        raise RuntimeError("calendar_tokens upsert sin access_token")
-    return saved
+    return save_calendar_tokens(user_id, data)
 
 
 def get_gmail_tokens(user_id: str) -> dict[str, Any] | None:
@@ -459,16 +449,9 @@ def get_gmail_tokens(user_id: str) -> dict[str, Any] | None:
 
 
 def upsert_gmail_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    from app.services.user_id_utils import normalize_user_id
+    from app.services.supabase_client import save_gmail_tokens
 
-    uid = normalize_user_id(user_id)
-    client = _client()
-    row = {"user_id": uid, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
-    result = client.table("gmail_tokens").upsert(row, on_conflict="user_id").execute()
-    saved = (result.data or [row])[0]
-    if not saved.get("access_token"):
-        raise RuntimeError("gmail_tokens upsert sin access_token")
-    return saved
+    return save_gmail_tokens(user_id, data)
 
 
 def list_hud_reminders(user_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
