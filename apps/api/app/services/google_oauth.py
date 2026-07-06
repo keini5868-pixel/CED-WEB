@@ -373,6 +373,8 @@ def token_has_calendar_write_scope(access_token: str) -> bool:
         & {
             "https://www.googleapis.com/auth/calendar",
             "https://www.googleapis.com/auth/calendar.events",
+            "https://www.googleapis.com/auth/calendar.events.owned",
+            "https://www.googleapis.com/auth/calendar.app.created",
         }
     )
 
