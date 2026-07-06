@@ -178,7 +178,9 @@ export async function fetchAdminUsers(
 
   const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
 
-  const res = await proxyFetch(`admin/users${q}`);
+  const res = await proxyFetch(`admin/users${q}`, {
+    signal: AbortSignal.timeout(15_000),
+  });
 
   const data = await parseApiJson<AdminUsersListResult & { detail?: string }>(
 

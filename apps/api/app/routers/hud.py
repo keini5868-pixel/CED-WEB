@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -113,6 +114,24 @@ async def hud_create_calendar_event(
     body: CalendarEventBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(_create_calendar_event_sync, user_id, body),
+            timeout=25.0,
+        )
+    except asyncio.TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="Calendar tardó demasiado. Reintenta en unos segundos.",
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[HUD] calendar event failed")
+        raise HTTPException(status_code=502, detail="No se pudo crear el evento.") from exc
+
+
+def _create_calendar_event_sync(user_id: str, body: CalendarEventBody) -> dict:
     from app.services.google_calendar_api import create_event
     from app.services.google_oauth import (
         CALENDAR_RECONNECT_MSG,
@@ -164,9 +183,6 @@ async def hud_create_calendar_event(
         if exc.response.status_code in (401, 403):
             raise HTTPException(status_code=403, detail=CALENDAR_RECONNECT_MSG) from exc
         logger.exception("[HUD] calendar event HTTP error")
-        raise HTTPException(status_code=502, detail="No se pudo crear el evento.") from exc
-    except Exception as exc:  # noqa: BLE001
-        logger.exception("[HUD] calendar event failed")
         raise HTTPException(status_code=502, detail="No se pudo crear el evento.") from exc
 
 

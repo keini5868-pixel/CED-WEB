@@ -46,6 +46,27 @@ ADVANCED_MODEL = ADVANCED_DEEP_MODEL
 ADVANCED_MODEL_FALLBACK = ADVANCED_STREAM_MODEL
 ADVANCED_MODEL_LABEL = ADVANCED_DEEP_MODEL_LABEL
 
+
+def _llm_provider_keys() -> tuple[str, str]:
+    from app.config import get_settings
+
+    settings = get_settings()
+    return settings.anthropic_api_key.strip(), settings.google_api_key.strip()
+
+
+def advanced_is_configured() -> bool:
+    anthropic, google = _llm_provider_keys()
+    return bool(anthropic or google)
+
+
+def _ensure_llm_providers(*, needs_anthropic: bool = False) -> tuple[str, str]:
+    anthropic, google = _llm_provider_keys()
+    if needs_anthropic and not anthropic:
+        raise ValueError("missing_anthropic_api_key")
+    if not anthropic and not google:
+        raise ValueError("missing_llm_api_key")
+    return anthropic, google
+
 ADVANCED_SYSTEM_PROMPT = f"""Eres el sistema AVANZADO de CED — Castillo Evolución Digital.
 Analista experto en negocios, marketing digital, ventas, estrategia empresarial y tecnología.
 
@@ -303,11 +324,6 @@ def send_advanced_message(
     conversation_id: str | None = None,
 ) -> dict[str, Any]:
     """Chat avanzado completo — herramientas + PDF + imágenes."""
-    settings = get_settings()
-    api_key = settings.anthropic_api_key.strip()
-    if not api_key:
-        raise ValueError("missing_anthropic_api_key")
-
     text = message.strip()
     if not text:
         raise ValueError("Mensaje vacío.")
@@ -318,6 +334,8 @@ def send_advanced_message(
             response=instant,
             model=ADVANCED_STREAM_MODEL_LABEL,
         )
+
+    anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=True)
 
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = _history_as_chat_rows(history)
@@ -367,7 +385,7 @@ def send_advanced_message(
     try:
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,
-            api_key=api_key,
+            api_key=anthropic_key,
             system=ADVANCED_SYSTEM_PROMPT,
             messages=anthropic_messages,
             conversation_id=conv_id,
@@ -484,12 +502,6 @@ def iter_advanced_message_stream(
     conversation_id: str | None = None,
 ) -> Iterator[str]:
     """SSE — streaming para respuestas conversacionales; herramientas vía respuesta completa."""
-    settings = get_settings()
-    api_key = settings.anthropic_api_key.strip()
-    google_key = settings.google_api_key.strip()
-    if not api_key:
-        raise ValueError("missing_anthropic_api_key")
-
     text = message.strip()
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = _history_as_chat_rows(history)
@@ -501,6 +513,8 @@ def iter_advanced_message_stream(
             model=ADVANCED_STREAM_MODEL_LABEL,
         ))
         return
+
+    anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=False)
 
     # PDF / imagen / herramientas → respuesta completa (no stream parcial).
     needs_tools = (
@@ -543,7 +557,7 @@ def iter_advanced_message_stream(
                 yield _sse_event("token", {"text": piece})
         else:
             for piece, model_label in _iter_anthropic_text_stream(
-                api_key=api_key,
+                api_key=anthropic_key,
                 system=stream_system,
                 messages=stream_messages,
                 max_tokens=max_tokens,

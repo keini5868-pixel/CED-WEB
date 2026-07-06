@@ -2478,6 +2478,11 @@ def iter_send_message_stream(
     conversation_id: str | None = None,
 ):
     """Generador SSE — streaming Gemini para chat conversacional."""
+    t0 = time.perf_counter()
+
+    def _perf(step: str) -> None:
+        logger.info("[PERF] chat/stream %s: %.2fs", step, time.perf_counter() - t0)
+
     text = content.strip()
     if not text:
         raise TextChatError("Mensaje vacío.")
@@ -2488,6 +2493,8 @@ def iter_send_message_stream(
         result = send_message(user_id, content=text, conversation_id=conversation_id)
         yield _sse_event("done", result)
         return
+
+    _perf("validated")
 
     status = chat_status(user_id)
     if status["blocked"]:
@@ -2545,6 +2552,7 @@ def iter_send_message_stream(
         session_id=conversation_id,
         channel="text",
     )
+    _perf("db_ready")
 
     instant = _instant_chat_greeting_reply(text)
     if instant:
@@ -2598,6 +2606,7 @@ def iter_send_message_stream(
 
     token_budget = _chat_max_tokens(text)
     accumulated: list[str] = []
+    _perf("pre_stream")
     try:
         for piece in _gemini_simple_reply_stream(
             api_key=google_key,
@@ -2608,6 +2617,7 @@ def iter_send_message_stream(
         ):
             accumulated.append(piece)
             yield _sse_event("token", {"text": piece})
+        _perf("stream_done")
     except Exception as exc:  # noqa: BLE001
         logger.warning("[CHAT] stream failed, fallback resilient: %s", exc)
         accumulated = []

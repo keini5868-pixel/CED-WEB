@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -17,6 +18,9 @@ logger = logging.getLogger(__name__)
 ACCESS_TYPES = frozenset({"paid", "beta", "founding_gift", "coadmin"})
 MAX_CREATIONS_PER_DAY = 10
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+_ADMIN_USERS_CACHE: dict[str, Any] | None = None
+_ADMIN_USERS_CACHE_AT: float = 0.0
+_ADMIN_USERS_CACHE_TTL_SEC = 60.0
 
 
 class AdminUserError(ValueError):
@@ -287,7 +291,19 @@ def _user_status(sub: dict[str, Any] | None) -> str:
     return "active"
 
 
-def list_admin_users(search: str = "", limit: int = 100) -> dict[str, Any]:
+def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
+    global _ADMIN_USERS_CACHE, _ADMIN_USERS_CACHE_AT
+    safe_limit = min(max(limit, 1), 50)
+    cache_key = f"{search.strip().lower()}:{safe_limit}"
+    now = time.time()
+    if (
+        not search.strip()
+        and _ADMIN_USERS_CACHE
+        and _ADMIN_USERS_CACHE.get("key") == cache_key
+        and now - _ADMIN_USERS_CACHE_AT < _ADMIN_USERS_CACHE_TTL_SEC
+    ):
+        return _ADMIN_USERS_CACHE["data"]
+
     client = _client()
     query = (
         client.table("profiles")
@@ -297,7 +313,7 @@ def list_admin_users(search: str = "", limit: int = 100) -> dict[str, Any]:
             "usage_limits(minutes_daily)"
         )
         .order("created_at", desc=True)
-        .limit(min(limit, 200))
+        .limit(safe_limit)
     )
     if search.strip():
         term = search.strip().replace(",", " ")
@@ -343,12 +359,16 @@ def list_admin_users(search: str = "", limit: int = 100) -> dict[str, Any]:
             }
         )
 
-    return {
+    payload = {
         "users": users,
         "total": len(users),
         "active_count": active,
         "expiring_count": expiring,
     }
+    if not search.strip():
+        _ADMIN_USERS_CACHE = {"key": cache_key, "data": payload}
+        _ADMIN_USERS_CACHE_AT = now
+    return payload
 
 
 def get_user_access(user_id: str) -> tuple[bool, str, int]:

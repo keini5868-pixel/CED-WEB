@@ -110,6 +110,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [modelLabel, setModelLabel] = useState("Claude Haiku");
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [usesGeminiOnly, setUsesGeminiOnly] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
@@ -121,7 +122,11 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   useEffect(() => {
     if (!open) return;
     void fetchAdvancedChatStatus().then((status) => {
-      setConfigured(status?.configured ?? false);
+      const ok = status?.configured ?? false;
+      setConfigured(ok);
+      setUsesGeminiOnly(
+        Boolean(status?.google_configured && !status?.anthropic_configured),
+      );
       if (status?.model) {
         setModelLabel(
           (status.stream_model ?? status.model)
@@ -286,8 +291,13 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
         {configured === false ? (
           <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-200">
-            ANTHROPIC_API_KEY no configurada en Railway. Añádala al servicio API para
-            activar el modo avanzado.
+            Modo avanzado no disponible. Configura GOOGLE_API_KEY o ANTHROPIC_API_KEY
+            en el servicio API de Railway.
+          </p>
+        ) : usesGeminiOnly ? (
+          <p className="mx-4 mt-3 rounded border border-violet-500/30 bg-violet-950/20 px-3 py-2 text-[10px] text-violet-200/90">
+            Conversación rápida con Gemini. PDF, imágenes y herramientas profundas
+            requieren ANTHROPIC_API_KEY.
           </p>
         ) : null}
 

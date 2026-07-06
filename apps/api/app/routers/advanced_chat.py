@@ -13,6 +13,7 @@ from app.services.claude_advanced import (
     ADVANCED_DEEP_MODEL_LABEL,
     ADVANCED_MODEL_LABEL,
     ADVANCED_STREAM_MODEL_LABEL,
+    advanced_is_configured,
     iter_advanced_message_stream,
     send_advanced_message,
 )
@@ -46,12 +47,16 @@ async def advanced_chat(
             conversation_id=body.conversation_id,
         )
     except ValueError as exc:
-        if str(exc) == "missing_anthropic_api_key":
+        code = str(exc)
+        if code in ("missing_anthropic_api_key", "missing_llm_api_key"):
             raise HTTPException(
                 status_code=503,
-                detail="ANTHROPIC_API_KEY no configurada en Railway.",
+                detail=(
+                    "Modo avanzado no disponible. Configura GOOGLE_API_KEY o "
+                    "ANTHROPIC_API_KEY en el servicio API de Railway."
+                ),
             ) from exc
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=code) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("[ADVANCED] chat failed user=%s", user_id[:8])
         raise HTTPException(
@@ -81,12 +86,16 @@ async def advanced_chat_stream(
             },
         )
     except ValueError as exc:
-        if str(exc) == "missing_anthropic_api_key":
+        code = str(exc)
+        if code in ("missing_anthropic_api_key", "missing_llm_api_key"):
             raise HTTPException(
                 status_code=503,
-                detail="ANTHROPIC_API_KEY no configurada en Railway.",
+                detail=(
+                    "Modo avanzado no disponible. Configura GOOGLE_API_KEY o "
+                    "ANTHROPIC_API_KEY en el servicio API de Railway."
+                ),
             ) from exc
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=code) from exc
     except Exception as exc:  # noqa: BLE001
         logger.exception("[ADVANCED] stream failed user=%s", user_id[:8])
         raise HTTPException(
@@ -100,9 +109,18 @@ def advanced_chat_status(_user_id: str = Depends(require_user_id)) -> dict:
     from app.config import get_settings
 
     settings = get_settings()
-    configured = bool(settings.anthropic_api_key.strip())
+    anthropic = bool(settings.anthropic_api_key.strip())
+    google = bool(settings.google_api_key.strip())
+    configured = advanced_is_configured()
+    stream_label = (
+        ADVANCED_STREAM_MODEL_LABEL
+        if anthropic
+        else ("gemini-2.5-flash" if google else None)
+    )
     return {
         "configured": configured,
-        "model": ADVANCED_DEEP_MODEL_LABEL if configured else None,
-        "stream_model": ADVANCED_STREAM_MODEL_LABEL if configured else None,
+        "anthropic_configured": anthropic,
+        "google_configured": google,
+        "model": ADVANCED_DEEP_MODEL_LABEL if anthropic else stream_label,
+        "stream_model": stream_label,
     }

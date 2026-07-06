@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -39,11 +39,16 @@ def test_advanced_chat_endpoint():
 
 
 def test_advanced_status_missing_key():
-    app = create_app()
-    app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
-
     with patch("app.config.get_settings") as mock_settings:
-        mock_settings.return_value.anthropic_api_key = ""
+        mock_settings.return_value = MagicMock(
+            anthropic_api_key="",
+            google_api_key="",
+        )
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+        app = create_app()
+        app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
         client = TestClient(app)
         res = client.get(
             "/v1/advanced/status",
@@ -52,5 +57,28 @@ def test_advanced_status_missing_key():
 
     assert res.status_code == 200
     assert res.json()["configured"] is False
+    app.dependency_overrides.clear()
 
+
+def test_advanced_status_google_only():
+    with patch("app.config.get_settings") as mock_settings:
+        mock_settings.return_value = MagicMock(
+            anthropic_api_key="",
+            google_api_key="gk-test",
+        )
+        from app.config import get_settings
+
+        get_settings.cache_clear()
+        app = create_app()
+        app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
+        client = TestClient(app)
+        res = client.get(
+            "/v1/advanced/status",
+            headers={"Authorization": "Bearer test"},
+        )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["configured"] is True
+    assert body["google_configured"] is True
     app.dependency_overrides.clear()

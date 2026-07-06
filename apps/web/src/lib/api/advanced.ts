@@ -12,6 +12,8 @@ export type AdvancedChatMessage = {
 
 export type AdvancedChatStatus = {
   configured: boolean;
+  anthropic_configured?: boolean;
+  google_configured?: boolean;
   model: string | null;
   stream_model?: string | null;
 };

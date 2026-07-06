@@ -308,6 +308,7 @@ export function CedTextChatPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const keepInputFocusRef = useRef(false);
+  const streamTargetIndexRef = useRef<number | null>(null);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
   const { setTextChatOpen } = useCedOverlay();
 
@@ -513,7 +514,6 @@ export function CedTextChatPanel({
       content: text || "📷 Imagen adjunta",
       user_image_preview: imagePreview,
     };
-    setMessages((prev) => dedupeChatMessages([...prev, userMsg]));
 
     if (imageFile && imagePreview && onVoiceImageAttached) {
       onVoiceImageAttached(imagePreview, imageFile);
@@ -569,34 +569,39 @@ export function CedTextChatPanel({
       }
 
       if (!imageFile) {
-        setMessages((prev) =>
-          dedupeChatMessages([
+        setMessages((prev) => {
+          const next = dedupeChatMessages([
             ...prev,
+            userMsg,
             { role: "model", content: "", created_at: new Date().toISOString() },
-          ]),
-        );
+          ]);
+          streamTargetIndexRef.current = next.length - 1;
+          return next;
+        });
         setTyping(false);
+      } else {
+        setMessages((prev) => dedupeChatMessages([...prev, userMsg]));
+        streamTargetIndexRef.current = null;
       }
+
+      const applyStreamChunk = (chunk: string) => {
+        setMessages((prev) => {
+          const idx = streamTargetIndexRef.current;
+          if (idx == null || idx < 0 || idx >= prev.length) return prev;
+          const next = [...prev];
+          const target = next[idx];
+          if (!target || target.role !== "model") return prev;
+          next[idx] = { ...target, content: `${target.content}${chunk}` };
+          return next;
+        });
+      };
 
       const result = await sendChatMessage(
         text,
         conversationId,
         imageFile,
         voicePublishActive || Boolean(onVoiceImageAttached),
-        !imageFile
-          ? (chunk) => {
-              setMessages((prev) => {
-                const next = [...prev];
-                const last = next[next.length - 1];
-                if (!last || last.role !== "model") return prev;
-                next[next.length - 1] = {
-                  ...last,
-                  content: `${last.content}${chunk}`,
-                };
-                return dedupeChatMessages(next);
-              });
-            }
-          : undefined,
+        !imageFile ? applyStreamChunk : undefined,
       );
       setConversationId(result.conversation_id);
       if (imageFile) {
@@ -616,11 +621,13 @@ export function CedTextChatPanel({
         );
       } else {
         setMessages((prev) => {
+          const idx = streamTargetIndexRef.current;
+          if (idx == null || idx < 0 || idx >= prev.length) return prev;
           const next = [...prev];
-          const last = next[next.length - 1];
-          if (last?.role === "model") {
-            next[next.length - 1] = {
-              ...last,
+          const target = next[idx];
+          if (target?.role === "model") {
+            next[idx] = {
+              ...target,
               content: result.reply,
               pdf: result.pdf ?? null,
               image: result.image
@@ -635,6 +642,7 @@ export function CedTextChatPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al enviar.");
     } finally {
+      streamTargetIndexRef.current = null;
       setBusy(false);
       setTyping(false);
       keepInputFocusRef.current = false;

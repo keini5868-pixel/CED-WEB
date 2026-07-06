@@ -208,10 +208,43 @@ def _fetch_web_sections(place: str) -> tuple[list[str], list[str], list[str]]:
     return results["weather"], results["air"], results["pollen"]
 
 
+def _section_with_timeout(
+    fn: Any,
+    *,
+    timeout: float = 5.0,
+    label: str,
+) -> dict[str, Any] | Any:
+    """Ejecuta sección LIFE con timeout — nunca bloquea el dashboard."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(fn)
+        try:
+            return future.result(timeout=timeout)
+        except Exception:  # noqa: BLE001
+            logger.warning("[LIFE] section timeout/fail label=%s", label, exc_info=True)
+            return None
+
+
 def build_life_connections(user_id: str) -> dict[str, Any]:
     """Solo Calendar + Gmail — respuesta rápida sin búsquedas web."""
-    calendar = _calendar_section(user_id)
-    gmail = _gmail_section(user_id)
+    calendar = _section_with_timeout(
+        lambda: _calendar_section(user_id),
+        timeout=5.0,
+        label="calendar",
+    ) or {
+        "connected": False,
+        "events": [],
+        "hint": "Calendar no disponible ahora.",
+    }
+    gmail = _section_with_timeout(
+        lambda: _gmail_section(user_id),
+        timeout=5.0,
+        label="gmail",
+    ) or {
+        "connected": False,
+        "unread_count": 0,
+        "messages": [],
+        "hint": "Gmail no disponible ahora.",
+    }
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "calendar": {"title": "CALENDARIO", **calendar},
@@ -233,8 +266,25 @@ def build_life_dashboard(user_id: str) -> dict[str, Any]:
         air_lines = ["Calidad del aire no disponible."]
         pollen_lines = ["Polen no disponible."]
 
-    calendar = _calendar_section(user_id)
-    gmail = _gmail_section(user_id)
+    calendar = _section_with_timeout(
+        lambda: _calendar_section(user_id),
+        timeout=5.0,
+        label="calendar",
+    ) or {
+        "connected": False,
+        "events": [],
+        "hint": "Conectar Calendar en CFG ⚙️",
+    }
+    gmail = _section_with_timeout(
+        lambda: _gmail_section(user_id),
+        timeout=5.0,
+        label="gmail",
+    ) or {
+        "connected": False,
+        "unread_count": 0,
+        "messages": [],
+        "hint": "Conectar Gmail en CFG ⚙️",
+    }
 
     return {
         "date_label": _date_label(),
