@@ -18,6 +18,8 @@ from app.services.text_chat import (
     DIRECT_IMAGE_MAX_CHARS,
     _anthropic_messages,
     _chat_image_attachment,
+    _gemini_chat_model,
+    _gemini_simple_reply_stream,
     _chat_max_tokens,
     _complete_chat_with_tools,
     _execute_direct_pdf,
@@ -484,6 +486,7 @@ def iter_advanced_message_stream(
     """SSE — streaming para respuestas conversacionales; herramientas vía respuesta completa."""
     settings = get_settings()
     api_key = settings.anthropic_api_key.strip()
+    google_key = settings.google_api_key.strip()
     if not api_key:
         raise ValueError("missing_anthropic_api_key")
 
@@ -526,16 +529,29 @@ def iter_advanced_message_stream(
     accumulated: list[str] = []
     stream_label = ADVANCED_STREAM_MODEL_LABEL
     try:
-        for piece, model_label in _iter_anthropic_text_stream(
-            api_key=api_key,
-            system=stream_system,
-            messages=stream_messages,
-            max_tokens=max_tokens,
-            user_text=text,
-        ):
-            stream_label = model_label
-            accumulated.append(piece)
-            yield _sse_event("token", {"text": piece})
+        # Ruta rápida: Gemini para conversación breve/no-herramientas.
+        if google_key and not _needs_sonnet_stream(text):
+            stream_label = "gemini-2.5-flash"
+            for piece in _gemini_simple_reply_stream(
+                api_key=google_key,
+                model=_gemini_chat_model(),
+                system=stream_system,
+                messages=stream_messages,
+                max_tokens=max_tokens,
+            ):
+                accumulated.append(piece)
+                yield _sse_event("token", {"text": piece})
+        else:
+            for piece, model_label in _iter_anthropic_text_stream(
+                api_key=api_key,
+                system=stream_system,
+                messages=stream_messages,
+                max_tokens=max_tokens,
+                user_text=text,
+            ):
+                stream_label = model_label
+                accumulated.append(piece)
+                yield _sse_event("token", {"text": piece})
     except Exception as exc:  # noqa: BLE001
         logger.warning("[ADVANCED] stream failed, fallback full: %s", exc)
         result = send_advanced_message(
