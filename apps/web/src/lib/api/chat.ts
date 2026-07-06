@@ -184,7 +184,7 @@ export async function sendChatMessageStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let donePayload: StreamDonePayload | null = null;
+  let finalPayload: StreamDonePayload | null = null;
 
   const parseEventBlock = (block: string) => {
     const lines = block.split("\n");
@@ -205,7 +205,7 @@ export async function sendChatMessageStream(
       return;
     }
     if (eventName === "done") {
-      donePayload = {
+      finalPayload = {
         conversation_id: String(parsed.conversation_id ?? ""),
         reply: String(parsed.reply ?? ""),
         usage: parsed.usage as ChatStatus,
@@ -216,8 +216,8 @@ export async function sendChatMessageStream(
   };
 
   while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
+    const { value, done: streamDone } = await reader.read();
+    if (streamDone) break;
     buffer += decoder.decode(value, { stream: true });
     const parts = buffer.split("\n\n");
     buffer = parts.pop() ?? "";
@@ -239,10 +239,12 @@ export async function sendChatMessageStream(
     }
   }
 
-  if (!donePayload?.conversation_id) {
+  // TypeScript no infiere asignaciones dentro del parser SSE.
+  const payload = finalPayload as StreamDonePayload | null;
+  if (!payload?.conversation_id) {
     throw new Error("Respuesta incompleta del chat.");
   }
-  return donePayload;
+  return payload;
 }
 
 export async function endChatConversation(conversationId: string): Promise<boolean> {

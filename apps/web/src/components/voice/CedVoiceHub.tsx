@@ -6,6 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
+import { AdvancedChatPanel } from "@/components/chat/AdvancedChatPanel";
 import { CedOrbOverlay } from "@/components/orb/CedOrbOverlay";
 import { useHudFeed } from "@/contexts/HudFeedContext";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
@@ -50,6 +51,7 @@ const JarvisOrbScene = dynamic(
 /** Centro del dashboard — orbe JARVIS + controles + Gemini Live. */
 export function CedVoiceHub() {
   const [chatOpen, setChatOpen] = useState(false);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
     url: string;
@@ -300,6 +302,7 @@ export function CedVoiceHub() {
         onStop={() => voice.setStopConfirmOpen(true)}
         onHistory={() => voice.setHistoryOpen(true)}
         onChat={() => setChatOpen(true)}
+        onAdvanced={() => setAdvancedOpen(true)}
         onSettings={() => voice.setSettingsOpen(true)}
         onFiles={() => {
           /* Fase 5 — upload */
@@ -327,6 +330,11 @@ export function CedVoiceHub() {
       <CedHistoryPanel
         open={voice.historyOpen}
         onClose={() => voice.setHistoryOpen(false)}
+      />
+
+      <AdvancedChatPanel
+        open={advancedOpen}
+        onClose={() => setAdvancedOpen(false)}
       />
 
       <CedTextChatPanel

@@ -30,6 +30,7 @@ from app.routers import (
     media,
     memory,
     google_auth,
+    advanced_chat,
     meta,
     openai,
     panels,
@@ -137,6 +138,7 @@ def create_app() -> FastAPI:
     application.include_router(conversations.router)
     application.include_router(billing.router)
     application.include_router(chat.router)
+    application.include_router(advanced_chat.router)
     application.include_router(pdf.router)
     application.include_router(cognitive.router)
     application.include_router(usage.router)

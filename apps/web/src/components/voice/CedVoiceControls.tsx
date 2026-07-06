@@ -30,6 +30,7 @@ interface CedVoiceControlsProps {
   onStop: () => void;
   onHistory: () => void;
   onChat: () => void;
+  onAdvanced?: () => void;
   onSettings: () => void;
   onFiles: () => void;
   quickPopup?: HudQuickPopupId;
@@ -191,6 +192,12 @@ export function CedVoiceControls(props: CedVoiceControlsProps) {
         emoji="📧"
         short="GMAIL"
         onClick={() => props.onQuickPopup?.("gmail")}
+      />
+      <EmojiControlBtn
+        label="Modo avanzado Claude"
+        emoji="🧠"
+        short="AVANZADO"
+        onClick={() => props.onAdvanced?.()}
       />
     </div>
   );
