@@ -56,3 +56,34 @@ def test_store_tokens_normalizes_user_id():
                     SAMPLE_UUID_UPPER,
                     {"access_token": "tok", "refresh_token": "ref", "expires_in": 3600},
                 )
+
+
+def test_save_google_token_endpoint():
+    from fastapi.testclient import TestClient
+
+    from app.deps.auth import require_user_id
+    from app.main import create_app
+
+    app = create_app()
+    app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
+
+    with patch("app.routers.google_auth.store_tokens") as mock_store:
+        with patch(
+            "app.routers.google_auth.get_connection_status",
+            return_value={"connected": True, "service": "calendar"},
+        ):
+            client = TestClient(app)
+            res = client.post(
+                "/v1/google/save-token",
+                json={
+                    "type": "calendar",
+                    "provider_token": "ya29.provider-token",
+                    "provider_refresh_token": "1//refresh",
+                },
+                headers={"Authorization": "Bearer test"},
+            )
+            assert res.status_code == 200
+            assert res.json()["connected"] is True
+            mock_store.assert_called_once()
+
+    app.dependency_overrides.clear()

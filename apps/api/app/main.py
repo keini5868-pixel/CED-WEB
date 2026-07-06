@@ -55,12 +55,9 @@ async def lifespan(_app: FastAPI):
     settings = reload_settings()
     configure_logging(settings)
     logger.info(
-        "Google OAuth: client_id=%s calendar_redirect=%s gmail_redirect=%s web_public=%s api_public=%s",
+        "Google tokens: client_id=%s service_role=%s web_public=%s api_public=%s (Supabase Auth provider_token)",
         "OK" if settings.google_calendar_client_id.strip() else "MISSING",
-        settings.google_calendar_redirect_uri.strip()
-        or f"{settings.api_public_url.rstrip('/')}/auth/google/calendar/callback",
-        settings.google_gmail_redirect_uri.strip()
-        or f"{settings.api_public_url.rstrip('/')}/auth/google/gmail/callback",
+        "OK" if settings.supabase_service_role_key.strip() else "MISSING",
         settings.web_public_url.strip() or "MISSING",
         settings.api_public_url.strip() or "MISSING",
     )
@@ -128,7 +125,6 @@ def create_app() -> FastAPI:
     application.include_router(panels.router)
     application.include_router(meta.router)
     application.include_router(google_auth.router)
-    application.include_router(google_auth.auth_router)
     application.include_router(media.router)
     application.include_router(retell.router)
     application.include_router(retell_custom_llm.router)

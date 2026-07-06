@@ -1,59 +1,58 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
 
 import { CedButton } from "@ced/ui";
 
 import {
-  fetchGoogleCalendarOAuthUrl,
+  connectGoogleViaSupabase,
   fetchGoogleCalendarStatus,
-  fetchGoogleGmailOAuthUrl,
   fetchGoogleGmailStatus,
-  googleCalendarLoginApiUrl,
+  syncPendingGoogleProviderToken,
 } from "@/lib/api/google";
 
 export const GOOGLE_CALENDAR_CONNECTED_EVENT = "ced:google-calendar-connected";
 export const GOOGLE_GMAIL_CONNECTED_EVENT = "ced:google-gmail-connected";
 
-const CALENDAR_TOAST: Record<string, string> = {
-  connected: "Google Calendar conectado correctamente.",
-  error: "No se pudo conectar Google Calendar.",
-  token_failed: "Google no devolvió token para Calendar.",
-  missing_config: "OAuth Calendar no configurado en el servidor.",
-};
-
-const GMAIL_TOAST: Record<string, string> = {
-  connected: "Gmail conectado correctamente.",
-  error: "No se pudo conectar Gmail.",
-  token_failed: "Google no devolvió token para Gmail.",
-  missing_config: "OAuth Gmail no configurado en el servidor.",
-};
+const SUCCESS_MESSAGES = {
+  calendar: "Google Calendar conectado correctamente.",
+  gmail: "Gmail conectado correctamente.",
+} as const;
 
 export function GoogleOAuthCallbackBanner() {
-  const searchParams = useSearchParams();
-  const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const calendar = searchParams.get("google_calendar");
-    const gmail = searchParams.get("google_gmail");
-    if (calendar) {
-      setMessage(CALENDAR_TOAST[calendar] ?? `Calendar: ${calendar}`);
-      if (calendar === "connected") {
-        window.dispatchEvent(new Event(GOOGLE_CALENDAR_CONNECTED_EVENT));
+    let cancelled = false;
+
+    void (async () => {
+      const result = await syncPendingGoogleProviderToken();
+      if (cancelled || !result.type) return;
+
+      if (result.ok) {
+        setMessage(SUCCESS_MESSAGES[result.type]);
+        window.dispatchEvent(
+          new Event(
+            result.type === "calendar"
+              ? GOOGLE_CALENDAR_CONNECTED_EVENT
+              : GOOGLE_GMAIL_CONNECTED_EVENT,
+          ),
+        );
+        return;
       }
-      router.replace("/dashboard", { scroll: false });
-      return;
-    }
-    if (gmail) {
-      setMessage(GMAIL_TOAST[gmail] ?? `Gmail: ${gmail}`);
-      if (gmail === "connected") {
-        window.dispatchEvent(new Event(GOOGLE_GMAIL_CONNECTED_EVENT));
-      }
-      router.replace("/dashboard", { scroll: false });
-    }
-  }, [searchParams, router]);
+
+      setMessage(
+        result.error ||
+          (result.type === "calendar"
+            ? "No se pudo conectar Google Calendar."
+            : "No se pudo conectar Gmail."),
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!message) return null;
 
@@ -109,19 +108,9 @@ export function ConnectGoogleServicesPanel() {
   const connectCalendar = async () => {
     setBusy("calendar");
     setError(null);
-    try {
-      const { url, error: oauthError } = await fetchGoogleCalendarOAuthUrl();
-      if (!url) {
-        setError(
-          oauthError ||
-            `No se pudo iniciar OAuth Calendar (API: ${googleCalendarLoginApiUrl().split("?")[0]}).`,
-        );
-        return;
-      }
-      window.location.href = url;
-    } catch {
-      setError("Error al conectar Google Calendar.");
-    } finally {
+    const { error: oauthError } = await connectGoogleViaSupabase("calendar");
+    if (oauthError) {
+      setError(oauthError);
       setBusy(null);
     }
   };
@@ -129,16 +118,9 @@ export function ConnectGoogleServicesPanel() {
   const connectGmail = async () => {
     setBusy("gmail");
     setError(null);
-    try {
-      const { url, error: oauthError } = await fetchGoogleGmailOAuthUrl();
-      if (!url) {
-        setError(oauthError || "No se pudo iniciar OAuth Gmail.");
-        return;
-      }
-      window.location.href = url;
-    } catch {
-      setError("Error al conectar Gmail.");
-    } finally {
+    const { error: oauthError } = await connectGoogleViaSupabase("gmail");
+    if (oauthError) {
+      setError(oauthError);
       setBusy(null);
     }
   };

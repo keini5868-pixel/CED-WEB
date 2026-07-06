@@ -1,3 +1,5 @@
+import type { Session } from "@supabase/supabase-js";
+
 import { createClient } from "@/lib/supabase/client";
 import { apiUrl } from "@/lib/env";
 import { parseApiJson } from "@/lib/api/http";
@@ -7,25 +9,16 @@ export type GoogleConnectionStatus = {
   service: "calendar" | "gmail";
 };
 
-export type GoogleOAuthResult = {
-  url: string | null;
-  error?: string;
+export type GoogleLinkType = "calendar" | "gmail";
+
+const PENDING_LINK_KEY = "ced_pending_google_link";
+
+const GOOGLE_SCOPES: Record<GoogleLinkType, string> = {
+  calendar:
+    "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events",
+  gmail:
+    "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send",
 };
-
-/** Base API — siempre dominio CED API (ced-web-production), nunca el host del web. */
-export function googleCalendarLoginApiUrl(webOrigin?: string): string {
-  const qs = webOrigin
-    ? `?web_origin=${encodeURIComponent(webOrigin)}`
-    : "";
-  return `${apiUrl()}/auth/google/calendar/login${qs}`;
-}
-
-export function googleGmailLoginApiUrl(webOrigin?: string): string {
-  const qs = webOrigin
-    ? `?web_origin=${encodeURIComponent(webOrigin)}`
-    : "";
-  return `${apiUrl()}/auth/google/gmail/login${qs}`;
-}
 
 async function sessionAccessToken(): Promise<string | null> {
   const supabase = createClient();
@@ -35,47 +28,124 @@ async function sessionAccessToken(): Promise<string | null> {
   return session?.access_token ?? null;
 }
 
-/** OAuth start — fetch directo al API (Bearer), no BFF same-origin. */
-async function fetchGoogleOAuthUrlFromApi(
-  path: "google/calendar/oauth/url" | "google/gmail/oauth/url",
-): Promise<GoogleOAuthResult> {
-  const token = await sessionAccessToken();
-  if (!token) {
-    return { url: null, error: "Inicia sesión para conectar Google." };
+function dashboardRedirectUrl(): string {
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/dashboard`;
+  }
+  return `${process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000"}/dashboard`;
+}
+
+async function waitForProviderSession(): Promise<Session | null> {
+  const supabase = createClient();
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.provider_token) {
+      return session;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  return session;
+}
+
+/** OAuth Google vía Supabase Auth (scopes adicionales sobre sesión existente). */
+export async function connectGoogleViaSupabase(
+  type: GoogleLinkType,
+): Promise<{ error?: string }> {
+  const supabase = createClient();
+  if (typeof window !== "undefined") {
+    sessionStorage.setItem(PENDING_LINK_KEY, type);
   }
 
-  const webOrigin =
-    typeof window !== "undefined" ? window.location.origin : "";
-  const qs = webOrigin
-    ? `?web_origin=${encodeURIComponent(webOrigin)}`
-    : "";
-  const target = `${apiUrl()}/v1/${path}${qs}`;
-
-  try {
-    const res = await fetch(target, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "google",
+    options: {
+      scopes: GOOGLE_SCOPES[type],
+      redirectTo: dashboardRedirectUrl(),
+      queryParams: {
+        access_type: "offline",
+        prompt: "consent",
       },
-      cache: "no-store",
-    });
-    const data = await parseApiJson<{ url?: string; detail?: string }>(res);
-    if (!res.ok) {
-      return {
-        url: null,
-        error:
-          data.detail ||
-          `API OAuth ${res.status} — revisa NEXT_PUBLIC_API_URL=${apiUrl()}`,
-      };
+    },
+  });
+
+  if (error) {
+    if (typeof window !== "undefined") {
+      sessionStorage.removeItem(PENDING_LINK_KEY);
     }
-    return { url: data.url ?? null };
-  } catch {
+    return { error: error.message };
+  }
+  return {};
+}
+
+/** Tras el redirect OAuth, persiste provider_token en Supabase (API service_role). */
+export async function saveGoogleProviderToken(
+  type: GoogleLinkType,
+): Promise<{ ok: boolean; error?: string }> {
+  const session = await waitForProviderSession();
+  if (!session?.access_token) {
+    return { ok: false, error: "Sin sesión activa." };
+  }
+
+  const providerToken = session.provider_token;
+  const providerRefreshToken = session.provider_refresh_token;
+  if (!providerToken) {
     return {
-      url: null,
-      error: `No se pudo contactar la API en ${apiUrl()}.`,
+      ok: false,
+      error:
+        "Sin provider_token en la sesión. Verifica scopes en Supabase → Auth → Google.",
     };
   }
+
+  try {
+    const res = await fetch("/api/ced/save-google-token", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({
+        type,
+        provider_token: providerToken,
+        provider_refresh_token: providerRefreshToken ?? null,
+      }),
+    });
+    const data = await parseApiJson<{ detail?: string; connected?: boolean }>(
+      res,
+    );
+    if (!res.ok) {
+      return {
+        ok: false,
+        error: data.detail || `Error al guardar token (${res.status}).`,
+      };
+    }
+    return { ok: Boolean(data.connected ?? true) };
+  } catch {
+    return { ok: false, error: "No se pudo contactar el servidor." };
+  }
+}
+
+export async function syncPendingGoogleProviderToken(): Promise<{
+  type: GoogleLinkType | null;
+  ok: boolean;
+  error?: string;
+}> {
+  if (typeof window === "undefined") {
+    return { type: null, ok: false };
+  }
+
+  const pending = sessionStorage.getItem(PENDING_LINK_KEY) as GoogleLinkType | null;
+  if (!pending || (pending !== "calendar" && pending !== "gmail")) {
+    return { type: null, ok: false };
+  }
+
+  const result = await saveGoogleProviderToken(pending);
+  sessionStorage.removeItem(PENDING_LINK_KEY);
+  return { type: pending, ...result };
 }
 
 export async function fetchGoogleCalendarStatus(): Promise<GoogleConnectionStatus | null> {
@@ -106,12 +176,4 @@ export async function fetchGoogleGmailStatus(): Promise<GoogleConnectionStatus |
   } catch {
     return null;
   }
-}
-
-export async function fetchGoogleCalendarOAuthUrl(): Promise<GoogleOAuthResult> {
-  return fetchGoogleOAuthUrlFromApi("google/calendar/oauth/url");
-}
-
-export async function fetchGoogleGmailOAuthUrl(): Promise<GoogleOAuthResult> {
-  return fetchGoogleOAuthUrlFromApi("google/gmail/oauth/url");
 }
