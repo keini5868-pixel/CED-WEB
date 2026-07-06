@@ -8,44 +8,110 @@ import {
 } from "@/components/voice/ConnectGoogleServices";
 import {
   createLifeFallback,
+  fetchHudConnections,
   fetchHudLife,
-  fetchHudLifeWithTimeout,
   type LifeDashboardSnapshot,
 } from "@/lib/api/hud";
 
-const REFRESH_MS = 30 * 60 * 1000;
-const STRIP_TIMEOUT_MS = 5000;
+function capitalizeDateLabel(label: string): string {
+  const trimmed = label.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function hasRealWeatherData(lines: string[]): boolean {
+  const line = (lines[0] ?? "").trim();
+  if (!line) return false;
+  if (/\d+\s*°[CF]?/i.test(line)) return true;
+  return line.length > 18 && !/^charlotte\s*nc?$/i.test(line);
+}
+
+function formatPlace(place?: string): string {
+  const raw = (place ?? "Charlotte NC").trim();
+  return raw.includes(",") ? raw : raw.replace(/\s+NC$/i, ", NC");
+}
+
+function mergeConnectionSlice(
+  prev: LifeDashboardSnapshot,
+  conn: Pick<LifeDashboardSnapshot, "calendar" | "gmail" | "updated_at">,
+): LifeDashboardSnapshot {
+  return {
+    ...prev,
+    updated_at: conn.updated_at || prev.updated_at,
+    calendar: { ...prev.calendar, ...conn.calendar, title: "CALENDARIO" },
+    gmail: { ...prev.gmail, ...conn.gmail, title: "GMAIL" },
+  };
+}
 
 export function useHudLifeData() {
   const [data, setData] = useState<LifeDashboardSnapshot>(() => createLifeFallback());
   const [refreshing, setRefreshing] = useState(false);
 
-  const refresh = useCallback(async (showSpinner = false) => {
-    if (showSpinner) setRefreshing(true);
+  /** Rápido — Calendar/Gmail OAuth (~1s). Siempre primero. */
+  const refreshConnections = useCallback(async () => {
+    const conn = await fetchHudConnections();
+    setData((prev) => mergeConnectionSlice(prev, conn));
+  }, []);
+
+  /** Lento — clima, aire, polen. No resetea conexiones si falla. */
+  const refreshLifeContent = useCallback(async () => {
     try {
-      const snapshot = showSpinner
-        ? await fetchHudLife()
-        : await fetchHudLifeWithTimeout(STRIP_TIMEOUT_MS);
-      setData(snapshot);
+      const snapshot = await fetchHudLife();
+      setData((prev) => ({
+        ...snapshot,
+        calendar: {
+          ...snapshot.calendar,
+          connected: prev.calendar.connected || snapshot.calendar.connected,
+          events: snapshot.calendar.connected
+            ? snapshot.calendar.events
+            : prev.calendar.events,
+        },
+        gmail: {
+          ...snapshot.gmail,
+          connected: prev.gmail.connected || snapshot.gmail.connected,
+          messages: snapshot.gmail.connected
+            ? snapshot.gmail.messages
+            : prev.gmail.messages,
+          unread_count: snapshot.gmail.connected
+            ? snapshot.gmail.unread_count
+            : prev.gmail.unread_count,
+        },
+      }));
     } catch {
-      setData(createLifeFallback());
-    } finally {
-      if (showSpinner) setRefreshing(false);
+      /* Mantener calendar/gmail ya cargados por refreshConnections */
     }
   }, []);
 
+  const refresh = useCallback(
+    async (showSpinner = false) => {
+      if (showSpinner) setRefreshing(true);
+      try {
+        await refreshConnections();
+        await refreshLifeContent();
+      } finally {
+        if (showSpinner) setRefreshing(false);
+      }
+    },
+    [refreshConnections, refreshLifeContent],
+  );
+
   useEffect(() => {
-    void refresh(false);
-    const id = setInterval(() => void refresh(false), REFRESH_MS);
-    const onOAuth = () => void refresh(false);
-    window.addEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onOAuth);
-    window.addEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onOAuth);
+    void refreshConnections();
+    void refreshLifeContent();
+    const id = setInterval(() => {
+      void refreshConnections();
+      void refreshLifeContent();
+    }, REFRESH_MS);
+    const onCal = () => void refreshConnections();
+    const onMail = () => void refreshConnections();
+    window.addEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onCal);
+    window.addEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onMail);
     return () => {
       clearInterval(id);
-      window.removeEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onOAuth);
-      window.removeEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onOAuth);
+      window.removeEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onCal);
+      window.removeEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onMail);
     };
-  }, [refresh]);
+  }, [refreshConnections, refreshLifeContent]);
 
   const weatherSummary = () => {
     const line = data.weather.lines[0] ?? "Charlotte NC";
@@ -59,23 +125,39 @@ export function useHudLifeData() {
   };
 
   const calendarSummary = () => {
-    if (!data.calendar.connected) return "Sin conectar";
-    if (!data.calendar.events.length) return "Sin eventos";
+    if (!data.calendar.connected) return null;
+    if (!data.calendar.events.length) return "Sin eventos hoy";
     const first = data.calendar.events[0] ?? "";
-    if (first.toLowerCase().includes("sin eventos")) return "Sin eventos";
-    return first.length > 28 ? `${first.slice(0, 28)}…` : first;
+    if (first.toLowerCase().includes("sin eventos")) return "Sin eventos hoy";
+    return first.length > 36 ? `${first.slice(0, 36)}…` : first;
   };
 
   const castilloStripText = () => {
-    const { temp, condition } = weatherSummary();
-    const weather = condition ? `${temp} ${condition}` : temp;
-    return `🌤️ ${weather}  │  📅 ${calendarSummary()}`;
+    const place = formatPlace(data.place);
+    const dateLabel = capitalizeDateLabel(data.date_label);
+
+    if (!hasRealWeatherData(data.weather.lines)) {
+      return `📅 ${dateLabel} · ${place}`;
+    }
+
+    const { temp, condition, line } = weatherSummary();
+    const weatherPart = condition
+      ? `${temp} · ${condition} · ${place}`
+      : line.includes("°")
+        ? `${line} · ${place}`
+        : `${temp} · ${place}`;
+
+    const cal = calendarSummary();
+    const segments = [`🌤️ ${weatherPart}`, `📅 ${dateLabel}`];
+    if (cal) segments.push(cal);
+    return segments.join("  |  ");
   };
 
   return {
     data,
     refreshing,
     refresh: () => refresh(true),
+    refreshConnections,
     weatherSummary,
     calendarSummary,
     castilloStripText,

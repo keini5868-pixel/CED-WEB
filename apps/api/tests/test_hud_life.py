@@ -5,12 +5,30 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from app.services.hud_life import (
+    build_life_connections,
     build_life_dashboard,
     build_life_dashboard_fallback,
     clean_life_text,
     check_calendar_token,
     check_gmail_token,
 )
+
+
+def test_build_life_connections_fast_path():
+    with patch(
+        "app.services.hud_life._calendar_section",
+        return_value={"connected": True, "events": ["9:00 — Standup"], "hint": ""},
+    ):
+        with patch(
+            "app.services.hud_life._gmail_section",
+            return_value={"connected": False, "unread_count": 0, "messages": [], "hint": "Conecte Gmail"},
+        ):
+            data = build_life_connections("user-1")
+
+    assert data["calendar"]["connected"] is True
+    assert "Standup" in data["calendar"]["events"][0]
+    assert "updated_at" in data
+    assert "weather" not in data
 
 
 def test_build_life_dashboard_structure():

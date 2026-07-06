@@ -172,8 +172,8 @@ function normalizeLifeSnapshot(raw: Record<string, unknown>): LifeDashboardSnaps
   };
 }
 
-/** Fusiona estado OAuth real aunque /hud/life falle o devuelva fallback. */
-async function mergeGoogleConnectionStatus(
+/** Fusiona estado OAuth desde endpoints rápidos /google/*/status. */
+export async function applyGoogleConnections(
   snapshot: LifeDashboardSnapshot,
 ): Promise<LifeDashboardSnapshot> {
   const [cal, mail] = await Promise.all([
@@ -197,6 +197,63 @@ async function mergeGoogleConnectionStatus(
   return snapshot;
 }
 
+/** Calendar + Gmail — endpoint rápido (~1s), sin clima web. */
+export async function fetchHudConnections(): Promise<
+  Pick<LifeDashboardSnapshot, "calendar" | "gmail" | "updated_at">
+> {
+  try {
+    const res = await proxyFetchAuthed("hud/connections");
+    if (!res.ok) {
+      const fallback = await applyGoogleConnections(createLifeFallback());
+      return {
+        updated_at: fallback.updated_at,
+        calendar: fallback.calendar,
+        gmail: fallback.gmail,
+      };
+    }
+    const raw = (await res.json()) as Record<string, unknown>;
+    const calendarRaw = (raw.calendar ?? {}) as Record<string, unknown>;
+    const gmailRaw = (raw.gmail ?? {}) as Record<string, unknown>;
+    return {
+      updated_at:
+        typeof raw.updated_at === "string"
+          ? raw.updated_at
+          : new Date().toISOString(),
+      calendar: {
+        title: "CALENDARIO",
+        connected: Boolean(calendarRaw.connected),
+        events: Array.isArray(calendarRaw.events)
+          ? calendarRaw.events.map((e) => String(e))
+          : [],
+        hint:
+          typeof calendarRaw.hint === "string" ? calendarRaw.hint : undefined,
+      },
+      gmail: {
+        title: "GMAIL",
+        connected: Boolean(gmailRaw.connected),
+        unread_count: Number(gmailRaw.unread_count ?? 0),
+        messages: Array.isArray(gmailRaw.messages)
+          ? gmailRaw.messages.map((m) => String(m))
+          : [],
+        hint: typeof gmailRaw.hint === "string" ? gmailRaw.hint : undefined,
+      },
+    };
+  } catch {
+    const fallback = await applyGoogleConnections(createLifeFallback());
+    return {
+      updated_at: fallback.updated_at,
+      calendar: fallback.calendar,
+      gmail: fallback.gmail,
+    };
+  }
+}
+
+async function mergeGoogleConnectionStatus(
+  snapshot: LifeDashboardSnapshot,
+): Promise<LifeDashboardSnapshot> {
+  return applyGoogleConnections(snapshot);
+}
+
 /** Dashboard LIFE — nunca devuelve null; fallback local si la API falla. */
 export async function fetchHudLife(): Promise<LifeDashboardSnapshot> {
   try {
@@ -211,7 +268,7 @@ export async function fetchHudLife(): Promise<LifeDashboardSnapshot> {
   }
 }
 
-/** LIFE con timeout — franja CASTILLO no espera al carrusel web completo. */
+/** LIFE con timeout — solo para llamadas opcionales; no usar para OAuth status. */
 export async function fetchHudLifeWithTimeout(
   timeoutMs = 5000,
 ): Promise<LifeDashboardSnapshot> {

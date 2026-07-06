@@ -215,6 +215,21 @@ body {
   }
 }
 
+/* Franja CASTILLO — scroll lento con datos LIFE */
+@keyframes life-marquee {
+  0% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(-100%);
+  }
+}
+
+.life-marquee {
+  animation: life-marquee 30s linear infinite;
+  white-space: nowrap;
+}
+
 .ced-hud-radar-ring {
   animation: ced-hud-radar-spin 14s linear infinite;
 }

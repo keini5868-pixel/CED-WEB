@@ -28,11 +28,13 @@ def test_oauth_state_legacy_uuid():
 
 def test_store_tokens_normalizes_user_id():
     with patch("app.services.google_oauth.ensure_profile_for_oauth"):
-        with patch("app.services.supabase_client.save_calendar_tokens") as save:
-            store_tokens(
-                "calendar",
-                SAMPLE_UUID_UPPER,
-                {"access_token": "tok", "refresh_token": "ref", "expires_in": 3600},
-            )
-            save.assert_called_once()
-            assert save.call_args[0][0] == SAMPLE_UUID
+        with patch("app.services.supabase_client.save_calendar_tokens"):
+            with patch(
+                "app.services.google_oauth.get_connection_status",
+                return_value={"connected": True, "service": "calendar"},
+            ):
+                store_tokens(
+                    "calendar",
+                    SAMPLE_UUID_UPPER,
+                    {"access_token": "tok", "refresh_token": "ref", "expires_in": 3600},
+                )

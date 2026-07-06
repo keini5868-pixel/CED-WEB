@@ -109,6 +109,7 @@ def auth_diagnostics(_request: Request) -> dict:
         "project_match": project_ref == expected_ref,
         "has_supabase_url": bool(url),
         "has_service_role_key": bool(settings.supabase_service_role_key.strip()),
+        "oauth_token_storage_ready": bool(settings.supabase_service_role_key.strip()),
         "has_anon_key": bool(settings.supabase_anon_key.strip()),
         "has_jwt_secret": bool(settings.supabase_jwt_secret.strip()),
         "supabase_api_key_valid": supabase_auth.get("ok"),

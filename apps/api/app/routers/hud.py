@@ -11,7 +11,11 @@ from pydantic import BaseModel, Field
 from app.deps.auth import require_user_id
 from app.services.hud_carousel import build_carousel_snapshot
 from app.services.hud_health import build_detailed_health
-from app.services.hud_life import build_life_dashboard, build_life_dashboard_fallback
+from app.services.hud_life import (
+    build_life_connections,
+    build_life_dashboard,
+    build_life_dashboard_fallback,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +52,21 @@ async def hud_life(user_id: str = Depends(require_user_id)) -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.exception("[LIFE] error: %s", exc)
         return build_life_dashboard_fallback(user_id)
+
+
+@router.get("/hud/connections")
+async def hud_connections(user_id: str = Depends(require_user_id)) -> dict:
+    """Calendar + Gmail — rápido, sin búsquedas web."""
+    try:
+        return build_life_connections(user_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[LIFE] connections error: %s", exc)
+        fb = build_life_dashboard_fallback(user_id)
+        return {
+            "updated_at": fb["updated_at"],
+            "calendar": fb["calendar"],
+            "gmail": fb["gmail"],
+        }
 
 
 class CalendarEventBody(BaseModel):

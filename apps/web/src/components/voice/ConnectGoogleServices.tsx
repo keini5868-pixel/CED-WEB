@@ -83,14 +83,20 @@ export function ConnectGoogleServicesPanel() {
       fetchGoogleCalendarStatus(),
       fetchGoogleGmailStatus(),
     ]);
-    if (cal) setCalendarConnected(Boolean(cal.connected));
-    if (mail) setGmailConnected(Boolean(mail.connected));
+    setCalendarConnected(Boolean(cal?.connected));
+    setGmailConnected(Boolean(mail?.connected));
   }, []);
 
   useEffect(() => {
     void refresh();
-    const onCal = () => void refresh();
-    const onMail = () => void refresh();
+    const onCal = () => {
+      setCalendarConnected(true);
+      void refresh();
+    };
+    const onMail = () => {
+      setGmailConnected(true);
+      void refresh();
+    };
     window.addEventListener(GOOGLE_CALENDAR_CONNECTED_EVENT, onCal);
     window.addEventListener(GOOGLE_GMAIL_CONNECTED_EVENT, onMail);
     return () => {

@@ -195,6 +195,17 @@ def _fetch_web_sections(place: str) -> tuple[list[str], list[str], list[str]]:
     return results["weather"], results["air"], results["pollen"]
 
 
+def build_life_connections(user_id: str) -> dict[str, Any]:
+    """Solo Calendar + Gmail — respuesta rápida sin búsquedas web."""
+    calendar = _calendar_section(user_id)
+    gmail = _gmail_section(user_id)
+    return {
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "calendar": {"title": "CALENDARIO", **calendar},
+        "gmail": {"title": "GMAIL", **gmail},
+    }
+
+
 def build_life_dashboard(user_id: str) -> dict[str, Any]:
     """Snapshot LIFE — cada sección tolera fallos parciales."""
     from app.modules.environment_module import resolve_environment_place

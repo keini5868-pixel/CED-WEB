@@ -123,8 +123,11 @@ def ensure_profile_for_oauth(user_id: str) -> None:
             on_conflict="id",
         ).execute()
         logger.info("[GOOGLE-OAUTH] profile ensured user=%s", uid[:8])
-    except Exception:  # noqa: BLE001
-        logger.warning("[GOOGLE-OAUTH] profile ensure failed user=%s", uid[:8], exc_info=True)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[GOOGLE-OAUTH] profile ensure failed user=%s: %s", uid[:8], exc)
+        raise ValueError("No se pudo crear perfil para guardar tokens OAuth.") from exc
+    if not supabase_db.get_profile(uid):
+        raise ValueError("Perfil ausente tras ensure — no se pueden guardar tokens OAuth.")
 
 
 def build_oauth_url(service: GoogleService, user_id: str) -> str:
@@ -219,6 +222,11 @@ def store_tokens(service: GoogleService, user_id: str, payload: dict[str, Any]) 
         from app.services.supabase_client import save_gmail_tokens
 
         save_gmail_tokens(uid, row)
+    status = get_connection_status(service, uid)
+    if not status.get("connected"):
+        raise RuntimeError(
+            f"Verificación falló: token {service} no legible en Supabase tras guardar"
+        )
     logger.info("[GOOGLE-OAUTH] tokens stored service=%s user=%s", service, uid[:8])
 
 

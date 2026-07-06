@@ -79,16 +79,21 @@ def calendar_callback(
         return _redirect_web("google_calendar=error")
     try:
         user_id = parse_oauth_state(state)
+        logger.info("[OAUTH CALLBACK] calendar code recibido user=%s", user_id[:8])
         payload = exchange_code("calendar", code)
+        logger.info("[OAUTH CALLBACK] guardando token calendar para user: %s", user_id)
         store_tokens("calendar", user_id, payload)
-        logger.info("[GOOGLE:CALENDAR] connected user=%s", user_id[:8])
+        logger.info("[OAUTH CALLBACK] token calendar guardado exitosamente user=%s", user_id[:8])
         return _redirect_web("google_calendar=connected")
     except ValueError as exc:
         logger.warning("[GOOGLE:CALENDAR] callback rejected: %s", exc)
         return _redirect_web("google_calendar=error")
     except httpx.HTTPError:
         logger.exception("[GOOGLE:CALENDAR] token exchange failed")
-        return _redirect_web(f"google_calendar=token_failed")
+        return _redirect_web("google_calendar=token_failed")
+    except RuntimeError as exc:
+        logger.error("[GOOGLE:CALENDAR] token persist failed: %s", exc)
+        return _redirect_web("google_calendar=token_failed")
     except Exception:  # noqa: BLE001
         logger.exception("[GOOGLE:CALENDAR] callback failed")
         return _redirect_web("google_calendar=error")
@@ -105,15 +110,20 @@ def gmail_callback(
         return _redirect_web("google_gmail=error")
     try:
         user_id = parse_oauth_state(state)
+        logger.info("[OAUTH CALLBACK] gmail code recibido user=%s", user_id[:8])
         payload = exchange_code("gmail", code)
+        logger.info("[OAUTH CALLBACK] guardando token gmail para user: %s", user_id)
         store_tokens("gmail", user_id, payload)
-        logger.info("[GOOGLE:GMAIL] connected user=%s", user_id[:8])
+        logger.info("[OAUTH CALLBACK] token gmail guardado exitosamente user=%s", user_id[:8])
         return _redirect_web("google_gmail=connected")
     except ValueError as exc:
         logger.warning("[GOOGLE:GMAIL] callback rejected: %s", exc)
         return _redirect_web("google_gmail=error")
     except httpx.HTTPError:
         logger.exception("[GOOGLE:GMAIL] token exchange failed")
+        return _redirect_web("google_gmail=token_failed")
+    except RuntimeError as exc:
+        logger.error("[GOOGLE:GMAIL] token persist failed: %s", exc)
         return _redirect_web("google_gmail=token_failed")
     except Exception:  # noqa: BLE001
         logger.exception("[GOOGLE:GMAIL] callback failed")
