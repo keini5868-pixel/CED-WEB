@@ -13,6 +13,8 @@ import {
   type LifeDashboardSnapshot,
 } from "@/lib/api/hud";
 
+const REFRESH_MS = 30 * 60 * 1000;
+
 function capitalizeDateLabel(label: string): string {
   const trimmed = label.trim();
   if (!trimmed) return trimmed;

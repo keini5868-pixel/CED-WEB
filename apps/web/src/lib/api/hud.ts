@@ -172,7 +172,7 @@ function normalizeLifeSnapshot(raw: Record<string, unknown>): LifeDashboardSnaps
   };
 }
 
-/** Fusiona estado OAuth desde endpoints rápidos /google/*/status. */
+/** Fusiona estado OAuth desde endpoints rápidos de Google (calendar/gmail status). */
 export async function applyGoogleConnections(
   snapshot: LifeDashboardSnapshot,
 ): Promise<LifeDashboardSnapshot> {
