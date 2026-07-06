@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useState } from "react";
 
+import { CastilloLifeStrip } from "@/components/dashboard/CastilloLifeStrip";
 import { CarouselMobileStrip } from "@/components/dashboard/carousel/CarouselMobileStrip";
 import {
   CAROUSEL_HEIGHT_PX,
@@ -65,12 +66,13 @@ export function LeftPanel3DCarousel() {
   return (
     <>
       <div className="hidden shrink-0 flex-col lg:flex">
-        <p className="ced-hud-text-secondary mb-2 shrink-0 text-[10px] uppercase tracking-widest">
+        <p className="ced-hud-text-secondary shrink-0 text-[10px] uppercase tracking-widest">
           Castillo · intel en vivo
           {prospectionMode ? (
             <span className="ml-2 text-red-400">· PROSPECCIÓN</span>
           ) : null}
         </p>
+        <CastilloLifeStrip />
         <div
           className="relative shrink-0 overflow-hidden"
           style={{ height: CAROUSEL_HEIGHT_PX, maxHeight: CAROUSEL_HEIGHT_PX }}
@@ -85,6 +87,10 @@ export function LeftPanel3DCarousel() {
         </div>
       </div>
       <div className="lg:hidden">
+        <p className="ced-hud-text-secondary shrink-0 text-[10px] uppercase tracking-widest">
+          Castillo · intel en vivo
+        </p>
+        <CastilloLifeStrip />
         <CarouselMobileStrip cards={cards} />
       </div>
     </>

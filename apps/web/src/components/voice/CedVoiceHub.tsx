@@ -24,6 +24,10 @@ import { CedAssistantButton } from "@/components/voice/CedAssistantButton";
 import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
 import {
+  CedHudQuickPopups,
+  type HudQuickPopupId,
+} from "@/components/voice/CedHudQuickPopups";
+import {
   CedHistoryPanel,
   CedSettingsModal,
   CedStopConfirmModal,
@@ -52,6 +56,7 @@ export function CedVoiceHub() {
     prompt?: string;
   } | null>(null);
   const [chatSeedPrompt, setChatSeedPrompt] = useState<string | null>(null);
+  const [quickPopup, setQuickPopup] = useState<HudQuickPopupId>(null);
   const [voiceImagePreview, setVoiceImagePreview] = useState<{
     url: string;
     prompt?: string;
@@ -286,6 +291,8 @@ export function CedVoiceHub() {
         cameraOn={voice.cameraOn}
         muted={voice.muted}
         paused={voice.paused}
+        quickPopup={quickPopup}
+        onQuickPopup={(id) => setQuickPopup((prev) => (prev === id ? null : id))}
         onMic={() => void voice.toggleMic()}
         onCamera={() => void voice.toggleCamera()}
         onMute={() => voice.setMuted((m) => !m)}
@@ -298,6 +305,8 @@ export function CedVoiceHub() {
           /* Fase 5 — upload */
         }}
       />
+
+      <CedHudQuickPopups active={quickPopup} onClose={() => setQuickPopup(null)} />
 
       <CedStopConfirmModal
         open={voice.stopConfirmOpen}

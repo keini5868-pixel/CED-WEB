@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services.hud_carousel import build_carousel_snapshot
@@ -47,3 +48,75 @@ async def hud_life(user_id: str = Depends(require_user_id)) -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.exception("[LIFE] error: %s", exc)
         return build_life_dashboard_fallback(user_id)
+
+
+class CalendarEventBody(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    date: str = Field(description="YYYY-MM-DD")
+    time: str = Field(default="09:00", description="HH:MM")
+    reminder_minutes: int | None = Field(default=None, ge=0, le=10_080)
+
+
+class GmailSendBody(BaseModel):
+    to: str = Field(min_length=3, max_length=200)
+    subject: str = Field(min_length=1, max_length=200)
+    body: str = Field(min_length=1, max_length=8000)
+
+
+@router.post("/hud/calendar/event")
+async def hud_create_calendar_event(
+    body: CalendarEventBody,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    from app.services.google_calendar_api import create_event
+    from app.services.google_oauth import get_valid_access_token
+
+    try:
+        token = get_valid_access_token("calendar", user_id)
+        from datetime import timedelta
+
+        start = datetime.fromisoformat(f"{body.date}T{body.time or '09:00'}:00")
+        try:
+            from zoneinfo import ZoneInfo
+
+            start = start.replace(tzinfo=ZoneInfo("America/New_York"))
+        except Exception:  # noqa: BLE001
+            start = start.replace(tzinfo=timezone.utc)
+        end = start + timedelta(hours=1)
+        create_event(
+            token,
+            summary=body.title,
+            start=start,
+            end=end,
+            description=(
+                f"Recordatorio CED ({body.reminder_minutes} min antes)"
+                if body.reminder_minutes
+                else "Evento creado desde CED HUD"
+            ),
+        )
+        return {"ok": True}
+    except ValueError as exc:
+        if str(exc) == "not_connected":
+            raise HTTPException(status_code=401, detail="Calendar no conectado.") from exc
+        raise HTTPException(status_code=400, detail="Fecha u hora inválida.") from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[HUD] calendar event failed")
+        raise HTTPException(status_code=502, detail="No se pudo crear el evento.") from exc
+
+
+@router.post("/hud/gmail/send")
+async def hud_send_gmail(body: GmailSendBody, user_id: str = Depends(require_user_id)) -> dict:
+    from app.services.google_gmail_api import send_message
+    from app.services.google_oauth import get_valid_access_token
+
+    try:
+        token = get_valid_access_token("gmail", user_id)
+        send_message(token, to=body.to, subject=body.subject, body=body.body)
+        return {"ok": True}
+    except ValueError as exc:
+        if str(exc) == "not_connected":
+            raise HTTPException(status_code=401, detail="Gmail no conectado.") from exc
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[HUD] gmail send failed")
+        raise HTTPException(status_code=502, detail="No se pudo enviar el email.") from exc

@@ -15,6 +15,8 @@ import {
 } from "lucide-react";
 import { motion } from "framer-motion";
 
+import type { HudQuickPopupId } from "@/components/voice/CedHudQuickPopups";
+
 interface CedVoiceControlsProps {
   micOn: boolean;
   micBusy?: boolean;
@@ -30,6 +32,8 @@ interface CedVoiceControlsProps {
   onChat: () => void;
   onSettings: () => void;
   onFiles: () => void;
+  quickPopup?: HudQuickPopupId;
+  onQuickPopup?: (id: Exclude<HudQuickPopupId, null>) => void;
   /** Oculta el botón MIC cuando el lanzador ASISTENTE está activo. */
   hideMicLaunch?: boolean;
 }
@@ -73,6 +77,27 @@ function ControlBtn({
     >
       {children}
     </motion.button>
+  );
+}
+
+function EmojiControlBtn({
+  active,
+  label,
+  emoji,
+  short,
+  onClick,
+}: {
+  active?: boolean;
+  label: string;
+  emoji: string;
+  short: string;
+  onClick: () => void;
+}) {
+  return (
+    <ControlBtn active={active} label={label} onClick={onClick}>
+      <span className="text-base leading-none">{emoji}</span>
+      <span className="mt-0.5 hidden sm:inline">{short}</span>
+    </ControlBtn>
   );
 }
 
@@ -139,6 +164,34 @@ export function CedVoiceControls(props: CedVoiceControlsProps) {
         <FolderOpen className="h-5 w-5" />
         <span className="mt-0.5 hidden sm:inline">FILES</span>
       </ControlBtn>
+      <EmojiControlBtn
+        active={props.quickPopup === "weather"}
+        label="Clima"
+        emoji="🌤️"
+        short="CLIMA"
+        onClick={() => props.onQuickPopup?.("weather")}
+      />
+      <EmojiControlBtn
+        active={props.quickPopup === "calendar"}
+        label="Calendario"
+        emoji="📅"
+        short="CAL"
+        onClick={() => props.onQuickPopup?.("calendar")}
+      />
+      <EmojiControlBtn
+        active={props.quickPopup === "events"}
+        label="Eventos y recordatorios"
+        emoji="🔔"
+        short="EVENTOS"
+        onClick={() => props.onQuickPopup?.("events")}
+      />
+      <EmojiControlBtn
+        active={props.quickPopup === "gmail"}
+        label="Gmail"
+        emoji="📧"
+        short="GMAIL"
+        onClick={() => props.onQuickPopup?.("gmail")}
+      />
     </div>
   );
 }

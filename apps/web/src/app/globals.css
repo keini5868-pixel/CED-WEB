@@ -201,6 +201,20 @@ body {
   }
 }
 
+.ced-castillo-life-strip {
+  display: inline-flex;
+  animation: ced-castillo-life-marquee 30s linear infinite;
+}
+
+@keyframes ced-castillo-life-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
 .ced-hud-radar-ring {
   animation: ced-hud-radar-spin 14s linear infinite;
 }

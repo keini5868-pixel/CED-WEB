@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 GMAIL_PATTERNS: tuple[str, ...] = (
     r"\b(?:emails?|correos?|gmail)\b",
+    r"\b(?:tengo|hay)\s+.*(?:emails?|correos?)\b",
     r"\b(?:tengo|hay)\s+.*(?:emails?|correos?)\s+importantes\b",
     r"\bl[eé]eme\s+(?:el\s+)?(?:email|correo)\b",
     r"\benv[ií]a\s+(?:un\s+)?(?:email|correo)\b",
@@ -75,14 +76,15 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
             f"{body[:400]}"
         )
 
-    query = "is:important OR is:unread"
+    query = "is:unread"
     if re.search(r"important", t):
         query = "is:important"
     messages = list_messages(access, query=query, max_results=4)
     if not messages:
-        return "Señor, no tiene correos importantes pendientes."
+        return "Señor, no tiene correos sin leer pendientes."
+    count = len(messages)
     parts = [f"«{m['subject']}» de {m['from']}" for m in messages[:3]]
-    return "Señor, correos recientes: " + "; ".join(parts) + "."
+    return f"Señor, tiene {count} correos sin leer. " + "; ".join(parts) + "."
 
 
 class GmailModule(BaseModule):
