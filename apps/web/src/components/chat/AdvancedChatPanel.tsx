@@ -133,8 +133,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         setMessages([
           {
             role: "assistant",
-            content:
-              "Modo avanzado activo. Puedo analizar, generar PDFs, crear imágenes y responder prompts largos. ¿Qué desea analizar, señor?",
+            content: "Modo avanzado listo. ¿Qué analizamos, señor?",
           },
         ]);
       }
@@ -191,27 +190,45 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       });
     };
 
+    let pendingChunk = "";
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushChunks = () => {
+      if (!pendingChunk) return;
+      const batch = pendingChunk;
+      pendingChunk = "";
+      flushTimer = null;
+      setStatusHint(null);
+      setMessages((prev) => {
+        const next = [...prev];
+        const last = next[next.length - 1];
+        if (!last || last.role !== "assistant") return prev;
+        next[next.length - 1] = {
+          ...last,
+          content: `${last.content}${batch}`,
+        };
+        return next;
+      });
+    };
+    const onChunk = (chunk: string) => {
+      pendingChunk += chunk;
+      if (!flushTimer) {
+        flushTimer = setTimeout(flushChunks, 24);
+      }
+    };
+
     try {
       const result = await sendAdvancedChatMessageStream(
         text,
         historyBefore,
-        (chunk) => {
-          setStatusHint(null);
-          setMessages((prev) => {
-            const next = [...prev];
-            const last = next[next.length - 1];
-            if (!last || last.role !== "assistant") return prev;
-            next[next.length - 1] = {
-              ...last,
-              content: `${last.content}${chunk}`,
-            };
-            return next;
-          });
-        },
+        onChunk,
         (hint) => setStatusHint(hint),
       );
+      if (flushTimer) clearTimeout(flushTimer);
+      flushChunks();
       applyResult(result);
     } catch (streamErr) {
+      if (flushTimer) clearTimeout(flushTimer);
+      pendingChunk = "";
       try {
         setStatusHint("Reintentando sin streaming…");
         const fallback = await sendAdvancedChatMessage(text, historyBefore);

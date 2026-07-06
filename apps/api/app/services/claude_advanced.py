@@ -61,6 +61,77 @@ CAPACIDADES (usa las herramientas cuando corresponda):
 {CHAT_DELIVERABLE_RULES}
 """
 
+# Prompt corto — streaming conversacional (menos latencia).
+ADVANCED_STREAM_SYSTEM = """Eres CED modo avanzado: negocios, marketing, ventas y estrategia.
+Español latinoamericano, profesional y cercano. Trata al usuario como "señor".
+REGLAS DE BREVEDAD:
+- Saludo o mensaje corto → 1-2 frases máximo, sin repetir bienvenida ni listar capacidades.
+- Pregunta simple → un párrafo directo.
+- Solo desarrolla en profundidad si piden análisis, estrategia, plan o PDF.
+- Máximo 1 emoji por respuesta, solo si aporta.
+"""
+
+_GREETING_ONLY = re.compile(
+    r"^(?:hola|hey|hi|hello|buenas?|buenos?\s*d[ií]as?|buenas?\s*tardes?|"
+    r"buenas?\s*noches?|qu[eé]\s*tal|saludos)[\s!.?👋😊]*$",
+    re.I,
+)
+
+_WELCOME_MARKERS = (
+    "modo avanzado activo",
+    "castillo evolución digital",
+    "bienvenido al sistema",
+)
+
+
+def _instant_greeting_reply(text: str) -> str | None:
+    if _GREETING_ONLY.match(text.strip()):
+        return (
+            "Hola, señor. Modo avanzado listo — ¿qué negocio o proyecto quiere analizar hoy?"
+        )
+    return None
+
+
+def _is_welcome_boilerplate(content: str) -> bool:
+    lowered = content.strip().lower()
+    if len(lowered) < 20:
+        return False
+    return any(marker in lowered for marker in _WELCOME_MARKERS)
+
+
+def _history_for_stream(history: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """Historial sin mensajes de bienvenida del UI — evita respuestas largas repetidas."""
+    messages: list[dict[str, str]] = []
+    for turn in history[-12:]:
+        role = str(turn.get("role") or "").strip().lower()
+        content = str(turn.get("content") or "").strip()
+        if not content or _is_welcome_boilerplate(content):
+            continue
+        if role in ("user", "human"):
+            messages.append({"role": "user", "content": content})
+        elif role in ("assistant", "model", "claude"):
+            messages.append({"role": "assistant", "content": content})
+    return messages[-10:]
+
+
+def _stream_max_tokens(text: str) -> int:
+    length = len(text.strip())
+    if length < 50:
+        return 280
+    if length < 180:
+        return 700
+    if _needs_sonnet_stream(text):
+        return _chat_max_tokens(text)
+    return min(1200, _chat_max_tokens(text))
+
+
+def _stream_system_prompt(text: str) -> str:
+    if len(text.strip()) < 50:
+        return ADVANCED_STREAM_SYSTEM
+    return ADVANCED_STREAM_SYSTEM + (
+        "\nDesarrolla con detalle solo si el usuario lo pide explícitamente."
+    )
+
 
 def _needs_sonnet_stream(text: str) -> bool:
     """Planes largos / entregables → Sonnet aunque sea streaming."""
@@ -239,6 +310,13 @@ def send_advanced_message(
     if not text:
         raise ValueError("Mensaje vacío.")
 
+    instant = _instant_greeting_reply(text)
+    if instant:
+        return _finish_payload(
+            response=instant,
+            model=ADVANCED_STREAM_MODEL_LABEL,
+        )
+
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = _history_as_chat_rows(history)
 
@@ -371,7 +449,7 @@ def _stream_model_text(
             json={
                 "model": model,
                 "max_tokens": max_tokens,
-                "temperature": 0.4,
+                "temperature": 0.25,
                 "system": system,
                 "messages": messages,
                 "stream": True,
@@ -413,6 +491,14 @@ def iter_advanced_message_stream(
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = _history_as_chat_rows(history)
 
+    instant = _instant_greeting_reply(text)
+    if instant:
+        yield _sse_event("done", _finish_payload(
+            response=instant,
+            model=ADVANCED_STREAM_MODEL_LABEL,
+        ))
+        return
+
     # PDF / imagen / herramientas → respuesta completa (no stream parcial).
     needs_tools = (
         _needs_chat_tools(text)
@@ -432,18 +518,17 @@ def iter_advanced_message_stream(
         yield _sse_event("done", result)
         return
 
-    normalized = _normalize_history(history)
+    normalized = _history_for_stream(history)
     stream_messages = [*normalized, {"role": "user", "content": text}]
-    max_tokens = _chat_max_tokens(text)
-    if max_tokens < CHAT_DELIVERABLE_MAX_TOKENS:
-        max_tokens = min(CHAT_DELIVERABLE_MAX_TOKENS, max_tokens + 800)
+    max_tokens = _stream_max_tokens(text)
+    stream_system = _stream_system_prompt(text)
 
     accumulated: list[str] = []
     stream_label = ADVANCED_STREAM_MODEL_LABEL
     try:
         for piece, model_label in _iter_anthropic_text_stream(
             api_key=api_key,
-            system=ADVANCED_SYSTEM_PROMPT,
+            system=stream_system,
             messages=stream_messages,
             max_tokens=max_tokens,
             user_text=text,

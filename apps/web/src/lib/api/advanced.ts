@@ -55,7 +55,13 @@ export async function sendAdvancedChatMessageStream(
     body: JSON.stringify({
       message,
       history: history
-        .filter((m) => m.role === "user" || m.role === "assistant")
+        .filter((m) => {
+          if (m.role !== "user" && m.role !== "assistant") return false;
+          const c = m.content.trim().toLowerCase();
+          if (m.role === "assistant" && c.includes("modo avanzado listo")) return false;
+          if (m.role === "assistant" && c.includes("modo avanzado activo")) return false;
+          return Boolean(m.content.trim());
+        })
         .map((m) => ({ role: m.role, content: m.content })),
     }),
     signal: AbortSignal.timeout(ADVANCED_TIMEOUT_MS),
