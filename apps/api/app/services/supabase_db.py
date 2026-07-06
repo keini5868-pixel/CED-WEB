@@ -407,48 +407,68 @@ def upsert_meta_connection(user_id: str, data: dict[str, Any]) -> dict[str, Any]
 
 def get_calendar_tokens(user_id: str) -> dict[str, Any] | None:
     try:
+        from app.services.user_id_utils import normalize_user_id
+
+        uid = normalize_user_id(user_id)
         client = _client()
         result = (
             client.table("calendar_tokens")
             .select("access_token, refresh_token, expires_at, connected_at")
-            .eq("user_id", user_id)
+            .eq("user_id", uid)
             .limit(1)
             .execute()
         )
         rows = result.data or []
         return rows[0] if rows else None
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[DB] get_calendar_tokens failed user=%s err=%s", str(user_id)[:8], exc)
         return None
 
 
 def upsert_calendar_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    from app.services.user_id_utils import normalize_user_id
+
+    uid = normalize_user_id(user_id)
     client = _client()
-    row = {"user_id": user_id, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
+    row = {"user_id": uid, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
     result = client.table("calendar_tokens").upsert(row, on_conflict="user_id").execute()
-    return (result.data or [row])[0]
+    saved = (result.data or [row])[0]
+    if not saved.get("access_token"):
+        raise RuntimeError("calendar_tokens upsert sin access_token")
+    return saved
 
 
 def get_gmail_tokens(user_id: str) -> dict[str, Any] | None:
     try:
+        from app.services.user_id_utils import normalize_user_id
+
+        uid = normalize_user_id(user_id)
         client = _client()
         result = (
             client.table("gmail_tokens")
             .select("access_token, refresh_token, expires_at, connected_at")
-            .eq("user_id", user_id)
+            .eq("user_id", uid)
             .limit(1)
             .execute()
         )
         rows = result.data or []
         return rows[0] if rows else None
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[DB] get_gmail_tokens failed user=%s err=%s", str(user_id)[:8], exc)
         return None
 
 
 def upsert_gmail_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    from app.services.user_id_utils import normalize_user_id
+
+    uid = normalize_user_id(user_id)
     client = _client()
-    row = {"user_id": user_id, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
+    row = {"user_id": uid, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
     result = client.table("gmail_tokens").upsert(row, on_conflict="user_id").execute()
-    return (result.data or [row])[0]
+    saved = (result.data or [row])[0]
+    if not saved.get("access_token"):
+        raise RuntimeError("gmail_tokens upsert sin access_token")
+    return saved
 
 
 def list_hud_reminders(user_id: str, *, limit: int = 20) -> list[dict[str, Any]]:

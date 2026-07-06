@@ -15,6 +15,7 @@ from app.services.google_oauth import (
     exchange_code,
     get_connection_status,
     oauth_configured,
+    parse_oauth_state,
     store_tokens,
 )
 
@@ -77,10 +78,15 @@ def calendar_callback(
         logger.warning("[GOOGLE:CALENDAR] callback error=%s", error)
         return _redirect_web("google_calendar=error")
     try:
+        user_id = parse_oauth_state(state)
         payload = exchange_code("calendar", code)
-        store_tokens("calendar", state, payload)
+        store_tokens("calendar", user_id, payload)
+        logger.info("[GOOGLE:CALENDAR] connected user=%s", user_id[:8])
         return _redirect_web("google_calendar=connected")
-    except httpx.HTTPError as exc:
+    except ValueError as exc:
+        logger.warning("[GOOGLE:CALENDAR] callback rejected: %s", exc)
+        return _redirect_web("google_calendar=error")
+    except httpx.HTTPError:
         logger.exception("[GOOGLE:CALENDAR] token exchange failed")
         return _redirect_web(f"google_calendar=token_failed")
     except Exception:  # noqa: BLE001
@@ -98,9 +104,14 @@ def gmail_callback(
         logger.warning("[GOOGLE:GMAIL] callback error=%s", error)
         return _redirect_web("google_gmail=error")
     try:
+        user_id = parse_oauth_state(state)
         payload = exchange_code("gmail", code)
-        store_tokens("gmail", state, payload)
+        store_tokens("gmail", user_id, payload)
+        logger.info("[GOOGLE:GMAIL] connected user=%s", user_id[:8])
         return _redirect_web("google_gmail=connected")
+    except ValueError as exc:
+        logger.warning("[GOOGLE:GMAIL] callback rejected: %s", exc)
+        return _redirect_web("google_gmail=error")
     except httpx.HTTPError:
         logger.exception("[GOOGLE:GMAIL] token exchange failed")
         return _redirect_web("google_gmail=token_failed")

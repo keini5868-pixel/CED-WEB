@@ -9,6 +9,7 @@ from fastapi import Header, HTTPException
 from jose import JWTError, jwt
 
 from app.config import get_settings
+from app.services.user_id_utils import normalize_user_id
 
 
 def _user_from_jwt_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
@@ -178,7 +179,7 @@ async def require_auth_user(
 
 async def require_user_id(authorization: str | None = Header(default=None)) -> str:
     user = await require_auth_user(authorization)
-    return user["id"]
+    return normalize_user_id(user["id"])
 
 
 async def require_super_admin(

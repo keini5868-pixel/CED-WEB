@@ -11,6 +11,7 @@ import httpx
 
 from app.config import get_settings
 from app.services import supabase_db
+from app.services.user_id_utils import normalize_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +64,69 @@ def oauth_configured() -> bool:
     )
 
 
+def _oauth_state_secret() -> str:
+    settings = get_settings()
+    secret = settings.supabase_jwt_secret.strip() or settings.google_calendar_client_secret.strip()
+    if not secret:
+        raise ValueError("OAuth state secret no configurado.")
+    return secret
+
+
+def build_oauth_state(user_id: str) -> str:
+    """State firmado — evita mismatch al volver del callback de Google."""
+    from jose import jwt
+
+    uid = normalize_user_id(user_id)
+    return jwt.encode({"uid": uid, "v": 1}, _oauth_state_secret(), algorithm="HS256")
+
+
+def parse_oauth_state(state: str) -> str:
+    """Recupera user_id del state (JWT firmado o UUID legacy en vuelo)."""
+    from jose import JWTError, jwt
+
+    raw = (state or "").strip()
+    if not raw:
+        raise ValueError("OAuth state vacío.")
+    try:
+        return normalize_user_id(raw)
+    except ValueError:
+        pass
+    try:
+        payload = jwt.decode(raw, _oauth_state_secret(), algorithms=["HS256"])
+        uid = payload.get("uid")
+        if not uid:
+            raise ValueError("OAuth state sin uid.")
+        return normalize_user_id(str(uid))
+    except JWTError as exc:
+        raise ValueError("OAuth state inválido.") from exc
+
+
+def ensure_profile_for_oauth(user_id: str) -> None:
+    """Garantiza fila en profiles antes del FK de calendar_tokens/gmail_tokens."""
+    uid = normalize_user_id(user_id)
+    if supabase_db.get_profile(uid):
+        return
+    try:
+        client = supabase_db._client()
+        auth_res = client.auth.admin.get_user_by_id(uid)
+        user = auth_res.user if hasattr(auth_res, "user") else auth_res
+        email = getattr(user, "email", None) or ""
+        meta = getattr(user, "user_metadata", None) or {}
+        full_name = meta.get("full_name", "") if isinstance(meta, dict) else ""
+        client.table("profiles").upsert(
+            {
+                "id": uid,
+                "email": email,
+                "full_name": full_name or "",
+                "role": "client",
+            },
+            on_conflict="id",
+        ).execute()
+        logger.info("[GOOGLE-OAUTH] profile ensured user=%s", uid[:8])
+    except Exception:  # noqa: BLE001
+        logger.warning("[GOOGLE-OAUTH] profile ensure failed user=%s", uid[:8], exc_info=True)
+
+
 def build_oauth_url(service: GoogleService, user_id: str) -> str:
     client_id, _ = _oauth_client_config()
     if service == "calendar":
@@ -78,7 +142,7 @@ def build_oauth_url(service: GoogleService, user_id: str) -> str:
         "scope": scopes,
         "access_type": "offline",
         "prompt": "consent",
-        "state": user_id,
+        "state": build_oauth_state(user_id),
         "include_granted_scopes": "true",
     }
     return f"{_GOOGLE_AUTH_URL}?{urlencode(params)}"
@@ -127,34 +191,54 @@ def _expires_at_from_token(payload: dict[str, Any]) -> str | None:
 
 
 def store_tokens(service: GoogleService, user_id: str, payload: dict[str, Any]) -> None:
+    uid = normalize_user_id(user_id)
+    ensure_profile_for_oauth(uid)
     access = str(payload.get("access_token") or "").strip()
     if not access:
         raise ValueError("Google no devolvió access_token.")
+    refresh = payload.get("refresh_token")
+    if not refresh:
+        existing = (
+            supabase_db.get_calendar_tokens(uid)
+            if service == "calendar"
+            else supabase_db.get_gmail_tokens(uid)
+        )
+        if existing and existing.get("refresh_token"):
+            refresh = existing.get("refresh_token")
     row = {
         "access_token": access,
-        "refresh_token": payload.get("refresh_token"),
+        "refresh_token": refresh,
         "expires_at": _expires_at_from_token(payload),
     }
     if service == "calendar":
-        supabase_db.upsert_calendar_tokens(user_id, row)
+        supabase_db.upsert_calendar_tokens(uid, row)
     else:
-        supabase_db.upsert_gmail_tokens(user_id, row)
+        supabase_db.upsert_gmail_tokens(uid, row)
+    logger.info("[GOOGLE-OAUTH] tokens stored service=%s user=%s", service, uid[:8])
 
 
 def get_connection_status(service: GoogleService, user_id: str) -> dict[str, Any]:
+    try:
+        uid = normalize_user_id(user_id)
+    except ValueError:
+        return {"connected": False, "service": service}
     row = (
-        supabase_db.get_calendar_tokens(user_id)
+        supabase_db.get_calendar_tokens(uid)
         if service == "calendar"
-        else supabase_db.get_gmail_tokens(user_id)
+        else supabase_db.get_gmail_tokens(uid)
     )
     return {"connected": bool(row and row.get("access_token")), "service": service}
 
 
 def get_valid_access_token(service: GoogleService, user_id: str) -> str:
+    try:
+        uid = normalize_user_id(user_id)
+    except ValueError as exc:
+        raise ValueError("not_connected") from exc
     row = (
-        supabase_db.get_calendar_tokens(user_id)
+        supabase_db.get_calendar_tokens(uid)
         if service == "calendar"
-        else supabase_db.get_gmail_tokens(user_id)
+        else supabase_db.get_gmail_tokens(uid)
     )
     if not row or not row.get("access_token"):
         raise ValueError("not_connected")
@@ -177,7 +261,7 @@ def get_valid_access_token(service: GoogleService, user_id: str) -> str:
 
     try:
         payload = refresh_access_token(service, refresh)
-        store_tokens(service, user_id, {**payload, "refresh_token": refresh})
+        store_tokens(service, uid, {**payload, "refresh_token": refresh})
         new_access = str(payload.get("access_token") or "").strip()
         if new_access:
             return new_access
