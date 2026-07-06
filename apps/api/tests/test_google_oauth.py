@@ -19,11 +19,29 @@ def test_normalize_user_id_lowercase():
 def test_oauth_state_roundtrip():
     with patch("app.services.google_oauth._oauth_state_secret", return_value="test-secret-key-123456"):
         state = build_oauth_state(SAMPLE_UUID)
-        assert parse_oauth_state(state) == SAMPLE_UUID
+        uid, web = parse_oauth_state(state)
+        assert uid == SAMPLE_UUID
+        assert web is None
+
+
+def test_oauth_state_with_web_origin():
+    with patch("app.services.google_oauth._oauth_state_secret", return_value="test-secret-key-123456"):
+        with patch(
+            "app.services.google_oauth.get_settings",
+        ) as mock_settings:
+            mock_settings.return_value.cors_origin_list.return_value = [
+                "https://app.example.com"
+            ]
+            state = build_oauth_state(SAMPLE_UUID, "https://app.example.com")
+            uid, web = parse_oauth_state(state)
+            assert uid == SAMPLE_UUID
+            assert web == "https://app.example.com"
 
 
 def test_oauth_state_legacy_uuid():
-    assert parse_oauth_state(SAMPLE_UUID_UPPER) == SAMPLE_UUID
+    uid, web = parse_oauth_state(SAMPLE_UUID_UPPER)
+    assert uid == SAMPLE_UUID
+    assert web is None
 
 
 def test_store_tokens_normalizes_user_id():

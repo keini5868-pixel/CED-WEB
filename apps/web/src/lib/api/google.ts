@@ -33,7 +33,10 @@ export async function fetchGoogleGmailStatus(): Promise<GoogleConnectionStatus |
 
 export async function fetchGoogleCalendarOAuthUrl(): Promise<GoogleOAuthResult> {
   try {
-    const res = await proxyFetchAuthed("google/calendar/oauth/url");
+    const webOrigin =
+      typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : "";
+    const qs = webOrigin ? `?web_origin=${webOrigin}` : "";
+    const res = await proxyFetchAuthed(`google/calendar/oauth/url${qs}`);
     const data = await parseApiJson<{ url?: string; detail?: string }>(res);
     if (!res.ok) {
       return {
@@ -49,7 +52,10 @@ export async function fetchGoogleCalendarOAuthUrl(): Promise<GoogleOAuthResult> 
 
 export async function fetchGoogleGmailOAuthUrl(): Promise<GoogleOAuthResult> {
   try {
-    const res = await proxyFetchAuthed("google/gmail/oauth/url");
+    const webOrigin =
+      typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : "";
+    const qs = webOrigin ? `?web_origin=${webOrigin}` : "";
+    const res = await proxyFetchAuthed(`google/gmail/oauth/url${qs}`);
     const data = await parseApiJson<{ url?: string; detail?: string }>(res);
     if (!res.ok) {
       return {

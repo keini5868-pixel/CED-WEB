@@ -153,6 +153,29 @@ class Settings(BaseSettings):
             self.google_maps_api_key = self.google_api_key.strip()
         return self
 
+    @model_validator(mode="after")
+    def resolve_public_urls(self) -> Settings:
+        """Railway: API_PUBLIC_URL y redirect URIs OAuth desde RAILWAY_PUBLIC_DOMAIN."""
+        railway = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
+        if railway:
+            railway_url = f"https://{railway.rstrip('/')}"
+            api = self.api_public_url.strip().rstrip("/")
+            if not api or "localhost" in api or api.startswith("http://127.0.0.1"):
+                self.api_public_url = railway_url
+
+        api_base = self.api_public_url.strip().rstrip("/")
+        if api_base and not self.google_calendar_redirect_uri.strip():
+            self.google_calendar_redirect_uri = (
+                f"{api_base}/auth/google/calendar/callback"
+            )
+        if api_base and not self.google_gmail_redirect_uri.strip():
+            self.google_gmail_redirect_uri = f"{api_base}/auth/google/gmail/callback"
+
+        web_override = os.environ.get("CED_WEB_PUBLIC_URL", "").strip().rstrip("/")
+        if web_override:
+            self.web_public_url = web_override
+        return self
+
     def is_production(self) -> bool:
         return self.app_env.strip().lower() == "production"
 

@@ -54,6 +54,16 @@ async def lifespan(_app: FastAPI):
 
     settings = reload_settings()
     configure_logging(settings)
+    logger.info(
+        "Google OAuth: client_id=%s calendar_redirect=%s gmail_redirect=%s web_public=%s api_public=%s",
+        "OK" if settings.google_calendar_client_id.strip() else "MISSING",
+        settings.google_calendar_redirect_uri.strip()
+        or f"{settings.api_public_url.rstrip('/')}/auth/google/calendar/callback",
+        settings.google_gmail_redirect_uri.strip()
+        or f"{settings.api_public_url.rstrip('/')}/auth/google/gmail/callback",
+        settings.web_public_url.strip() or "MISSING",
+        settings.api_public_url.strip() or "MISSING",
+    )
     if settings.is_production():
         logger.info(
             "CED API production build=%s ts=%s",

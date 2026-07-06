@@ -72,23 +72,47 @@ def _oauth_state_secret() -> str:
     return secret
 
 
-def build_oauth_state(user_id: str) -> str:
+def build_oauth_state(user_id: str, web_origin: str | None = None) -> str:
     """State firmado — evita mismatch al volver del callback de Google."""
     from jose import jwt
 
     uid = normalize_user_id(user_id)
-    return jwt.encode({"uid": uid, "v": 1}, _oauth_state_secret(), algorithm="HS256")
+    payload: dict[str, str | int] = {"uid": uid, "v": 1}
+    allowed_web = resolve_allowed_web_origin(web_origin or "")
+    if allowed_web:
+        payload["web"] = allowed_web
+    return jwt.encode(payload, _oauth_state_secret(), algorithm="HS256")
 
 
-def parse_oauth_state(state: str) -> str:
-    """Recupera user_id del state (JWT firmado o UUID legacy en vuelo)."""
+def resolve_allowed_web_origin(candidate: str) -> str | None:
+    """Solo orígenes permitidos (CORS / localhost) — evita open redirect."""
+    from urllib.parse import urlparse
+
+    raw = (candidate or "").strip().rstrip("/")
+    if not raw:
+        return None
+    parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        return None
+    origin = f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    if "localhost" in origin or "127.0.0.1" in origin:
+        return origin
+    allowed = get_settings().cors_origin_list()
+    if origin in allowed:
+        return origin
+    logger.warning("[GOOGLE-OAUTH] web origin not in CORS allowlist: %s", origin)
+    return None
+
+
+def parse_oauth_state(state: str) -> tuple[str, str | None]:
+    """Recupera (user_id, web_origin) del state (JWT firmado o UUID legacy)."""
     from jose import JWTError, jwt
 
     raw = (state or "").strip()
     if not raw:
         raise ValueError("OAuth state vacío.")
     try:
-        return normalize_user_id(raw)
+        return normalize_user_id(raw), None
     except ValueError:
         pass
     try:
@@ -96,9 +120,60 @@ def parse_oauth_state(state: str) -> str:
         uid = payload.get("uid")
         if not uid:
             raise ValueError("OAuth state sin uid.")
-        return normalize_user_id(str(uid))
+        web_raw = payload.get("web")
+        web = (
+            resolve_allowed_web_origin(str(web_raw))
+            if isinstance(web_raw, str) and web_raw.strip()
+            else None
+        )
+        return normalize_user_id(str(uid)), web
     except JWTError as exc:
         raise ValueError("OAuth state inválido.") from exc
+
+
+def google_oauth_diagnostics() -> dict[str, Any]:
+    """Diagnóstico público OAuth — redirect URIs y tablas (sin secretos)."""
+    import os
+
+    settings = get_settings()
+    tables_ok: bool | None = None
+    tables_error: str | None = None
+    try:
+        from app.services.supabase_client import get_supabase_admin, service_role_configured
+
+        if service_role_configured():
+            get_supabase_admin(require_service_role=True).table("calendar_tokens").select(
+                "user_id"
+            ).limit(1).execute()
+            tables_ok = True
+        else:
+            tables_ok = False
+            tables_error = "SUPABASE_SERVICE_ROLE_KEY missing"
+    except Exception as exc:  # noqa: BLE001
+        tables_ok = False
+        tables_error = str(exc)[:240]
+
+    return {
+        "oauth_configured": oauth_configured(),
+        "api_public_url": settings.api_public_url.strip() or None,
+        "web_public_url": settings.web_public_url.strip() or None,
+        "calendar_redirect_uri": _calendar_redirect_uri(),
+        "gmail_redirect_uri": _gmail_redirect_uri(),
+        "calendar_client_id": "OK" if settings.google_calendar_client_id.strip() else "MISSING",
+        "calendar_client_secret": (
+            "OK" if settings.google_calendar_client_secret.strip() else "MISSING"
+        ),
+        "calendar_redirect_env": (
+            "SET" if settings.google_calendar_redirect_uri.strip() else "AUTO"
+        ),
+        "gmail_redirect_env": (
+            "SET" if settings.google_gmail_redirect_uri.strip() else "AUTO"
+        ),
+        "oauth_token_storage_ready": tables_error != "SUPABASE_SERVICE_ROLE_KEY missing",
+        "oauth_tables_ok": tables_ok,
+        "oauth_tables_error": tables_error,
+        "railway_public_domain": os.environ.get("RAILWAY_PUBLIC_DOMAIN"),
+    }
 
 
 def ensure_profile_for_oauth(user_id: str) -> None:
@@ -130,7 +205,12 @@ def ensure_profile_for_oauth(user_id: str) -> None:
         raise ValueError("Perfil ausente tras ensure — no se pueden guardar tokens OAuth.")
 
 
-def build_oauth_url(service: GoogleService, user_id: str) -> str:
+def build_oauth_url(
+    service: GoogleService,
+    user_id: str,
+    *,
+    web_origin: str | None = None,
+) -> str:
     client_id, _ = _oauth_client_config()
     if service == "calendar":
         redirect_uri = _calendar_redirect_uri()
@@ -145,7 +225,7 @@ def build_oauth_url(service: GoogleService, user_id: str) -> str:
         "scope": scopes,
         "access_type": "offline",
         "prompt": "consent",
-        "state": build_oauth_state(user_id),
+        "state": build_oauth_state(user_id, web_origin),
         "include_granted_scopes": "true",
     }
     return f"{_GOOGLE_AUTH_URL}?{urlencode(params)}"
@@ -165,6 +245,15 @@ def exchange_code(service: GoogleService, code: str) -> dict[str, Any]:
                 "grant_type": "authorization_code",
             },
         )
+        if res.status_code >= 400:
+            logger.error(
+                "[GOOGLE-OAUTH] token exchange failed service=%s status=%s "
+                "redirect_uri=%s body=%s",
+                service,
+                res.status_code,
+                redirect_uri,
+                res.text[:500],
+            )
         res.raise_for_status()
         return res.json()
 
