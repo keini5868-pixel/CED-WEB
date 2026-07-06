@@ -100,6 +100,16 @@ function isLongRunningChatPath(path: string): boolean {
   );
 }
 
+/** Google Calendar/Gmail — cold start Railway puede tardar. */
+function isHudGooglePath(path: string): boolean {
+  const normalized = path.toLowerCase();
+  return (
+    normalized.includes("hud/calendar") ||
+    normalized.includes("hud/gmail") ||
+    normalized.includes("hud/connections")
+  );
+}
+
 async function forward(request: NextRequest, pathSegments: string[]) {
   const { token, authResponse } = await resolveAccessToken(request);
 
@@ -136,7 +146,11 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   }
 
   let upstream: Response;
-  const timeoutMs = isLongRunningChatPath(path) ? 300_000 : 60_000;
+  const timeoutMs = isLongRunningChatPath(path)
+    ? 300_000
+    : isHudGooglePath(path)
+      ? 120_000
+      : 60_000;
   try {
     upstream = await fetch(target, {
       method: request.method,

@@ -203,11 +203,14 @@ function CalendarHudPanel({
     if (!title.trim() || !date.trim()) return;
     setSaving(true);
     setDetailError(null);
+    const eventTitle = title.trim();
+    const eventDate = date.trim();
+    const eventTime = time.trim() || "09:00";
     try {
       const result = await createHudCalendarEvent({
-        title: title.trim(),
-        date: date.trim(),
-        time: time.trim() || "09:00",
+        title: eventTitle,
+        date: eventDate,
+        time: eventTime,
       });
       if (!result.ok) {
         const msg = result.error || "No se pudo guardar.";
@@ -218,14 +221,24 @@ function CalendarHudPanel({
       setDetailError(null);
       setNeedsReconnect(false);
       setTitle("");
+      const displayTime = eventTime.length === 5 ? eventTime : eventTime.slice(0, 5);
+      const optimistic = `Hoy ${displayTime} — ${eventTitle}`;
+      setLocalToday((prev) => {
+        if (prev.some((line) => line.includes(eventTitle))) return prev;
+        return prev[0]?.toLowerCase().includes("sin eventos") ? [optimistic] : [optimistic, ...prev];
+      });
       onRefresh();
-      const data = await fetchHudCalendarEvents();
-      if (data.error) {
-        setDetailError(data.error);
-        setNeedsReconnect(Boolean(data.needs_reconnect));
-      }
-      setLocalToday(data.today_events);
-      setLocalWeek(data.week_events);
+      void fetchHudCalendarEvents().then((data) => {
+        if (data.error) {
+          setDetailError(data.error);
+          setNeedsReconnect(Boolean(data.needs_reconnect));
+        } else {
+          setDetailError(null);
+          setNeedsReconnect(false);
+        }
+        if (data.today_events.length) setLocalToday(data.today_events);
+        if (data.week_events.length) setLocalWeek(data.week_events);
+      });
     } finally {
       setSaving(false);
     }

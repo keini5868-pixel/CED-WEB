@@ -22,6 +22,32 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1", tags=["hud"])
 
 
+def _parse_hud_event_datetime(date_raw: str, time_raw: str) -> datetime:
+    """Acepta YYYY-MM-DD o DD/MM/YYYY."""
+    from zoneinfo import ZoneInfo
+
+    date_str = (date_raw or "").strip()
+    time_str = (time_raw or "09:00").strip()
+    if "/" in date_str:
+        parts = date_str.split("/")
+        if len(parts) == 3:
+            day, month, year = parts[0].zfill(2), parts[1].zfill(2), parts[2]
+            date_str = f"{year}-{month}-{day}"
+    if len(time_str) == 5 and time_str.count(":") == 1:
+        time_str = f"{time_str}:00"
+    elif time_str.count(":") == 1:
+        h, m = time_str.split(":", 1)
+        time_str = f"{int(h):02d}:{m}:00"
+    try:
+        start = datetime.fromisoformat(f"{date_str}T{time_str}")
+    except ValueError as exc:
+        raise ValueError("invalid_datetime") from exc
+    try:
+        return start.replace(tzinfo=ZoneInfo("America/New_York"))
+    except Exception:  # noqa: BLE001
+        return start.replace(tzinfo=timezone.utc)
+
+
 @router.get("/hud/carousel")
 async def hud_carousel(user_id: str = Depends(require_user_id)) -> dict:
     """Snapshot de las 7 tarjetas del carrusel CASTILLO."""
@@ -99,13 +125,7 @@ async def hud_create_calendar_event(
     def _create_with_token(token: str) -> None:
         from datetime import timedelta
 
-        start = datetime.fromisoformat(f"{body.date}T{body.time or '09:00'}:00")
-        try:
-            from zoneinfo import ZoneInfo
-
-            start = start.replace(tzinfo=ZoneInfo("America/New_York"))
-        except Exception:  # noqa: BLE001
-            start = start.replace(tzinfo=timezone.utc)
+        start = _parse_hud_event_datetime(body.date, body.time or "09:00")
         end = start + timedelta(hours=1)
         create_event(
             token,
@@ -134,6 +154,11 @@ async def hud_create_calendar_event(
             raise HTTPException(status_code=401, detail="Calendar no conectado.") from exc
         if str(exc) == "reconnect_required":
             raise HTTPException(status_code=403, detail=CALENDAR_RECONNECT_MSG) from exc
+        if str(exc) == "invalid_datetime":
+            raise HTTPException(
+                status_code=400,
+                detail="Fecha u hora inválida. Use formato AAAA-MM-DD.",
+            ) from exc
         raise HTTPException(status_code=400, detail="Fecha u hora inválida.") from exc
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code in (401, 403):
