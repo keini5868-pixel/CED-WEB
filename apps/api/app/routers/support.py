@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import logging
+
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -21,6 +23,7 @@ from app.services.support_media import (
 )
 
 router = APIRouter(prefix="/v1/support", tags=["support"])
+logger = logging.getLogger(__name__)
 
 _MIME = {
     ".jpg": "image/jpeg",
@@ -213,7 +216,11 @@ async def admin_update_status(
 
 @router.get("/admin/unread-count")
 async def admin_unread_count(_admin_id: str = Depends(require_super_admin)) -> dict[str, Any]:
-    count = await run_sync(svc.count_unread_for_admin)
+    try:
+        count = await run_sync(svc.count_unread_for_admin)
+    except Exception:  # noqa: BLE001
+        logger.exception("[SUPPORT] admin unread-count failed")
+        return {"ok": True, "count": 0}
     return {"ok": True, "count": count}
 
 

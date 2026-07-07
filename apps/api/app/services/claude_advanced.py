@@ -5,14 +5,16 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime
 from typing import Any, Iterator
-from zoneinfo import ZoneInfo
 
 import httpx
 
 from app.config import get_settings
 from app.services.deliverable_replies import CHAT_DELIVERABLE_RULES
+from app.services.system_clock import (
+    clock_context_block,
+    try_instant_datetime_reply,
+)
 from app.services.text_chat import (
     CHAT_DELIVERABLE_MAX_TOKENS,
     CHAT_MODEL,
@@ -112,75 +114,19 @@ _WELCOME_MARKERS = (
     "bienvenido al sistema",
 )
 
-_DATETIME_LOOKUP = re.compile(
-    r"\b("
-    r"qu[eé]\s+d[ií]a\s+es|"
-    r"qu[eé]\s+fecha\s+es|"
-    r"qu[eé]\s+hora\s+es|"
-    r"fecha\s+de\s+hoy|"
-    r"d[ií]a\s+de\s+hoy|"
-    r"hora\s+actual|"
-    r"qu[eé]\s+mes\s+es"
-    r")\b",
-    re.I,
-)
 
-_SPANISH_DAYS = (
-    "lunes",
-    "martes",
-    "miércoles",
-    "jueves",
-    "viernes",
-    "sábado",
-    "domingo",
-)
-_SPANISH_MONTHS = (
-    "enero",
-    "febrero",
-    "marzo",
-    "abril",
-    "mayo",
-    "junio",
-    "julio",
-    "agosto",
-    "septiembre",
-    "octubre",
-    "noviembre",
-    "diciembre",
-)
-
-
-def _mx_now() -> datetime:
-    try:
-        return datetime.now(ZoneInfo("America/Mexico_City"))
-    except Exception:  # noqa: BLE001 — Windows sin tzdata
-        from datetime import timedelta, timezone
-
-        return datetime.now(timezone(timedelta(hours=-6)))
-
-
-def _format_datetime_mx() -> str:
-    now = _mx_now()
-    day = _SPANISH_DAYS[now.weekday()]
-    month = _SPANISH_MONTHS[now.month - 1]
-    return (
-        f"Hoy es {day} {now.day} de {month} de {now.year}, señor. "
-        f"Son las {now.strftime('%H:%M')} hora de Ciudad de México."
-    )
-
-
-def _try_instant_datetime_reply(text: str) -> str | None:
-    if _DATETIME_LOOKUP.search((text or "").strip()):
-        return _format_datetime_mx()
-    return None
+def _try_instant_datetime_reply(
+    text: str,
+    *,
+    history: list[dict[str, Any]] | None = None,
+) -> str | None:
+    return try_instant_datetime_reply(text, history=history)
 
 
 def _advanced_stream_system_with_clock() -> str:
-    now = _mx_now()
     return (
         ADVANCED_STREAM_SYSTEM
-        + f"\n\nFecha y hora actuales (Ciudad de México): "
-        f"{now.strftime('%Y-%m-%d %H:%M')} — úsalas para preguntas de hoy sin inventar código."
+        + f"\n\n{clock_context_block()}"
         + "\nPROHIBIDO escribir tool_code, print(), search_web() ni pseudo-código. "
         "Responde en español natural o deja que el backend use herramientas."
     )
@@ -228,7 +174,7 @@ def _recover_advanced_reply(
     if fixed and not _has_hallucinated_tool_code(fixed):
         return _finalize_chat_reply(fixed)
 
-    instant = _try_instant_datetime_reply(text)
+    instant = _try_instant_datetime_reply(text, history=history)
     if instant:
         return instant
 
@@ -463,7 +409,10 @@ def send_advanced_message(
     if not text:
         raise ValueError("Mensaje vacío.")
 
-    instant = _instant_greeting_reply(text) or _try_instant_datetime_reply(text)
+    instant = _instant_greeting_reply(text) or _try_instant_datetime_reply(
+        text,
+        history=history,
+    )
     if instant:
         return _finish_payload(
             response=instant,
@@ -641,7 +590,10 @@ def iter_advanced_message_stream(
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = _history_as_chat_rows(history)
 
-    instant = _instant_greeting_reply(text) or _try_instant_datetime_reply(text)
+    instant = _instant_greeting_reply(text) or _try_instant_datetime_reply(
+        text,
+        history=history,
+    )
     if instant:
         yield _sse_event("token", {"text": instant})
         yield _sse_event("done", _finish_payload(
@@ -657,12 +609,22 @@ def iter_advanced_message_stream(
 
     if needs_tools:
         yield _sse_event("status", {"text": "Analizando y preparando respuesta…"})
-        result = send_advanced_message(
-            user_id,
-            message=text,
-            history=history,
-            conversation_id=conv_id,
-        )
+        try:
+            result = send_advanced_message(
+                user_id,
+                message=text,
+                history=history,
+                conversation_id=conv_id,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[ADVANCED] tools pipeline failed")
+            fallback = _try_instant_datetime_reply(text, history=history) or (
+                "Disculpe señor, tuve un inconveniente técnico. ¿Puede repetir su pregunta?"
+            )
+            result = _finish_payload(
+                response=fallback,
+                model=ADVANCED_STREAM_MODEL_LABEL,
+            )
         yield _sse_event("done", result)
         return
 

@@ -255,7 +255,9 @@ def build_voice_system(
                 base = f"{base}\n\n{extras}"
         except Exception:  # noqa: BLE001
             pass
-    return base
+    from app.services.system_clock import clock_context_block
+
+    return f"{base}\n\n{clock_context_block()}"
 
 
 def needs_empathy_reformulation(text: str, *, user_text: str = "") -> bool:

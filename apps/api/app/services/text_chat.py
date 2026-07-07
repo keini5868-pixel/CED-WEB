@@ -1003,7 +1003,9 @@ def _build_chat_system(
     route: Any | None = None,
     conversation_id: str | None = None,
 ) -> str:
-    parts = [_chat_system_for_user(user_id)]
+    from app.services.system_clock import clock_context_block
+
+    parts = [_chat_system_for_user(user_id), clock_context_block()]
     if conversation_id:
         from app.services.publish_image_context import has_publishable_image
 
@@ -1027,7 +1029,9 @@ def _build_chat_system(
 
 def _build_chat_system_light(user_id: str, user_text: str) -> str:
     """System prompt mínimo para streaming — sin consultas DB (meta, dirección, KB)."""
-    parts = [CHAT_SYSTEM_BASE]
+    from app.services.system_clock import clock_context_block
+
+    parts = [CHAT_SYSTEM_BASE, clock_context_block()]
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
@@ -2050,6 +2054,14 @@ def send_message(
                 _finalize_chat_reply(instant),
                 route_meta={"intent": "greeting", "source": "instant"},
             )
+        from app.services.system_clock import try_instant_datetime_reply
+
+        dt_instant = try_instant_datetime_reply(text, history=history)
+        if dt_instant:
+            return _finish(
+                _finalize_chat_reply(dt_instant),
+                route_meta={"intent": "datetime", "source": "instant"},
+            )
 
     if image_bytes:
         try:
@@ -2713,6 +2725,31 @@ def iter_send_message_stream(
     )
     _bump_stream_usage_cache(user_id)
     _perf("db_ready")
+
+    from app.services.system_clock import try_instant_datetime_reply
+
+    dt_instant = try_instant_datetime_reply(text, history=history)
+    if dt_instant:
+        reply = _finalize_chat_reply(dt_instant)
+        yield _sse_event("token", {"text": reply})
+        supabase_db.append_message(
+            conversation_id,
+            user_id,
+            "model",
+            reply,
+            session_id=conversation_id,
+            channel="text",
+        )
+        yield _sse_event(
+            "done",
+            {
+                "conversation_id": conversation_id,
+                "reply": reply,
+                "usage": _stream_usage_snapshot(user_id, profile),
+                "cognitive": {"intent": "datetime", "source": "instant"},
+            },
+        )
+        return
 
     route = _stream_memory_route(user_id, text)
     if route.intent in ("memory_save", "memory_recall") and route.speakable:

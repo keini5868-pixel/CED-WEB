@@ -787,7 +787,70 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 return
 
+            from app.services.system_clock import try_instant_datetime_reply
+
             conversational_turn = is_small_talk(user_text, transcript)
+
+            clock_reply = try_instant_datetime_reply(
+                user_text,
+                transcript=transcript,
+                for_voice=True,
+            )
+            if clock_reply:
+                if await deliver_voice(clock_reply):
+                    logger.info(
+                        "[RETELL-GEMINI] instant datetime call=%s: %s",
+                        call_id,
+                        clock_reply[:80],
+                    )
+                    return
+                await anti_silence_if_unanswered(reason="datetime_deliver_failed")
+                return
+
+            if pending_web and uid and not conversational_turn:
+                kind = str(pending_web.get("kind") or "general")
+                query = str(pending_web.get("query") or user_text).strip()
+                if query:
+                    if not partial_sent:
+                        partial_sent = await send_filler_once_partial(
+                            web_search_hold_phrase(kind),
+                        )
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "search_web",
+                                uid,
+                                {"query": query, "kind": kind},
+                            ),
+                            timeout=12.0,
+                        )
+                        spoken = str(tool_result.get("spoken") or "").strip()
+                        if tool_result.get("status") == "success" and spoken:
+                            web_content = format_web_delivery(kind, spoken)
+                        else:
+                            web_content = WEB_SEARCH_VOICE_FALLBACK
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "[RETELL-GEMINI] fast-path search_web timeout call=%s query=%s",
+                            call_id,
+                            query[:80],
+                        )
+                        web_content = WEB_SEARCH_VOICE_FALLBACK
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "[RETELL-GEMINI] fast-path search_web failed call=%s",
+                            call_id,
+                        )
+                        web_content = WEB_SEARCH_VOICE_FALLBACK
+                    if await deliver_voice(web_content):
+                        logger.info(
+                            "[RETELL-GEMINI] fast-path web search call=%s kind=%s",
+                            call_id,
+                            kind,
+                        )
+                        return
+                    await anti_silence_if_unanswered(reason="web_fast_path_failed")
+                    return
 
             if uid and is_camera_deactivation_intent(user_text):
                 if not turn_already_handled(call_id, scheduled_rid):
