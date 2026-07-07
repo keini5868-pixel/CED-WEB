@@ -270,6 +270,17 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "consultar_redes_conectadas",
+        "description": (
+            "Consulta si el usuario tiene Facebook e Instagram conectados vía Meta OAuth. "
+            "Úsala cuando pregunte si puede publicar, si las redes están vinculadas, "
+            "o antes de publicar si no estás seguro del estado de conexión. "
+            "PROHIBIDO afirmar que está conectado sin invocar esta herramienta."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
         "name": "leer_comentarios_redes",
         "description": (
             "Úsala SIEMPRE que el usuario quiera saber qué dice la gente, revisar feedback, "

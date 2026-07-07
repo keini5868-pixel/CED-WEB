@@ -364,6 +364,53 @@ def _resolve_image_for_publishing(
     )
 
 
+def _load_reference_image_bytes(
+    user_id: str,
+    params: dict[str, Any],
+) -> tuple[bytes, str] | None:
+    """Resuelve bytes de imagen de referencia desde sesión voz, chat o parámetros."""
+    from app.services.publish_media import decode_image_data
+
+    resolved = _resolve_image_for_publishing(user_id, params)
+    if resolved.get("ok"):
+        data = str(resolved.get("data") or "").strip()
+        url = str(resolved.get("url") or "").strip()
+        if data:
+            try:
+                raw, mime = decode_image_data(data)
+                if raw:
+                    return raw, mime
+            except Exception:  # noqa: BLE001
+                pass
+        if url:
+            try:
+                raw, mime = decode_image_data(url)
+                if raw:
+                    return raw, mime
+            except Exception:  # noqa: BLE001
+                pass
+
+    stored = vcs.get_last_publishable_image(user_id, ignore_call_binding=True)
+    if stored:
+        data = str(stored.get("data") or "").strip()
+        url = str(stored.get("url") or "").strip()
+        if data:
+            try:
+                raw, mime = decode_image_data(data)
+                if raw:
+                    return raw, mime
+            except Exception:  # noqa: BLE001
+                pass
+        if url:
+            try:
+                raw, mime = decode_image_data(url)
+                if raw:
+                    return raw, mime
+            except Exception:  # noqa: BLE001
+                pass
+    return None
+
+
 async def _run_publish_call(
     fn: Any,
     *args: Any,
@@ -549,9 +596,62 @@ async def execute_voice_tool(
             )
 
         if name == "generate_image_with_reference":
+            from app.services.image_reference_generator import generate_image_with_reference
+
+            prompt = str(params.get("prompt") or "").strip()
+            style_mode = str(params.get("style_mode") or "edit")
+            quality = str(params.get("quality") or "standard")
+            if not prompt:
+                return _spoken_err("Indique qué desea generar o cambiar en la imagen, señor.")
+
+            ref = await asyncio.to_thread(_load_reference_image_bytes, user_id, params)
+            if not ref:
+                return _spoken_err(
+                    "No tengo imagen de referencia en esta sesión, señor. "
+                    "Suba una foto al panel de voz, muestre algo con la cámara, "
+                    "o adjunte una imagen en el chat.",
+                    error="missing_reference_image",
+                )
+            raw, mime = ref
+            logger.info(
+                "[VOICE:REF-IMG] start user=%s mode=%s prompt=%s",
+                user_id[:8],
+                style_mode,
+                prompt[:80],
+            )
+            result = await asyncio.to_thread(
+                generate_image_with_reference,
+                user_id=user_id,
+                prompt=prompt,
+                reference_image=raw,
+                content_type=mime,
+                style_mode=style_mode,
+                quality=quality,
+            )
+            if result.get("ok"):
+                url = str(result.get("url") or "")
+                vcs.push_tool_event(
+                    user_id,
+                    {
+                        "type": "generated_image",
+                        "image_url": url,
+                        "prompt": prompt,
+                    },
+                )
+                return {
+                    "ok": True,
+                    "spoken": "Imagen generada con referencia, señor.",
+                    "url": url,
+                    "image_url": url,
+                    "prompt": prompt,
+                }
+            err = str(result.get("error") or "reference_image_failed")
+            code = str(result.get("code") or "")
+            if code in ("quota_exhausted", "plan_limit"):
+                return _spoken_err(f"No fue posible generar la imagen, señor. {err}", error=code)
             return _spoken_err(
-                "Para imágenes con referencia use el chat o la cámara, señor.",
-                error="client_reference_required",
+                f"No fue posible generar la imagen con referencia, señor. {err}".strip(),
+                error=code or err,
             )
 
         if name == "save_memory":
@@ -625,7 +725,6 @@ async def execute_voice_tool(
             return await handle_camera_activation(user_id, fast=fast)
 
         if name == "analyze_uploaded_image":
-            from app.services import voice_client_session as vcs
             from app.services.chat_multimedia import analyze_chat_image
             from app.services.publish_media import decode_image_data
 
@@ -749,9 +848,31 @@ async def execute_voice_tool(
                 error=str(result.get("error") or "comments_failed"),
             )
 
-        if name == "activar_prospeccion":
-            from app.services import voice_client_session as vcs
+        if name == "consultar_redes_conectadas":
+            from app.services import supabase_db
 
+            conn = supabase_db.get_meta_connection(user_id)
+            if not conn or not conn.get("access_token"):
+                return _spoken_ok(
+                    "No tiene redes Meta conectadas, señor. "
+                    "Puede vincular Facebook e Instagram en Conectar Redes del dashboard."
+                )
+            ig = str(conn.get("ig_username") or "Instagram").strip()
+            return _spoken_ok(
+                f"Tiene Meta conectado, señor. Instagram @{ig}. "
+                "Puede publicar cuando confirme el texto del post."
+            )
+
+        if name == "activar_prospeccion":
+            from app.deps.plan_access import effective_plan_limits
+
+            limits, reason, _ = effective_plan_limits(user_id)
+            if reason == "trial_expired":
+                return _spoken_err("Tu prueba terminó, señor. Elige un plan en Precios.")
+            if not limits.prospection_enabled:
+                return _spoken_err(
+                    "La prospección requiere plan Élite o Founding, señor. Mejora en Precios."
+                )
             vcs.set_active_mode(user_id, "prospect")
             result = await asyncio.to_thread(set_prospection_enabled, user_id, True)
             if result.get("ok"):
@@ -822,7 +943,6 @@ async def execute_voice_tool(
             logger.info("[PUBLISH] caption recibido: '%s'", caption[:120])
             image_url = params.get("image_url")
             image_data = params.get("image_data")
-            from app.services import voice_client_session as vcs
 
             if not image_url and not image_data:
                 session_id = str(
@@ -879,8 +999,6 @@ async def execute_voice_tool(
             return _spoken_ok(spoken)
 
         if name == "activar_modo_conducir":
-            from app.services import voice_client_session as vcs
-
             vcs.set_active_mode(user_id, "map")
             vcs.set_map_search_results(user_id, [])
             clear_navigation_pending(user_id)
@@ -929,8 +1047,6 @@ async def execute_voice_tool(
                     error="places_failed",
                 )
             places = list(found.get("places") or [])
-            from app.services import voice_client_session as vcs
-
             vcs.set_active_mode(user_id, "map")
             set_place_options(user_id, places, query=query)
             vcs.set_map_search_results(user_id, places)
@@ -1082,8 +1198,6 @@ async def execute_voice_tool(
             }
 
         if name in {"stop_navigation", "cancelar_navegacion"}:
-            from app.services import voice_client_session as vcs
-
             clear_navigation(user_id)
             clear_place_options(user_id)
             vcs.set_map_search_results(user_id, [])
@@ -1101,8 +1215,6 @@ async def execute_voice_tool(
             "salir_mapa",
             "cerrar_modo_conducir",
         }:
-            from app.services import voice_client_session as vcs
-
             vcs.set_active_mode(user_id, None)
             vcs.set_map_search_results(user_id, [])
             push_client_action(user_id, "close_drive", {})

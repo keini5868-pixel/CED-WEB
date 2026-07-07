@@ -246,6 +246,15 @@ def build_voice_system(
                 base = f"{base}\n\n{mode_prompt}"
         except Exception:  # noqa: BLE001
             pass
+    if uid and not lightweight:
+        try:
+            from app.services.cognitive_router import build_voice_system_extras
+
+            extras = build_voice_system_extras(uid)
+            if extras:
+                base = f"{base}\n\n{extras}"
+        except Exception:  # noqa: BLE001
+            pass
     return base
 
 
