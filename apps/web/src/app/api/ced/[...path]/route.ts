@@ -52,17 +52,17 @@ async function resolveAccessToken(
   const authResponse = new NextResponse();
   const supabase = createClientFromRequest(request, authResponse);
 
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (sessionData.session?.access_token) {
+    return { token: sessionData.session.access_token, authResponse };
+  }
+
   const {
     data: { user },
     error: userError,
   } = await supabase.auth.getUser();
   if (userError || !user) {
     return { token: null, authResponse };
-  }
-
-  const { data: sessionData } = await supabase.auth.getSession();
-  if (sessionData.session?.access_token) {
-    return { token: sessionData.session.access_token, authResponse };
   }
 
   const { data: refreshed, error: refreshError } =

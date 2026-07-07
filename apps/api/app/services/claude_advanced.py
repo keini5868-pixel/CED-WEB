@@ -508,6 +508,7 @@ def iter_advanced_message_stream(
 
     instant = _instant_greeting_reply(text)
     if instant:
+        yield _sse_event("token", {"text": instant})
         yield _sse_event("done", _finish_payload(
             response=instant,
             model=ADVANCED_STREAM_MODEL_LABEL,

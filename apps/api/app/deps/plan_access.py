@@ -61,9 +61,9 @@ def require_meta_social(user_id: str) -> None:
         )
 
 
-def chat_message_limit(user_id: str) -> int:
+def chat_message_limit(user_id: str, *, profile: dict | None = None) -> int:
     """Mensajes de chat permitidos hoy (-1 = ilimitado, 0 = bloqueado)."""
-    profile = supabase_db.get_profile(user_id) or {}
+    profile = profile if profile is not None else (supabase_db.get_profile(user_id) or {})
     if is_super_admin(profile.get("email"), profile.get("role")):
         return -1
 

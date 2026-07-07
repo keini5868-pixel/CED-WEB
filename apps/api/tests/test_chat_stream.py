@@ -72,23 +72,23 @@ def test_route_message_defer_skips_kb_search():
 def test_stream_greeting_yields_token_immediately():
     events: list[str] = []
     with (
-        patch("app.services.text_chat.chat_status", return_value={"blocked": False}),
         patch("app.services.text_chat.supabase_db.get_profile", return_value={}),
+        patch("app.services.text_chat._stream_is_blocked", return_value=False),
         patch("app.services.chat_rate_limit.check_chat_rate_limit", return_value=(True, 0)),
         patch("app.deps.plan_access.chat_message_limit", return_value=100),
         patch("app.services.text_chat.get_settings") as settings,
-        patch("app.services.text_chat.supabase_db.create_conversation", return_value={"id": "c1"}),
-        patch("app.services.text_chat.supabase_db.get_conversation_messages", return_value=[]),
+        patch("app.services.text_chat._load_stream_conversation", return_value=("c1", [])),
         patch("app.services.text_chat.supabase_db.append_message"),
-        patch("app.services.text_chat.route_message") as route,
+        patch("app.services.text_chat._stream_memory_route") as route,
     ):
         settings.return_value = MagicMock(
             google_api_key="gk",
             anthropic_api_key="ak",
             gemini_voice_model="gemini-2.5-flash",
         )
-        route.side_effect = AssertionError("route_message no debe llamarse en saludo instantáneo")
+        route.side_effect = AssertionError("_stream_memory_route no debe llamarse en saludo instantáneo")
         for chunk in iter_send_message_stream(SAMPLE_UUID, content="hola"):
             events.append(chunk)
     assert any("event: token" in e for e in events)
+    assert events[0].startswith("event: token")
     assert any("event: done" in e for e in events)

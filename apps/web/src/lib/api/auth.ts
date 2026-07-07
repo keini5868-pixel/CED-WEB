@@ -1,21 +1,15 @@
 import { createClient } from "@/lib/supabase/client";
 
-/** Token Bearer validado con Supabase (preferir sobre getSession). */
+/** Token Bearer validado con Supabase (sesión local — sin round-trip getUser). */
 export async function authHeaders(
   json = true,
 ): Promise<HeadersInit> {
   const supabase = createClient();
   const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser();
-  if (error || !user) {
-    throw new Error("Sin sesión");
-  }
-  const {
     data: { session },
+    error,
   } = await supabase.auth.getSession();
-  if (!session?.access_token) {
+  if (error || !session?.access_token) {
     throw new Error("Sin sesión");
   }
   const headers: Record<string, string> = {

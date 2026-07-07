@@ -69,6 +69,9 @@ def _gemini_chat_model() -> str:
 
 
 CHAT_HISTORY_LIMIT = 30
+CHAT_STREAM_HISTORY_LIMIT = 12
+_STREAM_USAGE_CACHE: dict[str, tuple[float, int]] = {}
+_STREAM_USAGE_CACHE_TTL = 45.0
 CHAT_SIMPLE_MAX_TOKENS = 1400
 CHAT_DELIVERABLE_MAX_TOKENS = 3200
 CHAT_TOOLS_MAX_TOKENS = 1600
@@ -1023,13 +1026,8 @@ def _build_chat_system(
 
 
 def _build_chat_system_light(user_id: str, user_text: str) -> str:
-    """System prompt mínimo para streaming — sin KB ni memoria pesada."""
-    from app.services.user_address import address_context_for_prompt
-
-    parts = [_chat_system_for_user(user_id)]
-    addr = address_context_for_prompt(user_id)
-    if addr:
-        parts.append(addr)
+    """System prompt mínimo para streaming — sin consultas DB (meta, dirección, KB)."""
+    parts = [CHAT_SYSTEM_BASE]
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
@@ -2399,6 +2397,145 @@ def _sse_event(name: str, payload: dict[str, Any]) -> str:
     return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _invalidate_stream_usage_cache(user_id: str) -> None:
+    _STREAM_USAGE_CACHE.pop(user_id, None)
+
+
+def _cached_messages_today(user_id: str) -> int:
+    now = time.monotonic()
+    cached = _STREAM_USAGE_CACHE.get(user_id)
+    if cached and now - cached[0] < _STREAM_USAGE_CACHE_TTL:
+        return cached[1]
+    used = count_user_messages_today(user_id)
+    _STREAM_USAGE_CACHE[user_id] = (now, used)
+    return used
+
+
+def _bump_stream_usage_cache(user_id: str) -> None:
+    now = time.monotonic()
+    cached = _STREAM_USAGE_CACHE.get(user_id)
+    if cached:
+        _STREAM_USAGE_CACHE[user_id] = (now, cached[1] + 1)
+    else:
+        _STREAM_USAGE_CACHE[user_id] = (now, _cached_messages_today(user_id) + 1)
+
+
+def _stream_usage_snapshot(
+    user_id: str,
+    profile: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Uso diario ligero para evento done — sin welcome ni trial lookup pesado."""
+    from app.deps.plan_access import chat_message_limit
+
+    prof = profile if profile is not None else (supabase_db.get_profile(user_id) or {})
+    limit = chat_message_limit(user_id, profile=prof)
+    used = _cached_messages_today(user_id)
+    unlimited = limit < 0
+    remaining = -1 if unlimited else max(0, limit - used)
+    blocked = not unlimited and limit > 0 and used >= limit
+    return {
+        "messages_used_today": used,
+        "messages_limit_daily": limit if limit >= 0 else None,
+        "unlimited": unlimited,
+        "remaining_today": remaining if remaining >= 0 else None,
+        "blocked": blocked,
+        "trial_expired": False,
+    }
+
+
+def _stream_is_blocked(user_id: str, profile: dict[str, Any]) -> bool:
+    from app.deps.plan_access import chat_message_limit
+
+    limit = chat_message_limit(user_id, profile=profile)
+    if limit < 0:
+        return False
+    if limit <= 0:
+        return True
+    return _cached_messages_today(user_id) >= limit
+
+
+def _load_stream_conversation(
+    user_id: str,
+    text: str,
+    conversation_id: str | None,
+) -> tuple[str, list[dict[str, Any]]]:
+    if conversation_id:
+        conv = supabase_db.get_conversation(conversation_id, user_id)
+        if not conv or conv.get("channel") != "text":
+            raise TextChatError("Conversación no encontrada.")
+        history = supabase_db.get_conversation_messages(
+            conversation_id,
+            user_id,
+            limit=CHAT_STREAM_HISTORY_LIMIT,
+        )
+        return conversation_id, history
+    title = text[:48] + ("…" if len(text) > 48 else "")
+    conv = supabase_db.create_conversation(user_id, title=title, channel="text")
+    return str(conv["id"]), []
+
+
+def _stream_memory_route(user_id: str, text: str):
+    from app.services.cognitive_intents import CognitiveIntent, analyze_intent
+    from app.services.cognitive_router import CognitiveRouteResult
+    from app.services.cognitive_memory import save_memory
+    from app.services.session_memory import build_conversation_recall_reply
+
+    analysis = analyze_intent(text)
+    if analysis.primary == CognitiveIntent.MEMORY_SAVE and analysis.memory_save_text:
+        save_memory(user_id, "nota_chat", analysis.memory_save_text)
+        return CognitiveRouteResult(
+            intent=analysis.primary.value,
+            channel="text",
+            confidence=1.0,
+            speakable="Guardado en memoria cognitiva.",
+            memory_saved=True,
+        )
+    if analysis.primary == CognitiveIntent.MEMORY_RECALL:
+        reply = build_conversation_recall_reply(user_id, text, channel="text")
+        return CognitiveRouteResult(
+            intent=analysis.primary.value,
+            channel="text",
+            confidence=0.95 if reply else 0.3,
+            speakable=reply,
+        )
+    return CognitiveRouteResult(
+        intent=CognitiveIntent.DIRECT_REPLY.value,
+        channel="text",
+        confidence=0.85,
+        source="stream_fast",
+        meta={"defer_enrichment": True},
+    )
+
+
+def _persist_stream_turn(
+    user_id: str,
+    *,
+    conversation_id: str | None,
+    text: str,
+    reply: str,
+) -> str:
+    """Guarda turno tras primer token — no bloquea time-to-first-token."""
+    conv_id, _history = _load_stream_conversation(user_id, text, conversation_id)
+    supabase_db.append_message(
+        conv_id,
+        user_id,
+        "user",
+        text,
+        session_id=conv_id,
+        channel="text",
+    )
+    _bump_stream_usage_cache(user_id)
+    supabase_db.append_message(
+        conv_id,
+        user_id,
+        "model",
+        reply,
+        session_id=conv_id,
+        channel="text",
+    )
+    return conv_id
+
+
 def _can_stream_chat_text(text: str) -> bool:
     from app.modules.calendar_module import is_calendar_intent
     from app.modules.environment_module import is_environment_intent
@@ -2478,6 +2615,8 @@ def iter_send_message_stream(
     conversation_id: str | None = None,
 ):
     """Generador SSE — streaming Gemini para chat conversacional."""
+    from concurrent.futures import ThreadPoolExecutor
+
     t0 = time.perf_counter()
 
     def _perf(step: str) -> None:
@@ -2496,20 +2635,61 @@ def iter_send_message_stream(
 
     _perf("validated")
 
-    status = chat_status(user_id)
-    if status["blocked"]:
+    instant = _instant_chat_greeting_reply(text)
+    if instant:
+        reply = _finalize_chat_reply(instant)
+        yield _sse_event("token", {"text": reply})
+        _perf("first_token")
+        conv_id = _persist_stream_turn(
+            user_id,
+            conversation_id=conversation_id,
+            text=text,
+            reply=reply,
+        )
+        yield _sse_event(
+            "done",
+            {
+                "conversation_id": conv_id,
+                "reply": reply,
+                "usage": _stream_usage_snapshot(user_id),
+                "cognitive": {"intent": "greeting", "source": "instant"},
+            },
+        )
+        return
+
+    settings = get_settings()
+    google_key = settings.google_api_key.strip()
+    anthropic_key = settings.anthropic_api_key.strip()
+    gemini_model = _gemini_chat_model()
+    if not google_key:
         raise TextChatError(
-            "Alcanzaste el límite de mensajes de hoy. Mejora tu plan o vuelve mañana.",
-            http_status=429,
+            "Servicio de chat no disponible. Configura GOOGLE_API_KEY en Railway.",
+            http_status=503,
         )
 
     from app.deps.auth import is_super_admin
     from app.deps.plan_access import chat_message_limit
     from app.services.chat_rate_limit import check_chat_rate_limit
 
-    profile = supabase_db.get_profile(user_id) or {}
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        profile_future = pool.submit(supabase_db.get_profile, user_id)
+        conv_future = pool.submit(
+            _load_stream_conversation,
+            user_id,
+            text,
+            conversation_id,
+        )
+        profile = profile_future.result() or {}
+        conversation_id, history = conv_future.result()
+
+    if _stream_is_blocked(user_id, profile):
+        raise TextChatError(
+            "Alcanzaste el límite de mensajes de hoy. Mejora tu plan o vuelve mañana.",
+            http_status=429,
+        )
+
     admin = is_super_admin(profile.get("email"), profile.get("role"))
-    unlimited_plan = chat_message_limit(user_id) < 0
+    unlimited_plan = chat_message_limit(user_id, profile=profile) < 0
     if not admin and not unlimited_plan:
         allowed, retry_after = check_chat_rate_limit(
             user_id,
@@ -2522,28 +2702,6 @@ def iter_send_message_stream(
                 http_status=429,
             )
 
-    settings = get_settings()
-    google_key = settings.google_api_key.strip()
-    anthropic_key = settings.anthropic_api_key.strip()
-    gemini_model = _gemini_chat_model()
-    if not google_key:
-        raise TextChatError(
-            "Servicio de chat no disponible. Configura GOOGLE_API_KEY en Railway.",
-            http_status=503,
-        )
-
-    if conversation_id:
-        conv = supabase_db.get_conversation(conversation_id, user_id)
-        if not conv or conv.get("channel") != "text":
-            raise TextChatError("Conversación no encontrada.")
-    else:
-        title = text[:48] + ("…" if len(text) > 48 else "")
-        conv = supabase_db.create_conversation(user_id, title=title, channel="text")
-        conversation_id = str(conv["id"])
-
-    history = supabase_db.get_conversation_messages(
-        conversation_id, user_id, limit=CHAT_HISTORY_LIMIT,
-    )
     supabase_db.append_message(
         conversation_id,
         user_id,
@@ -2552,11 +2710,12 @@ def iter_send_message_stream(
         session_id=conversation_id,
         channel="text",
     )
+    _bump_stream_usage_cache(user_id)
     _perf("db_ready")
 
-    instant = _instant_chat_greeting_reply(text)
-    if instant:
-        reply = _finalize_chat_reply(instant)
+    route = _stream_memory_route(user_id, text)
+    if route.intent in ("memory_save", "memory_recall") and route.speakable:
+        reply = _finalize_chat_reply(route.speakable)
         supabase_db.append_message(
             conversation_id,
             user_id,
@@ -2571,26 +2730,7 @@ def iter_send_message_stream(
             {
                 "conversation_id": conversation_id,
                 "reply": reply,
-                "usage": chat_status(user_id),
-                "cognitive": {"intent": "greeting", "source": "instant"},
-            },
-        )
-        return
-
-    route = route_message(user_id, text, channel="text", defer_enrichment=True)
-    if route.intent in ("memory_save", "memory_recall") and route.speakable:
-        reply = _finalize_chat_reply(route.speakable)
-        supabase_db.append_message(
-            conversation_id, user_id, "model", reply,
-            session_id=conversation_id, channel="text",
-        )
-        yield _sse_event("token", {"text": reply})
-        yield _sse_event(
-            "done",
-            {
-                "conversation_id": conversation_id,
-                "reply": reply,
-                "usage": chat_status(user_id),
+                "usage": _stream_usage_snapshot(user_id, profile),
                 "cognitive": route.to_dict(),
             },
         )
@@ -2602,7 +2742,7 @@ def iter_send_message_stream(
         system = _build_chat_system_light(user_id, text)
     except Exception:  # noqa: BLE001
         logger.exception("[CHAT] fallo armando system prompt — usando base")
-        system = _chat_system_for_user(user_id)
+        system = CHAT_SYSTEM_BASE
 
     token_budget = _chat_max_tokens(text)
     accumulated: list[str] = []
@@ -2646,20 +2786,20 @@ def iter_send_message_stream(
                 http_status=503,
             ) from exc
 
-    reply, pdf_attachment, image_attachment = _ensure_chat_reply_no_kb_leak(
-        reply,
-        user_id=user_id,
-        user_text=text,
-        anthropic_key=anthropic_key,
-        google_key=google_key,
-        gemini_model=gemini_model,
-        system=system,
-        messages=messages,
-        conversation_id=conversation_id,
-        pdf_attachment=pdf_attachment,
-        image_attachment=image_attachment,
-    )
-    reply = _ensure_chat_reply_quality(reply, user_text=text)
+    if _contains_internal_kb_leak(reply):
+        reply, pdf_attachment, image_attachment = _ensure_chat_reply_no_kb_leak(
+            reply,
+            user_id=user_id,
+            user_text=text,
+            anthropic_key=anthropic_key,
+            google_key=google_key,
+            gemini_model=gemini_model,
+            system=system,
+            messages=messages,
+            conversation_id=conversation_id,
+            pdf_attachment=pdf_attachment,
+            image_attachment=image_attachment,
+        )
     reply = _finalize_chat_reply(reply)
 
     supabase_db.append_message(
@@ -2673,7 +2813,7 @@ def iter_send_message_stream(
     payload: dict[str, Any] = {
         "conversation_id": conversation_id,
         "reply": reply,
-        "usage": chat_status(user_id),
+        "usage": _stream_usage_snapshot(user_id, profile),
         "cognitive": route.to_dict(),
     }
     if pdf_attachment:
