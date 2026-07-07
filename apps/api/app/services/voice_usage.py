@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.domain.plans import USAGE_WARNING_PERCENT, normalize_plan_id, recharge_balance_to_bonus_minutes
+from app.services.async_sync import run_sync
 from app.services import supabase_db
 from app.services.admin_users import get_user_access
 
@@ -70,3 +71,8 @@ def voice_access_state(user_id: str) -> dict:
         "allowed": allowed,
         "has_stripe_customer": bool((sub or {}).get("stripe_customer_id")),
     }
+
+
+async def voice_access_state_async(user_id: str) -> dict:
+    """Misma lógica que voice_access_state, sin bloquear el event loop."""
+    return await run_sync(voice_access_state, user_id)

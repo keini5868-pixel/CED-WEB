@@ -16,7 +16,7 @@ from app.services.claude_deep_analysis import consultar_sistema_avanzado
 from app.services.gemini_grounded import fetch_voice_brief
 from app.services.openai_realtime import create_realtime_session, negotiate_realtime_call
 from app.services.openai_voice_config import OPENAI_VOICES, normalize_openai_voice
-from app.services.voice_usage import voice_access_state
+from app.services.voice_usage import voice_access_state_async
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ async def realtime_session(
             "error": "OpenAI Realtime deshabilitado. Voz activa vía Retell.",
             "code": "legacy_disabled",
         }
-    balance = voice_access_state(user_id)
+    balance = await voice_access_state_async(user_id)
     if balance.get("access_denied"):
         return {"ok": False, "error": "Acceso de voz no disponible. Elige un plan en Precios."}
     if balance.get("blocked"):
@@ -90,7 +90,8 @@ async def realtime_session(
     profile = (body.voice_profile if body and body.voice_profile else "jarvis").strip().lower()
     if profile not in ("standard", "jarvis"):
         profile = "jarvis"
-    result = create_realtime_session(
+    result = await asyncio.to_thread(
+        create_realtime_session,
         user_id=user_id,
         voice_name=voice,
         language=lang,

@@ -9,7 +9,11 @@ from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services import supabase_db
-from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state
+from app.services.async_sync import run_sync
+from app.services.voice_usage import (
+    ACCESS_DENIED_MESSAGES,
+    voice_access_state_async,
+)
 
 router = APIRouter(prefix="/v1/usage", tags=["usage"])
 
@@ -29,16 +33,16 @@ class SessionEndBody(BaseModel):
 
 
 @router.get("/balance")
-def usage_balance(user_id: str = Depends(require_user_id)) -> dict:
-    state = voice_access_state(user_id)
+async def usage_balance(user_id: str = Depends(require_user_id)) -> dict:
+    state = await voice_access_state_async(user_id)
     state.pop("allowed", None)
     state.pop("quota_exhausted", None)
     return state
 
 
 @router.post("/session/start")
-def session_start(user_id: str = Depends(require_user_id)) -> dict:
-    balance = voice_access_state(user_id)
+async def session_start(user_id: str = Depends(require_user_id)) -> dict:
+    balance = await voice_access_state_async(user_id)
     access_msg = balance.get("access_message") or ""
     if balance.get("access_denied"):
         detail = ACCESS_DENIED_MESSAGES.get(access_msg, access_msg or "Acceso no disponible.")
@@ -68,7 +72,7 @@ def session_start(user_id: str = Depends(require_user_id)) -> dict:
     }
 
     try:
-        conv = supabase_db.create_conversation(user_id)
+        conv = await run_sync(supabase_db.create_conversation, user_id)
         conversation_id = conv.get("id")
         _active_sessions[session_id]["conversation_id"] = conversation_id
     except RuntimeError:
@@ -83,7 +87,7 @@ def session_start(user_id: str = Depends(require_user_id)) -> dict:
 
 
 @router.post("/session/tick")
-def session_tick(
+async def session_tick(
     body: SessionTickBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
@@ -93,7 +97,8 @@ def session_tick(
 
     minutes = body.seconds / 60.0
     try:
-        used = supabase_db.add_usage_minutes(
+        used = await run_sync(
+            supabase_db.add_usage_minutes,
             user_id,
             minutes,
             session_id=body.session_id,
@@ -101,7 +106,7 @@ def session_tick(
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    state = voice_access_state(user_id)
+    state = await voice_access_state_async(user_id)
     warning = _usage_warning(state.get("usage_percent", 0), state.get("blocked", False))
     return {
         "used_minutes_today": round(used, 2),
@@ -125,7 +130,7 @@ def _usage_warning(pct: float, blocked: bool) -> str | None:
 
 
 @router.post("/session/end")
-def session_end(
+async def session_end(
     session_id: str | None = None,
     body: SessionEndBody | None = Body(default=None),
     user_id: str = Depends(require_user_id),
@@ -136,7 +141,7 @@ def session_end(
         raise HTTPException(status_code=400, detail="session_id requerido")
 
     meta = _active_sessions.pop(sid, None)
-    balance = usage_balance(user_id)
+    balance = await usage_balance(user_id)
     if meta and meta.get("user_id") == user_id:
         try:
             from app.services.conversation_memory import finalize_voice_session_async

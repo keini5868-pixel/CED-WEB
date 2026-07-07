@@ -23,7 +23,7 @@ from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.voice_tool_executor import execute_voice_tool
-from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state
+from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state_async
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,8 @@ class RegisterCallBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-def _voice_access_or_raise(user_id: str) -> None:
-    balance = voice_access_state(user_id)
+async def _voice_access_or_raise(user_id: str) -> None:
+    balance = await voice_access_state_async(user_id)
     if balance.get("access_denied"):
         msg = balance.get("access_message") or "Acceso no disponible."
         detail = ACCESS_DENIED_MESSAGES.get(msg, msg)
@@ -125,7 +125,7 @@ async def register_retell_call(
     agent_id = get_retell_agent_id()
     if not agent_id:
         try:
-            boot = bootstrap_retell_if_needed()
+            boot = await asyncio.to_thread(bootstrap_retell_if_needed)
             agent_id = (boot or {}).get("agent_id") or get_retell_agent_id()
         except Exception as exc:  # noqa: BLE001
             logger.warning("[RETELL] bootstrap on register failed: %s", exc)
@@ -136,7 +136,7 @@ async def register_retell_call(
             detail=err or "RETELL_AGENT_ID no configurado. Reinicie API o ejecute bootstrap.",
         )
 
-    _voice_access_or_raise(user_id)
+    await _voice_access_or_raise(user_id)
 
     try:
         await asyncio.to_thread(ensure_retell_agent, agent_id=agent_id)
@@ -531,7 +531,7 @@ async def retell_public_status() -> dict[str, Any]:
 
     if not agent_id and settings.voice_provider == "retell":
         try:
-            result = bootstrap_retell_if_needed()
+            result = await asyncio.to_thread(bootstrap_retell_if_needed)
             if result:
                 agent_id = result.get("agent_id") or get_retell_agent_id()
                 info = result

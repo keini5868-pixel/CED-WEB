@@ -9,6 +9,7 @@ from fastapi import Header, HTTPException
 from jose import JWTError, jwt
 
 from app.config import get_settings
+from app.services.async_sync import run_sync
 from app.services.user_id_utils import normalize_user_id
 
 
@@ -49,7 +50,7 @@ async def _verify_jwt_with_supabase(token: str) -> dict[str, Any] | None:
     if not settings.supabase_url:
         return None
 
-    user = _verify_jwt_with_supabase_sdk(token)
+    user = await run_sync(_verify_jwt_with_supabase_sdk, token)
     if user:
         return user
 

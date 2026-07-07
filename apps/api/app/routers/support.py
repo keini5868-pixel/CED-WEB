@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.deps.auth import is_super_admin, require_auth_user, require_super_admin
 from app.config import get_settings
 from app.services import support_chat as svc
+from app.services.async_sync import run_sync
 from app.services.support_media import (
     _EXT_BY_MIME,
     decode_support_upload,
@@ -57,7 +58,7 @@ async def create_conversation(
     body: CreateConversationBody,
     user: dict[str, Any] = Depends(_auth_context),
 ) -> dict[str, Any]:
-    conv = svc.create_conversation(user["id"], body.category)
+    conv = await run_sync(svc.create_conversation, user["id"], body.category)
     return {"ok": True, "conversation": conv}
 
 
@@ -65,7 +66,7 @@ async def create_conversation(
 async def list_user_conversations(
     user: dict[str, Any] = Depends(_auth_context),
 ) -> dict[str, Any]:
-    items = svc.list_user_conversations(user["id"])
+    items = await run_sync(svc.list_user_conversations, user["id"])
     return {"ok": True, "conversations": items}
 
 
@@ -76,7 +77,8 @@ async def list_admin_conversations(
     unread: bool = False,
     _admin_id: str = Depends(require_super_admin),
 ) -> dict[str, Any]:
-    items = svc.list_admin_conversations(
+    items = await run_sync(
+        svc.list_admin_conversations,
         status=status,
         category=category,
         unread_only=unread,
@@ -89,13 +91,14 @@ async def get_messages(
     conversation_id: str,
     user: dict[str, Any] = Depends(_auth_context),
 ) -> dict[str, Any]:
-    svc.assert_conversation_access(
+    await run_sync(
+        svc.assert_conversation_access,
         conversation_id,
         user_id=user["id"],
         email=user.get("email"),
         role=user.get("role"),
     )
-    messages = svc.list_messages(conversation_id)
+    messages = await run_sync(svc.list_messages, conversation_id)
     return {"ok": True, "messages": messages}
 
 
@@ -106,7 +109,8 @@ async def send_message(
     user: dict[str, Any] = Depends(_auth_context),
 ) -> dict[str, Any]:
     admin = is_super_admin(user.get("email"), user.get("role"))
-    conv = svc.assert_conversation_access(
+    conv = await run_sync(
+        svc.assert_conversation_access,
         conversation_id,
         user_id=user["id"],
         email=user.get("email"),
@@ -116,7 +120,8 @@ async def send_message(
     sender_type = "admin" if admin and str(conv["user_id"]) != user["id"] else "user"
     if sender_type == "user" and str(conv["user_id"]) != user["id"]:
         raise HTTPException(status_code=403, detail="Sin acceso")
-    message = svc.add_message(
+    message = await run_sync(
+        svc.add_message,
         conversation_id,
         sender_id=user["id"],
         sender_type=sender_type,
@@ -132,7 +137,8 @@ async def upload_attachment(
     file: UploadFile = File(...),
     user: dict[str, Any] = Depends(_auth_context),
 ) -> dict[str, Any]:
-    conv = svc.assert_conversation_access(
+    conv = await run_sync(
+        svc.assert_conversation_access,
         conversation_id,
         user_id=user["id"],
         email=user.get("email"),
@@ -145,7 +151,13 @@ async def upload_attachment(
     mime = (file.content_type or "image/jpeg").split(";")[0].strip()
     try:
         image_bytes, mime = decode_support_upload(raw, mime)
-        file_name = store_support_attachment(user["id"], conversation_id, image_bytes, mime)
+        file_name = await run_sync(
+            store_support_attachment,
+            user["id"],
+            conversation_id,
+            image_bytes,
+            mime,
+        )
         url = support_attachment_client_url(file_name)
         return {"ok": True, "url": url, "file_name": file_name}
     except ValueError as exc:
@@ -174,7 +186,8 @@ async def mark_conversation_read(
     user: dict[str, Any] = Depends(_auth_context),
 ) -> dict[str, Any]:
     admin = is_super_admin(user.get("email"), user.get("role"))
-    conv = svc.assert_conversation_access(
+    conv = await run_sync(
+        svc.assert_conversation_access,
         conversation_id,
         user_id=user["id"],
         email=user.get("email"),
@@ -182,7 +195,7 @@ async def mark_conversation_read(
         admin=admin,
     )
     reader = "admin" if admin and str(conv["user_id"]) != user["id"] else "user"
-    svc.mark_read(conversation_id, reader=reader)
+    await run_sync(svc.mark_read, conversation_id, reader=reader)
     return {"ok": True}
 
 
@@ -192,17 +205,19 @@ async def admin_update_status(
     body: UpdateStatusBody,
     _admin_id: str = Depends(require_super_admin),
 ) -> dict[str, Any]:
-    if not svc.get_conversation(conversation_id):
+    if not await run_sync(svc.get_conversation, conversation_id):
         raise HTTPException(status_code=404, detail="Conversación no encontrada")
-    conv = svc.update_status(conversation_id, body.status)
+    conv = await run_sync(svc.update_status, conversation_id, body.status)
     return {"ok": True, "conversation": conv}
 
 
 @router.get("/admin/unread-count")
 async def admin_unread_count(_admin_id: str = Depends(require_super_admin)) -> dict[str, Any]:
-    return {"ok": True, "count": svc.count_unread_for_admin()}
+    count = await run_sync(svc.count_unread_for_admin)
+    return {"ok": True, "count": count}
 
 
 @router.get("/user/unread-count")
 async def user_unread_count(user: dict[str, Any] = Depends(_auth_context)) -> dict[str, Any]:
-    return {"ok": True, "count": svc.count_unread_for_user(user["id"])}
+    count = await run_sync(svc.count_unread_for_user, user["id"])
+    return {"ok": True, "count": count}

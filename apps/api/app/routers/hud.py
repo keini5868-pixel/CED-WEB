@@ -10,6 +10,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
+from app.services.async_sync import run_sync
 from app.services.hud_carousel import build_carousel_snapshot
 from app.services.hud_health import build_detailed_health
 from app.services.hud_life import (
@@ -55,7 +56,7 @@ def _parse_hud_event_datetime(date_raw: str, time_raw: str) -> datetime:
 async def hud_carousel(user_id: str = Depends(require_user_id)) -> dict:
     """Snapshot de las 7 tarjetas del carrusel CASTILLO."""
     try:
-        return build_carousel_snapshot(user_id)
+        return await run_sync(build_carousel_snapshot, user_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[CAROUSEL] error: %s", exc)
         return {
@@ -70,7 +71,7 @@ async def hud_carousel(user_id: str = Depends(require_user_id)) -> dict:
 @router.get("/health/detailed")
 async def health_detailed(_user_id: str = Depends(require_user_id)) -> dict:
     """Health agregado SaaS — tarjeta SYSTEM."""
-    return build_detailed_health()
+    return await run_sync(build_detailed_health)
 
 
 @router.get("/hud/life")
@@ -80,23 +81,23 @@ async def hud_life(
 ) -> dict:
     """Dashboard LIFE — clima, calendario, gmail, aire y polen."""
     try:
-        snapshot = build_life_dashboard(user_id)
+        snapshot = await run_sync(build_life_dashboard, user_id)
         if is_weather_cache_expired(user_id):
             background_tasks.add_task(update_weather_cache, user_id)
         return snapshot
     except Exception as exc:  # noqa: BLE001
         logger.exception("[LIFE] error: %s", exc)
-        return build_life_dashboard_fallback(user_id)
+        return await run_sync(build_life_dashboard_fallback, user_id)
 
 
 @router.get("/hud/connections")
 async def hud_connections(user_id: str = Depends(require_user_id)) -> dict:
     """Calendar + Gmail — rápido, sin búsquedas web."""
     try:
-        return build_life_connections(user_id)
+        return await run_sync(build_life_connections, user_id)
     except Exception as exc:  # noqa: BLE001
         logger.exception("[LIFE] connections error: %s", exc)
-        fb = build_life_dashboard_fallback(user_id)
+        fb = await run_sync(build_life_dashboard_fallback, user_id)
         return {
             "updated_at": fb["updated_at"],
             "calendar": fb["calendar"],
@@ -203,25 +204,20 @@ async def hud_gmail_messages(
 
     allowed = {"primary", "promotions", "social", "updates", "forums"}
     cat = category if category in allowed else "primary"
-    return get_gmail_emails(user_id, cat)  # type: ignore[arg-type]
+    return await run_sync(get_gmail_emails, user_id, cat)  # type: ignore[arg-type]
 
 
 @router.get("/hud/calendar/events")
 async def hud_calendar_events(user_id: str = Depends(require_user_id)) -> dict:
     from app.services.google_calendar_api import get_calendar_events
 
-    return get_calendar_events(user_id)
+    return await run_sync(get_calendar_events, user_id)
 
 
 @router.post("/hud/gmail/send")
 async def hud_send_gmail(body: GmailSendBody, user_id: str = Depends(require_user_id)) -> dict:
-    from app.services.google_gmail_api import send_message
-    from app.services.google_oauth import get_valid_access_token
-
     try:
-        token = get_valid_access_token("gmail", user_id)
-        send_message(token, to=body.to, subject=body.subject, body=body.body)
-        return {"ok": True}
+        return await run_sync(_send_gmail_sync, user_id, body)
     except ValueError as exc:
         if str(exc) == "not_connected":
             raise HTTPException(status_code=401, detail="Gmail no conectado.") from exc
@@ -229,6 +225,15 @@ async def hud_send_gmail(body: GmailSendBody, user_id: str = Depends(require_use
     except Exception as exc:  # noqa: BLE001
         logger.exception("[HUD] gmail send failed")
         raise HTTPException(status_code=502, detail="No se pudo enviar el email.") from exc
+
+
+def _send_gmail_sync(user_id: str, body: GmailSendBody) -> dict:
+    from app.services.google_gmail_api import send_message
+    from app.services.google_oauth import get_valid_access_token
+
+    token = get_valid_access_token("gmail", user_id)
+    send_message(token, to=body.to, subject=body.subject, body=body.body)
+    return {"ok": True}
 
 
 class ReminderBody(BaseModel):
@@ -241,7 +246,7 @@ class ReminderBody(BaseModel):
 async def hud_list_reminders(user_id: str = Depends(require_user_id)) -> dict:
     from app.services.hud_reminders import upcoming_reminders
 
-    items = upcoming_reminders(user_id, limit=20)
+    items = await run_sync(upcoming_reminders, user_id, limit=20)
     return {
         "reminders": [
             {
@@ -262,7 +267,8 @@ async def hud_create_reminder(
 ) -> dict:
     from app.services.hud_reminders import create_reminder
 
-    ok = create_reminder(
+    ok = await run_sync(
+        create_reminder,
         user_id,
         text=body.text.strip(),
         reminder_date=body.date,
