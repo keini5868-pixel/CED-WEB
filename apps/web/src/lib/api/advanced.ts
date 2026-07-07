@@ -25,6 +25,10 @@ export type AdvancedChatResult = {
   image?: ChatImageAttachment | null;
 };
 
+/** Bienvenida instantánea — no esperar a /advanced/status. */
+export const ADVANCED_DEFAULT_WELCOME =
+  "Modo avanzado listo. ¿Qué analizamos, señor?";
+
 const ADVANCED_TIMEOUT_MS = 300_000;
 
 export async function fetchAdvancedChatStatus(): Promise<AdvancedChatStatus | null> {
@@ -43,17 +47,10 @@ export async function sendAdvancedChatMessageStream(
   onToken: (chunk: string) => void,
   onStatus?: (text: string) => void,
 ): Promise<AdvancedChatResult> {
-  let headers: HeadersInit = { "Content-Type": "application/json" };
-  try {
-    headers = { ...(await authHeaders()), ...headers };
-  } catch {
-    /* cookies-only fallback vía BFF */
-  }
-
   const res = await fetch("/api/ced/advanced/chat/stream", {
     method: "POST",
     credentials: "same-origin",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       message,
       history: history

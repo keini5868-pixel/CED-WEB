@@ -3,6 +3,11 @@ import { parseApiJson } from "@/lib/api/http";
 
 const CHAT_TIMEOUT_MS = 90_000;
 
+/** Bienvenida instantánea en UI — no esperar a /chat/status. */
+export const CHAT_DEFAULT_WELCOME =
+  "Hola, soy CED. Escríbeme aquí, dicta con el micrófono o adjunta una imagen. " +
+  "Puedo analizarla, generar variaciones o crear imágenes nuevas.";
+
 const proxyFetch = (path: string, init?: RequestInit) =>
   fetch(cedApiPath(path), {
     credentials: "same-origin",
@@ -45,9 +50,12 @@ export type ChatStatus = {
   welcome_message?: string;
 };
 
-export async function fetchChatStatus(): Promise<ChatStatus | null> {
+export async function fetchChatStatus(
+  opts?: { welcome?: boolean },
+): Promise<ChatStatus | null> {
   try {
-    const res = await proxyFetch("chat/status");
+    const qs = opts?.welcome ? "?welcome=true" : "";
+    const res = await proxyFetch(`chat/status${qs}`);
     if (!res.ok) return null;
     return (await res.json()) as ChatStatus;
   } catch {

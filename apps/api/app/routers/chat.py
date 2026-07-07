@@ -33,8 +33,12 @@ class SendChatBody(BaseModel):
 
 
 @router.get("/status")
-def get_chat_status(user_id: str = Depends(require_user_id)) -> dict:
-    return chat_status(user_id)
+def get_chat_status(
+    user_id: str = Depends(require_user_id),
+    welcome: bool = False,
+) -> dict:
+    """Estado de uso. welcome=true incluye saludo personalizado (más lento)."""
+    return chat_status(user_id, include_welcome=welcome)
 
 
 @router.get("/conversations")

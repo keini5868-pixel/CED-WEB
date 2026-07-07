@@ -1092,23 +1092,24 @@ def count_user_messages_today(user_id: str, *, channel: str = "text") -> int:
         return 0
 
 
-def chat_status(user_id: str) -> dict[str, Any]:
+def chat_status(user_id: str, *, include_welcome: bool = False) -> dict[str, Any]:
     from app.services.admin_users import get_user_access
 
     allowed, reason, _ = get_user_access(user_id)
     trial_expired = not allowed and reason == "trial_expired"
     limit = _message_limit_for_user(user_id)
-    used = count_user_messages_today(user_id)
+    used = _cached_messages_today(user_id)
     unlimited = limit < 0
     remaining = -1 if unlimited else max(0, limit - used)
     blocked = not unlimited and limit > 0 and used >= limit
     welcome_message = ""
-    try:
-        from app.services.session_memory import build_text_chat_welcome
+    if include_welcome:
+        try:
+            from app.services.session_memory import build_text_chat_welcome
 
-        welcome_message = build_text_chat_welcome(user_id)
-    except Exception:  # noqa: BLE001
-        pass
+            welcome_message = build_text_chat_welcome(user_id)
+        except Exception:  # noqa: BLE001
+            pass
     return {
         "messages_used_today": used,
         "messages_limit_daily": limit if limit >= 0 else None,

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ChatImageAttachment, ChatPdfAttachment } from "@/lib/api/chat";
 import {
+  ADVANCED_DEFAULT_WELCOME,
   fetchAdvancedChatStatus,
   sendAdvancedChatMessage,
   sendAdvancedChatMessageStream,
@@ -114,6 +115,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
+  const streamTargetIndexRef = useRef<number | null>(null);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -121,7 +123,23 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
   useEffect(() => {
     if (!open) return;
+    setMessages((prev) => {
+      if (prev.length > 0) return prev;
+      return [
+        {
+          role: "assistant",
+          content: ADVANCED_DEFAULT_WELCOME,
+          created_at: new Date().toISOString(),
+        },
+      ];
+    });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
     void fetchAdvancedChatStatus().then((status) => {
+      if (cancelled) return;
       const ok = status?.configured ?? false;
       setConfigured(ok);
       setUsesGeminiOnly(
@@ -134,16 +152,10 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
             .replace(/-/g, " "),
         );
       }
-      if (messages.length === 0) {
-        setMessages([
-          {
-            role: "assistant",
-            content: "Modo avanzado listo. ¿Qué analizamos, señor?",
-          },
-        ]);
-      }
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- welcome solo al abrir
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   useEffect(() => {
@@ -152,10 +164,17 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
   const submit = useCallback(async () => {
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || configured === false) return;
     setError(null);
     setInput("");
     setBusy(true);
+
+    const sendGuard = setTimeout(() => {
+      setBusy(false);
+      setStreaming(false);
+      setStatusHint(null);
+      streamTargetIndexRef.current = null;
+    }, 120_000);
 
     const userMsg: AdvancedChatMessage = {
       role: "user",
@@ -163,16 +182,23 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       created_at: new Date().toISOString(),
     };
     const historyBefore = messagesRef.current;
-    setMessages((prev) => [...prev, userMsg]);
-
-    const assistantPlaceholder: AdvancedChatMessage = {
-      role: "assistant",
-      content: "",
-      created_at: new Date().toISOString(),
-    };
-    setMessages((prev) => [...prev, assistantPlaceholder]);
+    let assistantIndex = historyBefore.length + 1;
+    setMessages((prev) => {
+      const next: AdvancedChatMessage[] = [
+        ...prev,
+        userMsg,
+        {
+          role: "assistant",
+          content: "",
+          created_at: new Date().toISOString(),
+        },
+      ];
+      assistantIndex = next.length - 1;
+      streamTargetIndexRef.current = assistantIndex;
+      return next;
+    });
     setStreaming(true);
-    setStatusHint("Conectando con Claude…");
+    setStatusHint(null);
 
     const applyResult = (result: {
       response: string;
@@ -182,11 +208,13 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     }) => {
       setModelLabel(result.model.replace("claude-", "Claude ").replace(/-/g, " "));
       setMessages((prev) => {
+        const idx = streamTargetIndexRef.current;
+        if (idx == null || idx < 0 || idx >= prev.length) return prev;
         const next = [...prev];
-        const last = next[next.length - 1];
-        if (!last || last.role !== "assistant") return prev;
-        next[next.length - 1] = {
-          ...last,
+        const target = next[idx];
+        if (!target || target.role !== "assistant") return prev;
+        next[idx] = {
+          ...target,
           content: stripPdfLinks(result.response),
           pdf: result.pdf ?? null,
           image: result.image ?? null,
@@ -195,30 +223,17 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       });
     };
 
-    let pendingChunk = "";
-    let flushTimer: ReturnType<typeof setTimeout> | null = null;
-    const flushChunks = () => {
-      if (!pendingChunk) return;
-      const batch = pendingChunk;
-      pendingChunk = "";
-      flushTimer = null;
+    const onChunk = (chunk: string) => {
       setStatusHint(null);
       setMessages((prev) => {
+        const idx = streamTargetIndexRef.current;
+        if (idx == null || idx < 0 || idx >= prev.length) return prev;
         const next = [...prev];
-        const last = next[next.length - 1];
-        if (!last || last.role !== "assistant") return prev;
-        next[next.length - 1] = {
-          ...last,
-          content: `${last.content}${batch}`,
-        };
+        const target = next[idx];
+        if (!target || target.role !== "assistant") return prev;
+        next[idx] = { ...target, content: `${target.content}${chunk}` };
         return next;
       });
-    };
-    const onChunk = (chunk: string) => {
-      pendingChunk += chunk;
-      if (!flushTimer) {
-        flushTimer = setTimeout(flushChunks, 24);
-      }
     };
 
     try {
@@ -228,23 +243,24 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         onChunk,
         (hint) => setStatusHint(hint),
       );
-      if (flushTimer) clearTimeout(flushTimer);
-      flushChunks();
       applyResult(result);
     } catch (streamErr) {
-      if (flushTimer) clearTimeout(flushTimer);
-      pendingChunk = "";
       try {
         setStatusHint("Reintentando sin streaming…");
         const fallback = await sendAdvancedChatMessage(text, historyBefore);
         applyResult(fallback);
       } catch (err) {
         setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last?.role === "assistant" && last.content.trim()) {
-            return prev;
+          const idx = streamTargetIndexRef.current;
+          if (idx != null && idx >= 0 && idx < prev.length) {
+            const target = prev[idx];
+            if (target?.role === "assistant" && target.content.trim()) {
+              return prev;
+            }
           }
-          return prev.filter((m) => m.content !== "" || m.role !== "assistant");
+          return prev.filter(
+            (m, i) => i !== streamTargetIndexRef.current || m.content.trim() !== "",
+          );
         });
         setError(
           err instanceof Error
@@ -255,12 +271,14 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         );
       }
     } finally {
+      clearTimeout(sendGuard);
+      streamTargetIndexRef.current = null;
       setStreaming(false);
       setStatusHint(null);
       setBusy(false);
       textareaRef.current?.focus();
     }
-  }, [busy, input]);
+  }, [busy, configured, input]);
 
   if (!open) return null;
 
@@ -356,7 +374,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
               }}
               rows={3}
               placeholder="Análisis, PDF, imágenes o prompts largos…"
-              disabled={busy || configured === false}
+              disabled={configured === false}
               className="min-h-[56px] max-h-40 flex-1 resize-y rounded border border-violet-900/50 bg-black/60 px-3 py-2 text-[12px] text-violet-50 placeholder:text-violet-700 focus:border-violet-500/50 focus:outline-none"
             />
             <button

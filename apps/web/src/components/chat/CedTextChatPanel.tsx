@@ -16,6 +16,7 @@ import {
   endChatConversation,
   fetchChatStatus,
   sendChatMessage,
+  CHAT_DEFAULT_WELCOME,
   type ChatImageAttachment,
   type ChatMessage,
   type ChatPdfAttachment,
@@ -370,19 +371,50 @@ export function CedTextChatPanel({
 
   useEffect(() => {
     if (!open) return;
-    void refreshStatus().then((s) => {
-      if (messages.length === 0) {
-        setMessages([
-          {
-            role: "model",
-            content:
-              s?.welcome_message?.trim() ||
-              "Hola, soy CED. Escríbeme aquí, dicta con el micrófono o adjunta una imagen. Puedo analizarla, generar variaciones o crear imágenes nuevas.",
-          },
-        ]);
-      }
+    setMessages((prev) => {
+      if (prev.length > 0) return prev;
+      return [
+        {
+          role: "model",
+          content: CHAT_DEFAULT_WELCOME,
+          created_at: new Date().toISOString(),
+        },
+      ];
     });
-  }, [open, messages.length, refreshStatus]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void refreshStatus().then((s) => {
+      if (cancelled || !s) return;
+      setStatus(s);
+    });
+    void fetchChatStatus({ welcome: true }).then((s) => {
+      if (cancelled) return;
+      const personalized = s?.welcome_message?.trim();
+      if (!personalized) return;
+      setMessages((prev) => {
+        if (prev.some((m) => m.role === "user")) return prev;
+        if (prev.length === 0) {
+          return [
+            {
+              role: "model",
+              content: personalized,
+              created_at: new Date().toISOString(),
+            },
+          ];
+        }
+        if (prev.length === 1 && prev[0]?.role === "model") {
+          return [{ ...prev[0], content: personalized }];
+        }
+        return prev;
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, refreshStatus]);
 
   useEffect(() => {
     if (!open || !seedImage?.url) return;
@@ -509,6 +541,13 @@ export function CedTextChatPanel({
     setBusy(true);
     setTyping(true);
     focusInput();
+
+    const sendGuard = setTimeout(() => {
+      setBusy(false);
+      setTyping(false);
+      streamTargetIndexRef.current = null;
+    }, 120_000);
+
     const userMsg: ChatMessage = {
       role: "user",
       content: text || "📷 Imagen adjunta",
@@ -642,6 +681,7 @@ export function CedTextChatPanel({
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error al enviar.");
     } finally {
+      clearTimeout(sendGuard);
       streamTargetIndexRef.current = null;
       setBusy(false);
       setTyping(false);
