@@ -82,3 +82,43 @@ def test_advanced_status_google_only():
     assert body["configured"] is True
     assert body["google_configured"] is True
     app.dependency_overrides.clear()
+
+
+def test_advanced_instant_datetime_reply():
+    from app.services.claude_advanced import _try_instant_datetime_reply
+
+    reply = _try_instant_datetime_reply("qué día es hoy")
+    assert reply
+    assert "tool_code" not in reply.lower()
+    assert "Hoy es" in reply
+
+
+def test_advanced_recovers_stream_tool_code():
+    from app.services.claude_advanced import _recover_advanced_reply
+
+    hallucinated = (
+        "Un momento, señor.\n\n**tool_code**\n"
+        'print(search_web(query="qué día es hoy"))'
+    )
+    with patch(
+        "app.services.claude_advanced._resolve_hallucinated_tool_code_reply",
+        return_value="Hoy es martes 7 de julio de 2026, señor.",
+    ):
+        fixed = _recover_advanced_reply(
+            "user-1",
+            hallucinated,
+            text="qué día es hoy",
+            history=[],
+            conversation_id="adv-1",
+        )
+    assert "tool_code" not in fixed.lower()
+    assert "print(" not in fixed.lower()
+
+
+def test_advanced_needs_tools_for_web_research():
+    from app.services.claude_advanced import _needs_advanced_tools
+
+    assert _needs_advanced_tools(
+        "últimas noticias de Venezuela hoy",
+        [],
+    )

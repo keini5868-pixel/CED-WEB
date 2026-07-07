@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime
 from typing import Any, Iterator
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -17,6 +19,7 @@ from app.services.text_chat import (
     CHAT_MODEL_FAST,
     DIRECT_IMAGE_MAX_CHARS,
     _anthropic_messages,
+    _can_stream_chat_text,
     _chat_image_attachment,
     _gemini_chat_model,
     _gemini_simple_reply_stream,
@@ -24,8 +27,11 @@ from app.services.text_chat import (
     _complete_chat_with_tools,
     _execute_direct_pdf,
     _finalize_chat_reply,
+    _has_hallucinated_tool,
+    _has_hallucinated_tool_code,
     _needs_chat_tools,
     _pdf_attachment_from_artifact,
+    _resolve_hallucinated_tool_code_reply,
     _try_direct_pdf_from_context,
     is_generate_image_intent,
     is_pdf_intent,
@@ -105,6 +111,135 @@ _WELCOME_MARKERS = (
     "castillo evolución digital",
     "bienvenido al sistema",
 )
+
+_DATETIME_LOOKUP = re.compile(
+    r"\b("
+    r"qu[eé]\s+d[ií]a\s+es|"
+    r"qu[eé]\s+fecha\s+es|"
+    r"qu[eé]\s+hora\s+es|"
+    r"fecha\s+de\s+hoy|"
+    r"d[ií]a\s+de\s+hoy|"
+    r"hora\s+actual|"
+    r"qu[eé]\s+mes\s+es"
+    r")\b",
+    re.I,
+)
+
+_SPANISH_DAYS = (
+    "lunes",
+    "martes",
+    "miércoles",
+    "jueves",
+    "viernes",
+    "sábado",
+    "domingo",
+)
+_SPANISH_MONTHS = (
+    "enero",
+    "febrero",
+    "marzo",
+    "abril",
+    "mayo",
+    "junio",
+    "julio",
+    "agosto",
+    "septiembre",
+    "octubre",
+    "noviembre",
+    "diciembre",
+)
+
+
+def _mx_now() -> datetime:
+    try:
+        return datetime.now(ZoneInfo("America/Mexico_City"))
+    except Exception:  # noqa: BLE001 — Windows sin tzdata
+        from datetime import timedelta, timezone
+
+        return datetime.now(timezone(timedelta(hours=-6)))
+
+
+def _format_datetime_mx() -> str:
+    now = _mx_now()
+    day = _SPANISH_DAYS[now.weekday()]
+    month = _SPANISH_MONTHS[now.month - 1]
+    return (
+        f"Hoy es {day} {now.day} de {month} de {now.year}, señor. "
+        f"Son las {now.strftime('%H:%M')} hora de Ciudad de México."
+    )
+
+
+def _try_instant_datetime_reply(text: str) -> str | None:
+    if _DATETIME_LOOKUP.search((text or "").strip()):
+        return _format_datetime_mx()
+    return None
+
+
+def _advanced_stream_system_with_clock() -> str:
+    now = _mx_now()
+    return (
+        ADVANCED_STREAM_SYSTEM
+        + f"\n\nFecha y hora actuales (Ciudad de México): "
+        f"{now.strftime('%Y-%m-%d %H:%M')} — úsalas para preguntas de hoy sin inventar código."
+        + "\nPROHIBIDO escribir tool_code, print(), search_web() ni pseudo-código. "
+        "Responde en español natural o deja que el backend use herramientas."
+    )
+
+
+def _needs_advanced_tools(text: str, history_rows: list[dict[str, Any]]) -> bool:
+    """Misma cobertura que chat normal: no hacer stream sin tools si hace falta acción real."""
+    if _needs_chat_tools(text):
+        return True
+    if is_pdf_intent(text) or is_generate_image_intent(text):
+        return True
+    if resolve_pdf_request(text, history_rows):
+        return True
+    if not _can_stream_chat_text(text):
+        return True
+    return False
+
+
+def _recover_advanced_reply(
+    user_id: str,
+    reply: str,
+    *,
+    text: str,
+    history: list[dict[str, Any]],
+    conversation_id: str,
+) -> str:
+    """Corrige tool_code alucinado o promesas de búsqueda sin ejecutar herramienta."""
+    cleaned = _finalize_chat_reply((reply or "").strip())
+    if not cleaned:
+        return cleaned
+
+    if not _has_hallucinated_tool_code(cleaned) and not _has_hallucinated_tool(cleaned):
+        return cleaned
+
+    history_rows = _history_as_chat_rows(history)
+    messages = _anthropic_messages(history_rows)
+    messages.append({"role": "user", "content": text})
+
+    fixed = _resolve_hallucinated_tool_code_reply(
+        cleaned,
+        messages,
+        user_id=user_id,
+        user_text=text,
+    )
+    if fixed and not _has_hallucinated_tool_code(fixed):
+        return _finalize_chat_reply(fixed)
+
+    instant = _try_instant_datetime_reply(text)
+    if instant:
+        return instant
+
+    logger.warning("[ADVANCED] tool_code en stream — escalando a pipeline con herramientas")
+    result = send_advanced_message(
+        user_id,
+        message=text,
+        history=history,
+        conversation_id=conversation_id,
+    )
+    return str(result.get("response") or cleaned)
 
 
 def _instant_greeting_reply(text: str) -> str | None:
@@ -328,7 +463,7 @@ def send_advanced_message(
     if not text:
         raise ValueError("Mensaje vacío.")
 
-    instant = _instant_greeting_reply(text)
+    instant = _instant_greeting_reply(text) or _try_instant_datetime_reply(text)
     if instant:
         return _finish_payload(
             response=instant,
@@ -506,7 +641,7 @@ def iter_advanced_message_stream(
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = _history_as_chat_rows(history)
 
-    instant = _instant_greeting_reply(text)
+    instant = _instant_greeting_reply(text) or _try_instant_datetime_reply(text)
     if instant:
         yield _sse_event("token", {"text": instant})
         yield _sse_event("done", _finish_payload(
@@ -517,13 +652,8 @@ def iter_advanced_message_stream(
 
     anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=False)
 
-    # PDF / imagen / herramientas → respuesta completa (no stream parcial).
-    needs_tools = (
-        _needs_chat_tools(text)
-        or is_pdf_intent(text)
-        or is_generate_image_intent(text)
-        or bool(resolve_pdf_request(text, history_rows))
-    )
+    # PDF / imagen / herramientas / web en vivo → respuesta completa (no stream parcial).
+    needs_tools = _needs_advanced_tools(text, history_rows)
 
     if needs_tools:
         yield _sse_event("status", {"text": "Analizando y preparando respuesta…"})
@@ -539,7 +669,7 @@ def iter_advanced_message_stream(
     normalized = _history_for_stream(history)
     stream_messages = [*normalized, {"role": "user", "content": text}]
     max_tokens = _stream_max_tokens(text)
-    stream_system = _stream_system_prompt(text)
+    stream_system = _advanced_stream_system_with_clock()
 
     accumulated: list[str] = []
     stream_label = ADVANCED_STREAM_MODEL_LABEL
@@ -578,7 +708,13 @@ def iter_advanced_message_stream(
         yield _sse_event("done", result)
         return
 
-    reply = _finalize_chat_reply("".join(accumulated).strip())
+    reply = _recover_advanced_reply(
+        user_id,
+        "".join(accumulated).strip(),
+        text=text,
+        history=history,
+        conversation_id=conv_id,
+    )
     if not reply:
         result = send_advanced_message(
             user_id,
