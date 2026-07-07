@@ -18,7 +18,7 @@ from app.services.integrations import (
     check_supabase_auth_api_key,
     check_tavily,
 )
-from app.services.build_info import BUILD_VERSION
+from app.build_info import BUILD_VERSION
 from app.services.openai_key_utils import openai_api_key_looks_valid
 
 router = APIRouter(prefix="/v1", tags=["diagnostic"])
