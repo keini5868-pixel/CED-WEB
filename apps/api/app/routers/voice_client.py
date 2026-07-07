@@ -187,13 +187,13 @@ async def voice_clear_chat_image(
 ) -> dict[str, str]:
     vcs.clear_last_publishable_image(user_id)
     logger.info("[VOICE_UPLOAD] user=%s status=cleared", user_id[:8])
-    return {"ok": "true"}
+    return {"ok": True}
 
 
 @router.post("/session-end")
 async def voice_session_end(
     user_id: str = Depends(require_user_id),
-) -> dict[str, str]:
+) -> dict[str, bool]:
     """Fin de sesión voz en cliente — limpia imagen pendiente."""
     vcs.end_voice_publish_session(user_id)
-    return {"ok": "true"}
+    return {"ok": True}
