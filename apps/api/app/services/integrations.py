@@ -67,6 +67,54 @@ def check_gemini() -> dict[str, Any]:
     return check_google()
 
 
+def check_tavily() -> dict[str, Any]:
+    """Comprueba TAVILY_API_KEY — búsqueda web en chat, voz y HUD."""
+    settings = get_settings()
+    api_key = settings.tavily_api_key.strip()
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "missing_tavily_api_key",
+            "hint": "Añade TAVILY_API_KEY en Railway (servicio CED-WEB).",
+        }
+    try:
+        with httpx.Client(timeout=8.0) as client:
+            res = client.post(
+                "https://api.tavily.com/search",
+                json={
+                    "api_key": api_key,
+                    "query": "health check ping",
+                    "max_results": 1,
+                    "search_depth": "basic",
+                },
+            )
+        if res.status_code == 200:
+            data = res.json()
+            return {
+                "ok": True,
+                "response_time": data.get("response_time"),
+            }
+        if res.status_code == 429:
+            return {
+                "ok": False,
+                "error": "rate_limited",
+                "detail": res.text[:200],
+            }
+        if res.status_code == 401:
+            return {
+                "ok": False,
+                "error": "invalid_api_key",
+                "detail": res.text[:200],
+            }
+        return {
+            "ok": False,
+            "error": f"tavily_http_{res.status_code}",
+            "detail": res.text[:200],
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:200]}
+
+
 def check_anthropic() -> dict[str, Any]:
     from app.services.text_chat import CHAT_MODEL
 

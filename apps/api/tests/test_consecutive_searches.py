@@ -143,3 +143,21 @@ def test_cleanup_search_tasks_cancels_pending():
         assert task.cancelled() or task.done()
 
     asyncio.run(run())
+
+
+def test_run_gemini_returns_after_timeout_when_brief_hangs():
+    import time
+
+    from app.services.gemini_grounded import GEMINI_TIMEOUT_SEC, _run_gemini
+
+    def slow_brief(*_args, **_kwargs) -> str:
+        time.sleep(GEMINI_TIMEOUT_SEC + 30)
+        return "never"
+
+    start = time.perf_counter()
+    with patch("app.services.gemini_grounded._generate_brief", side_effect=slow_brief):
+        result = _run_gemini("noticias hoy", "news", "fake-key")
+    elapsed = time.perf_counter() - start
+
+    assert result == ""
+    assert elapsed < GEMINI_TIMEOUT_SEC + 4

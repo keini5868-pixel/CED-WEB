@@ -16,7 +16,9 @@ from app.services.integrations import (
     check_supabase,
     check_supabase_auth,
     check_supabase_auth_api_key,
+    check_tavily,
 )
+from app.services.build_info import BUILD_VERSION
 from app.services.openai_key_utils import openai_api_key_looks_valid
 
 router = APIRouter(prefix="/v1", tags=["diagnostic"])
@@ -35,6 +37,7 @@ def health_diagnostic(_admin_id: str = Depends(require_super_admin)) -> dict:
     api_keys = {
         "anthropic": _key_configured(settings.anthropic_api_key),
         "google": _key_configured(settings.google_api_key),
+        "tavily": _key_configured(settings.tavily_api_key),
         "openai": _key_configured(settings.openai_api_key),
         "stripe": _key_configured(settings.stripe_secret_key),
         "supabase_service_role": _key_configured(settings.supabase_service_role_key),
@@ -50,6 +53,7 @@ def health_diagnostic(_admin_id: str = Depends(require_super_admin)) -> dict:
     openai_status = check_openai()
     google_status = check_google()
     anthropic_status = check_anthropic()
+    tavily_status = check_tavily()
 
     services: dict[str, str] = {}
     for name, result in (
@@ -59,6 +63,7 @@ def health_diagnostic(_admin_id: str = Depends(require_super_admin)) -> dict:
         ("openai", openai_status),
         ("google", google_status),
         ("anthropic", anthropic_status),
+        ("tavily", tavily_status),
     ):
         if result.get("ok"):
             services[name] = "ok"
@@ -70,7 +75,7 @@ def health_diagnostic(_admin_id: str = Depends(require_super_admin)) -> dict:
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "environment": settings.app_env,
-        "version": "285174d-restored",
+        "version": BUILD_VERSION,
         "web_public_url": settings.web_public_url,
         "api_public_url": settings.api_public_url,
         "cors_origins": settings.cors_origins,

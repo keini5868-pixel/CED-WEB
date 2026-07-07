@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -40,7 +41,8 @@ async def advanced_chat(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     try:
-        return send_advanced_message(
+        return await asyncio.to_thread(
+            send_advanced_message,
             user_id,
             message=body.message,
             history=[t.model_dump() for t in body.history],
