@@ -6,7 +6,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
@@ -16,6 +16,8 @@ from app.services.hud_life import (
     build_life_connections,
     build_life_dashboard,
     build_life_dashboard_fallback,
+    is_weather_cache_expired,
+    update_weather_cache,
 )
 
 logger = logging.getLogger(__name__)
@@ -72,10 +74,16 @@ async def health_detailed(_user_id: str = Depends(require_user_id)) -> dict:
 
 
 @router.get("/hud/life")
-async def hud_life(user_id: str = Depends(require_user_id)) -> dict:
+async def hud_life(
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(require_user_id),
+) -> dict:
     """Dashboard LIFE — clima, calendario, gmail, aire y polen."""
     try:
-        return build_life_dashboard(user_id)
+        snapshot = build_life_dashboard(user_id)
+        if is_weather_cache_expired(user_id):
+            background_tasks.add_task(update_weather_cache, user_id)
+        return snapshot
     except Exception as exc:  # noqa: BLE001
         logger.exception("[LIFE] error: %s", exc)
         return build_life_dashboard_fallback(user_id)

@@ -1,7 +1,7 @@
 import type { Session } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/client";
-import { apiUrl } from "@/lib/env";
+import { apiUrl, appUrl, PRODUCTION_WEB_URL } from "@/lib/env";
 import { parseApiJson } from "@/lib/api/http";
 
 export type GoogleConnectionStatus = {
@@ -15,7 +15,7 @@ const PENDING_LINK_KEY = "ced_pending_google_link";
 
 const GOOGLE_SCOPES: Record<GoogleLinkType, string> = {
   calendar:
-    "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly openid email profile",
   gmail:
     "https://www.googleapis.com/auth/gmail.readonly https://www.googleapis.com/auth/gmail.send https://www.googleapis.com/auth/gmail.compose https://www.googleapis.com/auth/gmail.modify",
 };
@@ -29,10 +29,11 @@ async function sessionAccessToken(): Promise<string | null> {
 }
 
 function dashboardRedirectUrl(): string {
-  if (typeof window !== "undefined") {
-    return `${window.location.origin}/dashboard`;
+  const base = appUrl();
+  if (base.includes("0.0.0.0") || base.includes("localhost:8080")) {
+    return `${PRODUCTION_WEB_URL}/dashboard`;
   }
-  return `${process.env.NEXT_PUBLIC_APP_URL?.trim() || "http://localhost:3000"}/dashboard`;
+  return `${base}/dashboard`;
 }
 
 async function waitForProviderSession(): Promise<Session | null> {

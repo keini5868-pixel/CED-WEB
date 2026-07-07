@@ -11,6 +11,7 @@ from app.services.hud_life import (
     clean_life_text,
     check_calendar_token,
     check_gmail_token,
+    update_weather_cache,
 )
 
 
@@ -45,6 +46,7 @@ def test_build_life_dashboard_structure():
                 "app.services.hud_life._gmail_section",
                 return_value={"connected": False, "unread_count": 0, "messages": [], "hint": "Conecte Gmail"},
             ):
+                update_weather_cache("user-1")
                 data = build_life_dashboard("user-1")
 
     assert "date_label" in data

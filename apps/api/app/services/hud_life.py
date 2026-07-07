@@ -41,6 +41,8 @@ _MONTHS_ES = (
     "Diciembre",
 )
 _DEFAULT_PLACE = "Charlotte NC"
+_WEATHER_CACHE_TTL = timedelta(minutes=30)
+_WEATHER_CACHE: dict[str, dict[str, Any]] = {}
 
 
 def clean_life_text(text: str) -> str:
@@ -208,6 +210,55 @@ def _fetch_web_sections(place: str) -> tuple[list[str], list[str], list[str]]:
     return results["weather"], results["air"], results["pollen"]
 
 
+def _weather_cache_key(user_id: str) -> str:
+    return (user_id or "").strip() or "__anon__"
+
+
+def is_weather_cache_expired(user_id: str) -> bool:
+    entry = _WEATHER_CACHE.get(_weather_cache_key(user_id))
+    if not entry:
+        return True
+    expires_at = entry.get("expires_at")
+    if not isinstance(expires_at, datetime):
+        return True
+    return datetime.now(timezone.utc) >= expires_at
+
+
+def update_weather_cache(user_id: str) -> None:
+    """Actualiza clima/aire/polen en background sin bloquear endpoints."""
+    from app.modules.environment_module import resolve_environment_place
+
+    place = resolve_environment_place(user_id, "") or _DEFAULT_PLACE
+    weather_lines, air_lines, pollen_lines = _fetch_web_sections(place)
+    _WEATHER_CACHE[_weather_cache_key(user_id)] = {
+        "place": place,
+        "weather_lines": weather_lines,
+        "air_lines": air_lines,
+        "pollen_lines": pollen_lines,
+        "updated_at": datetime.now(timezone.utc),
+        "expires_at": datetime.now(timezone.utc) + _WEATHER_CACHE_TTL,
+    }
+
+
+def _weather_snapshot(user_id: str) -> tuple[str, list[str], list[str], list[str], bool]:
+    entry = _WEATHER_CACHE.get(_weather_cache_key(user_id))
+    if not entry:
+        return (
+            _DEFAULT_PLACE,
+            ["Cargando clima…"],
+            ["Calidad del aire cargando…"],
+            ["Polen cargando…"],
+            True,
+        )
+    return (
+        str(entry.get("place") or _DEFAULT_PLACE),
+        list(entry.get("weather_lines") or ["Cargando clima…"]),
+        list(entry.get("air_lines") or ["Calidad del aire cargando…"]),
+        list(entry.get("pollen_lines") or ["Polen cargando…"]),
+        False,
+    )
+
+
 def _section_with_timeout(
     fn: Any,
     *,
@@ -253,18 +304,8 @@ def build_life_connections(user_id: str) -> dict[str, Any]:
 
 
 def build_life_dashboard(user_id: str) -> dict[str, Any]:
-    """Snapshot LIFE — cada sección tolera fallos parciales."""
-    from app.modules.environment_module import resolve_environment_place
-
-    place = resolve_environment_place(user_id, "") or _DEFAULT_PLACE
-
-    try:
-        weather_lines, air_lines, pollen_lines = _fetch_web_sections(place)
-    except Exception:  # noqa: BLE001
-        logger.warning("[LIFE] web sections failed user=%s", user_id[:8], exc_info=True)
-        weather_lines = ["Clima no disponible."]
-        air_lines = ["Calidad del aire no disponible."]
-        pollen_lines = ["Polen no disponible."]
+    """Snapshot LIFE inmediato — clima desde cache (sin bloquear event loop)."""
+    place, weather_lines, air_lines, pollen_lines, weather_loading = _weather_snapshot(user_id)
 
     calendar = _section_with_timeout(
         lambda: _calendar_section(user_id),
@@ -286,7 +327,7 @@ def build_life_dashboard(user_id: str) -> dict[str, Any]:
         "hint": "Conectar Gmail en CFG ⚙️",
     }
 
-    return {
+    payload = {
         "date_label": _date_label(),
         "place": place,
         "updated_at": datetime.now(timezone.utc).isoformat(),
@@ -296,6 +337,9 @@ def build_life_dashboard(user_id: str) -> dict[str, Any]:
         "air_quality": {"title": "CALIDAD DEL AIRE", "lines": air_lines},
         "pollen": {"title": "POLEN", "lines": pollen_lines},
     }
+    if weather_loading:
+        payload["weather_loading"] = True
+    return payload
 
 
 def build_life_dashboard_fallback(user_id: str = "") -> dict[str, Any]:
