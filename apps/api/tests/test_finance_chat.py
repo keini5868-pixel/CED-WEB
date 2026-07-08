@@ -1,0 +1,77 @@
+"""Tests — chat dedicado de finanzas: greeting, registro directo y routing."""
+
+from __future__ import annotations
+
+import json
+
+import app.services.finance_chat as fc
+
+
+def _collect_done(events: list[str]) -> dict:
+    for ev in events:
+        if ev.startswith("event: done"):
+            data_line = [ln for ln in ev.splitlines() if ln.startswith("data: ")][0]
+            return json.loads(data_line[6:])
+    raise AssertionError("no done event")
+
+
+def test_greeting_reply_instant():
+    out = fc.send_finance_message("u1", message="hola", history=[])
+    assert "finanzas" in out["response"].lower()
+    assert out["model"] == fc.FINANCE_STREAM_MODEL_LABEL
+
+
+def test_write_intent_registers(monkeypatch):
+    captured = {}
+
+    def fake_handle(user_id, text):
+        captured["text"] = text
+        return {"spoken": "Señor, registré un gasto de 50 USD en materiales."}
+
+    monkeypatch.setattr(fc, "handle_finance_query_sync", fake_handle)
+    out = fc.send_finance_message(
+        "u1", message="gasté 50 dólares en materiales hoy", history=[]
+    )
+    assert "registré" in out["response"].lower()
+    assert captured["text"].startswith("gasté")
+
+
+def test_stream_write_intent(monkeypatch):
+    monkeypatch.setattr(
+        fc,
+        "handle_finance_query_sync",
+        lambda user_id, text: {"spoken": "Señor, anoté un ingreso de 800 USD."},
+    )
+    events = list(
+        fc.iter_finance_message_stream(
+            "u1", message="recibí 800 dólares de un cliente", history=[]
+        )
+    )
+    done = _collect_done(events)
+    assert "ingreso" in done["response"].lower()
+
+
+def test_snapshot_injects_real_data(monkeypatch):
+    monkeypatch.setattr(
+        fc,
+        "summarize_finances",
+        lambda user_id, period="mes": {
+            "count": 1 if period == "mes" else 0,
+            "total_ingreso": 800.0,
+            "total_gasto": 80.0,
+            "balance": 720.0,
+            "period_label": "este mes",
+            "top_categories": [("materiales", 80.0)],
+        },
+    )
+    snap = fc._finance_snapshot("u1")
+    assert "DATOS REALES" in snap
+    assert "ingresos" in snap.lower()
+
+
+def test_snapshot_handles_errors(monkeypatch):
+    def boom(user_id, period="mes"):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(fc, "summarize_finances", boom)
+    assert fc._finance_snapshot("u1") == ""
