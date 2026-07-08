@@ -37,6 +37,7 @@ EXECUTION_MESSAGES: dict[str, str] = {
     "estado_navegacion": "Consultando ruta, señor",
     "registrar_movimiento_financiero": "Anotando el movimiento, señor",
     "consultar_finanzas": "Revisando sus finanzas, señor",
+    "consultar_pagos_pendientes": "Revisando sus pagos pendientes, señor",
 }
 
 TIMEOUT_MS: dict[str, int] = {
@@ -70,6 +71,7 @@ TIMEOUT_MS: dict[str, int] = {
     "buscar_lo_visible": 45_000,
     "registrar_movimiento_financiero": 12_000,
     "consultar_finanzas": 12_000,
+    "consultar_pagos_pendientes": 12_000,
 }
 
 

@@ -9,10 +9,14 @@ import pytest
 from app.services.finance_ledger import (
     aggregate_transactions,
     canonical_period,
+    format_pending_spoken,
     format_summary_spoken,
     normalize_amount,
+    normalize_status,
     normalize_type,
     period_range,
+    resolve_due_date,
+    today,
 )
 
 
@@ -106,6 +110,39 @@ def test_format_summary_spoken_with_data():
     assert "balance" in text.lower()
     assert "materiales" in text.lower()
     assert "a favor" in text.lower()
+
+
+def test_normalize_status():
+    assert normalize_status("pendiente") == "pendiente"
+    assert normalize_status("por pagar") == "pendiente"
+    assert normalize_status(None) == "pagado"
+    assert normalize_status("pagado") == "pagado"
+    assert normalize_status("cualquiera") == "pagado"
+
+
+def test_resolve_due_date_relative():
+    base = today()
+    assert resolve_due_date("hoy") == base
+    assert resolve_due_date("mañana") == base + timedelta(days=1)
+    lunes = resolve_due_date("lunes")
+    assert lunes is not None and lunes.weekday() == 0 and lunes > base
+    assert resolve_due_date("") is None
+    assert resolve_due_date("cualquier cosa") is None
+
+
+def test_format_pending_spoken_empty():
+    assert "no tiene pagos pendientes" in format_pending_spoken([]).lower()
+
+
+def test_format_pending_spoken_with_rows():
+    rows = [
+        {"amount": 850, "currency": "USD", "category": None, "due_date": "2026-07-13"},
+        {"amount": 300, "currency": "USD", "category": "mercado", "due_date": "2026-07-10"},
+    ]
+    text = format_pending_spoken(rows)
+    assert "2 pagos pendientes" in text
+    assert "1,150" in text
+    assert "mercado" in text
 
 
 def test_format_summary_spoken_deficit():

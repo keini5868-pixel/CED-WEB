@@ -33,6 +33,7 @@ _TOOL_ACK: dict[str, str] = {
     "buscar_lo_visible": "Analizando, señor.",
     "registrar_movimiento_financiero": "Anotando el movimiento, señor.",
     "consultar_finanzas": "Revisando sus finanzas, señor.",
+    "consultar_pagos_pendientes": "Revisando sus pagos pendientes, señor.",
 }
 
 _TOOL_FALLBACK: dict[str, str] = {
@@ -44,6 +45,7 @@ _TOOL_FALLBACK: dict[str, str] = {
     "publicar_facebook": "No pude publicar en Facebook, señor.",
     "registrar_movimiento_financiero": "No pude anotar el movimiento, señor. ¿Lo repite?",
     "consultar_finanzas": "No pude revisar sus finanzas, señor. ¿Lo intento de nuevo?",
+    "consultar_pagos_pendientes": "No pude revisar sus pagos pendientes, señor.",
 }
 
 

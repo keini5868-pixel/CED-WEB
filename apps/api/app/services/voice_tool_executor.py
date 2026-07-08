@@ -870,6 +870,8 @@ async def _execute_voice_tool_body(
             ).strip() or None
             fecha = params.get("fecha") or params.get("occurred_on")
             moneda = str(params.get("moneda") or params.get("currency") or "USD").strip() or "USD"
+            estado = str(params.get("estado") or params.get("status") or "pagado").strip()
+            vencimiento = params.get("fecha_vencimiento") or params.get("due_date")
             try:
                 saved = await asyncio.to_thread(
                     save_transaction,
@@ -880,6 +882,8 @@ async def _execute_voice_tool_body(
                     description=descripcion,
                     occurred_on=fecha,
                     currency=moneda,
+                    status=estado,
+                    due_date=vencimiento,
                 )
             except ValueError as exc:
                 return _spoken_err(
@@ -891,12 +895,29 @@ async def _execute_voice_tool_body(
                     "No pude guardar el movimiento, señor. La base de finanzas puede no estar lista.",
                     error="finance_save_failed",
                 )
+            if saved.get("status") == "pendiente":
+                cat_txt = f" para {saved.get('category')}" if saved.get("category") else ""
+                return _spoken_ok(
+                    f"Señor, anoté un pago pendiente de {saved.get('amount')} "
+                    f"{saved.get('currency', 'USD')}{cat_txt}. Se lo recordaré."
+                )
             kind = "ingreso" if saved.get("type") == "ingreso" else "gasto"
             cat_txt = f" en {saved.get('category')}" if saved.get("category") else ""
             return _spoken_ok(
                 f"Señor, registré un {kind} de {saved.get('amount')} "
                 f"{saved.get('currency', 'USD')}{cat_txt}."
             )
+
+        if name == "consultar_pagos_pendientes":
+            from app.services.finance_ledger import (
+                format_pending_spoken,
+                list_pending_payments,
+            )
+
+            rows = await asyncio.to_thread(list_pending_payments, user_id)
+            payload = _spoken_ok(format_pending_spoken(rows))
+            payload["pending"] = rows
+            return payload
 
         if name == "consultar_finanzas":
             from app.services.finance_ledger import (

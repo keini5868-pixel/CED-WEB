@@ -583,6 +583,21 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
                     "type": "string",
                     "description": "Opcional: hoy, ayer o YYYY-MM-DD (default hoy)",
                 },
+                "estado": {
+                    "type": "string",
+                    "enum": ["pagado", "pendiente"],
+                    "description": (
+                        "pagado = gasto/ingreso ya realizado; pendiente = compromiso "
+                        "de pago a futuro (ej. 'tengo que pagar 850 el lunes')"
+                    ),
+                },
+                "fecha_vencimiento": {
+                    "type": "string",
+                    "description": (
+                        "Solo si estado=pendiente: cuándo vence. Ej: lunes, mañana, "
+                        "viernes o YYYY-MM-DD"
+                    ),
+                },
                 "moneda": {
                     "type": "string",
                     "description": "Opcional, default USD",
@@ -590,6 +605,16 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
             },
             "required": ["tipo", "monto"],
         },
+    },
+    {
+        "type": "function",
+        "name": "consultar_pagos_pendientes",
+        "description": (
+            "Lista los pagos pendientes/programados del usuario (compromisos a futuro). "
+            "Usar cuando diga: qué tengo que pagar, cuánto debo, mis pagos pendientes, "
+            "qué pagos tengo esta semana."
+        ),
+        "parameters": {"type": "object", "properties": {}},
     },
     {
         "type": "function",

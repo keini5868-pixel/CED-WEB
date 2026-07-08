@@ -8,7 +8,10 @@ import re
 from app.modules.base_module import BaseModule
 from app.services.finance_ledger import (
     canonical_period,
+    format_pending_spoken,
     format_summary_spoken,
+    list_pending_payments,
+    resolve_due_date,
     save_transaction,
     summarize_finances,
 )
@@ -67,6 +70,23 @@ _FINANCE_CONTEXT = re.compile(
     r"(finanzas|dinero|plata|gast|ingres|ahorr|presupuesto|balance|deuda|financ)", re.I
 )
 
+# Pagos pendientes / programados (compromisos a futuro, no gastos ya hechos).
+_PENDING_TRIGGER = re.compile(
+    r"\b(tengo\s+que\s+pagar|debo\s+pagar|hay\s+que\s+pagar|tengo\s+un\s+pago|"
+    r"pago\s+pendiente|pagos?\s+pendientes?|por\s+pagar|dejar?\s+programad)\b",
+    re.I,
+)
+_PENDING_QUERY = re.compile(
+    r"\b(pagos?\s+pendientes?|qu[eé]\s+(?:tengo\s+que|debo)\s+pagar|"
+    r"cu[áa]nto\s+debo|qu[eé]\s+pagos?\s+tengo|mis\s+pagos)\b",
+    re.I,
+)
+_DAY_TOKEN = re.compile(
+    r"\b(hoy|ma[nñ]ana|pasado\s+ma[nñ]ana|lunes|martes|mi[eé]rcoles|jueves|"
+    r"viernes|s[áa]bado|domingo|\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?)\b",
+    re.I,
+)
+
 _TIME_TAIL_RE = re.compile(
     r"\s+(hoy|ayer|esta\s+ma[ñn]ana|esta\s+tarde|esta\s+noche|"
     r"este\s+mes|esta\s+semana|el\s+lunes|el\s+martes)\b.*$",
@@ -111,8 +131,81 @@ def is_finance_query_intent(text: str) -> bool:
     return False
 
 
+def is_finance_pending_query(text: str) -> bool:
+    t = (text or "").strip()
+    return bool(_PENDING_QUERY.search(t)) and not _AMOUNT_RE.search(t)
+
+
+def is_finance_pending_write(text: str) -> bool:
+    t = (text or "").strip()
+    if len(t) < 8:
+        return False
+    return bool(_PENDING_TRIGGER.search(t)) and bool(_AMOUNT_RE.search(t))
+
+
 def is_finance_intent(text: str) -> bool:
-    return is_finance_write_intent(text) or is_finance_query_intent(text)
+    return (
+        is_finance_write_intent(text)
+        or is_finance_query_intent(text)
+        or is_finance_pending_write(text)
+        or is_finance_pending_query(text)
+    )
+
+
+def parse_pending_statements(text: str) -> list[dict[str, object]]:
+    """Extrae uno o varios compromisos de pago futuros de una frase.
+
+    Ej: 'el lunes tengo que pagar 850, el miércoles 300, el viernes 300 para el mercado'
+    """
+    t = (text or "").strip()
+    if not t:
+        return []
+    clauses = re.split(r"\s*(?:,|;|\by\b)\s*", t)
+    results: list[dict[str, object]] = []
+    last_day: str | None = None
+    for clause in clauses:
+        clause = clause.strip()
+        if not clause:
+            continue
+        amount_match = _AMOUNT_RE.search(clause)
+        if not amount_match:
+            continue
+        raw_amount = amount_match.group(1)
+        normalized = _normalize_amount_str(raw_amount)
+        day_match = _DAY_TOKEN.search(clause)
+        day_text = day_match.group(1) if day_match else last_day
+        if day_match:
+            last_day = day_match.group(1)
+        due = resolve_due_date(day_text) if day_text else None
+        cat_match = re.search(r"\b(?:para|de|en)\s+(?:el\s+|la\s+|un[ao]?\s+)?(.+?)$", clause, re.I)
+        category = None
+        if cat_match:
+            cat = _TIME_TAIL_RE.sub("", cat_match.group(1)).strip(" .,")
+            cat = _DAY_TOKEN.sub("", cat).strip(" .,")
+            if 2 <= len(cat) <= 60:
+                category = cat
+        results.append(
+            {
+                "amount": normalized,
+                "category": category,
+                "due_date": due.isoformat() if due else None,
+                "description": clause[:400],
+            }
+        )
+    return results
+
+
+def _normalize_amount_str(raw_amount: str) -> str:
+    normalized = raw_amount
+    if "," in normalized and "." in normalized:
+        if normalized.rfind(",") > normalized.rfind("."):
+            normalized = normalized.replace(".", "").replace(",", ".")
+        else:
+            normalized = normalized.replace(",", "")
+    elif "," in normalized:
+        parts = normalized.split(",")
+        normalized = normalized.replace(",", ".") if len(parts[-1]) <= 2 else normalized.replace(",", "")
+    return normalized
 
 
 def parse_finance_statement(text: str) -> dict[str, object] | None:
@@ -176,9 +269,62 @@ def _confirm_spoken(saved: dict[str, object]) -> str:
     return f"Señor, {verb} un {kind} de {amount} {currency}{tail}."
 
 
+def _confirm_pending_spoken(saved: list[dict[str, object]]) -> str:
+    if not saved:
+        return "Señor, no entendí el pago pendiente. ¿Me lo repite con monto y día?"
+    total = 0.0
+    for s in saved:
+        try:
+            total += float(str(s.get("amount") or 0))
+        except (TypeError, ValueError):
+            pass
+    if len(saved) == 1:
+        from app.services.finance_ledger import _fmt_due
+
+        s = saved[0]
+        cat = s.get("category")
+        cat_txt = f" para {cat}" if cat else ""
+        due_raw = s.get("due_date")
+        due = _fmt_due(due_raw) if due_raw else "la fecha indicada"
+        return f"Señor, anoté un pago pendiente de {s.get('amount')}{cat_txt} para {due}."
+    return (
+        f"Señor, registré {len(saved)} pagos pendientes por un total de "
+        f"{total:,.2f}. Se los recordaré."
+    )
+
+
 def handle_finance_query_sync(user_id: str, text: str) -> dict[str, str]:
     """Registra un movimiento o devuelve el resumen — usado por chat y voz."""
     try:
+        if is_finance_pending_query(text):
+            rows = list_pending_payments(user_id)
+            return {"spoken": format_pending_spoken(rows)}
+
+        if is_finance_pending_write(text):
+            statements = parse_pending_statements(text)
+            saved_list: list[dict[str, object]] = []
+            for st in statements:
+                saved = save_transaction(
+                    user_id,
+                    tx_type="gasto",
+                    amount=st["amount"],
+                    category=st.get("category"),  # type: ignore[arg-type]
+                    description=st.get("description"),  # type: ignore[arg-type]
+                    status="pendiente",
+                    due_date=st.get("due_date"),
+                )
+                if saved.get("ok"):
+                    saved.setdefault("category", st.get("category"))
+                    saved_list.append(saved)
+            if saved_list:
+                return {"spoken": _confirm_pending_spoken(saved_list)}
+            return {
+                "spoken": (
+                    "Señor, no pude guardar los pagos pendientes. "
+                    "Revise que la base de datos de finanzas esté lista."
+                )
+            }
+
         if is_finance_write_intent(text):
             parsed = parse_finance_statement(text)
             if parsed:

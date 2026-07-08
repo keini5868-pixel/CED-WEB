@@ -9,6 +9,8 @@ from typing import Any, Iterator
 
 from app.modules.finance_module import (
     handle_finance_query_sync,
+    is_finance_pending_query,
+    is_finance_pending_write,
     is_finance_query_intent,
     is_finance_write_intent,
 )
@@ -22,7 +24,9 @@ from app.services.claude_advanced import (
 from app.services.deliverable_replies import CHAT_DELIVERABLE_RULES
 from app.services.finance_ledger import (
     canonical_period,
+    format_pending_spoken,
     format_summary_spoken,
+    list_pending_payments,
     summarize_finances,
 )
 from app.services.system_clock import clock_context_block, try_instant_datetime_reply
@@ -49,6 +53,8 @@ Hablas español latinoamericano.
 
 TU ROL EN FINANZAS:
 - Ayudas a registrar gastos e ingresos, analizar el historial y crear planes de ahorro realistas.
+- También registras PAGOS PENDIENTES (compromisos a futuro, ej. "el lunes tengo que pagar 850")
+  con su fecha de vencimiento, para recordárselos al usuario.
 - SIEMPRE basas tus análisis y consejos en los DATOS REALES del usuario que se te proveen abajo.
 - NUNCA inventes cifras. Si no hay datos suficientes, dilo y pide registrar movimientos.
 - Cuando el usuario declare un gasto/ingreso (ej. "gasté 50 en materiales"), confirma que quedó registrado.
@@ -117,6 +123,12 @@ def _finance_snapshot(user_id: str) -> str:
     lines.append("- " + format_summary_spoken(this_month))
     if last_month.get("count"):
         lines.append("- Mes pasado: " + format_summary_spoken(last_month))
+    try:
+        pending = list_pending_payments(user_id)
+        if pending:
+            lines.append("- Pagos pendientes: " + format_pending_spoken(pending))
+    except Exception:  # noqa: BLE001
+        pass
     return "\n".join(lines)
 
 
@@ -161,8 +173,12 @@ def send_finance_message(
     if greeting:
         return _finish_payload(response=greeting, model=FINANCE_STREAM_MODEL_LABEL)
 
-    # Registro directo y determinista de un movimiento.
-    if is_finance_write_intent(text):
+    # Registro directo y determinista de un movimiento o pago pendiente.
+    if (
+        is_finance_write_intent(text)
+        or is_finance_pending_write(text)
+        or is_finance_pending_query(text)
+    ):
         return _register_movement(user_id, text)
 
     anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=False)
@@ -244,7 +260,11 @@ def iter_finance_message_stream(
         )
         return
 
-    if is_finance_write_intent(text):
+    if (
+        is_finance_write_intent(text)
+        or is_finance_pending_write(text)
+        or is_finance_pending_query(text)
+    ):
         payload = _register_movement(user_id, text)
         yield _sse_event("token", {"text": payload["response"]})
         yield _sse_event("done", payload)

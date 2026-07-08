@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from app.modules.finance_module import (
     is_finance_intent,
+    is_finance_pending_query,
+    is_finance_pending_write,
     is_finance_query_intent,
     is_finance_write_intent,
     parse_finance_statement,
+    parse_pending_statements,
 )
 
 
@@ -89,6 +92,71 @@ def test_handle_query_uses_summary(monkeypatch):
     )
     out = fm.handle_finance_query_sync("user-1", "cómo voy este mes")
     assert "ingresos" in out["spoken"].lower()
+
+
+def test_pending_write_intent():
+    assert is_finance_pending_write("tengo que pagar 850 el lunes")
+    assert is_finance_pending_write("el viernes debo pagar 300 para el mercado")
+    assert not is_finance_pending_write("tengo que pagar mucho")
+    assert not is_finance_pending_write("gasté 50 en materiales")
+
+
+def test_pending_query_intent():
+    assert is_finance_pending_query("qué tengo que pagar")
+    assert is_finance_pending_query("cuánto debo")
+    assert is_finance_pending_query("pagos pendientes")
+    assert not is_finance_pending_query("tengo que pagar 850 el lunes")
+
+
+def test_pending_not_confused_with_immediate():
+    assert not is_finance_write_intent("tengo que pagar 850 el lunes")
+
+
+def test_parse_pending_multiple():
+    parsed = parse_pending_statements(
+        "el lunes tengo que pagar 850, el miércoles 300, el viernes 300 para el mercado"
+    )
+    assert len(parsed) == 3
+    assert parsed[0]["amount"] == "850"
+    assert parsed[2]["amount"] == "300"
+    assert parsed[2]["category"] == "mercado"
+    assert all(p["due_date"] for p in parsed)
+
+
+def test_handle_pending_query(monkeypatch):
+    import app.modules.finance_module as fm
+
+    monkeypatch.setattr(
+        fm,
+        "list_pending_payments",
+        lambda user_id: [
+            {"amount": 850, "currency": "USD", "category": None, "due_date": "2026-07-13"}
+        ],
+    )
+    out = fm.handle_finance_query_sync("u1", "qué tengo que pagar")
+    assert "pendiente" in out["spoken"].lower()
+
+
+def test_handle_pending_write(monkeypatch):
+    import app.modules.finance_module as fm
+
+    saved_calls = []
+
+    def fake_save(user_id, **kwargs):
+        saved_calls.append(kwargs)
+        return {
+            "ok": True,
+            "amount": kwargs["amount"],
+            "category": kwargs.get("category"),
+            "status": "pendiente",
+            "due_date": kwargs.get("due_date"),
+        }
+
+    monkeypatch.setattr(fm, "save_transaction", fake_save)
+    out = fm.handle_finance_query_sync("u1", "el lunes tengo que pagar 850, el martes 300")
+    assert len(saved_calls) == 2
+    assert all(c["status"] == "pendiente" for c in saved_calls)
+    assert "pendiente" in out["spoken"].lower()
 
 
 def test_handle_write_saves(monkeypatch):

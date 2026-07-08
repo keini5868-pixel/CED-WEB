@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -42,6 +43,48 @@ def _tz() -> ZoneInfo | None:
 def _today() -> date:
     tz = _tz()
     return datetime.now(tz).date() if tz else datetime.now().date()
+
+
+def today() -> date:
+    """Fecha local del usuario (zona de finanzas)."""
+    return _today()
+
+
+_WEEKDAYS: dict[str, int] = {
+    "lunes": 0, "martes": 1, "miercoles": 2, "miércoles": 2, "jueves": 3,
+    "viernes": 4, "sabado": 5, "sábado": 5, "domingo": 6,
+}
+
+
+def resolve_due_date(text: str) -> date | None:
+    """Convierte 'el lunes', 'mañana', 'hoy' o una fecha explícita en un date futuro."""
+    t = (text or "").strip().lower()
+    if not t:
+        return None
+    base = _today()
+    if re.search(r"\bhoy\b", t):
+        return base
+    if re.search(r"\bma[nñ]ana\b", t):
+        return base + timedelta(days=1)
+    if re.search(r"pasado\s+ma[nñ]ana", t):
+        return base + timedelta(days=2)
+    for name, weekday in _WEEKDAYS.items():
+        if re.search(rf"\b{re.escape(name)}\b", t):
+            delta = (weekday - base.weekday()) % 7
+            if delta == 0:
+                delta = 7  # el próximo, no hoy
+            return base + timedelta(days=delta)
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d/%m", "%d-%m"):
+        try:
+            parsed = datetime.strptime(t, fmt).date()
+            if fmt in ("%d/%m", "%d-%m"):
+                parsed = parsed.replace(year=base.year)
+                if parsed < base:
+                    parsed = parsed.replace(year=base.year + 1)
+            return parsed
+        except ValueError:
+            continue
+    return None
 
 
 def normalize_type(raw: str | None) -> str:
@@ -122,6 +165,13 @@ def canonical_period(period: str | None) -> str:
     return mapping.get(key, "mes")
 
 
+def normalize_status(raw: str | None) -> str:
+    s = (raw or "pagado").strip().lower()
+    if s in ("pendiente", "pending", "programado", "por pagar"):
+        return "pendiente"
+    return "pagado"
+
+
 def save_transaction(
     user_id: str,
     *,
@@ -131,6 +181,8 @@ def save_transaction(
     description: str | None = None,
     occurred_on: Any = None,
     currency: str = "USD",
+    status: str = "pagado",
+    due_date: Any = None,
 ) -> dict[str, Any]:
     """Guarda un movimiento; devuelve {ok, id, ...} o {ok: False, error}."""
     kind = normalize_type(tx_type)
@@ -139,8 +191,16 @@ def save_transaction(
     cat = (category or "").strip()[:MAX_CATEGORY] or None
     desc = (description or "").strip()[:MAX_DESCRIPTION] or None
     cur = (currency or "USD").strip().upper()[:8] or "USD"
+    state = normalize_status(status)
 
-    row = {
+    due: date | None = None
+    if state == "pendiente":
+        if isinstance(due_date, date):
+            due = due_date
+        elif due_date:
+            due = resolve_due_date(str(due_date))
+
+    row: dict[str, Any] = {
         "user_id": user_id,
         "type": kind,
         "amount": value,
@@ -148,6 +208,8 @@ def save_transaction(
         "category": cat,
         "description": desc,
         "occurred_on": day.isoformat(),
+        "status": state,
+        "due_date": due.isoformat() if due else None,
     }
     try:
         result = _client().table("finance_transactions").insert(row).execute()
@@ -156,12 +218,15 @@ def save_transaction(
             supabase_db.log_ced_activity(
                 user_id,
                 "finance_save",
-                detail=f"{kind}:{value}",
+                detail=f"{state}:{kind}:{value}",
                 meta={"category": cat or "general"},
             )
         except Exception:  # noqa: BLE001
             pass
-        logger.info("[FINANCE] save user=%s type=%s amount=%s", user_id[:8], kind, value)
+        logger.info(
+            "[FINANCE] save user=%s type=%s amount=%s status=%s",
+            user_id[:8], kind, value, state,
+        )
         return {
             "ok": True,
             "id": saved.get("id"),
@@ -170,13 +235,75 @@ def save_transaction(
             "currency": cur,
             "category": cat,
             "occurred_on": day.isoformat(),
+            "status": state,
+            "due_date": due.isoformat() if due else None,
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("[FINANCE] save failed %s", exc)
         return {
             "ok": False,
-            "error": "Ejecute la migración 021_finance_transactions.sql en Supabase",
+            "error": "Ejecute las migraciones 021 y 022 de finanzas en Supabase",
         }
+
+
+def list_pending_payments(user_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+    """Pagos pendientes ordenados por fecha de vencimiento."""
+    try:
+        result = (
+            _client()
+            .table("finance_transactions")
+            .select("id, type, amount, currency, category, description, due_date, occurred_on")
+            .eq("user_id", user_id)
+            .eq("status", "pendiente")
+            .order("due_date", desc=False)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[FINANCE] list pending failed %s", exc)
+        return []
+
+
+def mark_payment_paid(user_id: str, *, payment_id: str) -> dict[str, Any]:
+    try:
+        _client().table("finance_transactions").update(
+            {"status": "pagado", "occurred_on": _today().isoformat()}
+        ).eq("user_id", user_id).eq("id", payment_id).execute()
+        return {"ok": True}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[FINANCE] mark paid failed %s", exc)
+        return {"ok": False}
+
+
+def _fmt_due(due_raw: Any) -> str:
+    if not due_raw:
+        return "sin fecha"
+    try:
+        d = due_raw if isinstance(due_raw, date) else datetime.strptime(str(due_raw), "%Y-%m-%d").date()
+    except ValueError:
+        return str(due_raw)
+    dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
+    return f"{dias[d.weekday()]} {d.day:02d}/{d.month:02d}"
+
+
+def format_pending_spoken(rows: list[dict[str, Any]], *, currency: str = "USD") -> str:
+    if not rows:
+        return "Señor, no tiene pagos pendientes registrados."
+    total = 0.0
+    parts: list[str] = []
+    for r in rows[:8]:
+        try:
+            amt = float(r.get("amount") or 0)
+        except (TypeError, ValueError):
+            amt = 0.0
+        total += amt
+        cur = str(r.get("currency") or currency)
+        cat = str(r.get("category") or "").strip()
+        cat_txt = f" para {cat}" if cat else ""
+        parts.append(f"{amt:,.2f} {cur}{cat_txt} el {_fmt_due(r.get('due_date'))}")
+    joined = "; ".join(parts)
+    return f"Señor, tiene {len(rows)} pagos pendientes por {total:,.2f} {currency}: {joined}."
 
 
 def list_transactions(
@@ -184,15 +311,18 @@ def list_transactions(
     *,
     since: date | None = None,
     until: date | None = None,
+    status: str | None = "pagado",
     limit: int = 200,
 ) -> list[dict[str, Any]]:
     try:
         query = (
             _client()
             .table("finance_transactions")
-            .select("id, type, amount, currency, category, description, occurred_on")
+            .select("id, type, amount, currency, category, description, occurred_on, status")
             .eq("user_id", user_id)
         )
+        if status is not None:
+            query = query.eq("status", status)
         if since is not None:
             query = query.gte("occurred_on", since.isoformat())
         if until is not None:
@@ -242,7 +372,7 @@ def aggregate_transactions(rows: list[dict[str, Any]]) -> dict[str, Any]:
 def summarize_finances(user_id: str, *, period: str | None = "mes") -> dict[str, Any]:
     canon = canonical_period(period)
     since, until = period_range(canon)
-    rows = list_transactions(user_id, since=since, until=until, limit=500)
+    rows = list_transactions(user_id, since=since, until=until, status="pagado", limit=500)
     summary = aggregate_transactions(rows)
     summary["period"] = canon
     summary["period_label"] = PERIOD_LABELS.get(canon, "este mes")

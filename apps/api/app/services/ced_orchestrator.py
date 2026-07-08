@@ -122,6 +122,9 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\bmis\s+finanzas\b",
         r"\bplan\s+de\s+ahorro\b",
         r"\bcu[áa]nto\s+(?:he\s+)?gast[ée]\b",
+        r"\b(tengo\s+que\s+pagar|debo\s+pagar|hay\s+que\s+pagar)\b.*\d",
+        r"\bpagos?\s+pendientes?\b",
+        r"\bcu[áa]nto\s+debo\b",
     ),
 }
 
