@@ -246,9 +246,16 @@ def detect_module(
             return detected
         return active_module
 
+    if is_calendar_intent(text):
+        return "calendar"
+
+    if is_gmail_intent(text):
+        return "gmail"
+
     if resolve_navigation_confirm(text, transcript, user_id=user_id):
         return "map"
-    if resolve_navigation_place_search(text, transcript) or resolve_open_map_request(text):
+    nav_place = resolve_navigation_place_search(text, transcript)
+    if nav_place or resolve_open_map_request(text):
         return "map"
 
     if is_camera_activation_intent(text) or resolve_camera_voice_request(text):
@@ -259,12 +266,6 @@ def detect_module(
 
     if resolve_social_comments_request(text):
         return "publish"
-
-    if is_calendar_intent(text):
-        return "calendar"
-
-    if is_gmail_intent(text):
-        return "gmail"
 
     if is_environment_intent(text):
         return "environment"

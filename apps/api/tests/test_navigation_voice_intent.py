@@ -46,6 +46,12 @@ def test_walmart_explicit():
     assert extract_place_query("busca Walmart cerca") == "Walmart"
 
 
+def test_conversational_ir_a_not_navigation():
+    assert extract_place_query("quiero ir a contarte algo") is None
+    assert resolve_navigation_place_search("quiero ir a dormir", []) is None
+    assert resolve_navigation_place_search("léeme mis correos", []) is None
+
+
 def test_is_navigation_confirm_phrases():
     assert is_navigation_confirm("sí")
     assert is_navigation_confirm("dale")

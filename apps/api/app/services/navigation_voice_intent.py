@@ -54,6 +54,45 @@ _STRIP_FILLERS = re.compile(
     re.I,
 )
 
+# Frases conversacionales tras "ir a / quiero …" — no son destinos GPS.
+_NON_PLACE_HEAD = re.compile(
+    r"^(?:"
+    r"dormir|contar(?:te|le)?|decir(?:te|le)?|hablar|explicar(?:te|le)?|"
+    r"preguntar(?:te|le)?|saber|comentar(?:te|le)?|mostrar(?:te|le)?|"
+    r"revisar|ver(?:te|le)?|escuchar|ayudar(?:te|le)?|contarte|"
+    r"mis\s+correos|mis\s+emails|el\s+correo"
+    r")\b",
+    re.I,
+)
+
+_QUESTION_ONLY = re.compile(r"^\s*¿.+?\?\s*$")
+
+
+def _has_navigation_context(*, text: str, ctx: str = "", agent_last: str = "") -> bool:
+    blob = f"{text} {ctx} {agent_last}"
+    if _NAV_CONTEXT.search(blob):
+        return True
+    if _OPEN_MAP.search(blob):
+        return True
+    if _AGENT_ASK_START.search(agent_last):
+        return True
+    if _WALMART_HINT.search(text):
+        return True
+    return False
+
+
+def _is_valid_place_candidate(place: str, *, text: str, ctx: str = "") -> bool:
+    if not place or len(place) < 2:
+        return False
+    if _NON_PLACE_HEAD.match(place.strip()):
+        return False
+    blob = f"{text} {ctx}"
+    if re.search(r"\b(?:alg[uú]n|alguna|un|una)\s+", text, re.I):
+        if not re.search(r"\bcercan[oa]s?\b", blob, re.I) and not _WALMART_HINT.search(text):
+            if not _should_correct_arma_to_walmart(text, context=ctx):
+                return False
+    return True
+
 
 def _normalize(text: str) -> str:
     return " ".join((text or "").strip().lower().split())
@@ -115,13 +154,13 @@ def extract_place_query(user_text: str) -> str | None:
     m = _EXTRACT_PLACE.search(text)
     if m:
         place = normalize_navigation_query(m.group("place").strip(), context=text)
-        if len(place) >= 2:
+        if _is_valid_place_candidate(place, text=text):
             return place
 
     if _ARMA_WALMART.search(text) and _NAV_CONTEXT.search(text):
         return "Walmart"
 
-    if _WALMART_HINT.search(text):
+    if _WALMART_HINT.search(text) and _NAV_CONTEXT.search(text):
         return "Walmart"
 
     # "Walmart más cercano" sin verbo
@@ -141,6 +180,8 @@ def extract_place_query(user_text: str) -> str | None:
 def resolve_open_map_request(user_text: str) -> bool:
     text = (user_text or "").strip()
     if not text:
+        return False
+    if _QUESTION_ONLY.match(text) and not _OPEN_MAP.search(text):
         return False
     norm = _normalize(text)
     if norm in {"mapa", "activar mapa", "abre mapa", "abrir mapa", "modo conducir"}:
@@ -177,6 +218,9 @@ def resolve_navigation_place_search(
         # "algún arma más cercano" suelto
         if _should_correct_arma_to_walmart(last, context=ctx):
             return {"query": "Walmart", "open_map": "true"}
+        return None
+
+    if not _has_navigation_context(text=last, ctx=ctx, agent_last=agent_last):
         return None
 
     place = normalize_navigation_query(place, context=f"{last} {ctx}")
