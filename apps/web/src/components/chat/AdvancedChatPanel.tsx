@@ -287,7 +287,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   return (
     <div className="fixed inset-0 z-[155] flex items-end justify-center overflow-x-hidden bg-black/55 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
       <div className="box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-violet-500/35 bg-[#08060f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-lg sm:rounded-2xl">
-        <header className="flex shrink-0 items-center justify-between border-b border-violet-500/25 px-4 py-3">
+        <header className="flex shrink-0 items-center justify-between border-b border-violet-500/25 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
           <div className="flex min-w-0 items-center gap-2">
             <Brain className="h-4 w-4 shrink-0 text-violet-300" />
             <div className="min-w-0">
@@ -362,7 +362,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
           <p className="mx-4 mb-2 text-[11px] text-red-400">{error}</p>
         ) : null}
 
-        <footer className="shrink-0 border-t border-violet-500/20 p-3">
+        <footer className="relative z-10 shrink-0 border-t border-violet-500/20 bg-[#08060f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
           <div className="flex gap-2">
             <textarea
               ref={textareaRef}
@@ -377,7 +377,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
               rows={3}
               placeholder="Análisis, PDF, imágenes o prompts largos…"
               disabled={configured === false}
-              className="min-h-[56px] max-h-40 flex-1 resize-y rounded border border-violet-900/50 bg-black/60 px-3 py-2 text-[12px] text-violet-50 placeholder:text-violet-700 focus:border-violet-500/50 focus:outline-none"
+              className="min-h-[56px] max-h-40 flex-1 resize-y rounded border border-violet-900/50 bg-black/60 px-3 py-2 text-base text-violet-50 placeholder:text-violet-700 focus:border-violet-500/50 focus:outline-none disabled:opacity-50 sm:text-[12px]"
             />
             <button
               type="button"
