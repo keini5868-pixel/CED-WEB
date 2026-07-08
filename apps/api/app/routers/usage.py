@@ -92,7 +92,10 @@ async def session_tick(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     meta = _active_sessions.get(body.session_id)
-    if not meta or meta.get("user_id") != user_id:
+    # Tras un redeploy, _active_sessions (en memoria) se vacía. No cortes la voz
+    # por eso: si no hay meta pero el usuario es válido, contabiliza igual el tick
+    # de forma best-effort en vez de devolver 404 (que el frontend ve como error).
+    if meta and meta.get("user_id") != user_id:
         raise HTTPException(status_code=404, detail="Sesión no encontrada")
 
     minutes = body.seconds / 60.0
@@ -103,8 +106,24 @@ async def session_tick(
             minutes,
             session_id=body.session_id,
         )
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — telemetría de uso: nunca 500
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "[USAGE] add_usage_minutes fallo (best-effort) session=%s: %s",
+            body.session_id,
+            exc,
+        )
+        # Respuesta segura sin más llamadas a DB: no bloquear la voz por telemetría.
+        return {
+            "used_minutes_today": 0,
+            "plan_minutes_daily": 0,
+            "blocked": False,
+            "access_denied": False,
+            "usage_percent": 0,
+            "warning_level": None,
+            "should_disconnect": False,
+        }
 
     state = await voice_access_state_async(user_id)
     warning = _usage_warning(state.get("usage_percent", 0), state.get("blocked", False))

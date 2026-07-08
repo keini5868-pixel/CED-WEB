@@ -18,7 +18,11 @@ from app.services.cognitive_intents import (
     is_web_research_intent,
 )
 from app.services.gemini_voice_llm import GeminiVoiceLlm
-from app.services.retell_call_registry import release_call_user, resolve_call_user
+from app.services.retell_call_registry import (
+    bind_call_user,
+    release_call_user,
+    resolve_call_user,
+)
 from app.services.retell_custom_llm import (
     format_web_delivery,
     is_casual_conversation,
@@ -92,6 +96,43 @@ GPS_INSTRUCTION_CHANNEL = "navigation_instruction"
 
 _turn_filler_sent: dict[str, bool] = {}
 _turn_handled: dict[str, bool] = {}
+_api_uid_lookups: set[str] = set()
+
+
+async def resolve_call_user_robust(
+    call_id: str, payload: dict[str, Any] | None = None
+) -> str | None:
+    """Resuelve user_id con fallback a la API de Retell.
+
+    El registro call_id→user_id vive en memoria y se pierde si la API reinicia
+    (redeploy). Sin esto, las tools de voz fallan con "no identifiqué al usuario".
+    Ante un fallo del registro, recupera el user_id desde la metadata de la
+    llamada vía la API de Retell y lo re-vincula. Se intenta una sola vez por
+    llamada para no añadir latencia repetida.
+    """
+    uid = resolve_call_user(call_id, payload)
+    if uid:
+        return uid
+    cid = (call_id or "").strip()
+    if not cid or cid in _api_uid_lookups:
+        return None
+    _api_uid_lookups.add(cid)
+    try:
+        from app.services.retell_client import get_retell_client
+
+        client = get_retell_client()
+        if not client:
+            return None
+        detail = await asyncio.to_thread(client.call.retrieve, call_id=cid)
+        meta = getattr(detail, "metadata", None) or {}
+        val = str(meta.get("user_id") or meta.get("userId") or "").strip()
+        if val:
+            bind_call_user(cid, val)
+            logger.info("[RETELL-GEMINI] user_id recuperado vía API call=%s", cid)
+            return val
+    except Exception as exc:  # noqa: BLE001 — fallback best-effort
+        logger.warning("[RETELL-GEMINI] fallback user_id vía API falló call=%s: %s", cid, exc)
+    return None
 
 
 def _voice_turn_key(call_id: str, rid: int) -> str:
@@ -184,7 +225,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     last_web_delivery_at = 0.0
     last_web_query_norm = ""
 
-    user_id = resolve_call_user(call_id)
+    user_id = await resolve_call_user_robust(call_id)
     if user_id:
         llm.set_user_id(user_id)
         logger.info("[RETELL-GEMINI] user_id=%s call=%s (registry)", user_id[:8], call_id)
@@ -517,7 +558,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if interaction == "response_required" and response_id > 0:
             await cancel_greeting_stream(reason=f"user_turn_rid={response_id}")
 
-        uid = resolve_call_user(call_id, request_json)
+        uid = await resolve_call_user_robust(call_id, request_json)
         if uid:
             llm.set_user_id(uid)
             from app.services import voice_client_session as vcs
@@ -1288,4 +1329,5 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             except Exception:  # noqa: BLE001
                 pass
         release_call_user(call_id)
+        _api_uid_lookups.discard((call_id or "").strip())
         logger.info("[RETELL-GEMINI] WebSocket cerrado call_id=%s", call_id)

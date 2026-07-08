@@ -70,6 +70,9 @@ def append_message(
     body: AppendMessageBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
+    # Guardar historial es telemetría best-effort: NUNCA debe tumbar el chat ni
+    # devolver 500 (que además llega al navegador sin cabeceras CORS y se ve como
+    # "el chat no responde"). Si Supabase falla, se registra y se sigue.
     try:
         supabase_db.append_message(
             body.conversation_id,
@@ -79,8 +82,15 @@ def append_message(
             session_id=body.session_id,
             channel=body.channel or "voice",
         )
-        return {"ok": True}
+        return {"ok": True, "saved": True}
     except PermissionError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 — best-effort: no rompas la sesión
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "[CONV] append_message fallo (best-effort) conv=%s: %s",
+            body.conversation_id,
+            exc,
+        )
+        return {"ok": False, "saved": False, "error": "persist_failed"}
