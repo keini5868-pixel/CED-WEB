@@ -17,9 +17,12 @@ import {
   closestPathIndex,
   installMapSpeechSilencer,
   NAV_FOLLOW_TILT,
-  NAV_FOLLOW_ZOOM,
   NAV_IDLE_ZOOM,
+  NAV_MAP_PADDING,
+  navigationFollowZoom,
   navigationHeading,
+  navigationLookAheadCenter,
+  smoothHeading,
 } from "@/lib/navigation/geo";
 
 type DriveMapViewProps = {
@@ -119,36 +122,42 @@ function resetMapPadding(map: google.maps.Map) {
   map.setOptions({ padding: { top: 0, bottom: 0, left: 0, right: 0 } } as google.maps.MapOptions);
 }
 
-/** Flecha fija en el centro visual — el mapa se mueve debajo. */
+function applyNavigationMapPadding(map: google.maps.Map) {
+  map.setOptions({ padding: { ...NAV_MAP_PADDING } } as google.maps.MapOptions);
+}
+
+/** Cámara estilo Google Maps: zoom cercano, tilt 3D, rotación y look-ahead. */
 function followNavigationCamera(
   map: google.maps.Map,
   position: GeoPosition,
   path: NavLatLng[],
+  lastHeadingRef: { current: number | null },
 ) {
   const user = { lat: position.lat, lng: position.lng };
-  const heading = navigationHeading(user, path, position.heading, position.speed);
+  const rawHeading = navigationHeading(user, path, position.heading, position.speed);
+  const heading = smoothHeading(lastHeadingRef.current, rawHeading);
+  lastHeadingRef.current = heading;
+  const zoom = navigationFollowZoom(position.speed);
+  const center = navigationLookAheadCenter(user, path, heading, position.speed);
 
-  map.setCenter(user);
-  map.panTo(user);
+  applyNavigationMapPadding(map);
 
-  if (heading != null && !Number.isNaN(heading)) {
-    map.setHeading(heading);
-  }
-
-  if ((map.getZoom() ?? 0) < NAV_FOLLOW_ZOOM) {
-    map.setZoom(NAV_FOLLOW_ZOOM);
-  }
-
-  map.setTilt(NAV_FOLLOW_TILT);
+  const camera = {
+    center,
+    zoom,
+    heading,
+    tilt: NAV_FOLLOW_TILT,
+  };
 
   if (typeof map.moveCamera === "function") {
-    map.moveCamera({
-      center: user,
-      zoom: Math.max(map.getZoom() ?? NAV_FOLLOW_ZOOM, NAV_FOLLOW_ZOOM),
-      heading: heading ?? 0,
-      tilt: NAV_FOLLOW_TILT,
-    });
+    map.moveCamera(camera);
+    return;
   }
+
+  map.setCenter(center);
+  map.setZoom(zoom);
+  map.setHeading(heading);
+  map.setTilt(NAV_FOLLOW_TILT);
 }
 
 export function DriveMapView({
@@ -169,6 +178,7 @@ export function DriveMapView({
   const searchFittedRef = useRef(false);
   const idleCenteredRef = useRef(false);
   const navCameraReadyRef = useRef(false);
+  const lastNavHeadingRef = useRef<number | null>(null);
   const routePathRef = useRef<NavLatLng[]>([]);
   const [mapsReady, setMapsReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -194,6 +204,7 @@ export function DriveMapView({
           styles: MAP_STYLES,
           disableDefaultUI: true,
           gestureHandling: "greedy",
+          isFractionalZoomEnabled: true,
         });
 
         markerRef.current = await createUserLocationMarker(mapRef.current, DEFAULT_CENTER);
@@ -218,11 +229,12 @@ export function DriveMapView({
     if (mapState !== "navegando") {
       routeFittedRef.current = false;
       navCameraReadyRef.current = false;
+      lastNavHeadingRef.current = null;
       routePathRef.current = [];
       resetMapBearing(map);
       resetMapPadding(map);
     } else {
-      resetMapPadding(map);
+      applyNavigationMapPadding(map);
       if (position) {
         const path =
           routePathRef.current.length > 1
@@ -230,7 +242,7 @@ export function DriveMapView({
             : route
               ? routePathPoints(route, position)
               : [];
-        followNavigationCamera(map, position, path);
+        followNavigationCamera(map, position, path, lastNavHeadingRef);
         navCameraReadyRef.current = true;
       }
     }
@@ -266,7 +278,7 @@ export function DriveMapView({
             ? routePathPoints(route, position)
             : [];
       const heading = navigationHeading(latLng, path, position.heading, position.speed);
-      followNavigationCamera(map, position, path);
+      followNavigationCamera(map, position, path, lastNavHeadingRef);
       navCameraReadyRef.current = true;
       marker.content = createUserLocationContent(heading, true, true);
       return;
@@ -292,7 +304,7 @@ export function DriveMapView({
           ? routePathPoints(route, position)
           : [];
     if (path.length < 2) return;
-    followNavigationCamera(map, position, path);
+    followNavigationCamera(map, position, path, lastNavHeadingRef);
   }, [mapState, route, position?.lat, position?.lng, position?.heading]);
 
   useEffect(() => {

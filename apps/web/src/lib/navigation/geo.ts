@@ -10,9 +10,11 @@ export const NAV_STEP_COMPLETE_M = 50;
 export const NAV_ARRIVAL_DISTANCE_M = 50;
 
 /** Zoom / cámara en navegación activa (estilo Google Maps). */
-export const NAV_FOLLOW_ZOOM = 18;
-export const NAV_FOLLOW_TILT = 0;
+export const NAV_FOLLOW_ZOOM = 19;
+export const NAV_FOLLOW_TILT = 52;
 export const NAV_IDLE_ZOOM = 15;
+/** Padding del mapa en navegación — flecha del usuario en el tercio inferior. */
+export const NAV_MAP_PADDING = { top: 72, bottom: 240, left: 32, right: 32 } as const;
 
 export function distanceMeters(a: NavLatLng, b: NavLatLng): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -63,6 +65,89 @@ export function closestPathIndex(path: NavLatLng[], point: NavLatLng): number {
   return bestIdx;
 }
 
+export function offsetByMeters(
+  origin: NavLatLng,
+  bearingDeg: number,
+  distanceM: number,
+): NavLatLng {
+  const angular = distanceM / EARTH_RADIUS_M;
+  const bearing = (bearingDeg * Math.PI) / 180;
+  const lat1 = (origin.lat * Math.PI) / 180;
+  const lng1 = (origin.lng * Math.PI) / 180;
+
+  const lat2 = Math.asin(
+    Math.sin(lat1) * Math.cos(angular) +
+      Math.cos(lat1) * Math.sin(angular) * Math.cos(bearing),
+  );
+  const lng2 =
+    lng1 +
+    Math.atan2(
+      Math.sin(bearing) * Math.sin(angular) * Math.cos(lat1),
+      Math.cos(angular) - Math.sin(lat1) * Math.sin(lat2),
+    );
+
+  return {
+    lat: (lat2 * 180) / Math.PI,
+    lng: (((lng2 * 180) / Math.PI + 540) % 360) - 180,
+  };
+}
+
+/** Zoom dinámico: más cercano en ciudad, un poco más lejos en autopista. */
+export function navigationFollowZoom(speedMps: number | null | undefined): number {
+  const speed = speedMps ?? 0;
+  if (speed > 22) return 17.5;
+  if (speed > 12) return 18.5;
+  if (speed > 4) return 19;
+  return NAV_FOLLOW_ZOOM;
+}
+
+/** Suaviza giros bruscos de la cámara entre ticks GPS. */
+export function smoothHeading(
+  previous: number | null | undefined,
+  next: number,
+  maxDelta = 28,
+): number {
+  if (previous == null || Number.isNaN(previous)) return next;
+  let delta = ((next - previous + 540) % 360) - 180;
+  if (Math.abs(delta) > maxDelta) {
+    delta = Math.sign(delta) * maxDelta;
+  }
+  return (previous + delta + 360) % 360;
+}
+
+/** Punto de mira adelante en la ruta — centra la cámara como Google Maps. */
+export function navigationLookAheadCenter(
+  position: NavLatLng,
+  path: NavLatLng[],
+  heading: number,
+  speedMps: number | null | undefined,
+): NavLatLng {
+  const speed = speedMps ?? 0;
+  const aheadM = Math.min(220, Math.max(55, speed * 10 + 60));
+
+  if (path.length >= 2) {
+    const idx = closestPathIndex(path, position);
+    let acc = 0;
+    for (let i = idx; i < path.length - 1; i += 1) {
+      const from = path[i]!;
+      const to = path[i + 1]!;
+      const seg = distanceMeters(from, to);
+      if (seg <= 0) continue;
+      if (acc + seg >= aheadM) {
+        const ratio = (aheadM - acc) / seg;
+        return {
+          lat: from.lat + (to.lat - from.lat) * ratio,
+          lng: from.lng + (to.lng - from.lng) * ratio,
+        };
+      }
+      acc += seg;
+    }
+    return path[path.length - 1]!;
+  }
+
+  return offsetByMeters(position, heading, aheadM);
+}
+
 export function navigationHeading(
   position: NavLatLng,
   path: NavLatLng[],
@@ -72,7 +157,8 @@ export function navigationHeading(
   let routeHeading: number | null = null;
   if (path.length) {
     const idx = closestPathIndex(path, position);
-    const next = path[Math.min(idx + 1, path.length - 1)] ?? position;
+    const lookIdx = Math.min(idx + 3, path.length - 1);
+    const next = path[lookIdx] ?? position;
     if (next.lat !== position.lat || next.lng !== position.lng) {
       routeHeading = bearingDegrees(position, next);
     }

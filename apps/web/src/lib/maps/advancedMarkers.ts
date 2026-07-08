@@ -27,7 +27,18 @@ export function createUserLocationContent(
   wrap.style.pointerEvents = "none";
 
   if (navigating) {
+    const ring = document.createElement("div");
+    ring.style.position = "absolute";
+    ring.style.width = "36px";
+    ring.style.height = "36px";
+    ring.style.borderRadius = "50%";
+    ring.style.background = "rgba(66, 133, 244, 0.18)";
+    ring.style.boxShadow = "0 0 0 2px rgba(66, 133, 244, 0.35)";
+    wrap.appendChild(ring);
+
     const arrow = document.createElement("div");
+    arrow.style.position = "relative";
+    arrow.style.zIndex = "1";
     arrow.style.width = "0";
     arrow.style.height = "0";
     arrow.style.borderLeft = "12px solid transparent";
