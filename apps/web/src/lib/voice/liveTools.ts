@@ -16,6 +16,8 @@ export const REQUEST_CAMERA_DEACTIVATION = "request_camera_deactivation";
 export const PUBLICAR_FACEBOOK = "publicar_facebook";
 export const PUBLICAR_INSTAGRAM = "publicar_instagram";
 export const GENERAR_PDF = "generar_pdf";
+export const LEER_GMAIL = "leer_gmail";
+export const ENVIAR_GMAIL = "enviar_gmail";
 export const RECALL_PREVIOUS_CONVERSATIONS = "recall_previous_conversations";
 export const SAVE_LONG_TERM_MEMORY = "save_to_long_term_memory";
 
@@ -103,6 +105,60 @@ export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
   {
+    name: REQUEST_CAMERA_ACTIVATION,
+    description:
+      "Activa la cámara del usuario cuando pida visión o quiera mostrar algo. Tras activar confirma: 'Cámara activa.'",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        reason: { type: Type.STRING, description: "Motivo breve de activación" },
+      },
+    },
+  },
+  {
+    name: REQUEST_CAMERA_DEACTIVATION,
+    description: "Desactiva la cámara cuando el usuario lo pida.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: ANALIZAR_CAMARA,
+    description:
+      "Analiza el frame actual de la cámara. Requiere cámara activa; invoca request_camera_activation si hace falta.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        pregunta: {
+          type: Type.STRING,
+          description: "Qué quiere saber el usuario sobre lo visible.",
+        },
+      },
+    },
+  },
+  {
+    name: LEER_GMAIL,
+    description:
+      "Lee correos de Gmail: bandeja, categoría o remitente. Requiere Gmail conectado.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        consulta: { type: Type.STRING, description: "Petición del usuario sobre correos." },
+      },
+    },
+  },
+  {
+    name: ENVIAR_GMAIL,
+    description: "Envía un correo por Gmail. Requiere destinatario y mensaje.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        destinatario: { type: Type.STRING, description: "Email o nombre del destinatario" },
+        mensaje: { type: Type.STRING, description: "Cuerpo del correo" },
+        asunto: { type: Type.STRING, description: "Asunto opcional" },
+      },
+      required: ["destinatario", "mensaje"],
+    },
+  },
+  {
     name: PUBLICAR_FACEBOOK,
     description:
       "Publica en la página de Facebook conectada. Requiere mensaje de texto; imagen opcional (URL HTTPS pública).",
@@ -161,6 +217,8 @@ export const LIVE_TOOL_NAMES = new Set([
   ANALIZAR_CAMARA,
   REQUEST_CAMERA_ACTIVATION,
   REQUEST_CAMERA_DEACTIVATION,
+  LEER_GMAIL,
+  ENVIAR_GMAIL,
   RECALL_PREVIOUS_CONVERSATIONS,
   SAVE_LONG_TERM_MEMORY,
 ]);
