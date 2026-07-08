@@ -232,6 +232,7 @@ def is_attachment_creative_request(
 
 def is_image_creation_request(text: str, history: list[dict[str, str]] | None = None) -> bool:
     """True si el usuario pide generar/editar un creativo, no publicar."""
+    from app.services.chat_intents import is_pdf_intent, mentions_pdf
     from app.services.publish_text import (
         is_explicit_social_publish_request,
         is_publish_help_request,
@@ -240,6 +241,8 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
 
     t = normalize_creative_request_text(text)
     if not t:
+        return False
+    if is_pdf_intent(t) or mentions_pdf(t):
         return False
     if is_explicit_social_publish_request(t, with_image=True):
         return False

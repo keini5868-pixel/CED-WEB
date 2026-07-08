@@ -987,12 +987,12 @@ def _needs_chat_tools(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    if is_pdf_intent(t):
+        return False
     if is_generate_image_intent(t):
         img_prompt = parse_generate_image_prompt(t)
         if not img_prompt or len(t) > DIRECT_IMAGE_MAX_CHARS:
             return True
-        return False
-    if is_pdf_intent(t):
         return False
     return bool(_TOOLS_KEYWORDS.search(t))
 
@@ -2203,6 +2203,25 @@ def send_message(
             route_meta={"intent": "gmail", "source": "direct"},
         )
 
+    pdf_req = resolve_pdf_request(text, history)
+    if pdf_req and is_pdf_intent(text):
+        pdf_title, pdf_body = pdf_req
+        pdf_result = _execute_direct_pdf(
+            user_id,
+            title=pdf_title,
+            content=pdf_body,
+            history=history,
+            conversation_id=conversation_id,
+            user_request=text,
+        )
+        if pdf_result:
+            reply, attachment = pdf_result
+            return _finish(
+                _finalize_chat_reply(reply),
+                route_meta={"intent": "pdf", "source": "direct"},
+                pdf=attachment if attachment.get("file_id") else None,
+            )
+
     img_prompt = parse_generate_image_prompt(text)
     followup_prompt = (
         parse_followup_image_prompt(text, history)
@@ -2284,27 +2303,6 @@ def send_message(
             _format_image_generation_error(err),
             route_meta={"intent": "generate_image", "source": "direct_error"},
         )
-
-    pdf_req = resolve_pdf_request(text, history)
-    if pdf_req and is_pdf_intent(text):
-        pdf_title, pdf_body = pdf_req
-        pdf_result = _execute_direct_pdf(
-            user_id,
-            title=pdf_title,
-            content=pdf_body,
-            history=history,
-            conversation_id=conversation_id,
-            user_request=text,
-        )
-        if pdf_result:
-            message, attachment = pdf_result
-            if attachment.get("file_id"):
-                return _finish(
-                    message,
-                    route_meta={"intent": "generar_pdf", "source": "direct"},
-                    pdf=attachment,
-                )
-            return _finish(message)
 
     route = route_message(
         user_id,

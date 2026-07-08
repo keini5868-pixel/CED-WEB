@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from app.services.chat_intents import (
+    is_generate_image_intent,
     is_pdf_intent,
+    mentions_pdf,
     resolve_pdf_request,
 )
 from app.services.text_chat import (
@@ -15,6 +17,15 @@ from app.services.text_chat import (
 def test_is_pdf_intent_dame_esto_en_pdf():
     assert is_pdf_intent("ok dame esto en un pdf")
     assert is_pdf_intent("pon lo en un pdf por favor")
+
+
+def test_pdf_priority_over_image_intent():
+    msg = "genérame un PDF con un resumen de la historia del alquimista"
+    assert mentions_pdf(msg)
+    assert is_pdf_intent(msg)
+    assert not is_generate_image_intent(msg)
+    assert is_pdf_intent("créame un PDF")
+    assert not is_generate_image_intent("créame un PDF")
 
 
 def test_resolve_pdf_request_uses_last_assistant_plan():

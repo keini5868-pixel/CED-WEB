@@ -321,6 +321,10 @@ def _try_direct_image(
     history_rows: list[dict[str, Any]],
     conversation_id: str,
 ) -> dict[str, Any] | None:
+    from app.services.chat_intents import is_pdf_intent, mentions_pdf
+
+    if is_pdf_intent(text) or mentions_pdf(text):
+        return None
     img_prompt = parse_generate_image_prompt(text)
     followup = (
         parse_followup_image_prompt(text, history_rows)

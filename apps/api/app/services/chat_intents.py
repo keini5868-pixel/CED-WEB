@@ -48,8 +48,10 @@ _IMAGE_PROMPT_PATTERNS = (
     ),
 )
 _PDF_PATTERNS = (
+    re.compile(r"\bpdf\b", re.I),
     re.compile(
-        r"\b(genera|generar|crea|crear|exporta|exportar|convierte|convertir|guarda|guárdame|haz(me)?|dame|pon|pásalo|pasalo)\s+"
+        r"\b(genera|generar|gener[aá]me|crea|crear|cr[eé]ame|exporta|exportar|convierte|convertir|"
+        r"guarda|guárdame|haz(me)?|dame|pon|pásalo|pasalo)\s+"
         r"(?:.{0,48}?\s+)?(?:en\s+)?(?:un(?:a)?\s+)?pdf\b",
         re.I,
     ),
@@ -67,9 +69,15 @@ _PDF_THIS_REF = re.compile(
 )
 
 
+def mentions_pdf(text: str) -> bool:
+    return bool(re.search(r"\bpdf\b", (text or "").strip(), re.I))
+
+
 def is_generate_image_intent(text: str) -> bool:
     t = text.strip()
     if len(t) < 8:
+        return False
+    if mentions_pdf(t):
         return False
     return any(p.search(t) for p in _IMAGE_PATTERNS)
 
@@ -184,9 +192,11 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
 
 def is_pdf_intent(text: str) -> bool:
     t = text.strip()
-    if len(t) < 8:
+    if len(t) < 6:
         return False
-    return any(p.search(t) for p in _PDF_PATTERNS)
+    if mentions_pdf(t):
+        return True
+    return any(p.search(t) for p in _PDF_PATTERNS[1:])
 
 
 def parse_pdf_request(text: str) -> tuple[str, str] | None:
