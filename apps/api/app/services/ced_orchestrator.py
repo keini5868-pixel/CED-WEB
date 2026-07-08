@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-from typing import Any
+from typing import Any, Callable
 
 from app.modules.environment_module import is_environment_intent
 from app.modules.calendar_module import is_calendar_intent
 from app.modules.gmail_module import is_gmail_intent
 from app.modules.base_module import BaseModule
 from app.modules.module_registry import MODULE_ACKS, MODULE_ORDER, MODULE_OVERLAYS, build_module
+from app.services.module_detector import detect_intent as _detect_intent_v2
+from app.services.module_memory import format_module_context, load_module_memory
 from app.services import voice_client_session as vcs
 from app.services.cognitive_intents import (
     is_brand_followup_question,
@@ -133,6 +136,60 @@ _orchestrators: dict[str, "CedOrchestrator"] = {}
 _EPHEMERAL_MODULES = frozenset(
     {"calendar", "gmail", "environment", "web_search", "image_gen", "pdf", "publish", "finance"}
 )
+
+# Detección v2 para intención FRESCA (sin módulo activo). Reversible por flag.
+# La continuación de un módulo activo (acks, confirmaciones, follow-ups) sigue
+# usando los resolvers legacy porque dependen del transcript.
+USE_V2_FRESH_DETECTION = True
+
+# Timeout duro por llamada de módulo. Si un módulo se cuelga (tool sin respuesta),
+# se cancela, se cierra el módulo y se vuelve a conversación neutral con un
+# mensaje de error — nunca se queda pegado esperando indefinidamente.
+MODULE_CALL_TIMEOUT_SEC = 25.0
+
+# Mapea los nombres del detector v2 a los módulos que existen hoy en el registry.
+# weather/pollen/air_quality aún viven bajo "environment" (se separan en Fase 4).
+# datetime lo resuelve el reloj instantáneo aguas arriba; stripe aún no es módulo.
+DETECTOR_TO_REGISTRY: dict[str, str | None] = {
+    "camera": "camera",
+    "map": "map",
+    "pdf": "pdf",
+    "image_gen": "image_gen",
+    "social": "publish",
+    "prospection": "prospection",
+    "gmail": "gmail",
+    "calendar": "calendar",
+    "finance": "finance",
+    "weather": "environment",
+    "pollen": "environment",
+    "air_quality": "environment",
+    "web_search": "web_search",
+    "memory": "memory",
+    "datetime": None,
+    "stripe": None,
+}
+
+_UNSET = object()
+
+
+def detect_fresh_intent_v2(
+    user_text: str,
+    *,
+    classify: Callable[[str, str], bool] | object = _UNSET,
+) -> str | None:
+    """Detección de intención fresca (v2) → nombre de módulo del registry.
+
+    Devuelve None si no hay intención de acción clara (conversación base) o si el
+    módulo detectado aún no existe en el registry (datetime/stripe).
+    `classify` es inyectable para tests (sin red).
+    """
+    kwargs: dict[str, Any] = {}
+    if classify is not _UNSET:
+        kwargs["classify"] = classify  # type: ignore[assignment]
+    det = _detect_intent_v2(user_text, **kwargs)
+    if not det.activate or not det.module:
+        return None
+    return DETECTOR_TO_REGISTRY.get(det.module)
 
 
 def is_module_command(
@@ -325,12 +382,33 @@ class CedOrchestrator:
         self.active_module: str | None = None
         self._modules: dict[str, BaseModule] = {}
         self._module_states: dict[str, dict[str, Any]] = {}
+        # Memoria modular cargada on-demand al activar (Fase 3). Se limpia al cerrar.
+        self._module_memory: dict[str, str] = {}
 
     def _get_module(self, name: str) -> BaseModule:
         if name not in self._modules:
             self._modules[name] = build_module(name)
             self._module_states.setdefault(name, {})
         return self._modules[name]
+
+    async def _load_module_memory(self, name: str, user_id: str) -> None:
+        """Carga la memoria persistente del módulo (on-demand, no bloqueante)."""
+        try:
+            block = await asyncio.to_thread(load_module_memory, name, user_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("[ORCH] carga de memoria falló module=%s", name)
+            return
+        ctx = format_module_context(name, block) if block else None
+        if ctx:
+            self._module_memory[name] = ctx
+
+    def _overlay_with_memory(self, module_name: str | None) -> str | None:
+        """Overlay del módulo + su memoria cargada (contexto aislado del módulo)."""
+        overlay = get_context_overlay(module_name)
+        mem = self._module_memory.get(module_name or "")
+        if overlay and mem:
+            return f"{overlay}\n\n{mem}"
+        return mem or overlay
 
     async def deactivate_current(self, *, user_id: str) -> None:
         if not self.active_module:
@@ -343,6 +421,7 @@ class CedOrchestrator:
         except Exception:
             logger.exception("[ORCH] deactivate failed module=%s", prev)
         self._module_states[prev] = self._get_module(prev).get_state()
+        self._module_memory.pop(prev, None)
         self.active_module = None
         vcs.push_tool_event(user_id, {"type": "module_deactivated", "module": prev})
 
@@ -360,13 +439,35 @@ class CedOrchestrator:
         self.active_module = name
         vcs.set_active_mode(user_id, name)
         module = self._get_module(name)
-        result = await module.activate(
-            user_text,
-            user_id=user_id,
-            call_id=self.call_id,
-            user_text=user_text,
-            utterances=transcript,
-        )
+        # Memoria on-demand: solo la de ESTE módulo, al activarse.
+        await self._load_module_memory(name, user_id)
+        try:
+            result = await asyncio.wait_for(
+                module.activate(
+                    user_text,
+                    user_id=user_id,
+                    call_id=self.call_id,
+                    user_text=user_text,
+                    utterances=transcript,
+                ),
+                timeout=MODULE_CALL_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:  # módulo colgado: cancelar → cerrar → neutral
+            logger.warning("[ORCH] activate timeout module=%s", name)
+            await self.deactivate_current(user_id=user_id)
+            return ModuleResult(
+                ok=False,
+                spoken="Disculpe, señor. Eso tardó demasiado. ¿Reintentamos?",
+                handles_response=True,
+            )
+        except Exception:  # noqa: BLE001 — módulo falló al activar: cerrar → neutral
+            logger.exception("[ORCH] activate failed module=%s", name)
+            await self.deactivate_current(user_id=user_id)
+            return ModuleResult(
+                ok=False,
+                spoken="Disculpe, señor. No pude activar eso ahora. ¿Reintentamos?",
+                handles_response=True,
+            )
         self._module_states[name] = module.get_state()
         self._emit_module_events(user_id, name, result)
         return result
@@ -381,13 +482,34 @@ class CedOrchestrator:
         if not self.active_module:
             return None
         module = self._get_module(self.active_module)
-        result = await module.handle_command(
-            user_text,
-            user_id=user_id,
-            call_id=self.call_id,
-            user_text=user_text,
-            utterances=transcript,
-        )
+        active_name = self.active_module
+        try:
+            result = await asyncio.wait_for(
+                module.handle_command(
+                    user_text,
+                    user_id=user_id,
+                    call_id=self.call_id,
+                    user_text=user_text,
+                    utterances=transcript,
+                ),
+                timeout=MODULE_CALL_TIMEOUT_SEC,
+            )
+        except asyncio.TimeoutError:  # módulo colgado: cancelar → cerrar → neutral
+            logger.warning("[ORCH] handle_active timeout module=%s", active_name)
+            await self.deactivate_current(user_id=user_id)
+            return ModuleResult(
+                ok=False,
+                spoken="Disculpe, señor. Eso tardó demasiado. ¿Puede repetir?",
+                handles_response=True,
+            )
+        except Exception:  # noqa: BLE001 — el módulo falló: cerrar → neutral
+            logger.exception("[ORCH] handle_active failed module=%s", active_name)
+            await self.deactivate_current(user_id=user_id)
+            return ModuleResult(
+                ok=False,
+                spoken="Disculpe, señor. Tuve un inconveniente. ¿Puede repetir?",
+                handles_response=True,
+            )
         self._module_states[self.active_module] = module.get_state()
         if result.handles_response or result.tool_events:
             self._emit_module_events(user_id, self.active_module, result)
@@ -417,7 +539,7 @@ class CedOrchestrator:
         ):
             await self.deactivate_current(user_id=user_id)
 
-        overlay = get_context_overlay(self.active_module)
+        overlay = self._overlay_with_memory(self.active_module)
 
         if self.active_module:
             active_result = await self.handle_active(
@@ -429,7 +551,7 @@ class CedOrchestrator:
                 result = self._to_orch_result(
                     active_result,
                     module_activated=None,
-                    overlay=get_context_overlay(self.active_module),
+                    overlay=self._overlay_with_memory(self.active_module),
                 )
                 if is_camera_deactivation_intent(user_text):
                     await self.deactivate_current(user_id=user_id)
@@ -437,12 +559,7 @@ class CedOrchestrator:
                     await self._release_ephemeral_module(user_id)
                 return result
 
-        detected = detect_module(
-            user_text,
-            transcript,
-            user_id=user_id,
-            active_module=self.active_module,
-        )
+        detected = await self._detect_module(user_text, transcript, user_id=user_id)
 
         if detected:
             if detected != self.active_module:
@@ -454,27 +571,26 @@ class CedOrchestrator:
                 )
                 activated = detected
             else:
-                result = await self._get_module(detected).handle_command(
-                    user_text,
-                    user_id=user_id,
-                    call_id=self.call_id,
+                # Mismo módulo activo: continúa por handle_active (con timeout/cierre).
+                result = await self.handle_active(
                     user_text=user_text,
-                    utterances=transcript,
-                )
+                    transcript=transcript,
+                    user_id=user_id,
+                ) or ModuleResult()
                 activated = None
 
             if result.handles_response:
                 orch_result = self._to_orch_result(
                     result,
                     module_activated=activated,
-                    overlay=get_context_overlay(detected),
+                    overlay=self._overlay_with_memory(detected),
                 )
                 await self._release_ephemeral_module(user_id)
                 return orch_result
             if activated:
                 return OrchestratorResult(
                     module_activated=activated,
-                    context_overlay=get_context_overlay(detected),
+                    context_overlay=self._overlay_with_memory(detected),
                     conversation_continues=True,
                 )
 
@@ -484,7 +600,33 @@ class CedOrchestrator:
             if result.handles_response:
                 return self._to_orch_result(result, overlay=overlay)
 
-        return OrchestratorResult.conversation_only(overlay=get_context_overlay(self.active_module))
+        return OrchestratorResult.conversation_only(
+            overlay=self._overlay_with_memory(self.active_module)
+        )
+
+    async def _detect_module(
+        self,
+        user_text: str,
+        transcript: list[Utterance],
+        *,
+        user_id: str,
+    ) -> str | None:
+        """Detección de módulo.
+
+        - Intención fresca (v2, anclas estrictas + clasificador): se evalúa PRIMERO,
+          incluso con módulo activo, para permitir el cambio limpio entre módulos
+          (ej. Maps→PDF) y eliminar falsos positivos.
+        - Si v2 no detecta acción, se usan los resolvers legacy para continuación
+          del módulo activo (acks, confirmaciones, follow-ups que dependen del
+          transcript, ej. "dale", "el primero"). Reversible con USE_V2_FRESH_DETECTION.
+        """
+        if USE_V2_FRESH_DETECTION:
+            fresh = await asyncio.to_thread(detect_fresh_intent_v2, user_text)
+            if fresh:
+                return fresh
+        return detect_module(
+            user_text, transcript, user_id=user_id, active_module=self.active_module
+        )
 
     async def _handle_comments(
         self, user_id: str, comments: dict[str, str]
@@ -577,7 +719,7 @@ class CedOrchestratorFacade:
 
     def get_context_overlay(self, call_id: str) -> str | None:
         orch = self.get(call_id)
-        return get_context_overlay(orch.active_module)
+        return orch._overlay_with_memory(orch.active_module)
 
 
 ced_orchestrator = CedOrchestratorFacade()
