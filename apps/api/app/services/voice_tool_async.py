@@ -15,8 +15,9 @@ from app.services.voice_tool_executor import execute_voice_tool
 
 logger = logging.getLogger(__name__)
 
-TOOL_DEFAULT_TIMEOUT_SEC = 15.0
-PDF_TOOL_TIMEOUT_SEC = 90.0
+TOOL_DEFAULT_TIMEOUT_SEC = 18.0
+PDF_TOOL_TIMEOUT_SEC = 35.0
+PUBLISH_TOOL_TIMEOUT_SEC = 35.0
 
 _TOOL_ACK: dict[str, str] = {
     "search_web": "Investigando, señor.",
@@ -35,6 +36,8 @@ _TOOL_ACK: dict[str, str] = {
 _TOOL_FALLBACK: dict[str, str] = {
     "search_web": "Señor, no pude completar la búsqueda. ¿Repito?",
     "generar_pdf": "No pude preparar el PDF, señor. ¿Lo intento de nuevo?",
+    "leer_gmail": "No pude leer su correo, señor. ¿Lo intento de nuevo?",
+    "enviar_gmail": "No pude enviar el correo, señor. ¿Lo intento de nuevo?",
     "publicar_instagram": "No pude publicar en Instagram, señor.",
     "publicar_facebook": "No pude publicar en Facebook, señor.",
 }
@@ -59,8 +62,11 @@ def combined_tool_acknowledgment(tool_names: list[str]) -> str:
 
 
 def tool_timeout_sec(tool_name: str) -> float:
-    if tool_name == "generar_pdf":
+    key = (tool_name or "").strip().lower()
+    if key == "generar_pdf":
         return PDF_TOOL_TIMEOUT_SEC
+    if key in ("publicar_facebook", "publicar_instagram"):
+        return PUBLISH_TOOL_TIMEOUT_SEC
     return TOOL_DEFAULT_TIMEOUT_SEC
 
 

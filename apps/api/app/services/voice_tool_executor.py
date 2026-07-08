@@ -40,7 +40,7 @@ from app.services.cognitive_memory import save_memory, search_memory
 from app.services.pdf_report import (
     assistant_fallback_texts_from_messages,
     normalize_pdf_fields,
-    store_pdf,
+    store_pdf_with_timeout,
 )
 from app.services.prospection import get_prospection_report, set_prospection_enabled
 from app.services.social_comments import fetch_social_comments
@@ -458,6 +458,26 @@ async def execute_voice_tool(
     if not user_id:
         return _spoken_err("No identifiqué al usuario, señor.", error="missing_user_id")
 
+    from app.services.voice_tool_async import tool_timeout_sec
+
+    try:
+        return await asyncio.wait_for(
+            _execute_voice_tool_body(name, user_id, params),
+            timeout=tool_timeout_sec(name),
+        )
+    except asyncio.TimeoutError:
+        logger.warning("[VOICE_TOOL] timeout name=%s user=%s", name, user_id[:8])
+        return _spoken_err(
+            "Señor, la operación tardó demasiado. ¿Intento de nuevo?",
+            error="tool_timeout",
+        )
+
+
+async def _execute_voice_tool_body(
+    name: str,
+    user_id: str,
+    params: dict[str, Any],
+) -> dict[str, Any]:
     try:
         if name == "search_web":
             query = str(params.get("query") or "").strip()
@@ -787,12 +807,22 @@ async def execute_voice_tool(
             ).strip()
             try:
                 artifact = await asyncio.to_thread(
-                    store_pdf,
+                    store_pdf_with_timeout,
                     user_id=user_id,
                     title=titulo,
                     content=contenido,
                     fallback_texts=fallback_list,
                     user_request=user_request,
+                )
+            except TimeoutError:
+                return _spoken_err(
+                    "Señor, tardé demasiado generando el PDF. ¿Lo intento de nuevo?",
+                    error="pdf_timeout",
+                )
+            except RuntimeError:
+                return _spoken_err(
+                    "No pude guardar el PDF en el servidor, señor. Intente de nuevo.",
+                    error="pdf_store_failed",
                 )
             except ValueError:
                 return _spoken_err(
@@ -852,7 +882,16 @@ async def execute_voice_tool(
                         error="gmail_missing_fields",
                     )
                 query = f"envía un email a {dest} diciendo {msg}"
-            result = await asyncio.to_thread(handle_gmail_query_sync, user_id, query)
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(handle_gmail_query_sync, user_id, query),
+                    timeout=18.0,
+                )
+            except asyncio.TimeoutError:
+                return _spoken_err(
+                    "Señor, Gmail tardó demasiado. ¿Lo intento de nuevo?",
+                    error="gmail_timeout",
+                )
             spoken = str(result.get("spoken") or "").strip()
             if spoken:
                 return _spoken_ok(spoken)

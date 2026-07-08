@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
@@ -20,6 +21,8 @@ from app.services.orchestrator_types import ModuleResult
 from app.services.retell_llm_types import Utterance
 
 logger = logging.getLogger(__name__)
+
+GMAIL_VOICE_TIMEOUT_SEC = 18.0
 
 GMAIL_PATTERNS: tuple[str, ...] = (
     r"\b(?:emails?|correos?|gmail)\b",
@@ -178,8 +181,17 @@ class GmailModule(BaseModule):
 
     async def _run(self, user_id: str, text: str) -> ModuleResult:
         try:
-            spoken = _handle_gmail_query(user_id, text)
+            spoken = await asyncio.wait_for(
+                asyncio.to_thread(_handle_gmail_query, user_id, text),
+                timeout=GMAIL_VOICE_TIMEOUT_SEC,
+            )
             return ModuleResult(ok=True, spoken=spoken, handles_response=True)
+        except asyncio.TimeoutError:
+            return ModuleResult(
+                ok=False,
+                spoken="Señor, Gmail tardó demasiado. ¿Lo intento de nuevo?",
+                handles_response=True,
+            )
         except ValueError as exc:
             if str(exc) == "not_connected":
                 return ModuleResult(ok=False, spoken=_not_connected_message(), handles_response=True)
