@@ -138,6 +138,39 @@ def test_figurative_tiempo_en_not_weather():
     assert is_weather_intent("¿Cómo está el clima en Ciudad de México hoy?")
 
 
+def test_closing_ack_after_news_does_not_research():
+    """'ok perfecto' tras una noticia cierra el turno — no repite la búsqueda."""
+    tx = _tx(
+        ("user", "Dame las últimas noticias de Venezuela"),
+        ("agent", "Señor, en Venezuela..."),
+        ("user", "ok perfecto"),
+    )
+    assert resolve_web_search_request("ok perfecto", tx) is None
+
+
+def test_various_closing_acks_skip_search():
+    for ack in ("perfecto", "muy bien", "de acuerdo", "sí gracias", "todo bien", "listo"):
+        tx = _tx(
+            ("user", "Dame las noticias del día"),
+            ("agent", "Señor, hoy..."),
+            ("user", ack),
+        )
+        assert resolve_web_search_request(ack, tx) is None, ack
+
+
+def test_new_query_after_ack_still_searches():
+    """Una consulta nueva real tras una noticia sí debe buscar."""
+    tx = _tx(
+        ("user", "Dame las noticias de Venezuela"),
+        ("agent", "Señor, en Venezuela..."),
+        ("user", "ahora dime las noticias de Colombia"),
+    )
+    req = resolve_web_search_request("ahora dime las noticias de Colombia", tx)
+    assert req is not None
+    assert req["kind"] == "news"
+    assert "colombia" in req["query"].lower()
+
+
 def test_search_promise_detection():
     from app.services.retell_custom_llm import promised_voice_search_without_result
 

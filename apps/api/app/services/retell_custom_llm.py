@@ -93,6 +93,31 @@ _GENERIC_AGENT_LINES = frozenset(
 
 _ACK_ONLY = frozenset({"ok", "okay", "sí", "si", "vale", "bien", "yes", "news", "noticias"})
 
+# Palabras de asentimiento / cierre de turno — combinables en frases cortas
+# como "ok perfecto", "muy bien", "de acuerdo", "sí gracias", "todo bien".
+_ACK_CLOSING_WORDS = frozenset(
+    {
+        "ok", "okay", "okey", "vale", "dale", "listo", "perfecto", "perfe",
+        "genial", "excelente", "buenisimo", "gracias", "muchas", "muy",
+        "bien", "esta", "está", "de", "acuerdo", "entendido", "entiendo",
+        "correcto", "si", "sí", "claro", "asi", "así", "es", "todo",
+        "sale", "chevere", "chévere", "va", "listindo",
+    }
+)
+
+
+def _is_closing_ack(text: str) -> bool:
+    """True si el turno es solo asentimiento/cierre ('ok perfecto', 'muy bien')."""
+    norm = _normalize(text)
+    if not norm:
+        return False
+    if norm in _ACK_ONLY:
+        return True
+    tokens = norm.split()
+    if not tokens or len(tokens) > 3:
+        return False
+    return all(tok in _ACK_CLOSING_WORDS for tok in tokens)
+
 _WEB_FRAGMENT_HINTS = re.compile(
     r"\b(busca|buscar|buscame|investiga|precio|cotiza|clima|tiempo|temperatura|"
     r"noticia|ultim|dime|dame|cuanto|cuesta|hoy|internet|google|web|mercado|"
@@ -145,6 +170,9 @@ def _is_fragment_continuation(last: str, prev: str) -> bool:
         return False
     if ln in _ACK_ONLY or pn in _ACK_ONLY:
         return False
+    # Un cierre/asentimiento ("ok perfecto", "muy bien") NO continúa la consulta previa.
+    if _is_closing_ack(last):
+        return False
     if _needs_internet_lookup(last) and not _FRAGMENT_PREFIX.search(ln):
         if is_news_intent(last) or is_weather_intent(last) or is_web_research_intent(last):
             return False
@@ -191,6 +219,9 @@ def resolve_web_search_request(
     """Detecta búsqueda web usando el último turno — sin mezclar noticias previas."""
     last = (user_text or "").strip()
     if not last or _normalize(last) in _ACK_ONLY:
+        return None
+    # Confirmaciones/cierres ("ok perfecto", "gracias") cierran turno — no re-buscan.
+    if _is_closing_ack(last):
         return None
     if is_personal_vent_intent(last):
         return None
@@ -564,9 +595,9 @@ def split_progressive_voice(text: str, *, topic: str) -> list[tuple[str, bool]]:
 def web_search_hold_phrase(kind: str) -> str:
     """Frase de espera — solo noticias/clima (mensaje aparte antes del resultado)."""
     if kind == "weather":
-        return "Un momento, señor. Consulto el clima y vuelvo con el resultado."
+        return "Un momento, señor. Consulto el clima."
     if kind == "news":
-        return "Un momento, señor. Consulto las noticias más relevantes del día."
+        return "Un momento, señor. Consulto las noticias."
     return "Un momento, señor."
 
 

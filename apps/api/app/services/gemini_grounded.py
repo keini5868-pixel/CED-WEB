@@ -19,7 +19,13 @@ logger = logging.getLogger(__name__)
 
 BRIEF_MODEL = "gemini-2.5-flash"
 # Gemini 2.5 + Google Search consume tokens internos; <512 trunca en MAX_TOKENS.
+# Noticias amplias (varios temas) necesitan más presupuesto o se cortan a mitad.
 GEMINI_OUTPUT_TOKENS = 768
+GEMINI_OUTPUT_TOKENS_NEWS = 1600
+
+
+def _output_tokens_for_kind(kind: str) -> int:
+    return GEMINI_OUTPUT_TOKENS_NEWS if kind == "news" else GEMINI_OUTPUT_TOKENS
 TAVILY_TIMEOUT_SEC = 12
 GEMINI_TIMEOUT_SEC = 12
 SEARCH_WEB_PARALLEL_TIMEOUT_SEC = 20
@@ -48,7 +54,7 @@ def _generate_brief(client: Any, user_prompt: str, *, kind: str = "general") -> 
         config=types.GenerateContentConfig(
             tools=[types.Tool(google_search=types.GoogleSearch())],
             temperature=0.35,
-            max_output_tokens=GEMINI_OUTPUT_TOKENS,
+            max_output_tokens=_output_tokens_for_kind(kind),
         ),
     )
     text = (getattr(response, "text", None) or "").strip()

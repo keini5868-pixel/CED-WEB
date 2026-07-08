@@ -51,7 +51,11 @@ from app.services.voice_llm_common import (
     normalize_voice_delivery_text,
 )
 from app.services.ced_orchestrator import get_context_overlay, get_orchestrator
-from app.services.voice_tool_executor import NAVIGATION_TIMEOUT_SEC, execute_voice_tool
+from app.services.voice_tool_executor import (
+    NAVIGATION_TIMEOUT_SEC,
+    SEARCH_WEB_TIMEOUT_SEC,
+    execute_voice_tool,
+)
 from app.services.voice_tool_async import execute_deferred_tool_batch
 from app.services.voice_spoken import (
     chunk_ends_with_punctuation,
@@ -831,7 +835,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 uid,
                                 {"query": query, "kind": kind},
                             ),
-                            timeout=12.0,
+                            timeout=SEARCH_WEB_TIMEOUT_SEC + 2.0,
                         )
                         spoken = str(tool_result.get("spoken") or "").strip()
                         if tool_result.get("status") == "success" and spoken:
