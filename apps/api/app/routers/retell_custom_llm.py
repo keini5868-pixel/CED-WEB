@@ -133,10 +133,12 @@ def _normalize_user_key(text: str) -> str:
 
 def _debounce_wait_s(user_text: str) -> float:
     words = len(user_text.split())
+    if words <= 5:
+        return 0.06
     if words >= 20:
-        return 0.22
+        return 0.20
     if words >= 10:
-        return 0.18
+        return 0.14
     return 0.10
 
 
@@ -681,15 +683,19 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return rid >= latest
 
             async def deliver_voice(content: str, *, rid: int = scheduled_rid) -> bool:
+                nonlocal partial_sent
                 if not _can_deliver_turn(rid):
                     return False
                 async with response_lock:
-                    return await send_voice_response(
+                    delivered = await send_voice_response(
                         response_id=rid,
                         content=content,
                         user_key=scheduled_key,
                         generation=None,
                     )
+                if delivered:
+                    partial_sent = False
+                return delivered
 
             async def anti_silence_if_unanswered(*, reason: str) -> None:
                 """Nunca dejar response_required sin respuesta audible."""

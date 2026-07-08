@@ -22,4 +22,6 @@ COPY apps/api/app ./app
 COPY apps/api/data ./data
 
 # Railway inyecta PORT (shell form — probado en producción)
+# NOTA: no usar --workers sin sticky sessions + estado compartido (Redis).
+# El WebSocket Retell y voice_client_session viven en memoria por proceso.
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
