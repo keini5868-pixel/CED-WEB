@@ -114,6 +114,6 @@ export function installMapSpeechSilencer(): void {
 }
 
 /** @deprecated Solo CED habla — no usar TTS del navegador en el mapa. */
-export function speakNavigation(_text: string): void {
+export function speakNavigation(): void {
   cancelBrowserNavigationSpeech();
 }

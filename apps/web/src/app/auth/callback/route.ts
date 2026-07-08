@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
   // Las cookies de sesión deben ir en la respuesta de redirect (Next.js 15 + Supabase SSR).
-  let response = NextResponse.redirect(absoluteRedirect(request, next));
+  const response = NextResponse.redirect(absoluteRedirect(request, next));
 
   const supabase = createServerClient(url, key, {
     cookies: {

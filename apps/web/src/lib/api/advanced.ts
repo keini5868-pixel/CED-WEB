@@ -1,5 +1,4 @@
 import type { ChatImageAttachment, ChatPdfAttachment } from "@/lib/api/chat";
-import { authHeaders } from "@/lib/api/auth";
 import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 export type AdvancedChatMessage = {
