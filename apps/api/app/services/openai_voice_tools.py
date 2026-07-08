@@ -377,6 +377,56 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "leer_gmail",
+        "description": (
+            "Lee correos de Gmail del usuario: bandeja, categoría o un remitente. "
+            "Usar cuando diga: léeme mis correos, qué emails tengo, lee el de X, "
+            "correos importantes, bandeja principal. "
+            "Requiere Gmail conectado en configuración. "
+            "NUNCA digas que no tienes autoridad — invoca esta herramienta."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "consulta": {
+                    "type": "string",
+                    "description": (
+                        "Petición del usuario tal cual: inbox, promociones, "
+                        "leer correo de Juan, etc."
+                    ),
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "name": "enviar_gmail",
+        "description": (
+            "Envía un correo por Gmail. Usar cuando diga: envía un email a X, "
+            "manda correo a X diciendo Y. Requiere destinatario (email o nombre) "
+            "y cuerpo del mensaje. NUNCA digas que no tienes autoridad — invoca esta herramienta."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "destinatario": {
+                    "type": "string",
+                    "description": "Email o nombre del destinatario",
+                },
+                "mensaje": {
+                    "type": "string",
+                    "description": "Cuerpo del correo",
+                },
+                "asunto": {
+                    "type": "string",
+                    "description": "Asunto opcional (default: Mensaje desde CED)",
+                },
+            },
+            "required": ["destinatario", "mensaje"],
+        },
+    },
+    {
+        "type": "function",
         "name": "search_nearby_places",
         "description": (
             "Busca lugares cercanos SIN pedir dirección completa al usuario. "
