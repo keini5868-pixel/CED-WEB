@@ -173,6 +173,9 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\b(?:recib[íi]|gan[ée]|cobr[ée]|me\s+pagaron)\s+\d",
         r"\bregistra(?:r|me)?\s+(?:un\s+)?(?:gasto|ingreso)\b",
         r"\bgu[áa]rdame\s+que\b",
+        # Frases explícitas "... en finanzas ..." (guardar/anotar/registrar).
+        r"\b(?:gu[áa]rdame|an[óo]tame|anota(?:me)?|reg[íi]strame|registra|ap[úu]ntame|apunta)\s+en\s+finanzas\b",
+        r"\ben\s+finanzas\s+que\b",
         r"\bplan\s+de\s+ahorro\b",
         r"\bc[óo]mo\s+voy\b.*\b(?:mes|finanzas|dinero)\b",
         r"\bcu[áa]nto\s+debo\b",

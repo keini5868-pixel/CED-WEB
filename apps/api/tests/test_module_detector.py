@@ -214,3 +214,33 @@ def test_user_phrase_finance_guardame_que():
     d = detect_intent("guárdame que mañana pago el alquiler", classify=_never_action)
     assert d.module == "finance"
     assert d.activate is True
+
+
+# ---------------------------------------------------------------------------
+# Detector solo-estricto (voz): fuerza el orquestador por keyword, 0 latencia.
+# Frases reales del usuario que antes caían en respuesta genérica de Gemini.
+# ---------------------------------------------------------------------------
+def test_strict_only_finance_guardame_en_finanzas():
+    from app.services.ced_orchestrator import detect_strict_intent_v2
+
+    assert (
+        detect_strict_intent_v2(
+            "guárdame en finanzas que el viernes tengo que pagar 1000 dólares"
+        )
+        == "finance"
+    )
+
+
+def test_strict_only_pdf():
+    from app.services.ced_orchestrator import detect_strict_intent_v2
+
+    assert detect_strict_intent_v2("hazme un pdf con un resumen del sistema") == "pdf"
+
+
+def test_strict_only_no_false_positive_on_smalltalk():
+    from app.services.ced_orchestrator import detect_strict_intent_v2
+
+    # Conversación casual → NO fuerza módulo (sin falsos positivos).
+    assert detect_strict_intent_v2("hola cómo estás") is None
+    assert detect_strict_intent_v2("ok guardaste ese dato") is None
+    assert detect_strict_intent_v2("mira el historial") is None

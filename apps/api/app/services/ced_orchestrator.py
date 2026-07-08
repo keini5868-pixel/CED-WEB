@@ -192,6 +192,20 @@ def detect_fresh_intent_v2(
     return DETECTOR_TO_REGISTRY.get(det.module)
 
 
+def detect_strict_intent_v2(user_text: str) -> str | None:
+    """Detección SOLO por ancla estricta (0 latencia, sin LLM) → módulo del registry.
+
+    Se usa en el path de voz para FORZAR el orquestador cuando el usuario dijo una
+    frase-comando inequívoca (ej. "guárdame en finanzas que…", "hazme un pdf"),
+    aunque el clasificador de small-talk la trate como conversación casual. No
+    corre Etapa 2, así que nunca añade latencia ni falsos positivos.
+    """
+    det = _detect_intent_v2(user_text, run_stage2=False)
+    if det.confidence != "anchor" or not det.module or not det.is_action:
+        return None
+    return DETECTOR_TO_REGISTRY.get(det.module)
+
+
 def is_module_command(
     user_text: str,
     module: str,

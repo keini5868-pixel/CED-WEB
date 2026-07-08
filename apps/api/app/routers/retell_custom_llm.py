@@ -54,7 +54,11 @@ from app.services.voice_llm_common import (
     is_duplicate_voice_delivery,
     normalize_voice_delivery_text,
 )
-from app.services.ced_orchestrator import get_context_overlay, get_orchestrator
+from app.services.ced_orchestrator import (
+    detect_strict_intent_v2,
+    get_context_overlay,
+    get_orchestrator,
+)
 from app.services.voice_tool_executor import (
     NAVIGATION_TIMEOUT_SEC,
     SEARCH_WEB_TIMEOUT_SEC,
@@ -924,7 +928,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             orch = get_orchestrator(call_id)
             orch_result = None
-            if uid and (not conversational_turn or orch.active_module):
+            # Ancla estricta por keyword (ej. "guárdame en finanzas", "hazme un pdf"):
+            # fuerza el orquestador aunque small-talk lo clasifique como casual. Así
+            # la activación de módulo es DETERMINISTA por keyword, no la decide Gemini.
+            forced_module = detect_strict_intent_v2(user_text)
+            if forced_module:
+                logger.info(
+                    "[RETELL-ORCH] forced module=%s por ancla estricta call=%s text=%s",
+                    forced_module,
+                    call_id,
+                    user_text[:60],
+                )
+            if uid and (forced_module or not conversational_turn or orch.active_module):
                 clear_pending_advanced_topic(call_id)
                 orch_result = await orch.process(
                     user_text=user_text,
