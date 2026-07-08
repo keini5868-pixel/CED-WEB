@@ -123,7 +123,7 @@ import {
 const CAMERA_IDLE_MS = 5 * 60 * 1000;
 const CAMERA_FRAME_WARM_MS = 4500;
 const CAMERA_FRAME_READY_MS = 1200;
-const VOICE_CLIENT_POLL_MS = 450;
+const VOICE_CLIENT_POLL_MS = 300;
 const VIDEO_SEND_INTERVAL_MS = 2000;
 const VIDEO_CAPTURE_WIDTH = 640;
 const VIDEO_CAPTURE_HEIGHT = 480;
@@ -399,6 +399,18 @@ export function useCedVoiceSession(
     isDriveMapOpenRef.current = isDriveMapOpen;
     openDriveMapRef.current = openDriveMap;
   }, [isDriveMapOpen, openDriveMap]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const active = voiceSessionActive || micOn;
+    if (active) {
+      window.sessionStorage.setItem("ced-voice-active", "1");
+      document.body.setAttribute("data-ced-voice-active", "true");
+    } else {
+      window.sessionStorage.removeItem("ced-voice-active");
+      document.body.removeAttribute("data-ced-voice-active");
+    }
+  }, [voiceSessionActive, micOn]);
 
   useEffect(() => {
     if (!retellPollActive) return;

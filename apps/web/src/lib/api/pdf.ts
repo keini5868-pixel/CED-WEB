@@ -61,7 +61,15 @@ function pdfDownloadError(status: number, detail?: string): string {
 export async function downloadPdfBlob(
   fileId: string,
   filename = "documento-ced.pdf",
+  options?: { allowDuringVoice?: boolean },
 ): Promise<void> {
+  if (
+    typeof window !== "undefined" &&
+    !options?.allowDuringVoice &&
+    window.sessionStorage.getItem("ced-voice-active") === "1"
+  ) {
+    return;
+  }
   const id = fileId.trim();
   if (!/^[a-f0-9]{32}$/i.test(id)) {
     throw new Error("ID de PDF inválido. Pide a CED que genere el documento de nuevo.");

@@ -1,7 +1,8 @@
 /** Intents para generar PDF por voz (fallback si el modelo no invoca generar_pdf). */
 
 const PDF_INTENT_PATTERNS = [
-  /\b(genera|generar|crea|crear|exporta|exportar|convierte|convertir|guarda|guárdame|dame|pon|pásalo|pasalo)\s+(?:.{0,48}?\s+)?(?:en\s+)?(?:un(?:a)?\s+)?pdf\b/i,
+  /\bpdf\b/i,
+  /\b(genera|generar|gener[aá]me|crea|crear|cr[eé]ame|exporta|exportar|convierte|convertir|guarda|guárdame|dame|pon|pásalo|pasalo)\s+(?:.{0,48}?\s+)?(?:en\s+)?(?:un(?:a)?\s+)?pdf\b/i,
   /\b(?:esto|lo|el\s+plan|la\s+estrategia)\s+(?:en\s+)?(?:un(?:a)?\s+)?pdf\b/i,
   /\bpdf\s+(?:de|con|sobre)\b/i,
   /\b(?:haz|hazme)\s+(?:un(?:a)?\s+)?pdf\b/i,
@@ -10,7 +11,7 @@ const PDF_INTENT_PATTERNS = [
 
 export function isPdfIntent(text: string): boolean {
   const t = text.trim();
-  if (t.length < 8) return false;
+  if (t.length < 6) return false;
   return PDF_INTENT_PATTERNS.some((p) => p.test(t));
 }
 
