@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.deps.plan_access import require_pdf_reports
-from app.services.pdf_report import get_pdf, list_pdfs_for_user, store_pdf
+from app.services.pdf_report import get_pdf, list_pdfs_for_user, store_pdf_with_timeout
 
 router = APIRouter(prefix="/v1/pdf", tags=["pdf"])
 
@@ -31,15 +31,22 @@ def post_generate_pdf(
     require_pdf_reports(user_id)
     user_request = (body.user_request or body.content or body.title).strip()
     try:
-        artifact = store_pdf(
+        artifact = store_pdf_with_timeout(
             user_id=user_id,
             title=body.title.strip(),
             content=body.content.strip(),
             conversation_id=body.conversation_id,
             user_request=user_request,
         )
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail="No pude generar el PDF a tiempo. Intenta de nuevo.",
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return {
         "ok": True,
         "file_id": artifact.file_id,

@@ -37,7 +37,7 @@ from app.services.meta_social import MetaSocialError, publish_facebook, publish_
 from app.services.pdf_report import (
     assistant_fallback_texts_from_messages,
     normalize_pdf_fields,
-    store_pdf,
+    store_pdf_with_timeout,
     user_texts_from_messages,
 )
 from app.services.internal_kb_guard import (
@@ -569,7 +569,7 @@ def _execute_direct_pdf(
     user_texts = user_texts_from_messages(_anthropic_messages(history))
     resolved_request = user_request or (user_texts[-1] if user_texts else pdf_title)
     try:
-        artifact = store_pdf(
+        artifact = store_pdf_with_timeout(
             user_id=user_id,
             title=pdf_title,
             content=pdf_body,
@@ -577,9 +577,19 @@ def _execute_direct_pdf(
             fallback_texts=fallbacks,
             user_request=resolved_request,
         )
+    except TimeoutError:
+        return (
+            "No pude generar el PDF a tiempo, señor. Intenta de nuevo en un momento.",
+            {},
+        )
     except ValueError:
         return (
             "No pude armar el contenido del PDF. ¿Puedes indicar qué quieres incluir?",
+            {},
+        )
+    except RuntimeError:
+        return (
+            "No pude guardar el PDF en el servidor. Intenta de nuevo.",
             {},
         )
     except Exception as exc:  # noqa: BLE001
@@ -1282,14 +1292,24 @@ def _run_chat_tool(
             fallbacks = assistant_fallback_texts_from_messages(chat_messages or [])
             user_texts = user_texts_from_messages(chat_messages or [])
             user_request = user_texts[-1] if user_texts else title
-            artifact = store_pdf(
-                user_id=user_id,
-                title=title,
-                content=content,
-                conversation_id=conversation_id,
-                fallback_texts=fallbacks,
-                user_request=user_request,
-            )
+            try:
+                artifact = store_pdf_with_timeout(
+                    user_id=user_id,
+                    title=title,
+                    content=content,
+                    conversation_id=conversation_id,
+                    fallback_texts=fallbacks,
+                    user_request=user_request,
+                )
+            except TimeoutError:
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "error": "No pude generar el PDF a tiempo. Intenta de nuevo.",
+                    }
+                )
+            except (ValueError, RuntimeError) as exc:
+                return json.dumps({"ok": False, "error": str(exc) or "PDF failed"})
             return json.dumps(
                 {
                     "ok": True,
