@@ -479,7 +479,9 @@ export function CedHistoryPanel({
                   <button
                     type="button"
                     onClick={() =>
-                      void downloadPdfBlob(pdf.file_id, pdf.filename).catch((e) =>
+                      void downloadPdfBlob(pdf.file_id, pdf.filename, {
+                        allowDuringVoice: true,
+                      }).catch((e) =>
                         alert(
                           e instanceof Error
                             ? e.message

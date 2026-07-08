@@ -37,7 +37,9 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
     setBusy(true);
     setError(null);
     try {
-      await downloadPdfBlob(pdf.file_id, pdf.filename || "documento-ced.pdf");
+      await downloadPdfBlob(pdf.file_id, pdf.filename || "documento-ced.pdf", {
+        allowDuringVoice: true,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo descargar el PDF.");
     } finally {
