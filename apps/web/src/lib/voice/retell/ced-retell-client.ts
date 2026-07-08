@@ -79,6 +79,7 @@ export class CedRetellClient {
   private agentMutedForBargeIn = false;
   private agentTurnSeq = 0;
   private currentAgentStreamKey = "";
+  private lastTurntaking = "";
   private userTurnSeq = 0;
   private currentUserStreamKey = "";
 
@@ -314,31 +315,45 @@ export class CedRetellClient {
         const line = this.lastAgentLine;
         const prev = this.lastPersistedAgentLine;
         if (prev && line.trim().toLowerCase().slice(0, 55) === prev.trim().toLowerCase().slice(0, 55)) {
-          this.currentAgentStreamKey = "";
-          this.lastAgentLine = "";
+          // Casi-duplicado de la última línea persistida: no re-emitir.
+          // NO reiniciamos el streamKey — Retell envía transcript acumulativo y
+          // un mismo turno puede tener varios ciclos start/stop.
           return;
         }
         this.lastPersistedAgentLine = line;
         this.emitAgentTranscript(line, false);
       }
-      this.currentAgentStreamKey = "";
-      this.lastAgentLine = "";
+      // El streamKey del agente se mantiene estable durante todo el turno y solo
+      // se reinicia al comenzar un nuevo turno del usuario (ver handler "update").
+      // Así evitamos la cascada de burbujas creciendo palabra por palabra.
     });
 
     this.client.on("update", (update: RetellUpdateEvent) => {
       const lines = update.transcript;
       if (!Array.isArray(lines) || lines.length === 0) return;
 
-      if (update.turntaking === "agent_turn") {
+      const turntaking = update.turntaking;
+      if (turntaking === "agent_turn") {
         this.clearUserDebounce();
         const finalUser = this.latestLine(lines, "user");
         if (finalUser) {
           this.pendingUserText = finalUser;
           this.persistUserLine(finalUser);
         }
+        // Solo en la transición usuario→agente iniciamos una burbuja nueva.
+        // Retell repite "agent_turn" durante todo el turno, así que el guard
+        // evita reiniciar el streamKey a mitad de la respuesta (causa de la cascada).
+        if (this.lastTurntaking !== "agent_turn") {
+          this.currentAgentStreamKey = "";
+          this.lastAgentLine = "";
+          this.lastPersistedAgentLine = "";
+        }
       }
-      if (update.turntaking === "user_turn") {
+      if (turntaking === "user_turn") {
         this.maybeBargeIn();
+      }
+      if (turntaking) {
+        this.lastTurntaking = turntaking;
       }
 
       const userText = this.latestLine(lines, "user");
@@ -408,6 +423,7 @@ export class CedRetellClient {
     this.agentMutedForBargeIn = false;
     this.agentTurnSeq = 0;
     this.currentAgentStreamKey = "";
+    this.lastTurntaking = "";
     this.userTurnSeq = 0;
     this.currentUserStreamKey = "";
     retellLog("startCall", { callId: this.callId });
