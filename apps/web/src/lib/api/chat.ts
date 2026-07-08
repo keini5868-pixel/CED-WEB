@@ -2,6 +2,9 @@ import { cedApiPath } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
 const CHAT_TIMEOUT_MS = 90_000;
+// Si el stream no envía datos en este tiempo, lo cortamos y mostramos error
+// en vez de dejar el chat cargando para siempre.
+const CHAT_STREAM_STALL_MS = 45_000;
 
 /** Bienvenida instantánea en UI — no esperar a /chat/status. */
 export const CHAT_DEFAULT_WELCOME =
@@ -167,22 +170,48 @@ export async function sendChatMessageStream(
   conversationId: string | null | undefined,
   onToken: (chunk: string) => void,
 ): Promise<StreamDonePayload> {
-  const res = await fetch("/api/ced/chat/send/stream", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      content,
-      conversation_id: conversationId ?? undefined,
-    }),
-  });
+  const controller = new AbortController();
+  let stalled = false;
+  let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  const armStallWatchdog = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      stalled = true;
+      controller.abort();
+    }, CHAT_STREAM_STALL_MS);
+  };
+
+  armStallWatchdog();
+  let res: Response;
+  try {
+    res = await fetch("/api/ced/chat/send/stream", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content,
+        conversation_id: conversationId ?? undefined,
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    if (stallTimer) clearTimeout(stallTimer);
+    if (stalled) {
+      throw new Error(
+        "El asistente tardó demasiado en responder. Intenta de nuevo en un momento.",
+      );
+    }
+    throw err;
+  }
 
   if (!res.ok) {
+    if (stallTimer) clearTimeout(stallTimer);
     const data = await parseApiJson<{ detail?: string }>(res);
     throw new Error(data.detail || "No se pudo enviar el mensaje.");
   }
 
   if (!res.body) {
+    if (stallTimer) clearTimeout(stallTimer);
     throw new Error("Stream no disponible.");
   }
 
@@ -220,20 +249,32 @@ export async function sendChatMessageStream(
     }
   };
 
-  while (true) {
-    const { value, done: streamDone } = await reader.read();
-    if (streamDone) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      if (!part.trim()) continue;
-      try {
-        parseEventBlock(part);
-      } catch {
-        /* ignore malformed SSE chunk */
+  try {
+    while (true) {
+      const { value, done: streamDone } = await reader.read();
+      if (streamDone) break;
+      armStallWatchdog();
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        try {
+          parseEventBlock(part);
+        } catch {
+          /* ignore malformed SSE chunk */
+        }
       }
     }
+  } catch (err) {
+    if (stalled) {
+      throw new Error(
+        "El asistente tardó demasiado en responder. Intenta de nuevo en un momento.",
+      );
+    }
+    throw err;
+  } finally {
+    if (stallTimer) clearTimeout(stallTimer);
   }
 
   if (buffer.trim()) {

@@ -1513,7 +1513,7 @@ def _gemini_simple_reply(
     last_exc: Exception | None = None
     for attempt in range(3):
         try:
-            client = genai.Client(api_key=api_key)
+            client = _gemini_client(api_key)
             response = client.models.generate_content(
                 model=model_name,
                 contents=contents,
@@ -2608,6 +2608,27 @@ def _can_stream_chat_text(text: str) -> bool:
     return True
 
 
+# Timeout HTTP para Gemini: si la API se atasca, falla en vez de colgar para
+# siempre. Es un timeout por lectura/conexión (ms); el streaming sano envía
+# chunks con frecuencia, así que no corta respuestas saludables.
+CHAT_GEMINI_HTTP_TIMEOUT_MS = 45_000
+
+
+def _gemini_client(api_key: str):
+    """Cliente Gemini con timeout HTTP para evitar cuelgues indefinidos."""
+    from google import genai
+
+    try:
+        from google.genai import types
+
+        return genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=CHAT_GEMINI_HTTP_TIMEOUT_MS),
+        )
+    except Exception:  # noqa: BLE001 — SDK sin soporte de http_options.timeout
+        return genai.Client(api_key=api_key)
+
+
 def _gemini_simple_reply_stream(
     *,
     api_key: str,
@@ -2634,7 +2655,7 @@ def _gemini_simple_reply_stream(
         raise TextChatError("Sin mensajes para el asistente.")
 
     model_name = (model or CHAT_GEMINI_MODEL).strip() or CHAT_GEMINI_MODEL
-    client = genai.Client(api_key=api_key)
+    client = _gemini_client(api_key)
     stream = client.models.generate_content_stream(
         model=model_name,
         contents=contents,
