@@ -1213,7 +1213,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     call_id,
                 )
 
-            if partial_sent:
+            if partial_sent and scheduled_rid not in answered_response_ids:
                 await complete_partial_or_deliver(
                     WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
                 )
