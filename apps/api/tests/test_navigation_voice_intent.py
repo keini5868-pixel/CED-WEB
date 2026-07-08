@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.services.cognitive_intents import is_navigation_confirm
 from app.services.navigation_voice_intent import (
     extract_place_query,
+    is_plausible_place_query,
     normalize_navigation_query,
     resolve_navigation_confirm,
     resolve_navigation_place_search,
@@ -50,6 +51,8 @@ def test_conversational_ir_a_not_navigation():
     assert extract_place_query("quiero ir a contarte algo") is None
     assert resolve_navigation_place_search("quiero ir a dormir", []) is None
     assert resolve_navigation_place_search("léeme mis correos", []) is None
+    assert resolve_navigation_place_search("entonces tienes un inmenso potencial", []) is None
+    assert not is_plausible_place_query("inmenso potencial", user_text="entonces tienes un inmenso potencial")
 
 
 def test_is_navigation_confirm_phrases():

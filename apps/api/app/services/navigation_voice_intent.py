@@ -41,12 +41,34 @@ _EXTRACT_PLACE = re.compile(
     r"(?:busca(?:r)?|busque)\s+(?:alg[uú]n|alguna|un|una|el|la|me)?\s*"
     r"|(?:quiero|necesito|deseo)\s+(?:ir|irme)\s+(?:a\s+)?(?:alg[uú]n|alguna|un|una|el|la)?\s*"
     r"|(?:ir|vamos|ll[eé]vame)\s+(?:a\s+)?(?:alg[uú]n|alguna|un|una|el|la)?\s*"
-    r"|(?:alg[uú]n|alguna|un|una)\s+"
     r")"
     r"(?P<place>.+?)"
     r"(?:\s+(?:m[aá]s\s+)?cercan[oa]s?|\s+cerca|\s+por\s+favor)?"
     r"\s*$",
     re.I,
+)
+
+_ABSTRACT_PLACE_WORDS = frozenset(
+    {
+        "inmenso",
+        "potencial",
+        "historia",
+        "resumen",
+        "explicación",
+        "explicacion",
+        "conversación",
+        "conversacion",
+        "charla",
+        "idea",
+        "ideas",
+        "proyecto",
+        "plan",
+        "estrategia",
+        "contenido",
+        "mensaje",
+        "correo",
+        "email",
+    }
 )
 
 _STRIP_FILLERS = re.compile(
@@ -86,12 +108,27 @@ def _is_valid_place_candidate(place: str, *, text: str, ctx: str = "") -> bool:
         return False
     if _NON_PLACE_HEAD.match(place.strip()):
         return False
+    tokens = {w.lower() for w in re.findall(r"[a-záéíóúñ]+", place, flags=re.I)}
+    if tokens and tokens.issubset(_ABSTRACT_PLACE_WORDS):
+        return False
+    if any(tok in _ABSTRACT_PLACE_WORDS for tok in tokens) and not _NAV_CONTEXT.search(
+        f"{text} {ctx}"
+    ):
+        return False
     blob = f"{text} {ctx}"
     if re.search(r"\b(?:alg[uú]n|alguna|un|una)\s+", text, re.I):
         if not re.search(r"\bcercan[oa]s?\b", blob, re.I) and not _WALMART_HINT.search(text):
             if not _should_correct_arma_to_walmart(text, context=ctx):
                 return False
     return True
+
+
+def is_plausible_place_query(query: str, *, user_text: str = "") -> bool:
+    """Evita que Gemini envíe búsquedas de mapa con frases conversacionales."""
+    q = normalize_navigation_query((query or "").strip(), context=user_text)
+    if not q or len(q) < 2:
+        return False
+    return _is_valid_place_candidate(q, text=user_text or q, ctx=user_text)
 
 
 def _normalize(text: str) -> str:

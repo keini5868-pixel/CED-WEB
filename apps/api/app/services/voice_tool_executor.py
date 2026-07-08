@@ -1044,9 +1044,18 @@ async def execute_voice_tool(
             ).strip()
             if not query:
                 return _spoken_err("No escuché qué lugar buscar cerca, señor.")
-            from app.services.navigation_voice_intent import normalize_navigation_query
+            from app.services.navigation_voice_intent import (
+                is_plausible_place_query,
+                normalize_navigation_query,
+            )
 
-            query = normalize_navigation_query(query)
+            user_request = str(params.get("_user_request") or params.get("user_request") or "").strip()
+            query = normalize_navigation_query(query, context=user_request)
+            if not is_plausible_place_query(query, user_text=user_request or query):
+                return _spoken_ok(
+                    "Señor, no identifiqué un destino de navegación. "
+                    "¿A qué lugar cercano desea ir?"
+                )
             loc = get_location(user_id)
             if not loc:
                 push_client_action(user_id, "open_drive", {})
