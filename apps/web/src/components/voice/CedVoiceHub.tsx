@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
 import { AdvancedChatPanel } from "@/components/chat/AdvancedChatPanel";
+import { FinanceChatPanel } from "@/components/chat/FinanceChatPanel";
 import { CedOrbOverlay } from "@/components/orb/CedOrbOverlay";
 import { useHudFeed } from "@/contexts/HudFeedContext";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
@@ -52,6 +53,7 @@ const JarvisOrbScene = dynamic(
 export function CedVoiceHub() {
   const [chatOpen, setChatOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [financeOpen, setFinanceOpen] = useState(false);
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
     url: string;
@@ -303,6 +305,7 @@ export function CedVoiceHub() {
         onHistory={() => voice.setHistoryOpen(true)}
         onChat={() => setChatOpen(true)}
         onAdvanced={() => setAdvancedOpen(true)}
+        onFinance={() => setFinanceOpen(true)}
         onSettings={() => voice.setSettingsOpen(true)}
         onFiles={() => {
           /* Fase 5 — upload */
@@ -335,6 +338,11 @@ export function CedVoiceHub() {
       <AdvancedChatPanel
         open={advancedOpen}
         onClose={() => setAdvancedOpen(false)}
+      />
+
+      <FinanceChatPanel
+        open={financeOpen}
+        onClose={() => setFinanceOpen(false)}
       />
 
       <CedTextChatPanel

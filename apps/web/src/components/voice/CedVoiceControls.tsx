@@ -31,6 +31,7 @@ interface CedVoiceControlsProps {
   onHistory: () => void;
   onChat: () => void;
   onAdvanced?: () => void;
+  onFinance?: () => void;
   onSettings: () => void;
   onFiles: () => void;
   quickPopup?: HudQuickPopupId;
@@ -198,6 +199,12 @@ export function CedVoiceControls(props: CedVoiceControlsProps) {
         emoji="🧠"
         short="AVANZADO"
         onClick={() => props.onAdvanced?.()}
+      />
+      <EmojiControlBtn
+        label="Finanzas personales"
+        emoji="💰"
+        short="FINANZAS"
+        onClick={() => props.onFinance?.()}
       />
     </div>
   );
