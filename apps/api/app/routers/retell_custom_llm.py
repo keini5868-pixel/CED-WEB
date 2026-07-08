@@ -409,7 +409,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if user_key:
                 last_answered_user_key = user_key
             return True
-        chunks = voice_delivery_chunks(content)
+        # Retell: un solo envío con el texto completo — evita repetición en cascada por chunks.
+        chunks = [(content, True)]
+        if len(content) > 8000:
+            chunks = voice_delivery_chunks(content)
         for idx, (chunk, complete) in enumerate(chunks):
             if generation is not None and generation != generation_seq:
                 if idx > 0:
