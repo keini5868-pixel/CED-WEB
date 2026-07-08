@@ -2193,6 +2193,7 @@ def send_message(
         is_reminder_intent,
     )
     from app.modules.calendar_module import handle_calendar_query_sync, is_calendar_intent
+    from app.modules.finance_module import handle_finance_query_sync, is_finance_intent
     from app.modules.gmail_module import handle_gmail_query_sync, is_gmail_intent
 
     if is_reminder_intent(text) and re.search(r"recu[eé]rdame", text, re.I):
@@ -2221,6 +2222,13 @@ def send_message(
         return _finish(
             _finalize_chat_reply(str(gmail_result.get("spoken") or "")),
             route_meta={"intent": "gmail", "source": "direct"},
+        )
+
+    if is_finance_intent(text):
+        finance_result = handle_finance_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(finance_result.get("spoken") or "")),
+            route_meta={"intent": "finance", "source": "direct"},
         )
 
     pdf_req = resolve_pdf_request(text, history)
@@ -2570,6 +2578,7 @@ def _persist_stream_turn(
 def _can_stream_chat_text(text: str) -> bool:
     from app.modules.calendar_module import is_calendar_intent
     from app.modules.environment_module import is_environment_intent
+    from app.modules.finance_module import is_finance_intent
     from app.modules.gmail_module import is_gmail_intent
     from app.services.cognitive_intents import (
         is_conversation_recall_intent,
@@ -2581,6 +2590,8 @@ def _can_stream_chat_text(text: str) -> bool:
     from app.services.hud_reminders import is_reminder_intent
 
     if is_gmail_intent(text) or is_calendar_intent(text):
+        return False
+    if is_finance_intent(text):
         return False
     if is_reminder_intent(text) or is_environment_intent(text):
         return False

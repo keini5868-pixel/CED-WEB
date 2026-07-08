@@ -6,6 +6,7 @@ from app.modules.base_module import BaseModule
 from app.modules.camera_module import CameraModule
 from app.modules.calendar_module import CalendarModule
 from app.modules.environment_module import EnvironmentModule
+from app.modules.finance_module import FinanceModule
 from app.modules.gmail_module import GmailModule
 from app.modules.image_gen_module import ImageGenModule
 from app.modules.map_module import MapModule
@@ -27,6 +28,7 @@ MODULE_ACKS: dict[str, str] = {
     "pdf": "Preparando el documento, señor.",
     "prospection": "Activando prospección, señor.",
     "memory": "Un momento, señor.",
+    "finance": "Revisando sus finanzas, señor.",
 }
 
 MODULE_OVERLAYS: dict[str, str] = {
@@ -93,6 +95,14 @@ MÓDULO ACTIVO: MEMORIA/CRM
 El usuario quiere guardar información importante.
 Registra los datos y confirma que se guardó correctamente.
 """.strip(),
+    "finance": """
+MÓDULO ACTIVO: FINANZAS PERSONALES
+El usuario registra gastos e ingresos o pide análisis de sus finanzas.
+Para registrar un movimiento usa la tool registrar_movimiento_financiero
+(tipo ingreso/gasto, monto, categoría). Para analizar usa consultar_finanzas
+y con esos datos ofrece un resumen claro, consejos de ahorro y planes concretos.
+Confirma cada registro de forma breve y natural. Nunca inventes cifras.
+""".strip(),
 }
 
 MODULE_ORDER: tuple[str, ...] = (
@@ -107,6 +117,7 @@ MODULE_ORDER: tuple[str, ...] = (
     "pdf",
     "prospection",
     "memory",
+    "finance",
 )
 
 
@@ -123,6 +134,7 @@ def build_module(name: str) -> BaseModule:
         "pdf": PdfModule,
         "prospection": ProspectionModule,
         "memory": MemoryModule,
+        "finance": FinanceModule,
     }
     cls = factories.get(name)
     if not cls:

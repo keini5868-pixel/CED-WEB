@@ -115,12 +115,20 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\b(recuerda que|guarda esto|registra)\b",
         r"\b(agrega al crm|nuevo cliente|añade contacto)\b",
     ),
+    "finance": (
+        r"\b(gast[ée]|pagu[ée]|compr[ée])\b.*\d",
+        r"\b(recib[íi]|gan[ée]|me pagaron|cobr[ée])\b.*\d",
+        r"\bc[óo]mo\s+voy\b.*\b(mes|finanzas|dinero)\b",
+        r"\bmis\s+finanzas\b",
+        r"\bplan\s+de\s+ahorro\b",
+        r"\bcu[áa]nto\s+(?:he\s+)?gast[ée]\b",
+    ),
 }
 
 _orchestrators: dict[str, "CedOrchestrator"] = {}
 
 _EPHEMERAL_MODULES = frozenset(
-    {"calendar", "gmail", "environment", "web_search", "image_gen", "pdf", "publish"}
+    {"calendar", "gmail", "environment", "web_search", "image_gen", "pdf", "publish", "finance"}
 )
 
 
