@@ -96,7 +96,10 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
     let cancelled = false;
     void fetchFinanceChatStatus().then((status) => {
       if (cancelled) return;
-      setConfigured(status?.configured ?? false);
+      // Fail-open: si el fetch de status falla (cold-start/timeout), NO
+      // deshabilitamos el chat. Solo bloqueamos si el backend confirma que no
+      // está configurado. Así finanzas responde igual que el chat normal.
+      if (status) setConfigured(status.configured);
     });
     return () => {
       cancelled = true;
@@ -285,7 +288,7 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
           })}
           {streaming ? (
             <p className="ced-hud-text-muted animate-pulse text-[11px]">
-              {statusHint || "CED escribiendo…"}
+              {statusHint || "CED está escribiendo…"}
             </p>
           ) : busy ? (
             <p className="ced-hud-text-muted text-[11px]">Procesando…</p>

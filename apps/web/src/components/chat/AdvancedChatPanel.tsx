@@ -142,12 +142,15 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     let cancelled = false;
     void fetchAdvancedChatStatus().then((status) => {
       if (cancelled) return;
-      const ok = status?.configured ?? false;
-      setConfigured(ok);
+      // Fail-open: si el fetch de status falla (cold-start/timeout), NO
+      // deshabilitamos el chat. Solo bloqueamos si el backend confirma que no
+      // está configurado. Así avanzado responde igual que el chat normal.
+      if (!status) return;
+      setConfigured(status.configured);
       setUsesGeminiOnly(
-        Boolean(status?.google_configured && !status?.anthropic_configured),
+        Boolean(status.google_configured && !status.anthropic_configured),
       );
-      if (status?.model) {
+      if (status.model) {
         setModelLabel(
           (status.stream_model ?? status.model)
             .replace("claude-", "Claude ")
@@ -351,7 +354,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
           })}
           {streaming ? (
             <p className="ced-hud-text-muted animate-pulse text-[11px]">
-              {statusHint || "Claude escribiendo…"}
+              {statusHint || "CED está escribiendo…"}
             </p>
           ) : busy ? (
             <p className="ced-hud-text-muted text-[11px]">Procesando…</p>
