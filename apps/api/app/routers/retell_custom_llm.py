@@ -651,6 +651,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         )
         user_key = _normalize_user_key(user_text)
         pending_web = resolve_web_search_request(user_text, transcript)
+        # Un ancla estricta de módulo (ej. "resumen de mis finanzas", "hazme un pdf")
+        # SIEMPRE gana al fast-path de búsqueda web. Sin esto, "dame el resumen de
+        # mis finanzas" caía en "consulto las noticias" porque el web fast-path corre
+        # antes que el orquestador. web_search sí puede seguir su camino.
+        strict_module_early = detect_strict_intent_v2(user_text)
+        if pending_web and strict_module_early and strict_module_early != "web_search":
+            logger.info(
+                "[RETELL-ORCH] ancla estricta %s cancela web fast-path call=%s",
+                strict_module_early,
+                call_id,
+            )
+            pending_web = None
         if user_key and user_key == last_answered_user_key and not pending_web:
             logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
             await ack_empty_response(response_id=response_id, reason="duplicate_user_key")
