@@ -44,6 +44,7 @@ def test_store_pdf_composes_when_model_only_passes_title(monkeypatch):
         "4. El tesoro está donde menos lo esperas.\n"
         "5. Cada paso enseña algo sobre ti mismo."
     )
+    fake_pdf = b"%PDF-1.4 " + (b"x" * 200)
 
     def fake_compose(**kwargs):
         assert "Alquimista" in kwargs["user_request"] or "alquimista" in kwargs["user_request"].lower()
@@ -51,6 +52,10 @@ def test_store_pdf_composes_when_model_only_passes_title(monkeypatch):
 
     monkeypatch.setattr("app.services.pdf_report.compose_pdf_body", fake_compose)
     monkeypatch.setattr("app.services.supabase_db.save_pdf_artifact", lambda **_: True)
+    monkeypatch.setattr(
+        "app.services.supabase_db.get_pdf_artifact",
+        lambda file_id, user_id: (fake_pdf, "doc.pdf", "Los consejos del alquimista"),
+    )
 
     artifact = store_pdf(
         user_id="user-test",

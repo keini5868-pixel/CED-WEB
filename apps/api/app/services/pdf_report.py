@@ -6,6 +6,7 @@ import json
 import logging
 import re
 import uuid
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -13,6 +14,10 @@ from typing import Any
 from fpdf import FPDF
 
 logger = logging.getLogger(__name__)
+
+PDF_COMPOSE_TIMEOUT_SEC = 18.0
+PDF_STORE_TIMEOUT_SEC = 20.0
+PDF_MIN_BYTES = 120
 
 # Caché en memoria (L1) — Supabase es la fuente de verdad en producción.
 _STORE: dict[str, tuple[bytes, str, datetime, str]] = {}
@@ -144,7 +149,7 @@ INSTRUCCIONES:
 - Texto plano legible (sin markdown con asteriscos).
 - Entrega SOLO el cuerpo del documento, sin saludo ni despedida."""
 
-    try:
+    def _call_gemini() -> str:
         from google import genai
         from google.genai import types
 
@@ -157,10 +162,16 @@ INSTRUCCIONES:
                 max_output_tokens=4096,
             ),
         )
-        text = (response.text or "").strip()
+        return (response.text or "").strip()
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            text = pool.submit(_call_gemini).result(timeout=PDF_COMPOSE_TIMEOUT_SEC)
         if text and len(text) >= 80:
             logger.info("[PDF] composed body chars=%s title=%s", len(text), safe_title[:60])
             return text[:_PDF_BODY_MAX_CHARS]
+    except FuturesTimeoutError:
+        logger.warning("[PDF] compose timeout title=%s", safe_title[:60])
     except Exception:  # noqa: BLE001
         logger.exception("[PDF] compose_pdf_body failed title=%s", safe_title[:60])
     return ""
@@ -287,11 +298,15 @@ def store_pdf(
         raise ValueError("No se pudo redactar el contenido del PDF")
 
     safe_content = resolved[:_PDF_BODY_MAX_CHARS]
+    if len(safe_content.strip()) < 40:
+        raise ValueError("No se pudo redactar el contenido del PDF")
+
     filename = _sanitize_filename(safe_title)
     data = generate_pdf_bytes(title=safe_title, content=safe_content)
-    now = datetime.now(timezone.utc)
-    _STORE[file_id] = (data, filename, now, user_id)
+    if len(data) < PDF_MIN_BYTES or not data.startswith(b"%PDF"):
+        raise ValueError("PDF generado inválido o vacío")
 
+    now = datetime.now(timezone.utc)
     meta = {
         "file_id": file_id,
         "filename": filename,
@@ -299,9 +314,8 @@ def store_pdf(
         "conversation_id": conversation_id or "",
         "created_at": now.isoformat(),
     }
-    _USER_INDEX.setdefault(user_id, []).insert(0, meta)
-    _USER_INDEX[user_id] = _USER_INDEX[user_id][:100]
 
+    saved = False
     try:
         from app.services import supabase_db
 
@@ -313,10 +327,19 @@ def store_pdf(
             pdf_bytes=data,
             conversation_id=conversation_id,
         )
-        if not saved:
-            logger.error("PDF no persistido en Supabase file_id=%s user=%s", file_id, user_id[:8])
+        if saved:
+            verify = supabase_db.get_pdf_artifact(file_id, user_id)
+            if not verify or len(verify[0]) < PDF_MIN_BYTES:
+                saved = False
     except Exception:  # noqa: BLE001
-        logger.warning("PDF guardado solo en memoria (Supabase no disponible)")
+        logger.exception("[PDF] Supabase persist failed file_id=%s user=%s", file_id, user_id[:8])
+
+    if not saved:
+        raise RuntimeError("No se pudo guardar el PDF en el servidor")
+
+    _STORE[file_id] = (data, filename, now, user_id)
+    _USER_INDEX.setdefault(user_id, []).insert(0, meta)
+    _USER_INDEX[user_id] = _USER_INDEX[user_id][:100]
 
     if conversation_id:
         try:
@@ -341,6 +364,16 @@ def store_pdf(
             logger.warning("No se pudo registrar PDF en conversación %s", conversation_id)
 
     return PdfArtifact(file_id=file_id, filename=filename, title=safe_title)
+
+
+def store_pdf_with_timeout(**kwargs: Any) -> PdfArtifact:
+    """Genera PDF con límite de tiempo — evita colgar el chat si Gemini tarda."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(store_pdf, **kwargs)
+        try:
+            return future.result(timeout=PDF_STORE_TIMEOUT_SEC)
+        except FuturesTimeoutError as exc:
+            raise TimeoutError("PDF generation timed out") from exc
 
 
 def get_pdf(file_id: str, user_id: str) -> tuple[bytes, str] | None:
