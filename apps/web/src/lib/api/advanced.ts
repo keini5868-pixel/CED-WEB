@@ -29,6 +29,8 @@ export const ADVANCED_DEFAULT_WELCOME =
   "Modo avanzado listo. ¿Qué analizamos, señor?";
 
 const ADVANCED_TIMEOUT_MS = 300_000;
+// Corta el stream si no llegan datos en este tiempo (evita spinner infinito).
+const ADVANCED_STREAM_STALL_MS = 45_000;
 
 export async function fetchAdvancedChatStatus(): Promise<AdvancedChatStatus | null> {
   try {
@@ -46,35 +48,67 @@ export async function sendAdvancedChatMessageStream(
   onToken: (chunk: string) => void,
   onStatus?: (text: string) => void,
 ): Promise<AdvancedChatResult> {
-  const res = await fetch("/api/ced/advanced/chat/stream", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message,
-      history: history
-        .filter((m) => {
-          if (m.role !== "user" && m.role !== "assistant") return false;
-          const c = m.content.trim().toLowerCase();
-          if (m.role === "assistant" && c.includes("modo avanzado listo")) return false;
-          if (m.role === "assistant" && c.includes("modo avanzado activo")) return false;
-          return Boolean(m.content.trim());
-        })
-        .map((m) => ({ role: m.role, content: m.content })),
-    }),
-    signal: AbortSignal.timeout(ADVANCED_TIMEOUT_MS),
-  });
+  const controller = new AbortController();
+  let stalled = false;
+  let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  const armStallWatchdog = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      stalled = true;
+      controller.abort();
+    }, ADVANCED_STREAM_STALL_MS);
+  };
+  const clearStall = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+  };
+  const hardTimeout = setTimeout(() => controller.abort(), ADVANCED_TIMEOUT_MS);
+
+  armStallWatchdog();
+  let res: Response;
+  try {
+    res = await fetch("/api/ced/advanced/chat/stream", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        history: history
+          .filter((m) => {
+            if (m.role !== "user" && m.role !== "assistant") return false;
+            const c = m.content.trim().toLowerCase();
+            if (m.role === "assistant" && c.includes("modo avanzado listo")) return false;
+            if (m.role === "assistant" && c.includes("modo avanzado activo")) return false;
+            return Boolean(m.content.trim());
+          })
+          .map((m) => ({ role: m.role, content: m.content })),
+      }),
+      signal: controller.signal,
+    });
+  } catch (err) {
+    clearStall();
+    clearTimeout(hardTimeout);
+    if (stalled) {
+      throw new Error("El asistente tardó demasiado. Intenta de nuevo.");
+    }
+    throw err;
+  }
 
   if (res.status === 404 || res.status === 405) {
+    clearStall();
+    clearTimeout(hardTimeout);
     return sendAdvancedChatMessage(message, history);
   }
 
   if (!res.ok) {
+    clearStall();
+    clearTimeout(hardTimeout);
     const data = await parseApiJson<{ detail?: string }>(res);
     throw new Error(data.detail || "No se pudo obtener respuesta de Claude.");
   }
 
   if (!res.body) {
+    clearStall();
+    clearTimeout(hardTimeout);
     throw new Error("Stream no disponible.");
   }
 
@@ -120,20 +154,33 @@ export async function sendAdvancedChatMessageStream(
     }
   };
 
-  while (true) {
-    const { value, done: streamDone } = await reader.read();
-    if (streamDone) break;
-    buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split("\n\n");
-    buffer = parts.pop() ?? "";
-    for (const part of parts) {
-      if (!part.trim()) continue;
-      try {
-        parseEventBlock(part);
-      } catch {
-        /* ignore malformed chunk */
+  try {
+    while (true) {
+      const { value, done: streamDone } = await reader.read();
+      if (streamDone) break;
+      armStallWatchdog();
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split("\n\n");
+      buffer = parts.pop() ?? "";
+      for (const part of parts) {
+        if (!part.trim()) continue;
+        try {
+          parseEventBlock(part);
+        } catch {
+          /* ignore malformed chunk */
+        }
       }
     }
+  } catch (err) {
+    clearStall();
+    clearTimeout(hardTimeout);
+    if (stalled) {
+      throw new Error("El asistente tardó demasiado. Intenta de nuevo.");
+    }
+    throw err;
+  } finally {
+    clearStall();
+    clearTimeout(hardTimeout);
   }
 
   if (buffer.trim()) {
