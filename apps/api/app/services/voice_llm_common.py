@@ -134,33 +134,23 @@ def log_voice_delivery(provider: str, path: str, text: str, *, user_text: str = 
     )
 
 
-def build_voice_system(
+def build_base_voice_system(
     user_id: str | None,
     user_text: str = "",
     *,
     kb_hits: list | None = None,
     skip_kb: bool = False,
-    lightweight: bool = False,
+    include_session_state: bool = False,
 ) -> str:
+    """Prompt base ligero — identidad CED + overlays del turno + reloj.
+
+    NO precarga memoria global (conversaciones previas, sesión, extras cognitivos).
+    Esa memoria se carga on-demand vía ``module_memory`` al activar un módulo
+    (Fase 3). ``include_session_state`` añade estado de cámara/imágenes/modo
+    activo solo cuando el caller lo pide explícitamente.
+    """
     base = _cached_base_voice_prompt()
     uid = (user_id or "").strip()
-    if uid:
-        try:
-            from app.services.conversation_memory import load_user_context
-
-            ctx = load_user_context(uid)
-            if ctx:
-                base = f"{base}\n\n{ctx}"
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            from app.services.session_memory import get_session_memory_context
-
-            mem_ctx = get_session_memory_context(uid)
-            if mem_ctx:
-                base = f"{base}\n\n{mem_ctx}"
-        except Exception:  # noqa: BLE001
-            pass
     query = (user_text or "").strip()
     if query and is_strategy_consultation_topic(query):
         base = f"{base}\n\n{CED_STRATEGY_CONSULTATION_OVERLAY}"
@@ -175,9 +165,7 @@ def build_voice_system(
             "oraciones completas, sin cortar a mitad. Cierra con una frase final."
         )
     if query and is_prompt_creation_request(query):
-        base = (
-            f"{base}\n\n{PROMPT_DELIVERY_OVERLAY}"
-        )
+        base = f"{base}\n\n{PROMPT_DELIVERY_OVERLAY}"
     if query and not skip_kb:
         try:
             from app.services.internal_knowledge import format_hits_for_prompt
@@ -199,9 +187,7 @@ def build_voice_system(
                 )
         except Exception:  # noqa: BLE001
             pass
-    if lightweight:
-        return base
-    if uid:
+    if include_session_state and uid:
         try:
             from app.services import voice_client_session as vcs
 
@@ -246,18 +232,77 @@ def build_voice_system(
                 base = f"{base}\n\n{mode_prompt}"
         except Exception:  # noqa: BLE001
             pass
-    if uid and not lightweight:
-        try:
-            from app.services.cognitive_router import build_voice_system_extras
-
-            extras = build_voice_system_extras(uid)
-            if extras:
-                base = f"{base}\n\n{extras}"
-        except Exception:  # noqa: BLE001
-            pass
     from app.services.system_clock import clock_context_block
 
     return f"{base}\n\n{clock_context_block()}"
+
+
+def _append_legacy_global_memory(base: str, user_id: str) -> str:
+    """Memoria global legacy — se retirará al cablear memoria modular (Fase 3)."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return base
+    try:
+        from app.services.conversation_memory import load_user_context
+
+        ctx = load_user_context(uid)
+        if ctx:
+            base = f"{base}\n\n{ctx}"
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.services.session_memory import get_session_memory_context
+
+        mem_ctx = get_session_memory_context(uid)
+        if mem_ctx:
+            base = f"{base}\n\n{mem_ctx}"
+    except Exception:  # noqa: BLE001
+        pass
+    return base
+
+
+def _append_cognitive_extras(base: str, user_id: str) -> str:
+    uid = (user_id or "").strip()
+    if not uid:
+        return base
+    try:
+        from app.services.cognitive_router import build_voice_system_extras
+
+        extras = build_voice_system_extras(uid)
+        if extras:
+            base = f"{base}\n\n{extras}"
+    except Exception:  # noqa: BLE001
+        pass
+    return base
+
+
+def build_voice_system(
+    user_id: str | None,
+    user_text: str = "",
+    *,
+    kb_hits: list | None = None,
+    skip_kb: bool = False,
+    lightweight: bool = False,
+) -> str:
+    """Prompt de voz en producción — delega en base ligera + memoria legacy.
+
+    Comportamiento actual preservado hasta Fase 3 (cableado modular).
+    """
+    base = build_base_voice_system(
+        user_id,
+        user_text,
+        kb_hits=kb_hits,
+        skip_kb=skip_kb,
+        include_session_state=not lightweight,
+    )
+    uid = (user_id or "").strip()
+    if uid:
+        base = _append_legacy_global_memory(base, uid)
+    if lightweight:
+        return base
+    if uid:
+        base = _append_cognitive_extras(base, uid)
+    return base
 
 
 def needs_empathy_reformulation(text: str, *, user_text: str = "") -> bool:
