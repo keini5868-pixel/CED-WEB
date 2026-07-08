@@ -859,6 +859,59 @@ async def _execute_voice_tool_body(
                 "title": artifact.title,
             }
 
+        if name == "registrar_movimiento_financiero":
+            from app.services.finance_ledger import save_transaction
+
+            tipo = str(params.get("tipo") or params.get("type") or "").strip()
+            monto = params.get("monto", params.get("amount"))
+            categoria = str(params.get("categoria") or params.get("category") or "").strip() or None
+            descripcion = str(
+                params.get("descripcion") or params.get("description") or ""
+            ).strip() or None
+            fecha = params.get("fecha") or params.get("occurred_on")
+            moneda = str(params.get("moneda") or params.get("currency") or "USD").strip() or "USD"
+            try:
+                saved = await asyncio.to_thread(
+                    save_transaction,
+                    user_id,
+                    tx_type=tipo,
+                    amount=monto,
+                    category=categoria,
+                    description=descripcion,
+                    occurred_on=fecha,
+                    currency=moneda,
+                )
+            except ValueError as exc:
+                return _spoken_err(
+                    f"Señor, no entendí el movimiento: {str(exc)}. ¿Me lo repite?",
+                    error="finance_invalid",
+                )
+            if not saved.get("ok"):
+                return _spoken_err(
+                    "No pude guardar el movimiento, señor. La base de finanzas puede no estar lista.",
+                    error="finance_save_failed",
+                )
+            kind = "ingreso" if saved.get("type") == "ingreso" else "gasto"
+            cat_txt = f" en {saved.get('category')}" if saved.get("category") else ""
+            return _spoken_ok(
+                f"Señor, registré un {kind} de {saved.get('amount')} "
+                f"{saved.get('currency', 'USD')}{cat_txt}."
+            )
+
+        if name == "consultar_finanzas":
+            from app.services.finance_ledger import (
+                canonical_period,
+                format_summary_spoken,
+                summarize_finances,
+            )
+
+            periodo = canonical_period(str(params.get("periodo") or params.get("period") or "mes"))
+            summary = await asyncio.to_thread(summarize_finances, user_id, period=periodo)
+            spoken = format_summary_spoken(summary)
+            payload = _spoken_ok(spoken)
+            payload["summary"] = summary
+            return payload
+
         if name in ("leer_gmail", "enviar_gmail"):
             from app.modules.gmail_module import handle_gmail_query_sync
 

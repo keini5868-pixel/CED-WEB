@@ -31,6 +31,8 @@ _TOOL_ACK: dict[str, str] = {
     "generar_pdf": "Preparando el PDF, señor.",
     "analyze_camera_frame": "Analizando, señor.",
     "buscar_lo_visible": "Analizando, señor.",
+    "registrar_movimiento_financiero": "Anotando el movimiento, señor.",
+    "consultar_finanzas": "Revisando sus finanzas, señor.",
 }
 
 _TOOL_FALLBACK: dict[str, str] = {
@@ -40,6 +42,8 @@ _TOOL_FALLBACK: dict[str, str] = {
     "enviar_gmail": "No pude enviar el correo, señor. ¿Lo intento de nuevo?",
     "publicar_instagram": "No pude publicar en Instagram, señor.",
     "publicar_facebook": "No pude publicar en Facebook, señor.",
+    "registrar_movimiento_financiero": "No pude anotar el movimiento, señor. ¿Lo repite?",
+    "consultar_finanzas": "No pude revisar sus finanzas, señor. ¿Lo intento de nuevo?",
 }
 
 

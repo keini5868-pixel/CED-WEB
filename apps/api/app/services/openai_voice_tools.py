@@ -550,6 +550,67 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "description": "Informa distancia, tiempo restante o si hay ruta activa.",
         "parameters": {"type": "object", "properties": {}},
     },
+    {
+        "type": "function",
+        "name": "registrar_movimiento_financiero",
+        "description": (
+            "Registra un gasto o ingreso en las finanzas del usuario. "
+            "OBLIGATORIO cuando diga: gasté X en Y, pagué X, compré X, "
+            "recibí X de Y, me pagaron X, gané X. Extrae tipo, monto y categoría. "
+            "NUNCA digas que no puedes — invoca esta herramienta."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "tipo": {
+                    "type": "string",
+                    "enum": ["ingreso", "gasto"],
+                    "description": "ingreso si recibió dinero, gasto si lo pagó",
+                },
+                "monto": {
+                    "type": "number",
+                    "description": "Cantidad numérica del movimiento (sin símbolo)",
+                },
+                "categoria": {
+                    "type": "string",
+                    "description": "Categoría breve: materiales, comida, cliente, renta, etc.",
+                },
+                "descripcion": {
+                    "type": "string",
+                    "description": "Descripción opcional del movimiento",
+                },
+                "fecha": {
+                    "type": "string",
+                    "description": "Opcional: hoy, ayer o YYYY-MM-DD (default hoy)",
+                },
+                "moneda": {
+                    "type": "string",
+                    "description": "Opcional, default USD",
+                },
+            },
+            "required": ["tipo", "monto"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "consultar_finanzas",
+        "description": (
+            "Consulta el resumen de finanzas del usuario (ingresos, gastos, balance, "
+            "categorías) para un período. Usar cuando diga: cómo voy este mes, "
+            "cuánto gasté, mis finanzas, dame un plan de ahorro, ayúdame a ahorrar. "
+            "Con los datos que devuelve, ofrece análisis y consejos concretos."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "periodo": {
+                    "type": "string",
+                    "enum": ["hoy", "semana", "mes", "mes_pasado", "anio", "todo"],
+                    "description": "Período a analizar (default mes)",
+                },
+            },
+        },
+    },
 ]
 
 
