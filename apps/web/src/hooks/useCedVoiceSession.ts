@@ -7,7 +7,7 @@ import { ORB_STATE_LABELS } from "@ced/types";
 
 import { appendConversationMessage } from "@/lib/api/conversations";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
-import { generatePdf, downloadPdfBlob } from "@/lib/api/pdf";
+import { generatePdf } from "@/lib/api/pdf";
 import { fetchVoiceBrief, fetchGenerateImage, fetchGenerateImageWithReference, fetchDeepAnalysis } from "@/lib/api/openai";
 import { saveMemory, searchMemory, recallPreviousConversations, saveLongTermMemory } from "@/lib/api/memory";
 import { updateUserAddress } from "@/lib/api/profile";
@@ -545,14 +545,8 @@ export function useCedVoiceSession(
             callbacks?.onGeneratedImage?.(normalized, ev.prompt);
           }
           if (ev.type === "pdf_created" && ev.title) {
-            if (ev.file_id) {
-              void downloadPdfBlob(
-                String(ev.file_id),
-                `${String(ev.title).slice(0, 80)}.pdf`,
-              ).catch(() => undefined);
-            }
             callbacks?.onTranscript?.(
-              `PDF listo, señor. Título: ${String(ev.title)}. Ya está en su historial y descargándose.`,
+              `PDF listo, señor. Título: ${String(ev.title)}. Ya está en su historial.`,
               "model",
               { partial: false },
             );
@@ -1652,7 +1646,6 @@ export function useCedVoiceSession(
             const cid = conversationRef.current;
             const pdf = await generatePdf(title, content, cid, userRequest ?? content);
             if (isStale()) return;
-            void downloadPdfBlob(pdf.file_id, pdf.filename).catch(() => undefined);
             client.sendNarrationBrief(
               `Listo. PDF "${pdf.title}" generado y guardado en tu historial.`,
             );
@@ -2490,7 +2483,6 @@ export function useCedVoiceSession(
             const cid = conversationRef.current;
             try {
               const pdf = await generatePdf(title, content, cid, userRequest);
-              void downloadPdfBlob(pdf.file_id, pdf.filename).catch(() => undefined);
               return {
                 spoken: `Listo. PDF "${pdf.title}" generado y guardado en tu historial.`,
               };
