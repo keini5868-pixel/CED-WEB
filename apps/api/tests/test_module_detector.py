@@ -173,3 +173,44 @@ def test_pdf_priority_over_finance_soft():
     d = detect_intent("hazme un pdf sobre mis finanzas", classify=_never_action)
     assert d.module == "pdf"
     assert d.confidence == CONF_ANCHOR
+
+
+# ---------------------------------------------------------------------------
+# Frases reales del usuario — anchors estrictos agregados.
+# ---------------------------------------------------------------------------
+def test_user_phrase_gmail_leer_mis_correos():
+    d = detect_intent("leer mis correos", classify=_never_action)
+    assert d.module == "gmail"
+    assert d.activate is True
+
+
+def test_user_phrase_gmail_leeme_correo_de():
+    d = detect_intent("léeme el correo de Juan", classify=_never_action)
+    assert d.module == "gmail"
+    assert d.activate is True
+
+
+def test_user_phrase_camera_abre_y_analiza():
+    d1 = detect_intent("abre la cámara", classify=_never_action)
+    d2 = detect_intent("analiza esto", classify=_never_action)
+    assert d1.module == "camera" and d1.activate
+    assert d2.module == "camera" and d2.activate
+
+
+def test_user_phrase_social_publicame():
+    d1 = detect_intent("publícame esto", classify=_never_action)
+    d2 = detect_intent("haz la publicación", classify=_never_action)
+    assert d1.module == "social" and d1.activate
+    assert d2.module == "social" and d2.activate
+
+
+def test_user_phrase_finance_como_van():
+    d = detect_intent("cómo van mis finanzas", classify=_never_action)
+    assert d.module == "finance"
+    assert d.activate is True
+
+
+def test_user_phrase_finance_guardame_que():
+    d = detect_intent("guárdame que mañana pago el alquiler", classify=_never_action)
+    assert d.module == "finance"
+    assert d.activate is True

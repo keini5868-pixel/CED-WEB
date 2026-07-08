@@ -126,6 +126,8 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\b(?:g[ée]n[ée]ra(?:r|me)?|cr[ée]a(?:r|me)?|haz(?:me)?|dis[ée][ñn]a(?:r|me)?|dibuja(?:r|me)?|pinta(?:r|me)?)\s+(?:una?\s+)?(?:imagen|foto|ilustraci[óo]n|logo|banner|flyer|dise[ñn]o|arte|portada)\b",
     ),
     "social": (
+        r"\bpubl[íi]c(?:ame|a)\s+esto\b",
+        r"\bhaz\s+la\s+publicaci[óo]n\b",
         r"\bpubl[íi]ca(?:lo|la)?\b",
         r"\bpublicar\b",
         r"\bpost[ée]a(?:lo|la)?\b",
@@ -139,6 +141,8 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bbuscar?\s+prospectos?\b",
     ),
     "gmail": (
+        r"\bleer\s+mis\s+correos\b",
+        r"\bl[ée]e(?:me)?\s+el\s+correo\s+de\b",
         r"\bl[ée]e(?:me)?\s+(?:el\s+|mi\s+|los\s+|mis\s+)?(?:correos?|emails?|gmail)\b",
         r"\benv[íi]a(?:me)?\s+(?:un\s+)?(?:correo|email)\b",
         r"\brev[íi]sa\s+(?:mi\s+)?(?:correo|gmail|bandeja)\b",
@@ -160,6 +164,7 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bmejora(?:r)?\s+(?:mi\s+)?plan\b",
     ),
     "finance": (
+        r"\bc[óo]mo\s+van\s+mis\s+finanzas\b",
         r"\bresumen\s+de\s+(?:mis\s+)?finanzas\b",
         r"\bcu[áa]nto\s+(?:he\s+)?gast[éeè]\b",
         r"\b(?:tengo|debo|hay)\s+que\s+pagar\b",
@@ -167,7 +172,7 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bgast[ée]\s+\d",
         r"\b(?:recib[íi]|gan[ée]|cobr[ée]|me\s+pagaron)\s+\d",
         r"\bregistra(?:r|me)?\s+(?:un\s+)?(?:gasto|ingreso)\b",
-        r"\bgu[áa]rdame\s+que\b.*\bpag",
+        r"\bgu[áa]rdame\s+que\b",
         r"\bplan\s+de\s+ahorro\b",
         r"\bc[óo]mo\s+voy\b.*\b(?:mes|finanzas|dinero)\b",
         r"\bcu[áa]nto\s+debo\b",
