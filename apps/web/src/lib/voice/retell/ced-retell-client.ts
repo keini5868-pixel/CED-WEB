@@ -367,9 +367,11 @@ export class CedRetellClient {
       const agentText = this.latestLine(lines, "agent");
       if (!agentText || agentText === this.lastAgentLine) return;
       this.lastAgentLine = agentText;
-      if (this.agentSpeaking) {
-        this.emitAgentTranscript(agentText, true);
-      }
+      // NO emitimos parciales del agente. Retell envía el transcript de forma
+      // incremental (creciendo palabra por palabra) y renderizar cada estado
+      // intermedio producía la "cascada" de burbujas. Mostramos SOLO la línea
+      // final en agent_stop_talking. El usuario igual escucha la voz en tiempo
+      // real; el texto es secundario. Esto elimina la cascada de raíz.
     });
 
     this.client.on("error", (error: unknown) => {

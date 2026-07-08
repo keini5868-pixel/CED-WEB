@@ -33,9 +33,12 @@ _GASTO_VERBS = (
 _INGRESO_RE = re.compile(r"\b(?:" + "|".join(_INGRESO_VERBS) + r")\b", re.I)
 _GASTO_RE = re.compile(r"\b(?:" + "|".join(_GASTO_VERBS) + r")\b", re.I)
 
-# Monto: 50, 1,200.50, $800, 800 dólares
+# Monto: 50, 1,200.50, $800, 800 dólares, 1000
+# La primera alternativa exige el separador de miles (+), si no "1000" se
+# recortaría a "100" al matchear solo el primer grupo \d{1,3}. Sin separador,
+# cae a la segunda alternativa \d+ que captura el entero completo.
 _AMOUNT_RE = re.compile(
-    r"(?:\$\s*)?(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
+    r"(?:\$\s*)?(\d{1,3}(?:[.,]\d{3})+(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)"
     r"\s*(?:d[óo]lares?|usd|dolar|pesos|euros?|\$)?",
     re.I,
 )
@@ -73,7 +76,15 @@ _FINANCE_CONTEXT = re.compile(
 # Pagos pendientes / programados (compromisos a futuro, no gastos ya hechos).
 _PENDING_TRIGGER = re.compile(
     r"\b(tengo\s+que\s+pagar|debo\s+pagar|hay\s+que\s+pagar|tengo\s+un\s+pago|"
+    r"tengo\s+que\s+tener|debo\s+tener|necesito\s+tener|tengo\s+que\s+juntar|"
     r"pago\s+pendiente|pagos?\s+pendientes?|por\s+pagar|dejar?\s+programad)\b",
+    re.I,
+)
+# Categorías que en realidad son expresiones de tiempo (no una categoría real).
+_TEMPORAL_CATEGORY = re.compile(
+    r"^(?:d[íi]a|semana|mes|a[ñn]o|pr[óo]xim[oa]|que\s+viene|siguiente|"
+    r"lunes|martes|mi[eé]rcoles|jueves|viernes|s[áa]bado|domingo|de|la|el|"
+    r"\s)+$",
     re.I,
 )
 _PENDING_QUERY = re.compile(
@@ -160,7 +171,9 @@ def parse_pending_statements(text: str) -> list[dict[str, object]]:
     t = (text or "").strip()
     if not t:
         return []
-    clauses = re.split(r"\s*(?:,|;|\by\b)\s*", t)
+    # Divide por cláusulas, pero NO por la coma de un separador de miles
+    # (","seguida de dígito, ej. "1,200"): solo separa comas de enumeración.
+    clauses = re.split(r"\s*(?:;|\by\b)\s*|,(?!\d)\s*", t)
     results: list[dict[str, object]] = []
     last_day: str | None = None
     for clause in clauses:
@@ -182,7 +195,10 @@ def parse_pending_statements(text: str) -> list[dict[str, object]]:
         if cat_match:
             cat = _TIME_TAIL_RE.sub("", cat_match.group(1)).strip(" .,")
             cat = _DAY_TOKEN.sub("", cat).strip(" .,")
-            if 2 <= len(cat) <= 60:
+            cat = re.sub(r"\s+", " ", cat).strip(" .,")
+            # Descarta "categorías" que son solo expresiones de tiempo
+            # (ej. "día de la semana que viene") — no son una categoría real.
+            if 2 <= len(cat) <= 60 and not _TEMPORAL_CATEGORY.match(cat):
                 category = cat
         results.append(
             {

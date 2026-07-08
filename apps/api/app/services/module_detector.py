@@ -176,6 +176,11 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         # Frases explícitas "... en finanzas ..." (guardar/anotar/registrar).
         r"\b(?:gu[áa]rdame|an[óo]tame|anota(?:me)?|reg[íi]strame|registra|ap[úu]ntame|apunta)\s+en\s+finanzas\b",
         r"\ben\s+finanzas\s+que\b",
+        # Tolerancia a errores de STT: "guárdame en finanzas" suena como
+        # "soy guardian finanzas" / "guardián finanzas". Contiene "finanzas"
+        # explícito, así que es seguro tratarlo como intención de acción.
+        r"\bguard[ií][aá]n\s+(?:en\s+|de\s+)?finanzas\b",
+        r"\bguardi[aá]n\s+finanzas\b",
         r"\bplan\s+de\s+ahorro\b",
         r"\bc[óo]mo\s+voy\b.*\b(?:mes|finanzas|dinero)\b",
         r"\bcu[áa]nto\s+debo\b",
