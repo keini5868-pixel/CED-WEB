@@ -131,15 +131,40 @@ class LlamaVoiceLlm:
             parts.append(extra_overlay.strip())
         return "\n\n".join(p for p in parts if p.strip())
 
+    async def _cloud_fallback_reply(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+        user_text: str = "",
+    ) -> str | None:
+        try:
+            from app.services.cloud_llm_fallback import chat_cloud_reply
+
+            return await asyncio.wait_for(
+                asyncio.to_thread(
+                    chat_cloud_reply,
+                    system=system,
+                    messages=messages,
+                    user_text=user_text,
+                    max_tokens=1024,
+                ),
+                timeout=15.0,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[RETELL-LLAMA] cloud fallback failed call=%s: %s", self._latency_call_id, exc)
+            return None
+
     async def _llama_reply(
         self,
         *,
         system: str,
         messages: list[dict[str, str]],
         timeout: float = LLAMA_VOICE_TIMEOUT_SEC,
+        user_text: str = "",
     ) -> str:
         try:
-            return await asyncio.wait_for(
+            reply = await asyncio.wait_for(
                 asyncio.to_thread(
                     call_llama_chat,
                     system=system,
@@ -149,9 +174,10 @@ class LlamaVoiceLlm:
                 ),
                 timeout=timeout,
             )
+            if (reply or "").strip():
+                return reply
         except asyncio.TimeoutError:
             logger.warning("[RETELL-LLAMA] timeout call=%s", self._latency_call_id)
-            return FALLBACK_REPLY
         except Exception as exc:  # noqa: BLE001
             from app.services.llama_service import LlamaNotReadyError
 
@@ -159,7 +185,16 @@ class LlamaVoiceLlm:
                 logger.warning("[RETELL-LLAMA] modelo no listo call=%s", self._latency_call_id)
             else:
                 logger.exception("[RETELL-LLAMA] generate failed call=%s", self._latency_call_id)
-            return FALLBACK_REPLY
+
+        cloud = await self._cloud_fallback_reply(
+            system=system,
+            messages=messages,
+            user_text=user_text,
+        )
+        if cloud:
+            logger.info("[RETELL-LLAMA] cloud fallback ok call=%s", self._latency_call_id)
+            return cloud
+        return FALLBACK_REPLY
 
     async def draft_greeting(self) -> str:
         from app.services.voice_greetings import pick_jarvis_greeting
@@ -220,7 +255,7 @@ class LlamaVoiceLlm:
             return None
         system = self._build_system(extra_overlay=CONVERSATIONAL_TURN_OVERLAY)
         messages = _utterances_to_messages(request.transcript)
-        reply = await self._llama_reply(system=system, messages=messages)
+        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text)
         safe, blocked = guard_voice_response(reply)
         if blocked or not safe:
             return None
@@ -239,7 +274,7 @@ class LlamaVoiceLlm:
         messages = _utterances_to_messages(transcript)
         if not messages:
             messages = [{"role": "user", "content": user_text}]
-        reply = await self._llama_reply(system=system, messages=messages)
+        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text)
         safe, _ = guard_voice_response(reply)
         return finalize_voice_delivery_text(safe or FALLBACK_REPLY)
 
@@ -261,7 +296,7 @@ class LlamaVoiceLlm:
             {"role": "assistant", "content": bad_reply},
             {"role": "user", "content": user_text},
         ]
-        reply = await self._llama_reply(system=system, messages=messages)
+        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text)
         safe, blocked = guard_voice_response(reply)
         if blocked or not safe:
             return None
@@ -294,7 +329,7 @@ class LlamaVoiceLlm:
             messages = [{"role": "user", "content": user_text}]
 
         self._turn_count += 1
-        reply = await self._llama_reply(system=system, messages=messages)
+        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text)
         safe, blocked = guard_voice_response(reply)
         if blocked:
             safe = FALLBACK_REPLY
