@@ -557,11 +557,6 @@ export function useCedVoiceSession(
             callbacks?.onGeneratedImage?.(normalized, ev.prompt);
           }
           if (ev.type === "pdf_created" && ev.title) {
-            callbacks?.onTranscript?.(
-              `PDF listo, señor. Título: ${String(ev.title)}. Ya está en su historial.`,
-              "model",
-              { partial: false },
-            );
             void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
           }
           if (ev.type === "camera_activate") {
@@ -1129,11 +1124,24 @@ export function useCedVoiceSession(
             if (isStale()) return;
             retellCallStartedAtRef.current = Date.now();
             lastPublishableImageRef.current = null;
-            setRetellPollActive(true);
             lastVoiceActionIdRef.current = null;
-            lastToolEventIdRef.current = 0;
             setOrbState("listening");
             setStatusLabel(ORB_STATE_LABELS.listening);
+            void (async () => {
+              try {
+                const state = await fetchVoiceClientState(false);
+                const events = state.tool_events ?? [];
+                const maxId = events.reduce(
+                  (max, ev) => Math.max(max, Number(ev.id || 0)),
+                  lastToolEventIdRef.current,
+                );
+                lastToolEventIdRef.current = maxId;
+              } catch {
+                /* mantener cursor de eventos */
+              }
+              if (isStale()) return;
+              setRetellPollActive(true);
+            })();
           },
           onCallEnded: () => {
             if (isStale()) return;
@@ -1659,7 +1667,7 @@ export function useCedVoiceSession(
             const pdf = await generatePdf(title, content, cid, userRequest ?? content);
             if (isStale()) return;
             client.sendNarrationBrief(
-              `Listo. PDF "${pdf.title}" generado y guardado en tu historial.`,
+              `PDF listo, señor. Título: ${pdf.title}. Ya está en su historial.`,
             );
           } catch (err) {
             if (!isStale()) {
@@ -2486,17 +2494,25 @@ export function useCedVoiceSession(
             return { spoken: `no pude analizar la cámara: ${result.error}` };
           }
           if (name === GENERAR_PDF) {
-            const title = String(args.titulo ?? args.title ?? "Documento CED").trim();
-            let content = String(args.contenido ?? args.content ?? "").trim();
-            if (!content) content = title;
             const userRequest = String(
-              args._user_request ?? args.user_request ?? content ?? title,
+              args._user_request ?? args.user_request ?? lastUserUtteranceRef.current ?? "",
             ).trim();
+            const parsed = parsePdfRequest(
+              userRequest,
+              recentAssistantTextsRef.current,
+            );
+            const title = String(
+              parsed?.title ?? args.titulo ?? args.title ?? "Documento CED",
+            ).trim();
+            let content = String(
+              parsed?.content ?? args.contenido ?? args.content ?? "",
+            ).trim();
+            if (!content) content = title;
             const cid = conversationRef.current;
             try {
-              const pdf = await generatePdf(title, content, cid, userRequest);
+              const pdf = await generatePdf(title, content, cid, userRequest || content);
               return {
-                spoken: `Listo. PDF "${pdf.title}" generado y guardado en tu historial.`,
+                spoken: `PDF listo, señor. Título: ${pdf.title}. Ya está en su historial.`,
               };
             } catch (err) {
               const msg =

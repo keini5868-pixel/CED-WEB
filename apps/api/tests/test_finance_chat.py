@@ -83,3 +83,43 @@ def test_snapshot_handles_errors(monkeypatch):
 
     monkeypatch.setattr(fc, "summarize_finances", boom)
     assert fc._finance_snapshot("u1") == ""
+
+
+def test_instant_finance_query_reply(monkeypatch):
+    monkeypatch.setattr(
+        fc,
+        "summarize_finances",
+        lambda user_id, period="mes": {
+            "count": 3,
+            "total_ingreso": 1200.0,
+            "total_gasto": 400.0,
+            "balance": 800.0,
+            "period_label": "este mes",
+            "top_categories": [("materiales", 200.0)],
+        },
+    )
+    reply = fc._instant_finance_query_reply("u1", "¿Cómo voy este mes?")
+    assert reply
+    assert "mes" in reply.lower()
+
+
+def test_stream_finance_query_yields_token_immediately(monkeypatch):
+    monkeypatch.setattr(
+        fc,
+        "summarize_finances",
+        lambda user_id, period="mes": {
+            "count": 2,
+            "total_ingreso": 500.0,
+            "total_gasto": 100.0,
+            "balance": 400.0,
+            "period_label": "este mes",
+            "top_categories": [],
+        },
+    )
+    events = list(
+        fc.iter_finance_message_stream("u1", message="¿Cómo voy este mes?", history=[])
+    )
+    token_events = [ev for ev in events if ev.startswith("event: token")]
+    assert token_events, "expected instant finance summary token"
+    done = _collect_done(events)
+    assert done["response"].strip()

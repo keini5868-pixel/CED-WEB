@@ -2799,6 +2799,10 @@ def iter_send_message_stream(
 
     if not _can_stream_chat_text(text):
         result = send_message(user_id, content=text, conversation_id=conversation_id)
+        reply = str(result.get("reply") or "").strip()
+        if reply:
+            yield _sse_event("token", {"text": reply})
+            yield _sse_flush()
         yield _sse_event("done", result)
         return
 

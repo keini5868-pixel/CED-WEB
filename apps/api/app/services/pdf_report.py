@@ -102,22 +102,13 @@ def pdf_content_needs_composition(
     return False
 
 
-def compose_pdf_body(
+def _compose_pdf_prompt(
     *,
     title: str,
     user_request: str,
     draft_content: str = "",
     context_snippets: list[str] | None = None,
 ) -> str:
-    """Redacta el cuerpo del PDF con Gemini cuando el modelo no pasó contenido sustantivo."""
-    from app.config import get_settings
-
-    settings = get_settings()
-    api_key = settings.google_api_key.strip()
-    if not api_key:
-        logger.warning("[PDF] compose skipped — no GOOGLE_API_KEY")
-        return ""
-
     req = (user_request or title or "").strip()
     safe_title = (title or "Documento CED").strip()
     draft = (draft_content or "").strip()
@@ -126,9 +117,10 @@ def compose_pdf_body(
         for snippet in (context_snippets or [])
         if (snippet or "").strip()
     ][-6:]
-    context_block = "\n".join(f"- {line}" for line in context_lines) if context_lines else "(sin contexto previo)"
-
-    prompt = f"""Redacta el CONTENIDO COMPLETO de un documento PDF en español.
+    context_block = (
+        "\n".join(f"- {line}" for line in context_lines) if context_lines else "(sin contexto previo)"
+    )
+    return f"""Redacta el CONTENIDO COMPLETO de un documento PDF en español.
 
 Título del documento: {safe_title}
 
@@ -149,6 +141,50 @@ INSTRUCCIONES:
 - Texto plano legible (sin markdown con asteriscos).
 - Entrega SOLO el cuerpo del documento, sin saludo ni despedida."""
 
+
+def _compose_pdf_body_cloud_fallback(prompt: str) -> str:
+    """Gemini/Claude cuando la composición directa con Gemini falla."""
+    from app.services.cloud_llm_fallback import chat_cloud_reply
+
+    try:
+        text = chat_cloud_reply(
+            system=(
+                "Eres un redactor profesional en español. "
+                "Genera el cuerpo completo de documentos PDF claros y útiles."
+            ),
+            messages=[{"role": "user", "content": prompt}],
+            user_text=prompt[:240],
+            max_tokens=4096,
+        )
+        if text and len(text.strip()) >= 80:
+            logger.info("[PDF] composed body via cloud fallback chars=%s", len(text))
+            return text.strip()[:_PDF_BODY_MAX_CHARS]
+    except Exception:  # noqa: BLE001
+        logger.exception("[PDF] cloud compose fallback failed")
+    return ""
+
+
+def compose_pdf_body(
+    *,
+    title: str,
+    user_request: str,
+    draft_content: str = "",
+    context_snippets: list[str] | None = None,
+) -> str:
+    """Redacta el cuerpo del PDF con Gemini cuando el modelo no pasó contenido sustantivo."""
+    from app.config import get_settings
+
+    settings = get_settings()
+    api_key = settings.google_api_key.strip()
+    safe_title = (title or "Documento CED").strip()
+    req = (user_request or title or "").strip()
+    prompt = _compose_pdf_prompt(
+        title=safe_title,
+        user_request=req,
+        draft_content=draft_content,
+        context_snippets=context_snippets,
+    )
+
     def _call_gemini() -> str:
         from google import genai
         from google.genai import types
@@ -164,17 +200,62 @@ INSTRUCCIONES:
         )
         return (response.text or "").strip()
 
-    try:
-        with ThreadPoolExecutor(max_workers=1) as pool:
-            text = pool.submit(_call_gemini).result(timeout=PDF_COMPOSE_TIMEOUT_SEC)
-        if text and len(text) >= 80:
-            logger.info("[PDF] composed body chars=%s title=%s", len(text), safe_title[:60])
-            return text[:_PDF_BODY_MAX_CHARS]
-    except FuturesTimeoutError:
-        logger.warning("[PDF] compose timeout title=%s", safe_title[:60])
-    except Exception:  # noqa: BLE001
-        logger.exception("[PDF] compose_pdf_body failed title=%s", safe_title[:60])
-    return ""
+    if api_key:
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                text = pool.submit(_call_gemini).result(timeout=PDF_COMPOSE_TIMEOUT_SEC)
+            if text and len(text) >= 80:
+                logger.info("[PDF] composed body chars=%s title=%s", len(text), safe_title[:60])
+                return text[:_PDF_BODY_MAX_CHARS]
+        except FuturesTimeoutError:
+            logger.warning("[PDF] compose timeout title=%s", safe_title[:60])
+        except Exception:  # noqa: BLE001
+            logger.exception("[PDF] compose_pdf_body failed title=%s", safe_title[:60])
+    else:
+        logger.warning("[PDF] compose skipped — no GOOGLE_API_KEY")
+
+    return _compose_pdf_body_cloud_fallback(prompt)
+
+
+def _persist_pdf_artifact(
+    *,
+    file_id: str,
+    user_id: str,
+    title: str,
+    filename: str,
+    pdf_bytes: bytes,
+    conversation_id: str | None,
+) -> bool:
+    from app.services import supabase_db
+
+    attempts: list[str | None] = []
+    if conversation_id:
+        attempts.append(conversation_id)
+    attempts.append(None)
+    seen: set[str | None] = set()
+    for conv_id in attempts:
+        if conv_id in seen:
+            continue
+        seen.add(conv_id)
+        saved = supabase_db.save_pdf_artifact(
+            file_id=file_id,
+            user_id=user_id,
+            title=title,
+            filename=filename,
+            pdf_bytes=pdf_bytes,
+            conversation_id=conv_id,
+        )
+        if not saved:
+            continue
+        verify = supabase_db.get_pdf_artifact(file_id, user_id)
+        if verify and len(verify[0]) >= PDF_MIN_BYTES:
+            return True
+        logger.warning(
+            "[PDF] Supabase verify failed file_id=%s conv=%s",
+            file_id,
+            conv_id or "none",
+        )
+    return False
 
 
 def assistant_fallback_texts_from_messages(messages: list[dict[str, Any]]) -> list[str]:
@@ -297,6 +378,13 @@ def store_pdf(
     if pdf_content_needs_composition(safe_title, resolved, user_request=req):
         raise ValueError("No se pudo redactar el contenido del PDF")
 
+    from app.services.chat_intents import infer_pdf_title
+
+    if safe_title == "Documento CED" or len(safe_title.strip()) < 12:
+        inferred = infer_pdf_title(req, resolved)
+        if inferred and inferred != "Documento CED":
+            safe_title = inferred[:200]
+
     safe_content = resolved[:_PDF_BODY_MAX_CHARS]
     if len(safe_content.strip()) < 40:
         raise ValueError("No se pudo redactar el contenido del PDF")
@@ -317,9 +405,7 @@ def store_pdf(
 
     saved = False
     try:
-        from app.services import supabase_db
-
-        saved = supabase_db.save_pdf_artifact(
+        saved = _persist_pdf_artifact(
             file_id=file_id,
             user_id=user_id,
             title=safe_title,
@@ -327,19 +413,23 @@ def store_pdf(
             pdf_bytes=data,
             conversation_id=conversation_id,
         )
-        if saved:
-            verify = supabase_db.get_pdf_artifact(file_id, user_id)
-            if not verify or len(verify[0]) < PDF_MIN_BYTES:
-                saved = False
     except Exception:  # noqa: BLE001
         logger.exception("[PDF] Supabase persist failed file_id=%s user=%s", file_id, user_id[:8])
-
-    if not saved:
-        raise RuntimeError("No se pudo guardar el PDF en el servidor")
 
     _STORE[file_id] = (data, filename, now, user_id)
     _USER_INDEX.setdefault(user_id, []).insert(0, meta)
     _USER_INDEX[user_id] = _USER_INDEX[user_id][:100]
+
+    if not saved:
+        from app.services.supabase_client import service_role_configured
+
+        if service_role_configured():
+            raise RuntimeError("No se pudo guardar el PDF en el servidor")
+        logger.error(
+            "[PDF] PDF solo en memoria (falta SUPABASE_SERVICE_ROLE_KEY) file_id=%s user=%s",
+            file_id,
+            user_id[:8],
+        )
 
     if conversation_id:
         try:

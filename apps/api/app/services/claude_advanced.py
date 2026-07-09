@@ -429,8 +429,6 @@ def send_advanced_message(
             model=ADVANCED_STREAM_MODEL_LABEL,
         )
 
-    anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=True)
-
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = _history_as_chat_rows(history)
 
@@ -466,6 +464,8 @@ def send_advanced_message(
                 model=ADVANCED_MODEL_LABEL,
                 pdf=attachment if attachment.get("file_id") else None,
             )
+
+    anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=True)
 
     image_result = _try_direct_image(user_id, text, history_rows, conv_id)
     if image_result:
@@ -639,6 +639,10 @@ def iter_advanced_message_stream(
                 response=fallback,
                 model=ADVANCED_STREAM_MODEL_LABEL,
             )
+        response_text = str(result.get("response") or "").strip()
+        if response_text:
+            yield _sse_event("token", {"text": response_text})
+            yield _sse_flush()
         yield _sse_event("done", result)
         return
 

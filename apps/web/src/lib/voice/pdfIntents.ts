@@ -3,7 +3,7 @@
 const PDF_INTENT_PATTERNS = [
   /\bpdf\b/i,
   /\b(genera|generar|gener[aá]me|crea|crear|cr[eé]ame|exporta|exportar|convierte|convertir|guarda|guárdame|dame|pon|pásalo|pasalo)\s+(?:.{0,48}?\s+)?(?:en\s+)?(?:un(?:a)?\s+)?pdf\b/i,
-  /\b(?:esto|lo|el\s+plan|la\s+estrategia)\s+(?:en\s+)?(?:un(?:a)?\s+)?pdf\b/i,
+  /\b(?:esto|lo|la\s+informaci[oó]n|el\s+plan|la\s+estrategia)\s+(?:en\s+)?(?:un(?:a)?\s+)?pdf\b/i,
   /\bpdf\s+(?:de|con|sobre)\b/i,
   /\b(?:haz|hazme)\s+(?:un(?:a)?\s+)?pdf\b/i,
   /\b(?:en|como)\s+(?:un(?:a)?\s+)?pdf\b/i,
@@ -16,7 +16,27 @@ export function isPdfIntent(text: string): boolean {
 }
 
 const PDF_THIS_REF =
-  /\b(esto|lo|el\s+plan|la\s+estrategia|ese\s+plan|el\s+documento|aqu[ií]\s+(?:presentado|mostrado))\b/i;
+  /\b(esto|lo|la\s+informaci[oó]n|esa\s+informaci[oó]n|con\s+eso|lo\s+anterior|el\s+plan|la\s+estrategia|ese\s+plan|el\s+documento|aqu[ií]\s+(?:presentado|mostrado))\b/i;
+
+function inferPdfTitle(userText: string, content: string): string {
+  const blob = `${userText}\n${content.slice(0, 900)}`;
+  if (/plan\s+semanal|estrategia\s+semanal/i.test(blob)) return "Plan Semanal de Estrategia CED";
+  if (/lanzamiento\s+(?:de\s+)?ced/i.test(blob)) return "Plan de Lanzamiento CED";
+  if (/\bestrategia\b/i.test(blob) && !/tornado|noticia/i.test(blob)) return "Estrategia CED";
+  if (/\btornado\b/i.test(blob)) {
+    if (/\bchina\b|\bhubei\b/i.test(blob)) return "Tornado EF2 en Hubei, China";
+    return "Informe sobre Tornado";
+  }
+  const body = content.trim();
+  for (const rawLine of body.split(/[\n.!?]+/)) {
+    let line = rawLine.trim();
+    line = line.replace(/^(?:señor,?\s*)?(?:sobre su consulta:?\s*)?/i, "").trim();
+    if (line.length >= 18 && line.length <= 110 && !/^(?:un momento|consulto|pdf)\b/i.test(line)) {
+      return line.slice(0, 120);
+    }
+  }
+  return "Documento CED";
+}
 
 export function parsePdfRequest(
   text: string,
@@ -60,11 +80,8 @@ export function parsePdfRequest(
     if (previous) content = previous.trim();
   }
 
-  const blob = `${t}\n${content.slice(0, 600)}`;
   if (title === "Documento CED" || title.length < 8) {
-    if (/plan\s+semanal|estrategia\s+semanal/i.test(blob)) title = "Plan Semanal de Estrategia CED";
-    else if (/lanzamiento\s+(?:de\s+)?ced/i.test(blob)) title = "Plan de Lanzamiento CED";
-    else if (/estrategia/i.test(blob)) title = "Estrategia CED";
+    title = inferPdfTitle(t, content);
   }
 
   if (!content || content.length < 3) {

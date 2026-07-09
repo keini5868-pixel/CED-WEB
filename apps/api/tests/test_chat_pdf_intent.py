@@ -58,3 +58,32 @@ def test_hallucinated_generar_pdf_fields_extracts_content():
     title, content = fields
     assert "Plan Semanal" in title
     assert "Plan Semanal" in content
+
+
+def test_resolve_pdf_request_uses_assistant_news_for_esa_informacion():
+    history = [
+        {
+            "role": "assistant",
+            "content": (
+                "Un poderoso tornado EF2 azotó la provincia central de Hubei en China, "
+                "dejando once fallecidos y más de trescientas heridas."
+            ),
+        },
+    ]
+    req = resolve_pdf_request("¿me puedes crear un PDF con esa información?", history)
+    assert req is not None
+    title, body = req
+    assert "Hubei" in body or "tornado" in body.lower()
+    assert title != "Documento CED"
+    assert "Tornado" in title or "Hubei" in title
+
+
+def test_infer_pdf_title_from_tornado_content():
+    from app.services.chat_intents import infer_pdf_title
+
+    title = infer_pdf_title(
+        "PDF con esa información",
+        "Un poderoso tornado EF2 azotó Hubei en China dejando once fallecidos.",
+    )
+    assert "Tornado" in title
+    assert "China" in title or "Hubei" in title

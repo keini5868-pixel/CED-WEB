@@ -83,6 +83,62 @@ def test_store_pdf_raises_when_compose_fails(mock_compose):
         raise AssertionError("expected ValueError")
 
 
+def test_compose_pdf_body_uses_cloud_fallback_when_gemini_empty(monkeypatch):
+    from app.services.pdf_report import compose_pdf_body
+
+    monkeypatch.setattr("app.config.get_settings", lambda: type("S", (), {"google_api_key": "fake-key"})())
+    monkeypatch.setattr(
+        "app.services.pdf_report.ThreadPoolExecutor",
+        lambda **_: type(
+            "Pool",
+            (),
+            {
+                "submit": lambda self, fn: type(
+                    "F",
+                    (),
+                    {"result": lambda self, timeout=0: ""},
+                )(),
+                "__enter__": lambda self: self,
+                "__exit__": lambda *a: None,
+            },
+        )(),
+    )
+    monkeypatch.setattr(
+        "app.services.pdf_report._compose_pdf_body_cloud_fallback",
+        lambda prompt: "Contenido extenso del documento generado por fallback cloud. " * 8,
+    )
+    body = compose_pdf_body(
+        title="Plan semanal",
+        user_request="Hazme un PDF del plan semanal",
+        draft_content="Plan semanal",
+    )
+    assert len(body) >= 80
+    assert "fallback cloud" in body
+
+
+def test_store_pdf_memory_only_without_service_role(monkeypatch):
+    from app.services.pdf_report import store_pdf
+
+    composed = "Sección uno del informe.\n" * 12
+    fake_pdf = b"%PDF-1.4 " + (b"x" * 200)
+
+    monkeypatch.setattr("app.services.pdf_report.compose_pdf_body", lambda **_: composed)
+    monkeypatch.setattr("app.services.pdf_report._persist_pdf_artifact", lambda **_: False)
+    monkeypatch.setattr(
+        "app.services.supabase_client.service_role_configured",
+        lambda: False,
+    )
+
+    artifact = store_pdf(
+        user_id="user-test",
+        title="Informe",
+        content="Informe",
+        user_request="PDF del informe",
+    )
+    assert artifact.file_id
+    assert "informe" in artifact.title.lower()
+
+
 def test_dedupe_chat_reply_removes_exact_duplicate_halves():
     text = "Bloque A.\n\nBloque A."
     assert _dedupe_chat_reply(text) == "Bloque A."

@@ -117,8 +117,8 @@ export function CedVoiceHub() {
         const normalized = normalizeCedMediaUrl(imageUrl);
         pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
         setVoiceImagePreview({ url: normalized, prompt });
-        setChatSeedImage({ url: normalized, prompt });
-        setChatOpen(true);
+        setChatOpen(false);
+        setChatSeedImage(null);
       }
     };
     window.addEventListener("ced-voice-tool-result", onToolResult);
@@ -133,10 +133,16 @@ export function CedVoiceHub() {
     onGeneratedImage: (url, prompt) => {
       pushVoiceImage(url, { prompt, role: "model", status: "ready" });
       setVoiceImagePreview({ url, prompt });
-      setChatSeedImage({ url, prompt });
-      setChatOpen(true);
+      setChatOpen(false);
+      setChatSeedImage(null);
     },
   });
+
+  useEffect(() => {
+    if (!voice.micOn) return;
+    setChatOpen(false);
+    setChatSeedImage(null);
+  }, [voice.micOn]);
 
   useEffect(() => {
     const onLifeAction = (ev: Event) => {
@@ -225,7 +231,6 @@ export function CedVoiceHub() {
       <CedVoiceImagePreview
         url={voiceImagePreview?.url ?? null}
         prompt={voiceImagePreview?.prompt}
-        onOpenChat={() => setChatOpen(true)}
         onDismiss={() => setVoiceImagePreview(null)}
       />
 

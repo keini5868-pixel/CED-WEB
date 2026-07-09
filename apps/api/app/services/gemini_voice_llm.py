@@ -720,7 +720,7 @@ class GeminiVoiceLlm:
 
         if isinstance(tool_result, dict) and tool_result.get("ok"):
             spoken = str(tool_result.get("spoken") or "").strip()
-            return spoken or f"PDF listo, señor. Título: {title}."
+            return spoken or f"PDF listo, señor. Título: {title}. Ya está en su historial."
         spoken = str(tool_result.get("spoken") or tool_result.get("error") or "").strip()
         return spoken or None
 

@@ -7,15 +7,13 @@ import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 type Props = {
   url: string | null;
   prompt?: string;
-  onOpenChat?: () => void;
   onDismiss?: () => void;
 };
 
-/** Vista previa de imagen generada por voz — visible sin abrir el chat manualmente. */
+/** Vista previa compacta bajo el orbe — la conversación principal va en el panel derecho. */
 export function CedVoiceImagePreview({
   url,
   prompt,
-  onOpenChat,
   onDismiss,
 }: Props) {
   const src = url ? normalizeCedMediaUrl(url) : null;
@@ -31,22 +29,15 @@ export function CedVoiceImagePreview({
           className="mt-4 w-full max-w-sm"
         >
           <div className="overflow-hidden rounded-xl border border-cyan-500/40 bg-black/60 shadow-[0_0_24px_rgba(0,229,255,0.15)]">
-            <button
-              type="button"
-              onClick={onOpenChat}
-              className="block w-full cursor-pointer"
-              aria-label="Abrir imagen en chat"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={src}
-                alt={prompt ? `Imagen: ${prompt}` : "Imagen generada por CED"}
-                className="max-h-72 w-full object-contain"
-                onError={(e) => {
-                  e.currentTarget.alt = "No se pudo cargar la imagen";
-                }}
-              />
-            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt={prompt ? `Imagen: ${prompt}` : "Imagen generada por CED"}
+              className="max-h-72 w-full object-contain"
+              onError={(e) => {
+                e.currentTarget.alt = "No se pudo cargar la imagen";
+              }}
+            />
             <div className="flex items-center justify-between gap-2 px-3 py-2">
               <p className="ced-hud-text-secondary truncate text-xs">
                 {prompt ? `Imagen: ${prompt}` : "Imagen generada"}

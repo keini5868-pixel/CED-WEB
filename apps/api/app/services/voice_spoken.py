@@ -158,12 +158,26 @@ def compose_voice_tool_delivery(filler: str, body: str) -> str:
     return f"{lead}. {tail}"
 
 
+def sanitize_pdf_delivery_text(text: str) -> str:
+    """Elimina prompts obsoletos de guardado y normaliza confirmación de PDF."""
+    cleaned = " ".join((text or "").split()).strip()
+    if not cleaned:
+        return cleaned
+    cleaned = re.sub(r"¿\s*d[oó]nde\s+desea\s+guardarlo\??", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"¿\s*d[oó]nde\s+(?:lo\s+)?guarda(?:r|mos)\??", "", cleaned, flags=re.I)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,")
+    if re.search(r"\bpdf\b", cleaned, re.I) and not re.search(r"historial", cleaned, re.I):
+        cleaned = f"{cleaned.rstrip('.')}. Ya está en su historial."
+    return cleaned
+
+
 def finalize_voice_delivery_text(text: str) -> str:
     """Una sola respuesta hablable: sin filler duplicado y con cierre de oración."""
     from app.services.voice_llm_common import dedupe_voice_reply
 
     raw = " ".join((text or "").split()).strip()
     raw = dedupe_voice_reply(raw)
+    raw = sanitize_pdf_delivery_text(raw)
     raw = re.sub(r"\*\*([^*]+)\*\*", r"\1", raw)
     raw = re.sub(r"\*([^*]+)\*", r"\1", raw)
     raw = re.sub(r"^#+\s*", "", raw, flags=re.MULTILINE)

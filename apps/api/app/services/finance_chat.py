@@ -124,6 +124,90 @@ def _greeting_reply(text: str) -> str | None:
     return None
 
 
+def _instant_finance_query_reply(user_id: str, text: str) -> str | None:
+    """Resumen determinista de finanzas — evita colgar el chat en consultas simples."""
+    if not is_finance_query_intent(text) or is_pdf_intent(text):
+        return None
+    lowered = text.strip().lower()
+    period = "mes_pasado" if re.search(r"mes\s+pasado|mes\s+anterior", lowered) else "mes"
+    try:
+        summary = summarize_finances(user_id, period=canonical_period(period))
+        spoken = format_summary_spoken(summary)
+        if spoken.strip():
+            return spoken
+    except Exception:  # noqa: BLE001
+        logger.exception("[FINANCE] instant query failed user=%s", user_id[:8])
+    return None
+
+
+def _yield_done_with_text(result: dict[str, Any]) -> Iterator[str]:
+    response = str(result.get("response") or "").strip()
+    if response:
+        yield _sse_event("token", {"text": response})
+        yield _sse_flush()
+    yield _sse_event("done", result)
+
+
+def _finance_llm_reply(
+    user_id: str,
+    *,
+    text: str,
+    history_rows: list[dict[str, Any]],
+    history: list[dict[str, Any]],
+    system: str,
+    anthropic_key: str,
+    google_key: str,
+) -> tuple[str, str]:
+    """Respuesta LLM para finanzas sin pipeline bloqueante de herramientas."""
+    stream_messages = [*_history_for_stream(history), {"role": "user", "content": text}]
+    max_tokens = _stream_max_tokens(text)
+    accumulated: list[str] = []
+    stream_label = _stream_model_label()
+
+    from app.services.llama_service import use_llama
+
+    if google_key or use_llama():
+        for piece in _gemini_simple_reply_stream(
+            api_key=google_key,
+            model=_gemini_chat_model(),
+            system=system,
+            messages=stream_messages,
+            max_tokens=max_tokens,
+        ):
+            accumulated.append(piece)
+    elif anthropic_key:
+        for piece, model_label in _iter_anthropic_text_stream(
+            api_key=anthropic_key,
+            system=system,
+            messages=stream_messages,
+            max_tokens=max_tokens,
+            user_text=text,
+        ):
+            stream_label = model_label
+            accumulated.append(piece)
+
+    reply = _finalize_chat_reply("".join(accumulated).strip())
+    if not reply:
+        from app.services.cloud_llm_fallback import chat_cloud_reply
+
+        cloud = chat_cloud_reply(
+            system=system,
+            messages=stream_messages,
+            user_text=text,
+            max_tokens=max_tokens,
+        )
+        if cloud:
+            reply = _finalize_chat_reply(cloud)
+    if not reply:
+        instant = _instant_finance_query_reply(user_id, text)
+        if instant:
+            reply = instant
+    if not reply:
+        summary = summarize_finances(user_id, period=canonical_period("mes"))
+        reply = format_summary_spoken(summary)
+    return reply, stream_label
+
+
 def _finance_snapshot(user_id: str) -> str:
     """Resumen compacto de datos reales para inyectar al modelo."""
     try:
@@ -185,6 +269,10 @@ def send_finance_message(
     if greeting:
         return _finish_payload(response=greeting, model=_stream_model_label())
 
+    instant_query = _instant_finance_query_reply(user_id, text)
+    if instant_query:
+        return _finish_payload(response=instant_query, model=_stream_model_label())
+
     # Registro directo y determinista de un movimiento o pago pendiente.
     if (
         is_finance_write_intent(text)
@@ -219,38 +307,43 @@ def send_finance_message(
 
     system = _finance_system_with_data(FINANCE_SYSTEM_PROMPT, user_id)
 
-    # Con Anthropic: pipeline completo con herramientas (permite PDF de plan).
-    if anthropic_key:
-        messages = _anthropic_messages(history_rows)
-        messages.append({"role": "user", "content": text})
-        reply, pdf_attachment, _image = _complete_chat_with_tools(
+    if _needs_finance_tools(text, history_rows):
+        if anthropic_key:
+            messages = _anthropic_messages(history_rows)
+            messages.append({"role": "user", "content": text})
+            reply, pdf_attachment, _image = _complete_chat_with_tools(
+                user_id,
+                api_key=anthropic_key,
+                system=system,
+                messages=messages,
+                conversation_id=conv_id,
+            )
+            return _finish_payload(
+                response=_finalize_chat_reply(reply),
+                model=FINANCE_MODEL_LABEL,
+                pdf=pdf_attachment,
+            )
+        reply, model_label = _finance_llm_reply(
             user_id,
-            api_key=anthropic_key,
+            text=text,
+            history_rows=history_rows,
+            history=history,
             system=system,
-            messages=messages,
-            conversation_id=conv_id,
+            anthropic_key=anthropic_key,
+            google_key=google_key,
         )
-        return _finish_payload(
-            response=_finalize_chat_reply(reply),
-            model=FINANCE_MODEL_LABEL,
-            pdf=pdf_attachment,
-        )
+        return _finish_payload(response=reply, model=model_label)
 
-    # Solo Google: respuesta con Gemini (sin herramientas).
-    accumulated: list[str] = []
-    for piece in _gemini_simple_reply_stream(
-        api_key=google_key,
-        model=_gemini_chat_model(),
-        system=system,
-        messages=[*_history_for_stream(history), {"role": "user", "content": text}],
-        max_tokens=_stream_max_tokens(text),
-    ):
-        accumulated.append(piece)
-    reply = _finalize_chat_reply("".join(accumulated).strip())
-    if not reply:
-        summary = summarize_finances(user_id, period=canonical_period("mes"))
-        reply = format_summary_spoken(summary)
-    return _finish_payload(response=reply, model=_stream_model_label())
+    reply, model_label = _finance_llm_reply(
+        user_id,
+        text=text,
+        history_rows=history_rows,
+        history=history,
+        system=_finance_system_with_data(FINANCE_STREAM_SYSTEM, user_id),
+        anthropic_key=anthropic_key,
+        google_key=google_key,
+    )
+    return _finish_payload(response=reply, model=model_label)
 
 
 def iter_finance_message_stream(
@@ -273,6 +366,16 @@ def iter_finance_message_stream(
         )
         return
 
+    instant_query = _instant_finance_query_reply(user_id, text)
+    if instant_query:
+        yield _sse_event("token", {"text": instant_query})
+        yield _sse_flush()
+        yield _sse_event(
+            "done",
+            _finish_payload(response=instant_query, model=_stream_model_label()),
+        )
+        return
+
     yield _sse_event("status", {"text": "Preparando respuesta…"})
     yield _sse_flush()
 
@@ -286,10 +389,20 @@ def iter_finance_message_stream(
         yield _sse_event("done", payload)
         return
 
-    anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=False)
+    try:
+        anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=False)
+    except ValueError:
+        fallback = _instant_finance_query_reply(user_id, text) or (
+            "Disculpe señor, finanzas no está disponible en este momento."
+        )
+        yield from _yield_done_with_text(
+            _finish_payload(response=fallback, model=_stream_model_label())
+        )
+        return
 
     if _needs_finance_tools(text, history_rows):
         yield _sse_event("status", {"text": "Analizando sus finanzas…"})
+        yield _sse_flush()
         try:
             result = send_finance_message(
                 user_id, message=text, history=history, conversation_id=conv_id
@@ -300,7 +413,7 @@ def iter_finance_message_stream(
                 response="Disculpe señor, tuve un inconveniente. ¿Puede repetir?",
                 model=_stream_model_label(),
             )
-        yield _sse_event("done", result)
+        yield from _yield_done_with_text(result)
         return
 
     system = _finance_system_with_data(FINANCE_STREAM_SYSTEM, user_id)
@@ -348,7 +461,7 @@ def iter_finance_message_stream(
         result = send_finance_message(
             user_id, message=text, history=history, conversation_id=conv_id
         )
-        yield _sse_event("done", result)
+        yield from _yield_done_with_text(result)
         return
 
     reply = _finalize_chat_reply("".join(accumulated).strip())
@@ -364,10 +477,14 @@ def iter_finance_message_stream(
         if cloud:
             reply = _finalize_chat_reply(cloud)
     if not reply:
+        instant = _instant_finance_query_reply(user_id, text)
+        if instant:
+            reply = instant
+    if not reply:
         result = send_finance_message(
             user_id, message=text, history=history, conversation_id=conv_id
         )
-        yield _sse_event("done", result)
+        yield from _yield_done_with_text(result)
         return
 
     yield _sse_event("done", _finish_payload(response=reply, model=stream_label))

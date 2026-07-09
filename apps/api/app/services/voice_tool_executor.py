@@ -805,6 +805,23 @@ async def _execute_voice_tool_body(
                 or params.get("query")
                 or titulo
             ).strip()
+            history_rows: list[dict[str, str]] = []
+            if fallback_list:
+                for snippet in fallback_list:
+                    text = str(snippet or "").strip()
+                    if text:
+                        history_rows.append({"role": "assistant", "content": text})
+            from app.services.chat_intents import infer_pdf_title, resolve_pdf_request
+
+            pdf_req = resolve_pdf_request(user_request, history_rows)
+            if pdf_req:
+                req_title, req_body = pdf_req
+                if req_body and len(req_body.strip()) > len(contenido.strip()):
+                    contenido = req_body
+                if req_title and req_title != "Documento CED":
+                    titulo = req_title
+            if titulo == "Documento CED" and len(contenido.strip()) >= 40:
+                titulo = infer_pdf_title(user_request, contenido)
             try:
                 artifact = await asyncio.to_thread(
                     store_pdf_with_timeout,
@@ -839,7 +856,7 @@ async def _execute_voice_tool_body(
                 )
             spoken = (
                 f"PDF listo, señor. Título: {artifact.title}. "
-                "¿Dónde desea guardarlo?"
+                "Ya está en su historial."
             )
             try:
                 vcs.push_tool_event(

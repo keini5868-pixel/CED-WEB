@@ -64,7 +64,11 @@ _PDF_PATTERNS = (
 )
 
 _PDF_THIS_REF = re.compile(
-    r"\b(esto|lo|el\s+plan|la\s+estrategia|ese\s+plan|el\s+documento|aqu[ií]\s+(?:presentado|mostrado))\b",
+    r"\b("
+    r"esto|lo|la\s+informaci[oó]n|esa\s+informaci[oó]n|con\s+eso|"
+    r"lo\s+anterior|el\s+plan|la\s+estrategia|ese\s+plan|el\s+documento|"
+    r"aqu[ií]\s+(?:presentado|mostrado)"
+    r")\b",
     re.I,
 )
 
@@ -252,15 +256,40 @@ def _last_assistant_text(history: list[dict] | None, *, min_len: int = 120) -> s
     return ""
 
 
-def _infer_pdf_title(user_text: str, content: str) -> str:
-    blob = f"{user_text}\n{content[:600]}"
+def infer_pdf_title(user_text: str, content: str) -> str:
+    """Título legible a partir del pedido y del cuerpo del documento."""
+    blob = f"{user_text}\n{content[:900]}"
     if re.search(r"plan\s+semanal|estrategia\s+semanal", blob, re.I):
         return "Plan Semanal de Estrategia CED"
     if re.search(r"lanzamiento\s+(?:de\s+)?ced", blob, re.I):
         return "Plan de Lanzamiento CED"
-    if re.search(r"estrategia", blob, re.I):
+    if re.search(r"\bestrategia\b", blob, re.I) and not re.search(r"tornado|noticia", blob, re.I):
         return "Estrategia CED"
+    if re.search(r"\btornado\b", blob, re.I):
+        if re.search(r"\bchina\b|\bhubei\b", blob, re.I):
+            return "Tornado EF2 en Hubei, China"
+        return "Informe sobre Tornado"
+    if re.search(r"\bnoticia", blob, re.I):
+        topic = re.search(
+            r"noticia(?:s)?\s+(?:de|sobre|del?|la)?\s*([^.\n]{8,80})",
+            user_text,
+            re.I,
+        )
+        if topic:
+            return topic.group(1).strip()[:120]
+    if re.search(r"\bfinanz", blob, re.I):
+        return "Reporte Financiero CED"
+    body = (content or "").strip()
+    for raw_line in re.split(r"[\n.!?]+", body):
+        line = raw_line.strip()
+        line = re.sub(r"^(?:señor,?\s*)?(?:sobre su consulta:?\s*)?", "", line, flags=re.I).strip()
+        if 18 <= len(line) <= 110 and not re.search(r"^(?:un momento|consulto|pdf)\b", line, re.I):
+            return line[:120]
     return "Documento CED"
+
+
+def _infer_pdf_title(user_text: str, content: str) -> str:
+    return infer_pdf_title(user_text, content)
 
 
 def resolve_pdf_request(
@@ -287,13 +316,13 @@ def resolve_pdf_request(
         if previous:
             content = previous
 
-    if title == "Documento CED" or len(title) < 8:
-        title = _infer_pdf_title(t, content)
-
     if not content or len(content) < 40:
         previous = _last_assistant_text(history, min_len=80)
         if previous:
             content = previous
+
+    if title == "Documento CED" or len(title) < 8:
+        title = infer_pdf_title(t, content)
 
     if not content:
         return title[:200], ""

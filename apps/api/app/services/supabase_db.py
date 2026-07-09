@@ -926,11 +926,24 @@ def save_pdf_artifact(
 ) -> bool:
     import base64
 
+    from app.services.supabase_client import service_role_configured
+
+    if not service_role_configured():
+        logger.error(
+            "[DB] save_pdf_artifact skipped — SUPABASE_SERVICE_ROLE_KEY required (RLS deny-all)"
+        )
+        return False
+
+    from app.services.user_id_utils import normalize_user_id
+
+    uid = normalize_user_id(user_id)
     try:
-        client = _client()
+        from app.services.supabase_client import get_supabase_admin
+
+        client = get_supabase_admin(require_service_role=True)
         row: dict[str, Any] = {
             "file_id": file_id,
-            "user_id": user_id,
+            "user_id": uid,
             "title": title,
             "filename": filename,
             "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
@@ -947,13 +960,20 @@ def save_pdf_artifact(
 def get_pdf_artifact(file_id: str, user_id: str) -> tuple[bytes, str, str] | None:
     import base64
 
+    from app.services.user_id_utils import normalize_user_id
+
+    uid = normalize_user_id(user_id)
     try:
-        client = _client()
+        from app.services.supabase_client import get_supabase_admin, service_role_configured
+
+        if not service_role_configured():
+            return None
+        client = get_supabase_admin(require_service_role=True)
         result = (
             client.table("ced_pdf_artifacts")
             .select("filename, title, pdf_base64")
             .eq("file_id", file_id)
-            .eq("user_id", user_id)
+            .eq("user_id", uid)
             .limit(1)
             .execute()
         )
