@@ -2,20 +2,40 @@
 set -e
 
 MODEL="${OLLAMA_MODEL:-llama2:13b}"
+MODELS_DIR="${OLLAMA_MODELS:-/data}"
 
-echo "[CED-Llama] Starting Ollama on ${OLLAMA_HOST:-0.0.0.0:11434}"
+mkdir -p "${MODELS_DIR}"
+export OLLAMA_MODELS="${MODELS_DIR}"
+
+echo "[CED-Llama] OLLAMA_HOST=${OLLAMA_HOST:-[::]:11434}"
+echo "[CED-Llama] OLLAMA_MODELS=${OLLAMA_MODELS}"
+echo "[CED-Llama] MODEL=${MODEL}"
+
 ollama serve &
 SERVE_PID=$!
 
-# Esperar a que el daemon responda.
-for i in $(seq 1 60); do
+# Esperar a que el daemon responda (hasta 2 min en cold start).
+for i in $(seq 1 120); do
   if ollama list >/dev/null 2>&1; then
+    echo "[CED-Llama] Ollama daemon ready (${i}s)"
     break
   fi
   sleep 1
 done
 
-echo "[CED-Llama] Pulling model ${MODEL} (first boot may take several minutes)..."
-ollama pull "${MODEL}" || echo "[CED-Llama] WARN: pull failed — will retry on next restart"
+if ! ollama list >/dev/null 2>&1; then
+  echo "[CED-Llama] ERROR: Ollama daemon did not start in 120s"
+  exit 1
+fi
 
+if ollama list 2>/dev/null | grep -q "${MODEL%%:*}"; then
+  echo "[CED-Llama] Model ${MODEL} already present — skipping pull"
+else
+  echo "[CED-Llama] Pulling ${MODEL} (first boot ~7.4GB, several minutes)..."
+  ollama pull "${MODEL}" || {
+    echo "[CED-Llama] WARN: pull failed — check RAM/disk; will retry next restart"
+  }
+fi
+
+echo "[CED-Llama] Ready — listening on ${OLLAMA_HOST}"
 wait "${SERVE_PID}"

@@ -79,10 +79,33 @@ def test_call_llama_chat_parses_message(monkeypatch):
     assert text == "Respuesta chat"
 
 
-def test_llama_endpoint_strips_api_suffix(monkeypatch):
-    monkeypatch.setenv("LLAMA_ENDPOINT", "http://ced-llama:11434/api/generate")
+def test_llama_available_uses_diagnostics(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "llama")
     get_settings.cache_clear()
-    from app.services.llama_service import _chat_url, _generate_url
 
-    assert _chat_url() == "http://ced-llama:11434/api/chat"
-    assert _generate_url() == "http://ced-llama:11434/api/generate"
+    with patch(
+        "app.services.llama_service.llama_health_diagnostics",
+        return_value={"ok": True},
+    ):
+        from app.services.llama_service import llama_available
+
+        assert llama_available() is True
+
+
+def test_llama_health_diagnostics_reports_error(monkeypatch):
+    monkeypatch.setenv("LLAMA_ENDPOINT", "http://ced-llama.railway.internal:11434")
+    get_settings.cache_clear()
+
+    with patch("app.services.llama_service.httpx.Client") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client.get.side_effect = TimeoutError("timed out")
+        mock_client_cls.return_value = mock_client
+
+        from app.services.llama_service import llama_health_diagnostics
+
+        diag = llama_health_diagnostics()
+    assert diag["ok"] is False
+    assert "timed out" in str(diag.get("error", ""))
+    assert diag["url"] == "http://ced-llama.railway.internal:11434/api/tags"

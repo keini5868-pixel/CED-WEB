@@ -43,7 +43,7 @@ router = APIRouter(tags=["health"])
 @limiter.exempt
 def health(_request: Request) -> dict[str, str]:
     """Liveness probe — sin dependencias externas (Railway)."""
-    from app.services.llama_service import llama_available, llama_model, use_llama
+    from app.services.llama_service import llama_health_diagnostics, llama_model, use_llama
 
     settings = get_settings()
     payload: dict[str, str] = {
@@ -56,8 +56,25 @@ def health(_request: Request) -> dict[str, str]:
     }
     if use_llama():
         payload["llama_model"] = llama_model()
-        payload["llama_available"] = "true" if llama_available() else "false"
+        payload["llama_endpoint"] = settings.llama_endpoint.strip()
+        diag = llama_health_diagnostics()
+        payload["llama_available"] = "true" if diag.get("ok") else "false"
+        if not diag.get("ok"):
+            payload["llama_error"] = str(diag.get("error") or "unknown")
+            payload["llama_probe_url"] = str(diag.get("url") or "")
     return payload
+
+
+@router.get("/health/llama")
+@limiter.exempt
+def health_llama(_request: Request) -> dict:
+    """Diagnóstico Llama/Ollama — URL probada, latencia, modelos y error."""
+    from app.services.llama_service import llama_health_diagnostics, use_llama
+
+    settings = get_settings()
+    if not use_llama():
+        return {"enabled": False, "llm_provider": settings.llm_provider}
+    return {"enabled": True, **llama_health_diagnostics()}
 
 
 @router.get("/health/voice-prompt")

@@ -1,15 +1,27 @@
 # Railway — servicio Ollama / Llama local (CED-Llama)
 #
-# En Railway → nuevo servicio → Settings → Config-as-code:
+# En Railway → servicio CED-Llama → Settings → Config-as-code:
 #   Config file path: /railway.llama.toml
 #
 # Root Directory: repo root. Dockerfile: apps/ollama/Dockerfile
-# Variable opcional: OLLAMA_MODEL=llama2:13b
 #
-# En el servicio API, configurar:
+# VOLUMEN PERSISTENTE (recomendado):
+#   Settings → Volumes → Add Volume → Mount path: /data
+#   Sin volumen, el modelo (~7.4 GB) se re-descarga en cada reinicio.
+#
+# RED PRIVADA (obligatorio para que el API lo alcance):
+#   - Nombre del servicio debe coincidir con el hostname: ced-llama.railway.internal
+#   - Ollama escucha en puerto 11434 (NO uses $PORT de Railway para llamadas internas)
+#   - OLLAMA_HOST=[::]:11434 — Railway private network usa IPv6
+#
+# Variables opcionales en CED-Llama:
+#   OLLAMA_MODEL=llama2:13b
+#
+# En el servicio API:
 #   LLM_PROVIDER=llama
 #   LLAMA_ENDPOINT=http://ced-llama.railway.internal:11434
-#   (o el hostname interno que Railway asigne al servicio CED-Llama)
+#   LLAMA_MODEL=llama2:13b
+#   RETELL_LLM_PROVIDER=llama
 
 [build]
 builder = "DOCKERFILE"

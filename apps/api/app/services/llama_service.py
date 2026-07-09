@@ -24,7 +24,7 @@ NUNCA llames tools por tu cuenta. NUNCA tomes decisiones sin confirmación.
 Siempre responde conversacionalmente, con empatía, en contexto modular."""
 
 _DEFAULT_TIMEOUT_SEC = 120.0
-_HEALTH_TIMEOUT_SEC = 5.0
+_HEALTH_TIMEOUT_SEC = 15.0
 
 
 def _ollama_base() -> str:
@@ -65,14 +65,49 @@ def use_llama() -> bool:
     return (get_settings().retell_llm_provider or "").strip().lower() == "llama"
 
 
+def llama_health_diagnostics() -> dict[str, Any]:
+    """Diagnóstico detallado para /health — expone URL, error y modelos."""
+    url = _tags_url()
+    base = _ollama_base()
+    result: dict[str, Any] = {
+        "url": url,
+        "endpoint": base,
+        "model": llama_model(),
+        "timeout_sec": _HEALTH_TIMEOUT_SEC,
+        "ok": False,
+    }
+    try:
+        import time
+
+        started = time.monotonic()
+        with httpx.Client(timeout=_HEALTH_TIMEOUT_SEC) as client:
+            response = client.get(url)
+        result["latency_ms"] = int((time.monotonic() - started) * 1000)
+        result["status_code"] = response.status_code
+        if response.status_code == 200:
+            data = response.json()
+            models = data.get("models") or []
+            names = [
+                str(m.get("name") or "")
+                for m in models
+                if isinstance(m, dict) and m.get("name")
+            ]
+            result["models"] = names
+            result["model_ready"] = llama_model() in names or any(
+                llama_model().split(":")[0] in n for n in names
+            )
+            result["ok"] = True
+        else:
+            result["error"] = f"HTTP {response.status_code}"
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        logger.warning("[LLAMA] health check failed url=%s err=%s", url, exc)
+    return result
+
+
 def llama_available() -> bool:
     """Ping rápido a Ollama — para /health y arranque."""
-    try:
-        with httpx.Client(timeout=_HEALTH_TIMEOUT_SEC) as client:
-            r = client.get(_tags_url())
-            return r.status_code == 200
-    except Exception:  # noqa: BLE001
-        return False
+    return bool(llama_health_diagnostics().get("ok"))
 
 
 def call_llama_local(
