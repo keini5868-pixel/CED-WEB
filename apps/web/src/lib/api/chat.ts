@@ -1,4 +1,4 @@
-import { cedApiPath } from "@/lib/api/ced-proxy";
+import { cedApiPath, streamAuthHeaders } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
 const CHAT_TIMEOUT_MS = 90_000;
@@ -184,10 +184,11 @@ export async function sendChatMessageStream(
   armStallWatchdog();
   let res: Response;
   try {
+    const headers = await streamAuthHeaders();
     res = await fetch("/api/ced/chat/send/stream", {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         content,
         conversation_id: conversationId ?? undefined,
@@ -218,6 +219,7 @@ export async function sendChatMessageStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let streamedText = "";
   let finalPayload: StreamDonePayload | null = null;
 
   const parseEventBlock = (block: string) => {
@@ -235,7 +237,10 @@ export async function sendChatMessageStream(
     const parsed = JSON.parse(dataLine) as Record<string, unknown>;
     if (eventName === "token") {
       const text = String(parsed.text ?? "");
-      if (text) onToken(text);
+      if (text) {
+        streamedText += text;
+        onToken(text);
+      }
       return;
     }
     if (eventName === "done") {
@@ -287,10 +292,25 @@ export async function sendChatMessageStream(
 
   // TypeScript no infiere asignaciones dentro del parser SSE.
   const payload = finalPayload as StreamDonePayload | null;
-  if (!payload?.conversation_id) {
-    throw new Error("Respuesta incompleta del chat.");
+  if (payload?.conversation_id) {
+    return payload;
   }
-  return payload;
+  if (streamedText.trim()) {
+    return {
+      conversation_id: payload?.conversation_id || conversationId || "",
+      reply: streamedText.trim(),
+      usage: payload?.usage ?? {
+        messages_used_today: 0,
+        messages_limit_daily: null,
+        unlimited: false,
+        remaining_today: null,
+        blocked: false,
+      },
+      pdf: payload?.pdf ?? null,
+      image: payload?.image ?? null,
+    };
+  }
+  throw new Error("Respuesta incompleta del chat.");
 }
 
 export async function endChatConversation(conversationId: string): Promise<boolean> {

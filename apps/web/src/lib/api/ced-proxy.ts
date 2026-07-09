@@ -27,3 +27,21 @@ export async function proxyFetchAuthed(
   }
   return proxyFetch(path, { ...init, headers });
 }
+
+/** Headers de auth para streams SSE (mismo criterio que proxyFetchAuthed). */
+export async function streamAuthHeaders(
+  extra?: HeadersInit,
+): Promise<HeadersInit> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "text/event-stream",
+    ...(extra as Record<string, string> | undefined),
+  };
+  try {
+    const auth = await authHeaders(false);
+    Object.assign(headers, auth as Record<string, string>);
+  } catch {
+    /* cookies-only fallback */
+  }
+  return headers;
+}

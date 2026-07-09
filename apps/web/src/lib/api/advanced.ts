@@ -1,5 +1,5 @@
 import type { ChatImageAttachment, ChatPdfAttachment } from "@/lib/api/chat";
-import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
+import { proxyFetchAuthed, streamAuthHeaders } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 export type AdvancedChatMessage = {
   role: "user" | "assistant";
@@ -66,10 +66,11 @@ export async function sendAdvancedChatMessageStream(
   armStallWatchdog();
   let res: Response;
   try {
+    const headers = await streamAuthHeaders();
     res = await fetch("/api/ced/advanced/chat/stream", {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         message,
         history: history

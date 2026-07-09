@@ -681,6 +681,16 @@ export function CedTextChatPanel({
       }
       setStatus(result.usage);
     } catch (e) {
+      setMessages((prev) => {
+        const idx = streamTargetIndexRef.current;
+        if (idx != null && idx >= 0 && idx < prev.length) {
+          const target = prev[idx];
+          if (target?.role === "model" && !target.content.trim()) {
+            return prev.filter((_, i) => i !== idx);
+          }
+        }
+        return prev;
+      });
       setError(e instanceof Error ? e.message : "Error al enviar.");
     } finally {
       clearTimeout(sendGuard);

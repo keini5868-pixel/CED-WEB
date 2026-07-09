@@ -1,5 +1,5 @@
 import type { ChatPdfAttachment } from "@/lib/api/chat";
-import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
+import { proxyFetchAuthed, streamAuthHeaders } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
 export type FinanceChatMessage = {
@@ -65,10 +65,11 @@ export async function sendFinanceChatMessageStream(
   armStallWatchdog();
   let res: Response;
   try {
+    const headers = await streamAuthHeaders();
     res = await fetch("/api/ced/finance/chat/stream", {
       method: "POST",
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
+      headers,
       body: JSON.stringify({
         message,
         history: history
