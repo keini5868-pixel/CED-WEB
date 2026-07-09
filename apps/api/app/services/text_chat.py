@@ -1491,10 +1491,11 @@ def _gemini_simple_reply(
     system: str,
     messages: list[dict[str, Any]],
     max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
+    allow_llama: bool = True,
 ) -> str:
     from app.services.llama_service import call_llama_chat, use_llama
 
-    if use_llama():
+    if allow_llama and use_llama():
         try:
             return call_llama_chat(
                 system=system,
@@ -1587,14 +1588,9 @@ def _simple_chat_cascade(
             )
             return reply, None, None
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Llama cascade failed: %s", exc)
+            logger.warning("[CHAT] Llama cascade failed, fallback cloud: %s", exc)
             last_exc = exc
-        if isinstance(last_exc, TextChatError):
-            raise last_exc
-        raise TextChatError(
-            "Servicio de chat local no disponible. Verifica Ollama.",
-            http_status=503,
-        ) from last_exc
+        # Continúa a Gemini/Claude — no cortar el chat si Ollama falla o tarda.
 
     if google_key:
         try:
@@ -2675,10 +2671,11 @@ def _gemini_simple_reply_stream(
     system: str,
     messages: list[dict[str, Any]],
     max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
+    allow_llama: bool = True,
 ):
     from app.services.llama_service import iter_llama_chat_stream, use_llama
 
-    if use_llama():
+    if allow_llama and use_llama():
         yield from iter_llama_chat_stream(
             system=system,
             messages=messages,

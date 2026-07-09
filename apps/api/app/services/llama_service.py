@@ -24,6 +24,7 @@ NUNCA llames tools por tu cuenta. NUNCA tomes decisiones sin confirmación.
 Siempre responde conversacionalmente, con empatía, en contexto modular."""
 
 _DEFAULT_TIMEOUT_SEC = 120.0
+_CHAT_TIMEOUT_SEC = 45.0
 _HEALTH_TIMEOUT_SEC = 15.0
 
 
@@ -178,7 +179,7 @@ def call_llama_chat(
         "stream": False,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
-    with httpx.Client(timeout=_DEFAULT_TIMEOUT_SEC) as client:
+    with httpx.Client(timeout=_CHAT_TIMEOUT_SEC) as client:
         response = client.post(_chat_url(), json=payload)
         response.raise_for_status()
         data = response.json()
@@ -206,7 +207,7 @@ def iter_llama_chat_stream(
         "stream": True,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
-    with httpx.Client(timeout=_DEFAULT_TIMEOUT_SEC) as client:
+    with httpx.Client(timeout=_CHAT_TIMEOUT_SEC) as client:
         with client.stream("POST", _chat_url(), json=payload) as response:
             response.raise_for_status()
             for line in response.iter_lines():

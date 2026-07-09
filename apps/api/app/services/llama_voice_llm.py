@@ -157,14 +157,38 @@ class LlamaVoiceLlm:
             return FALLBACK_REPLY
 
     async def draft_greeting(self) -> str:
+        from app.services.voice_greetings import pick_jarvis_greeting
+
+        # Mismo patrón que Gemini: saludo instantáneo — Retell cuelga si Ollama tarda.
+        greeting = pick_jarvis_greeting(self.user_id)
+        if greeting:
+            logger.info(
+                "[RETELL-LLAMA] greeting pool instant user=%s",
+                (self.user_id or "?")[:8],
+            )
+            safe, _ = guard_voice_response(greeting)
+            return finalize_voice_delivery_text(
+                safe or "CED en línea, señor. Estoy listo para asistirle."
+            )
+
         system = self._build_system(extra_overlay=GREETING_OVERLAY)
-        reply = await asyncio.to_thread(
-            call_llama_local,
-            "Saluda brevemente al usuario. Una sola frase natural, en español.",
-            system=system,
-            temperature=0.6,
-            max_tokens=120,
-        )
+        try:
+            reply = await asyncio.wait_for(
+                asyncio.to_thread(
+                    call_llama_local,
+                    "Saluda brevemente al usuario. Una sola frase natural, en español.",
+                    system=system,
+                    temperature=0.6,
+                    max_tokens=120,
+                ),
+                timeout=8.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning("[RETELL-LLAMA] greeting timeout call=%s", self._latency_call_id)
+            return finalize_voice_delivery_text("CED en línea, señor. Estoy listo para asistirle.")
+        except Exception:  # noqa: BLE001
+            logger.exception("[RETELL-LLAMA] greeting failed call=%s", self._latency_call_id)
+            return finalize_voice_delivery_text("CED en línea, señor. Estoy listo para asistirle.")
         safe, _ = guard_voice_response(reply)
         return finalize_voice_delivery_text(safe or "CED en línea, señor. Estoy listo para asistirle.")
 

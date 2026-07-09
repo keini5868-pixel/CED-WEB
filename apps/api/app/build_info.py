@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "llama-ipv6-health-diagnostics"
+BUILD_VERSION = "fix-voz-saludo-instantaneo-chat-fallback"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

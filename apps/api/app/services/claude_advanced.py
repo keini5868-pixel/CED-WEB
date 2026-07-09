@@ -642,7 +642,7 @@ def iter_advanced_message_stream(
     accumulated: list[str] = []
     stream_label = ADVANCED_STREAM_MODEL_LABEL
     try:
-        # Ruta rápida: Gemini para conversación breve/no-herramientas.
+        # Chat Avanzado: nunca Llama local — Gemini/Claude cloud explícito.
         if google_key and not _needs_sonnet_stream(text):
             stream_label = "gemini-2.5-flash"
             for piece in _gemini_simple_reply_stream(
@@ -651,10 +651,11 @@ def iter_advanced_message_stream(
                 system=stream_system,
                 messages=stream_messages,
                 max_tokens=max_tokens,
+                allow_llama=False,
             ):
                 accumulated.append(piece)
                 yield _sse_event("token", {"text": piece})
-        else:
+        elif anthropic_key:
             for piece, model_label in _iter_anthropic_text_stream(
                 api_key=anthropic_key,
                 system=stream_system,
@@ -665,6 +666,8 @@ def iter_advanced_message_stream(
                 stream_label = model_label
                 accumulated.append(piece)
                 yield _sse_event("token", {"text": piece})
+        else:
+            raise ValueError("missing_llm_api_key")
     except Exception as exc:  # noqa: BLE001
         logger.warning("[ADVANCED] stream failed, fallback full: %s", exc)
         result = send_advanced_message(
