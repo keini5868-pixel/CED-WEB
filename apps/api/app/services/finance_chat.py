@@ -47,6 +47,14 @@ logger = logging.getLogger(__name__)
 FINANCE_MODEL_LABEL = "ced-finance"
 FINANCE_STREAM_MODEL_LABEL = "gemini-2.5-flash"
 
+
+def _stream_model_label() -> str:
+    from app.services.llama_service import llama_model, use_llama
+
+    if use_llama():
+        return llama_model()
+    return FINANCE_STREAM_MODEL_LABEL
+
 FINANCE_SYSTEM_PROMPT = f"""Eres CED — Castillo Evolución Digital — en su módulo de FINANZAS PERSONALES.
 Eres el mismo CED de siempre: profesional, cercano y directo. Tratas al usuario como "señor" o por su nombre.
 Hablas español latinoamericano.
@@ -171,7 +179,7 @@ def send_finance_message(
 
     greeting = _greeting_reply(text) or try_instant_datetime_reply(text, history=history)
     if greeting:
-        return _finish_payload(response=greeting, model=FINANCE_STREAM_MODEL_LABEL)
+        return _finish_payload(response=greeting, model=_stream_model_label())
 
     # Registro directo y determinista de un movimiento o pago pendiente.
     if (
@@ -238,7 +246,7 @@ def send_finance_message(
     if not reply:
         summary = summarize_finances(user_id, period=canonical_period("mes"))
         reply = format_summary_spoken(summary)
-    return _finish_payload(response=reply, model=FINANCE_STREAM_MODEL_LABEL)
+    return _finish_payload(response=reply, model=_stream_model_label())
 
 
 def iter_finance_message_stream(
@@ -256,7 +264,7 @@ def iter_finance_message_stream(
     if greeting:
         yield _sse_event("token", {"text": greeting})
         yield _sse_event(
-            "done", _finish_payload(response=greeting, model=FINANCE_STREAM_MODEL_LABEL)
+            "done", _finish_payload(response=greeting, model=_stream_model_label())
         )
         return
 
@@ -282,7 +290,7 @@ def iter_finance_message_stream(
             logger.exception("[FINANCE] tools pipeline failed")
             result = _finish_payload(
                 response="Disculpe señor, tuve un inconveniente. ¿Puede repetir?",
-                model=FINANCE_STREAM_MODEL_LABEL,
+                model=_stream_model_label(),
             )
         yield _sse_event("done", result)
         return
@@ -292,9 +300,11 @@ def iter_finance_message_stream(
     max_tokens = _stream_max_tokens(text)
 
     accumulated: list[str] = []
-    stream_label = FINANCE_STREAM_MODEL_LABEL
+    stream_label = _stream_model_label()
     try:
-        if google_key:
+        from app.services.llama_service import use_llama
+
+        if google_key or use_llama():
             for piece in _gemini_simple_reply_stream(
                 api_key=google_key,
                 model=_gemini_chat_model(),

@@ -17,7 +17,7 @@ from app.services.cognitive_intents import (
     is_script_demo_request,
     is_web_research_intent,
 )
-from app.services.gemini_voice_llm import GeminiVoiceLlm
+from app.services.voice_llm_factory import build_voice_llm
 from app.services.retell_call_registry import (
     bind_call_user,
     release_call_user,
@@ -206,7 +206,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     session_started = time.time()
     logger.info("[RETELL-GEMINI] WebSocket conectado call_id=%s", call_id)
 
-    llm = GeminiVoiceLlm()
+    llm = build_voice_llm()
     response_lock = asyncio.Lock()
     active_response_id = 0
     debounce_task: asyncio.Task[None] | None = None

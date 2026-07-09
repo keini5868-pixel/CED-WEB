@@ -92,6 +92,13 @@ class Settings(BaseSettings):
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     gemini_voice_model: str = "gemini-2.5-flash"
     gemini_image_model: str = "gemini-2.5-flash-image"
+
+    # Cerebro conversacional local (Ollama/Llama) — reemplaza Gemini en chats y voz.
+    # Chat Avanzado sigue usando Claude. Imágenes/visión siguen en Gemini.
+    llm_provider: str = "llama"
+    llama_endpoint: str = "http://localhost:11434"
+    llama_model: str = "llama2:13b"
+
     anthropic_api_key: str = ""
     tavily_api_key: str = ""
 
@@ -118,7 +125,7 @@ class Settings(BaseSettings):
     retell_webhook_secret: str = ""
     retell_auto_bootstrap: bool = False
     retell_bootstrap_secret: str = ""
-    retell_llm_provider: str = "gemini"
+    retell_llm_provider: str = "llama"
     elevenlabs_api_key: str = ""
     # Clon Jarvis en ElevenLabs — se registra en Retell al bootstrap si no hay RETELL_VOICE_ID
     elevenlabs_jarvis_voice_id: str = "UKhFmKblQwXqi7vvaALt"

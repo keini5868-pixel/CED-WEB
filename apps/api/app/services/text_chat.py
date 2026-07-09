@@ -1492,6 +1492,23 @@ def _gemini_simple_reply(
     messages: list[dict[str, Any]],
     max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
 ) -> str:
+    from app.services.llama_service import call_llama_chat, use_llama
+
+    if use_llama():
+        try:
+            return call_llama_chat(
+                system=system,
+                messages=messages,
+                temperature=0.4,
+                max_tokens=max_tokens,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CHAT] Llama simple failed: %s", exc)
+            raise TextChatError(
+                "El asistente local no respondió. Verifica que Ollama esté activo.",
+                http_status=503,
+            ) from exc
+
     from google import genai
     from google.genai import types
 
@@ -1553,9 +1570,31 @@ def _simple_chat_cascade(
     user_text: str = "",
     max_tokens: int | None = None,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
-    """Gemini primero; Claude como respaldo."""
+    """Gemini primero; Claude como respaldo. Con llm_provider=llama, solo Llama local."""
+    from app.services.llama_service import use_llama
+
     last_exc: Exception | None = None
     token_budget = max_tokens or _chat_max_tokens(user_text)
+
+    if use_llama():
+        try:
+            reply = _gemini_simple_reply(
+                api_key="",
+                model="",
+                system=system,
+                messages=messages,
+                max_tokens=token_budget,
+            )
+            return reply, None, None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CHAT] Llama cascade failed: %s", exc)
+            last_exc = exc
+        if isinstance(last_exc, TextChatError):
+            raise last_exc
+        raise TextChatError(
+            "Servicio de chat local no disponible. Verifica Ollama.",
+            http_status=503,
+        ) from last_exc
 
     if google_key:
         try:
@@ -2637,6 +2676,17 @@ def _gemini_simple_reply_stream(
     messages: list[dict[str, Any]],
     max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
 ):
+    from app.services.llama_service import iter_llama_chat_stream, use_llama
+
+    if use_llama():
+        yield from iter_llama_chat_stream(
+            system=system,
+            messages=messages,
+            temperature=0.4,
+            max_tokens=max_tokens,
+        )
+        return
+
     from google import genai
     from google.genai import types
 

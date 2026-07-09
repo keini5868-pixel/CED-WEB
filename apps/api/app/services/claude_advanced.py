@@ -68,10 +68,12 @@ def advanced_is_configured() -> bool:
 
 
 def _ensure_llm_providers(*, needs_anthropic: bool = False) -> tuple[str, str]:
+    from app.services.llama_service import use_llama
+
     anthropic, google = _llm_provider_keys()
     if needs_anthropic and not anthropic:
         raise ValueError("missing_anthropic_api_key")
-    if not anthropic and not google:
+    if not anthropic and not google and not use_llama():
         raise ValueError("missing_llm_api_key")
     return anthropic, google
 

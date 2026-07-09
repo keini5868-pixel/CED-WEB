@@ -77,9 +77,18 @@ async def lifespan(_app: FastAPI):
     if settings.voice_provider == "retell":
         if not settings.retell_api_key.strip():
             logger.warning("RETELL_API_KEY vacía — voz Retell no funcionará")
-        elif not settings.google_api_key.strip():
-            logger.warning("GOOGLE_API_KEY vacía — cerebro Gemini voz no funcionará")
         else:
+            from app.services.llama_service import llama_available, llama_model, use_llama
+
+            if use_llama():
+                logger.info(
+                    "LLM provider=llama model=%s endpoint=%s available=%s",
+                    llama_model(),
+                    settings.llama_endpoint,
+                    llama_available(),
+                )
+            elif not settings.google_api_key.strip():
+                logger.warning("GOOGLE_API_KEY vacía — cerebro Gemini voz no funcionará")
             from app.services.retell_agent_setup import bootstrap_retell_if_needed
 
             bootstrap_retell_if_needed()

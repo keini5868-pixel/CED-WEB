@@ -43,14 +43,21 @@ router = APIRouter(tags=["health"])
 @limiter.exempt
 def health(_request: Request) -> dict[str, str]:
     """Liveness probe — sin dependencias externas (Railway)."""
+    from app.services.llama_service import llama_available, llama_model, use_llama
+
     settings = get_settings()
-    return {
+    payload: dict[str, str] = {
         "status": "ok",
         "service": "castillo-digital-api",
         "env": settings.app_env,
         "build": BUILD_VERSION,
         "timestamp": BUILD_TIMESTAMP,
+        "llm_provider": settings.llm_provider,
     }
+    if use_llama():
+        payload["llama_model"] = llama_model()
+        payload["llama_available"] = "true" if llama_available() else "false"
+    return payload
 
 
 @router.get("/health/voice-prompt")
