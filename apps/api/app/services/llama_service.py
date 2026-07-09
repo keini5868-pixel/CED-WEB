@@ -26,6 +26,13 @@ Siempre responde conversacionalmente, con empatía, en contexto modular."""
 _DEFAULT_TIMEOUT_SEC = 120.0
 _CHAT_TIMEOUT_SEC = 45.0
 _HEALTH_TIMEOUT_SEC = 15.0
+_MODEL_READY_CACHE_TTL_SEC = 15.0
+
+_model_ready_cache: tuple[float, bool] | None = None
+
+
+class LlamaNotReadyError(RuntimeError):
+    """Ollama responde pero el modelo configurado no está descargado."""
 
 
 def _ollama_base() -> str:
@@ -94,11 +101,14 @@ def llama_health_diagnostics() -> dict[str, Any]:
                 if isinstance(m, dict) and m.get("name")
             ]
             result["models"] = names
-            result["model_ready"] = llama_model() in names or any(
-                llama_model().split(":")[0] in n for n in names
+            target = llama_model()
+            result["model_ready"] = target in names or any(
+                target.split(":")[0] in n for n in names
             )
-            result["ok"] = True
+            result["daemon_ok"] = True
+            result["ok"] = bool(result["model_ready"])
         else:
+            result["daemon_ok"] = False
             result["error"] = f"HTTP {response.status_code}"
     except Exception as exc:  # noqa: BLE001
         result["error"] = f"{type(exc).__name__}: {exc}"
@@ -106,9 +116,39 @@ def llama_health_diagnostics() -> dict[str, Any]:
     return result
 
 
+def llama_model_ready(*, force_refresh: bool = False) -> bool:
+    """True si Ollama tiene el modelo configurado (no solo el daemon)."""
+    global _model_ready_cache
+    import time
+
+    now = time.monotonic()
+    if (
+        not force_refresh
+        and _model_ready_cache is not None
+        and now - _model_ready_cache[0] < _MODEL_READY_CACHE_TTL_SEC
+    ):
+        return _model_ready_cache[1]
+    ready = bool(llama_health_diagnostics().get("model_ready"))
+    _model_ready_cache = (now, ready)
+    return ready
+
+
+def should_route_to_llama() -> bool:
+    """Usar Llama solo si está configurado Y el modelo está listo."""
+    return use_llama() and llama_model_ready()
+
+
 def llama_available() -> bool:
-    """Ping rápido a Ollama — para /health y arranque."""
-    return bool(llama_health_diagnostics().get("ok"))
+    """Modelo listo para inferencia — no solo daemon Ollama."""
+    return llama_model_ready()
+
+
+def _raise_if_llama_http_error(response: httpx.Response) -> None:
+    if response.status_code == 404:
+        body = response.text.lower()
+        if "not found" in body or "model" in body:
+            raise LlamaNotReadyError(f"modelo no disponible: {response.text[:200]}")
+    response.raise_for_status()
 
 
 def call_llama_local(
@@ -131,9 +171,11 @@ def call_llama_local(
         "stream": False,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
+    if not llama_model_ready():
+        raise LlamaNotReadyError(f"modelo {llama_model()} no descargado en Ollama")
     with httpx.Client(timeout=_DEFAULT_TIMEOUT_SEC) as client:
         response = client.post(_generate_url(), json=payload)
-        response.raise_for_status()
+        _raise_if_llama_http_error(response)
         data = response.json()
     text = str(data.get("response") or "").strip()
     if not text:
@@ -179,9 +221,11 @@ def call_llama_chat(
         "stream": False,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
+    if not llama_model_ready():
+        raise LlamaNotReadyError(f"modelo {llama_model()} no descargado en Ollama")
     with httpx.Client(timeout=_CHAT_TIMEOUT_SEC) as client:
         response = client.post(_chat_url(), json=payload)
-        response.raise_for_status()
+        _raise_if_llama_http_error(response)
         data = response.json()
     msg = data.get("message") or {}
     text = str(msg.get("content") or "").strip()
@@ -207,9 +251,11 @@ def iter_llama_chat_stream(
         "stream": True,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
+    if not llama_model_ready():
+        raise LlamaNotReadyError(f"modelo {llama_model()} no descargado en Ollama")
     with httpx.Client(timeout=_CHAT_TIMEOUT_SEC) as client:
         with client.stream("POST", _chat_url(), json=payload) as response:
-            response.raise_for_status()
+            _raise_if_llama_http_error(response)
             for line in response.iter_lines():
                 if not line:
                     continue

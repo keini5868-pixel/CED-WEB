@@ -47,9 +47,10 @@ def test_call_llama_local_parses_response(monkeypatch):
     mock_client.post.return_value = mock_response
 
     with patch("app.services.llama_service.httpx.Client", return_value=mock_client):
-        from app.services.llama_service import call_llama_local
+        with patch("app.services.llama_service.llama_model_ready", return_value=True):
+            from app.services.llama_service import call_llama_local
 
-        text = call_llama_local("¿Cómo estás?", context="Contexto previo")
+            text = call_llama_local("¿Cómo estás?", context="Contexto previo")
     assert text == "Hola, señor."
     payload = mock_client.post.call_args[1]["json"]
     assert payload["model"] == "llama2:13b"
@@ -70,26 +71,37 @@ def test_call_llama_chat_parses_message(monkeypatch):
     mock_client.post.return_value = mock_response
 
     with patch("app.services.llama_service.httpx.Client", return_value=mock_client):
-        from app.services.llama_service import call_llama_chat
+        with patch("app.services.llama_service.llama_model_ready", return_value=True):
+            from app.services.llama_service import call_llama_chat
 
-        text = call_llama_chat(
-            system="Eres CED",
-            messages=[{"role": "user", "content": "Hola"}],
-        )
+            text = call_llama_chat(
+                system="Eres CED",
+                messages=[{"role": "user", "content": "Hola"}],
+            )
     assert text == "Respuesta chat"
 
 
-def test_llama_available_uses_diagnostics(monkeypatch):
+def test_llama_available_requires_model_ready(monkeypatch):
     monkeypatch.setenv("LLM_PROVIDER", "llama")
     get_settings.cache_clear()
 
     with patch(
         "app.services.llama_service.llama_health_diagnostics",
-        return_value={"ok": True},
+        return_value={"daemon_ok": True, "model_ready": False, "models": []},
     ):
         from app.services.llama_service import llama_available
 
-        assert llama_available() is True
+        assert llama_available() is False
+
+
+def test_should_route_false_without_model(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "llama")
+    get_settings.cache_clear()
+
+    with patch("app.services.llama_service.llama_model_ready", return_value=False):
+        from app.services.llama_service import should_route_to_llama
+
+        assert should_route_to_llama() is False
 
 
 def test_llama_health_diagnostics_reports_error(monkeypatch):

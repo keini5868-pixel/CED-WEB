@@ -152,8 +152,13 @@ class LlamaVoiceLlm:
         except asyncio.TimeoutError:
             logger.warning("[RETELL-LLAMA] timeout call=%s", self._latency_call_id)
             return FALLBACK_REPLY
-        except Exception:  # noqa: BLE001
-            logger.exception("[RETELL-LLAMA] generate failed call=%s", self._latency_call_id)
+        except Exception as exc:  # noqa: BLE001
+            from app.services.llama_service import LlamaNotReadyError
+
+            if isinstance(exc, LlamaNotReadyError):
+                logger.warning("[RETELL-LLAMA] modelo no listo call=%s", self._latency_call_id)
+            else:
+                logger.exception("[RETELL-LLAMA] generate failed call=%s", self._latency_call_id)
             return FALLBACK_REPLY
 
     async def draft_greeting(self) -> str:

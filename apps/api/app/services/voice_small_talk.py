@@ -59,4 +59,4 @@ def try_instant_small_talk_voice_reply(text: str) -> str | None:
     if norm in {"okay", "ok", "sí", "si", "vale", "gracias"}:
         return "De acuerdo, señor. ¿Seguimos?"
 
-    return random.choice(_HOW_ARE_YOU_REPLIES)
+    return None

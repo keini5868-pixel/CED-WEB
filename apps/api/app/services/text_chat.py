@@ -1493,22 +1493,26 @@ def _gemini_simple_reply(
     max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
     allow_llama: bool = True,
 ) -> str:
-    from app.services.llama_service import call_llama_chat, use_llama
+    from app.services.llama_service import (
+        LlamaNotReadyError,
+        call_llama_chat,
+        should_route_to_llama,
+        use_llama,
+    )
 
     if allow_llama and use_llama():
-        try:
-            return call_llama_chat(
-                system=system,
-                messages=messages,
-                temperature=0.4,
-                max_tokens=max_tokens,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Llama simple failed: %s", exc)
-            raise TextChatError(
-                "El asistente local no respondió. Verifica que Ollama esté activo.",
-                http_status=503,
-            ) from exc
+        if should_route_to_llama():
+            try:
+                return call_llama_chat(
+                    system=system,
+                    messages=messages,
+                    temperature=0.4,
+                    max_tokens=max_tokens,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[CHAT] Llama simple failed, fallback cloud: %s", exc)
+        else:
+            logger.warning("[CHAT] Ollama sin modelo listo — fallback cloud inmediato")
 
     from google import genai
     from google.genai import types
@@ -1572,12 +1576,12 @@ def _simple_chat_cascade(
     max_tokens: int | None = None,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
     """Gemini primero; Claude como respaldo. Con llm_provider=llama, solo Llama local."""
-    from app.services.llama_service import use_llama
+    from app.services.llama_service import should_route_to_llama, use_llama
 
     last_exc: Exception | None = None
     token_budget = max_tokens or _chat_max_tokens(user_text)
 
-    if use_llama():
+    if use_llama() and should_route_to_llama():
         try:
             reply = _gemini_simple_reply(
                 api_key="",
@@ -1590,7 +1594,8 @@ def _simple_chat_cascade(
         except Exception as exc:  # noqa: BLE001
             logger.warning("[CHAT] Llama cascade failed, fallback cloud: %s", exc)
             last_exc = exc
-        # Continúa a Gemini/Claude — no cortar el chat si Ollama falla o tarda.
+    elif use_llama():
+        logger.warning("[CHAT] Llama configurado pero modelo no listo — cascade cloud")
 
     if google_key:
         try:
@@ -2673,9 +2678,9 @@ def _gemini_simple_reply_stream(
     max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
     allow_llama: bool = True,
 ):
-    from app.services.llama_service import iter_llama_chat_stream, use_llama
+    from app.services.llama_service import iter_llama_chat_stream, should_route_to_llama, use_llama
 
-    if allow_llama and use_llama():
+    if allow_llama and use_llama() and should_route_to_llama():
         yield from iter_llama_chat_stream(
             system=system,
             messages=messages,
@@ -2683,6 +2688,8 @@ def _gemini_simple_reply_stream(
             max_tokens=max_tokens,
         )
         return
+    if allow_llama and use_llama() and not should_route_to_llama():
+        logger.warning("[CHAT] Ollama sin modelo listo — stream fallback cloud")
 
     from google import genai
     from google.genai import types

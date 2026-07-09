@@ -28,12 +28,14 @@ if ! ollama list >/dev/null 2>&1; then
   exit 1
 fi
 
-if ollama list 2>/dev/null | grep -q "${MODEL%%:*}"; then
+if ollama list 2>/dev/null | grep -qi "${MODEL%%:*}"; then
   echo "[CED-Llama] Model ${MODEL} already present — skipping pull"
 else
-  echo "[CED-Llama] Pulling ${MODEL} (first boot ~7.4GB, several minutes)..."
+  echo "[CED-Llama] Model missing (volume resize / cold start) — pulling ${MODEL}..."
+  echo "[CED-Llama] Size ~7.4GB — may take several minutes on first boot"
   ollama pull "${MODEL}" || {
-    echo "[CED-Llama] WARN: pull failed — check RAM/disk; will retry next restart"
+    echo "[CED-Llama] ERROR: pull failed — check disk/RAM; exiting for Railway restart"
+    exit 1
   }
 fi
 

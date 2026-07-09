@@ -58,9 +58,12 @@ def health(_request: Request) -> dict[str, str]:
         payload["llama_model"] = llama_model()
         payload["llama_endpoint"] = settings.llama_endpoint.strip()
         diag = llama_health_diagnostics()
-        payload["llama_available"] = "true" if diag.get("ok") else "false"
-        if not diag.get("ok"):
-            payload["llama_error"] = str(diag.get("error") or "unknown")
+        payload["llama_available"] = "true" if diag.get("model_ready") else "false"
+        payload["llama_daemon_ok"] = "true" if diag.get("daemon_ok") else "false"
+        if not diag.get("model_ready"):
+            payload["llama_error"] = str(
+                diag.get("error") or "modelo no descargado en Ollama"
+            )
             payload["llama_probe_url"] = str(diag.get("url") or "")
     return payload
 
