@@ -21,6 +21,14 @@ def test_greeting_reply_instant():
     assert out["model"] == fc.FINANCE_STREAM_MODEL_LABEL
 
 
+def test_stream_greeting_hola_yields_token_immediately():
+    events = list(fc.iter_finance_message_stream("u1", message="HOLA", history=[]))
+    token_events = [ev for ev in events if ev.startswith("event: token")]
+    assert token_events, "expected instant greeting token"
+    done = _collect_done(events)
+    assert "finanzas" in done["response"].lower()
+
+
 def test_write_intent_registers(monkeypatch):
     captured = {}
 

@@ -314,7 +314,7 @@ def iter_finance_message_stream(
             ):
                 accumulated.append(piece)
                 yield _sse_event("token", {"text": piece})
-        else:
+        elif anthropic_key:
             for piece, model_label in _iter_anthropic_text_stream(
                 api_key=anthropic_key,
                 system=system,
@@ -335,6 +335,17 @@ def iter_finance_message_stream(
 
     reply = _finalize_chat_reply("".join(accumulated).strip())
     if not reply:
+        from app.services.cloud_llm_fallback import chat_cloud_reply
+
+        cloud = chat_cloud_reply(
+            system=system,
+            messages=stream_messages,
+            user_text=text,
+            max_tokens=max_tokens,
+        )
+        if cloud:
+            reply = _finalize_chat_reply(cloud)
+    if not reply:
         result = send_finance_message(
             user_id, message=text, history=history, conversation_id=conv_id
         )
@@ -346,5 +357,11 @@ def iter_finance_message_stream(
 
 def finance_is_configured() -> bool:
     from app.services.claude_advanced import advanced_is_configured
+    from app.services.cloud_llm_fallback import cloud_llm_configured
+    from app.services.llama_service import should_route_to_llama, use_llama
 
-    return advanced_is_configured()
+    return (
+        advanced_is_configured()
+        or cloud_llm_configured()
+        or (use_llama() and should_route_to_llama())
+    )

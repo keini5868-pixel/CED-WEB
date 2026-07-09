@@ -2942,6 +2942,17 @@ def iter_send_message_stream(
     pdf_attachment: dict[str, Any] | None = None
     image_attachment: dict[str, Any] | None = None
     if not reply:
+        from app.services.cloud_llm_fallback import chat_cloud_reply
+
+        cloud = chat_cloud_reply(
+            system=system,
+            messages=messages,
+            user_text=text,
+            max_tokens=token_budget,
+        )
+        if cloud:
+            reply = cloud
+    if not reply:
         try:
             reply, pdf_attachment, image_attachment = _complete_chat_resilient(
                 user_id,

@@ -698,6 +698,17 @@ def iter_advanced_message_stream(
         conversation_id=conv_id,
     )
     if not reply:
+        from app.services.cloud_llm_fallback import chat_cloud_reply
+
+        cloud = chat_cloud_reply(
+            system=stream_system,
+            messages=stream_messages,
+            user_text=text,
+            max_tokens=max_tokens,
+        )
+        if cloud:
+            reply = _finalize_chat_reply(cloud)
+    if not reply:
         result = send_advanced_message(
             user_id,
             message=text,

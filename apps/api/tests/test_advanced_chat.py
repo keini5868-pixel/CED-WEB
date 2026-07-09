@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
 from app.deps.auth import require_user_id
 from app.main import create_app
+import app.services.claude_advanced as adv
 
 SAMPLE_UUID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+def _collect_done(events: list[str]) -> dict:
+    for ev in events:
+        if ev.startswith("event: done"):
+            data_line = [ln for ln in ev.splitlines() if ln.startswith("data: ")][0]
+            return json.loads(data_line[6:])
+    raise AssertionError("no done event")
 
 
 def test_advanced_chat_endpoint():
@@ -122,3 +132,11 @@ def test_advanced_needs_tools_for_web_research():
         "últimas noticias de Venezuela hoy",
         [],
     )
+
+
+def test_advanced_stream_greeting_hola_yields_token_immediately():
+    events = list(adv.iter_advanced_message_stream("u1", message="HOLA", history=[]))
+    token_events = [ev for ev in events if ev.startswith("event: token")]
+    assert token_events, "expected instant greeting token"
+    done = _collect_done(events)
+    assert "modo avanzado" in done["response"].lower()
