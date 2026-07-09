@@ -2964,8 +2964,11 @@ def iter_send_message_stream(
 
     token_budget = _chat_max_tokens(text)
     accumulated: list[str] = []
+    stream_buf = ""
     _perf("pre_stream")
     try:
+        from app.services.stream_delta import stream_piece_delta
+
         for piece in _gemini_simple_reply_stream(
             api_key=google_key,
             model=gemini_model,
@@ -2973,8 +2976,12 @@ def iter_send_message_stream(
             messages=messages,
             max_tokens=token_budget,
         ):
-            accumulated.append(piece)
-            yield _sse_event("token", {"text": piece})
+            delta = stream_piece_delta(stream_buf, piece)
+            if not delta:
+                continue
+            stream_buf += delta
+            accumulated.append(delta)
+            yield _sse_event("token", {"text": delta})
         _perf("stream_done")
     except Exception as exc:  # noqa: BLE001
         logger.warning("[CHAT] stream failed, fallback resilient: %s", exc)

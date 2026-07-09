@@ -648,8 +648,11 @@ def iter_advanced_message_stream(
     stream_system = _advanced_stream_system_with_clock()
 
     accumulated: list[str] = []
+    stream_buf = ""
     stream_label = ADVANCED_STREAM_MODEL_LABEL
     try:
+        from app.services.stream_delta import stream_piece_delta
+
         # Chat Avanzado: Claude primero (rápido); Gemini como respaldo.
         if anthropic_key and not _needs_sonnet_stream(text):
             for piece, model_label in _iter_anthropic_text_stream(
@@ -660,8 +663,12 @@ def iter_advanced_message_stream(
                 user_text=text,
             ):
                 stream_label = model_label
-                accumulated.append(piece)
-                yield _sse_event("token", {"text": piece})
+                delta = stream_piece_delta(stream_buf, piece)
+                if not delta:
+                    continue
+                stream_buf += delta
+                accumulated.append(delta)
+                yield _sse_event("token", {"text": delta})
         elif google_key and not _needs_sonnet_stream(text):
             stream_label = "gemini-2.5-flash"
             for piece in _gemini_simple_reply_stream(
@@ -672,8 +679,12 @@ def iter_advanced_message_stream(
                 max_tokens=max_tokens,
                 allow_llama=False,
             ):
-                accumulated.append(piece)
-                yield _sse_event("token", {"text": piece})
+                delta = stream_piece_delta(stream_buf, piece)
+                if not delta:
+                    continue
+                stream_buf += delta
+                accumulated.append(delta)
+                yield _sse_event("token", {"text": delta})
         elif anthropic_key:
             for piece, model_label in _iter_anthropic_text_stream(
                 api_key=anthropic_key,
@@ -683,8 +694,12 @@ def iter_advanced_message_stream(
                 user_text=text,
             ):
                 stream_label = model_label
-                accumulated.append(piece)
-                yield _sse_event("token", {"text": piece})
+                delta = stream_piece_delta(stream_buf, piece)
+                if not delta:
+                    continue
+                stream_buf += delta
+                accumulated.append(delta)
+                yield _sse_event("token", {"text": delta})
         else:
             raise ValueError("missing_llm_api_key")
     except Exception as exc:  # noqa: BLE001

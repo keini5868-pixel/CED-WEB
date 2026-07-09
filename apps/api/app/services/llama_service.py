@@ -241,7 +241,9 @@ def iter_llama_chat_stream(
     temperature: float = 0.7,
     max_tokens: int = 2048,
 ) -> Iterator[str]:
-    """Streaming token a token para SSE de chats."""
+    """Streaming token a token para SSE de chats — siempre deltas incrementales."""
+    from app.services.stream_delta import stream_piece_delta
+
     ollama_msgs = _messages_to_ollama(system, messages)
     if not any(m["role"] == "user" for m in ollama_msgs):
         raise RuntimeError("Sin mensajes de usuario para Llama")
@@ -253,6 +255,7 @@ def iter_llama_chat_stream(
     }
     if not llama_model_ready():
         raise LlamaNotReadyError(f"modelo {llama_model()} no descargado en Ollama")
+    accumulated = ""
     with httpx.Client(timeout=_CHAT_TIMEOUT_SEC) as client:
         with client.stream("POST", _chat_url(), json=payload) as response:
             _raise_if_llama_http_error(response)
@@ -267,7 +270,9 @@ def iter_llama_chat_stream(
                     continue
                 msg = chunk.get("message") or {}
                 piece = str(msg.get("content") or "")
-                if piece:
-                    yield piece
+                delta = stream_piece_delta(accumulated, piece)
+                if delta:
+                    accumulated += delta
+                    yield delta
                 if chunk.get("done"):
                     break

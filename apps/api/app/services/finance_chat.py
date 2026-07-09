@@ -308,9 +308,11 @@ def iter_finance_message_stream(
     max_tokens = _stream_max_tokens(text)
 
     accumulated: list[str] = []
+    stream_buf = ""
     stream_label = _stream_model_label()
     try:
         from app.services.llama_service import use_llama
+        from app.services.stream_delta import stream_piece_delta
 
         if google_key or use_llama():
             for piece in _gemini_simple_reply_stream(
@@ -320,8 +322,12 @@ def iter_finance_message_stream(
                 messages=stream_messages,
                 max_tokens=max_tokens,
             ):
-                accumulated.append(piece)
-                yield _sse_event("token", {"text": piece})
+                delta = stream_piece_delta(stream_buf, piece)
+                if not delta:
+                    continue
+                stream_buf += delta
+                accumulated.append(delta)
+                yield _sse_event("token", {"text": delta})
         elif anthropic_key:
             for piece, model_label in _iter_anthropic_text_stream(
                 api_key=anthropic_key,
@@ -331,8 +337,12 @@ def iter_finance_message_stream(
                 user_text=text,
             ):
                 stream_label = model_label
-                accumulated.append(piece)
-                yield _sse_event("token", {"text": piece})
+                delta = stream_piece_delta(stream_buf, piece)
+                if not delta:
+                    continue
+                stream_buf += delta
+                accumulated.append(delta)
+                yield _sse_event("token", {"text": delta})
     except Exception as exc:  # noqa: BLE001
         logger.warning("[FINANCE] stream failed, fallback full: %s", exc)
         result = send_finance_message(

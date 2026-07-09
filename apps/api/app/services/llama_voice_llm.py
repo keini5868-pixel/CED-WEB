@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import time
 from collections.abc import AsyncIterator
 from typing import Any
@@ -302,6 +303,46 @@ class LlamaVoiceLlm:
             return None
         return finalize_voice_delivery_text(safe)
 
+    async def _iter_llama_voice_deltas(
+        self,
+        *,
+        system: str,
+        messages: list[dict[str, str]],
+    ) -> AsyncIterator[tuple[str, str]]:
+        """Streaming Llama → (delta, accumulated) para Retell."""
+        from app.services.llama_service import iter_llama_chat_stream
+
+        loop = asyncio.get_running_loop()
+        queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+
+        def _producer() -> None:
+            acc = ""
+            try:
+                for piece in iter_llama_chat_stream(
+                    system=system,
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=1024,
+                ):
+                    acc += piece
+                    loop.call_soon_threadsafe(queue.put_nowait, ("delta", piece))
+                loop.call_soon_threadsafe(queue.put_nowait, ("end", acc))
+            except Exception as exc:  # noqa: BLE001
+                loop.call_soon_threadsafe(queue.put_nowait, ("err", str(exc)))
+
+        threading.Thread(target=_producer, daemon=True).start()
+        acc = ""
+        while True:
+            kind, payload = await queue.get()
+            if kind == "delta" and payload:
+                acc += payload
+                yield payload, acc
+            elif kind == "end":
+                yield "", payload or acc
+                return
+            elif kind == "err":
+                raise RuntimeError(payload or "llama stream failed")
+
     async def draft_response(
         self,
         request: ResponseRequiredRequest,
@@ -329,24 +370,58 @@ class LlamaVoiceLlm:
             messages = [{"role": "user", "content": user_text}]
 
         self._turn_count += 1
-        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text)
-        safe, blocked = guard_voice_response(reply)
+        accumulated = ""
+        try:
+            async for delta, acc in self._iter_llama_voice_deltas(
+                system=system,
+                messages=messages,
+            ):
+                if delta:
+                    accumulated = acc
+                    safe, blocked = guard_voice_response(delta)
+                    if blocked:
+                        continue
+                    piece = finalize_voice_delivery_text(safe)
+                    if piece:
+                        yield ResponseResponse(
+                            response_id=request.response_id,
+                            content=piece,
+                            content_complete=False,
+                            end_call=False,
+                        )
+                elif acc:
+                    accumulated = acc
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[RETELL-LLAMA] stream failed rid=%s: %s",
+                request.response_id,
+                exc,
+            )
+            accumulated = ""
+
+        if not accumulated.strip():
+            accumulated = await self._llama_reply(
+                system=system,
+                messages=messages,
+                user_text=user_text,
+            )
+
+        safe, blocked = guard_voice_response(accumulated)
         if blocked:
             safe = FALLBACK_REPLY
         content = finalize_voice_delivery_text(safe or FALLBACK_REPLY)
 
-        # Actualizar historial local
         self._history = [*messages, {"role": "assistant", "content": content}]
         self._history = self._history[-MAX_HISTORY_TURNS * 2 :]
 
         logger.info(
-            "[RETELL-LLAMA] draft_response rid=%s chars=%s path=llama_no_tools",
+            "[RETELL-LLAMA] draft_response rid=%s chars=%s path=llama_stream",
             request.response_id,
             len(content),
         )
         yield ResponseResponse(
             response_id=request.response_id,
-            content=content,
+            content="",
             content_complete=True,
             end_call=False,
         )

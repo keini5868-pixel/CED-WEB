@@ -408,6 +408,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         content: str,
         user_key: str,
         generation: int | None = None,
+        skip_prefix: str = "",
     ) -> bool:
         nonlocal active_response_id, last_answered_user_key, answered_response_ids
         nonlocal last_delivered_voice_content, last_web_delivery_at
@@ -418,6 +419,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 call_id,
             )
             return False
+        from app.services.stream_delta import strip_prefix_overlap
+
+        body = strip_prefix_overlap(skip_prefix, content) if skip_prefix else content
+        if not (body or "").strip():
+            if skip_prefix:
+                await send_voice_partial(
+                    response_id=response_id,
+                    content="",
+                    content_complete=True,
+                    generation=generation,
+                )
+                answered_response_ids.add(response_id)
+                return True
+            body = content
         if response_id in answered_response_ids:
             logger.info(
                 "[RETELL-OPENAI] skip duplicate send rid=%s call=%s",
@@ -425,13 +440,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 call_id,
             )
             return False
-        safe, blocked = guard_voice_response(content)
+        safe, blocked = guard_voice_response(body)
         if blocked:
             logger.warning(
                 "[RETELL-OPENAI] blocked outbound code leak rid=%s call=%s preview=%s",
                 response_id,
                 call_id,
-                content[:80],
+                body[:80],
             )
             safe = FALLBACK_REPLY
         content = safe or FALLBACK_REPLY
@@ -458,7 +473,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if user_key:
                 last_answered_user_key = user_key
             return True
-        # Retell: un solo envío con el texto completo — evita repetición en cascada por chunks.
+        # Retell: deltas incrementales; un solo envío si cabe en un mensaje.
         chunks = [(content, True)]
         if len(content) > 8000:
             chunks = voice_delivery_chunks(content)
@@ -717,6 +732,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             gpt_calls = 0
             partial_sent = False
             deferred_tools_pending = False
+            last_partial_content = ""
 
             def _turn_rid_stale(rid: int = scheduled_rid) -> bool:
                 stale, _ = _is_superseded_turn_rid(rid, scheduled_key, turn_latest_rid)
@@ -728,17 +744,22 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             reset_turn_filler_state(call_id, scheduled_rid)
 
             async def send_filler_once_partial(text: str) -> bool:
+                nonlocal partial_sent, last_partial_content
                 if not try_mark_turn_filler_sent(call_id, scheduled_rid):
                     return False
                 if _turn_stale():
                     return False
                 async with response_lock:
-                    return await send_voice_partial(
+                    sent = await send_voice_partial(
                         response_id=scheduled_rid,
                         content=text.strip(),
                         content_complete=False,
                         generation=my_generation,
                     )
+                if sent:
+                    last_partial_content = text.strip()
+                    partial_sent = True
+                return sent
 
             def _can_deliver_turn(rid: int = scheduled_rid) -> bool:
                 if rid in answered_response_ids:
@@ -747,7 +768,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return rid >= latest
 
             async def deliver_voice(content: str, *, rid: int = scheduled_rid) -> bool:
-                nonlocal partial_sent
+                nonlocal partial_sent, last_partial_content
                 if not _can_deliver_turn(rid):
                     return False
                 async with response_lock:
@@ -756,9 +777,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         content=content,
                         user_key=scheduled_key,
                         generation=None,
+                        skip_prefix=last_partial_content if partial_sent else "",
                     )
                 if delivered:
                     partial_sent = False
+                    last_partial_content = ""
                 return delivered
 
             async def anti_silence_if_unanswered(*, reason: str) -> None:
@@ -811,8 +834,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 await ack_empty_response(response_id=scheduled_rid, reason=reason)
 
             async def complete_partial_or_deliver(content: str) -> bool:
-                nonlocal partial_sent
-                partial_sent = False
                 return await deliver_voice(content)
 
             try:
@@ -1162,6 +1183,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
                 try:
                     draft_events: list[Any] = []
+                    voice_streamed = False
+                    streamed_text = ""
                     async for event in llm.draft_response(request):
                         stale, _ = _is_superseded_turn_rid(
                             scheduled_rid,
@@ -1178,6 +1201,34 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             )
                             break
                         draft_events.append(event)
+                        piece = (event.content or "").strip()
+                        if piece:
+                            async with response_lock:
+                                if _turn_stale():
+                                    break
+                                sent = await send_voice_partial(
+                                    response_id=scheduled_rid,
+                                    content=piece,
+                                    content_complete=False,
+                                    generation=my_generation,
+                                )
+                            if sent:
+                                voice_streamed = True
+                                streamed_text += piece
+                        if event.content_complete:
+                            async with response_lock:
+                                if not _turn_stale():
+                                    await send_voice_partial(
+                                        response_id=scheduled_rid,
+                                        content="",
+                                        content_complete=True,
+                                        generation=my_generation,
+                                    )
+                            voice_streamed = True
+                            answered_response_ids.add(scheduled_rid)
+                            if scheduled_key:
+                                last_answered_user_key = scheduled_key
+                            break
 
                     deferred_batch = llm.take_deferred_batch()
                     if deferred_batch is not None and draft_events:
@@ -1227,6 +1278,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             call_id,
                             scheduled_rid,
                             len(deferred_batch.calls),
+                        )
+                        return
+
+                    if voice_streamed and streamed_text.strip():
+                        last_delivered_voice_content = normalize_voice_delivery_text(
+                            streamed_text
+                        )
+                        logger.info(
+                            "[RETELL-DELIVERY] streamed call=%s rid=%s chars=%s",
+                            call_id,
+                            scheduled_rid,
+                            len(streamed_text),
                         )
                         return
 

@@ -373,6 +373,15 @@ def analyze_chat_image(
         if result.get("ok") and result.get("summary"):
             reply = str(result["summary"])
 
+    if not reply:
+        from app.services.vision_search import _openai_vision_fallback
+
+        reply = _openai_vision_fallback(
+            image_bytes,
+            build_chat_vision_prompt(user_text),
+            max_tokens=CHAT_VISION_MAX_TOKENS,
+        )
+
     if not reply and anthropic_key:
         reply = _anthropic_vision_reply(
             api_key=anthropic_key,
@@ -382,7 +391,9 @@ def analyze_chat_image(
         )
 
     if not reply:
-        err = "No pude analizar la imagen. Verifica GOOGLE_API_KEY en Railway."
+        err = (
+            "No pude analizar la imagen. Verifica GOOGLE_API_KEY u OPENAI_API_KEY en Railway."
+        )
         raise TextChatError(err, http_status=503)
 
     _log_feature_usage(
