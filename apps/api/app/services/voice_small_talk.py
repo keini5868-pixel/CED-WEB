@@ -37,6 +37,14 @@ def try_instant_small_talk_voice_reply(text: str) -> str | None:
         return None
 
     norm = _normalize(cleaned)
+    # Nunca instantáneo en frases largas o con intención de tarea.
+    if len(norm.split()) > 8:
+        return None
+    if re.search(
+        r"\b(necesito|quiero|hazme|haz|analisis|análisis|video|pdf|finanzas|maps|mapa|busca|investiga)\b",
+        norm,
+    ):
+        return None
     if not is_small_talk(cleaned) and not re.search(r"como\s+estas?\b", norm):
         return None
 

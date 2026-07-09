@@ -85,7 +85,7 @@ _VIRAL_KEYWORDS = re.compile(
 
 _GREETING_ONLY = re.compile(
     r"^(?:hola|buenos?\s+d[ií]as|buenas?\s+tardes|buenas?\s+noches|hey|hi|hello|"
-    r"qué\s+tal|que\s+tal|saludos)[\s!.?]*$",
+    r"qué\s+tal|que\s+tal|como\s+estas?|cómo\s+estas?|saludos)[\s!.?]*$",
     re.I,
 )
 _TOOLS_KEYWORDS = re.compile(
@@ -472,7 +472,13 @@ def _wants_viral_knowledge(text: str) -> bool:
 
 
 def _instant_chat_greeting_reply(text: str) -> str | None:
-    if _GREETING_ONLY.match((text or "").strip()):
+    cleaned = (text or "").strip()
+    if _GREETING_ONLY.match(cleaned):
+        if re.search(r"como\s+estas?|cómo\s+estas?", cleaned, re.I):
+            return (
+                "Muy bien, señor, gracias por preguntar. "
+                "¿En qué le ayudo hoy?"
+            )
         return (
             "Hola, señor. Soy CED — su asistente de negocios y marketing. "
             "¿En qué le ayudo hoy?"
@@ -2678,18 +2684,44 @@ def _gemini_simple_reply_stream(
     max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
     allow_llama: bool = True,
 ):
-    from app.services.llama_service import iter_llama_chat_stream, should_route_to_llama, use_llama
+    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+    from app.services.llama_service import (
+        _CHAT_TIMEOUT_SEC,
+        iter_llama_chat_stream,
+        should_route_to_llama,
+        use_llama,
+    )
 
     if allow_llama and use_llama() and should_route_to_llama():
-        yield from iter_llama_chat_stream(
-            system=system,
-            messages=messages,
-            temperature=0.4,
-            max_tokens=max_tokens,
-        )
-        return
-    if allow_llama and use_llama() and not should_route_to_llama():
+        def _collect_llama() -> list[str]:
+            return list(
+                iter_llama_chat_stream(
+                    system=system,
+                    messages=messages,
+                    temperature=0.4,
+                    max_tokens=max_tokens,
+                )
+            )
+
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                pieces = pool.submit(_collect_llama).result(timeout=_CHAT_TIMEOUT_SEC)
+            if pieces:
+                yield from pieces
+                return
+        except FuturesTimeout:
+            logger.warning("[CHAT] Llama stream timeout %.0fs — fallback cloud", _CHAT_TIMEOUT_SEC)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CHAT] Llama stream failed — fallback cloud: %s", exc)
+    elif allow_llama and use_llama() and not should_route_to_llama():
         logger.warning("[CHAT] Ollama sin modelo listo — stream fallback cloud")
+
+    if not (api_key or "").strip():
+        raise TextChatError(
+            "Sin proveedor cloud para fallback de chat.",
+            http_status=503,
+        )
 
     from google import genai
     from google.genai import types
@@ -2778,9 +2810,11 @@ def iter_send_message_stream(
     google_key = settings.google_api_key.strip()
     anthropic_key = settings.anthropic_api_key.strip()
     gemini_model = _gemini_chat_model()
-    if not google_key:
+    from app.services.llama_service import should_route_to_llama, use_llama
+
+    if not google_key and not anthropic_key and not (use_llama() and should_route_to_llama()):
         raise TextChatError(
-            "Servicio de chat no disponible. Configura GOOGLE_API_KEY en Railway.",
+            "Servicio de chat no disponible. Configura GOOGLE_API_KEY o ANTHROPIC_API_KEY en Railway.",
             http_status=503,
         )
 

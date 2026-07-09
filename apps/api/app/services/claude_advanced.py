@@ -642,8 +642,19 @@ def iter_advanced_message_stream(
     accumulated: list[str] = []
     stream_label = ADVANCED_STREAM_MODEL_LABEL
     try:
-        # Chat Avanzado: nunca Llama local — Gemini/Claude cloud explícito.
-        if google_key and not _needs_sonnet_stream(text):
+        # Chat Avanzado: Claude primero (rápido); Gemini como respaldo.
+        if anthropic_key and not _needs_sonnet_stream(text):
+            for piece, model_label in _iter_anthropic_text_stream(
+                api_key=anthropic_key,
+                system=stream_system,
+                messages=stream_messages,
+                max_tokens=max_tokens,
+                user_text=text,
+            ):
+                stream_label = model_label
+                accumulated.append(piece)
+                yield _sse_event("token", {"text": piece})
+        elif google_key and not _needs_sonnet_stream(text):
             stream_label = "gemini-2.5-flash"
             for piece in _gemini_simple_reply_stream(
                 api_key=google_key,
