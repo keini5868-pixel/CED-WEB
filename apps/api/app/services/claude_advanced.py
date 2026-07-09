@@ -299,6 +299,10 @@ def _sse_event(name: str, payload: dict[str, Any]) -> str:
     return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _sse_flush() -> str:
+    return ": flush\n\n"
+
+
 def _finish_payload(
     *,
     response: str,
@@ -602,11 +606,15 @@ def iter_advanced_message_stream(
     )
     if instant:
         yield _sse_event("token", {"text": instant})
+        yield _sse_flush()
         yield _sse_event("done", _finish_payload(
             response=instant,
             model=ADVANCED_STREAM_MODEL_LABEL,
         ))
         return
+
+    yield _sse_event("status", {"text": "Preparando análisis…"})
+    yield _sse_flush()
 
     anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=False)
 

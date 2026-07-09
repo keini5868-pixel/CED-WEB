@@ -2482,6 +2482,11 @@ def _sse_event(name: str, payload: dict[str, Any]) -> str:
     return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _sse_flush() -> str:
+    """Comentario SSE para forzar flush en proxies (Railway / Next.js)."""
+    return ": flush\n\n"
+
+
 def _invalidate_stream_usage_cache(user_id: str) -> None:
     _STREAM_USAGE_CACHE.pop(user_id, None)
 
@@ -2717,7 +2722,22 @@ def _gemini_simple_reply_stream(
     elif allow_llama and use_llama() and not should_route_to_llama():
         logger.warning("[CHAT] Ollama sin modelo listo — stream fallback cloud")
 
+    settings = get_settings()
+    anthropic_key = settings.anthropic_api_key.strip()
     if not (api_key or "").strip():
+        if anthropic_key:
+            from app.services.claude_advanced import _iter_anthropic_text_stream
+
+            for piece, _label in _iter_anthropic_text_stream(
+                api_key=anthropic_key,
+                system=system,
+                messages=messages,
+                max_tokens=max_tokens,
+                user_text="",
+            ):
+                if piece:
+                    yield piece
+            return
         raise TextChatError(
             "Sin proveedor cloud para fallback de chat.",
             http_status=503,
@@ -2788,13 +2808,12 @@ def iter_send_message_stream(
     if instant:
         reply = _finalize_chat_reply(instant)
         yield _sse_event("token", {"text": reply})
+        yield _sse_flush()
         _perf("first_token")
-        conv_id = _persist_stream_turn(
-            user_id,
-            conversation_id=conversation_id,
-            text=text,
-            reply=reply,
-        )
+        if conversation_id:
+            conv_id = conversation_id
+        else:
+            conv_id, _ = _load_stream_conversation(user_id, text, conversation_id)
         yield _sse_event(
             "done",
             {
@@ -2804,7 +2823,30 @@ def iter_send_message_stream(
                 "cognitive": {"intent": "greeting", "source": "instant"},
             },
         )
+        try:
+            supabase_db.append_message(
+                conv_id,
+                user_id,
+                "user",
+                text,
+                session_id=conv_id,
+                channel="text",
+            )
+            _bump_stream_usage_cache(user_id)
+            supabase_db.append_message(
+                conv_id,
+                user_id,
+                "model",
+                reply,
+                session_id=conv_id,
+                channel="text",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[CHAT] instant greeting persist failed user=%s", user_id[:8])
         return
+
+    yield _sse_event("status", {"text": "Preparando respuesta…"})
+    yield _sse_flush()
 
     settings = get_settings()
     google_key = settings.google_api_key.strip()

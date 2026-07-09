@@ -99,6 +99,10 @@ def _sse_event(name: str, payload: dict[str, Any]) -> str:
     return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _sse_flush() -> str:
+    return ": flush\n\n"
+
+
 def _finish_payload(
     *,
     response: str,
@@ -263,10 +267,14 @@ def iter_finance_message_stream(
     greeting = _greeting_reply(text) or try_instant_datetime_reply(text, history=history)
     if greeting:
         yield _sse_event("token", {"text": greeting})
+        yield _sse_flush()
         yield _sse_event(
             "done", _finish_payload(response=greeting, model=_stream_model_label())
         )
         return
+
+    yield _sse_event("status", {"text": "Preparando respuesta…"})
+    yield _sse_flush()
 
     if (
         is_finance_write_intent(text)
