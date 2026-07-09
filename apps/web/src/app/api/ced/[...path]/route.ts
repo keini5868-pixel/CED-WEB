@@ -96,6 +96,7 @@ function isLongRunningChatPath(path: string): boolean {
     normalized.includes("advanced/chat") ||
     normalized.includes("images/generate-with-reference") ||
     normalized.includes("images/generate") ||
+    normalized.includes("vision/") ||
     normalized.includes("hud/life")
   );
 }

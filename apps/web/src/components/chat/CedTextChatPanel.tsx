@@ -22,6 +22,7 @@ import {
   type ChatPdfAttachment,
   type ChatStatus,
 } from "@/lib/api/chat";
+import { appendStreamChunk } from "@/lib/stream-chunk";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
@@ -467,7 +468,7 @@ export function CedTextChatPanel({
               if (!last || last.role !== "model") return prev;
               next[next.length - 1] = {
                 ...last,
-                content: `${last.content}${chunk}`,
+                content: appendStreamChunk(last.content, chunk),
               };
               return dedupeChatMessages(next);
             });
@@ -632,7 +633,7 @@ export function CedTextChatPanel({
           const next = [...prev];
           const target = next[idx];
           if (!target || target.role !== "model") return prev;
-          next[idx] = { ...target, content: `${target.content}${chunk}` };
+          next[idx] = { ...target, content: appendStreamChunk(target.content, chunk) };
           return next;
         });
       };

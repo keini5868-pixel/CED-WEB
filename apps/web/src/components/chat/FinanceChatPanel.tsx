@@ -3,6 +3,7 @@
 import { Send, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { appendStreamChunk } from "@/lib/stream-chunk";
 import type { ChatPdfAttachment } from "@/lib/api/chat";
 import {
   FINANCE_DEFAULT_WELCOME,
@@ -176,7 +177,7 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
         const next = [...prev];
         const target = next[idx];
         if (!target || target.role !== "assistant") return prev;
-        next[idx] = { ...target, content: `${target.content}${chunk}` };
+        next[idx] = { ...target, content: appendStreamChunk(target.content, chunk) };
         return next;
       });
     };

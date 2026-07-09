@@ -1,4 +1,4 @@
-import { cedApiPath } from "@/lib/api/ced-proxy";
+import { cedApiPath, proxyFetchAuthed } from "@/lib/api/ced-proxy";
 
 export type VisionSearchResult =
   | { ok: true; summary: string; query?: string; subject?: string }
@@ -8,10 +8,9 @@ async function proxyPost(path: string, body: object, timeoutMs = 28000): Promise
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return await fetch(cedApiPath(path), {
+    return await proxyFetchAuthed(path, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
       body: JSON.stringify(body),
       signal: controller.signal,
     });
@@ -66,7 +65,7 @@ export async function fetchVisionAnalyze(
         image: imageDataUrl,
         question,
       },
-      15000,
+      28000,
     );
     const data = (await res.json()) as Record<string, unknown>;
     if (!res.ok || data.ok !== true) {

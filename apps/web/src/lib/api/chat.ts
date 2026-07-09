@@ -1,4 +1,5 @@
 import { cedApiPath, streamAuthHeaders } from "@/lib/api/ced-proxy";
+import { appendStreamChunk } from "@/lib/stream-chunk";
 import { parseApiJson } from "@/lib/api/http";
 
 const CHAT_TIMEOUT_MS = 90_000;
@@ -238,7 +239,7 @@ export async function sendChatMessageStream(
     if (eventName === "token") {
       const text = String(parsed.text ?? "");
       if (text) {
-        streamedText += text;
+        streamedText = appendStreamChunk(streamedText, text);
         onToken(text);
       }
       return;
