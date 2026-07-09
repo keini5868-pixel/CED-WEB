@@ -1055,6 +1055,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         response_id=scheduled_rid,
                         transcript=transcript,
                     )
+                    from app.services.voice_small_talk import try_instant_small_talk_voice_reply
+
+                    instant_small_talk = try_instant_small_talk_voice_reply(user_text)
+                    if instant_small_talk and await deliver_voice(instant_small_talk):
+                        logger.info(
+                            "[RETELL-LLAMA] instant small-talk call=%s text=%s",
+                            call_id,
+                            user_text[:60],
+                        )
+                        return
+
                     gpt_calls += 1
                     reply = await llm.draft_conversational_response(conv_request)
                 finally:

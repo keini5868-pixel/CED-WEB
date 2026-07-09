@@ -763,9 +763,9 @@ def is_small_talk(text: str, transcript: list[Utterance] | None = None) -> bool:
         return True
     if re.search(r"hola.*(como|cómo)\s+estás?\b", norm):
         return True
-    if re.search(r"hola.*\bs[ií]\b", norm) and re.search(r"(como|cómo)\s+estás?\b", norm):
+    if re.search(r"hola.*\bs[ií]\b", norm) and re.search(r"como\s+estas?\b", norm):
         return True
-    if re.search(r"(como|cómo)\s+estás?\s*$", norm) or re.search(r"(como|cómo)\s+estás?\?", norm):
+    if re.search(r"como\s+estas?\s*$", norm) or re.search(r"como\s+estas?\?", norm):
         return True
     if norm.startswith("hola") and len(norm.split()) <= 4 and len(norm) < 32:
         return True

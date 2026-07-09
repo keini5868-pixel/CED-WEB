@@ -33,7 +33,7 @@ from app.services.voice_spoken import finalize_voice_delivery_text
 
 logger = logging.getLogger(__name__)
 
-LLAMA_VOICE_TIMEOUT_SEC = 45.0
+LLAMA_VOICE_TIMEOUT_SEC = 12.0
 
 
 def _utterances_to_messages(utterances: list[Utterance]) -> list[dict[str, str]]:
@@ -201,6 +201,16 @@ class LlamaVoiceLlm:
 
     async def draft_conversational_response(self, request: ResponseRequiredRequest) -> str | None:
         user_text = merged_user_query(request.transcript) or ""
+        from app.services.voice_small_talk import try_instant_small_talk_voice_reply
+
+        instant = try_instant_small_talk_voice_reply(user_text)
+        if instant:
+            logger.info("[RETELL-LLAMA] small-talk instant call=%s", self._latency_call_id)
+            safe, blocked = guard_voice_response(instant)
+            if blocked or not safe:
+                return None
+            return finalize_voice_delivery_text(safe)
+
         if not user_text:
             return None
         system = self._build_system(extra_overlay=CONVERSATIONAL_TURN_OVERLAY)
