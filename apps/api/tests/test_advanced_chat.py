@@ -113,6 +113,15 @@ def test_advanced_streams_business_query_without_tools():
     )
 
 
+def test_advanced_image_request_detected():
+    from app.services.advanced_mode.intents import needs_advanced_full_pipeline
+    from app.services.chat_intents import is_generate_image_intent
+
+    text = "antes generame una imagen de la neuroplasticidad"
+    assert is_generate_image_intent(text)
+    assert not needs_advanced_full_pipeline(text, [])
+
+
 def test_advanced_stream_greeting_hola_yields_token_immediately():
     events = list(adv.iter_advanced_message_stream("u1", message="HOLA", history=[]))
     token_events = [ev for ev in events if ev.startswith("event: token")]

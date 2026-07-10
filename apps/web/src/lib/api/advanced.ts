@@ -32,8 +32,10 @@ export const ADVANCED_DEFAULT_WELCOME =
   "Modo avanzado listo. ¿Qué analizamos, señor?";
 
 const ADVANCED_TIMEOUT_MS = 300_000;
-// Corta el stream si no llegan datos en este tiempo (evita spinner infinito).
-const ADVANCED_STREAM_STALL_MS = 120_000;
+// Generación de imagen/PDF puede tardar >2 min — ampliar stall del stream.
+const ADVANCED_STREAM_STALL_MS = 240_000;
+
+export { ADVANCED_TIMEOUT_MS };
 
 export async function fetchAdvancedChatStatus(): Promise<AdvancedChatStatus | null> {
   try {

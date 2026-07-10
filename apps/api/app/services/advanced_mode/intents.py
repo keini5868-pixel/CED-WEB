@@ -22,10 +22,8 @@ _EXPLICIT_WEB = re.compile(
 
 
 def needs_advanced_full_pipeline(text: str, history_rows: list[dict[str, Any]]) -> bool:
-    """PDF, imagen generada o búsqueda web explícita → pipeline completo con herramientas."""
-    if is_pdf_intent(text) or is_generate_image_intent(text):
-        return True
-    if parse_generate_image_prompt(text):
+    """PDF o búsqueda web explícita → pipeline completo (imagen tiene ruta propia en stream)."""
+    if is_pdf_intent(text):
         return True
     if resolve_pdf_request(text, history_rows):
         return True

@@ -454,8 +454,48 @@ def iter_advanced_message_stream(
 
     anthropic_key = require_anthropic_api_key()
 
+    # Imagen: ruta directa (Gemini Flash Image) — no pasar por chat con herramientas.
+    if is_generate_image_intent(text) or parse_generate_image_prompt(text):
+        status = "Generando imagen con IA…"
+        yield _sse_event("status", {"text": status})
+        yield _sse_flush()
+
+        def _run_image_job() -> dict[str, Any]:
+            direct = _try_direct_image(user_id, text, history_rows, conv_id)
+            if direct:
+                return direct
+            return send_advanced_message(
+                user_id,
+                message=text,
+                history=history,
+                conversation_id=conv_id,
+            )
+
+        result: dict[str, Any] | None = None
+        try:
+            for kind, payload in _iter_blocking_with_keepalives(_run_image_job):
+                if kind == "ping":
+                    yield _sse_event("status", {"text": status})
+                    yield _sse_flush()
+                else:
+                    result = payload
+        except Exception:  # noqa: BLE001
+            logger.exception("[ADV-MODE] image generation failed")
+            result = _finish_payload(
+                response="Disculpe señor, no pude generar la imagen. Intente de nuevo.",
+                model=ADVANCED_MODEL_LABEL,
+            )
+        if result is None:
+            result = _finish_payload(
+                response="Disculpe señor, no pude generar la imagen.",
+                model=ADVANCED_MODEL_LABEL,
+            )
+        yield from _yield_done_cached(user_id, text, result)
+        return
+
     if needs_advanced_full_pipeline(text, history_rows):
-        yield _sse_event("status", {"text": "Analizando y preparando respuesta…"})
+        status = "Analizando y preparando respuesta…"
+        yield _sse_event("status", {"text": status})
         yield _sse_flush()
 
         def _run_tools_pipeline() -> dict[str, Any]:
@@ -466,10 +506,11 @@ def iter_advanced_message_stream(
                 conversation_id=conv_id,
             )
 
-        result: dict[str, Any] | None = None
+        result = None
         try:
             for kind, payload in _iter_blocking_with_keepalives(_run_tools_pipeline):
                 if kind == "ping":
+                    yield _sse_event("status", {"text": status})
                     yield _sse_flush()
                 else:
                     result = payload

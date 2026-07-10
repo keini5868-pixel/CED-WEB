@@ -19,6 +19,7 @@ import {
   sendAdvancedChatMessage,
   sendAdvancedChatMessageStream,
   sendAdvancedChatMessageWithImage,
+  ADVANCED_TIMEOUT_MS,
   type AdvancedChatMessage,
 } from "@/lib/api/advanced";import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
@@ -212,7 +213,8 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       setStreaming(false);
       setStatusHint(null);
       streamTargetIndexRef.current = null;
-    }, 120_000);
+      setError("La operación tardó demasiado. Intente de nuevo.");
+    }, ADVANCED_TIMEOUT_MS);
 
     const userMsg: AdvancedChatMessage = {
       role: "user",
@@ -324,7 +326,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
                 : "Error al analizar.",
           );
         }
-      } else if (!receivedTokens) {
+      } else {
         setError(
           streamErr instanceof Error
             ? streamErr.message
