@@ -148,8 +148,11 @@ def calendar_oauth_callback(
             target = (web_origin or fallback_web).rstrip("/")
             return RedirectResponse(f"{target}/dashboard?calendar=scope_read")
         if not token_has_calendar_write_scope(access):
-            target = (web_origin or fallback_web).rstrip("/")
-            return RedirectResponse(f"{target}/dashboard?calendar=scope_write")
+            from app.services.google_calendar_api import probe_calendar_access
+
+            if not probe_calendar_access(access):
+                target = (web_origin or fallback_web).rstrip("/")
+                return RedirectResponse(f"{target}/dashboard?calendar=scope_write")
         store_tokens("calendar", user_id, payload)
         target = (web_origin or fallback_web).rstrip("/")
         return RedirectResponse(f"{target}/dashboard?calendar=connected")

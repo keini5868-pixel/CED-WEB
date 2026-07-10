@@ -42,6 +42,30 @@ def _headers(access_token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {access_token}"}
 
 
+def probe_calendar_access(access_token: str) -> bool:
+    """Comprueba acceso real a Calendar — más fiable que tokeninfo en tokens refrescados."""
+    token = (access_token or "").strip()
+    if not token:
+        return False
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            res = client.get(
+                f"{_CALENDAR_BASE}/calendars/primary",
+                headers=_headers(token),
+                params={"fields": "id,summary"},
+            )
+            if res.status_code == 200:
+                return True
+            logger.warning(
+                "[CALENDAR] probe status=%s body=%s",
+                res.status_code,
+                res.text[:180],
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[CALENDAR] probe failed: %s", exc)
+    return False
+
+
 def _event_time_payload(dt: datetime, tz_name: str = _DEFAULT_TZ) -> dict[str, str]:
     try:
         tz = ZoneInfo(tz_name)

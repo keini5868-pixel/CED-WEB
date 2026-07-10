@@ -116,6 +116,30 @@ def test_calendar_oauth_url_endpoint():
     app.dependency_overrides.clear()
 
 
+def test_calendar_status_uses_api_probe_when_tokeninfo_empty():
+    from app.services.google_oauth import get_connection_status
+
+    with patch(
+        "app.services.google_oauth.supabase_db.get_calendar_tokens",
+        return_value={"access_token": "tok", "refresh_token": "ref"},
+    ):
+        with patch(
+            "app.services.google_oauth.token_has_calendar_read_scope",
+            return_value=False,
+        ):
+            with patch(
+                "app.services.google_oauth.token_has_calendar_write_scope",
+                return_value=False,
+            ):
+                with patch(
+                    "app.services.google_calendar_api.probe_calendar_access",
+                    return_value=True,
+                ):
+                    status = get_connection_status("calendar", SAMPLE_UUID)
+
+    assert status["connected"] is True
+
+
 def test_calendar_status_detects_insufficient_scopes():
     from app.services.google_oauth import get_connection_status
 
@@ -131,7 +155,15 @@ def test_calendar_status_detects_insufficient_scopes():
                 "app.services.google_oauth.token_has_calendar_write_scope",
                 return_value=False,
             ):
-                status = get_connection_status("calendar", SAMPLE_UUID)
+                with patch(
+                    "app.services.google_calendar_api.probe_calendar_access",
+                    return_value=False,
+                ):
+                    with patch(
+                        "app.services.google_oauth.refresh_access_token",
+                        side_effect=RuntimeError("no refresh"),
+                    ):
+                        status = get_connection_status("calendar", SAMPLE_UUID)
 
     assert status["connected"] is False
     assert status.get("needs_reconnect") is True

@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 GoogleService = Literal["calendar", "gmail"]
 
 CALENDAR_SCOPES = (
-    "https://www.googleapis.com/auth/calendar.readonly "
+    "https://www.googleapis.com/auth/calendar "
     "https://www.googleapis.com/auth/calendar.events"
 )
 GMAIL_SCOPES = (
@@ -350,33 +350,45 @@ def inspect_access_token(access_token: str) -> dict[str, Any]:
 
 
 def _scope_parts(access_token: str) -> set[str]:
+    if not (access_token or "").strip():
+        return set()
     scope = str(inspect_access_token(access_token).get("scope") or "")
     return {part.strip() for part in scope.split() if part.strip()}
 
 
-def token_has_calendar_read_scope(access_token: str) -> bool:
-    parts = _scope_parts(access_token)
-    return bool(
-        parts
-        & {
+def _calendar_scope_sets() -> tuple[frozenset[str], frozenset[str]]:
+    read_scopes = frozenset(
+        {
             "https://www.googleapis.com/auth/calendar",
             "https://www.googleapis.com/auth/calendar.readonly",
             "https://www.googleapis.com/auth/calendar.events",
         }
     )
-
-
-def token_has_calendar_write_scope(access_token: str) -> bool:
-    parts = _scope_parts(access_token)
-    return bool(
-        parts
-        & {
+    write_scopes = frozenset(
+        {
             "https://www.googleapis.com/auth/calendar",
             "https://www.googleapis.com/auth/calendar.events",
             "https://www.googleapis.com/auth/calendar.events.owned",
             "https://www.googleapis.com/auth/calendar.app.created",
         }
     )
+    return read_scopes, write_scopes
+
+
+def token_has_calendar_read_scope(access_token: str) -> bool:
+    parts = _scope_parts(access_token)
+    if not parts:
+        return False
+    read_scopes, _ = _calendar_scope_sets()
+    return bool(parts & read_scopes)
+
+
+def token_has_calendar_write_scope(access_token: str) -> bool:
+    parts = _scope_parts(access_token)
+    if not parts:
+        return False
+    _, write_scopes = _calendar_scope_sets()
+    return bool(parts & write_scopes)
 
 
 def token_has_calendar_scope(access_token: str) -> bool:
@@ -488,17 +500,88 @@ def get_connection_status(service: GoogleService, user_id: str) -> dict[str, Any
     if not row or not row.get("access_token"):
         return {"connected": False, "service": service}
     if service == "calendar":
-        access = str(row.get("access_token") or "")
-        if not token_has_calendar_read_scope(access) or not token_has_calendar_write_scope(
-            access
-        ):
-            return {
-                "connected": False,
-                "service": service,
-                "needs_reconnect": True,
-                "hint": CALENDAR_RECONNECT_MSG,
-            }
+        from app.services.google_calendar_api import probe_calendar_access
+
+        access = _access_token_for_status("calendar", uid, row)
+        read_ok = token_has_calendar_read_scope(access)
+        write_ok = token_has_calendar_write_scope(access)
+        if read_ok and write_ok:
+            return {"connected": True, "service": service}
+        if probe_calendar_access(access):
+            logger.info(
+                "[GOOGLE-OAUTH] calendar OK via API probe (tokeninfo vacío) user=%s",
+                uid[:8],
+            )
+            return {"connected": True, "service": service}
+        refresh = str(row.get("refresh_token") or "").strip()
+        if refresh:
+            try:
+                payload = refresh_access_token("calendar", refresh)
+                access = str(payload.get("access_token") or "").strip()
+                if access and probe_calendar_access(access):
+                    from app.services.supabase_client import save_calendar_tokens
+
+                    save_calendar_tokens(uid, {**payload, "refresh_token": refresh})
+                    logger.info(
+                        "[GOOGLE-OAUTH] calendar OK tras refresh+probe user=%s",
+                        uid[:8],
+                    )
+                    return {"connected": True, "service": service}
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[GOOGLE-OAUTH] calendar refresh+probe failed user=%s",
+                    uid[:8],
+                )
+        return {
+            "connected": False,
+            "service": service,
+            "needs_reconnect": True,
+            "hint": CALENDAR_RECONNECT_MSG,
+        }
     return {"connected": True, "service": service}
+
+
+def _access_token_for_status(
+    service: GoogleService,
+    user_id: str,
+    row: dict[str, Any],
+) -> str:
+    """Devuelve access token fresco para validación — sin recursión con store_tokens."""
+    access = str(row.get("access_token") or "")
+    expires_raw = row.get("expires_at")
+    needs_refresh = False
+    if expires_raw:
+        try:
+            expires = datetime.fromisoformat(str(expires_raw).replace("Z", "+00:00"))
+            if expires.tzinfo is None:
+                expires = expires.replace(tzinfo=timezone.utc)
+            needs_refresh = expires <= datetime.now(timezone.utc)
+        except Exception:  # noqa: BLE001
+            needs_refresh = False
+    refresh = str(row.get("refresh_token") or "").strip()
+    if not needs_refresh or not refresh:
+        return access
+    try:
+        payload = refresh_access_token(service, refresh)
+        new_access = str(payload.get("access_token") or "").strip()
+        if not new_access:
+            return access
+        if service == "calendar":
+            from app.services.supabase_client import save_calendar_tokens
+
+            save_calendar_tokens(user_id, {**payload, "refresh_token": refresh})
+        else:
+            from app.services.supabase_client import save_gmail_tokens
+
+            save_gmail_tokens(user_id, {**payload, "refresh_token": refresh})
+        return new_access
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "[GOOGLE-OAUTH] refresh for status failed service=%s user=%s",
+            service,
+            str(user_id)[:8],
+        )
+        return access
 
 
 def get_valid_access_token(service: GoogleService, user_id: str) -> str:

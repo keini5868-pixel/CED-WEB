@@ -232,6 +232,9 @@ export async function applyGoogleConnections(
     if (!snapshot.calendar.events.length) {
       snapshot.calendar.events = ["Sin eventos programados para hoy."];
     }
+  } else if (cal?.needs_reconnect && cal.hint) {
+    snapshot.calendar.connected = false;
+    snapshot.calendar.hint = cal.hint;
   }
   if (mail?.connected) {
     snapshot.gmail.connected = true;

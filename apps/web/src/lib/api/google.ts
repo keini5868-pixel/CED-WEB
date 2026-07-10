@@ -7,6 +7,8 @@ import { parseApiJson } from "@/lib/api/http";
 export type GoogleConnectionStatus = {
   connected: boolean;
   service: "calendar" | "gmail";
+  needs_reconnect?: boolean;
+  hint?: string;
 };
 
 export type GoogleLinkType = "calendar" | "gmail";
