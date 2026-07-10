@@ -32,23 +32,35 @@ GMAIL_PATTERNS: tuple[str, ...] = (
     r"\b(?:tengo|hay)\s+.*(?:emails?|correos?)\s+importantes\b",
     r"\bl[eé]eme\s+(?:mis\s+)?(?:emails?|correos?)\b",
     r"\bl[eé]e\s+(?:los\s+)?(?:gmail|correos?|emails?)\b",
+    r"\bl[eé]e(?:me)?\s+(?:el\s+|mi\s+)?(?:[úu]ltim[oa]s?\s+)?(?:correo|email|gmail|mensaje)\b",
+    r"\b(?:me\s+puedes|puedes|pod[eí]as)\s+(?:leer|revisar|decir|contar).*(?:correo|email|gmail)\b",
+    r"\b(?:[úu]ltim[oa]s?|reciente|nuev[oa])\s+(?:correo|email|gmail|mensaje)\b",
+    r"\b(?:correo|email|gmail|mensaje)\s+(?:[úu]ltim[oa]|reciente|nuev[oa]|m[aá]s\s+reciente)\b",
     r"\b(?:qu[eé]|cu[aá]ntos)\s+.*(?:emails?|correos?)\b",
     r"\bl[eé]eme\s+(?:el\s+)?(?:email|correo)\b",
-    r"\bl[eé]e\s+(?:el\s+)?(?:de\s+)?",
+    r"\bl[eé]e(?:me)?\s+(?:el\s+)?(?:correo|email)\s+de\b",
     r"\benv[ií]a\s+(?:un\s+)?(?:email|correo)\b",
     r"\bmandar\s+(?:un\s+)?(?:email|correo)\b",
 )
 
-CATEGORY_LABELS = {
-    "primary": "Principal",
-    "promotions": "Promociones",
-    "social": "Social",
-    "updates": "Actualizaciones",
-    "forums": "Foros",
-}
+_READ_LATEST_RE = re.compile(
+    r"\b(?:"
+    r"(?:[úu]ltim[oa]s?|reciente|nuev[oa]|m[aá]s\s+reciente)\s+(?:correo|email|gmail|mensaje)|"
+    r"(?:correo|email|gmail|mensaje)\s+(?:[úu]ltim[oa]|reciente|nuev[oa]|m[aá]s\s+reciente)|"
+    r"(?:me\s+puedes|puedes|pod[eí]as)\s+(?:leer|revisar|decir|contar).*(?:correo|email|gmail)|"
+    r"l[eé]e(?:me)?\s+(?:el\s+|mi\s+)?(?:[úu]ltim[oa]s?\s+)?(?:correo|email|gmail|mensaje)"
+    r")\b",
+    re.I,
+)
 
 _GMAIL_PICK_REJECT = re.compile(
-    r"\b(?:clima|pdf|mapa|finanzas|imagen|c[áa]mara|ll[ée]vame|naveg)\b",
+    r"\b(?:clima|pdf|mapa|finanzas|imagen|c[áa]mara|ll[ée]vame|naveg|"
+    r"escuchaste|me\s+oyes|me\s+o[ií]ste|repites|repite|me\s+escuchas)\b",
+    re.I,
+)
+
+_GMAIL_COMMAND_RE = re.compile(
+    r"\b(?:correo|email|gmail|mensaje|leer|l[eé]e|l[eé]eme|ultim|reciente)\b",
     re.I,
 )
 
@@ -69,6 +81,8 @@ def is_gmail_followup_pick(text: str, user_id: str = "") -> bool:
         return False
     if _GMAIL_PICK_REJECT.search(t):
         return False
+    if _GMAIL_COMMAND_RE.search(t):
+        return False
     if re.search(
         r"\bl[eé]eme\s+(?:el\s+)?(?:correo|email)\s+de\b",
         t,
@@ -76,6 +90,40 @@ def is_gmail_followup_pick(text: str, user_id: str = "") -> bool:
     ):
         return False
     return True
+
+
+def is_gmail_read_latest_intent(text: str) -> bool:
+    t = (text or "").strip()
+    if len(t) < 8:
+        return False
+    return bool(_READ_LATEST_RE.search(t))
+
+
+def _read_latest_email(access: str, user_id: str, category: str) -> str:
+    messages = list_messages_by_category(access, category, max_results=1)  # type: ignore[arg-type]
+    if not messages:
+        vcs.set_gmail_awaiting_pick(user_id, False)
+        label = CATEGORY_LABELS.get(category, "Principal")
+        return f"Señor, no tiene correos recientes en {label}."
+    msg = messages[0]
+    body = get_message_body(access, msg["id"])
+    from_name = msg.get("from_name") or msg.get("from", "?")
+    vcs.set_gmail_awaiting_pick(user_id, False)
+    when = msg.get("relative_date") or ""
+    when_txt = f", recibido {when.lower()}" if when else ""
+    return (
+        f"Señor, su último correo es de {from_name}{when_txt}: "
+        f"asunto «{msg['subject']}». {body[:800]}"
+    )
+
+
+CATEGORY_LABELS = {
+    "primary": "Principal",
+    "promotions": "Promociones",
+    "social": "Social",
+    "updates": "Actualizaciones",
+    "forums": "Foros",
+}
 
 
 def _not_connected_message() -> str:
@@ -197,6 +245,9 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
         return f"Señor, envié el correo a {recipient}."
 
     category = detect_gmail_category(text)
+    if is_gmail_read_latest_intent(text):
+        return _read_latest_email(access, user_id, category)
+
     if re.search(
         r"l[eé]eme\s+mis|qu[eé]\s+emails|qu[eé]\s+correos|cu[aá]ntos\s+emails|"
         r"emails?\s+tengo|correos?\s+tengo|gmail\s+que\s+tengo|"

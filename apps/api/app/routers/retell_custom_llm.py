@@ -56,6 +56,7 @@ from app.services.voice_llm_common import (
 )
 from app.services.ced_orchestrator import (
     detect_strict_intent_v2,
+    detect_voice_module_intent,
     get_context_overlay,
     get_orchestrator,
 )
@@ -670,7 +671,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         # SIEMPRE gana al fast-path de búsqueda web. Sin esto, "dame el resumen de
         # mis finanzas" caía en "consulto las noticias" porque el web fast-path corre
         # antes que el orquestador. web_search sí puede seguir su camino.
-        strict_module_early = detect_strict_intent_v2(user_text)
+        strict_module_early = detect_voice_module_intent(user_text, transcript, user_id=uid or "")
         if pending_web and strict_module_early and strict_module_early != "web_search":
             logger.info(
                 "[RETELL-ORCH] ancla estricta %s cancela web fast-path call=%s",
@@ -964,10 +965,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             # Ancla estricta por keyword (ej. "guárdame en finanzas", "hazme un pdf"):
             # fuerza el orquestador aunque small-talk lo clasifique como casual. Así
             # la activación de módulo es DETERMINISTA por keyword, no la decide Gemini.
-            forced_module = detect_strict_intent_v2(user_text)
+            forced_module = detect_voice_module_intent(user_text, transcript, user_id=uid or "")
             if forced_module:
                 logger.info(
-                    "[RETELL-ORCH] forced module=%s por ancla estricta call=%s text=%s",
+                    "[RETELL-ORCH] forced module=%s call=%s text=%s",
                     forced_module,
                     call_id,
                     user_text[:60],
@@ -1010,6 +1011,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             call_id,
                             delivered,
                         )
+                    else:
+                        await anti_silence_if_unanswered(reason="orch_empty_spoken")
                     return
             elif uid:
                 llm.set_module_overlay(

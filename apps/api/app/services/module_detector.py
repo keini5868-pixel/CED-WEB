@@ -146,6 +146,10 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
     "gmail": (
         r"\bleer\s+mis\s+correos\b",
         r"\bl[ée]e(?:me)?\s+(?:los\s+)?gmail\b",
+        r"\bl[ée]e(?:me)?\s+(?:el\s+|mi\s+)?(?:[úu]ltim[oa]s?\s+)?(?:correo|email|gmail|mensaje)\b",
+        r"\b(?:me\s+puedes|puedes|pod[eí]as)\s+(?:leer|revisar|decir|contar).*(?:correo|email|gmail)\b",
+        r"\b(?:[úu]ltim[oa]s?|reciente|nuev[oa])\s+(?:correo|email|gmail|mensaje)\b",
+        r"\b(?:correo|email|gmail|mensaje)\s+(?:[úu]ltim[oa]|reciente|nuev[oa]|m[aá]s\s+reciente)\b",
         r"\bl[ée]e(?:me)?\s+el\s+correo\s+de\b",
         r"\bl[ée]e(?:me)?\s+(?:el\s+|mi\s+|los\s+|mis\s+)?(?:correos?|emails?|gmail)\b",
         r"\benv[íi]a(?:me)?\s+(?:un\s+)?(?:correo|email)\b",
@@ -316,7 +320,7 @@ def _llm_classify_intent(text: str, module: str) -> bool:
         settings = get_settings()
         api_key = settings.google_api_key.strip()
         if not api_key:
-            return False
+            return _legacy_confirms_action(text, module)
 
         from google import genai
         from google.genai import types
@@ -324,7 +328,7 @@ def _llm_classify_intent(text: str, module: str) -> bool:
         try:
             client = genai.Client(
                 api_key=api_key,
-                http_options=types.HttpOptions(timeout=6000),
+                http_options=types.HttpOptions(timeout=10000),
             )
         except Exception:  # noqa: BLE001
             client = genai.Client(api_key=api_key)
@@ -348,7 +352,27 @@ def _llm_classify_intent(text: str, module: str) -> bool:
         return "ACCION" in answer or "ACCIÓN" in answer
     except Exception as exc:  # noqa: BLE001
         logger.warning("[DETECT] clasificador de intención falló module=%s: %s", module, exc)
-        return False
+        return _legacy_confirms_action(text, module)
+
+
+def _legacy_confirms_action(text: str, module: str) -> bool:
+    """Respaldo determinista cuando el clasificador LLM no está disponible."""
+    from app.modules.calendar_module import is_calendar_intent
+    from app.modules.environment_module import is_environment_intent
+    from app.modules.finance_module import is_finance_intent
+    from app.modules.gmail_module import is_gmail_intent
+
+    checks: dict[str, Callable[[str], bool]] = {
+        "gmail": is_gmail_intent,
+        "finance": is_finance_intent,
+        "calendar": is_calendar_intent,
+        "environment": is_environment_intent,
+        "weather": is_environment_intent,
+        "pollen": is_environment_intent,
+        "air_quality": is_environment_intent,
+    }
+    fn = checks.get(module)
+    return bool(fn(text)) if fn else False
 
 
 def detect_intent(

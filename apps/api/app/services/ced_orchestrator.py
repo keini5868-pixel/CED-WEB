@@ -206,6 +206,22 @@ def detect_strict_intent_v2(user_text: str) -> str | None:
     return DETECTOR_TO_REGISTRY.get(det.module)
 
 
+def detect_voice_module_intent(
+    user_text: str,
+    transcript: list[Utterance] | None = None,
+    *,
+    user_id: str = "",
+) -> str | None:
+    """Detección determinista para voz: ancla estricta → v2 → legacy patterns."""
+    strict = detect_strict_intent_v2(user_text)
+    if strict:
+        return strict
+    fresh = detect_fresh_intent_v2(user_text)
+    if fresh:
+        return fresh
+    return detect_module(user_text, transcript or [], user_id=user_id)
+
+
 def is_module_command(
     user_text: str,
     module: str,
