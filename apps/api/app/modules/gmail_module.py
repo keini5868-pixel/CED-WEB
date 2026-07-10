@@ -7,6 +7,8 @@ import logging
 import re
 
 from app.modules.base_module import BaseModule
+from app.modules.module_acks import MODULE_ACKS
+from app.services import voice_client_session as vcs
 from app.services.google_gmail_api import (
     detect_gmail_category,
     extract_recipient,
@@ -29,6 +31,7 @@ GMAIL_PATTERNS: tuple[str, ...] = (
     r"\b(?:tengo|hay)\s+.*(?:emails?|correos?)\b",
     r"\b(?:tengo|hay)\s+.*(?:emails?|correos?)\s+importantes\b",
     r"\bl[eé]eme\s+(?:mis\s+)?(?:emails?|correos?)\b",
+    r"\bl[eé]e\s+(?:los\s+)?(?:gmail|correos?|emails?)\b",
     r"\b(?:qu[eé]|cu[aá]ntos)\s+.*(?:emails?|correos?)\b",
     r"\bl[eé]eme\s+(?:el\s+)?(?:email|correo)\b",
     r"\bl[eé]e\s+(?:el\s+)?(?:de\s+)?",
@@ -44,12 +47,35 @@ CATEGORY_LABELS = {
     "forums": "Foros",
 }
 
+_GMAIL_PICK_REJECT = re.compile(
+    r"\b(?:clima|pdf|mapa|finanzas|imagen|c[áa]mara|ll[ée]vame|naveg)\b",
+    re.I,
+)
+
 
 def is_gmail_intent(text: str) -> bool:
     t = (text or "").strip().lower()
     if len(t) < 6:
         return False
     return any(re.search(p, t) for p in GMAIL_PATTERNS)
+
+
+def is_gmail_followup_pick(text: str, user_id: str = "") -> bool:
+    """True si el usuario responde con el nombre del correo tras un listado."""
+    t = (text or "").strip()
+    if not t or not user_id or not vcs.is_gmail_awaiting_pick(user_id):
+        return False
+    if len(t) < 2 or len(t) > 100:
+        return False
+    if _GMAIL_PICK_REJECT.search(t):
+        return False
+    if re.search(
+        r"\bl[eé]eme\s+(?:el\s+)?(?:correo|email)\s+de\b",
+        t,
+        re.I,
+    ):
+        return False
+    return True
 
 
 def _not_connected_message() -> str:
@@ -59,10 +85,19 @@ def _not_connected_message() -> str:
     )
 
 
-def _summarize_inbox(access: str, category: str, *, max_results: int = 4) -> str:
+def _summarize_inbox(
+    access: str,
+    category: str,
+    *,
+    user_id: str,
+    max_results: int = 4,
+) -> str:
     messages = list_messages_by_category(access, category, max_results=max_results)  # type: ignore[arg-type]
     label = CATEGORY_LABELS.get(category, "Principal")
+    vcs.set_gmail_inbox_cache(user_id, messages)
+    vcs.set_gmail_awaiting_pick(user_id, True)
     if not messages:
+        vcs.set_gmail_awaiting_pick(user_id, False)
         return f"Señor, no tiene correos recientes en {label}."
     count = len(messages)
     parts: list[str] = []
@@ -77,7 +112,7 @@ def _summarize_inbox(access: str, category: str, *, max_results: int = 4) -> str
     nuevo = "nuevo" if count == 1 else "nuevos"
     intro = f"Señor, tiene {count} email{'s' if count != 1 else ''} {nuevo} en {label}: "
     body = ". ".join(parts)
-    return intro + body + ". ¿Desea que lea alguno completo?"
+    return intro + body + ". ¿Cuál correo, dígame el nombre?"
 
 
 def _read_sender_email(access: str, text: str) -> str:
@@ -101,9 +136,48 @@ def _read_sender_email(access: str, text: str) -> str:
     )
 
 
+def _read_email_by_pick(access: str, user_id: str, hint: str) -> str:
+    hint_norm = hint.strip().lower()
+    cached = vcs.get_gmail_inbox_cache(user_id)
+    tokens = [tok for tok in re.split(r"\s+", hint_norm) if len(tok) >= 2]
+
+    best: dict | None = None
+    best_score = 0
+    for msg in cached:
+        haystack = (
+            f"{msg.get('from_name', '')} {msg.get('from', '')} {msg.get('subject', '')}"
+        ).lower()
+        score = 0
+        if hint_norm and hint_norm in haystack:
+            score += 10
+        for tok in tokens:
+            if tok in haystack:
+                score += 3
+        if score > best_score:
+            best_score = score
+            best = msg
+
+    if best and best_score >= 3:
+        body = get_message_body(access, best["id"])
+        from_name = best.get("from_name") or best.get("from", "?")
+        vcs.set_gmail_awaiting_pick(user_id, False)
+        return (
+            f"Señor, de {from_name}: asunto «{best['subject']}». "
+            f"{body[:800]}"
+        )
+
+    fallback = _read_sender_email(access, f"de {hint}")
+    if "no encontré" not in fallback.lower():
+        vcs.set_gmail_awaiting_pick(user_id, False)
+    return fallback
+
+
 def _handle_gmail_query(user_id: str, text: str) -> str:
     access = get_valid_access_token("gmail", user_id)
     t = text.lower()
+
+    if is_gmail_followup_pick(text, user_id):
+        return _read_email_by_pick(access, user_id, text)
 
     if re.search(r"env[ií]a|mandar", t):
         recipient = extract_recipient(text)
@@ -119,23 +193,30 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
             subject="Mensaje desde CED",
             body=body,
         )
+        vcs.set_gmail_awaiting_pick(user_id, False)
         return f"Señor, envié el correo a {recipient}."
-
-    if re.search(r"l[eé]eme\s+(?:el\s+)?(?:email|correo)|l[eé]e\s+(?:el\s+)?(?:de\s+)?", t):
-        return _read_sender_email(access, text)
 
     category = detect_gmail_category(text)
     if re.search(
         r"l[eé]eme\s+mis|qu[eé]\s+emails|qu[eé]\s+correos|cu[aá]ntos\s+emails|"
-        r"emails?\s+tengo|correos?\s+tengo",
+        r"emails?\s+tengo|correos?\s+tengo|gmail\s+que\s+tengo|"
+        r"l[eé]e\s+(?:los\s+)?(?:gmail|correos?|emails?)\b",
         t,
     ):
-        return _summarize_inbox(access, category)
+        return _summarize_inbox(access, category, user_id=user_id)
+
+    if re.search(
+        r"l[eé]eme\s+(?:el\s+)?(?:email|correo)|l[eé]e(?:me)?\s+(?:el\s+)?(?:correo|email)\s+de\b",
+        t,
+    ):
+        vcs.set_gmail_awaiting_pick(user_id, False)
+        return _read_sender_email(access, text)
 
     if re.search(r"important", t):
-        return _summarize_inbox(access, "primary")
+        return _summarize_inbox(access, "primary", user_id=user_id)
 
-    return _summarize_inbox(access, category)
+    vcs.set_gmail_awaiting_pick(user_id, False)
+    return _summarize_inbox(access, category, user_id=user_id)
 
 
 def handle_gmail_query_sync(user_id: str, text: str) -> dict[str, str]:
@@ -175,8 +256,9 @@ class GmailModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        if is_gmail_intent(user_text or transcript):
-            return await self._run(user_id, user_text or transcript)
+        text = user_text or transcript
+        if is_gmail_intent(text) or is_gmail_followup_pick(text, user_id):
+            return await self._run(user_id, text)
         return self._idle()
 
     async def _run(self, user_id: str, text: str) -> ModuleResult:
@@ -185,7 +267,13 @@ class GmailModule(BaseModule):
                 asyncio.to_thread(_handle_gmail_query, user_id, text),
                 timeout=GMAIL_VOICE_TIMEOUT_SEC,
             )
-            return ModuleResult(ok=True, spoken=spoken, handles_response=True)
+            return ModuleResult(
+                ok=True,
+                spoken=spoken,
+                handles_response=True,
+                send_filler=True,
+                filler=MODULE_ACKS.get("gmail", "Revisando su correo, señor."),
+            )
         except asyncio.TimeoutError:
             return ModuleResult(
                 ok=False,

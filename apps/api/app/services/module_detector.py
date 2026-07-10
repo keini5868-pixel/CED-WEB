@@ -102,6 +102,9 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\benciende\s+(?:la\s+)?c[áa]mara\b",
         r"\bactiva\s+(?:la\s+)?c[áa]mara\b",
         r"\banaliza\s+esto\b",
+        r"\banaliza\s+lo\s+que\s+(?:tengo|tienes|ves|veo|hay)\b",
+        r"\banaliza\s+.*\ben\s+(?:la\s+)?mano\b",
+        r"\bqu[ée]\s+(?:es|tengo)\s+(?:esto|en\s+(?:la\s+)?mano)\b",
         r"\bmira\s+esto\b",
         r"\bqu[ée]\s+ves\b",
         r"\bdescribe\s+lo\s+que\s+ves\b",
@@ -142,6 +145,7 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
     ),
     "gmail": (
         r"\bleer\s+mis\s+correos\b",
+        r"\bl[ée]e(?:me)?\s+(?:los\s+)?gmail\b",
         r"\bl[ée]e(?:me)?\s+el\s+correo\s+de\b",
         r"\bl[ée]e(?:me)?\s+(?:el\s+|mi\s+|los\s+|mis\s+)?(?:correos?|emails?|gmail)\b",
         r"\benv[íi]a(?:me)?\s+(?:un\s+)?(?:correo|email)\b",
@@ -164,6 +168,9 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bmejora(?:r)?\s+(?:mi\s+)?plan\b",
     ),
     "finance": (
+        r"\bqu[ée]\s+tengo\s+en\s+finanzas\b",
+        r"\bdame\s+un\s+reporte\b.*\bfinanzas\b",
+        r"\bfinanzas\b.*\bdame\s+un\s+reporte\b",
         r"\bc[óo]mo\s+van\s+mis\s+finanzas\b",
         r"\bresumen\s+de\s+(?:mis\s+)?finanzas\b",
         r"\bcu[áa]nto\s+(?:he\s+)?gast[éeè]\b",
@@ -186,6 +193,7 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bcu[áa]nto\s+debo\b",
     ),
     "weather": (
+        r"\bdime\s+(?:el\s+)?clima\b",
         r"\b(?:c[óo]mo|qu[ée])\s+(?:va\s+a\s+estar|estar[áa]|est[áa])\s+el\s+(?:clima|tiempo)\b",
         r"\bpron[óo]stico\s+(?:del?\s+)?(?:clima|tiempo|d[íi]a)\b",
         r"\bva\s+a\s+llover\b",

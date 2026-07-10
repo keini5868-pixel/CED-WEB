@@ -558,6 +558,7 @@ export function useCedVoiceSession(
           }
           if (ev.type === "pdf_created" && ev.title) {
             void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
+            setHistoryOpen(true);
           }
           if (ev.type === "camera_activate") {
             activateCameraFromVoiceRef.current({ showFeedback: false });

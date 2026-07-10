@@ -6,6 +6,7 @@ import logging
 import re
 
 from app.modules.base_module import BaseModule
+from app.modules.module_acks import MODULE_ACKS
 from app.services.finance_ledger import (
     canonical_period,
     format_pending_spoken,
@@ -45,6 +46,9 @@ _AMOUNT_RE = re.compile(
 
 # Consultas / análisis (no registran).
 _QUERY_PATTERNS: tuple[str, ...] = (
+    r"\bqu[ée]\s+tengo\s+en\s+finanzas\b",
+    r"\bdame\s+un\s+reporte\b.*\bfinanzas\b",
+    r"\bfinanzas\b.*\bdame\s+un\s+reporte\b",
     r"\bc[óo]mo\s+voy\b",
     r"\bc[óo]mo\s+van\s+mis\s+finanzas\b",
     r"\bmis\s+finanzas\b",
@@ -511,7 +515,11 @@ class FinanceModule(BaseModule):
                 timeout=15.0,
             )
             return ModuleResult(
-                ok=True, spoken=str(result.get("spoken") or ""), handles_response=True
+                ok=True,
+                spoken=str(result.get("spoken") or ""),
+                handles_response=True,
+                send_filler=True,
+                filler=MODULE_ACKS.get("finance", "Revisando sus finanzas, señor."),
             )
         except asyncio.TimeoutError:
             return ModuleResult(

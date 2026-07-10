@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from app.modules.base_module import BaseModule
+from app.modules.module_acks import MODULE_ACKS
 from app.services.orchestrator_types import ModuleResult
 from app.services.retell_llm_types import Utterance
 from app.services.voice_tool_executor import execute_voice_tool
@@ -56,9 +57,21 @@ class ImageGenModule(BaseModule):
             )
 
         spoken = str(tool_result.get("spoken") or "Imagen generada, señor.").strip()
+        tool_events: list[dict] = [{"type": "module_activated", "module": self.name}]
+        image_url = str(tool_result.get("image_url") or tool_result.get("url") or "").strip()
+        if image_url:
+            tool_events.append(
+                {
+                    "type": "generated_image",
+                    "image_url": image_url,
+                    "prompt": prompt,
+                }
+            )
         return ModuleResult(
             ok=bool(tool_result.get("ok")),
             spoken=spoken,
             handles_response=True,
-            tool_events=[{"type": "module_activated", "module": self.name}],
+            send_filler=True,
+            filler=MODULE_ACKS.get("image_gen", "Generando imagen, señor."),
+            tool_events=tool_events,
         )

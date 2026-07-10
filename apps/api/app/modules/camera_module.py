@@ -217,5 +217,6 @@ class CameraModule(BaseModule):
             ok=bool(tool_result.get("ok")),
             spoken=delivery,
             handles_response=True,
-            send_filler=False,
+            send_filler=True,
+            filler="Un momento, señor. Analizo con visión.",
         )

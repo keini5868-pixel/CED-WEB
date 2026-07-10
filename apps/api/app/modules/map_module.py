@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from app.modules.base_module import BaseModule
+from app.modules.module_acks import MODULE_ACKS
 from app.services import voice_client_session as vcs
 from app.services.navigation_voice_intent import (
     normalize_navigation_query,
@@ -158,6 +159,8 @@ class MapModule(BaseModule):
             ok=True,
             spoken=spoken,
             handles_response=True,
+            send_filler=True,
+            filler=MODULE_ACKS.get("map", "Abriendo el mapa, señor."),
             tool_events=[{"type": "module_activated", "module": self.name}],
         )
 

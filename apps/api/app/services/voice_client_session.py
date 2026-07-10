@@ -33,6 +33,8 @@ def _fresh_session() -> dict[str, Any]:
         "last_vision_summary": "",
         "tool_events": [],
         "updated_at": _now(),
+        "gmail_inbox_cache": [],
+        "gmail_awaiting_pick": False,
     }
 
 
@@ -539,3 +541,28 @@ def get_last_publishable_image(
         if data:
             out["data"] = data
         return out
+
+
+def set_gmail_inbox_cache(user_id: str, messages: list[dict[str, Any]]) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["gmail_inbox_cache"] = deepcopy(messages or [])
+        session["updated_at"] = _now()
+
+
+def get_gmail_inbox_cache(user_id: str) -> list[dict[str, Any]]:
+    rows = _get(user_id).get("gmail_inbox_cache")
+    return deepcopy(rows) if isinstance(rows, list) else []
+
+
+def set_gmail_awaiting_pick(user_id: str, awaiting: bool) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["gmail_awaiting_pick"] = bool(awaiting)
+        if not awaiting:
+            session["gmail_inbox_cache"] = []
+        session["updated_at"] = _now()
+
+
+def is_gmail_awaiting_pick(user_id: str) -> bool:
+    return bool(_get(user_id).get("gmail_awaiting_pick"))

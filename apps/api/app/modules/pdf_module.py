@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 
 from app.modules.base_module import BaseModule
+from app.modules.module_acks import MODULE_ACKS
 from app.services.chat_intents import resolve_pdf_request
 from app.services.orchestrator_types import ModuleResult
 from app.services.retell_llm_types import Utterance
@@ -125,5 +126,7 @@ class PdfModule(BaseModule):
             ok=ok,
             spoken=spoken,
             handles_response=True,
+            send_filler=True,
+            filler=MODULE_ACKS.get("pdf", "Preparando el documento, señor."),
             tool_events=tool_events,
         )

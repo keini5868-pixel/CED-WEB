@@ -193,8 +193,25 @@ def test_user_phrase_gmail_leeme_correo_de():
 def test_user_phrase_camera_abre_y_analiza():
     d1 = detect_intent("abre la cámara", classify=_never_action)
     d2 = detect_intent("analiza esto", classify=_never_action)
+    d3 = detect_intent("analiza lo que tengo en la mano", classify=_never_action)
     assert d1.module == "camera" and d1.activate
     assert d2.module == "camera" and d2.activate
+    assert d3.module == "camera" and d3.activate
+
+
+def test_user_phrase_finance_qué_tengo_en_finanzas():
+    d = detect_intent(
+        "Oye, ¿qué tengo en finanzas? Dame un reporte",
+        classify=_never_action,
+    )
+    assert d.module == "finance"
+    assert d.activate is True
+
+
+def test_user_phrase_weather_dime_el_clima():
+    d = detect_intent("Dime el clima", classify=_never_action)
+    assert d.module == "weather"
+    assert d.activate is True
 
 
 def test_user_phrase_social_publicame():

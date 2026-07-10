@@ -6,6 +6,7 @@ import logging
 import re
 
 from app.modules.base_module import BaseModule
+from app.modules.module_acks import MODULE_ACKS
 from app.services.orchestrator_types import ModuleResult
 from app.services.retell_llm_types import Utterance
 
@@ -132,7 +133,13 @@ class EnvironmentModule(BaseModule):
         try:
             spoken = _web_search_environment(user_id, text)
             ok = not spoken.startswith("No pude obtener")
-            return ModuleResult(ok=ok, spoken=spoken, handles_response=True)
+            return ModuleResult(
+                ok=ok,
+                spoken=spoken,
+                handles_response=True,
+                send_filler=True,
+                filler=MODULE_ACKS.get("environment", "Consultando el ambiente, señor."),
+            )
         except Exception:  # noqa: BLE001
             logger.exception("[ENV] module query failed user=%s", user_id[:8])
             return ModuleResult(
