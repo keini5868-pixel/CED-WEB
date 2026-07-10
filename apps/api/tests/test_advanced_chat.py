@@ -140,3 +140,37 @@ def test_advanced_stream_greeting_hola_yields_token_immediately():
     assert token_events, "expected instant greeting token"
     done = _collect_done(events)
     assert "modo avanzado" in done["response"].lower()
+
+
+def test_advanced_stream_fallback_yields_token_before_done(monkeypatch):
+    """Si el stream LLM falla, el fallback debe emitir token antes de done."""
+
+    def fake_stream(*args, **kwargs):
+        raise RuntimeError("stream down")
+
+    monkeypatch.setattr(adv, "_iter_anthropic_text_stream", fake_stream)
+    monkeypatch.setattr(
+        adv,
+        "send_advanced_message",
+        lambda user_id, **kwargs: {
+            "response": "Análisis listo, señor.",
+            "model": "claude-sonnet-4-6",
+        },
+    )
+    monkeypatch.setattr(
+        adv,
+        "_ensure_llm_providers",
+        lambda **kwargs: ("anthropic-key", "google-key"),
+    )
+
+    events = list(
+        adv.iter_advanced_message_stream(
+            "u1",
+            message="Resume las ventajas de automatizar marketing.",
+            history=[],
+        )
+    )
+    token_events = [ev for ev in events if ev.startswith("event: token")]
+    assert token_events, "expected token before done on advanced fallback"
+    done = _collect_done(events)
+    assert "análisis" in done["response"].lower()

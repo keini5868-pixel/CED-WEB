@@ -303,6 +303,14 @@ def _sse_flush() -> str:
     return ": flush\n\n"
 
 
+def _yield_done_with_text(result: dict[str, Any]) -> Iterator[str]:
+    response = str(result.get("response") or "").strip()
+    if response:
+        yield _sse_event("token", {"text": response})
+        yield _sse_flush()
+    yield _sse_event("done", result)
+
+
 def _finish_payload(
     *,
     response: str,
@@ -714,7 +722,7 @@ def iter_advanced_message_stream(
             history=history,
             conversation_id=conv_id,
         )
-        yield _sse_event("done", result)
+        yield from _yield_done_with_text(result)
         return
 
     reply = _recover_advanced_reply(
@@ -742,12 +750,11 @@ def iter_advanced_message_stream(
             history=history,
             conversation_id=conv_id,
         )
-        yield _sse_event("done", result)
+        yield from _yield_done_with_text(result)
         return
 
-    yield _sse_event(
-        "done",
-        _finish_payload(response=reply, model=stream_label),
+    yield from _yield_done_with_text(
+        _finish_payload(response=reply, model=stream_label)
     )
 
 

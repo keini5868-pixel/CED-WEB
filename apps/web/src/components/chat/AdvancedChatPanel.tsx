@@ -332,7 +332,15 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
           {messages.map((msg, i) => {
             const displayContent =
               msg.role === "assistant" ? stripPdfLinks(msg.content) : msg.content;
-            if (msg.role === "assistant" && !displayContent && !msg.pdf && !msg.image) {
+            const isActiveStreamBubble =
+              streaming && streamTargetIndexRef.current === i;
+            if (
+              msg.role === "assistant" &&
+              !displayContent &&
+              !msg.pdf &&
+              !msg.image &&
+              !isActiveStreamBubble
+            ) {
               return null;
             }
             return (
