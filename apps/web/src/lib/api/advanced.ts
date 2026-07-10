@@ -226,6 +226,8 @@ export async function sendAdvancedChatMessageStream(
   } catch {
     throw new Error("Respuesta incompleta del modo avanzado.");
   }
+}
+
 /** Fallback sin streaming (PDF/imagen ya resueltos en servidor). */
 export async function sendAdvancedChatMessage(
   message: string,

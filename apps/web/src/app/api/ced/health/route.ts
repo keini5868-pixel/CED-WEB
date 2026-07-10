@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
 
-const WEB_BUILD = "advanced-mode-isolated-v1";
+const WEB_BUILD = "advanced-mode-isolated-v1-fix-ts";
 
 /** Diagnóstico BFF: comprueba que el web alcanza la API (sin auth). */
 export async function GET() {
