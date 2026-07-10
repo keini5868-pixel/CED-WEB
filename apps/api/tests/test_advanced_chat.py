@@ -134,6 +134,19 @@ def test_advanced_needs_tools_for_web_research():
     )
 
 
+def test_advanced_streams_business_query_without_tools():
+    from app.services.claude_advanced import _needs_advanced_tools
+
+    assert not _needs_advanced_tools(
+        "Resume las ventajas de automatizar marketing digital",
+        [],
+    )
+    assert not _needs_advanced_tools(
+        "dame información sobre estrategia de ventas",
+        [],
+    )
+
+
 def test_advanced_stream_greeting_hola_yields_token_immediately():
     events = list(adv.iter_advanced_message_stream("u1", message="HOLA", history=[]))
     token_events = [ev for ev in events if ev.startswith("event: token")]
@@ -161,11 +174,8 @@ def test_advanced_stream_fallback_yields_token_before_done(monkeypatch):
     monkeypatch.setattr(adv, "_iter_anthropic_text_stream", fake_stream)
     monkeypatch.setattr(
         adv,
-        "send_advanced_message",
-        lambda user_id, **kwargs: {
-            "response": "Análisis listo, señor.",
-            "model": "claude-sonnet-4-6",
-        },
+        "_advanced_stream_fallback_reply",
+        lambda **kwargs: "Análisis listo, señor.",
     )
     monkeypatch.setattr(
         adv,

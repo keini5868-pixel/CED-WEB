@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import logging
 import re
 import threading
 import time
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator, TypeVar
 
 import httpx
 
@@ -141,16 +142,83 @@ def _advanced_stream_system_with_clock() -> str:
 
 
 def _needs_advanced_tools(text: str, history_rows: list[dict[str, Any]]) -> bool:
-    """Misma cobertura que chat normal: no hacer stream sin tools si hace falta acción real."""
-    if _needs_chat_tools(text):
-        return True
+    """Solo PDF/imagen/integraciones y datos en vivo — el resto va por stream Claude."""
     if is_pdf_intent(text) or is_generate_image_intent(text):
         return True
     if resolve_pdf_request(text, history_rows):
         return True
-    if not _can_stream_chat_text(text):
+    from app.modules.calendar_module import is_calendar_intent
+    from app.modules.environment_module import is_environment_intent
+    from app.modules.gmail_module import is_gmail_intent
+    from app.services.cognitive_intents import (
+        is_conversation_recall_intent,
+        is_meta_publish_intent,
+        requires_live_web,
+    )
+    from app.services.hud_reminders import is_reminder_intent
+
+    if is_meta_publish_intent(text):
+        return True
+    if is_gmail_intent(text) or is_calendar_intent(text):
+        return True
+    if is_reminder_intent(text) or is_environment_intent(text):
+        return True
+    if is_conversation_recall_intent(text):
+        return True
+    if requires_live_web(text):
         return True
     return False
+
+
+_T = TypeVar("_T")
+_KEEPALIVE_INTERVAL_SEC = 8.0
+
+
+def _iter_blocking_with_keepalives(
+    fn: Callable[[], _T],
+    *,
+    interval: float = _KEEPALIVE_INTERVAL_SEC,
+) -> Iterator[tuple[str, _T | None]]:
+    """Ejecuta fn en un hilo y emite pings mientras espera (evita stall del cliente SSE)."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        fut = pool.submit(fn)
+        while not fut.done():
+            yield ("ping", None)
+            try:
+                yield ("done", fut.result(timeout=interval))
+                return
+            except concurrent.futures.TimeoutError:
+                continue
+
+
+def _advanced_stream_fallback_reply(
+    *,
+    stream_system: str,
+    stream_messages: list[dict[str, str]],
+    text: str,
+    max_tokens: int,
+    history: list[dict[str, Any]] | None = None,
+) -> str:
+    """Fallback rápido sin pipeline de herramientas (no bloquea minutos)."""
+    from app.services.cloud_llm_fallback import chat_cloud_reply
+
+    cloud = chat_cloud_reply(
+        system=stream_system,
+        messages=stream_messages,
+        user_text=text,
+        max_tokens=max_tokens,
+    )
+    if cloud:
+        finalized = _finalize_chat_reply(cloud.strip())
+        if finalized:
+            return finalized
+    instant = _try_instant_datetime_reply(text, history=history)
+    if instant:
+        return instant
+    return (
+        "Disculpe señor, no pude completar la respuesta avanzada ahora mismo. "
+        "¿Puede repetir su pregunta?"
+    )
 
 
 def _recover_advanced_reply(
@@ -674,13 +742,23 @@ def iter_advanced_message_stream(
 
     if needs_tools:
         yield _sse_event("status", {"text": "Analizando y preparando respuesta…"})
-        try:
-            result = send_advanced_message(
+        yield _sse_flush()
+
+        def _run_tools_pipeline() -> dict[str, Any]:
+            return send_advanced_message(
                 user_id,
                 message=text,
                 history=history,
                 conversation_id=conv_id,
             )
+
+        result: dict[str, Any] | None = None
+        try:
+            for kind, payload in _iter_blocking_with_keepalives(_run_tools_pipeline):
+                if kind == "ping":
+                    yield _sse_flush()
+                else:
+                    result = payload
         except Exception:  # noqa: BLE001
             logger.exception("[ADVANCED] tools pipeline failed")
             fallback = _try_instant_datetime_reply(text, history=history) or (
@@ -688,6 +766,13 @@ def iter_advanced_message_stream(
             )
             result = _finish_payload(
                 response=fallback,
+                model=ADVANCED_STREAM_MODEL_LABEL,
+            )
+        if result is None:
+            result = _finish_payload(
+                response=(
+                    "Disculpe señor, tuve un inconveniente técnico. ¿Puede repetir su pregunta?"
+                ),
                 model=ADVANCED_STREAM_MODEL_LABEL,
             )
         yield from _yield_done_cached(user_id, text, result)
@@ -755,24 +840,19 @@ def iter_advanced_message_stream(
         else:
             raise ValueError("missing_llm_api_key")
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[ADVANCED] stream failed, fallback full: %s", exc)
-        try:
-            result = send_advanced_message(
-                user_id,
-                message=text,
-                history=history,
-                conversation_id=conv_id,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("[ADVANCED] fallback full failed")
-            fallback = _try_instant_datetime_reply(text, history=history) or (
-                "Disculpe señor, modo avanzado está temporalmente saturado. Reintente en unos segundos."
-            )
-            result = _finish_payload(
-                response=fallback,
-                model=ADVANCED_STREAM_MODEL_LABEL,
-            )
-        yield from _yield_done_cached(user_id, text, result)
+        logger.warning("[ADVANCED] stream failed, light fallback: %s", exc)
+        fallback_text = _advanced_stream_fallback_reply(
+            stream_system=stream_system,
+            stream_messages=stream_messages,
+            text=text,
+            max_tokens=max_tokens,
+            history=history,
+        )
+        yield from _yield_done_cached(
+            user_id,
+            text,
+            _finish_payload(response=fallback_text, model=ADVANCED_STREAM_MODEL_LABEL),
+        )
         return
 
     # No bloquear el cierre SSE con recovery pesado (send_advanced_message).
@@ -789,23 +869,18 @@ def iter_advanced_message_stream(
         if cloud:
             reply = _finalize_chat_reply(cloud)
     if not reply:
-        try:
-            result = send_advanced_message(
-                user_id,
-                message=text,
-                history=history,
-                conversation_id=conv_id,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("[ADVANCED] final fallback failed")
-            fallback = _try_instant_datetime_reply(text, history=history) or (
-                "Disculpe señor, no pude completar la respuesta avanzada ahora mismo."
-            )
-            result = _finish_payload(
-                response=fallback,
-                model=ADVANCED_STREAM_MODEL_LABEL,
-            )
-        yield from _yield_done_cached(user_id, text, result)
+        fallback_text = _advanced_stream_fallback_reply(
+            stream_system=stream_system,
+            stream_messages=stream_messages,
+            text=text,
+            max_tokens=max_tokens,
+            history=history,
+        )
+        yield from _yield_done_cached(
+            user_id,
+            text,
+            _finish_payload(response=fallback_text, model=stream_label),
+        )
         return
 
     yield from _yield_done_cached(

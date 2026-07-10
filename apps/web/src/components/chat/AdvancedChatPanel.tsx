@@ -283,7 +283,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
                 : "Error al analizar.",
           );
         }
-      } else {
+      } else if (!receivedTokens) {
         setError(
           streamErr instanceof Error
             ? streamErr.message
