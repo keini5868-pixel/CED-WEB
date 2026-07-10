@@ -183,8 +183,8 @@ export async function sendFinanceChatMessageStream(
     if (stalled && streamedText.trim()) {
       return {
         response: streamedText.trim(),
-        model: finalPayload?.model ?? FINANCE_FALLBACK_MODEL,
-        pdf: finalPayload?.pdf ?? null,
+        model: FINANCE_FALLBACK_MODEL,
+        pdf: null,
       };
     }
     if (stalled) {

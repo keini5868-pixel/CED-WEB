@@ -199,9 +199,9 @@ export async function sendAdvancedChatMessageStream(
     if (stalled && streamedText.trim()) {
       return {
         response: streamedText.trim(),
-        model: finalPayload?.model ?? "claude-sonnet-4-6",
-        pdf: finalPayload?.pdf ?? null,
-        image: finalPayload?.image ?? null,
+        model: "claude-sonnet-4-6",
+        pdf: null,
+        image: null,
       };
     }
     if (stalled) {
