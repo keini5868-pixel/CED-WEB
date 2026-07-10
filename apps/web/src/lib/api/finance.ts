@@ -13,6 +13,9 @@ export type FinanceChatStatus = {
   configured: boolean;
   anthropic_configured?: boolean;
   google_configured?: boolean;
+  llama_configured?: boolean;
+  finance_db_ready?: boolean;
+  finance_db_error?: string | null;
   model: string | null;
   stream_model?: string | null;
 };
@@ -33,7 +36,12 @@ const FINANCE_FALLBACK_MODEL = "ced-finance";
 
 export async function fetchFinanceChatStatus(): Promise<FinanceChatStatus | null> {
   try {
-    const res = await proxyFetchAuthed("finance/status");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4_000);
+    const res = await proxyFetchAuthed("finance/status", {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
     if (!res.ok) return null;
     return (await res.json()) as FinanceChatStatus;
   } catch {

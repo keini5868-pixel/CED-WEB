@@ -100,11 +100,13 @@ async def finance_chat_stream(
 @router.get("/status")
 def finance_chat_status(_user_id: str = Depends(require_user_id)) -> dict:
     from app.config import get_settings
+    from app.services.finance_schema import finance_db_diagnostics
+    from app.services.llama_service import llama_model, use_llama
 
     settings = get_settings()
     anthropic = bool(settings.anthropic_api_key.strip())
     google = bool(settings.google_api_key.strip())
-    from app.services.llama_service import llama_model, use_llama
+    db = finance_db_diagnostics()
 
     stream_model = (
         llama_model()
@@ -116,6 +118,8 @@ def finance_chat_status(_user_id: str = Depends(require_user_id)) -> dict:
         "anthropic_configured": anthropic,
         "google_configured": google,
         "llama_configured": use_llama(),
+        "finance_db_ready": db.get("ready"),
+        "finance_db_error": db.get("error"),
         "model": FINANCE_MODEL_LABEL if anthropic else stream_model,
         "stream_model": stream_model,
     }

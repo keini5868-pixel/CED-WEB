@@ -355,6 +355,7 @@ def handle_finance_query_sync(user_id: str, text: str) -> dict[str, str]:
         if is_finance_pending_write(text) or is_finance_future_write(text):
             statements = parse_pending_statements(text)
             saved_list: list[dict[str, object]] = []
+            last_save_error = ""
             for st in statements:
                 saved = save_transaction(
                     user_id,
@@ -368,13 +369,24 @@ def handle_finance_query_sync(user_id: str, text: str) -> dict[str, str]:
                 if saved.get("ok"):
                     saved.setdefault("category", st.get("category"))
                     saved_list.append(saved)
+                else:
+                    last_save_error = str(saved.get("error") or last_save_error)
             if saved_list:
                 return {"spoken": _confirm_pending_spoken(saved_list)}
+            schema_hint = ""
+            last_err = last_save_error
+            if not last_err:
+                from app.services.finance_schema import finance_db_error
+
+                last_err = finance_db_error() or ""
+            if last_err:
+                schema_hint = f" Detalle: {last_err[:120]}."
             return {
                 "spoken": (
-                    "Señor, no pude guardar los pagos pendientes. "
-                    "Revise que la base de datos de finanzas esté lista."
-                )
+                    "Señor, no pude guardar los pagos pendientes."
+                    f"{schema_hint} "
+                    "Si persiste, ejecute las migraciones 021 y 022 de finanzas en Supabase."
+                ),
             }
 
         if is_finance_write_intent(text):

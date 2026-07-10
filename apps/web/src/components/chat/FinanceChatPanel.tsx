@@ -95,12 +95,13 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
+    // Status en background — no bloquea el chat (fail-open, timeout 4s).
     void fetchFinanceChatStatus().then((status) => {
-      if (cancelled) return;
-      // Fail-open: si el fetch de status falla (cold-start/timeout), NO
-      // deshabilitamos el chat. Solo bloqueamos si el backend confirma que no
-      // está configurado. Así finanzas responde igual que el chat normal.
-      if (status) setConfigured(status.configured);
+      if (cancelled || !status) return;
+      if (status.configured === false) setConfigured(false);
+      if (status.finance_db_ready === false && status.finance_db_error) {
+        setError(status.finance_db_error);
+      }
     });
     return () => {
       cancelled = true;

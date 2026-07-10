@@ -507,10 +507,7 @@ def iter_finance_message_stream(
 def finance_is_configured() -> bool:
     from app.services.claude_advanced import advanced_is_configured
     from app.services.cloud_llm_fallback import cloud_llm_configured
-    from app.services.llama_service import should_route_to_llama, use_llama
+    from app.services.llama_service import use_llama
 
-    return (
-        advanced_is_configured()
-        or cloud_llm_configured()
-        or (use_llama() and should_route_to_llama())
-    )
+    # No llamar should_route_to_llama() aquí — bloquea /finance/status ~15s en health Ollama.
+    return advanced_is_configured() or cloud_llm_configured() or use_llama()

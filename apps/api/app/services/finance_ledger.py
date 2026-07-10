@@ -9,6 +9,8 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.services import supabase_db
+from app.services.finance_schema import finance_db_error, finance_db_ready
+from app.services.user_id_utils import normalize_user_id
 
 logger = logging.getLogger(__name__)
 
@@ -197,6 +199,19 @@ def save_transaction(
     due_date: Any = None,
 ) -> dict[str, Any]:
     """Guarda un movimiento; devuelve {ok, id, ...} o {ok: False, error}."""
+    if not finance_db_ready():
+        schema_err = finance_db_error() or "Tabla finance_transactions no disponible."
+        logger.warning("[FINANCE] save blocked — schema: %s", schema_err)
+        return {"ok": False, "error": schema_err}
+
+    uid = normalize_user_id(user_id)
+    try:
+        from app.services.google_oauth import ensure_profile_for_oauth
+
+        ensure_profile_for_oauth(uid)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[FINANCE] profile ensure skipped user=%s: %s", uid[:8], exc)
+
     kind = normalize_type(tx_type)
     value = normalize_amount(amount)
     day = _parse_occurred_on(occurred_on)
@@ -213,7 +228,7 @@ def save_transaction(
             due = resolve_due_date(str(due_date))
 
     row: dict[str, Any] = {
-        "user_id": user_id,
+        "user_id": uid,
         "type": kind,
         "amount": value,
         "currency": cur,
@@ -228,7 +243,7 @@ def save_transaction(
         saved = (result.data or [row])[0]
         try:
             supabase_db.log_ced_activity(
-                user_id,
+                uid,
                 "finance_save",
                 detail=f"{state}:{kind}:{value}",
                 meta={"category": cat or "general"},
@@ -251,21 +266,33 @@ def save_transaction(
             "due_date": due.isoformat() if due else None,
         }
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[FINANCE] save failed %s", exc)
-        return {
-            "ok": False,
-            "error": "Ejecute las migraciones 021 y 022 de finanzas en Supabase",
-        }
+        logger.exception("[FINANCE] save failed user=%s", uid[:8])
+        err_text = str(exc)
+        if "PGRST205" in err_text or "Could not find the table" in err_text:
+            return {
+                "ok": False,
+                "error": (
+                    "Tabla finance_transactions no existe. "
+                    "Ejecute migraciones 021 y 022 en Supabase."
+                ),
+            }
+        if "violates foreign key" in err_text.lower() or "23503" in err_text:
+            return {
+                "ok": False,
+                "error": "Perfil de usuario no encontrado en Supabase (profiles).",
+            }
+        return {"ok": False, "error": err_text[:200]}
 
 
 def list_pending_payments(user_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
     """Pagos pendientes ordenados por fecha de vencimiento."""
     try:
+        uid = normalize_user_id(user_id)
         result = (
             _client()
             .table("finance_transactions")
             .select("id, type, amount, currency, category, description, due_date, occurred_on")
-            .eq("user_id", user_id)
+            .eq("user_id", uid)
             .eq("status", "pendiente")
             .order("due_date", desc=False)
             .limit(limit)
@@ -327,11 +354,12 @@ def list_transactions(
     limit: int = 200,
 ) -> list[dict[str, Any]]:
     try:
+        uid = normalize_user_id(user_id)
         query = (
             _client()
             .table("finance_transactions")
             .select("id, type, amount, currency, category, description, occurred_on, status")
-            .eq("user_id", user_id)
+            .eq("user_id", uid)
         )
         if status is not None:
             query = query.eq("status", status)
