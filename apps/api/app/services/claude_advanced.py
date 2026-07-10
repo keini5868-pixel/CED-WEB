@@ -590,7 +590,8 @@ def _stream_model_text(
     max_tokens: int,
     model: str,
 ) -> Iterator[str]:
-    with httpx.Client(timeout=120.0) as client:
+    timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=10.0)
+    with httpx.Client(timeout=timeout) as client:
         with client.stream(
             "POST",
             "https://api.anthropic.com/v1/messages",
@@ -754,12 +755,22 @@ def iter_advanced_message_stream(
             raise ValueError("missing_llm_api_key")
     except Exception as exc:  # noqa: BLE001
         logger.warning("[ADVANCED] stream failed, fallback full: %s", exc)
-        result = send_advanced_message(
-            user_id,
-            message=text,
-            history=history,
-            conversation_id=conv_id,
-        )
+        try:
+            result = send_advanced_message(
+                user_id,
+                message=text,
+                history=history,
+                conversation_id=conv_id,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[ADVANCED] fallback full failed")
+            fallback = _try_instant_datetime_reply(text, history=history) or (
+                "Disculpe señor, modo avanzado está temporalmente saturado. Reintente en unos segundos."
+            )
+            result = _finish_payload(
+                response=fallback,
+                model=ADVANCED_STREAM_MODEL_LABEL,
+            )
         yield from _yield_done_cached(user_id, text, result)
         return
 
@@ -782,12 +793,22 @@ def iter_advanced_message_stream(
         if cloud:
             reply = _finalize_chat_reply(cloud)
     if not reply:
-        result = send_advanced_message(
-            user_id,
-            message=text,
-            history=history,
-            conversation_id=conv_id,
-        )
+        try:
+            result = send_advanced_message(
+                user_id,
+                message=text,
+                history=history,
+                conversation_id=conv_id,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[ADVANCED] final fallback failed")
+            fallback = _try_instant_datetime_reply(text, history=history) or (
+                "Disculpe señor, no pude completar la respuesta avanzada ahora mismo."
+            )
+            result = _finish_payload(
+                response=fallback,
+                model=ADVANCED_STREAM_MODEL_LABEL,
+            )
         yield from _yield_done_cached(user_id, text, result)
         return
 

@@ -478,9 +478,16 @@ def iter_finance_message_stream(
             yield _sse_event("token", {"text": delta})
     except Exception as exc:  # noqa: BLE001
         logger.warning("[FINANCE] stream failed, fallback full: %s", exc)
-        result = send_finance_message(
-            user_id, message=text, history=history, conversation_id=conv_id
-        )
+        try:
+            result = send_finance_message(
+                user_id, message=text, history=history, conversation_id=conv_id
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[FINANCE] fallback full failed")
+            result = _finish_payload(
+                response="Disculpe señor, finanzas está temporalmente saturado. Intente en unos segundos.",
+                model=_stream_model_label(),
+            )
         yield from _yield_done_with_text(result)
         return
 
@@ -501,9 +508,16 @@ def iter_finance_message_stream(
         if instant:
             reply = instant
     if not reply:
-        result = send_finance_message(
-            user_id, message=text, history=history, conversation_id=conv_id
-        )
+        try:
+            result = send_finance_message(
+                user_id, message=text, history=history, conversation_id=conv_id
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[FINANCE] final fallback failed")
+            result = _finish_payload(
+                response="Disculpe señor, no pude responder en este momento. ¿Puede repetir su consulta?",
+                model=_stream_model_label(),
+            )
         yield from _yield_done_with_text(result)
         return
 

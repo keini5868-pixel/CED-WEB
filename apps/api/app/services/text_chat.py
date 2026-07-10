@@ -2760,12 +2760,15 @@ def _gemini_simple_reply_stream(
                 return
         except Exception as exc:  # noqa: BLE001
             logger.warning("[CHAT] Llama stream failed — fallback Claude: %s", exc)
+        logger.info("[CHAT] fallback_provider=claude reason=llama_stream_unavailable")
     elif allow_llama and use_llama() and not should_route_to_llama():
         logger.warning("[CHAT] Ollama sin modelo listo — stream fallback Claude")
+        logger.info("[CHAT] fallback_provider=claude reason=llama_not_ready")
 
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
     if anthropic_key:
+        logger.info("[CHAT] streaming_with=claude_fallback")
         from app.services.claude_advanced import _iter_anthropic_text_stream
 
         for piece, _label in _iter_anthropic_text_stream(
