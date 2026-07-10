@@ -603,10 +603,7 @@ def _execute_direct_pdf(
         return ("No pude generar el PDF en este momento. Intenta de nuevo.", {})
 
     attachment = _pdf_attachment_from_artifact(artifact)
-    return (
-        f'Listo. PDF "{artifact.title}" generado. Usa el botón Descargar abajo.',
-        attachment,
-    )
+    return _pdf_success_message(artifact.title), attachment
 
 
 def _try_direct_pdf_from_context(
@@ -1683,6 +1680,30 @@ def _final_text_from_response(data: dict[str, Any]) -> str:
     ).strip()
 
 
+def _pdf_success_message(title: str) -> str:
+    safe = (title or "Documento CED").strip()[:200]
+    return f'Listo. PDF "{safe}" generado. Ya está en su historial.'
+
+
+def _normalize_pdf_tool_reply(
+    reply: str,
+    pdf_attachment: dict[str, Any] | None,
+) -> str:
+    if not pdf_attachment or not pdf_attachment.get("file_id"):
+        return reply
+    standard = _pdf_success_message(str(pdf_attachment.get("title") or "Documento CED"))
+    cleaned = _strip_pdf_markdown_links(reply or "").strip()
+    if not cleaned:
+        return standard
+    if "historial" in cleaned.lower():
+        return cleaned
+    if "descargar abajo" in cleaned.lower():
+        return standard
+    if len(cleaned) < 30 or not re.search(r"\bpdf\b", cleaned, re.I):
+        return standard
+    return cleaned
+
+
 def _pdf_attachment_from_artifact(artifact: Any) -> dict[str, Any]:
     return {
         "file_id": artifact.file_id,
@@ -1845,6 +1866,8 @@ def _complete_chat_with_tools(
                     )
                 if _has_hallucinated_tool(reply) and not image_attachment and not pdf_attachment:
                     return HALLUCINATION_FALLBACK_REPLY, None, None
+                if pdf_attachment:
+                    reply = _normalize_pdf_tool_reply(reply, pdf_attachment)
                 return reply, pdf_attachment, image_attachment
             raise TextChatError("Respuesta vacía del asistente.")
 

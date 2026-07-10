@@ -87,3 +87,24 @@ def test_infer_pdf_title_from_tornado_content():
     )
     assert "Tornado" in title
     assert "China" in title or "Hubei" in title
+
+
+def test_parse_pdf_request_does_not_use_hola_placeholder():
+    from app.services.chat_intents import parse_pdf_request
+
+    title, body = parse_pdf_request("genera un pdf")
+    assert body != "Hola"
+
+
+def test_pdf_success_message_mentions_historial():
+    from app.services.text_chat import _normalize_pdf_tool_reply, _pdf_success_message
+
+    msg = _pdf_success_message("Tornado EF2 en Hubei, China")
+    assert "historial" in msg.lower()
+    assert "Tornado" in msg
+    normalized = _normalize_pdf_tool_reply(
+        "Listo. PDF generado. Usa el botón Descargar abajo.",
+        {"file_id": "x1", "title": "Informe"},
+    )
+    assert "historial" in normalized.lower()
+    assert "Descargar abajo" not in normalized

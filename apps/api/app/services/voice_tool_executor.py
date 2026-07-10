@@ -822,12 +822,19 @@ async def _execute_voice_tool_body(
                     titulo = req_title
             if titulo == "Documento CED" and len(contenido.strip()) >= 40:
                 titulo = infer_pdf_title(user_request, contenido)
+            conversation_id = str(
+                params.get("conversation_id")
+                or params.get("session_id")
+                or params.get("call_id")
+                or ""
+            ).strip() or None
             try:
                 artifact = await asyncio.to_thread(
                     store_pdf_with_timeout,
                     user_id=user_id,
                     title=titulo,
                     content=contenido,
+                    conversation_id=conversation_id,
                     fallback_texts=fallback_list,
                     user_request=user_request,
                 )

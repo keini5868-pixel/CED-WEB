@@ -27,7 +27,12 @@ def test_pdf_module_resolves_title_and_body_from_history():
 
     async def fake_tool(name, user_id, params):
         captured.update(params)
-        return {"ok": True, "spoken": "PDF listo"}
+        return {
+            "ok": True,
+            "spoken": "PDF listo, señor. Título: Estrategia CED. Ya está en su historial.",
+            "file_id": "abc123",
+            "title": "Estrategia CED",
+        }
 
     with patch(
         "app.modules.pdf_module.execute_voice_tool",
@@ -44,6 +49,9 @@ def test_pdf_module_resolves_title_and_body_from_history():
         )
 
     assert result.ok is True
+    assert captured.get("conversation_id") == "c1"
     assert captured.get("titulo")
     assert captured.get("titulo") != "Documento CED" or len(captured.get("contenido", "")) > 40
     assert captured.get("_pdf_fallback_texts")
+    assert any(ev.get("type") == "pdf_created" for ev in result.tool_events)
+    assert "historial" in result.spoken.lower()

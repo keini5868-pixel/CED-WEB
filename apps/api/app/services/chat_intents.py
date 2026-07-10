@@ -237,8 +237,8 @@ def parse_pdf_request(text: str) -> tuple[str, str] | None:
             flags=re.I,
         ).strip()
 
-    if not content or len(content) < 1:
-        content = title if title != "Documento CED" else "Hola"
+    if not content:
+        content = title if title != "Documento CED" else ""
 
     return title[:200], content[:12000]
 
