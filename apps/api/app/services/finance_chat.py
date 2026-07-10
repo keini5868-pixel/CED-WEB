@@ -487,7 +487,9 @@ def iter_finance_message_stream(
         yield from _yield_done_with_text(result)
         return
 
-    yield _sse_event("done", _finish_payload(response=reply, model=stream_label))
+    yield from _yield_done_with_text(
+        _finish_payload(response=reply, model=stream_label)
+    )
 
 
 def finance_is_configured() -> bool:

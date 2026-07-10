@@ -104,10 +104,18 @@ def finance_chat_status(_user_id: str = Depends(require_user_id)) -> dict:
     settings = get_settings()
     anthropic = bool(settings.anthropic_api_key.strip())
     google = bool(settings.google_api_key.strip())
+    from app.services.llama_service import llama_model, use_llama
+
+    stream_model = (
+        llama_model()
+        if use_llama()
+        else (FINANCE_STREAM_MODEL_LABEL if google else FINANCE_MODEL_LABEL)
+    )
     return {
         "configured": finance_is_configured(),
         "anthropic_configured": anthropic,
         "google_configured": google,
-        "model": FINANCE_MODEL_LABEL if anthropic else FINANCE_STREAM_MODEL_LABEL,
-        "stream_model": FINANCE_STREAM_MODEL_LABEL if google else FINANCE_MODEL_LABEL,
+        "llama_configured": use_llama(),
+        "model": FINANCE_MODEL_LABEL if anthropic else stream_model,
+        "stream_model": stream_model,
     }

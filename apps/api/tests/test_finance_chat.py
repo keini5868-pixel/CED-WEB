@@ -123,3 +123,35 @@ def test_stream_finance_query_yields_token_immediately(monkeypatch):
     assert token_events, "expected instant finance summary token"
     done = _collect_done(events)
     assert done["response"].strip()
+
+
+def test_stream_llm_reply_yields_token_before_done(monkeypatch):
+    """Cuando el stream LLM no emite deltas pero hay respuesta final, debe haber token."""
+    import app.services.cloud_llm_fallback as cfb
+
+    def fake_stream(*args, **kwargs):
+        return
+        yield  # pragma: no cover — generator marker
+
+    monkeypatch.setattr(fc, "_gemini_simple_reply_stream", fake_stream)
+    monkeypatch.setattr(
+        cfb,
+        "chat_cloud_reply",
+        lambda **kwargs: "Señor, este mes lleva un balance positivo de 400 USD.",
+    )
+    monkeypatch.setattr(fc, "_ensure_llm_providers", lambda **kwargs: ("", "gk"))
+    monkeypatch.setattr(fc, "_needs_finance_tools", lambda text, history: False)
+    monkeypatch.setattr(fc, "_finance_system_with_data", lambda prompt, user_id: prompt)
+    monkeypatch.setattr(fc, "_instant_finance_query_reply", lambda user_id, text: None)
+
+    events = list(
+        fc.iter_finance_message_stream(
+            "u1",
+            message="¿Qué me recomiendas para ahorrar más?",
+            history=[],
+        )
+    )
+    token_events = [ev for ev in events if ev.startswith("event: token")]
+    assert token_events, "expected token before done when cloud fallback fills reply"
+    done = _collect_done(events)
+    assert "balance" in done["response"].lower() or "ahorr" in done["response"].lower()

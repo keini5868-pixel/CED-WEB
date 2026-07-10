@@ -267,7 +267,14 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
           {messages.map((msg, i) => {
             const displayContent =
               msg.role === "assistant" ? stripPdfLinks(msg.content) : msg.content;
-            if (msg.role === "assistant" && !displayContent && !msg.pdf) {
+            const isActiveStreamBubble =
+              streaming && streamTargetIndexRef.current === i;
+            if (
+              msg.role === "assistant" &&
+              !displayContent &&
+              !msg.pdf &&
+              !isActiveStreamBubble
+            ) {
               return null;
             }
             return (
