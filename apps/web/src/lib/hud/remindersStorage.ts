@@ -39,16 +39,56 @@ export function saveReminder(input: {
 
 export function upcomingReminders(): CedReminder[] {
   const now = Date.now();
-  return listReminders()
-    .filter((r) => {
+  const sorted = listReminders().sort(
+    (a, b) =>
+      new Date(`${a.date}T${a.time || "09:00"}`).getTime() -
+      new Date(`${b.date}T${b.time || "09:00"}`).getTime(),
+  );
+  const upcoming = sorted.filter((r) => {
+    const when = new Date(`${r.date}T${r.time || "09:00"}`).getTime();
+    return !Number.isNaN(when) && when >= now - 86_400_000;
+  });
+  if (upcoming.length) return upcoming;
+  return sorted.slice(-8).reverse();
+}
+
+export async function loadRemindersMerged(): Promise<CedReminder[]> {
+  const local = listReminders();
+  try {
+    const { fetchHudReminders } = await import("@/lib/api/hudActions");
+    const remote = await fetchHudReminders();
+    const byKey = new Map<string, CedReminder>();
+    for (const item of remote.reminders) {
+      const key = `${item.date}|${item.time}|${item.text}`;
+      byKey.set(key, {
+        id: item.id,
+        text: item.text,
+        date: item.date,
+        time: item.time || "09:00",
+        createdAt: new Date().toISOString(),
+      });
+    }
+    for (const item of local) {
+      const key = `${item.date}|${item.time}|${item.text}`;
+      if (!byKey.has(key)) byKey.set(key, item);
+    }
+    const merged = [...byKey.values()].sort(
+      (a, b) =>
+        new Date(`${a.date}T${a.time || "09:00"}`).getTime() -
+        new Date(`${b.date}T${b.time || "09:00"}`).getTime(),
+    );
+    if (typeof window !== "undefined" && merged.length) {
+      localStorage.setItem(KEY, JSON.stringify(merged.slice(-20)));
+    }
+    const now = Date.now();
+    const upcoming = merged.filter((r) => {
       const when = new Date(`${r.date}T${r.time || "09:00"}`).getTime();
       return !Number.isNaN(when) && when >= now - 86_400_000;
-    })
-    .sort(
-      (a, b) =>
-        new Date(`${a.date}T${a.time}`).getTime() -
-        new Date(`${b.date}T${b.time}`).getTime(),
-    );
+    });
+    return upcoming.length ? upcoming : merged.slice(-8);
+  } catch {
+    return upcomingReminders();
+  }
 }
 
 export async function saveReminderWithSync(input: {

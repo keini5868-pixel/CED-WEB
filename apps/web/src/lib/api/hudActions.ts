@@ -93,6 +93,28 @@ export async function createHudReminder(payload: {
   );
 }
 
+export async function fetchHudReminders(): Promise<{
+  reminders: Array<{ id: string; text: string; date: string; time: string }>;
+  error?: string;
+}> {
+  try {
+    const res = await proxyFetchAuthed("hud/reminders", { method: "GET" });
+    if (!res.ok) {
+      const body = await res.text();
+      return { reminders: [], error: body || `HTTP ${res.status}` };
+    }
+    const data = (await res.json()) as {
+      reminders?: Array<{ id: string; text: string; date: string; time: string }>;
+    };
+    return { reminders: data.reminders ?? [] };
+  } catch (e) {
+    return {
+      reminders: [],
+      error: e instanceof Error ? e.message : "No se pudieron cargar recordatorios.",
+    };
+  }
+}
+
 export async function createHudCalendarEvent(payload: {
   title: string;
   date: string;

@@ -158,9 +158,9 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
       model: string;
       pdf?: ChatPdfAttachment | null;
     }) => {
+      const idx = assistantIndex;
       setMessages((prev) => {
-        const idx = streamTargetIndexRef.current;
-        if (idx == null || idx < 0 || idx >= prev.length) return prev;
+        if (idx < 0 || idx >= prev.length) return prev;
         const next = [...prev];
         const target = next[idx];
         if (!target || target.role !== "assistant") return prev;
@@ -175,9 +175,9 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
 
     const onChunk = (chunk: string) => {
       setStatusHint(null);
+      const idx = assistantIndex;
       setMessages((prev) => {
-        const idx = streamTargetIndexRef.current;
-        if (idx == null || idx < 0 || idx >= prev.length) return prev;
+        if (idx < 0 || idx >= prev.length) return prev;
         const next = [...prev];
         const target = next[idx];
         if (!target || target.role !== "assistant") return prev;
@@ -200,17 +200,15 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
         const fallback = await sendFinanceChatMessage(text, historyBefore);
         applyResult(fallback);
       } catch (err) {
+        const idx = assistantIndex;
         setMessages((prev) => {
-          const idx = streamTargetIndexRef.current;
-          if (idx != null && idx >= 0 && idx < prev.length) {
+          if (idx >= 0 && idx < prev.length) {
             const target = prev[idx];
             if (target?.role === "assistant" && target.content.trim()) {
               return prev;
             }
           }
-          return prev.filter(
-            (m, i) => i !== streamTargetIndexRef.current || m.content.trim() !== "",
-          );
+          return prev.filter((m, i) => i !== idx || m.content.trim() !== "");
         });
         setError(
           err instanceof Error

@@ -96,6 +96,28 @@ def test_parse_pdf_request_does_not_use_hola_placeholder():
     assert body != "Hola"
 
 
+def test_resolve_pdf_skips_filler_assistant_closing():
+    history = [
+        {
+            "role": "assistant",
+            "content": (
+                "La neuroplasticidad es la capacidad del cerebro de reorganizar sus conexiones "
+                "neuronales a lo largo de la vida, permitiendo aprender y recuperarse de lesiones."
+            ),
+        },
+        {
+            "role": "assistant",
+            "content": "¿Hay algo más en lo que le pueda ayudar?",
+        },
+    ]
+    req = resolve_pdf_request("pon eso en un pdf", history)
+    assert req is not None
+    title, body = req
+    assert "neuroplasticidad" in body.lower()
+    assert "algo más" not in title.lower()
+    assert "algo más" not in body.lower()
+
+
 def test_pdf_success_message_mentions_historial():
     from app.services.text_chat import _normalize_pdf_tool_reply, _pdf_success_message
 

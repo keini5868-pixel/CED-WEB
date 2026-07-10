@@ -148,13 +148,16 @@ export function CedVoiceHub() {
     const onLifeAction = (ev: Event) => {
       const detail = (ev as CustomEvent<LifeActionDetail>).detail;
       const prompt = detail?.prompt?.trim();
-      if (!prompt) return;
-      unlockVoiceAudioOnGesture();
-      voice.primeSessionMediaFromGesture();
-      if (detail.activateVoice !== false && !voice.micOn) {
-        void voice.toggleMic();
+      if (detail?.activateVoice === true) {
+        unlockVoiceAudioOnGesture();
+        voice.primeSessionMediaFromGesture();
+        if (!voice.micOn) {
+          void voice.toggleMic();
+        }
       }
-      setChatSeedPrompt(prompt);
+      if (prompt) {
+        setChatSeedPrompt(prompt);
+      }
       setChatOpen(true);
     };
     window.addEventListener(CED_LIFE_ACTION_EVENT, onLifeAction);

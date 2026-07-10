@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   connectGoogleCalendarFromLife,
   connectGoogleGmailFromLife,
-  dispatchLifeVoicePrompt,
+  dispatchLifeChatPrompt,
 } from "@/lib/lifeActions";
 import {
   fetchHudCalendarEvents,
@@ -119,7 +119,7 @@ function GmailHudPanel({
                 type="button"
                 className="w-full text-left hover:text-cyan-200"
                 onClick={() =>
-                  dispatchLifeVoicePrompt(
+                  dispatchLifeChatPrompt(
                     `léeme el email de ${msg.from} con asunto ${msg.subject}`,
                   )
                 }
@@ -143,11 +143,7 @@ function GmailHudPanel({
       <div className="mt-2 flex flex-wrap gap-1">
         <LifeActionButton
           label="📖 Leer con CED"
-          onClick={() => dispatchLifeVoicePrompt("léeme mis emails")}
-        />
-        <LifeActionButton
-          label="✉️ Enviar email"
-          onClick={() => dispatchLifeVoicePrompt("Quiero enviar un email")}
+          onClick={() => dispatchLifeChatPrompt("léeme mis emails importantes", "gmail")}
         />
       </div>
     </div>
@@ -322,9 +318,9 @@ function CalendarHudPanel({
       </div>
       <div className="mt-2">
         <LifeActionButton
-          label="📅 Preguntar a CED"
+          label="📅 Ver esta semana"
           onClick={() =>
-            dispatchLifeVoicePrompt("¿qué eventos tengo esta semana?")
+            dispatchLifeChatPrompt("¿qué eventos tengo esta semana?", "calendar")
           }
         />
       </div>
@@ -428,9 +424,9 @@ export function LifeDashboardPanel() {
           lines={[weatherHeadline, ...(data.weather.lines.slice(1, 2) || [])]}
           actions={
             <LifeActionButton
-              label="CED"
+              label="Pregunta"
               onClick={() =>
-                dispatchLifeVoicePrompt(`¿qué clima hay hoy en ${place}?`)
+                dispatchLifeChatPrompt(`¿qué clima hay hoy en ${place}?`, "weather")
               }
             />
           }
@@ -441,10 +437,11 @@ export function LifeDashboardPanel() {
           lines={data.air_quality.lines}
           actions={
             <LifeActionButton
-              label="CED"
+              label="Pregunta"
               onClick={() =>
-                dispatchLifeVoicePrompt(
+                dispatchLifeChatPrompt(
                   `¿cómo está la calidad del aire en ${place} hoy?`,
+                  "weather",
                 )
               }
             />
@@ -456,10 +453,11 @@ export function LifeDashboardPanel() {
           lines={data.pollen.lines}
           actions={
             <LifeActionButton
-              label="CED"
+              label="Pregunta"
               onClick={() =>
-                dispatchLifeVoicePrompt(
+                dispatchLifeChatPrompt(
                   `¿cuáles son los niveles de polen en ${place} hoy?`,
+                  "weather",
                 )
               }
             />

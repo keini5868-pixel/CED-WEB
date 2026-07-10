@@ -243,16 +243,50 @@ def parse_pdf_request(text: str) -> tuple[str, str] | None:
     return title[:200], content[:12000]
 
 
-def _last_assistant_text(history: list[dict] | None, *, min_len: int = 120) -> str:
+_PDF_FILLER_ASSISTANT = re.compile(
+    r"(?:"
+    r"algo\s+m[aá]s\s+en\s+lo\s+que\s+(?:le\s+)?pueda\s+ayudar"
+    r"|(?:en\s+)?qu[eé]\s+m[aá]s\s+puedo\s+ayud"
+    r"|(?:puedo|le)\s+puedo\s+ayudar\s+en\s+algo"
+    r")",
+    re.I,
+)
+
+
+def _is_pdf_filler_assistant(text: str) -> bool:
+    t = re.sub(r"\s+", " ", (text or "").strip())
+    if not t:
+        return True
+    if len(t) < 90 and _PDF_FILLER_ASSISTANT.search(t):
+        return True
+    if re.fullmatch(
+        r"(?:¿?\s*)?(?:listo,?\s*señor|perfecto|de\s+nada|un\s+placer)[\s!.?]*",
+        t,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def _assistant_texts_for_pdf(history: list[dict] | None, *, min_len: int = 80) -> list[str]:
+    texts: list[str] = []
     for row in reversed(history or []):
         role = str(row.get("role") or "").lower()
         if role not in ("assistant", "model"):
             continue
         content = row.get("content")
-        if isinstance(content, str):
-            text = content.strip()
-            if len(text) >= min_len:
-                return text
+        if not isinstance(content, str):
+            continue
+        text = content.strip()
+        if len(text) < min_len or _is_pdf_filler_assistant(text):
+            continue
+        texts.append(text)
+    return texts
+
+
+def _last_assistant_text(history: list[dict] | None, *, min_len: int = 120) -> str:
+    for text in _assistant_texts_for_pdf(history, min_len=min_len):
+        return text
     return ""
 
 
@@ -283,8 +317,17 @@ def infer_pdf_title(user_text: str, content: str) -> str:
     for raw_line in re.split(r"[\n.!?]+", body):
         line = raw_line.strip()
         line = re.sub(r"^(?:señor,?\s*)?(?:sobre su consulta:?\s*)?", "", line, flags=re.I).strip()
+        if _is_pdf_filler_assistant(line):
+            continue
         if 18 <= len(line) <= 110 and not re.search(r"^(?:un momento|consulto|pdf)\b", line, re.I):
             return line[:120]
+    for candidate in _assistant_texts_for_pdf(
+        [{"role": "assistant", "content": body}],
+        min_len=18,
+    ):
+        first_line = re.split(r"[\n.!?]+", candidate)[0].strip()
+        if first_line and not _is_pdf_filler_assistant(first_line):
+            return first_line[:120]
     return "Documento CED"
 
 
@@ -317,9 +360,9 @@ def resolve_pdf_request(
             content = previous
 
     if not content or len(content) < 40:
-        previous = _last_assistant_text(history, min_len=80)
-        if previous:
+        for previous in _assistant_texts_for_pdf(history, min_len=80):
             content = previous
+            break
 
     if title == "Documento CED" or len(title) < 8:
         title = infer_pdf_title(t, content)
