@@ -97,6 +97,41 @@ def _fetch_message_metadata(
     }
 
 
+def list_inbox_messages(
+    access_token: str,
+    *,
+    max_results: int = 5,
+) -> list[dict[str, str]]:
+    """Correos más recientes de la bandeja de entrada (sin filtro de pestaña)."""
+    with httpx.Client(timeout=20.0) as client:
+        res = client.get(
+            f"{_GMAIL_BASE}/messages",
+            headers=_headers(access_token),
+            params={"maxResults": max_results, "labelIds": "INBOX"},
+        )
+        res.raise_for_status()
+        data = res.json()
+        ids = [str(m.get("id")) for m in (data.get("messages") or []) if m.get("id")]
+        return [
+            _fetch_message_metadata(client, access_token, msg_id)
+            for msg_id in ids[:max_results]
+        ]
+
+
+def probe_gmail_access(access_token: str) -> bool:
+    """Comprueba acceso real a Gmail (no solo tokeninfo)."""
+    try:
+        with httpx.Client(timeout=12.0) as client:
+            res = client.get(
+                f"{_GMAIL_BASE}/messages",
+                headers=_headers(access_token),
+                params={"maxResults": 1, "labelIds": "INBOX"},
+            )
+            return res.status_code == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def list_messages(
     access_token: str,
     *,

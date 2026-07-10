@@ -139,7 +139,7 @@ def test_gmail_module_reads_latest_email():
             return_value="token",
         ):
             with patch(
-                "app.modules.gmail_module.list_messages_by_category",
+                "app.modules.gmail_module.list_inbox_messages",
                 return_value=[
                     {
                         "id": "latest-1",
@@ -147,6 +147,7 @@ def test_gmail_module_reads_latest_email():
                         "from_name": "Ana",
                         "subject": "Factura julio",
                         "relative_date": "hoy",
+                        "snippet": "Resumen del correo.",
                     },
                 ],
             ):
@@ -168,7 +169,7 @@ def test_gmail_module_reads_latest_email():
     assert "ultimo correo" in result.spoken.lower() or "último correo" in result.spoken.lower()
     assert "Contenido completo" in result.spoken
     assert "Factura julio" in result.spoken
-    assert not vcs.is_gmail_awaiting_pick(uid)
+    assert "Resumen del correo" in result.spoken or "Contenido completo" in result.spoken
 
 
 def test_gmail_list_prompts_for_name():

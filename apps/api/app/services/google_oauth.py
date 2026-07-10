@@ -538,6 +538,45 @@ def get_connection_status(service: GoogleService, user_id: str) -> dict[str, Any
             "needs_reconnect": True,
             "hint": CALENDAR_RECONNECT_MSG,
         }
+    if service == "gmail":
+        from app.services.google_gmail_api import probe_gmail_access
+
+        access = _access_token_for_status("gmail", uid, row)
+        if token_has_gmail_scope(access) and probe_gmail_access(access):
+            return {"connected": True, "service": service}
+        if probe_gmail_access(access):
+            logger.info(
+                "[GOOGLE-OAUTH] gmail OK via API probe (tokeninfo vacío) user=%s",
+                uid[:8],
+            )
+            return {"connected": True, "service": service}
+        refresh = str(row.get("refresh_token") or "").strip()
+        if refresh:
+            try:
+                payload = refresh_access_token("gmail", refresh)
+                access = str(payload.get("access_token") or "").strip()
+                if access and probe_gmail_access(access):
+                    from app.services.supabase_client import save_gmail_tokens
+
+                    save_gmail_tokens(uid, {**payload, "refresh_token": refresh})
+                    logger.info(
+                        "[GOOGLE-OAUTH] gmail OK tras refresh+probe user=%s",
+                        uid[:8],
+                    )
+                    return {"connected": True, "service": service}
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[GOOGLE-OAUTH] gmail refresh+probe failed user=%s",
+                    uid[:8],
+                )
+        return {
+            "connected": False,
+            "service": service,
+            "needs_reconnect": True,
+            "hint": (
+                "Gmail necesita reconexión. Use Conectar Gmail en configuración de voz."
+            ),
+        }
     return {"connected": True, "service": service}
 
 
