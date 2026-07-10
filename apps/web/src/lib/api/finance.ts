@@ -1,4 +1,8 @@
 import type { ChatPdfAttachment } from "@/lib/api/chat";
+import {
+  COTIDIAN_CHAT_TIMEOUT_MS,
+  COTIDIAN_STREAM_STALL_MS,
+} from "@/lib/api/cotidian-stream";
 import { proxyFetchAuthed, streamAuthHeaders } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
@@ -29,9 +33,8 @@ export type FinanceChatResult = {
 export const FINANCE_DEFAULT_WELCOME =
   "Finanzas listas, señor. Dígame un gasto o ingreso para anotarlo, o pregúnteme cómo va este mes.";
 
-const FINANCE_TIMEOUT_MS = 300_000;
-// Corta el stream si no llegan datos en este tiempo (evita spinner infinito).
-const FINANCE_STREAM_STALL_MS = 120_000;
+const FINANCE_TIMEOUT_MS = COTIDIAN_CHAT_TIMEOUT_MS;
+const FINANCE_STREAM_STALL_MS = COTIDIAN_STREAM_STALL_MS;
 const FINANCE_FALLBACK_MODEL = "ced-finance";
 
 export async function fetchFinanceChatStatus(): Promise<FinanceChatStatus | null> {

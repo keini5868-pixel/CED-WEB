@@ -2080,9 +2080,11 @@ def send_message(
     anthropic_key = settings.anthropic_api_key.strip()
     google_key = settings.google_api_key.strip()
     gemini_model = _gemini_chat_model()
-    if not google_key:
+    from app.services.llama_service import use_llama
+
+    if not google_key and not anthropic_key and not use_llama():
         raise TextChatError(
-            "Servicio de chat no disponible. Configura GOOGLE_API_KEY en Railway.",
+            "Servicio de chat no disponible. Configura GOOGLE_API_KEY, ANTHROPIC_API_KEY o Llama en Railway.",
             http_status=503,
         )
 
@@ -2668,10 +2670,8 @@ def _persist_stream_turn(
 
 
 def _can_stream_chat_text(text: str) -> bool:
-    from app.modules.calendar_module import is_calendar_intent
     from app.modules.environment_module import is_environment_intent
-    from app.modules.finance_module import is_finance_intent
-    from app.modules.gmail_module import is_gmail_intent
+    from app.services.chat_module_context import requires_sync_module_handler
     from app.services.cognitive_intents import (
         is_conversation_recall_intent,
         is_news_intent,
@@ -2679,23 +2679,22 @@ def _can_stream_chat_text(text: str) -> bool:
         is_web_research_intent,
         requires_live_web,
     )
-    from app.services.hud_reminders import is_reminder_intent
 
-    if is_gmail_intent(text) or is_calendar_intent(text):
+    if requires_sync_module_handler(text):
         return False
-    if is_finance_intent(text):
-        return False
-    if is_reminder_intent(text) or is_environment_intent(text):
-        return False
+    if is_weather_intent(text) or is_news_intent(text):
+        return True
     if is_conversation_recall_intent(text):
         return False
     if is_generate_image_intent(text) or is_pdf_intent(text):
         return False
-    if requires_live_web(text) or is_web_research_intent(text):
+    if is_web_research_intent(text):
         return False
-    if is_news_intent(text) or is_weather_intent(text):
+    if is_environment_intent(text):
         return False
-    if _needs_chat_tools(text):
+    if requires_live_web(text):
+        return False
+    if _needs_chat_tools(text) and not (is_weather_intent(text) or is_news_intent(text)):
         return False
     return True
 
@@ -2729,96 +2728,19 @@ def _gemini_simple_reply_stream(
     messages: list[dict[str, Any]],
     max_tokens: int = CHAT_SIMPLE_MAX_TOKENS,
     allow_llama: bool = True,
+    user_text: str = "",
 ):
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+    from app.services.chat_stream_pipeline import iter_unified_llm_stream
 
-    from app.services.llama_service import (
-        _CHAT_TIMEOUT_SEC,
-        iter_llama_chat_stream,
-        should_route_to_llama,
-        use_llama,
-    )
-
-    if allow_llama and use_llama() and should_route_to_llama(fast_probe=True):
-        started = time.monotonic()
-        try:
-            for piece in iter_llama_chat_stream(
-                system=system,
-                messages=messages,
-                temperature=0.4,
-                max_tokens=max_tokens,
-            ):
-                if time.monotonic() - started > _CHAT_TIMEOUT_SEC:
-                    logger.warning(
-                        "[CHAT] Llama stream timeout %.0fs — fallback Claude",
-                        _CHAT_TIMEOUT_SEC,
-                    )
-                    break
-                if piece:
-                    yield piece
-            else:
-                return
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Llama stream failed — fallback Claude: %s", exc)
-        logger.info("[CHAT] fallback_provider=claude reason=llama_stream_unavailable")
-    elif allow_llama and use_llama() and not should_route_to_llama():
-        logger.warning("[CHAT] Ollama sin modelo listo — stream fallback Claude")
-        logger.info("[CHAT] fallback_provider=claude reason=llama_not_ready")
-
-    settings = get_settings()
-    anthropic_key = settings.anthropic_api_key.strip()
-    if anthropic_key:
-        logger.info("[CHAT] streaming_with=claude_fallback")
-        from app.services.claude_advanced import _iter_anthropic_text_stream
-
-        for piece, _label in _iter_anthropic_text_stream(
-            api_key=anthropic_key,
-            system=system,
-            messages=messages,
-            max_tokens=max_tokens,
-            user_text="",
-        ):
-            if piece:
-                yield piece
-        return
-
-    if not (api_key or "").strip():
-        raise TextChatError(
-            "Sin ANTHROPIC_API_KEY para fallback cuando Llama no responde.",
-            http_status=503,
-        )
-
-    logger.warning("[CHAT] Sin Claude — stream fallback Gemini degradado")
-    from google import genai
-    from google.genai import types
-
-    contents: list[types.Content] = []
-    for msg in messages:
-        role = msg.get("role")
-        content = msg.get("content")
-        if not isinstance(content, str) or not content.strip():
-            continue
-        if role == "user":
-            contents.append(types.Content(role="user", parts=[types.Part(text=content)]))
-        elif role == "assistant":
-            contents.append(types.Content(role="model", parts=[types.Part(text=content)]))
-
-    if not contents:
-        raise TextChatError("Sin mensajes para el asistente.")
-
-    model_name = (model or CHAT_GEMINI_MODEL).strip() or CHAT_GEMINI_MODEL
-    client = _gemini_client(api_key)
-    stream = client.models.generate_content_stream(
-        model=model_name,
-        contents=contents,
-        config=types.GenerateContentConfig(
-            system_instruction=_trim_system(system),
-            temperature=0.4,
-            max_output_tokens=max_tokens,
-        ),
-    )
-    for chunk in stream:
-        piece = getattr(chunk, "text", None) or ""
+    for piece, _label in iter_unified_llm_stream(
+        api_key=api_key,
+        model=model,
+        system=system,
+        messages=messages,
+        max_tokens=max_tokens,
+        allow_llama=allow_llama,
+        user_text=user_text,
+    ):
         if piece:
             yield piece
 
@@ -3020,6 +2942,15 @@ def iter_send_message_stream(
         logger.exception("[CHAT] fallo armando system prompt — usando base")
         system = CHAT_SYSTEM_BASE
 
+    module_route_meta: dict[str, Any] | None = None
+    from app.services.chat_module_context import fetch_module_stream_context
+
+    module_context, module_route_meta = fetch_module_stream_context(user_id, text)
+    if module_context:
+        system = f"{system}\n\n{module_context}"
+        yield _sse_event("status", {"text": "Consultando datos del módulo…"})
+        yield _sse_flush()
+
     token_budget = _chat_max_tokens(text)
     accumulated: list[str] = []
     stream_buf = ""
@@ -3115,7 +3046,7 @@ def iter_send_message_stream(
         "conversation_id": conversation_id,
         "reply": reply,
         "usage": _stream_usage_snapshot(user_id, profile),
-        "cognitive": route.to_dict(),
+        "cognitive": module_route_meta if module_route_meta else route.to_dict(),
     }
     if pdf_attachment:
         payload["pdf"] = pdf_attachment

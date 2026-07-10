@@ -18,7 +18,6 @@ from app.modules.finance_module import (
 from app.services.finance_claude_stream import (
     finance_history_for_stream,
     finance_stream_max_tokens,
-    iter_finance_anthropic_text_stream,
 )
 from app.services.deliverable_replies import CHAT_DELIVERABLE_RULES
 from app.services.finance_ledger import (
@@ -202,37 +201,25 @@ def _iter_finance_model_stream(
     max_tokens: int,
     user_text: str,
 ) -> Iterator[tuple[str, str]]:
-    """Finanzas: Claude primero (sin Llama) para TTFT estable bajo concurrencia."""
-    if anthropic_key:
-        logger.info("[FINANCE] stream claude-first")
-        for piece, model_label in iter_finance_anthropic_text_stream(
-            api_key=anthropic_key,
-            system=system,
-            messages=messages,
-            max_tokens=max_tokens,
-            user_text=user_text,
-        ):
-            if piece:
-                yield piece, model_label
-        return
+    """Finanzas: mismo pipeline Llama → Claude → Gemini que Chat Normal."""
+    from app.services.chat_stream_pipeline import iter_unified_llm_stream
+    from app.services.text_chat import _gemini_chat_model
 
-    stream_api_key = ""
-    if google_key:
-        logger.warning("[FINANCE] Sin Claude — stream Gemini degradado")
-        stream_api_key = google_key
-    else:
-        raise TextChatError("Sin proveedor LLM para finanzas.", http_status=503)
+    stream_api_key = google_key
+    if not stream_api_key and anthropic_key:
+        stream_api_key = anthropic_key
 
-    for piece in _gemini_simple_reply_stream(
+    for piece, model_label in iter_unified_llm_stream(
         api_key=stream_api_key,
         model=_gemini_chat_model(),
         system=system,
         messages=messages,
         max_tokens=max_tokens,
-        allow_llama=False,
+        allow_llama=True,
+        user_text=user_text,
     ):
         if piece:
-            yield piece, _stream_model_label()
+            yield piece, model_label
 
 
 def _finance_llm_reply(

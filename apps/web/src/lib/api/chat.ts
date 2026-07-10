@@ -1,11 +1,13 @@
 import { cedApiPath, streamAuthHeaders } from "@/lib/api/ced-proxy";
+import {
+  COTIDIAN_CHAT_TIMEOUT_MS,
+  COTIDIAN_STREAM_STALL_MS,
+} from "@/lib/api/cotidian-stream";
 import { appendStreamChunk } from "@/lib/stream-chunk";
 import { parseApiJson } from "@/lib/api/http";
 
-const CHAT_TIMEOUT_MS = 90_000;
-// Si el stream no envía datos en este tiempo, lo cortamos y mostramos error
-// en vez de dejar el chat cargando para siempre.
-const CHAT_STREAM_STALL_MS = 45_000;
+const CHAT_TIMEOUT_MS = COTIDIAN_CHAT_TIMEOUT_MS;
+const CHAT_STREAM_STALL_MS = COTIDIAN_STREAM_STALL_MS;
 
 /** Bienvenida instantánea en UI — no esperar a /chat/status. */
 export const CHAT_DEFAULT_WELCOME =

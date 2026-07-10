@@ -53,7 +53,15 @@ def test_instant_greeting_reply():
 
 def test_can_stream_skips_live_web():
     assert _can_stream_chat_text("hola") is True
-    assert _can_stream_chat_text("busca en internet las noticias de hoy") is False
+    assert _can_stream_chat_text("busca en internet las noticias de hoy") is True
+    assert _can_stream_chat_text("investiga en internet sobre física cuántica") is False
+
+
+def test_can_stream_allows_life_module_queries():
+    assert _can_stream_chat_text("qué tengo mañana en el calendario") is True
+    assert _can_stream_chat_text("qué recordatorios tengo") is True
+    assert _can_stream_chat_text("cómo está el clima hoy") is True
+    assert _can_stream_chat_text("agéndame una cita mañana a las 3pm") is False
 
 
 def test_route_message_defer_skips_kb_search():
