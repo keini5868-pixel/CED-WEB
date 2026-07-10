@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
       },
       body,
       cache: "no-store",
+      signal: AbortSignal.timeout(300_000),
     });
   } catch {
     return NextResponse.json(

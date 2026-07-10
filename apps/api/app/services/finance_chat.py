@@ -131,13 +131,26 @@ def _instant_finance_query_reply(user_id: str, text: str) -> str | None:
     lowered = text.strip().lower()
     period = "mes_pasado" if re.search(r"mes\s+pasado|mes\s+anterior", lowered) else "mes"
     try:
-        summary = summarize_finances(user_id, period=canonical_period(period))
+        from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(
+                summarize_finances,
+                user_id,
+                period=canonical_period(period),
+            )
+            summary = future.result(timeout=12.0)
         spoken = format_summary_spoken(summary)
         if spoken.strip():
             return spoken
+    except FuturesTimeout:
+        logger.warning("[FINANCE] summarize_finances timeout user=%s", user_id[:8])
     except Exception:  # noqa: BLE001
         logger.exception("[FINANCE] instant query failed user=%s", user_id[:8])
-    return None
+    return (
+        "Señor, no pude consultar sus finanzas en este momento. "
+        "Intente de nuevo en unos segundos."
+    )
 
 
 def _yield_done_with_text(result: dict[str, Any]) -> Iterator[str]:
@@ -414,6 +427,14 @@ def iter_finance_message_stream(
                 model=_stream_model_label(),
             )
         yield from _yield_done_with_text(result)
+        return
+
+    if is_finance_query_intent(text):
+        payload = _finish_payload(
+            response=_instant_finance_query_reply(user_id, text) or "",
+            model=_stream_model_label(),
+        )
+        yield from _yield_done_with_text(payload)
         return
 
     system = _finance_system_with_data(FINANCE_STREAM_SYSTEM, user_id)

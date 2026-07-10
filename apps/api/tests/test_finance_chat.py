@@ -103,6 +103,16 @@ def test_instant_finance_query_reply(monkeypatch):
     assert "mes" in reply.lower()
 
 
+def test_instant_finance_query_returns_fallback_on_db_error(monkeypatch):
+    def boom(user_id, period="mes"):
+        raise RuntimeError("db down")
+
+    monkeypatch.setattr(fc, "summarize_finances", boom)
+    reply = fc._instant_finance_query_reply("u1", "como voy este mes")
+    assert reply
+    assert "consultar" in reply.lower()
+
+
 def test_stream_finance_query_yields_token_immediately(monkeypatch):
     monkeypatch.setattr(
         fc,
@@ -123,6 +133,34 @@ def test_stream_finance_query_yields_token_immediately(monkeypatch):
     assert token_events, "expected instant finance summary token"
     done = _collect_done(events)
     assert done["response"].strip()
+
+
+def test_stream_finance_query_skips_llm_path(monkeypatch):
+    """Consultas tipo 'cómo voy' nunca deben entrar al stream LLM lento."""
+
+    def fail_stream(*args, **kwargs):
+        raise AssertionError("LLM stream should not run for finance queries")
+
+    monkeypatch.setattr(fc, "_gemini_simple_reply_stream", fail_stream)
+    monkeypatch.setattr(
+        fc,
+        "summarize_finances",
+        lambda user_id, period="mes": {
+            "count": 1,
+            "total_ingreso": 0.0,
+            "total_gasto": 300.0,
+            "balance": -300.0,
+            "period_label": "este mes",
+            "top_categories": [],
+        },
+    )
+    events = list(
+        fc.iter_finance_message_stream("u1", message="como voy este mes", history=[])
+    )
+    token_events = [ev for ev in events if ev.startswith("event: token")]
+    assert token_events
+    done = _collect_done(events)
+    assert "mes" in done["response"].lower()
 
 
 def test_stream_llm_reply_yields_token_before_done(monkeypatch):
