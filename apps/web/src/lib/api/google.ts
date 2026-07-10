@@ -57,6 +57,10 @@ async function waitForProviderSession(): Promise<Session | null> {
 export async function connectGoogleViaSupabase(
   type: GoogleLinkType,
 ): Promise<{ error?: string }> {
+  if (type === "calendar") {
+    return connectGoogleCalendarViaApi();
+  }
+
   const supabase = createClient();
   if (typeof window !== "undefined") {
     sessionStorage.setItem(PENDING_LINK_KEY, type);
@@ -81,6 +85,32 @@ export async function connectGoogleViaSupabase(
     return { error: error.message };
   }
   return {};
+}
+
+/** Calendar — OAuth directo vía API (scopes calendar.events garantizados). */
+async function connectGoogleCalendarViaApi(): Promise<{ error?: string }> {
+  const token = await sessionAccessToken();
+  if (!token) {
+    return { error: "Sin sesión activa." };
+  }
+  try {
+    const res = await fetch(`${apiUrl()}/v1/google/calendar/oauth-url`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    const data = await parseApiJson<{ url?: string; detail?: string }>(res);
+    if (!res.ok || !data.url) {
+      return {
+        error: data.detail || "No se pudo iniciar la conexión con Google Calendar.",
+      };
+    }
+    if (typeof window !== "undefined") {
+      window.location.href = data.url;
+    }
+    return {};
+  } catch {
+    return { error: "No se pudo contactar el servidor para conectar Calendar." };
+  }
 }
 
 /** Tras el redirect OAuth, persiste provider_token en Supabase (API service_role). */

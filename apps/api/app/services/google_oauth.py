@@ -485,7 +485,20 @@ def get_connection_status(service: GoogleService, user_id: str) -> dict[str, Any
         if service == "calendar"
         else supabase_db.get_gmail_tokens(uid)
     )
-    return {"connected": bool(row and row.get("access_token")), "service": service}
+    if not row or not row.get("access_token"):
+        return {"connected": False, "service": service}
+    if service == "calendar":
+        access = str(row.get("access_token") or "")
+        if not token_has_calendar_read_scope(access) or not token_has_calendar_write_scope(
+            access
+        ):
+            return {
+                "connected": False,
+                "service": service,
+                "needs_reconnect": True,
+                "hint": CALENDAR_RECONNECT_MSG,
+            }
+    return {"connected": True, "service": service}
 
 
 def get_valid_access_token(service: GoogleService, user_id: str) -> str:

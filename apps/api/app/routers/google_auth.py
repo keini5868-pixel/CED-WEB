@@ -5,16 +5,23 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
+from app.config import get_settings
 from app.deps.auth import require_user_id
 from app.services.google_oauth import (
     CALENDAR_RECONNECT_MSG,
     CALENDAR_WRITE_SCOPE_MSG,
     GMAIL_RECONNECT_MSG,
+    build_oauth_url,
+    exchange_code,
     get_connection_status,
     google_oauth_diagnostics,
+    oauth_configured,
+    parse_oauth_state,
+    resolve_allowed_web_origin,
     store_tokens,
     token_has_calendar_read_scope,
     token_has_calendar_write_scope,
@@ -24,6 +31,7 @@ from app.services.google_oauth import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/google", tags=["google"])
+callback_router = APIRouter(tags=["google-oauth-callback"])
 
 
 class SaveGoogleTokenBody(BaseModel):
@@ -101,6 +109,53 @@ def save_google_token(
 @router.get("/calendar/status")
 def calendar_status(user_id: str = Depends(require_user_id)) -> dict:
     return get_connection_status("calendar", user_id)
+
+
+@router.get("/calendar/oauth-url")
+def calendar_oauth_url(
+    request: Request,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    """URL OAuth directa (Railway) — scopes calendar completos, sin depender de Supabase Auth."""
+    if not oauth_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Google Calendar OAuth no configurado en el servidor.",
+        )
+    origin = resolve_allowed_web_origin(request.headers.get("origin") or "")
+    settings = get_settings()
+    web_origin = origin or settings.web_public_url.strip() or None
+    return {"url": build_oauth_url("calendar", user_id, web_origin=web_origin)}
+
+
+@callback_router.get("/auth/google/calendar/callback")
+def calendar_oauth_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Callback público de Google OAuth — intercambia code y guarda tokens Calendar."""
+    settings = get_settings()
+    fallback_web = settings.web_public_url.rstrip("/") or "https://cedweb-production.up.railway.app"
+    if error or not code or not state:
+        logger.warning("[GOOGLE-OAUTH] calendar callback error=%s code=%s", error, bool(code))
+        return RedirectResponse(f"{fallback_web}/dashboard?calendar=error")
+    try:
+        user_id, web_origin = parse_oauth_state(state)
+        payload = exchange_code("calendar", code)
+        access = str(payload.get("access_token") or "")
+        if not token_has_calendar_read_scope(access):
+            target = (web_origin or fallback_web).rstrip("/")
+            return RedirectResponse(f"{target}/dashboard?calendar=scope_read")
+        if not token_has_calendar_write_scope(access):
+            target = (web_origin or fallback_web).rstrip("/")
+            return RedirectResponse(f"{target}/dashboard?calendar=scope_write")
+        store_tokens("calendar", user_id, payload)
+        target = (web_origin or fallback_web).rstrip("/")
+        return RedirectResponse(f"{target}/dashboard?calendar=connected")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[GOOGLE-OAUTH] calendar callback failed: %s", exc)
+        return RedirectResponse(f"{fallback_web}/dashboard?calendar=error")
 
 
 @router.get("/gmail/status")

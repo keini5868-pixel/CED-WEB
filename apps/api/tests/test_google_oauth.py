@@ -89,3 +89,49 @@ def test_save_google_token_endpoint():
                     mock_store.assert_called_once()
 
     app.dependency_overrides.clear()
+
+
+def test_calendar_oauth_url_endpoint():
+    from fastapi.testclient import TestClient
+
+    from app.deps.auth import require_user_id
+    from app.main import create_app
+
+    app = create_app()
+    app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
+
+    with patch("app.routers.google_auth.oauth_configured", return_value=True):
+        with patch(
+            "app.routers.google_auth.build_oauth_url",
+            return_value="https://accounts.google.com/o/oauth2/v2/auth?test=1",
+        ):
+            client = TestClient(app)
+            res = client.get(
+                "/v1/google/calendar/oauth-url",
+                headers={"Authorization": "Bearer test"},
+            )
+
+    assert res.status_code == 200
+    assert "accounts.google.com" in res.json()["url"]
+    app.dependency_overrides.clear()
+
+
+def test_calendar_status_detects_insufficient_scopes():
+    from app.services.google_oauth import get_connection_status
+
+    with patch(
+        "app.services.google_oauth.supabase_db.get_calendar_tokens",
+        return_value={"access_token": "tok"},
+    ):
+        with patch(
+            "app.services.google_oauth.token_has_calendar_read_scope",
+            return_value=True,
+        ):
+            with patch(
+                "app.services.google_oauth.token_has_calendar_write_scope",
+                return_value=False,
+            ):
+                status = get_connection_status("calendar", SAMPLE_UUID)
+
+    assert status["connected"] is False
+    assert status.get("needs_reconnect") is True

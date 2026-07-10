@@ -26,6 +26,32 @@ export function GoogleOAuthCallbackBanner() {
     let cancelled = false;
 
     void (async () => {
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        const calendarParam = params.get("calendar");
+        if (calendarParam === "connected") {
+          setMessage(SUCCESS_MESSAGES.calendar);
+          window.dispatchEvent(new Event(GOOGLE_CALENDAR_CONNECTED_EVENT));
+          params.delete("calendar");
+          const next = `${window.location.pathname}${
+            params.toString() ? `?${params.toString()}` : ""
+          }`;
+          window.history.replaceState({}, "", next);
+          return;
+        }
+        if (calendarParam === "error" || calendarParam?.startsWith("scope")) {
+          setMessage(
+            "No se pudieron obtener permisos de Calendar. Pulse «Reconectar Calendar» y acepte todos los permisos.",
+          );
+          params.delete("calendar");
+          const next = `${window.location.pathname}${
+            params.toString() ? `?${params.toString()}` : ""
+          }`;
+          window.history.replaceState({}, "", next);
+          return;
+        }
+      }
+
       const result = await syncPendingGoogleProviderToken();
       if (cancelled || !result.type) return;
 
