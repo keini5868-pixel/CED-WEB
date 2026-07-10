@@ -7,6 +7,7 @@ Reemplaza Gemini para generación de texto en todos los canales excepto Chat Ava
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Iterator
 from typing import Any
 
@@ -172,6 +173,12 @@ def llama_available() -> bool:
     return llama_model_ready()
 
 
+def _log_queue_wait(started: float, *, endpoint: str) -> None:
+    """Tiempo hasta primer byte de inferencia (cola Ollama + arranque)."""
+    ms = int((time.monotonic() - started) * 1000)
+    logger.info("[LLAMA] queue_wait_ms=%s endpoint=%s model=%s", ms, endpoint, llama_model())
+
+
 def _raise_if_llama_http_error(response: httpx.Response) -> None:
     if response.status_code == 404:
         body = response.text.lower()
@@ -202,9 +209,11 @@ def call_llama_local(
     }
     if not llama_model_ready():
         raise LlamaNotReadyError(f"modelo {llama_model()} no descargado en Ollama")
+    started = time.monotonic()
     with httpx.Client(timeout=_DEFAULT_TIMEOUT_SEC) as client:
         response = client.post(_generate_url(), json=payload)
         _raise_if_llama_http_error(response)
+        _log_queue_wait(started, endpoint="generate")
         data = response.json()
     text = str(data.get("response") or "").strip()
     if not text:
@@ -252,9 +261,11 @@ def call_llama_chat(
     }
     if not llama_model_ready():
         raise LlamaNotReadyError(f"modelo {llama_model()} no descargado en Ollama")
+    started = time.monotonic()
     with httpx.Client(timeout=_CHAT_TIMEOUT_SEC) as client:
         response = client.post(_chat_url(), json=payload)
         _raise_if_llama_http_error(response)
+        _log_queue_wait(started, endpoint="chat")
         data = response.json()
     msg = data.get("message") or {}
     text = str(msg.get("content") or "").strip()
@@ -285,10 +296,15 @@ def iter_llama_chat_stream(
     if not llama_model_ready():
         raise LlamaNotReadyError(f"modelo {llama_model()} no descargado en Ollama")
     accumulated = ""
+    started = time.monotonic()
+    queue_logged = False
     with httpx.Client(timeout=_CHAT_TIMEOUT_SEC) as client:
         with client.stream("POST", _chat_url(), json=payload) as response:
             _raise_if_llama_http_error(response)
             for line in response.iter_lines():
+                if not queue_logged and line:
+                    _log_queue_wait(started, endpoint="chat_stream")
+                    queue_logged = True
                 if not line:
                     continue
                 import json

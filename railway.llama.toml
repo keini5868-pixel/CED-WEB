@@ -16,6 +16,7 @@
 #
 # Variables opcionales en CED-Llama:
 #   OLLAMA_MODEL=llama2:13b
+#   OLLAMA_NUM_PARALLEL=6   (default en entrypoint; 24GB RAM → hasta 6 slots)
 #
 # En el servicio API:
 #   LLM_PROVIDER=llama

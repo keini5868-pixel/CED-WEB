@@ -32,6 +32,7 @@ from app.services.finance_ledger import (
 )
 from app.services.system_clock import clock_context_block, try_instant_datetime_reply
 from app.services.text_chat import (
+    TextChatError,
     _anthropic_messages,
     _complete_chat_with_tools,
     _execute_direct_pdf,
@@ -180,25 +181,25 @@ def _finance_llm_reply(
 
     from app.services.llama_service import use_llama
 
-    if google_key or use_llama():
-        for piece in _gemini_simple_reply_stream(
-            api_key=google_key,
-            model=_gemini_chat_model(),
-            system=system,
-            messages=stream_messages,
-            max_tokens=max_tokens,
-        ):
-            accumulated.append(piece)
-    elif anthropic_key:
-        for piece, model_label in _iter_anthropic_text_stream(
-            api_key=anthropic_key,
-            system=system,
-            messages=stream_messages,
-            max_tokens=max_tokens,
-            user_text=text,
-        ):
-            stream_label = model_label
-            accumulated.append(piece)
+    stream_api_key = ""
+    if not use_llama() and not anthropic_key:
+        if google_key:
+            logger.warning("[FINANCE] Sin Claude — stream Gemini degradado")
+            stream_api_key = google_key
+        else:
+            raise TextChatError(
+                "Sin proveedor LLM para finanzas.",
+                http_status=503,
+            )
+
+    for piece in _gemini_simple_reply_stream(
+        api_key=stream_api_key,
+        model=_gemini_chat_model(),
+        system=system,
+        messages=stream_messages,
+        max_tokens=max_tokens,
+    ):
+        accumulated.append(piece)
 
     reply = _finalize_chat_reply("".join(accumulated).strip())
     if not reply:
@@ -451,35 +452,30 @@ def iter_finance_message_stream(
         from app.services.llama_service import use_llama
         from app.services.stream_delta import stream_piece_delta
 
-        if google_key or use_llama():
-            for piece in _gemini_simple_reply_stream(
-                api_key=google_key,
-                model=_gemini_chat_model(),
-                system=system,
-                messages=stream_messages,
-                max_tokens=max_tokens,
-            ):
-                delta = stream_piece_delta(stream_buf, piece)
-                if not delta:
-                    continue
-                stream_buf += delta
-                accumulated.append(delta)
-                yield _sse_event("token", {"text": delta})
-        elif anthropic_key:
-            for piece, model_label in _iter_anthropic_text_stream(
-                api_key=anthropic_key,
-                system=system,
-                messages=stream_messages,
-                max_tokens=max_tokens,
-                user_text=text,
-            ):
-                stream_label = model_label
-                delta = stream_piece_delta(stream_buf, piece)
-                if not delta:
-                    continue
-                stream_buf += delta
-                accumulated.append(delta)
-                yield _sse_event("token", {"text": delta})
+        stream_api_key = ""
+        if not use_llama() and not anthropic_key:
+            if google_key:
+                logger.warning("[FINANCE] Sin Claude — stream Gemini degradado")
+                stream_api_key = google_key
+            else:
+                raise TextChatError(
+                    "Sin proveedor LLM para finanzas.",
+                    http_status=503,
+                )
+
+        for piece in _gemini_simple_reply_stream(
+            api_key=stream_api_key,
+            model=_gemini_chat_model(),
+            system=system,
+            messages=stream_messages,
+            max_tokens=max_tokens,
+        ):
+            delta = stream_piece_delta(stream_buf, piece)
+            if not delta:
+                continue
+            stream_buf += delta
+            accumulated.append(delta)
+            yield _sse_event("token", {"text": delta})
     except Exception as exc:  # noqa: BLE001
         logger.warning("[FINANCE] stream failed, fallback full: %s", exc)
         result = send_finance_message(

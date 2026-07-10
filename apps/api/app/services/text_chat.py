@@ -1513,10 +1513,27 @@ def _gemini_simple_reply(
                     max_tokens=max_tokens,
                 )
             except Exception as exc:  # noqa: BLE001
-                logger.warning("[CHAT] Llama simple failed, fallback cloud: %s", exc)
+                logger.warning("[CHAT] Llama simple failed, fallback Claude: %s", exc)
         else:
-            logger.warning("[CHAT] Ollama sin modelo listo — fallback cloud inmediato")
+            logger.warning("[CHAT] Ollama sin modelo listo — fallback Claude inmediato")
 
+    settings = get_settings()
+    anthropic_key = settings.anthropic_api_key.strip()
+    if anthropic_key:
+        return _anthropic_simple_reply(
+            api_key=anthropic_key,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+        )
+
+    if not (api_key or "").strip():
+        raise TextChatError(
+            "Sin ANTHROPIC_API_KEY para fallback cuando Llama no responde.",
+            http_status=503,
+        )
+
+    logger.warning("[CHAT] Sin Claude — fallback Gemini degradado")
     from google import genai
     from google.genai import types
 
@@ -1578,7 +1595,7 @@ def _simple_chat_cascade(
     user_text: str = "",
     max_tokens: int | None = None,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
-    """Gemini primero; Claude como respaldo. Con llm_provider=llama, solo Llama local."""
+    """Llama primero; Claude como único fallback cloud conversacional."""
     from app.services.llama_service import should_route_to_llama, use_llama
 
     last_exc: Exception | None = None
@@ -1595,24 +1612,10 @@ def _simple_chat_cascade(
             )
             return reply, None, None
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Llama cascade failed, fallback cloud: %s", exc)
+            logger.warning("[CHAT] Llama cascade failed, fallback Claude: %s", exc)
             last_exc = exc
     elif use_llama():
-        logger.warning("[CHAT] Llama configurado pero modelo no listo — cascade cloud")
-
-    if google_key:
-        try:
-            reply = _gemini_simple_reply(
-                api_key=google_key,
-                model=gemini_model,
-                system=system,
-                messages=messages,
-                max_tokens=token_budget,
-            )
-            return reply, None, None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Gemini simple failed: %s", exc)
-            last_exc = exc
+        logger.warning("[CHAT] Llama configurado pero modelo no listo — fallback Claude")
 
     if anthropic_key:
         try:
@@ -1624,7 +1627,22 @@ def _simple_chat_cascade(
             )
             return reply, None, None
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Anthropic simple failed: %s", exc)
+            logger.warning("[CHAT] Anthropic cascade failed: %s", exc)
+            last_exc = exc
+
+    if google_key:
+        try:
+            reply = _gemini_simple_reply(
+                api_key=google_key,
+                model=gemini_model,
+                system=system,
+                messages=messages,
+                max_tokens=token_budget,
+                allow_llama=False,
+            )
+            return reply, None, None
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CHAT] Gemini simple failed (degradado): %s", exc)
             last_exc = exc
 
     if isinstance(last_exc, httpx.HTTPStatusError):
@@ -2732,7 +2750,7 @@ def _gemini_simple_reply_stream(
             ):
                 if time.monotonic() - started > _CHAT_TIMEOUT_SEC:
                     logger.warning(
-                        "[CHAT] Llama stream timeout %.0fs — fallback cloud",
+                        "[CHAT] Llama stream timeout %.0fs — fallback Claude",
                         _CHAT_TIMEOUT_SEC,
                     )
                     break
@@ -2741,31 +2759,33 @@ def _gemini_simple_reply_stream(
             else:
                 return
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Llama stream failed — fallback cloud: %s", exc)
+            logger.warning("[CHAT] Llama stream failed — fallback Claude: %s", exc)
     elif allow_llama and use_llama() and not should_route_to_llama():
-        logger.warning("[CHAT] Ollama sin modelo listo — stream fallback cloud")
+        logger.warning("[CHAT] Ollama sin modelo listo — stream fallback Claude")
 
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
-    if not (api_key or "").strip():
-        if anthropic_key:
-            from app.services.claude_advanced import _iter_anthropic_text_stream
+    if anthropic_key:
+        from app.services.claude_advanced import _iter_anthropic_text_stream
 
-            for piece, _label in _iter_anthropic_text_stream(
-                api_key=anthropic_key,
-                system=system,
-                messages=messages,
-                max_tokens=max_tokens,
-                user_text="",
-            ):
-                if piece:
-                    yield piece
-            return
+        for piece, _label in _iter_anthropic_text_stream(
+            api_key=anthropic_key,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            user_text="",
+        ):
+            if piece:
+                yield piece
+        return
+
+    if not (api_key or "").strip():
         raise TextChatError(
-            "Sin proveedor cloud para fallback de chat.",
+            "Sin ANTHROPIC_API_KEY para fallback cuando Llama no responde.",
             http_status=503,
         )
 
+    logger.warning("[CHAT] Sin Claude — stream fallback Gemini degradado")
     from google import genai
     from google.genai import types
 
@@ -3004,8 +3024,8 @@ def iter_send_message_stream(
     try:
         from app.services.stream_delta import stream_piece_delta
 
-        # Cloud-first cuando hay Gemini: evita health-check Ollama (~15s) y TTFT lento.
-        allow_llama = not bool(google_key)
+        # Llama primero; si falla → Claude (no Gemini) vía _gemini_simple_reply_stream.
+        allow_llama = True
         for piece in _gemini_simple_reply_stream(
             api_key=google_key,
             model=gemini_model,

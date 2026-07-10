@@ -3,12 +3,14 @@ set -e
 
 MODEL="${OLLAMA_MODEL:-llama2:13b}"
 MODELS_DIR="${OLLAMA_MODELS:-/data}"
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-6}"
 
 mkdir -p "${MODELS_DIR}"
 export OLLAMA_MODELS="${MODELS_DIR}"
 
 echo "[CED-Llama] OLLAMA_HOST=${OLLAMA_HOST:-[::]:11434}"
 echo "[CED-Llama] OLLAMA_MODELS=${OLLAMA_MODELS}"
+echo "[CED-Llama] OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL}"
 echo "[CED-Llama] MODEL=${MODEL}"
 
 ollama serve &

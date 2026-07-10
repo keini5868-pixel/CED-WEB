@@ -1,4 +1,4 @@
-"""Fallback cloud (Gemini → Claude) cuando Llama local falla o no está listo."""
+"""Fallback cloud (Claude primero) cuando Llama local falla o no está listo."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def chat_cloud_reply(
     user_text: str = "",
     max_tokens: int = 2048,
 ) -> str | None:
-    """Respuesta no-stream vía Gemini o Claude — nunca Llama."""
+    """Respuesta no-stream vía Claude (único fallback conversacional)."""
     from app.services.text_chat import (
         CHAT_SIMPLE_MAX_TOKENS,
         _anthropic_simple_reply,
@@ -38,7 +38,21 @@ def chat_cloud_reply(
 
     token_budget = max_tokens or CHAT_SIMPLE_MAX_TOKENS
 
+    if anthropic_key:
+        try:
+            return _anthropic_simple_reply(
+                api_key=anthropic_key,
+                system=system,
+                messages=messages,
+                max_tokens=token_budget,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[CLOUD-FALLBACK] anthropic failed: %s", exc)
+
     if google_key:
+        logger.warning(
+            "[CLOUD-FALLBACK] Sin Claude disponible — fallback Gemini degradado"
+        )
         try:
             return _gemini_simple_reply(
                 api_key=google_key,
@@ -50,17 +64,6 @@ def chat_cloud_reply(
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("[CLOUD-FALLBACK] gemini failed: %s", exc)
-
-    if anthropic_key:
-        try:
-            return _anthropic_simple_reply(
-                api_key=anthropic_key,
-                system=system,
-                messages=messages,
-                max_tokens=token_budget,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[CLOUD-FALLBACK] anthropic failed: %s", exc)
     return None
 
 
@@ -70,21 +73,19 @@ def iter_chat_cloud_stream(
     messages: list[dict[str, Any]],
     max_tokens: int = 2048,
 ):
-    """Streaming cloud — Gemini primero, sin Llama."""
-    from app.services.text_chat import (
-        _gemini_chat_model,
-        _gemini_simple_reply_stream,
-    )
+    """Streaming cloud — Claude, sin Llama."""
+    from app.services.claude_advanced import _iter_anthropic_text_stream
 
     settings = get_settings()
-    google_key = settings.google_api_key.strip()
-    if not google_key:
-        raise RuntimeError("missing_google_api_key_for_stream")
-    yield from _gemini_simple_reply_stream(
-        api_key=google_key,
-        model=_gemini_chat_model(),
+    anthropic_key = settings.anthropic_api_key.strip()
+    if not anthropic_key:
+        raise RuntimeError("missing_anthropic_api_key_for_stream")
+    for piece, _label in _iter_anthropic_text_stream(
+        api_key=anthropic_key,
         system=system,
         messages=messages,
         max_tokens=max_tokens,
-        allow_llama=False,
-    )
+        user_text="",
+    ):
+        if piece:
+            yield piece

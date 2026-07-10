@@ -86,8 +86,8 @@ def test_llama_available_requires_model_ready(monkeypatch):
     get_settings.cache_clear()
 
     with patch(
-        "app.services.llama_service.llama_health_diagnostics",
-        return_value={"daemon_ok": True, "model_ready": False, "models": []},
+        "app.services.llama_service.llama_model_ready",
+        return_value=False,
     ):
         from app.services.llama_service import llama_available
 
