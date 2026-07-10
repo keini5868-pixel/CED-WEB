@@ -208,3 +208,41 @@ def test_handle_write_saves(monkeypatch):
     out = fm.handle_finance_query_sync("user-1", "gasté 50 dólares en materiales hoy")
     assert captured["tx_type"] == "gasto"
     assert "registré" in out["spoken"].lower() or "anoté" in out["spoken"].lower()
+
+
+def test_gasto_de_manana_routes_to_pending():
+    from app.modules.finance_module import is_finance_future_write
+
+    text = "gasto de 300 para mañana"
+    assert is_finance_future_write(text)
+    rows = parse_pending_statements(text)
+    assert rows and rows[0]["amount"] == "300"
+    assert rows[0]["due_date"]
+
+
+def test_breakdown_intent_de_que():
+    from app.modules.finance_module import is_finance_breakdown_intent
+
+    assert is_finance_breakdown_intent("600 de qué")
+    assert is_finance_breakdown_intent("¿600 de qué?")
+    assert is_finance_breakdown_intent("dame el desglose de mis gastos")
+    assert not is_finance_breakdown_intent("gasté 600 en materiales")
+
+
+def test_handle_breakdown_intent(monkeypatch):
+    import app.modules.finance_module as fm
+
+    monkeypatch.setattr(
+        fm,
+        "summarize_finances",
+        lambda user_id, period=None: {
+            "total_gasto": 600.0,
+            "pending_gasto": 0.0,
+            "top_categories": [("general", 600.0)],
+            "pending_rows": [],
+            "count": 2,
+        },
+    )
+    out = fm.handle_finance_query_sync("u1", "¿600 de qué?")
+    assert "desglose" in out["spoken"].lower()
+    assert "600" in out["spoken"]

@@ -8,7 +8,9 @@ import re
 from typing import Any, Iterator
 
 from app.modules.finance_module import (
+    format_finance_breakdown_spoken,
     handle_finance_query_sync,
+    is_finance_breakdown_intent,
     is_finance_pending_query,
     is_finance_query_intent,
     is_finance_register_intent,
@@ -285,6 +287,10 @@ def send_finance_message(
     if instant_query:
         return _finish_payload(response=instant_query, model=_stream_model_label())
 
+    if is_finance_breakdown_intent(text):
+        reply = format_finance_breakdown_spoken(user_id, text)
+        return _finish_payload(response=reply, model=_stream_model_label())
+
     # Registro directo y determinista de un movimiento o pago pendiente.
     if is_finance_register_intent(text) or is_finance_pending_query(text):
         return _register_movement(user_id, text)
@@ -382,6 +388,12 @@ def iter_finance_message_stream(
             "done",
             _finish_payload(response=instant_query, model=_stream_model_label()),
         )
+        return
+
+    if is_finance_breakdown_intent(text):
+        reply = format_finance_breakdown_spoken(user_id, text)
+        payload = _finish_payload(response=reply, model=_stream_model_label())
+        yield from _yield_done_with_text(payload)
         return
 
     yield _sse_event("status", {"text": "Preparando respuesta…"})

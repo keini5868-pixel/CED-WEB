@@ -19,6 +19,7 @@ MAX_DESCRIPTION = 400
 MAX_CATEGORY = 60
 MAX_AMOUNT = 1_000_000_000
 VALID_TYPES = ("ingreso", "gasto")
+_DEDUP_WINDOW = timedelta(seconds=90)
 
 # Períodos soportados en consultas/análisis por voz o chat.
 PERIOD_LABELS: dict[str, str] = {
@@ -186,6 +187,58 @@ def normalize_status(raw: str | None) -> str:
     return "pagado"
 
 
+def _parse_created_at(raw: object) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        text = str(raw).replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(text)
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=ZoneInfo("UTC"))
+        return parsed
+    except ValueError:
+        return None
+
+
+def _find_recent_duplicate(
+    uid: str,
+    *,
+    kind: str,
+    value: float,
+    desc: str | None,
+    state: str,
+    due: date | None,
+) -> dict[str, Any] | None:
+    """Evita doble guardado por reintentos del frontend en la misma sesión."""
+    try:
+        query = (
+            _client()
+            .table("finance_transactions")
+            .select(
+                "id, amount, description, status, due_date, created_at, type, currency, category"
+            )
+            .eq("user_id", uid)
+            .eq("type", kind)
+            .eq("amount", value)
+            .eq("status", state)
+        )
+        if desc:
+            query = query.eq("description", desc)
+        result = query.order("created_at", desc=True).limit(5).execute()
+        cutoff = datetime.now(ZoneInfo("UTC")) - _DEDUP_WINDOW
+        for row in result.data or []:
+            if state == "pendiente" and due:
+                row_due = row.get("due_date")
+                if row_due and str(row_due)[:10] != due.isoformat():
+                    continue
+            created = _parse_created_at(row.get("created_at"))
+            if created and created >= cutoff:
+                return row
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[FINANCE] dedup check skipped: %s", exc)
+    return None
+
+
 def save_transaction(
     user_id: str,
     *,
@@ -238,6 +291,27 @@ def save_transaction(
         "status": state,
         "due_date": due.isoformat() if due else None,
     }
+    dup = _find_recent_duplicate(
+        uid,
+        kind=kind,
+        value=value,
+        desc=desc,
+        state=state,
+        due=due,
+    )
+    if dup:
+        logger.info("[FINANCE] dedup skip user=%s amount=%s status=%s", user_id[:8], value, state)
+        return {
+            "ok": True,
+            "id": dup.get("id"),
+            "type": kind,
+            "amount": value,
+            "currency": dup.get("currency", cur),
+            "category": dup.get("category") or cat,
+            "status": state,
+            "due_date": dup.get("due_date"),
+            "deduplicated": True,
+        }
     try:
         result = _client().table("finance_transactions").insert(row).execute()
         saved = (result.data or [row])[0]

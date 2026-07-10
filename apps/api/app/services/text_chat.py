@@ -2722,24 +2722,24 @@ def _gemini_simple_reply_stream(
     )
 
     if allow_llama and use_llama() and should_route_to_llama():
-        def _collect_llama() -> list[str]:
-            return list(
-                iter_llama_chat_stream(
-                    system=system,
-                    messages=messages,
-                    temperature=0.4,
-                    max_tokens=max_tokens,
-                )
-            )
-
+        started = time.monotonic()
         try:
-            with ThreadPoolExecutor(max_workers=1) as pool:
-                pieces = pool.submit(_collect_llama).result(timeout=_CHAT_TIMEOUT_SEC)
-            if pieces:
-                yield from pieces
+            for piece in iter_llama_chat_stream(
+                system=system,
+                messages=messages,
+                temperature=0.4,
+                max_tokens=max_tokens,
+            ):
+                if time.monotonic() - started > _CHAT_TIMEOUT_SEC:
+                    logger.warning(
+                        "[CHAT] Llama stream timeout %.0fs — fallback cloud",
+                        _CHAT_TIMEOUT_SEC,
+                    )
+                    break
+                if piece:
+                    yield piece
+            else:
                 return
-        except FuturesTimeout:
-            logger.warning("[CHAT] Llama stream timeout %.0fs — fallback cloud", _CHAT_TIMEOUT_SEC)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[CHAT] Llama stream failed — fallback cloud: %s", exc)
     elif allow_llama and use_llama() and not should_route_to_llama():

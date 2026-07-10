@@ -119,6 +119,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
   const streamTargetIndexRef = useRef<number | null>(null);
+  const submitInFlightRef = useRef(false);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -170,7 +171,9 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
   const submit = useCallback(async () => {
     const text = input.trim();
-    if (!text || busy || configured === false) return;
+    if (!text || configured === false) return;
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setError(null);
     setInput("");
     setBusy(true);
@@ -282,9 +285,10 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       setStreaming(false);
       setStatusHint(null);
       setBusy(false);
+      submitInFlightRef.current = false;
       textareaRef.current?.focus();
     }
-  }, [busy, configured, input]);
+  }, [configured, input]);
 
   if (!open) return null;
 

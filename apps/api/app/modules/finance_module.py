@@ -165,16 +165,70 @@ def is_finance_pending_write(text: str) -> bool:
 
 
 def is_finance_future_write(text: str) -> bool:
-    """Gasto/pago programado a futuro sin verbo 'gasté' ni 'tengo que pagar'."""
+    """Gasto/pago con fecha futura — pending aunque diga 'gasto de' o 'gasté'."""
     t = (text or "").strip()
-    if len(t) < 8 or not _AMOUNT_RE.search(t):
-        return False
-    if is_finance_pending_write(t) or is_finance_write_intent(t):
+    if is_finance_pending_write(t):
+        return True
+    if len(t) < 6 or not _AMOUNT_RE.search(t):
         return False
     rows = parse_pending_statements(t)
-    if not rows or not any(r.get("due_date") for r in rows):
+    return bool(rows and any(r.get("due_date") for r in rows))
+
+
+def is_finance_breakdown_intent(text: str) -> bool:
+    """Seguimiento: pedir desglose de una cifra o categorías del mes."""
+    t = (text or "").strip().lower()
+    if len(t) < 5:
         return False
-    return bool(_SCHEDULED_GASTO.search(t) or _FUTURE_SCHEDULE_HINT.search(t))
+    if re.search(r"\b(desglose|detall|desglosar|explica|explicar)\b", t):
+        return True
+    if re.search(r"\bde\s+qu[eé]\b", t) and re.search(
+        r"\d|gastos?|incluye|son|es", t
+    ):
+        return True
+    if re.search(r"\bqu[eé]\s+(son|es|incluye)\b", t) and re.search(r"\d", t):
+        return True
+    return False
+
+
+def format_finance_breakdown_spoken(user_id: str, text: str) -> str:
+    """Detalle por categoría y pagos pendientes del mes."""
+    summary = summarize_finances(user_id, period=canonical_period("mes"))
+    parts: list[str] = []
+    top = summary.get("top_categories") or []
+    if top:
+        for cat, amt in top[:6]:
+            parts.append(f"{cat} {_fmt_money_short(amt)}")
+    pending_rows = summary.get("pending_rows") or []
+    for row in pending_rows[:6]:
+        try:
+            amt = float(row.get("amount") or 0)
+        except (TypeError, ValueError):
+            amt = 0.0
+        parts.append(
+            f"pendiente {_fmt_money_short(amt)} el {_fmt_due_short(row.get('due_date'))}"
+        )
+    if not parts:
+        return (
+            "Señor, no encuentro un desglose para esa cifra en este mes. "
+            "¿Quiere que revise otro período?"
+        )
+    total_gasto = float(summary.get("total_gasto") or 0)
+    pending_gasto = float(summary.get("pending_gasto") or 0)
+    intro = f"Señor, los gastos de este mes suman {_fmt_money_short(total_gasto)}"
+    if pending_gasto:
+        intro += f" más {_fmt_money_short(pending_gasto)} en pagos pendientes"
+    return f"{intro}. Desglose: {'; '.join(parts)}."
+
+
+def _fmt_money_short(value: float, currency: str = "USD") -> str:
+    return f"{value:,.2f} {currency}"
+
+
+def _fmt_due_short(due_raw: object) -> str:
+    from app.services.finance_ledger import _fmt_due
+
+    return _fmt_due(due_raw)
 
 
 def is_finance_register_intent(text: str) -> bool:
@@ -191,6 +245,7 @@ def is_finance_intent(text: str) -> bool:
         is_finance_register_intent(text)
         or is_finance_query_intent(text)
         or is_finance_pending_query(text)
+        or is_finance_breakdown_intent(text)
     )
 
 
@@ -352,7 +407,10 @@ def handle_finance_query_sync(user_id: str, text: str) -> dict[str, str]:
             rows = list_pending_payments(user_id)
             return {"spoken": format_pending_spoken(rows)}
 
-        if is_finance_pending_write(text) or is_finance_future_write(text):
+        if is_finance_breakdown_intent(text):
+            return {"spoken": format_finance_breakdown_spoken(user_id, text)}
+
+        if is_finance_future_write(text):
             statements = parse_pending_statements(text)
             saved_list: list[dict[str, object]] = []
             last_save_error = ""
