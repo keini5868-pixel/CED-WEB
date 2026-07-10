@@ -1,4 +1,8 @@
-"""Chat avanzado CED — Claude Sonnet con herramientas (PDF, imágenes, web)."""
+"""LEGACY — streaming Claude para Chat Normal (text_chat / cloud_llm_fallback).
+
+Modo Avanzado: app.services.advanced_mode
+Finanzas stream: app.services.finance_claude_stream
+"""
 
 from __future__ import annotations
 

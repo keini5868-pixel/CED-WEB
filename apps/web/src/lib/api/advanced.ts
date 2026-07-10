@@ -7,7 +7,10 @@ export type AdvancedChatMessage = {
   created_at?: string;
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
+  user_image_preview?: string | null;
 };
+
+export type AdvancedImageMode = "analyze" | "variation" | "inspired" | "edit";
 
 export type AdvancedChatStatus = {
   configured: boolean;
@@ -223,7 +226,6 @@ export async function sendAdvancedChatMessageStream(
   } catch {
     throw new Error("Respuesta incompleta del modo avanzado.");
   }
-}
 /** Fallback sin streaming (PDF/imagen ya resueltos en servidor). */
 export async function sendAdvancedChatMessage(
   message: string,
@@ -241,6 +243,43 @@ export async function sendAdvancedChatMessage(
   const data = await parseApiJson<AdvancedChatResult & { detail?: string }>(res);
   if (!res.ok) {
     throw new Error(data.detail || "No se pudo obtener respuesta de Claude.");
+  }
+  return {
+    response: data.response ?? "",
+    model: data.model ?? "claude-sonnet-4-6",
+    pdf: data.pdf ?? null,
+    image: data.image ?? null,
+  };
+}
+
+/** Mensaje con imagen adjunta — análisis o generación con referencia. */
+export async function sendAdvancedChatMessageWithImage(
+  message: string,
+  history: AdvancedChatMessage[],
+  image: File,
+  imageMode: AdvancedImageMode = "analyze",
+): Promise<AdvancedChatResult> {
+  const formData = new FormData();
+  formData.append("content", message);
+  formData.append("image_mode", imageMode);
+  formData.append(
+    "history_json",
+    JSON.stringify(
+      history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role, content: m.content })),
+    ),
+  );
+  formData.append("image", image, image.name || "attachment.jpg");
+
+  const res = await proxyFetchAuthed("advanced/chat/with-image", {
+    method: "POST",
+    body: formData,
+    signal: AbortSignal.timeout(ADVANCED_TIMEOUT_MS),
+  });
+  const data = await parseApiJson<AdvancedChatResult & { detail?: string }>(res);
+  if (!res.ok) {
+    throw new Error(data.detail || "No se pudo procesar la imagen en modo avanzado.");
   }
   return {
     response: data.response ?? "",

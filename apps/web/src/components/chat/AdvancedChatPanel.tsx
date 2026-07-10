@@ -3,6 +3,14 @@
 import { Brain, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
+import {
+  ImageActionBar,
+  imageActionHint,
+  imageActionPlaceholder,
+  type ImageActionMode,
+} from "@/components/chat/ImageActionBar";
+import { MicButton } from "@/components/chat/MicButton";
 import { appendStreamChunk } from "@/lib/stream-chunk";
 import type { ChatImageAttachment, ChatPdfAttachment } from "@/lib/api/chat";
 import {
@@ -10,9 +18,9 @@ import {
   fetchAdvancedChatStatus,
   sendAdvancedChatMessage,
   sendAdvancedChatMessageStream,
+  sendAdvancedChatMessageWithImage,
   type AdvancedChatMessage,
-} from "@/lib/api/advanced";
-import { normalizeCedMediaUrl } from "@/lib/api/media-url";
+} from "@/lib/api/advanced";import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 
@@ -105,6 +113,19 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
   );
 }
 
+function UserImagePreview({ preview }: { preview: string }) {
+  return (
+    <div className="mt-2">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={preview}
+        alt="Imagen adjunta"
+        className="max-h-40 rounded border border-violet-800/50 object-contain"
+      />
+    </div>
+  );
+}
+
 export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   const [messages, setMessages] = useState<AdvancedChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -114,7 +135,11 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [modelLabel, setModelLabel] = useState("Claude Haiku");
   const [configured, setConfigured] = useState<boolean | null>(null);
-  const [usesGeminiOnly, setUsesGeminiOnly] = useState(false);
+  const [attachedImage, setAttachedImage] = useState<{
+    file: File;
+    preview: string;
+  } | null>(null);
+  const [imageMode, setImageMode] = useState<ImageActionMode>("analyze");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
@@ -149,9 +174,6 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       // está configurado. Así avanzado responde igual que el chat normal.
       if (!status) return;
       setConfigured(status.configured);
-      setUsesGeminiOnly(
-        Boolean(status.google_configured && !status.anthropic_configured),
-      );
       if (status.model) {
         setModelLabel(
           (status.stream_model ?? status.model)
@@ -171,11 +193,18 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
   const submit = useCallback(async () => {
     const text = input.trim();
-    if (!text || configured === false) return;
+    if ((!text && !attachedImage) || configured === false) return;
     if (submitInFlightRef.current) return;
     submitInFlightRef.current = true;
     setError(null);
+
+    const imageFile = attachedImage?.file ?? null;
+    const imagePreview = attachedImage?.preview ?? null;
+    const currentMode = imageMode;
+
     setInput("");
+    setAttachedImage(null);
+    setImageMode("analyze");
     setBusy(true);
 
     const sendGuard = setTimeout(() => {
@@ -187,8 +216,9 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
     const userMsg: AdvancedChatMessage = {
       role: "user",
-      content: text,
+      content: text || "📷 Imagen adjunta",
       created_at: new Date().toISOString(),
+      user_image_preview: imagePreview,
     };
     const historyBefore = messagesRef.current;
     let assistantIndex = historyBefore.length + 1;
@@ -249,13 +279,24 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     };
 
     try {
-      const result = await sendAdvancedChatMessageStream(
-        text,
-        historyBefore,
-        onChunk,
-        (hint) => setStatusHint(hint),
-      );
-      applyResult(result);
+      if (imageFile) {
+        setStatusHint("Analizando imagen con Claude…");
+        const result = await sendAdvancedChatMessageWithImage(
+          text || "¿Qué piensas de esta imagen?",
+          historyBefore,
+          imageFile,
+          currentMode,
+        );
+        applyResult(result);
+      } else {
+        const result = await sendAdvancedChatMessageStream(
+          text,
+          historyBefore,
+          onChunk,
+          (hint) => setStatusHint(hint),
+        );
+        applyResult(result);
+      }
     } catch (streamErr) {
       if (!receivedTokens) {
         try {
@@ -299,7 +340,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       submitInFlightRef.current = false;
       textareaRef.current?.focus();
     }
-  }, [configured, input]);
+  }, [configured, input, attachedImage, imageMode]);
 
   if (!open) return null;
 
@@ -330,13 +371,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
         {configured === false ? (
           <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-200">
-            Modo avanzado no disponible. Configura GOOGLE_API_KEY o ANTHROPIC_API_KEY
-            en el servicio API de Railway.
-          </p>
-        ) : usesGeminiOnly ? (
-          <p className="mx-4 mt-3 rounded border border-violet-500/30 bg-violet-950/20 px-3 py-2 text-[10px] text-violet-200/90">
-            Conversación rápida con Gemini. PDF, imágenes y herramientas profundas
-            requieren ANTHROPIC_API_KEY.
+            Modo avanzado requiere ANTHROPIC_API_KEY en el servicio API de Railway.
           </p>
         ) : null}
 
@@ -347,6 +382,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
           {messages.map((msg, i) => {
             const displayContent =
               msg.role === "assistant" ? stripPdfLinks(msg.content) : msg.content;
+            const userImagePreview = msg.user_image_preview ?? null;
             const isActiveStreamBubble =
               streaming && streamTargetIndexRef.current === i;
             if (
@@ -371,6 +407,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
                 {displayContent ? (
                   <p className="whitespace-pre-wrap">{displayContent}</p>
                 ) : null}
+                {userImagePreview ? <UserImagePreview preview={userImagePreview} /> : null}
                 {msg.pdf?.file_id ? <PdfDownloadButton pdf={msg.pdf} /> : null}
                 {msg.image?.url ? <ChatImagePreview image={msg.image} /> : null}
               </div>
@@ -390,7 +427,18 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         ) : null}
 
         <footer className="relative z-10 shrink-0 border-t border-violet-500/20 bg-[#08060f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
-          <div className="flex gap-2">
+          {attachedImage ? (
+            <ImageActionBar
+              preview={attachedImage.preview}
+              mode={imageMode}
+              onModeChange={setImageMode}
+              onRemove={() => {
+                setAttachedImage(null);
+                setImageMode("analyze");
+              }}
+            />
+          ) : null}
+          <div className="flex items-end gap-2">
             <textarea
               ref={textareaRef}
               value={input}
@@ -402,14 +450,29 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
                 }
               }}
               rows={3}
-              placeholder="Análisis, PDF, imágenes o prompts largos…"
+              placeholder={
+                attachedImage
+                  ? imageActionPlaceholder(imageMode)
+                  : "Análisis, PDF, imágenes o dictado por voz…"
+              }
               disabled={configured === false}
               className="min-h-[56px] max-h-40 flex-1 resize-y rounded border border-violet-900/50 bg-black/60 px-3 py-2 text-base text-violet-50 placeholder:text-violet-700 focus:border-violet-500/50 focus:outline-none disabled:opacity-50 sm:text-[12px]"
+            />
+            <ImageUploadButton
+              onImageSelected={(file, preview) => setAttachedImage({ file, preview })}
+              disabled={busy || configured === false || !!attachedImage}
+            />
+            <MicButton
+              getBaseText={() => input}
+              onTextUpdate={setInput}
+              disabled={busy || configured === false}
             />
             <button
               type="button"
               onClick={() => void submit()}
-              disabled={busy || !input.trim() || configured === false}
+              disabled={
+                busy || (!input.trim() && !attachedImage) || configured === false
+              }
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-violet-500/40 bg-violet-950/50 text-violet-200 transition hover:bg-violet-900/50 disabled:opacity-40"
               aria-label="Analizar"
               title="ANALIZAR"
@@ -418,7 +481,9 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
             </button>
           </div>
           <p className="mt-1 text-center text-[9px] text-violet-500/70">
-            PDF · Imágenes · Streaming · Enter
+            {attachedImage
+              ? imageActionHint(imageMode)
+              : "PDF · Imágenes · 🎤 dictado · Enter"}
           </p>
         </footer>
       </div>

@@ -1,4 +1,4 @@
-"""Tests — chat avanzado Claude."""
+"""Tests — Modo Avanzado aislado (advanced_mode)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.deps.auth import require_user_id
 from app.main import create_app
-import app.services.claude_advanced as adv
+import app.services.advanced_mode.service as adv
 
 SAMPLE_UUID = "550e8400-e29b-41d4-a716-446655440000"
 
@@ -49,14 +49,8 @@ def test_advanced_chat_endpoint():
 
 
 def test_advanced_status_missing_key():
-    with patch("app.config.get_settings") as mock_settings:
-        mock_settings.return_value = MagicMock(
-            anthropic_api_key="",
-            google_api_key="",
-        )
-        from app.config import get_settings
-
-        get_settings.cache_clear()
+    with patch("app.services.advanced_mode.claude_stream.get_settings") as mock_settings:
+        mock_settings.return_value = MagicMock(anthropic_api_key="")
         app = create_app()
         app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
         client = TestClient(app)
@@ -70,15 +64,9 @@ def test_advanced_status_missing_key():
     app.dependency_overrides.clear()
 
 
-def test_advanced_status_google_only():
-    with patch("app.config.get_settings") as mock_settings:
-        mock_settings.return_value = MagicMock(
-            anthropic_api_key="",
-            google_api_key="gk-test",
-        )
-        from app.config import get_settings
-
-        get_settings.cache_clear()
+def test_advanced_status_anthropic_only():
+    with patch("app.services.advanced_mode.claude_stream.get_settings") as mock_settings:
+        mock_settings.return_value = MagicMock(anthropic_api_key="sk-test")
         app = create_app()
         app.dependency_overrides[require_user_id] = lambda: SAMPLE_UUID
         client = TestClient(app)
@@ -90,58 +78,36 @@ def test_advanced_status_google_only():
     assert res.status_code == 200
     body = res.json()
     assert body["configured"] is True
-    assert body["google_configured"] is True
+    assert body["anthropic_configured"] is True
     app.dependency_overrides.clear()
 
 
 def test_advanced_instant_datetime_reply():
-    from app.services.claude_advanced import _try_instant_datetime_reply
+    from app.services.system_clock import try_instant_datetime_reply
 
-    reply = _try_instant_datetime_reply("qué día es hoy")
+    reply = try_instant_datetime_reply("qué día es hoy")
     assert reply
     assert "tool_code" not in reply.lower()
     assert "Hoy es" in reply
 
 
-def test_advanced_recovers_stream_tool_code():
-    from app.services.claude_advanced import _recover_advanced_reply
-
-    hallucinated = (
-        "Un momento, señor.\n\n**tool_code**\n"
-        'print(search_web(query="qué día es hoy"))'
-    )
-    with patch(
-        "app.services.claude_advanced._resolve_hallucinated_tool_code_reply",
-        return_value="Hoy es martes 7 de julio de 2026, señor.",
-    ):
-        fixed = _recover_advanced_reply(
-            "user-1",
-            hallucinated,
-            text="qué día es hoy",
-            history=[],
-            conversation_id="adv-1",
-        )
-    assert "tool_code" not in fixed.lower()
-    assert "print(" not in fixed.lower()
-
-
 def test_advanced_needs_tools_for_web_research():
-    from app.services.claude_advanced import _needs_advanced_tools
+    from app.services.advanced_mode.intents import needs_advanced_full_pipeline
 
-    assert _needs_advanced_tools(
+    assert needs_advanced_full_pipeline(
         "últimas noticias de Venezuela hoy",
         [],
     )
 
 
 def test_advanced_streams_business_query_without_tools():
-    from app.services.claude_advanced import _needs_advanced_tools
+    from app.services.advanced_mode.intents import needs_advanced_full_pipeline
 
-    assert not _needs_advanced_tools(
+    assert not needs_advanced_full_pipeline(
         "Resume las ventajas de automatizar marketing digital",
         [],
     )
-    assert not _needs_advanced_tools(
+    assert not needs_advanced_full_pipeline(
         "dame información sobre estrategia de ventas",
         [],
     )
@@ -171,16 +137,18 @@ def test_advanced_stream_fallback_yields_token_before_done(monkeypatch):
     def fake_stream(*args, **kwargs):
         raise RuntimeError("stream down")
 
-    monkeypatch.setattr(adv, "_iter_anthropic_text_stream", fake_stream)
     monkeypatch.setattr(
-        adv,
-        "_advanced_stream_fallback_reply",
-        lambda **kwargs: "Análisis listo, señor.",
+        "app.services.advanced_mode.service.iter_advanced_claude_stream",
+        fake_stream,
     )
     monkeypatch.setattr(
         adv,
-        "_ensure_llm_providers",
-        lambda **kwargs: ("anthropic-key", "google-key"),
+        "_stream_fallback_reply",
+        lambda **kwargs: "Análisis listo, señor.",
+    )
+    monkeypatch.setattr(
+        "app.services.advanced_mode.service.require_anthropic_api_key",
+        lambda: "anthropic-key",
     )
 
     events = list(

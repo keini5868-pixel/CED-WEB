@@ -15,12 +15,10 @@ from app.modules.finance_module import (
     is_finance_query_intent,
     is_finance_register_intent,
 )
-from app.services.claude_advanced import (
-    _ensure_llm_providers,
-    _history_as_chat_rows,
-    _history_for_stream,
-    _iter_anthropic_text_stream,
-    _stream_max_tokens,
+from app.services.finance_claude_stream import (
+    finance_history_for_stream,
+    finance_stream_max_tokens,
+    iter_finance_anthropic_text_stream,
 )
 from app.services.deliverable_replies import CHAT_DELIVERABLE_RULES
 from app.services.finance_ledger import (
@@ -95,6 +93,38 @@ _GREETING_ONLY = re.compile(
 
 def _conversation_id(user_id: str, explicit: str | None) -> str:
     return explicit or f"finance-{user_id}"
+
+
+def _finance_llm_keys() -> tuple[str, str]:
+    from app.config import get_settings
+
+    settings = get_settings()
+    return settings.anthropic_api_key.strip(), settings.google_api_key.strip()
+
+
+def _ensure_llm_providers(*, needs_anthropic: bool = False) -> tuple[str, str]:
+    from app.services.llama_service import use_llama
+
+    anthropic, google = _finance_llm_keys()
+    if needs_anthropic and not anthropic:
+        raise ValueError("missing_anthropic_api_key")
+    if not anthropic and not google and not use_llama():
+        raise ValueError("missing_llm_api_key")
+    return anthropic, google
+
+
+def _history_as_chat_rows(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for turn in history[-20:]:
+        role = str(turn.get("role") or "").strip().lower()
+        content = str(turn.get("content") or "").strip()
+        if not content:
+            continue
+        if role in ("user", "human"):
+            rows.append({"role": "user", "content": content})
+        elif role in ("assistant", "model", "claude"):
+            rows.append({"role": "model", "content": content})
+    return rows
 
 
 def _sse_event(name: str, payload: dict[str, Any]) -> str:
@@ -173,11 +203,9 @@ def _iter_finance_model_stream(
     user_text: str,
 ) -> Iterator[tuple[str, str]]:
     """Finanzas: Claude primero (sin Llama) para TTFT estable bajo concurrencia."""
-    from app.services.claude_advanced import _iter_anthropic_text_stream
-
     if anthropic_key:
         logger.info("[FINANCE] stream claude-first")
-        for piece, model_label in _iter_anthropic_text_stream(
+        for piece, model_label in iter_finance_anthropic_text_stream(
             api_key=anthropic_key,
             system=system,
             messages=messages,
@@ -218,8 +246,8 @@ def _finance_llm_reply(
     google_key: str,
 ) -> tuple[str, str]:
     """Respuesta LLM para finanzas sin pipeline bloqueante de herramientas."""
-    stream_messages = [*_history_for_stream(history), {"role": "user", "content": text}]
-    max_tokens = _stream_max_tokens(text)
+    stream_messages = [*finance_history_for_stream(history), {"role": "user", "content": text}]
+    max_tokens = finance_stream_max_tokens(text)
     accumulated: list[str] = []
     stream_label = _stream_model_label()
 
@@ -475,8 +503,8 @@ def iter_finance_message_stream(
         return
 
     system = _finance_system_with_data(FINANCE_STREAM_SYSTEM, user_id)
-    stream_messages = [*_history_for_stream(history), {"role": "user", "content": text}]
-    max_tokens = _stream_max_tokens(text)
+    stream_messages = [*finance_history_for_stream(history), {"role": "user", "content": text}]
+    max_tokens = finance_stream_max_tokens(text)
 
     accumulated: list[str] = []
     stream_buf = ""
@@ -551,9 +579,8 @@ def iter_finance_message_stream(
 
 
 def finance_is_configured() -> bool:
-    from app.services.claude_advanced import advanced_is_configured
     from app.services.cloud_llm_fallback import cloud_llm_configured
     from app.services.llama_service import use_llama
 
-    # No llamar should_route_to_llama() aquí — bloquea /finance/status ~15s en health Ollama.
-    return advanced_is_configured() or cloud_llm_configured() or use_llama()
+    anthropic, google = _finance_llm_keys()
+    return bool(anthropic or google) or cloud_llm_configured() or use_llama()

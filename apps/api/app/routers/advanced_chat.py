@@ -1,27 +1,29 @@
-"""Chat avanzado — Claude Sonnet + herramientas."""
+"""Chat avanzado — módulo aislado (Claude puro)."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
-from app.services.claude_advanced import (
+from app.services.advanced_mode import (
     ADVANCED_DEEP_MODEL_LABEL,
-    ADVANCED_MODEL_LABEL,
     ADVANCED_STREAM_MODEL_LABEL,
     advanced_is_configured,
     iter_advanced_message_stream,
     send_advanced_message,
+    send_advanced_message_with_image,
 )
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/advanced", tags=["advanced"])
+
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 class AdvancedChatTurn(BaseModel):
@@ -55,16 +57,65 @@ async def advanced_chat(
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "Modo avanzado no disponible. Configura GOOGLE_API_KEY o "
-                    "ANTHROPIC_API_KEY en el servicio API de Railway."
+                    "Modo avanzado requiere ANTHROPIC_API_KEY en el servicio API de Railway."
                 ),
             ) from exc
         raise HTTPException(status_code=400, detail=code) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[ADVANCED] chat failed user=%s", user_id[:8])
+        logger.exception("[ADV-MODE] chat failed user=%s", user_id[:8])
         raise HTTPException(
             status_code=502,
             detail="No pude obtener respuesta de Claude. Reintenta en un momento.",
+        ) from exc
+
+
+@router.post("/chat/with-image")
+async def advanced_chat_with_image(
+    content: str = Form(default=""),
+    image_mode: str = Form(default="analyze"),
+    conversation_id: str | None = Form(default=None),
+    history_json: str = Form(default="[]"),
+    image: UploadFile = File(...),
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    try:
+        image_bytes = await image.read()
+        if len(image_bytes) > MAX_IMAGE_BYTES:
+            raise HTTPException(status_code=400, detail="Imagen demasiado grande. Máximo 5MB.")
+        media_type = (image.content_type or "image/jpeg").split(";")[0].strip()
+        text = content.strip() or "¿Qué piensas de esta imagen?"
+        try:
+            import json
+
+            history_raw = json.loads(history_json or "[]")
+            history = history_raw if isinstance(history_raw, list) else []
+        except json.JSONDecodeError:
+            history = []
+        return await asyncio.to_thread(
+            send_advanced_message_with_image,
+            user_id,
+            message=text,
+            history=history,
+            image_bytes=image_bytes,
+            image_media_type=media_type,
+            image_mode=(image_mode or "analyze").strip().lower(),
+            conversation_id=conversation_id,
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        code = str(exc)
+        if code == "missing_anthropic_api_key":
+            raise HTTPException(
+                status_code=503,
+                detail="Modo avanzado requiere ANTHROPIC_API_KEY.",
+            ) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[ADV-MODE] with-image failed user=%s", user_id[:8])
+        raise HTTPException(
+            status_code=502,
+            detail="Error procesando imagen en modo avanzado.",
         ) from exc
 
 
@@ -94,13 +145,12 @@ async def advanced_chat_stream(
             raise HTTPException(
                 status_code=503,
                 detail=(
-                    "Modo avanzado no disponible. Configura GOOGLE_API_KEY o "
-                    "ANTHROPIC_API_KEY en el servicio API de Railway."
+                    "Modo avanzado requiere ANTHROPIC_API_KEY en el servicio API de Railway."
                 ),
             ) from exc
         raise HTTPException(status_code=400, detail=code) from exc
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[ADVANCED] stream failed user=%s", user_id[:8])
+        logger.exception("[ADV-MODE] stream failed user=%s", user_id[:8])
         raise HTTPException(
             status_code=502,
             detail="Error en modo avanzado. Reintenta.",
@@ -113,17 +163,11 @@ def advanced_chat_status(_user_id: str = Depends(require_user_id)) -> dict:
 
     settings = get_settings()
     anthropic = bool(settings.anthropic_api_key.strip())
-    google = bool(settings.google_api_key.strip())
     configured = advanced_is_configured()
-    stream_label = (
-        ADVANCED_STREAM_MODEL_LABEL
-        if anthropic
-        else ("gemini-2.5-flash" if google else None)
-    )
     return {
         "configured": configured,
         "anthropic_configured": anthropic,
-        "google_configured": google,
-        "model": ADVANCED_DEEP_MODEL_LABEL if anthropic else stream_label,
-        "stream_model": stream_label,
+        "google_configured": False,
+        "model": ADVANCED_DEEP_MODEL_LABEL if anthropic else None,
+        "stream_model": ADVANCED_STREAM_MODEL_LABEL if anthropic else None,
     }
