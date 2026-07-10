@@ -33,6 +33,7 @@ class AdvancedChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=8000)
     history: list[AdvancedChatTurn] = Field(default_factory=list)
     conversation_id: str | None = None
+    client_request_id: str | None = Field(default=None, max_length=80)
 
 
 @router.post("/chat")

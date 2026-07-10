@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
 
-const WEB_BUILD = "2026-07-06-oauth-api-url-fix";
+const WEB_BUILD = "fix-chat-ttft-advanced-submit-v2";
 
 /** Diagnóstico BFF: comprueba que el web alcanza la API (sin auth). */
 export async function GET() {

@@ -232,7 +232,10 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       });
     };
 
+    let receivedTokens = false;
+
     const onChunk = (chunk: string) => {
+      receivedTokens = true;
       setStatusHint(null);
       setMessages((prev) => {
         const idx = streamTargetIndexRef.current;
@@ -254,29 +257,37 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       );
       applyResult(result);
     } catch (streamErr) {
-      try {
-        setStatusHint("Reintentando sin streaming…");
-        const fallback = await sendAdvancedChatMessage(text, historyBefore);
-        applyResult(fallback);
-      } catch (err) {
-        setMessages((prev) => {
-          const idx = streamTargetIndexRef.current;
-          if (idx != null && idx >= 0 && idx < prev.length) {
-            const target = prev[idx];
-            if (target?.role === "assistant" && target.content.trim()) {
-              return prev;
+      if (!receivedTokens) {
+        try {
+          setStatusHint("Reintentando sin streaming…");
+          const fallback = await sendAdvancedChatMessage(text, historyBefore);
+          applyResult(fallback);
+        } catch (err) {
+          setMessages((prev) => {
+            const idx = streamTargetIndexRef.current;
+            if (idx != null && idx >= 0 && idx < prev.length) {
+              const target = prev[idx];
+              if (target?.role === "assistant" && target.content.trim()) {
+                return prev;
+              }
             }
-          }
-          return prev.filter(
-            (m, i) => i !== streamTargetIndexRef.current || m.content.trim() !== "",
+            return prev.filter(
+              (m, i) => i !== streamTargetIndexRef.current || m.content.trim() !== "",
+            );
+          });
+          setError(
+            err instanceof Error
+              ? err.message
+              : streamErr instanceof Error
+                ? streamErr.message
+                : "Error al analizar.",
           );
-        });
+        }
+      } else {
         setError(
-          err instanceof Error
-            ? err.message
-            : streamErr instanceof Error
-              ? streamErr.message
-              : "Error al analizar.",
+          streamErr instanceof Error
+            ? streamErr.message
+            : "Error al analizar.",
         );
       }
     } finally {

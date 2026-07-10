@@ -25,8 +25,9 @@ Siempre responde conversacionalmente, con empatía, en contexto modular."""
 
 _DEFAULT_TIMEOUT_SEC = 120.0
 _CHAT_TIMEOUT_SEC = 8.0
-_HEALTH_TIMEOUT_SEC = 15.0
+_HEALTH_TIMEOUT_SEC = 3.0
 _MODEL_READY_CACHE_TTL_SEC = 15.0
+_CHAT_HEALTH_TIMEOUT_SEC = 2.0
 
 _model_ready_cache: tuple[float, bool] | None = None
 
@@ -116,7 +117,7 @@ def llama_health_diagnostics() -> dict[str, Any]:
     return result
 
 
-def llama_model_ready(*, force_refresh: bool = False) -> bool:
+def llama_model_ready(*, force_refresh: bool = False, timeout_sec: float | None = None) -> bool:
     """True si Ollama tiene el modelo configurado (no solo el daemon)."""
     global _model_ready_cache
     import time
@@ -124,18 +125,46 @@ def llama_model_ready(*, force_refresh: bool = False) -> bool:
     now = time.monotonic()
     if (
         not force_refresh
+        and timeout_sec is None
         and _model_ready_cache is not None
         and now - _model_ready_cache[0] < _MODEL_READY_CACHE_TTL_SEC
     ):
         return _model_ready_cache[1]
-    ready = bool(llama_health_diagnostics().get("model_ready"))
-    _model_ready_cache = (now, ready)
+    probe_timeout = timeout_sec if timeout_sec is not None else _HEALTH_TIMEOUT_SEC
+    ready = bool(_llama_health_model_ready(timeout_sec=probe_timeout))
+    if timeout_sec is None:
+        _model_ready_cache = (now, ready)
     return ready
 
 
-def should_route_to_llama() -> bool:
+def _llama_health_model_ready(*, timeout_sec: float) -> bool:
+    url = _tags_url()
+    try:
+        with httpx.Client(timeout=timeout_sec) as client:
+            response = client.get(url)
+        if response.status_code != 200:
+            return False
+        data = response.json()
+        models = data.get("models") or []
+        names = [
+            str(m.get("name") or "")
+            for m in models
+            if isinstance(m, dict) and m.get("name")
+        ]
+        target = llama_model()
+        return target in names or any(target.split(":")[0] in n for n in names)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[LLAMA] health check failed url=%s err=%s", url, exc)
+        return False
+
+
+def should_route_to_llama(*, fast_probe: bool = False) -> bool:
     """Usar Llama solo si está configurado Y el modelo está listo."""
-    return use_llama() and llama_model_ready()
+    if not use_llama():
+        return False
+    if fast_probe:
+        return llama_model_ready(timeout_sec=_CHAT_HEALTH_TIMEOUT_SEC)
+    return llama_model_ready()
 
 
 def llama_available() -> bool:

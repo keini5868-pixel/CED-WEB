@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
+import time
 from typing import Any, Iterator
 
 import httpx
@@ -109,6 +111,10 @@ _GREETING_ONLY = re.compile(
     r"buenas?\s*noches?|qu[eé]\s*tal|saludos)[\s!.?👋😊]*$",
     re.I,
 )
+
+_ADVANCED_DEDUP_TTL_SEC = 45.0
+_advanced_dup_lock = threading.Lock()
+_advanced_dup_cache: dict[tuple[str, str], tuple[float, dict[str, Any]]] = {}
 
 _WELCOME_MARKERS = (
     "modo avanzado activo",
@@ -303,12 +309,37 @@ def _sse_flush() -> str:
     return ": flush\n\n"
 
 
+def _advanced_dup_lookup(user_id: str, text: str) -> dict[str, Any] | None:
+    key = (user_id, text.strip().lower())
+    now = time.monotonic()
+    with _advanced_dup_lock:
+        entry = _advanced_dup_cache.get(key)
+        if entry and now - entry[0] < _ADVANCED_DEDUP_TTL_SEC:
+            return entry[1]
+    return None
+
+
+def _advanced_dup_remember(user_id: str, text: str, payload: dict[str, Any]) -> None:
+    key = (user_id, text.strip().lower())
+    with _advanced_dup_lock:
+        _advanced_dup_cache[key] = (time.monotonic(), payload)
+
+
 def _yield_done_with_text(result: dict[str, Any]) -> Iterator[str]:
     response = str(result.get("response") or "").strip()
     if response:
         yield _sse_event("token", {"text": response})
         yield _sse_flush()
     yield _sse_event("done", result)
+
+
+def _yield_done_cached(
+    user_id: str,
+    text: str,
+    result: dict[str, Any],
+) -> Iterator[str]:
+    _advanced_dup_remember(user_id, text, result)
+    yield from _yield_done_with_text(result)
 
 
 def _finish_payload(
@@ -613,12 +644,23 @@ def iter_advanced_message_stream(
         history=history,
     )
     if instant:
-        yield _sse_event("token", {"text": instant})
-        yield _sse_flush()
-        yield _sse_event("done", _finish_payload(
+        payload = _finish_payload(
             response=instant,
             model=ADVANCED_STREAM_MODEL_LABEL,
-        ))
+        )
+        _advanced_dup_remember(user_id, text, payload)
+        yield _sse_event("token", {"text": instant})
+        yield _sse_flush()
+        yield _sse_event("done", payload)
+        return
+
+    cached = _advanced_dup_lookup(user_id, text)
+    if cached:
+        response = str(cached.get("response") or "").strip()
+        if response:
+            yield _sse_event("token", {"text": response})
+            yield _sse_flush()
+        yield _sse_event("done", cached)
         return
 
     yield _sse_event("status", {"text": "Preparando análisis…"})
@@ -647,11 +689,7 @@ def iter_advanced_message_stream(
                 response=fallback,
                 model=ADVANCED_STREAM_MODEL_LABEL,
             )
-        response_text = str(result.get("response") or "").strip()
-        if response_text:
-            yield _sse_event("token", {"text": response_text})
-            yield _sse_flush()
-        yield _sse_event("done", result)
+        yield from _yield_done_cached(user_id, text, result)
         return
 
     normalized = _history_for_stream(history)
@@ -722,7 +760,7 @@ def iter_advanced_message_stream(
             history=history,
             conversation_id=conv_id,
         )
-        yield from _yield_done_with_text(result)
+        yield from _yield_done_cached(user_id, text, result)
         return
 
     reply = _recover_advanced_reply(
@@ -750,11 +788,13 @@ def iter_advanced_message_stream(
             history=history,
             conversation_id=conv_id,
         )
-        yield from _yield_done_with_text(result)
+        yield from _yield_done_cached(user_id, text, result)
         return
 
-    yield from _yield_done_with_text(
-        _finish_payload(response=reply, model=stream_label)
+    yield from _yield_done_cached(
+        user_id,
+        text,
+        _finish_payload(response=reply, model=stream_label),
     )
 
 

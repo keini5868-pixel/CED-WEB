@@ -2721,7 +2721,7 @@ def _gemini_simple_reply_stream(
         use_llama,
     )
 
-    if allow_llama and use_llama() and should_route_to_llama():
+    if allow_llama and use_llama() and should_route_to_llama(fast_probe=True):
         started = time.monotonic()
         try:
             for piece in iter_llama_chat_stream(
@@ -2879,9 +2879,9 @@ def iter_send_message_stream(
     google_key = settings.google_api_key.strip()
     anthropic_key = settings.anthropic_api_key.strip()
     gemini_model = _gemini_chat_model()
-    from app.services.llama_service import should_route_to_llama, use_llama
+    from app.services.llama_service import use_llama
 
-    if not google_key and not anthropic_key and not (use_llama() and should_route_to_llama()):
+    if not google_key and not anthropic_key and not use_llama():
         raise TextChatError(
             "Servicio de chat no disponible. Configura GOOGLE_API_KEY o ANTHROPIC_API_KEY en Railway.",
             http_status=503,
@@ -2922,21 +2922,28 @@ def iter_send_message_stream(
                 http_status=429,
             )
 
-    supabase_db.append_message(
-        conversation_id,
-        user_id,
-        "user",
-        text,
-        session_id=conversation_id,
-        channel="text",
-    )
-    _bump_stream_usage_cache(user_id)
-    _perf("db_ready")
+    user_message_persisted = False
+
+    def _persist_user_message() -> None:
+        nonlocal user_message_persisted
+        if user_message_persisted:
+            return
+        supabase_db.append_message(
+            conversation_id,
+            user_id,
+            "user",
+            text,
+            session_id=conversation_id,
+            channel="text",
+        )
+        _bump_stream_usage_cache(user_id)
+        user_message_persisted = True
 
     from app.services.system_clock import try_instant_datetime_reply
 
     dt_instant = try_instant_datetime_reply(text, history=history)
     if dt_instant:
+        _persist_user_message()
         reply = _finalize_chat_reply(dt_instant)
         yield _sse_event("token", {"text": reply})
         supabase_db.append_message(
@@ -2960,6 +2967,7 @@ def iter_send_message_stream(
 
     route = _stream_memory_route(user_id, text)
     if route.intent in ("memory_save", "memory_recall") and route.speakable:
+        _persist_user_message()
         reply = _finalize_chat_reply(route.speakable)
         supabase_db.append_message(
             conversation_id,
@@ -2996,13 +3004,19 @@ def iter_send_message_stream(
     try:
         from app.services.stream_delta import stream_piece_delta
 
+        # Cloud-first cuando hay Gemini: evita health-check Ollama (~15s) y TTFT lento.
+        allow_llama = not bool(google_key)
         for piece in _gemini_simple_reply_stream(
             api_key=google_key,
             model=gemini_model,
             system=system,
             messages=messages,
             max_tokens=token_budget,
+            allow_llama=allow_llama,
         ):
+            if not user_message_persisted:
+                _persist_user_message()
+                _perf("first_token")
             delta = stream_piece_delta(stream_buf, piece)
             if not delta:
                 continue
@@ -3065,6 +3079,7 @@ def iter_send_message_stream(
         )
     reply = _finalize_chat_reply(reply)
 
+    _persist_user_message()
     supabase_db.append_message(
         conversation_id,
         user_id,

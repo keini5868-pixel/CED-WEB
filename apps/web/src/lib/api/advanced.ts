@@ -32,6 +32,12 @@ const ADVANCED_TIMEOUT_MS = 300_000;
 // Corta el stream si no llegan datos en este tiempo (evita spinner infinito).
 const ADVANCED_STREAM_STALL_MS = 45_000;
 
+let advancedStreamInFlight = false;
+
+function releaseAdvancedStreamLock() {
+  advancedStreamInFlight = false;
+}
+
 export async function fetchAdvancedChatStatus(): Promise<AdvancedChatStatus | null> {
   try {
     const res = await proxyFetchAuthed("advanced/status");
@@ -48,6 +54,15 @@ export async function sendAdvancedChatMessageStream(
   onToken: (chunk: string) => void,
   onStatus?: (text: string) => void,
 ): Promise<AdvancedChatResult> {
+  if (advancedStreamInFlight) {
+    throw new Error("Ya hay un mensaje en proceso en modo avanzado.");
+  }
+  advancedStreamInFlight = true;
+  const clientRequestId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `adv-${Date.now()}`;
+
   const controller = new AbortController();
   let stalled = false;
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
@@ -73,6 +88,7 @@ export async function sendAdvancedChatMessageStream(
       headers,
       body: JSON.stringify({
         message,
+        client_request_id: clientRequestId,
         history: history
           .filter((m) => {
             if (m.role !== "user" && m.role !== "assistant") return false;
@@ -88,6 +104,7 @@ export async function sendAdvancedChatMessageStream(
   } catch (err) {
     clearStall();
     clearTimeout(hardTimeout);
+    releaseAdvancedStreamLock();
     if (stalled) {
       throw new Error("El asistente tardó demasiado. Intenta de nuevo.");
     }
@@ -97,12 +114,14 @@ export async function sendAdvancedChatMessageStream(
   if (res.status === 404 || res.status === 405) {
     clearStall();
     clearTimeout(hardTimeout);
+    releaseAdvancedStreamLock();
     return sendAdvancedChatMessage(message, history);
   }
 
   if (!res.ok) {
     clearStall();
     clearTimeout(hardTimeout);
+    releaseAdvancedStreamLock();
     const data = await parseApiJson<{ detail?: string }>(res);
     throw new Error(data.detail || "No se pudo obtener respuesta de Claude.");
   }
@@ -110,6 +129,7 @@ export async function sendAdvancedChatMessageStream(
   if (!res.body) {
     clearStall();
     clearTimeout(hardTimeout);
+    releaseAdvancedStreamLock();
     throw new Error("Stream no disponible.");
   }
 
@@ -175,6 +195,7 @@ export async function sendAdvancedChatMessageStream(
   } catch (err) {
     clearStall();
     clearTimeout(hardTimeout);
+    releaseAdvancedStreamLock();
     if (stalled) {
       throw new Error("El asistente tardó demasiado. Intenta de nuevo.");
     }
@@ -182,6 +203,7 @@ export async function sendAdvancedChatMessageStream(
   } finally {
     clearStall();
     clearTimeout(hardTimeout);
+    releaseAdvancedStreamLock();
   }
 
   if (buffer.trim()) {

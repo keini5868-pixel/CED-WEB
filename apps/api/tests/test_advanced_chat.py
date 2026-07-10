@@ -142,6 +142,16 @@ def test_advanced_stream_greeting_hola_yields_token_immediately():
     assert "modo avanzado" in done["response"].lower()
 
 
+def test_advanced_stream_duplicate_hola_replays_cached():
+    events_first = list(adv.iter_advanced_message_stream("u1", message="hola", history=[]))
+    token_first = [e for e in events_first if e.startswith("event: token")]
+    assert token_first, "expected greeting token"
+
+    events_second = list(adv.iter_advanced_message_stream("u1", message="hola", history=[]))
+    token_second = [e for e in events_second if e.startswith("event: token")]
+    assert token_second, "duplicate should replay cached greeting"
+
+
 def test_advanced_stream_fallback_yields_token_before_done(monkeypatch):
     """Si el stream LLM falla, el fallback debe emitir token antes de done."""
 
