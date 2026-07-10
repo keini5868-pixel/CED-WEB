@@ -25,7 +25,7 @@ NUNCA llames tools por tu cuenta. NUNCA tomes decisiones sin confirmación.
 Siempre responde conversacionalmente, con empatía, en contexto modular."""
 
 _DEFAULT_TIMEOUT_SEC = 120.0
-_CHAT_TIMEOUT_SEC = 8.0
+_CHAT_TIMEOUT_SEC = 6.0
 _HEALTH_TIMEOUT_SEC = 3.0
 _MODEL_READY_CACHE_TTL_SEC = 15.0
 _CHAT_HEALTH_TIMEOUT_SEC = 2.0
