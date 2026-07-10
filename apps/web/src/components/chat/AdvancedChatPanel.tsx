@@ -247,18 +247,24 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       pdf?: ChatPdfAttachment | null;
       image?: ChatImageAttachment | null;
     }) => {
+      const idx = assistantIndex;
       setModelLabel(result.model.replace("claude-", "Claude ").replace(/-/g, " "));
+      setStatusHint(null);
       setMessages((prev) => {
-        const idx = streamTargetIndexRef.current;
-        if (idx == null || idx < 0 || idx >= prev.length) return prev;
-        const next = [...prev];
-        const target = next[idx];
+        if (idx < 0 || idx >= prev.length) return prev;
+        const target = prev[idx];
         if (!target || target.role !== "assistant") return prev;
+        const next = [...prev];
         next[idx] = {
           ...target,
           content: stripPdfLinks(result.response),
           pdf: result.pdf ?? null,
-          image: result.image ?? null,
+          image: result.image?.url
+            ? {
+                ...result.image,
+                url: normalizeCedMediaUrl(result.image.url),
+              }
+            : null,
         };
         return next;
       });
@@ -269,9 +275,9 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     const onChunk = (chunk: string) => {
       receivedTokens = true;
       setStatusHint(null);
+      const idx = assistantIndex;
       setMessages((prev) => {
-        const idx = streamTargetIndexRef.current;
-        if (idx == null || idx < 0 || idx >= prev.length) return prev;
+        if (idx < 0 || idx >= prev.length) return prev;
         const next = [...prev];
         const target = next[idx];
         if (!target || target.role !== "assistant") return prev;
@@ -306,17 +312,15 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
           const fallback = await sendAdvancedChatMessage(text, historyBefore);
           applyResult(fallback);
         } catch (err) {
+          const idx = assistantIndex;
           setMessages((prev) => {
-            const idx = streamTargetIndexRef.current;
-            if (idx != null && idx >= 0 && idx < prev.length) {
+            if (idx >= 0 && idx < prev.length) {
               const target = prev[idx];
-              if (target?.role === "assistant" && target.content.trim()) {
+              if (target?.role === "assistant" && (target.content.trim() || target.image?.url)) {
                 return prev;
               }
             }
-            return prev.filter(
-              (m, i) => i !== streamTargetIndexRef.current || m.content.trim() !== "",
-            );
+            return prev.filter((m, i) => i !== idx || m.content.trim() !== "");
           });
           setError(
             err instanceof Error
@@ -408,6 +412,8 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
               >
                 {displayContent ? (
                   <p className="whitespace-pre-wrap">{displayContent}</p>
+                ) : isActiveStreamBubble && statusHint ? (
+                  <p className="animate-pulse text-violet-300/90">{statusHint}</p>
                 ) : null}
                 {userImagePreview ? <UserImagePreview preview={userImagePreview} /> : null}
                 {msg.pdf?.file_id ? <PdfDownloadButton pdf={msg.pdf} /> : null}

@@ -212,8 +212,16 @@ export async function sendAdvancedChatMessageStream(
   }
 
   const payload = finalPayload as AdvancedChatResult | null;
-  if (payload?.response?.trim()) {
-    return payload;
+  if (payload) {
+    const response = (payload.response?.trim() || streamedText.trim());
+    if (response || payload.image?.url || payload.pdf?.file_id) {
+      return {
+        response: response || "Listo, señor.",
+        model: payload.model ?? "claude-sonnet-4-6",
+        pdf: payload.pdf ?? null,
+        image: payload.image ?? null,
+      };
+    }
   }
   if (streamedText.trim()) {
     return {
