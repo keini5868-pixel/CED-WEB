@@ -30,7 +30,7 @@ export const ADVANCED_DEFAULT_WELCOME =
 
 const ADVANCED_TIMEOUT_MS = 300_000;
 // Corta el stream si no llegan datos en este tiempo (evita spinner infinito).
-const ADVANCED_STREAM_STALL_MS = 45_000;
+const ADVANCED_STREAM_STALL_MS = 120_000;
 
 let advancedStreamInFlight = false;
 
@@ -196,6 +196,14 @@ export async function sendAdvancedChatMessageStream(
     clearStall();
     clearTimeout(hardTimeout);
     releaseAdvancedStreamLock();
+    if (stalled && streamedText.trim()) {
+      return {
+        response: streamedText.trim(),
+        model: finalPayload?.model ?? "claude-sonnet-4-6",
+        pdf: finalPayload?.pdf ?? null,
+        image: finalPayload?.image ?? null,
+      };
+    }
     if (stalled) {
       throw new Error("El asistente tardó demasiado. Intenta de nuevo.");
     }

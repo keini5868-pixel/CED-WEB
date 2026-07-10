@@ -31,7 +31,7 @@ export const FINANCE_DEFAULT_WELCOME =
 
 const FINANCE_TIMEOUT_MS = 300_000;
 // Corta el stream si no llegan datos en este tiempo (evita spinner infinito).
-const FINANCE_STREAM_STALL_MS = 45_000;
+const FINANCE_STREAM_STALL_MS = 120_000;
 const FINANCE_FALLBACK_MODEL = "ced-finance";
 
 export async function fetchFinanceChatStatus(): Promise<FinanceChatStatus | null> {
@@ -180,6 +180,13 @@ export async function sendFinanceChatMessageStream(
   } catch (err) {
     clearStall();
     clearTimeout(hardTimeout);
+    if (stalled && streamedText.trim()) {
+      return {
+        response: streamedText.trim(),
+        model: finalPayload?.model ?? FINANCE_FALLBACK_MODEL,
+        pdf: finalPayload?.pdf ?? null,
+      };
+    }
     if (stalled) {
       throw new Error("El asistente tardó demasiado. Intenta de nuevo.");
     }

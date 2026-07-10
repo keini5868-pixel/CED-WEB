@@ -704,6 +704,7 @@ def iter_advanced_message_stream(
     try:
         from app.services.stream_delta import stream_piece_delta
 
+        logger.info("[ADVANCED] stream start user=%s", user_id[:8])
         # Chat Avanzado: Claude primero (rápido); Gemini como respaldo.
         if anthropic_key and not _needs_sonnet_stream(text):
             for piece, model_label in _iter_anthropic_text_stream(
@@ -774,13 +775,8 @@ def iter_advanced_message_stream(
         yield from _yield_done_cached(user_id, text, result)
         return
 
-    reply = _recover_advanced_reply(
-        user_id,
-        "".join(accumulated).strip(),
-        text=text,
-        history=history,
-        conversation_id=conv_id,
-    )
+    # No bloquear el cierre SSE con recovery pesado (send_advanced_message).
+    reply = _finalize_chat_reply("".join(accumulated).strip())
     if not reply:
         from app.services.cloud_llm_fallback import chat_cloud_reply
 

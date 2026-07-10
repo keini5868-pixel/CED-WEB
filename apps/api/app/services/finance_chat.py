@@ -163,6 +163,50 @@ def _yield_done_with_text(result: dict[str, Any]) -> Iterator[str]:
     yield _sse_event("done", result)
 
 
+def _iter_finance_model_stream(
+    *,
+    anthropic_key: str,
+    google_key: str,
+    system: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    user_text: str,
+) -> Iterator[tuple[str, str]]:
+    """Finanzas: Claude primero (sin Llama) para TTFT estable bajo concurrencia."""
+    from app.services.claude_advanced import _iter_anthropic_text_stream
+
+    if anthropic_key:
+        logger.info("[FINANCE] stream claude-first")
+        for piece, model_label in _iter_anthropic_text_stream(
+            api_key=anthropic_key,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            user_text=user_text,
+        ):
+            if piece:
+                yield piece, model_label
+        return
+
+    stream_api_key = ""
+    if google_key:
+        logger.warning("[FINANCE] Sin Claude — stream Gemini degradado")
+        stream_api_key = google_key
+    else:
+        raise TextChatError("Sin proveedor LLM para finanzas.", http_status=503)
+
+    for piece in _gemini_simple_reply_stream(
+        api_key=stream_api_key,
+        model=_gemini_chat_model(),
+        system=system,
+        messages=messages,
+        max_tokens=max_tokens,
+        allow_llama=False,
+    ):
+        if piece:
+            yield piece, _stream_model_label()
+
+
 def _finance_llm_reply(
     user_id: str,
     *,
@@ -179,26 +223,15 @@ def _finance_llm_reply(
     accumulated: list[str] = []
     stream_label = _stream_model_label()
 
-    from app.services.llama_service import use_llama
-
-    stream_api_key = ""
-    if not use_llama() and not anthropic_key:
-        if google_key:
-            logger.warning("[FINANCE] Sin Claude — stream Gemini degradado")
-            stream_api_key = google_key
-        else:
-            raise TextChatError(
-                "Sin proveedor LLM para finanzas.",
-                http_status=503,
-            )
-
-    for piece in _gemini_simple_reply_stream(
-        api_key=stream_api_key,
-        model=_gemini_chat_model(),
+    for piece, model_label in _iter_finance_model_stream(
+        anthropic_key=anthropic_key,
+        google_key=google_key,
         system=system,
         messages=stream_messages,
         max_tokens=max_tokens,
+        user_text=text,
     ):
+        stream_label = model_label
         accumulated.append(piece)
 
     reply = _finalize_chat_reply("".join(accumulated).strip())
@@ -449,27 +482,18 @@ def iter_finance_message_stream(
     stream_buf = ""
     stream_label = _stream_model_label()
     try:
-        from app.services.llama_service import use_llama
         from app.services.stream_delta import stream_piece_delta
 
-        stream_api_key = ""
-        if not use_llama() and not anthropic_key:
-            if google_key:
-                logger.warning("[FINANCE] Sin Claude — stream Gemini degradado")
-                stream_api_key = google_key
-            else:
-                raise TextChatError(
-                    "Sin proveedor LLM para finanzas.",
-                    http_status=503,
-                )
-
-        for piece in _gemini_simple_reply_stream(
-            api_key=stream_api_key,
-            model=_gemini_chat_model(),
+        logger.info("[FINANCE] stream start user=%s", user_id[:8])
+        for piece, model_label in _iter_finance_model_stream(
+            anthropic_key=anthropic_key,
+            google_key=google_key,
             system=system,
             messages=stream_messages,
             max_tokens=max_tokens,
+            user_text=text,
         ):
+            stream_label = model_label
             delta = stream_piece_delta(stream_buf, piece)
             if not delta:
                 continue
