@@ -10,9 +10,8 @@ from typing import Any, Iterator
 from app.modules.finance_module import (
     handle_finance_query_sync,
     is_finance_pending_query,
-    is_finance_pending_write,
     is_finance_query_intent,
-    is_finance_write_intent,
+    is_finance_register_intent,
 )
 from app.services.claude_advanced import (
     _ensure_llm_providers,
@@ -287,11 +286,7 @@ def send_finance_message(
         return _finish_payload(response=instant_query, model=_stream_model_label())
 
     # Registro directo y determinista de un movimiento o pago pendiente.
-    if (
-        is_finance_write_intent(text)
-        or is_finance_pending_write(text)
-        or is_finance_pending_query(text)
-    ):
+    if is_finance_register_intent(text) or is_finance_pending_query(text):
         return _register_movement(user_id, text)
 
     anthropic_key, google_key = _ensure_llm_providers(needs_anthropic=False)
@@ -392,11 +387,7 @@ def iter_finance_message_stream(
     yield _sse_event("status", {"text": "Preparando respuesta…"})
     yield _sse_flush()
 
-    if (
-        is_finance_write_intent(text)
-        or is_finance_pending_write(text)
-        or is_finance_pending_query(text)
-    ):
+    if is_finance_register_intent(text) or is_finance_pending_query(text):
         payload = _register_movement(user_id, text)
         yield _sse_event("token", {"text": payload["response"]})
         yield _sse_event("done", payload)

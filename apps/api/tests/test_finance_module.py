@@ -101,6 +101,42 @@ def test_pending_write_intent():
     assert not is_finance_pending_write("gasté 50 en materiales")
 
 
+def test_future_write_guardar_gasto_manana():
+    from app.modules.finance_module import is_finance_future_write, is_finance_register_intent
+
+    text = "quiero guardar un gasto para el día de mañana de 300 dólares"
+    assert is_finance_future_write(text)
+    assert is_finance_register_intent(text)
+    rows = parse_pending_statements(text)
+    assert rows and rows[0]["amount"] == "300"
+    assert rows[0]["due_date"]
+
+
+def test_handle_future_write_saves_pending(monkeypatch):
+    import app.modules.finance_module as fm
+
+    captured: list[dict] = []
+
+    def fake_save(user_id, **kwargs):
+        captured.append(kwargs)
+        return {
+            "ok": True,
+            "amount": kwargs["amount"],
+            "status": kwargs.get("status"),
+            "due_date": kwargs.get("due_date"),
+        }
+
+    monkeypatch.setattr(fm, "save_transaction", fake_save)
+    out = fm.handle_finance_query_sync(
+        "u1",
+        "quiero guardar un gasto para el día de mañana de 300 dólares",
+    )
+    assert len(captured) == 1
+    assert captured[0]["status"] == "pendiente"
+    assert captured[0]["due_date"]
+    assert "pendiente" in out["spoken"].lower()
+
+
 def test_pending_query_intent():
     assert is_finance_pending_query("qué tengo que pagar")
     assert is_finance_pending_query("cuánto debo")

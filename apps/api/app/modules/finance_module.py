@@ -80,6 +80,16 @@ _PENDING_TRIGGER = re.compile(
     r"pago\s+pendiente|pagos?\s+pendientes?|por\s+pagar|dejar?\s+programad)\b",
     re.I,
 )
+_SCHEDULED_GASTO = re.compile(
+    r"\b(?:guardar|registrar|anotar|programar|dejar)\s+(?:un\s+)?(?:gasto|pago)\b",
+    re.I,
+)
+_FUTURE_SCHEDULE_HINT = re.compile(
+    r"\b(?:para\s+(?:el\s+)?(?:d[ií]a\s+de\s+)?(?:ma[nñ]ana|pasado\s+ma[nñ]ana|"
+    r"lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|"
+    r"la\s+pr[oó]xima\s+semana|el\s+pr[oó]ximo))\b",
+    re.I,
+)
 # Categorías que en realidad son expresiones de tiempo (no una categoría real).
 _TEMPORAL_CATEGORY = re.compile(
     r"^(?:d[íi]a|semana|mes|a[ñn]o|pr[óo]xim[oa]|que\s+viene|siguiente|"
@@ -154,11 +164,32 @@ def is_finance_pending_write(text: str) -> bool:
     return bool(_PENDING_TRIGGER.search(t)) and bool(_AMOUNT_RE.search(t))
 
 
-def is_finance_intent(text: str) -> bool:
+def is_finance_future_write(text: str) -> bool:
+    """Gasto/pago programado a futuro sin verbo 'gasté' ni 'tengo que pagar'."""
+    t = (text or "").strip()
+    if len(t) < 8 or not _AMOUNT_RE.search(t):
+        return False
+    if is_finance_pending_write(t) or is_finance_write_intent(t):
+        return False
+    rows = parse_pending_statements(t)
+    if not rows or not any(r.get("due_date") for r in rows):
+        return False
+    return bool(_SCHEDULED_GASTO.search(t) or _FUTURE_SCHEDULE_HINT.search(t))
+
+
+def is_finance_register_intent(text: str) -> bool:
+    """True si el usuario pide registrar un movimiento (inmediato o futuro)."""
     return (
         is_finance_write_intent(text)
-        or is_finance_query_intent(text)
         or is_finance_pending_write(text)
+        or is_finance_future_write(text)
+    )
+
+
+def is_finance_intent(text: str) -> bool:
+    return (
+        is_finance_register_intent(text)
+        or is_finance_query_intent(text)
         or is_finance_pending_query(text)
     )
 
@@ -195,10 +226,15 @@ def parse_pending_statements(text: str) -> list[dict[str, object]]:
         if cat_match:
             cat = _TIME_TAIL_RE.sub("", cat_match.group(1)).strip(" .,")
             cat = _DAY_TOKEN.sub("", cat).strip(" .,")
+            cat = _AMOUNT_RE.sub("", cat).strip(" .,")
             cat = re.sub(r"\s+", " ", cat).strip(" .,")
             # Descarta "categorías" que son solo expresiones de tiempo
-            # (ej. "día de la semana que viene") — no son una categoría real.
-            if 2 <= len(cat) <= 60 and not _TEMPORAL_CATEGORY.match(cat):
+            # (ej. "día de mañana", "día de la semana que viene").
+            if (
+                2 <= len(cat) <= 60
+                and not _TEMPORAL_CATEGORY.match(cat)
+                and not re.search(r"\b(d[ií]a\s+de|dolares?|usd)\b", cat, re.I)
+            ):
                 category = cat
         results.append(
             {
@@ -316,7 +352,7 @@ def handle_finance_query_sync(user_id: str, text: str) -> dict[str, str]:
             rows = list_pending_payments(user_id)
             return {"spoken": format_pending_spoken(rows)}
 
-        if is_finance_pending_write(text):
+        if is_finance_pending_write(text) or is_finance_future_write(text):
             statements = parse_pending_statements(text)
             saved_list: list[dict[str, object]] = []
             for st in statements:

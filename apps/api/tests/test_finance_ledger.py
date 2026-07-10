@@ -91,9 +91,50 @@ def test_aggregate_ignores_bad_rows():
 
 
 def test_format_summary_spoken_empty():
-    summary = {"count": 0, "period_label": "este mes"}
+    summary = {"count": 0, "period_label": "este mes", "pending_count": 0}
     text = format_summary_spoken(summary)
     assert "no tengo movimientos" in text.lower()
+
+
+def test_format_summary_spoken_pending_only():
+    summary = {
+        "count": 0,
+        "period_label": "este mes",
+        "pending_count": 1,
+        "pending_gasto": 300.0,
+        "pending_rows": [
+            {"amount": 300, "currency": "USD", "due_date": "2026-07-10"},
+        ],
+    }
+    text = format_summary_spoken(summary)
+    assert "pendiente" in text.lower()
+    assert "300" in text
+    assert "no tiene gastos pagados" in text.lower()
+
+
+def test_list_pending_in_period_filters_by_due_date():
+    from app.services.finance_ledger import list_pending_in_period
+
+    rows = [
+        {"amount": 300, "due_date": "2026-07-10", "status": "pendiente"},
+        {"amount": 50, "due_date": "2026-08-01", "status": "pendiente"},
+    ]
+
+    def fake_list(user_id, limit=50):
+        return rows
+
+    import app.services.finance_ledger as fl
+
+    orig = fl.list_pending_payments
+    fl.list_pending_payments = fake_list
+    try:
+        since = date(2026, 7, 1)
+        until = date(2026, 7, 31)
+        filtered = list_pending_in_period("u1", since=since, until=until)
+        assert len(filtered) == 1
+        assert filtered[0]["amount"] == 300
+    finally:
+        fl.list_pending_payments = orig
 
 
 def test_format_summary_spoken_with_data():

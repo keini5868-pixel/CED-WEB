@@ -131,7 +131,11 @@ def _parse_occurred_on(raw: Any) -> date:
     return today
 
 
-def period_range(period: str | None) -> tuple[date | None, date | None]:
+def period_range(
+    period: str | None,
+    *,
+    through_month_end: bool = False,
+) -> tuple[date | None, date | None]:
     """Rango [desde, hasta] inclusivo para un período; (None, None) = todo."""
     key = (period or "mes").strip().lower()
     today = _today()
@@ -141,15 +145,23 @@ def period_range(period: str | None) -> tuple[date | None, date | None]:
         return today, today
     if key in ("semana", "week", "esta_semana"):
         start = today - timedelta(days=today.weekday())
-        return start, today
+        end = start + timedelta(days=6) if through_month_end else today
+        return start, end
     if key in ("mes_pasado", "last_month", "mes pasado"):
         first_this = today.replace(day=1)
         last_prev = first_this - timedelta(days=1)
         return last_prev.replace(day=1), last_prev
     if key in ("anio", "año", "year", "este_anio"):
-        return today.replace(month=1, day=1), today
+        end = today.replace(month=12, day=31) if through_month_end else today
+        return today.replace(month=1, day=1), end
     # default: este mes
-    return today.replace(day=1), today
+    since = today.replace(day=1)
+    if through_month_end:
+        next_month = (since.replace(day=28) + timedelta(days=4)).replace(day=1)
+        until = next_month - timedelta(days=1)
+    else:
+        until = today
+    return since, until
 
 
 def canonical_period(period: str | None) -> str:
@@ -369,13 +381,60 @@ def aggregate_transactions(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _parse_row_date(raw: Any) -> date | None:
+    if not raw:
+        return None
+    if isinstance(raw, date):
+        return raw
+    try:
+        return datetime.strptime(str(raw)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def list_pending_in_period(
+    user_id: str,
+    *,
+    since: date | None = None,
+    until: date | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Pagos pendientes cuya due_date cae dentro del rango (incluye fechas futuras del mes)."""
+    rows = list_pending_payments(user_id, limit=limit)
+    if since is None and until is None:
+        return rows
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        due = _parse_row_date(row.get("due_date") or row.get("occurred_on"))
+        if due is None:
+            continue
+        if since is not None and due < since:
+            continue
+        if until is not None and due > until:
+            continue
+        filtered.append(row)
+    return filtered
+
+
 def summarize_finances(user_id: str, *, period: str | None = "mes") -> dict[str, Any]:
     canon = canonical_period(period)
     since, until = period_range(canon)
+    _, until_pending = period_range(canon, through_month_end=True)
     rows = list_transactions(user_id, since=since, until=until, status="pagado", limit=500)
     summary = aggregate_transactions(rows)
+    pending_rows = list_pending_in_period(
+        user_id,
+        since=since,
+        until=until_pending,
+    )
+    pending_agg = aggregate_transactions(
+        [{"type": "gasto", **row} for row in pending_rows]
+    )
     summary["period"] = canon
     summary["period_label"] = PERIOD_LABELS.get(canon, "este mes")
+    summary["pending_count"] = len(pending_rows)
+    summary["pending_gasto"] = pending_agg.get("total_gasto", 0.0)
+    summary["pending_rows"] = pending_rows
     return summary
 
 
@@ -386,22 +445,48 @@ def _fmt_money(value: float, currency: str = "USD") -> str:
 def format_summary_spoken(summary: dict[str, Any], *, currency: str = "USD") -> str:
     """Resumen hablable/legible para voz o chat."""
     label = summary.get("period_label", "este mes")
-    if not summary.get("count"):
+    count = int(summary.get("count") or 0)
+    pending_count = int(summary.get("pending_count") or 0)
+    pending_gasto = float(summary.get("pending_gasto") or 0.0)
+    pending_rows = summary.get("pending_rows") or []
+
+    if not count and not pending_count:
         return (
             f"Señor, no tengo movimientos registrados para {label}. "
             "Dígame un gasto o ingreso y lo anoto."
         )
-    ingreso = _fmt_money(summary.get("total_ingreso", 0.0), currency)
-    gasto = _fmt_money(summary.get("total_gasto", 0.0), currency)
-    balance = summary.get("balance", 0.0)
-    balance_txt = _fmt_money(balance, currency)
-    estado = "a favor" if balance >= 0 else "en déficit"
-    parts = [
-        f"Señor, para {label}: ingresos {ingreso}, gastos {gasto}, "
-        f"balance {balance_txt} {estado}."
-    ]
-    top = summary.get("top_categories") or []
-    if top:
-        cats = ", ".join(f"{cat} {_fmt_money(amt, currency)}" for cat, amt in top[:3])
-        parts.append(f"Mayores gastos: {cats}.")
+
+    parts: list[str] = []
+
+    if count:
+        ingreso = _fmt_money(summary.get("total_ingreso", 0.0), currency)
+        gasto = _fmt_money(summary.get("total_gasto", 0.0), currency)
+        balance = summary.get("balance", 0.0)
+        balance_txt = _fmt_money(balance, currency)
+        estado = "a favor" if balance >= 0 else "en déficit"
+        parts.append(
+            f"Señor, para {label}: ingresos {ingreso}, gastos {gasto}, "
+            f"balance {balance_txt} {estado}."
+        )
+        top = summary.get("top_categories") or []
+        if top:
+            cats = ", ".join(f"{cat} {_fmt_money(amt, currency)}" for cat, amt in top[:3])
+            parts.append(f"Mayores gastos: {cats}.")
+    else:
+        parts.append(f"Señor, no tiene gastos pagados registrados para {label}.")
+
+    if pending_count:
+        pend_parts: list[str] = []
+        for row in pending_rows[:4]:
+            try:
+                amt = float(row.get("amount") or 0)
+            except (TypeError, ValueError):
+                amt = 0.0
+            pend_parts.append(f"{amt:,.2f} {currency} el {_fmt_due(row.get('due_date'))}")
+        pend_joined = "; ".join(pend_parts)
+        parts.append(
+            f"Tiene {pending_count} pago(s) pendiente(s) en {label} "
+            f"por {_fmt_money(pending_gasto, currency)}: {pend_joined}."
+        )
+
     return " ".join(parts)
