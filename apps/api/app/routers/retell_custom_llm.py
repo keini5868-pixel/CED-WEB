@@ -998,6 +998,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         user_text[:80],
                     )
                     reply = None
+                if not reply:
+                    from app.services.voice_casual import try_casual_empathy_fallback
+
+                    reply = try_casual_empathy_fallback(user_text)
                 if reply:
                     if await deliver_voice(reply):
                         logger.info(

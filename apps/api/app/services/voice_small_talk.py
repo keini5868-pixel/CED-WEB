@@ -45,6 +45,11 @@ def try_instant_small_talk_voice_reply(text: str) -> str | None:
         norm,
     ):
         return None
+
+    for pattern, reply in _TIME_GREETINGS:
+        if pattern.search(norm):
+            return reply
+
     if not is_small_talk(cleaned) and not re.search(r"como\s+estas?\b", norm):
         return None
 
@@ -53,10 +58,6 @@ def try_instant_small_talk_voice_reply(text: str) -> str | None:
         "hola como estas",
     }:
         return random.choice(_HOW_ARE_YOU_REPLIES)
-
-    for pattern, reply in _TIME_GREETINGS:
-        if pattern.search(norm):
-            return reply
 
     if norm in {"qué tal", "que tal"}:
         return random.choice(_WHATS_UP_REPLIES)

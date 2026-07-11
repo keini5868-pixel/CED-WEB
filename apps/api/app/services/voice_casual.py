@@ -137,6 +137,24 @@ def try_casual_empathy_fallback(user_text: str) -> str | None:
                 "De nada, señor. Para eso estoy.",
             ),
         ),
+        (
+            re.compile(r"\b(pel[ií]cula|serie|netflix|cine)\b", re.I),
+            (
+                "Qué lástima, señor; perder el tiempo con algo malo desanima. Mejor descanse un rato y retome con algo más ligero.",
+            ),
+        ),
+        (
+            re.compile(r"\b(caf[eé]|desayun|leche)\b", re.I),
+            (
+                "El café con leche es un clásico reconfortante, señor; a muchos les ayuda a arrancar la mañana con calma.",
+            ),
+        ),
+        (
+            re.compile(r"\b(buenos d[ií]as|buenas tardes|buenas noches)\b", re.I),
+            (
+                "Buenos días, señor. Estoy a su disposición.",
+            ),
+        ),
     )
     for pattern, replies in rules:
         if pattern.search(norm):

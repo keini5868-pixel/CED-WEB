@@ -365,6 +365,12 @@ class LlamaVoiceLlm:
         )
         safe, blocked = guard_voice_response(reply)
         if blocked or not safe:
+            empathy = try_casual_empathy_fallback(user_text)
+            if empathy:
+                safe, blocked = guard_voice_response(empathy)
+            else:
+                safe, blocked = guard_voice_response(FALLBACK_REPLY)
+        if blocked or not safe:
             logger.warning(
                 "[RETELL-LLAMA] casual guard blocked=%s call=%s preview=%s",
                 blocked,
