@@ -36,14 +36,66 @@ LLAMA_CASUAL_MAX_TOKENS = 140
 LLAMA_CASUAL_TEMPERATURE = 0.55
 LLAMA_CASUAL_TIMEOUT_SEC = 8.0
 LLAMA_VOICE_SAFETY_TIMEOUT_SEC = 25.0
+CASUAL_LLAMA_MAX_SYSTEM_CHARS = 1800
 
-CASUAL_VOICE_OVERLAY = """
-# CHARLA CASUAL RÁPIDA
-Responde en 1-2 oraciones completas, empática y directa.
-NO invoques herramientas. NO prometas buscar ni investigar.
-Si hay contexto interno CED en el prompt, úsalo en lenguaje natural sin leer etiquetas.
-Si no hay contexto interno, razona con naturalidad como asistente personal.
+CASUAL_LLAMA_SYSTEM_BASE = """
+Eres CED, asistente de voz personal del Castillo Evolución Digital.
+Tono formal y cercano — trata al usuario como "señor".
+
+Este turno es charla casual o desahogo personal. No hay herramientas, búsquedas web,
+módulos ni tareas en curso. Responde de inmediato.
+
+Instrucciones:
+- 1-2 oraciones completas, empáticas y directas.
+- Valida lo que comparte antes de aconsejar, si aplica.
+- PROHIBIDO frases de espera: "un momento", "permítame", "deme un segundo",
+  "voy a buscar", "consulto", "investigo" o variantes.
+- PROHIBIDO prometer acciones, tools, internet o invocar funciones.
+- PROHIBIDO "¿En qué puedo ayudarle?" u otras respuestas transaccionales vacías.
 """.strip()
+
+# Overlay legacy — preferir build_casual_llama_system() en Llama 3B.
+CASUAL_VOICE_OVERLAY = """
+Responde ya en 1-2 oraciones. Sin muletillas de espera ni herramientas.
+""".strip()
+
+
+def build_casual_llama_system(user_text: str = "") -> str:
+    """System prompt mínimo para Llama 3B en charla casual (~1K chars, sin tools/Gemini)."""
+    parts: list[str] = [CASUAL_LLAMA_SYSTEM_BASE]
+    query = (user_text or "").strip()
+    if query:
+        try:
+            from app.services.cognitive_intents import is_internal_knowledge_query
+            from app.services.internal_knowledge import format_hits_for_prompt, search_internal_knowledge
+
+            if is_internal_knowledge_query(query):
+                hits = search_internal_knowledge(query, limit=1)
+                if hits:
+                    block = format_hits_for_prompt(hits)
+                    parts.append(
+                        "Contexto interno CED (úsalo en lenguaje natural; "
+                        "no leas etiquetas ni el encabezado):\n"
+                        f"{block}"
+                    )
+        except Exception:  # noqa: BLE001
+            pass
+    try:
+        from app.services.system_clock import clock_context_block
+
+        clock = clock_context_block().strip()
+        if clock:
+            parts.append(clock)
+    except Exception:  # noqa: BLE001
+        pass
+    system = "\n\n".join(p for p in parts if p.strip())
+    if len(system) > CASUAL_LLAMA_MAX_SYSTEM_CHARS:
+        logger.warning(
+            "[RETELL-VOICE] casual system prompt largo chars=%s max=%s",
+            len(system),
+            CASUAL_LLAMA_MAX_SYSTEM_CHARS,
+        )
+    return system
 
 
 def is_casual_voice_turn(text: str, transcript: list[Utterance] | None = None) -> bool:

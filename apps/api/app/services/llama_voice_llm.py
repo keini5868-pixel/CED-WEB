@@ -202,7 +202,13 @@ class LlamaVoiceLlm:
             if isinstance(exc, LlamaNotReadyError):
                 logger.warning("[RETELL-LLAMA] modelo no listo call=%s", self._latency_call_id)
             else:
-                logger.exception("[RETELL-LLAMA] generate failed call=%s", self._latency_call_id)
+                logger.exception(
+                    "[RETELL-LLAMA] generate failed call=%s path=%s err=%s: %s",
+                    self._latency_call_id,
+                    path,
+                    type(exc).__name__,
+                    exc,
+                )
 
         if not allow_cloud_fallback:
             return FALLBACK_REPLY
@@ -263,10 +269,10 @@ class LlamaVoiceLlm:
     async def draft_conversational_response(self, request: ResponseRequiredRequest) -> str | None:
         user_text = merged_user_query(request.transcript) or ""
         from app.services.voice_casual import (
-            CASUAL_VOICE_OVERLAY,
             LLAMA_CASUAL_MAX_TOKENS,
             LLAMA_CASUAL_TEMPERATURE,
             LLAMA_CASUAL_TIMEOUT_SEC,
+            build_casual_llama_system,
             try_internal_knowledge_voice_reply,
         )
         from app.services.voice_small_talk import try_instant_small_talk_voice_reply
@@ -292,9 +298,11 @@ class LlamaVoiceLlm:
             )
             return kb_reply
 
-        system = self._build_system(
-            extra_overlay=f"{CONVERSATIONAL_TURN_OVERLAY}\n\n{CASUAL_VOICE_OVERLAY}",
-            user_text=user_text,
+        system = build_casual_llama_system(user_text)
+        logger.info(
+            "[RETELL-LLAMA] casual_system_chars=%s call=%s",
+            len(system),
+            self._latency_call_id,
         )
         messages = _utterances_to_messages(request.transcript)
         reply = await self._llama_reply(
@@ -309,14 +317,31 @@ class LlamaVoiceLlm:
             allow_cloud_fallback=False,
         )
         logger.info(
-            "[RETELL-LLAMA] casual source=llama call=%s text=%s",
+            "[RETELL-LLAMA] casual source=llama call=%s text=%s reply_chars=%s",
             self._latency_call_id,
             user_text[:60],
+            len(reply or ""),
         )
         safe, blocked = guard_voice_response(reply)
         if blocked or not safe:
+            logger.warning(
+                "[RETELL-LLAMA] casual guard blocked=%s call=%s preview=%s",
+                blocked,
+                self._latency_call_id,
+                (reply or "")[:80],
+            )
             return None
-        return finalize_voice_delivery_text(safe)
+        final = finalize_voice_delivery_text(safe)
+        if not final and safe.strip():
+            logger.warning(
+                "[RETELL-LLAMA] casual finalize emptied reply call=%s preview=%s",
+                self._latency_call_id,
+                safe[:80],
+            )
+            final = safe.strip()
+        if not final:
+            return None
+        return final
 
     async def generate_natural_reply(
         self,

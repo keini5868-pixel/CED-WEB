@@ -59,6 +59,17 @@ def test_user_reported_phrase_no_longer_blocked_as_task_query() -> None:
     assert not should_run_orchestrator(text)
 
 
+def test_casual_llama_system_is_minimal_without_tools() -> None:
+    from app.services.voice_casual import build_casual_llama_system
+
+    system = build_casual_llama_system("me siento cansado hoy")
+    assert len(system) < 1800
+    assert "FUNCTION CALLING" not in system
+    assert "Gemini" not in system
+    assert "search_web" not in system
+    assert "señor" in system.lower() or "senor" in system.lower()
+
+
 def test_internal_kb_concept_question_is_casual_voice_turn() -> None:
     text = "¿Qué es un embudo de ventas?"
     assert is_casual_voice_turn(text)
