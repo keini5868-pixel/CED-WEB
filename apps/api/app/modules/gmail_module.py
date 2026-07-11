@@ -354,7 +354,7 @@ class GmailModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._active = True
+        self._enter_active()
         return await self._run(user_id, user_text or transcript)
 
     async def handle_command(
@@ -366,6 +366,8 @@ class GmailModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if idle := self._guard_passive():
+            return idle
         text = user_text or transcript
         if is_gmail_intent(text) or is_gmail_followup_pick(text, user_id):
             return await self._run(user_id, text)

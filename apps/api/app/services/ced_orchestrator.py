@@ -13,6 +13,7 @@ from app.modules.gmail_module import is_gmail_followup_pick, is_gmail_intent
 from app.modules.base_module import BaseModule
 from app.modules.module_registry import MODULE_ACKS, MODULE_ORDER, MODULE_OVERLAYS, build_module
 from app.services.module_detector import detect_intent as _detect_intent_v2
+from app.services.voice_intent_gate import has_explicit_module_signal
 from app.services.module_memory import format_module_context, load_module_memory
 from app.services import voice_client_session as vcs
 from app.services.cognitive_intents import (
@@ -146,6 +147,19 @@ USE_V2_FRESH_DETECTION = True
 # se cancela, se cierra el módulo y se vuelve a conversación neutral con un
 # mensaje de error — nunca se queda pegado esperando indefinidamente.
 MODULE_CALL_TIMEOUT_SEC = 25.0
+
+# Mini agentes independientes — cargados en pasivo, activados solo por delegación explícita.
+MINI_AGENT_MODULES: tuple[str, ...] = (
+    "camera",
+    "publish",
+    "prospection",
+    "image_gen",
+    "pdf",
+    "map",
+    "calendar",
+    "gmail",
+    "finance",
+)
 
 # Mapea los nombres del detector v2 a los módulos que existen hoy en el registry.
 # weather/pollen/air_quality aún viven bajo "environment" (se separan en Fase 4).
@@ -417,6 +431,22 @@ class CedOrchestrator:
         self._module_states: dict[str, dict[str, Any]] = {}
         # Memoria modular cargada on-demand al activar (Fase 3). Se limpia al cerrar.
         self._module_memory: dict[str, str] = {}
+        self._passive_agents_ready = False
+
+    def _ensure_passive_agents(self) -> None:
+        """Pre-carga mini agentes en modo recepción pasivo (sin evaluar turnos)."""
+        if self._passive_agents_ready:
+            return
+        for name in MINI_AGENT_MODULES:
+            if name not in self._modules:
+                self._modules[name] = build_module(name)
+                self._module_states.setdefault(name, {})
+        self._passive_agents_ready = True
+        logger.info(
+            "[ORCH] passive mini-agents loaded call=%s count=%s",
+            self.call_id[:12],
+            len(MINI_AGENT_MODULES),
+        )
 
     def _get_module(self, name: str) -> BaseModule:
         if name not in self._modules:
@@ -472,6 +502,7 @@ class CedOrchestrator:
         self.active_module = name
         vcs.set_active_mode(user_id, name)
         module = self._get_module(name)
+        module._enter_active()
         # Memoria on-demand: solo la de ESTE módulo, al activarse.
         await self._load_module_memory(name, user_id)
         try:
@@ -562,6 +593,7 @@ class CedOrchestrator:
         call_id: str,
         user_id: str,
     ) -> OrchestratorResult:
+        self._ensure_passive_agents()
         if (
             self.active_module
             and is_topic_change(user_text)
@@ -655,6 +687,8 @@ class CedOrchestrator:
           del módulo activo (acks, confirmaciones, follow-ups que dependen del
           transcript, ej. "dale", "el primero"). Reversible con USE_V2_FRESH_DETECTION.
         """
+        if not self.active_module and not has_explicit_module_signal(user_text):
+            return None
         if USE_V2_FRESH_DETECTION:
             fresh = await asyncio.to_thread(detect_fresh_intent_v2, user_text)
             if fresh:

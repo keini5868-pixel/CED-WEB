@@ -23,7 +23,7 @@ class ImageGenModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._active = True
+        self._enter_active()
         self._state["activated"] = True
         return await self._generate(user_text, user_id)
 
@@ -36,6 +36,8 @@ class ImageGenModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if idle := self._guard_passive():
+            return idle
         return await self._generate(user_text, user_id)
 
     async def _generate(self, user_text: str, user_id: str) -> ModuleResult:

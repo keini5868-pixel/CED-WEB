@@ -38,7 +38,7 @@ class CameraModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._active = True
+        self._enter_active()
         vcs.set_active_mode(user_id, "camera")
 
         if is_camera_deactivation_intent(user_text):
@@ -68,6 +68,8 @@ class CameraModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if idle := self._guard_passive():
+            return idle
         if is_camera_deactivation_intent(user_text):
             return await self._deactivate_camera(user_id)
 

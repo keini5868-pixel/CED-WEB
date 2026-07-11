@@ -83,6 +83,7 @@ def test_gmail_module_reads_picked_email():
     )
 
     async def run():
+        module._enter_active()
         with patch(
             "app.modules.gmail_module.get_valid_access_token",
             return_value="token",

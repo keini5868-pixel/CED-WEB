@@ -46,7 +46,7 @@ class PublishModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._active = True
+        self._enter_active()
         comments = resolve_social_comments_request(user_text)
         if comments:
             return await self._read_comments(user_id, comments)
@@ -71,6 +71,8 @@ class PublishModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if idle := self._guard_passive():
+            return idle
         comments = resolve_social_comments_request(user_text)
         if comments:
             return await self._read_comments(user_id, comments)

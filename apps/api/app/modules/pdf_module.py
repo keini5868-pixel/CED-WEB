@@ -35,7 +35,7 @@ class PdfModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._active = True
+        self._enter_active()
         self._state = {"generating": False, "last_pdf_path": None}
         return await self._generate_pdf(
             user_text,
@@ -53,6 +53,8 @@ class PdfModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if idle := self._guard_passive():
+            return idle
         return await self._generate_pdf(
             user_text,
             user_id,

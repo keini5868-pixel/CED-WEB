@@ -49,7 +49,7 @@ class MapModule(BaseModule):
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
         vcs.set_active_mode(user_id, "map")
-        self._active = True
+        self._enter_active()
         self._state.update({"navigation_active": False})
 
         if resolve_open_map_request(user_text) and not resolve_navigation_place_search(
@@ -86,6 +86,8 @@ class MapModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if idle := self._guard_passive():
+            return idle
         nav_confirm = resolve_navigation_confirm(
             user_text, utterances or [], user_id=user_id
         )

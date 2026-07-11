@@ -23,7 +23,7 @@ class ProspectionModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._active = True
+        self._enter_active()
         vcs.set_active_mode(user_id, "prospect")
         self._state = {"campaign_active": True, "prospects_list": []}
         t = user_text.lower()
@@ -63,6 +63,8 @@ class ProspectionModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if idle := self._guard_passive():
+            return idle
         return await self.activate(
             transcript,
             user_id=user_id,

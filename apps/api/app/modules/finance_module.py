@@ -490,7 +490,7 @@ class FinanceModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        self._active = True
+        self._enter_active()
         return await self._run(user_id, user_text or transcript)
 
     async def handle_command(
@@ -502,6 +502,8 @@ class FinanceModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if idle := self._guard_passive():
+            return idle
         if is_finance_intent(user_text or transcript):
             return await self._run(user_id, user_text or transcript)
         return self._idle()
