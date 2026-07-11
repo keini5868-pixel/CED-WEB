@@ -4,7 +4,7 @@ set -e
 MODEL="${OLLAMA_MODEL:-llama2:13b}"
 VOICE_MODEL="${OLLAMA_VOICE_MODEL:-llama3.2:3b}"
 MODELS_DIR="${OLLAMA_MODELS:-/data}"
-export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-2}"
+export OLLAMA_NUM_PARALLEL="${OLLAMA_NUM_PARALLEL:-1}"
 export OLLAMA_MAX_LOADED_MODELS="${OLLAMA_MAX_LOADED_MODELS:-1}"
 
 mkdir -p "${MODELS_DIR}"
@@ -48,8 +48,15 @@ ensure_model() {
   fi
 }
 
-ensure_model "${MODEL}" "text/reasoning"
 ensure_model "${VOICE_MODEL}" "voice/conversational"
+ensure_model "${MODEL}" "text/reasoning"
+
+echo "[CED-Llama] Warming voice model ${VOICE_MODEL}..."
+if ollama run "${VOICE_MODEL}" "ok" >/dev/null 2>&1; then
+  echo "[CED-Llama] Voice model warm"
+else
+  echo "[CED-Llama] WARN: voice warm failed — first request may be slow"
+fi
 
 echo "[CED-Llama] Ready — listening on ${OLLAMA_HOST}"
 wait "${SERVE_PID}"

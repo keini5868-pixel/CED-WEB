@@ -378,6 +378,18 @@ def call_llama_voice_generate(
 
     attempts: list[tuple[str, str, dict[str, Any], Any]] = [
         (
+            "generate_inline",
+            _generate_url(),
+            {
+                "model": voice,
+                "prompt": inline_prompt,
+                "stream": False,
+                "keep_alive": "30m",
+                "options": options,
+            },
+            _parse_generate_response,
+        ),
+        (
             "generate_system",
             _generate_url(),
             {
@@ -385,48 +397,22 @@ def call_llama_voice_generate(
                 "prompt": prompt,
                 "system": sys_clean,
                 "stream": False,
-                "keep_alive": "5m",
+                "keep_alive": "30m",
                 "options": options,
             },
             _parse_generate_response,
-        ),
-        (
-            "generate_inline",
-            _generate_url(),
-            {
-                "model": voice,
-                "prompt": inline_prompt,
-                "stream": False,
-                "keep_alive": "5m",
-                "options": options,
-            },
-            _parse_generate_response,
-        ),
-        (
-            "chat",
-            _chat_url(),
-            {
-                "model": voice,
-                "messages": [
-                    {"role": "system", "content": sys_clean},
-                    {"role": "user", "content": prompt},
-                ],
-                "stream": False,
-                "keep_alive": "5m",
-                "options": options,
-            },
-            _parse_chat_response,
         ),
     ]
 
     last_exc: Exception | None = None
     last_body = ""
     started = time.monotonic()
+    per_attempt_timeout = max(timeout_sec, 16.0)
     for idx, (label, url, payload, parser) in enumerate(attempts):
         if idx > 0 and text_model != voice:
             _ollama_unload_model(text_model)
         try:
-            with httpx.Client(timeout=timeout_sec) as client:
+            with httpx.Client(timeout=per_attempt_timeout) as client:
                 response = client.post(url, json=payload)
                 if response.status_code >= 400:
                     last_body = (response.text or "")[:400]
@@ -451,6 +437,14 @@ def call_llama_voice_generate(
                 last_body,
             )
             continue
+        except httpx.TimeoutException as exc:
+            last_exc = exc
+            logger.warning(
+                "[LLAMA] voice_attempt_timeout model=%s strategy=%s",
+                voice,
+                label,
+            )
+            continue
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             logger.warning(
@@ -460,6 +454,28 @@ def call_llama_voice_generate(
                 exc,
             )
             continue
+
+    if text_model != voice and llama_model_ready(timeout_sec=2.0):
+        logger.warning("[LLAMA] voice_fallback_to_text_model=%s", text_model)
+        fallback_prompt = inline_prompt
+        fallback_payload = {
+            "model": text_model,
+            "prompt": fallback_prompt,
+            "stream": False,
+            "keep_alive": "5m",
+            "options": {"temperature": temperature, "num_predict": min(max_tokens, 100)},
+        }
+        try:
+            _ollama_unload_model(voice)
+            with httpx.Client(timeout=min(per_attempt_timeout + 4.0, 22.0)) as client:
+                response = client.post(_generate_url(), json=fallback_payload)
+                _raise_if_llama_http_error(response)
+                text = _parse_generate_response(response.json())
+            if text:
+                return text
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning("[LLAMA] voice_text_fallback_failed model=%s err=%s", text_model, exc)
 
     if last_exc:
         if last_body and isinstance(last_exc, httpx.HTTPStatusError):

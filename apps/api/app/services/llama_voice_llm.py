@@ -274,6 +274,7 @@ class LlamaVoiceLlm:
             LLAMA_CASUAL_MAX_TOKENS,
             LLAMA_CASUAL_TEMPERATURE,
             LLAMA_CASUAL_TIMEOUT_SEC,
+            LLAMA_VOICE_SAFETY_TIMEOUT_SEC,
             build_casual_llama_system,
             try_internal_knowledge_voice_reply,
         )
@@ -325,7 +326,7 @@ class LlamaVoiceLlm:
                     max_tokens=LLAMA_CASUAL_MAX_TOKENS,
                     timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,
                 ),
-                timeout=LLAMA_CASUAL_TIMEOUT_SEC,
+                timeout=LLAMA_VOICE_SAFETY_TIMEOUT_SEC,
             )
             if turn and (reply or "").strip():
                 turn.mark_llm_first_token()
