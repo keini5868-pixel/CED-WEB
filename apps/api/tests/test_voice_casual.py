@@ -133,15 +133,18 @@ def test_casual_llama_uses_low_token_budget(monkeypatch: pytest.MonkeyPatch) -> 
 
     assert captured.get("max_tokens") == LLAMA_CASUAL_MAX_TOKENS
     assert captured.get("temperature") == LLAMA_CASUAL_TEMPERATURE
-    assert captured.get("timeout_sec") == 18.0
+    assert captured.get("timeout_sec") == 10.0
 
 
-def test_voice_safety_timeout_is_25_seconds() -> None:
+def test_voice_safety_timeout_is_14_seconds() -> None:
     from app.services.llama_voice_llm import LLAMA_VOICE_TIMEOUT_SEC
     from app.services.voice_casual import LLAMA_VOICE_SAFETY_TIMEOUT_SEC
 
     assert LLAMA_VOICE_TIMEOUT_SEC == 25.0
-    assert LLAMA_VOICE_SAFETY_TIMEOUT_SEC == 25.0
+    assert LLAMA_VOICE_SAFETY_TIMEOUT_SEC == 14.0
+
+
+def test_casual_empathy_fallback_for_tired_phrase() -> None:
     from app.services.voice_casual import try_casual_empathy_fallback
 
     reply = try_casual_empathy_fallback(
@@ -158,8 +161,3 @@ def test_casual_empathy_fallback_for_sad_phrase() -> None:
     reply = try_casual_empathy_fallback("me siento un poco triste hoy")
     assert reply
     assert "señor" in reply.lower() or "senor" in reply.lower()
-    from app.services.llama_voice_llm import LLAMA_VOICE_TIMEOUT_SEC
-    from app.services.voice_casual import LLAMA_VOICE_SAFETY_TIMEOUT_SEC
-
-    assert LLAMA_VOICE_TIMEOUT_SEC == 25.0
-    assert LLAMA_VOICE_SAFETY_TIMEOUT_SEC == 25.0
