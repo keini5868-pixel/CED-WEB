@@ -169,6 +169,7 @@ class LlamaVoiceLlm:
         temperature: float = 0.7,
         max_tokens: int = 1024,
         http_timeout_sec: float | None = None,
+        num_ctx: int | None = None,
         allow_cloud_fallback: bool = True,
     ) -> str:
         turn = (
@@ -187,6 +188,7 @@ class LlamaVoiceLlm:
                     temperature=temperature,
                     max_tokens=max_tokens,
                     timeout_sec=http_timeout_sec,
+                    num_ctx=num_ctx,
                 ),
                 timeout=timeout,
             )
@@ -270,6 +272,7 @@ class LlamaVoiceLlm:
         user_text = merged_user_query(request.transcript) or ""
         from app.services.voice_casual import (
             LLAMA_CASUAL_MAX_TOKENS,
+            LLAMA_CASUAL_NUM_CTX,
             LLAMA_CASUAL_TEMPERATURE,
             LLAMA_CASUAL_TIMEOUT_SEC,
             build_casual_llama_system,
@@ -305,6 +308,8 @@ class LlamaVoiceLlm:
             self._latency_call_id,
         )
         messages = _utterances_to_messages(request.transcript)
+        if len(messages) > 4:
+            messages = messages[-4:]
         reply = await self._llama_reply(
             system=system,
             messages=messages,
@@ -314,6 +319,7 @@ class LlamaVoiceLlm:
             max_tokens=LLAMA_CASUAL_MAX_TOKENS,
             timeout=LLAMA_CASUAL_TIMEOUT_SEC,
             http_timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,
+            num_ctx=LLAMA_CASUAL_NUM_CTX,
             allow_cloud_fallback=False,
         )
         logger.info(

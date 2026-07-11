@@ -273,6 +273,7 @@ def call_llama_chat(
     max_tokens: int = 2048,
     model: str | None = None,
     timeout_sec: float | None = None,
+    num_ctx: int | None = None,
 ) -> str:
     """Chat multi-turno — usado por text_chat y chats dedicados."""
     target_model = (model or llama_model()).strip()
@@ -280,12 +281,15 @@ def call_llama_chat(
     ollama_msgs = _messages_to_ollama(system, messages)
     if not any(m["role"] == "user" for m in ollama_msgs):
         raise RuntimeError("Sin mensajes de usuario para Llama")
+    options: dict[str, Any] = {"temperature": temperature, "num_predict": max_tokens}
+    if num_ctx is not None:
+        options["num_ctx"] = num_ctx
     payload: dict[str, Any] = {
         "model": target_model,
         "messages": ollama_msgs,
         "stream": False,
         "keep_alive": _OLLAMA_KEEP_ALIVE,
-        "options": {"temperature": temperature, "num_predict": max_tokens},
+        "options": options,
     }
     if not _llama_health_model_ready(timeout_sec=_HEALTH_TIMEOUT_SEC, model_name=target_model):
         raise LlamaNotReadyError(f"modelo {target_model} no descargado en Ollama")
@@ -309,6 +313,7 @@ def call_llama_voice_chat(
     temperature: float = 0.7,
     max_tokens: int = 1024,
     timeout_sec: float | None = None,
+    num_ctx: int | None = None,
 ) -> str:
     """Chat de voz — usa modelo liviano (3B) con timeout acorde."""
     voice = llama_voice_model()
@@ -321,6 +326,7 @@ def call_llama_voice_chat(
             temperature=temperature,
             max_tokens=max_tokens,
             timeout_sec=http_timeout,
+            num_ctx=num_ctx,
         )
     return call_llama_chat(
         system=system,
@@ -329,6 +335,7 @@ def call_llama_voice_chat(
         max_tokens=max_tokens,
         model=voice,
         timeout_sec=http_timeout,
+        num_ctx=num_ctx,
     )
 
 
