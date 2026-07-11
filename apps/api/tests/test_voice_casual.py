@@ -59,7 +59,10 @@ def test_user_reported_phrase_no_longer_blocked_as_task_query() -> None:
     assert not should_run_orchestrator(text)
 
 
-def test_internal_kb_query_returns_source() -> None:
+def test_internal_kb_concept_question_is_casual_voice_turn() -> None:
+    text = "¿Qué es un embudo de ventas?"
+    assert is_casual_voice_turn(text)
+    assert not should_run_orchestrator(text)
     reply, source = try_internal_knowledge_voice_reply("¿Qué es un embudo de ventas?")
     if reply:
         assert source == "internal_kb"

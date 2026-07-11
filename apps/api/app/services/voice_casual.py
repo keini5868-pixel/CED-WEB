@@ -48,6 +48,8 @@ Si no hay contexto interno, razona con naturalidad como asistente personal.
 
 def is_casual_voice_turn(text: str, transcript: list[Utterance] | None = None) -> bool:
     """True si el turno es charla casual sin señal explícita de módulo/herramienta."""
+    from app.services.cognitive_intents import is_internal_knowledge_query
+
     norm = " ".join((text or "").strip().lower().split())
     if not norm:
         return False
@@ -57,9 +59,10 @@ def is_casual_voice_turn(text: str, transcript: list[Utterance] | None = None) -
         return False
     if resolve_web_search_request(text, transcript or []) is not None:
         return False
+    internal_kb = is_internal_knowledge_query(text)
     if (
         _needs_internet_lookup(text)
-        or is_web_research_intent(text)
+        or (is_web_research_intent(text) and not internal_kb)
         or is_script_demo_request(text)
         or is_meta_publish_intent(text)
     ):

@@ -941,7 +941,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             # Charla casual — antes del orquestador: KB interno o Llama, sin tools ni filler.
-            if conversational_turn and uid:
+            if conversational_turn:
                 skip_conversational = False
                 async with response_lock:
                     superseded, latest_rid = _is_superseded_turn_rid(
