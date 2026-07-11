@@ -11,16 +11,22 @@ _CREATE_VERBS = (
     r"haz(?:me|nos|lo|la|es|emos|er|go)?|hacer(?:me|lo)?|"
     r"dise[nñ]a(?:r|me|mos|s|is|n|do)?|"
     r"dibuja(?:r|me|mos|s)?|pinta(?:r|me|mos|s)?|"
-    r"dame|hazme)"
+    r"dame|hazme|"
+    r"generate|create|make|draw)"
 )
-_IMAGE_NOUN = r"(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|arte|gr[aá]fico|creativo|logo|banner|flyer|portada)"
+_IMAGE_NOUN = (
+    r"(?:imagen|foto|picture|illustration|ilustraci[oó]n|dise[nñ]o|arte|artwork|"
+    r"gr[aá]fico|creativo|logo|banner|flyer|portada|image|photo|drawing)"
+)
 
 _IMAGE_PATTERNS = (
-    re.compile(rf"\b{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
-    re.compile(rf"\b{_IMAGE_NOUN}\s+(?:de|con|para)\b", re.I),
+    re.compile(rf"\b{_CREATE_VERBS}\s+(?:an?\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\b{_CREATE_VERBS}\s+(?:me\s+)?(?:an?\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\b{_IMAGE_NOUN}\s+(?:de|con|para|of|with|showing)\b", re.I),
     re.compile(rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\bnecesito\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\bcan\s+you\s+{_CREATE_VERBS}\s+(?:an?\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(
         rf"\b{_CREATE_VERBS}\b.+\b{_IMAGE_NOUN}\b|\b{_IMAGE_NOUN}\b.+\b{_CREATE_VERBS}\b",
         re.I,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from app.services.chat_intents import (
@@ -286,3 +287,138 @@ def run_chat_image_generation(
         "display_label": display_label,
         "used_reference": bool(ref_payload),
     }
+
+
+_HALLUCINATED_GENERATE_IMAGE = re.compile(r"generate_image\s*\(", re.I)
+_HALLUCINATED_JSON_PROMPT = re.compile(
+    r"""generate_image\s*\(\s*\{[^}]*["']prompt["']\s*:\s*["']([^"']+)["']""",
+    re.I | re.S,
+)
+_HALLUCINATED_KW_PROMPT = re.compile(
+    r"""generate_image\s*\(\s*prompt\s*=\s*["']([^"']+)["']""",
+    re.I,
+)
+_FALSE_SUCCESS_MARKERS = (
+    "aquí está tu",
+    "aqui esta tu",
+    "here is your",
+    "here's your",
+    "here is the",
+    "listo, señor",
+    "listo senor",
+)
+_VISUAL_NOUNS = (
+    "imagen",
+    "foto",
+    "árbol",
+    "arbol",
+    "tree",
+    "creativo",
+    "picture",
+    "image",
+    "photo",
+    "flyer",
+)
+
+
+def looks_like_hallucinated_generate_image(text: str) -> bool:
+    return bool(_HALLUCINATED_GENERATE_IMAGE.search(text or ""))
+
+
+def extract_hallucinated_generate_image_prompt(text: str) -> str | None:
+    blob = text or ""
+    match = _HALLUCINATED_JSON_PROMPT.search(blob)
+    if match:
+        return match.group(1).strip()
+    match = _HALLUCINATED_KW_PROMPT.search(blob)
+    if match:
+        return match.group(1).strip()
+    return None
+
+
+def strip_hallucinated_generate_image_text(text: str) -> str:
+    cleaned = re.sub(
+        r"print\s*\(\s*generate_image\s*\([^)]*\)\s*\)",
+        "",
+        text or "",
+        flags=re.I | re.S,
+    )
+    cleaned = re.sub(
+        r"generate_image\s*\(\s*\{.*?\}\s*\)",
+        "",
+        cleaned,
+        flags=re.I | re.S,
+    )
+    cleaned = re.sub(r"generate_image\s*\([^)]*\)", "", cleaned, flags=re.I | re.S)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
+
+
+def reply_promises_image_without_attachment(text: str) -> bool:
+    if looks_like_hallucinated_generate_image(text):
+        return True
+    lowered = (text or "").lower()
+    if not lowered:
+        return False
+    if not any(marker in lowered for marker in _FALSE_SUCCESS_MARKERS):
+        return False
+    return any(noun in lowered for noun in _VISUAL_NOUNS)
+
+
+def salvage_image_turn(
+    user_id: str,
+    conversation_id: str | None,
+    user_text: str,
+    history: list[dict[str, str]] | None,
+    reply: str,
+    image_attachment: dict[str, Any] | None,
+    *,
+    plan_id: str | None = None,
+) -> tuple[str, dict[str, Any] | None]:
+    """
+    Si el LLM alucinó generate_image(...) o prometió imagen sin adjuntarla,
+    ejecuta la generación real o devuelve error claro (nunca texto crudo de tool).
+    """
+    if image_attachment and image_attachment.get("url"):
+        if looks_like_hallucinated_generate_image(reply):
+            clean = strip_hallucinated_generate_image_text(reply)
+            return clean or str(image_attachment.get("caption") or "Imagen generada"), image_attachment
+        return reply, image_attachment
+
+    wants_image = should_take_direct_image_path(user_text, history)
+    hallucinated = looks_like_hallucinated_generate_image(reply)
+    false_success = reply_promises_image_without_attachment(reply)
+    if not wants_image and not hallucinated and not false_success:
+        return reply, image_attachment
+
+    logger.warning(
+        "[CHAT:IMG-GEN] salvage turn user=%s wants=%s halluc=%s false_ok=%s",
+        user_id[:8],
+        wants_image,
+        hallucinated,
+        false_success,
+    )
+    gen = run_chat_image_generation(
+        user_id,
+        conversation_id,
+        user_text,
+        history,
+        plan_id=plan_id,
+    )
+    if gen.get("ok") and gen.get("url"):
+        clean = strip_hallucinated_generate_image_text(reply)
+        if not clean or false_success or hallucinated:
+            clean = str(gen.get("reply") or "Listo. Aquí está tu imagen generada.")
+        attachment = {
+            "url": str(gen["url"]),
+            "caption": str(gen.get("caption") or "Imagen generada"),
+            "prompt": str(gen.get("caption") or user_text)[:200],
+            "quality": gen.get("quality"),
+        }
+        return clean, attachment
+
+    err = str(gen.get("error") or gen.get("reply") or "No pude generar la imagen.")
+    clean = strip_hallucinated_generate_image_text(reply)
+    if clean and not hallucinated and not false_success:
+        return f"{clean}\n\n{err}", None
+    return err, None

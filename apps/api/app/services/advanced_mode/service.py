@@ -341,6 +341,18 @@ def send_advanced_message(
         logger.exception("[ADV-MODE] tools chat failed: %s", exc)
         raise
 
+    from app.services.text_chat import _plan_id_for_user, _salvage_image_if_needed
+
+    reply, image_attachment = _salvage_image_if_needed(
+        user_id,
+        conv_id,
+        text,
+        history_rows,
+        reply,
+        image_attachment,
+        plan_id=_plan_id_for_user(user_id),
+    )
+
     return _finish_payload(
         response=_finalize_chat_reply(reply),
         model=ADVANCED_MODEL_LABEL,
@@ -460,11 +472,9 @@ def iter_advanced_message_stream(
             direct = _try_direct_image(user_id, text, history_rows, conv_id)
             if direct:
                 return direct
-            return send_advanced_message(
-                user_id,
-                message=text,
-                history=history,
-                conversation_id=conv_id,
+            return _finish_payload(
+                response="Disculpe señor, no pude generar la imagen. Intente de nuevo.",
+                model=ADVANCED_MODEL_LABEL,
             )
 
         result: dict[str, Any] | None = None

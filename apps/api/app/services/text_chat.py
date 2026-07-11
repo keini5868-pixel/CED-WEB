@@ -104,6 +104,7 @@ HALLUCINATED_TOOL_PATTERNS = (
     r"```\s*generate_image",
     r"```\s*generar_pdf",
     r"```\s*search_web",
+    r"\bgenerate_image\s*\(",
 )
 
 HALLUCINATED_TOOL_CODE_PATTERNS = (
@@ -116,6 +117,8 @@ HALLUCINATED_TOOL_CODE_PATTERNS = (
     r"tool_code\s*\n\s*print\(",
     r"search_web\(query=",
     r"generate_image\(prompt=",
+    r"generate_image\s*\(\s*\{",
+    r'generate_image\s*\(\s*["\']prompt["\']',
     r"generar_pdf\s*\(\s*content\s*=",
 )
 
@@ -134,6 +137,11 @@ INTERNAL_KB_LEAK_RETRY_MESSAGE = (
     "Tu respuesta anterior incluyó el bloque interno 'Conocimiento interno CED'. "
     "Ese texto es SOLO contexto del sistema — NUNCA debe aparecer en tu respuesta al usuario. "
     "Reescribe de forma natural y útil, usando la información sin citar ni copiar el bloque interno."
+)
+
+IMAGE_HALLUCINATION_RETRY_MESSAGE = (
+    "Escribiste generate_image como texto o código. NO narres herramientas. "
+    "Responde al usuario en lenguaje natural; el sistema generará la imagen por ti."
 )
 
 HALLUCINATION_RETRY_USER_MESSAGE = (
@@ -485,6 +493,37 @@ def _instant_chat_greeting_reply(text: str) -> str | None:
         )
     return None
 
+def _salvage_image_if_needed(
+    user_id: str,
+    conversation_id: str | None,
+    user_text: str,
+    history: list[dict[str, str]] | None,
+    reply: str,
+    image_attachment: dict[str, Any] | None,
+    *,
+    plan_id: str | None = None,
+) -> tuple[str, dict[str, Any] | None]:
+    from app.services.chat_image_generation import salvage_image_turn
+
+    return salvage_image_turn(
+        user_id,
+        conversation_id,
+        user_text,
+        history,
+        reply,
+        image_attachment,
+        plan_id=plan_id,
+    )
+
+
+def _plan_id_for_user(user_id: str) -> str | None:
+    try:
+        sub = supabase_db.get_subscription(user_id)
+        return sub.get("plan_id") if sub else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _has_hallucinated_tool(text: str) -> bool:
     for pattern in HALLUCINATED_TOOL_PATTERNS:
         if re.search(pattern, text, re.IGNORECASE):
@@ -693,6 +732,10 @@ def _resolve_hallucinated_tool_code_reply(
 ) -> str | None:
     if not _has_hallucinated_tool_code(reply):
         return None
+    from app.services.chat_image_generation import looks_like_hallucinated_generate_image
+
+    if looks_like_hallucinated_generate_image(reply):
+        return None
     if re.search(r"generar_pdf", reply or "", re.I):
         return None
     if re.search(r"recall_memory|recall_previous_conversations", reply or "", re.I):
@@ -711,6 +754,10 @@ def _resolve_hallucinated_tool_code_reply(
 
 
 def _tool_hallucination_kind(reply: str) -> str | None:
+    from app.services.chat_image_generation import looks_like_hallucinated_generate_image
+
+    if looks_like_hallucinated_generate_image(reply):
+        return "generate_image"
     if _has_hallucinated_tool_code(reply):
         return "tool_code"
     if _promised_web_search_without_tool(reply):
@@ -721,6 +768,8 @@ def _tool_hallucination_kind(reply: str) -> str | None:
 
 
 def _hallucination_retry_message(kind: str) -> str:
+    if kind == "generate_image":
+        return IMAGE_HALLUCINATION_RETRY_MESSAGE
     if kind == "tool_code":
         return TOOL_CODE_HALLUCINATION_RETRY_MESSAGE
     if kind == "search_promise":
@@ -1779,6 +1828,17 @@ def _extract_image_from_tool_result(result: str) -> dict[str, Any] | None:
     return None
 
 
+def _history_rows_from_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for row in messages:
+        if not isinstance(row, dict):
+            continue
+        content = row.get("content")
+        if isinstance(content, str) and content.strip():
+            rows.append({"role": str(row.get("role") or "user"), "content": content.strip()})
+    return rows
+
+
 def _complete_chat_with_tools(
     user_id: str,
     *,
@@ -1807,6 +1867,28 @@ def _complete_chat_with_tools(
                 if pdf_attachment:
                     reply = _strip_pdf_markdown_links(reply)
                 hallucination = _tool_hallucination_kind(reply)
+                if (
+                    hallucination == "generate_image"
+                    and not image_attachment
+                    and not pdf_attachment
+                ):
+                    from app.services.chat_image_generation import (
+                        looks_like_hallucinated_generate_image,
+                    )
+
+                    salvaged, salvaged_img = _salvage_image_if_needed(
+                        user_id,
+                        conversation_id,
+                        _last_user_text(messages),
+                        _history_rows_from_messages(messages),
+                        reply,
+                        image_attachment,
+                        plan_id=_plan_id_for_user(user_id),
+                    )
+                    if salvaged_img:
+                        return salvaged, pdf_attachment, salvaged_img
+                    if salvaged and not looks_like_hallucinated_generate_image(salvaged):
+                        return salvaged, pdf_attachment, None
                 if (
                     allow_hallucination_retry
                     and hallucination
@@ -1880,6 +1962,18 @@ def _complete_chat_with_tools(
                     return HALLUCINATION_FALLBACK_REPLY, None, None
                 if pdf_attachment:
                     reply = _normalize_pdf_tool_reply(reply, pdf_attachment)
+                salvaged, salvaged_img = _salvage_image_if_needed(
+                    user_id,
+                    conversation_id,
+                    _last_user_text(messages),
+                    _history_rows_from_messages(messages),
+                    reply,
+                    image_attachment,
+                    plan_id=_plan_id_for_user(user_id),
+                )
+                reply = salvaged
+                if salvaged_img:
+                    image_attachment = salvaged_img
                 return reply, pdf_attachment, image_attachment
             raise TextChatError("Respuesta vacía del asistente.")
 
@@ -1983,6 +2077,18 @@ def _complete_chat_resilient(
             system=trimmed_system,
             messages=messages,
         )
+        salvaged, salvaged_img = _salvage_image_if_needed(
+            user_id,
+            conversation_id,
+            user_text,
+            _history_rows_from_messages(messages),
+            reply,
+            image_attachment,
+            plan_id=_plan_id_for_user(user_id),
+        )
+        reply = salvaged
+        if salvaged_img:
+            image_attachment = salvaged_img
         return reply, pdf_attachment, image_attachment
 
     if anthropic_key:
@@ -2471,6 +2577,27 @@ def send_message(
     reply = _ensure_chat_reply_quality(reply, user_text=text)
     reply = _finalize_chat_reply(reply)
 
+    reply, image_attachment = _salvage_image_if_needed(
+        user_id,
+        conversation_id,
+        text,
+        history,
+        reply,
+        image_attachment,
+        plan_id=_plan_id_for_user(user_id),
+    )
+    if image_attachment:
+        from app.services.chat_image_generation import (
+            looks_like_hallucinated_generate_image,
+            strip_hallucinated_generate_image_text,
+        )
+
+        if looks_like_hallucinated_generate_image(reply):
+            reply = _finalize_chat_reply(
+                strip_hallucinated_generate_image_text(reply)
+                or str(image_attachment.get("caption") or "Imagen generada")
+            )
+
     return _finish(
         reply,
         route_meta=route.to_dict(),
@@ -2805,6 +2932,67 @@ def iter_send_message_stream(
         profile = profile_future.result() or {}
         conversation_id, history = conv_future.result()
 
+    from app.services.chat_image_generation import (
+        run_chat_image_generation,
+        should_take_direct_image_path,
+    )
+
+    if should_take_direct_image_path(text, history):
+        yield _sse_event("status", {"text": "Generando imagen con IA…"})
+        yield _sse_flush()
+        gen = run_chat_image_generation(
+            user_id,
+            conversation_id,
+            text,
+            history,
+            plan_id=_plan_id_for_user(user_id),
+        )
+        if gen.get("ok") and gen.get("url"):
+            reply = str(gen.get("reply") or "Listo. Aquí está tu imagen generada.")
+            image_attachment = _chat_image_attachment(
+                str(gen["url"]),
+                caption=str(gen.get("caption") or "Imagen generada"),
+                quality=str(gen.get("quality") or "") or None,
+            )
+        else:
+            reply = _format_image_generation_error(
+                str(gen.get("error") or gen.get("reply") or "")
+            )
+            image_attachment = None
+        supabase_db.append_message(
+            conversation_id,
+            user_id,
+            "user",
+            text,
+            session_id=conversation_id,
+            channel="text",
+        )
+        _bump_stream_usage_cache(user_id)
+        supabase_db.append_message(
+            conversation_id,
+            user_id,
+            "model",
+            reply,
+            session_id=conversation_id,
+            channel="text",
+        )
+        payload: dict[str, Any] = {
+            "conversation_id": conversation_id,
+            "reply": reply,
+            "usage": _stream_usage_snapshot(user_id, profile),
+            "cognitive": {
+                "intent": "generate_image",
+                "source": "direct",
+                "used_reference": bool(gen.get("used_reference")),
+            },
+        }
+        if image_attachment:
+            payload["image"] = image_attachment
+        yield _sse_event("token", {"text": reply})
+        yield _sse_flush()
+        yield _sse_event("done", payload)
+        return
+
     if _stream_is_blocked(user_id, profile):
         raise TextChatError(
             "Alcanzaste el límite de mensajes de hoy. Mejora tu plan o vuelve mañana.",
@@ -2990,6 +3178,16 @@ def iter_send_message_stream(
             image_attachment=image_attachment,
         )
     reply = _finalize_chat_reply(reply)
+
+    reply, image_attachment = _salvage_image_if_needed(
+        user_id,
+        conversation_id,
+        text,
+        history,
+        reply,
+        image_attachment,
+        plan_id=_plan_id_for_user(user_id),
+    )
 
     _persist_user_message()
     supabase_db.append_message(
