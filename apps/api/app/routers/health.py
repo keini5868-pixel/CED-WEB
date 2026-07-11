@@ -84,6 +84,49 @@ def health_llama(_request: Request) -> dict:
     return {"enabled": True, **llama_health_diagnostics()}
 
 
+@router.get("/health/llama/voice-probe")
+@limiter.exempt
+def health_llama_voice_probe(_request: Request) -> dict:
+    """Diagnóstico crudo — prueba mínima de inferencia 3B y devuelve body de error Ollama."""
+    import httpx
+
+    from app.services.llama_service import _chat_url, _generate_url, llama_voice_model, use_llama
+
+    if not use_llama():
+        return {"ok": False, "error": "llama disabled"}
+    voice = llama_voice_model()
+    probes: list[dict] = []
+    for name, url, payload in (
+        (
+            "minimal_generate",
+            _generate_url(),
+            {"model": voice, "prompt": "Di hola en una frase.", "stream": False, "options": {"num_predict": 32}},
+        ),
+        (
+            "minimal_chat",
+            _chat_url(),
+            {
+                "model": voice,
+                "messages": [{"role": "user", "content": "Di hola en una frase."}],
+                "stream": False,
+                "options": {"num_predict": 32},
+            },
+        ),
+    ):
+        item: dict = {"name": name, "url": url}
+        try:
+            with httpx.Client(timeout=15.0) as client:
+                r = client.post(url, json=payload)
+            item["status"] = r.status_code
+            item["body_preview"] = (r.text or "")[:500]
+            item["ok"] = r.status_code == 200
+        except Exception as exc:  # noqa: BLE001
+            item["ok"] = False
+            item["error"] = f"{type(exc).__name__}: {exc}"
+        probes.append(item)
+    return {"voice_model": voice, "build": BUILD_VERSION, "probes": probes}
+
+
 @router.get("/health/llama/voice-smoke")
 @limiter.exempt
 def health_llama_voice_smoke(

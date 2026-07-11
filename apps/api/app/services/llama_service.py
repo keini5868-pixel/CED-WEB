@@ -357,7 +357,7 @@ def call_llama_voice_generate(
     max_tokens: int = 140,
     timeout_sec: float = 12.0,
 ) -> str:
-    """Generación casual de voz — /api/generate con modelo 3B (más estable que chat en prod)."""
+    """Generación casual de voz — modelo 3B con varias estrategias ante OOM en prod."""
     voice = llama_voice_model()
     if not llama_voice_model_ready():
         raise LlamaNotReadyError(f"modelo {voice} no descargado en Ollama")
@@ -369,69 +369,101 @@ def call_llama_voice_generate(
     sys_clean = system.strip()
     prompt = user_text.strip()
     options = {"temperature": temperature, "num_predict": max_tokens}
-    generate_payload: dict[str, Any] = {
-        "model": voice,
-        "prompt": prompt,
-        "system": sys_clean,
-        "stream": False,
-        "keep_alive": _OLLAMA_KEEP_ALIVE,
-        "options": options,
-    }
-    chat_payload: dict[str, Any] = {
-        "model": voice,
-        "messages": [
-            {"role": "system", "content": sys_clean},
-            {"role": "user", "content": prompt},
-        ],
-        "stream": False,
-        "keep_alive": _OLLAMA_KEEP_ALIVE,
-        "options": options,
-    }
+
+    inline_prompt = (
+        f"Instrucciones del sistema:\n{sys_clean}\n\n"
+        f"Usuario: {prompt}\n\n"
+        "Asistente:"
+    )
+
+    attempts: list[tuple[str, str, dict[str, Any], Any]] = [
+        (
+            "generate_system",
+            _generate_url(),
+            {
+                "model": voice,
+                "prompt": prompt,
+                "system": sys_clean,
+                "stream": False,
+                "keep_alive": "5m",
+                "options": options,
+            },
+            _parse_generate_response,
+        ),
+        (
+            "generate_inline",
+            _generate_url(),
+            {
+                "model": voice,
+                "prompt": inline_prompt,
+                "stream": False,
+                "keep_alive": "5m",
+                "options": options,
+            },
+            _parse_generate_response,
+        ),
+        (
+            "chat",
+            _chat_url(),
+            {
+                "model": voice,
+                "messages": [
+                    {"role": "system", "content": sys_clean},
+                    {"role": "user", "content": prompt},
+                ],
+                "stream": False,
+                "keep_alive": "5m",
+                "options": options,
+            },
+            _parse_chat_response,
+        ),
+    ]
 
     last_exc: Exception | None = None
+    last_body = ""
     started = time.monotonic()
-    for attempt, (url, payload, parser) in enumerate(
-        (
-            (_generate_url(), generate_payload, _parse_generate_response),
-            (_chat_url(), chat_payload, _parse_chat_response),
-        )
-    ):
-        if attempt > 0 and text_model != voice:
+    for idx, (label, url, payload, parser) in enumerate(attempts):
+        if idx > 0 and text_model != voice:
             _ollama_unload_model(text_model)
         try:
             with httpx.Client(timeout=timeout_sec) as client:
                 response = client.post(url, json=payload)
+                if response.status_code >= 400:
+                    last_body = (response.text or "")[:400]
                 _raise_if_llama_http_error(response)
-                _log_queue_wait(started, endpoint=f"voice:{voice}:{'generate' if attempt == 0 else 'chat'}")
+                _log_queue_wait(started, endpoint=f"voice:{voice}:{label}")
                 text = parser(response.json())
             if text:
                 return text
             logger.error(
-                "[LLAMA] empty_voice_reply model=%s endpoint=%s attempt=%s",
+                "[LLAMA] empty_voice_reply model=%s strategy=%s",
                 voice,
-                "generate" if attempt == 0 else "chat",
-                attempt,
+                label,
             )
         except httpx.HTTPStatusError as exc:
             last_exc = exc
+            last_body = (exc.response.text or "")[:400]
             logger.warning(
-                "[LLAMA] voice_attempt_failed model=%s attempt=%s status=%s",
+                "[LLAMA] voice_attempt_failed model=%s strategy=%s status=%s body=%s",
                 voice,
-                attempt,
+                label,
                 exc.response.status_code,
+                last_body,
             )
             continue
         except Exception as exc:  # noqa: BLE001
             last_exc = exc
             logger.warning(
-                "[LLAMA] voice_attempt_failed model=%s attempt=%s err=%s",
+                "[LLAMA] voice_attempt_failed model=%s strategy=%s err=%s",
                 voice,
-                attempt,
+                label,
                 exc,
             )
             continue
 
     if last_exc:
+        if last_body and isinstance(last_exc, httpx.HTTPStatusError):
+            raise RuntimeError(f"{last_exc}; ollama_body={last_body}") from last_exc
         raise last_exc
     raise RuntimeError("Llama devolvió respuesta vacía")
 
