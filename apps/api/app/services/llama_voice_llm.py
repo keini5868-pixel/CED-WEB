@@ -306,20 +306,43 @@ class LlamaVoiceLlm:
             len(system),
             self._latency_call_id,
         )
-        messages = _utterances_to_messages(request.transcript)
-        if len(messages) > 4:
-            messages = messages[-4:]
-        reply = await self._llama_reply(
-            system=system,
-            messages=messages,
-            user_text=user_text,
-            path="conversational",
-            temperature=LLAMA_CASUAL_TEMPERATURE,
-            max_tokens=LLAMA_CASUAL_MAX_TOKENS,
-            timeout=LLAMA_CASUAL_TIMEOUT_SEC,
-            http_timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,
-            allow_cloud_fallback=False,
+        from app.services.llama_service import call_llama_voice_generate
+
+        turn = (
+            get_turn(self._latency_call_id, self._latency_response_id)
+            if self._latency_call_id and self._latency_response_id
+            else None
         )
+        if turn:
+            turn.mark_llm_request(path="conversational")
+        try:
+            reply = await asyncio.wait_for(
+                asyncio.to_thread(
+                    call_llama_voice_generate,
+                    system=system,
+                    user_text=user_text,
+                    temperature=LLAMA_CASUAL_TEMPERATURE,
+                    max_tokens=LLAMA_CASUAL_MAX_TOKENS,
+                    timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,
+                ),
+                timeout=LLAMA_CASUAL_TIMEOUT_SEC,
+            )
+            if turn and (reply or "").strip():
+                turn.mark_llm_first_token()
+        except asyncio.TimeoutError:
+            logger.warning(
+                "[RETELL-LLAMA] timeout call=%s path=conversational",
+                self._latency_call_id,
+            )
+            reply = FALLBACK_REPLY
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "[RETELL-LLAMA] generate failed call=%s path=conversational err=%s: %s",
+                self._latency_call_id,
+                type(exc).__name__,
+                exc,
+            )
+            reply = FALLBACK_REPLY
         logger.info(
             "[RETELL-LLAMA] casual source=llama call=%s text=%s reply_chars=%s",
             self._latency_call_id,

@@ -93,7 +93,7 @@ def health_llama_voice_smoke(
     """Smoke test — Llama 3B con prompt casual mínimo (diagnóstico prod)."""
     import time
 
-    from app.services.llama_service import call_llama_voice_chat, use_llama
+    from app.services.llama_service import call_llama_voice_generate, use_llama
     from app.services.voice_casual import (
         LLAMA_CASUAL_MAX_TOKENS,
         LLAMA_CASUAL_TEMPERATURE,
@@ -110,9 +110,9 @@ def health_llama_voice_smoke(
     err = ""
     raw = ""
     try:
-        raw = call_llama_voice_chat(
+        raw = call_llama_voice_generate(
             system=system,
-            messages=[{"role": "user", "content": phrase}],
+            user_text=phrase,
             temperature=LLAMA_CASUAL_TEMPERATURE,
             max_tokens=LLAMA_CASUAL_MAX_TOKENS,
             timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,

@@ -90,7 +90,7 @@ def test_casual_draft_under_four_seconds(monkeypatch: pytest.MonkeyPatch, phrase
         return "Entiendo, señor. Descanse un poco cuando pueda."
 
     monkeypatch.setattr(ls, "llama_voice_model_ready", lambda **k: True)
-    monkeypatch.setattr("app.services.llama_voice_llm.call_llama_voice_chat", _fast_llama)
+    monkeypatch.setattr("app.services.llama_voice_llm.call_llama_voice_generate", _fast_llama)
 
     llm = LlamaVoiceLlm()
     llm.set_user_id("test-user")
@@ -120,7 +120,7 @@ def test_casual_llama_uses_low_token_budget(monkeypatch: pytest.MonkeyPatch) -> 
         return "Comprendo, señor."
 
     monkeypatch.setattr(ls, "llama_voice_model_ready", lambda **k: True)
-    monkeypatch.setattr("app.services.llama_voice_llm.call_llama_voice_chat", _capture)
+    monkeypatch.setattr("app.services.llama_voice_llm.call_llama_voice_generate", _capture)
 
     llm = LlamaVoiceLlm()
     phrase = "estoy cansado hoy"

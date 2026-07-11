@@ -323,6 +323,43 @@ def call_llama_chat(
     return text
 
 
+def call_llama_voice_generate(
+    *,
+    system: str,
+    user_text: str,
+    temperature: float = 0.55,
+    max_tokens: int = 140,
+    timeout_sec: float = 12.0,
+) -> str:
+    """Generación casual de voz — /api/generate con modelo 3B (más estable que chat en prod)."""
+    voice = llama_voice_model()
+    if not llama_voice_model_ready():
+        raise LlamaNotReadyError(f"modelo {voice} no descargado en Ollama")
+    payload: dict[str, Any] = {
+        "model": voice,
+        "prompt": user_text.strip(),
+        "system": system.strip(),
+        "stream": False,
+        "keep_alive": _OLLAMA_KEEP_ALIVE,
+        "options": {"temperature": temperature, "num_predict": max_tokens},
+    }
+    started = time.monotonic()
+    with httpx.Client(timeout=timeout_sec) as client:
+        response = client.post(_generate_url(), json=payload)
+        _raise_if_llama_http_error(response)
+        _log_queue_wait(started, endpoint=f"generate:{voice}")
+        data = response.json()
+    text = str(data.get("response") or "").strip()
+    if not text:
+        logger.error(
+            "[LLAMA] empty_generate model=%s eval_count=%s",
+            voice,
+            data.get("eval_count"),
+        )
+        raise RuntimeError("Llama devolvió respuesta vacía")
+    return text
+
+
 def call_llama_voice_chat(
     *,
     system: str,
