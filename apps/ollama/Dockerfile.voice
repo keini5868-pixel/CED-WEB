@@ -1,0 +1,12 @@
+# CED-Llama-Voice — Ollama dedicado a conversación de voz (llama3.2:3b)
+FROM ollama/ollama:latest
+
+ENV OLLAMA_HOST=[::]:11434
+ENV OLLAMA_MODELS=/data
+
+COPY apps/ollama/entrypoint-voice.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 11434
+
+ENTRYPOINT ["/entrypoint.sh"]

@@ -1,0 +1,37 @@
+# Railway — servicio Ollama dedicado a voz (CED-Llama-Voice)
+#
+# En Railway → servicio CED-Llama-Voice → Settings → Config-as-code:
+#   Config file path: /railway.llama-voice.toml
+#
+# Root Directory: repo root. Dockerfile: apps/ollama/Dockerfile.voice
+#
+# VOLUMEN PERSISTENTE (obligatorio — modelo ~2 GB):
+#   Settings → Volumes → Add Volume → Mount path: /data
+#   Usar volumen NUEVO — no compartir el de CED-Llama (13B).
+#
+# RED PRIVADA:
+#   - Nombre del servicio → hostname: ced-llama-voice.railway.internal
+#   - Ollama escucha en puerto 11434 (llamadas internas, no $PORT)
+#   - OLLAMA_HOST=[::]:11434
+#
+# Variables en CED-Llama-Voice (opcionales — defaults en entrypoint):
+#   OLLAMA_VOICE_MODEL=llama3.2:3b
+#   OLLAMA_NUM_PARALLEL=1
+#   OLLAMA_MAX_LOADED_MODELS=1
+#
+# En el servicio API (tras crear este servicio):
+#   LLAMA_VOICE_ENDPOINT=http://ced-llama-voice.railway.internal:11434
+#   LLAMA_VOICE_MODEL=llama3.2:3b
+#   (LLAMA_ENDPOINT sigue apuntando a ced-llama para el 13B)
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/ollama/Dockerfile.voice"
+watchPatterns = [
+  "apps/ollama/**",
+  "railway.llama-voice.toml",
+]
+
+[deploy]
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

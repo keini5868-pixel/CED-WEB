@@ -1,4 +1,4 @@
-# Railway — servicio Ollama / Llama local (CED-Llama)
+# Railway — servicio Ollama / Llama local — SOLO texto (CED-Llama)
 #
 # En Railway → servicio CED-Llama → Settings → Config-as-code:
 #   Config file path: /railway.llama.toml
@@ -7,25 +7,24 @@
 #
 # VOLUMEN PERSISTENTE (recomendado):
 #   Settings → Volumes → Add Volume → Mount path: /data
-#   Sin volumen, el modelo (~7.4 GB) se re-descarga en cada reinicio.
+#   Solo el modelo 13B (~7.4 GB). El 3B de voz vive en CED-Llama-Voice.
 #
-# RED PRIVADA (obligatorio para que el API lo alcance):
-#   - Nombre del servicio debe coincidir con el hostname: ced-llama.railway.internal
-#   - Ollama escucha en puerto 11434 (NO uses $PORT de Railway para llamadas internas)
-#   - OLLAMA_HOST=[::]:11434 — Railway private network usa IPv6
+# RED PRIVADA:
+#   - Hostname: ced-llama.railway.internal
+#   - OLLAMA_HOST=[::]:11434
 #
-# Variables opcionales en CED-Llama:
+# Variables en CED-Llama:
 #   OLLAMA_MODEL=llama2:13b
-#   OLLAMA_VOICE_MODEL=llama3.2:3b
-#   OLLAMA_NUM_PARALLEL=2   (default en entrypoint; evita reservar RAM excesiva)
-#   OLLAMA_MAX_LOADED_MODELS=1   (solo un modelo cargado — voz 3B vs texto 13B)
+#   OLLAMA_NUM_PARALLEL=1
+#   OLLAMA_MAX_LOADED_MODELS=1
 #
-# En el servicio API:
-#   LLM_PROVIDER=llama
+# Variables en API:
 #   LLAMA_ENDPOINT=http://ced-llama.railway.internal:11434
 #   LLAMA_MODEL=llama2:13b
+#   LLAMA_VOICE_ENDPOINT=http://ced-llama-voice.railway.internal:11434
 #   LLAMA_VOICE_MODEL=llama3.2:3b
-#   RETELL_LLM_PROVIDER=llama
+#
+# Servicio de voz separado: ver railway.llama-voice.toml
 
 [build]
 builder = "DOCKERFILE"

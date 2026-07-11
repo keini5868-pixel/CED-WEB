@@ -43,7 +43,14 @@ router = APIRouter(tags=["health"])
 @limiter.exempt
 def health(_request: Request) -> dict[str, str]:
     """Liveness probe — sin dependencias externas (Railway)."""
-    from app.services.llama_service import llama_health_diagnostics, llama_model, use_llama
+    from app.services.llama_service import (
+        llama_combined_health_diagnostics,
+        llama_health_diagnostics,
+        llama_model,
+        llama_voice_health_diagnostics,
+        llama_voice_model,
+        use_llama,
+    )
 
     settings = get_settings()
     payload: dict[str, str] = {
@@ -56,19 +63,32 @@ def health(_request: Request) -> dict[str, str]:
     }
     if use_llama():
         payload["llama_model"] = llama_model()
-        from app.services.llama_service import llama_voice_model
-
         payload["llama_voice_model"] = llama_voice_model()
         payload["llama_endpoint"] = settings.llama_endpoint.strip()
-        diag = llama_health_diagnostics()
-        payload["llama_available"] = "true" if diag.get("model_ready") else "false"
-        payload["llama_voice_available"] = "true" if diag.get("voice_model_ready") else "false"
-        payload["llama_daemon_ok"] = "true" if diag.get("daemon_ok") else "false"
-        if not diag.get("model_ready"):
+        payload["llama_voice_endpoint"] = (
+            settings.llama_voice_endpoint.strip() or settings.llama_endpoint.strip()
+        )
+        text_diag = llama_health_diagnostics()
+        voice_diag = llama_voice_health_diagnostics()
+        payload["llama_available"] = "true" if text_diag.get("model_ready") else "false"
+        payload["llama_voice_available"] = (
+            "true" if voice_diag.get("voice_model_ready") else "false"
+        )
+        payload["llama_daemon_ok"] = "true" if text_diag.get("daemon_ok") else "false"
+        payload["llama_voice_daemon_ok"] = "true" if voice_diag.get("daemon_ok") else "false"
+        payload["llama_voice_endpoint_separate"] = (
+            "true" if voice_diag.get("separate_endpoint") else "false"
+        )
+        if not text_diag.get("model_ready"):
             payload["llama_error"] = str(
-                diag.get("error") or "modelo no descargado en Ollama"
+                text_diag.get("error") or "modelo texto no descargado en Ollama"
             )
-            payload["llama_probe_url"] = str(diag.get("url") or "")
+            payload["llama_probe_url"] = str(text_diag.get("url") or "")
+        if not voice_diag.get("voice_model_ready"):
+            payload["llama_voice_error"] = str(
+                voice_diag.get("error") or "modelo voz no descargado en Ollama"
+            )
+            payload["llama_voice_probe_url"] = str(voice_diag.get("url") or "")
     return payload
 
 
@@ -76,12 +96,13 @@ def health(_request: Request) -> dict[str, str]:
 @limiter.exempt
 def health_llama(_request: Request) -> dict:
     """Diagnóstico Llama/Ollama — URL probada, latencia, modelos y error."""
-    from app.services.llama_service import llama_health_diagnostics, use_llama
+    from app.services.llama_service import llama_combined_health_diagnostics, use_llama
 
     settings = get_settings()
     if not use_llama():
         return {"enabled": False, "llm_provider": settings.llm_provider}
-    return {"enabled": True, **llama_health_diagnostics()}
+    combined = llama_combined_health_diagnostics()
+    return {"enabled": True, **combined}
 
 
 @router.get("/health/llama/voice-probe")
@@ -90,21 +111,28 @@ def health_llama_voice_probe(_request: Request) -> dict:
     """Diagnóstico crudo — prueba mínima de inferencia 3B y devuelve body de error Ollama."""
     import httpx
 
-    from app.services.llama_service import _chat_url, _generate_url, llama_voice_model, use_llama
+    from app.services.llama_service import (
+        _chat_url,
+        _generate_url,
+        _ollama_voice_base,
+        llama_voice_model,
+        use_llama,
+    )
 
     if not use_llama():
         return {"ok": False, "error": "llama disabled"}
     voice = llama_voice_model()
+    voice_base = _ollama_voice_base()
     probes: list[dict] = []
     for name, url, payload in (
         (
             "minimal_generate",
-            _generate_url(),
+            _generate_url(base=voice_base),
             {"model": voice, "prompt": "Di hola en una frase.", "stream": False, "options": {"num_predict": 32}},
         ),
         (
             "minimal_chat",
-            _chat_url(),
+            _chat_url(base=voice_base),
             {
                 "model": voice,
                 "messages": [{"role": "user", "content": "Di hola en una frase."}],
@@ -124,7 +152,7 @@ def health_llama_voice_probe(_request: Request) -> dict:
             item["ok"] = False
             item["error"] = f"{type(exc).__name__}: {exc}"
         probes.append(item)
-    return {"voice_model": voice, "build": BUILD_VERSION, "probes": probes}
+    return {"voice_model": voice, "voice_endpoint": voice_base, "build": BUILD_VERSION, "probes": probes}
 
 
 @router.get("/health/llama/inference-probe")
@@ -138,6 +166,7 @@ def health_llama_inference_probe(_request: Request) -> dict:
     from app.services.llama_service import (
         _generate_url,
         _ollama_base,
+        _ollama_voice_base,
         llama_model,
         llama_voice_model,
         use_llama,
@@ -147,50 +176,70 @@ def health_llama_inference_probe(_request: Request) -> dict:
         return {"ok": False, "error": "llama disabled"}
 
     base = _ollama_base()
+    voice_base = _ollama_voice_base()
     text_model = llama_model()
     voice_model = llama_voice_model()
     out: dict = {
         "build": BUILD_VERSION,
-        "endpoint": base,
+        "text_endpoint": base,
+        "voice_endpoint": voice_base,
         "text_model": text_model,
         "voice_model": voice_model,
+        "voice_endpoint_separate": voice_base != base,
     }
 
     try:
         with httpx.Client(timeout=5.0) as client:
-            ps_resp = client.get(f"{base}/api/ps")
-            out["ps_status"] = ps_resp.status_code
-            if ps_resp.status_code == 200:
-                ps_data = ps_resp.json()
-                models = ps_data.get("models") or []
-                out["running_models"] = [
-                    {
-                        "name": m.get("name"),
-                        "size_vram": m.get("size_vram"),
-                        "size": m.get("size"),
-                        "expires_at": m.get("expires_at"),
-                    }
-                    for m in models
-                    if isinstance(m, dict)
-                ]
-                out["running_count"] = len(out["running_models"])
-            else:
-                out["ps_body"] = (ps_resp.text or "")[:300]
+            ps_resp = client.get(f"{voice_base}/api/ps")
+        out["voice_ps_status"] = ps_resp.status_code
+        if ps_resp.status_code == 200:
+            ps_data = ps_resp.json()
+            models = ps_data.get("models") or []
+            out["voice_running_models"] = [
+                {
+                    "name": m.get("name"),
+                    "size_vram": m.get("size_vram"),
+                    "size": m.get("size"),
+                }
+                for m in models
+                if isinstance(m, dict)
+            ]
+            out["voice_running_count"] = len(out["voice_running_models"])
     except Exception as exc:  # noqa: BLE001
-        out["ps_error"] = f"{type(exc).__name__}: {exc}"
+        out["voice_ps_error"] = f"{type(exc).__name__}: {exc}"
 
-    def _probe(name: str, model: str, *, timeout: float) -> dict:
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            ps_resp = client.get(f"{base}/api/ps")
+        out["text_ps_status"] = ps_resp.status_code
+        if ps_resp.status_code == 200:
+            ps_data = ps_resp.json()
+            models = ps_data.get("models") or []
+            out["text_running_models"] = [
+                {
+                    "name": m.get("name"),
+                    "size_vram": m.get("size_vram"),
+                    "size": m.get("size"),
+                }
+                for m in models
+                if isinstance(m, dict)
+            ]
+            out["text_running_count"] = len(out["text_running_models"])
+    except Exception as exc:  # noqa: BLE001
+        out["text_ps_error"] = f"{type(exc).__name__}: {exc}"
+
+    def _probe(name: str, model: str, *, timeout: float, base: str) -> dict:
         payload = {
             "model": model,
             "prompt": "Responde solo: ok",
             "stream": False,
             "options": {"num_predict": 8, "temperature": 0.1},
         }
-        item: dict = {"name": name, "model": model, "timeout_sec": timeout}
+        item: dict = {"name": name, "model": model, "endpoint": base, "timeout_sec": timeout}
         started = time.perf_counter()
         try:
             with httpx.Client(timeout=timeout) as client:
-                resp = client.post(_generate_url(), json=payload)
+                resp = client.post(_generate_url(base=base), json=payload)
             item["elapsed_ms"] = int((time.perf_counter() - started) * 1000)
             item["status"] = resp.status_code
             item["ok"] = resp.status_code == 200
@@ -207,20 +256,9 @@ def health_llama_inference_probe(_request: Request) -> dict:
         return item
 
     out["probes"] = [
-        _probe("voice_3b", voice_model, timeout=25.0),
-        _probe("text_13b", text_model, timeout=25.0),
+        _probe("voice_3b", voice_model, timeout=25.0, base=voice_base),
+        _probe("text_13b", text_model, timeout=25.0, base=base),
     ]
-
-    # Tras 13B, reintentar 3B (simula competencia RAM / swap de modelos).
-    try:
-        with httpx.Client(timeout=3.0) as client:
-            client.post(
-                _generate_url(),
-                json={"model": text_model, "prompt": "", "keep_alive": 0},
-            )
-    except Exception:  # noqa: BLE001
-        pass
-    out["probes"].append(_probe("voice_3b_after_unload_13b", voice_model, timeout=25.0))
 
     out["any_inference_ok"] = any(p.get("ok") for p in out["probes"])
     return out

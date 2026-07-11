@@ -100,6 +100,8 @@ class Settings(BaseSettings):
     llama_model: str = "llama2:13b"
     # Modelo liviano solo para conversación de voz (Retell Custom LLM).
     llama_voice_model: str = "llama3.2:3b"
+    # Ollama dedicado a voz — si vacío, voz usa llama_endpoint (transición).
+    llama_voice_endpoint: str = ""
 
     anthropic_api_key: str = ""
     tavily_api_key: str = ""

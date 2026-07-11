@@ -123,34 +123,21 @@ def test_llama_health_diagnostics_reports_error(monkeypatch):
     assert diag["url"] == "http://ced-llama.railway.internal:11434/api/tags"
 
 
-def test_call_llama_voice_generate_unloads_text_model_and_falls_back_to_chat(monkeypatch):
+def test_call_llama_voice_generate_uses_voice_endpoint(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "llama")
     monkeypatch.setenv("LLAMA_MODEL", "llama2:13b")
     monkeypatch.setenv("LLAMA_VOICE_MODEL", "llama3.2:3b")
+    monkeypatch.setenv("LLAMA_VOICE_ENDPOINT", "http://ced-llama-voice.railway.internal:11434")
     get_settings.cache_clear()
 
-    calls: list[tuple[str, dict]] = []
+    calls: list[str] = []
 
     def _post(url: str, *, json: dict):  # noqa: ANN001
-        calls.append((url, json))
+        calls.append(url)
         mock_response = MagicMock()
-        mock_response.raise_for_status = MagicMock()
-        if json.get("keep_alive") == 0:
-            mock_response.status_code = 200
-            mock_response.json.return_value = {}
-            return mock_response
-        if url.endswith("/api/generate"):
-            mock_response.status_code = 500
-            mock_response.text = "model requires more memory"
-            exc = __import__("httpx").HTTPStatusError(
-                "500",
-                request=MagicMock(),
-                response=mock_response,
-            )
-            mock_response.raise_for_status.side_effect = exc
-            return mock_response
         mock_response.status_code = 200
-        mock_response.json.return_value = {"message": {"content": "Comprendo, señor."}}
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json.return_value = {"response": "Comprendo, señor."}
         return mock_response
 
     mock_client = MagicMock()
@@ -167,5 +154,5 @@ def test_call_llama_voice_generate_unloads_text_model_and_falls_back_to_chat(mon
                 user_text="me siento triste",
             )
     assert text == "Comprendo, señor."
-    assert any(json.get("keep_alive") == 0 for _, json in calls)
-    assert any(url.endswith("/api/chat") for url, _ in calls)
+    assert calls
+    assert all("ced-llama-voice" in url for url in calls)

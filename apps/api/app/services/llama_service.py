@@ -41,27 +41,54 @@ class LlamaNotReadyError(RuntimeError):
     """Ollama responde pero el modelo configurado no está descargado."""
 
 
-def _ollama_base() -> str:
-    endpoint = get_settings().llama_endpoint.strip()
+def _normalize_ollama_endpoint(raw: str) -> str:
+    endpoint = (raw or "").strip()
     if not endpoint:
         return "http://localhost:11434"
-    # Acepta URL completa (/api/generate o /api/chat) o solo host:puerto.
     for suffix in ("/api/generate", "/api/chat", "/api/tags"):
         if endpoint.endswith(suffix):
             return endpoint[: -len(suffix)]
     return endpoint.rstrip("/")
 
 
-def _chat_url() -> str:
-    return f"{_ollama_base()}/api/chat"
+def _ollama_base() -> str:
+    return _normalize_ollama_endpoint(get_settings().llama_endpoint)
 
 
-def _generate_url() -> str:
-    return f"{_ollama_base()}/api/generate"
+def _ollama_voice_base() -> str:
+    voice = (get_settings().llama_voice_endpoint or "").strip()
+    if voice:
+        return _normalize_ollama_endpoint(voice)
+    return _ollama_base()
 
 
-def _tags_url() -> str:
-    return f"{_ollama_base()}/api/tags"
+def llama_voice_endpoint_separate() -> bool:
+    """True si voz usa un Ollama distinto al de texto."""
+    return bool((get_settings().llama_voice_endpoint or "").strip())
+
+
+def _chat_url(*, base: str | None = None) -> str:
+    return f"{(base or _ollama_base())}/api/chat"
+
+
+def _generate_url(*, base: str | None = None) -> str:
+    return f"{(base or _ollama_base())}/api/generate"
+
+
+def _tags_url(*, base: str | None = None) -> str:
+    return f"{(base or _ollama_base())}/api/tags"
+
+
+def _voice_chat_url() -> str:
+    return _chat_url(base=_ollama_voice_base())
+
+
+def _voice_generate_url() -> str:
+    return _generate_url(base=_ollama_voice_base())
+
+
+def _voice_tags_url() -> str:
+    return _tags_url(base=_ollama_voice_base())
 
 
 def llama_model() -> str:
@@ -86,20 +113,18 @@ def use_llama() -> bool:
 
 
 def llama_health_diagnostics() -> dict[str, Any]:
-    """Diagnóstico detallado para /health — expone URL, error y modelos."""
-    url = _tags_url()
+    """Diagnóstico Ollama texto (13B) — endpoint LLAMA_ENDPOINT."""
     base = _ollama_base()
+    url = _tags_url(base=base)
     result: dict[str, Any] = {
+        "role": "text",
         "url": url,
         "endpoint": base,
         "model": llama_model(),
-        "voice_model": llama_voice_model(),
         "timeout_sec": _HEALTH_TIMEOUT_SEC,
         "ok": False,
     }
     try:
-        import time
-
         started = time.monotonic()
         with httpx.Client(timeout=_HEALTH_TIMEOUT_SEC) as client:
             response = client.get(url)
@@ -115,27 +140,82 @@ def llama_health_diagnostics() -> dict[str, Any]:
             ]
             result["models"] = names
             target = llama_model()
-            voice_target = llama_voice_model()
             result["model_ready"] = target in names or any(
                 target.split(":")[0] in n for n in names
             )
-            result["voice_model_ready"] = voice_target in names or any(
-                voice_target.split(":")[0] in n for n in names
-            )
             result["daemon_ok"] = True
             result["ok"] = bool(result["model_ready"])
-            result["voice_ok"] = bool(result["voice_model_ready"])
         else:
             result["daemon_ok"] = False
             result["error"] = f"HTTP {response.status_code}"
     except Exception as exc:  # noqa: BLE001
         result["error"] = f"{type(exc).__name__}: {exc}"
-        logger.warning("[LLAMA] health check failed url=%s err=%s", url, exc)
+        logger.warning("[LLAMA] text health check failed url=%s err=%s", url, exc)
     return result
 
 
-def _llama_health_model_ready(*, timeout_sec: float, model_name: str | None = None) -> bool:
-    url = _tags_url()
+def llama_voice_health_diagnostics() -> dict[str, Any]:
+    """Diagnóstico Ollama voz (3B) — LLAMA_VOICE_ENDPOINT o fallback."""
+    base = _ollama_voice_base()
+    url = _tags_url(base=base)
+    result: dict[str, Any] = {
+        "role": "voice",
+        "url": url,
+        "endpoint": base,
+        "voice_model": llama_voice_model(),
+        "separate_endpoint": llama_voice_endpoint_separate(),
+        "timeout_sec": _HEALTH_TIMEOUT_SEC,
+        "ok": False,
+    }
+    try:
+        started = time.monotonic()
+        with httpx.Client(timeout=_HEALTH_TIMEOUT_SEC) as client:
+            response = client.get(url)
+        result["latency_ms"] = int((time.monotonic() - started) * 1000)
+        result["status_code"] = response.status_code
+        if response.status_code == 200:
+            data = response.json()
+            models = data.get("models") or []
+            names = [
+                str(m.get("name") or "")
+                for m in models
+                if isinstance(m, dict) and m.get("name")
+            ]
+            result["models"] = names
+            voice_target = llama_voice_model()
+            result["voice_model_ready"] = voice_target in names or any(
+                voice_target.split(":")[0] in n for n in names
+            )
+            result["daemon_ok"] = True
+            result["ok"] = bool(result["voice_model_ready"])
+        else:
+            result["daemon_ok"] = False
+            result["error"] = f"HTTP {response.status_code}"
+    except Exception as exc:  # noqa: BLE001
+        result["error"] = f"{type(exc).__name__}: {exc}"
+        logger.warning("[LLAMA] voice health check failed url=%s err=%s", url, exc)
+    return result
+
+
+def llama_combined_health_diagnostics() -> dict[str, Any]:
+    """Diagnóstico unificado — texto y voz por separado."""
+    text = llama_health_diagnostics()
+    voice = llama_voice_health_diagnostics()
+    return {
+        "text": text,
+        "voice": voice,
+        "voice_endpoint_separate": llama_voice_endpoint_separate(),
+        "ok": bool(text.get("ok")) and bool(voice.get("ok")),
+    }
+
+
+def _llama_health_model_ready(
+    *,
+    timeout_sec: float,
+    model_name: str | None = None,
+    base: str | None = None,
+) -> bool:
+    url = _tags_url(base=base or _ollama_base())
     target = (model_name or llama_model()).strip()
     try:
         with httpx.Client(timeout=timeout_sec) as client:
@@ -176,9 +256,13 @@ def llama_model_ready(*, force_refresh: bool = False, timeout_sec: float | None 
 
 
 def llama_voice_model_ready(*, timeout_sec: float | None = None) -> bool:
-    """True si el modelo liviano de voz está descargado en Ollama."""
+    """True si el modelo liviano de voz está descargado en su Ollama."""
     probe_timeout = timeout_sec if timeout_sec is not None else _HEALTH_TIMEOUT_SEC
-    return _llama_health_model_ready(timeout_sec=probe_timeout, model_name=llama_voice_model())
+    return _llama_health_model_ready(
+        timeout_sec=probe_timeout,
+        model_name=llama_voice_model(),
+        base=_ollama_voice_base(),
+    )
 
 
 def should_route_to_llama(*, fast_probe: bool = False) -> bool:
@@ -201,16 +285,16 @@ def _log_queue_wait(started: float, *, endpoint: str) -> None:
     logger.info("[LLAMA] queue_wait_ms=%s endpoint=%s model=%s", ms, endpoint, llama_model())
 
 
-def _ollama_unload_model(model: str, *, timeout_sec: float = 2.0) -> None:
+def _ollama_unload_model(model: str, *, base: str | None = None) -> None:
     """Libera RAM descargando un modelo de Ollama (best-effort, no lanza)."""
     target = (model or "").strip()
     if not target:
         return
     payload = {"model": target, "prompt": "", "keep_alive": 0}
     try:
-        with httpx.Client(timeout=timeout_sec) as client:
-            client.post(_generate_url(), json=payload)
-        logger.info("[LLAMA] unload_model=%s", target)
+        with httpx.Client(timeout=2.0) as client:
+            client.post(_generate_url(base=base), json=payload)
+        logger.info("[LLAMA] unload_model=%s base=%s", target, base or _ollama_base())
     except Exception as exc:  # noqa: BLE001
         logger.debug("[LLAMA] unload_model skipped model=%s err=%s", target, exc)
 
@@ -307,8 +391,10 @@ def call_llama_chat(
     model: str | None = None,
     timeout_sec: float | None = None,
     num_ctx: int | None = None,
+    endpoint_base: str | None = None,
 ) -> str:
     """Chat multi-turno — usado por text_chat y chats dedicados."""
+    base = endpoint_base or _ollama_base()
     target_model = (model or llama_model()).strip()
     http_timeout = timeout_sec if timeout_sec is not None else _CHAT_TIMEOUT_SEC
     ollama_msgs = _messages_to_ollama(system, messages)
@@ -324,11 +410,11 @@ def call_llama_chat(
         "keep_alive": _OLLAMA_KEEP_ALIVE,
         "options": options,
     }
-    if not _llama_health_model_ready(timeout_sec=_HEALTH_TIMEOUT_SEC, model_name=target_model):
+    if not _llama_health_model_ready(timeout_sec=_HEALTH_TIMEOUT_SEC, model_name=target_model, base=base):
         raise LlamaNotReadyError(f"modelo {target_model} no descargado en Ollama")
     started = time.monotonic()
     with httpx.Client(timeout=http_timeout) as client:
-        response = client.post(_chat_url(), json=payload)
+        response = client.post(_chat_url(base=base), json=payload)
         _raise_if_llama_http_error(response)
         _log_queue_wait(started, endpoint=f"chat:{target_model}")
         data = response.json()
@@ -362,9 +448,10 @@ def call_llama_voice_generate(
     if not llama_voice_model_ready():
         raise LlamaNotReadyError(f"modelo {voice} no descargado en Ollama")
 
+    voice_base = _ollama_voice_base()
     text_model = llama_model()
-    if text_model != voice:
-        _ollama_unload_model(text_model)
+    if not llama_voice_endpoint_separate() and text_model != voice:
+        _ollama_unload_model(text_model, base=voice_base)
 
     sys_clean = system.strip()
     prompt = user_text.strip()
@@ -379,7 +466,7 @@ def call_llama_voice_generate(
     attempts: list[tuple[str, str, dict[str, Any], Any]] = [
         (
             "generate_inline",
-            _generate_url(),
+            _voice_generate_url(),
             {
                 "model": voice,
                 "prompt": inline_prompt,
@@ -396,8 +483,8 @@ def call_llama_voice_generate(
     started = time.monotonic()
     per_attempt_timeout = max(timeout_sec, 8.0)
     for idx, (label, url, payload, parser) in enumerate(attempts):
-        if idx > 0 and text_model != voice:
-            _ollama_unload_model(text_model)
+        if idx > 0 and not llama_voice_endpoint_separate() and text_model != voice:
+            _ollama_unload_model(text_model, base=voice_base)
         try:
             with httpx.Client(timeout=per_attempt_timeout) as client:
                 response = client.post(url, json=payload)
@@ -479,6 +566,7 @@ def call_llama_voice_chat(
         model=voice,
         timeout_sec=http_timeout,
         num_ctx=num_ctx,
+        endpoint_base=_ollama_voice_base(),
     )
 
 
@@ -490,10 +578,12 @@ def iter_llama_chat_stream(
     max_tokens: int = 2048,
     model: str | None = None,
     timeout_sec: float | None = None,
+    endpoint_base: str | None = None,
 ) -> Iterator[str]:
     """Streaming token a token para SSE de chats — siempre deltas incrementales."""
     from app.services.stream_delta import stream_piece_delta
 
+    base = endpoint_base or _ollama_base()
     target_model = (model or llama_model()).strip()
     http_timeout = timeout_sec if timeout_sec is not None else _CHAT_TIMEOUT_SEC
     ollama_msgs = _messages_to_ollama(system, messages)
@@ -506,13 +596,13 @@ def iter_llama_chat_stream(
         "keep_alive": _OLLAMA_KEEP_ALIVE,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
-    if not _llama_health_model_ready(timeout_sec=_HEALTH_TIMEOUT_SEC, model_name=target_model):
+    if not _llama_health_model_ready(timeout_sec=_HEALTH_TIMEOUT_SEC, model_name=target_model, base=base):
         raise LlamaNotReadyError(f"modelo {target_model} no descargado en Ollama")
     accumulated = ""
     started = time.monotonic()
     queue_logged = False
     with httpx.Client(timeout=http_timeout) as client:
-        with client.stream("POST", _chat_url(), json=payload) as response:
+        with client.stream("POST", _chat_url(base=base), json=payload) as response:
             _raise_if_llama_http_error(response)
             for line in response.iter_lines():
                 if not queue_logged and line:
@@ -553,6 +643,7 @@ def iter_llama_voice_chat_stream(
             max_tokens=max_tokens,
             model=voice,
             timeout_sec=_VOICE_CHAT_TIMEOUT_SEC,
+            endpoint_base=_ollama_voice_base(),
         )
         return
     logger.warning("[LLAMA] voice stream fallback to %s", llama_model())
