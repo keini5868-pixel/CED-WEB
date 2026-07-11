@@ -17,7 +17,8 @@
 # Variables opcionales en CED-Llama:
 #   OLLAMA_MODEL=llama2:13b
 #   OLLAMA_VOICE_MODEL=llama3.2:3b
-#   OLLAMA_NUM_PARALLEL=6   (default en entrypoint; 24GB RAM → hasta 6 slots)
+#   OLLAMA_NUM_PARALLEL=2   (default en entrypoint; evita reservar RAM excesiva)
+#   OLLAMA_MAX_LOADED_MODELS=1   (solo un modelo cargado — voz 3B vs texto 13B)
 #
 # En el servicio API:
 #   LLM_PROVIDER=llama

@@ -201,6 +201,32 @@ def _log_queue_wait(started: float, *, endpoint: str) -> None:
     logger.info("[LLAMA] queue_wait_ms=%s endpoint=%s model=%s", ms, endpoint, llama_model())
 
 
+def _ollama_unload_model(model: str, *, timeout_sec: float = 2.0) -> None:
+    """Libera RAM descargando un modelo de Ollama (best-effort, no lanza)."""
+    target = (model or "").strip()
+    if not target:
+        return
+    payload = {"model": target, "prompt": "", "keep_alive": 0}
+    try:
+        with httpx.Client(timeout=timeout_sec) as client:
+            client.post(_generate_url(), json=payload)
+        logger.info("[LLAMA] unload_model=%s", target)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[LLAMA] unload_model skipped model=%s err=%s", target, exc)
+
+
+def _parse_generate_response(data: dict[str, Any]) -> str:
+    return str(data.get("response") or "").strip()
+
+
+def _parse_chat_response(data: dict[str, Any]) -> str:
+    msg = data.get("message") or {}
+    text = str(msg.get("content") or "").strip()
+    if not text:
+        text = str(msg.get("thinking") or "").strip()
+    return text
+
+
 def _raise_if_llama_http_error(response: httpx.Response) -> None:
     if response.status_code == 404:
         body = response.text.lower()
@@ -335,29 +361,79 @@ def call_llama_voice_generate(
     voice = llama_voice_model()
     if not llama_voice_model_ready():
         raise LlamaNotReadyError(f"modelo {voice} no descargado en Ollama")
-    payload: dict[str, Any] = {
+
+    text_model = llama_model()
+    if text_model != voice:
+        _ollama_unload_model(text_model)
+
+    sys_clean = system.strip()
+    prompt = user_text.strip()
+    options = {"temperature": temperature, "num_predict": max_tokens}
+    generate_payload: dict[str, Any] = {
         "model": voice,
-        "prompt": user_text.strip(),
-        "system": system.strip(),
+        "prompt": prompt,
+        "system": sys_clean,
         "stream": False,
         "keep_alive": _OLLAMA_KEEP_ALIVE,
-        "options": {"temperature": temperature, "num_predict": max_tokens},
+        "options": options,
     }
+    chat_payload: dict[str, Any] = {
+        "model": voice,
+        "messages": [
+            {"role": "system", "content": sys_clean},
+            {"role": "user", "content": prompt},
+        ],
+        "stream": False,
+        "keep_alive": _OLLAMA_KEEP_ALIVE,
+        "options": options,
+    }
+
+    last_exc: Exception | None = None
     started = time.monotonic()
-    with httpx.Client(timeout=timeout_sec) as client:
-        response = client.post(_generate_url(), json=payload)
-        _raise_if_llama_http_error(response)
-        _log_queue_wait(started, endpoint=f"generate:{voice}")
-        data = response.json()
-    text = str(data.get("response") or "").strip()
-    if not text:
-        logger.error(
-            "[LLAMA] empty_generate model=%s eval_count=%s",
-            voice,
-            data.get("eval_count"),
+    for attempt, (url, payload, parser) in enumerate(
+        (
+            (_generate_url(), generate_payload, _parse_generate_response),
+            (_chat_url(), chat_payload, _parse_chat_response),
         )
-        raise RuntimeError("Llama devolvió respuesta vacía")
-    return text
+    ):
+        if attempt > 0 and text_model != voice:
+            _ollama_unload_model(text_model)
+        try:
+            with httpx.Client(timeout=timeout_sec) as client:
+                response = client.post(url, json=payload)
+                _raise_if_llama_http_error(response)
+                _log_queue_wait(started, endpoint=f"voice:{voice}:{'generate' if attempt == 0 else 'chat'}")
+                text = parser(response.json())
+            if text:
+                return text
+            logger.error(
+                "[LLAMA] empty_voice_reply model=%s endpoint=%s attempt=%s",
+                voice,
+                "generate" if attempt == 0 else "chat",
+                attempt,
+            )
+        except httpx.HTTPStatusError as exc:
+            last_exc = exc
+            logger.warning(
+                "[LLAMA] voice_attempt_failed model=%s attempt=%s status=%s",
+                voice,
+                attempt,
+                exc.response.status_code,
+            )
+            continue
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            logger.warning(
+                "[LLAMA] voice_attempt_failed model=%s attempt=%s err=%s",
+                voice,
+                attempt,
+                exc,
+            )
+            continue
+
+    if last_exc:
+        raise last_exc
+    raise RuntimeError("Llama devolvió respuesta vacía")
 
 
 def call_llama_voice_chat(
