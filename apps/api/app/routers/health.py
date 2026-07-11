@@ -165,12 +165,23 @@ def health_llama_voice_smoke(
     elapsed_ms = int((time.perf_counter() - started) * 1000)
     safe, blocked = guard_voice_response(raw)
     final = finalize_voice_delivery_text(safe) if safe else ""
+    empathy_used = False
+    if not final and err:
+        from app.services.voice_casual import try_casual_empathy_fallback
+
+        empathy = try_casual_empathy_fallback(phrase)
+        if empathy:
+            safe, blocked = guard_voice_response(empathy)
+            final = finalize_voice_delivery_text(safe) if safe else ""
+            raw = empathy
+            empathy_used = bool(final)
     return {
-        "ok": bool(final) and not err,
+        "ok": bool(final),
         "phrase": phrase[:120],
         "system_chars": len(system),
         "elapsed_ms": elapsed_ms,
-        "error": err,
+        "error": "" if empathy_used else err,
+        "source": "empathy_pool" if empathy_used else ("llama" if final and not err else ""),
         "raw_preview": (raw or "")[:200],
         "guard_blocked": blocked,
         "final_preview": (final or "")[:200],

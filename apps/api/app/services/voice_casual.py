@@ -98,6 +98,58 @@ def build_casual_llama_system(user_text: str = "") -> str:
     return system
 
 
+def try_casual_empathy_fallback(user_text: str) -> str | None:
+    """Respuesta empática determinística cuando Ollama no está disponible."""
+    norm = " ".join((user_text or "").strip().lower().split())
+    if not norm:
+        return None
+    rules: tuple[tuple[re.Pattern[str], tuple[str, ...]], ...] = (
+        (
+            re.compile(r"\b(triste|tristeza|deprim|melancol|mal humor)\b", re.I),
+            (
+                "Lo lamento, señor; es válido sentirse así algunos días. Estoy aquí si quiere desahogarse un poco.",
+                "Comprendo ese pesar, señor. Cuando quiera, cuénteme qué lo tiene así y lo escucho con calma.",
+            ),
+        ),
+        (
+            re.compile(r"\b(madrugada|despert|dorm[ií]|insomnio|hecho polvo|cansad|agotad|fatig)\b", re.I),
+            (
+                "Entiendo, señor; dormir poco pesa en el cuerpo y en el ánimo. Trate de hidratarse y descansar cuando pueda.",
+                "Comprendo, señor. Esas madrugadas largas dejan el día difícil; cuídese un poco hoy.",
+            ),
+        ),
+        (
+            re.compile(r"\b(tr[aá]fico|fastidio|molest|enojo|pesad)\b", re.I),
+            (
+                "Le entiendo, señor; el tráfico agota a cualquiera. Respire un momento y siga adelante con calma.",
+                "Comprendo la molestia, señor. Esos trayectos pesados arruinan la mañana; espero que el resto del día mejore.",
+            ),
+        ),
+        (
+            re.compile(r"\b(reuni|oficina|trabaj|lunes)\b", re.I),
+            (
+                "Suena a un día exigente, señor. Tómese un respiro; lo está haciendo bien.",
+            ),
+        ),
+        (
+            re.compile(r"\b(gracias|escuch)\b", re.I),
+            (
+                "De nada, señor. Para eso estoy.",
+            ),
+        ),
+    )
+    for pattern, replies in rules:
+        if pattern.search(norm):
+            import random
+
+            return random.choice(replies)
+    if len(norm.split()) >= 4:
+        return (
+            "Comprendo, señor. Cuénteme un poco más si quiere; lo escucho."
+        )
+    return None
+
+
 def is_casual_voice_turn(text: str, transcript: list[Utterance] | None = None) -> bool:
     """True si el turno es charla casual sin señal explícita de módulo/herramienta."""
     from app.services.cognitive_intents import is_internal_knowledge_query

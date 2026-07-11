@@ -276,6 +276,7 @@ class LlamaVoiceLlm:
             LLAMA_CASUAL_TIMEOUT_SEC,
             LLAMA_VOICE_SAFETY_TIMEOUT_SEC,
             build_casual_llama_system,
+            try_casual_empathy_fallback,
             try_internal_knowledge_voice_reply,
         )
         from app.services.voice_small_talk import try_instant_small_talk_voice_reply
@@ -335,7 +336,7 @@ class LlamaVoiceLlm:
                 "[RETELL-LLAMA] timeout call=%s path=conversational",
                 self._latency_call_id,
             )
-            reply = FALLBACK_REPLY
+            reply = ""
         except Exception as exc:  # noqa: BLE001
             logger.exception(
                 "[RETELL-LLAMA] generate failed call=%s path=conversational err=%s: %s",
@@ -343,7 +344,19 @@ class LlamaVoiceLlm:
                 type(exc).__name__,
                 exc,
             )
-            reply = FALLBACK_REPLY
+            reply = ""
+
+        if not (reply or "").strip():
+            empathy = try_casual_empathy_fallback(user_text)
+            if empathy:
+                logger.info(
+                    "[RETELL-LLAMA] casual source=empathy_pool call=%s text=%s",
+                    self._latency_call_id,
+                    user_text[:60],
+                )
+                reply = empathy
+            else:
+                reply = FALLBACK_REPLY
         logger.info(
             "[RETELL-LLAMA] casual source=llama call=%s text=%s reply_chars=%s",
             self._latency_call_id,

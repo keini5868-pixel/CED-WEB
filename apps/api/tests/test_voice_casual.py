@@ -142,3 +142,24 @@ def test_voice_safety_timeout_is_25_seconds() -> None:
 
     assert LLAMA_VOICE_TIMEOUT_SEC == 25.0
     assert LLAMA_VOICE_SAFETY_TIMEOUT_SEC == 25.0
+    from app.services.voice_casual import try_casual_empathy_fallback
+
+    reply = try_casual_empathy_fallback(
+        "trabajé hasta las 4 de la madrugada y ahorita me acabo de despertar"
+    )
+    assert reply
+    assert "señor" in reply.lower() or "senor" in reply.lower()
+    assert "un momento" not in reply.lower()
+
+
+def test_casual_empathy_fallback_for_sad_phrase() -> None:
+    from app.services.voice_casual import try_casual_empathy_fallback
+
+    reply = try_casual_empathy_fallback("me siento un poco triste hoy")
+    assert reply
+    assert "señor" in reply.lower() or "senor" in reply.lower()
+    from app.services.llama_voice_llm import LLAMA_VOICE_TIMEOUT_SEC
+    from app.services.voice_casual import LLAMA_VOICE_SAFETY_TIMEOUT_SEC
+
+    assert LLAMA_VOICE_TIMEOUT_SEC == 25.0
+    assert LLAMA_VOICE_SAFETY_TIMEOUT_SEC == 25.0
