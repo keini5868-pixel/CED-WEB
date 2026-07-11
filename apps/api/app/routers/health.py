@@ -84,6 +84,59 @@ def health_llama(_request: Request) -> dict:
     return {"enabled": True, **llama_health_diagnostics()}
 
 
+@router.get("/health/llama/voice-smoke")
+@limiter.exempt
+def health_llama_voice_smoke(
+    _request: Request,
+    phrase: str = Query(default="me siento un poco triste hoy"),
+) -> dict:
+    """Smoke test — Llama 3B con prompt casual mínimo (diagnóstico prod)."""
+    import time
+
+    from app.services.llama_service import call_llama_voice_chat, use_llama
+    from app.services.voice_casual import (
+        LLAMA_CASUAL_MAX_TOKENS,
+        LLAMA_CASUAL_NUM_CTX,
+        LLAMA_CASUAL_TEMPERATURE,
+        LLAMA_CASUAL_TIMEOUT_SEC,
+        build_casual_llama_system,
+    )
+    from app.services.voice_response_guard import guard_voice_response
+    from app.services.voice_spoken import finalize_voice_delivery_text
+
+    if not use_llama():
+        return {"ok": False, "error": "llama disabled"}
+    system = build_casual_llama_system(phrase)
+    started = time.perf_counter()
+    err = ""
+    raw = ""
+    try:
+        raw = call_llama_voice_chat(
+            system=system,
+            messages=[{"role": "user", "content": phrase}],
+            temperature=LLAMA_CASUAL_TEMPERATURE,
+            max_tokens=LLAMA_CASUAL_MAX_TOKENS,
+            timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,
+            num_ctx=LLAMA_CASUAL_NUM_CTX,
+        )
+    except Exception as exc:  # noqa: BLE001
+        err = f"{type(exc).__name__}: {exc}"
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    safe, blocked = guard_voice_response(raw)
+    final = finalize_voice_delivery_text(safe) if safe else ""
+    return {
+        "ok": bool(final) and not err,
+        "phrase": phrase[:120],
+        "system_chars": len(system),
+        "elapsed_ms": elapsed_ms,
+        "error": err,
+        "raw_preview": (raw or "")[:200],
+        "guard_blocked": blocked,
+        "final_preview": (final or "")[:200],
+        "build": BUILD_VERSION,
+    }
+
+
 @router.get("/health/voice-prompt")
 @limiter.exempt
 def health_voice_prompt(_request: Request) -> dict:

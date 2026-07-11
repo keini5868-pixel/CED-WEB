@@ -302,6 +302,16 @@ def call_llama_chat(
     msg = data.get("message") or {}
     text = str(msg.get("content") or "").strip()
     if not text:
+        text = str(msg.get("thinking") or "").strip()
+    if not text:
+        logger.error(
+            "[LLAMA] empty_reply model=%s done=%s eval_count=%s prompt_eval=%s msg_keys=%s",
+            target_model,
+            data.get("done"),
+            data.get("eval_count"),
+            data.get("prompt_eval_count"),
+            list(msg.keys()) if isinstance(msg, dict) else type(msg).__name__,
+        )
         raise RuntimeError("Llama devolvió respuesta vacía")
     return text
 

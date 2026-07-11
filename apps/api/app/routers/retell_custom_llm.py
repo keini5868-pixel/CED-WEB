@@ -1015,6 +1015,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     "[RETELL-GEMINI] conversational miss — fallthrough draft_response call=%s",
                     call_id,
                 )
+                if await deliver_voice(FALLBACK_REPLY):
+                    return
+                await anti_silence_if_unanswered(reason="conversational_miss")
+                return
 
             from app.services.voice_intent_gate import detect_local_module_hints
 
