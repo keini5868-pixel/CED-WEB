@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "voice-3b-filler-v1"
+BUILD_VERSION = "chat-image-ref-v1"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

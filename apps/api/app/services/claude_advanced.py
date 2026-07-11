@@ -438,31 +438,15 @@ def _try_direct_image(
     history_rows: list[dict[str, Any]],
     conversation_id: str,
 ) -> dict[str, Any] | None:
-    from app.services.chat_intents import is_pdf_intent, mentions_pdf
-
-    if is_pdf_intent(text) or mentions_pdf(text):
-        return None
-    img_prompt = parse_generate_image_prompt(text)
-    followup = (
-        parse_followup_image_prompt(text, history_rows)
-        if not img_prompt
-        else None
+    from app.services.chat_image_generation import (
+        run_chat_image_generation,
+        should_take_direct_image_path,
     )
-    effective = img_prompt or followup
-    if not effective or not is_generate_image_intent(text) or len(text) > DIRECT_IMAGE_MAX_CHARS:
-        return None
-    if _needs_chat_tools(text) and not img_prompt:
-        return None
 
-    from app.services.gemini_images import generate_image
-    from app.services.marketing_creative import (
-        build_display_label,
-        extract_product_subject,
-        is_marketing_creative_intent,
-        resolve_image_creation_from_text,
-    )
-    from app.services.publish_image_context import register_text_chat_image_url
-    from app.services.text_chat import _recent_chat_context
+    if not should_take_direct_image_path(text, history_rows):
+        return None
+    if _needs_chat_tools(text) and not parse_generate_image_prompt(text):
+        return None
 
     plan_id = None
     try:
@@ -473,47 +457,25 @@ def _try_direct_image(
     except Exception:  # noqa: BLE001
         pass
 
-    chat_context = _recent_chat_context(history_rows)
-    creation = resolve_image_creation_from_text(text, history_rows)
-    display_label = ""
-    success_reply = "Listo. Aquí está su imagen generada."
-    if creation:
-        img_result = generate_image(
-            user_id=user_id,
-            plan_id=plan_id,
-            prompt=creation["internal_prompt"],
-            quality="auto",
-            context="",
-            display_label=creation["display_label"],
-        )
-        success_reply = creation.get("reply") or success_reply
-        display_label = creation["display_label"]
-    else:
-        if is_marketing_creative_intent(text):
-            display_label = build_display_label(extract_product_subject(chat_context))
-            success_reply = "Listo, señor. Aquí está su creativo publicitario."
-        img_result = generate_image(
-            user_id=user_id,
-            plan_id=plan_id,
-            prompt=effective,
-            quality="auto",
-            context=chat_context,
-            display_label=display_label or None,
-        )
-
-    if not img_result.get("ok") or not img_result.get("url"):
-        err = str(img_result.get("error") or "No pude generar la imagen.")
+    gen = run_chat_image_generation(
+        user_id,
+        conversation_id,
+        text,
+        history_rows,
+        plan_id=plan_id,
+    )
+    if not gen.get("ok") or not gen.get("url"):
+        err = str(gen.get("error") or gen.get("reply") or "No pude generar la imagen.")
         return _finish_payload(response=err, model=ADVANCED_MODEL_LABEL)
 
-    register_text_chat_image_url(user_id, conversation_id, str(img_result["url"]))
-    caption = str(img_result.get("caption") or display_label or "Imagen generada")
+    caption = str(gen.get("caption") or "Imagen generada")
     return _finish_payload(
-        response=success_reply,
+        response=str(gen.get("reply") or "Listo. Aquí está su imagen generada."),
         model=ADVANCED_MODEL_LABEL,
         image=_chat_image_attachment(
-            str(img_result["url"]),
+            str(gen["url"]),
             caption=caption,
-            quality=str(img_result.get("quality") or ""),
+            quality=str(gen.get("quality") or ""),
         ),
     )
 

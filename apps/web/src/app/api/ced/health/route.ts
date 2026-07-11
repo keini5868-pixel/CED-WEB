@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
 
-const WEB_BUILD = "voice-3b-filler-v1";
+const WEB_BUILD = "chat-image-ref-v1";
 
 /** Diagnóstico BFF: comprueba que el web alcanza la API (sin auth). */
 export async function GET() {

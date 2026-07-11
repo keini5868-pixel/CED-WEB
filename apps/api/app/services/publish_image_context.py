@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 _lock = threading.Lock()
 _by_conversation: dict[str, dict[str, Any]] = {}
 _by_user: dict[str, dict[str, Any]] = {}
+_vision_by_conversation: dict[str, dict[str, Any]] = {}
 
 MAX_AGE_SEC = 3600.0
 RECENT_UPLOAD_HOURS = 24.0
@@ -140,7 +141,8 @@ def register_text_chat_image(
     public_url = store_publish_image(user_id, image_bytes, mime)
     entry = {
         "url": public_url,
-        "data": None,
+        "data": bytes(image_bytes),
+        "mime": (mime or "image/jpeg").split(";")[0].strip().lower() or "image/jpeg",
         "at": _now(),
         "conversation_id": conversation_id,
         "filename": filename,
@@ -157,11 +159,12 @@ def register_text_chat_image_url(
     image_url: str,
     *,
     filename: str = "",
+    preserve_reference_bytes: bool = True,
 ) -> str:
     url = (image_url or "").strip()
     if not url:
         return ""
-    entry = {
+    entry: dict[str, Any] = {
         "url": url,
         "data": None,
         "at": _now(),
@@ -169,6 +172,14 @@ def register_text_chat_image_url(
         "filename": filename,
         "size_bytes": 0,
     }
+    if preserve_reference_bytes:
+        existing = get_last_uploaded_image_for_session(user_id, conversation_id)
+        if existing:
+            data = existing.get("data")
+            if isinstance(data, (bytes, bytearray)) and len(data) > 0:
+                entry["data"] = bytes(data)
+                entry["mime"] = existing.get("mime") or "image/jpeg"
+                entry["size_bytes"] = len(entry["data"])
     _store_entry(user_id, conversation_id, entry)
     _mirror_to_voice_session(user_id, public_url=url, filename=filename)
     return url
@@ -232,6 +243,67 @@ def has_publishable_image(user_id: str, conversation_id: str | None = None) -> b
     if not row:
         return False
     return bool(str(row.get("url") or "").strip() or str(row.get("data") or "").strip())
+
+
+def set_session_vision_analysis(
+    user_id: str,
+    conversation_id: str,
+    analysis: str,
+) -> None:
+    """Cachea el último análisis visual de la conversación para generación con referencia."""
+    text = (analysis or "").strip()
+    if not text or not conversation_id:
+        return
+    key = _conv_key(user_id, conversation_id)
+    with _lock:
+        _vision_by_conversation[key] = {"analysis": text[:4000], "at": _now()}
+
+
+def get_session_vision_analysis(
+    user_id: str,
+    conversation_id: str | None,
+    *,
+    max_age_sec: float = MAX_AGE_SEC,
+) -> str:
+    if not conversation_id:
+        return ""
+    key = _conv_key(user_id, conversation_id)
+    now = _now()
+    with _lock:
+        row = _vision_by_conversation.get(key)
+        if not row or now - float(row.get("at") or 0) > max_age_sec:
+            return ""
+        return str(row.get("analysis") or "").strip()
+
+
+def resolve_reference_image_bytes(
+    user_id: str,
+    conversation_id: str | None,
+    *,
+    max_age_sec: float = MAX_AGE_SEC,
+) -> tuple[bytes, str] | None:
+    """Recupera bytes + MIME de la última imagen subida en la sesión de chat."""
+    row = get_last_uploaded_image_for_session(user_id, conversation_id, max_age_sec=max_age_sec)
+    if not row:
+        return None
+
+    data = row.get("data")
+    mime = str(row.get("mime") or "image/jpeg").split(";")[0].strip().lower() or "image/jpeg"
+    if isinstance(data, (bytes, bytearray)) and len(data) > 0:
+        return bytes(data), mime
+
+    url = str(row.get("url") or "").strip()
+    if not url:
+        return None
+    try:
+        from app.services.publish_media import decode_image_data
+
+        fetched, fetched_mime = decode_image_data(url)
+        if fetched:
+            return fetched, fetched_mime or mime
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[PUBLISH] [IMAGE] fetch reference failed user=%s: %s", user_id[:8], exc)
+    return None
 
 
 def resolve_image_for_publishing(

@@ -414,6 +414,11 @@ def build_marketing_creative_brief(
     raw = _merge_creative_raw(raw, parsed)
 
     context = _history_blob(history)
+    from app.services.chat_image_generation import extract_vision_context_from_history
+
+    vision = extract_vision_context_from_history(history)
+    if has_reference_image and vision:
+        context = f"{context}\n{vision}".strip()
     subject = normalize_spanish(_extract_creative_subject(f"{context}\n{raw}\n{user_text}"))
     overlay_lines = collect_image_overlay_lines(f"{raw}\n{context}", context)
     if not overlay_lines:
@@ -487,15 +492,25 @@ def resolve_image_creation_from_attachment(
 def resolve_image_creation_from_text(
     user_text: str,
     history: list[dict[str, str]] | None = None,
+    *,
+    has_reference_image: bool | None = None,
 ) -> dict[str, str] | None:
     """Pedido de creativo sin adjunto (solo texto + historial)."""
     if not is_image_creation_request(user_text, history):
         return None
-    if is_marketing_creative_intent(user_text) or parse_followup_image_prompt(user_text, history):
+    if has_reference_image is None:
+        from app.services.chat_intents import user_requests_prior_reference
+
+        has_reference_image = user_requests_prior_reference(user_text)
+    if (
+        is_marketing_creative_intent(user_text)
+        or parse_followup_image_prompt(user_text, history)
+        or has_reference_image
+    ):
         internal, display, style_mode = build_marketing_creative_brief(
             user_text,
             history,
-            has_reference_image=False,
+            has_reference_image=has_reference_image,
         )
         return {
             "internal_prompt": internal,

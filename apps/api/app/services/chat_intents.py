@@ -72,6 +72,23 @@ _PDF_THIS_REF = re.compile(
     re.I,
 )
 
+_PRIOR_REFERENCE = re.compile(
+    r"\b("
+    r"igual\s+a\s+(?:la\s+)?(?:que\s+)?(?:te\s+)?(?:pas[eé]|sub[ií]|mand[eé]|envi[eé])"
+    r"|(?:la|el)\s+(?:misma|mismo)\s+(?:imagen|foto|flyer|creativo|dise[nñ]o|referencia)"
+    r"|(?:mism[oa]s?\s+)?(?:precios?|nombre|dise[nñ]o|estilo|textos?)"
+    r"|(?:imagen|foto|flyer|creativo)\s+(?:de\s+)?referencia"
+    r"|(?:que|la\s+que)\s+(?:te\s+)?(?:pas[eé]|sub[ií]|mand[eé]|envi[eé]|compart[ií])"
+    r"|(?:usa|utiliza)\w*\s+(?:esa|esta|la)\s+(?:imagen|foto|referencia)"
+    r"|basad[oa]\s+en\s+(?:la\s+)?(?:imagen|foto|referencia)"
+    r")\b",
+    re.I,
+)
+
+
+def user_requests_prior_reference(text: str) -> bool:
+    return bool(_PRIOR_REFERENCE.search((text or "").strip()))
+
 
 def mentions_pdf(text: str) -> bool:
     return bool(re.search(r"\bpdf\b", (text or "").strip(), re.I))
@@ -103,7 +120,8 @@ def parse_generate_image_prompt(text: str) -> str | None:
 
 _FOLLOWUP_IMAGE_CONTEXT = re.compile(
     r"\b(genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|imagen|foto|dise[nñ]o|"
-    r"creativo|ilustraci[oó]n|face(?:book)?|instagram|publicar|banner|flyer)\b",
+    r"creativo|ilustraci[oó]n|face(?:book)?|instagram|publicar|banner|flyer|"
+    r"referencia|precio|dise[nñ]o|igual|mismo|otra\s+vez|de\s+nuevo)\b",
     re.I,
 )
 _FOLLOWUP_SKIP = re.compile(
@@ -117,7 +135,8 @@ _IMAGE_THREAD_USER = re.compile(
 )
 _IMAGE_THREAD_ASSISTANT = re.compile(
     r"(?:Descargar imagen|Creativo\s+[—\-]|imagen generada|"
-    r"aqu[ií]\s+est[aá]\s+(?:tu|su)\s+(?:imagen|creativo))",
+    r"aqu[ií]\s+est[aá]\s+(?:tu|su)\s+(?:imagen|creativo)|"
+    r"\*\*Qu[eé]\s+es\*\*|Detalle visible|Observaciones\s+[—\-])",
     re.I,
 )
 _CASUAL_CHAT_BLOCK = re.compile(
@@ -169,8 +188,6 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
         return None
     if _FOLLOWUP_SKIP.search(t):
         return None
-    if not history_has_active_image_thread(history):
-        return None
     from app.services.publish_text import (
         is_explicit_social_publish_request,
         is_publish_help_request,
@@ -183,13 +200,18 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
         or is_publish_help_request(t)
     ):
         return None
+
+    has_thread = history_has_active_image_thread(history)
+    if not has_thread and not user_requests_prior_reference(t):
+        return None
+
     recent: list[str] = []
     for row in (history or [])[-8:]:
         content = (row.get("content") or "").strip()
         if content:
             recent.append(content)
     blob = " ".join(recent[-6:]).lower()
-    if not _FOLLOWUP_IMAGE_CONTEXT.search(blob):
+    if not _FOLLOWUP_IMAGE_CONTEXT.search(blob) and not user_requests_prior_reference(t):
         return None
     return t
 

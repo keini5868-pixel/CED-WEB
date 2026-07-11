@@ -1323,8 +1323,7 @@ def _run_chat_tool(
                 }
             )
         if name == "generate_image":
-            from app.services.gemini_images import generate_image
-            from app.services.marketing_creative import resolve_image_creation_from_text
+            from app.services.chat_image_generation import run_chat_image_generation
 
             plan_id = None
             try:
@@ -1336,41 +1335,36 @@ def _run_chat_tool(
             prior_rows: list[dict[str, str]] = []
             if chat_messages:
                 prior_rows = [
-                    {"content": str(m.get("content") or "")}
+                    {"role": str(m.get("role") or "user"), "content": str(m.get("content") or "")}
                     for m in chat_messages[:-1]
                     if isinstance(m, dict)
                 ]
-            prior = _recent_chat_context(prior_rows)
-            creation = resolve_image_creation_from_text(prompt, prior_rows)
             quality = str(tool_input.get("quality") or "auto")
-            if creation:
-                result = generate_image(
-                    user_id=user_id,
-                    plan_id=plan_id,
-                    prompt=creation["internal_prompt"],
-                    quality=quality,
-                    context="",
-                    display_label=creation["display_label"],
+            gen = run_chat_image_generation(
+                user_id,
+                conversation_id,
+                prompt,
+                prior_rows,
+                plan_id=plan_id,
+            )
+            if gen.get("ok") and gen.get("url"):
+                return json.dumps(
+                    {
+                        "ok": True,
+                        "url": gen["url"],
+                        "caption": gen.get("caption"),
+                        "quality": gen.get("quality") or quality,
+                        "prompt": prompt,
+                        "used_reference": gen.get("used_reference"),
+                    }
                 )
-            else:
-                result = generate_image(
-                    user_id=user_id,
-                    plan_id=plan_id,
-                    prompt=prompt,
-                    quality=quality,
-                    context=prior,
-                )
-            if result.get("ok") and result.get("url"):
-                result["prompt"] = prompt
-                if conversation_id:
-                    from app.services.publish_image_context import register_text_chat_image_url
-
-                    register_text_chat_image_url(
-                        user_id,
-                        conversation_id,
-                        str(result["url"]),
-                    )
-            return json.dumps(result)
+            return json.dumps(
+                {
+                    "ok": False,
+                    "error": gen.get("error") or gen.get("reply"),
+                    "code": "generation_failed",
+                }
+            )
         if name == "recall_previous_conversations":
             from app.services.conversation_memory import (
                 format_recall_for_voice,
@@ -2237,6 +2231,9 @@ def send_message(
                 media_type=image_media_type or "image/jpeg",
                 user_text=text,
             )
+            from app.services.publish_image_context import set_session_vision_analysis
+
+            set_session_vision_analysis(user_id, conversation_id, reply)
             return _finish(
                 reply,
                 route_meta={"intent": "chat_vision", "source": "attachment"},
@@ -2339,85 +2336,46 @@ def send_message(
                 pdf=attachment if attachment.get("file_id") else None,
             )
 
-    img_prompt = parse_generate_image_prompt(text)
-    followup_prompt = (
-        parse_followup_image_prompt(text, history)
-        if not img_prompt and not is_casual_chat_interrupt(text)
-        else None
+    from app.services.chat_image_generation import (
+        should_take_direct_image_path,
+        run_chat_image_generation,
     )
-    effective_img_prompt = img_prompt or followup_prompt
-    if (
-        effective_img_prompt
-        and not is_casual_chat_interrupt(text)
-        and (is_generate_image_intent(text) or followup_prompt)
-        and len(text.strip()) <= DIRECT_IMAGE_MAX_CHARS
-    ):
-        from app.services.gemini_images import generate_image
-        from app.services.marketing_creative import (
-            build_display_label,
-            extract_product_subject,
-            is_marketing_creative_intent,
-            resolve_image_creation_from_text,
-        )
 
+    if should_take_direct_image_path(text, history):
         plan_id = None
         try:
             sub = supabase_db.get_subscription(user_id)
             plan_id = sub.get("plan_id") if sub else None
         except Exception:  # noqa: BLE001
             pass
-        chat_context = _recent_chat_context(history)
-        creation = resolve_image_creation_from_text(text, history)
-        display_label = ""
-        success_reply = "Listo. Aquí está tu imagen generada."
-        if creation:
-            prompt_for_model = creation["internal_prompt"]
-            display_label = creation["display_label"]
-            success_reply = creation.get("reply") or "Listo. Aquí está su creativo."
-            img_result = generate_image(
-                user_id=user_id,
-                plan_id=plan_id,
-                prompt=prompt_for_model,
-                quality="auto",
-                context="",
-                display_label=display_label,
-            )
-        else:
-            if is_marketing_creative_intent(text):
-                display_label = build_display_label(extract_product_subject(chat_context))
-                success_reply = "Listo, señor. Aquí está su creativo publicitario."
-            img_result = generate_image(
-                user_id=user_id,
-                plan_id=plan_id,
-                prompt=effective_img_prompt,
-                quality="auto",
-                context=chat_context,
-                display_label=display_label or None,
-            )
-        if img_result.get("ok") and img_result.get("url"):
-            from app.services.publish_image_context import register_text_chat_image_url
 
-            register_text_chat_image_url(
-                user_id,
-                conversation_id,
-                str(img_result["url"]),
-            )
-            caption = str(img_result.get("caption") or display_label or "Imagen generada")
+        from app.services.marketing_creative import is_marketing_creative_intent
+
+        gen = run_chat_image_generation(
+            user_id,
+            conversation_id,
+            text,
+            history,
+            plan_id=plan_id,
+        )
+        if gen.get("ok") and gen.get("url"):
             return _finish(
-                success_reply,
+                gen.get("reply") or "Listo. Aquí está tu imagen generada.",
                 route_meta={
-                    "intent": "marketing_creative" if creation or is_marketing_creative_intent(text) else "generate_image",
+                    "intent": "marketing_creative"
+                    if gen.get("used_reference") or is_marketing_creative_intent(text)
+                    else "generate_image",
                     "source": "direct",
+                    "used_reference": bool(gen.get("used_reference")),
                 },
                 image=_chat_image_attachment(
-                    str(img_result["url"]),
-                    caption=caption,
-                    quality=str(img_result.get("quality") or ""),
+                    str(gen["url"]),
+                    caption=str(gen.get("caption") or "Imagen generada"),
+                    quality=str(gen.get("quality") or ""),
                 ),
             )
-        err = str(img_result.get("error") or "No pude generar la imagen.")
         return _finish(
-            _format_image_generation_error(err),
+            _format_image_generation_error(str(gen.get("error") or gen.get("reply") or "")),
             route_meta={"intent": "generate_image", "source": "direct_error"},
         )
 

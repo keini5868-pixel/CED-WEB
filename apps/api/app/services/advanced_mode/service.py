@@ -227,18 +227,13 @@ def _try_direct_image(
     history_rows: list[dict[str, Any]],
     conversation_id: str,
 ) -> dict[str, Any] | None:
-    if is_pdf_intent(text):
-        return None
-    img_prompt = parse_generate_image_prompt(text)
-    followup = (
-        parse_followup_image_prompt(text, history_rows) if not img_prompt else None
+    from app.services.chat_image_generation import (
+        run_chat_image_generation,
+        should_take_direct_image_path,
     )
-    effective = img_prompt or followup
-    if not effective or not is_generate_image_intent(text) or len(text) > DIRECT_IMAGE_MAX_CHARS:
-        return None
 
-    from app.services.gemini_images import generate_image
-    from app.services.text_chat import _recent_chat_context
+    if not should_take_direct_image_path(text, history_rows):
+        return None
 
     plan_id = None
     try:
@@ -249,26 +244,25 @@ def _try_direct_image(
     except Exception:  # noqa: BLE001
         pass
 
-    chat_context = _recent_chat_context(history_rows)
-    img_result = generate_image(
-        user_id=user_id,
+    gen = run_chat_image_generation(
+        user_id,
+        conversation_id,
+        text,
+        history_rows,
         plan_id=plan_id,
-        prompt=effective,
-        quality="auto",
-        context=chat_context,
     )
-    if not img_result.get("ok") or not img_result.get("url"):
-        err = str(img_result.get("error") or "No pude generar la imagen.")
+    if not gen.get("ok") or not gen.get("url"):
+        err = str(gen.get("error") or gen.get("reply") or "No pude generar la imagen.")
         return _finish_payload(response=err, model=ADVANCED_MODEL_LABEL)
 
-    caption = str(img_result.get("caption") or "Imagen generada")
+    caption = str(gen.get("caption") or "Imagen generada")
     return _finish_payload(
-        response="Listo, señor. Aquí está su imagen generada.",
+        response=str(gen.get("reply") or "Listo, señor. Aquí está su imagen generada."),
         model=ADVANCED_MODEL_LABEL,
         image=_chat_image_attachment(
-            str(img_result["url"]),
+            str(gen["url"]),
             caption=caption,
-            quality=str(img_result.get("quality") or ""),
+            quality=str(gen.get("quality") or ""),
         ),
     )
 
@@ -454,8 +448,10 @@ def iter_advanced_message_stream(
 
     anthropic_key = require_anthropic_api_key()
 
+    from app.services.chat_image_generation import should_take_direct_image_path
+
     # Imagen: ruta directa (Gemini Flash Image) — no pasar por chat con herramientas.
-    if is_generate_image_intent(text) or parse_generate_image_prompt(text):
+    if should_take_direct_image_path(text, history_rows):
         status = "Generando imagen con IA…"
         yield _sse_event("status", {"text": status})
         yield _sse_flush()
