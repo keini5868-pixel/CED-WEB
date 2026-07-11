@@ -31,6 +31,7 @@ from app.services.voice_llm_common import (
 )
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_spoken import finalize_voice_delivery_text
+from app.services.voice_latency import get_turn
 
 logger = logging.getLogger(__name__)
 
@@ -163,7 +164,15 @@ class LlamaVoiceLlm:
         messages: list[dict[str, str]],
         timeout: float = LLAMA_VOICE_TIMEOUT_SEC,
         user_text: str = "",
+        path: str = "llama_chat",
     ) -> str:
+        turn = (
+            get_turn(self._latency_call_id, self._latency_response_id)
+            if self._latency_call_id and self._latency_response_id
+            else None
+        )
+        if turn:
+            turn.mark_llm_request(path=path)
         try:
             reply = await asyncio.wait_for(
                 asyncio.to_thread(
@@ -175,6 +184,8 @@ class LlamaVoiceLlm:
                 ),
                 timeout=timeout,
             )
+            if turn and (reply or "").strip():
+                turn.mark_llm_first_token()
             if (reply or "").strip():
                 return reply
         except asyncio.TimeoutError:
@@ -256,7 +267,7 @@ class LlamaVoiceLlm:
             return None
         system = self._build_system(extra_overlay=CONVERSATIONAL_TURN_OVERLAY)
         messages = _utterances_to_messages(request.transcript)
-        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text)
+        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text, path="conversational")
         safe, blocked = guard_voice_response(reply)
         if blocked or not safe:
             return None
@@ -275,7 +286,7 @@ class LlamaVoiceLlm:
         messages = _utterances_to_messages(transcript)
         if not messages:
             messages = [{"role": "user", "content": user_text}]
-        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text)
+        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text, path="conversational")
         safe, _ = guard_voice_response(reply)
         return finalize_voice_delivery_text(safe or FALLBACK_REPLY)
 
@@ -297,7 +308,7 @@ class LlamaVoiceLlm:
             {"role": "assistant", "content": bad_reply},
             {"role": "user", "content": user_text},
         ]
-        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text)
+        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text, path="conversational")
         safe, blocked = guard_voice_response(reply)
         if blocked or not safe:
             return None
@@ -308,12 +319,22 @@ class LlamaVoiceLlm:
         *,
         system: str,
         messages: list[dict[str, str]],
+        path: str = "llama_stream",
     ) -> AsyncIterator[tuple[str, str]]:
         """Streaming Llama → (delta, accumulated) para Retell."""
         from app.services.llama_service import iter_llama_chat_stream
 
+        turn = (
+            get_turn(self._latency_call_id, self._latency_response_id)
+            if self._latency_call_id and self._latency_response_id
+            else None
+        )
+        if turn:
+            turn.mark_llm_request(path=path)
+
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+        first_token_marked = False
 
         def _producer() -> None:
             acc = ""
@@ -335,6 +356,9 @@ class LlamaVoiceLlm:
         while True:
             kind, payload = await queue.get()
             if kind == "delta" and payload:
+                if turn and not first_token_marked:
+                    turn.mark_llm_first_token()
+                    first_token_marked = True
                 acc += payload
                 yield payload, acc
             elif kind == "end":

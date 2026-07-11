@@ -25,10 +25,12 @@ NUNCA llames tools por tu cuenta. NUNCA tomes decisiones sin confirmación.
 Siempre responde conversacionalmente, con empatía, en contexto modular."""
 
 _DEFAULT_TIMEOUT_SEC = 120.0
-_CHAT_TIMEOUT_SEC = 6.0
+# 13B en CPU Railway: inferencia típica 8–14 s; margen para evitar fallback cloud prematuro.
+_CHAT_TIMEOUT_SEC = 18.0
 _HEALTH_TIMEOUT_SEC = 3.0
 _MODEL_READY_CACHE_TTL_SEC = 15.0
 _CHAT_HEALTH_TIMEOUT_SEC = 2.0
+_OLLAMA_KEEP_ALIVE = "24h"
 
 _model_ready_cache: tuple[float, bool] | None = None
 
@@ -205,6 +207,7 @@ def call_llama_local(
         "prompt": full_prompt,
         "system": sys_text,
         "stream": False,
+        "keep_alive": _OLLAMA_KEEP_ALIVE,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
     if not llama_model_ready():
@@ -257,6 +260,7 @@ def call_llama_chat(
         "model": llama_model(),
         "messages": ollama_msgs,
         "stream": False,
+        "keep_alive": _OLLAMA_KEEP_ALIVE,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
     if not llama_model_ready():
@@ -291,6 +295,7 @@ def iter_llama_chat_stream(
         "model": llama_model(),
         "messages": ollama_msgs,
         "stream": True,
+        "keep_alive": _OLLAMA_KEEP_ALIVE,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
     if not llama_model_ready():

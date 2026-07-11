@@ -76,6 +76,7 @@ from app.services.voice_spoken import (
 )
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_latency import get_turn, start_turn
+from app.services.voice_intent_gate import has_explicit_module_signal, should_run_orchestrator
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -671,7 +672,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         # SIEMPRE gana al fast-path de búsqueda web. Sin esto, "dame el resumen de
         # mis finanzas" caía en "consulto las noticias" porque el web fast-path corre
         # antes que el orquestador. web_search sí puede seguir su camino.
-        strict_module_early = detect_voice_module_intent(user_text, transcript, user_id=uid or "")
+        strict_module_early = detect_strict_intent_v2(user_text)
+        if not strict_module_early and has_explicit_module_signal(user_text):
+            strict_module_early = detect_voice_module_intent(
+                user_text, transcript, user_id=uid or ""
+            )
         if pending_web and strict_module_early and strict_module_early != "web_search":
             logger.info(
                 "[RETELL-ORCH] ancla estricta %s cancela web fast-path call=%s",
@@ -899,6 +904,24 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 await anti_silence_if_unanswered(reason="datetime_deliver_failed")
                 return
 
+            from app.services.voice_intent_gate import detect_local_module_hints
+
+            module_hints = detect_local_module_hints(user_text)
+            if "advanced" in module_hints and uid and not get_orchestrator(call_id).active_module:
+                set_pending_advanced_topic(call_id, user_text)
+                advanced_reply = (
+                    "Señor, el modo avanzado con Claude funciona en el chat de texto. "
+                    "Abra el panel Avanzado para continuar su consulta con análisis profundo."
+                )
+                if await deliver_voice(advanced_reply):
+                    logger.info(
+                        "[RETELL-ORCH] advanced mode delegated to text call=%s",
+                        call_id,
+                    )
+                    return
+                await anti_silence_if_unanswered(reason="advanced_delegate_failed")
+                return
+
             if pending_web and uid and not conversational_turn:
                 kind = str(pending_web.get("kind") or "general")
                 query = str(pending_web.get("query") or user_text).strip()
@@ -962,10 +985,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             orch = get_orchestrator(call_id)
             orch_result = None
-            # Ancla estricta por keyword (ej. "guárdame en finanzas", "hazme un pdf"):
-            # fuerza el orquestador aunque small-talk lo clasifique como casual. Así
-            # la activación de módulo es DETERMINISTA por keyword, no la decide Gemini.
-            forced_module = detect_voice_module_intent(user_text, transcript, user_id=uid or "")
+            forced_module = detect_strict_intent_v2(user_text)
+            run_orchestrator = should_run_orchestrator(
+                user_text,
+                active_module=orch.active_module,
+                forced_module=forced_module,
+            )
+            if run_orchestrator and not forced_module and has_explicit_module_signal(user_text):
+                forced_module = detect_voice_module_intent(
+                    user_text, transcript, user_id=uid or ""
+                )
             if forced_module:
                 logger.info(
                     "[RETELL-ORCH] forced module=%s call=%s text=%s",
@@ -973,7 +1002,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     call_id,
                     user_text[:60],
                 )
-            if uid and (forced_module or not conversational_turn or orch.active_module):
+            if uid and run_orchestrator:
                 clear_pending_advanced_topic(call_id)
                 orch_result = await orch.process(
                     user_text=user_text,
