@@ -134,7 +134,6 @@ def test_casual_llama_uses_low_token_budget(monkeypatch: pytest.MonkeyPatch) -> 
     assert captured.get("max_tokens") == LLAMA_CASUAL_MAX_TOKENS
     assert captured.get("temperature") == LLAMA_CASUAL_TEMPERATURE
     assert captured.get("timeout_sec") == 12.0
-    assert captured.get("num_ctx") == 2048
 
 
 def test_voice_safety_timeout_is_25_seconds() -> None:

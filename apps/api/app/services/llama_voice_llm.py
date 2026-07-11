@@ -272,7 +272,6 @@ class LlamaVoiceLlm:
         user_text = merged_user_query(request.transcript) or ""
         from app.services.voice_casual import (
             LLAMA_CASUAL_MAX_TOKENS,
-            LLAMA_CASUAL_NUM_CTX,
             LLAMA_CASUAL_TEMPERATURE,
             LLAMA_CASUAL_TIMEOUT_SEC,
             build_casual_llama_system,
@@ -319,7 +318,6 @@ class LlamaVoiceLlm:
             max_tokens=LLAMA_CASUAL_MAX_TOKENS,
             timeout=LLAMA_CASUAL_TIMEOUT_SEC,
             http_timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,
-            num_ctx=LLAMA_CASUAL_NUM_CTX,
             allow_cloud_fallback=False,
         )
         logger.info(

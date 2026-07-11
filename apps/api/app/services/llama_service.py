@@ -206,6 +206,13 @@ def _raise_if_llama_http_error(response: httpx.Response) -> None:
         body = response.text.lower()
         if "not found" in body or "model" in body:
             raise LlamaNotReadyError(f"modelo no disponible: {response.text[:200]}")
+    if response.status_code >= 400:
+        snippet = (response.text or "")[:400]
+        logger.error(
+            "[LLAMA] http_error status=%s body=%s",
+            response.status_code,
+            snippet,
+        )
     response.raise_for_status()
 
 

@@ -96,7 +96,6 @@ def health_llama_voice_smoke(
     from app.services.llama_service import call_llama_voice_chat, use_llama
     from app.services.voice_casual import (
         LLAMA_CASUAL_MAX_TOKENS,
-        LLAMA_CASUAL_NUM_CTX,
         LLAMA_CASUAL_TEMPERATURE,
         LLAMA_CASUAL_TIMEOUT_SEC,
         build_casual_llama_system,
@@ -117,7 +116,6 @@ def health_llama_voice_smoke(
             temperature=LLAMA_CASUAL_TEMPERATURE,
             max_tokens=LLAMA_CASUAL_MAX_TOKENS,
             timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,
-            num_ctx=LLAMA_CASUAL_NUM_CTX,
         )
     except Exception as exc:  # noqa: BLE001
         err = f"{type(exc).__name__}: {exc}"
