@@ -36,7 +36,7 @@ from app.services.voice_latency import get_turn
 
 logger = logging.getLogger(__name__)
 
-LLAMA_VOICE_TIMEOUT_SEC = 22.0
+LLAMA_VOICE_TIMEOUT_SEC = 25.0
 
 
 def _utterances_to_messages(utterances: list[Utterance]) -> list[dict[str, str]]:
@@ -125,8 +125,8 @@ class LlamaVoiceLlm:
             self._session_started = time.monotonic()
             self._turn_count = 0
 
-    def _build_system(self, *, extra_overlay: str = "") -> str:
-        base = build_voice_system(self.user_id or "", lightweight=True)
+    def _build_system(self, *, extra_overlay: str = "", user_text: str = "") -> str:
+        base = build_voice_system(self.user_id or "", user_text, lightweight=True)
         parts = [LLAMA_CONVERSATIONAL_SYSTEM, base]
         if self._module_overlay.strip():
             parts.append(self._module_overlay.strip())
@@ -166,6 +166,10 @@ class LlamaVoiceLlm:
         timeout: float = LLAMA_VOICE_TIMEOUT_SEC,
         user_text: str = "",
         path: str = "llama_chat",
+        temperature: float = 0.7,
+        max_tokens: int = 1024,
+        http_timeout_sec: float | None = None,
+        allow_cloud_fallback: bool = True,
     ) -> str:
         turn = (
             get_turn(self._latency_call_id, self._latency_response_id)
@@ -180,8 +184,9 @@ class LlamaVoiceLlm:
                     call_llama_voice_chat,
                     system=system,
                     messages=messages,
-                    temperature=0.7,
-                    max_tokens=1024,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    timeout_sec=http_timeout_sec,
                 ),
                 timeout=timeout,
             )
@@ -190,7 +195,7 @@ class LlamaVoiceLlm:
             if (reply or "").strip():
                 return reply
         except asyncio.TimeoutError:
-            logger.warning("[RETELL-LLAMA] timeout call=%s", self._latency_call_id)
+            logger.warning("[RETELL-LLAMA] timeout call=%s path=%s", self._latency_call_id, path)
         except Exception as exc:  # noqa: BLE001
             from app.services.llama_service import LlamaNotReadyError
 
@@ -198,6 +203,9 @@ class LlamaVoiceLlm:
                 logger.warning("[RETELL-LLAMA] modelo no listo call=%s", self._latency_call_id)
             else:
                 logger.exception("[RETELL-LLAMA] generate failed call=%s", self._latency_call_id)
+
+        if not allow_cloud_fallback:
+            return FALLBACK_REPLY
 
         cloud = await self._cloud_fallback_reply(
             system=system,
@@ -254,6 +262,13 @@ class LlamaVoiceLlm:
 
     async def draft_conversational_response(self, request: ResponseRequiredRequest) -> str | None:
         user_text = merged_user_query(request.transcript) or ""
+        from app.services.voice_casual import (
+            CASUAL_VOICE_OVERLAY,
+            LLAMA_CASUAL_MAX_TOKENS,
+            LLAMA_CASUAL_TEMPERATURE,
+            LLAMA_CASUAL_TIMEOUT_SEC,
+            try_internal_knowledge_voice_reply,
+        )
         from app.services.voice_small_talk import try_instant_small_talk_voice_reply
 
         instant = try_instant_small_talk_voice_reply(user_text)
@@ -266,9 +281,38 @@ class LlamaVoiceLlm:
 
         if not user_text:
             return None
-        system = self._build_system(extra_overlay=CONVERSATIONAL_TURN_OVERLAY)
+
+        kb_reply, kb_source = try_internal_knowledge_voice_reply(user_text)
+        if kb_reply:
+            logger.info(
+                "[RETELL-LLAMA] casual source=%s call=%s text=%s",
+                kb_source,
+                self._latency_call_id,
+                user_text[:60],
+            )
+            return kb_reply
+
+        system = self._build_system(
+            extra_overlay=f"{CONVERSATIONAL_TURN_OVERLAY}\n\n{CASUAL_VOICE_OVERLAY}",
+            user_text=user_text,
+        )
         messages = _utterances_to_messages(request.transcript)
-        reply = await self._llama_reply(system=system, messages=messages, user_text=user_text, path="conversational")
+        reply = await self._llama_reply(
+            system=system,
+            messages=messages,
+            user_text=user_text,
+            path="conversational",
+            temperature=LLAMA_CASUAL_TEMPERATURE,
+            max_tokens=LLAMA_CASUAL_MAX_TOKENS,
+            timeout=LLAMA_CASUAL_TIMEOUT_SEC,
+            http_timeout_sec=LLAMA_CASUAL_TIMEOUT_SEC,
+            allow_cloud_fallback=False,
+        )
+        logger.info(
+            "[RETELL-LLAMA] casual source=llama call=%s text=%s",
+            self._latency_call_id,
+            user_text[:60],
+        )
         safe, blocked = guard_voice_response(reply)
         if blocked or not safe:
             return None

@@ -77,6 +77,7 @@ from app.services.voice_spoken import (
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_latency import get_turn, start_turn
 from app.services.voice_intent_gate import has_explicit_module_signal, should_run_orchestrator
+from app.services.voice_casual import is_casual_voice_turn
 from app.services.voice_filler_bank import FILLER_MIN_HOLD_S, pick_voice_filler
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
@@ -921,7 +922,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             from app.services.system_clock import try_instant_datetime_reply
 
-            conversational_turn = is_small_talk(user_text, transcript)
+            conversational_turn = is_casual_voice_turn(user_text, transcript)
 
             clock_reply = try_instant_datetime_reply(
                 user_text,
@@ -938,6 +939,82 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     return
                 await anti_silence_if_unanswered(reason="datetime_deliver_failed")
                 return
+
+            # Charla casual — antes del orquestador: KB interno o Llama, sin tools ni filler.
+            if conversational_turn and uid:
+                skip_conversational = False
+                async with response_lock:
+                    superseded, latest_rid = _is_superseded_turn_rid(
+                        scheduled_rid,
+                        scheduled_key,
+                        turn_latest_rid,
+                    )
+                    if superseded:
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=conversational",
+                            scheduled_rid,
+                            latest_rid,
+                            call_id,
+                        )
+                        skip_conversational = True
+                    elif scheduled_key and scheduled_key == last_answered_user_key:
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
+                            scheduled_rid,
+                            call_id,
+                        )
+                        skip_conversational = True
+                    elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
+                        latest_for_key = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
+                        if scheduled_rid < latest_for_key:
+                            logger.info(
+                                "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s",
+                                scheduled_rid,
+                                call_id,
+                            )
+                            skip_conversational = True
+                    else:
+                        turn_draft_in_progress = True
+                        turn_draft_user_key = scheduled_key
+                if skip_conversational:
+                    await ack_superseded_turn(reason="conversational_superseded")
+                    return
+                try:
+                    conv_request = ResponseRequiredRequest(
+                        interaction_type=interaction,
+                        response_id=scheduled_rid,
+                        transcript=transcript,
+                    )
+                    gpt_calls += 1
+                    reply = await llm.draft_conversational_response(conv_request)
+                finally:
+                    turn_draft_in_progress = False
+                    turn_draft_user_key = ""
+                if reply and promised_voice_search_without_result(reply, user_text=user_text):
+                    logger.warning(
+                        "[RETELL-OPENAI] conversational search promise without tool — "
+                        "escalating call=%s text=%s",
+                        call_id,
+                        user_text[:80],
+                    )
+                    reply = None
+                if reply:
+                    if await deliver_voice(reply):
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=conversational",
+                            scheduled_rid,
+                            turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
+                            gpt_calls,
+                            call_id,
+                        )
+                        logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
+                        return
+                    await anti_silence_if_unanswered(reason="conversational_deliver_failed")
+                    return
+                logger.warning(
+                    "[RETELL-GEMINI] conversational miss — fallthrough draft_response call=%s",
+                    call_id,
+                )
 
             from app.services.voice_intent_gate import detect_local_module_hints
 
@@ -1098,94 +1175,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 await ack_superseded_turn(reason="turn_superseded")
                 return
-
-            # Path conversacional para saludos y charla corta post-saludo.
-            if conversational_turn:
-                skip_conversational = False
-                async with response_lock:
-                    superseded, latest_rid = _is_superseded_turn_rid(
-                        scheduled_rid,
-                        scheduled_key,
-                        turn_latest_rid,
-                    )
-                    if superseded:
-                        logger.info(
-                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=conversational",
-                            scheduled_rid,
-                            latest_rid,
-                            call_id,
-                        )
-                        skip_conversational = True
-                    elif scheduled_key and scheduled_key == last_answered_user_key:
-                        logger.info(
-                            "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
-                            scheduled_rid,
-                            call_id,
-                        )
-                        skip_conversational = True
-                    elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
-                        latest_for_key = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
-                        if scheduled_rid < latest_for_key:
-                            logger.info(
-                                "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s",
-                                scheduled_rid,
-                                call_id,
-                            )
-                            skip_conversational = True
-                    else:
-                        turn_draft_in_progress = True
-                        turn_draft_user_key = scheduled_key
-                if skip_conversational:
-                    await ack_superseded_turn(reason="conversational_superseded")
-                    return
-                try:
-                    conv_request = ResponseRequiredRequest(
-                        interaction_type=interaction,
-                        response_id=scheduled_rid,
-                        transcript=transcript,
-                    )
-                    from app.services.voice_small_talk import try_instant_small_talk_voice_reply
-
-                    instant_small_talk = try_instant_small_talk_voice_reply(user_text)
-                    if instant_small_talk and await deliver_voice(instant_small_talk):
-                        logger.info(
-                            "[RETELL-LLAMA] instant small-talk call=%s text=%s",
-                            call_id,
-                            user_text[:60],
-                        )
-                        return
-
-                    gpt_calls += 1
-                    await fire_latency_filler("general")
-                    reply = await llm.draft_conversational_response(conv_request)
-                finally:
-                    turn_draft_in_progress = False
-                    turn_draft_user_key = ""
-                if reply and promised_voice_search_without_result(reply, user_text=user_text):
-                    logger.warning(
-                        "[RETELL-OPENAI] conversational search promise without tool — "
-                        "escalating call=%s text=%s",
-                        call_id,
-                        user_text[:80],
-                    )
-                    reply = None
-                if reply:
-                    if await deliver_voice(reply):
-                        logger.info(
-                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=conversational",
-                            scheduled_rid,
-                            turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
-                            gpt_calls,
-                            call_id,
-                        )
-                        logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
-                        return
-                    await anti_silence_if_unanswered(reason="conversational_deliver_failed")
-                    return
-                logger.warning(
-                    "[RETELL-GEMINI] conversational miss — fallthrough draft_response call=%s",
-                    call_id,
-                )
 
             if turn_already_handled(call_id, scheduled_rid):
                 await ack_empty_response(

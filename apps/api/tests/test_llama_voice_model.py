@@ -8,7 +8,7 @@ from app.services.llama_voice_llm import LLAMA_VOICE_TIMEOUT_SEC
 def test_voice_timeout_above_http_chat_timeout() -> None:
     from app.services.llama_service import _CHAT_TIMEOUT_SEC, _VOICE_CHAT_TIMEOUT_SEC
 
-    assert LLAMA_VOICE_TIMEOUT_SEC >= 20.0
+    assert LLAMA_VOICE_TIMEOUT_SEC >= 24.0
     assert LLAMA_VOICE_TIMEOUT_SEC > _CHAT_TIMEOUT_SEC
     assert LLAMA_VOICE_TIMEOUT_SEC > _VOICE_CHAT_TIMEOUT_SEC
 

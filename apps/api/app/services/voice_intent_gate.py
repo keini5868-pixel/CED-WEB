@@ -128,9 +128,10 @@ _MODULE_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "environment",
         re.compile(
             r"\b("
-            r"clima|tiempo|temperatura|lluvia|llover|"
+            r"clima|temperatura|lluvia|llover|"
             r"calidad\s+del\s+aire|polen|alergia|"
-            r"qu[eé]\s+clima|c[oó]mo\s+est[aá]\s+el\s+tiempo"
+            r"qu[eé]\s+clima|c[oó]mo\s+est[aá]\s+el\s+tiempo|"
+            r"pron[oó]stico|pronostico"
             r")\b",
             re.I,
         ),

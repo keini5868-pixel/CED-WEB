@@ -706,13 +706,11 @@ def _is_concept_question(text: str) -> bool:
 
 
 def _is_task_or_info_query(text: str) -> bool:
-    """Preguntas reales (clima, noticias, tools, estrategia) — no son small talk."""
+    """Preguntas reales (clima, noticias, tools) — no son small talk."""
     norm = _normalize(text)
     if _is_concept_question(text):
         return True
     if _needs_internet_lookup(text):
-        return True
-    if is_casual_conversation(text):
         return True
     if bool(
         re.search(
@@ -722,8 +720,6 @@ def _is_task_or_info_query(text: str) -> bool:
             norm,
         )
     ):
-        return True
-    if len(norm.split()) >= 8:
         return True
     return False
 
@@ -745,8 +741,11 @@ def is_casual_conversation(text: str) -> bool:
         return False
     if re.search(
         r"\b(dormi|dormí|descans|descanso|cansad|cansancio|estuve|estaba|"
+        r"trabaj[eé]|madrugada|despert|acabo de|reci[eé]n me levant|"
+        r"sin dormir|turno|agotad|exhaust|"
         r"te decia|te decía|no habia descansado|gracias por contar|"
-        r"me siento|como amanec|hoy dorm|platic|charla)\b",
+        r"me siento|como amanec|hoy dorm|platic|charla|"
+        r"que tal tu|qué tal tu|como te fue|cómo te fue)\b",
         norm,
     ):
         return True

@@ -308,9 +308,11 @@ def call_llama_voice_chat(
     messages: list[dict[str, Any]],
     temperature: float = 0.7,
     max_tokens: int = 1024,
+    timeout_sec: float | None = None,
 ) -> str:
     """Chat de voz — usa modelo liviano (3B) con timeout acorde."""
     voice = llama_voice_model()
+    http_timeout = timeout_sec if timeout_sec is not None else _VOICE_CHAT_TIMEOUT_SEC
     if not llama_voice_model_ready():
         logger.warning("[LLAMA] voice model %s no listo — fallback a %s", voice, llama_model())
         return call_llama_chat(
@@ -318,6 +320,7 @@ def call_llama_voice_chat(
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            timeout_sec=http_timeout,
         )
     return call_llama_chat(
         system=system,
@@ -325,7 +328,7 @@ def call_llama_voice_chat(
         temperature=temperature,
         max_tokens=max_tokens,
         model=voice,
-        timeout_sec=_VOICE_CHAT_TIMEOUT_SEC,
+        timeout_sec=http_timeout,
     )
 
 
