@@ -17,7 +17,7 @@ def test_llama_voice_marks_latency_on_conversational_reply() -> None:
 
     async def run() -> str | None:
         with patch(
-            "app.services.llama_voice_llm.call_llama_chat",
+            "app.services.llama_voice_llm.call_llama_voice_chat",
             return_value="Respuesta de prueba, señor.",
         ):
             req = ResponseRequiredRequest(
@@ -47,7 +47,7 @@ def test_llama_voice_stream_marks_first_token() -> None:
 
     async def run() -> list[str]:
         with patch(
-            "app.services.llama_service.iter_llama_chat_stream",
+            "app.services.llama_service.iter_llama_voice_chat_stream",
             side_effect=lambda **kwargs: fake_stream(**kwargs),
         ):
             req = ResponseRequiredRequest(
@@ -98,7 +98,7 @@ def test_llama_payload_includes_keep_alive() -> None:
             captured.update(json)
             return FakeResponse()
 
-    with patch.object(ls, "llama_model_ready", return_value=True):
+    with patch.object(ls, "_llama_health_model_ready", return_value=True):
         with patch.object(ls.httpx, "Client", FakeClient):
             ls.call_llama_chat(
                 system="test",

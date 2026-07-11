@@ -15,8 +15,9 @@ from typing import Any
 
 from app.services.llama_service import (
     LLAMA_CONVERSATIONAL_SYSTEM,
-    call_llama_chat,
     call_llama_local,
+    call_llama_voice_chat,
+    iter_llama_voice_chat_stream,
 )
 from app.services.retell_custom_llm import merged_user_query
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
@@ -35,7 +36,7 @@ from app.services.voice_latency import get_turn
 
 logger = logging.getLogger(__name__)
 
-LLAMA_VOICE_TIMEOUT_SEC = 12.0
+LLAMA_VOICE_TIMEOUT_SEC = 22.0
 
 
 def _utterances_to_messages(utterances: list[Utterance]) -> list[dict[str, str]]:
@@ -176,7 +177,7 @@ class LlamaVoiceLlm:
         try:
             reply = await asyncio.wait_for(
                 asyncio.to_thread(
-                    call_llama_chat,
+                    call_llama_voice_chat,
                     system=system,
                     messages=messages,
                     temperature=0.7,
@@ -322,7 +323,7 @@ class LlamaVoiceLlm:
         path: str = "llama_stream",
     ) -> AsyncIterator[tuple[str, str]]:
         """Streaming Llama → (delta, accumulated) para Retell."""
-        from app.services.llama_service import iter_llama_chat_stream
+        from app.services.llama_service import iter_llama_voice_chat_stream
 
         turn = (
             get_turn(self._latency_call_id, self._latency_response_id)
@@ -339,7 +340,7 @@ class LlamaVoiceLlm:
         def _producer() -> None:
             acc = ""
             try:
-                for piece in iter_llama_chat_stream(
+                for piece in iter_llama_voice_chat_stream(
                     system=system,
                     messages=messages,
                     temperature=0.7,

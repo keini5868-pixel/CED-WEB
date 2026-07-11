@@ -16,12 +16,14 @@
 #
 # Variables opcionales en CED-Llama:
 #   OLLAMA_MODEL=llama2:13b
+#   OLLAMA_VOICE_MODEL=llama3.2:3b
 #   OLLAMA_NUM_PARALLEL=6   (default en entrypoint; 24GB RAM → hasta 6 slots)
 #
 # En el servicio API:
 #   LLM_PROVIDER=llama
 #   LLAMA_ENDPOINT=http://ced-llama.railway.internal:11434
 #   LLAMA_MODEL=llama2:13b
+#   LLAMA_VOICE_MODEL=llama3.2:3b
 #   RETELL_LLM_PROVIDER=llama
 
 [build]

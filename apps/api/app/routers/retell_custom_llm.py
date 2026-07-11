@@ -77,6 +77,7 @@ from app.services.voice_spoken import (
 from app.services.voice_response_guard import guard_voice_response
 from app.services.voice_latency import get_turn, start_turn
 from app.services.voice_intent_gate import has_explicit_module_signal, should_run_orchestrator
+from app.services.voice_filler_bank import FILLER_MIN_HOLD_S, pick_voice_filler
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -739,6 +740,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             partial_sent = False
             deferred_tools_pending = False
             last_partial_content = ""
+            filler_sent_at: float | None = None
+            filler_hold_done = False
 
             def _turn_rid_stale(rid: int = scheduled_rid) -> bool:
                 stale, _ = _is_superseded_turn_rid(rid, scheduled_key, turn_latest_rid)
@@ -767,6 +770,37 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     partial_sent = True
                 return sent
 
+            async def fire_latency_filler(
+                category: str,
+                *,
+                module: str | None = None,
+            ) -> None:
+                nonlocal filler_sent_at
+                phrase = pick_voice_filler(
+                    category,
+                    call_id=call_id,
+                    module=module,
+                )
+                if await send_filler_once_partial(phrase):
+                    filler_sent_at = time.monotonic()
+                    logger.info(
+                        "[RETELL-FILLER] sent category=%s module=%s call=%s rid=%s",
+                        category,
+                        module or "-",
+                        call_id[:12],
+                        scheduled_rid,
+                    )
+
+            async def ensure_filler_hold() -> None:
+                nonlocal filler_hold_done
+                if filler_hold_done or not partial_sent or filler_sent_at is None:
+                    return
+                elapsed = time.monotonic() - filler_sent_at
+                wait_s = FILLER_MIN_HOLD_S - elapsed
+                if wait_s > 0:
+                    await asyncio.sleep(wait_s)
+                filler_hold_done = True
+
             def _can_deliver_turn(rid: int = scheduled_rid) -> bool:
                 if rid in answered_response_ids:
                     return False
@@ -777,6 +811,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 nonlocal partial_sent, last_partial_content
                 if not _can_deliver_turn(rid):
                     return False
+                await ensure_filler_hold()
                 async with response_lock:
                     delivered = await send_voice_response(
                         response_id=rid,
@@ -926,10 +961,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 kind = str(pending_web.get("kind") or "general")
                 query = str(pending_web.get("query") or user_text).strip()
                 if query:
-                    if not partial_sent:
-                        partial_sent = await send_filler_once_partial(
-                            web_search_hold_phrase(kind),
-                        )
+                    await fire_latency_filler("web_search")
                     try:
                         tool_result = await asyncio.wait_for(
                             execute_voice_tool(
@@ -1003,6 +1035,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     user_text[:60],
                 )
             if uid and run_orchestrator:
+                mod_hint = forced_module or orch.active_module
+                if mod_hint:
+                    await fire_latency_filler("module", module=mod_hint)
                 clear_pending_advanced_topic(call_id)
                 orch_result = await orch.process(
                     user_text=user_text,
@@ -1012,11 +1047,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
                 llm.set_module_overlay(orch_result.context_overlay or "")
                 if orch_result.handles_response:
-                    if orch_result.send_filler and orch_result.filler:
+                    if orch_result.send_filler:
                         async with response_lock:
                             if not _turn_stale():
-                                partial_sent = await send_filler_once_partial(
-                                    orch_result.filler,
+                                await fire_latency_filler(
+                                    "module",
+                                    module=orch.active_module or forced_module,
                                 )
                     if turn_already_handled(call_id, scheduled_rid) and orch.active_module == "camera":
                         await ack_empty_response(
@@ -1120,6 +1156,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         return
 
                     gpt_calls += 1
+                    await fire_latency_filler("general")
                     reply = await llm.draft_conversational_response(conv_request)
                 finally:
                     turn_draft_in_progress = False
@@ -1217,6 +1254,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     draft_events: list[Any] = []
                     voice_streamed = False
                     streamed_text = ""
+                    await fire_latency_filler("general")
                     async for event in llm.draft_response(request):
                         stale, _ = _is_superseded_turn_rid(
                             scheduled_rid,
@@ -1235,6 +1273,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         draft_events.append(event)
                         piece = (event.content or "").strip()
                         if piece:
+                            await ensure_filler_hold()
                             async with response_lock:
                                 if _turn_stale():
                                     break

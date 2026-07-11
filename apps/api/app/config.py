@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     llm_provider: str = "llama"
     llama_endpoint: str = "http://localhost:11434"
     llama_model: str = "llama2:13b"
+    # Modelo liviano solo para conversación de voz (Retell Custom LLM).
+    llama_voice_model: str = "llama3.2:3b"
 
     anthropic_api_key: str = ""
     tavily_api_key: str = ""

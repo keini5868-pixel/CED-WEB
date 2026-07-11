@@ -56,9 +56,13 @@ def health(_request: Request) -> dict[str, str]:
     }
     if use_llama():
         payload["llama_model"] = llama_model()
+        from app.services.llama_service import llama_voice_model
+
+        payload["llama_voice_model"] = llama_voice_model()
         payload["llama_endpoint"] = settings.llama_endpoint.strip()
         diag = llama_health_diagnostics()
         payload["llama_available"] = "true" if diag.get("model_ready") else "false"
+        payload["llama_voice_available"] = "true" if diag.get("voice_model_ready") else "false"
         payload["llama_daemon_ok"] = "true" if diag.get("daemon_ok") else "false"
         if not diag.get("model_ready"):
             payload["llama_error"] = str(
