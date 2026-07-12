@@ -15,14 +15,19 @@ logger = logging.getLogger(__name__)
 ENVIRONMENT_PATTERNS: tuple[str, ...] = (
     r"\b(clima|tiempo|temperatura|calor|fr[ií]o)\b",
     r"\b(va a llover|lluvia|nublado|despejado)\b",
-    r"\b(calidad del aire|contaminaci[oó]n|aire)\b",
+    r"\b(calidad\s+(?:del?\s+)?aire|contaminaci[oó]n)\b",
     r"\b(horas de sol|sol hoy|trabajar afuera)\b",
     r"\b(polen|alergia|al[eé]rgico)\b",
     r"\b(c[oó]mo est[aá] el tiempo|qu[eé] clima)\b",
 )
 
 _LOCATION_IN_QUERY = re.compile(
-    r"\b(?:clima|tiempo|temperatura|aire|polen)\s+(?:en|de)\s+(.+?)(?:\?|$)",
+    r"\b(?:clima|tiempo|temperatura|aire|polen|calidad(?:\s+(?:del?\s+)?aire)?)\s+(?:en|de)\s+(.+?)(?:\?|$)",
+    re.I,
+)
+
+_QUESTION_WORDS = re.compile(
+    r"\b(qu[ée]|c[óo]mo|cu[áa]ndo|d[óo]nde|por\s?qu[ée]|para\s?qu[ée])\b",
     re.I,
 )
 
@@ -34,6 +39,80 @@ def is_environment_intent(text: str) -> bool:
     if len(t) < 4:
         return False
     return any(re.search(p, t) for p in ENVIRONMENT_PATTERNS)
+
+
+def is_environment_topic(text: str) -> bool:
+    """True si el turno trata clima/calidad del aire/polen (ancla estricta o patterns)."""
+    if is_environment_intent(text):
+        return True
+    from app.services.ced_orchestrator import detect_strict_intent_v2
+
+    return detect_strict_intent_v2(text) == "environment"
+
+
+def _utterance_text(item: object) -> tuple[str, str]:
+    if isinstance(item, dict):
+        return str(item.get("role") or ""), str(item.get("content") or "").strip()
+    role = getattr(item, "role", "") or ""
+    content = getattr(item, "content", "") or ""
+    return str(role), str(content).strip()
+
+
+def recent_environment_user_query(
+    transcript: list,
+    *,
+    exclude: str = "",
+) -> str | None:
+    """Última pregunta del usuario sobre ambiente antes del turno actual."""
+    exclude_norm = (exclude or "").strip().lower()
+    user_lines = list(_iter_transcript_user_lines(transcript))
+    for text in reversed(user_lines):
+        if not text:
+            continue
+        if exclude_norm and text.strip().lower() == exclude_norm:
+            continue
+        if is_environment_topic(text):
+            return text
+    return None
+
+
+def _iter_transcript_user_lines(transcript: list):
+    for item in transcript or []:
+        role, text = _utterance_text(item)
+        if role.lower() != "user":
+            continue
+        yield text
+
+
+def is_environment_location_followup(text: str) -> bool:
+    """Respuesta corta de ubicación tras una consulta ambiental (ej. «Charlotte»)."""
+    t = (text or "").strip()
+    if not t or len(t) > 80:
+        return False
+    if is_environment_topic(t):
+        return False
+    if _QUESTION_WORDS.search(t) and len(t.split()) > 4:
+        return False
+    words = [w for w in re.split(r"\s+", t) if w]
+    if not 1 <= len(words) <= 8:
+        return False
+    if any(ch.isdigit() for ch in t):
+        return False
+    return True
+
+
+def compose_environment_query(user_text: str, transcript: list | None = None) -> str:
+    """Combina consulta ambiental previa + ubicación en un solo texto para búsqueda."""
+    current = (user_text or "").strip()
+    if not is_environment_location_followup(current):
+        return current
+    prior = recent_environment_user_query(transcript or [], exclude=current)
+    if not prior:
+        return current
+    place = current.rstrip("?.,").strip()
+    if re.search(r"\b(?:en|de)\s+", place, re.I):
+        return f"{prior} {place}"
+    return f"{prior} en {place}"
 
 
 def _extract_place_from_query(text: str) -> str:
@@ -48,6 +127,9 @@ def resolve_environment_place(user_id: str, transcript: str = "") -> str:
     place = _extract_place_from_query(transcript)
     if place:
         return place
+    t = (transcript or "").strip()
+    if is_environment_location_followup(t) and not is_environment_topic(t):
+        return t.rstrip("?.,").strip()
     return _DEFAULT_PLACE
 
 
@@ -125,8 +207,12 @@ class EnvironmentModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
-        if is_environment_intent(user_text or transcript):
-            return await self._run_query(user_id, user_text or transcript)
+        query = compose_environment_query(
+            user_text or transcript,
+            utterances or [],
+        )
+        if is_environment_topic(query) or is_environment_location_followup(user_text or transcript):
+            return await self._run_query(user_id, query)
         return self._idle()
 
     async def _run_query(self, user_id: str, text: str) -> ModuleResult:

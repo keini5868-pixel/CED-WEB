@@ -70,12 +70,33 @@ export async function startVoiceSession(): Promise<{
 
 export type VoiceSessionTick = {
   used_minutes_today: number;
+  plan_minutes_daily?: number;
   blocked: boolean;
   access_denied?: boolean;
   usage_percent: number;
   warning_level?: "warn" | "critical" | "blocked" | null;
   should_disconnect?: boolean;
+  degraded?: boolean;
+  disconnect_reason?: "quota" | "subscription" | null;
 };
+
+/** Mensaje explícito cuando el tick cierra la sesión por cupo o suscripción. */
+export function voiceSessionDisconnectMessage(data: VoiceSessionTick): string | null {
+  if (data.access_denied) {
+    return "Tu suscripción no está activa. Renueva en Precios para usar la voz.";
+  }
+  if (data.blocked || data.should_disconnect) {
+    const used = data.used_minutes_today ?? 0;
+    const plan = data.plan_minutes_daily ?? 0;
+    const pct = data.usage_percent ?? (plan ? (used / plan) * 100 : 100);
+    const usedLabel = used.toFixed(1);
+    return (
+      `Límite diario de voz alcanzado (${usedLabel}/${plan || "?"} min, ${pct.toFixed(0)}%). ` +
+      "La sesión se cerró por cupo — recarga en Precios o continúa mañana."
+    );
+  }
+  return null;
+}
 
 export type VoiceSessionTickResult =
   | { ok: true; data: VoiceSessionTick }

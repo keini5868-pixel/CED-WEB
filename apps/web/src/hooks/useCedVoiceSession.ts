@@ -33,6 +33,7 @@ import {
   endVoiceSession,
   startVoiceSession,
   tickVoiceSessionDetailed,
+  voiceSessionDisconnectMessage,
 } from "@/lib/api/usage";
 import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
 import { useDriveMap } from "@/contexts/DriveMapContext";
@@ -1266,15 +1267,21 @@ export function useCedVoiceSession(
               }
               const data = result.data;
               onUsageRefresh?.();
-              if (data.blocked || data.should_disconnect) {
-                setErrorMessage(
-                  "Has alcanzado tu límite diario de voz. Recarga o continúa mañana.",
-                );
-                await stopSession();
-              } else if (data.access_denied) {
-                setErrorMessage(
-                  "Tu suscripción no está activa. Renueva en Precios para usar la voz.",
-                );
+              const disconnectMsg = voiceSessionDisconnectMessage(data);
+              if (disconnectMsg) {
+                if (data.blocked || data.should_disconnect) {
+                  console.warn(
+                    "[CED] usage/tick cerró sesión por cupo",
+                    {
+                      used: data.used_minutes_today,
+                      plan: data.plan_minutes_daily,
+                      percent: data.usage_percent,
+                      blocked: data.blocked,
+                      should_disconnect: data.should_disconnect,
+                    },
+                  );
+                }
+                setErrorMessage(disconnectMsg);
                 await stopSession();
               }
             } catch {
@@ -1313,20 +1320,23 @@ export function useCedVoiceSession(
             }
             const data = result.data;
             onUsageRefresh?.();
-            if (data.blocked || data.should_disconnect) {
-              setErrorMessage(
-                "Has alcanzado tu límite diario de voz. Recarga o continúa mañana.",
-              );
+            const disconnectMsg = voiceSessionDisconnectMessage(data);
+            if (disconnectMsg) {
+              if (data.blocked || data.should_disconnect) {
+                console.warn("[CED] usage/tick cerró sesión por cupo", {
+                  used: data.used_minutes_today,
+                  plan: data.plan_minutes_daily,
+                  percent: data.usage_percent,
+                  blocked: data.blocked,
+                  should_disconnect: data.should_disconnect,
+                });
+              }
+              setErrorMessage(disconnectMsg);
               await stopSession();
             } else if (data.warning_level === "critical") {
               setStatusLabel("Queda poco tiempo de voz hoy (95%)…");
             } else if (data.warning_level === "warn") {
               setStatusLabel("Has usado el 80% de tu voz diaria…");
-            } else if (data.access_denied) {
-              setErrorMessage(
-                "Tu suscripción no está activa. Renueva en Precios para usar la voz.",
-              );
-              await stopSession();
             }
           } catch {
             /* ignore — no cerrar voz por fallo de red */

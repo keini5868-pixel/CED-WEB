@@ -82,6 +82,7 @@ from app.services.voice_filler_bank import FILLER_MIN_HOLD_S, pick_voice_filler
 from app.services.voice_test_mode import (
     is_gemini_standalone_voice_test,
     resolve_standalone_forced_module,
+    standalone_environment_query,
     standalone_user_keys_overlap,
     voice_standalone_modules,
 )
@@ -1029,15 +1030,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
                         if forced_module and uid:
                             orch = get_orchestrator(call_id)
+                            orch_user_text = user_text
+                            if forced_module == "environment":
+                                orch_user_text = standalone_environment_query(
+                                    user_text,
+                                    transcript,
+                                )
                             logger.info(
                                 "[RETELL-ORCH] standalone forced module=%s call=%s rid=%s text=%s",
                                 forced_module,
                                 call_id,
                                 scheduled_rid,
-                                user_text[:60],
+                                orch_user_text[:60],
                             )
                             orch_result = await orch.process(
-                                user_text=user_text,
+                                user_text=orch_user_text,
                                 transcript=transcript,
                                 call_id=call_id,
                                 user_id=uid,

@@ -63,10 +63,21 @@ def resolve_standalone_forced_module(
         get_orchestrator,
         is_module_command,
     )
+    from app.modules.environment_module import (
+        is_environment_location_followup,
+        recent_environment_user_query,
+    )
 
     strict = detect_strict_intent_v2(user_text)
     if strict and strict in enabled:
         return strict
+
+    if "environment" in enabled:
+        if is_environment_location_followup(user_text) and recent_environment_user_query(
+            transcript,
+            exclude=user_text,
+        ):
+            return "environment"
 
     orch = get_orchestrator(call_id)
     active = (orch.active_module or "").strip().lower()
@@ -75,6 +86,13 @@ def resolve_standalone_forced_module(
             return active
 
     return None
+
+
+def standalone_environment_query(user_text: str, transcript: list) -> str:
+    """Texto efectivo para orquestador ambiente (follow-up de ubicación incluido)."""
+    from app.modules.environment_module import compose_environment_query
+
+    return compose_environment_query(user_text, transcript)
 
 
 def standalone_user_keys_overlap(a: str, b: str, *, min_prefix: int = 12) -> bool:

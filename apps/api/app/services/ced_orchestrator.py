@@ -272,7 +272,12 @@ def is_module_command(
     if module == "gmail":
         return is_gmail_intent(text) or is_gmail_followup_pick(text, user_id)
     if module == "environment":
-        return is_environment_intent(text)
+        from app.modules.environment_module import (
+            is_environment_intent,
+            is_environment_location_followup,
+        )
+
+        return bool(is_environment_intent(text) or is_environment_location_followup(text))
     if module in ("image_gen", "pdf", "prospection", "memory"):
         detected = detect_module(text, transcript, user_id=user_id, active_module=module)
         return detected == module

@@ -210,9 +210,12 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bc[óo]mo\s+est[áa]\s+el\s+polen\b",
     ),
     "air_quality": (
-        r"\bcalidad\s+del\s+aire\b",
-        r"\b[íi]ndice\s+de\s+(?:calidad\s+del\s+)?aire\b",
+        r"\bcalidad\s+(?:del?\s+)?aire\b",
+        r"\b[íi]ndice\s+(?:de\s+)?(?:calidad\s+(?:del?\s+)?)?aire\b",
         r"\bcontaminaci[óo]n\s+del?\s+aire\b",
+        r"\binformaci[óo]n\s+(?:de\s+(?:la\s+)?)?calidad\s+(?:del?\s+)?aire\b",
+        r"\bdatos\s+(?:de\s+(?:la\s+)?)?calidad\s+(?:del?\s+)?aire\b",
+        r"\b(?:c[óo]mo\s+est[áa]|qu[ée]\s+tal)\s+(?:la\s+)?calidad\s+(?:del?\s+)?aire\b",
     ),
     "datetime": (
         r"\bqu[ée]\s+hora\s+es\b",

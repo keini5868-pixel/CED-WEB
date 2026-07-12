@@ -42,6 +42,8 @@ def test_standalone_modules_empty_without_flag(monkeypatch: pytest.MonkeyPatch) 
         ("¿Cómo está el clima hoy?", "environment"),
         ("¿Va a llover mañana?", "environment"),
         ("Calidad del aire en Charlotte", "environment"),
+        ("dame informacion de la calidad de aire", "environment"),
+        ("informacion sobre la calidad del aire", "environment"),
         ("¿Cómo estás?", None),
         ("Hace calor", None),
     ],
@@ -130,3 +132,43 @@ def test_concurrent_standalone_lock_prevents_double_delivery() -> None:
 
     asyncio.run(run())
     assert deliveries == ["orch"]
+
+
+def test_environment_location_followup_after_air_quality_question(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.retell_llm_types import Utterance
+
+    monkeypatch.setenv("VOICE_TEST_MODE", GEMINI_STANDALONE_MODE)
+    monkeypatch.setenv("VOICE_STANDALONE_MODULES", "environment")
+    get_settings.cache_clear()
+
+    transcript = [
+        Utterance(role="user", content="dame informacion de la calidad de aire"),
+        Utterance(
+            role="agent",
+            content="¿Tiene alguna ubicación específica en mente, señor?",
+        ),
+    ]
+    got = resolve_standalone_forced_module(
+        "Charlotte",
+        transcript,
+        call_id="test-call",
+        user_id="user-1",
+    )
+    assert got == "environment"
+
+
+def test_compose_environment_query_merges_location(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.modules.environment_module import compose_environment_query
+    from app.services.retell_llm_types import Utterance
+
+    transcript = [
+        Utterance(role="user", content="dame informacion de la calidad de aire"),
+        Utterance(role="agent", content="¿Dónde, señor?"),
+    ]
+    merged = compose_environment_query("Carolina del Norte", transcript)
+    assert "calidad" in merged.lower()
+    assert "Carolina del Norte" in merged

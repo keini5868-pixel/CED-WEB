@@ -35,6 +35,14 @@ class SessionEndBody(BaseModel):
 @router.get("/balance")
 async def usage_balance(user_id: str = Depends(require_user_id)) -> dict:
     state = await voice_access_state_async(user_id)
+    if state.get("degraded"):
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "[USAGE] balance degraded user=%s reason=%s",
+            user_id[:8],
+            state.get("degraded_reason"),
+        )
     state.pop("allowed", None)
     state.pop("quota_exhausted", None)
     return state
@@ -126,6 +134,25 @@ async def session_tick(
         }
 
     state = await voice_access_state_async(user_id)
+    if state.get("degraded"):
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "[USAGE] tick state degraded session=%s user=%s reason=%s",
+            body.session_id,
+            user_id[:8],
+            state.get("degraded_reason"),
+        )
+        return {
+            "used_minutes_today": round(float(state.get("used_minutes_today") or 0), 2),
+            "plan_minutes_daily": int(state.get("plan_minutes_daily") or 0),
+            "blocked": False,
+            "access_denied": False,
+            "usage_percent": 0,
+            "warning_level": None,
+            "should_disconnect": False,
+            "degraded": True,
+        }
     warning = _usage_warning(state.get("usage_percent", 0), state.get("blocked", False))
     return {
         "used_minutes_today": round(used, 2),
