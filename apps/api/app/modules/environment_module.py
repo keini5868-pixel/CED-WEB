@@ -31,6 +31,42 @@ _QUESTION_WORDS = re.compile(
     re.I,
 )
 
+_CASUAL_ACK_PATTERN = re.compile(
+    r"^(?:"
+    r"ok(?:\s+gracias)?|"
+    r"gracias(?:\s+gracias)?|muchas gracias|de nada|muy bien|"
+    r"perfecto|entendido|vale|listo|bueno|hola|buenas|hey|"
+    r"(?:¿)?(?:me\s+)?(?:escuchas?|o[íi]ste)|"
+    r"(?:¿)?est[áa]s?\s+ah[íi]|"
+    r"(?:¿)?sigues?\s+ah[íi]"
+    r")\s*[.!?]?$",
+    re.I,
+)
+
+_ACK_TOKENS = frozenset(
+    {
+        "ok",
+        "gracias",
+        "thanks",
+        "si",
+        "sí",
+        "no",
+        "hola",
+        "bueno",
+        "vale",
+        "listo",
+        "perfecto",
+        "entendido",
+        "hey",
+        "buenas",
+        "bien",
+        "de",
+        "nada",
+        "muy",
+        "muchas",
+    }
+)
+
 # Capa 3 standalone — tema ambiental + señal de petición (sin LLM).
 _ENV_TOPIC = re.compile(
     r"\b("
@@ -157,16 +193,22 @@ def is_environment_location_followup(text: str) -> bool:
     t = (text or "").strip()
     if not t or len(t) > 80:
         return False
+    if _CASUAL_ACK_PATTERN.match(t):
+        return False
     if is_environment_topic(t):
         return False
     if _QUESTION_WORDS.search(t) and len(t.split()) > 4:
         return False
-    words = [w for w in re.split(r"\s+", t) if w]
+    words = [w.strip(".,!?") for w in re.split(r"\s+", t) if w]
     if not 1 <= len(words) <= 8:
         return False
     if any(ch.isdigit() for ch in t):
         return False
-    return True
+    lowered = [w.lower() for w in words]
+    if all(w in _ACK_TOKENS for w in lowered):
+        return False
+    # Al menos un token tipo lugar (no mero ack/check-in).
+    return any(len(w) >= 3 and w.lower() not in _ACK_TOKENS for w in words)
 
 
 def compose_environment_query(user_text: str, transcript: list | None = None) -> str:

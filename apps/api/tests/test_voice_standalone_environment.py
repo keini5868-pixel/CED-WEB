@@ -195,3 +195,59 @@ def test_is_environment_action_request(phrase: str, expected: bool) -> None:
     from app.modules.environment_module import is_environment_action_request
 
     assert is_environment_action_request(phrase) is expected
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected"),
+    [
+        ("Charlotte", True),
+        ("Carolina del Norte", True),
+        ("Miami", True),
+        ("ok gracias", False),
+        ("estas ahi", False),
+        ("¿Estás ahí?", False),
+        ("gracias", False),
+    ],
+)
+def test_is_environment_location_followup(phrase: str, expected: bool) -> None:
+    from app.modules.environment_module import is_environment_location_followup
+
+    assert is_environment_location_followup(phrase) is expected
+
+
+def test_casual_turn_after_weather_does_not_force_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Reproduce bug r5: clima OK → «ok gracias» debe ir a charla, no al módulo."""
+    from app.services.retell_llm_types import Utterance
+
+    monkeypatch.setenv("VOICE_TEST_MODE", GEMINI_STANDALONE_MODE)
+    monkeypatch.setenv("VOICE_STANDALONE_MODULES", "environment")
+    get_settings.cache_clear()
+
+    transcript = [
+        Utterance(
+            role="user",
+            content="me puede decir como va a estar el clima hoy",
+        ),
+        Utterance(
+            role="agent",
+            content="Señor, en Charlotte hoy nublado con 23 grados.",
+        ),
+    ]
+    weather = resolve_standalone_forced_module(
+        "me puede decir como va a estar el clima hoy",
+        [],
+        call_id="call-post-weather",
+        user_id="user-1",
+    )
+    assert weather == "environment"
+
+    for casual in ("ok gracias", "estas ahi", "¿Estás ahí?"):
+        got = resolve_standalone_forced_module(
+            casual,
+            transcript,
+            call_id="call-post-weather",
+            user_id="user-1",
+        )
+        assert got is None, casual

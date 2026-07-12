@@ -986,6 +986,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     return
                 try:
                     async with standalone_exec_lock:
+                        if (
+                            scheduled_key
+                            and last_standalone_module_answered_key
+                            and not standalone_user_keys_overlap(
+                                scheduled_key,
+                                last_standalone_module_answered_key,
+                            )
+                        ):
+                            last_standalone_module_answered_key = ""
+
                         if scheduled_rid in answered_response_ids:
                             logger.info(
                                 "[VOICE-TEST-GEMINI] skip rid=%s reason=already_answered call=%s",
@@ -1059,6 +1069,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                     generation=my_generation,
                                 ):
                                     last_standalone_module_answered_key = scheduled_key
+                                    if uid and forced_module == "environment":
+                                        await get_orchestrator(call_id).deactivate_current(
+                                            user_id=uid,
+                                        )
                                     logger.info(
                                         "[RETELL-ORCH] standalone module=%s call=%s rid=%s "
                                         "delivered=true chars=%s",
