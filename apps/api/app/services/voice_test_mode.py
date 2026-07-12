@@ -68,6 +68,7 @@ def resolve_standalone_forced_module(
         is_module_command,
     )
     from app.modules.environment_module import (
+        environment_awaiting_location_followup,
         is_environment_action_request,
         is_environment_location_followup,
         recent_environment_user_query,
@@ -80,9 +81,10 @@ def resolve_standalone_forced_module(
     if "environment" in enabled:
         if is_environment_action_request(user_text):
             return "environment"
-        if is_environment_location_followup(user_text) and recent_environment_user_query(
-            transcript,
-            exclude=user_text,
+        if (
+            is_environment_location_followup(user_text)
+            and recent_environment_user_query(transcript, exclude=user_text)
+            and environment_awaiting_location_followup(transcript, exclude=user_text)
         ):
             return "environment"
 

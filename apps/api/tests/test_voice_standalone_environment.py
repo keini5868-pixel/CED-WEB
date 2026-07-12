@@ -207,6 +207,8 @@ def test_is_environment_action_request(phrase: str, expected: bool) -> None:
         ("estas ahi", False),
         ("¿Estás ahí?", False),
         ("gracias", False),
+        ("si me escuchas", False),
+        ("Sí, me escuchas", False),
     ],
 )
 def test_is_environment_location_followup(phrase: str, expected: bool) -> None:
@@ -251,3 +253,81 @@ def test_casual_turn_after_weather_does_not_force_environment(
             user_id="user-1",
         )
         assert got is None, casual
+
+
+def test_r6_voice_sequence_no_second_weather_delivery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Secuencia real r6: clima → ok gracias → sí me escuchas (sin 2.º clima)."""
+    from app.services.retell_llm_types import Utterance
+
+    monkeypatch.setenv("VOICE_TEST_MODE", GEMINI_STANDALONE_MODE)
+    monkeypatch.setenv("VOICE_STANDALONE_MODULES", "environment")
+    get_settings.cache_clear()
+
+    weather_q = "como traes clima el dia de hoy"
+    weather_a = (
+        "El clima actual en Charlotte presenta nublado con temperatura de 24 grados "
+        "y humedad del 87 por ciento."
+    )
+
+    transcript_after_ack = [
+        Utterance(role="user", content=weather_q),
+        Utterance(role="agent", content=weather_a),
+    ]
+    transcript_after_checkin = transcript_after_ack + [
+        Utterance(role="user", content="ok gracias"),
+    ]
+
+    assert (
+        resolve_standalone_forced_module(
+            weather_q,
+            [],
+            call_id="seq-r6",
+            user_id="user-1",
+        )
+        == "environment"
+    )
+    assert (
+        resolve_standalone_forced_module(
+            "ok gracias",
+            transcript_after_ack,
+            call_id="seq-r6",
+            user_id="user-1",
+        )
+        is None
+    )
+    assert (
+        resolve_standalone_forced_module(
+            "si me escuchas",
+            transcript_after_checkin,
+            call_id="seq-r6",
+            user_id="user-1",
+        )
+        is None
+    )
+
+
+def test_location_followup_still_works_when_agent_asked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.services.retell_llm_types import Utterance
+
+    monkeypatch.setenv("VOICE_TEST_MODE", GEMINI_STANDALONE_MODE)
+    monkeypatch.setenv("VOICE_STANDALONE_MODULES", "environment")
+    get_settings.cache_clear()
+
+    transcript = [
+        Utterance(role="user", content="dame informacion de la calidad de aire"),
+        Utterance(
+            role="agent",
+            content="¿Tiene alguna ubicación específica en mente, señor?",
+        ),
+    ]
+    got = resolve_standalone_forced_module(
+        "Charlotte",
+        transcript,
+        call_id="loc-ask",
+        user_id="user-1",
+    )
+    assert got == "environment"

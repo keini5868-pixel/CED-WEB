@@ -36,10 +36,29 @@ _CASUAL_ACK_PATTERN = re.compile(
     r"ok(?:\s+gracias)?|"
     r"gracias(?:\s+gracias)?|muchas gracias|de nada|muy bien|"
     r"perfecto|entendido|vale|listo|bueno|hola|buenas|hey|"
-    r"(?:¿)?(?:me\s+)?(?:escuchas?|o[íi]ste)|"
+    r"(?:¿)?(?:s[íi][,\.\s]+)?(?:me\s+)?escuchas?\s*[.!?]?|"
+    r"(?:¿)?(?:me\s+)?(?:escuchas?|o[íi]ste)\s*[.!?]?|"
     r"(?:¿)?est[áa]s?\s+ah[íi]|"
     r"(?:¿)?sigues?\s+ah[íi]"
     r")\s*[.!?]?$",
+    re.I,
+)
+
+_CHECKIN_PATTERN = re.compile(
+    r"\b(?:(?:me\s+)?escuchas?|o[íi]ste|oyes?|o[íi]gas?)\b",
+    re.I,
+)
+
+_AGENT_ASKED_LOCATION = re.compile(
+    r"(?:ubicaci[óo]n|localidad|d[óo]nde|ciudad|location|zona|lugar|espec[íi]fic[ao]?\b)",
+    re.I,
+)
+
+_AGENT_DELIVERED_ENV = re.compile(
+    r"\b(?:"
+    r"grados|°|temperatura|humedad|precipitaci|nublado|despejado|"
+    r"charlotte|clima\s+(?:actual|hoy)|calidad\s+(?:del?\s+)?aire"
+    r")\b",
     re.I,
 )
 
@@ -180,6 +199,48 @@ def recent_environment_user_query(
     return None
 
 
+def environment_awaiting_location_followup(
+    transcript: list,
+    *,
+    exclude: str = "",
+) -> bool:
+    """True solo si el agente pidió ubicación y aún no entregó datos ambientales."""
+    prior = recent_environment_user_query(transcript, exclude=exclude)
+    if not prior:
+        return False
+
+    prior_norm = prior.strip().lower()
+    exclude_norm = (exclude or "").strip().lower()
+    seen_prior = False
+    agent_after_prior: list[str] = []
+
+    for item in transcript or []:
+        role, text = _utterance_text(item)
+        if role.lower() == "user":
+            norm = text.strip().lower()
+            if norm == exclude_norm:
+                continue
+            if norm == prior_norm and not seen_prior:
+                seen_prior = True
+                agent_after_prior = []
+                continue
+            if seen_prior:
+                break
+        elif role.lower() == "agent" and seen_prior:
+            agent_after_prior.append(text)
+
+    if not seen_prior:
+        return False
+
+    for agent_text in agent_after_prior:
+        if len(agent_text.strip()) >= 40 and _AGENT_DELIVERED_ENV.search(agent_text):
+            return False
+    for agent_text in agent_after_prior:
+        if _AGENT_ASKED_LOCATION.search(agent_text):
+            return True
+    return not agent_after_prior
+
+
 def _iter_transcript_user_lines(transcript: list):
     for item in transcript or []:
         role, text = _utterance_text(item)
@@ -194,6 +255,8 @@ def is_environment_location_followup(text: str) -> bool:
     if not t or len(t) > 80:
         return False
     if _CASUAL_ACK_PATTERN.match(t):
+        return False
+    if _CHECKIN_PATTERN.search(t):
         return False
     if is_environment_topic(t):
         return False
@@ -216,7 +279,10 @@ def compose_environment_query(user_text: str, transcript: list | None = None) ->
     current = (user_text or "").strip()
     if not is_environment_location_followup(current):
         return current
-    prior = recent_environment_user_query(transcript or [], exclude=current)
+    tx = transcript or []
+    if not environment_awaiting_location_followup(tx, exclude=current):
+        return current
+    prior = recent_environment_user_query(tx, exclude=current)
     if not prior:
         return current
     place = current.rstrip("?.,").strip()
