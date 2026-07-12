@@ -130,6 +130,8 @@ class Settings(BaseSettings):
     retell_auto_bootstrap: bool = False
     retell_bootstrap_secret: str = ""
     retell_llm_provider: str = "llama"
+    # Prueba aislada de voz: gemini_standalone = Retell → Gemini directo, sin orquestador.
+    voice_test_mode: str = ""
     elevenlabs_api_key: str = ""
     # Clon Jarvis en ElevenLabs — se registra en Retell al bootstrap si no hay RETELL_VOICE_ID
     elevenlabs_jarvis_voice_id: str = "UKhFmKblQwXqi7vvaALt"

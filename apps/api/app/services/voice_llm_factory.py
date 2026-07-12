@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from app.config import get_settings
 from app.services.llama_service import use_llama
+from app.services.voice_test_mode import GEMINI_STANDALONE_MODE
 
 
 class VoiceLlmProtocol(Protocol):
@@ -27,6 +29,11 @@ class VoiceLlmProtocol(Protocol):
 
 
 def build_voice_llm() -> VoiceLlmProtocol:
+    mode = (get_settings().voice_test_mode or "").strip().lower()
+    if mode == GEMINI_STANDALONE_MODE:
+        from app.services.gemini_voice_standalone import GeminiStandaloneVoiceLlm
+
+        return GeminiStandaloneVoiceLlm()
     if use_llama():
         from app.services.llama_voice_llm import LlamaVoiceLlm
 

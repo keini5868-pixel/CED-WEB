@@ -79,6 +79,7 @@ from app.services.voice_latency import get_turn, start_turn
 from app.services.voice_intent_gate import has_explicit_module_signal, should_run_orchestrator
 from app.services.voice_casual import is_casual_voice_turn
 from app.services.voice_filler_bank import FILLER_MIN_HOLD_S, pick_voice_filler
+from app.services.voice_test_mode import is_gemini_standalone_voice_test
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -211,6 +212,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     logger.info("[RETELL-GEMINI] WebSocket conectado call_id=%s", call_id)
 
     llm = build_voice_llm()
+    if is_gemini_standalone_voice_test():
+        logger.warning(
+            "[VOICE-TEST-GEMINI] *** STANDALONE MODE — Gemini directo, sin orquestador/tools *** call=%s",
+            call_id,
+        )
     response_lock = asyncio.Lock()
     active_response_id = 0
     debounce_task: asyncio.Task[None] | None = None
@@ -659,26 +665,29 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if interaction == "response_required":
                 await ack_empty_response(response_id=response_id, reason="inaudible")
             return
-        if should_clear_pending_script(user_text):
-            clear_pending_advanced_topic(call_id)
-        remember_pending_script_topic(
-            call_id,
-            transcript,
-            user_text=user_text,
-            set_pending=set_pending_advanced_topic,
-            script_already_delivered=is_script_delivered(call_id),
-        )
-        user_key = _normalize_user_key(user_text)
-        pending_web = resolve_web_search_request(user_text, transcript)
-        # Un ancla estricta de módulo (ej. "resumen de mis finanzas", "hazme un pdf")
-        # SIEMPRE gana al fast-path de búsqueda web. Sin esto, "dame el resumen de
-        # mis finanzas" caía en "consulto las noticias" porque el web fast-path corre
-        # antes que el orquestador. web_search sí puede seguir su camino.
-        strict_module_early = detect_strict_intent_v2(user_text)
-        if not strict_module_early and has_explicit_module_signal(user_text):
-            strict_module_early = detect_voice_module_intent(
-                user_text, transcript, user_id=uid or ""
+        if not is_gemini_standalone_voice_test():
+            if should_clear_pending_script(user_text):
+                clear_pending_advanced_topic(call_id)
+            remember_pending_script_topic(
+                call_id,
+                transcript,
+                user_text=user_text,
+                set_pending=set_pending_advanced_topic,
+                script_already_delivered=is_script_delivered(call_id),
             )
+        user_key = _normalize_user_key(user_text)
+        pending_web = None if is_gemini_standalone_voice_test() else resolve_web_search_request(user_text, transcript)
+        strict_module_early = None
+        if not is_gemini_standalone_voice_test():
+            # Un ancla estricta de módulo (ej. "resumen de mis finanzas", "hazme un pdf")
+            # SIEMPRE gana al fast-path de búsqueda web. Sin esto, "dame el resumen de
+            # mis finanzas" caía en "consulto las noticias" porque el web fast-path corre
+            # antes que el orquestador. web_search sí puede seguir su camino.
+            strict_module_early = detect_strict_intent_v2(user_text)
+            if not strict_module_early and has_explicit_module_signal(user_text):
+                strict_module_early = detect_voice_module_intent(
+                    user_text, transcript, user_id=uid or ""
+                )
         if pending_web and strict_module_early and strict_module_early != "web_search":
             logger.info(
                 "[RETELL-ORCH] ancla estricta %s cancela web fast-path call=%s",
@@ -918,6 +927,31 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     scheduled_rid,
                     call_id,
                 )
+                return
+
+            if is_gemini_standalone_voice_test():
+                conv_request = ResponseRequiredRequest(
+                    interaction_type="response_required",
+                    response_id=scheduled_rid,
+                    transcript=transcript,
+                )
+                llm.set_latency_context(call_id, scheduled_rid)
+                turn_draft_in_progress = True
+                turn_draft_user_key = scheduled_key
+                try:
+                    reply = await llm.draft_conversational_response(conv_request)
+                finally:
+                    turn_draft_in_progress = False
+                    turn_draft_user_key = ""
+                if reply and await deliver_voice(reply):
+                    logger.info(
+                        "[VOICE-TEST-GEMINI] delivered rid=%s call=%s chars=%s",
+                        scheduled_rid,
+                        call_id,
+                        len(reply),
+                    )
+                    return
+                await anti_silence_if_unanswered(reason="standalone_gemini_empty")
                 return
 
             from app.services.system_clock import try_instant_datetime_reply

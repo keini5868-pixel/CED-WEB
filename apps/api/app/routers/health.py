@@ -61,6 +61,13 @@ def health(_request: Request) -> dict[str, str]:
         "timestamp": BUILD_TIMESTAMP,
         "llm_provider": settings.llm_provider,
     }
+    from app.services.voice_test_mode import is_gemini_standalone_voice_test, voice_test_mode
+
+    if voice_test_mode():
+        payload["voice_test_mode"] = voice_test_mode()
+        payload["voice_test_mode_active"] = (
+            "true" if is_gemini_standalone_voice_test() else "false"
+        )
     if use_llama():
         payload["llama_model"] = llama_model()
         payload["llama_voice_model"] = llama_voice_model()
