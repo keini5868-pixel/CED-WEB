@@ -79,7 +79,11 @@ from app.services.voice_latency import get_turn, start_turn
 from app.services.voice_intent_gate import has_explicit_module_signal, should_run_orchestrator
 from app.services.voice_casual import is_casual_voice_turn
 from app.services.voice_filler_bank import FILLER_MIN_HOLD_S, pick_voice_filler
-from app.services.voice_test_mode import is_gemini_standalone_voice_test
+from app.services.voice_test_mode import (
+    is_gemini_standalone_voice_test,
+    resolve_standalone_forced_module,
+    voice_standalone_modules,
+)
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
@@ -975,13 +979,57 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 if skip_standalone:
                     await ack_superseded_turn(reason="standalone_superseded")
                     return
-                conv_request = ResponseRequiredRequest(
-                    interaction_type="response_required",
-                    response_id=scheduled_rid,
-                    transcript=transcript,
-                )
-                llm.set_latency_context(call_id, scheduled_rid)
+                reply: str | None = None
                 try:
+                    forced_module = None
+                    if uid and voice_standalone_modules():
+                        forced_module = resolve_standalone_forced_module(
+                            user_text,
+                            transcript,
+                            call_id=call_id,
+                            user_id=uid,
+                        )
+                    if forced_module and uid:
+                        orch = get_orchestrator(call_id)
+                        logger.info(
+                            "[RETELL-ORCH] standalone forced module=%s call=%s text=%s",
+                            forced_module,
+                            call_id,
+                            user_text[:60],
+                        )
+                        orch_result = await orch.process(
+                            user_text=user_text,
+                            transcript=transcript,
+                            call_id=call_id,
+                            user_id=uid,
+                        )
+                        if _turn_rid_stale() or my_generation != generation_seq:
+                            await ack_superseded_turn(reason="standalone_orch_stale")
+                            return
+                        if orch_result.handles_response:
+                            spoken = (orch_result.spoken or "").strip()
+                            if spoken and await deliver_voice(
+                                spoken,
+                                generation=my_generation,
+                            ):
+                                logger.info(
+                                    "[RETELL-ORCH] standalone module=%s call=%s "
+                                    "delivered=true chars=%s",
+                                    orch.active_module or forced_module,
+                                    call_id,
+                                    len(spoken),
+                                )
+                                return
+                            await anti_silence_if_unanswered(
+                                reason="standalone_orch_empty",
+                            )
+                            return
+                    conv_request = ResponseRequiredRequest(
+                        interaction_type="response_required",
+                        response_id=scheduled_rid,
+                        transcript=transcript,
+                    )
+                    llm.set_latency_context(call_id, scheduled_rid)
                     reply = await llm.draft_conversational_response(conv_request)
                 finally:
                     turn_draft_in_progress = False
