@@ -13,6 +13,7 @@ from google.genai import types
 from app.services.gemini_voice_llm import (
     _extract_text,
     _gemini_client,
+    _response_finish_reason,
     _transcript_to_contents,
     _truncate_contents,
     _voice_model,
@@ -26,7 +27,7 @@ from app.services.voice_test_mode import GEMINI_STANDALONE_SYSTEM
 logger = logging.getLogger(__name__)
 
 STANDALONE_TIMEOUT_SEC = 18.0
-STANDALONE_MAX_TOKENS = 140
+STANDALONE_MAX_TOKENS = 320
 STANDALONE_TEMPERATURE = 0.55
 
 
@@ -40,6 +41,7 @@ class GeminiStandaloneVoiceLlm:
         self._history: list[types.Content] = []
         self._latency_call_id = ""
         self._latency_response_id = 0
+        self._generate_lock = asyncio.Lock()
 
     def set_module_overlay(self, overlay: str | None) -> None:
         del overlay
@@ -109,18 +111,20 @@ class GeminiStandaloneVoiceLlm:
             system_instruction=GEMINI_STANDALONE_SYSTEM,
             temperature=STANDALONE_TEMPERATURE,
             max_output_tokens=STANDALONE_MAX_TOKENS,
+            thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
 
         started = time.perf_counter()
         try:
-            response = await asyncio.wait_for(
-                self.client.aio.models.generate_content(
-                    model=self.model,
-                    contents=prompt_contents,
-                    config=config,
-                ),
-                timeout=STANDALONE_TIMEOUT_SEC,
-            )
+            async with self._generate_lock:
+                response = await asyncio.wait_for(
+                    self.client.aio.models.generate_content(
+                        model=self.model,
+                        contents=prompt_contents,
+                        config=config,
+                    ),
+                    timeout=STANDALONE_TIMEOUT_SEC,
+                )
         except asyncio.TimeoutError:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
             logger.warning(
@@ -144,15 +148,18 @@ class GeminiStandaloneVoiceLlm:
             return None
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)
+        finish = _response_finish_reason(response)
         raw = " ".join((_extract_text(response) or "").split()).strip()
         text = finalize_voice_delivery_text(raw) if raw else ""
 
         logger.info(
-            "[VOICE-TEST-GEMINI] ok path=%s call=%s rid=%s elapsed_ms=%s chars=%s preview=%s",
+            "[VOICE-TEST-GEMINI] ok path=%s call=%s rid=%s elapsed_ms=%s "
+            "finish=%s chars=%s preview=%s",
             path,
             self._latency_call_id[:12],
             self._latency_response_id,
             elapsed_ms,
+            finish,
             len(text),
             text[:120],
         )

@@ -817,7 +817,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 latest = turn_latest_rid.get(_turn_slot(scheduled_key), rid)
                 return rid >= latest
 
-            async def deliver_voice(content: str, *, rid: int = scheduled_rid) -> bool:
+            async def deliver_voice(
+                content: str,
+                *,
+                rid: int = scheduled_rid,
+                generation: int | None = None,
+            ) -> bool:
                 nonlocal partial_sent, last_partial_content
                 if not _can_deliver_turn(rid):
                     return False
@@ -827,7 +832,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         response_id=rid,
                         content=content,
                         user_key=scheduled_key,
-                        generation=None,
+                        generation=generation,
                         skip_prefix=last_partial_content if partial_sent else "",
                     )
                 if delivered:
@@ -930,20 +935,61 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             if is_gemini_standalone_voice_test():
+                skip_standalone = False
+                async with response_lock:
+                    superseded, latest_rid = _is_superseded_turn_rid(
+                        scheduled_rid,
+                        scheduled_key,
+                        turn_latest_rid,
+                    )
+                    if superseded:
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=standalone",
+                            scheduled_rid,
+                            latest_rid,
+                            call_id,
+                        )
+                        skip_standalone = True
+                    elif scheduled_key and scheduled_key == last_answered_user_key:
+                        logger.info(
+                            "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s path=standalone",
+                            scheduled_rid,
+                            call_id,
+                        )
+                        skip_standalone = True
+                    elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
+                        latest_for_key = turn_latest_rid.get(
+                            _turn_slot(scheduled_key),
+                            scheduled_rid,
+                        )
+                        if scheduled_rid < latest_for_key:
+                            logger.info(
+                                "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s path=standalone",
+                                scheduled_rid,
+                                call_id,
+                            )
+                            skip_standalone = True
+                    else:
+                        turn_draft_in_progress = True
+                        turn_draft_user_key = scheduled_key
+                if skip_standalone:
+                    await ack_superseded_turn(reason="standalone_superseded")
+                    return
                 conv_request = ResponseRequiredRequest(
                     interaction_type="response_required",
                     response_id=scheduled_rid,
                     transcript=transcript,
                 )
                 llm.set_latency_context(call_id, scheduled_rid)
-                turn_draft_in_progress = True
-                turn_draft_user_key = scheduled_key
                 try:
                     reply = await llm.draft_conversational_response(conv_request)
                 finally:
                     turn_draft_in_progress = False
                     turn_draft_user_key = ""
-                if reply and await deliver_voice(reply):
+                if _turn_rid_stale() or my_generation != generation_seq:
+                    await ack_superseded_turn(reason="standalone_stale_after_llm")
+                    return
+                if reply and await deliver_voice(reply, generation=my_generation):
                     logger.info(
                         "[VOICE-TEST-GEMINI] delivered rid=%s call=%s chars=%s",
                         scheduled_rid,

@@ -66,3 +66,50 @@ def test_standalone_draft_logs_latency(monkeypatch: pytest.MonkeyPatch) -> None:
     reply = asyncio.run(_run())
     assert reply
     assert "señor" in reply.lower() or "Entiendo" in reply
+
+
+def test_standalone_disables_thinking_and_uses_320_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import asyncio
+
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
+    monkeypatch.setenv("VOICE_TEST_MODE", GEMINI_STANDALONE_MODE)
+    get_settings.cache_clear()
+
+    mock_response = MagicMock()
+    mock_response.text = "Claro que sí, señor."
+    mock_response.candidates = [MagicMock(finish_reason="STOP")]
+
+    captured: dict = {}
+
+    async def _capture_generate(*args, **kwargs):
+        captured["config"] = kwargs.get("config")
+        return mock_response
+
+    async def _run() -> str | None:
+        from app.services.gemini_voice_standalone import (
+            STANDALONE_MAX_TOKENS,
+            GeminiStandaloneVoiceLlm,
+        )
+
+        with patch("app.services.gemini_voice_standalone._gemini_client") as mock_client_factory:
+            mock_client = MagicMock()
+            mock_client.aio.models.generate_content = AsyncMock(side_effect=_capture_generate)
+            mock_client_factory.return_value = mock_client
+
+            llm = GeminiStandaloneVoiceLlm()
+            req = ResponseRequiredRequest(
+                interaction_type="response_required",
+                response_id=1,
+                transcript=[Utterance(role="user", content="Me escuchas?")],
+            )
+            reply = await llm.draft_conversational_response(req)
+            captured["max_tokens"] = STANDALONE_MAX_TOKENS
+            return reply
+
+    reply = asyncio.run(_run())
+    assert reply
+    cfg = captured["config"]
+    assert cfg.max_output_tokens == captured["max_tokens"]
+    assert cfg.thinking_config.thinking_budget == 0
