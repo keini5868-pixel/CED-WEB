@@ -53,7 +53,11 @@ def resolve_standalone_forced_module(
     call_id: str,
     user_id: str,
 ) -> str | None:
-    """Ancla estricta o módulo activo — solo si está en VOICE_STANDALONE_MODULES."""
+    """Ancla estricta, heurística ambiente (capa 3) o módulo activo — standalone only.
+
+    Nota fases futuras: calendario/finanzas/Gmail deberían añadir clasificador Gemini
+    condicionado (capa 4) ante mayor costo de falsos positivos — no aplica a clima.
+    """
     enabled = voice_standalone_modules()
     if not enabled:
         return None
@@ -64,6 +68,7 @@ def resolve_standalone_forced_module(
         is_module_command,
     )
     from app.modules.environment_module import (
+        is_environment_action_request,
         is_environment_location_followup,
         recent_environment_user_query,
     )
@@ -73,6 +78,8 @@ def resolve_standalone_forced_module(
         return strict
 
     if "environment" in enabled:
+        if is_environment_action_request(user_text):
+            return "environment"
         if is_environment_location_followup(user_text) and recent_environment_user_query(
             transcript,
             exclude=user_text,

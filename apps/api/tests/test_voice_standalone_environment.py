@@ -45,9 +45,12 @@ def test_standalone_modules_empty_without_flag(monkeypatch: pytest.MonkeyPatch) 
         ("dame informacion de la calidad de aire", "environment"),
         ("informacion sobre la calidad del aire", "environment"),
         ("Dame informacion sobre el clima el dia de hoy", "environment"),
+        ("dame informacion sobre el clima hoy", "environment"),
+        ("calidad de aire", "environment"),
         ("informacion sobre el clima", "environment"),
         ("¿Cómo estás?", None),
         ("Hace calor", None),
+        ("hablamos del clima ayer", None),
     ],
 )
 def test_resolve_standalone_forced_module_triggers(
@@ -174,3 +177,21 @@ def test_compose_environment_query_merges_location(
     merged = compose_environment_query("Carolina del Norte", transcript)
     assert "calidad" in merged.lower()
     assert "Carolina del Norte" in merged
+
+
+@pytest.mark.parametrize(
+    ("phrase", "expected"),
+    [
+        ("dame informacion sobre el clima hoy", True),
+        ("calidad de aire", True),
+        ("informacion del tiempo", True),
+        ("Hace calor", False),
+        ("hablamos del clima ayer", False),
+        ("me gusta el clima de colombia", False),
+        ("como estas", False),
+    ],
+)
+def test_is_environment_action_request(phrase: str, expected: bool) -> None:
+    from app.modules.environment_module import is_environment_action_request
+
+    assert is_environment_action_request(phrase) is expected

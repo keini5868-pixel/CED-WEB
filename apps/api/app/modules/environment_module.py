@@ -31,6 +31,50 @@ _QUESTION_WORDS = re.compile(
     re.I,
 )
 
+# Capa 3 standalone — tema ambiental + señal de petición (sin LLM).
+_ENV_TOPIC = re.compile(
+    r"\b("
+    r"clima|tiempo|temperatura|lluvia|llover|nublado|despejado|"
+    r"polen|alergia|al[eé]rgico|"
+    r"calidad\s+(?:del?\s+)?aire|contaminaci[oó]n|"
+    r"pron[óo]stico|horas\s+de\s+sol|"
+    r"[íi]ndice\s+(?:de\s+)?(?:calidad\s+(?:del?\s+)?)?aire"
+    r")\b",
+    re.I,
+)
+
+_ENV_ACTION = re.compile(
+    r"\b("
+    r"dame|dime|d[íi]me|informaci[óo]n|datos|pron[óo]stico|"
+    r"qu[ée]|c[óo]mo|cu[áa]l|cu[áa]nto|"
+    r"necesito|quiero\s+saber|d[íi]as?\s+de\s+hoy"
+    r")\b",
+    re.I,
+)
+
+_ENV_IMPLICIT_REQUEST = re.compile(
+    r"\b("
+    r"calidad\s+(?:del?\s+)?aire|"
+    r"(?:clima|tiempo)\s+(?:el\s+)?(?:d[íi]a\s+de\s+)?hoy|"
+    r"(?:clima|tiempo)\s+(?:para\s+)?ma[ñn]ana"
+    r")\b",
+    re.I,
+)
+
+_ENV_CASUAL = re.compile(
+    r"\b("
+    r"hablamos|hablaba|hablaron|comentamos|coment[óo]|"
+    r"recuerdo|me\s+gusta|odio|prefiero|extra[ñn]o|"
+    r"en\s+la\s+reuni[óo]n|durante\s+la"
+    r")\b",
+    re.I,
+)
+
+_ENV_CASUAL_IDIOMS = re.compile(
+    r"\bhace\s+(?:mucho\s+)?(?:calor|fr[ií]o)\b",
+    re.I,
+)
+
 _DEFAULT_PLACE = "Charlotte NC"
 
 
@@ -41,9 +85,33 @@ def is_environment_intent(text: str) -> bool:
     return any(re.search(p, t) for p in ENVIRONMENT_PATTERNS)
 
 
+def is_environment_action_request(text: str) -> bool:
+    """Capa 3: petición activa de clima/aire/polen — excluye menciones casuales."""
+    t = (text or "").strip()
+    if len(t) < 4:
+        return False
+    t_lower = t.lower()
+
+    from app.services.ced_orchestrator import detect_strict_intent_v2
+
+    if detect_strict_intent_v2(t) == "environment":
+        return True
+
+    if _ENV_CASUAL.search(t_lower) or _ENV_CASUAL_IDIOMS.search(t_lower):
+        return False
+
+    if not _ENV_TOPIC.search(t_lower):
+        return False
+
+    if _ENV_IMPLICIT_REQUEST.search(t_lower):
+        return True
+
+    return bool(_ENV_ACTION.search(t_lower))
+
+
 def is_environment_topic(text: str) -> bool:
-    """True si el turno trata clima/calidad del aire/polen (ancla estricta o patterns)."""
-    if is_environment_intent(text):
+    """True si el turno trata clima/calidad del aire/polen como consulta."""
+    if is_environment_action_request(text):
         return True
     from app.services.ced_orchestrator import detect_strict_intent_v2
 
@@ -211,7 +279,9 @@ class EnvironmentModule(BaseModule):
             user_text or transcript,
             utterances or [],
         )
-        if is_environment_topic(query) or is_environment_location_followup(user_text or transcript):
+        if is_environment_action_request(query) or is_environment_location_followup(
+            user_text or transcript,
+        ):
             return await self._run_query(user_id, query)
         return self._idle()
 
