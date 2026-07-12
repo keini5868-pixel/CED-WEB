@@ -82,6 +82,7 @@ from app.services.voice_filler_bank import FILLER_MIN_HOLD_S, pick_voice_filler
 from app.services.voice_test_mode import (
     is_gemini_standalone_voice_test,
     resolve_standalone_forced_module,
+    standalone_user_keys_overlap,
     voice_standalone_modules,
 )
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
@@ -242,6 +243,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     last_delivered_voice_content = ""
     last_web_delivery_at = 0.0
     last_web_query_norm = ""
+    standalone_exec_lock = asyncio.Lock()
+    last_standalone_module_answered_key = ""
 
     user_id = await resolve_call_user_robust(call_id)
     if user_id:
@@ -748,6 +751,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
         async def run_debounced() -> None:
             nonlocal active_response_id, last_answered_user_key, turn_draft_in_progress, turn_draft_user_key
+            nonlocal last_standalone_module_answered_key
             scheduled_key = user_key
             scheduled_rid = response_id
             gpt_calls = 0
@@ -979,73 +983,133 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 if skip_standalone:
                     await ack_superseded_turn(reason="standalone_superseded")
                     return
-                reply: str | None = None
                 try:
-                    forced_module = None
-                    if uid and voice_standalone_modules():
-                        forced_module = resolve_standalone_forced_module(
-                            user_text,
-                            transcript,
-                            call_id=call_id,
-                            user_id=uid,
+                    async with standalone_exec_lock:
+                        if scheduled_rid in answered_response_ids:
+                            logger.info(
+                                "[VOICE-TEST-GEMINI] skip rid=%s reason=already_answered call=%s",
+                                scheduled_rid,
+                                call_id,
+                            )
+                            return
+                        if scheduled_key and scheduled_key == last_answered_user_key:
+                            logger.info(
+                                "[VOICE-TEST-GEMINI] skip rid=%s reason=answered_key call=%s",
+                                scheduled_rid,
+                                call_id,
+                            )
+                            await ack_superseded_turn(reason="standalone_answered_key")
+                            return
+                        if last_standalone_module_answered_key and standalone_user_keys_overlap(
+                            scheduled_key,
+                            last_standalone_module_answered_key,
+                        ):
+                            logger.info(
+                                "[VOICE-TEST-GEMINI] skip rid=%s reason=module_answered "
+                                "call=%s key=%s module_key=%s",
+                                scheduled_rid,
+                                call_id,
+                                scheduled_key[:48],
+                                last_standalone_module_answered_key[:48],
+                            )
+                            await ack_superseded_turn(reason="standalone_module_answered")
+                            return
+                        if _turn_rid_stale() or my_generation != generation_seq:
+                            await ack_superseded_turn(reason="standalone_stale_in_lock")
+                            return
+
+                        forced_module = None
+                        if uid and voice_standalone_modules():
+                            forced_module = resolve_standalone_forced_module(
+                                user_text,
+                                transcript,
+                                call_id=call_id,
+                                user_id=uid,
+                            )
+
+                        if forced_module and uid:
+                            orch = get_orchestrator(call_id)
+                            logger.info(
+                                "[RETELL-ORCH] standalone forced module=%s call=%s rid=%s text=%s",
+                                forced_module,
+                                call_id,
+                                scheduled_rid,
+                                user_text[:60],
+                            )
+                            orch_result = await orch.process(
+                                user_text=user_text,
+                                transcript=transcript,
+                                call_id=call_id,
+                                user_id=uid,
+                            )
+                            if _turn_rid_stale() or my_generation != generation_seq:
+                                await ack_superseded_turn(reason="standalone_orch_stale")
+                                return
+                            if orch_result.handles_response:
+                                spoken = (orch_result.spoken or "").strip()
+                                if spoken and await deliver_voice(
+                                    spoken,
+                                    generation=my_generation,
+                                ):
+                                    last_standalone_module_answered_key = scheduled_key
+                                    logger.info(
+                                        "[RETELL-ORCH] standalone module=%s call=%s rid=%s "
+                                        "delivered=true chars=%s",
+                                        orch.active_module or forced_module,
+                                        call_id,
+                                        scheduled_rid,
+                                        len(spoken),
+                                    )
+                                    return
+                                await anti_silence_if_unanswered(
+                                    reason="standalone_orch_empty",
+                                )
+                                return
+
+                        if last_standalone_module_answered_key and standalone_user_keys_overlap(
+                            scheduled_key,
+                            last_standalone_module_answered_key,
+                        ):
+                            logger.info(
+                                "[VOICE-TEST-GEMINI] skip rid=%s reason=module_answered_post_orch "
+                                "call=%s",
+                                scheduled_rid,
+                                call_id,
+                            )
+                            await ack_superseded_turn(reason="standalone_module_answered_late")
+                            return
+
+                        conv_request = ResponseRequiredRequest(
+                            interaction_type="response_required",
+                            response_id=scheduled_rid,
+                            transcript=transcript,
                         )
-                    if forced_module and uid:
-                        orch = get_orchestrator(call_id)
+                        llm.set_latency_context(call_id, scheduled_rid)
                         logger.info(
-                            "[RETELL-ORCH] standalone forced module=%s call=%s text=%s",
-                            forced_module,
+                            "[VOICE-TEST-GEMINI] gemini start rid=%s call=%s text=%s",
+                            scheduled_rid,
                             call_id,
                             user_text[:60],
                         )
-                        orch_result = await orch.process(
-                            user_text=user_text,
-                            transcript=transcript,
-                            call_id=call_id,
-                            user_id=uid,
-                        )
+                        reply = await llm.draft_conversational_response(conv_request)
                         if _turn_rid_stale() or my_generation != generation_seq:
-                            await ack_superseded_turn(reason="standalone_orch_stale")
+                            await ack_superseded_turn(reason="standalone_stale_after_llm")
                             return
-                        if orch_result.handles_response:
-                            spoken = (orch_result.spoken or "").strip()
-                            if spoken and await deliver_voice(
-                                spoken,
-                                generation=my_generation,
-                            ):
-                                logger.info(
-                                    "[RETELL-ORCH] standalone module=%s call=%s "
-                                    "delivered=true chars=%s",
-                                    orch.active_module or forced_module,
-                                    call_id,
-                                    len(spoken),
-                                )
-                                return
-                            await anti_silence_if_unanswered(
-                                reason="standalone_orch_empty",
+                        if reply and await deliver_voice(reply, generation=my_generation):
+                            logger.info(
+                                "[VOICE-TEST-GEMINI] delivered rid=%s call=%s chars=%s",
+                                scheduled_rid,
+                                call_id,
+                                len(reply),
                             )
                             return
-                    conv_request = ResponseRequiredRequest(
-                        interaction_type="response_required",
-                        response_id=scheduled_rid,
-                        transcript=transcript,
-                    )
-                    llm.set_latency_context(call_id, scheduled_rid)
-                    reply = await llm.draft_conversational_response(conv_request)
+                        await anti_silence_if_unanswered(reason="standalone_gemini_empty")
+                        return
+                except asyncio.CancelledError:
+                    raise
                 finally:
                     turn_draft_in_progress = False
                     turn_draft_user_key = ""
-                if _turn_rid_stale() or my_generation != generation_seq:
-                    await ack_superseded_turn(reason="standalone_stale_after_llm")
-                    return
-                if reply and await deliver_voice(reply, generation=my_generation):
-                    logger.info(
-                        "[VOICE-TEST-GEMINI] delivered rid=%s call=%s chars=%s",
-                        scheduled_rid,
-                        call_id,
-                        len(reply),
-                    )
-                    return
-                await anti_silence_if_unanswered(reason="standalone_gemini_empty")
                 return
 
             from app.services.system_clock import try_instant_datetime_reply

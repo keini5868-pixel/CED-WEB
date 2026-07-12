@@ -75,3 +75,19 @@ def resolve_standalone_forced_module(
             return active
 
     return None
+
+
+def standalone_user_keys_overlap(a: str, b: str, *, min_prefix: int = 12) -> bool:
+    """True si dos claves de turno parecen la misma frase (STT parcial vs final)."""
+    left = (a or "").strip().lower()
+    right = (b or "").strip().lower()
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+    if len(shorter) >= min_prefix and longer.startswith(shorter):
+        return True
+    if len(shorter) >= 8 and shorter in longer:
+        return True
+    return False

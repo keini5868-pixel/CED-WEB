@@ -9,6 +9,7 @@ from app.services.voice_test_mode import (
     GEMINI_STANDALONE_MODE,
     is_standalone_module_enabled,
     resolve_standalone_forced_module,
+    standalone_user_keys_overlap,
     voice_standalone_modules,
 )
 
@@ -87,3 +88,45 @@ def test_environment_module_spoken_without_filler(
     assert "Charlotte" in result.spoken or "28" in result.spoken
     # Standalone path must ignore send_filler — flag may be True on module result.
     assert result.send_filler is True  # module default; router skips filler in standalone
+
+
+def test_standalone_user_keys_overlap() -> None:
+    from app.services.voice_test_mode import standalone_user_keys_overlap
+
+    a = "como esta el clima hoy"
+    b = "como esta el clima hoy en charlotte"
+    assert standalone_user_keys_overlap(a, b) is True
+    assert standalone_user_keys_overlap("como estas", "como esta el clima hoy") is False
+
+
+def test_concurrent_standalone_lock_prevents_double_delivery() -> None:
+    """Simula rid viejo en orquestador + rid nuevo en Gemini — solo uno debe hablar."""
+    import asyncio
+
+    lock = asyncio.Lock()
+    last_module_key = ""
+    last_answered_key = ""
+    deliveries: list[str] = []
+
+    async def orch_task() -> None:
+        nonlocal last_module_key, last_answered_key
+        async with lock:
+            await asyncio.sleep(0.05)
+            last_module_key = "como esta el clima hoy"
+            last_answered_key = last_module_key
+            deliveries.append("orch")
+
+    async def gemini_task() -> None:
+        async with lock:
+            if last_module_key and standalone_user_keys_overlap(
+                "como esta el clima hoy",
+                last_module_key,
+            ):
+                return
+            deliveries.append("gemini")
+
+    async def run() -> None:
+        await asyncio.gather(orch_task(), gemini_task())
+
+    asyncio.run(run())
+    assert deliveries == ["orch"]
