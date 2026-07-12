@@ -198,9 +198,12 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
     ),
     "weather": (
         r"\bdime\s+(?:el\s+)?clima\b",
+        r"\bdame\s+informaci[óo]n\s+(?:sobre|de|del)\s+(?:el\s+)?(?:clima|tiempo)\b",
+        r"\binformaci[óo]n\s+(?:sobre|de|del)\s+(?:el\s+)?(?:clima|tiempo)\b",
         r"\b(?:c[óo]mo|qu[ée])\s+(?:va\s+a\s+estar|estar[áa]|est[áa])\s+el\s+(?:clima|tiempo)\b",
         r"\bpron[óo]stico\s+(?:del?\s+)?(?:clima|tiempo|d[íi]a)\b",
         r"\bva\s+a\s+llover\b",
+        r"\b(?:clima|tiempo)\s+(?:el\s+)?(?:d[íi]a\s+de\s+)?hoy\b",
         r"\b(?:clima|tiempo)\s+(?:hoy|ma[ñn]ana|de\s+hoy|para\s+hoy)\b",
         r"\bqu[ée]\s+clima\s+(?:hace|hay|har[áa])\b",
     ),

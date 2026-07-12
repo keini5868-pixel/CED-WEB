@@ -44,6 +44,8 @@ def test_standalone_modules_empty_without_flag(monkeypatch: pytest.MonkeyPatch) 
         ("Calidad del aire en Charlotte", "environment"),
         ("dame informacion de la calidad de aire", "environment"),
         ("informacion sobre la calidad del aire", "environment"),
+        ("Dame informacion sobre el clima el dia de hoy", "environment"),
+        ("informacion sobre el clima", "environment"),
         ("¿Cómo estás?", None),
         ("Hace calor", None),
     ],

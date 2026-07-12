@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "voice-test-gemini-standalone-v3-environment-r3"
+BUILD_VERSION = "voice-test-gemini-standalone-v3-environment-r4"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
