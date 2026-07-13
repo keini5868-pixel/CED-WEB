@@ -59,6 +59,44 @@ def test_consult_requires_active_mode():
     assert "activa modo avanzado" in out["spoken"].lower()
 
 
+def test_consult_available_after_activate_without_retell_transition():
+    """Reproduce bug v10: activate OK pero Retell se queda en general_assistant."""
+    import asyncio
+
+    from app.services.retell_native_pilot import (
+        build_native_pilot_states,
+        execute_consult_advanced_tool,
+        STATE_GENERAL_ASSISTANT,
+    )
+
+    states, _ = build_native_pilot_states(api_public_url="https://api.example.com")
+    general = next(s for s in states if s["name"] == STATE_GENERAL_ASSISTANT)
+    assert "consult_advanced" in {t["name"] for t in general["tools"]}
+
+    activate_advanced_mode(USER)
+    assert vcs.is_advanced_mode_active(USER)
+
+    async def run():
+        with patch(
+            "app.services.advanced_mode_flow.consultar_sistema_avanzado",
+            return_value={"ok": True, "result": "Sócrates y el alquimista comparten búsqueda interior."},
+        ):
+            return await execute_consult_advanced_tool(
+                user_id=USER,
+                payload={"call": {"call_id": "c-no-transition"}},
+                args={
+                    "query": (
+                        "análisis de la filosofía de Sócrates comparado con El Alquimista"
+                    ),
+                },
+            )
+
+    out = asyncio.run(run())
+    assert out["ok"] is True
+    assert "Sócrates" in out["result"] or "alquimista" in out["result"].lower()
+    assert "[meta:" not in out["result"]
+
+
 def test_consult_calls_claude_deep_analysis():
     activate_advanced_mode(USER)
     with patch(

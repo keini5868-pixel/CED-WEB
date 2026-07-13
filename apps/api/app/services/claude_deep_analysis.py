@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 ANALYSIS_MODEL_FAST = "claude-haiku-4-5-20251001"
 ANALYSIS_MODEL_FALLBACK = "claude-sonnet-4-6"
 ANALYSIS_TIMEOUT_SEC = 22
+# Presupuesto total de voz (Retell tool timeout ~45s). Sin cascada 22+22+22.
+VOICE_ANALYSIS_BUDGET_SEC = 36
 VOICE_RESULT_LIMIT = 900
 VOICE_SCRIPT_LIMIT = 1800
 
@@ -33,7 +35,13 @@ def _is_script_request(topic: str) -> bool:
 def _voice_trim(text: str, *, is_script: bool = False) -> str:
     from app.services.voice_spoken import fit_voice_spoken
 
-    t = re.sub(r"\s+", " ", text).strip()
+    t = re.sub(r"```[\s\S]*?```", " ", text or "")
+    t = re.sub(r"^#{1,6}\s*", "", t, flags=re.M)
+    t = re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
+    t = re.sub(r"\*([^*]+)\*", r"\1", t)
+    t = re.sub(r"`([^`]+)`", r"\1", t)
+    t = re.sub(r"^\s*[-*•]\s+", "", t, flags=re.M)
+    t = re.sub(r"\s+", " ", t).strip()
     if not t:
         return ""
     limit = VOICE_SCRIPT_LIMIT if is_script else VOICE_RESULT_LIMIT
@@ -87,11 +95,14 @@ def _gemini_analysis(api_key: str, user_prompt: str, *, model: str, max_tokens: 
 
 def _run_analysis(topic: str) -> tuple[str | None, str | None]:
     """Returns (text, error)."""
+    import time
+
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
     google_key = settings.google_api_key.strip()
     gemini_model = settings.gemini_voice_model.strip() or "gemini-2.5-flash"
     is_script = _is_script_request(topic)
+    deadline = time.monotonic() + VOICE_ANALYSIS_BUDGET_SEC
 
     if is_script:
         user_prompt = (
@@ -112,38 +123,52 @@ def _run_analysis(topic: str) -> tuple[str | None, str | None]:
     else:
         user_prompt = (
             f"Consulta: {topic}\n\n"
-            "Responde en español latino para VOZ. Máximo 3-4 oraciones completas. "
-            "Preciso, directo. Sin markdown ni URLs."
+            "Responde en español latinoamericano para VOZ. "
+            "Entre 4 y 8 oraciones completas, fluídas y concretas. "
+            "Si compara ideas o autores, menciona 2-3 puntos de conexión claros. "
+            "Sin markdown, URLs ni listas con viñetas. Cierra en una oración completa."
         )
-        max_tokens = 320
+        max_tokens = 700
+
+    def _remaining() -> float:
+        return max(0.5, deadline - time.monotonic())
 
     def _try_anthropic(model: str) -> str:
         return _anthropic_analysis(anthropic_key, user_prompt, model=model, max_tokens=max_tokens)
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         if anthropic_key:
-            future = pool.submit(_try_anthropic, ANALYSIS_MODEL_FAST)
-            try:
-                text = future.result(timeout=ANALYSIS_TIMEOUT_SEC)
-                if text:
-                    return _voice_trim(text, is_script=is_script), None
-            except FuturesTimeout:
-                logger.warning("[CLAUDE:DEEP] haiku timeout")
-            except Exception as exc:
-                logger.warning("[CLAUDE:DEEP] haiku %s: %s", type(exc).__name__, exc)
+            for model, label in (
+                (ANALYSIS_MODEL_FAST, "haiku"),
+                (ANALYSIS_MODEL_FALLBACK, "sonnet"),
+            ):
+                remaining = _remaining()
+                if remaining < 3:
+                    break
+                attempt_timeout = min(ANALYSIS_TIMEOUT_SEC, remaining)
+                future = pool.submit(_try_anthropic, model)
+                try:
+                    text = future.result(timeout=attempt_timeout)
+                    if text:
+                        logger.info(
+                            "[CLAUDE:DEEP] provider=anthropic model=%s len=%s leftover=%.1fs",
+                            label,
+                            len(text),
+                            _remaining(),
+                        )
+                        return _voice_trim(text, is_script=is_script), None
+                except FuturesTimeout:
+                    logger.warning(
+                        "[CLAUDE:DEEP] %s timeout after %.1fs",
+                        label,
+                        attempt_timeout,
+                    )
+                except Exception as exc:
+                    logger.warning("[CLAUDE:DEEP] %s %s: %s", label, type(exc).__name__, exc)
 
-            future = pool.submit(_try_anthropic, ANALYSIS_MODEL_FALLBACK)
-            try:
-                text = future.result(timeout=ANALYSIS_TIMEOUT_SEC)
-                if text:
-                    return _voice_trim(text, is_script=is_script), None
-            except FuturesTimeout:
-                logger.warning("[CLAUDE:DEEP] sonnet timeout")
-            except Exception as exc:
-                logger.warning("[CLAUDE:DEEP] sonnet %s: %s", type(exc).__name__, exc)
-
-        if google_key:
-            gemini_tokens = 1400 if is_script else 320
+        if google_key and _remaining() >= 3:
+            gemini_tokens = 1400 if is_script else 480
+            attempt_timeout = min(ANALYSIS_TIMEOUT_SEC, _remaining())
             future = pool.submit(
                 _gemini_analysis,
                 google_key,
@@ -152,8 +177,9 @@ def _run_analysis(topic: str) -> tuple[str | None, str | None]:
                 max_tokens=gemini_tokens,
             )
             try:
-                text = future.result(timeout=ANALYSIS_TIMEOUT_SEC)
+                text = future.result(timeout=attempt_timeout)
                 if text:
+                    logger.info("[CLAUDE:DEEP] provider=gemini len=%s", len(text))
                     return _voice_trim(text, is_script=is_script), None
             except FuturesTimeout:
                 logger.warning("[CLAUDE:DEEP] gemini timeout")

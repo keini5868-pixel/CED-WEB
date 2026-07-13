@@ -61,11 +61,13 @@ Cámara / visión:
 
 Modo avanzado (Claude):
 1. Solo la frase «activa modo avanzado» → activate_advanced_mode. Luego transition_to_advanced_mode_active.
-2. En modo avanzado, preguntas sustantivas → consult_advanced (NO inventes análisis profundo con Gemini).
-3. Clima (get_environment) y lectura de finanzas (read_finances) SÍ están disponibles en modo avanzado sin salir.
-4. Gmail, escritura de finanzas y cámara NO están en modo avanzado — pide salir primero si las necesita.
-5. Salida solo explícita: «modo normal», «sal del modo avanzado», «desactiva modo avanzado» → deactivate_advanced_mode.
-6. NO salgas solo tras una respuesta — el modo permanece activo hasta salida explícita.
+2. Tras activar (aunque no hayas cambiado de estado), preguntas sustantivas / análisis / comparación → consult_advanced SIEMPRE. consult_advanced también está disponible en este estado general.
+3. PROHIBIDO responder tú mismo análisis profundo, filosófico o literario — debe ser consult_advanced.
+4. Clima (get_environment) y lectura de finanzas (read_finances) SÍ disponibles en modo avanzado sin salir.
+5. Gmail, escritura de finanzas y cámara: si el usuario las pide en modo avanzado, usa la tool correspondiente o pide salir — no inventes.
+6. Salida solo explícita: «modo normal», «sal del modo avanzado», «desactiva modo avanzado» → deactivate_advanced_mode.
+7. NO salgas solo tras una respuesta — el modo permanece activo hasta salida explícita.
+8. Tras consult_advanced, di el resultado tal cual (sin inventar ni cortar).
 
 Finanzas — escritura con confirmación obligatoria:
 1. finance_prepare_write requiere monto y concepto claros (gasto, ingreso o pago pendiente con fecha).
@@ -80,10 +82,12 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro), cámara, activar modo avanzado.
+Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro), cámara, modo avanzado.
 - Gmail: solo lectura. Repite el resultado de read_gmail tal cual.
 - Cámara: activate_camera una sola vez; describe solo con analyze_camera_frame / search_visible_product.
 - Si el usuario dice exactamente «activa modo avanzado» → activate_advanced_mode y transition_to_advanced_mode_active.
+- Si el modo avanzado YA fue activado en esta sesión (activate_advanced_mode devolvió ok) y el usuario hace una pregunta de análisis/investigación/filosofía/comparación → consult_advanced de inmediato. NO respondas tú esa pregunta.
+- Si dice «modo normal» / «sal del modo avanzado» → deactivate_advanced_mode.
 - Para REGISTRAR finanzas: finance_prepare_write con la frase del usuario (monto + concepto).
 - Tras prepare con awaiting_confirmation: lee el resumen, pregunta confirmación y usa transition_to_finance_confirm_pending.
 - Si ya hay borrador pendiente y el usuario dice «sí» o «dale», llama finance_confirm_write de inmediato (también disponible aquí).
@@ -184,9 +188,10 @@ ACTIVATE_ADVANCED_DESCRIPTION = (
 
 CONSULT_ADVANCED_DESCRIPTION = (
     "Consulta profunda vía Claude (modo avanzado). "
-    "Usar para preguntas de análisis, investigación o razonamiento complejo "
-    "mientras el modo avanzado está activo. "
-    "Repite el resultado tal cual al usuario."
+    "Usar para preguntas de análisis, investigación, filosofía, comparación de ideas o razonamiento complejo "
+    "después de que activate_advanced_mode haya confirmado el modo (aunque no haya cambiado de estado). "
+    "También disponible en el estado general por si Retell no transicionó. "
+    "Repite el resultado tal cual al usuario. NUNCA respondas esas preguntas sin llamar esta herramienta."
 )
 
 DEACTIVATE_ADVANCED_DESCRIPTION = (
@@ -513,7 +518,7 @@ def build_consult_advanced_tool(*, api_public_url: str) -> dict[str, Any]:
         description=CONSULT_ADVANCED_DESCRIPTION,
         parameters=CONSULT_ADVANCED_PARAMETERS,
         filler="Un momento, consultando el sistema avanzado, señor.",
-        timeout_ms=28_000,
+        timeout_ms=45_000,
     )
 
 
@@ -547,6 +552,10 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_analyze_camera_frame_tool(api_public_url=api_public_url),
                 build_search_visible_product_tool(api_public_url=api_public_url),
                 build_activate_advanced_mode_tool(api_public_url=api_public_url),
+                # Mismo patrón que finance_confirm_write: disponibles en general
+                # por si Retell no transiciona a advanced_mode_active.
+                build_consult_advanced_tool(api_public_url=api_public_url),
+                build_deactivate_advanced_mode_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
@@ -1330,6 +1339,10 @@ async def _execute_native_advanced_tool(
                 "spoken": "Herramienta de modo avanzado no reconocida, señor.",
             }
         spoken = _format_action_result_with_meta(action)
+        # Respuestas de consult sin transición: solo texto limpio para voz
+        # (evita que Retell lea [meta:...] o se confunda tras speak_after_execution).
+        if tool_name == "consult_advanced" and action.get("status") == "answered":
+            spoken = str(action.get("spoken") or spoken).strip()
         ok = bool(action.get("ok"))
     except Exception:  # noqa: BLE001
         logger.exception("[NATIVE-PILOT] %s failed user=%s", tool_name, user_id[:8])

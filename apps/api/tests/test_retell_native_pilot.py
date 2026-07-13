@@ -170,7 +170,8 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "search_visible_product" in general_tools
     assert "deactivate_camera" in general_tools
     assert "activate_advanced_mode" in general_tools
-    assert "consult_advanced" not in general_tools
+    assert "consult_advanced" in general_tools
+    assert "deactivate_advanced_mode" in general_tools
     assert "finance_confirm_write" in confirm_tools
     assert "finance_cancel_write" in confirm_tools
     assert "read_finances" in confirm_tools
@@ -197,6 +198,7 @@ def test_pilot_prompt_includes_advanced_rules():
     assert "activa modo avanzado" in RETELL_NATIVE_PILOT_PROMPT
     assert "consult_advanced" in RETELL_NATIVE_PILOT_PROMPT
     assert "deactivate_advanced_mode" in RETELL_NATIVE_PILOT_PROMPT
+    assert "aunque no hayas cambiado de estado" in RETELL_NATIVE_PILOT_PROMPT
 
 
 def test_pilot_prompt_includes_camera_rules():
@@ -212,7 +214,7 @@ def test_consult_advanced_tool_has_filler():
     tool = build_consult_advanced_tool(api_public_url="https://api.example.com")
     assert tool["name"] == "consult_advanced"
     assert "sistema avanzado" in tool["execution_message_description"].lower()
-    assert tool["timeout_ms"] == 28_000
+    assert tool["timeout_ms"] == 45_000
 
 
 def test_pilot_prompt_includes_standalone_identity():
