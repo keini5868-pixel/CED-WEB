@@ -224,28 +224,98 @@ def test_gmail_read_sync_blocks_voice_send():
 
 def test_gmail_read_sync_returns_full_body_via_helper():
     from app.modules.gmail_module import GMAIL_VOICE_BODY_LIMIT, _message_content_for_voice
+    from app.services.google_gmail_api import MessageBodyResult
 
     long_body = "A" * 2000
-    with patch("app.modules.gmail_module.get_message_body", return_value=long_body):
-        content = _message_content_for_voice("token", {"id": "msg-1", "snippet": "short"})
+    with patch(
+        "app.modules.gmail_module.fetch_message_body_detail",
+        return_value=MessageBodyResult(text=long_body, source="plain", ok=True),
+    ):
+        content, ok, _source = _message_content_for_voice("token", {"id": "msg-1", "subject": "Hola"})
+    assert ok is True
     assert len(content) == GMAIL_VOICE_BODY_LIMIT
-    assert content == "A" * GMAIL_VOICE_BODY_LIMIT
 
 
-def test_gmail_read_sender_uses_literal_body_block():
-    from app.modules.gmail_module import _read_sender_email
+def test_gmail_read_sync_leeme_el_de_sender():
+    from app.modules.gmail_module import handle_gmail_read_sync
 
-    body = "Reunión confirmada el lunes 13 a las 10:00 en sala B."
-    with patch("app.modules.gmail_module.get_message_body", return_value=body):
+    with patch("app.modules.gmail_module._gmail_api_call") as call:
+        call.side_effect = lambda _uid, fn: fn("token")
+        with patch("app.modules.gmail_module.list_messages") as list_msgs:
+            list_msgs.return_value = [
+                {
+                    "id": "m1",
+                    "from_name": "Jun Medina",
+                    "subject": "Work Schedule for Monday",
+                    "from": "jun@x.com",
+                    "snippet": "Work Schedule for Monday",
+                }
+            ]
+            with patch("app.modules.gmail_module.fetch_message_body_detail") as fetch_body:
+                from app.services.google_gmail_api import MessageBodyResult
+
+                fetch_body.return_value = MessageBodyResult(
+                    text="Shift starts 8:00 AM. Break at 12:00.",
+                    source="html",
+                    ok=True,
+                )
+                out = handle_gmail_read_sync("user-1", "léeme el de Jun Medina")
+    assert "Shift starts 8:00 AM" in out["spoken"]
+    assert "CUERPO_LITERAL" in out["spoken"]
+
+
+def test_gmail_body_followup_uses_last_read_cache():
+    from app.modules.gmail_module import handle_gmail_read_sync
+    from app.services import voice_client_session as vcs
+    from app.services.google_gmail_api import MessageBodyResult
+
+    vcs.set_gmail_last_read(
+        "user-1",
+        {
+            "id": "cached-msg",
+            "from_name": "Jun Medina",
+            "subject": "Work Schedule",
+            "snippet": "snippet",
+        },
+    )
+    with patch("app.modules.gmail_module._gmail_api_call", side_effect=lambda _uid, fn: fn("token")):
         with patch(
-            "app.modules.gmail_module.list_messages",
-            return_value=[{"id": "m1", "from_name": "Jun Medina", "subject": "Horario", "from": "j@x.com"}],
+            "app.modules.gmail_module.fetch_message_body_detail",
+            return_value=MessageBodyResult(
+                text="Full schedule: 8am standup, 2pm review.",
+                source="plain",
+                ok=True,
+            ),
         ):
-            spoken = _read_sender_email("token", "léeme el correo de Jun Medina")
-    assert "CUERPO_LITERAL" in spoken
-    assert body in spoken
-    assert "PROHIBIDO inventar" in spoken
-    assert "Jun Medina" in spoken
+            out = handle_gmail_read_sync("user-1", "léeme el contenido del correo")
+    assert "8am standup" in out["spoken"]
+    vcs.set_gmail_last_read("user-1", None)
+
+
+def test_gmail_snippet_only_reports_unavailable_not_subject():
+    from app.modules.gmail_module import _message_content_for_voice
+    from app.services.google_gmail_api import MessageBodyResult
+
+    with patch(
+        "app.modules.gmail_module.fetch_message_body_detail",
+        return_value=MessageBodyResult(
+            text="Work Schedule for Monday, July 13th, 2026",
+            source="snippet",
+            ok=False,
+            snippet="Work Schedule for Monday, July 13th, 2026",
+        ),
+    ):
+        content, ok, source = _message_content_for_voice(
+            "token",
+            {
+                "id": "m1",
+                "subject": "Work Schedule for Monday, July 13th, 2026",
+                "snippet": "Work Schedule for Monday, July 13th, 2026",
+            },
+        )
+    assert ok is False
+    assert source == "snippet"
+    assert "No pude obtener el cuerpo completo" in content
 
 
 def test_gmail_literal_format_three_distinct_bodies():

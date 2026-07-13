@@ -89,9 +89,15 @@ def test_gmail_module_reads_picked_email():
             return_value="token",
         ):
             with patch(
-                "app.modules.gmail_module.get_message_body",
-                return_value="Contenido del correo de prueba.",
-            ):
+                "app.modules.gmail_module.fetch_message_body_detail",
+            ) as fetch_body:
+                from app.services.google_gmail_api import MessageBodyResult
+
+                fetch_body.return_value = MessageBodyResult(
+                    text="Contenido del correo de prueba.",
+                    source="plain",
+                    ok=True,
+                )
                 return await module.handle_command(
                     "Marvin",
                     user_id=uid,
@@ -153,9 +159,15 @@ def test_gmail_module_reads_latest_email():
                 ],
             ):
                 with patch(
-                    "app.modules.gmail_module.get_message_body",
-                    return_value="Contenido completo del ultimo correo.",
-                ):
+                    "app.modules.gmail_module.fetch_message_body_detail",
+                ) as fetch_body:
+                    from app.services.google_gmail_api import MessageBodyResult
+
+                    fetch_body.return_value = MessageBodyResult(
+                        text="Contenido completo del ultimo correo.",
+                        source="plain",
+                        ok=True,
+                    )
                     return await module.activate(
                         "me puedes leer el ultimo Gmail que me llego?",
                         user_id=uid,
@@ -167,10 +179,10 @@ def test_gmail_module_reads_latest_email():
 
     result = asyncio.run(run())
     assert result.ok
-    assert "ultimo correo" in result.spoken.lower() or "último correo" in result.spoken.lower()
+    assert "CUERPO_LITERAL" in result.spoken
     assert "Contenido completo" in result.spoken
     assert "Factura julio" in result.spoken
-    assert "Resumen del correo" in result.spoken or "Contenido completo" in result.spoken
+    assert "Ana" in result.spoken
 
 
 def test_gmail_list_prompts_for_name():

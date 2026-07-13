@@ -15,6 +15,7 @@ from app.services.google_gmail_api import (
     detect_gmail_category,
     extract_recipient,
     extract_sender_query,
+    fetch_message_body_detail,
     get_message_body,
     list_inbox_messages,
     list_messages,
@@ -33,13 +34,42 @@ GMAIL_VOICE_BODY_LIMIT = 1400
 _GMAIL_LITERAL_PREAMBLE = (
     "INSTRUCCIÓN OBLIGATORIA: Lea al usuario el bloque CUERPO_LITERAL palabra por palabra. "
     "PROHIBIDO inventar, parafrasear, resumir creativamente ni agregar horarios, reuniones "
-    "o detalles que no aparezcan en CUERPO_LITERAL.\n\n"
+    "o detalles que no aparezcan en CUERPO_LITERAL. "
+    "PROHIBIDO leer solo el asunto de METADATOS como si fuera el cuerpo. "
+    "PROHIBIDO prometer que va a extraer el cuerpo después — si CUERPO_LITERAL indica "
+    "indisponible, dígalo una sola vez y no insista.\n\n"
+)
+
+_BODY_UNAVAILABLE_MSG = (
+    "No pude obtener el cuerpo completo de este correo; solo tengo el asunto. "
+    "El mensaje puede estar en formato HTML complejo, en un adjunto o no disponible por la API."
+)
+
+_READ_BODY_FOLLOWUP_RE = re.compile(
+    r"\b(?:"
+    r"contenido(?:\s+del\s+correo)?|cuerp[oa](?:\s+del\s+(?:correo|mensaje))?|"
+    r"mensaje\s+completo|texto\s+del\s+correo|lo\s+que\s+dice\s+el\s+correo|"
+    r"léeme\s+el\s+contenido|lee\s+el\s+contenido|qué\s+dice\s+el\s+correo"
+    r")\b",
+    re.I,
 )
 
 
-def format_gmail_literal_voice(*, from_name: str, subject: str, body: str) -> str:
+def is_gmail_read_body_followup(text: str) -> bool:
+    return bool(_READ_BODY_FOLLOWUP_RE.search(text or ""))
+
+
+def format_gmail_literal_voice(
+    *,
+    from_name: str,
+    subject: str,
+    body: str,
+    body_ok: bool = True,
+) -> str:
     """Formatea lectura Gmail para que el LLM no alucine el contenido."""
-    content = (body or "").strip() or "No pude leer el contenido del correo."
+    content = (body or "").strip()
+    if not body_ok or not content:
+        content = _BODY_UNAVAILABLE_MSG
     return (
         f"{_GMAIL_LITERAL_PREAMBLE}"
         f"METADATOS: remitente {from_name}, asunto «{subject}».\n"
@@ -161,17 +191,86 @@ def _gmail_api_call(user_id: str, fn):
         return fn(access)
 
 
-def _message_content_for_voice(access: str, msg: dict[str, str]) -> str:
+def _normalize_compare(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def _message_content_for_voice(
+    access: str,
+    msg: dict[str, str],
+) -> tuple[str, bool, str]:
+    """Devuelve (texto, body_ok, source) para lectura por voz."""
+    subject = str(msg.get("subject") or "")
     snippet = str(msg.get("snippet") or "").strip()
     try:
-        body = get_message_body(access, msg["id"]).strip()
-        if body and body != "No pude leer el contenido del correo.":
-            return body[:GMAIL_VOICE_BODY_LIMIT]
+        detail = fetch_message_body_detail(access, msg["id"])
+        body = detail.text.strip()
+        source = detail.source
+        if detail.ok and body:
+            if _normalize_compare(body) == _normalize_compare(subject):
+                logger.warning(
+                    "[GMAIL] body equals subject msg=%s — treating as unavailable",
+                    str(msg.get("id") or "")[:12],
+                )
+                return _BODY_UNAVAILABLE_MSG, False, source
+            if source == "snippet":
+                logger.warning(
+                    "[GMAIL] only snippet for msg=%s subject=%r",
+                    str(msg.get("id") or "")[:12],
+                    subject[:60],
+                )
+                return _BODY_UNAVAILABLE_MSG, False, source
+            return body[:GMAIL_VOICE_BODY_LIMIT], True, source
+        if body and source == "snippet":
+            return _BODY_UNAVAILABLE_MSG, False, source
     except Exception:  # noqa: BLE001
-        logger.warning("[GMAIL] body fetch failed msg=%s", str(msg.get("id") or "")[:12])
-    if snippet:
-        return snippet[:GMAIL_VOICE_BODY_LIMIT]
-    return "No pude leer el contenido del correo."
+        logger.exception("[GMAIL] body fetch failed msg=%s", str(msg.get("id") or "")[:12])
+
+    if snippet and _normalize_compare(snippet) != _normalize_compare(subject):
+        return snippet[:GMAIL_VOICE_BODY_LIMIT], False, "snippet"
+    return _BODY_UNAVAILABLE_MSG, False, "none"
+
+
+def _remember_last_read(user_id: str, msg: dict[str, str], *, body_ok: bool, source: str) -> None:
+    vcs.set_gmail_last_read(
+        user_id,
+        {
+            "id": msg.get("id"),
+            "from_name": msg.get("from_name") or msg.get("from"),
+            "from": msg.get("from"),
+            "subject": msg.get("subject"),
+            "snippet": msg.get("snippet"),
+            "body_ok": body_ok,
+            "body_source": source,
+        },
+    )
+
+
+def _format_read_message(
+    user_id: str,
+    access: str,
+    msg: dict[str, str],
+) -> str:
+    content, body_ok, source = _message_content_for_voice(access, msg)
+    from_name = msg.get("from_name") or msg.get("from", "?")
+    subject = str(msg.get("subject") or "(sin asunto)")
+    _remember_last_read(user_id, msg, body_ok=body_ok, source=source)
+    logger.info(
+        "[GMAIL] read voice user=%s msg=%s from=%r subject=%r body_ok=%s source=%s len=%s",
+        user_id[:8],
+        str(msg.get("id") or "")[:12],
+        from_name[:40],
+        subject[:60],
+        body_ok,
+        source,
+        len(content),
+    )
+    return format_gmail_literal_voice(
+        from_name=from_name,
+        subject=subject,
+        body=content,
+        body_ok=body_ok,
+    )
 
 
 def _read_latest_email(user_id: str) -> str:
@@ -181,16 +280,12 @@ def _read_latest_email(user_id: str) -> str:
             vcs.set_gmail_awaiting_pick(user_id, False)
             return "Señor, no tiene correos recientes en su bandeja de entrada."
         msg = messages[0]
-        content = _message_content_for_voice(access, msg)
-        from_name = msg.get("from_name") or msg.get("from", "?")
         vcs.set_gmail_awaiting_pick(user_id, False)
         when = msg.get("relative_date") or ""
         when_txt = f", recibido {when.lower()}" if when else ""
-        return format_gmail_literal_voice(
-            from_name=from_name,
-            subject=str(msg.get("subject") or "(sin asunto)"),
-            body=content,
-        ) + (f"\n\n(Recibido{when_txt}.)" if when_txt else "")
+        return _format_read_message(user_id, access, msg) + (
+            f"\n\n(Recibido{when_txt}.)" if when_txt else ""
+        )
 
     return _gmail_api_call(user_id, _fetch)
 
@@ -236,7 +331,7 @@ CATEGORY_LABELS = {
 }
 
 
-def _read_sender_email(access: str, text: str) -> str:
+def _read_sender_email(access: str, text: str, *, user_id: str) -> str:
     sender = extract_sender_query(text)
     query = f"from:{sender}" if sender else ""
     messages = list_messages(access, query=query, max_results=3)
@@ -249,13 +344,28 @@ def _read_sender_email(access: str, text: str) -> str:
     if not messages:
         return "Señor, no encontré correos con ese criterio."
     msg = messages[0]
-    content = _message_content_for_voice(access, msg)
-    from_name = msg.get("from_name") or msg.get("from", "?")
-    return format_gmail_literal_voice(
-        from_name=from_name,
-        subject=str(msg.get("subject") or "(sin asunto)"),
-        body=content,
-    )
+    return _format_read_message(user_id, access, msg)
+
+
+def _read_last_cached_message(user_id: str) -> str:
+    cached = vcs.get_gmail_last_read(user_id)
+    if not cached:
+        return (
+            "Señor, no tengo un correo reciente en contexto. "
+            "Dígame de quién desea leer el correo."
+        )
+
+    def _fetch(access: str) -> str:
+        msg = {
+            "id": str(cached.get("id") or ""),
+            "from_name": cached.get("from_name") or cached.get("from"),
+            "from": cached.get("from"),
+            "subject": cached.get("subject"),
+            "snippet": cached.get("snippet"),
+        }
+        return _format_read_message(user_id, access, msg)
+
+    return _gmail_api_call(user_id, _fetch)
 
 
 def _read_email_by_pick(user_id: str, hint: str) -> str:
@@ -281,16 +391,10 @@ def _read_email_by_pick(user_id: str, hint: str) -> str:
                 best = msg
 
         if best and best_score >= 3:
-            content = _message_content_for_voice(access, best)
-            from_name = best.get("from_name") or best.get("from", "?")
             vcs.set_gmail_awaiting_pick(user_id, False)
-            return format_gmail_literal_voice(
-                from_name=from_name,
-                subject=str(best.get("subject") or "(sin asunto)"),
-                body=content,
-            )
+            return _format_read_message(user_id, access, best)
 
-        fallback = _read_sender_email(access, f"de {hint}")
+        fallback = _read_sender_email(access, f"de {hint}", user_id=user_id)
         if "no encontré" not in fallback.lower():
             vcs.set_gmail_awaiting_pick(user_id, False)
         return fallback
@@ -300,6 +404,9 @@ def _read_email_by_pick(user_id: str, hint: str) -> str:
 
 def _handle_gmail_query(user_id: str, text: str) -> str:
     t = text.lower()
+
+    if is_gmail_read_body_followup(text):
+        return _read_last_cached_message(user_id)
 
     if is_gmail_followup_pick(text, user_id):
         return _read_email_by_pick(user_id, text)
@@ -337,12 +444,14 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
         return _summarize_inbox(category, user_id=user_id)
 
     if re.search(
-        r"l[eé]eme\s+(?:el\s+)?(?:email|correo)|l[eé]e(?:me)?\s+(?:el\s+)?(?:correo|email)\s+de\b",
+        r"l[eé]eme\s+(?:el\s+)?(?:email|correo)|"
+        r"l[eé]e(?:me)?\s+(?:el\s+)?(?:correo|email)\s+de\b|"
+        r"l[eé]e(?:me)?\s+el\s+de\s+",
         t,
     ):
         def _read_sender(access: str) -> str:
             vcs.set_gmail_awaiting_pick(user_id, False)
-            return _read_sender_email(access, text)
+            return _read_sender_email(access, text, user_id=user_id)
 
         return _gmail_api_call(user_id, _read_sender)
 

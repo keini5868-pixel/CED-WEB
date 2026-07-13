@@ -37,6 +37,7 @@ def _fresh_session() -> dict[str, Any]:
         "gmail_awaiting_pick": False,
         "gmail_pending_send": None,
         "finance_pending_write": None,
+        "gmail_last_read": None,
     }
 
 
@@ -568,6 +569,23 @@ def set_gmail_awaiting_pick(user_id: str, awaiting: bool) -> None:
 
 def is_gmail_awaiting_pick(user_id: str) -> bool:
     return bool(_get(user_id).get("gmail_awaiting_pick"))
+
+
+def set_gmail_last_read(user_id: str, message: dict[str, Any] | None) -> None:
+    session = _get(user_id)
+    with _lock:
+        if message and message.get("id"):
+            session["gmail_last_read"] = deepcopy(message)
+        else:
+            session["gmail_last_read"] = None
+        session["updated_at"] = _now()
+
+
+def get_gmail_last_read(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("gmail_last_read")
+    if not isinstance(row, dict) or not row.get("id"):
+        return None
+    return deepcopy(row)
 
 
 GMAIL_PENDING_TTL_SEC = 600

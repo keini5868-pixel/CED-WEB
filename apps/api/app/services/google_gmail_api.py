@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import base64
+import logging
 import re
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
+from html import unescape
 from typing import Any, Literal
 
 import httpx
+
+logger = logging.getLogger(__name__)
 
 _GMAIL_BASE = "https://gmail.googleapis.com/gmail/v1/users/me"
 
@@ -219,34 +224,80 @@ def get_gmail_emails(user_id: str, category: GmailCategory = "primary") -> dict[
         }
 
 
-def _extract_body_from_payload(payload: dict[str, Any]) -> str:
-    mime = str(payload.get("mimeType") or "")
-    body_data = (payload.get("body") or {}).get("data")
-    if body_data and mime.startswith("text/"):
-        try:
-            raw = base64.urlsafe_b64decode(body_data + "==")
-            return raw.decode("utf-8", errors="replace").strip()
-        except Exception:  # noqa: BLE001
-            pass
+def _decode_body_data(data: str) -> str:
+    try:
+        raw = base64.urlsafe_b64decode(data + "==")
+        return raw.decode("utf-8", errors="replace").strip()
+    except Exception:  # noqa: BLE001
+        return ""
 
-    for part in payload.get("parts") or []:
-        part_mime = str(part.get("mimeType") or "")
-        if part_mime == "text/plain":
-            data = (part.get("body") or {}).get("data")
-            if data:
-                try:
-                    raw = base64.urlsafe_b64decode(data + "==")
-                    return raw.decode("utf-8", errors="replace").strip()
-                except Exception:  # noqa: BLE001
-                    continue
-    for part in payload.get("parts") or []:
-        nested = _extract_body_from_payload(part)
-        if nested:
-            return nested
+
+def _html_to_plain(html: str) -> str:
+    text = str(html or "")
+    text = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", text, flags=re.I | re.S)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.I)
+    text = re.sub(r"</(?:p|div|tr|li|h[1-6])>", "\n", text, flags=re.I)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = unescape(text)
+    text = text.replace("\xa0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def _walk_payload_parts(payload: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Recorre multipart y devuelve fragmentos text/plain y text/html."""
+    plain_parts: list[str] = []
+    html_parts: list[str] = []
+
+    def walk(node: dict[str, Any]) -> None:
+        mime = str(node.get("mimeType") or "")
+        body_data = (node.get("body") or {}).get("data")
+        if body_data:
+            decoded = _decode_body_data(str(body_data))
+            if decoded:
+                if mime == "text/plain":
+                    plain_parts.append(decoded)
+                elif mime == "text/html":
+                    html_parts.append(decoded)
+                elif mime.startswith("text/"):
+                    plain_parts.append(decoded)
+        for part in node.get("parts") or []:
+            if isinstance(part, dict):
+                walk(part)
+
+    walk(payload)
+    return plain_parts, html_parts
+
+
+def _extract_body_from_payload(payload: dict[str, Any]) -> str:
+    plain_parts, html_parts = _walk_payload_parts(payload)
+    if plain_parts:
+        return "\n\n".join(plain_parts).strip()
+    for html in html_parts:
+        plain = _html_to_plain(html)
+        if plain:
+            return plain
     return ""
 
 
-def get_message_body(access_token: str, message_id: str) -> str:
+BodySource = Literal["plain", "html", "snippet", "none"]
+
+
+@dataclass(frozen=True)
+class MessageBodyResult:
+    text: str
+    source: BodySource
+    ok: bool
+    snippet: str = ""
+
+
+def _normalize_compare(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "").strip().lower())
+
+
+def fetch_message_body_detail(access_token: str, message_id: str) -> MessageBodyResult:
+    """Obtiene cuerpo del mensaje con fuente (plain/html/snippet) para diagnóstico."""
     with httpx.Client(timeout=20.0) as client:
         res = client.get(
             f"{_GMAIL_BASE}/messages/{message_id}",
@@ -255,12 +306,47 @@ def get_message_body(access_token: str, message_id: str) -> str:
         )
         res.raise_for_status()
         data = res.json()
-    body = _extract_body_from_payload(data.get("payload") or {})
-    if body:
-        return body[:4000]
+
     snippet = str(data.get("snippet") or "").strip()
+    payload = data.get("payload") or {}
+    plain_parts, html_parts = _walk_payload_parts(payload)
+    body = _extract_body_from_payload(payload)
+
+    if body:
+        source: BodySource = "html" if html_parts and not plain_parts else "plain"
+        logger.info(
+            "[GMAIL] body ok msg=%s source=%s len=%s plain_parts=%s html_parts=%s",
+            str(message_id)[:12],
+            source,
+            len(body),
+            len(plain_parts),
+            len(html_parts),
+        )
+        return MessageBodyResult(text=body[:4000], source=source, ok=True, snippet=snippet)
+
     if snippet:
-        return snippet
+        logger.warning(
+            "[GMAIL] body empty msg=%s — fallback snippet len=%s mime=%s",
+            str(message_id)[:12],
+            len(snippet),
+            str(payload.get("mimeType") or ""),
+        )
+        return MessageBodyResult(text=snippet[:4000], source="snippet", ok=False, snippet=snippet)
+
+    logger.warning(
+        "[GMAIL] body unavailable msg=%s mime=%s",
+        str(message_id)[:12],
+        str(payload.get("mimeType") or ""),
+    )
+    return MessageBodyResult(text="", source="none", ok=False, snippet=snippet)
+
+
+def get_message_body(access_token: str, message_id: str) -> str:
+    result = fetch_message_body_detail(access_token, message_id)
+    if result.ok:
+        return result.text
+    if result.text:
+        return result.text
     return "No pude leer el contenido del correo."
 
 

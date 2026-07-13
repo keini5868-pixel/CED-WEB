@@ -27,7 +27,7 @@ def test_read_latest_uses_inbox_not_category():
                 }
             ]
             with patch(
-                "app.modules.gmail_module.get_message_body",
+                "app.modules.gmail_module.fetch_message_body_detail",
                 side_effect=RuntimeError("body fail"),
             ):
                 out = handle_gmail_query_sync(
@@ -36,7 +36,7 @@ def test_read_latest_uses_inbox_not_category():
                 )
     assert "Ana" in out["spoken"]
     assert "Hola" in out["spoken"]
-    assert "Texto del snippet" in out["spoken"]
+    assert "No pude obtener el cuerpo completo" in out["spoken"]
     inbox.assert_called_once()
 
 
