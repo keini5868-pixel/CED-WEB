@@ -49,6 +49,7 @@ from app.services.retell_native_pilot import (
     execute_read_finances_tool,
     execute_read_gmail_tool,
     execute_search_visible_product_tool,
+    execute_search_web_tool,
     get_call_pilot_metrics,
     get_pilot_metrics_snapshot,
 )
@@ -378,6 +379,16 @@ async def retell_gmail_cancel_send_tool(request: Request) -> JSONResponse:
     result = await execute_gmail_cancel_send_tool(
         user_id=user_id, payload=payload, args=args
     )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/search_web")
+async def retell_search_web_tool(request: Request) -> JSONResponse:
+    """Búsqueda web general — piloto nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_search_web_tool(user_id=user_id, payload=payload, args=args)
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 

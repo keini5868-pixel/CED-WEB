@@ -39,6 +39,7 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "gmail_prepare_send",
         "gmail_confirm_send",
         "gmail_cancel_send",
+        "search_web",
         "read_finances",
         "finance_prepare_write",
         "finance_confirm_write",
@@ -173,6 +174,7 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "gmail_prepare_send" in general_tools
     assert "gmail_confirm_send" in general_tools
     assert "gmail_cancel_send" in general_tools
+    assert "search_web" in general_tools
     assert "get_environment" in general_tools
     assert "activate_camera" in general_tools
     assert "analyze_camera_frame" in general_tools
@@ -213,6 +215,52 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "activate_camera" not in advanced_tools
     assert "finance_prepare_write" not in advanced_tools
     assert "gmail_prepare_send" not in advanced_tools
+    assert "search_web" not in advanced_tools
+
+
+def test_pilot_prompt_includes_search_web_rules():
+    assert "search_web" in RETELL_NATIVE_PILOT_PROMPT
+    assert "NO uses search_web para clima" in RETELL_NATIVE_PILOT_PROMPT
+
+
+def test_build_search_web_tool_has_filler():
+    from app.services.retell_native_pilot import build_search_web_tool
+
+    tool = build_search_web_tool(api_public_url="https://api.example.com")
+    assert tool["name"] == "search_web"
+    assert "investigando" in tool["execution_message_description"].lower()
+    assert tool["timeout_ms"] == 25_000
+
+
+def test_execute_search_web_tool_uses_voice_executor():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_search_web_tool
+
+    payload = {
+        "call": {"call_id": "call_search_1"},
+        "args": {"query": "noticias de OpenAI hoy"},
+    }
+
+    async def _run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={"ok": True, "spoken": "Señor, OpenAI anunció una actualización."},
+        ) as mock_exec:
+            result = await execute_search_web_tool(
+                user_id="user-1",
+                payload=payload,
+                args=payload["args"],
+            )
+            mock_exec.assert_awaited_once()
+            assert mock_exec.await_args.args[0] == "search_web"
+            assert mock_exec.await_args.args[2]["query"] == "noticias de OpenAI hoy"
+            return result
+
+    result = asyncio.run(_run())
+    assert result["ok"] is True
+    assert "OpenAI" in result["result"]
 
 
 def test_pilot_prompt_includes_advanced_rules():

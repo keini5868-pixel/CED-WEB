@@ -36,6 +36,7 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - deactivate_camera: apagar la cámara.
 - analyze_camera_frame: describir qué hay frente a la cámara (visión).
 - search_visible_product: identificar el objeto visible y buscar datos reales (precio, specs, dónde comprarlo).
+- search_web: búsqueda web general (noticias, hechos actuales, datos externos). NO para clima (use get_environment) ni para lo visible en cámara (use search_visible_product).
 - activate_advanced_mode: activar modo avanzado con Claude (solo frase «activa modo avanzado»).
 - consult_advanced: consulta profunda vía Claude — solo en modo avanzado.
 - deactivate_advanced_mode: salir a modo conversacional normal.
@@ -48,6 +49,7 @@ Reglas generales:
 - EXCEPCIÓN Gmail: tras read_gmail, lee al usuario el texto devuelto por la herramienta tal cual, sin modificarlo ni añadir nada.
 - EXCEPCIÓN Finanzas confirmación: tras finance_confirm_write exitoso, di el mensaje de confirmación sin parafrasear.
 - EXCEPCIÓN Cámara: tras activate/deactivate/analyze/search, di el resultado de la herramienta tal cual.
+- EXCEPCIÓN search_web: tras search_web, di el resultado de la herramienta tal cual (1-4 oraciones).
 - EXCEPCIÓN Modo avanzado: tras activate/consult/deactivate avanzado, di el resultado de la herramienta tal cual.
 - Calendario escritura: prepare → confirmación → confirm_write. NUNCA inventes que ya se agendó.
 - PROHIBIDO llamar calendar_confirm_write en el mismo turno que calendar_prepare_write.
@@ -77,6 +79,11 @@ Calendario — escritura con confirmación:
 4. «no / cancela» → calendar_cancel_write.
 5. Si falta permiso de escritura, comunica el mensaje de la tool tal cual (reconectar Calendar).
 
+Búsqueda web (search_web):
+1. «busca / investiga / qué pasó / noticias de / cuánto cuesta [sin cámara] / quién es …» con datos actuales → search_web.
+2. NO uses search_web para clima/aire (get_environment), calendario, Gmail, finanzas ni objetos en cámara.
+3. NO inventes resultados: si falla, di el mensaje de la tool.
+
 Modo avanzado (Claude):
 1. Solo la frase «activa modo avanzado» → activate_advanced_mode. Luego transition_to_advanced_mode_active.
 2. Tras activar (aunque no hayas cambiado de estado), preguntas sustantivas / análisis / comparación → consult_advanced SIEMPRE. consult_advanced también está disponible en este estado general.
@@ -100,7 +107,8 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario (lectura y agendar), Gmail (lectura y envío), finanzas, cámara, modo avanzado.
+Estado general — clima, calendario, Gmail, finanzas, búsqueda web, cámara, modo avanzado.
+- search_web: hechos actuales / noticias / datos externos (no clima → get_environment; no cámara → search_visible_product).
 - Gmail lectura: read_gmail. Envío: gmail_prepare_send → confirmar → gmail_confirm_send (sí / envíalo).
 - Tras gmail_prepare_send con awaiting_confirmation: lee el resumen, pregunta confirmación y transition_to_gmail_confirm_pending.
 - Si ya hay borrador de correo y el usuario dice «sí», llama gmail_confirm_send de inmediato (también disponible aquí).
@@ -196,6 +204,12 @@ GMAIL_CONFIRM_DESCRIPTION = (
 
 GMAIL_CANCEL_DESCRIPTION = (
     "Cancela el borrador de correo pendiente sin enviarlo."
+)
+
+SEARCH_WEB_DESCRIPTION = (
+    "Búsqueda web general: noticias, hechos actuales, precios/datos externos o investigación breve. "
+    "NO usar para clima (get_environment), calendario, Gmail, finanzas ni objetos visibles en cámara "
+    "(search_visible_product)."
 )
 
 READ_FINANCES_DESCRIPTION = (
@@ -372,6 +386,24 @@ GMAIL_CANCEL_PARAMETERS: dict[str, Any] = {
             "description": "ID del borrador a cancelar (opcional).",
         },
     },
+}
+
+SEARCH_WEB_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": (
+                "Consulta de búsqueda (ej. 'quién ganó el Super Bowl 2026', "
+                "'noticias de OpenAI hoy', 'precio del dólar en RD')."
+            ),
+        },
+        "kind": {
+            "type": "string",
+            "description": "Tipo opcional: general, news u other. Por defecto general.",
+        },
+    },
+    "required": ["query"],
 }
 
 READ_FINANCES_PARAMETERS: dict[str, Any] = {
@@ -612,6 +644,17 @@ def build_gmail_cancel_send_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_search_web_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="search_web",
+        description=SEARCH_WEB_DESCRIPTION,
+        parameters=SEARCH_WEB_PARAMETERS,
+        filler="Investigando, señor.",
+        timeout_ms=25_000,
+    )
+
+
 def build_read_finances_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -749,6 +792,7 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_gmail_prepare_send_tool(api_public_url=api_public_url),
                 build_gmail_confirm_send_tool(api_public_url=api_public_url),
                 build_gmail_cancel_send_tool(api_public_url=api_public_url),
+                build_search_web_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
                 build_finance_prepare_write_tool(api_public_url=api_public_url),
                 build_finance_confirm_write_tool(api_public_url=api_public_url),
@@ -988,6 +1032,7 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "gmail_prepare_send": _stats("gmail_prepare_send"),
         "gmail_confirm_send": _stats("gmail_confirm_send"),
         "gmail_cancel_send": _stats("gmail_cancel_send"),
+        "search_web": _stats("search_web"),
         "read_finances": _stats("read_finances"),
         "finance_prepare_write": _stats("finance_prepare_write"),
         "finance_confirm_write": _stats("finance_confirm_write"),
@@ -1814,6 +1859,93 @@ async def execute_gmail_cancel_send_tool(
         args=args,
         handler=_run_gmail_cancel,
     )
+
+
+async def execute_search_web_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    """Búsqueda web general — reutiliza voice_tool_executor.search_web."""
+    from app.services.calendar_write_flow import maybe_clear_calendar_pending_on_topic_change
+    from app.services.finance_write_flow import maybe_clear_finance_pending_on_topic_change
+    from app.services.gmail_send_flow import maybe_clear_gmail_pending_on_topic_change
+    from app.services.voice_tool_executor import execute_voice_tool
+
+    started = time.perf_counter()
+    call_id = _extract_call_id(payload)
+    query = resolve_tool_query(payload, args)
+    kind = str(args.get("kind") or "general").strip() or "general"
+
+    if user_id:
+        maybe_clear_finance_pending_on_topic_change(user_id, "search_web")
+        maybe_clear_calendar_pending_on_topic_change(user_id, "search_web")
+        maybe_clear_gmail_pending_on_topic_change(user_id, "search_web")
+
+    if not user_id:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(
+            call_id=call_id,
+            tool_name="search_web",
+            latency_ms=latency_ms,
+            ok=False,
+            query=query,
+        )
+        return {
+            "result": "No identifiqué al usuario, señor.",
+            "latency_ms": latency_ms,
+            "ok": False,
+        }
+
+    if not query:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(
+            call_id=call_id,
+            tool_name="search_web",
+            latency_ms=latency_ms,
+            ok=False,
+        )
+        return {
+            "result": "Señor, ¿qué desea que busque?",
+            "latency_ms": latency_ms,
+            "ok": False,
+        }
+
+    try:
+        result = await execute_voice_tool(
+            "search_web",
+            user_id,
+            {"query": query, "kind": kind},
+        )
+        spoken = str(result.get("spoken") or "").strip()
+        ok = bool(result.get("ok", True)) and bool(spoken) and not _spoken_indicates_failure(
+            spoken
+        )
+        if not spoken:
+            spoken = "Señor, no pude completar la búsqueda en este momento."
+            ok = False
+    except Exception:  # noqa: BLE001
+        logger.exception("[NATIVE-PILOT] search_web failed user=%s", user_id[:8])
+        spoken = "Señor, no pude completar la búsqueda en este momento."
+        ok = False
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    record_tool_metric(
+        call_id=call_id,
+        tool_name="search_web",
+        latency_ms=latency_ms,
+        ok=ok,
+        query=query,
+    )
+    logger.info(
+        "[NATIVE-PILOT] search_web call=%s user=%s latency=%sms ok=%s",
+        call_id[:12] if call_id else "?",
+        user_id[:8],
+        latency_ms,
+        ok,
+    )
+    return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
 
 
 # Compat tests / imports previos
