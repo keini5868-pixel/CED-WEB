@@ -103,6 +103,27 @@ def _not_connected_message() -> str:
     )
 
 
+def handle_calendar_read_sync(user_id: str, text: str) -> dict[str, str]:
+    """Solo consulta calendario — sin crear citas ni recordatorios (piloto nativo)."""
+    if re.search(r"ag[eé]ndame|agendar|programa|recu[eé]rdame", text or "", re.I):
+        return {
+            "spoken": (
+                "Señor, por ahora solo puedo consultar su calendario. "
+                "Agendar citas requerirá confirmación explícita en una fase posterior."
+            ),
+        }
+    try:
+        spoken = _handle_calendar_query(user_id, text)
+        return {"spoken": spoken}
+    except ValueError as exc:
+        if str(exc) == "not_connected":
+            return {"spoken": _not_connected_message()}
+        return {"spoken": "Señor, no pude acceder a su calendario. Revise la conexión."}
+    except Exception:  # noqa: BLE001
+        logger.exception("[CALENDAR] read sync failed user=%s", user_id[:8])
+        return {"spoken": "Señor, no pude consultar su calendario en este momento."}
+
+
 def handle_calendar_query_sync(user_id: str, text: str) -> dict[str, str]:
     try:
         if re.search(r"recu[eé]rdame", text, re.I):

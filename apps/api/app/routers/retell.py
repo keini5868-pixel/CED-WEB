@@ -28,7 +28,13 @@ from app.services.retell_agent_setup import (
 from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
-from app.services.retell_native_pilot import execute_get_environment_tool, get_call_pilot_metrics, get_pilot_metrics_snapshot
+from app.services.retell_native_pilot import (
+    execute_get_environment_tool,
+    execute_list_calendar_events_tool,
+    execute_read_gmail_tool,
+    get_call_pilot_metrics,
+    get_pilot_metrics_snapshot,
+)
 from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state_async
@@ -252,6 +258,26 @@ async def retell_get_environment_tool(request: Request) -> JSONResponse:
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
     result = await execute_get_environment_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/list_calendar_events")
+async def retell_list_calendar_events_tool(request: Request) -> JSONResponse:
+    """Custom function list_calendar_events — solo lectura, piloto nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_list_calendar_events_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/read_gmail")
+async def retell_read_gmail_tool(request: Request) -> JSONResponse:
+    """Custom function read_gmail — solo lectura, piloto nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_read_gmail_tool(user_id=user_id, payload=payload, args=args)
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 

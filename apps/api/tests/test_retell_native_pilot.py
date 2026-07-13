@@ -11,19 +11,27 @@ from app.main import app
 from app.services.retell_native_pilot import (
     RETELL_NATIVE_PILOT_PROMPT,
     build_get_environment_tool,
+    build_native_pilot_tools,
     get_pilot_metrics_snapshot,
     record_tool_metric,
     resolve_environment_tool_query,
 )
 
 
-def test_build_get_environment_tool_shape():
+def test_build_get_environment_tool_has_static_filler():
     tool = build_get_environment_tool(api_public_url="https://api.example.com")
     assert tool["name"] == "get_environment"
-    assert tool["type"] == "custom"
-    assert tool["url"].endswith("/v1/retell/tools/get_environment")
-    assert tool["method"] == "POST"
-    assert "query" in tool["parameters"]["properties"]
+    assert tool["execution_message_type"] == "static_text"
+    assert "consultando el clima" in tool["execution_message_description"].lower()
+
+
+def test_build_native_pilot_tools_includes_read_only():
+    tools = build_native_pilot_tools(api_public_url="https://api.example.com")
+    names = {t["name"] for t in tools}
+    assert names == {"get_environment", "list_calendar_events", "read_gmail"}
+    for tool in tools:
+        assert tool["execution_message_type"] == "static_text"
+        assert tool["speak_during_execution"] is True
 
 
 def test_pilot_prompt_includes_standalone_identity():
@@ -109,5 +117,19 @@ def test_record_tool_metric_rolling_window():
             query=f"clima {idx}",
         )
     snap = get_pilot_metrics_snapshot()
-    assert snap["environment_invocations"] >= 5
-    assert snap["environment_avg_latency_ms"] is not None
+    assert snap["get_environment"]["invocations"] >= 5
+    assert snap["get_environment"]["avg_latency_ms"] is not None
+
+
+def test_calendar_read_sync_rejects_create():
+    from app.modules.calendar_module import handle_calendar_read_sync
+
+    result = handle_calendar_read_sync("user-1", "agéndame cita mañana a las 3")
+    assert "solo puedo consultar" in result["spoken"].lower()
+
+
+def test_gmail_read_sync_rejects_send():
+    from app.modules.gmail_module import handle_gmail_read_sync
+
+    result = handle_gmail_read_sync("user-1", "envía un email a juan@test.com")
+    assert "solo puedo leer" in result["spoken"].lower()

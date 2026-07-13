@@ -1,10 +1,11 @@
-"""Piloto Retell LLM nativo — prompt, gateway get_environment y métricas."""
+"""Piloto Retell LLM nativo — prompt, tools HTTP firmadas y métricas."""
 
 from __future__ import annotations
 
 import logging
 import threading
 import time
+from collections.abc import Callable
 from typing import Any
 
 from app.services.voice_test_mode import GEMINI_STANDALONE_SYSTEM
@@ -12,27 +13,49 @@ from app.services.voice_test_mode import GEMINI_STANDALONE_SYSTEM
 logger = logging.getLogger(__name__)
 
 STAGING_AGENT_NAME = "CED Jarvis Native Pilot"
-
 NATIVE_PILOT_GREETING = "CED en línea, señor. Estoy listo para conversar."
 
-RETELL_NATIVE_PILOT_PROMPT = f"""{GEMINI_STANDALONE_SYSTEM}
+READ_TOOLS_PROMPT = """
+Herramientas de solo lectura (usar solo cuando el usuario lo pida explícitamente):
+- get_environment: clima, temperatura, pronóstico, calidad del aire, polen o ambiente.
+- list_calendar_events: consultar eventos, citas o recordatorios en Google Calendar (solo lectura).
+- read_gmail: leer bandeja, categorías o correos de un remitente (solo lectura).
 
-Herramienta disponible (solo cuando el usuario la pida explícitamente):
-- get_environment: clima, temperatura, pronóstico, calidad del aire, polen o ambiente en una ubicación.
-
-Reglas de la herramienta:
-- Úsala SOLO ante peticiones activas de información ambiental (ej. "¿cómo está el clima?", "dame información del clima",
-  "calidad de aire", "¿va a llover?").
-- NO la uses para charla casual, agradecimientos ("ok gracias"), check-ins ("¿me escuchas?", "¿estás ahí?"),
-  desahogo personal ni menciones pasajeras del clima sin petición de datos.
-- Si falta ubicación, pregunta una sola vez cuál ciudad o zona le interesa; luego llama get_environment con la query completa.
-- Tras recibir el resultado, responde en 1-3 oraciones con los datos. No repitas la consulta ni vuelvas a llamar
+Reglas generales:
+- NO uses herramientas para charla casual, agradecimientos ("ok gracias"), check-ins ("¿me escuchas?"),
+  desahogo personal ni menciones pasajeras sin petición de datos.
+- Tras recibir el resultado, responde en 1-4 oraciones. No repitas la consulta ni vuelvas a llamar
   la herramienta sin una petición nueva del usuario.
+- NO agendes citas, NO envíes correos, NO modifiques nada — esas acciones no están disponibles en este piloto.
+
+get_environment:
+- Solo ante peticiones activas de información ambiental.
+- Si falta ubicación, pregunta una sola vez; luego llama con la query completa.
+
+list_calendar_events:
+- Solo para "¿qué tengo hoy/mañana?", eventos de la semana, calendario, recordatorios existentes.
+- Si piden agendar o crear cita, explica que aún no está disponible en este piloto.
+
+read_gmail:
+- Solo para leer correos: bandeja, importantes, promociones, correo de X, último email.
+- Si piden enviar correo, explica que requerirá confirmación en una fase posterior.
 """.strip()
+
+RETELL_NATIVE_PILOT_PROMPT = f"{GEMINI_STANDALONE_SYSTEM}\n\n{READ_TOOLS_PROMPT}"
 
 GET_ENVIRONMENT_DESCRIPTION = (
     "Consulta clima, temperatura, pronóstico, calidad del aire o polen para una ubicación. "
     "Usar solo cuando el usuario pida activamente información ambiental en tiempo real."
+)
+
+LIST_CALENDAR_DESCRIPTION = (
+    "Consulta eventos, citas o recordatorios del Google Calendar del usuario. "
+    "Solo lectura — no crear ni modificar eventos."
+)
+
+READ_GMAIL_DESCRIPTION = (
+    "Lee correos de Gmail: bandeja, categoría o remitente. "
+    "Solo lectura — no enviar correos."
 )
 
 GET_ENVIRONMENT_PARAMETERS: dict[str, Any] = {
@@ -41,9 +64,35 @@ GET_ENVIRONMENT_PARAMETERS: dict[str, Any] = {
         "query": {
             "type": "string",
             "description": (
-                "Petición completa del usuario sobre clima, calidad del aire o ambiente, "
-                "incluyendo ubicación si la mencionó (ej. 'clima hoy en Charlotte', "
-                "'calidad del aire Carolina del Norte')."
+                "Petición completa sobre clima o ambiente, con ubicación si la mencionó."
+            ),
+        },
+    },
+    "required": ["query"],
+}
+
+LIST_CALENDAR_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": (
+                "Petición del usuario sobre su calendario "
+                "(ej. 'qué tengo hoy', 'eventos de mañana', 'esta semana')."
+            ),
+        },
+    },
+    "required": ["query"],
+}
+
+READ_GMAIL_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": (
+                "Petición de lectura de correo tal cual "
+                "(ej. 'léeme mis correos', 'correos importantes', 'email de Juan')."
             ),
         },
     },
@@ -55,20 +104,70 @@ _tool_metrics: list[dict[str, Any]] = []
 _call_metrics: dict[str, dict[str, Any]] = {}
 
 
-def build_get_environment_tool(*, api_public_url: str) -> dict[str, Any]:
+def _build_custom_tool(
+    *,
+    api_public_url: str,
+    name: str,
+    description: str,
+    parameters: dict[str, Any],
+    filler: str,
+    timeout_ms: int,
+) -> dict[str, Any]:
     base = api_public_url.rstrip("/")
     return {
         "type": "custom",
-        "name": "get_environment",
-        "description": GET_ENVIRONMENT_DESCRIPTION,
-        "url": f"{base}/v1/retell/tools/get_environment",
+        "name": name,
+        "description": description,
+        "url": f"{base}/v1/retell/tools/{name}",
         "method": "POST",
-        "parameters": GET_ENVIRONMENT_PARAMETERS,
+        "parameters": parameters,
         "speak_during_execution": True,
         "speak_after_execution": True,
-        "execution_message_description": "Consultando el ambiente, señor",
-        "timeout_ms": 22_000,
+        "execution_message_type": "static_text",
+        "execution_message_description": filler,
+        "timeout_ms": timeout_ms,
     }
+
+
+def build_get_environment_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="get_environment",
+        description=GET_ENVIRONMENT_DESCRIPTION,
+        parameters=GET_ENVIRONMENT_PARAMETERS,
+        filler="Un momento, consultando el clima, señor.",
+        timeout_ms=22_000,
+    )
+
+
+def build_list_calendar_events_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="list_calendar_events",
+        description=LIST_CALENDAR_DESCRIPTION,
+        parameters=LIST_CALENDAR_PARAMETERS,
+        filler="Un momento, revisando su calendario, señor.",
+        timeout_ms=18_000,
+    )
+
+
+def build_read_gmail_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="read_gmail",
+        description=READ_GMAIL_DESCRIPTION,
+        parameters=READ_GMAIL_PARAMETERS,
+        filler="Un momento, revisando su correo, señor.",
+        timeout_ms=24_000,
+    )
+
+
+def build_native_pilot_tools(*, api_public_url: str) -> list[dict[str, Any]]:
+    return [
+        build_get_environment_tool(api_public_url=api_public_url),
+        build_list_calendar_events_tool(api_public_url=api_public_url),
+        build_read_gmail_tool(api_public_url=api_public_url),
+    ]
 
 
 def _extract_call_id(payload: dict[str, Any]) -> str:
@@ -103,8 +202,13 @@ def _latest_user_utterance(payload: dict[str, Any]) -> str:
     return ""
 
 
-def resolve_environment_tool_query(payload: dict[str, Any], args: dict[str, Any]) -> str:
-    query = str(args.get("query") or args.get("transcript") or "").strip()
+def resolve_tool_query(payload: dict[str, Any], args: dict[str, Any]) -> str:
+    query = str(
+        args.get("query")
+        or args.get("consulta")
+        or args.get("transcript")
+        or ""
+    ).strip()
     if query:
         return query
     from_transcript = _latest_user_utterance(payload)
@@ -131,8 +235,8 @@ def record_tool_metric(
     }
     with _lock:
         _tool_metrics.append(entry)
-        if len(_tool_metrics) > 200:
-            del _tool_metrics[: len(_tool_metrics) - 200]
+        if len(_tool_metrics) > 400:
+            del _tool_metrics[: len(_tool_metrics) - 400]
         if call_id:
             bucket = _call_metrics.setdefault(
                 call_id,
@@ -145,16 +249,27 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
     with _lock:
         tools = list(_tool_metrics)
         calls = {cid: dict(data) for cid, data in _call_metrics.items()}
-    env_calls = [t for t in tools if t.get("tool") == "get_environment"]
-    latencies = [int(t["latency_ms"]) for t in env_calls if t.get("latency_ms") is not None]
-    avg_latency = round(sum(latencies) / len(latencies)) if latencies else None
+
+    def _stats(name: str) -> dict[str, Any]:
+        rows = [t for t in tools if t.get("tool") == name]
+        latencies = [int(t["latency_ms"]) for t in rows if t.get("latency_ms") is not None]
+        avg = round(sum(latencies) / len(latencies)) if latencies else None
+        return {
+            "invocations": len(rows),
+            "avg_latency_ms": avg,
+            "latencies_ms": latencies[-20:],
+        }
+
     return {
         "tool_invocations": len(tools),
-        "environment_invocations": len(env_calls),
-        "environment_avg_latency_ms": avg_latency,
-        "environment_latencies_ms": latencies[-20:],
-        "recent_tools": tools[-20:],
         "calls_tracked": len(calls),
+        "get_environment": _stats("get_environment"),
+        "list_calendar_events": _stats("list_calendar_events"),
+        "read_gmail": _stats("read_gmail"),
+        "environment_invocations": _stats("get_environment")["invocations"],
+        "environment_avg_latency_ms": _stats("get_environment")["avg_latency_ms"],
+        "environment_latencies_ms": _stats("get_environment")["latencies_ms"],
+        "recent_tools": tools[-30:],
     }
 
 
@@ -164,25 +279,27 @@ def get_call_pilot_metrics(call_id: str) -> dict[str, Any] | None:
         return dict(data) if data else None
 
 
-async def execute_get_environment_tool(
+async def _execute_native_read_tool(
     *,
+    tool_name: str,
     user_id: str,
     payload: dict[str, Any],
     args: dict[str, Any],
+    handler: Callable[[str, str], dict[str, str]],
+    empty_query_message: str,
+    failure_prefix: str = "No pude completar",
 ) -> dict[str, Any]:
     import asyncio
 
-    from app.modules.environment_module import handle_environment_query_sync
-
     started = time.perf_counter()
     call_id = _extract_call_id(payload)
-    query = resolve_environment_tool_query(payload, args)
+    query = resolve_tool_query(payload, args)
 
     if not user_id:
         latency_ms = int((time.perf_counter() - started) * 1000)
         record_tool_metric(
             call_id=call_id,
-            tool_name="get_environment",
+            tool_name=tool_name,
             latency_ms=latency_ms,
             ok=False,
             query=query,
@@ -197,41 +314,100 @@ async def execute_get_environment_tool(
         latency_ms = int((time.perf_counter() - started) * 1000)
         record_tool_metric(
             call_id=call_id,
-            tool_name="get_environment",
+            tool_name=tool_name,
             latency_ms=latency_ms,
             ok=False,
         )
         return {
-            "result": "Señor, ¿de qué ciudad o zona desea el clima o la calidad del aire?",
+            "result": empty_query_message,
             "latency_ms": latency_ms,
             "ok": False,
         }
 
     try:
-        result = await asyncio.to_thread(handle_environment_query_sync, user_id, query)
+        result = await asyncio.to_thread(handler, user_id, query)
         spoken = str(result.get("spoken") or "Completado, señor.").strip()
-        ok = not spoken.startswith("No pude obtener")
+        ok = not spoken.lower().startswith(("no pude", "no identifiqu"))
     except Exception:  # noqa: BLE001
-        logger.exception("[NATIVE-PILOT] get_environment failed user=%s", user_id[:8])
-        spoken = (
-            "No pude obtener datos ambientales en este momento, señor. "
-            "Intente de nuevo en unos minutos."
-        )
+        logger.exception("[NATIVE-PILOT] %s failed user=%s", tool_name, user_id[:8])
+        spoken = f"{failure_prefix} en este momento, señor. Intente de nuevo en unos minutos."
         ok = False
 
     latency_ms = int((time.perf_counter() - started) * 1000)
     record_tool_metric(
         call_id=call_id,
-        tool_name="get_environment",
+        tool_name=tool_name,
         latency_ms=latency_ms,
         ok=ok,
         query=query,
     )
     logger.info(
-        "[NATIVE-PILOT] get_environment call=%s user=%s latency=%sms ok=%s",
+        "[NATIVE-PILOT] %s call=%s user=%s latency=%sms ok=%s",
+        tool_name,
         call_id[:12] if call_id else "?",
         user_id[:8],
         latency_ms,
         ok,
     )
     return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
+
+
+async def execute_get_environment_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    from app.modules.environment_module import handle_environment_query_sync
+
+    return await _execute_native_read_tool(
+        tool_name="get_environment",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=handle_environment_query_sync,
+        empty_query_message="Señor, ¿de qué ciudad o zona desea el clima o la calidad del aire?",
+        failure_prefix="No pude obtener datos ambientales",
+    )
+
+
+async def execute_list_calendar_events_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    from app.modules.calendar_module import handle_calendar_read_sync
+
+    return await _execute_native_read_tool(
+        tool_name="list_calendar_events",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=handle_calendar_read_sync,
+        empty_query_message="Señor, ¿qué día o periodo de su calendario desea consultar?",
+        failure_prefix="No pude consultar su calendario",
+    )
+
+
+async def execute_read_gmail_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    from app.modules.gmail_module import handle_gmail_read_sync
+
+    return await _execute_native_read_tool(
+        tool_name="read_gmail",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=handle_gmail_read_sync,
+        empty_query_message="Señor, ¿qué correos desea que revise?",
+        failure_prefix="No pude consultar su correo",
+    )
+
+
+# Compat tests / imports previos
+resolve_environment_tool_query = resolve_tool_query

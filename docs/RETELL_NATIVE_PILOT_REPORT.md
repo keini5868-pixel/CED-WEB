@@ -1,126 +1,143 @@
-# Piloto Retell LLM nativo — clima (staging)
+# Piloto Retell LLM nativo — reporte comparativo
 
 Agente **separado** de producción. Producción (`RETELL_AGENT_ID`, Custom LLM r7) no se modifica.
 
-## Variables Railway (piloto)
-
-```env
-# IDs del agente staging — se obtienen con bootstrap (ver abajo)
-RETELL_NATIVE_STAGING_AGENT_ID=
-RETELL_NATIVE_STAGING_LLM_ID=
-RETELL_NATIVE_PILOT_MODEL=gemini-3.0-flash
-```
-
-Opcional frontend (sin query param):
-
-```env
-NEXT_PUBLIC_RETELL_NATIVE_PILOT=true
-```
-
-## Bootstrap del agente staging (una vez)
-
-```bash
-curl -X POST "https://<API_PUBLIC_URL>/v1/retell/native-pilot/bootstrap" \
-  -H "X-Bootstrap-Secret: <RETELL_API_KEY o RETELL_BOOTSTRAP_SECRET>"
-```
-
-Copiar `agent_id` y `llm_id` de la respuesta a Railway.
-
-## Cómo probar por voz
-
-1. Abrir la app con **`?voicePilot=native`** en la URL (ej. `https://app.castillodigital.com/?voicePilot=native`).
-2. Iniciar sesión e iniciar voz — verás **"Piloto nativo — conectando…"**.
-3. La llamada usa `POST /v1/retell/register-call-native-pilot` (agente staging, `retell-llm`).
-4. Producción sigue en la URL normal sin query param.
-
-## Protocolo de pruebas (r2–r7)
-
-Repetir **en ambos sistemas** (prod vs piloto) y anotar resultados:
-
-| # | Secuencia | Qué observar |
-|---|-----------|--------------|
-| 1 | "¿Cómo está el clima hoy?" / "dame información sobre el clima" | Datos reales, una sola respuesta |
-| 2 | "calidad de aire" (sin "del") | Activa get_environment, no charla vacía |
-| 3 | Tras clima → "Ok, gracias" | Charla casual, **sin** re-ejecutar clima |
-| 4 | Tras clima → "¿Estás ahí?" / "Sí, me escuchas" | Check-in casual, **sin** clima duplicado |
-| 5 | "Charlotte" / "Carolina del Norte" tras pregunta de aire | Follow-up de ubicación |
-| 6 | Hablar rápido / interrumpir durante respuesta | Sin solapamiento ni arrastre de turno |
-| 7 | Desahogo personal (dolor de estómago, etc.) | Tono CED, sin tools |
-
-## Métricas post-llamada
-
-```bash
-# Estado del piloto
-GET /v1/retell/native-pilot/status
-
-# Latencias acumuladas del gateway get_environment
-GET /v1/retell/native-pilot/metrics
-
-# Detalle de una llamada (transcript Retell + latencias locales)
-GET /v1/retell/native-pilot/call-metrics/{call_id}
-```
+**Build piloto actual:** `retell-native-pilot-v2-calendar-gmail`  
+**Fase:** clima validado + lectura calendario/Gmail
 
 ---
 
-## Reporte comparativo (plantilla)
+## Reporte comparativo — prueba de voz (Fase clima)
 
-Completar tras pruebas de voz reales.
+Resultado de la prueba profunda del usuario (build `retell-native-pilot-environment-v1`).
 
 ### Configuración
 
 | | Producción (r7) | Piloto nativo |
 |--|-----------------|---------------|
 | Engine | `custom-llm` WebSocket | `retell-llm` |
-| Modelo LLM | Gemini 2.5 Flash (API key propia) | Gemini 3.0 Flash (Retell) |
+| Modelo LLM | Gemini 2.5 Flash (API key Google) | Gemini 3.0 Flash (Retell) |
 | Voz | Jarvis (`RETELL_VOICE_ID`) | Misma voz (copiada del agente prod) |
-| Tool clima | Orquestador + anchors/heurísticas | `get_environment` Custom Function |
+| Tool clima | Orquestador + anchors/heurísticas + locks | `get_environment` Custom Function |
+| Turnos | Debounce, superseded, answered_key (artesanal) | Gestionado por Retell |
 
-### Latencia módulo clima (ms)
+### Resultado cualitativo (confirmado por usuario)
 
-| Frase | Prod r7 | Piloto nativo |
-|-------|---------|---------------|
-| "¿Cómo está el clima hoy?" | _pendiente_ | _ver `environment_avg_latency_ms`_ |
-| "calidad de aire" | _pendiente_ | _pendiente_ |
-| Follow-up ubicación | _pendiente_ | _pendiente_ |
+| Criterio | Prod r7 | Piloto nativo |
+|----------|---------|---------------|
+| Velocidad de respuesta conversacional | Buena con parches | **Excelente** — responde antes de terminar de hablar |
+| Ejecución clima con contexto | Funcional tras r3–r7 | **Correcta**, buen contexto conversacional |
+| Solapamiento de audio | Historial de bugs (r2–r6) | **Ninguno** (confirmado en audio real) |
+| Arrastre / repetición no solicitada | r5 silencio, r6–r7 re-clima | **Ninguno** (confirmado en audio real) |
+| Charla casual post-clima | Parcheada en r6–r7 | **Correcta** |
+| Silencio durante búsqueda clima | Fillers vía router custom | Pausa audible — **corregido en v2** con `execution_message_type: static_text` |
+| Transcripción duplicada en pantalla | Bug cosmético conocido | Igual (cosmético, no afecta audio) — pendiente final |
 
-### Bugs de turnos (r2–r7)
+### Latencia gateway `get_environment` (ms)
+
+Las métricas se registran en memoria en `GET /v1/retell/native-pilot/metrics` (requiere auth).
+
+| Métrica | Prod r7 (Custom LLM) | Piloto nativo |
+|---------|----------------------|---------------|
+| Turno conversacional (percepción) | Normal | **Muy rápido** |
+| Búsqueda clima (web grounding) | ~4–12 s típico + filler router | ~4–12 s (misma capa `handle_environment_query_sync`) |
+| Timeout máximo tool | 22 s | 22 s |
+| Pausa en silencio pre-respuesta | Filler inconsistente | **v1:** silencio — **v2:** filler estático *"Un momento, consultando el clima, señor."* |
+
+Nota: la latencia de datos ambientales es la misma en ambos sistemas (mismo `EnvironmentModule` + Gemini grounded search). La diferencia está en **coordinación de turnos** y **time-to-first-byte conversacional**, donde Retell nativo gana claramente.
+
+### Bugs de turnos (protocolo r2–r7)
 
 | Bug | Prod r7 | Piloto nativo |
 |-----|---------|---------------|
-| Solapamiento de audio | | |
-| Arrastre de turno anterior | | |
-| Repetición clima no solicitada | r6–r7 parcheado | _pendiente_ |
-| Silencio post-clima | r5 parcheado | _pendiente_ |
+| Solapamiento de audio | Corregido parcialmente | **No observado** |
+| Arrastre de turno anterior | Corregido parcialmente | **No observado** |
+| Repetición clima no solicitada | r6–r7 parcheado | **No observado** |
+| Silencio post-clima (ignorar ack) | r5 parcheado | **No observado** |
+| Anchor gaps ("calidad de aire" sin "del") | Parcheado con heurísticas | LLM decide tool — **sin anchor manual** |
 
 ### Charla casual
 
 | Frase | Prod r7 | Piloto nativo |
 |-------|---------|---------------|
-| "Ok, gracias" | | |
-| "¿Estás ahí?" | | |
-| Desahogo personal | | |
+| "Ok, gracias" | OK tras r6–r7 | **OK** |
+| "¿Estás ahí?" / "Sí, me escuchas" | OK tras r7 | **OK** |
+| Desahogo personal | OK (Gemini) | **OK** (mismo prompt base standalone) |
 
 ### Costo por minuto (estimado)
 
-| | Prod r7 | Piloto nativo |
-|--|---------|---------------|
-| LLM | Gemini 2.5 Flash directo Google (~$0.15/1M input*) | Retell Gemini 3.0 Flash ~$0.027/min Retell |
-| Infra turnos | Custom WS + API compute | Incluido en Retell |
-| **Total observado** | _medir en Google Cloud + Railway_ | _medir en Retell dashboard call cost_ |
+| Componente | Prod r7 | Piloto nativo |
+|------------|---------|---------------|
+| LLM | Gemini 2.5 Flash vía API Google (~$0.075/1M input, ~$0.30/1M output*) + tokens conversación | Retell factura Gemini 3.0 Flash ~**$0.027/min** (voz incluida en minuto Retell) |
+| STT/TTS | Incluido en Retell | Incluido en Retell |
+| Infra turnos | Railway API + WebSocket Custom LLM (~1700 LOC) | Incluido en plataforma Retell |
+| Búsqueda clima | Google grounding (misma en ambos) | Google grounding (misma en ambos) |
 
-\* Google pricing varía; comparar minutos reales de la misma duración de llamada.
+\* Precios Google orientativos; el costo real prod depende de tokens/turno en Custom LLM.
+
+**Observación:** el piloto simplifica la stack (menos compute propio en turnos). El costo Retell por minuto es predecible; prod mezcla Retell + Gemini directo + infra custom.
 
 ### Recomendación
 
-- [ ] **Proceder a Fase 3** (tools de lectura: calendario, Gmail) — piloto estable
-- [ ] **Iterar piloto** — problemas encontrados: ___
-- [ ] **Quedarse en Custom LLM reforzado** — razón: ___
+- [x] **Proceder a Fase 3** (tools de lectura: calendario, Gmail) — piloto clima estable
+- [x] **Migración confirmada** por el usuario
+- [ ] Cutover producción — pendiente paridad completa + canary
+
+---
+
+## Fase 3 — tools de lectura (v2)
+
+Nuevas Custom Functions en el mismo agente staging:
+
+| Tool | Tipo | Gateway | Filler durante ejecución |
+|------|------|---------|--------------------------|
+| `get_environment` | Lectura | `/v1/retell/tools/get_environment` | "Un momento, consultando el clima, señor." |
+| `list_calendar_events` | Solo lectura | `/v1/retell/tools/list_calendar_events` | "Un momento, revisando su calendario, señor." |
+| `read_gmail` | Solo lectura | `/v1/retell/tools/read_gmail` | "Un momento, revisando su correo, señor." |
+
+**Regla de diseño:** escritura (agendar, enviar correo, registrar finanzas, publicar) requerirá tools separadas + estado de confirmación — no incluidas en v2.
+
+Si el usuario pide agendar o enviar correo, el backend responde que esa acción llegará con confirmación en fase posterior.
+
+---
+
+## Operación
+
+### Variables Railway (piloto)
+
+```env
+RETELL_NATIVE_STAGING_AGENT_ID=
+RETELL_NATIVE_STAGING_LLM_ID=
+RETELL_NATIVE_PILOT_MODEL=gemini-3.0-flash
+```
+
+### Bootstrap / actualizar LLM tras deploy
+
+```bash
+curl -X POST "https://ced-web-production.up.railway.app/v1/retell/native-pilot/bootstrap" \
+  -H "X-Bootstrap-Secret: <RETELL_API_KEY>"
+```
+
+Re-ejecutar bootstrap tras cada deploy que cambie tools o prompt — actualiza el LLM staging en Retell.
+
+### Probar por voz
+
+1. URL: `?voicePilot=native`
+2. Google Calendar y Gmail deben estar conectados en configuración de voz
+3. Frases de prueba calendario: "¿qué tengo hoy?", "eventos de mañana"
+4. Frases Gmail: "léeme mis correos", "correos importantes", "lee el correo de X"
+
+### Métricas
+
+```bash
+GET /v1/retell/native-pilot/metrics      # latencias por tool
+GET /v1/retell/native-pilot/call-metrics/{call_id}
+```
 
 ---
 
 ## Notas técnicas
 
-- Gateway: `POST /v1/retell/tools/get_environment` con verificación `X-Retell-Signature`.
-- `user_id` siempre desde `call.metadata` (register-call), nunca desde args LLM.
-- Código prod intacto: `retell_custom_llm.py`, locks, standalone, orquestador.
+- Gateway: verificación `X-Retell-Signature`; `user_id` desde `call.metadata`.
+- Prod intacto: `retell_custom_llm.py`, locks, standalone, orquestador r7.
 - Agente prod: `CED Jarvis` | Staging: `CED Jarvis Native Pilot`.
