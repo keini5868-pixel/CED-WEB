@@ -26,6 +26,10 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - finance_prepare_write: preparar registro de gasto, ingreso o pago pendiente (NUNCA guarda — solo borrador).
 - finance_confirm_write: ejecutar registro real SOLO tras confirmación explícita del usuario en voz.
 - finance_cancel_write: descartar borrador financiero pendiente sin guardar.
+- activate_camera: encender la cámara del dispositivo (una sola vez).
+- deactivate_camera: apagar la cámara.
+- analyze_camera_frame: describir qué hay frente a la cámara (visión).
+- search_visible_product: identificar el objeto visible y buscar datos reales (precio, specs, dónde comprarlo).
 
 Reglas generales:
 - NO uses herramientas para charla casual, agradecimientos ("ok gracias"), check-ins ("¿me escuchas?"),
@@ -34,6 +38,7 @@ Reglas generales:
   la herramienta sin una petición nueva del usuario.
 - EXCEPCIÓN Gmail: tras read_gmail, lee al usuario el texto devuelto por la herramienta tal cual, sin modificarlo ni añadir nada.
 - EXCEPCIÓN Finanzas confirmación: tras finance_confirm_write exitoso, di el mensaje de confirmación sin parafrasear.
+- EXCEPCIÓN Cámara: tras activate/deactivate/analyze/search, di el resultado de la herramienta tal cual.
 - NO agendes citas ni modifiques calendario — solo lectura de calendario en este piloto.
 - NO envíes correos por voz — Gmail es solo lectura. Para enviar, el usuario usa el formulario en pantalla.
 
@@ -41,6 +46,14 @@ Gmail — solo lectura:
 - read_gmail devuelve el texto exacto que debe decirse en voz; repítalo sin inventar ni resumir.
 - PROHIBIDO prometer «voy a extraer el cuerpo» — si la tool dice que no pudo, comuníquelo una vez y pare.
 - Si el usuario pide enviar correo, indíquele que use el formulario de correo en la interfaz de CED.
+
+Cámara / visión:
+1. «activa/enciende/abre la cámara» → activate_camera UNA sola vez. NO vuelvas a confirmar la activación.
+2. PROHIBIDO describir nada visual sin llamar analyze_camera_frame o search_visible_product.
+3. «qué ves / qué es esto / analiza» → analyze_camera_frame (si la cámara está apagada, la tool la activa internamente).
+4. «dónde lo compro / precio / especificaciones / marca» → search_visible_product.
+5. «apaga/cierra la cámara» → deactivate_camera.
+6. Si falla captura o permisos, comunica el error UNA vez — sin bucles de «activando, activando».
 
 Finanzas — escritura con confirmación obligatoria:
 1. finance_prepare_write requiere monto y concepto claros (gasto, ingreso o pago pendiente con fecha).
@@ -55,8 +68,9 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro).
+Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro), cámara.
 - Gmail: solo lectura. Repite el resultado de read_gmail tal cual.
+- Cámara: activate_camera una sola vez; describe solo con analyze_camera_frame / search_visible_product.
 - Para REGISTRAR finanzas: finance_prepare_write con la frase del usuario (monto + concepto).
 - Tras prepare con awaiting_confirmation: lee el resumen, pregunta confirmación y usa transition_to_finance_confirm_pending.
 - Si ya hay borrador pendiente y el usuario dice «sí» o «dale», llama finance_confirm_write de inmediato (también disponible aquí).
@@ -112,6 +126,30 @@ FINANCE_CONFIRM_DESCRIPTION = (
 FINANCE_CANCEL_DESCRIPTION = (
     "Cancela y descarta el borrador financiero pendiente sin guardar. "
     "Usar cuando el usuario dice no, cancela, olvídalo o desea corregir y rehacer."
+)
+
+ACTIVATE_CAMERA_DESCRIPTION = (
+    "Enciende la cámara del dispositivo del usuario. "
+    "Usar cuando diga activa/enciende/abre la cámara. "
+    "Si ya está activa, responde sin reactivar. NO describe lo que ve — solo confirma activación."
+)
+
+DEACTIVATE_CAMERA_DESCRIPTION = (
+    "Apaga la cámara del dispositivo. "
+    "Usar cuando diga apaga/cierra/desactiva la cámara."
+)
+
+ANALYZE_CAMERA_FRAME_DESCRIPTION = (
+    "Captura un frame de la cámara y describe qué hay frente a ella. "
+    "Usar para 'qué ves', 'qué es esto', 'analiza lo que muestro'. "
+    "Si la cámara está apagada, la activa internamente. "
+    "PROHIBIDO inventar una descripción sin llamar esta herramienta."
+)
+
+SEARCH_VISIBLE_PRODUCT_DESCRIPTION = (
+    "Identifica el objeto visible ante la cámara y busca información real "
+    "(especificaciones, precio, dónde comprarlo, marca). "
+    "Usar cuando el usuario pida datos adicionales sobre lo mostrado."
 )
 
 GET_ENVIRONMENT_PARAMETERS: dict[str, Any] = {
@@ -199,6 +237,42 @@ FINANCE_CANCEL_PARAMETERS: dict[str, Any] = {
         "draft_id": {
             "type": "string",
             "description": "ID del borrador a cancelar (opcional si hay uno activo).",
+        },
+    },
+}
+
+ACTIVATE_CAMERA_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+}
+
+DEACTIVATE_CAMERA_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+}
+
+ANALYZE_CAMERA_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "question": {
+            "type": "string",
+            "description": (
+                "Pregunta opcional sobre lo visible "
+                "(ej. 'qué marca es', 'qué producto muestro')."
+            ),
+        },
+    },
+}
+
+SEARCH_VISIBLE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "question": {
+            "type": "string",
+            "description": (
+                "Pregunta del usuario sobre el producto visible "
+                "(ej. 'dónde lo compro', 'especificaciones', 'precio')."
+            ),
         },
     },
 }
@@ -310,6 +384,50 @@ def build_finance_cancel_write_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_activate_camera_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="activate_camera",
+        description=ACTIVATE_CAMERA_DESCRIPTION,
+        parameters=ACTIVATE_CAMERA_PARAMETERS,
+        filler="Activando la cámara, señor.",
+        timeout_ms=12_000,
+    )
+
+
+def build_deactivate_camera_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="deactivate_camera",
+        description=DEACTIVATE_CAMERA_DESCRIPTION,
+        parameters=DEACTIVATE_CAMERA_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_analyze_camera_frame_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="analyze_camera_frame",
+        description=ANALYZE_CAMERA_FRAME_DESCRIPTION,
+        parameters=ANALYZE_CAMERA_PARAMETERS,
+        filler="Un momento, analizando lo que me muestra, señor.",
+        timeout_ms=45_000,
+    )
+
+
+def build_search_visible_product_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="search_visible_product",
+        description=SEARCH_VISIBLE_PRODUCT_DESCRIPTION,
+        parameters=SEARCH_VISIBLE_PARAMETERS,
+        filler="Un momento, buscando información sobre lo que veo, señor.",
+        timeout_ms=45_000,
+    )
+
+
 def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, Any]], str]:
     """Retell States — tools restringidas por estado (general_tools vacío)."""
     return [
@@ -324,6 +442,10 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_finance_prepare_write_tool(api_public_url=api_public_url),
                 build_finance_confirm_write_tool(api_public_url=api_public_url),
                 build_finance_cancel_write_tool(api_public_url=api_public_url),
+                build_activate_camera_tool(api_public_url=api_public_url),
+                build_deactivate_camera_tool(api_public_url=api_public_url),
+                build_analyze_camera_frame_tool(api_public_url=api_public_url),
+                build_search_visible_product_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
@@ -475,6 +597,10 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "finance_prepare_write": _stats("finance_prepare_write"),
         "finance_confirm_write": _stats("finance_confirm_write"),
         "finance_cancel_write": _stats("finance_cancel_write"),
+        "activate_camera": _stats("activate_camera"),
+        "deactivate_camera": _stats("deactivate_camera"),
+        "analyze_camera_frame": _stats("analyze_camera_frame"),
+        "search_visible_product": _stats("search_visible_product"),
         "environment_invocations": _stats("get_environment")["invocations"],
         "environment_avg_latency_ms": _stats("get_environment")["avg_latency_ms"],
         "environment_latencies_ms": _stats("get_environment")["latencies_ms"],
@@ -817,6 +943,199 @@ async def execute_finance_cancel_write_tool(
         payload=payload,
         args=args,
         handler=_run_finance_cancel,
+    )
+
+
+_PRODUCT_FOLLOWUP_RE = (
+    r"\b("
+    r"marca|brand|precio|cuesta|cuesta|comprar|consig|d[oó]nde\s+(?:lo\s+)?(?:compro|vendo|encuentro)|"
+    r"especificaci|specs?|caracter[ií]stic|modelo|cu[aá]nto\s+(?:cuesta|vale)|"
+    r"informaci[oó]n(?:\s+adicional)?|datos\s+(?:del\s+)?producto"
+    r")\b"
+)
+
+
+def _camera_question_from_args(payload: dict[str, Any], args: dict[str, Any]) -> str:
+    for key in ("question", "pregunta", "query"):
+        value = str(args.get(key) or "").strip()
+        if value:
+            return value
+    return resolve_tool_query(payload, args)
+
+
+async def _execute_native_camera_tool(
+    *,
+    tool_name: str,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    """Wrappers sobre voice_tool_executor — misma lógica que Custom LLM / Live."""
+    import re
+
+    from app.services import voice_client_session as vcs
+    from app.services.voice_tool_executor import execute_voice_tool
+
+    started = time.perf_counter()
+    call_id = _extract_call_id(payload)
+    question = _camera_question_from_args(payload, args)
+
+    if not user_id:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(
+            call_id=call_id,
+            tool_name=tool_name,
+            latency_ms=latency_ms,
+            ok=False,
+            query=question,
+        )
+        return {
+            "result": "No identifiqué al usuario, señor.",
+            "latency_ms": latency_ms,
+            "ok": False,
+        }
+
+    try:
+        if tool_name == "activate_camera":
+            # Idempotente: is_camera_active → respuesta corta sin re-push.
+            result = await execute_voice_tool(
+                "request_camera_activation",
+                user_id,
+                {},
+            )
+        elif tool_name == "deactivate_camera":
+            result = await execute_voice_tool(
+                "request_camera_deactivation",
+                user_id,
+                {},
+            )
+        elif tool_name == "analyze_camera_frame":
+            result = await execute_voice_tool(
+                "analyze_camera_frame",
+                user_id,
+                {"pregunta": question or "¿Qué ves en la imagen?"},
+            )
+        elif tool_name == "search_visible_product":
+            last_vision = vcs.get_last_vision_summary(user_id)
+            followup = bool(
+                last_vision
+                and question
+                and re.search(_PRODUCT_FOLLOWUP_RE, question, re.I)
+            )
+            if followup:
+                # Reutiliza el último objeto identificado + búsqueda web (sin recapturar).
+                obj = re.sub(
+                    r"(?i)^(es|se ve|parece)\s+(un|una)\s+",
+                    "",
+                    last_vision,
+                ).strip()
+                obj = re.sub(r"\s+", " ", obj)[:120]
+                search_q = f"{obj} {question}".strip()[:200]
+                result = await execute_voice_tool(
+                    "search_web",
+                    user_id,
+                    {"query": search_q, "kind": "general"},
+                )
+                spoken_web = str(result.get("spoken") or "").strip()
+                if spoken_web and result.get("ok", True):
+                    result = {
+                        "ok": True,
+                        "spoken": (
+                            f"Sobre lo que identificamos ({obj}): {spoken_web}"
+                        ),
+                    }
+                else:
+                    result = await execute_voice_tool(
+                        "buscar_lo_visible",
+                        user_id,
+                        {
+                            "pregunta": question
+                            or "Identifica lo visible y busca información",
+                        },
+                    )
+            else:
+                result = await execute_voice_tool(
+                    "buscar_lo_visible",
+                    user_id,
+                    {
+                        "pregunta": question
+                        or "Identifica lo visible y busca información",
+                    },
+                )
+        else:
+            result = {"ok": False, "spoken": "Herramienta de cámara no reconocida, señor."}
+
+        spoken = str(result.get("spoken") or "Completado, señor.").strip()
+        ok = bool(result.get("ok", True)) and not _spoken_indicates_failure(spoken)
+    except Exception:  # noqa: BLE001
+        logger.exception("[NATIVE-PILOT] %s failed user=%s", tool_name, user_id[:8])
+        spoken = "Señor, no pude completar la operación de cámara en este momento."
+        ok = False
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    record_tool_metric(
+        call_id=call_id,
+        tool_name=tool_name,
+        latency_ms=latency_ms,
+        ok=ok,
+        query=question[:120],
+    )
+    return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
+
+
+async def execute_activate_camera_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_camera_tool(
+        tool_name="activate_camera",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+    )
+
+
+async def execute_deactivate_camera_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_camera_tool(
+        tool_name="deactivate_camera",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+    )
+
+
+async def execute_analyze_camera_frame_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_camera_tool(
+        tool_name="analyze_camera_frame",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+    )
+
+
+async def execute_search_visible_product_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_camera_tool(
+        tool_name="search_visible_product",
+        user_id=user_id,
+        payload=payload,
+        args=args,
     )
 
 

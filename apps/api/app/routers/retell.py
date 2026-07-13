@@ -29,6 +29,9 @@ from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.retell_native_pilot import (
+    execute_activate_camera_tool,
+    execute_analyze_camera_frame_tool,
+    execute_deactivate_camera_tool,
     execute_finance_cancel_write_tool,
     execute_finance_confirm_write_tool,
     execute_finance_prepare_write_tool,
@@ -36,6 +39,7 @@ from app.services.retell_native_pilot import (
     execute_list_calendar_events_tool,
     execute_read_finances_tool,
     execute_read_gmail_tool,
+    execute_search_visible_product_tool,
     get_call_pilot_metrics,
     get_pilot_metrics_snapshot,
 )
@@ -320,6 +324,50 @@ async def retell_finance_confirm_write_tool(request: Request) -> JSONResponse:
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
     result = await execute_finance_confirm_write_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/activate_camera")
+async def retell_activate_camera_tool(request: Request) -> JSONResponse:
+    """Activa la cámara del cliente (piloto nativo) — idempotente."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_activate_camera_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/deactivate_camera")
+async def retell_deactivate_camera_tool(request: Request) -> JSONResponse:
+    """Apaga la cámara del cliente (piloto nativo)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_deactivate_camera_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/analyze_camera_frame")
+async def retell_analyze_camera_frame_tool(request: Request) -> JSONResponse:
+    """Captura y analiza un frame de la cámara (piloto nativo)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_analyze_camera_frame_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/search_visible_product")
+async def retell_search_visible_product_tool(request: Request) -> JSONResponse:
+    """Identifica objeto visible y busca datos de producto (piloto nativo)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_search_visible_product_tool(
+        user_id=user_id, payload=payload, args=args
+    )
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 

@@ -37,7 +37,111 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "finance_prepare_write",
         "finance_confirm_write",
         "finance_cancel_write",
+        "activate_camera",
+        "deactivate_camera",
+        "analyze_camera_frame",
+        "search_visible_product",
     }
+
+
+def test_camera_tools_have_fillers_and_timeouts():
+    from app.services.retell_native_pilot import (
+        build_activate_camera_tool,
+        build_analyze_camera_frame_tool,
+        build_search_visible_product_tool,
+    )
+
+    activate = build_activate_camera_tool(api_public_url="https://api.example.com")
+    assert "Activando la cámara" in activate["execution_message_description"]
+    assert activate["timeout_ms"] == 12_000
+
+    analyze = build_analyze_camera_frame_tool(api_public_url="https://api.example.com")
+    assert "analizando" in analyze["execution_message_description"].lower()
+    assert analyze["timeout_ms"] == 45_000
+
+    search = build_search_visible_product_tool(api_public_url="https://api.example.com")
+    assert "buscando información" in search["execution_message_description"].lower()
+    assert search["timeout_ms"] == 45_000
+
+
+def test_activate_camera_idempotent_when_already_active():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_activate_camera_tool
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={"ok": True, "spoken": "Cámara activa, señor. Lista para analizar."},
+        ) as mock_exec:
+            out = await execute_activate_camera_tool(
+                user_id="user-cam-1",
+                payload={"call": {"call_id": "c1"}},
+                args={},
+            )
+            return out, mock_exec
+
+    out, mock_exec = asyncio.run(run())
+    assert "Cámara activa" in out["result"]
+    assert "activando" not in out["result"].lower()
+    mock_exec.assert_awaited_once()
+    assert mock_exec.await_args.args[0] == "request_camera_activation"
+
+
+def test_analyze_camera_frame_calls_vision_executor():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_analyze_camera_frame_tool
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={"ok": True, "spoken": "Es un frasco de proteína MyProtein."},
+        ) as mock_exec:
+            out = await execute_analyze_camera_frame_tool(
+                user_id="user-cam-2",
+                payload={"call": {"call_id": "c2"}},
+                args={"question": "qué es esto"},
+            )
+            return out, mock_exec
+
+    out, mock_exec = asyncio.run(run())
+    assert "MyProtein" in out["result"]
+    mock_exec.assert_awaited_once()
+    assert mock_exec.await_args.args[0] == "analyze_camera_frame"
+
+
+def test_search_visible_product_uses_last_vision_without_recapture():
+    import asyncio
+
+    from app.services import voice_client_session as vcs
+    from app.services.retell_native_pilot import execute_search_visible_product_tool
+
+    vcs.set_last_vision_summary("user-cam-3", "Es un frasco de proteína MyProtein Impact Whey.")
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={
+                "ok": True,
+                "spoken": "Se vende en Amazon por alrededor de 40 dólares.",
+            },
+        ) as mock_exec:
+            out = await execute_search_visible_product_tool(
+                user_id="user-cam-3",
+                payload={"call": {"call_id": "c3"}},
+                args={"question": "dónde lo compro"},
+            )
+            return out, mock_exec
+
+    out, mock_exec = asyncio.run(run())
+    assert "Amazon" in out["result"] or "40" in out["result"]
+    mock_exec.assert_awaited_once()
+    assert mock_exec.await_args.args[0] == "search_web"
+    vcs.set_last_vision_summary("user-cam-3", "")
 
 
 def test_build_native_pilot_states_restrict_confirm_tools():
@@ -58,12 +162,24 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "read_finances" in general_tools
     assert "read_gmail" in general_tools
     assert "get_environment" in general_tools
+    assert "activate_camera" in general_tools
+    assert "analyze_camera_frame" in general_tools
+    assert "search_visible_product" in general_tools
+    assert "deactivate_camera" in general_tools
     assert "finance_confirm_write" in confirm_tools
     assert "finance_cancel_write" in confirm_tools
     assert "read_finances" in confirm_tools
     assert "get_environment" not in confirm_tools
     assert "finance_prepare_write" not in confirm_tools
+    assert "activate_camera" not in confirm_tools
     assert "gmail_prepare_send" not in general_tools
+
+
+def test_pilot_prompt_includes_camera_rules():
+    assert "activate_camera" in RETELL_NATIVE_PILOT_PROMPT
+    assert "analyze_camera_frame" in RETELL_NATIVE_PILOT_PROMPT
+    assert "search_visible_product" in RETELL_NATIVE_PILOT_PROMPT
+    assert "PROHIBIDO describir nada visual" in RETELL_NATIVE_PILOT_PROMPT
 
 
 def test_pilot_prompt_includes_standalone_identity():
