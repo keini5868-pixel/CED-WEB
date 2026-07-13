@@ -60,9 +60,9 @@ import {
   cedResolveHonorific,
 } from "@/lib/voice/live/ced-brief-messages";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
-import { registerRetellCall, warmupRetellVoiceApi } from "@/lib/api/retell";
+import { registerRetellCall, registerRetellNativePilotCall, warmupRetellVoiceApi } from "@/lib/api/retell";
 import { CedRetellClient } from "@/lib/voice/retell/ced-retell-client";
-import { isRetellVoice } from "@/lib/voice/voiceProvider";
+import { isRetellNativePilot, isRetellVoice } from "@/lib/voice/voiceProvider";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import { normalizeVoiceName } from "@/lib/voice/openaiVoices";
 import {
@@ -1096,7 +1096,13 @@ export function useCedVoiceSession(
       setMicOn(true);
       saveMicPreference(true);
 
-      setStatusLabel(isRetellVoice() ? "Conectando con CED…" : ORB_STATE_LABELS.processing);
+      setStatusLabel(
+        isRetellVoice()
+          ? isRetellNativePilot()
+            ? "Piloto nativo — conectando…"
+            : "Conectando con CED…"
+          : ORB_STATE_LABELS.processing,
+      );
 
       const [voiceSession] = await Promise.all([
         startVoiceSession(),
@@ -1110,7 +1116,9 @@ export function useCedVoiceSession(
         isRetellSessionRef.current = true;
         setVoiceSessionActive(true);
         setStatusLabel("Iniciando llamada…");
-        const registration = await registerRetellCall();
+        const registration = isRetellNativePilot()
+          ? await registerRetellNativePilotCall()
+          : await registerRetellCall();
         if (isStale()) return;
         if (!registration.ok) {
           setErrorMessage(registration.error || "No pude iniciar voz Retell.");
@@ -1166,7 +1174,9 @@ export function useCedVoiceSession(
               );
               void (async () => {
                 try {
-                  const registration = await registerRetellCall();
+                  const registration = isRetellNativePilot()
+          ? await registerRetellNativePilotCall()
+          : await registerRetellCall();
                   if (isStale() || !registration.ok) {
                     setRetellPollActive(false);
                     await stopSession();

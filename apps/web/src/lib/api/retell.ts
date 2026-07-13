@@ -54,6 +54,51 @@ export async function registerRetellCall(): Promise<RetellRegisterCallResponse> 
   };
 }
 
+export type RetellNativePilotRegisterResponse = RetellRegisterCallResponse & {
+  pilot?: string;
+  engine?: string;
+  model?: string;
+};
+
+export async function registerRetellNativePilotCall(): Promise<RetellNativePilotRegisterResponse> {
+  let response: Response;
+  try {
+    response = await proxyFetch("retell/register-call-native-pilot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+  } catch {
+    return { ok: false, error: "No se pudo contactar la API del piloto nativo." };
+  }
+
+  const data = await parseApiJson<RetellNativePilotRegisterResponse & { detail?: string }>(
+    response,
+  ).catch(() => ({ ok: false as const, error: `Error ${response.status}` }));
+
+  if (!response.ok) {
+    const errData = data as { error?: string; detail?: string };
+    return {
+      ok: false,
+      error: errData.detail || errData.error || `Error ${response.status}`,
+    };
+  }
+
+  if (!("access_token" in data) || !data.access_token) {
+    return { ok: false, error: "La API no devolvió access_token del piloto nativo." };
+  }
+
+  return {
+    ok: true,
+    access_token: data.access_token,
+    call_id: data.call_id,
+    agent_id: data.agent_id,
+    pilot: data.pilot,
+    engine: data.engine,
+    model: data.model,
+  };
+}
+
 export type RetellConfigResponse = {
   provider: string;
   agentConfigured: boolean;

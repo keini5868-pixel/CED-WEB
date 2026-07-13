@@ -13,7 +13,13 @@ from pydantic import BaseModel, Field
 
 from app.config import get_settings
 from app.deps.auth import require_user_id
-from app.services.retell_agent_cache import get_last_bootstrap_error, get_last_bootstrap_info, get_retell_agent_id
+from app.services.retell_agent_cache import (
+    get_last_bootstrap_error,
+    get_last_bootstrap_info,
+    get_last_native_staging_info,
+    get_native_staging_agent_id,
+    get_retell_agent_id,
+)
 from app.services.retell_agent_setup import (
     bootstrap_retell_if_needed,
     custom_llm_websocket_url,
@@ -22,6 +28,8 @@ from app.services.retell_agent_setup import (
 from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
+from app.services.retell_native_pilot import execute_get_environment_tool, get_call_pilot_metrics, get_pilot_metrics_snapshot
+from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state_async
 
@@ -167,6 +175,181 @@ async def register_retell_call(
         "call_id": call_id,
         "agent_id": agent_id,
     }
+
+
+@router.post("/register-call-native-pilot")
+async def register_retell_native_pilot_call(
+    body: RegisterCallBody | None = None,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    """Web call contra el agente Retell LLM nativo de staging (piloto clima)."""
+    settings = get_settings()
+    if settings.voice_provider != "retell":
+        raise HTTPException(status_code=503, detail="Proveedor de voz Retell no activo.")
+
+    client = get_retell_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="RETELL_API_KEY no configurada.")
+
+    agent_id = get_native_staging_agent_id()
+    if not agent_id:
+        try:
+            boot = await asyncio.to_thread(bootstrap_native_staging_pilot)
+            agent_id = (boot or {}).get("agent_id") or get_native_staging_agent_id()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[NATIVE-PILOT] bootstrap on register failed: %s", exc)
+            raise HTTPException(
+                status_code=503,
+                detail=f"Piloto nativo no configurado: {exc}",
+            ) from exc
+    if not agent_id:
+        raise HTTPException(
+            status_code=503,
+            detail="RETELL_NATIVE_STAGING_AGENT_ID no configurado. Ejecute bootstrap del piloto.",
+        )
+
+    await _voice_access_or_raise(user_id)
+
+    try:
+        await asyncio.to_thread(ensure_native_staging_agent, agent_id=agent_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[NATIVE-PILOT] agent refresh before call failed (continuing): %s", exc)
+
+    try:
+        call = await asyncio.to_thread(
+            client.call.create_web_call,
+            agent_id=agent_id,
+            metadata={"user_id": user_id, "pilot": "native-llm-environment"},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[NATIVE-PILOT] create_web_call failed: %s", exc)
+        raise HTTPException(status_code=502, detail=_format_retell_call_error(exc)) from exc
+
+    call_id = getattr(call, "call_id", None) or getattr(call, "callId", None)
+    if call_id:
+        bind_call_user(str(call_id), user_id)
+        from app.services import voice_client_session as vcs
+
+        vcs.begin_voice_publish_session(user_id, str(call_id))
+        logger.info("[NATIVE-PILOT] call=%s user=%s agent=%s", call_id, user_id[:8], agent_id[:12])
+
+    staging_info = get_last_native_staging_info() or {}
+    return {
+        "ok": True,
+        "access_token": call.access_token,
+        "call_id": call_id,
+        "agent_id": agent_id,
+        "pilot": "native-llm-environment",
+        "engine": "retell-llm",
+        "model": staging_info.get("model") or settings.retell_native_pilot_model,
+    }
+
+
+@router.post("/tools/get_environment")
+async def retell_get_environment_tool(request: Request) -> JSONResponse:
+    """Custom function get_environment — piloto Retell LLM nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_get_environment_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/native-pilot/bootstrap")
+async def retell_native_pilot_bootstrap(
+    x_bootstrap_secret: str | None = Header(default=None, alias="X-Bootstrap-Secret"),
+) -> dict[str, Any]:
+    """Crea/actualiza agente staging Retell LLM nativo — no toca producción."""
+    _verify_bootstrap_secret(x_bootstrap_secret)
+    try:
+        out = await asyncio.to_thread(bootstrap_native_staging_pilot)
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[NATIVE-PILOT] bootstrap failed")
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return {
+        "ok": True,
+        **out,
+        "hint": (
+            "Copie RETELL_NATIVE_STAGING_AGENT_ID y RETELL_NATIVE_STAGING_LLM_ID a Railway. "
+            "Producción (RETELL_AGENT_ID) no fue modificada."
+        ),
+    }
+
+
+@router.get("/native-pilot/status")
+async def retell_native_pilot_status(
+    _user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    settings = get_settings()
+    staging_id = get_native_staging_agent_id()
+    prod_id = get_retell_agent_id()
+    staging_info = get_last_native_staging_info() or {}
+    client = get_retell_client()
+    staging_agent: dict[str, Any] | None = None
+    if client and staging_id:
+        try:
+            agent = client.agent.retrieve(agent_id=staging_id)
+            staging_agent = _json_safe(
+                {
+                    "agent_id": getattr(agent, "agent_id", staging_id),
+                    "agent_name": getattr(agent, "agent_name", None),
+                    "voice_id": getattr(agent, "voice_id", None),
+                    "response_engine": getattr(agent, "response_engine", None),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            staging_agent = {"error": str(exc)}
+
+    return {
+        "ok": True,
+        "pilot": "native-llm-environment",
+        "production_agent_id": prod_id or None,
+        "staging_agent_id": staging_id or None,
+        "staging_llm_id": settings.retell_native_staging_llm_id.strip() or staging_info.get("llm_id"),
+        "model": settings.retell_native_pilot_model,
+        "staging_agent": staging_agent,
+        "metrics": get_pilot_metrics_snapshot(),
+        "access": {
+            "url_param": "?voicePilot=native",
+            "register_endpoint": "/v1/retell/register-call-native-pilot",
+        },
+    }
+
+
+@router.get("/native-pilot/metrics")
+async def retell_native_pilot_metrics(
+    _user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    return {"ok": True, **get_pilot_metrics_snapshot()}
+
+
+@router.get("/native-pilot/call-metrics/{call_id}")
+async def retell_native_pilot_call_metrics(
+    call_id: str,
+    _user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    local = get_call_pilot_metrics(call_id)
+    out: dict[str, Any] = {"ok": True, "call_id": call_id, "local_metrics": local}
+
+    client = get_retell_client()
+    if client:
+        try:
+            call = await asyncio.to_thread(client.call.retrieve, call_id=call_id.strip())
+            out["retell"] = _json_safe(
+                {
+                    "call_status": getattr(call, "call_status", None),
+                    "disconnection_reason": getattr(call, "disconnection_reason", None),
+                    "agent_id": getattr(call, "agent_id", None),
+                    "llm_token_usage": getattr(call, "llm_token_usage", None),
+                    "transcript": getattr(call, "transcript_object", None),
+                    "start_timestamp": getattr(call, "start_timestamp", None),
+                    "end_timestamp": getattr(call, "end_timestamp", None),
+                }
+            )
+        except Exception as exc:  # noqa: BLE001
+            out["retell_error"] = str(exc)
+
+    return out
 
 
 @router.post("/webhook")
