@@ -32,6 +32,9 @@ from app.services.retell_native_pilot import (
     execute_activate_advanced_mode_tool,
     execute_activate_camera_tool,
     execute_analyze_camera_frame_tool,
+    execute_calendar_cancel_write_tool,
+    execute_calendar_confirm_write_tool,
+    execute_calendar_prepare_write_tool,
     execute_consult_advanced_tool,
     execute_deactivate_advanced_mode_tool,
     execute_deactivate_camera_tool,
@@ -47,6 +50,7 @@ from app.services.retell_native_pilot import (
     get_pilot_metrics_snapshot,
 )
 from app.services.finance_write_flow import clear_finance_pending_for_call
+from app.services.calendar_write_flow import clear_calendar_pending_for_call
 from app.services.voice_client_session import clear_advanced_mode_for_call
 from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
 from app.services.voice_tool_executor import execute_voice_tool
@@ -288,6 +292,42 @@ async def retell_list_calendar_events_tool(request: Request) -> JSONResponse:
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
     result = await execute_list_calendar_events_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/calendar_prepare_write")
+async def retell_calendar_prepare_write_tool(request: Request) -> JSONResponse:
+    """Prepara borrador de cita — no agenda (piloto nativo)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_calendar_prepare_write_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/calendar_confirm_write")
+async def retell_calendar_confirm_write_tool(request: Request) -> JSONResponse:
+    """Agenda cita tras confirmación verificada en transcript."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_calendar_confirm_write_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/calendar_cancel_write")
+async def retell_calendar_cancel_write_tool(request: Request) -> JSONResponse:
+    """Cancela borrador de cita pendiente."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_calendar_cancel_write_tool(
+        user_id=user_id, payload=payload, args=args
+    )
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
@@ -535,6 +575,7 @@ async def retell_webhook(request: Request) -> dict[str, Any]:
         uid = resolve_call_user(str(call_id), payload)
         if uid:
             clear_finance_pending_for_call(uid, str(call_id))
+            clear_calendar_pending_for_call(uid, str(call_id))
             clear_advanced_mode_for_call(uid, str(call_id))
         try:
             client = get_retell_client()

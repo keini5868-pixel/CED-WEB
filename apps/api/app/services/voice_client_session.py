@@ -37,6 +37,7 @@ def _fresh_session() -> dict[str, Any]:
         "gmail_awaiting_pick": False,
         "gmail_pending_send": None,
         "finance_pending_write": None,
+        "calendar_pending_write": None,
         "gmail_last_read": None,
         "advanced_mode_active": False,
         "advanced_last_topic": "",
@@ -664,6 +665,83 @@ def revert_gmail_pending_to_pending(user_id: str) -> None:
         if row.get("status") == "sending":
             row["status"] = "pending"
             session["gmail_pending_send"] = row
+            session["updated_at"] = _now()
+
+
+CALENDAR_PENDING_TTL_SEC = 600
+
+
+def set_calendar_pending_write(user_id: str, draft: dict[str, Any]) -> None:
+    session = _get(user_id)
+    now = _now()
+    row = deepcopy(draft)
+    row["prepared_at"] = now
+    row["expires_at"] = now + CALENDAR_PENDING_TTL_SEC
+    with _lock:
+        session["calendar_pending_write"] = row
+        session["updated_at"] = now
+
+
+def get_calendar_pending_write(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("calendar_pending_write")
+    if not isinstance(row, dict):
+        return None
+    return deepcopy(row)
+
+
+def is_calendar_pending_write_expired(user_id: str) -> bool:
+    row = _get(user_id).get("calendar_pending_write")
+    if not isinstance(row, dict):
+        return False
+    return _now() > float(row.get("expires_at") or 0)
+
+
+def clear_calendar_pending_write(user_id: str, *, reason: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        session["calendar_pending_write"] = None
+        session["updated_at"] = _now()
+    if reason:
+        pass
+
+
+def try_mark_calendar_pending_writing(user_id: str, draft_id: str) -> bool:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("calendar_pending_write")
+        if not isinstance(row, dict):
+            return False
+        if draft_id and row.get("draft_id") != draft_id:
+            return False
+        if row.get("status") != "pending":
+            return False
+        row["status"] = "writing"
+        session["calendar_pending_write"] = row
+        session["updated_at"] = _now()
+        return True
+
+
+def mark_calendar_pending_written(user_id: str, *, event_id: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("calendar_pending_write")
+        if not isinstance(row, dict):
+            return
+        row["status"] = "written"
+        row["created_event_id"] = event_id
+        session["calendar_pending_write"] = row
+        session["updated_at"] = _now()
+
+
+def revert_calendar_pending_to_pending(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("calendar_pending_write")
+        if not isinstance(row, dict):
+            return
+        if row.get("status") == "writing":
+            row["status"] = "pending"
+            session["calendar_pending_write"] = row
             session["updated_at"] = _now()
 
 

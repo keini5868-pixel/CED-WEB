@@ -20,7 +20,10 @@ NATIVE_PILOT_GREETING = "CED en línea, señor. Estoy listo para conversar."
 READ_TOOLS_PROMPT = """
 Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - get_environment: clima, temperatura, pronóstico, calidad del aire, polen o ambiente.
-- list_calendar_events: consultar eventos, citas o recordatorios en Google Calendar (solo lectura).
+- list_calendar_events: consultar eventos, citas o recordatorios en Google Calendar (lectura).
+- calendar_prepare_write: preparar borrador de cita/recordatorio (NUNCA agenda — solo borrador).
+- calendar_confirm_write: agendar en Google Calendar SOLO tras confirmación explícita en voz.
+- calendar_cancel_write: descartar borrador de cita pendiente.
 - read_gmail: leer bandeja, categorías o correos de un remitente (SOLO lectura — incluye cuerpo completo).
 - read_finances: resumen financiero, desglose de gastos o pagos pendientes (solo lectura).
 - finance_prepare_write: preparar registro de gasto, ingreso o pago pendiente (NUNCA guarda — solo borrador).
@@ -43,7 +46,8 @@ Reglas generales:
 - EXCEPCIÓN Finanzas confirmación: tras finance_confirm_write exitoso, di el mensaje de confirmación sin parafrasear.
 - EXCEPCIÓN Cámara: tras activate/deactivate/analyze/search, di el resultado de la herramienta tal cual.
 - EXCEPCIÓN Modo avanzado: tras activate/consult/deactivate avanzado, di el resultado de la herramienta tal cual.
-- NO agendes citas ni modifiques calendario — solo lectura de calendario en este piloto.
+- Calendario escritura: prepare → confirmación → confirm_write. NUNCA inventes que ya se agendó.
+- PROHIBIDO llamar calendar_confirm_write en el mismo turno que calendar_prepare_write.
 - NO envíes correos por voz — Gmail es solo lectura. Para enviar, el usuario usa el formulario en pantalla.
 
 Gmail — solo lectura:
@@ -58,6 +62,13 @@ Cámara / visión:
 4. «dónde lo compro / precio / especificaciones / marca» → search_visible_product.
 5. «apaga/cierra la cámara» → deactivate_camera.
 6. Si falla captura o permisos, comunica el error UNA vez — sin bucles de «activando, activando».
+
+Calendario — escritura con confirmación:
+1. «agéndame / programa / recuérdame …» → calendar_prepare_write con la frase completa.
+2. Tras prepare (awaiting_confirmation): lee el resumen y pregunta si confirma; transition_to_calendar_confirm_pending.
+3. «sí» / «dale» / «agenda» → calendar_confirm_write (también disponible en general si no transicionó).
+4. «no / cancela» → calendar_cancel_write.
+5. Si falta permiso de escritura, comunica el mensaje de la tool tal cual (reconectar Calendar).
 
 Modo avanzado (Claude):
 1. Solo la frase «activa modo avanzado» → activate_advanced_mode. Luego transition_to_advanced_mode_active.
@@ -82,8 +93,9 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro), cámara, modo avanzado.
+Estado general — clima, calendario (lectura y agendar), Gmail (solo lectura), finanzas, cámara, modo avanzado.
 - Gmail: solo lectura. Repite el resultado de read_gmail tal cual.
+- Para AGENDAR: calendar_prepare_write → confirmar → calendar_confirm_write (sí / dale).
 - Cámara: activate_camera una sola vez; describe solo con analyze_camera_frame / search_visible_product.
 - Si el usuario dice exactamente «activa modo avanzado» → activate_advanced_mode y transition_to_advanced_mode_active.
 - Si el modo avanzado YA fue activado en esta sesión (activate_advanced_mode devolvió ok) y el usuario hace una pregunta de análisis/investigación/filosofía/comparación → consult_advanced de inmediato. NO respondas tú esa pregunta.
@@ -113,7 +125,16 @@ Estado modo avanzado (Claude) — investigación profunda activa.
 - NO salgas del modo avanzado tras responder una sola consulta.
 """.strip()
 
+CALENDAR_CONFIRM_STATE_PROMPT = """
+Estado de confirmación de cita — hay un borrador de calendario pendiente.
+- Si dice sí, dale, adelante o confirma → calendar_confirm_write de inmediato (incluso solo «sí»).
+- Si dice no/cancela → calendar_cancel_write y transition_to_general_assistant.
+- list_calendar_events solo si pide consultar (cancela el borrador pendiente).
+- Tras confirm exitoso, di exactamente el mensaje de la herramienta.
+""".strip()
+
 STATE_GENERAL_ASSISTANT = "general_assistant"
+STATE_CALENDAR_CONFIRM_PENDING = "calendar_confirm_pending"
 STATE_FINANCE_CONFIRM_PENDING = "finance_confirm_pending"
 STATE_ADVANCED_MODE_ACTIVE = "advanced_mode_active"
 
@@ -126,7 +147,21 @@ GET_ENVIRONMENT_DESCRIPTION = (
 
 LIST_CALENDAR_DESCRIPTION = (
     "Consulta eventos, citas o recordatorios del Google Calendar del usuario. "
-    "Solo lectura — no crear ni modificar eventos."
+    "Solo lectura — para agendar use calendar_prepare_write."
+)
+
+CALENDAR_PREPARE_DESCRIPTION = (
+    "Prepara un borrador de cita o recordatorio en el calendario. "
+    "Requiere qué, día y hora en la frase del usuario. NO agenda todavía — pide confirmación."
+)
+
+CALENDAR_CONFIRM_DESCRIPTION = (
+    "Agenda en Google Calendar el borrador pendiente tras confirmación explícita: "
+    "sí, dale, adelante. Un solo «sí» basta si hay borrador pendiente."
+)
+
+CALENDAR_CANCEL_DESCRIPTION = (
+    "Cancela el borrador de cita pendiente sin agendarlo."
 )
 
 READ_GMAIL_DESCRIPTION = (
@@ -224,6 +259,40 @@ LIST_CALENDAR_PARAMETERS: dict[str, Any] = {
         },
     },
     "required": ["query"],
+}
+
+CALENDAR_PREPARE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": (
+                "Frase del usuario para agendar "
+                "(ej. 'agéndame reunión con Ana mañana a las 3 pm', 'recuérdame pagar el lunes a las 9')."
+            ),
+        },
+    },
+    "required": ["query"],
+}
+
+CALENDAR_CONFIRM_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {
+            "type": "string",
+            "description": "ID del borrador de calendar_prepare_write (opcional si hay uno activo).",
+        },
+    },
+}
+
+CALENDAR_CANCEL_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {
+            "type": "string",
+            "description": "ID del borrador a cancelar (opcional si hay uno activo).",
+        },
+    },
 }
 
 READ_GMAIL_PARAMETERS: dict[str, Any] = {
@@ -401,6 +470,39 @@ def build_list_calendar_events_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_calendar_prepare_write_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="calendar_prepare_write",
+        description=CALENDAR_PREPARE_DESCRIPTION,
+        parameters=CALENDAR_PREPARE_PARAMETERS,
+        filler="Un momento, preparando la cita, señor.",
+        timeout_ms=12_000,
+    )
+
+
+def build_calendar_confirm_write_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="calendar_confirm_write",
+        description=CALENDAR_CONFIRM_DESCRIPTION,
+        parameters=CALENDAR_CONFIRM_PARAMETERS,
+        filler="Agendando en su calendario, señor.",
+        timeout_ms=20_000,
+    )
+
+
+def build_calendar_cancel_write_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="calendar_cancel_write",
+        description=CALENDAR_CANCEL_DESCRIPTION,
+        parameters=CALENDAR_CANCEL_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
 def build_read_gmail_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -542,6 +644,9 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
             "tools": [
                 build_get_environment_tool(api_public_url=api_public_url),
                 build_list_calendar_events_tool(api_public_url=api_public_url),
+                build_calendar_prepare_write_tool(api_public_url=api_public_url),
+                build_calendar_confirm_write_tool(api_public_url=api_public_url),
+                build_calendar_cancel_write_tool(api_public_url=api_public_url),
                 build_read_gmail_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
                 build_finance_prepare_write_tool(api_public_url=api_public_url),
@@ -563,6 +668,13 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "description": (
                         "Transición cuando finance_prepare_write devuelve awaiting_confirmation: "
                         "hay borrador listo y debe pedirse confirmación de registro al usuario."
+                    ),
+                },
+                {
+                    "destination_state_name": STATE_CALENDAR_CONFIRM_PENDING,
+                    "description": (
+                        "Transición cuando calendar_prepare_write devuelve awaiting_confirmation: "
+                        "hay borrador de cita listo y debe pedirse confirmación al usuario."
                     ),
                 },
                 {
@@ -588,6 +700,23 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "description": (
                         "Volver al flujo general tras registro exitoso, cancelación, borrador expirado "
                         "o cuando ya no hay movimiento pendiente."
+                    ),
+                },
+            ],
+        },
+        {
+            "name": STATE_CALENDAR_CONFIRM_PENDING,
+            "state_prompt": CALENDAR_CONFIRM_STATE_PROMPT,
+            "tools": [
+                build_list_calendar_events_tool(api_public_url=api_public_url),
+                build_calendar_confirm_write_tool(api_public_url=api_public_url),
+                build_calendar_cancel_write_tool(api_public_url=api_public_url),
+            ],
+            "edges": [
+                {
+                    "destination_state_name": STATE_GENERAL_ASSISTANT,
+                    "description": (
+                        "Volver al flujo general tras agendar, cancelar o borrador expirado."
                     ),
                 },
             ],
@@ -728,6 +857,9 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "calls_tracked": len(calls),
         "get_environment": _stats("get_environment"),
         "list_calendar_events": _stats("list_calendar_events"),
+        "calendar_prepare_write": _stats("calendar_prepare_write"),
+        "calendar_confirm_write": _stats("calendar_confirm_write"),
+        "calendar_cancel_write": _stats("calendar_cancel_write"),
         "read_gmail": _stats("read_gmail"),
         "read_finances": _stats("read_finances"),
         "finance_prepare_write": _stats("finance_prepare_write"),
@@ -1399,6 +1531,80 @@ async def execute_deactivate_advanced_mode_tool(
         user_id=user_id,
         payload=payload,
         args=args,
+    )
+
+
+
+def _run_calendar_prepare(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.calendar_write_flow import prepare_calendar_write
+
+    query = resolve_tool_query(payload, args)
+    return prepare_calendar_write(user_id, call_id=call_id, query=query)
+
+
+def _run_calendar_confirm(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.calendar_write_flow import confirm_calendar_write
+
+    return confirm_calendar_write(
+        user_id,
+        call_id=call_id,
+        payload=payload,
+        draft_id=str(args.get("draft_id") or ""),
+    )
+
+
+def _run_calendar_cancel(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.calendar_write_flow import cancel_calendar_write
+
+    return cancel_calendar_write(
+        user_id,
+        draft_id=str(args.get("draft_id") or ""),
+        reason="user_cancel",
+    )
+
+
+async def execute_calendar_prepare_write_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="calendar_prepare_write",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_calendar_prepare,
+    )
+
+
+async def execute_calendar_confirm_write_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="calendar_confirm_write",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_calendar_confirm,
+    )
+
+
+async def execute_calendar_cancel_write_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="calendar_cancel_write",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_calendar_cancel,
     )
 
 

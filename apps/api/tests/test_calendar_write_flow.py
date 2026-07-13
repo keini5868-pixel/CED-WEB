@@ -1,0 +1,158 @@
+"""Tests — Calendario escritura con confirmación (piloto nativo)."""
+
+from __future__ import annotations
+
+from unittest.mock import patch
+
+from app.services import voice_client_session as vcs
+from app.services.calendar_write_flow import (
+    cancel_calendar_write,
+    confirm_calendar_write,
+    is_calendar_write_confirm,
+    prepare_calendar_write,
+)
+
+USER = "550e8400-e29b-41d4-a716-446655440099"
+CALL = "call_calendar_test_1"
+
+
+def setup_function() -> None:
+    vcs.clear_calendar_pending_write(USER)
+
+
+def test_is_calendar_write_confirm():
+    assert is_calendar_write_confirm("sí, agéndalo")
+    assert is_calendar_write_confirm("Sí.", allow_short_yes=True)
+    assert is_calendar_write_confirm("sí", allow_short_yes=True)
+    assert not is_calendar_write_confirm("ok gracias")
+
+
+def test_prepare_needs_details():
+    out = prepare_calendar_write(USER, call_id=CALL, query="hola")
+    assert out["status"] == "needs_details"
+
+
+def test_prepare_missing_write_scope():
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=False,
+        ):
+            out = prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="agéndame reunión con Ana mañana a las 3 pm",
+            )
+    assert out["status"] == "missing_write_scope"
+    assert "permiso de escritura" in out["spoken"].lower()
+    assert vcs.get_calendar_pending_write(USER) is None
+
+
+def test_prepare_and_confirm_short_yes():
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            prep = prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="agéndame reunión con Ana mañana a las 3 pm",
+            )
+    assert prep["status"] == "awaiting_confirmation"
+    assert prep["transition"] == "transition_to_calendar_confirm_pending"
+    draft_id = prep["draft_id"]
+
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            with patch(
+                "app.services.calendar_write_flow._calendar_api_call",
+                side_effect=lambda _uid, fn: fn("tok"),
+            ):
+                with patch(
+                    "app.services.calendar_write_flow.create_event",
+                    return_value={"id": "evt-1"},
+                ):
+                    conf = confirm_calendar_write(
+                        USER,
+                        call_id=CALL,
+                        draft_id=draft_id,
+                        payload={
+                            "call": {
+                                "transcript_object": [
+                                    {"role": "user", "content": "Sí."},
+                                ]
+                            }
+                        },
+                    )
+    assert conf["ok"] is True
+    assert conf["status"] == "written"
+    assert "Ana" in conf["spoken"] or "reunión" in conf["spoken"].lower()
+
+
+def test_confirm_reports_missing_write_scope():
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            prep = prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="recuérdame pagar el lunes a las 9",
+            )
+    draft_id = prep["draft_id"]
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=False,
+        ):
+            conf = confirm_calendar_write(
+                USER,
+                call_id=CALL,
+                draft_id=draft_id,
+                payload={
+                    "call": {
+                        "transcript_object": [{"role": "user", "content": "sí"}]
+                    }
+                },
+            )
+    assert conf["status"] == "missing_write_scope"
+    assert "permiso de escritura" in conf["spoken"].lower()
+
+
+def test_cancel_calendar_write():
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="agéndame dentista mañana a las 10",
+            )
+    out = cancel_calendar_write(USER)
+    assert out["status"] == "cancelled"
+    assert vcs.get_calendar_pending_write(USER) is None

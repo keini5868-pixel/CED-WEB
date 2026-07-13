@@ -32,6 +32,9 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
     assert names == {
         "get_environment",
         "list_calendar_events",
+        "calendar_prepare_write",
+        "calendar_confirm_write",
+        "calendar_cancel_write",
         "read_gmail",
         "read_finances",
         "finance_prepare_write",
@@ -308,7 +311,9 @@ def test_calendar_read_sync_rejects_create():
     from app.modules.calendar_module import handle_calendar_read_sync
 
     result = handle_calendar_read_sync("user-1", "agéndame cita mañana a las 3")
-    assert "solo puedo consultar" in result["spoken"].lower()
+    spoken = result["spoken"].lower()
+    assert "confirmación" in spoken or "agéndame" in spoken
+    assert "sí" in spoken
 
 
 def test_calendar_api_call_refreshes_on_401():

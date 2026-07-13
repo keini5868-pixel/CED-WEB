@@ -143,12 +143,13 @@ def _resolve_calendar_windows(text: str) -> list[tuple[datetime, datetime, str]]
 
 
 def handle_calendar_read_sync(user_id: str, text: str) -> dict[str, str]:
-    """Solo consulta calendario — sin crear citas ni recordatorios (piloto nativo)."""
+    """Consulta calendario — si piden agendar, redirige al flujo con confirmación."""
     if re.search(r"ag[eé]ndame|agendar|programa|recu[eé]rdame", text or "", re.I):
         return {
             "spoken": (
-                "Señor, por ahora solo puedo consultar su calendario. "
-                "Agendar citas requerirá confirmación explícita en una fase posterior."
+                "Señor, para agendar use confirmación explícita: "
+                "diga por ejemplo «agéndame reunión mañana a las 3» "
+                "y luego confirme con «sí»."
             ),
         }
     try:
