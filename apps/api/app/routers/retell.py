@@ -29,8 +29,11 @@ from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.retell_native_pilot import (
+    execute_activate_advanced_mode_tool,
     execute_activate_camera_tool,
     execute_analyze_camera_frame_tool,
+    execute_consult_advanced_tool,
+    execute_deactivate_advanced_mode_tool,
     execute_deactivate_camera_tool,
     execute_finance_cancel_write_tool,
     execute_finance_confirm_write_tool,
@@ -44,6 +47,7 @@ from app.services.retell_native_pilot import (
     get_pilot_metrics_snapshot,
 )
 from app.services.finance_write_flow import clear_finance_pending_for_call
+from app.services.voice_client_session import clear_advanced_mode_for_call
 from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state_async
@@ -371,6 +375,42 @@ async def retell_search_visible_product_tool(request: Request) -> JSONResponse:
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
+@router.post("/tools/activate_advanced_mode")
+async def retell_activate_advanced_mode_tool(request: Request) -> JSONResponse:
+    """Activa modo avanzado Claude (piloto nativo)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_activate_advanced_mode_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/consult_advanced")
+async def retell_consult_advanced_tool(request: Request) -> JSONResponse:
+    """Consulta profunda Claude en modo avanzado (piloto nativo)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_consult_advanced_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/deactivate_advanced_mode")
+async def retell_deactivate_advanced_mode_tool(request: Request) -> JSONResponse:
+    """Sale del modo avanzado (piloto nativo)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_deactivate_advanced_mode_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
 @router.post("/tools/finance_cancel_write")
 async def retell_finance_cancel_write_tool(request: Request) -> JSONResponse:
     """Cancela borrador financiero pendiente."""
@@ -495,6 +535,7 @@ async def retell_webhook(request: Request) -> dict[str, Any]:
         uid = resolve_call_user(str(call_id), payload)
         if uid:
             clear_finance_pending_for_call(uid, str(call_id))
+            clear_advanced_mode_for_call(uid, str(call_id))
         try:
             client = get_retell_client()
             if client:

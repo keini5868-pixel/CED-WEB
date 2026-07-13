@@ -30,6 +30,9 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - deactivate_camera: apagar la cámara.
 - analyze_camera_frame: describir qué hay frente a la cámara (visión).
 - search_visible_product: identificar el objeto visible y buscar datos reales (precio, specs, dónde comprarlo).
+- activate_advanced_mode: activar modo avanzado con Claude (solo frase «activa modo avanzado»).
+- consult_advanced: consulta profunda vía Claude — solo en modo avanzado.
+- deactivate_advanced_mode: salir a modo conversacional normal.
 
 Reglas generales:
 - NO uses herramientas para charla casual, agradecimientos ("ok gracias"), check-ins ("¿me escuchas?"),
@@ -39,6 +42,7 @@ Reglas generales:
 - EXCEPCIÓN Gmail: tras read_gmail, lee al usuario el texto devuelto por la herramienta tal cual, sin modificarlo ni añadir nada.
 - EXCEPCIÓN Finanzas confirmación: tras finance_confirm_write exitoso, di el mensaje de confirmación sin parafrasear.
 - EXCEPCIÓN Cámara: tras activate/deactivate/analyze/search, di el resultado de la herramienta tal cual.
+- EXCEPCIÓN Modo avanzado: tras activate/consult/deactivate avanzado, di el resultado de la herramienta tal cual.
 - NO agendes citas ni modifiques calendario — solo lectura de calendario en este piloto.
 - NO envíes correos por voz — Gmail es solo lectura. Para enviar, el usuario usa el formulario en pantalla.
 
@@ -55,6 +59,14 @@ Cámara / visión:
 5. «apaga/cierra la cámara» → deactivate_camera.
 6. Si falla captura o permisos, comunica el error UNA vez — sin bucles de «activando, activando».
 
+Modo avanzado (Claude):
+1. Solo la frase «activa modo avanzado» → activate_advanced_mode. Luego transition_to_advanced_mode_active.
+2. En modo avanzado, preguntas sustantivas → consult_advanced (NO inventes análisis profundo con Gemini).
+3. Clima (get_environment) y lectura de finanzas (read_finances) SÍ están disponibles en modo avanzado sin salir.
+4. Gmail, escritura de finanzas y cámara NO están en modo avanzado — pide salir primero si las necesita.
+5. Salida solo explícita: «modo normal», «sal del modo avanzado», «desactiva modo avanzado» → deactivate_advanced_mode.
+6. NO salgas solo tras una respuesta — el modo permanece activo hasta salida explícita.
+
 Finanzas — escritura con confirmación obligatoria:
 1. finance_prepare_write requiere monto y concepto claros (gasto, ingreso o pago pendiente con fecha).
 2. Tras prepare exitoso (awaiting_confirmation), lee el resumen en voz y pregunta si confirma el registro.
@@ -68,9 +80,10 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro), cámara.
+Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro), cámara, activar modo avanzado.
 - Gmail: solo lectura. Repite el resultado de read_gmail tal cual.
 - Cámara: activate_camera una sola vez; describe solo con analyze_camera_frame / search_visible_product.
+- Si el usuario dice exactamente «activa modo avanzado» → activate_advanced_mode y transition_to_advanced_mode_active.
 - Para REGISTRAR finanzas: finance_prepare_write con la frase del usuario (monto + concepto).
 - Tras prepare con awaiting_confirmation: lee el resumen, pregunta confirmación y usa transition_to_finance_confirm_pending.
 - Si ya hay borrador pendiente y el usuario dice «sí» o «dale», llama finance_confirm_write de inmediato (también disponible aquí).
@@ -86,8 +99,19 @@ Estado de confirmación de registro financiero — hay un borrador pendiente.
 - Tras finance_confirm_write exitoso, di al usuario exactamente el mensaje de confirmación devuelto.
 """.strip()
 
+ADVANCED_MODE_STATE_PROMPT = """
+Estado modo avanzado (Claude) — investigación profunda activa.
+- Preguntas sustantivas / análisis / investigación → consult_advanced. Di el resultado tal cual.
+- Clima o ambiente → get_environment (sin salir del modo).
+- Consulta de finanzas (solo lectura) → read_finances (sin salir del modo).
+- Si dice «modo normal», «sal del modo avanzado» o «desactiva modo avanzado» → deactivate_advanced_mode y transition_to_general_assistant.
+- NO llames Gmail, cámara ni escritura de finanzas aquí — indica que debe salir al modo normal primero.
+- NO salgas del modo avanzado tras responder una sola consulta.
+""".strip()
+
 STATE_GENERAL_ASSISTANT = "general_assistant"
 STATE_FINANCE_CONFIRM_PENDING = "finance_confirm_pending"
+STATE_ADVANCED_MODE_ACTIVE = "advanced_mode_active"
 
 RETELL_NATIVE_PILOT_PROMPT = f"{GEMINI_STANDALONE_SYSTEM}\n\n{READ_TOOLS_PROMPT}"
 
@@ -150,6 +174,24 @@ SEARCH_VISIBLE_PRODUCT_DESCRIPTION = (
     "Identifica el objeto visible ante la cámara y busca información real "
     "(especificaciones, precio, dónde comprarlo, marca). "
     "Usar cuando el usuario pida datos adicionales sobre lo mostrado."
+)
+
+ACTIVATE_ADVANCED_DESCRIPTION = (
+    "Activa el modo avanzado con Claude para investigación más profunda. "
+    "Usar SOLO cuando el usuario diga «activa modo avanzado». "
+    "No usar para charla casual ni para módulos rápidos (clima/Gmail/cámara)."
+)
+
+CONSULT_ADVANCED_DESCRIPTION = (
+    "Consulta profunda vía Claude (modo avanzado). "
+    "Usar para preguntas de análisis, investigación o razonamiento complejo "
+    "mientras el modo avanzado está activo. "
+    "Repite el resultado tal cual al usuario."
+)
+
+DEACTIVATE_ADVANCED_DESCRIPTION = (
+    "Sale del modo avanzado y vuelve al modo conversacional normal. "
+    "Usar cuando diga «modo normal», «sal del modo avanzado» o «desactiva modo avanzado»."
 )
 
 GET_ENVIRONMENT_PARAMETERS: dict[str, Any] = {
@@ -275,6 +317,31 @@ SEARCH_VISIBLE_PARAMETERS: dict[str, Any] = {
             ),
         },
     },
+}
+
+ACTIVATE_ADVANCED_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+}
+
+CONSULT_ADVANCED_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": (
+                "Consulta profunda del usuario "
+                "(ej. 'explica cómo funciona el interés compuesto', "
+                "'compara opciones de financing para un auto')."
+            ),
+        },
+    },
+    "required": ["query"],
+}
+
+DEACTIVATE_ADVANCED_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
 }
 
 _lock = threading.Lock()
@@ -428,6 +495,39 @@ def build_search_visible_product_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_activate_advanced_mode_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="activate_advanced_mode",
+        description=ACTIVATE_ADVANCED_DESCRIPTION,
+        parameters=ACTIVATE_ADVANCED_PARAMETERS,
+        filler="Activando modo avanzado, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_consult_advanced_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="consult_advanced",
+        description=CONSULT_ADVANCED_DESCRIPTION,
+        parameters=CONSULT_ADVANCED_PARAMETERS,
+        filler="Un momento, consultando el sistema avanzado, señor.",
+        timeout_ms=28_000,
+    )
+
+
+def build_deactivate_advanced_mode_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="deactivate_advanced_mode",
+        description=DEACTIVATE_ADVANCED_DESCRIPTION,
+        parameters=DEACTIVATE_ADVANCED_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
 def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, Any]], str]:
     """Retell States — tools restringidas por estado (general_tools vacío)."""
     return [
@@ -446,6 +546,7 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_deactivate_camera_tool(api_public_url=api_public_url),
                 build_analyze_camera_frame_tool(api_public_url=api_public_url),
                 build_search_visible_product_tool(api_public_url=api_public_url),
+                build_activate_advanced_mode_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
@@ -453,6 +554,13 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "description": (
                         "Transición cuando finance_prepare_write devuelve awaiting_confirmation: "
                         "hay borrador listo y debe pedirse confirmación de registro al usuario."
+                    ),
+                },
+                {
+                    "destination_state_name": STATE_ADVANCED_MODE_ACTIVE,
+                    "description": (
+                        "Transición cuando activate_advanced_mode confirma modo avanzado activo "
+                        "(usuario dijo «activa modo avanzado»)."
                     ),
                 },
             ],
@@ -471,6 +579,25 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "description": (
                         "Volver al flujo general tras registro exitoso, cancelación, borrador expirado "
                         "o cuando ya no hay movimiento pendiente."
+                    ),
+                },
+            ],
+        },
+        {
+            "name": STATE_ADVANCED_MODE_ACTIVE,
+            "state_prompt": ADVANCED_MODE_STATE_PROMPT,
+            "tools": [
+                build_consult_advanced_tool(api_public_url=api_public_url),
+                build_deactivate_advanced_mode_tool(api_public_url=api_public_url),
+                build_get_environment_tool(api_public_url=api_public_url),
+                build_read_finances_tool(api_public_url=api_public_url),
+            ],
+            "edges": [
+                {
+                    "destination_state_name": STATE_GENERAL_ASSISTANT,
+                    "description": (
+                        "Volver al modo conversacional normal tras deactivate_advanced_mode "
+                        "(salida explícita del usuario)."
                     ),
                 },
             ],
@@ -601,6 +728,9 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "deactivate_camera": _stats("deactivate_camera"),
         "analyze_camera_frame": _stats("analyze_camera_frame"),
         "search_visible_product": _stats("search_visible_product"),
+        "activate_advanced_mode": _stats("activate_advanced_mode"),
+        "consult_advanced": _stats("consult_advanced"),
+        "deactivate_advanced_mode": _stats("deactivate_advanced_mode"),
         "environment_invocations": _stats("get_environment")["invocations"],
         "environment_avg_latency_ms": _stats("get_environment")["avg_latency_ms"],
         "environment_latencies_ms": _stats("get_environment")["latencies_ms"],
@@ -805,6 +935,10 @@ async def execute_read_finances_tool(
 
 def _format_finance_action_result(action: dict[str, Any]) -> str:
     """Resultado hablado + metadata JSON para el LLM (transiciones Retell)."""
+    return _format_action_result_with_meta(action)
+
+
+def _format_action_result_with_meta(action: dict[str, Any]) -> str:
     import json
 
     spoken = str(action.get("spoken") or "Completado, señor.").strip()
@@ -1143,6 +1277,112 @@ async def execute_search_visible_product_tool(
 ) -> dict[str, Any]:
     return await _execute_native_camera_tool(
         tool_name="search_visible_product",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+    )
+
+
+async def _execute_native_advanced_tool(
+    *,
+    tool_name: str,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    import asyncio
+
+    from app.services.advanced_mode_flow import (
+        activate_advanced_mode,
+        consult_advanced,
+        deactivate_advanced_mode,
+    )
+
+    started = time.perf_counter()
+    call_id = _extract_call_id(payload)
+    query = resolve_tool_query(payload, args)
+
+    if not user_id:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(
+            call_id=call_id,
+            tool_name=tool_name,
+            latency_ms=latency_ms,
+            ok=False,
+            query=query,
+        )
+        return {
+            "result": "No identifiqué al usuario, señor.",
+            "latency_ms": latency_ms,
+            "ok": False,
+        }
+
+    try:
+        if tool_name == "activate_advanced_mode":
+            action = await asyncio.to_thread(activate_advanced_mode, user_id)
+        elif tool_name == "deactivate_advanced_mode":
+            action = await asyncio.to_thread(deactivate_advanced_mode, user_id)
+        elif tool_name == "consult_advanced":
+            action = await asyncio.to_thread(consult_advanced, user_id, query)
+        else:
+            action = {
+                "ok": False,
+                "spoken": "Herramienta de modo avanzado no reconocida, señor.",
+            }
+        spoken = _format_action_result_with_meta(action)
+        ok = bool(action.get("ok"))
+    except Exception:  # noqa: BLE001
+        logger.exception("[NATIVE-PILOT] %s failed user=%s", tool_name, user_id[:8])
+        spoken = "Señor, no pude completar la operación de modo avanzado."
+        ok = False
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    record_tool_metric(
+        call_id=call_id,
+        tool_name=tool_name,
+        latency_ms=latency_ms,
+        ok=ok,
+        query=query[:120],
+    )
+    return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
+
+
+async def execute_activate_advanced_mode_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_advanced_tool(
+        tool_name="activate_advanced_mode",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+    )
+
+
+async def execute_consult_advanced_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_advanced_tool(
+        tool_name="consult_advanced",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+    )
+
+
+async def execute_deactivate_advanced_mode_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_advanced_tool(
+        tool_name="deactivate_advanced_mode",
         user_id=user_id,
         payload=payload,
         args=args,

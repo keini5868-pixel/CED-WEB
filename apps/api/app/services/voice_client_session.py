@@ -38,6 +38,9 @@ def _fresh_session() -> dict[str, Any]:
         "gmail_pending_send": None,
         "finance_pending_write": None,
         "gmail_last_read": None,
+        "advanced_mode_active": False,
+        "advanced_last_topic": "",
+        "advanced_turn_count": 0,
     }
 
 
@@ -738,4 +741,42 @@ def revert_finance_pending_to_pending(user_id: str) -> None:
             row["status"] = "pending"
             session["finance_pending_write"] = row
             session["updated_at"] = _now()
+
+
+def set_advanced_mode_active(user_id: str, active: bool) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["advanced_mode_active"] = bool(active)
+        if active:
+            session["active_mode"] = "advanced"
+            session["advanced_turn_count"] = int(session.get("advanced_turn_count") or 0)
+        else:
+            if session.get("active_mode") == "advanced":
+                session["active_mode"] = None
+            session["advanced_last_topic"] = ""
+            session["advanced_turn_count"] = 0
+        session["updated_at"] = _now()
+
+
+def is_advanced_mode_active(user_id: str) -> bool:
+    return bool(_get(user_id).get("advanced_mode_active"))
+
+
+def record_advanced_consult(user_id: str, topic: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["advanced_last_topic"] = (topic or "").strip()[:240]
+        session["advanced_turn_count"] = int(session.get("advanced_turn_count") or 0) + 1
+        session["updated_at"] = _now()
+
+
+def get_advanced_last_topic(user_id: str) -> str:
+    return str(_get(user_id).get("advanced_last_topic") or "").strip()
+
+
+def clear_advanced_mode_for_call(user_id: str, call_id: str = "") -> None:
+    """Limpia modo avanzado al terminar la llamada (call_id opcional)."""
+    if not user_id.strip():
+        return
+    set_advanced_mode_active(user_id, False)
 

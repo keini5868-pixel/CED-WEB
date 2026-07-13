@@ -41,6 +41,9 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "deactivate_camera",
         "analyze_camera_frame",
         "search_visible_product",
+        "activate_advanced_mode",
+        "consult_advanced",
+        "deactivate_advanced_mode",
     }
 
 
@@ -166,6 +169,8 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "analyze_camera_frame" in general_tools
     assert "search_visible_product" in general_tools
     assert "deactivate_camera" in general_tools
+    assert "activate_advanced_mode" in general_tools
+    assert "consult_advanced" not in general_tools
     assert "finance_confirm_write" in confirm_tools
     assert "finance_cancel_write" in confirm_tools
     assert "read_finances" in confirm_tools
@@ -174,12 +179,40 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "activate_camera" not in confirm_tools
     assert "gmail_prepare_send" not in general_tools
 
+    from app.services.retell_native_pilot import STATE_ADVANCED_MODE_ACTIVE
+
+    advanced_tools = {t["name"] for t in by_name[STATE_ADVANCED_MODE_ACTIVE]["tools"]}
+    assert advanced_tools == {
+        "consult_advanced",
+        "deactivate_advanced_mode",
+        "get_environment",
+        "read_finances",
+    }
+    assert "read_gmail" not in advanced_tools
+    assert "activate_camera" not in advanced_tools
+    assert "finance_prepare_write" not in advanced_tools
+
+
+def test_pilot_prompt_includes_advanced_rules():
+    assert "activa modo avanzado" in RETELL_NATIVE_PILOT_PROMPT
+    assert "consult_advanced" in RETELL_NATIVE_PILOT_PROMPT
+    assert "deactivate_advanced_mode" in RETELL_NATIVE_PILOT_PROMPT
+
 
 def test_pilot_prompt_includes_camera_rules():
     assert "activate_camera" in RETELL_NATIVE_PILOT_PROMPT
     assert "analyze_camera_frame" in RETELL_NATIVE_PILOT_PROMPT
     assert "search_visible_product" in RETELL_NATIVE_PILOT_PROMPT
     assert "PROHIBIDO describir nada visual" in RETELL_NATIVE_PILOT_PROMPT
+
+
+def test_consult_advanced_tool_has_filler():
+    from app.services.retell_native_pilot import build_consult_advanced_tool
+
+    tool = build_consult_advanced_tool(api_public_url="https://api.example.com")
+    assert tool["name"] == "consult_advanced"
+    assert "sistema avanzado" in tool["execution_message_description"].lower()
+    assert tool["timeout_ms"] == 28_000
 
 
 def test_pilot_prompt_includes_standalone_identity():
