@@ -8,6 +8,8 @@ import time
 from collections.abc import Callable
 from typing import Any
 
+import httpx
+
 from app.services.voice_test_mode import GEMINI_STANDALONE_SYSTEM
 
 logger = logging.getLogger(__name__)
@@ -279,6 +281,21 @@ def get_call_pilot_metrics(call_id: str) -> dict[str, Any] | None:
         return dict(data) if data else None
 
 
+_FAILURE_SPOKEN_MARKERS = (
+    "no pude",
+    "no identifiqu",
+    "aún no tiene",
+    "reconect",
+    "no está disponible",
+    "permisos",
+)
+
+
+def _spoken_indicates_failure(spoken: str) -> bool:
+    low = (spoken or "").lower()
+    return any(marker in low for marker in _FAILURE_SPOKEN_MARKERS)
+
+
 async def _execute_native_read_tool(
     *,
     tool_name: str,
@@ -327,7 +344,25 @@ async def _execute_native_read_tool(
     try:
         result = await asyncio.to_thread(handler, user_id, query)
         spoken = str(result.get("spoken") or "Completado, señor.").strip()
-        ok = not spoken.lower().startswith(("no pude", "no identifiqu"))
+        ok = not _spoken_indicates_failure(spoken)
+    except httpx.HTTPStatusError as exc:
+        logger.error(
+            "[NATIVE-PILOT] %s HTTP %s user=%s",
+            tool_name,
+            exc.response.status_code,
+            user_id[:8],
+        )
+        spoken = f"{failure_prefix} en este momento, señor. Revise la conexión de Google."
+        ok = False
+    except ValueError as exc:
+        if str(exc) == "not_connected":
+            spoken = (
+                "Señor, aún no tiene esa integración conectada. "
+                "Use el botón correspondiente en configuración de voz."
+            )
+        else:
+            spoken = f"{failure_prefix} en este momento, señor."
+        ok = False
     except Exception:  # noqa: BLE001
         logger.exception("[NATIVE-PILOT] %s failed user=%s", tool_name, user_id[:8])
         spoken = f"{failure_prefix} en este momento, señor. Intente de nuevo en unos minutos."

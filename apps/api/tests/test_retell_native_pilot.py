@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -126,6 +127,60 @@ def test_calendar_read_sync_rejects_create():
 
     result = handle_calendar_read_sync("user-1", "agéndame cita mañana a las 3")
     assert "solo puedo consultar" in result["spoken"].lower()
+
+
+def test_calendar_api_call_refreshes_on_401():
+    from app.modules.calendar_module import _calendar_api_call, _handle_calendar_query
+
+    calls = {"n": 0}
+
+    def _fn(access: str) -> str:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.HTTPStatusError(
+                "unauthorized",
+                request=httpx.Request("GET", "https://google.example/events"),
+                response=httpx.Response(401),
+            )
+        assert access == "fresh-token"
+        return "ok"
+
+    with patch(
+        "app.modules.calendar_module.get_valid_access_token",
+        return_value="stale-token",
+    ):
+        with patch(
+            "app.modules.calendar_module.force_refresh_access_token",
+            return_value="fresh-token",
+        ):
+            assert _calendar_api_call("user-1", _fn) == "ok"
+            assert calls["n"] == 2
+
+
+def test_resolve_calendar_windows_hoy_y_manana():
+    from app.modules.calendar_module import _resolve_calendar_windows
+
+    windows = _resolve_calendar_windows("¿qué tengo hoy o eventos de mañana?")
+    labels = [label for _, _, label in windows]
+    assert labels == ["hoy", "mañana"]
+
+
+def test_handle_calendar_query_hoy_y_manana_with_events():
+    from app.modules.calendar_module import _handle_calendar_query
+
+    with patch(
+        "app.modules.calendar_module._calendar_api_call",
+        side_effect=lambda _uid, fn: fn("token"),
+    ):
+        with patch(
+            "app.modules.calendar_module.list_events",
+            side_effect=[["Hoy 9:00 AM — Standup"], ["Mañana 2:00 PM — Doctor"]],
+        ):
+            spoken = _handle_calendar_query("user-1", "¿qué tengo hoy o eventos de mañana?")
+    assert "Standup" in spoken
+    assert "Doctor" in spoken
+    assert "hoy" in spoken.lower()
+    assert "mañana" in spoken.lower()
 
 
 def test_gmail_read_sync_rejects_send():

@@ -7,9 +7,11 @@ import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import httpx
+
 from app.modules.base_module import BaseModule
 from app.services.google_calendar_api import create_event, list_events, resolve_window
-from app.services.google_oauth import get_valid_access_token
+from app.services.google_oauth import force_refresh_access_token, get_valid_access_token
 from app.services.orchestrator_types import ModuleResult
 from app.services.retell_llm_types import Utterance
 
@@ -103,6 +105,43 @@ def _not_connected_message() -> str:
     )
 
 
+def _calendar_api_call(user_id: str, fn):
+    """Ejecuta fn(access) con refresh automático ante 401/403 — igual que Gmail."""
+    access = get_valid_access_token("calendar", user_id)
+    try:
+        return fn(access)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code not in (401, 403):
+            raise
+        logger.info("[CALENDAR] token refresh retry user=%s status=%s", user_id[:8], exc.response.status_code)
+        access = force_refresh_access_token("calendar", user_id)
+        return fn(access)
+
+
+def _resolve_calendar_windows(text: str) -> list[tuple[datetime, datetime, str]]:
+    """Ventanas de consulta — soporta hoy + mañana en la misma pregunta."""
+    t = (text or "").lower()
+    has_hoy = bool(re.search(r"\bhoy\b", t))
+    has_manana = bool(re.search(r"ma[nñ]ana", t))
+    has_semana = bool(re.search(r"\bsemana\b", t))
+
+    if has_hoy and has_manana:
+        s1, e1 = resolve_window("today")
+        s2, e2 = resolve_window("tomorrow")
+        return [(s1, e1, "hoy"), (s2, e2, "mañana")]
+    if has_manana:
+        start, end = resolve_window("tomorrow")
+        return [(start, end, "mañana")]
+    if has_semana:
+        start, end = resolve_window("week")
+        return [(start, end, "esta semana")]
+    if has_hoy:
+        start, end = resolve_window("today")
+        return [(start, end, "hoy")]
+    start, end = resolve_window("today")
+    return [(start, end, "hoy")]
+
+
 def handle_calendar_read_sync(user_id: str, text: str) -> dict[str, str]:
     """Solo consulta calendario — sin crear citas ni recordatorios (piloto nativo)."""
     if re.search(r"ag[eé]ndame|agendar|programa|recu[eé]rdame", text or "", re.I):
@@ -155,34 +194,31 @@ def handle_calendar_create_sync(user_id: str, text: str, *, reminder: bool = Fal
 
 
 def _handle_calendar_query(user_id: str, text: str) -> str:
-    access = get_valid_access_token("calendar", user_id)
     t = text.lower()
     if re.search(r"recordatorios?", t):
         from app.services.hud_reminders import format_reminders_spoken
 
         return format_reminders_spoken(user_id)
-    elif re.search(r"ma[nñ]ana", t):
-        start, end = resolve_window("tomorrow")
-        label = "mañana"
-    elif re.search(r"semana|eventos", t):
-        start, end = resolve_window("week")
-        label = "esta semana"
-    elif re.search(r"\bhoy\b", t):
-        start, end = resolve_window("today")
-        label = "hoy"
-    else:
-        start, end = resolve_window("today")
-        label = "hoy"
 
-    events = list_events(access, time_min=start, time_max=end)
-    if not events:
-        return f"Señor, no tiene eventos en su calendario para {label}."
-    joined = "; ".join(events[:6])
-    return f"Señor, para {label}: {joined}."
+    windows = _resolve_calendar_windows(text)
+
+    def _fetch(access: str) -> str:
+        sections: list[str] = []
+        for start, end, label in windows:
+            events = list_events(access, time_min=start, time_max=end)
+            if events:
+                joined = "; ".join(events[:6])
+                sections.append(f"para {label}: {joined}")
+            else:
+                sections.append(f"para {label} no tiene eventos")
+        if not sections:
+            return "Señor, no tiene eventos en su calendario."
+        return f"Señor, {'. '.join(sections)}."
+
+    return _calendar_api_call(user_id, _fetch)
 
 
 def _handle_create_appointment(user_id: str, text: str, *, reminder: bool = False) -> str:
-    access = get_valid_access_token("calendar", user_id)
     tz = ZoneInfo("America/New_York")
     day = _parse_target_day(text, tz)
     hour, minute = _parse_time(text)
@@ -191,10 +227,14 @@ def _handle_create_appointment(user_id: str, text: str, *, reminder: bool = Fals
     title = _extract_title(text, reminder=reminder)
     if reminder and not title.lower().startswith("recordatorio"):
         title = f"Recordatorio: {title}"
-    create_event(access, summary=title, start=start, end=end)
-    when = start.strftime("%A %d/%m a las %I:%M %p").replace(" 0", " ")
-    kind = "recordatorio" if reminder else "cita"
-    return f"Señor, agendé su {kind} «{title}» para {when}."
+
+    def _create(access: str) -> str:
+        create_event(access, summary=title, start=start, end=end)
+        when = start.strftime("%A %d/%m a las %I:%M %p").replace(" 0", " ")
+        kind = "recordatorio" if reminder else "cita"
+        return f"Señor, agendé su {kind} «{title}» para {when}."
+
+    return _calendar_api_call(user_id, _create)
 
 
 class CalendarModule(BaseModule):

@@ -2,8 +2,24 @@
 
 Agente **separado** de producción. Producción (`RETELL_AGENT_ID`, Custom LLM r7) no se modifica.
 
-**Build piloto actual:** `retell-native-pilot-v2-calendar-gmail`  
-**Fase:** clima validado + lectura calendario/Gmail
+**Build piloto actual:** `retell-native-pilot-v2b-calendar-oauth-fix`  
+**Fase:** clima validado + lectura calendario/Gmail (fix OAuth calendario)
+
+---
+
+## Fix v2b — Calendario OAuth refresh (2026-07-13)
+
+**Síntoma:** `list_calendar_events` fallaba con mensaje genérico mientras Gmail funcionaba en la misma sesión.
+
+**Causa raíz:** Gmail usa `_gmail_api_call()` con **refresh automático** ante 401/403; el módulo calendario llamaba `get_valid_access_token()` una sola vez sin reintentar — token expirado → HTTP 401 → excepción genérica.
+
+**Corrección:**
+- `_calendar_api_call()` — mismo patrón que Gmail
+- Consultas combinadas **hoy + mañana** en una sola pregunta
+- Fallback `resolve_call_user()` si metadata falta en payload Retell
+- Logging HTTP en gateway nativo
+
+**No era:** bug de Custom Function ni user_id distinto (Gmail en la misma llamada confirma metadata correcta).
 
 ---
 

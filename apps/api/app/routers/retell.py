@@ -77,7 +77,14 @@ def _extract_user_id(payload: dict[str, Any]) -> str:
     call = payload.get("call") or {}
     metadata = call.get("metadata") or {}
     user_id = str(metadata.get("user_id") or metadata.get("userId") or "").strip()
-    return user_id
+    if user_id:
+        return user_id
+    call_id = str(call.get("call_id") or call.get("callId") or "").strip()
+    if call_id:
+        resolved = resolve_call_user(call_id, payload)
+        if resolved:
+            return resolved
+    return ""
 
 
 async def _verify_retell_request(request: Request) -> dict[str, Any]:
