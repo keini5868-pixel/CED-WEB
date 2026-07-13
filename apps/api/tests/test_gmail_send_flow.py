@@ -125,6 +125,34 @@ def test_confirm_requires_explicit_yes():
     vcs.clear_gmail_pending_send(USER)
 
 
+def test_confirm_sends_with_short_yes():
+    prepare_gmail_send(
+        USER,
+        call_id=CALL,
+        to="jessica.25@gmail.com",
+        subject="Test",
+        body="Hola mundo",
+    )
+    draft_id = vcs.get_gmail_pending_send(USER)["draft_id"]
+    payload = {
+        "call": {
+            "transcript_object": [
+                {"role": "agent", "content": "¿Desea que envíe el correo?"},
+                {"role": "user", "content": "Sí."},
+            ]
+        }
+    }
+    with patch("app.services.gmail_send_flow.get_valid_access_token", return_value="tok"):
+        with patch(
+            "app.services.gmail_send_flow.send_message",
+            return_value={"id": "msg-short"},
+        ):
+            result = confirm_gmail_send(USER, call_id=CALL, payload=payload, draft_id=draft_id)
+    assert result["ok"] is True
+    assert result["status"] == "sent"
+    vcs.clear_gmail_pending_send(USER)
+
+
 def test_confirm_sends_with_explicit_yes():
     prepare_gmail_send(
         USER,

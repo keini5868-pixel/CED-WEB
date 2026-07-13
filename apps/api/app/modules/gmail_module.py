@@ -474,12 +474,13 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
 
 
 def handle_gmail_read_sync(user_id: str, text: str) -> dict[str, str]:
-    """Lectura Gmail — el piloto nativo no envía correos por voz."""
-    if re.search(r"env[ií]a|mandar", text or "", re.I):
+    """Consulta Gmail — si piden enviar, redirige al flujo con confirmación."""
+    if re.search(r"\b(?:env[ií]a(?:me|r)?|mandar|manda(?:me)?)\b", text or "", re.I):
         return {
             "spoken": (
-                "Señor, por voz solo puedo leer sus correos. "
-                "Para enviar un mensaje use el formulario de correo en la pantalla de CED."
+                "Señor, para enviar un correo use confirmación explícita: "
+                "diga por ejemplo «envía un correo a nombre@correo.com asunto Prueba "
+                "diciendo Hola» y luego confirme con «sí»."
             ),
         }
     return handle_gmail_query_sync(user_id, text)

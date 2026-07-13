@@ -36,6 +36,9 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "calendar_confirm_write",
         "calendar_cancel_write",
         "read_gmail",
+        "gmail_prepare_send",
+        "gmail_confirm_send",
+        "gmail_cancel_send",
         "read_finances",
         "finance_prepare_write",
         "finance_confirm_write",
@@ -167,6 +170,9 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "finance_cancel_write" in general_tools
     assert "read_finances" in general_tools
     assert "read_gmail" in general_tools
+    assert "gmail_prepare_send" in general_tools
+    assert "gmail_confirm_send" in general_tools
+    assert "gmail_cancel_send" in general_tools
     assert "get_environment" in general_tools
     assert "activate_camera" in general_tools
     assert "analyze_camera_frame" in general_tools
@@ -181,9 +187,20 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "get_environment" not in confirm_tools
     assert "finance_prepare_write" not in confirm_tools
     assert "activate_camera" not in confirm_tools
-    assert "gmail_prepare_send" not in general_tools
+    assert "gmail_prepare_send" not in confirm_tools
 
-    from app.services.retell_native_pilot import STATE_ADVANCED_MODE_ACTIVE
+    from app.services.retell_native_pilot import (
+        STATE_ADVANCED_MODE_ACTIVE,
+        STATE_GMAIL_CONFIRM_PENDING,
+    )
+
+    gmail_tools = {t["name"] for t in by_name[STATE_GMAIL_CONFIRM_PENDING]["tools"]}
+    assert gmail_tools == {
+        "read_gmail",
+        "gmail_confirm_send",
+        "gmail_cancel_send",
+    }
+    assert "gmail_prepare_send" not in gmail_tools
 
     advanced_tools = {t["name"] for t in by_name[STATE_ADVANCED_MODE_ACTIVE]["tools"]}
     assert advanced_tools == {
@@ -195,6 +212,7 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "read_gmail" not in advanced_tools
     assert "activate_camera" not in advanced_tools
     assert "finance_prepare_write" not in advanced_tools
+    assert "gmail_prepare_send" not in advanced_tools
 
 
 def test_pilot_prompt_includes_advanced_rules():
@@ -370,12 +388,14 @@ def test_handle_calendar_query_hoy_y_manana_with_events():
     assert "mañana" in spoken.lower()
 
 
-def test_gmail_read_sync_blocks_voice_send():
+def test_gmail_read_sync_redirects_voice_send_to_confirm_flow():
     from app.modules.gmail_module import handle_gmail_read_sync
 
     result = handle_gmail_read_sync("user-1", "envía un email a juan@test.com")
-    assert "formulario" in result["spoken"].lower()
-    assert "por voz" in result["spoken"].lower()
+    spoken = result["spoken"].lower()
+    assert "confirmación" in spoken or "confirme" in spoken
+    assert "sí" in spoken
+    assert "formulario" not in spoken
 
 
 def test_gmail_read_sync_returns_full_body_via_helper():

@@ -24,7 +24,10 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - calendar_prepare_write: preparar borrador de cita/recordatorio (NUNCA agenda — solo borrador).
 - calendar_confirm_write: agendar en Google Calendar SOLO tras confirmación explícita en voz.
 - calendar_cancel_write: descartar borrador de cita pendiente.
-- read_gmail: leer bandeja, categorías o correos de un remitente (SOLO lectura — incluye cuerpo completo).
+- read_gmail: leer bandeja, categorías o correos de un remitente (lectura — incluye cuerpo completo).
+- gmail_prepare_send: preparar borrador de correo (NUNCA envía — solo borrador).
+- gmail_confirm_send: enviar correo SOLO tras confirmación explícita en voz.
+- gmail_cancel_send: descartar borrador de correo pendiente.
 - read_finances: resumen financiero, desglose de gastos o pagos pendientes (solo lectura).
 - finance_prepare_write: preparar registro de gasto, ingreso o pago pendiente (NUNCA guarda — solo borrador).
 - finance_confirm_write: ejecutar registro real SOLO tras confirmación explícita del usuario en voz.
@@ -48,12 +51,16 @@ Reglas generales:
 - EXCEPCIÓN Modo avanzado: tras activate/consult/deactivate avanzado, di el resultado de la herramienta tal cual.
 - Calendario escritura: prepare → confirmación → confirm_write. NUNCA inventes que ya se agendó.
 - PROHIBIDO llamar calendar_confirm_write en el mismo turno que calendar_prepare_write.
-- NO envíes correos por voz — Gmail es solo lectura. Para enviar, el usuario usa el formulario en pantalla.
+- Gmail envío: prepare → confirmación → confirm_send. NUNCA inventes que ya se envió.
+- PROHIBIDO llamar gmail_confirm_send en el mismo turno que gmail_prepare_send.
 
-Gmail — solo lectura:
-- read_gmail devuelve el texto exacto que debe decirse en voz; repítalo sin inventar ni resumir.
-- PROHIBIDO prometer «voy a extraer el cuerpo» — si la tool dice que no pudo, comuníquelo una vez y pare.
-- Si el usuario pide enviar correo, indíquele que use el formulario de correo en la interfaz de CED.
+Gmail — lectura y envío con confirmación:
+- read_gmail: repite el resultado tal cual; sin inventar.
+- PROHIBIDO prometer «voy a extraer el cuerpo».
+1. «envía un correo a … asunto … diciendo …» → gmail_prepare_send.
+2. Tras prepare: lee el resumen y pregunta confirmación; transition_to_gmail_confirm_pending.
+3. «sí» / «envíalo» → gmail_confirm_send (también en general si no transicionó).
+4. «no / cancela» → gmail_cancel_send.
 
 Cámara / visión:
 1. «activa/enciende/abre la cámara» → activate_camera UNA sola vez. NO vuelvas a confirmar la activación.
@@ -93,8 +100,10 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario (lectura y agendar), Gmail (solo lectura), finanzas, cámara, modo avanzado.
-- Gmail: solo lectura. Repite el resultado de read_gmail tal cual.
+Estado general — clima, calendario (lectura y agendar), Gmail (lectura y envío), finanzas, cámara, modo avanzado.
+- Gmail lectura: read_gmail. Envío: gmail_prepare_send → confirmar → gmail_confirm_send (sí / envíalo).
+- Tras gmail_prepare_send con awaiting_confirmation: lee el resumen, pregunta confirmación y transition_to_gmail_confirm_pending.
+- Si ya hay borrador de correo y el usuario dice «sí», llama gmail_confirm_send de inmediato (también disponible aquí).
 - Para AGENDAR: calendar_prepare_write → confirmar → calendar_confirm_write (sí / dale).
 - Cámara: activate_camera una sola vez; describe solo con analyze_camera_frame / search_visible_product.
 - Si el usuario dice exactamente «activa modo avanzado» → activate_advanced_mode y transition_to_advanced_mode_active.
@@ -135,6 +144,14 @@ Estado de confirmación de cita — hay un borrador de calendario pendiente.
 
 STATE_GENERAL_ASSISTANT = "general_assistant"
 STATE_CALENDAR_CONFIRM_PENDING = "calendar_confirm_pending"
+GMAIL_CONFIRM_STATE_PROMPT = """
+Estado de confirmación de correo — hay un borrador pendiente de envío.
+- Si dice sí, envíalo, dale o confirma → gmail_confirm_send (incluso solo «sí»).
+- Si dice no/cancela → gmail_cancel_send y transition_to_general_assistant.
+- Tras envío exitoso, di exactamente el mensaje de la herramienta.
+""".strip()
+
+STATE_GMAIL_CONFIRM_PENDING = "gmail_confirm_pending"
 STATE_FINANCE_CONFIRM_PENDING = "finance_confirm_pending"
 STATE_ADVANCED_MODE_ACTIVE = "advanced_mode_active"
 
@@ -166,7 +183,19 @@ CALENDAR_CANCEL_DESCRIPTION = (
 
 READ_GMAIL_DESCRIPTION = (
     "Lee correos de Gmail: bandeja, categoría o remitente, incluyendo el cuerpo completo del mensaje. "
-    "No envía correos — para enviar use el formulario en la interfaz de CED."
+    "Para enviar use gmail_prepare_send."
+)
+
+GMAIL_PREPARE_DESCRIPTION = (
+    "Prepara un borrador de correo (para, asunto, cuerpo). NO envía — pide confirmación."
+)
+
+GMAIL_CONFIRM_DESCRIPTION = (
+    "Envía el borrador de correo pendiente tras confirmación explícita: sí, envíalo, dale. Un solo «sí» basta."
+)
+
+GMAIL_CANCEL_DESCRIPTION = (
+    "Cancela el borrador de correo pendiente sin enviarlo."
 )
 
 READ_FINANCES_DESCRIPTION = (
@@ -307,6 +336,42 @@ READ_GMAIL_PARAMETERS: dict[str, Any] = {
         },
     },
     "required": ["query"],
+}
+
+GMAIL_PREPARE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "to": {"type": "string", "description": "Correo destinatario."},
+        "subject": {"type": "string", "description": "Asunto del correo."},
+        "body": {"type": "string", "description": "Cuerpo del mensaje."},
+        "query": {
+            "type": "string",
+            "description": (
+                "Frase completa del usuario si no se separaron to/subject/body "
+                "(ej. 'envía un correo a ana@x.com asunto Reunión diciendo confirmo')."
+            ),
+        },
+    },
+}
+
+GMAIL_CONFIRM_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {
+            "type": "string",
+            "description": "ID del borrador de gmail_prepare_send (opcional).",
+        },
+    },
+}
+
+GMAIL_CANCEL_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {
+            "type": "string",
+            "description": "ID del borrador a cancelar (opcional).",
+        },
+    },
 }
 
 READ_FINANCES_PARAMETERS: dict[str, Any] = {
@@ -514,6 +579,39 @@ def build_read_gmail_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_gmail_prepare_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_prepare_send",
+        description=GMAIL_PREPARE_DESCRIPTION,
+        parameters=GMAIL_PREPARE_PARAMETERS,
+        filler="Un momento, preparando el correo, señor.",
+        timeout_ms=12_000,
+    )
+
+
+def build_gmail_confirm_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_confirm_send",
+        description=GMAIL_CONFIRM_DESCRIPTION,
+        parameters=GMAIL_CONFIRM_PARAMETERS,
+        filler="Enviando el correo, señor.",
+        timeout_ms=20_000,
+    )
+
+
+def build_gmail_cancel_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_cancel_send",
+        description=GMAIL_CANCEL_DESCRIPTION,
+        parameters=GMAIL_CANCEL_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
 def build_read_finances_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -648,6 +746,9 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_calendar_confirm_write_tool(api_public_url=api_public_url),
                 build_calendar_cancel_write_tool(api_public_url=api_public_url),
                 build_read_gmail_tool(api_public_url=api_public_url),
+                build_gmail_prepare_send_tool(api_public_url=api_public_url),
+                build_gmail_confirm_send_tool(api_public_url=api_public_url),
+                build_gmail_cancel_send_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
                 build_finance_prepare_write_tool(api_public_url=api_public_url),
                 build_finance_confirm_write_tool(api_public_url=api_public_url),
@@ -668,6 +769,12 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "description": (
                         "Transición cuando finance_prepare_write devuelve awaiting_confirmation: "
                         "hay borrador listo y debe pedirse confirmación de registro al usuario."
+                    ),
+                },
+                {
+                    "destination_state_name": STATE_GMAIL_CONFIRM_PENDING,
+                    "description": (
+                        "Transición cuando gmail_prepare_send devuelve awaiting_confirmation."
                     ),
                 },
                 {
@@ -700,6 +807,23 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "description": (
                         "Volver al flujo general tras registro exitoso, cancelación, borrador expirado "
                         "o cuando ya no hay movimiento pendiente."
+                    ),
+                },
+            ],
+        },
+        {
+            "name": STATE_GMAIL_CONFIRM_PENDING,
+            "state_prompt": GMAIL_CONFIRM_STATE_PROMPT,
+            "tools": [
+                build_read_gmail_tool(api_public_url=api_public_url),
+                build_gmail_confirm_send_tool(api_public_url=api_public_url),
+                build_gmail_cancel_send_tool(api_public_url=api_public_url),
+            ],
+            "edges": [
+                {
+                    "destination_state_name": STATE_GENERAL_ASSISTANT,
+                    "description": (
+                        "Volver al flujo general tras enviar, cancelar o borrador expirado."
                     ),
                 },
             ],
@@ -861,6 +985,9 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "calendar_confirm_write": _stats("calendar_confirm_write"),
         "calendar_cancel_write": _stats("calendar_cancel_write"),
         "read_gmail": _stats("read_gmail"),
+        "gmail_prepare_send": _stats("gmail_prepare_send"),
+        "gmail_confirm_send": _stats("gmail_confirm_send"),
+        "gmail_cancel_send": _stats("gmail_cancel_send"),
         "read_finances": _stats("read_finances"),
         "finance_prepare_write": _stats("finance_prepare_write"),
         "finance_confirm_write": _stats("finance_confirm_write"),
@@ -1605,6 +1732,87 @@ async def execute_calendar_cancel_write_tool(
         payload=payload,
         args=args,
         handler=_run_calendar_cancel,
+    )
+
+
+
+def _run_gmail_prepare(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.gmail_send_flow import prepare_gmail_send
+
+    query = resolve_tool_query(payload, args)
+    return prepare_gmail_send(
+        user_id,
+        call_id=call_id,
+        to=str(args.get("to") or ""),
+        subject=str(args.get("subject") or ""),
+        body=str(args.get("body") or ""),
+        query=query,
+    )
+
+
+def _run_gmail_confirm(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.gmail_send_flow import confirm_gmail_send
+
+    return confirm_gmail_send(
+        user_id,
+        call_id=call_id,
+        payload=payload,
+        draft_id=str(args.get("draft_id") or ""),
+    )
+
+
+def _run_gmail_cancel(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.gmail_send_flow import cancel_gmail_send
+
+    return cancel_gmail_send(
+        user_id,
+        draft_id=str(args.get("draft_id") or ""),
+        reason="user_cancel",
+    )
+
+
+async def execute_gmail_prepare_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="gmail_prepare_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_prepare,
+    )
+
+
+async def execute_gmail_confirm_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="gmail_confirm_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_confirm,
+    )
+
+
+async def execute_gmail_cancel_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="gmail_cancel_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_cancel,
     )
 
 

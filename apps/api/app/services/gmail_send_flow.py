@@ -313,16 +313,18 @@ def confirm_gmail_send(
             "status": "confirm_required",
             "spoken": (
                 "Señor, no detecté una confirmación clara. "
-                "¿Desea que envíe el correo? Diga «sí, envíalo» o «cancela»."
+                "¿Desea que envíe el correo? Diga «sí» o «cancela»."
             ),
         }
-    if not _agent_recently_asked_confirm(transcript):
+    # «sí» corto basta si hay borrador (mismo patrón que finanzas).
+    short_yes = bool(re.fullmatch(r"s[ií][\s!.]*", (user_line or "").strip(), re.I))
+    if not short_yes and not _agent_recently_asked_confirm(transcript):
         return {
             "ok": False,
             "status": "confirm_context_missing",
             "spoken": (
                 "Señor, confirme explícitamente el envío: "
-                "«sí, envíalo» o «no, cancela»."
+                "«sí» o «no, cancela»."
             ),
         }
 
