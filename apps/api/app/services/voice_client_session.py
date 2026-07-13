@@ -36,6 +36,7 @@ def _fresh_session() -> dict[str, Any]:
         "gmail_inbox_cache": [],
         "gmail_awaiting_pick": False,
         "gmail_pending_send": None,
+        "finance_pending_write": None,
     }
 
 
@@ -642,5 +643,81 @@ def revert_gmail_pending_to_pending(user_id: str) -> None:
         if row.get("status") == "sending":
             row["status"] = "pending"
             session["gmail_pending_send"] = row
+            session["updated_at"] = _now()
+
+
+FINANCE_PENDING_TTL_SEC = 600
+
+
+def set_finance_pending_write(user_id: str, draft: dict[str, Any]) -> None:
+    session = _get(user_id)
+    now = _now()
+    row = deepcopy(draft)
+    row["prepared_at"] = now
+    row["expires_at"] = now + FINANCE_PENDING_TTL_SEC
+    with _lock:
+        session["finance_pending_write"] = row
+        session["updated_at"] = now
+
+
+def get_finance_pending_write(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("finance_pending_write")
+    if not isinstance(row, dict):
+        return None
+    return deepcopy(row)
+
+
+def is_finance_pending_write_expired(user_id: str) -> bool:
+    row = _get(user_id).get("finance_pending_write")
+    if not isinstance(row, dict):
+        return False
+    expires = float(row.get("expires_at") or 0)
+    return expires > 0 and _now() > expires
+
+
+def clear_finance_pending_write(user_id: str, *, reason: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        session["finance_pending_write"] = None
+        session["updated_at"] = _now()
+
+
+def try_mark_finance_pending_writing(user_id: str, draft_id: str) -> bool:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("finance_pending_write")
+        if not isinstance(row, dict):
+            return False
+        if str(row.get("draft_id") or "") != draft_id:
+            return False
+        if str(row.get("status") or "") != "pending":
+            return False
+        row["status"] = "writing"
+        session["finance_pending_write"] = row
+        session["updated_at"] = _now()
+        return True
+
+
+def mark_finance_pending_written(user_id: str, *, saved_ids: list[str] | None = None) -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("finance_pending_write")
+        if not isinstance(row, dict):
+            return
+        row["status"] = "written"
+        row["saved_ids"] = saved_ids or []
+        session["finance_pending_write"] = row
+        session["updated_at"] = _now()
+
+
+def revert_finance_pending_to_pending(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("finance_pending_write")
+        if not isinstance(row, dict):
+            return
+        if row.get("status") == "writing":
+            row["status"] = "pending"
+            session["finance_pending_write"] = row
             session["updated_at"] = _now()
 

@@ -29,17 +29,17 @@ from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.retell_native_pilot import (
+    execute_finance_cancel_write_tool,
+    execute_finance_confirm_write_tool,
+    execute_finance_prepare_write_tool,
     execute_get_environment_tool,
-    execute_gmail_cancel_send_tool,
-    execute_gmail_confirm_send_tool,
-    execute_gmail_prepare_send_tool,
     execute_list_calendar_events_tool,
+    execute_read_finances_tool,
     execute_read_gmail_tool,
     get_call_pilot_metrics,
     get_pilot_metrics_snapshot,
 )
-from app.services.retell_call_registry import resolve_call_user
-from app.services.gmail_send_flow import clear_gmail_pending_for_call
+from app.services.finance_write_flow import clear_finance_pending_for_call
 from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state_async
@@ -293,33 +293,43 @@ async def retell_read_gmail_tool(request: Request) -> JSONResponse:
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
-@router.post("/tools/gmail_prepare_send")
-async def retell_gmail_prepare_send_tool(request: Request) -> JSONResponse:
-    """Prepara borrador Gmail — no envía (piloto nativo)."""
+@router.post("/tools/read_finances")
+async def retell_read_finances_tool(request: Request) -> JSONResponse:
+    """Custom function read_finances — piloto nativo."""
     payload = await _verify_retell_request(request)
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
-    result = await execute_gmail_prepare_send_tool(user_id=user_id, payload=payload, args=args)
+    result = await execute_read_finances_tool(user_id=user_id, payload=payload, args=args)
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
-@router.post("/tools/gmail_confirm_send")
-async def retell_gmail_confirm_send_tool(request: Request) -> JSONResponse:
-    """Envía correo Gmail tras confirmación verificada en transcript."""
+@router.post("/tools/finance_prepare_write")
+async def retell_finance_prepare_write_tool(request: Request) -> JSONResponse:
+    """Prepara borrador financiero — no guarda (piloto nativo)."""
     payload = await _verify_retell_request(request)
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
-    result = await execute_gmail_confirm_send_tool(user_id=user_id, payload=payload, args=args)
+    result = await execute_finance_prepare_write_tool(user_id=user_id, payload=payload, args=args)
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
-@router.post("/tools/gmail_cancel_send")
-async def retell_gmail_cancel_send_tool(request: Request) -> JSONResponse:
-    """Cancela borrador Gmail pendiente."""
+@router.post("/tools/finance_confirm_write")
+async def retell_finance_confirm_write_tool(request: Request) -> JSONResponse:
+    """Registra movimiento financiero tras confirmación verificada en transcript."""
     payload = await _verify_retell_request(request)
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
-    result = await execute_gmail_cancel_send_tool(user_id=user_id, payload=payload, args=args)
+    result = await execute_finance_confirm_write_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/finance_cancel_write")
+async def retell_finance_cancel_write_tool(request: Request) -> JSONResponse:
+    """Cancela borrador financiero pendiente."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_finance_cancel_write_tool(user_id=user_id, payload=payload, args=args)
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
@@ -436,7 +446,7 @@ async def retell_webhook(request: Request) -> dict[str, Any]:
     if event == "call_ended" and call_id:
         uid = resolve_call_user(str(call_id), payload)
         if uid:
-            clear_gmail_pending_for_call(uid, str(call_id))
+            clear_finance_pending_for_call(uid, str(call_id))
         try:
             client = get_retell_client()
             if client:

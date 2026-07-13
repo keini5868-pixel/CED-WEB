@@ -28,6 +28,7 @@ from app.services.retell_llm_types import Utterance
 logger = logging.getLogger(__name__)
 
 GMAIL_VOICE_TIMEOUT_SEC = 22.0
+GMAIL_VOICE_BODY_LIMIT = 1400
 
 GMAIL_PATTERNS: tuple[str, ...] = (
     r"\b(?:emails?|correos?|gmail)\b",
@@ -149,11 +150,11 @@ def _message_content_for_voice(access: str, msg: dict[str, str]) -> str:
     try:
         body = get_message_body(access, msg["id"]).strip()
         if body and body != "No pude leer el contenido del correo.":
-            return body[:800]
+            return body[:GMAIL_VOICE_BODY_LIMIT]
     except Exception:  # noqa: BLE001
         logger.warning("[GMAIL] body fetch failed msg=%s", str(msg.get("id") or "")[:12])
     if snippet:
-        return snippet[:800]
+        return snippet[:GMAIL_VOICE_BODY_LIMIT]
     return "No pude leer el contenido del correo."
 
 
@@ -231,11 +232,11 @@ def _read_sender_email(access: str, text: str) -> str:
     if not messages:
         return "Señor, no encontré correos con ese criterio."
     msg = messages[0]
-    body = get_message_body(access, msg["id"])
+    content = _message_content_for_voice(access, msg)
     from_name = msg.get("from_name") or msg.get("from", "?")
     return (
         f"Señor, de {from_name}: asunto «{msg['subject']}». "
-        f"{body[:800]}"
+        f"{content}"
     )
 
 
@@ -334,12 +335,12 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
 
 
 def handle_gmail_read_sync(user_id: str, text: str) -> dict[str, str]:
-    """Lectura Gmail — envío va por gmail_prepare_send en piloto nativo."""
+    """Lectura Gmail — el piloto nativo no envía correos por voz."""
     if re.search(r"env[ií]a|mandar", text or "", re.I):
         return {
             "spoken": (
-                "Señor, para enviar un correo indíqueme destinatario, asunto y mensaje. "
-                "Le pediré confirmación antes de enviarlo."
+                "Señor, por voz solo puedo leer sus correos. "
+                "Para enviar un mensaje use el formulario de correo en la pantalla de CED."
             ),
         }
     return handle_gmail_query_sync(user_id, text)

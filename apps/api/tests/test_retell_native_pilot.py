@@ -26,16 +26,17 @@ def test_build_get_environment_tool_has_static_filler():
     assert "consultando el clima" in tool["execution_message_description"].lower()
 
 
-def test_build_native_pilot_tools_includes_read_and_gmail_send():
+def test_build_native_pilot_tools_includes_read_and_finance_write():
     tools = build_native_pilot_tools(api_public_url="https://api.example.com")
     names = {t["name"] for t in tools}
     assert names == {
         "get_environment",
         "list_calendar_events",
         "read_gmail",
-        "gmail_prepare_send",
-        "gmail_confirm_send",
-        "gmail_cancel_send",
+        "read_finances",
+        "finance_prepare_write",
+        "finance_confirm_write",
+        "finance_cancel_write",
     }
     for tool in tools:
         assert tool["execution_message_type"] == "static_text"
@@ -44,7 +45,7 @@ def test_build_native_pilot_tools_includes_read_and_gmail_send():
 
 def test_build_native_pilot_states_restrict_confirm_tools():
     from app.services.retell_native_pilot import (
-        STATE_GMAIL_CONFIRM_PENDING,
+        STATE_FINANCE_CONFIRM_PENDING,
         STATE_GENERAL_ASSISTANT,
         build_native_pilot_states,
     )
@@ -53,14 +54,17 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert starting == STATE_GENERAL_ASSISTANT
     by_name = {s["name"]: s for s in states}
     general_tools = {t["name"] for t in by_name[STATE_GENERAL_ASSISTANT]["tools"]}
-    confirm_tools = {t["name"] for t in by_name[STATE_GMAIL_CONFIRM_PENDING]["tools"]}
-    assert "gmail_prepare_send" in general_tools
+    confirm_tools = {t["name"] for t in by_name[STATE_FINANCE_CONFIRM_PENDING]["tools"]}
+    assert "finance_prepare_write" in general_tools
+    assert "read_finances" in general_tools
+    assert "read_gmail" in general_tools
     assert "get_environment" in general_tools
-    assert "gmail_confirm_send" in confirm_tools
-    assert "gmail_cancel_send" in confirm_tools
-    assert "read_gmail" in confirm_tools
+    assert "finance_confirm_write" in confirm_tools
+    assert "finance_cancel_write" in confirm_tools
+    assert "read_finances" in confirm_tools
     assert "get_environment" not in confirm_tools
-    assert "gmail_prepare_send" not in confirm_tools
+    assert "finance_prepare_write" not in confirm_tools
+    assert "gmail_prepare_send" not in general_tools
 
 
 def test_pilot_prompt_includes_standalone_identity():
@@ -211,9 +215,40 @@ def test_handle_calendar_query_hoy_y_manana_with_events():
     assert "mañana" in spoken.lower()
 
 
-def test_gmail_read_sync_redirects_send_to_prepare_flow():
+def test_gmail_read_sync_blocks_voice_send():
     from app.modules.gmail_module import handle_gmail_read_sync
 
     result = handle_gmail_read_sync("user-1", "envía un email a juan@test.com")
-    assert "asunto" in result["spoken"].lower()
+    assert "formulario" in result["spoken"].lower()
+    assert "por voz" in result["spoken"].lower()
+
+
+def test_gmail_read_sync_returns_full_body_via_helper():
+    from app.modules.gmail_module import GMAIL_VOICE_BODY_LIMIT, _message_content_for_voice
+
+    long_body = "A" * 2000
+    with patch("app.modules.gmail_module.get_message_body", return_value=long_body):
+        content = _message_content_for_voice("token", {"id": "msg-1", "snippet": "short"})
+    assert len(content) == GMAIL_VOICE_BODY_LIMIT
+    assert content == "A" * GMAIL_VOICE_BODY_LIMIT
+
+
+def test_gmail_read_sender_uses_full_body_helper():
+    from app.modules.gmail_module import _read_sender_email
+
+    body = "Cuerpo completo del mensaje de prueba con detalle."
+    with patch("app.modules.gmail_module.get_message_body", return_value=body):
+        with patch(
+            "app.modules.gmail_module.list_messages",
+            return_value=[{"id": "m1", "from_name": "Jun Medina", "subject": "Hola", "from": "j@x.com"}],
+        ):
+            spoken = _read_sender_email("token", "léeme el correo de Jun Medina")
+    assert body in spoken
+    assert "Jun Medina" in spoken
+
+
+def test_finance_read_sync_redirects_write_to_prepare_flow():
+    from app.modules.finance_module import handle_finance_read_sync
+
+    result = handle_finance_read_sync("user-1", "gasté 50 en materiales")
     assert "confirmación" in result["spoken"].lower()

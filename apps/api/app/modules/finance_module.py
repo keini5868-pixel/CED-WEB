@@ -404,6 +404,32 @@ def _confirm_pending_spoken(saved: list[dict[str, object]]) -> str:
     )
 
 
+def handle_finance_read_sync(user_id: str, text: str) -> dict[str, str]:
+    """Solo lectura para piloto nativo — escritura va por finance_prepare_write."""
+    try:
+        if is_finance_register_intent(text):
+            return {
+                "spoken": (
+                    "Señor, para registrar un gasto, ingreso o pago pendiente, "
+                    "dígame el monto y el concepto; le pediré confirmación antes de guardarlo."
+                ),
+            }
+
+        if is_finance_pending_query(text):
+            rows = list_pending_payments(user_id)
+            return {"spoken": format_pending_spoken(rows)}
+
+        if is_finance_breakdown_intent(text):
+            return {"spoken": format_finance_breakdown_spoken(user_id, text)}
+
+        period = _detect_period(text)
+        summary = summarize_finances(user_id, period=canonical_period(period))
+        return {"spoken": format_summary_spoken(summary)}
+    except Exception:  # noqa: BLE001
+        logger.exception("[FINANCE] read sync failed user=%s", user_id[:8])
+        return {"spoken": "Señor, no pude procesar su consulta de finanzas en este momento."}
+
+
 def handle_finance_query_sync(user_id: str, text: str) -> dict[str, str]:
     """Registra un movimiento o devuelve el resumen — usado por chat y voz."""
     try:
