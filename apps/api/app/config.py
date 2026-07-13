@@ -194,6 +194,25 @@ class Settings(BaseSettings):
                     break
         return self
 
+    @staticmethod
+    def _normalize_google_oauth_redirect(uri: str, api_base: str, callback_path: str) -> str:
+        """Callbacks OAuth viven en la API — corrige URIs apuntando al frontend (404)."""
+        from urllib.parse import urlparse
+
+        custom = (uri or "").strip()
+        if not api_base:
+            return custom
+        api_host = urlparse(
+            api_base if "://" in api_base else f"https://{api_base}"
+        ).netloc.lower()
+        if not custom:
+            return f"{api_base.rstrip('/')}{callback_path}"
+        parsed = urlparse(custom)
+        redirect_host = parsed.netloc.lower()
+        if redirect_host and api_host and redirect_host != api_host and "/auth/google/" in custom:
+            return f"{api_base.rstrip('/')}{callback_path}"
+        return custom
+
     @model_validator(mode="after")
     def resolve_public_urls(self) -> Settings:
         """Railway: API_PUBLIC_URL y redirect URIs OAuth desde RAILWAY_PUBLIC_DOMAIN."""
@@ -205,12 +224,16 @@ class Settings(BaseSettings):
                 self.api_public_url = railway_url
 
         api_base = self.api_public_url.strip().rstrip("/")
-        if api_base and not self.google_calendar_redirect_uri.strip():
-            self.google_calendar_redirect_uri = (
-                f"{api_base}/auth/google/calendar/callback"
-            )
-        if api_base and not self.google_gmail_redirect_uri.strip():
-            self.google_gmail_redirect_uri = f"{api_base}/auth/google/gmail/callback"
+        self.google_calendar_redirect_uri = self._normalize_google_oauth_redirect(
+            self.google_calendar_redirect_uri,
+            api_base,
+            "/auth/google/calendar/callback",
+        )
+        self.google_gmail_redirect_uri = self._normalize_google_oauth_redirect(
+            self.google_gmail_redirect_uri,
+            api_base,
+            "/auth/google/gmail/callback",
+        )
 
         web_override = os.environ.get("CED_WEB_PUBLIC_URL", "").strip().rstrip("/")
         if web_override:

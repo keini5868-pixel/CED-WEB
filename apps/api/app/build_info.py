@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "retell-native-pilot-v2b-calendar-oauth-fix"
+BUILD_VERSION = "fix-google-oauth-redirect-api-domain"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
