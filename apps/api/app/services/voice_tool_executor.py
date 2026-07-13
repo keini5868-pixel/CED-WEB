@@ -320,8 +320,26 @@ async def _run_camera_capture(
             len(summary),
         )
         formatted = format_vision_response(summary) or summary.strip()
-        vcs.set_last_vision_summary(user_id, formatted)
-        return _spoken_ok(formatted)
+        # No cachear fallos — envenenan search_visible_product / follow-ups.
+        low = formatted.lower()
+        is_failure = any(
+            marker in low
+            for marker in (
+                "no pude",
+                "no pudo",
+                "falló el análisis",
+                "fallo el analisis",
+                "imagen inválida",
+                "imagen invalida",
+                "captura de cámara quedó",
+            )
+        )
+        if not is_failure:
+            vcs.set_last_vision_summary(user_id, formatted)
+        return _spoken_ok(formatted) if not is_failure else _spoken_err(
+            formatted,
+            error="vision_analyze_failed",
+        )
     logger.warning(
         "[VISION:GEMINI] capture_timeout user=%s request_id=%s",
         user_id[:8],

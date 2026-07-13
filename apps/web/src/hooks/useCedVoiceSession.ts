@@ -128,8 +128,11 @@ const VOICE_CLIENT_POLL_MS = 300;
 const VIDEO_SEND_INTERVAL_MS = 2000;
 const VIDEO_CAPTURE_WIDTH = 640;
 const VIDEO_CAPTURE_HEIGHT = 480;
-const VISION_CAPTURE_WIDTH = 480;
-const VISION_CAPTURE_HEIGHT = 360;
+/** Análisis de visión: resolución suficiente para objetos pequeños (antes 480×360 @ 0.62). */
+const VISION_CAPTURE_WIDTH = 960;
+const VISION_CAPTURE_HEIGHT = 720;
+const VISION_JPEG_QUALITY = 0.78;
+const VIDEO_JPEG_QUALITY = 0.72;
 const USAGE_TICK_SECONDS = 15;
 const MAX_WS_RECONNECT = 3;
 /** Si el turno no cierra, liberar mic/UI (WebRTC). */
@@ -376,7 +379,10 @@ export function useCedVoiceSession(
     canvas.height = compact ? VISION_CAPTURE_HEIGHT : VIDEO_CAPTURE_HEIGHT;
     const ctx = canvas.getContext("2d");
     ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const dataUrl = canvas.toDataURL("image/jpeg", compact ? 0.62 : 0.72);
+    const dataUrl = canvas.toDataURL(
+      "image/jpeg",
+      compact ? VISION_JPEG_QUALITY : VIDEO_JPEG_QUALITY,
+    );
     if (!compact) cameraPreviewRef.current = dataUrl;
     return dataUrl;
   }, []);
@@ -498,9 +504,10 @@ export function useCedVoiceSession(
         const streamLive = cameraStreamLive();
         await postVoiceCameraStatus(streamLive, streamLive);
         await ensureCameraCaptureVideo(hadStream ? 2000 : 5000);
+        // compact=true usa resolución de visión (960×720 @ 0.78) para analyze y visual_search
         const frame = await waitForCameraFrame(
           hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
-          mode === "analyze",
+          true,
         );
         if (!frame) {
           console.warn("[VISION:GEMINI] empty_frame request_id=%s", requestId);
@@ -509,7 +516,12 @@ export function useCedVoiceSession(
             "Señor, no pude procesar la imagen de la cámara. Intente mostrar de nuevo.",
           );
         } else {
-          console.log("[VISION:GEMINI] analyze_start request_id=%s mode=%s", requestId, mode);
+          console.log(
+            "[VISION:GEMINI] analyze_start request_id=%s mode=%s frame_chars=%s",
+            requestId,
+            mode,
+            frame.length,
+          );
           const result =
             mode === "visual_search"
               ? await fetchVisionWebSearch(frame, question)

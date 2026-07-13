@@ -1017,8 +1017,18 @@ async def _execute_native_camera_tool(
             )
         elif tool_name == "search_visible_product":
             last_vision = vcs.get_last_vision_summary(user_id)
-            followup = bool(
+            # Solo reutilizar cache si el subject es suficientemente específico.
+            subject_ok = bool(
                 last_vision
+                and len(last_vision) >= 28
+                and not re.search(
+                    r"\b(no pude|no pudo|fall[oó]|procesar la imagen)\b",
+                    last_vision,
+                    re.I,
+                )
+            )
+            followup = bool(
+                subject_ok
                 and question
                 and re.search(_PRODUCT_FOLLOWUP_RE, question, re.I)
             )
