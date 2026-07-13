@@ -35,6 +35,7 @@ def _fresh_session() -> dict[str, Any]:
         "updated_at": _now(),
         "gmail_inbox_cache": [],
         "gmail_awaiting_pick": False,
+        "gmail_pending_send": None,
     }
 
 
@@ -566,3 +567,80 @@ def set_gmail_awaiting_pick(user_id: str, awaiting: bool) -> None:
 
 def is_gmail_awaiting_pick(user_id: str) -> bool:
     return bool(_get(user_id).get("gmail_awaiting_pick"))
+
+
+GMAIL_PENDING_TTL_SEC = 600
+
+
+def set_gmail_pending_send(user_id: str, draft: dict[str, Any]) -> None:
+    session = _get(user_id)
+    now = _now()
+    row = deepcopy(draft)
+    row["prepared_at"] = now
+    row["expires_at"] = now + GMAIL_PENDING_TTL_SEC
+    with _lock:
+        session["gmail_pending_send"] = row
+        session["updated_at"] = now
+
+
+def get_gmail_pending_send(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("gmail_pending_send")
+    if not isinstance(row, dict):
+        return None
+    return deepcopy(row)
+
+
+def is_gmail_pending_send_expired(user_id: str) -> bool:
+    row = _get(user_id).get("gmail_pending_send")
+    if not isinstance(row, dict):
+        return False
+    expires = float(row.get("expires_at") or 0)
+    return expires > 0 and _now() > expires
+
+
+def clear_gmail_pending_send(user_id: str, *, reason: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        session["gmail_pending_send"] = None
+        session["updated_at"] = _now()
+
+
+def try_mark_gmail_pending_sending(user_id: str, draft_id: str) -> bool:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("gmail_pending_send")
+        if not isinstance(row, dict):
+            return False
+        if str(row.get("draft_id") or "") != draft_id:
+            return False
+        if str(row.get("status") or "") != "pending":
+            return False
+        row["status"] = "sending"
+        session["gmail_pending_send"] = row
+        session["updated_at"] = _now()
+        return True
+
+
+def mark_gmail_pending_sent(user_id: str, *, message_id: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("gmail_pending_send")
+        if not isinstance(row, dict):
+            return
+        row["status"] = "sent"
+        row["sent_message_id"] = message_id or None
+        session["gmail_pending_send"] = row
+        session["updated_at"] = _now()
+
+
+def revert_gmail_pending_to_pending(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("gmail_pending_send")
+        if not isinstance(row, dict):
+            return
+        if row.get("status") == "sending":
+            row["status"] = "pending"
+            session["gmail_pending_send"] = row
+            session["updated_at"] = _now()
+

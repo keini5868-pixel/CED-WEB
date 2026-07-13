@@ -26,13 +26,41 @@ def test_build_get_environment_tool_has_static_filler():
     assert "consultando el clima" in tool["execution_message_description"].lower()
 
 
-def test_build_native_pilot_tools_includes_read_only():
+def test_build_native_pilot_tools_includes_read_and_gmail_send():
     tools = build_native_pilot_tools(api_public_url="https://api.example.com")
     names = {t["name"] for t in tools}
-    assert names == {"get_environment", "list_calendar_events", "read_gmail"}
+    assert names == {
+        "get_environment",
+        "list_calendar_events",
+        "read_gmail",
+        "gmail_prepare_send",
+        "gmail_confirm_send",
+        "gmail_cancel_send",
+    }
     for tool in tools:
         assert tool["execution_message_type"] == "static_text"
         assert tool["speak_during_execution"] is True
+
+
+def test_build_native_pilot_states_restrict_confirm_tools():
+    from app.services.retell_native_pilot import (
+        STATE_GMAIL_CONFIRM_PENDING,
+        STATE_GENERAL_ASSISTANT,
+        build_native_pilot_states,
+    )
+
+    states, starting = build_native_pilot_states(api_public_url="https://api.example.com")
+    assert starting == STATE_GENERAL_ASSISTANT
+    by_name = {s["name"]: s for s in states}
+    general_tools = {t["name"] for t in by_name[STATE_GENERAL_ASSISTANT]["tools"]}
+    confirm_tools = {t["name"] for t in by_name[STATE_GMAIL_CONFIRM_PENDING]["tools"]}
+    assert "gmail_prepare_send" in general_tools
+    assert "get_environment" in general_tools
+    assert "gmail_confirm_send" in confirm_tools
+    assert "gmail_cancel_send" in confirm_tools
+    assert "read_gmail" in confirm_tools
+    assert "get_environment" not in confirm_tools
+    assert "gmail_prepare_send" not in confirm_tools
 
 
 def test_pilot_prompt_includes_standalone_identity():
@@ -183,8 +211,9 @@ def test_handle_calendar_query_hoy_y_manana_with_events():
     assert "mañana" in spoken.lower()
 
 
-def test_gmail_read_sync_rejects_send():
+def test_gmail_read_sync_redirects_send_to_prepare_flow():
     from app.modules.gmail_module import handle_gmail_read_sync
 
     result = handle_gmail_read_sync("user-1", "envía un email a juan@test.com")
-    assert "solo puedo leer" in result["spoken"].lower()
+    assert "asunto" in result["spoken"].lower()
+    assert "confirmación" in result["spoken"].lower()

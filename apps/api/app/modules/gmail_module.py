@@ -334,12 +334,12 @@ def _handle_gmail_query(user_id: str, text: str) -> str:
 
 
 def handle_gmail_read_sync(user_id: str, text: str) -> dict[str, str]:
-    """Solo lectura Gmail — sin enviar correos (piloto nativo)."""
+    """Lectura Gmail — envío va por gmail_prepare_send en piloto nativo."""
     if re.search(r"env[ií]a|mandar", text or "", re.I):
         return {
             "spoken": (
-                "Señor, por ahora solo puedo leer correos. "
-                "Enviar mensajes requerirá confirmación explícita en una fase posterior."
+                "Señor, para enviar un correo indíqueme destinatario, asunto y mensaje. "
+                "Le pediré confirmación antes de enviarlo."
             ),
         }
     return handle_gmail_query_sync(user_id, text)

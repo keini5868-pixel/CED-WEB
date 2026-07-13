@@ -23,7 +23,7 @@ from app.services.retell_native_pilot import (
     NATIVE_PILOT_GREETING,
     RETELL_NATIVE_PILOT_PROMPT,
     STAGING_AGENT_NAME,
-    build_native_pilot_tools,
+    build_native_pilot_llm_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,7 +51,8 @@ def _llm_payload(*, api_public_url: str, with_tools: bool) -> dict[str, Any]:
         "general_prompt": RETELL_NATIVE_PILOT_PROMPT,
     }
     if with_tools:
-        payload["general_tools"] = build_native_pilot_tools(api_public_url=api_public_url)
+        llm_tools = build_native_pilot_llm_config(api_public_url=api_public_url)
+        payload.update(llm_tools)
     return payload
 
 

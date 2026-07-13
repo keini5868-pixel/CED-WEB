@@ -18,30 +18,54 @@ STAGING_AGENT_NAME = "CED Jarvis Native Pilot"
 NATIVE_PILOT_GREETING = "CED en línea, señor. Estoy listo para conversar."
 
 READ_TOOLS_PROMPT = """
-Herramientas de solo lectura (usar solo cuando el usuario lo pida explícitamente):
+Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - get_environment: clima, temperatura, pronóstico, calidad del aire, polen o ambiente.
 - list_calendar_events: consultar eventos, citas o recordatorios en Google Calendar (solo lectura).
-- read_gmail: leer bandeja, categorías o correos de un remitente (solo lectura).
+- read_gmail: leer bandeja, categorías o correos de un remitente.
+- gmail_prepare_send: preparar envío de correo (NUNCA envía — solo crea borrador y pide confirmación).
+- gmail_confirm_send: ejecutar envío real SOLO tras confirmación explícita del usuario en voz.
+- gmail_cancel_send: descartar borrador pendiente sin enviar.
 
 Reglas generales:
 - NO uses herramientas para charla casual, agradecimientos ("ok gracias"), check-ins ("¿me escuchas?"),
   desahogo personal ni menciones pasajeras sin petición de datos.
 - Tras recibir el resultado, responde en 1-4 oraciones. No repitas la consulta ni vuelvas a llamar
   la herramienta sin una petición nueva del usuario.
-- NO agendes citas, NO envíes correos, NO modifiques nada — esas acciones no están disponibles en este piloto.
+- NO agendes citas ni modifiques calendario — solo lectura de calendario en este piloto.
 
-get_environment:
-- Solo ante peticiones activas de información ambiental.
-- Si falta ubicación, pregunta una sola vez; luego llama con la query completa.
+Gmail — envío con confirmación obligatoria:
+1. gmail_prepare_send requiere destinatario, asunto Y cuerpo. El asunto es OBLIGATORIO — si falta,
+   pregunta «¿Cuál es el asunto del correo?» y NO infieras asunto del cuerpo.
+2. Tras prepare exitoso (awaiting_confirmation), lee el resumen en voz y pregunta si confirma el envío.
+3. Llama transition_to_gmail_confirm_pending cuando prepare devuelva awaiting_confirmation.
+4. gmail_confirm_send SOLO cuando el usuario acaba de decir sí/envíalo/dale de forma explícita.
+5. NUNCA llames gmail_confirm_send en el mismo turno que gmail_prepare_send.
+6. Si el usuario dice no/cancela → gmail_cancel_send y transition_to_general_assistant.
+7. Si corrige destinatario/asunto/cuerpo antes de confirmar → cancela, vuelve a general_assistant
+   y llama gmail_prepare_send con los datos corregidos.
 
-list_calendar_events:
-- Solo para "¿qué tengo hoy/mañana?", eventos de la semana, calendario, recordatorios existentes.
-- Si piden agendar o crear cita, explica que aún no está disponible en este piloto.
-
-read_gmail:
-- Solo para leer correos: bandeja, importantes, promociones, correo de X, último email.
-- Si piden enviar correo, explica que requerirá confirmación en una fase posterior.
+get_environment / list_calendar_events / read_gmail: reglas de lectura igual que antes.
 """.strip()
+
+GENERAL_ASSISTANT_STATE_PROMPT = """
+Estado general — clima, calendario (lectura), Gmail (lectura y preparar envío).
+- Para ENVIAR correo: gmail_prepare_send con to, subject (obligatorio) y body.
+- Si falta asunto, destinatario o cuerpo, pregunta antes de llamar la herramienta o deja que la tool lo indique.
+- Tras prepare con awaiting_confirmation: lee el resumen, pregunta confirmación y usa transition_to_gmail_confirm_pending.
+""".strip()
+
+GMAIL_CONFIRM_STATE_PROMPT = """
+Estado de confirmación de envío Gmail — hay un borrador pendiente.
+- Repite el resumen si el usuario lo pide.
+- Si confirma explícitamente (sí, envíalo, dale, adelante) → gmail_confirm_send.
+- Si dice no, cancela, olvídalo o cambia de tema → gmail_cancel_send y transition_to_general_assistant.
+- Si corrige datos → gmail_cancel_send, transition_to_general_assistant, gmail_prepare_send con datos nuevos.
+- NO uses get_environment ni list_calendar_events aquí. read_gmail solo si pide leer correos (cancela el envío).
+- NUNCA llames gmail_confirm_send sin confirmación verbal clara del usuario en este turno.
+""".strip()
+
+STATE_GENERAL_ASSISTANT = "general_assistant"
+STATE_GMAIL_CONFIRM_PENDING = "gmail_confirm_pending"
 
 RETELL_NATIVE_PILOT_PROMPT = f"{GEMINI_STANDALONE_SYSTEM}\n\n{READ_TOOLS_PROMPT}"
 
@@ -57,7 +81,24 @@ LIST_CALENDAR_DESCRIPTION = (
 
 READ_GMAIL_DESCRIPTION = (
     "Lee correos de Gmail: bandeja, categoría o remitente. "
-    "Solo lectura — no enviar correos."
+    "No envía correos — para enviar use gmail_prepare_send."
+)
+
+GMAIL_PREPARE_DESCRIPTION = (
+    "Prepara un borrador de correo Gmail para envío. Requiere destinatario (to), "
+    "asunto (subject, obligatorio) y cuerpo (body). NO envía — solo crea borrador "
+    "y devuelve resumen para confirmación del usuario."
+)
+
+GMAIL_CONFIRM_DESCRIPTION = (
+    "Ejecuta el envío real del borrador Gmail pendiente. "
+    "SOLO llamar cuando el usuario acaba de confirmar explícitamente en voz "
+    "(sí, envíalo, dale, adelante). Requiere draft_id del prepare."
+)
+
+GMAIL_CANCEL_DESCRIPTION = (
+    "Cancela y descarta el borrador de correo pendiente sin enviar. "
+    "Usar cuando el usuario dice no, cancela, olvídalo o desea corregir y rehacer."
 )
 
 GET_ENVIRONMENT_PARAMETERS: dict[str, Any] = {
@@ -99,6 +140,50 @@ READ_GMAIL_PARAMETERS: dict[str, Any] = {
         },
     },
     "required": ["query"],
+}
+
+GMAIL_PREPARE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "to": {
+            "type": "string",
+            "description": "Correo del destinatario (ej. jessica.25@gmail.com).",
+        },
+        "subject": {
+            "type": "string",
+            "description": "Asunto del correo — OBLIGATORIO. No inferir del cuerpo.",
+        },
+        "body": {
+            "type": "string",
+            "description": "Cuerpo/mensaje del correo.",
+        },
+        "query": {
+            "type": "string",
+            "description": "Petición original del usuario si ayuda a extraer campos.",
+        },
+    },
+    "required": ["body"],
+}
+
+GMAIL_CONFIRM_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {
+            "type": "string",
+            "description": "ID del borrador devuelto por gmail_prepare_send.",
+        },
+    },
+    "required": ["draft_id"],
+}
+
+GMAIL_CANCEL_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {
+            "type": "string",
+            "description": "ID del borrador a cancelar (opcional si hay uno activo).",
+        },
+    },
 }
 
 _lock = threading.Lock()
@@ -164,12 +249,99 @@ def build_read_gmail_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
-def build_native_pilot_tools(*, api_public_url: str) -> list[dict[str, Any]]:
+def build_gmail_prepare_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_prepare_send",
+        description=GMAIL_PREPARE_DESCRIPTION,
+        parameters=GMAIL_PREPARE_PARAMETERS,
+        filler="Un momento, preparando su correo, señor.",
+        timeout_ms=12_000,
+    )
+
+
+def build_gmail_confirm_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_confirm_send",
+        description=GMAIL_CONFIRM_DESCRIPTION,
+        parameters=GMAIL_CONFIRM_PARAMETERS,
+        filler="Enviando su correo, señor.",
+        timeout_ms=20_000,
+    )
+
+
+def build_gmail_cancel_send_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="gmail_cancel_send",
+        description=GMAIL_CANCEL_DESCRIPTION,
+        parameters=GMAIL_CANCEL_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, Any]], str]:
+    """Retell States — tools restringidas por estado (general_tools vacío)."""
     return [
-        build_get_environment_tool(api_public_url=api_public_url),
-        build_list_calendar_events_tool(api_public_url=api_public_url),
-        build_read_gmail_tool(api_public_url=api_public_url),
-    ]
+        {
+            "name": STATE_GENERAL_ASSISTANT,
+            "state_prompt": GENERAL_ASSISTANT_STATE_PROMPT,
+            "tools": [
+                build_get_environment_tool(api_public_url=api_public_url),
+                build_list_calendar_events_tool(api_public_url=api_public_url),
+                build_read_gmail_tool(api_public_url=api_public_url),
+                build_gmail_prepare_send_tool(api_public_url=api_public_url),
+            ],
+            "edges": [
+                {
+                    "destination_state_name": STATE_GMAIL_CONFIRM_PENDING,
+                    "description": (
+                        "Transición cuando gmail_prepare_send devuelve awaiting_confirmation: "
+                        "hay borrador listo y debe pedirse confirmación de envío al usuario."
+                    ),
+                },
+            ],
+        },
+        {
+            "name": STATE_GMAIL_CONFIRM_PENDING,
+            "state_prompt": GMAIL_CONFIRM_STATE_PROMPT,
+            "tools": [
+                build_read_gmail_tool(api_public_url=api_public_url),
+                build_gmail_confirm_send_tool(api_public_url=api_public_url),
+                build_gmail_cancel_send_tool(api_public_url=api_public_url),
+            ],
+            "edges": [
+                {
+                    "destination_state_name": STATE_GENERAL_ASSISTANT,
+                    "description": (
+                        "Volver al flujo general tras envío exitoso, cancelación, borrador expirado "
+                        "o cuando ya no hay correo pendiente."
+                    ),
+                },
+            ],
+        },
+    ], STATE_GENERAL_ASSISTANT
+
+
+def build_native_pilot_llm_config(*, api_public_url: str) -> dict[str, Any]:
+    """Config LLM completa: states + starting_state, sin general_tools globales."""
+    states, starting = build_native_pilot_states(api_public_url=api_public_url)
+    return {
+        "general_tools": [],
+        "states": states,
+        "starting_state": starting,
+    }
+
+
+def build_native_pilot_tools(*, api_public_url: str) -> list[dict[str, Any]]:
+    """Lista plana de tools (tests / compat) — incluye todas las del piloto."""
+    states, _ = build_native_pilot_states(api_public_url=api_public_url)
+    tools: list[dict[str, Any]] = []
+    for state in states:
+        tools.extend(state.get("tools") or [])
+    return tools
 
 
 def _extract_call_id(payload: dict[str, Any]) -> str:
@@ -268,6 +440,9 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "get_environment": _stats("get_environment"),
         "list_calendar_events": _stats("list_calendar_events"),
         "read_gmail": _stats("read_gmail"),
+        "gmail_prepare_send": _stats("gmail_prepare_send"),
+        "gmail_confirm_send": _stats("gmail_confirm_send"),
+        "gmail_cancel_send": _stats("gmail_cancel_send"),
         "environment_invocations": _stats("get_environment")["invocations"],
         "environment_avg_latency_ms": _stats("get_environment")["avg_latency_ms"],
         "environment_latencies_ms": _stats("get_environment")["latencies_ms"],
@@ -326,6 +501,10 @@ async def _execute_native_read_tool(
             "latency_ms": latency_ms,
             "ok": False,
         }
+
+    from app.services.gmail_send_flow import maybe_clear_gmail_pending_on_topic_change
+
+    maybe_clear_gmail_pending_on_topic_change(user_id, tool_name)
 
     if not query:
         latency_ms = int((time.perf_counter() - started) * 1000)
@@ -432,6 +611,9 @@ async def execute_read_gmail_tool(
     args: dict[str, Any],
 ) -> dict[str, Any]:
     from app.modules.gmail_module import handle_gmail_read_sync
+    from app.services.gmail_send_flow import maybe_clear_gmail_pending_on_topic_change
+
+    maybe_clear_gmail_pending_on_topic_change(user_id, "read_gmail")
 
     return await _execute_native_read_tool(
         tool_name="read_gmail",
@@ -441,6 +623,156 @@ async def execute_read_gmail_tool(
         handler=handle_gmail_read_sync,
         empty_query_message="Señor, ¿qué correos desea que revise?",
         failure_prefix="No pude consultar su correo",
+    )
+
+
+def _format_gmail_action_result(action: dict[str, Any]) -> str:
+    """Resultado hablado + metadata JSON para el LLM (transiciones Retell)."""
+    import json
+
+    spoken = str(action.get("spoken") or "Completado, señor.").strip()
+    meta = {
+        "status": action.get("status"),
+        "draft_id": action.get("draft_id"),
+        "transition": action.get("transition"),
+        "ok": action.get("ok"),
+    }
+    meta = {k: v for k, v in meta.items() if v is not None}
+    if meta:
+        return f"{spoken}\n\n[meta:{json.dumps(meta, ensure_ascii=False)}]"
+    return spoken
+
+
+async def _execute_native_gmail_action_tool(
+    *,
+    tool_name: str,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+    handler: Callable[..., dict[str, Any]],
+) -> dict[str, Any]:
+    import asyncio
+
+    started = time.perf_counter()
+    call_id = _extract_call_id(payload)
+
+    if not user_id:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(
+            call_id=call_id,
+            tool_name=tool_name,
+            latency_ms=latency_ms,
+            ok=False,
+        )
+        return {
+            "result": "No identifiqué al usuario, señor.",
+            "latency_ms": latency_ms,
+            "ok": False,
+        }
+
+    try:
+        action = await asyncio.to_thread(
+            handler,
+            user_id,
+            call_id=call_id,
+            payload=payload,
+            args=args,
+        )
+        spoken = _format_gmail_action_result(action)
+        ok = bool(action.get("ok"))
+    except Exception:  # noqa: BLE001
+        logger.exception("[NATIVE-PILOT] %s failed user=%s", tool_name, user_id[:8])
+        spoken = "Señor, no pude completar la operación de correo en este momento."
+        ok = False
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    record_tool_metric(
+        call_id=call_id,
+        tool_name=tool_name,
+        latency_ms=latency_ms,
+        ok=ok,
+        query=str(args.get("draft_id") or args.get("to") or "")[:120],
+    )
+    return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
+
+
+def _run_gmail_prepare(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.gmail_send_flow import prepare_gmail_send
+
+    query = resolve_tool_query(payload, args)
+    return prepare_gmail_send(
+        user_id,
+        call_id=call_id,
+        to=str(args.get("to") or ""),
+        subject=str(args.get("subject") or ""),
+        body=str(args.get("body") or ""),
+        query=query,
+    )
+
+
+def _run_gmail_confirm(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.gmail_send_flow import confirm_gmail_send
+
+    return confirm_gmail_send(
+        user_id,
+        call_id=call_id,
+        payload=payload,
+        draft_id=str(args.get("draft_id") or ""),
+    )
+
+
+def _run_gmail_cancel(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.gmail_send_flow import cancel_gmail_send
+
+    return cancel_gmail_send(
+        user_id,
+        draft_id=str(args.get("draft_id") or ""),
+        reason="user_cancel",
+    )
+
+
+async def execute_gmail_prepare_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_gmail_action_tool(
+        tool_name="gmail_prepare_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_prepare,
+    )
+
+
+async def execute_gmail_confirm_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_gmail_action_tool(
+        tool_name="gmail_confirm_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_confirm,
+    )
+
+
+async def execute_gmail_cancel_send_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_gmail_action_tool(
+        tool_name="gmail_cancel_send",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_gmail_cancel,
     )
 
 
