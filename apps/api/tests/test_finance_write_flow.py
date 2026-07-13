@@ -23,6 +23,7 @@ CALL = "call_finance_test_1"
 def test_is_finance_write_confirm():
     assert is_finance_write_confirm("sí, regístralo")
     assert is_finance_write_confirm("dale, adelante")
+    assert is_finance_write_confirm("Sí.", allow_short_yes=True)
     assert is_finance_write_confirm("sí", allow_short_yes=True)
     assert not is_finance_write_confirm("ok gracias")
     assert not is_finance_write_confirm("perfecto")
@@ -85,6 +86,33 @@ def test_confirm_requires_explicit_yes():
     result = confirm_finance_write(USER, call_id=CALL, payload=payload, draft_id=draft_id)
     assert result["status"] == "confirm_required"
     assert vcs.get_finance_pending_write(USER)["status"] == "pending"
+    vcs.clear_finance_pending_write(USER)
+
+
+def test_confirm_short_yes_without_agent_context():
+    """Un «sí» solo debe confirmar si hay borrador pendiente (sin exigir transcript del agente)."""
+    prepare_finance_write(USER, call_id=CALL, query="el lunes tengo que pagar 850 en gasolina")
+    draft_id = vcs.get_finance_pending_write(USER)["draft_id"]
+    payload = {
+        "call": {
+            "transcript_object": [
+                {"role": "user", "content": "Sí."},
+            ]
+        }
+    }
+    with patch("app.services.finance_write_flow.save_transaction") as mock_save:
+        mock_save.return_value = {
+            "ok": True,
+            "id": "tx-pending-1",
+            "type": "gasto",
+            "amount": "850",
+            "currency": "USD",
+            "category": "gasolina",
+        }
+        result = confirm_finance_write(USER, call_id=CALL, payload=payload, draft_id=draft_id)
+    assert result["ok"] is True
+    assert result["status"] == "written"
+    mock_save.assert_called_once()
     vcs.clear_finance_pending_write(USER)
 
 

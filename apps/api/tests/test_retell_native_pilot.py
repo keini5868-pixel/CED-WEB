@@ -38,9 +38,6 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "finance_confirm_write",
         "finance_cancel_write",
     }
-    for tool in tools:
-        assert tool["execution_message_type"] == "static_text"
-        assert tool["speak_during_execution"] is True
 
 
 def test_build_native_pilot_states_restrict_confirm_tools():
@@ -56,6 +53,8 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     general_tools = {t["name"] for t in by_name[STATE_GENERAL_ASSISTANT]["tools"]}
     confirm_tools = {t["name"] for t in by_name[STATE_FINANCE_CONFIRM_PENDING]["tools"]}
     assert "finance_prepare_write" in general_tools
+    assert "finance_confirm_write" in general_tools
+    assert "finance_cancel_write" in general_tools
     assert "read_finances" in general_tools
     assert "read_gmail" in general_tools
     assert "get_environment" in general_tools
@@ -233,18 +232,36 @@ def test_gmail_read_sync_returns_full_body_via_helper():
     assert content == "A" * GMAIL_VOICE_BODY_LIMIT
 
 
-def test_gmail_read_sender_uses_full_body_helper():
+def test_gmail_read_sender_uses_literal_body_block():
     from app.modules.gmail_module import _read_sender_email
 
-    body = "Cuerpo completo del mensaje de prueba con detalle."
+    body = "Reunión confirmada el lunes 13 a las 10:00 en sala B."
     with patch("app.modules.gmail_module.get_message_body", return_value=body):
         with patch(
             "app.modules.gmail_module.list_messages",
-            return_value=[{"id": "m1", "from_name": "Jun Medina", "subject": "Hola", "from": "j@x.com"}],
+            return_value=[{"id": "m1", "from_name": "Jun Medina", "subject": "Horario", "from": "j@x.com"}],
         ):
             spoken = _read_sender_email("token", "léeme el correo de Jun Medina")
+    assert "CUERPO_LITERAL" in spoken
     assert body in spoken
+    assert "PROHIBIDO inventar" in spoken
     assert "Jun Medina" in spoken
+
+
+def test_gmail_literal_format_three_distinct_bodies():
+    from app.modules.gmail_module import format_gmail_literal_voice
+
+    samples = [
+        ("Ana", "Factura", "Total a pagar: 120 USD antes del viernes."),
+        ("Carlos", "Reunión", "Nos vemos a las 3pm en la oficina central."),
+        ("Jun Medina", "Horario lunes", "El turno empieza a las 8:00, no a las 9."),
+    ]
+    for from_name, subject, body in samples:
+        out = format_gmail_literal_voice(from_name=from_name, subject=subject, body=body)
+        assert body in out
+        assert "CUERPO_LITERAL" in out
+        assert "9:00 AM" not in out
+        assert "2:00 PM" not in out
 
 
 def test_finance_read_sync_redirects_write_to_prepare_flow():

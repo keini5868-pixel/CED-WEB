@@ -32,41 +32,45 @@ Reglas generales:
   desahogo personal ni menciones pasajeras sin petición de datos.
 - Tras recibir el resultado, responde en 1-4 oraciones. No repitas la consulta ni vuelvas a llamar
   la herramienta sin una petición nueva del usuario.
+- EXCEPCIÓN Gmail: tras read_gmail, lee el CUERPO_LITERAL tal cual — sin inventar ni parafrasear.
+- EXCEPCIÓN Finanzas confirmación: tras finance_confirm_write exitoso, di exactamente el mensaje de confirmación.
 - NO agendes citas ni modifiques calendario — solo lectura de calendario en este piloto.
 - NO envíes correos por voz — Gmail es solo lectura. Para enviar, el usuario usa el formulario en pantalla.
 
 Gmail — solo lectura:
 - read_gmail lista correos nuevos/recientes o lee el cuerpo completo de un correo elegido.
+- El resultado incluye CUERPO_LITERAL: léalo al usuario sin cambiar palabras ni inventar datos.
+- PROHIBIDO inventar horarios, reuniones o detalles que no estén en CUERPO_LITERAL.
 - Si el usuario pide enviar correo, indíquele que use el formulario de correo en la interfaz de CED.
 
 Finanzas — escritura con confirmación obligatoria:
 1. finance_prepare_write requiere monto y concepto claros (gasto, ingreso o pago pendiente con fecha).
 2. Tras prepare exitoso (awaiting_confirmation), lee el resumen en voz y pregunta si confirma el registro.
 3. Llama transition_to_finance_confirm_pending cuando prepare devuelva awaiting_confirmation.
-4. finance_confirm_write SOLO cuando el usuario acaba de decir sí/regístralo/dale de forma explícita.
+4. finance_confirm_write cuando el usuario dice sí, sí., dale, adelante o confirma — incluso solo «sí».
 5. NUNCA llames finance_confirm_write en el mismo turno que finance_prepare_write.
 6. Si el usuario dice no/cancela → finance_cancel_write y transition_to_general_assistant.
-7. Si corrige monto o concepto antes de confirmar → cancela, vuelve a general_assistant
-   y llama finance_prepare_write con los datos corregidos.
+7. Si hay borrador pendiente y el usuario dice «sí», llama finance_confirm_write aunque no hayas cambiado de estado.
 
 read_finances / get_environment / list_calendar_events / read_gmail: reglas de lectura sin confirmación.
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
 Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro).
-- Gmail: solo lectura. No hay envío por voz.
+- Gmail: solo lectura. Lee CUERPO_LITERAL sin inventar. No hay envío por voz.
 - Para REGISTRAR finanzas: finance_prepare_write con la frase del usuario (monto + concepto).
 - Tras prepare con awaiting_confirmation: lee el resumen, pregunta confirmación y usa transition_to_finance_confirm_pending.
+- Si ya hay borrador pendiente y el usuario dice «sí» o «dale», llama finance_confirm_write de inmediato (también disponible aquí).
 """.strip()
 
 FINANCE_CONFIRM_STATE_PROMPT = """
 Estado de confirmación de registro financiero — hay un borrador pendiente.
 - Repite el resumen si el usuario lo pide.
-- Si confirma explícitamente (sí, regístralo, dale, adelante) → finance_confirm_write.
+- Si dice sí, sí., dale, adelante o confirma → finance_confirm_write de inmediato (incluso solo «sí»).
 - Si dice no, cancela, olvídalo o cambia de tema → finance_cancel_write y transition_to_general_assistant.
 - Si corrige datos → finance_cancel_write, transition_to_general_assistant, finance_prepare_write con datos nuevos.
 - read_finances solo si pide consultar finanzas (cancela el registro pendiente).
-- NUNCA llames finance_confirm_write sin confirmación verbal clara del usuario en este turno.
+- Tras finance_confirm_write exitoso, di al usuario exactamente el mensaje de confirmación devuelto.
 """.strip()
 
 STATE_GENERAL_ASSISTANT = "general_assistant"
@@ -102,8 +106,8 @@ FINANCE_PREPARE_DESCRIPTION = (
 
 FINANCE_CONFIRM_DESCRIPTION = (
     "Ejecuta el registro real del borrador financiero pendiente. "
-    "SOLO llamar cuando el usuario acaba de confirmar explícitamente en voz "
-    "(sí, regístralo, dale, adelante). Requiere draft_id del prepare."
+    "Llamar cuando el usuario acaba de confirmar en voz: sí, sí., dale, adelante, correcto. "
+    "Un solo «sí» basta si hay borrador pendiente. draft_id opcional si hay uno activo."
 )
 
 FINANCE_CANCEL_DESCRIPTION = (
@@ -185,10 +189,9 @@ FINANCE_CONFIRM_PARAMETERS: dict[str, Any] = {
     "properties": {
         "draft_id": {
             "type": "string",
-            "description": "ID del borrador devuelto por finance_prepare_write.",
+            "description": "ID del borrador devuelto por finance_prepare_write (opcional si hay uno activo).",
         },
     },
-    "required": ["draft_id"],
 }
 
 FINANCE_CANCEL_PARAMETERS: dict[str, Any] = {
@@ -320,6 +323,8 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_read_gmail_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
                 build_finance_prepare_write_tool(api_public_url=api_public_url),
+                build_finance_confirm_write_tool(api_public_url=api_public_url),
+                build_finance_cancel_write_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
@@ -678,6 +683,9 @@ def _format_finance_action_result(action: dict[str, Any]) -> str:
     import json
 
     spoken = str(action.get("spoken") or "Completado, señor.").strip()
+    status = str(action.get("status") or "")
+    if status in {"written", "already_written", "cancelled", "awaiting_confirmation"}:
+        spoken = f"DI EXACTAMENTE AL USUARIO (sin parafrasear): {spoken}"
     meta = {
         "status": action.get("status"),
         "draft_id": action.get("draft_id"),

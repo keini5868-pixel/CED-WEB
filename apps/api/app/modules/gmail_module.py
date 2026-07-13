@@ -30,6 +30,22 @@ logger = logging.getLogger(__name__)
 GMAIL_VOICE_TIMEOUT_SEC = 22.0
 GMAIL_VOICE_BODY_LIMIT = 1400
 
+_GMAIL_LITERAL_PREAMBLE = (
+    "INSTRUCCIÓN OBLIGATORIA: Lea al usuario el bloque CUERPO_LITERAL palabra por palabra. "
+    "PROHIBIDO inventar, parafrasear, resumir creativamente ni agregar horarios, reuniones "
+    "o detalles que no aparezcan en CUERPO_LITERAL.\n\n"
+)
+
+
+def format_gmail_literal_voice(*, from_name: str, subject: str, body: str) -> str:
+    """Formatea lectura Gmail para que el LLM no alucine el contenido."""
+    content = (body or "").strip() or "No pude leer el contenido del correo."
+    return (
+        f"{_GMAIL_LITERAL_PREAMBLE}"
+        f"METADATOS: remitente {from_name}, asunto «{subject}».\n"
+        f"CUERPO_LITERAL:\n{content}"
+    )
+
 GMAIL_PATTERNS: tuple[str, ...] = (
     r"\b(?:emails?|correos?|gmail)\b",
     r"\b(?:tengo|hay)\s+.*(?:emails?|correos?)\b",
@@ -170,10 +186,11 @@ def _read_latest_email(user_id: str) -> str:
         vcs.set_gmail_awaiting_pick(user_id, False)
         when = msg.get("relative_date") or ""
         when_txt = f", recibido {when.lower()}" if when else ""
-        return (
-            f"Señor, su último correo es de {from_name}{when_txt}: "
-            f"asunto «{msg['subject']}». {content}"
-        )
+        return format_gmail_literal_voice(
+            from_name=from_name,
+            subject=str(msg.get("subject") or "(sin asunto)"),
+            body=content,
+        ) + (f"\n\n(Recibido{when_txt}.)" if when_txt else "")
 
     return _gmail_api_call(user_id, _fetch)
 
@@ -234,9 +251,10 @@ def _read_sender_email(access: str, text: str) -> str:
     msg = messages[0]
     content = _message_content_for_voice(access, msg)
     from_name = msg.get("from_name") or msg.get("from", "?")
-    return (
-        f"Señor, de {from_name}: asunto «{msg['subject']}». "
-        f"{content}"
+    return format_gmail_literal_voice(
+        from_name=from_name,
+        subject=str(msg.get("subject") or "(sin asunto)"),
+        body=content,
     )
 
 
@@ -266,9 +284,10 @@ def _read_email_by_pick(user_id: str, hint: str) -> str:
             content = _message_content_for_voice(access, best)
             from_name = best.get("from_name") or best.get("from", "?")
             vcs.set_gmail_awaiting_pick(user_id, False)
-            return (
-                f"Señor, de {from_name}: asunto «{best['subject']}». "
-                f"{content}"
+            return format_gmail_literal_voice(
+                from_name=from_name,
+                subject=str(best.get("subject") or "(sin asunto)"),
+                body=content,
             )
 
         fallback = _read_sender_email(access, f"de {hint}")

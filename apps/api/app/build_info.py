@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "retell-native-pilot-v5-gmail-read-finance-write"
+BUILD_VERSION = "retell-native-pilot-v6-gmail-literal-finance-confirm"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

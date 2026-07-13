@@ -29,7 +29,7 @@ _FINANCE_WRITE_CONFIRM = re.compile(
     r"\b("
     r"s[ií]\s*,?\s*(?:reg[ií]stra(?:lo|la|me|r)?|anota(?:lo|la|me|r)?|confirma(?:lo)?|gu[aá]rdalo)|"
     r"reg[ií]stra(?:lo|la|me|r)?|anota(?:lo|la|me|r)?|gu[aá]rdalo|"
-    r"dale|adelante|de\s+acuerdo|confirmo|confirma(?:do)?|"
+    r"dale|adelante|de\s+acuerdo|confirmo|confirma(?:do)?|correcto|exacto|"
     r"procede|hazlo|s[ií]\s+por\s+favor"
     r")\b",
     re.I,
@@ -45,8 +45,13 @@ _FINANCE_WRITE_CANCEL = re.compile(
 )
 
 _AGENT_CONFIRM_ASK = re.compile(
-    r"\b(confirm(?:o|a|ar|e)?|registr(?:o|e|ar)|anot(?:o|e|ar)|guard(?:o|e|ar)|"
-    r"¿\s*desea|desea\s+que|procedo)\b",
+    r"\b(confirm(?:o|a|ar|e)?|registr(?:o|e|ar)|anot(?:o|e|ar)|guard(?:o|e|ar)|preparad|"
+    r"¿\s*desea|desea\s+que|procedo|pendiente)\b",
+    re.I,
+)
+
+_SHORT_AFFIRMATIVE = re.compile(
+    r"^(?:s[ií]|dale|adelante|correcto|exacto|confirmo|de\s+acuerdo|ok(?:ay)?)[\s!.]*$",
     re.I,
 )
 
@@ -55,11 +60,15 @@ def is_finance_write_confirm(text: str, *, allow_short_yes: bool = False) -> boo
     t = (text or "").strip()
     if not t:
         return False
-    if allow_short_yes and re.fullmatch(r"s[ií][\s!.]*", t, re.I):
+    if allow_short_yes and _SHORT_AFFIRMATIVE.match(t):
         return True
     if re.fullmatch(r"s[ií]\s*(?:reg[ií]stra(?:lo|la)?|anota(?:lo|la)?)[\s!.]*", t, re.I):
         return True
     return bool(_FINANCE_WRITE_CONFIRM.search(t))
+
+
+def is_short_finance_affirmative(text: str) -> bool:
+    return bool(_SHORT_AFFIRMATIVE.match((text or "").strip()))
 
 
 def is_finance_write_cancel(text: str) -> bool:
@@ -236,7 +245,10 @@ def prepare_finance_write(
         "status": "awaiting_confirmation",
         "draft_id": draft_id,
         "kind": kind,
-        "spoken": spoken,
+        "spoken": (
+            f"{spoken} "
+            "Cuando el usuario diga solo «sí» o «dale», llame finance_confirm_write de inmediato."
+        ),
         "transition": "transition_to_finance_confirm_pending",
     }
 
@@ -355,22 +367,29 @@ def confirm_finance_write(
 
     user_line = _latest_user_utterance(payload)
     transcript = _transcript_from_payload(payload)
+    logger.info(
+        "[FINANCE-WRITE] confirm attempt user=%s draft=%s utterance=%r",
+        user_id[:8],
+        str(draft.get("draft_id", ""))[:8],
+        user_line[:80],
+    )
     if not is_finance_write_confirm(user_line, allow_short_yes=True):
         return {
             "ok": False,
             "status": "confirm_required",
             "spoken": (
                 "Señor, no detecté una confirmación clara. "
-                "¿Desea que lo registre? Diga «sí, regístralo» o «cancela»."
+                "¿Desea que lo registre? Diga «sí» o «cancela»."
             ),
         }
-    if not _agent_recently_asked_confirm(transcript):
+    short_yes = is_short_finance_affirmative(user_line)
+    if not short_yes and not _agent_recently_asked_confirm(transcript):
         return {
             "ok": False,
             "status": "confirm_context_missing",
             "spoken": (
                 "Señor, confirme explícitamente el registro: "
-                "«sí, regístralo» o «no, cancela»."
+                "«sí» o «no, cancela»."
             ),
         }
 
