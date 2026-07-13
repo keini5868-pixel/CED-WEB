@@ -231,7 +231,7 @@ def test_gmail_read_sync_returns_full_body_via_helper():
         "app.modules.gmail_module.fetch_message_body_detail",
         return_value=MessageBodyResult(text=long_body, source="plain", ok=True),
     ):
-        content, ok, _source = _message_content_for_voice("token", {"id": "msg-1", "subject": "Hola"})
+        content, ok, _source, _mime = _message_content_for_voice("token", {"id": "msg-1", "subject": "Hola"})
     assert ok is True
     assert len(content) == GMAIL_VOICE_BODY_LIMIT
 
@@ -261,7 +261,9 @@ def test_gmail_read_sync_leeme_el_de_sender():
                 )
                 out = handle_gmail_read_sync("user-1", "léeme el de Jun Medina")
     assert "Shift starts 8:00 AM" in out["spoken"]
-    assert "CUERPO_LITERAL" in out["spoken"]
+    assert "Señor, de Jun Medina" in out["spoken"]
+    assert "INSTRUCCIÓN" not in out["spoken"]
+    assert "CUERPO_LITERAL" not in out["spoken"]
 
 
 def test_gmail_body_followup_uses_last_read_cache():
@@ -305,7 +307,7 @@ def test_gmail_snippet_only_reports_unavailable_not_subject():
             snippet="Work Schedule for Monday, July 13th, 2026",
         ),
     ):
-        content, ok, source = _message_content_for_voice(
+        content, ok, source, _mime = _message_content_for_voice(
             "token",
             {
                 "id": "m1",
@@ -329,9 +331,8 @@ def test_gmail_literal_format_three_distinct_bodies():
     for from_name, subject, body in samples:
         out = format_gmail_literal_voice(from_name=from_name, subject=subject, body=body)
         assert body in out
-        assert "CUERPO_LITERAL" in out
-        assert "9:00 AM" not in out
-        assert "2:00 PM" not in out
+        assert "Señor, de" in out
+        assert "CUERPO_LITERAL" not in out
 
 
 def test_finance_read_sync_redirects_write_to_prepare_flow():

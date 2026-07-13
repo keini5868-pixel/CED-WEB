@@ -247,7 +247,7 @@ def prepare_finance_write(
         "kind": kind,
         "spoken": (
             f"{spoken} "
-            "Cuando el usuario diga solo «sí» o «dale», llame finance_confirm_write de inmediato."
+        "Cuando el usuario confirme con «sí» o «dale», llame finance_confirm_write."
         ),
         "transition": "transition_to_finance_confirm_pending",
     }

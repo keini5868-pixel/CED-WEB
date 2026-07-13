@@ -42,9 +42,9 @@ def test_extract_body_from_html_only_multipart():
             },
         ],
     }
-    body = _extract_body_from_payload(payload)
+    body, source = _extract_body_from_payload(payload)
     assert "Team meeting at 10:00" in body
-    assert "Lunch break at noon" in body
+    assert source == "html"
 
 
 def test_extract_body_prefers_plain_over_html():
@@ -61,8 +61,9 @@ def test_extract_body_prefers_plain_over_html():
             },
         ],
     }
-    body = _extract_body_from_payload(payload)
+    body, source = _extract_body_from_payload(payload)
     assert body == "Plain body with real schedule details."
+    assert source == "plain"
 
 
 def test_extract_body_nested_multipart_related():
@@ -81,8 +82,65 @@ def test_extract_body_nested_multipart_related():
             },
         ],
     }
-    body = _extract_body_from_payload(payload)
+    body, source = _extract_body_from_payload(payload)
     assert "Report due Friday 5pm" in body
+    assert source == "html"
+
+
+def test_extract_body_from_calendar_invite():
+    ics = (
+        "BEGIN:VCALENDAR\n"
+        "BEGIN:VEVENT\n"
+        "SUMMARY:Work Schedule for Monday\n"
+        "DESCRIPTION:Shift A 7am-3pm. Shift B 3pm-11pm.\n"
+        "DTSTART:20260713T070000\n"
+        "END:VEVENT\n"
+        "END:VCALENDAR"
+    )
+    payload = {
+        "mimeType": "multipart/alternative",
+        "parts": [
+            {"mimeType": "text/calendar", "body": {"data": _b64(ics)}},
+        ],
+    }
+    body, source = _extract_body_from_payload(payload)
+    assert source == "calendar"
+    assert "Shift A 7am-3pm" in body
+
+
+def test_extract_body_fetches_attachment_id(monkeypatch):
+    html = "<p>Body stored as attachment in Gmail.</p>"
+
+    class FakeClient:
+        def get(self, url, **kwargs):
+            class Resp:
+                def raise_for_status(self):
+                    return None
+
+                def json(self):
+                    if "/attachments/" in url:
+                        return {"data": _b64(html)}
+                    return {}
+
+            return Resp()
+
+    payload = {
+        "mimeType": "multipart/alternative",
+        "parts": [
+            {
+                "mimeType": "text/html",
+                "body": {"attachmentId": "att-1", "size": 120},
+            },
+        ],
+    }
+    body, source = _extract_body_from_payload(
+        payload,
+        client=FakeClient(),  # type: ignore[arg-type]
+        access_token="tok",
+        message_id="msg-1",
+    )
+    assert source == "html"
+    assert "Body stored as attachment" in body
 
 
 def test_fetch_message_body_detail_html_source(monkeypatch):

@@ -31,19 +31,42 @@ logger = logging.getLogger(__name__)
 GMAIL_VOICE_TIMEOUT_SEC = 22.0
 GMAIL_VOICE_BODY_LIMIT = 1400
 
-_GMAIL_LITERAL_PREAMBLE = (
-    "INSTRUCCIÓN OBLIGATORIA: Lea al usuario el bloque CUERPO_LITERAL palabra por palabra. "
-    "PROHIBIDO inventar, parafrasear, resumir creativamente ni agregar horarios, reuniones "
-    "o detalles que no aparezcan en CUERPO_LITERAL. "
-    "PROHIBIDO leer solo el asunto de METADATOS como si fuera el cuerpo. "
-    "PROHIBIDO prometer que va a extraer el cuerpo después — si CUERPO_LITERAL indica "
-    "indisponible, dígalo una sola vez y no insista.\n\n"
+_GMAIL_VOICE_UNAVAILABLE = (
+    "No pude obtener el cuerpo completo de ese mensaje; "
+    "puede estar en un adjunto, una invitación de calendario embebida o un formato no legible por la API."
 )
 
-_BODY_UNAVAILABLE_MSG = (
-    "No pude obtener el cuerpo completo de este correo; solo tengo el asunto. "
-    "El mensaje puede estar en formato HTML complejo, en un adjunto o no disponible por la API."
-)
+
+def format_gmail_spoken_user(
+    *,
+    from_name: str,
+    subject: str,
+    body: str,
+    body_ok: bool = True,
+) -> str:
+    """Texto listo para leer en voz — sin instrucciones internas para el LLM."""
+    if body_ok and (body or "").strip():
+        return f"Señor, de {from_name}, asunto «{subject}». {body.strip()}"
+    return (
+        f"Señor, de {from_name}, asunto «{subject}». "
+        f"{_GMAIL_VOICE_UNAVAILABLE}"
+    )
+
+
+def format_gmail_literal_voice(
+    *,
+    from_name: str,
+    subject: str,
+    body: str,
+    body_ok: bool = True,
+) -> str:
+    """Alias — salida limpia para voz (sin bloques CUERPO_LITERAL)."""
+    return format_gmail_spoken_user(
+        from_name=from_name,
+        subject=subject,
+        body=body,
+        body_ok=body_ok,
+    )
 
 _READ_BODY_FOLLOWUP_RE = re.compile(
     r"\b(?:"
@@ -58,23 +81,6 @@ _READ_BODY_FOLLOWUP_RE = re.compile(
 def is_gmail_read_body_followup(text: str) -> bool:
     return bool(_READ_BODY_FOLLOWUP_RE.search(text or ""))
 
-
-def format_gmail_literal_voice(
-    *,
-    from_name: str,
-    subject: str,
-    body: str,
-    body_ok: bool = True,
-) -> str:
-    """Formatea lectura Gmail para que el LLM no alucine el contenido."""
-    content = (body or "").strip()
-    if not body_ok or not content:
-        content = _BODY_UNAVAILABLE_MSG
-    return (
-        f"{_GMAIL_LITERAL_PREAMBLE}"
-        f"METADATOS: remitente {from_name}, asunto «{subject}».\n"
-        f"CUERPO_LITERAL:\n{content}"
-    )
 
 GMAIL_PATTERNS: tuple[str, ...] = (
     r"\b(?:emails?|correos?|gmail)\b",
@@ -198,37 +204,41 @@ def _normalize_compare(text: str) -> str:
 def _message_content_for_voice(
     access: str,
     msg: dict[str, str],
-) -> tuple[str, bool, str]:
-    """Devuelve (texto, body_ok, source) para lectura por voz."""
+) -> tuple[str, bool, str, str]:
+    """Devuelve (texto, body_ok, source, mime_summary) para lectura por voz."""
     subject = str(msg.get("subject") or "")
     snippet = str(msg.get("snippet") or "").strip()
+    mime_summary = ""
     try:
         detail = fetch_message_body_detail(access, msg["id"])
         body = detail.text.strip()
         source = detail.source
+        mime_summary = detail.mime_summary
         if detail.ok and body:
             if _normalize_compare(body) == _normalize_compare(subject):
                 logger.warning(
-                    "[GMAIL] body equals subject msg=%s — treating as unavailable",
+                    "[GMAIL] body equals subject msg=%s mime=%s",
                     str(msg.get("id") or "")[:12],
+                    mime_summary[:120],
                 )
-                return _BODY_UNAVAILABLE_MSG, False, source
-            if source == "snippet":
-                logger.warning(
-                    "[GMAIL] only snippet for msg=%s subject=%r",
-                    str(msg.get("id") or "")[:12],
-                    subject[:60],
-                )
-                return _BODY_UNAVAILABLE_MSG, False, source
-            return body[:GMAIL_VOICE_BODY_LIMIT], True, source
+                return _GMAIL_VOICE_UNAVAILABLE, False, source, mime_summary
+            return body[:GMAIL_VOICE_BODY_LIMIT], True, source, mime_summary
         if body and source == "snippet":
-            return _BODY_UNAVAILABLE_MSG, False, source
+            logger.warning(
+                "[GMAIL] only snippet for msg=%s mime=%s",
+                str(msg.get("id") or "")[:12],
+                mime_summary[:120],
+            )
+            return _GMAIL_VOICE_UNAVAILABLE, False, source, mime_summary
     except Exception:  # noqa: BLE001
-        logger.exception("[GMAIL] body fetch failed msg=%s", str(msg.get("id") or "")[:12])
+        logger.exception(
+            "[GMAIL] body fetch failed msg=%s",
+            str(msg.get("id") or "")[:12],
+        )
 
     if snippet and _normalize_compare(snippet) != _normalize_compare(subject):
-        return snippet[:GMAIL_VOICE_BODY_LIMIT], False, "snippet"
-    return _BODY_UNAVAILABLE_MSG, False, "none"
+        return snippet[:GMAIL_VOICE_BODY_LIMIT], False, "snippet", mime_summary
+    return _GMAIL_VOICE_UNAVAILABLE, False, "none", mime_summary
 
 
 def _remember_last_read(user_id: str, msg: dict[str, str], *, body_ok: bool, source: str) -> None:
@@ -251,12 +261,12 @@ def _format_read_message(
     access: str,
     msg: dict[str, str],
 ) -> str:
-    content, body_ok, source = _message_content_for_voice(access, msg)
+    content, body_ok, source, mime_summary = _message_content_for_voice(access, msg)
     from_name = msg.get("from_name") or msg.get("from", "?")
     subject = str(msg.get("subject") or "(sin asunto)")
     _remember_last_read(user_id, msg, body_ok=body_ok, source=source)
     logger.info(
-        "[GMAIL] read voice user=%s msg=%s from=%r subject=%r body_ok=%s source=%s len=%s",
+        "[GMAIL] read voice user=%s msg=%s from=%r subject=%r body_ok=%s source=%s len=%s mime=%s",
         user_id[:8],
         str(msg.get("id") or "")[:12],
         from_name[:40],
@@ -264,8 +274,9 @@ def _format_read_message(
         body_ok,
         source,
         len(content),
+        mime_summary[:120],
     )
-    return format_gmail_literal_voice(
+    return format_gmail_spoken_user(
         from_name=from_name,
         subject=subject,
         body=content,

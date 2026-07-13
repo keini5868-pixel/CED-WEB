@@ -32,17 +32,14 @@ Reglas generales:
   desahogo personal ni menciones pasajeras sin petición de datos.
 - Tras recibir el resultado, responde en 1-4 oraciones. No repitas la consulta ni vuelvas a llamar
   la herramienta sin una petición nueva del usuario.
-- EXCEPCIÓN Gmail: tras read_gmail, lee el CUERPO_LITERAL tal cual — sin inventar ni parafrasear.
-- EXCEPCIÓN Finanzas confirmación: tras finance_confirm_write exitoso, di exactamente el mensaje de confirmación.
+- EXCEPCIÓN Gmail: tras read_gmail, lee al usuario el texto devuelto por la herramienta tal cual, sin modificarlo ni añadir nada.
+- EXCEPCIÓN Finanzas confirmación: tras finance_confirm_write exitoso, di el mensaje de confirmación sin parafrasear.
 - NO agendes citas ni modifiques calendario — solo lectura de calendario en este piloto.
 - NO envíes correos por voz — Gmail es solo lectura. Para enviar, el usuario usa el formulario en pantalla.
 
 Gmail — solo lectura:
-- read_gmail lista correos nuevos/recientes o lee el cuerpo completo de un correo elegido.
-- El resultado incluye CUERPO_LITERAL: léalo al usuario sin cambiar palabras ni inventar datos.
-- PROHIBIDO leer solo METADATOS/asunto como si fuera el cuerpo del mensaje.
-- PROHIBIDO prometer «voy a extraer el cuerpo» o «intento acceder de nuevo» — llame read_gmail o diga que no pudo UNA vez.
-- Si CUERPO_LITERAL indica que el cuerpo no está disponible, comuníquelo claramente y no insista.
+- read_gmail devuelve el texto exacto que debe decirse en voz; repítalo sin inventar ni resumir.
+- PROHIBIDO prometer «voy a extraer el cuerpo» — si la tool dice que no pudo, comuníquelo una vez y pare.
 - Si el usuario pide enviar correo, indíquele que use el formulario de correo en la interfaz de CED.
 
 Finanzas — escritura con confirmación obligatoria:
@@ -59,7 +56,7 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
 Estado general — clima, calendario (lectura), Gmail (solo lectura), finanzas (lectura y preparar registro).
-- Gmail: solo lectura. Lee CUERPO_LITERAL sin inventar. No hay envío por voz.
+- Gmail: solo lectura. Repite el resultado de read_gmail tal cual.
 - Para REGISTRAR finanzas: finance_prepare_write con la frase del usuario (monto + concepto).
 - Tras prepare con awaiting_confirmation: lee el resumen, pregunta confirmación y usa transition_to_finance_confirm_pending.
 - Si ya hay borrador pendiente y el usuario dice «sí» o «dale», llama finance_confirm_write de inmediato (también disponible aquí).
@@ -685,9 +682,6 @@ def _format_finance_action_result(action: dict[str, Any]) -> str:
     import json
 
     spoken = str(action.get("spoken") or "Completado, señor.").strip()
-    status = str(action.get("status") or "")
-    if status in {"written", "already_written", "cancelled", "awaiting_confirmation"}:
-        spoken = f"DI EXACTAMENTE AL USUARIO (sin parafrasear): {spoken}"
     meta = {
         "status": action.get("status"),
         "draft_id": action.get("draft_id"),

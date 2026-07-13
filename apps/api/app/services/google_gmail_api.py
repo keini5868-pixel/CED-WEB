@@ -224,12 +224,99 @@ def get_gmail_emails(user_id: str, category: GmailCategory = "primary") -> dict[
         }
 
 
-def _decode_body_data(data: str) -> str:
+def _decode_body_data(data: str, *, charset: str = "utf-8") -> str:
     try:
         raw = base64.urlsafe_b64decode(data + "==")
-        return raw.decode("utf-8", errors="replace").strip()
     except Exception:  # noqa: BLE001
         return ""
+    try:
+        enc = (charset or "utf-8").strip().strip('"').lower()
+        if enc in {"utf-8", "utf8", "us-ascii", "ascii"}:
+            return raw.decode("utf-8", errors="replace").strip()
+        return raw.decode(enc, errors="replace").strip()
+    except Exception:  # noqa: BLE001
+        return raw.decode("utf-8", errors="replace").strip()
+
+
+def _part_charset(part: dict[str, Any]) -> str:
+    for header in part.get("headers") or []:
+        if not isinstance(header, dict):
+            continue
+        if str(header.get("name") or "").lower() != "content-type":
+            continue
+        value = str(header.get("value") or "")
+        match = re.search(r"charset\s*=\s*['\"]?([^;'\"\s]+)", value, re.I)
+        if match:
+            return match.group(1)
+    return "utf-8"
+
+
+def _fetch_attachment_bytes(
+    client: httpx.Client,
+    access_token: str,
+    message_id: str,
+    attachment_id: str,
+) -> bytes:
+    res = client.get(
+        f"{_GMAIL_BASE}/messages/{message_id}/attachments/{attachment_id}",
+        headers=_headers(access_token),
+    )
+    res.raise_for_status()
+    data = str(res.json().get("data") or "")
+    if not data:
+        return b""
+    return base64.urlsafe_b64decode(data + "==")
+
+
+def _ics_to_plain(ics_text: str) -> str:
+    """Extrae texto legible de una invitación text/calendar (ICS)."""
+    unfolded: list[str] = []
+    for raw_line in ics_text.replace("\r\n", "\n").split("\n"):
+        if raw_line.startswith((" ", "\t")) and unfolded:
+            unfolded[-1] += raw_line.strip()
+        else:
+            unfolded.append(raw_line.strip())
+
+    parts: list[str] = []
+    for line in unfolded:
+        upper = line.upper()
+        if upper.startswith("SUMMARY:"):
+            parts.append(f"Evento: {line.split(':', 1)[-1].strip()}")
+        elif upper.startswith("DESCRIPTION:"):
+            desc = line.split(":", 1)[-1].strip()
+            desc = desc.replace("\\n", "\n").replace("\\,", ",")
+            if desc:
+                parts.append(desc)
+        elif upper.startswith("LOCATION:"):
+            parts.append(f"Lugar: {line.split(':', 1)[-1].strip()}")
+        elif upper.startswith("DTSTART"):
+            when = line.split(":", 1)[-1].strip()
+            if when:
+                parts.append(f"Inicio: {when}")
+    return "\n".join(parts).strip()
+
+
+def _summarize_payload_mime(payload: dict[str, Any]) -> str:
+    bits: list[str] = []
+
+    def walk(node: dict[str, Any], depth: int = 0) -> None:
+        mime = str(node.get("mimeType") or "unknown")
+        body = node.get("body") or {}
+        has_data = bool(body.get("data"))
+        has_attach = bool(body.get("attachmentId"))
+        size = int(body.get("size") or 0)
+        tag = mime
+        if has_data:
+            tag += "(inline)"
+        elif has_attach:
+            tag += f"(attachment:{size}b)"
+        bits.append(tag)
+        for part in node.get("parts") or []:
+            if isinstance(part, dict):
+                walk(part, depth + 1)
+
+    walk(payload)
+    return " > ".join(bits[:12])
 
 
 def _html_to_plain(html: str) -> str:
@@ -245,43 +332,90 @@ def _html_to_plain(html: str) -> str:
     return text.strip()
 
 
-def _walk_payload_parts(payload: dict[str, Any]) -> tuple[list[str], list[str]]:
-    """Recorre multipart y devuelve fragmentos text/plain y text/html."""
+def _walk_payload_parts(
+    payload: dict[str, Any],
+    *,
+    client: httpx.Client | None = None,
+    access_token: str = "",
+    message_id: str = "",
+) -> tuple[list[str], list[str], list[str]]:
+    """Recorre multipart — plain, html y calendar (ICS)."""
     plain_parts: list[str] = []
     html_parts: list[str] = []
+    calendar_parts: list[str] = []
+
+    def _decode_part(part: dict[str, Any], mime: str) -> str:
+        body_obj = part.get("body") or {}
+        body_data = body_obj.get("data")
+        charset = _part_charset(part)
+        if body_data:
+            return _decode_body_data(str(body_data), charset=charset)
+        attachment_id = str(body_obj.get("attachmentId") or "")
+        if attachment_id and client and access_token and message_id:
+            try:
+                raw = _fetch_attachment_bytes(client, access_token, message_id, attachment_id)
+                if raw:
+                    if charset not in {"utf-8", "utf8", "us-ascii", "ascii"}:
+                        try:
+                            return raw.decode(charset, errors="replace").strip()
+                        except Exception:  # noqa: BLE001
+                            pass
+                    return raw.decode("utf-8", errors="replace").strip()
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[GMAIL] attachment fetch failed msg=%s att=%s",
+                    message_id[:12],
+                    attachment_id[:12],
+                )
+        return ""
 
     def walk(node: dict[str, Any]) -> None:
         mime = str(node.get("mimeType") or "")
-        body_data = (node.get("body") or {}).get("data")
-        if body_data:
-            decoded = _decode_body_data(str(body_data))
-            if decoded:
-                if mime == "text/plain":
-                    plain_parts.append(decoded)
-                elif mime == "text/html":
-                    html_parts.append(decoded)
-                elif mime.startswith("text/"):
-                    plain_parts.append(decoded)
+        decoded = _decode_part(node, mime)
+        if decoded:
+            if mime == "text/plain":
+                plain_parts.append(decoded)
+            elif mime == "text/html":
+                html_parts.append(decoded)
+            elif mime == "text/calendar":
+                calendar_parts.append(decoded)
+            elif mime.startswith("text/"):
+                plain_parts.append(decoded)
         for part in node.get("parts") or []:
             if isinstance(part, dict):
                 walk(part)
 
     walk(payload)
-    return plain_parts, html_parts
+    return plain_parts, html_parts, calendar_parts
 
 
-def _extract_body_from_payload(payload: dict[str, Any]) -> str:
-    plain_parts, html_parts = _walk_payload_parts(payload)
+def _extract_body_from_payload(
+    payload: dict[str, Any],
+    *,
+    client: httpx.Client | None = None,
+    access_token: str = "",
+    message_id: str = "",
+) -> tuple[str, BodySource]:
+    plain_parts, html_parts, calendar_parts = _walk_payload_parts(
+        payload,
+        client=client,
+        access_token=access_token,
+        message_id=message_id,
+    )
     if plain_parts:
-        return "\n\n".join(plain_parts).strip()
+        return "\n\n".join(plain_parts).strip(), "plain"
     for html in html_parts:
         plain = _html_to_plain(html)
+        if len(plain) >= 8:
+            return plain, "html"
+    for ics in calendar_parts:
+        plain = _ics_to_plain(ics)
         if plain:
-            return plain
-    return ""
+            return plain, "calendar"
+    return "", "none"
 
 
-BodySource = Literal["plain", "html", "snippet", "none"]
+BodySource = Literal["plain", "html", "calendar", "snippet", "none"]
 
 
 @dataclass(frozen=True)
@@ -290,6 +424,7 @@ class MessageBodyResult:
     source: BodySource
     ok: bool
     snippet: str = ""
+    mime_summary: str = ""
 
 
 def _normalize_compare(text: str) -> str:
@@ -297,7 +432,7 @@ def _normalize_compare(text: str) -> str:
 
 
 def fetch_message_body_detail(access_token: str, message_id: str) -> MessageBodyResult:
-    """Obtiene cuerpo del mensaje con fuente (plain/html/snippet) para diagnóstico."""
+    """Obtiene cuerpo del mensaje con fuente (plain/html/calendar/snippet) para diagnóstico."""
     with httpx.Client(timeout=20.0) as client:
         res = client.get(
             f"{_GMAIL_BASE}/messages/{message_id}",
@@ -307,38 +442,59 @@ def fetch_message_body_detail(access_token: str, message_id: str) -> MessageBody
         res.raise_for_status()
         data = res.json()
 
-    snippet = str(data.get("snippet") or "").strip()
-    payload = data.get("payload") or {}
-    plain_parts, html_parts = _walk_payload_parts(payload)
-    body = _extract_body_from_payload(payload)
+        snippet = str(data.get("snippet") or "").strip()
+        payload = data.get("payload") or {}
+        mime_summary = _summarize_payload_mime(payload)
+        body, source = _extract_body_from_payload(
+            payload,
+            client=client,
+            access_token=access_token,
+            message_id=message_id,
+        )
 
     if body:
-        source: BodySource = "html" if html_parts and not plain_parts else "plain"
         logger.info(
-            "[GMAIL] body ok msg=%s source=%s len=%s plain_parts=%s html_parts=%s",
+            "[GMAIL] body ok msg=%s source=%s len=%s mime=%s",
             str(message_id)[:12],
             source,
             len(body),
-            len(plain_parts),
-            len(html_parts),
+            mime_summary[:180],
         )
-        return MessageBodyResult(text=body[:4000], source=source, ok=True, snippet=snippet)
+        return MessageBodyResult(
+            text=body[:4000],
+            source=source,
+            ok=True,
+            snippet=snippet,
+            mime_summary=mime_summary,
+        )
 
     if snippet:
         logger.warning(
-            "[GMAIL] body empty msg=%s — fallback snippet len=%s mime=%s",
+            "[GMAIL] body empty msg=%s source=snippet mime=%s snippet=%r",
             str(message_id)[:12],
-            len(snippet),
-            str(payload.get("mimeType") or ""),
+            mime_summary[:180],
+            snippet[:80],
         )
-        return MessageBodyResult(text=snippet[:4000], source="snippet", ok=False, snippet=snippet)
+        return MessageBodyResult(
+            text=snippet[:4000],
+            source="snippet",
+            ok=False,
+            snippet=snippet,
+            mime_summary=mime_summary,
+        )
 
     logger.warning(
-        "[GMAIL] body unavailable msg=%s mime=%s",
+        "[GMAIL] body unavailable msg=%s source=none mime=%s",
         str(message_id)[:12],
-        str(payload.get("mimeType") or ""),
+        mime_summary[:180],
     )
-    return MessageBodyResult(text="", source="none", ok=False, snippet=snippet)
+    return MessageBodyResult(
+        text="",
+        source="none",
+        ok=False,
+        snippet=snippet,
+        mime_summary=mime_summary,
+    )
 
 
 def get_message_body(access_token: str, message_id: str) -> str:

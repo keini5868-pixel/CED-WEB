@@ -179,10 +179,10 @@ def test_gmail_module_reads_latest_email():
 
     result = asyncio.run(run())
     assert result.ok
-    assert "CUERPO_LITERAL" in result.spoken
     assert "Contenido completo" in result.spoken
     assert "Factura julio" in result.spoken
     assert "Ana" in result.spoken
+    assert "CUERPO_LITERAL" not in result.spoken
 
 
 def test_gmail_list_prompts_for_name():
