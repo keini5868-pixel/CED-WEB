@@ -54,6 +54,12 @@ from app.services.retell_native_pilot import (
     execute_disable_prospection_tool,
     execute_prospection_report_tool,
     execute_read_social_comments_tool,
+    execute_open_drive_map_tool,
+    execute_search_nearby_places_tool,
+    execute_show_route_tool,
+    execute_start_drive_navigation_tool,
+    execute_stop_drive_navigation_tool,
+    execute_navigation_status_tool,
     execute_list_calendar_events_tool,
     execute_read_finances_tool,
     execute_read_gmail_tool,
@@ -487,6 +493,66 @@ async def retell_read_social_comments_tool(request: Request) -> JSONResponse:
     user_id = _extract_user_id(payload)
     result = await execute_read_social_comments_tool(
         user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/open_drive_map")
+async def retell_open_drive_map_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_open_drive_map_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/search_nearby_places")
+async def retell_search_nearby_places_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_search_nearby_places_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/show_route")
+async def retell_show_route_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_show_route_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/start_drive_navigation")
+async def retell_start_drive_navigation_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_start_drive_navigation_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/stop_drive_navigation")
+async def retell_stop_drive_navigation_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_stop_drive_navigation_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/navigation_status")
+async def retell_navigation_status_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_navigation_status_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
     )
     return JSONResponse(status_code=200, content={"result": result["result"]})
 

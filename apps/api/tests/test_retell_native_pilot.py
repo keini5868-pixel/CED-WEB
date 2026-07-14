@@ -48,6 +48,12 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "disable_prospection",
         "prospection_report",
         "read_social_comments",
+        "open_drive_map",
+        "search_nearby_places",
+        "show_route",
+        "start_drive_navigation",
+        "stop_drive_navigation",
+        "navigation_status",
         "read_finances",
         "finance_prepare_write",
         "finance_confirm_write",
@@ -186,6 +192,12 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "meta_prepare_publish" in general_tools
     assert "meta_confirm_publish" in general_tools
     assert "check_meta_networks" in general_tools
+    assert "open_drive_map" in general_tools
+    assert "search_nearby_places" in general_tools
+    assert "show_route" in general_tools
+    assert "start_drive_navigation" in general_tools
+    assert "stop_drive_navigation" in general_tools
+    assert "navigation_status" in general_tools
     assert "get_environment" in general_tools
     assert "activate_camera" in general_tools
     assert "analyze_camera_frame" in general_tools
@@ -242,6 +254,65 @@ def test_build_native_pilot_states_restrict_confirm_tools():
 def test_pilot_prompt_includes_search_web_rules():
     assert "search_web" in RETELL_NATIVE_PILOT_PROMPT
     assert "NO uses search_web para clima" in RETELL_NATIVE_PILOT_PROMPT
+
+
+def test_pilot_prompt_includes_map_navigation_rules():
+    assert "search_nearby_places" in RETELL_NATIVE_PILOT_PROMPT
+    assert "show_route" in RETELL_NATIVE_PILOT_PROMPT
+    assert "start_drive_navigation" in RETELL_NATIVE_PILOT_PROMPT
+    assert "muéstrame la ruta" in RETELL_NATIVE_PILOT_PROMPT
+    assert "inicia la ruta" in RETELL_NATIVE_PILOT_PROMPT
+
+
+def test_execute_map_tools_delegate_to_voice_executor():
+    import asyncio
+
+    from app.services.retell_native_pilot import (
+        execute_open_drive_map_tool,
+        execute_search_nearby_places_tool,
+        execute_show_route_tool,
+        execute_start_drive_navigation_tool,
+    )
+
+    payload = {"call": {"call_id": "call-map-1"}}
+
+    async def _run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={"ok": True, "spoken": "Mapa listo, señor."},
+        ) as mock_exec:
+            await execute_open_drive_map_tool(user_id="u1", payload=payload, args={})
+            assert mock_exec.await_args.args[0] == "activar_modo_conducir"
+
+            mock_exec.reset_mock()
+            await execute_search_nearby_places_tool(
+                user_id="u1", payload=payload, args={"query": "Torre Eiffel"}
+            )
+            assert mock_exec.await_args.args[0] == "search_nearby_places"
+            assert mock_exec.await_args.args[2]["query"] == "Torre Eiffel"
+
+            mock_exec.reset_mock()
+            with patch(
+                "app.services.navigation_session.get_place_options",
+                return_value=[{"name": "A", "lat": 1.0, "lng": 2.0}],
+            ), patch(
+                "app.services.navigation_session.get_route",
+                return_value=None,
+            ):
+                await execute_show_route_tool(user_id="u1", payload=payload, args={})
+            assert mock_exec.await_args.args[0] == "start_navigation"
+            assert mock_exec.await_args.args[2].get("option_index") == 0
+            assert mock_exec.await_args.args[2].get("confirm") is not True
+
+            mock_exec.reset_mock()
+            await execute_start_drive_navigation_tool(
+                user_id="u1", payload=payload, args={}
+            )
+            assert mock_exec.await_args.args[0] == "start_navigation"
+            assert mock_exec.await_args.args[2].get("confirm") is True
+
+    asyncio.run(_run())
 
 
 def test_build_search_web_tool_has_filler():

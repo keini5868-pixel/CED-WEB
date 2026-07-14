@@ -30,6 +30,20 @@ _OPEN_MAP = re.compile(
     re.I,
 )
 
+_SHOW_ROUTE = re.compile(
+    r"\b(?:mu[eé]stra(?:me)?|mostrar|ense[nñ]a(?:me)?|traza(?:me)?|calcula(?:me)?)\s+"
+    r"(?:la\s+)?ruta\b|"
+    r"\bruta\s+por\s+favor\b",
+    re.I,
+)
+
+_START_ROUTE = re.compile(
+    r"\b(?:inicia|iniciar|arranca|arrancar|empieza|empezar)\s+"
+    r"(?:(?:la|el)\s+)?(?:ruta|navegaci[oó]n|viaje|gps)\b|"
+    r"\bcomienza(?:\s+la)?\s+navegaci[oó]n\b",
+    re.I,
+)
+
 _AGENT_ASK_START = re.compile(
     r"\b(iniciamos|inicio el viaje|iniciar(?:\s+(?:el\s+)?viaje|ruta)?|"
     r"m[aá]s cercano|cu[aá]l prefiere|toque iniciar)\b",
@@ -224,6 +238,24 @@ def resolve_open_map_request(user_text: str) -> bool:
     if norm in {"mapa", "activar mapa", "abre mapa", "abrir mapa", "modo conducir"}:
         return True
     return bool(_OPEN_MAP.search(text))
+
+
+def resolve_show_route_request(user_text: str) -> bool:
+    """True cuando pide ver/trazar la ruta sin arrancar la guía aún."""
+    text = (user_text or "").strip()
+    if not text:
+        return False
+    return bool(_SHOW_ROUTE.search(text))
+
+
+def resolve_start_route_request(user_text: str) -> bool:
+    """True cuando pide iniciar navegación en vivo."""
+    text = (user_text or "").strip()
+    if not text:
+        return False
+    if resolve_show_route_request(text) and not _START_ROUTE.search(text):
+        return False
+    return bool(_START_ROUTE.search(text)) or is_navigation_confirm(text)
 
 
 def resolve_navigation_place_search(

@@ -109,8 +109,14 @@ function applyMapAppearance(map: google.maps.Map, mapState: MapState) {
   }
 
   if (mapState === "navegando") {
-    map.setMapTypeId(google.maps.MapTypeId.HYBRID);
-    map.setOptions({ ...dark, gestureHandling: "none" });
+    // ROADMAP vectorial + tilt: muestra edificios 3D extruded (HYBRID oculta relief urbano).
+    map.setMapTypeId(google.maps.MapTypeId.ROADMAP);
+    map.setOptions({
+      ...dark,
+      gestureHandling: "none",
+      rotateControl: false,
+      tilt: NAV_FOLLOW_TILT,
+    });
     return;
   }
 

@@ -11,7 +11,7 @@ export const NAV_ARRIVAL_DISTANCE_M = 50;
 
 /** Zoom / cámara en navegación activa (estilo Google Maps). */
 export const NAV_FOLLOW_ZOOM = 19;
-export const NAV_FOLLOW_TILT = 52;
+export const NAV_FOLLOW_TILT = 67.5;
 export const NAV_IDLE_ZOOM = 15;
 /** Padding del mapa en navegación — flecha del usuario en el tercio inferior. */
 export const NAV_MAP_PADDING = { top: 72, bottom: 240, left: 32, right: 32 } as const;

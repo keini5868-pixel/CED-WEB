@@ -44,6 +44,12 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - disable_prospection: desactivar prospección.
 - prospection_report: reporte de leads de hoy.
 - read_social_comments: leer comentarios recientes FB/IG.
+- open_drive_map: abrir mapa / modo conducir.
+- search_nearby_places: buscar destino («llévame a …»).
+- show_route: mostrar ruta calculada («muéstrame la ruta»).
+- start_drive_navigation: iniciar navegación en vivo («inicia la ruta»).
+- stop_drive_navigation: detener navegación.
+- navigation_status: estado/ETA de la ruta.
 - search_web: búsqueda web general (noticias, hechos actuales, datos externos). NO para clima (use get_environment) ni para lo visible en cámara (use search_visible_product).
 - activate_advanced_mode: activar modo avanzado con Claude (solo frase «activa modo avanzado»).
 - consult_advanced: consulta profunda vía Claude — solo en modo avanzado.
@@ -105,6 +111,13 @@ Prospección (leads en comentarios):
 4. «lee los comentarios de Instagram/Facebook» → read_social_comments.
 5. Requiere Meta conectado y plan con prospección; si falla, di el mensaje de la tool.
 
+Mapa / navegación:
+1. «llévame a [lugar]» → search_nearby_places (abre mapa si hace falta).
+2. «muéstrame la ruta» → show_route (traza la ruta; aún no inicia guía).
+3. «inicia la ruta / inicia la navegación» → start_drive_navigation.
+4. «abre el mapa / modo conducir» → open_drive_map.
+5. «detén la navegación / cancela ruta» → stop_drive_navigation.
+
 Búsqueda web (search_web):
 1. «busca / investiga / qué pasó / noticias de / cuánto cuesta [sin cámara] / quién es …» con datos actuales → search_web.
 2. NO uses search_web para clima/aire (get_environment), calendario, Gmail, finanzas ni objetos en cámara.
@@ -137,6 +150,7 @@ Estado general — clima, calendario, Gmail, finanzas, Meta/redes, búsqueda web
 - search_web: hechos actuales / noticias / datos externos (no clima → get_environment; no cámara → search_visible_product).
 - Meta: meta_prepare_publish → confirmar → meta_confirm_publish. check_meta_networks para estado de conexión.
 - Prospección: enable_prospection / disable_prospection / prospection_report / read_social_comments.
+- Mapa: open_drive_map, search_nearby_places, show_route, start_drive_navigation, stop_drive_navigation, navigation_status.
 - Tras meta_prepare_publish con awaiting_confirmation: transition_to_publish_confirm_pending.
 - Si hay borrador Meta y dice «sí», llama meta_confirm_publish de inmediato (también aquí).
 - Gmail lectura: read_gmail. Envío: gmail_prepare_send → confirmar → gmail_confirm_send (sí / envíalo).
@@ -276,6 +290,21 @@ PROSPECTION_REPORT_DESCRIPTION = (
 READ_SOCIAL_COMMENTS_DESCRIPTION = (
     "Lee comentarios recientes de Instagram y/o Facebook y destaca prospectos calientes."
 )
+
+OPEN_DRIVE_MAP_DESCRIPTION = (
+    "Abre el mapa / modo conducir en pantalla."
+)
+SEARCH_NEARBY_PLACES_DESCRIPTION = (
+    "Busca lugares cercanos o un destino. Usar con «llévame a …»."
+)
+SHOW_ROUTE_DESCRIPTION = (
+    "Calcula y muestra la ruta al destino (sin iniciar guía aún). Usar con «muéstrame la ruta»."
+)
+START_DRIVE_NAVIGATION_DESCRIPTION = (
+    "Inicia la navegación en vivo con zoom, flecha y guía hablada. Usar con «inicia la ruta»."
+)
+STOP_DRIVE_NAVIGATION_DESCRIPTION = "Detiene la navegación y limpia la ruta activa."
+NAVIGATION_STATUS_DESCRIPTION = "Informa el estado de la navegación (ETA, destino, si está guiando)."
 
 SEARCH_WEB_DESCRIPTION = (
     "Búsqueda web general: noticias, hechos actuales, precios/datos externos o investigación breve. "
@@ -508,6 +537,25 @@ READ_SOCIAL_COMMENTS_PARAMETERS: dict[str, Any] = {
         },
     },
 }
+
+OPEN_DRIVE_MAP_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+SEARCH_NEARBY_PLACES_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "Lugar o destino."},
+    },
+    "required": ["query"],
+}
+SHOW_ROUTE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {"type": "string", "description": "Destino opcional si aún no hay ruta."},
+        "option_index": {"type": "integer", "description": "Índice 0-based de la opción en pantalla."},
+    },
+}
+START_DRIVE_NAVIGATION_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+STOP_DRIVE_NAVIGATION_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+NAVIGATION_STATUS_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
 
 SEARCH_WEB_PARAMETERS: dict[str, Any] = {
     "type": "object",
@@ -864,6 +912,72 @@ def build_read_social_comments_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_open_drive_map_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="open_drive_map",
+        description=OPEN_DRIVE_MAP_DESCRIPTION,
+        parameters=OPEN_DRIVE_MAP_PARAMETERS,
+        filler="Abriendo el mapa, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_search_nearby_places_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="search_nearby_places",
+        description=SEARCH_NEARBY_PLACES_DESCRIPTION,
+        parameters=SEARCH_NEARBY_PLACES_PARAMETERS,
+        filler="Buscando el destino, señor.",
+        timeout_ms=20_000,
+    )
+
+
+def build_show_route_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="show_route",
+        description=SHOW_ROUTE_DESCRIPTION,
+        parameters=SHOW_ROUTE_PARAMETERS,
+        filler="Calculando la ruta, señor.",
+        timeout_ms=25_000,
+    )
+
+
+def build_start_drive_navigation_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="start_drive_navigation",
+        description=START_DRIVE_NAVIGATION_DESCRIPTION,
+        parameters=START_DRIVE_NAVIGATION_PARAMETERS,
+        filler="Iniciando navegación, señor.",
+        timeout_ms=15_000,
+    )
+
+
+def build_stop_drive_navigation_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="stop_drive_navigation",
+        description=STOP_DRIVE_NAVIGATION_DESCRIPTION,
+        parameters=STOP_DRIVE_NAVIGATION_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_navigation_status_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="navigation_status",
+        description=NAVIGATION_STATUS_DESCRIPTION,
+        parameters=NAVIGATION_STATUS_PARAMETERS,
+        filler="Revisando la ruta, señor.",
+        timeout_ms=8_000,
+    )
+
+
 def build_read_finances_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -1010,6 +1124,12 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_disable_prospection_tool(api_public_url=api_public_url),
                 build_prospection_report_tool(api_public_url=api_public_url),
                 build_read_social_comments_tool(api_public_url=api_public_url),
+                build_open_drive_map_tool(api_public_url=api_public_url),
+                build_search_nearby_places_tool(api_public_url=api_public_url),
+                build_show_route_tool(api_public_url=api_public_url),
+                build_start_drive_navigation_tool(api_public_url=api_public_url),
+                build_stop_drive_navigation_tool(api_public_url=api_public_url),
+                build_navigation_status_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
                 build_finance_prepare_write_tool(api_public_url=api_public_url),
                 build_finance_confirm_write_tool(api_public_url=api_public_url),
@@ -1281,6 +1401,12 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "disable_prospection": _stats("disable_prospection"),
         "prospection_report": _stats("prospection_report"),
         "read_social_comments": _stats("read_social_comments"),
+        "open_drive_map": _stats("open_drive_map"),
+        "search_nearby_places": _stats("search_nearby_places"),
+        "show_route": _stats("show_route"),
+        "start_drive_navigation": _stats("start_drive_navigation"),
+        "stop_drive_navigation": _stats("stop_drive_navigation"),
+        "navigation_status": _stats("navigation_status"),
         "read_finances": _stats("read_finances"),
         "finance_prepare_write": _stats("finance_prepare_write"),
         "finance_confirm_write": _stats("finance_confirm_write"),
@@ -2377,6 +2503,87 @@ async def execute_read_social_comments_tool(
         user_id=user_id,
         payload=payload,
         args={"platform": platform},
+    )
+
+
+
+async def execute_open_drive_map_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="open_drive_map",
+        voice_tool_name="activar_modo_conducir",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_search_nearby_places_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    query = str(args.get("query") or "").strip() or resolve_tool_query(payload, args)
+    return await _execute_native_voice_alias_tool(
+        tool_name="search_nearby_places",
+        voice_tool_name="search_nearby_places",
+        user_id=user_id,
+        payload=payload,
+        args={"query": query, "_user_request": query},
+    )
+
+
+async def execute_show_route_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    """Muestra ruta: usa opción pendiente/índice o destino en query; no inicia guía."""
+    from app.services.navigation_session import get_place_options, get_route
+
+    params: dict[str, Any] = {}
+    if args.get("option_index") is not None:
+        params["option_index"] = int(args["option_index"])
+    query = str(args.get("query") or "").strip() or resolve_tool_query(payload, args)
+    if query and query.lower() not in {
+        "muestrame la ruta",
+        "muéstrame la ruta",
+        "mostrar la ruta",
+        "muestra la ruta",
+        "traza la ruta",
+        "calcula la ruta",
+        "la ruta",
+    }:
+        params["destino"] = query
+    # «muéstrame la ruta» tras búsqueda → primera opción si aún no hay ruta.
+    if "option_index" not in params and "destino" not in params:
+        if get_place_options(user_id) and not get_route(user_id):
+            params["option_index"] = 0
+    # Sin confirm: preview (apply_route); no begin_navigation.
+    return await _execute_native_voice_alias_tool(
+        tool_name="show_route",
+        voice_tool_name="start_navigation",
+        user_id=user_id,
+        payload=payload,
+        args=params,
+    )
+
+
+async def execute_start_drive_navigation_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="start_drive_navigation",
+        voice_tool_name="start_navigation",
+        user_id=user_id,
+        payload=payload,
+        args={"confirm": True, "destino": "iniciar"},
+    )
+
+
+async def execute_stop_drive_navigation_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="stop_drive_navigation",
+        voice_tool_name="stop_navigation",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_navigation_status_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="navigation_status",
+        voice_tool_name="navigation_status",
+        user_id=user_id,
+        payload=payload,
     )
 
 

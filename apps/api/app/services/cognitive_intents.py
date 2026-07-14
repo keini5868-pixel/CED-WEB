@@ -440,7 +440,9 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
 
 _NAV_CONFIRM_PATTERNS = [
     re.compile(
-        r"\b(sí|si|dale|iniciar?|vamos|empezar?|el primero|correcto|ok|adelante|listo)\b",
+        r"\b(sí|si|dale|iniciar?|vamos|empezar?|el primero|correcto|ok|adelante|listo|"
+        r"inicia(?:\s+la)?\s+(?:ruta|navegaci[oó]n)|iniciar?\s+(?:la\s+)?(?:ruta|navegaci[oó]n)|"
+        r"arranca(?:r)?(?:\s+la\s+ruta)?)\b",
         re.I,
     ),
 ]

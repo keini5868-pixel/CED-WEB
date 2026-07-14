@@ -10,6 +10,8 @@ from app.services.navigation_voice_intent import (
     resolve_navigation_confirm,
     resolve_navigation_place_search,
     resolve_open_map_request,
+    resolve_show_route_request,
+    resolve_start_route_request,
 )
 from app.services.retell_llm_types import Utterance
 
@@ -60,7 +62,19 @@ def test_is_navigation_confirm_phrases():
     assert is_navigation_confirm("dale")
     assert is_navigation_confirm("vamos")
     assert is_navigation_confirm("el primero")
+    assert is_navigation_confirm("inicia la ruta")
+    assert is_navigation_confirm("inicia la navegación")
     assert not is_navigation_confirm("busca walmart cerca")
+
+
+def test_show_vs_start_route_intents():
+    assert resolve_show_route_request("muéstrame la ruta")
+    assert resolve_show_route_request("traza la ruta")
+    assert not resolve_show_route_request("inicia la ruta")
+    assert resolve_start_route_request("inicia la ruta")
+    assert resolve_start_route_request("inicia la navegación")
+    assert resolve_start_route_request("arranca la ruta")
+    assert not resolve_start_route_request("muéstrame la ruta")
 
 
 def test_resolve_navigation_confirm_after_place_search():

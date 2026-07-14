@@ -1292,6 +1292,14 @@ async def _execute_voice_tool_body(
                 "iniciar navegacion",
                 "iniciar navegación",
                 "iniciar ruta",
+                "inicia la ruta",
+                "inicia la navegacion",
+                "inicia la navegación",
+                "inicia navegacion",
+                "inicia navegación",
+                "arranca la ruta",
+                "empezar navegacion",
+                "empezar navegación",
             }
             existing_route = get_route(user_id)
             explicit_confirm = params.get("confirm") is True
