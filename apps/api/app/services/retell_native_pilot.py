@@ -40,6 +40,10 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - meta_confirm_publish: publicar SOLO tras confirmación explícita en voz.
 - meta_cancel_publish: descartar borrador de publicación.
 - check_meta_networks: comprobar si Facebook/Instagram están conectados.
+- enable_prospection: activar detección de leads en comentarios.
+- disable_prospection: desactivar prospección.
+- prospection_report: reporte de leads de hoy.
+- read_social_comments: leer comentarios recientes FB/IG.
 - search_web: búsqueda web general (noticias, hechos actuales, datos externos). NO para clima (use get_environment) ni para lo visible en cámara (use search_visible_product).
 - activate_advanced_mode: activar modo avanzado con Claude (solo frase «activa modo avanzado»).
 - consult_advanced: consulta profunda vía Claude — solo en modo avanzado.
@@ -94,6 +98,13 @@ Meta / redes (publicación):
 6. Instagram sin imagen: comunica needs_image; no inventes la publicación.
 7. check_meta_networks si pregunta si están conectadas las redes.
 
+Prospección (leads en comentarios):
+1. «activa prospección» → enable_prospection.
+2. «desactiva prospección» → disable_prospection.
+3. «reporte de leads / prospección» → prospection_report.
+4. «lee los comentarios de Instagram/Facebook» → read_social_comments.
+5. Requiere Meta conectado y plan con prospección; si falla, di el mensaje de la tool.
+
 Búsqueda web (search_web):
 1. «busca / investiga / qué pasó / noticias de / cuánto cuesta [sin cámara] / quién es …» con datos actuales → search_web.
 2. NO uses search_web para clima/aire (get_environment), calendario, Gmail, finanzas ni objetos en cámara.
@@ -125,6 +136,7 @@ GENERAL_ASSISTANT_STATE_PROMPT = """
 Estado general — clima, calendario, Gmail, finanzas, Meta/redes, búsqueda web, cámara, modo avanzado.
 - search_web: hechos actuales / noticias / datos externos (no clima → get_environment; no cámara → search_visible_product).
 - Meta: meta_prepare_publish → confirmar → meta_confirm_publish. check_meta_networks para estado de conexión.
+- Prospección: enable_prospection / disable_prospection / prospection_report / read_social_comments.
 - Tras meta_prepare_publish con awaiting_confirmation: transition_to_publish_confirm_pending.
 - Si hay borrador Meta y dice «sí», llama meta_confirm_publish de inmediato (también aquí).
 - Gmail lectura: read_gmail. Envío: gmail_prepare_send → confirmar → gmail_confirm_send (sí / envíalo).
@@ -249,6 +261,20 @@ META_CANCEL_DESCRIPTION = (
 
 CHECK_META_DESCRIPTION = (
     "Comprueba si Facebook e Instagram están conectados (Meta OAuth)."
+)
+
+ENABLE_PROSPECTION_DESCRIPTION = (
+    "Activa el modo prospección: analiza comentarios de Instagram para detectar leads calientes."
+)
+
+DISABLE_PROSPECTION_DESCRIPTION = "Desactiva el modo prospección."
+
+PROSPECTION_REPORT_DESCRIPTION = (
+    "Informa cuántos leads y leads calientes se detectaron hoy."
+)
+
+READ_SOCIAL_COMMENTS_DESCRIPTION = (
+    "Lee comentarios recientes de Instagram y/o Facebook y destaca prospectos calientes."
 )
 
 SEARCH_WEB_DESCRIPTION = (
@@ -469,6 +495,19 @@ META_CANCEL_PARAMETERS: dict[str, Any] = {
 }
 
 CHECK_META_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+
+ENABLE_PROSPECTION_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+DISABLE_PROSPECTION_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+PROSPECTION_REPORT_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+READ_SOCIAL_COMMENTS_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "platform": {
+            "type": "string",
+            "description": "both, instagram o facebook. Por defecto both.",
+        },
+    },
+}
 
 SEARCH_WEB_PARAMETERS: dict[str, Any] = {
     "type": "object",
@@ -781,6 +820,50 @@ def build_check_meta_networks_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_enable_prospection_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="enable_prospection",
+        description=ENABLE_PROSPECTION_DESCRIPTION,
+        parameters=ENABLE_PROSPECTION_PARAMETERS,
+        filler="Activando prospección, señor.",
+        timeout_ms=12_000,
+    )
+
+
+def build_disable_prospection_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="disable_prospection",
+        description=DISABLE_PROSPECTION_DESCRIPTION,
+        parameters=DISABLE_PROSPECTION_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_prospection_report_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="prospection_report",
+        description=PROSPECTION_REPORT_DESCRIPTION,
+        parameters=PROSPECTION_REPORT_PARAMETERS,
+        filler="Revisando leads, señor.",
+        timeout_ms=12_000,
+    )
+
+
+def build_read_social_comments_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="read_social_comments",
+        description=READ_SOCIAL_COMMENTS_DESCRIPTION,
+        parameters=READ_SOCIAL_COMMENTS_PARAMETERS,
+        filler="Leyendo comentarios, señor.",
+        timeout_ms=25_000,
+    )
+
+
 def build_read_finances_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -923,6 +1006,10 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_meta_prepare_publish_tool(api_public_url=api_public_url),
                 build_meta_confirm_publish_tool(api_public_url=api_public_url),
                 build_meta_cancel_publish_tool(api_public_url=api_public_url),
+                build_enable_prospection_tool(api_public_url=api_public_url),
+                build_disable_prospection_tool(api_public_url=api_public_url),
+                build_prospection_report_tool(api_public_url=api_public_url),
+                build_read_social_comments_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
                 build_finance_prepare_write_tool(api_public_url=api_public_url),
                 build_finance_confirm_write_tool(api_public_url=api_public_url),
@@ -1186,6 +1273,14 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "gmail_confirm_send": _stats("gmail_confirm_send"),
         "gmail_cancel_send": _stats("gmail_cancel_send"),
         "search_web": _stats("search_web"),
+        "meta_prepare_publish": _stats("meta_prepare_publish"),
+        "meta_confirm_publish": _stats("meta_confirm_publish"),
+        "meta_cancel_publish": _stats("meta_cancel_publish"),
+        "check_meta_networks": _stats("check_meta_networks"),
+        "enable_prospection": _stats("enable_prospection"),
+        "disable_prospection": _stats("disable_prospection"),
+        "prospection_report": _stats("prospection_report"),
+        "read_social_comments": _stats("read_social_comments"),
         "read_finances": _stats("read_finances"),
         "finance_prepare_write": _stats("finance_prepare_write"),
         "finance_confirm_write": _stats("finance_confirm_write"),
@@ -2201,6 +2296,88 @@ async def execute_check_meta_networks_tool(
     latency_ms = int((time.perf_counter() - started) * 1000)
     record_tool_metric(call_id=call_id, tool_name="check_meta_networks", latency_ms=latency_ms, ok=ok)
     return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
+
+
+async def _execute_native_voice_alias_tool(
+    *,
+    tool_name: str,
+    voice_tool_name: str,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    from app.services.voice_tool_executor import execute_voice_tool
+
+    started = time.perf_counter()
+    call_id = _extract_call_id(payload)
+    if not user_id:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(call_id=call_id, tool_name=tool_name, latency_ms=latency_ms, ok=False)
+        return {"result": "No identifiqué al usuario, señor.", "latency_ms": latency_ms, "ok": False}
+    result = await execute_voice_tool(voice_tool_name, user_id, args or {})
+    spoken = str(result.get("spoken") or "").strip() or "Completado, señor."
+    ok = bool(result.get("ok", True)) and not _spoken_indicates_failure(spoken)
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    record_tool_metric(call_id=call_id, tool_name=tool_name, latency_ms=latency_ms, ok=ok)
+    return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
+
+
+async def execute_enable_prospection_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="enable_prospection",
+        voice_tool_name="activar_prospeccion",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_disable_prospection_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="disable_prospection",
+        voice_tool_name="desactivar_prospeccion",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_prospection_report_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="prospection_report",
+        voice_tool_name="reporte_prospeccion",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_read_social_comments_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    platform = str(args.get("platform") or "both").strip() or "both"
+    return await _execute_native_voice_alias_tool(
+        tool_name="read_social_comments",
+        voice_tool_name="leer_comentarios_redes",
+        user_id=user_id,
+        payload=payload,
+        args={"platform": platform},
+    )
 
 
 # Compat tests / imports previos

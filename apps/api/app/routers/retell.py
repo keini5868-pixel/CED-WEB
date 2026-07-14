@@ -50,6 +50,10 @@ from app.services.retell_native_pilot import (
     execute_meta_cancel_publish_tool,
     execute_meta_confirm_publish_tool,
     execute_meta_prepare_publish_tool,
+    execute_enable_prospection_tool,
+    execute_disable_prospection_tool,
+    execute_prospection_report_tool,
+    execute_read_social_comments_tool,
     execute_list_calendar_events_tool,
     execute_read_finances_tool,
     execute_read_gmail_tool,
@@ -441,6 +445,47 @@ async def retell_meta_cancel_publish_tool(request: Request) -> JSONResponse:
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
     result = await execute_meta_cancel_publish_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/enable_prospection")
+async def retell_enable_prospection_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_enable_prospection_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/disable_prospection")
+async def retell_disable_prospection_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_disable_prospection_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/prospection_report")
+async def retell_prospection_report_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_prospection_report_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/read_social_comments")
+async def retell_read_social_comments_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_read_social_comments_tool(
         user_id=user_id, payload=payload, args=args
     )
     return JSONResponse(status_code=200, content={"result": result["result"]})
