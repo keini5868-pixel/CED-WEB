@@ -173,7 +173,8 @@ Estado de confirmación de registro financiero — hay un borrador pendiente.
 - Si dice no, cancela, olvídalo o cambia de tema → finance_cancel_write y transition_to_general_assistant.
 - Si corrige datos → finance_cancel_write, transition_to_general_assistant, finance_prepare_write con datos nuevos.
 - read_finances solo si pide consultar finanzas (cancela el registro pendiente).
-- Tras finance_confirm_write exitoso, di al usuario exactamente el mensaje de confirmación devuelto.
+- Tras finance_confirm_write EXITOSO: di el mensaje de la tool y EN EL MISMO TURNO llama transition_to_general_assistant.
+- Si el usuario pide otra cosa (clima, Gmail, redes) → transition_to_general_assistant de inmediato.
 """.strip()
 
 ADVANCED_MODE_STATE_PROMPT = """
@@ -191,7 +192,8 @@ Estado de confirmación de cita — hay un borrador de calendario pendiente.
 - Si dice sí, dale, adelante o confirma → calendar_confirm_write de inmediato (incluso solo «sí»).
 - Si dice no/cancela → calendar_cancel_write y transition_to_general_assistant.
 - list_calendar_events solo si pide consultar (cancela el borrador pendiente).
-- Tras confirm exitoso, di exactamente el mensaje de la herramienta.
+- Tras calendar_confirm_write EXITOSO: di el mensaje de la tool y EN EL MISMO TURNO llama transition_to_general_assistant.
+- Si el usuario pide otra cosa (finanzas, clima, Gmail) → transition_to_general_assistant de inmediato.
 """.strip()
 
 STATE_GENERAL_ASSISTANT = "general_assistant"
@@ -200,7 +202,8 @@ GMAIL_CONFIRM_STATE_PROMPT = """
 Estado de confirmación de correo — hay un borrador pendiente de envío.
 - Si dice sí, envíalo, dale o confirma → gmail_confirm_send (incluso solo «sí»).
 - Si dice no/cancela → gmail_cancel_send y transition_to_general_assistant.
-- Tras envío exitoso, di exactamente el mensaje de la herramienta.
+- Tras gmail_confirm_send EXITOSO: di el mensaje de la tool y EN EL MISMO TURNO llama transition_to_general_assistant.
+- Si el usuario pide otra cosa (finanzas, clima, redes) → transition_to_general_assistant de inmediato.
 """.strip()
 
 STATE_GMAIL_CONFIRM_PENDING = "gmail_confirm_pending"
@@ -209,7 +212,10 @@ PUBLISH_CONFIRM_STATE_PROMPT = """
 Estado de confirmación de publicación — hay un borrador FB/IG pendiente.
 - Si dice sí, publícalo, dale o confirma → meta_confirm_publish (incluso solo «sí»).
 - Si dice no/cancela → meta_cancel_publish y transition_to_general_assistant.
-- Tras publicar, di exactamente el mensaje de la herramienta.
+- Tras meta_confirm_publish EXITOSO (publicado): di el mensaje de la tool y EN EL MISMO TURNO,
+  OBLIGATORIO, llama transition_to_general_assistant. Sin esa transición la sesión se queda bloqueada.
+- Si el usuario pide finanzas, clima, Gmail, calendario u otra cosa → transition_to_general_assistant YA
+  (o usa la tool de lectura disponible aquí) — NUNCA quedes en silencio.
 """.strip()
 
 STATE_FINANCE_CONFIRM_PENDING = "finance_confirm_pending"
@@ -1188,13 +1194,14 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_read_finances_tool(api_public_url=api_public_url),
                 build_finance_confirm_write_tool(api_public_url=api_public_url),
                 build_finance_cancel_write_tool(api_public_url=api_public_url),
+                build_get_environment_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
                     "destination_state_name": STATE_GENERAL_ASSISTANT,
                     "description": (
-                        "Volver al flujo general tras registro exitoso, cancelación, borrador expirado "
-                        "o cuando ya no hay movimiento pendiente."
+                        "OBLIGATORIO tras finance_confirm_write / finance_cancel_write exitoso. "
+                        "También si el usuario pide clima, Gmail, redes u otro tema no financiero."
                     ),
                 },
             ],
@@ -1206,12 +1213,15 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_read_gmail_tool(api_public_url=api_public_url),
                 build_gmail_confirm_send_tool(api_public_url=api_public_url),
                 build_gmail_cancel_send_tool(api_public_url=api_public_url),
+                build_get_environment_tool(api_public_url=api_public_url),
+                build_read_finances_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
                     "destination_state_name": STATE_GENERAL_ASSISTANT,
                     "description": (
-                        "Volver al flujo general tras enviar, cancelar o borrador expirado."
+                        "OBLIGATORIO tras gmail_confirm_send / gmail_cancel_send exitoso. "
+                        "También si pide finanzas, clima, redes u otro tema."
                     ),
                 },
             ],
@@ -1223,12 +1233,22 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_check_meta_networks_tool(api_public_url=api_public_url),
                 build_meta_confirm_publish_tool(api_public_url=api_public_url),
                 build_meta_cancel_publish_tool(api_public_url=api_public_url),
+                # Escape hatch: si Retell no transiciona tras publicar, el usuario
+                # no debe quedar en silencio al pedir finanzas/clima/Gmail.
+                build_get_environment_tool(api_public_url=api_public_url),
+                build_read_finances_tool(api_public_url=api_public_url),
+                build_read_gmail_tool(api_public_url=api_public_url),
+                build_list_calendar_events_tool(api_public_url=api_public_url),
+                build_search_web_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
                     "destination_state_name": STATE_GENERAL_ASSISTANT,
                     "description": (
-                        "Volver al flujo general tras publicar, cancelar o borrador expirado."
+                        "OBLIGATORIO en el mismo turno tras meta_confirm_publish exitoso "
+                        "(status published) o meta_cancel_publish. "
+                        "También si el usuario pide finanzas, clima, Gmail, calendario "
+                        "o cualquier tema que no sea confirmar/cancelar la publicación."
                     ),
                 },
             ],
@@ -1240,12 +1260,15 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_list_calendar_events_tool(api_public_url=api_public_url),
                 build_calendar_confirm_write_tool(api_public_url=api_public_url),
                 build_calendar_cancel_write_tool(api_public_url=api_public_url),
+                build_get_environment_tool(api_public_url=api_public_url),
+                build_read_finances_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
                     "destination_state_name": STATE_GENERAL_ASSISTANT,
                     "description": (
-                        "Volver al flujo general tras agendar, cancelar o borrador expirado."
+                        "OBLIGATORIO tras calendar_confirm_write / calendar_cancel_write exitoso. "
+                        "También si pide finanzas, clima, Gmail u otro tema."
                     ),
                 },
             ],
@@ -1630,10 +1653,17 @@ def _format_action_result_with_meta(action: dict[str, Any]) -> str:
     import json
 
     spoken = str(action.get("spoken") or "Completado, señor.").strip()
+    transition = action.get("transition")
+    # Refuerzo anti-silencio: tras éxito en estados confirm, Retell debe salir al general.
+    if transition == "transition_to_general_assistant":
+        spoken = (
+            f"{spoken} "
+            f"[REQUERIDO: llama ahora transition_to_general_assistant]"
+        )
     meta = {
         "status": action.get("status"),
         "draft_id": action.get("draft_id"),
-        "transition": action.get("transition"),
+        "transition": transition,
         "ok": action.get("ok"),
     }
     meta = {k: v for k, v in meta.items() if v is not None}

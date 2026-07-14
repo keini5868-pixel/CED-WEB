@@ -209,12 +209,13 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "finance_confirm_write" in confirm_tools
     assert "finance_cancel_write" in confirm_tools
     assert "read_finances" in confirm_tools
-    assert "get_environment" not in confirm_tools
+    assert "get_environment" in confirm_tools
     assert "finance_prepare_write" not in confirm_tools
     assert "activate_camera" not in confirm_tools
     assert "gmail_prepare_send" not in confirm_tools
 
     from app.services.retell_native_pilot import (
+        PUBLISH_CONFIRM_STATE_PROMPT,
         STATE_ADVANCED_MODE_ACTIVE,
         STATE_GMAIL_CONFIRM_PENDING,
         STATE_PUBLISH_CONFIRM_PENDING,
@@ -225,6 +226,8 @@ def test_build_native_pilot_states_restrict_confirm_tools():
         "read_gmail",
         "gmail_confirm_send",
         "gmail_cancel_send",
+        "get_environment",
+        "read_finances",
     }
     assert "gmail_prepare_send" not in gmail_tools
 
@@ -233,9 +236,16 @@ def test_build_native_pilot_states_restrict_confirm_tools():
         "check_meta_networks",
         "meta_confirm_publish",
         "meta_cancel_publish",
+        "get_environment",
+        "read_finances",
+        "read_gmail",
+        "list_calendar_events",
+        "search_web",
     }
     assert "meta_prepare_publish" not in publish_tools
-
+    publish_edge = by_name[STATE_PUBLISH_CONFIRM_PENDING]["edges"][0]["description"]
+    assert "OBLIGATORIO" in publish_edge
+    assert "transition_to_general_assistant" in PUBLISH_CONFIRM_STATE_PROMPT
     advanced_tools = {t["name"] for t in by_name[STATE_ADVANCED_MODE_ACTIVE]["tools"]}
     assert advanced_tools == {
         "consult_advanced",
