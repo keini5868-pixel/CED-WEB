@@ -105,11 +105,25 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
     });
   }, []);
 
-  const beginNavigation = useCallback(() => {
+  const beginNavigation = useCallback((routeOverride?: NavRoute | null) => {
     cancelBrowserNavigationSpeech();
-    setMapNav((prev) =>
-      prev.route ? { ...prev, isNavigating: true, placeOptions: [], placeQuery: "" } : prev,
-    );
+    setMapNav((prev) => {
+      const route = routeOverride ?? prev.route;
+      if (!route) return prev;
+      return {
+        route,
+        destinationPin: route.destination
+          ? {
+              lat: route.destination.lat,
+              lng: route.destination.lng,
+              label: route.destination.label,
+            }
+          : prev.destinationPin,
+        placeOptions: [],
+        placeQuery: "",
+        isNavigating: true,
+      };
+    });
     void postNavigationBegin();
   }, []);
 
@@ -326,7 +340,8 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
         applyRouteFromServer(detail.payload as NavRoute);
       }
       if (detail?.action === "begin_navigation") {
-        beginNavigation();
+        const payload = detail.payload as { route?: NavRoute } | null | undefined;
+        beginNavigation(payload?.route ?? null);
       }
       if (detail?.action === "cancel_navigation") {
         resetToIdle();

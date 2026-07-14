@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "retell-native-pilot-v21-map-camera-modes"
+BUILD_VERSION = "retell-native-pilot-v22-nav-voice-start"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

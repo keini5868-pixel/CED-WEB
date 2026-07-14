@@ -29,6 +29,7 @@ from app.services.navigation_session import (
     clear_place_options,
     get_current_step_index,
     get_location,
+    get_navigation_pending,
     get_place_options,
     get_route,
     push_client_action,
@@ -57,14 +58,16 @@ NAVIGATION_TIMEOUT_SEC = 25.0
 
 
 def _parse_place_option_index(params: dict[str, Any]) -> int | None:
-    raw = params.get("index")
-    if raw is not None:
-        try:
-            idx = int(raw)
-            if idx >= 0:
-                return idx
-        except (TypeError, ValueError):
-            pass
+    # show_route envía option_index; otras tools usan index.
+    for key in ("index", "option_index"):
+        raw = params.get(key)
+        if raw is not None:
+            try:
+                idx = int(raw)
+                if idx >= 0:
+                    return idx
+            except (TypeError, ValueError):
+                pass
     text = " ".join(
         str(params.get(k) or "")
         for k in ("opcion", "option", "eleccion", "destino", "query", "texto")
@@ -78,6 +81,68 @@ def _parse_place_option_index(params: dict[str, Any]) -> int | None:
     if re.search(r"\b(m[aá]s cercano|m[aá]s pr[oó]ximo|el cercano|la cercana)\b", text):
         return 0
     return None
+
+
+_CONFIRM_NAV_WORDS = frozenset(
+    {
+        "iniciar",
+        "ir",
+        "vamos",
+        "adelante",
+        "dale",
+        "listo",
+        "confirmar",
+        "start",
+        "go",
+        "arrancar",
+        "iniciar navegacion",
+        "iniciar navegación",
+        "iniciar ruta",
+        "inicia la ruta",
+        "inicia la navegacion",
+        "inicia la navegación",
+        "inicia navegacion",
+        "inicia navegación",
+        "arranca la ruta",
+        "empezar navegacion",
+        "empezar navegación",
+        "si",
+        "sí",
+    }
+)
+
+
+def _is_nav_confirm_destino(destino: str) -> bool:
+    d = (destino or "").strip().lower()
+    if not d:
+        return False
+    if d in _CONFIRM_NAV_WORDS:
+        return True
+    return bool(
+        re.search(
+            r"\b(inicia|iniciar|arranca|empezar)\b.*\b(ruta|navegaci[oó]n|viaje)\b",
+            d,
+        )
+    )
+
+
+def _resolve_pending_place(
+    user_id: str,
+    *,
+    option_idx: int | None = None,
+) -> tuple[dict[str, Any] | None, int | None]:
+    """Destino listo tras búsqueda (opciones / pending), sin geocodificar «iniciar»."""
+    options = get_place_options(user_id)
+    if options:
+        idx = 0 if option_idx is None else option_idx
+        if idx < 0 or idx >= len(options):
+            return None, None
+        return options[idx], idx
+    pending = get_navigation_pending(user_id)
+    dest = pending.get("destination")
+    if isinstance(dest, dict) and dest.get("lat") is not None and dest.get("lng") is not None:
+        return dest, int(pending.get("index") or 0)
+    return None, None
 
 
 def _format_places_spoken(places: list[dict[str, Any]], *, query: str) -> str:
@@ -127,17 +192,21 @@ def _push_map_start_navigation(
 def _begin_active_navigation(user_id: str, route: dict[str, Any]) -> dict[str, Any]:
     set_navigating(user_id, True)
     clear_navigation_pending(user_id)
-    push_client_action(user_id, "begin_navigation", {})
+    # Incluir ruta: client_action es un solo slot; si venimos de calculate+begin
+    # el apply_route previo puede perderse — el cliente aplica y arranca con este payload.
+    push_client_action(user_id, "begin_navigation", {"route": route})
     dest_label = str(route.get("destination", {}).get("label") or "su destino")
     _push_map_start_navigation(
         user_id,
         destination=dest_label,
         action="begin_navigation",
+        route=route,
     )
     return {
         "ok": True,
         "spoken": f"Iniciando navegación hacia {dest_label}, señor.",
         "client_action": "begin_navigation",
+        "route": route,
     }
 
 
@@ -148,6 +217,7 @@ async def _start_route_for_user(
     dest_lng: float,
     dest_label: str,
     index: int | None = None,
+    begin: bool = False,
 ) -> dict[str, Any]:
     loc = get_location(user_id)
     if not loc:
@@ -171,9 +241,11 @@ async def _start_route_for_user(
             error="route_failed",
         )
     set_route(user_id, route)
-    set_navigating(user_id, False)
     clear_place_options(user_id)
     clear_navigation_pending(user_id)
+    if begin:
+        return _begin_active_navigation(user_id, route)
+    set_navigating(user_id, False)
     push_client_action(user_id, "apply_route", route)
     _push_map_start_navigation(
         user_id,
@@ -1296,43 +1368,50 @@ async def _execute_voice_tool_body(
                 if option_idx >= len(options):
                     return _spoken_err("Esa opción no está disponible, señor.")
                 place = options[option_idx]
+                # show_route (sin confirm) → solo preview; start_drive (confirm) → guía.
+                begin = params.get("confirm") is True
                 return await _start_route_for_user(
                     user_id,
                     dest_lat=float(place["lat"]),
                     dest_lng=float(place["lng"]),
                     dest_label=str(place.get("name") or place.get("address") or "Destino"),
                     index=option_idx,
+                    begin=begin,
                 )
             destino = str(params.get("destino") or params.get("query") or "").strip()
-            confirm_words = {
-                "iniciar",
-                "ir",
-                "vamos",
-                "adelante",
-                "dale",
-                "listo",
-                "confirmar",
-                "start",
-                "go",
-                "arrancar",
-                "iniciar navegacion",
-                "iniciar navegación",
-                "iniciar ruta",
-                "inicia la ruta",
-                "inicia la navegacion",
-                "inicia la navegación",
-                "inicia navegacion",
-                "inicia navegación",
-                "arranca la ruta",
-                "empezar navegacion",
-                "empezar navegación",
-            }
             existing_route = get_route(user_id)
             explicit_confirm = params.get("confirm") is True
-            if existing_route and (
-                explicit_confirm or destino.lower() in confirm_words
-            ):
+            wants_begin = explicit_confirm or _is_nav_confirm_destino(destino)
+
+            if existing_route and wants_begin:
                 return _begin_active_navigation(user_id, existing_route)
+
+            # Confirmación por voz tras búsqueda: calcular ruta al lugar pendiente e iniciar.
+            # Antes geocodificaba «iniciar» → error genérico de dirección.
+            if wants_begin and not existing_route:
+                place, pending_idx = _resolve_pending_place(user_id, option_idx=option_idx)
+                if place is not None:
+                    logger.info(
+                        "[VOICE_NAV] confirm start via pending place user=%s label=%s",
+                        user_id[:8],
+                        place.get("name") or place.get("address"),
+                    )
+                    return await _start_route_for_user(
+                        user_id,
+                        dest_lat=float(place["lat"]),
+                        dest_lng=float(place["lng"]),
+                        dest_label=str(
+                            place.get("name") or place.get("address") or "Destino"
+                        ),
+                        index=pending_idx,
+                        begin=True,
+                    )
+                return _spoken_err(
+                    "No tengo un destino listo en el mapa, señor. "
+                    "Diga un lugar primero, por ejemplo «llévame a Wells Fargo».",
+                    error="no_pending_destination",
+                )
+
             if not destino:
                 if existing_route:
                     dest_label = str(

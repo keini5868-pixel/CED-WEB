@@ -626,9 +626,13 @@ export function useCedVoiceSession(
               id: Number(ev.id || Date.now()),
               action: navAction,
               payload:
-                navAction === "apply_route" && ev.route
-                  ? (ev.route as unknown as Record<string, unknown>)
-                  : {},
+                navAction === "begin_navigation"
+                  ? ev.route
+                    ? { route: ev.route as unknown as Record<string, unknown> }
+                    : {}
+                  : ev.route
+                    ? (ev.route as unknown as Record<string, unknown>)
+                    : {},
             };
             if (!isDriveMapOpenRef.current) {
               openDriveMapRef.current(detail);

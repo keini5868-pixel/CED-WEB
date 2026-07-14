@@ -27,6 +27,7 @@ import {
   navigationLookAheadCenter,
   ROUTE_PREVIEW_MIN_ZOOM,
   smoothHeading,
+  snapToRoutePath,
 } from "@/lib/navigation/geo";
 
 type DriveMapViewProps = {
@@ -179,11 +180,12 @@ function followNavigationCamera(
   lastHeadingRef: { current: number | null },
 ) {
   const user = { lat: position.lat, lng: position.lng };
-  const rawHeading = navigationHeading(user, path, position.heading, position.speed);
-  const heading = smoothHeading(lastHeadingRef.current, rawHeading);
+  const snapped = path.length >= 2 ? snapToRoutePath(path, user) : user;
+  const rawHeading = navigationHeading(snapped, path, position.heading, position.speed);
+  const heading = smoothHeading(lastHeadingRef.current, rawHeading, 45);
   lastHeadingRef.current = heading;
   const zoom = navigationFollowZoom(position.speed);
-  const center = navigationLookAheadCenter(user, path, heading, position.speed);
+  const center = navigationLookAheadCenter(snapped, path, heading, position.speed);
 
   applyNavigationMapPadding(map);
 
@@ -193,6 +195,13 @@ function followNavigationCamera(
     heading,
     tilt: NAV_FOLLOW_TILT,
   });
+  // Refuerzo: algunos WebViews aplican tilt pero ignoran heading en un solo moveCamera.
+  if (typeof map.setHeading === "function") {
+    map.setHeading(heading);
+  }
+  if (typeof map.setTilt === "function") {
+    map.setTilt(NAV_FOLLOW_TILT);
+  }
 }
 
 export function DriveMapView({
@@ -241,6 +250,10 @@ export function DriveMapView({
           disableDefaultUI: true,
           gestureHandling: "greedy",
           isFractionalZoomEnabled: true,
+          // Vector + Map ID → tilt/heading (rotación tipo Waze).
+          ...(typeof google.maps.RenderingType !== "undefined"
+            ? { renderingType: google.maps.RenderingType.VECTOR }
+            : {}),
         });
 
         markerRef.current = await createUserLocationMarker(mapRef.current, DEFAULT_CENTER);
@@ -331,7 +344,6 @@ export function DriveMapView({
     if (!map || !marker || !position) return;
 
     const latLng = { lat: position.lat, lng: position.lng };
-    marker.position = latLng;
 
     if (mapState === "navegando") {
       const path =
@@ -340,13 +352,17 @@ export function DriveMapView({
           : route
             ? routePathPoints(route, position)
             : [];
-      const heading = navigationHeading(latLng, path, position.heading, position.speed);
+      if (path.length > 1) routePathRef.current = path;
+      const snapped = path.length >= 2 ? snapToRoutePath(path, latLng) : latLng;
+      marker.position = snapped;
+      const heading = navigationHeading(snapped, path, position.heading, position.speed);
       followNavigationCamera(map, position, path, lastNavHeadingRef);
       navCameraReadyRef.current = true;
       marker.content = createUserLocationContent(heading, true, true);
       return;
     }
 
+    marker.position = latLng;
     marker.content = createUserLocationContent(position.heading, false, false);
   }, [
     position?.lat,

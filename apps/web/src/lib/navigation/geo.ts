@@ -75,6 +75,34 @@ export function closestPathIndex(path: NavLatLng[], point: NavLatLng): number {
   return bestIdx;
 }
 
+/** Ancla el pin a la polilínea (evita flecha al lado de la ruta). */
+export function snapToRoutePath(path: NavLatLng[], point: NavLatLng): NavLatLng {
+  if (path.length < 1) return point;
+  if (path.length === 1) return path[0]!;
+
+  const idx = closestPathIndex(path, point);
+  const prev = path[Math.max(0, idx - 1)]!;
+  const curr = path[idx]!;
+  const next = path[Math.min(path.length - 1, idx + 1)]!;
+
+  const project = (a: NavLatLng, b: NavLatLng): NavLatLng => {
+    const abLat = b.lat - a.lat;
+    const abLng = b.lng - a.lng;
+    const apLat = point.lat - a.lat;
+    const apLng = point.lng - a.lng;
+    const ab2 = abLat * abLat + abLng * abLng;
+    if (ab2 <= 0) return a;
+    const t = Math.max(0, Math.min(1, (apLat * abLat + apLng * abLng) / ab2));
+    return { lat: a.lat + abLat * t, lng: a.lng + abLng * t };
+  };
+
+  const onPrev = project(prev, curr);
+  const onNext = project(curr, next);
+  return distanceMeters(point, onPrev) <= distanceMeters(point, onNext)
+    ? onPrev
+    : onNext;
+}
+
 export function offsetByMeters(
   origin: NavLatLng,
   bearingDeg: number,
@@ -134,7 +162,7 @@ export function navigationLookAheadCenter(
 ): NavLatLng {
   const speed = speedMps ?? 0;
   // Look-ahead corto → cámara más “primera persona” (Waze), no panorama de toda la ruta.
-  const aheadM = Math.min(110, Math.max(32, speed * 6 + 38));
+  const aheadM = Math.min(70, Math.max(18, speed * 5 + 22));
 
   if (path.length >= 2) {
     const idx = closestPathIndex(path, position);
@@ -166,18 +194,22 @@ export function navigationHeading(
   speedMps: number | null | undefined = null,
 ): number {
   let routeHeading: number | null = null;
-  if (path.length) {
-    const idx = closestPathIndex(path, position);
-    const lookIdx = Math.min(idx + 3, path.length - 1);
-    const next = path[lookIdx] ?? position;
-    if (next.lat !== position.lat || next.lng !== position.lng) {
-      routeHeading = bearingDegrees(position, next);
+  if (path.length >= 2) {
+    const snapped = snapToRoutePath(path, position);
+    const idx = closestPathIndex(path, snapped);
+    const lookIdx = Math.min(idx + Math.max(2, Math.floor(path.length * 0.01) + 2), path.length - 1);
+    const next = path[lookIdx] ?? path[path.length - 1]!;
+    if (next.lat !== snapped.lat || next.lng !== snapped.lng) {
+      routeHeading = bearingDegrees(snapped, next);
+    } else if (idx + 1 < path.length) {
+      routeHeading = bearingDegrees(snapped, path[idx + 1]!);
     }
   }
 
+  // Priorizar rumbo de la ruta (orientación «hacia arriba»). GPS solo a velocidad.
   if (
     speedMps != null &&
-    speedMps > 2 &&
+    speedMps > 3.5 &&
     gpsHeading != null &&
     !Number.isNaN(gpsHeading)
   ) {
