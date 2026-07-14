@@ -10,7 +10,12 @@ export type AdvancedChatMessage = {
   user_image_preview?: string | null;
 };
 
-export type AdvancedImageMode = "analyze" | "variation" | "inspired" | "edit";
+export type AdvancedImageMode =
+  | "analyze"
+  | "variation"
+  | "inspired"
+  | "edit"
+  | "publish";
 
 export type AdvancedChatStatus = {
   configured: boolean;

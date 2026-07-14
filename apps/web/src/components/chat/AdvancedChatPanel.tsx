@@ -21,7 +21,9 @@ import {
   sendAdvancedChatMessageWithImage,
   ADVANCED_TIMEOUT_MS,
   type AdvancedChatMessage,
-} from "@/lib/api/advanced";import { normalizeCedMediaUrl } from "@/lib/api/media-url";
+  type AdvancedImageMode,
+} from "@/lib/api/advanced";
+import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 
@@ -288,12 +290,23 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
     try {
       if (imageFile) {
-        setStatusHint("Analizando imagen con Claude…");
+        const mode = currentMode as AdvancedImageMode;
+        setStatusHint(
+          mode === "publish"
+            ? "Preparando imagen para publicar…"
+            : mode === "analyze"
+              ? "Analizando imagen…"
+              : "Procesando imagen…",
+        );
+        const outbound =
+          mode === "publish"
+            ? text || "Usa esta imagen para publicar"
+            : text || "¿Qué piensas de esta imagen?";
         const result = await sendAdvancedChatMessageWithImage(
-          text || "¿Qué piensas de esta imagen?",
+          outbound,
           historyBefore,
           imageFile,
-          currentMode,
+          mode,
         );
         applyResult(result);
       } else {
@@ -306,7 +319,8 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         applyResult(result);
       }
     } catch (streamErr) {
-      if (!receivedTokens) {
+      // Con imagen: no degradar a chat de texto sin adjunto (falsa “continuación”).
+      if (!receivedTokens && !imageFile) {
         try {
           setStatusHint("Reintentando sin streaming…");
           const fallback = await sendAdvancedChatMessage(text, historyBefore);
@@ -327,14 +341,26 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
               ? err.message
               : streamErr instanceof Error
                 ? streamErr.message
-                : "Error al analizar.",
+                : "Error al enviar.",
           );
         }
       } else {
+        const idx = assistantIndex;
+        setMessages((prev) => {
+          if (idx >= 0 && idx < prev.length) {
+            const target = prev[idx];
+            if (target?.role === "assistant" && !target.content.trim() && !target.image?.url) {
+              return prev.filter((_, i) => i !== idx);
+            }
+          }
+          return prev;
+        });
         setError(
           streamErr instanceof Error
             ? streamErr.message
-            : "Error al analizar.",
+            : imageFile
+              ? "No pude procesar la imagen. Intente Analizar de nuevo o «Usar para publicar»."
+              : "Error al enviar.",
         );
       }
     } finally {

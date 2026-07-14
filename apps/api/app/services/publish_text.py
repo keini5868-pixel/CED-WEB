@@ -537,10 +537,33 @@ def is_publish_platform_reply(text: str) -> bool:
     return bool(_FACEBOOK_PLATFORM.search(t) or _INSTAGRAM_PLATFORM.search(t))
 
 
+_IMAGE_FOR_PUBLISH = re.compile(
+    r"(?:"
+    r"^(?:esa|esta)\s+(?:es\s+(?:la\s+)?)?imagen\b|"
+    r"\b(?:usa|usar|utiliza)\w*\s+(?:esta|esa)\s+imagen\b|"
+    r"\b(?:para\s+)?publicar\b.*\b(?:esta|esa)\s+imagen\b|"
+    r"\b(?:esta|esa)\s+imagen\b.*\b(?:para\s+)?publicar\b|"
+    r"\busar\s+para\s+publicar\b|"
+    r"\bpublica\s+(?:con\s+)?(?:esta|esa)\s+imagen\b"
+    r")",
+    re.I,
+)
+
+
+def is_image_for_publish_signal(text: str) -> bool:
+    """Usuario señala la imagen adjunta/recién subida como medio a publicar."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    return bool(_IMAGE_FOR_PUBLISH.search(t))
+
+
 def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    if with_image and is_image_for_publish_signal(t):
+        return True
     if is_explicit_social_publish_request(t, with_image=with_image):
         return True
     from app.services.marketing_creative import blocks_publish_intent
@@ -557,6 +580,35 @@ def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     if with_image and has_verb and has_image_ref:
         return True
     return False
+
+
+def history_awaits_publish_image(history: list[dict[str, str]] | None) -> bool:
+    """True si el asistente pidió recientemente subir imagen para FB/IG."""
+    recent = list(history or [])[-8:]
+    blob_user = " ".join(
+        str(r.get("content") or "")
+        for r in recent
+        if str(r.get("role") or "") == "user"
+    )
+    blob_asst = " ".join(
+        str(r.get("content") or "")
+        for r in recent
+        if str(r.get("role") or "") in {"assistant", "model"}
+    )
+    if not (_SOCIAL_PLATFORM.search(blob_user) or _PUBLISH_VERB.search(blob_user) or _PUBLISH_STEM.search(blob_user)):
+        if not (_SOCIAL_PLATFORM.search(blob_asst) and re.search(r"public", blob_asst, re.I)):
+            return False
+    return bool(
+        re.search(
+            r"(?:suba|sube|adjunt|env[ií]e|envie|cargue|pegue).{0,40}(?:imagen|foto)|"
+            r"(?:imagen|foto).{0,40}(?:para\s+publicar|de\s+la\s+publicaci)|"
+            r"cuando\s+(?:tenga|suba|adjunte)\s+la\s+imagen|"
+            r"necesito\s+la\s+imagen|"
+            r"facebook\s+est[aá]\s+conectado",
+            blob_asst,
+            re.I,
+        )
+    )
 
 
 def detect_publish_platform_explicit(text: str) -> str | None:

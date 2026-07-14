@@ -140,6 +140,7 @@ async def post_chat_message_with_image(
     content: str = Form(default=""),
     conversation_id: str | None = Form(default=None),
     voice_publish: str = Form(default=""),
+    image_mode: str = Form(default=""),
     image: UploadFile = File(...),
     user_id: str = Depends(require_user_id),
 ) -> dict:
@@ -148,7 +149,14 @@ async def post_chat_message_with_image(
         if len(image_bytes) > MAX_IMAGE_BYTES:
             raise TextChatError("Imagen demasiado grande. Máximo 5 MB.", http_status=400)
         media_type = (image.content_type or "image/jpeg").split(";")[0].strip()
-        text = content.strip() or "¿Qué piensas de esta imagen?"
+        # No forzar «analizar» por defecto: el vacío permite enganchar un borrador
+        # de publicación pendiente. El modo llega desde la UI.
+        mode = (image_mode or "").strip().lower()
+        text = content.strip()
+        if not text and mode == "analyze":
+            text = "¿Qué piensas de esta imagen?"
+        elif not text and mode == "publish":
+            text = "Usa esta imagen para publicar"
         want_voice = voice_publish.strip().lower() in ("true", "1", "yes")
         active: str | None = None
         try:
@@ -164,6 +172,7 @@ async def post_chat_message_with_image(
             conversation_id=conversation_id,
             image_bytes=image_bytes,
             image_media_type=media_type,
+            image_mode=mode or None,
         )
         if want_voice or active:
             logger.info(

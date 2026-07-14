@@ -2,7 +2,12 @@
 
 import { X } from "lucide-react";
 
-export type ImageActionMode = "analyze" | "variation" | "inspired" | "edit";
+export type ImageActionMode =
+  | "analyze"
+  | "variation"
+  | "inspired"
+  | "edit"
+  | "publish";
 
 type ImageActionBarProps = {
   preview: string;
@@ -12,6 +17,7 @@ type ImageActionBarProps = {
 };
 
 const MODES: { id: ImageActionMode; label: string; emoji: string }[] = [
+  { id: "publish", label: "Usar para publicar", emoji: "📤" },
   { id: "analyze", label: "Analizar", emoji: "🔍" },
   { id: "variation", label: "Variación", emoji: "🔄" },
   { id: "inspired", label: "Inspirar", emoji: "✨" },
@@ -51,8 +57,12 @@ export function ImageActionBar({
             onClick={() => onModeChange(id)}
             className={`action-tag rounded-2xl border px-3 py-1.5 text-[13px] transition-all sm:text-[13px] ${
               mode === id
-                ? "border-cyan-400 bg-cyan-500 text-white"
-                : "border-cyan-800/50 bg-black/40 text-cyan-400/80 hover:bg-cyan-950/50"
+                ? id === "publish"
+                  ? "border-emerald-400 bg-emerald-600 text-white"
+                  : "border-cyan-400 bg-cyan-500 text-white"
+                : id === "publish"
+                  ? "border-emerald-800/50 bg-black/40 text-emerald-300/90 hover:bg-emerald-950/40"
+                  : "border-cyan-800/50 bg-black/40 text-cyan-400/80 hover:bg-cyan-950/50"
             }`}
           >
             {emoji} {label}
@@ -65,6 +75,8 @@ export function ImageActionBar({
 
 export function imageActionPlaceholder(mode: ImageActionMode): string {
   switch (mode) {
+    case "publish":
+      return "Texto del post (opcional) o envíe para usar esta imagen…";
     case "variation":
       return "Describe la variación que quieres…";
     case "inspired":
@@ -78,6 +90,8 @@ export function imageActionPlaceholder(mode: ImageActionMode): string {
 
 export function imageActionHint(mode: ImageActionMode): string {
   switch (mode) {
+    case "publish":
+      return "📤 Usar para publicar — conecta esta imagen al borrador de Facebook/Instagram";
     case "variation":
       return "🔄 Modo variación — ej: \"versión más moderna y minimalista\"";
     case "inspired":

@@ -2143,8 +2143,10 @@ def send_message(
     conversation_id: str | None = None,
     image_bytes: bytes | None = None,
     image_media_type: str | None = None,
+    image_mode: str | None = None,
 ) -> dict[str, Any]:
     text = content.strip()
+    mode = (image_mode or "").strip().lower()
     if not text and not image_bytes:
         raise TextChatError("Mensaje vacío.")
     if text and len(text) > 8000:
@@ -2240,7 +2242,36 @@ def send_message(
             out["image"] = image
         return out
 
-    from app.services.text_publish_flow import handle_publish_flow_turn
+    from app.services.publish_image_context import (
+        get_publish_flow,
+        register_text_chat_image,
+    )
+    from app.services.publish_text import (
+        history_awaits_publish_image,
+        is_image_for_publish_signal,
+        is_social_publish_intent,
+    )
+    from app.services.text_publish_flow import (
+        continue_publish_after_image,
+        handle_publish_flow_turn,
+        start_publish_flow_from_image,
+    )
+
+    # Registrar imagen ANTES del flujo de publicación (awaiting_image → attach).
+    if image_bytes:
+        try:
+            register_text_chat_image(
+                user_id,
+                conversation_id,
+                image_bytes,
+                image_media_type or "image/jpeg",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[CHAT] register image failed user=%s", user_id[:8])
+            raise TextChatError(
+                _format_image_generation_error(str(exc)),
+                http_status=503,
+            ) from exc
 
     publish_reply = handle_publish_flow_turn(
         user_id,
@@ -2256,36 +2287,41 @@ def send_message(
             route_meta={"intent": "publish_flow", "source": "conversation"},
         )
 
-    if not image_bytes:
-        instant = _instant_chat_greeting_reply(text)
-        if instant:
-            return _finish(
-                _finalize_chat_reply(instant),
-                route_meta={"intent": "greeting", "source": "instant"},
-            )
-        from app.services.system_clock import try_instant_datetime_reply
-
-        dt_instant = try_instant_datetime_reply(text, history=history)
-        if dt_instant:
-            return _finish(
-                _finalize_chat_reply(dt_instant),
-                route_meta={"intent": "datetime", "source": "instant"},
-            )
-
     if image_bytes:
         try:
             from app.services.chat_multimedia import analyze_chat_image
             from app.services.marketing_creative import resolve_image_creation_from_attachment
-            from app.services.publish_image_context import register_text_chat_image
-            from app.services.publish_text import is_social_publish_intent
-            from app.services.text_publish_flow import start_publish_flow_from_image
 
-            register_text_chat_image(
-                user_id,
-                conversation_id,
-                image_bytes,
-                image_media_type or "image/jpeg",
+            flow = get_publish_flow(user_id, conversation_id)
+            awaiting_pub = bool(flow and str(flow.get("stage") or "") == "awaiting_image")
+            explicit_analyze = mode == "analyze" or bool(
+                re.search(
+                    r"\b(analiza|analizá|describe|expl[ií]came)\b|"
+                    r"qu[eé]\s+piensas\s+de\s+esta\s+imagen",
+                    text,
+                    re.I,
+                )
             )
+            wants_publish = mode == "publish" or (
+                not explicit_analyze
+                and (
+                    is_social_publish_intent(text, with_image=True)
+                    or is_image_for_publish_signal(text)
+                    or awaiting_pub
+                    or history_awaits_publish_image(history)
+                )
+            )
+            if wants_publish:
+                reply = continue_publish_after_image(
+                    user_id,
+                    conversation_id,
+                    text if (text or "").strip() else "Usa esta imagen para publicar",
+                    history=history,
+                )
+                return _finish(
+                    reply,
+                    route_meta={"intent": "publish_flow", "source": "image_upload"},
+                )
 
             if is_social_publish_intent(text, with_image=True):
                 reply = start_publish_flow_from_image(
@@ -2331,11 +2367,21 @@ def send_message(
                     route_meta={"intent": "marketing_creative", "source": "attachment_error"},
                 )
 
+            analyze_prompt = (text or "").strip()
+            if not analyze_prompt or analyze_prompt in {
+                "📷 Imagen adjunta",
+                "¿Qué piensas de esta imagen?",
+            }:
+                analyze_prompt = (
+                    "Describe brevemente qué se ve en esta imagen. "
+                    "Si no hay suficiente contexto, pregunta: "
+                    "¿desea publicarla, analizarla o generar una variación?"
+                )
             reply = analyze_chat_image(
                 user_id,
                 image_bytes=image_bytes,
                 media_type=image_media_type or "image/jpeg",
-                user_text=text,
+                user_text=analyze_prompt,
             )
             from app.services.publish_image_context import set_session_vision_analysis
 
@@ -2352,6 +2398,21 @@ def send_message(
                 _format_image_generation_error(str(exc)),
                 http_status=503,
             ) from exc
+
+    instant = _instant_chat_greeting_reply(text)
+    if instant:
+        return _finish(
+            _finalize_chat_reply(instant),
+            route_meta={"intent": "greeting", "source": "instant"},
+        )
+    from app.services.system_clock import try_instant_datetime_reply
+
+    dt_instant = try_instant_datetime_reply(text, history=history)
+    if dt_instant:
+        return _finish(
+            _finalize_chat_reply(dt_instant),
+            route_meta={"intent": "datetime", "source": "instant"},
+        )
 
     from app.services.chat_intents import is_casual_chat_interrupt
     from app.services.cognitive_intents import is_conversation_recall_intent

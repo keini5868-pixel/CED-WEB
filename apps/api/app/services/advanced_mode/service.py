@@ -371,11 +371,36 @@ def send_advanced_message_with_image(
     image_mode: str = "analyze",
     conversation_id: str | None = None,
 ) -> dict[str, Any]:
-    text = (message or "").strip() or "¿Qué piensas de esta imagen?"
-    api_key = require_anthropic_api_key()
-    conv_id = _conversation_id(user_id, conversation_id)
+    mode = (image_mode or "analyze").strip().lower()
+    text = (message or "").strip()
+    if not text and mode == "publish":
+        text = "Usa esta imagen para publicar"
+    elif not text:
+        text = "¿Qué piensas de esta imagen?"
 
-    if image_mode in ("variation", "inspired", "edit"):
+    # Misma lógica de publicación que el chat cotidiano.
+    if mode == "publish":
+        from app.services.text_chat import send_message as send_text_chat_message
+
+        result = send_text_chat_message(
+            user_id,
+            content=text,
+            conversation_id=None,
+            image_bytes=image_bytes,
+            image_media_type=image_media_type or "image/jpeg",
+            image_mode="publish",
+        )
+        return _finish_payload(
+            response=str(result.get("reply") or ""),
+            model=ADVANCED_MODEL_LABEL,
+            pdf=result.get("pdf"),
+            image=result.get("image"),
+        )
+
+    api_key = require_anthropic_api_key()
+    _conversation_id(user_id, conversation_id)
+
+    if mode in ("variation", "inspired", "edit"):
         from app.services.image_reference_generator import generate_image_with_reference
 
         style_map = {
@@ -384,11 +409,11 @@ def send_advanced_message_with_image(
             "edit": "edit",
         }
         prompt = text
-        if image_mode == "variation" and "variación" not in text.lower():
+        if mode == "variation" and "variación" not in text.lower():
             prompt = f"Genera una variación de esta imagen: {text}"
-        elif image_mode == "inspired":
+        elif mode == "inspired":
             prompt = f"Crea una imagen inspirada en esta referencia: {text}"
-        elif image_mode == "edit":
+        elif mode == "edit":
             prompt = f"Edita esta imagen: {text}"
 
         ref_result = generate_image_with_reference(
@@ -396,7 +421,7 @@ def send_advanced_message_with_image(
             prompt=prompt,
             reference_image=image_bytes,
             content_type=image_media_type or "image/jpeg",
-            style_mode=style_map.get(image_mode, "edit"),
+            style_mode=style_map.get(mode, "edit"),
         )
         if ref_result.get("ok") and ref_result.get("url"):
             caption = text[:72] if len(text) <= 72 else "Imagen generada"
@@ -410,7 +435,14 @@ def send_advanced_message_with_image(
                 ),
             )
         err = str(ref_result.get("error") or "No pude procesar la imagen.")
-        return _finish_payload(response=err, model=ADVANCED_MODEL_LABEL)
+        # Nunca fingir éxito sin URL.
+        return _finish_payload(
+            response=(
+                f"{err} ¿Desea publicarla, analizarla de nuevo "
+                "o probar otra variación?"
+            ),
+            model=ADVANCED_MODEL_LABEL,
+        )
 
     reply = analyze_image_with_claude(
         api_key=api_key,

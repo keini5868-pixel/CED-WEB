@@ -196,14 +196,17 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
         return None
     from app.services.publish_text import (
         is_explicit_social_publish_request,
+        is_image_for_publish_signal,
         is_publish_help_request,
         is_publish_platform_reply,
     )
 
+    # No llamar is_social_publish_intent aquí (recursión vía blocks_publish_intent).
     if (
         is_explicit_social_publish_request(t)
         or is_publish_platform_reply(t)
         or is_publish_help_request(t)
+        or is_image_for_publish_signal(t)
     ):
         return None
 

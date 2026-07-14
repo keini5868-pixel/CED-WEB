@@ -21,7 +21,9 @@ from app.services.publish_text import (
     extract_initial_publish_caption,
     extract_inline_publish_caption,
     extract_user_caption_for_publish,
+    history_awaits_publish_image,
     is_deictic_caption_reference,
+    is_image_for_publish_signal,
     is_publish_confirm,
     is_publish_help_request,
     is_social_publish_intent,
@@ -115,6 +117,105 @@ def _resolve_flow_caption(
     return extract_caption_from_history(history, platform=platform)
 
 
+def start_publish_flow_awaiting_image(
+    user_id: str,
+    conversation_id: str,
+    text: str,
+    *,
+    history: list[dict[str, str]] | None = None,
+) -> str:
+    """Inicia publicación sin imagen todavía (pedido por texto)."""
+    explicit = detect_publish_platform_explicit(text)
+    platform = explicit or detect_publish_platform(text) or ""
+    inline = (
+        extract_initial_publish_caption(text, platform=platform or "facebook")
+        or extract_inline_publish_caption(text, platform=platform or "facebook")
+    )
+    if not inline and history:
+        inline = extract_caption_from_history(history, platform=platform or "facebook")
+    begin_publish_flow(
+        user_id,
+        conversation_id,
+        platform=platform,
+        caption_draft=inline or "",
+        stage="awaiting_image",
+    )
+    label = _PLATFORM_LABEL.get(platform, "")
+    if label and inline:
+        return (
+            f"Perfecto, señor. Publicaré en {label} con este texto:\n\n"
+            f"{inline}\n\n"
+            f"Ahora adjunte la imagen (o elija «Usar para publicar») y le pido confirmación final."
+        )
+    if label:
+        return (
+            f"Muy bien, señor. {label} está listo para publicar. "
+            f"Adjunte la imagen que desea usar (botón de adjuntar o «Usar para publicar»)."
+        )
+    return (
+        "Muy bien, señor. Adjunte la imagen para publicar y indíqueme si es Facebook o Instagram."
+    )
+
+
+def continue_publish_after_image(
+    user_id: str,
+    conversation_id: str,
+    text: str,
+    *,
+    history: list[dict[str, str]] | None = None,
+) -> str:
+    """Imagen recién registrada + flujo pending / señal de publicar → avanza el borrador."""
+    flow = get_publish_flow(user_id, conversation_id)
+    explicit = detect_publish_platform_explicit(text)
+    platform = (explicit or (str(flow.get("platform") or "") if flow else "") or "").strip()
+    # Sin red explícita: dejar vacío para preguntar FB/IG (no forzar default).
+    caption = str(flow.get("caption_draft") or "").strip() if flow else ""
+    caption = _resolve_flow_caption(
+        text,
+        platform=platform or "instagram",
+        history=history or [],
+        existing=caption,
+    ) or caption
+    if not caption and history:
+        caption = extract_caption_from_history(history, platform=platform or "instagram")
+    if caption and platform:
+        begin_publish_flow(
+            user_id,
+            conversation_id,
+            platform=platform,
+            caption_draft=caption,
+            stage="awaiting_confirm",
+        )
+        label = _PLATFORM_LABEL.get(platform, platform)
+        return (
+            f"Imagen recibida, señor. Publicaré en {label} con este texto:\n\n"
+            f"{caption}\n\n"
+            f"Cuando esté listo, dígame «envía» o «publica»."
+        )
+    if caption and not platform:
+        begin_publish_flow(
+            user_id,
+            conversation_id,
+            platform="",
+            caption_draft=caption,
+            stage="awaiting_confirm",
+        )
+        return (
+            "Imagen recibida, señor. La publicaré cuando usted confirme.\n\n"
+            f"Texto: {caption}\n\n"
+            "¿Desea publicar en Facebook o Instagram? "
+            "¿Envío la publicación ahora o quiere ajustar el texto?"
+        )
+    begin_publish_flow(
+        user_id,
+        conversation_id,
+        platform=platform,
+        caption_draft="",
+        stage="awaiting_caption_choice",
+    )
+    return publish_flow_opening(platform)
+
+
 def start_publish_flow_from_image(
     user_id: str,
     conversation_id: str,
@@ -122,30 +223,12 @@ def start_publish_flow_from_image(
     *,
     history: list[dict[str, str]] | None = None,
 ) -> str:
-    explicit = detect_publish_platform_explicit(text)
-    platform = explicit or detect_publish_platform(text)
-    inline = extract_initial_publish_caption(text, platform=platform) or extract_inline_publish_caption(
+    return continue_publish_after_image(
+        user_id,
+        conversation_id,
         text,
-        platform=platform,
+        history=history,
     )
-    if not inline and history:
-        inline = extract_caption_from_history(history, platform=platform)
-    if inline:
-        begin_publish_flow(
-            user_id,
-            conversation_id,
-            platform=platform,
-            caption_draft=inline,
-            stage="awaiting_confirm",
-        )
-        label = _PLATFORM_LABEL.get(platform, platform)
-        return (
-            f"Imagen recibida, señor. Publicaré en {label} con este texto:\n\n"
-            f"{inline}\n\n"
-            f"Cuando esté listo, dígame «envía» o «publica»."
-        )
-    begin_publish_flow(user_id, conversation_id, platform=explicit or "")
-    return publish_flow_opening(explicit or "")
 
 
 def handle_publish_flow_turn(
@@ -159,9 +242,23 @@ def handle_publish_flow_turn(
 ) -> str | None:
     """Devuelve respuesta si el turno pertenece al flujo de publicación; si no, None."""
     flow = get_publish_flow(user_id, conversation_id)
-    if flow and has_publishable_image(user_id, conversation_id) and _publish_turn_is_off_topic(text):
+    if (
+        flow
+        and str(flow.get("stage") or "") != "awaiting_image"
+        and has_publishable_image(user_id, conversation_id)
+        and _publish_turn_is_off_topic(text)
+    ):
         clear_publish_flow(user_id, conversation_id)
         flow = None
+
+    # Pedido de publicar SIN imagen → esperar adjunto (no inventar éxito).
+    if not flow and is_social_publish_intent(text) and not has_publishable_image(user_id, conversation_id):
+        return start_publish_flow_awaiting_image(
+            user_id,
+            conversation_id,
+            text,
+            history=history,
+        )
 
     if not flow and is_social_publish_intent(text) and has_publishable_image(user_id, conversation_id):
         explicit = detect_publish_platform_explicit(text)
@@ -188,7 +285,23 @@ def handle_publish_flow_turn(
         begin_publish_flow(user_id, conversation_id, platform=explicit or "")
         return publish_flow_opening(explicit or "")
 
-    if not flow or not has_publishable_image(user_id, conversation_id):
+    # «esa imagen» con foto ya en contexto + historial de publicar.
+    if (
+        not flow
+        and has_publishable_image(user_id, conversation_id)
+        and (
+            is_image_for_publish_signal(text)
+            or (history_awaits_publish_image(history) and is_image_for_publish_signal(text))
+        )
+    ):
+        return continue_publish_after_image(
+            user_id,
+            conversation_id,
+            text,
+            history=history,
+        )
+
+    if not flow:
         return None
 
     platform = str(flow.get("platform") or "").strip()
@@ -199,6 +312,59 @@ def handle_publish_flow_turn(
     label = _PLATFORM_LABEL.get(platform, platform)
     stage = str(flow.get("stage") or "awaiting_caption_choice")
     caption = str(flow.get("caption_draft") or "").strip()
+
+    if stage == "awaiting_image":
+        if has_publishable_image(user_id, conversation_id):
+            return continue_publish_after_image(
+                user_id,
+                conversation_id,
+                user_text,
+                history=history,
+            )
+        # Actualizar caption/plataforma mientras espera la imagen.
+        if user_text:
+            new_cap = _resolve_flow_caption(
+                user_text,
+                platform=platform or "facebook",
+                history=history,
+                existing=caption,
+            )
+            if new_cap:
+                update_publish_flow(
+                    user_id,
+                    conversation_id,
+                    caption_draft=new_cap,
+                    platform=platform or None,
+                )
+                caption = new_cap
+            elif explicit := detect_publish_platform_explicit(user_text):
+                update_publish_flow(user_id, conversation_id, platform=explicit)
+                platform = explicit
+                label = _PLATFORM_LABEL.get(platform, platform)
+        if label and caption:
+            return (
+                f"Tengo el texto para {label}, señor. "
+                f"Adjunte la imagen (o «Usar para publicar») para continuar."
+            )
+        if label:
+            return (
+                f"Todavía necesito la imagen para publicar en {label}, señor. "
+                f"Adjúntela con el botón de imagen o elija «Usar para publicar»."
+            )
+        return (
+            "Todavía necesito la imagen para publicar, señor. "
+            "Adjúntela cuando esté listo."
+        )
+
+    if not has_publishable_image(user_id, conversation_id):
+        if stage in {"awaiting_confirm", "awaiting_caption_choice"}:
+            update_publish_flow(user_id, conversation_id, stage="awaiting_image")
+            return (
+                f"No encuentro la imagen del borrador, señor. "
+                f"Adjúntela de nuevo para publicar"
+                f"{f' en {label}' if label else ''}."
+            )
+        return None
 
     if stage == "awaiting_caption_choice":
         if is_publish_confirm(user_text, allow_short_yes=True) and caption:

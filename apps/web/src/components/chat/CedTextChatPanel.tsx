@@ -185,13 +185,20 @@ function isInternalImagePrompt(text: string): boolean {
 
 /** Creativos con mucho texto deben pasar por chat (brief limpio + publicar después). */
 function shouldRouteAttachmentViaChat(text: string, mode: ImageActionMode): boolean {
-  if (mode === "analyze") return true;
+  if (mode === "analyze" || mode === "publish") return true;
   const t = text.trim();
   if (!t) return false;
   if (t.length > 100) return true;
   return /beneficios?|veneficios?|caracter[ií]sticas|puntos clave|ventajas|flyer|creativo|referencia|fondo|genera\s+una\s+imagen|vbeneficios|imegen/i.test(
     t,
   );
+}
+
+function recentMessagesAwaitPublish(messages: ChatMessage[]): boolean {
+  const recent = messages.slice(-8);
+  const blob = recent.map((m) => m.content || "").join(" ");
+  return /facebook|instagram|\bface\b|\bfb\b|publicar|publicaci[oó]n/i.test(blob)
+    && /imagen|foto|adjunt|suba|sube/i.test(blob);
 }
 
 function imageUserLabel(image: ChatImageAttachment): string {
@@ -551,9 +558,14 @@ export function CedTextChatPanel({
       streamTargetIndexRef.current = null;
     }, 120_000);
 
+    const outboundText =
+      currentMode === "publish" && imageFile
+        ? text || "Usa esta imagen para publicar"
+        : text;
+
     const userMsg: ChatMessage = {
       role: "user",
-      content: text || "📷 Imagen adjunta",
+      content: outboundText || "📷 Imagen adjunta",
       user_image_preview: imagePreview,
     };
 
@@ -564,11 +576,11 @@ export function CedTextChatPanel({
     try {
       if (
         imageFile &&
-        !shouldRouteAttachmentViaChat(text, currentMode) &&
+        !shouldRouteAttachmentViaChat(outboundText, currentMode) &&
         (currentMode === "variation" || currentMode === "inspired" || currentMode === "edit")
       ) {
         const prompt =
-          text ||
+          outboundText ||
           (currentMode === "variation"
             ? "Genera una variación de esta imagen"
             : currentMode === "inspired"
@@ -639,20 +651,28 @@ export function CedTextChatPanel({
       };
 
       const result = await sendChatMessage(
-        text,
+        outboundText,
         conversationId,
         imageFile,
         voicePublishActive || Boolean(onVoiceImageAttached),
         !imageFile ? applyStreamChunk : undefined,
+        imageFile ? currentMode : null,
       );
       setConversationId(result.conversation_id);
       if (imageFile) {
+        const reply = result.reply || "";
+        const claimsCreativeSuccess =
+          /listo[^.]*aqu[ií]\s+est[aá]\s+su\s+creativo/i.test(reply) &&
+          !result.image?.url;
         setMessages((prev) =>
           dedupeChatMessages([
             ...prev,
             {
               role: "model",
-              content: result.reply,
+              content: claimsCreativeSuccess
+                ? "No pude completar esa acción con la imagen, señor. "
+                  + "¿Desea publicarla, analizarla o generar una variación?"
+                : reply,
               created_at: new Date().toISOString(),
               pdf: result.pdf ?? null,
               image: result.image
@@ -889,7 +909,14 @@ export function CedTextChatPanel({
               style={{ WebkitAppearance: "none" }}
             />
             <ImageUploadButton
-              onImageSelected={(file, preview) => setAttachedImage({ file, preview })}
+              onImageSelected={(file, preview) => {
+                setAttachedImage({ file, preview });
+                setImageMode((prev) =>
+                  prev === "analyze" && recentMessagesAwaitPublish(messages)
+                    ? "publish"
+                    : prev,
+                );
+              }}
               disabled={busy || status?.blocked || !!attachedImage}
             />
             <MicButton

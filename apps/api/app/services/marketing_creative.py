@@ -209,6 +209,11 @@ def is_attachment_creative_request(
     raw = (text or "").strip()
     if not raw:
         return False
+    from app.services.publish_text import is_image_for_publish_signal, is_social_publish_intent
+
+    # Señalar «esa imagen» para publicar ≠ pedir creativo nuevo.
+    if is_image_for_publish_signal(raw) or is_social_publish_intent(raw, with_image=True):
+        return False
     t = normalize_creative_request_text(raw)
     if is_image_creation_request(t, history):
         return True

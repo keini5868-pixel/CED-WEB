@@ -84,6 +84,7 @@ export async function sendChatMessage(
   image?: File | null,
   voicePublish?: boolean,
   onToken?: (chunk: string) => void,
+  imageMode?: string | null,
 ): Promise<{
   conversation_id: string;
   reply: string;
@@ -97,6 +98,7 @@ export async function sendChatMessage(
       conversationId,
       image,
       voicePublish,
+      imageMode,
     );
   }
   return sendChatMessageStream(content, conversationId, onToken ?? (() => {}));
@@ -107,6 +109,7 @@ async function sendChatMessageBlocking(
   conversationId?: string | null,
   image?: File | null,
   voicePublish?: boolean,
+  imageMode?: string | null,
 ): Promise<{
   conversation_id: string;
   reply: string;
@@ -125,6 +128,9 @@ async function sendChatMessageBlocking(
     formData.append("image", image, image.name || "attachment.jpg");
     if (voicePublish) {
       formData.append("voice_publish", "true");
+    }
+    if (imageMode) {
+      formData.append("image_mode", imageMode);
     }
     res = await proxyFetch("chat/send-with-image", {
       method: "POST",
