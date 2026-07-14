@@ -89,9 +89,10 @@ _GREETING_ONLY = re.compile(
     re.I,
 )
 _TOOLS_KEYWORDS = re.compile(
-    r"\b(publica|publicar|instagram|facebook|meta|recuerdas|guarda|memoria|"
+    r"\b(publica|publicar|instagram|facebook|meta|face|fb|recuerdas|guarda|memoria|"
     r"lead|cliente|pdf|imagen|conectad|busca|buscar|búsqueda|noticias|clima|"
-    r"informaci[oó]n|investiga|terremoto|actual|reciente|dame datos)\b",
+    r"informaci[oó]n|investiga|terremoto|actual|reciente|dame datos|"
+    r"confirmo|confirm[oa]|env[ií]a|enviar|publ[ií]calo)\b",
     re.I,
 )
 
@@ -2815,7 +2816,38 @@ def _persist_stream_turn(
     return conv_id
 
 
-def _can_stream_chat_text(text: str) -> bool:
+def _publish_flow_requires_blocking(
+    user_id: str,
+    conversation_id: str | None,
+    text: str,
+) -> bool:
+    """Confirmaciones cortas («te confirmo», «sí», «envía») no deben ir por SSE sin tools."""
+    from app.services.publish_image_context import get_publish_flow
+    from app.services.publish_text import (
+        is_publish_confirm,
+        is_social_publish_intent,
+        wants_publish_now,
+    )
+
+    t = (text or "").strip()
+    if not t:
+        return False
+    if is_publish_confirm(t, allow_short_yes=False) or wants_publish_now(t):
+        return True
+    if is_social_publish_intent(t):
+        return True
+    if conversation_id and get_publish_flow(user_id, conversation_id):
+        # Con borrador activo, incluso «sí» / ajustes deben pasar por handle_publish_flow_turn.
+        return True
+    return False
+
+
+def _can_stream_chat_text(
+    text: str,
+    *,
+    user_id: str | None = None,
+    conversation_id: str | None = None,
+) -> bool:
     from app.modules.environment_module import is_environment_intent
     from app.services.chat_module_context import requires_sync_module_handler
     from app.services.cognitive_intents import (
@@ -2826,6 +2858,8 @@ def _can_stream_chat_text(text: str) -> bool:
         requires_live_web,
     )
 
+    if user_id and _publish_flow_requires_blocking(user_id, conversation_id, text):
+        return False
     if requires_sync_module_handler(text):
         return False
     if is_weather_intent(text) or is_news_intent(text):
@@ -2911,7 +2945,9 @@ def iter_send_message_stream(
     if len(text) > 8000:
         raise TextChatError("Mensaje demasiado largo.")
 
-    if not _can_stream_chat_text(text):
+    if not _can_stream_chat_text(
+        text, user_id=user_id, conversation_id=conversation_id
+    ):
         result = send_message(user_id, content=text, conversation_id=conversation_id)
         reply = str(result.get("reply") or "").strip()
         if reply:
@@ -2921,6 +2957,16 @@ def iter_send_message_stream(
         return
 
     _perf("validated")
+
+    # Doble red: por si el conversation_id llega tarde o el flujo se creó mid-stream setup.
+    if conversation_id and _publish_flow_requires_blocking(user_id, conversation_id, text):
+        result = send_message(user_id, content=text, conversation_id=conversation_id)
+        reply = str(result.get("reply") or "").strip()
+        if reply:
+            yield _sse_event("token", {"text": reply})
+            yield _sse_flush()
+        yield _sse_event("done", result)
+        return
 
     instant = _instant_chat_greeting_reply(text)
     if instant:
@@ -2992,6 +3038,16 @@ def iter_send_message_stream(
         )
         profile = profile_future.result() or {}
         conversation_id, history = conv_future.result()
+
+    # Tras resolver conversation_id: si hay borrador Meta, publicar por vía bloqueante.
+    if _publish_flow_requires_blocking(user_id, conversation_id, text):
+        result = send_message(user_id, content=text, conversation_id=conversation_id)
+        reply = str(result.get("reply") or "").strip()
+        if reply:
+            yield _sse_event("token", {"text": reply})
+            yield _sse_flush()
+        yield _sse_event("done", result)
+        return
 
     from app.services.chat_image_generation import (
         run_chat_image_generation,

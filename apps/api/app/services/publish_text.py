@@ -640,6 +640,9 @@ def is_publish_confirm(text: str, *, allow_short_yes: bool = False) -> bool:
         return True
     if re.fullmatch(r"s[ií]\s*(?:env[ií]a(?:la|lo)?|publica(?:la|lo)?)[\s!.]*", t, re.I):
         return True
+    # «te confirmo» / «sí te confirmo» / «confirmo la publicación»
+    if re.search(r"\b(?:te\s+)?confirmo\b", t, re.I):
+        return True
     return bool(_PUBLISH_CONFIRM.search(t))
 
 
