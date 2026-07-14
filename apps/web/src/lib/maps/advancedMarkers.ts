@@ -27,13 +27,16 @@ export function createUserLocationContent(
   wrap.style.pointerEvents = "none";
 
   if (navigating) {
+    wrap.style.width = "48px";
+    wrap.style.height = "48px";
+    wrap.style.position = "relative";
     const ring = document.createElement("div");
     ring.style.position = "absolute";
-    ring.style.width = "36px";
-    ring.style.height = "36px";
+    ring.style.width = "44px";
+    ring.style.height = "44px";
     ring.style.borderRadius = "50%";
-    ring.style.background = "rgba(66, 133, 244, 0.18)";
-    ring.style.boxShadow = "0 0 0 2px rgba(66, 133, 244, 0.35)";
+    ring.style.background = "rgba(66, 133, 244, 0.22)";
+    ring.style.boxShadow = "0 0 0 3px rgba(66, 133, 244, 0.4)";
     wrap.appendChild(ring);
 
     const arrow = document.createElement("div");
@@ -41,16 +44,14 @@ export function createUserLocationContent(
     arrow.style.zIndex = "1";
     arrow.style.width = "0";
     arrow.style.height = "0";
-    arrow.style.borderLeft = "12px solid transparent";
-    arrow.style.borderRight = "12px solid transparent";
-    arrow.style.borderBottom = "24px solid #4285F4";
-    arrow.style.filter = "drop-shadow(0 2px 4px rgba(0,0,0,0.5))";
+    arrow.style.borderLeft = "16px solid transparent";
+    arrow.style.borderRight = "16px solid transparent";
+    arrow.style.borderBottom = "32px solid #4285F4";
+    arrow.style.filter = "drop-shadow(0 2px 6px rgba(0,0,0,0.55))";
     arrow.style.transformOrigin = "center center";
     if (!mapRotates) {
       arrow.style.transform = `rotate(${heading ?? 0}deg)`;
     }
-    wrap.style.width = "28px";
-    wrap.style.height = "28px";
     wrap.appendChild(arrow);
   } else {
     const dot = document.createElement("div");

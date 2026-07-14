@@ -1243,23 +1243,49 @@ async def _execute_voice_tool_body(
             vcs.set_active_mode(user_id, "map")
             set_place_options(user_id, places, query=query)
             vcs.set_map_search_results(user_id, places)
-            push_client_action(
-                user_id,
-                "show_place_options",
-                {"query": query, "places": places},
-            )
+
+            from app.services.navigation_voice_intent import is_generic_place_query
+
+            # Nombre propio específico con 1 resultado → vista cercana del POI.
+            # Categoría / varios resultados → lista para elegir.
+            if places and (is_generic_place_query(query) or len(places) > 1):
+                push_client_action(
+                    user_id,
+                    "show_place_options",
+                    {"query": query, "places": places},
+                )
+                client_action = "show_place_options"
+            else:
+                top = places[0] if places else None
+                if top:
+                    payload = {
+                        "lat": top.get("lat"),
+                        "lng": top.get("lng"),
+                        "label": top.get("name") or top.get("address") or query,
+                    }
+                    push_client_action(user_id, "show_destination", payload)
+                    client_action = "show_destination"
+                else:
+                    push_client_action(
+                        user_id,
+                        "show_place_options",
+                        {"query": query, "places": places},
+                    )
+                    client_action = "show_place_options"
+
             vcs.push_tool_event(
                 user_id,
                 {
                     "type": "map_search_results",
                     "query": query,
                     "places": places,
+                    "view": client_action,
                 },
             )
             return {
                 "ok": True,
                 "spoken": _format_places_spoken(places, query=query),
-                "client_action": "show_place_options",
+                "client_action": client_action,
                 "places": places,
             }
 

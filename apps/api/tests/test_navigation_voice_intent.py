@@ -77,6 +77,15 @@ def test_show_vs_start_route_intents():
     assert not resolve_start_route_request("muéstrame la ruta")
 
 
+def test_generic_vs_specific_place_query():
+    from app.services.navigation_voice_intent import is_generic_place_query
+
+    assert is_generic_place_query("Walmart más cercano")
+    assert is_generic_place_query("el mercado cerca")
+    assert not is_generic_place_query("Torre Eiffel")
+    assert not is_generic_place_query("Empire State Building")
+
+
 def test_resolve_navigation_confirm_after_place_search():
     from app.services.navigation_session import set_place_options
 

@@ -258,6 +258,28 @@ def resolve_start_route_request(user_text: str) -> bool:
     return bool(_START_ROUTE.search(text)) or is_navigation_confirm(text)
 
 
+_GENERIC_PLACE_QUERY = re.compile(
+    r"\b("
+    r"walmart|target|costco|sam'?s|lidl|aldi|"
+    r"mcdonalds?|starbucks|burger\s*king|wendy|"
+    r"farmacia|gasolinera|hospital|urgencias|"
+    r"mercado|supermercado|tienda|banco|cajero|atm|"
+    r"restaurante|cafeter[ií]a|comida|"
+    r"m[aá]s\s+cercan[oa]s?|cercanos?|nearby|cerca(?:\s+de\s+m[ií])?|"
+    r"alg[uú]n|cualquier"
+    r")\b",
+    re.I,
+)
+
+
+def is_generic_place_query(query: str) -> bool:
+    """Categoría (varios resultados) vs nombre propio específico (un POI)."""
+    q = (query or "").strip()
+    if not q:
+        return False
+    return bool(_GENERIC_PLACE_QUERY.search(q))
+
+
 def resolve_navigation_place_search(
     user_text: str,
     transcript: list[Utterance],

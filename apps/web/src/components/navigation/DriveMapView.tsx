@@ -15,6 +15,9 @@ import type { NavLatLng, NavPlaceOption, NavRoute } from "@/lib/api/navigation";
 import type { MapState } from "@/lib/navigation/mapState";
 import {
   closestPathIndex,
+  CATEGORY_OVERVIEW_MAX_ZOOM,
+  DESTINATION_VIEW_TILT,
+  DESTINATION_VIEW_ZOOM,
   installMapSpeechSilencer,
   NAV_FOLLOW_TILT,
   NAV_IDLE_ZOOM,
@@ -22,6 +25,7 @@ import {
   navigationFollowZoom,
   navigationHeading,
   navigationLookAheadCenter,
+  ROUTE_PREVIEW_MIN_ZOOM,
   smoothHeading,
 } from "@/lib/navigation/geo";
 
@@ -102,14 +106,30 @@ function resetMapBearing(map: google.maps.Map) {
 function applyMapAppearance(map: google.maps.Map, mapState: MapState) {
   const dark = { colorScheme: google.maps.ColorScheme.DARK };
 
+  if (mapState === "destino_vista") {
+    // ROADMAP vectorial + tilt: edificios extruded (mejor aproximación a flyover
+    // sin Photorealistic 3D Tiles).
+    map.setMapTypeId(google.maps.MapTypeId.ROADMAP);
+    map.setOptions({
+      ...dark,
+      gestureHandling: "greedy",
+      tilt: DESTINATION_VIEW_TILT,
+      heading: 35,
+    });
+    return;
+  }
+
   if (mapState === "ruta_lista") {
-    map.setMapTypeId(google.maps.MapTypeId.SATELLITE);
-    map.setOptions({ ...dark, gestureHandling: "greedy" });
+    map.setMapTypeId(google.maps.MapTypeId.ROADMAP);
+    map.setOptions({
+      ...dark,
+      gestureHandling: "greedy",
+      tilt: 48,
+    });
     return;
   }
 
   if (mapState === "navegando") {
-    // ROADMAP vectorial + tilt: muestra edificios 3D extruded (HYBRID oculta relief urbano).
     map.setMapTypeId(google.maps.MapTypeId.ROADMAP);
     map.setOptions({
       ...dark,
@@ -121,7 +141,26 @@ function applyMapAppearance(map: google.maps.Map, mapState: MapState) {
   }
 
   map.setMapTypeId(google.maps.MapTypeId.ROADMAP);
-  map.setOptions({ ...dark, gestureHandling: "greedy" });
+  map.setOptions({ ...dark, gestureHandling: "greedy", tilt: 0, heading: 0 });
+}
+
+function moveCameraSafe(
+  map: google.maps.Map,
+  camera: {
+    center: google.maps.LatLngLiteral;
+    zoom: number;
+    heading?: number;
+    tilt?: number;
+  },
+) {
+  if (typeof map.moveCamera === "function") {
+    map.moveCamera(camera);
+    return;
+  }
+  map.setCenter(camera.center);
+  map.setZoom(camera.zoom);
+  if (camera.heading != null) map.setHeading(camera.heading);
+  if (camera.tilt != null) map.setTilt(camera.tilt);
 }
 
 function resetMapPadding(map: google.maps.Map) {
@@ -148,22 +187,12 @@ function followNavigationCamera(
 
   applyNavigationMapPadding(map);
 
-  const camera = {
+  moveCameraSafe(map, {
     center,
     zoom,
     heading,
     tilt: NAV_FOLLOW_TILT,
-  };
-
-  if (typeof map.moveCamera === "function") {
-    map.moveCamera(camera);
-    return;
-  }
-
-  map.setCenter(center);
-  map.setZoom(zoom);
-  map.setHeading(heading);
-  map.setTilt(NAV_FOLLOW_TILT);
+  });
 }
 
 export function DriveMapView({
@@ -183,6 +212,7 @@ export function DriveMapView({
   const routeFittedRef = useRef(false);
   const searchFittedRef = useRef(false);
   const idleCenteredRef = useRef(false);
+  const destViewReadyRef = useRef(false);
   const navCameraReadyRef = useRef(false);
   const lastNavHeadingRef = useRef<number | null>(null);
   const routePathRef = useRef<NavLatLng[]>([]);
@@ -232,14 +262,7 @@ export function DriveMapView({
     if (!mapsReady || !map) return;
     applyMapAppearance(map, mapState);
 
-    if (mapState !== "navegando") {
-      routeFittedRef.current = false;
-      navCameraReadyRef.current = false;
-      lastNavHeadingRef.current = null;
-      routePathRef.current = [];
-      resetMapBearing(map);
-      resetMapPadding(map);
-    } else {
+    if (mapState === "navegando") {
       applyNavigationMapPadding(map);
       if (position) {
         const path =
@@ -251,8 +274,17 @@ export function DriveMapView({
         followNavigationCamera(map, position, path, lastNavHeadingRef);
         navCameraReadyRef.current = true;
       }
+    } else {
+      resetMapPadding(map);
+      navCameraReadyRef.current = false;
+      lastNavHeadingRef.current = null;
+      if (mapState === "idle" || mapState === "searching") {
+        resetMapBearing(map);
+      }
     }
     if (mapState !== "searching") searchFittedRef.current = false;
+    if (mapState !== "destino_vista") destViewReadyRef.current = false;
+    if (mapState !== "ruta_lista") routeFittedRef.current = false;
     if (mapState === "idle") idleCenteredRef.current = false;
   }, [mapsReady, mapState, position?.lat, position?.lng, route]);
 
@@ -260,13 +292,38 @@ export function DriveMapView({
     const map = mapRef.current;
     if (!mapsReady || !map || !position || mapState !== "idle") return;
     if (!idleCenteredRef.current) {
-      map.setZoom(NAV_IDLE_ZOOM);
-      map.setTilt(0);
-      map.setHeading(0);
-      map.panTo({ lat: position.lat, lng: position.lng });
+      moveCameraSafe(map, {
+        center: { lat: position.lat, lng: position.lng },
+        zoom: NAV_IDLE_ZOOM,
+        heading: 0,
+        tilt: 0,
+      });
       idleCenteredRef.current = true;
     }
   }, [mapsReady, mapState, position?.lat, position?.lng]);
+
+  /** Comportamiento 1: lugar específico — cámara cercana inclinada sobre el POI. */
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapsReady || !map || mapState !== "destino_vista") return;
+    const pin = destinationPin ?? route?.destination ?? null;
+    if (!pin) return;
+    if (destViewReadyRef.current) return;
+    moveCameraSafe(map, {
+      center: { lat: pin.lat, lng: pin.lng },
+      zoom: DESTINATION_VIEW_ZOOM,
+      heading: 35,
+      tilt: DESTINATION_VIEW_TILT,
+    });
+    destViewReadyRef.current = true;
+  }, [
+    mapsReady,
+    mapState,
+    destinationPin?.lat,
+    destinationPin?.lng,
+    route?.destination?.lat,
+    route?.destination?.lng,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -348,7 +405,16 @@ export function DriveMapView({
       for (const place of placeOptions) {
         bounds.extend({ lat: place.lat, lng: place.lng });
       }
-      map.fitBounds(bounds, 56);
+      map.fitBounds(bounds, 72);
+      // Evita zoom demasiado cercano cuando hay pocas opciones lejanas.
+      google.maps.event.addListenerOnce(map, "idle", () => {
+        const z = map.getZoom();
+        if (typeof z === "number" && z > CATEGORY_OVERVIEW_MAX_ZOOM) {
+          map.setZoom(CATEGORY_OVERVIEW_MAX_ZOOM);
+        }
+        map.setTilt(0);
+        map.setHeading(0);
+      });
       searchFittedRef.current = true;
     }
 
@@ -380,13 +446,28 @@ export function DriveMapView({
         });
       }
       if (!routeFittedRef.current) {
-        const bounds = new google.maps.LatLngBounds();
-        for (const p of path) bounds.extend(p);
-        if (position) bounds.extend({ lat: position.lat, lng: position.lng });
-        if (route.destination) {
-          bounds.extend({ lat: route.destination.lat, lng: route.destination.lng });
+        const dest = route.destination;
+        if (dest) {
+          // Preferir vista cercana al destino (no panorama de toda la ruta).
+          moveCameraSafe(map, {
+            center: { lat: dest.lat, lng: dest.lng },
+            zoom: Math.max(ROUTE_PREVIEW_MIN_ZOOM + 1.5, 15.2),
+            heading: 25,
+            tilt: 48,
+          });
+        } else {
+          const bounds = new google.maps.LatLngBounds();
+          for (const p of path) bounds.extend(p);
+          if (position) bounds.extend({ lat: position.lat, lng: position.lng });
+          map.fitBounds(bounds, 56);
+          google.maps.event.addListenerOnce(map, "idle", () => {
+            const z = map.getZoom();
+            if (typeof z === "number" && z < ROUTE_PREVIEW_MIN_ZOOM) {
+              map.setZoom(ROUTE_PREVIEW_MIN_ZOOM);
+            }
+            map.setTilt(48);
+          });
         }
-        map.fitBounds(bounds, 56);
         routeFittedRef.current = true;
       }
       return;
@@ -430,7 +511,14 @@ export function DriveMapView({
     }
 
     const pin = destinationPin ?? route?.destination ?? null;
-    if (!pin || (mapState !== "ruta_lista" && mapState !== "navegando")) return;
+    if (
+      !pin ||
+      (mapState !== "ruta_lista" &&
+        mapState !== "navegando" &&
+        mapState !== "destino_vista")
+    ) {
+      return;
+    }
 
     let cancelled = false;
     void createDestinationMarker(

@@ -9,12 +9,22 @@ export const NAV_STEP_COMPLETE_M = 50;
 /** Distancia para considerar llegada al destino. */
 export const NAV_ARRIVAL_DISTANCE_M = 50;
 
-/** Zoom / cámara en navegación activa (estilo Google Maps). */
-export const NAV_FOLLOW_ZOOM = 19;
-export const NAV_FOLLOW_TILT = 67.5;
+/** Zoom / cámara en navegación activa (estilo Google Maps / Waze — cercana). */
+export const NAV_FOLLOW_ZOOM = 19.6;
+export const NAV_FOLLOW_TILT = 68;
 export const NAV_IDLE_ZOOM = 15;
-/** Padding del mapa en navegación — flecha del usuario en el tercio inferior. */
-export const NAV_MAP_PADDING = { top: 72, bottom: 240, left: 32, right: 32 } as const;
+/**
+ * Vista de un POI específico (aproximación a flyover):
+ * ROADMAP vectorial + tilt — no es Photorealistic 3D Tiles (eso requiere otro producto Google).
+ */
+export const DESTINATION_VIEW_ZOOM = 17.9;
+export const DESTINATION_VIEW_TILT = 62;
+/** Overview de varias opciones (categoría genérica). */
+export const CATEGORY_OVERVIEW_MAX_ZOOM = 14.8;
+/** Tras fitBounds de ruta completa, no alejar más que esto. */
+export const ROUTE_PREVIEW_MIN_ZOOM = 13.5;
+/** Padding del mapa en navegación — flecha del usuario centrada abajo. */
+export const NAV_MAP_PADDING = { top: 48, bottom: 220, left: 28, right: 28 } as const;
 
 export function distanceMeters(a: NavLatLng, b: NavLatLng): number {
   const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -92,12 +102,12 @@ export function offsetByMeters(
   };
 }
 
-/** Zoom dinámico: más cercano en ciudad, un poco más lejos en autopista. */
+/** Zoom dinámico: más cercano en ciudad (estilo Waze), un poco más lejos en autopista. */
 export function navigationFollowZoom(speedMps: number | null | undefined): number {
   const speed = speedMps ?? 0;
-  if (speed > 22) return 17.5;
-  if (speed > 12) return 18.5;
-  if (speed > 4) return 19;
+  if (speed > 22) return 18.0;
+  if (speed > 12) return 18.8;
+  if (speed > 4) return 19.4;
   return NAV_FOLLOW_ZOOM;
 }
 
@@ -123,7 +133,8 @@ export function navigationLookAheadCenter(
   speedMps: number | null | undefined,
 ): NavLatLng {
   const speed = speedMps ?? 0;
-  const aheadM = Math.min(220, Math.max(55, speed * 10 + 60));
+  // Look-ahead corto → cámara más “primera persona” (Waze), no panorama de toda la ruta.
+  const aheadM = Math.min(110, Math.max(32, speed * 6 + 38));
 
   if (path.length >= 2) {
     const idx = closestPathIndex(path, position);

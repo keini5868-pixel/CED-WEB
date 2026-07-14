@@ -65,10 +65,17 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
       deriveMapState({
         route: mapNav.route,
         placeOptions: mapNav.placeOptions,
-        isSearching: navBusy && !mapNav.route,
+        destinationPin: mapNav.destinationPin,
+        isSearching: navBusy && !mapNav.route && mapNav.placeOptions.length === 0,
         isNavigating: mapNav.isNavigating,
       }),
-    [mapNav.route, mapNav.placeOptions, mapNav.isNavigating, navBusy],
+    [
+      mapNav.route,
+      mapNav.placeOptions,
+      mapNav.destinationPin,
+      mapNav.isNavigating,
+      navBusy,
+    ],
   );
 
   const ui = MAP_UI_VISIBILITY[mapState];
@@ -344,13 +351,31 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
       }
       if (detail?.action === "show_place_options" && detail.payload) {
         const p = detail.payload as { query?: string; places?: NavPlaceOption[] };
+        const places = p.places || [];
         setNavError(null);
+        // Un solo resultado (lugar específico) → vista aérea cercana, no lista.
+        if (places.length === 1) {
+          const only = places[0]!;
+          setMapNav((prev) => ({
+            ...prev,
+            route: null,
+            isNavigating: false,
+            destinationPin: {
+              lat: only.lat,
+              lng: only.lng,
+              label: only.name || only.address || p.query || "Destino",
+            },
+            placeOptions: [],
+            placeQuery: p.query || "",
+          }));
+          return;
+        }
         setMapNav((prev) => ({
           ...prev,
           route: null,
           isNavigating: false,
           destinationPin: null,
-          placeOptions: p.places || [],
+          placeOptions: places,
           placeQuery: p.query || "",
         }));
       }
