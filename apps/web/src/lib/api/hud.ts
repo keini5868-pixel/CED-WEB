@@ -246,12 +246,29 @@ export async function applyGoogleConnections(
   return snapshot;
 }
 
+export type HudFetchOptions = {
+  /** Relativo al chat — widgets deben ir en "low". */
+  priority?: "high" | "low" | "auto";
+  /** Si false, no espera applyGoogleConnections (más rápido para pintar clima). */
+  mergeGoogleStatus?: boolean;
+};
+
+function withHudPriority(
+  priority?: "high" | "low" | "auto",
+): RequestInit | undefined {
+  if (!priority) return undefined;
+  return { priority } as RequestInit;
+}
+
 /** Calendar + Gmail — endpoint rápido (~1s), sin clima web. */
-export async function fetchHudConnections(): Promise<
-  Pick<LifeDashboardSnapshot, "calendar" | "gmail" | "updated_at">
-> {
+export async function fetchHudConnections(
+  options?: HudFetchOptions,
+): Promise<Pick<LifeDashboardSnapshot, "calendar" | "gmail" | "updated_at">> {
   try {
-    const res = await proxyFetchAuthed("hud/connections");
+    const res = await proxyFetchAuthed(
+      "hud/connections",
+      withHudPriority(options?.priority),
+    );
     if (!res.ok) {
       const fallback = await applyGoogleConnections(createLifeFallback());
       return {
@@ -321,16 +338,27 @@ async function mergeGoogleConnectionStatus(
 }
 
 /** Dashboard LIFE — nunca devuelve null; fallback local si la API falla. */
-export async function fetchHudLife(): Promise<LifeDashboardSnapshot> {
+export async function fetchHudLife(
+  options?: HudFetchOptions,
+): Promise<LifeDashboardSnapshot> {
+  const mergeGoogle = options?.mergeGoogleStatus !== false;
   try {
-    const res = await proxyFetchAuthed("hud/life");
+    const res = await proxyFetchAuthed(
+      "hud/life",
+      withHudPriority(options?.priority),
+    );
     if (!res.ok) {
-      return mergeGoogleConnectionStatus(createLifeFallback());
+      const fallback = createLifeFallback();
+      return mergeGoogle
+        ? mergeGoogleConnectionStatus(fallback)
+        : fallback;
     }
     const raw = (await res.json()) as Record<string, unknown>;
-    return mergeGoogleConnectionStatus(normalizeLifeSnapshot(raw));
+    const snapshot = normalizeLifeSnapshot(raw);
+    return mergeGoogle ? mergeGoogleConnectionStatus(snapshot) : snapshot;
   } catch {
-    return mergeGoogleConnectionStatus(createLifeFallback());
+    const fallback = createLifeFallback();
+    return mergeGoogle ? mergeGoogleConnectionStatus(fallback) : fallback;
   }
 }
 

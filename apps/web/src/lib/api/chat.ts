@@ -17,9 +17,11 @@ export const CHAT_DEFAULT_WELCOME =
 const proxyFetch = (path: string, init?: RequestInit) =>
   fetch(cedApiPath(path), {
     credentials: "same-origin",
+    // Chat > widgets LIFE: priorizar respuesta al usuario.
+    priority: "high",
     ...init,
     signal: init?.signal ?? AbortSignal.timeout(CHAT_TIMEOUT_MS),
-  });
+  } as RequestInit);
 
 export type ChatPdfAttachment = {
   file_id: string;

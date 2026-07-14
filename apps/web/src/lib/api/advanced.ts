@@ -39,7 +39,9 @@ export { ADVANCED_TIMEOUT_MS };
 
 export async function fetchAdvancedChatStatus(): Promise<AdvancedChatStatus | null> {
   try {
-    const res = await proxyFetchAuthed("advanced/status");
+    const res = await proxyFetchAuthed("advanced/status", {
+      priority: "high",
+    } as RequestInit);
     if (!res.ok) return null;
     return (await res.json()) as AdvancedChatStatus;
   } catch {
@@ -81,6 +83,7 @@ export async function sendAdvancedChatMessageStream(
       method: "POST",
       credentials: "same-origin",
       headers,
+      priority: "high",
       body: JSON.stringify({
         message,
         client_request_id: clientRequestId,
@@ -95,7 +98,7 @@ export async function sendAdvancedChatMessageStream(
           .map((m) => ({ role: m.role, content: m.content })),
       }),
       signal: controller.signal,
-    });
+    } as RequestInit);
   } catch (err) {
     clearStall();
     clearTimeout(hardTimeout);

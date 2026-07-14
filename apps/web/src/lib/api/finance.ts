@@ -43,7 +43,8 @@ export async function fetchFinanceChatStatus(): Promise<FinanceChatStatus | null
     const timer = setTimeout(() => controller.abort(), 4_000);
     const res = await proxyFetchAuthed("finance/status", {
       signal: controller.signal,
-    });
+      priority: "high",
+    } as RequestInit);
     clearTimeout(timer);
     if (!res.ok) return null;
     return (await res.json()) as FinanceChatStatus;
@@ -81,6 +82,7 @@ export async function sendFinanceChatMessageStream(
       method: "POST",
       credentials: "same-origin",
       headers,
+      priority: "high",
       body: JSON.stringify({
         message,
         history: history
@@ -93,7 +95,7 @@ export async function sendFinanceChatMessageStream(
           .map((m) => ({ role: m.role, content: m.content })),
       }),
       signal: controller.signal,
-    });
+    } as RequestInit);
   } catch (err) {
     clearStall();
     clearTimeout(hardTimeout);
