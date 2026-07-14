@@ -26,7 +26,7 @@ _PUBLISH_VERB = re.compile(
 )
 _PUBLISH_STEM = re.compile(r"\b(?:public\w*|p[uúií]+blic\w*)\b", re.I)
 _FACEBOOK_PLATFORM = re.compile(
-    r"\b(?:facebook|facebo(?:ok|ok)?|face\s*book|fb)\b",
+    r"\b(?:facebook|facebo(?:ok|ok)?|face\s*book|face|fb)\b",
     re.I,
 )
 _INSTAGRAM_PLATFORM = re.compile(
@@ -36,7 +36,7 @@ _INSTAGRAM_PLATFORM = re.compile(
 _SOCIAL_PLATFORM = re.compile(
     r"\b(?:"
     r"instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram|"
-    r"facebook|facebo(?:ok|ok)?|face\s*book|fb|meta|redes"
+    r"facebook|facebo(?:ok|ok)?|face\s*book|face|fb|meta|redes"
     r")\b",
     re.I,
 )

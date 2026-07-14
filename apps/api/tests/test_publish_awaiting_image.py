@@ -49,7 +49,7 @@ def test_text_only_publish_starts_awaiting_image():
     reply = handle_publish_flow_turn(
         uid,
         cid,
-        "necesito publicar en facebook",
+        "necesito publicar en face",
         history=[],
         run_tool=fake_tool,
         suggest_caption=lambda *_: "",
