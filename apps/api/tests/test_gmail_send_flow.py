@@ -21,10 +21,25 @@ USER = "550e8400-e29b-41d4-a716-446655440099"
 CALL = "call_gmail_test_1"
 
 
+@pytest.fixture(autouse=True)
+def _gmail_send_ready():
+    with patch(
+        "app.services.gmail_send_flow.get_valid_access_token",
+        return_value="tok-ready",
+    ):
+        with patch(
+            "app.services.google_oauth.token_has_gmail_send_scope",
+            return_value=True,
+        ):
+            yield
+
+
 def test_is_gmail_send_confirm():
     assert is_gmail_send_confirm("sí, envíalo")
     assert is_gmail_send_confirm("dale, adelante")
     assert is_gmail_send_confirm("sí", allow_short_yes=True)
+    assert is_gmail_send_confirm("Sí, inténtalo de nuevo", allow_short_yes=True)
+    assert is_gmail_send_confirm("inténtalo de nuevo", allow_short_yes=True)
     assert not is_gmail_send_confirm("ok gracias")
     assert not is_gmail_send_confirm("perfecto")
 
@@ -45,6 +60,23 @@ def test_prepare_requires_subject():
     )
     assert result["status"] == "needs_subject"
     assert "asunto" in result["spoken"].lower()
+    assert vcs.get_gmail_pending_send(USER) is None
+
+
+def test_prepare_blocked_without_send_scope():
+    with patch(
+        "app.services.google_oauth.token_has_gmail_send_scope",
+        return_value=False,
+    ):
+        result = prepare_gmail_send(
+            USER,
+            call_id=CALL,
+            to="jessica.25@gmail.com",
+            subject="Reunión",
+            body="Hola",
+        )
+    assert result["status"] == "missing_send_scope"
+    assert "permiso de envío" in result["spoken"].lower()
     assert vcs.get_gmail_pending_send(USER) is None
 
 

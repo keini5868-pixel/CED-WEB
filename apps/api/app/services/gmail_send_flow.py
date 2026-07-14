@@ -23,10 +23,12 @@ _EMAIL_RE = re.compile(r"^[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}$")
 
 _GMAIL_SEND_CONFIRM = re.compile(
     r"\b("
-    r"s[ií]\s*,?\s*(?:env[ií]a(?:lo|la|me|r)?|m[aá]ndalo|mandalo|confirma(?:lo)?)|"
+    r"s[ií]\s*,?\s*(?:env[ií]a(?:lo|la|me|r)?|m[aá]ndalo|mandalo|confirma(?:lo)?|"
+    r"int[eé]nta(?:lo|r)?(?:\s+de\s+nuevo)?|reintenta(?:lo|r)?|prueba(?:lo)?\s+de\s+nuevo)|"
     r"env[ií]a(?:lo|la|me|r)?|m[aá]ndalo|mandalo|"
     r"dale|adelante|de\s+acuerdo|confirmo|confirma(?:do)?|"
-    r"procede|hazlo|s[ií]\s+por\s+favor"
+    r"procede|hazlo|s[ií]\s+por\s+favor|"
+    r"int[eé]nta(?:lo)?\s+de\s+nuevo|reint[eé]nta(?:lo)?|prueba\s+otra\s+vez"
     r")\b",
     re.I,
 )
@@ -42,7 +44,7 @@ _GMAIL_SEND_CANCEL = re.compile(
 
 _AGENT_CONFIRM_ASK = re.compile(
     r"\b(confirm(?:o|a|ar|e)?|env[ií]o|env[ií]e|enviar|mand(?:o|e|ar)|"
-    r"¿\s*desea|desea\s+que|procedo)\b",
+    r"¿\s*desea|desea\s+que|procedo|intento|de\s+nuevo)\b",
     re.I,
 )
 
@@ -141,9 +143,58 @@ def _not_connected_message() -> str:
 
 def _reconnect_message() -> str:
     return (
-        "Señor, Gmail necesita reconexión. "
-        "Use el botón Conectar Gmail en configuración de voz e intente de nuevo."
+        "Señor, Gmail necesita reconexión con permiso de envío. "
+        "Use el botón Conectar Gmail en configuración de voz, acepte todos los permisos e intente de nuevo."
     )
+
+
+def _send_scope_message() -> str:
+    return (
+        "Señor, falta permiso de envío en Gmail. "
+        "Reconecte Gmail en configuración de voz y acepte el permiso para enviar correos."
+    )
+
+
+def _classify_gmail_http_error(exc: httpx.HTTPStatusError) -> dict[str, Any]:
+    """Mapea errores HTTP de Gmail a mensajes hablados (sin filtrar tokens)."""
+    status = exc.response.status_code
+    body = ""
+    try:
+        body = (exc.response.text or "")[:500]
+    except Exception:  # noqa: BLE001
+        body = ""
+    logger.warning(
+        "[GMAIL-SEND] HTTP %s body=%s",
+        status,
+        body.replace("\n", " ")[:300],
+    )
+    lower = body.lower()
+    if status in (401, 403) or "insufficient" in lower or "autherror" in lower:
+        if "insufficient" in lower or "permission" in lower or "scope" in lower:
+            return {
+                "ok": False,
+                "status": "missing_send_scope",
+                "spoken": _send_scope_message(),
+            }
+        return {"ok": False, "status": "auth", "spoken": _reconnect_message()}
+    if status == 400 and ("raw" in lower or "invalid" in lower or "message" in lower):
+        return {
+            "ok": False,
+            "status": "invalid_message",
+            "spoken": (
+                "Señor, Gmail rechazó el formato del mensaje. "
+                "¿Lo preparo de nuevo con otro texto?"
+            ),
+        }
+    return {
+        "ok": False,
+        "status": "error",
+        "spoken": (
+            f"Señor, Gmail no pudo enviar el correo (error {status}). "
+            "¿Lo intento de nuevo?"
+        ),
+        "http_status": status,
+    }
 
 
 def _gmail_api_call(user_id: str, fn):
@@ -155,6 +206,33 @@ def _gmail_api_call(user_id: str, fn):
             raise
         access = force_refresh_access_token("gmail", user_id)
         return fn(access)
+
+
+def _assert_gmail_send_ready(user_id: str) -> dict[str, Any] | None:
+    """Devuelve respuesta hablada de error si no hay token/enviar; None si listo."""
+    from app.services.google_oauth import token_has_gmail_send_scope
+
+    try:
+        access = get_valid_access_token("gmail", user_id)
+    except ValueError as exc:
+        if str(exc) in {"not_connected", "reconnect_required"}:
+            return {
+                "ok": False,
+                "status": "reconnect_required" if str(exc) == "reconnect_required" else "not_connected",
+                "spoken": (
+                    _reconnect_message()
+                    if str(exc) == "reconnect_required"
+                    else _not_connected_message()
+                ),
+            }
+        raise
+    if not token_has_gmail_send_scope(access):
+        return {
+            "ok": False,
+            "status": "missing_send_scope",
+            "spoken": _send_scope_message(),
+        }
+    return None
 
 
 def prepare_gmail_send(
@@ -216,6 +294,10 @@ def prepare_gmail_send(
             "status": "needs_body",
             "spoken": "Señor, ¿qué desea decir en el cuerpo del mensaje?",
         }
+
+    blocked = _assert_gmail_send_ready(user_id)
+    if blocked:
+        return blocked
 
     draft_id = str(uuid.uuid4())
     draft = {
@@ -316,9 +398,16 @@ def confirm_gmail_send(
                 "¿Desea que envíe el correo? Diga «sí» o «cancela»."
             ),
         }
-    # «sí» corto basta si hay borrador (mismo patrón que finanzas).
+    # «sí» corto o reintento explícito basta si hay borrador (mismo patrón que finanzas).
     short_yes = bool(re.fullmatch(r"s[ií][\s!.]*", (user_line or "").strip(), re.I))
-    if not short_yes and not _agent_recently_asked_confirm(transcript):
+    retry_yes = bool(
+        re.search(
+            r"\b(?:int[eé]nta(?:lo)?(?:\s+de\s+nuevo)?|reint[eé]nta(?:lo)?|prueba(?:lo)?\s+de\s+nuevo)\b",
+            user_line or "",
+            re.I,
+        )
+    )
+    if not short_yes and not retry_yes and not _agent_recently_asked_confirm(transcript):
         return {
             "ok": False,
             "status": "confirm_context_missing",
@@ -327,6 +416,10 @@ def confirm_gmail_send(
                 "«sí» o «no, cancela»."
             ),
         }
+
+    ready = _assert_gmail_send_ready(user_id)
+    if ready:
+        return ready
 
     if not vcs.try_mark_gmail_pending_sending(user_id, str(draft.get("draft_id") or "")):
         refreshed = vcs.get_gmail_pending_send(user_id) or {}
@@ -371,6 +464,8 @@ def confirm_gmail_send(
         vcs.revert_gmail_pending_to_pending(user_id)
         if str(exc) == "not_connected":
             return {"ok": False, "status": "not_connected", "spoken": _not_connected_message()}
+        if str(exc) == "reconnect_required":
+            return {"ok": False, "status": "reconnect_required", "spoken": _reconnect_message()}
         return {
             "ok": False,
             "status": "error",
@@ -378,14 +473,7 @@ def confirm_gmail_send(
         }
     except httpx.HTTPStatusError as exc:
         vcs.revert_gmail_pending_to_pending(user_id)
-        logger.warning("[GMAIL-SEND] HTTP %s user=%s", exc.response.status_code, user_id[:8])
-        if exc.response.status_code in (401, 403):
-            return {"ok": False, "status": "auth", "spoken": _reconnect_message()}
-        return {
-            "ok": False,
-            "status": "error",
-            "spoken": "Señor, Gmail rechazó el envío. ¿Lo intento de nuevo?",
-        }
+        return _classify_gmail_http_error(exc)
     except Exception:  # noqa: BLE001
         vcs.revert_gmail_pending_to_pending(user_id)
         logger.exception("[GMAIL-SEND] failed user=%s", user_id[:8])

@@ -15,6 +15,7 @@ from app.services.google_oauth import (
     CALENDAR_RECONNECT_MSG,
     CALENDAR_WRITE_SCOPE_MSG,
     GMAIL_RECONNECT_MSG,
+    GMAIL_SEND_SCOPE_MSG,
     build_oauth_url,
     exchange_code,
     get_connection_status,
@@ -26,6 +27,7 @@ from app.services.google_oauth import (
     token_has_calendar_read_scope,
     token_has_calendar_write_scope,
     token_has_gmail_scope,
+    token_has_gmail_send_scope,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,11 +72,17 @@ def save_google_token(
                 status_code=400,
                 detail=CALENDAR_WRITE_SCOPE_MSG,
             )
-    elif body.type == "gmail" and not token_has_gmail_scope(body.provider_token):
-        raise HTTPException(
-            status_code=400,
-            detail=GMAIL_RECONNECT_MSG,
-        )
+    elif body.type == "gmail":
+        if not token_has_gmail_scope(body.provider_token):
+            raise HTTPException(
+                status_code=400,
+                detail=GMAIL_RECONNECT_MSG,
+            )
+        if not token_has_gmail_send_scope(body.provider_token):
+            raise HTTPException(
+                status_code=400,
+                detail=GMAIL_SEND_SCOPE_MSG,
+            )
     try:
         store_tokens(
             body.type,
@@ -164,3 +172,50 @@ def calendar_oauth_callback(
 @router.get("/gmail/status")
 def gmail_status(user_id: str = Depends(require_user_id)) -> dict:
     return get_connection_status("gmail", user_id)
+
+
+@router.get("/gmail/oauth-url")
+def gmail_oauth_url(
+    request: Request,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    """URL OAuth directa (Railway) — scopes gmail.send incluidos, sin depender de Supabase Auth."""
+    if not oauth_configured():
+        raise HTTPException(
+            status_code=503,
+            detail="Google Gmail OAuth no configurado en el servidor.",
+        )
+    origin = resolve_allowed_web_origin(request.headers.get("origin") or "")
+    settings = get_settings()
+    web_origin = origin or settings.web_public_url.strip() or None
+    return {"url": build_oauth_url("gmail", user_id, web_origin=web_origin)}
+
+
+@callback_router.get("/auth/google/gmail/callback")
+def gmail_oauth_callback(
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+) -> RedirectResponse:
+    """Callback público de Google OAuth — intercambia code y guarda tokens Gmail."""
+    settings = get_settings()
+    fallback_web = settings.web_public_url.rstrip("/") or "https://cedweb-production.up.railway.app"
+    if error or not code or not state:
+        logger.warning("[GOOGLE-OAUTH] gmail callback error=%s code=%s", error, bool(code))
+        return RedirectResponse(f"{fallback_web}/dashboard?gmail=error")
+    try:
+        user_id, web_origin = parse_oauth_state(state)
+        payload = exchange_code("gmail", code)
+        access = str(payload.get("access_token") or "")
+        if not token_has_gmail_scope(access):
+            target = (web_origin or fallback_web).rstrip("/")
+            return RedirectResponse(f"{target}/dashboard?gmail=scope_read")
+        if not token_has_gmail_send_scope(access):
+            target = (web_origin or fallback_web).rstrip("/")
+            return RedirectResponse(f"{target}/dashboard?gmail=scope_send")
+        store_tokens("gmail", user_id, payload)
+        target = (web_origin or fallback_web).rstrip("/")
+        return RedirectResponse(f"{target}/dashboard?gmail=connected")
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[GOOGLE-OAUTH] gmail callback failed: %s", exc)
+        return RedirectResponse(f"{fallback_web}/dashboard?gmail=error")

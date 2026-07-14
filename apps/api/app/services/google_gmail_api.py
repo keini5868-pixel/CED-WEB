@@ -507,10 +507,13 @@ def get_message_body(access_token: str, message_id: str) -> str:
 
 
 def send_message(access_token: str, *, to: str, subject: str, body: str) -> dict[str, Any]:
-    msg = EmailMessage()
+    from email import policy
+
+    msg = EmailMessage(policy=policy.SMTP)
     msg["To"] = to
+    # Subject ASCII-safe vía header encoding estándar (evita MIME roto con acentos).
     msg["Subject"] = subject[:200]
-    msg.set_content(body[:8000])
+    msg.set_content((body or "")[:8000], charset="utf-8")
     raw = base64.urlsafe_b64encode(msg.as_bytes()).decode().rstrip("=")
     with httpx.Client(timeout=20.0) as client:
         res = client.post(
@@ -518,6 +521,12 @@ def send_message(access_token: str, *, to: str, subject: str, body: str) -> dict
             headers=_headers(access_token),
             json={"raw": raw},
         )
+        if res.status_code >= 400:
+            logger.warning(
+                "[GMAIL] send failed status=%s body=%s",
+                res.status_code,
+                (res.text or "")[:400].replace("\n", " "),
+            )
         res.raise_for_status()
         return res.json()
 

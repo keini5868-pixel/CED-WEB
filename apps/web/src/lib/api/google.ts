@@ -62,31 +62,7 @@ export async function connectGoogleViaSupabase(
   if (type === "calendar") {
     return connectGoogleCalendarViaApi();
   }
-
-  const supabase = createClient();
-  if (typeof window !== "undefined") {
-    sessionStorage.setItem(PENDING_LINK_KEY, type);
-  }
-
-  const { error } = await supabase.auth.signInWithOAuth({
-    provider: "google",
-    options: {
-      scopes: GOOGLE_SCOPES[type],
-      redirectTo: dashboardRedirectUrl(),
-      queryParams: {
-        access_type: "offline",
-        prompt: "consent",
-      },
-    },
-  });
-
-  if (error) {
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem(PENDING_LINK_KEY);
-    }
-    return { error: error.message };
-  }
-  return {};
+  return connectGoogleGmailViaApi();
 }
 
 /** Calendar — OAuth directo vía API (scopes calendar.events garantizados). */
@@ -112,6 +88,32 @@ async function connectGoogleCalendarViaApi(): Promise<{ error?: string }> {
     return {};
   } catch {
     return { error: "No se pudo contactar el servidor para conectar Calendar." };
+  }
+}
+
+/** Gmail — OAuth directo vía API (scopes gmail.send garantizados; refresh con cliente Railway). */
+async function connectGoogleGmailViaApi(): Promise<{ error?: string }> {
+  const token = await sessionAccessToken();
+  if (!token) {
+    return { error: "Sin sesión activa." };
+  }
+  try {
+    const res = await fetch(`${apiUrl()}/v1/google/gmail/oauth-url`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      cache: "no-store",
+    });
+    const data = await parseApiJson<{ url?: string; detail?: string }>(res);
+    if (!res.ok || !data.url) {
+      return {
+        error: data.detail || "No se pudo iniciar la conexión con Gmail.",
+      };
+    }
+    if (typeof window !== "undefined") {
+      window.location.href = data.url;
+    }
+    return {};
+  } catch {
+    return { error: "No se pudo contactar el servidor para conectar Gmail." };
   }
 }
 

@@ -44,6 +44,10 @@ GMAIL_RECONNECT_MSG = (
     "Permisos de Gmail insuficientes. Pulse «Conectar Gmail» de nuevo "
     "y acepte todos los permisos."
 )
+GMAIL_SEND_SCOPE_MSG = (
+    "Falta permiso para enviar correos. Reconecte Gmail y acepte el permiso "
+    "de envío (gmail.send)."
+)
 
 
 def _calendar_redirect_uri() -> str:
@@ -329,11 +333,7 @@ def refresh_access_token(service: GoogleService, refresh_token: str) -> dict[str
         service,
         last_error or "",
     )
-    raise httpx.HTTPStatusError(
-        "refresh_failed",
-        request=httpx.Request("POST", _GOOGLE_TOKEN_URL),
-        response=httpx.Response(400, text=last_error or "refresh_failed"),
-    )
+    raise ValueError("reconnect_required")
 
 
 def inspect_access_token(access_token: str) -> dict[str, Any]:
@@ -399,16 +399,36 @@ def token_has_calendar_scope(access_token: str) -> bool:
 
 
 def token_has_gmail_scope(access_token: str) -> bool:
-    scope = str(inspect_access_token(access_token).get("scope") or "")
-    return any(
-        marker in scope
-        for marker in (
-            "auth/gmail.readonly",
-            "auth/gmail.send",
-            "auth/gmail.compose",
-            "auth/gmail.modify",
-        )
+    """Compatible: lectura o envío (estado «conectado» legacy)."""
+    return token_has_gmail_read_scope(access_token) or token_has_gmail_send_scope(
+        access_token
     )
+
+
+def token_has_gmail_read_scope(access_token: str) -> bool:
+    parts = _scope_parts(access_token)
+    if not parts:
+        return False
+    markers = {
+        "https://www.googleapis.com/auth/gmail.readonly",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://www.googleapis.com/auth/gmail.compose",
+        "https://mail.google.com/",
+    }
+    return bool(parts & markers)
+
+
+def token_has_gmail_send_scope(access_token: str) -> bool:
+    parts = _scope_parts(access_token)
+    if not parts:
+        return False
+    markers = {
+        "https://www.googleapis.com/auth/gmail.send",
+        "https://www.googleapis.com/auth/gmail.compose",
+        "https://www.googleapis.com/auth/gmail.modify",
+        "https://mail.google.com/",
+    }
+    return bool(parts & markers)
 
 
 def force_refresh_access_token(service: GoogleService, user_id: str) -> str:
@@ -542,14 +562,15 @@ def get_connection_status(service: GoogleService, user_id: str) -> dict[str, Any
         from app.services.google_gmail_api import probe_gmail_access
 
         access = _access_token_for_status("gmail", uid, row)
-        if token_has_gmail_scope(access) and probe_gmail_access(access):
-            return {"connected": True, "service": service}
-        if probe_gmail_access(access):
-            logger.info(
-                "[GOOGLE-OAUTH] gmail OK via API probe (tokeninfo vacío) user=%s",
-                uid[:8],
-            )
-            return {"connected": True, "service": service}
+        read_ok = token_has_gmail_read_scope(access) or probe_gmail_access(access)
+        send_ok = token_has_gmail_send_scope(access)
+        if read_ok:
+            return {
+                "connected": True,
+                "service": service,
+                "can_send": send_ok,
+                "hint": None if send_ok else GMAIL_SEND_SCOPE_MSG,
+            }
         refresh = str(row.get("refresh_token") or "").strip()
         if refresh:
             try:
@@ -559,11 +580,18 @@ def get_connection_status(service: GoogleService, user_id: str) -> dict[str, Any
                     from app.services.supabase_client import save_gmail_tokens
 
                     save_gmail_tokens(uid, {**payload, "refresh_token": refresh})
+                    send_ok = token_has_gmail_send_scope(access)
                     logger.info(
-                        "[GOOGLE-OAUTH] gmail OK tras refresh+probe user=%s",
+                        "[GOOGLE-OAUTH] gmail OK tras refresh+probe user=%s can_send=%s",
                         uid[:8],
+                        send_ok,
                     )
-                    return {"connected": True, "service": service}
+                    return {
+                        "connected": True,
+                        "service": service,
+                        "can_send": send_ok,
+                        "hint": None if send_ok else GMAIL_SEND_SCOPE_MSG,
+                    }
             except Exception:  # noqa: BLE001
                 logger.warning(
                     "[GOOGLE-OAUTH] gmail refresh+probe failed user=%s",
@@ -572,6 +600,7 @@ def get_connection_status(service: GoogleService, user_id: str) -> dict[str, Any
         return {
             "connected": False,
             "service": service,
+            "can_send": False,
             "needs_reconnect": True,
             "hint": (
                 "Gmail necesita reconexión. Use Conectar Gmail en configuración de voz."
@@ -650,7 +679,7 @@ def get_valid_access_token(service: GoogleService, user_id: str) -> str:
 
     refresh = str(row.get("refresh_token") or "").strip()
     if not refresh:
-        return access
+        raise ValueError("reconnect_required")
 
     try:
         payload = refresh_access_token(service, refresh)
@@ -660,4 +689,5 @@ def get_valid_access_token(service: GoogleService, user_id: str) -> str:
             return new_access
     except Exception:  # noqa: BLE001
         logger.warning("[GOOGLE-OAUTH] refresh failed service=%s user=%s", service, user_id[:8])
-    return access
+    # Access expirado y refresh fallido → no usar token caducado (enmascara errores 401 como «rechazó»).
+    raise ValueError("reconnect_required")
