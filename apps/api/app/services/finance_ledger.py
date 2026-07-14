@@ -389,18 +389,26 @@ def mark_payment_paid(user_id: str, *, payment_id: str) -> dict[str, Any]:
         return {"ok": False}
 
 
+def _fmt_money(value: float, currency: str = "USD") -> str:
+    from app.services.finance_speech import amount_to_spoken_es
+
+    return amount_to_spoken_es(value, currency)
+
+
 def _fmt_due(due_raw: Any) -> str:
-    if not due_raw:
-        return "sin fecha"
-    try:
-        d = due_raw if isinstance(due_raw, date) else datetime.strptime(str(due_raw), "%Y-%m-%d").date()
-    except ValueError:
-        return str(due_raw)
-    dias = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
-    return f"{dias[d.weekday()]} {d.day:02d}/{d.month:02d}"
+    from app.services.finance_speech import due_date_to_spoken_es, due_time_from_description
+
+    # Compat: sin descripción aquí, solo fecha.
+    return due_date_to_spoken_es(due_raw)
 
 
 def format_pending_spoken(rows: list[dict[str, Any]], *, currency: str = "USD") -> str:
+    from app.services.finance_speech import (
+        amount_to_spoken_es,
+        due_date_to_spoken_es,
+        due_time_from_description,
+    )
+
     if not rows:
         return "Señor, no tiene pagos pendientes registrados."
     total = 0.0
@@ -413,10 +421,15 @@ def format_pending_spoken(rows: list[dict[str, Any]], *, currency: str = "USD") 
         total += amt
         cur = str(r.get("currency") or currency)
         cat = str(r.get("category") or "").strip()
-        cat_txt = f" para {cat}" if cat else ""
-        parts.append(f"{amt:,.2f} {cur}{cat_txt} el {_fmt_due(r.get('due_date'))}")
+        cat_txt = f" de {cat}" if cat else ""
+        due_time = due_time_from_description(str(r.get("description") or ""))
+        when = due_date_to_spoken_es(r.get("due_date"), due_time=due_time)
+        parts.append(f"{amount_to_spoken_es(amt, cur)}{cat_txt} para {when}")
     joined = "; ".join(parts)
-    return f"Señor, tiene {len(rows)} pagos pendientes por {total:,.2f} {currency}: {joined}."
+    return (
+        f"Señor, tiene {len(rows)} pagos pendientes por "
+        f"{amount_to_spoken_es(total, currency)}: {joined}."
+    )
 
 
 def list_transactions(
@@ -540,10 +553,6 @@ def summarize_finances(user_id: str, *, period: str | None = "mes") -> dict[str,
     return summary
 
 
-def _fmt_money(value: float, currency: str = "USD") -> str:
-    return f"{value:,.2f} {currency}"
-
-
 def format_summary_spoken(summary: dict[str, Any], *, currency: str = "USD") -> str:
     """Resumen hablable/legible para voz o chat."""
     label = summary.get("period_label", "este mes")
@@ -578,13 +587,21 @@ def format_summary_spoken(summary: dict[str, Any], *, currency: str = "USD") -> 
         parts.append(f"Señor, no tiene gastos pagados registrados para {label}.")
 
     if pending_count:
+        from app.services.finance_speech import (
+            amount_to_spoken_es,
+            due_date_to_spoken_es,
+            due_time_from_description,
+        )
+
         pend_parts: list[str] = []
         for row in pending_rows[:4]:
             try:
                 amt = float(row.get("amount") or 0)
             except (TypeError, ValueError):
                 amt = 0.0
-            pend_parts.append(f"{amt:,.2f} {currency} el {_fmt_due(row.get('due_date'))}")
+            due_time = due_time_from_description(str(row.get("description") or ""))
+            when = due_date_to_spoken_es(row.get("due_date"), due_time=due_time)
+            pend_parts.append(f"{amount_to_spoken_es(amt, currency)} para {when}")
         pend_joined = "; ".join(pend_parts)
         parts.append(
             f"Tiene {pending_count} pago(s) pendiente(s) en {label} "

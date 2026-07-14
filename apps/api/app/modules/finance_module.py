@@ -114,7 +114,8 @@ _DAY_TOKEN = re.compile(
 
 _TIME_TAIL_RE = re.compile(
     r"\s+(hoy|ayer|esta\s+ma[ñn]ana|esta\s+tarde|esta\s+noche|"
-    r"este\s+mes|esta\s+semana|el\s+lunes|el\s+martes)\b.*$",
+    r"este\s+mes|esta\s+semana|el\s+lunes|el\s+martes|"
+    r"a\s+las?\s+\d{1,2}.*|el\s+(?:lunes|martes|mi[eé]rcoles|jueves|viernes|s[áa]bado|domingo)\b.*)$",
     re.I,
 )
 
@@ -226,13 +227,15 @@ def format_finance_breakdown_spoken(user_id: str, text: str) -> str:
 
 
 def _fmt_money_short(value: float, currency: str = "USD") -> str:
-    return f"{value:,.2f} {currency}"
+    from app.services.finance_speech import amount_to_spoken_es
+
+    return amount_to_spoken_es(value, currency)
 
 
 def _fmt_due_short(due_raw: object) -> str:
-    from app.services.finance_ledger import _fmt_due
+    from app.services.finance_speech import due_date_to_spoken_es
 
-    return _fmt_due(due_raw)
+    return due_date_to_spoken_es(due_raw)
 
 
 def is_finance_register_intent(text: str) -> bool:
@@ -258,6 +261,8 @@ def parse_pending_statements(text: str) -> list[dict[str, object]]:
 
     Ej: 'el lunes tengo que pagar 850, el miércoles 300, el viernes 300 para el mercado'
     """
+    from app.services.finance_speech import parse_due_time, scrub_time_phrases
+
     t = (text or "").strip()
     if not t:
         return []
@@ -280,19 +285,34 @@ def parse_pending_statements(text: str) -> list[dict[str, object]]:
         if day_match:
             last_day = day_match.group(1)
         due = resolve_due_date(day_text) if day_text else None
-        cat_match = re.search(r"\b(?:para|de|en)\s+(?:el\s+|la\s+|un[ao]?\s+)?(.+?)$", clause, re.I)
+        due_time = parse_due_time(clause)
+
+        # Categoría: quitar monto, día y hora (evita «para el a las pm»).
+        clause_for_cat = scrub_time_phrases(clause)
+        cat_match = re.search(
+            r"\b(?:para|de|en)\s+(?:el\s+|la\s+|un[ao]?\s+)?(.+?)$",
+            clause_for_cat,
+            re.I,
+        )
         category = None
         if cat_match:
             cat = _TIME_TAIL_RE.sub("", cat_match.group(1)).strip(" .,")
+            cat = scrub_time_phrases(cat)
             cat = _DAY_TOKEN.sub("", cat).strip(" .,")
             cat = _AMOUNT_RE.sub("", cat).strip(" .,")
+            cat = re.sub(r"\b(?:a\s+las?|pm|am|hora)\b", "", cat, flags=re.I)
             cat = re.sub(r"\s+", " ", cat).strip(" .,")
-            # Descarta "categorías" que son solo expresiones de tiempo
-            # (ej. "día de mañana", "día de la semana que viene").
+            cat = re.sub(r"^(?:para|de|en|el|la|los|las)\s+", "", cat, flags=re.I).strip(" .,")
+            cat = re.sub(r"^(?:para|de|en)$", "", cat, flags=re.I).strip(" .,")
             if (
                 2 <= len(cat) <= 60
+                and cat.lower() not in {"para", "de", "en", "el", "la"}
                 and not _TEMPORAL_CATEGORY.match(cat)
-                and not re.search(r"\b(d[ií]a\s+de|dolares?|usd)\b", cat, re.I)
+                and not re.search(
+                    r"\b(d[ií]a\s+de|dolares?|usd|noche|tarde|ma[nñ]ana|pendiente)\b",
+                    cat,
+                    re.I,
+                )
             ):
                 category = cat
         results.append(
@@ -300,6 +320,7 @@ def parse_pending_statements(text: str) -> list[dict[str, object]]:
                 "amount": normalized,
                 "category": category,
                 "due_date": due.isoformat() if due else None,
+                "due_time": due_time,
                 "description": clause[:400],
             }
         )
@@ -371,16 +392,24 @@ def parse_finance_statement(text: str) -> dict[str, object] | None:
 
 
 def _confirm_spoken(saved: dict[str, object]) -> str:
+    from app.services.finance_speech import amount_to_spoken_es
+
     kind = "ingreso" if saved.get("type") == "ingreso" else "gasto"
-    amount = saved.get("amount")
-    currency = saved.get("currency", "USD")
+    currency = str(saved.get("currency") or "USD")
+    money = amount_to_spoken_es(saved.get("amount"), currency)
     cat = saved.get("category")
     tail = f" en {cat}" if cat else ""
     verb = "Registré" if kind == "gasto" else "Anoté"
-    return f"Señor, {verb} un {kind} de {amount} {currency}{tail}."
+    return f"Señor, {verb} un {kind} de {money}{tail}."
 
 
 def _confirm_pending_spoken(saved: list[dict[str, object]]) -> str:
+    from app.services.finance_speech import (
+        amount_to_spoken_es,
+        due_date_to_spoken_es,
+        due_time_from_description,
+    )
+
     if not saved:
         return "Señor, no entendí el pago pendiente. ¿Me lo repite con monto y día?"
     total = 0.0
@@ -390,17 +419,20 @@ def _confirm_pending_spoken(saved: list[dict[str, object]]) -> str:
         except (TypeError, ValueError):
             pass
     if len(saved) == 1:
-        from app.services.finance_ledger import _fmt_due
-
         s = saved[0]
-        cat = s.get("category")
-        cat_txt = f" para {cat}" if cat else ""
-        due_raw = s.get("due_date")
-        due = _fmt_due(due_raw) if due_raw else "la fecha indicada"
-        return f"Señor, anoté un pago pendiente de {s.get('amount')}{cat_txt} para {due}."
+        currency = str(s.get("currency") or "USD")
+        money = amount_to_spoken_es(s.get("amount"), currency)
+        cat = str(s.get("category") or "").strip()
+        cat_txt = f" de {cat}" if cat else ""
+        due_time = str(s.get("due_time") or "").strip() or due_time_from_description(
+            str(s.get("description") or "")
+        )
+        when = due_date_to_spoken_es(s.get("due_date"), due_time=due_time or None)
+        return f"Señor, anoté un pago pendiente de {money}{cat_txt} para {when}."
+    total_spoken = amount_to_spoken_es(total, "USD")
     return (
         f"Señor, registré {len(saved)} pagos pendientes por un total de "
-        f"{total:,.2f}. Se los recordaré."
+        f"{total_spoken}. Se los recordaré."
     )
 
 
@@ -441,21 +473,30 @@ def handle_finance_query_sync(user_id: str, text: str) -> dict[str, str]:
             return {"spoken": format_finance_breakdown_spoken(user_id, text)}
 
         if is_finance_future_write(text):
+            from app.services.finance_speech import embed_due_time_in_description
+
             statements = parse_pending_statements(text)
             saved_list: list[dict[str, object]] = []
             last_save_error = ""
             for st in statements:
+                due_time = str(st.get("due_time") or "").strip() or None
+                description = embed_due_time_in_description(
+                    str(st.get("description") or "") or None,
+                    due_time,
+                )
                 saved = save_transaction(
                     user_id,
                     tx_type="gasto",
                     amount=st["amount"],
                     category=st.get("category"),  # type: ignore[arg-type]
-                    description=st.get("description"),  # type: ignore[arg-type]
+                    description=description,
                     status="pendiente",
                     due_date=st.get("due_date"),
                 )
                 if saved.get("ok"):
                     saved.setdefault("category", st.get("category"))
+                    if due_time:
+                        saved["due_time"] = due_time
                     saved_list.append(saved)
                 else:
                     last_save_error = str(saved.get("error") or last_save_error)

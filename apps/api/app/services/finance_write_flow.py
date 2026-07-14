@@ -130,17 +130,20 @@ def _agent_recently_asked_confirm(transcript: list[dict[str, Any]]) -> bool:
 
 
 def _summarize_draft_rows(kind: str, rows: list[dict[str, Any]]) -> str:
+    from app.services.finance_speech import amount_to_spoken_es, due_date_to_spoken_es
+
     if kind == "pending":
         parts: list[str] = []
         for row in rows:
-            amt = row.get("amount")
-            cat = row.get("category")
-            due = row.get("due_date")
-            segment = f"pago pendiente de {amt}"
+            money = amount_to_spoken_es(row.get("amount"), "USD")
+            cat = str(row.get("category") or "").strip()
+            due_time = str(row.get("due_time") or "").strip() or None
+            when = due_date_to_spoken_es(row.get("due_date"), due_time=due_time)
+            segment = f"pago pendiente de {money}"
             if cat:
-                segment += f" para {cat}"
-            if due:
-                segment += f" el {due}"
+                segment += f" de {cat}"
+            if row.get("due_date") or due_time:
+                segment += f" para {when}"
             parts.append(segment)
         if len(parts) == 1:
             return f"Señor, {parts[0]}. ¿Desea que lo registre?"
@@ -152,11 +155,11 @@ def _summarize_draft_rows(kind: str, rows: list[dict[str, Any]]) -> str:
     row = rows[0]
     tx_type = str(row.get("type") or "gasto")
     kind_label = "ingreso" if tx_type == "ingreso" else "gasto"
-    amt = row.get("amount")
+    money = amount_to_spoken_es(row.get("amount"), "USD")
     cat = row.get("category")
     cat_txt = f" en {cat}" if cat else ""
     return (
-        f"Señor, un {kind_label} de {amt}{cat_txt}. "
+        f"Señor, un {kind_label} de {money}{cat_txt}. "
         f"¿Desea que lo registre?"
     )
 
@@ -254,6 +257,8 @@ def prepare_finance_write(
 
 
 def _execute_draft_rows(user_id: str, draft: dict[str, Any]) -> tuple[list[dict[str, Any]], str]:
+    from app.services.finance_speech import embed_due_time_in_description
+
     kind = str(draft.get("kind") or "")
     rows = draft.get("rows") or []
     if not isinstance(rows, list):
@@ -266,17 +271,24 @@ def _execute_draft_rows(user_id: str, draft: dict[str, Any]) -> tuple[list[dict[
         for row in rows:
             if not isinstance(row, dict):
                 continue
+            due_time = str(row.get("due_time") or "").strip() or None
+            description = embed_due_time_in_description(
+                str(row.get("description") or "") or None,
+                due_time,
+            )
             saved = save_transaction(
                 user_id,
                 tx_type="gasto",
                 amount=row.get("amount"),
                 category=row.get("category"),  # type: ignore[arg-type]
-                description=row.get("description"),  # type: ignore[arg-type]
+                description=description,
                 status="pendiente",
                 due_date=row.get("due_date"),
             )
             if saved.get("ok"):
                 saved.setdefault("category", row.get("category"))
+                if due_time:
+                    saved["due_time"] = due_time
                 saved_list.append(saved)
             else:
                 last_error = str(saved.get("error") or last_error)

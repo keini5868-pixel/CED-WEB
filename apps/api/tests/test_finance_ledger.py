@@ -108,7 +108,7 @@ def test_format_summary_spoken_pending_only():
     }
     text = format_summary_spoken(summary)
     assert "pendiente" in text.lower()
-    assert "300" in text
+    assert "trescientos" in text
     assert "no tiene gastos pagados" in text.lower()
 
 
@@ -182,7 +182,7 @@ def test_format_pending_spoken_with_rows():
     ]
     text = format_pending_spoken(rows)
     assert "2 pagos pendientes" in text
-    assert "1,150" in text
+    assert "mil ciento cincuenta" in text
     assert "mercado" in text
 
 

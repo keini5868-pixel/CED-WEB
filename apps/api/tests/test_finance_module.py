@@ -245,4 +245,4 @@ def test_handle_breakdown_intent(monkeypatch):
     )
     out = fm.handle_finance_query_sync("u1", "¿600 de qué?")
     assert "desglose" in out["spoken"].lower()
-    assert "600" in out["spoken"]
+    assert "seiscientos" in out["spoken"]
