@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import logging
 import re
+import time
 import uuid
 from pathlib import Path
 
@@ -78,6 +79,42 @@ def store_publish_image(user_id: str, image_bytes: bytes, mime: str) -> str:
     """URL HTTPS pública en la API (Meta / Instagram)."""
     file_name = _save_image_file(user_id, image_bytes, mime)
     return api_media_url(file_name)
+
+
+def find_latest_publish_media_url(
+    user_id: str,
+    *,
+    max_age_sec: float = 900.0,
+) -> str | None:
+    """Última imagen en disco para el usuario (útil si otra réplica no tiene la sesión en memoria)."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return None
+    prefix = f"{uid[:8]}_"
+    try:
+        root = _ensure_dir()
+    except Exception:  # noqa: BLE001
+        return None
+    now = time.time()
+    best: Path | None = None
+    best_mtime = 0.0
+    for path in root.glob(f"{prefix}*"):
+        if not path.is_file():
+            continue
+        if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp", ".gif"}:
+            continue
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if now - mtime > max_age_sec:
+            continue
+        if mtime > best_mtime:
+            best = path
+            best_mtime = mtime
+    if not best:
+        return None
+    return api_media_url(best.name)
 
 
 def store_publish_image_for_client(user_id: str, image_bytes: bytes, mime: str) -> str:

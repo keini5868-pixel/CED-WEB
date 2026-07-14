@@ -101,6 +101,10 @@ export type VoiceChatImageResponse = {
   public_url?: string;
   size_bytes?: number;
   filename?: string;
+  meta_draft_ready?: boolean;
+  draft_id?: string;
+  meta_spoken?: string;
+  caption_preview?: string;
   reason?: string;
   detail?: string | Array<{ type?: string; msg?: string }>;
 };

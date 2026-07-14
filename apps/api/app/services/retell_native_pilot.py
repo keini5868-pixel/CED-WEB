@@ -101,7 +101,7 @@ Meta / redes (publicación):
 3. «sí» / «publícalo» → meta_confirm_publish (también en general si no transicionó).
 4. «no / cancela» → meta_cancel_publish.
 5. Si falta Meta/OAuth, comunica el mensaje de la tool tal cual (Conectar Redes).
-6. Instagram sin imagen: comunica needs_image; no inventes la publicación.
+6. Instagram sin imagen (needs_image): el usuario puede subirla por el botón de imagen del panel HUD (sin cámara). Cuando diga «ya subí la imagen», «¿ves la imagen?», «usa la foto que subí» → vuelve a llamar meta_prepare_publish (NO digas que solo sirve la cámara).
 7. check_meta_networks si pregunta si están conectadas las redes.
 
 Prospección (leads en comentarios):
@@ -261,7 +261,8 @@ GMAIL_CANCEL_DESCRIPTION = (
 META_PREPARE_DESCRIPTION = (
     "Prepara un borrador de publicación en Facebook o Instagram. "
     "NO publica — pide confirmación. Requiere plataforma y texto (caption). "
-    "Instagram requiere imagen previa (cámara o generada)."
+    "Instagram requiere imagen: subida por el panel HUD, cámara o generada. "
+    "Si el usuario dice que ya subió la imagen, llama de nuevo esta tool."
 )
 
 META_CONFIRM_DESCRIPTION = (

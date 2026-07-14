@@ -21,7 +21,14 @@ from app.services.publish_text import (
 logger = logging.getLogger(__name__)
 
 META_PUBLISH_TTL_SEC = 600
-DraftStatus = Literal["pending", "publishing", "published", "cancelled"]
+DraftStatus = Literal[
+    "pending",
+    "awaiting_image",
+    "awaiting_confirmation",
+    "publishing",
+    "published",
+    "cancelled",
+]
 Platform = Literal["facebook", "instagram"]
 
 _PUBLISH_CANCEL = re.compile(
@@ -94,6 +101,156 @@ def _meta_connected(user_id: str) -> bool:
     return bool(conn and conn.get("access_token"))
 
 
+def _to_public_image_url(url: str) -> str:
+    """Normaliza /api/ced/media/... o /v1/media/... a HTTPS público para Meta."""
+    u = (url or "").strip()
+    if not u:
+        return ""
+    if u.startswith("http://") or u.startswith("https://"):
+        return u
+    match = re.search(r"/media/publish/([^/?#]+)", u)
+    if match:
+        from app.services.publish_media import api_media_url
+
+        return api_media_url(match.group(1))
+    return u
+
+
+def resolve_publishable_image_for_meta(user_id: str) -> dict[str, str] | None:
+    """Resuelve imagen subida por UI/cámara/chat para Instagram (sesión + contexto + disco)."""
+    img = vcs.get_last_publishable_image(user_id, ignore_call_binding=True)
+    if img and (img.get("url") or img.get("data")):
+        public = _to_public_image_url(str(img.get("url") or ""))
+        out: dict[str, str] = {}
+        if public:
+            out["url"] = public
+        data = str(img.get("data") or "").strip()
+        if data:
+            out["data"] = data
+        if out:
+            return out
+
+    try:
+        from app.services.publish_image_context import resolve_image_for_publishing
+
+        resolved = resolve_image_for_publishing(user_id, None, use_last_uploaded_image=True)
+        if resolved.get("ok"):
+            public = _to_public_image_url(str(resolved.get("url") or ""))
+            out = {}
+            if public:
+                out["url"] = public
+            data = str(resolved.get("data") or "").strip()
+            if data:
+                out["data"] = data
+            if out:
+                return out
+    except Exception:  # noqa: BLE001
+        logger.exception("[META-PUBLISH] resolve_image_for_publishing failed user=%s", user_id[:8])
+
+    try:
+        from app.services.publish_media import find_latest_publish_media_url
+
+        disk_url = find_latest_publish_media_url(user_id)
+        if disk_url:
+            return {"url": disk_url}
+    except Exception:  # noqa: BLE001
+        logger.exception("[META-PUBLISH] disk image lookup failed user=%s", user_id[:8])
+
+    return None
+
+
+def _awaiting_confirmation_response(draft: dict[str, Any]) -> dict[str, Any]:
+    preview = _caption_preview(str(draft.get("caption") or ""))
+    plat = str(draft.get("platform") or "")
+    label = "Facebook" if plat == "facebook" else "Instagram"
+    has_image = bool(str(draft.get("image_url") or "").strip())
+    image_note = " con la imagen que subió" if has_image and plat == "instagram" else ""
+    spoken = (
+        f"Le preparo una publicación en {label}{image_note} que dice: «{preview}». "
+        f"¿Confirma que la publique?"
+    )
+    return {
+        "ok": True,
+        "status": "awaiting_confirmation",
+        "draft_id": draft.get("draft_id"),
+        "platform": plat,
+        "caption_preview": preview,
+        "has_image": has_image,
+        "spoken": spoken,
+        "transition": "transition_to_publish_confirm_pending",
+    }
+
+
+def attach_image_to_awaiting_meta_draft(
+    user_id: str,
+    image_url: str,
+    *,
+    filename: str = "",
+) -> dict[str, Any] | None:
+    """
+    Si hay borrador IG esperando imagen, asocia la URL subida por la UI y avanza a confirmación.
+    Llamado desde POST /v1/voice/chat-image tras registrar last_publishable_image.
+    """
+    public = _to_public_image_url(image_url)
+    if not public:
+        return None
+
+    draft = vcs.get_meta_pending_publish(user_id)
+    if not draft:
+        return None
+    if str(draft.get("platform") or "") != "instagram":
+        return None
+    status = str(draft.get("status") or "")
+    if status not in {"awaiting_image", "pending"}:
+        return None
+
+    draft = dict(draft)
+    draft["image_url"] = public
+    draft["image_filename"] = (filename or "").strip()
+    draft["status"] = "pending"
+    draft["awaiting_image"] = False
+    vcs.set_meta_pending_publish(user_id, draft)
+
+    event = {
+        "type": "meta_image_ready",
+        "draft_id": draft.get("draft_id"),
+        "platform": "instagram",
+        "image_url": public,
+        "filename": filename,
+        "caption_preview": _caption_preview(str(draft.get("caption") or "")),
+    }
+    try:
+        vcs.push_tool_event(user_id, event)
+        vcs.push_client_action(
+            user_id,
+            "meta_image_ready",
+            {
+                "draft_id": draft.get("draft_id"),
+                "caption_preview": event["caption_preview"],
+                "filename": filename,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("[META-PUBLISH] push image-ready event failed user=%s", user_id[:8])
+
+    logger.info(
+        "[META-PUBLISH] image attached to draft user=%s draft=%s file=%s",
+        user_id[:8],
+        str(draft.get("draft_id", ""))[:8],
+        (filename or "")[:48],
+    )
+    return {
+        "ok": True,
+        "draft_id": draft.get("draft_id"),
+        "status": "awaiting_confirmation",
+        "caption_preview": event["caption_preview"],
+        "spoken": (
+            f"Imagen recibida, señor. Preparo Instagram con «{event['caption_preview']}». "
+            f"¿Confirma que la publique?"
+        ),
+    }
+
+
 def prepare_meta_publish(
     user_id: str,
     *,
@@ -143,45 +300,80 @@ def prepare_meta_publish(
             "reason": reason,
         }
 
+    # Reusar borrador IG en awaiting_image si el caption coincide o el usuario solo avisó de la imagen.
+    existing = vcs.get_meta_pending_publish(user_id)
+    if (
+        existing
+        and str(existing.get("platform") or "") == "instagram"
+        and str(existing.get("status") or "") == "awaiting_image"
+        and not vcs.is_meta_pending_publish_expired(user_id)
+    ):
+        existing_cap = sanitize_publish_caption(str(existing.get("caption") or ""))
+        if not cleaned or cleaned == existing_cap or len(cleaned) < 8:
+            cleaned = existing_cap or cleaned
+            plat = "instagram"
+
+    image_url = ""
     if plat == "instagram":
-        img = vcs.get_last_publishable_image(user_id, ignore_call_binding=True)
-        if not img:
+        resolved = resolve_publishable_image_for_meta(user_id)
+        if resolved and resolved.get("url"):
+            image_url = resolved["url"]
+        elif existing and str(existing.get("image_url") or "").strip():
+            image_url = _to_public_image_url(str(existing.get("image_url") or ""))
+
+        if not image_url:
+            draft_id = str(
+                (existing or {}).get("draft_id") or uuid.uuid4()
+            )
+            if existing and str(existing.get("status") or "") == "awaiting_image":
+                draft_id = str(existing.get("draft_id"))
+            draft = {
+                "draft_id": draft_id,
+                "call_id": (call_id or "").strip(),
+                "platform": "instagram",
+                "caption": cleaned,
+                "status": "awaiting_image",
+                "awaiting_image": True,
+                "image_url": None,
+                "idempotency_key": _idempotency_key(user_id, draft_id),
+                "post_id": None,
+            }
+            vcs.set_meta_pending_publish(user_id, draft)
             return {
                 "ok": False,
                 "status": "needs_image",
+                "draft_id": draft_id,
+                "platform": "instagram",
                 "spoken": (
                     "Señor, Instagram requiere una imagen. "
-                    "Active la cámara, muestre el producto, o genere/suba una imagen "
-                    "y luego diga el texto a publicar."
+                    "Súbala con el botón de imagen del panel (no hace falta la cámara), "
+                    "o active la cámara / genere una imagen, y luego dígame "
+                    "«ya subí la imagen» o repita el texto a publicar."
                 ),
             }
 
     draft_id = str(uuid.uuid4())
+    # Si reanudamos un awaiting_image, conservar el mismo draft_id.
+    if (
+        existing
+        and str(existing.get("platform") or "") == plat
+        and str(existing.get("status") or "") == "awaiting_image"
+    ):
+        draft_id = str(existing.get("draft_id") or draft_id)
+
     draft = {
         "draft_id": draft_id,
         "call_id": (call_id or "").strip(),
         "platform": plat,
         "caption": cleaned,
         "status": "pending",
+        "awaiting_image": False,
+        "image_url": image_url or None,
         "idempotency_key": _idempotency_key(user_id, draft_id),
         "post_id": None,
     }
     vcs.set_meta_pending_publish(user_id, draft)
-    preview = _caption_preview(cleaned)
-    label = "Facebook" if plat == "facebook" else "Instagram"
-    spoken = (
-        f"Le preparo una publicación en {label} que dice: «{preview}». "
-        f"¿Confirma que la publique?"
-    )
-    return {
-        "ok": True,
-        "status": "awaiting_confirmation",
-        "draft_id": draft_id,
-        "platform": plat,
-        "caption_preview": preview,
-        "spoken": spoken,
-        "transition": "transition_to_publish_confirm_pending",
-    }
+    return _awaiting_confirmation_response(draft)
 
 
 def confirm_meta_publish(
@@ -220,6 +412,27 @@ def confirm_meta_publish(
         }
 
     status = str(draft.get("status") or "")
+    if status == "awaiting_image":
+        resolved = resolve_publishable_image_for_meta(user_id)
+        if resolved and resolved.get("url"):
+            attached = attach_image_to_awaiting_meta_draft(
+                user_id, resolved["url"], filename=str(draft.get("image_filename") or "")
+            )
+            if attached:
+                return {
+                    "ok": False,
+                    "status": "confirm_required",
+                    "spoken": attached["spoken"],
+                    "transition": "transition_to_publish_confirm_pending",
+                }
+        return {
+            "ok": False,
+            "status": "needs_image",
+            "spoken": (
+                "Señor, aún falta la imagen para Instagram. "
+                "Súbala con el botón de imagen del panel y luego confirme."
+            ),
+        }
     if status == "published":
         return {
             "ok": True,
@@ -269,11 +482,42 @@ def confirm_meta_publish(
 
     plat = str(draft.get("platform") or "")
     caption = str(draft.get("caption") or "")
+    image_url = _to_public_image_url(str(draft.get("image_url") or ""))
+    if plat == "instagram" and not image_url:
+        resolved = resolve_publishable_image_for_meta(user_id)
+        if resolved:
+            image_url = _to_public_image_url(str(resolved.get("url") or ""))
+            image_data = str(resolved.get("data") or "") or None
+        else:
+            image_data = None
+    else:
+        image_data = None
+
     try:
         if plat == "facebook":
-            result = publish_facebook(user_id, caption)
+            result = publish_facebook(
+                user_id,
+                caption,
+                image_url=image_url or None,
+                image_data=image_data,
+            )
         elif plat == "instagram":
-            result = publish_instagram(user_id, caption)
+            if not image_url and not image_data:
+                vcs.revert_meta_pending_to_pending(user_id)
+                return {
+                    "ok": False,
+                    "status": "needs_image",
+                    "spoken": (
+                        "Señor, Instagram requiere una imagen. "
+                        "Súbala con el botón de imagen del panel e intente de nuevo."
+                    ),
+                }
+            result = publish_instagram(
+                user_id,
+                caption,
+                image_url=image_url or None,
+                image_data=image_data,
+            )
         else:
             vcs.revert_meta_pending_to_pending(user_id)
             return {
@@ -282,7 +526,7 @@ def confirm_meta_publish(
                 "spoken": "Señor, no reconocí la red social del borrador.",
             }
 
-        post_id = str(result.get("post_id") or "")
+        post_id = str(result.get("post_id") or result.get("media_id") or "")
         vcs.mark_meta_pending_published(user_id, post_id=post_id)
         spoken = str(result.get("spoken") or "").strip()
         if not spoken:

@@ -170,9 +170,12 @@ function HudVoiceImageUpload() {
           filename: file.name,
         });
         const serverUrl = normalizeCedMediaUrl(result.image_url || previewUrl);
+        const readyText = result.meta_draft_ready
+          ? "Imagen lista — confirme por voz la publicación en Instagram"
+          : "Imagen lista para CED";
         updateVoiceImage(itemId, {
           imageUrl: serverUrl,
-          text: "Imagen lista para CED",
+          text: readyText,
           uploadStatus: "ready",
           fileName: result.filename || file.name,
           fileSize: result.size_bytes ?? file.size,

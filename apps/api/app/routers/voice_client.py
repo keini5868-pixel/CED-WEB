@@ -135,20 +135,36 @@ async def voice_chat_image(
             filename=filename,
         )
         client_url = _client_url_from_public(public_url)
+        meta_attach = None
+        try:
+            from app.services.meta_publish_flow import attach_image_to_awaiting_meta_draft
+
+            meta_attach = attach_image_to_awaiting_meta_draft(
+                user_id, public_url, filename=filename
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[VOICE_UPLOAD] meta draft attach failed user=%s", user_id[:8])
         logger.info(
-            "[VOICE_UPLOAD] user=%s file=%s size=%s status=ok call=%s",
+            "[VOICE_UPLOAD] user=%s file=%s size=%s status=ok call=%s meta_draft=%s",
             user_id[:8],
             filename[:48],
             len(raw),
             (call_id or "?")[:12],
+            "yes" if meta_attach else "no",
         )
-        return {
+        out: dict[str, Any] = {
             "ok": True,
             "image_url": client_url or public_url,
             "public_url": public_url,
             "size_bytes": len(raw),
             "filename": filename,
         }
+        if meta_attach:
+            out["meta_draft_ready"] = True
+            out["draft_id"] = meta_attach.get("draft_id")
+            out["meta_spoken"] = meta_attach.get("spoken")
+            out["caption_preview"] = meta_attach.get("caption_preview")
+        return out
 
     url = (body.image_url or "").strip()
     if not url:
@@ -167,18 +183,32 @@ async def voice_chat_image(
         filename=filename,
         session_id=call_id or None,
     )
+    meta_attach = None
+    try:
+        from app.services.meta_publish_flow import attach_image_to_awaiting_meta_draft
+
+        meta_attach = attach_image_to_awaiting_meta_draft(user_id, url, filename=filename)
+    except Exception:  # noqa: BLE001
+        logger.exception("[VOICE_UPLOAD] meta draft attach failed user=%s", user_id[:8])
     logger.info(
-        "[VOICE_UPLOAD] user=%s file=%s status=ok_url call=%s",
+        "[VOICE_UPLOAD] user=%s file=%s status=ok_url call=%s meta_draft=%s",
         user_id[:8],
         filename[:48],
         (call_id or "?")[:12],
+        "yes" if meta_attach else "no",
     )
-    return {
+    out = {
         "ok": True,
         "image_url": url if url.startswith("/") else _client_url_from_public(url) or url,
         "public_url": url,
         "filename": filename,
     }
+    if meta_attach:
+        out["meta_draft_ready"] = True
+        out["draft_id"] = meta_attach.get("draft_id")
+        out["meta_spoken"] = meta_attach.get("spoken")
+        out["caption_preview"] = meta_attach.get("caption_preview")
+    return out
 
 
 @router.delete("/chat-image")
