@@ -36,6 +36,10 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - deactivate_camera: apagar la cámara.
 - analyze_camera_frame: describir qué hay frente a la cámara (visión).
 - search_visible_product: identificar el objeto visible y buscar datos reales (precio, specs, dónde comprarlo).
+- meta_prepare_publish: preparar borrador de publicación FB/IG (NUNCA publica).
+- meta_confirm_publish: publicar SOLO tras confirmación explícita en voz.
+- meta_cancel_publish: descartar borrador de publicación.
+- check_meta_networks: comprobar si Facebook/Instagram están conectados.
 - search_web: búsqueda web general (noticias, hechos actuales, datos externos). NO para clima (use get_environment) ni para lo visible en cámara (use search_visible_product).
 - activate_advanced_mode: activar modo avanzado con Claude (solo frase «activa modo avanzado»).
 - consult_advanced: consulta profunda vía Claude — solo en modo avanzado.
@@ -55,6 +59,8 @@ Reglas generales:
 - PROHIBIDO llamar calendar_confirm_write en el mismo turno que calendar_prepare_write.
 - Gmail envío: prepare → confirmación → confirm_send. NUNCA inventes que ya se envió.
 - PROHIBIDO llamar gmail_confirm_send en el mismo turno que gmail_prepare_send.
+- Meta publicación: prepare → confirmación → confirm_publish. NUNCA inventes que ya se publicó.
+- PROHIBIDO llamar meta_confirm_publish en el mismo turno que meta_prepare_publish.
 
 Gmail — lectura y envío con confirmación:
 - read_gmail: repite el resultado tal cual; sin inventar.
@@ -78,6 +84,15 @@ Calendario — escritura con confirmación:
 3. «sí» / «dale» / «agenda» → calendar_confirm_write (también disponible en general si no transicionó).
 4. «no / cancela» → calendar_cancel_write.
 5. Si falta permiso de escritura, comunica el mensaje de la tool tal cual (reconectar Calendar).
+
+Meta / redes (publicación):
+1. «publica en Facebook/Instagram que diga …» → meta_prepare_publish.
+2. Tras prepare (awaiting_confirmation): lee el resumen y pregunta; transition_to_publish_confirm_pending.
+3. «sí» / «publícalo» → meta_confirm_publish (también en general si no transicionó).
+4. «no / cancela» → meta_cancel_publish.
+5. Si falta Meta/OAuth, comunica el mensaje de la tool tal cual (Conectar Redes).
+6. Instagram sin imagen: comunica needs_image; no inventes la publicación.
+7. check_meta_networks si pregunta si están conectadas las redes.
 
 Búsqueda web (search_web):
 1. «busca / investiga / qué pasó / noticias de / cuánto cuesta [sin cámara] / quién es …» con datos actuales → search_web.
@@ -107,8 +122,11 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario, Gmail, finanzas, búsqueda web, cámara, modo avanzado.
+Estado general — clima, calendario, Gmail, finanzas, Meta/redes, búsqueda web, cámara, modo avanzado.
 - search_web: hechos actuales / noticias / datos externos (no clima → get_environment; no cámara → search_visible_product).
+- Meta: meta_prepare_publish → confirmar → meta_confirm_publish. check_meta_networks para estado de conexión.
+- Tras meta_prepare_publish con awaiting_confirmation: transition_to_publish_confirm_pending.
+- Si hay borrador Meta y dice «sí», llama meta_confirm_publish de inmediato (también aquí).
 - Gmail lectura: read_gmail. Envío: gmail_prepare_send → confirmar → gmail_confirm_send (sí / envíalo).
 - Tras gmail_prepare_send con awaiting_confirmation: lee el resumen, pregunta confirmación y transition_to_gmail_confirm_pending.
 - Si ya hay borrador de correo y el usuario dice «sí», llama gmail_confirm_send de inmediato (también disponible aquí).
@@ -160,6 +178,14 @@ Estado de confirmación de correo — hay un borrador pendiente de envío.
 """.strip()
 
 STATE_GMAIL_CONFIRM_PENDING = "gmail_confirm_pending"
+STATE_PUBLISH_CONFIRM_PENDING = "publish_confirm_pending"
+PUBLISH_CONFIRM_STATE_PROMPT = """
+Estado de confirmación de publicación — hay un borrador FB/IG pendiente.
+- Si dice sí, publícalo, dale o confirma → meta_confirm_publish (incluso solo «sí»).
+- Si dice no/cancela → meta_cancel_publish y transition_to_general_assistant.
+- Tras publicar, di exactamente el mensaje de la herramienta.
+""".strip()
+
 STATE_FINANCE_CONFIRM_PENDING = "finance_confirm_pending"
 STATE_ADVANCED_MODE_ACTIVE = "advanced_mode_active"
 
@@ -204,6 +230,25 @@ GMAIL_CONFIRM_DESCRIPTION = (
 
 GMAIL_CANCEL_DESCRIPTION = (
     "Cancela el borrador de correo pendiente sin enviarlo."
+)
+
+META_PREPARE_DESCRIPTION = (
+    "Prepara un borrador de publicación en Facebook o Instagram. "
+    "NO publica — pide confirmación. Requiere plataforma y texto (caption). "
+    "Instagram requiere imagen previa (cámara o generada)."
+)
+
+META_CONFIRM_DESCRIPTION = (
+    "Publica el borrador pendiente tras confirmación explícita: sí, publícalo, dale. "
+    "Un solo «sí» basta."
+)
+
+META_CANCEL_DESCRIPTION = (
+    "Cancela el borrador de publicación pendiente sin publicarlo."
+)
+
+CHECK_META_DESCRIPTION = (
+    "Comprueba si Facebook e Instagram están conectados (Meta OAuth)."
 )
 
 SEARCH_WEB_DESCRIPTION = (
@@ -387,6 +432,43 @@ GMAIL_CANCEL_PARAMETERS: dict[str, Any] = {
         },
     },
 }
+
+META_PREPARE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "platform": {
+            "type": "string",
+            "description": "facebook o instagram",
+        },
+        "caption": {
+            "type": "string",
+            "description": "Texto a publicar.",
+        },
+        "query": {
+            "type": "string",
+            "description": "Frase completa del usuario si no se separaron platform/caption.",
+        },
+    },
+}
+
+META_CONFIRM_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {
+            "type": "string",
+            "description": "ID del borrador de meta_prepare_publish (opcional).",
+        },
+    },
+}
+
+META_CANCEL_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "draft_id": {"type": "string", "description": "ID del borrador (opcional)."},
+    },
+}
+
+CHECK_META_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
 
 SEARCH_WEB_PARAMETERS: dict[str, Any] = {
     "type": "object",
@@ -655,6 +737,50 @@ def build_search_web_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_meta_prepare_publish_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="meta_prepare_publish",
+        description=META_PREPARE_DESCRIPTION,
+        parameters=META_PREPARE_PARAMETERS,
+        filler="Preparando la publicación, señor.",
+        timeout_ms=12_000,
+    )
+
+
+def build_meta_confirm_publish_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="meta_confirm_publish",
+        description=META_CONFIRM_DESCRIPTION,
+        parameters=META_CONFIRM_PARAMETERS,
+        filler="Publicando, señor.",
+        timeout_ms=35_000,
+    )
+
+
+def build_meta_cancel_publish_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="meta_cancel_publish",
+        description=META_CANCEL_DESCRIPTION,
+        parameters=META_CANCEL_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_check_meta_networks_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="check_meta_networks",
+        description=CHECK_META_DESCRIPTION,
+        parameters=CHECK_META_PARAMETERS,
+        filler="Revisando sus redes, señor.",
+        timeout_ms=10_000,
+    )
+
+
 def build_read_finances_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -793,6 +919,10 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_gmail_confirm_send_tool(api_public_url=api_public_url),
                 build_gmail_cancel_send_tool(api_public_url=api_public_url),
                 build_search_web_tool(api_public_url=api_public_url),
+                build_check_meta_networks_tool(api_public_url=api_public_url),
+                build_meta_prepare_publish_tool(api_public_url=api_public_url),
+                build_meta_confirm_publish_tool(api_public_url=api_public_url),
+                build_meta_cancel_publish_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
                 build_finance_prepare_write_tool(api_public_url=api_public_url),
                 build_finance_confirm_write_tool(api_public_url=api_public_url),
@@ -819,6 +949,12 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "destination_state_name": STATE_GMAIL_CONFIRM_PENDING,
                     "description": (
                         "Transición cuando gmail_prepare_send devuelve awaiting_confirmation."
+                    ),
+                },
+                {
+                    "destination_state_name": STATE_PUBLISH_CONFIRM_PENDING,
+                    "description": (
+                        "Transición cuando meta_prepare_publish devuelve awaiting_confirmation."
                     ),
                 },
                 {
@@ -868,6 +1004,23 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "destination_state_name": STATE_GENERAL_ASSISTANT,
                     "description": (
                         "Volver al flujo general tras enviar, cancelar o borrador expirado."
+                    ),
+                },
+            ],
+        },
+        {
+            "name": STATE_PUBLISH_CONFIRM_PENDING,
+            "state_prompt": PUBLISH_CONFIRM_STATE_PROMPT,
+            "tools": [
+                build_check_meta_networks_tool(api_public_url=api_public_url),
+                build_meta_confirm_publish_tool(api_public_url=api_public_url),
+                build_meta_cancel_publish_tool(api_public_url=api_public_url),
+            ],
+            "edges": [
+                {
+                    "destination_state_name": STATE_GENERAL_ASSISTANT,
+                    "description": (
+                        "Volver al flujo general tras publicar, cancelar o borrador expirado."
                     ),
                 },
             ],
@@ -1945,6 +2098,108 @@ async def execute_search_web_tool(
         latency_ms,
         ok,
     )
+    return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
+
+
+
+def _run_meta_prepare(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.meta_publish_flow import prepare_meta_publish
+
+    query = resolve_tool_query(payload, args)
+    return prepare_meta_publish(
+        user_id,
+        call_id=call_id,
+        platform=str(args.get("platform") or ""),
+        caption=str(args.get("caption") or ""),
+        query=query,
+    )
+
+
+def _run_meta_confirm(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.meta_publish_flow import confirm_meta_publish
+
+    return confirm_meta_publish(
+        user_id,
+        call_id=call_id,
+        payload=payload,
+        draft_id=str(args.get("draft_id") or ""),
+    )
+
+
+def _run_meta_cancel(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.meta_publish_flow import cancel_meta_publish
+
+    return cancel_meta_publish(
+        user_id,
+        draft_id=str(args.get("draft_id") or ""),
+        reason="user_cancel",
+    )
+
+
+async def execute_meta_prepare_publish_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="meta_prepare_publish",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_meta_prepare,
+    )
+
+
+async def execute_meta_confirm_publish_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="meta_confirm_publish",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_meta_confirm,
+    )
+
+
+async def execute_meta_cancel_publish_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    return await _execute_native_finance_action_tool(
+        tool_name="meta_cancel_publish",
+        user_id=user_id,
+        payload=payload,
+        args=args,
+        handler=_run_meta_cancel,
+    )
+
+
+async def execute_check_meta_networks_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    from app.services.voice_tool_executor import execute_voice_tool
+
+    started = time.perf_counter()
+    call_id = _extract_call_id(payload)
+    if not user_id:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(call_id=call_id, tool_name="check_meta_networks", latency_ms=latency_ms, ok=False)
+        return {"result": "No identifiqué al usuario, señor.", "latency_ms": latency_ms, "ok": False}
+    result = await execute_voice_tool("consultar_redes_conectadas", user_id, {})
+    spoken = str(result.get("spoken") or "").strip() or "No pude consultar sus redes, señor."
+    ok = bool(result.get("ok", True))
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    record_tool_metric(call_id=call_id, tool_name="check_meta_networks", latency_ms=latency_ms, ok=ok)
     return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
 
 

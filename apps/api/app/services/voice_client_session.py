@@ -38,6 +38,7 @@ def _fresh_session() -> dict[str, Any]:
         "gmail_pending_send": None,
         "finance_pending_write": None,
         "calendar_pending_write": None,
+        "meta_pending_publish": None,
         "gmail_last_read": None,
         "advanced_mode_active": False,
         "advanced_last_topic": "",
@@ -742,6 +743,81 @@ def revert_calendar_pending_to_pending(user_id: str) -> None:
         if row.get("status") == "writing":
             row["status"] = "pending"
             session["calendar_pending_write"] = row
+            session["updated_at"] = _now()
+
+
+META_PENDING_TTL_SEC = 600
+
+
+def set_meta_pending_publish(user_id: str, draft: dict[str, Any]) -> None:
+    session = _get(user_id)
+    now = _now()
+    row = deepcopy(draft)
+    row["prepared_at"] = now
+    row["expires_at"] = now + META_PENDING_TTL_SEC
+    with _lock:
+        session["meta_pending_publish"] = row
+        session["updated_at"] = now
+
+
+def get_meta_pending_publish(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("meta_pending_publish")
+    if not isinstance(row, dict):
+        return None
+    return deepcopy(row)
+
+
+def is_meta_pending_publish_expired(user_id: str) -> bool:
+    row = _get(user_id).get("meta_pending_publish")
+    if not isinstance(row, dict):
+        return False
+    return _now() > float(row.get("expires_at") or 0)
+
+
+def clear_meta_pending_publish(user_id: str, *, reason: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        session["meta_pending_publish"] = None
+        session["updated_at"] = _now()
+
+
+def try_mark_meta_pending_publishing(user_id: str, draft_id: str) -> bool:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("meta_pending_publish")
+        if not isinstance(row, dict):
+            return False
+        if draft_id and row.get("draft_id") != draft_id:
+            return False
+        if row.get("status") != "pending":
+            return False
+        row["status"] = "publishing"
+        session["meta_pending_publish"] = row
+        session["updated_at"] = _now()
+        return True
+
+
+def mark_meta_pending_published(user_id: str, *, post_id: str = "") -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("meta_pending_publish")
+        if not isinstance(row, dict):
+            return
+        row["status"] = "published"
+        row["post_id"] = post_id or row.get("post_id")
+        session["meta_pending_publish"] = row
+        session["updated_at"] = _now()
+
+
+def revert_meta_pending_to_pending(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        row = session.get("meta_pending_publish")
+        if not isinstance(row, dict):
+            return
+        if row.get("status") == "publishing":
+            row["status"] = "pending"
+            session["meta_pending_publish"] = row
             session["updated_at"] = _now()
 
 

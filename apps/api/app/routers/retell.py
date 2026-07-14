@@ -46,6 +46,10 @@ from app.services.retell_native_pilot import (
     execute_gmail_cancel_send_tool,
     execute_gmail_confirm_send_tool,
     execute_gmail_prepare_send_tool,
+    execute_check_meta_networks_tool,
+    execute_meta_cancel_publish_tool,
+    execute_meta_confirm_publish_tool,
+    execute_meta_prepare_publish_tool,
     execute_list_calendar_events_tool,
     execute_read_finances_tool,
     execute_read_gmail_tool,
@@ -57,6 +61,7 @@ from app.services.retell_native_pilot import (
 from app.services.finance_write_flow import clear_finance_pending_for_call
 from app.services.calendar_write_flow import clear_calendar_pending_for_call
 from app.services.gmail_send_flow import clear_gmail_pending_for_call
+from app.services.meta_publish_flow import clear_meta_pending_for_call
 from app.services.voice_client_session import clear_advanced_mode_for_call
 from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
 from app.services.voice_tool_executor import execute_voice_tool
@@ -393,6 +398,54 @@ async def retell_search_web_tool(request: Request) -> JSONResponse:
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
+@router.post("/tools/check_meta_networks")
+async def retell_check_meta_networks_tool(request: Request) -> JSONResponse:
+    """Estado de conexión Meta — piloto nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_check_meta_networks_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/meta_prepare_publish")
+async def retell_meta_prepare_publish_tool(request: Request) -> JSONResponse:
+    """Prepara borrador de publicación FB/IG — no publica."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_meta_prepare_publish_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/meta_confirm_publish")
+async def retell_meta_confirm_publish_tool(request: Request) -> JSONResponse:
+    """Publica tras confirmación verificada en transcript."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_meta_confirm_publish_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/meta_cancel_publish")
+async def retell_meta_cancel_publish_tool(request: Request) -> JSONResponse:
+    """Cancela borrador de publicación pendiente."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_meta_cancel_publish_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
 @router.post("/tools/read_finances")
 async def retell_read_finances_tool(request: Request) -> JSONResponse:
     """Custom function read_finances — piloto nativo."""
@@ -701,6 +754,7 @@ async def retell_webhook(request: Request) -> dict[str, Any]:
             clear_finance_pending_for_call(uid, str(call_id))
             clear_calendar_pending_for_call(uid, str(call_id))
             clear_gmail_pending_for_call(uid, str(call_id))
+            clear_meta_pending_for_call(uid, str(call_id))
             clear_advanced_mode_for_call(uid, str(call_id))
         try:
             client = get_retell_client()

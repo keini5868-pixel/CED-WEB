@@ -40,6 +40,10 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "gmail_confirm_send",
         "gmail_cancel_send",
         "search_web",
+        "check_meta_networks",
+        "meta_prepare_publish",
+        "meta_confirm_publish",
+        "meta_cancel_publish",
         "read_finances",
         "finance_prepare_write",
         "finance_confirm_write",
@@ -175,6 +179,9 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "gmail_confirm_send" in general_tools
     assert "gmail_cancel_send" in general_tools
     assert "search_web" in general_tools
+    assert "meta_prepare_publish" in general_tools
+    assert "meta_confirm_publish" in general_tools
+    assert "check_meta_networks" in general_tools
     assert "get_environment" in general_tools
     assert "activate_camera" in general_tools
     assert "analyze_camera_frame" in general_tools
@@ -194,6 +201,7 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     from app.services.retell_native_pilot import (
         STATE_ADVANCED_MODE_ACTIVE,
         STATE_GMAIL_CONFIRM_PENDING,
+        STATE_PUBLISH_CONFIRM_PENDING,
     )
 
     gmail_tools = {t["name"] for t in by_name[STATE_GMAIL_CONFIRM_PENDING]["tools"]}
@@ -203,6 +211,14 @@ def test_build_native_pilot_states_restrict_confirm_tools():
         "gmail_cancel_send",
     }
     assert "gmail_prepare_send" not in gmail_tools
+
+    publish_tools = {t["name"] for t in by_name[STATE_PUBLISH_CONFIRM_PENDING]["tools"]}
+    assert publish_tools == {
+        "check_meta_networks",
+        "meta_confirm_publish",
+        "meta_cancel_publish",
+    }
+    assert "meta_prepare_publish" not in publish_tools
 
     advanced_tools = {t["name"] for t in by_name[STATE_ADVANCED_MODE_ACTIVE]["tools"]}
     assert advanced_tools == {
@@ -216,6 +232,7 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "finance_prepare_write" not in advanced_tools
     assert "gmail_prepare_send" not in advanced_tools
     assert "search_web" not in advanced_tools
+    assert "meta_prepare_publish" not in advanced_tools
 
 
 def test_pilot_prompt_includes_search_web_rules():
