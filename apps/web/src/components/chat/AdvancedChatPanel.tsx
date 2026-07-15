@@ -11,6 +11,7 @@ import {
   type ImageActionMode,
 } from "@/components/chat/ImageActionBar";
 import { MicButton } from "@/components/chat/MicButton";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { appendStreamChunk } from "@/lib/stream-chunk";
 import type { ChatImageAttachment, ChatPdfAttachment } from "@/lib/api/chat";
 import {
@@ -77,6 +78,7 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
 function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const src = normalizeCedMediaUrl(image.url);
   const label = image.caption?.trim() || image.prompt?.trim() || "Imagen generada";
 
@@ -98,7 +100,8 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
       <img
         src={src}
         alt={label}
-        className="max-h-56 w-full rounded border border-violet-800/50 object-contain"
+        className="max-h-56 w-full cursor-zoom-in rounded border border-violet-800/50 object-contain transition hover:opacity-95"
+        onClick={() => setLightboxOpen(true)}
         onError={(e) => {
           e.currentTarget.alt = "No se pudo cargar la imagen";
         }}
@@ -112,18 +115,32 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
         {busy ? "Descargando…" : "🖼️ Descargar imagen"}
       </button>
       {error ? <p className="text-[10px] text-red-400">{error}</p> : null}
+      <ImageLightbox
+        src={src}
+        alt={label}
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
+      />
     </div>
   );
 }
 
 function UserImagePreview({ preview }: { preview: string }) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   return (
     <div className="mt-2">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={preview}
         alt="Imagen adjunta"
-        className="max-h-40 rounded border border-violet-800/50 object-contain"
+        className="max-h-40 cursor-zoom-in rounded border border-violet-800/50 object-contain"
+        onClick={() => setLightboxOpen(true)}
+      />
+      <ImageLightbox
+        src={preview}
+        alt="Imagen adjunta"
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
       />
     </div>
   );

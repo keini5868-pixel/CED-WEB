@@ -1,7 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
+import { useState } from "react";
 
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 
 type Props = {
@@ -17,6 +19,8 @@ export function CedVoiceImagePreview({
   onDismiss,
 }: Props) {
   const src = url ? normalizeCedMediaUrl(url) : null;
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const label = prompt ? `Imagen: ${prompt}` : "Imagen generada por CED";
 
   return (
     <AnimatePresence>
@@ -32,8 +36,9 @@ export function CedVoiceImagePreview({
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
-              alt={prompt ? `Imagen: ${prompt}` : "Imagen generada por CED"}
-              className="max-h-72 w-full object-contain"
+              alt={label}
+              className="max-h-72 w-full cursor-zoom-in object-contain transition hover:opacity-95"
+              onClick={() => setLightboxOpen(true)}
               onError={(e) => {
                 e.currentTarget.alt = "No se pudo cargar la imagen";
               }}
@@ -53,6 +58,12 @@ export function CedVoiceImagePreview({
               ) : null}
             </div>
           </div>
+          <ImageLightbox
+            src={src}
+            alt={label}
+            open={lightboxOpen}
+            onClose={() => setLightboxOpen(false)}
+          />
         </motion.div>
       ) : null}
     </AnimatePresence>

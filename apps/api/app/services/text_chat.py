@@ -2925,6 +2925,61 @@ def _gemini_simple_reply_stream(
             yield piece
 
 
+def _iter_blocking_send(
+    user_id: str,
+    text: str,
+    conversation_id: str | None,
+):
+    """Ejecuta send_message (ruta bloqueante: imagen/PDF/herramientas) dentro del SSE.
+
+    Corre la llamada en un hilo y emite keep-alives cada 10 s: sin bytes el
+    cliente aborta a los 45 s y la UI queda en silencio total. Cualquier
+    excepción se convierte en un evento done con mensaje de error, nunca en
+    un stream muerto.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as _FutureTimeout
+
+    result: dict[str, Any] | None = None
+    error_reply: str | None = None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(
+            send_message, user_id, content=text, conversation_id=conversation_id
+        )
+        while True:
+            try:
+                result = future.result(timeout=10.0)
+                break
+            except _FutureTimeout:
+                yield _sse_flush()
+            except TextChatError as exc:
+                error_reply = str(exc) or "No pude completar esa acción."
+                break
+            except Exception:
+                logger.exception(
+                    "[CHAT] stream blocking-path failed user=%s", user_id[:8]
+                )
+                error_reply = (
+                    "No pude completar esa acción. Intenta de nuevo en un momento."
+                )
+                break
+
+    if error_reply is not None or result is None:
+        reply = error_reply or "No pude completar esa acción."
+        yield _sse_event("token", {"text": reply})
+        yield _sse_flush()
+        yield _sse_event(
+            "done", {"conversation_id": conversation_id, "reply": reply}
+        )
+        return
+
+    reply = str(result.get("reply") or "").strip()
+    if reply:
+        yield _sse_event("token", {"text": reply})
+        yield _sse_flush()
+    yield _sse_event("done", result)
+
+
 def iter_send_message_stream(
     user_id: str,
     *,
@@ -2948,24 +3003,14 @@ def iter_send_message_stream(
     if not _can_stream_chat_text(
         text, user_id=user_id, conversation_id=conversation_id
     ):
-        result = send_message(user_id, content=text, conversation_id=conversation_id)
-        reply = str(result.get("reply") or "").strip()
-        if reply:
-            yield _sse_event("token", {"text": reply})
-            yield _sse_flush()
-        yield _sse_event("done", result)
+        yield from _iter_blocking_send(user_id, text, conversation_id)
         return
 
     _perf("validated")
 
     # Doble red: por si el conversation_id llega tarde o el flujo se creó mid-stream setup.
     if conversation_id and _publish_flow_requires_blocking(user_id, conversation_id, text):
-        result = send_message(user_id, content=text, conversation_id=conversation_id)
-        reply = str(result.get("reply") or "").strip()
-        if reply:
-            yield _sse_event("token", {"text": reply})
-            yield _sse_flush()
-        yield _sse_event("done", result)
+        yield from _iter_blocking_send(user_id, text, conversation_id)
         return
 
     instant = _instant_chat_greeting_reply(text)
@@ -3041,12 +3086,7 @@ def iter_send_message_stream(
 
     # Tras resolver conversation_id: si hay borrador Meta, publicar por vía bloqueante.
     if _publish_flow_requires_blocking(user_id, conversation_id, text):
-        result = send_message(user_id, content=text, conversation_id=conversation_id)
-        reply = str(result.get("reply") or "").strip()
-        if reply:
-            yield _sse_event("token", {"text": reply})
-            yield _sse_flush()
-        yield _sse_event("done", result)
+        yield from _iter_blocking_send(user_id, text, conversation_id)
         return
 
     from app.services.chat_image_generation import (

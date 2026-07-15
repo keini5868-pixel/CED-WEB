@@ -244,8 +244,10 @@ def parse_pdf_request(text: str) -> tuple[str, str] | None:
         t,
         re.I,
     )
+    # \b evita que "de" haga match dentro de "del" y corte la primera letra
+    # ("PDF del resumen" → "l resumen"); "del" se acepta completo.
     content_match = re.search(
-        r"(?:contenido|sobre|de|con|que\s+diga|que\s+incluya)\s*[:.]?\s*(.+)$",
+        r"\b(?:contenido|sobre|de(?:l)?|con|que\s+diga|que\s+incluya)\b\s*[:.]?\s*(.+)$",
         t,
         re.I | re.S,
     )

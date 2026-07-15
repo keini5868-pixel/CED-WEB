@@ -1,6 +1,8 @@
 "use client";
 
 import { MessageCircle, Minimize2, Send, X } from "lucide-react";
+
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
@@ -116,55 +118,6 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
         {busy ? "Descargando…" : `📄 Descargar PDF${pdf.title ? `: ${pdf.title}` : ""}`}
       </button>
       {error ? <p className="mt-1 text-[10px] text-red-400">{error}</p> : null}
-    </div>
-  );
-}
-
-function ImageLightbox({
-  src,
-  alt,
-  open,
-  onClose,
-}: {
-  src: string;
-  alt: string;
-  open: boolean;
-  onClose: () => void;
-}) {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open, onClose]);
-
-  if (!open) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/92 p-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Vista ampliada"
-      onClick={onClose}
-    >
-      <button
-        type="button"
-        onClick={onClose}
-        className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-black/70 text-white hover:bg-black"
-        aria-label="Cerrar"
-      >
-        <X className="h-5 w-5" />
-      </button>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        className="max-h-[92vh] max-w-[96vw] cursor-zoom-out rounded-lg object-contain shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      />
     </div>
   );
 }
@@ -573,6 +526,11 @@ export function CedTextChatPanel({
       onVoiceImageAttached(imagePreview, imageFile);
     }
 
+    // Índice local del placeholder: los updaters de React pueden ejecutarse
+    // después del finally (que anula el ref), así que el ref no es confiable
+    // en el updater final ni en el catch.
+    let assistantIndex = -1;
+
     try {
       if (
         imageFile &&
@@ -629,7 +587,8 @@ export function CedTextChatPanel({
             userMsg,
             { role: "model", content: "", created_at: new Date().toISOString() },
           ]);
-          streamTargetIndexRef.current = next.length - 1;
+          assistantIndex = next.length - 1;
+          streamTargetIndexRef.current = assistantIndex;
           return next;
         });
         setTyping(false);
@@ -683,8 +642,8 @@ export function CedTextChatPanel({
         );
       } else {
         setMessages((prev) => {
-          const idx = streamTargetIndexRef.current;
-          if (idx == null || idx < 0 || idx >= prev.length) return prev;
+          const idx = assistantIndex;
+          if (idx < 0 || idx >= prev.length) return prev;
           const next = [...prev];
           const target = next[idx];
           if (target?.role === "model") {
@@ -703,8 +662,8 @@ export function CedTextChatPanel({
       setStatus(result.usage);
     } catch (e) {
       setMessages((prev) => {
-        const idx = streamTargetIndexRef.current;
-        if (idx != null && idx >= 0 && idx < prev.length) {
+        const idx = assistantIndex;
+        if (idx >= 0 && idx < prev.length) {
           const target = prev[idx];
           if (target?.role === "model" && !target.content.trim()) {
             return prev.filter((_, i) => i !== idx);
