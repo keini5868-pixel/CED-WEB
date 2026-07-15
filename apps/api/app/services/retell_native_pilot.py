@@ -137,6 +137,13 @@ YouTube (reproducción de videos):
 3. «cierra YouTube / quita el video» → close_youtube_player.
 4. Tras cada tool de YouTube, di el resultado tal cual. NUNCA confirmes que un video
    se reproduce sin resultado exitoso de play_youtube_video. NO uses search_web para videos.
+5. SILENCIO DURANTE LA MÚSICA (regla exclusiva de YouTube): mientras un video o canción
+   está sonando, confirma en UNA sola frase breve y quédate en silencio. PROHIBIDO añadir
+   «¿algo más en lo que pueda ayudarle?», «estoy a su disposición», ofrecer ayuda o iniciar
+   charla — el usuario quiere escuchar la música, no conversar. Solo vuelve a hablar si el
+   usuario se dirige a ti. Si pide otra canción: filler breve, confirma el cambio en una
+   frase y silencio otra vez. Esta regla NO aplica al resto de la conversación (clima,
+   Gmail, finanzas, charla casual), donde mantienes tu estilo normal.
 
 Modo avanzado (Claude):
 1. Solo la frase «activa modo avanzado» → activate_advanced_mode. Luego transition_to_advanced_mode_active.
@@ -166,6 +173,7 @@ Estado general — clima, calendario, Gmail, finanzas, Meta/redes, búsqueda web
 - YouTube: «pon/reproduce/busca X en YouTube» → play_youtube_video. «pausa el video» → pause_youtube_video.
   «reanuda el video» → resume_youtube_video. «cierra YouTube» → close_youtube_player.
   Di el resultado tal cual — NUNCA confirmes reproducción sin resultado exitoso.
+  Con música sonando: UNA frase breve y SILENCIO — sin ofrecer más ayuda ni charla (solo en YouTube).
 - Meta: meta_prepare_publish → confirmar → meta_confirm_publish. check_meta_networks para estado de conexión.
 - Prospección: enable_prospection / disable_prospection / prospection_report / read_social_comments.
 - Mapa: open_drive_map, search_nearby_places, show_route, start_drive_navigation, stop_drive_navigation, navigation_status.
@@ -340,7 +348,8 @@ SEARCH_WEB_DESCRIPTION = (
 PLAY_YOUTUBE_DESCRIPTION = (
     "Busca y reproduce un video público de YouTube en el panel del usuario. "
     "Usar cuando diga «pon / reproduce / busca [algo] en YouTube». "
-    "Di el resultado tal cual — NUNCA confirmes reproducción sin resultado exitoso."
+    "Di el resultado tal cual — NUNCA confirmes reproducción sin resultado exitoso. "
+    "Tras confirmar: SILENCIO — no ofrezcas más ayuda mientras suena la música."
 )
 
 PAUSE_YOUTUBE_DESCRIPTION = (
@@ -348,7 +357,8 @@ PAUSE_YOUTUBE_DESCRIPTION = (
 )
 
 RESUME_YOUTUBE_DESCRIPTION = (
-    "Reanuda el video de YouTube pausado. Usar con «reanuda / continúa el video / dale play»."
+    "Reanuda el video de YouTube pausado. Usar con «reanuda / continúa el video / dale play». "
+    "Confirma en una frase y quédate en silencio mientras suena."
 )
 
 CLOSE_YOUTUBE_DESCRIPTION = (

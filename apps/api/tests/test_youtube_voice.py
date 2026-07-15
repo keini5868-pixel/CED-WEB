@@ -506,3 +506,33 @@ def test_native_pilot_tools_include_youtube():
     play = by_name["play_youtube_video"]
     assert "YouTube" in play["execution_message_description"]
     assert play["url"].endswith("/v1/retell/tools/play_youtube_video")
+
+
+def test_native_pilot_prompts_enforce_silence_during_music():
+    """Regla exclusiva YouTube: confirmar breve y callar mientras suena la música."""
+    from app.services.retell_native_pilot import (
+        GENERAL_ASSISTANT_STATE_PROMPT,
+        PLAY_YOUTUBE_DESCRIPTION,
+        READ_TOOLS_PROMPT,
+    )
+
+    assert "SILENCIO DURANTE LA MÚSICA" in READ_TOOLS_PROMPT
+    assert "no ofrezcas más ayuda" in PLAY_YOUTUBE_DESCRIPTION
+    assert "SILENCIO" in GENERAL_ASSISTANT_STATE_PROMPT
+    # La regla debe declararse como exclusiva de YouTube, no general.
+    assert "NO aplica al resto" in READ_TOOLS_PROMPT
+
+
+def test_openai_play_tool_description_enforces_silence():
+    from app.services.openai_voice_tools import OPENAI_REALTIME_TOOLS
+
+    play = next(t for t in OPENAI_REALTIME_TOOLS if t["name"] == "play_youtube_video")
+    assert "SILENCIO" in play["description"]
+
+
+def test_module_overlay_youtube_prohibits_offers():
+    from app.modules.module_registry import MODULE_OVERLAYS
+
+    overlay = MODULE_OVERLAYS["youtube"]
+    assert "PROHIBIDO ofrecer" in overlay
+    assert "silencio" in overlay.lower()

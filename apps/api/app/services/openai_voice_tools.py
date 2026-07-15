@@ -624,7 +624,8 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
             "OBLIGATORIO cuando diga: pon X en YouTube, reproduce X en YouTube, "
             "busca X en YouTube. "
             "PROHIBIDO confirmar reproducción sin invocar esta herramienta: "
-            "di exactamente el resultado que devuelve (título real o error)."
+            "di exactamente el resultado que devuelve (título real o error). "
+            "Tras confirmar, SILENCIO: no ofrezcas más ayuda mientras suena la música."
         ),
         "parameters": {
             "type": "object",

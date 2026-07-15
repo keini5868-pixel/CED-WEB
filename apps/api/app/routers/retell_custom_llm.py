@@ -627,6 +627,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         if interaction == "reminder_required":
+            # Con música de YouTube sonando, el silencio del usuario es intencional:
+            # no interrumpir con "¿sigue ahí?" (regla exclusiva del modo YouTube).
+            uid_for_mode = uid or resolve_call_user(call_id, request_json)
+            if uid_for_mode:
+                from app.services import voice_client_session as vcs
+
+                if vcs.get_active_mode(uid_for_mode) == "youtube":
+                    await ack_empty_response(
+                        response_id=response_id, reason="youtube_playing"
+                    )
+                    return
             transcript_raw = request_json.get("transcript") or []
             transcript = [
                 Utterance(role=item.get("role", "user"), content=str(item.get("content") or ""))
