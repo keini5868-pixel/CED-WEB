@@ -389,6 +389,9 @@ def _walk_payload_parts(
     return plain_parts, html_parts, calendar_parts
 
 
+_TRIVIAL_PLAIN_MAX_CHARS = 40
+
+
 def _extract_body_from_payload(
     payload: dict[str, Any],
     *,
@@ -402,16 +405,88 @@ def _extract_body_from_payload(
         access_token=access_token,
         message_id=message_id,
     )
-    if plain_parts:
-        return "\n\n".join(plain_parts).strip(), "plain"
+    plain_text = "\n\n".join(plain_parts).strip() if plain_parts else ""
+    html_text = ""
     for html in html_parts:
-        plain = _html_to_plain(html)
-        if len(plain) >= 8:
-            return plain, "html"
+        candidate = _html_to_plain(html)
+        if len(candidate) > len(html_text):
+            html_text = candidate
+
+    # Promocionales (Alibaba, newsletters): la parte text/plain suele ser trivial
+    # («ver en el navegador», un link) mientras el HTML trae el contenido real.
+    if plain_text and len(plain_text) >= _TRIVIAL_PLAIN_MAX_CHARS:
+        return plain_text, "plain"
+    if len(html_text) >= 8 and len(html_text) > len(plain_text):
+        return html_text, "html"
+    if plain_text:
+        return plain_text, "plain"
     for ics in calendar_parts:
         plain = _ics_to_plain(ics)
         if plain:
             return plain, "calendar"
+    return "", "none"
+
+
+def _extract_body_from_raw(
+    client: httpx.Client,
+    access_token: str,
+    message_id: str,
+) -> tuple[str, BodySource]:
+    """Último recurso: descarga el MIME crudo (format=raw) y lo parsea con la stdlib.
+
+    Cubre estructuras que el walk del format=full no decodifica (charsets raros,
+    anidamientos multipart no estándar de correos promocionales).
+    """
+    import email
+    from email import policy
+
+    try:
+        res = client.get(
+            f"{_GMAIL_BASE}/messages/{message_id}",
+            headers=_headers(access_token),
+            params={"format": "raw"},
+        )
+        res.raise_for_status()
+        raw_b64 = str(res.json().get("raw") or "")
+        if not raw_b64:
+            return "", "none"
+        msg = email.message_from_bytes(
+            base64.urlsafe_b64decode(raw_b64 + "=="),
+            policy=policy.default,
+        )
+        plain_texts: list[str] = []
+        html_texts: list[str] = []
+        for part in msg.walk():
+            ctype = part.get_content_type()
+            if ctype not in ("text/plain", "text/html"):
+                continue
+            try:
+                content = part.get_content()
+            except Exception:  # noqa: BLE001
+                continue
+            if not isinstance(content, str) or not content.strip():
+                continue
+            if ctype == "text/plain":
+                plain_texts.append(content.strip())
+            else:
+                html_texts.append(content)
+        plain = "\n\n".join(plain_texts).strip()
+        html_plain = ""
+        for html in html_texts:
+            candidate = _html_to_plain(html)
+            if len(candidate) > len(html_plain):
+                html_plain = candidate
+        if plain and len(plain) >= _TRIVIAL_PLAIN_MAX_CHARS:
+            return plain, "plain"
+        if len(html_plain) >= 8 and len(html_plain) > len(plain):
+            return html_plain, "html"
+        if plain:
+            return plain, "plain"
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "[GMAIL] raw fallback failed msg=%s",
+            str(message_id)[:12],
+        )
     return "", "none"
 
 
@@ -451,6 +526,15 @@ def fetch_message_body_detail(access_token: str, message_id: str) -> MessageBody
             access_token=access_token,
             message_id=message_id,
         )
+        if not body:
+            body, source = _extract_body_from_raw(client, access_token, message_id)
+            if body:
+                logger.info(
+                    "[GMAIL] raw fallback ok msg=%s source=%s len=%s",
+                    str(message_id)[:12],
+                    source,
+                    len(body),
+                )
 
     if body:
         logger.info(

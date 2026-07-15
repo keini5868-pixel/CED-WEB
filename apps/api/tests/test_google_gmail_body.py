@@ -66,6 +66,90 @@ def test_extract_body_prefers_plain_over_html():
     assert source == "plain"
 
 
+def test_extract_body_prefers_rich_html_over_trivial_plain():
+    """Promocionales: plain trivial («ver en navegador») no debe ganarle al HTML real."""
+    payload = {
+        "mimeType": "multipart/alternative",
+        "parts": [
+            {
+                "mimeType": "text/plain",
+                "body": {"data": _b64("View in browser")},
+            },
+            {
+                "mimeType": "text/html",
+                "body": {
+                    "data": _b64(
+                        "<h1>Mega Sale at Alibaba</h1>"
+                        "<p>Get 40% off industrial equipment this week only. "
+                        "Free shipping on orders over $500. Offer ends Sunday.</p>"
+                    ),
+                },
+            },
+        ],
+    }
+    body, source = _extract_body_from_payload(payload)
+    assert source == "html"
+    assert "40% off industrial equipment" in body
+
+
+def test_extract_body_raw_fallback_when_full_parse_empty(monkeypatch):
+    """format=full sin partes decodificables → fallback a format=raw con MIME real."""
+    import email.message
+
+    mime = email.message.EmailMessage()
+    mime["From"] = "promo@alibaba.com"
+    mime["Subject"] = "Deals"
+    mime.set_content("View online")
+    mime.add_alternative(
+        "<p>Wholesale prices on electronics. Bulk discounts available now.</p>",
+        subtype="html",
+    )
+    raw_b64 = base64.urlsafe_b64encode(bytes(mime)).decode().rstrip("=")
+
+    class FakeResponse:
+        def __init__(self, data: dict) -> None:
+            self._data = data
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self._data
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs) -> None:
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args) -> None:
+            return None
+
+        def get(self, url, **kwargs):
+            params = kwargs.get("params") or {}
+            if params.get("format") == "raw":
+                return FakeResponse({"raw": raw_b64})
+            # format=full: payload sin data decodificable (solo imagen)
+            return FakeResponse(
+                {
+                    "snippet": "Deals",
+                    "payload": {
+                        "mimeType": "multipart/related",
+                        "parts": [
+                            {"mimeType": "image/png", "body": {"attachmentId": "x"}},
+                        ],
+                    },
+                }
+            )
+
+    monkeypatch.setattr("app.services.google_gmail_api.httpx.Client", FakeClient)
+    result = fetch_message_body_detail("token", "msg-raw")
+    assert result.ok is True
+    assert result.source == "html"
+    assert "Wholesale prices on electronics" in result.text
+
+
 def test_extract_body_nested_multipart_related():
     inner_html = "<div>Report due Friday 5pm. Contact HR for questions.</div>"
     payload = {
