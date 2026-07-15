@@ -143,7 +143,7 @@ async function refreshLifeContent() {
       mergeGoogleStatus: false,
       priority: "low",
     });
-    let next = mergeLifeSnapshot(state.data, snapshot);
+    const next = mergeLifeSnapshot(state.data, snapshot);
     setState({ data: next });
     persist(next);
 
