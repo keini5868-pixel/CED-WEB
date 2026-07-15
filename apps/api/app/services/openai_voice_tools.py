@@ -618,6 +618,54 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
     },
     {
         "type": "function",
+        "name": "play_youtube_video",
+        "description": (
+            "Busca y reproduce un video público de YouTube en el panel del usuario. "
+            "OBLIGATORIO cuando diga: pon X en YouTube, reproduce X en YouTube, "
+            "busca X en YouTube. "
+            "PROHIBIDO confirmar reproducción sin invocar esta herramienta: "
+            "di exactamente el resultado que devuelve (título real o error)."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Qué video buscar (canción, artista, tema).",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "pause_youtube_video",
+        "description": (
+            "Pausa el video de YouTube en reproducción. "
+            "Usar cuando diga: pausa el video, pon pausa, detén el video."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
+        "name": "resume_youtube_video",
+        "description": (
+            "Reanuda el video de YouTube pausado. "
+            "Usar cuando diga: reanuda el video, continúa el video, dale play."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
+        "name": "close_youtube_player",
+        "description": (
+            "Cierra el panel/reproductor de YouTube. "
+            "Usar cuando diga: cierra YouTube, quita el video, sal de YouTube."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
         "name": "consultar_finanzas",
         "description": (
             "Consulta el resumen de finanzas del usuario (ingresos, gastos, balance, "

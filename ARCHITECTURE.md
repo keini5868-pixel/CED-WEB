@@ -77,7 +77,7 @@ CED-WEB/
 | **Supabase** | Auth, Postgres, storage, perfiles, billing, memoria cognitiva |
 | **Stripe** | Suscripciones, recargas, webhooks |
 | **Resend** | Email transaccional |
-| **YouTube Data API** | Carrusel / contenido (opcional) |
+| **YouTube Data API** | Reproductor por voz (Fase 1: API key, búsqueda pública) |
 | **ElevenLabs** | Clon de voz Jarvis registrado en Retell (vía `RETELL_VOICE_ID`) |
 
 **Nota:** ChromaDB aparece solo en `MIGRATION_PLAN.md` como idea futura. **No está en el runtime actual.** La memoria cognitiva vive en **Supabase Postgres** (`cognitive_memories`). El conocimiento interno usa **JSON seed + tabla `internal_knowledge_articles`**.

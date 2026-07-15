@@ -119,6 +119,11 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\b(recuerda que|guarda esto|registra)\b",
         r"\b(agrega al crm|nuevo cliente|añade contacto)\b",
     ),
+    "youtube": (
+        r"\b(?:pon(?:me)?|reproduce(?:me)?|busca(?:me)?|toca(?:me)?)\b.*\ben\s+youtube\b",
+        r"\byoutube\b.*\b(?:pon(?:me)?|reproduce(?:me)?|busca(?:me)?)\b",
+        r"\b(cierra|quita|abre)\s+(el\s+)?(panel\s+de\s+)?youtube\b",
+    ),
     "finance": (
         r"\b(gast[ée]|pagu[ée]|compr[ée])\b.*\d",
         r"\b(recib[íi]|gan[ée]|me pagaron|cobr[ée])\b.*\d",
@@ -159,6 +164,7 @@ MINI_AGENT_MODULES: tuple[str, ...] = (
     "calendar",
     "gmail",
     "finance",
+    "youtube",
 )
 
 # Mapea los nombres del detector v2 a los módulos que existen hoy en el registry.
@@ -179,6 +185,7 @@ DETECTOR_TO_REGISTRY: dict[str, str | None] = {
     "air_quality": "environment",
     "web_search": "web_search",
     "memory": "memory",
+    "youtube": "youtube",
     "datetime": None,
     "stripe": None,
 }
@@ -265,6 +272,10 @@ def is_module_command(
             or resolve_meta_publish_request(text, transcript)
             or resolve_social_comments_request(text)
         )
+    if module == "youtube":
+        from app.services.youtube_voice_intent import is_youtube_intent
+
+        return is_youtube_intent(text)
     if module == "web_search":
         return resolve_web_search_request(text, transcript) is not None
     if module == "calendar":
@@ -351,6 +362,12 @@ def detect_module(
         ):
             return "camera"
 
+    if active_module == "youtube":
+        from app.services.youtube_voice_intent import is_youtube_intent
+
+        if is_youtube_intent(text):
+            return "youtube"
+
     if active_module in (
         "calendar",
         "gmail",
@@ -373,6 +390,12 @@ def detect_module(
 
     if is_gmail_intent(text):
         return "gmail"
+
+    # Antes del mapa: "busca X en youtube" no debe caer en búsqueda de lugares.
+    from app.services.youtube_voice_intent import resolve_youtube_play_request
+
+    if resolve_youtube_play_request(text):
+        return "youtube"
 
     if resolve_navigation_confirm(text, transcript, user_id=user_id):
         return "map"

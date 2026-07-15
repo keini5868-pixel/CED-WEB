@@ -142,6 +142,7 @@ Re-ejecutar bootstrap tras cada deploy que cambie tools o prompt — actualiza e
 2. Google Calendar y Gmail deben estar conectados en configuración de voz
 3. Frases de prueba calendario: "¿qué tengo hoy?", "eventos de mañana"
 4. Frases Gmail: "léeme mis correos", "correos importantes", "lee el correo de X"
+5. Frases YouTube (requiere `YOUTUBE_API_KEY`): "pon Bohemian Rhapsody en YouTube", "pausa el video", "reanuda el video", "cierra YouTube"
 
 ### Métricas
 

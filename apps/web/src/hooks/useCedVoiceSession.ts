@@ -30,6 +30,11 @@ import {
 } from "@/lib/api/voiceClient";
 import type { NavClientAction } from "@/lib/api/navigation";
 import {
+  dispatchCedYoutubeEvent,
+  isYoutubeBridgeAction,
+  youtubeActionFromBridge,
+} from "@/lib/voice/youtubePlayer";
+import {
   endVoiceSession,
   startVoiceSession,
   tickVoiceSessionDetailed,
@@ -480,6 +485,12 @@ export function useCedVoiceSession(
         await ackVoiceClientAction(action.id);
         return;
       }
+      if (isYoutubeBridgeAction(action.action)) {
+        // El backend duplica estas acciones como tool_events (canal ordenado
+        // que sí soporta ráfagas); aquí solo se libera el slot de client_action.
+        await ackVoiceClientAction(action.id);
+        return;
+      }
       if (action.action !== "camera_capture") return;
 
       const requestId = Number(action.payload.request_id || 0);
@@ -583,6 +594,13 @@ export function useCedVoiceSession(
                 detail: { text },
               }),
             );
+          }
+          if (ev.type && isYoutubeBridgeAction(ev.type)) {
+            const ytAction = youtubeActionFromBridge(
+              ev.type,
+              ev as unknown as Record<string, unknown>,
+            );
+            if (ytAction) dispatchCedYoutubeEvent(ytAction);
           }
           if (ev.type === "module_activated" && ev.module) {
             window.dispatchEvent(

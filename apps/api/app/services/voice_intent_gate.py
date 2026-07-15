@@ -74,6 +74,19 @@ _MODULE_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
+        "youtube",
+        re.compile(
+            r"\b("
+            r"youtube|"
+            r"pausa(?:r)?\s+(?:el\s+)?(?:video|v[ií]deo)|"
+            r"reanuda(?:r)?\s+(?:el\s+)?(?:video|v[ií]deo)|"
+            r"det[eé]n\s+(?:el\s+)?(?:video|v[ií]deo)|"
+            r"cierra\s+(?:el\s+)?(?:video|v[ií]deo|reproductor)"
+            r")\b",
+            re.I,
+        ),
+    ),
+    (
         "map",
         re.compile(
             r"\b("

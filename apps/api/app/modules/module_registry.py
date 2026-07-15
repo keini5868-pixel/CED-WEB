@@ -15,6 +15,7 @@ from app.modules.pdf_module import PdfModule
 from app.modules.prospection_module import ProspectionModule
 from app.modules.publish_module import PublishModule
 from app.modules.web_search_module import WebSearchModule
+from app.modules.youtube_module import YouTubeModule
 from app.modules.module_acks import MODULE_ACKS
 
 MODULE_OVERLAYS: dict[str, str] = {
@@ -89,6 +90,14 @@ Para registrar un movimiento usa la tool registrar_movimiento_financiero
 y con esos datos ofrece un resumen claro, consejos de ahorro y planes concretos.
 Confirma cada registro de forma breve y natural. Nunca inventes cifras.
 """.strip(),
+    "youtube": """
+MÓDULO ACTIVO: YOUTUBE
+El usuario está viendo un video de YouTube en pantalla.
+Comandos: "pausa el video", "reanuda el video", "cierra youtube",
+"pon [otra cosa] en youtube".
+NUNCA confirmes que un video se reproduce sin resultado real de la herramienta.
+Responde breve — está viendo el video.
+""".strip(),
 }
 
 MODULE_ORDER: tuple[str, ...] = (
@@ -104,6 +113,7 @@ MODULE_ORDER: tuple[str, ...] = (
     "prospection",
     "memory",
     "finance",
+    "youtube",
 )
 
 
@@ -121,6 +131,7 @@ def build_module(name: str) -> BaseModule:
         "prospection": ProspectionModule,
         "memory": MemoryModule,
         "finance": FinanceModule,
+        "youtube": YouTubeModule,
     }
     cls = factories.get(name)
     if not cls:

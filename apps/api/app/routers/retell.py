@@ -55,6 +55,10 @@ from app.services.retell_native_pilot import (
     execute_prospection_report_tool,
     execute_read_social_comments_tool,
     execute_open_drive_map_tool,
+    execute_play_youtube_video_tool,
+    execute_pause_youtube_video_tool,
+    execute_resume_youtube_video_tool,
+    execute_close_youtube_player_tool,
     execute_search_nearby_places_tool,
     execute_show_route_tool,
     execute_start_drive_navigation_tool,
@@ -405,6 +409,54 @@ async def retell_search_web_tool(request: Request) -> JSONResponse:
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
     result = await execute_search_web_tool(user_id=user_id, payload=payload, args=args)
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/play_youtube_video")
+async def retell_play_youtube_video_tool(request: Request) -> JSONResponse:
+    """Busca y reproduce un video de YouTube — piloto nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_play_youtube_video_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/pause_youtube_video")
+async def retell_pause_youtube_video_tool(request: Request) -> JSONResponse:
+    """Pausa el video de YouTube — piloto nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_pause_youtube_video_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/resume_youtube_video")
+async def retell_resume_youtube_video_tool(request: Request) -> JSONResponse:
+    """Reanuda el video de YouTube — piloto nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_resume_youtube_video_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/close_youtube_player")
+async def retell_close_youtube_player_tool(request: Request) -> JSONResponse:
+    """Cierra el panel de YouTube — piloto nativo."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_close_youtube_player_tool(
+        user_id=user_id, payload=payload, args=args
+    )
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 

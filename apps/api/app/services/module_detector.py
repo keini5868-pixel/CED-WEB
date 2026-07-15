@@ -55,6 +55,7 @@ class Detection:
 # explícita van primero; los de datos/tema van después.
 MODULE_PRIORITY: tuple[str, ...] = (
     "camera",
+    "youtube",
     "map",
     "pdf",
     "image_gen",
@@ -75,6 +76,7 @@ MODULE_PRIORITY: tuple[str, ...] = (
 # Etiqueta legible por módulo — usada en el prompt del clasificador (Etapa 2).
 MODULE_LABELS: dict[str, str] = {
     "camera": "cámara y visión (mirar/analizar lo que ve la cámara)",
+    "youtube": "reproducir videos de YouTube (buscar, pausar, reanudar, cerrar)",
     "map": "navegación / Google Maps (llevar a un destino, calcular ruta)",
     "pdf": "generar un documento PDF",
     "image_gen": "generar/crear una imagen",
@@ -108,6 +110,15 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bmira\s+esto\b",
         r"\bqu[ée]\s+ves\b",
         r"\bdescribe\s+lo\s+que\s+ves\b",
+    ),
+    "youtube": (
+        r"\b(?:pon(?:me|ga)?|reproduce(?:me)?|reproducir|busca(?:me|r)?|toca(?:me)?|"
+        r"quiero\s+(?:ver|escuchar|o[ií]r))\b.{0,80}?\ben\s+youtube\b",
+        r"\byoutube\s*[,:]?\s+(?:pon(?:me|ga)?|reproduce(?:me)?|busca(?:me|r)?|toca(?:me)?)\b",
+        r"\b(?:abre|abrir|cierra|cerrar|quita(?:r)?|apaga(?:r)?|pausa(?:r)?|"
+        r"reanuda(?:r)?|det[eé]n)\s+(?:el\s+)?(?:panel\s+(?:de\s+)?)?"
+        r"(?:youtube|reproductor(?:\s+de\s+youtube)?)\b",
+        r"\bsal(?:ir)?\s+de\s+youtube\b",
     ),
     "map": (
         r"\bll[ée]vame\s+a\b",
@@ -248,6 +259,9 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
 #     "dame un resumen de finanzas" (acción → ya cubierto por STRICT).
 # ---------------------------------------------------------------------------
 SOFT_ANCHORS: dict[str, tuple[str, ...]] = {
+    "youtube": (
+        r"\byoutube\b",
+    ),
     "finance": (
         r"\bfinan(?:zas|ciera|ciero)\b",
         r"\bmis\s+(?:gastos|ingresos|deudas|ahorros)\b",
@@ -367,9 +381,11 @@ def _legacy_confirms_action(text: str, module: str) -> bool:
     from app.modules.environment_module import is_environment_intent
     from app.modules.finance_module import is_finance_intent
     from app.modules.gmail_module import is_gmail_intent
+    from app.services.youtube_voice_intent import is_youtube_intent
 
     checks: dict[str, Callable[[str], bool]] = {
         "gmail": is_gmail_intent,
+        "youtube": is_youtube_intent,
         "finance": is_finance_intent,
         "calendar": is_calendar_intent,
         "environment": is_environment_intent,

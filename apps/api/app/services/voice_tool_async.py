@@ -21,6 +21,7 @@ PUBLISH_TOOL_TIMEOUT_SEC = 35.0
 
 _TOOL_ACK: dict[str, str] = {
     "search_web": "Investigando, señor.",
+    "play_youtube_video": "Buscando en YouTube, señor.",
     "activar_modo_conducir": "Abriendo el mapa, señor.",
     "open_map": "Abriendo el mapa, señor.",
     "search_nearby_places": "Buscando en el mapa, señor.",
@@ -38,6 +39,7 @@ _TOOL_ACK: dict[str, str] = {
 
 _TOOL_FALLBACK: dict[str, str] = {
     "search_web": "Señor, no pude completar la búsqueda. ¿Repito?",
+    "play_youtube_video": "No pude buscar el video en YouTube, señor. ¿Repito?",
     "generar_pdf": "No pude preparar el PDF, señor. ¿Lo intento de nuevo?",
     "leer_gmail": "No pude leer su correo, señor. ¿Lo intento de nuevo?",
     "enviar_gmail": "No pude enviar el correo, señor. ¿Lo intento de nuevo?",

@@ -26,6 +26,9 @@ export type VoiceToolEvent = {
   destination?: string;
   index?: number;
   route?: NavRoute;
+  video_id?: string;
+  channel_title?: string;
+  thumbnail_url?: string;
 };
 
 export type VoiceClientState = {

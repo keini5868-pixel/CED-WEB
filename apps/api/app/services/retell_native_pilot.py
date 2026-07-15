@@ -51,6 +51,10 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - stop_drive_navigation: detener navegación.
 - navigation_status: estado/ETA de la ruta.
 - search_web: búsqueda web general (noticias, hechos actuales, datos externos). NO para clima (use get_environment) ni para lo visible en cámara (use search_visible_product).
+- play_youtube_video: buscar y reproducir un video de YouTube («pon/reproduce/busca X en YouTube»).
+- pause_youtube_video: pausar el video de YouTube en curso.
+- resume_youtube_video: reanudar el video de YouTube pausado.
+- close_youtube_player: cerrar el panel/reproductor de YouTube.
 - activate_advanced_mode: activar modo avanzado con Claude (solo frase «activa modo avanzado»).
 - consult_advanced: consulta profunda vía Claude — solo en modo avanzado.
 - deactivate_advanced_mode: salir a modo conversacional normal.
@@ -127,6 +131,13 @@ Búsqueda web (search_web):
 2. NO uses search_web para clima/aire (get_environment), calendario, Gmail, finanzas ni objetos en cámara.
 3. NO inventes resultados: si falla, di el mensaje de la tool.
 
+YouTube (reproducción de videos):
+1. «pon / reproduce / busca [algo] en YouTube» → play_youtube_video con la consulta.
+2. «pausa el video» → pause_youtube_video. «reanuda / continúa el video» → resume_youtube_video.
+3. «cierra YouTube / quita el video» → close_youtube_player.
+4. Tras cada tool de YouTube, di el resultado tal cual. NUNCA confirmes que un video
+   se reproduce sin resultado exitoso de play_youtube_video. NO uses search_web para videos.
+
 Modo avanzado (Claude):
 1. Solo la frase «activa modo avanzado» → activate_advanced_mode. Luego transition_to_advanced_mode_active.
 2. Tras activar (aunque no hayas cambiado de estado), preguntas sustantivas / análisis / comparación → consult_advanced SIEMPRE. consult_advanced también está disponible en este estado general.
@@ -150,8 +161,11 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario, Gmail, finanzas, Meta/redes, búsqueda web, cámara, modo avanzado.
+Estado general — clima, calendario, Gmail, finanzas, Meta/redes, búsqueda web, cámara, YouTube, modo avanzado.
 - search_web: hechos actuales / noticias / datos externos (no clima → get_environment; no cámara → search_visible_product).
+- YouTube: «pon/reproduce/busca X en YouTube» → play_youtube_video. «pausa el video» → pause_youtube_video.
+  «reanuda el video» → resume_youtube_video. «cierra YouTube» → close_youtube_player.
+  Di el resultado tal cual — NUNCA confirmes reproducción sin resultado exitoso.
 - Meta: meta_prepare_publish → confirmar → meta_confirm_publish. check_meta_networks para estado de conexión.
 - Prospección: enable_prospection / disable_prospection / prospection_report / read_social_comments.
 - Mapa: open_drive_map, search_nearby_places, show_route, start_drive_navigation, stop_drive_navigation, navigation_status.
@@ -321,6 +335,24 @@ SEARCH_WEB_DESCRIPTION = (
     "Búsqueda web general: noticias, hechos actuales, precios/datos externos o investigación breve. "
     "NO usar para clima (get_environment), calendario, Gmail, finanzas ni objetos visibles en cámara "
     "(search_visible_product)."
+)
+
+PLAY_YOUTUBE_DESCRIPTION = (
+    "Busca y reproduce un video público de YouTube en el panel del usuario. "
+    "Usar cuando diga «pon / reproduce / busca [algo] en YouTube». "
+    "Di el resultado tal cual — NUNCA confirmes reproducción sin resultado exitoso."
+)
+
+PAUSE_YOUTUBE_DESCRIPTION = (
+    "Pausa el video de YouTube en reproducción. Usar con «pausa el video / pon pausa»."
+)
+
+RESUME_YOUTUBE_DESCRIPTION = (
+    "Reanuda el video de YouTube pausado. Usar con «reanuda / continúa el video / dale play»."
+)
+
+CLOSE_YOUTUBE_DESCRIPTION = (
+    "Cierra el panel/reproductor de YouTube. Usar con «cierra YouTube / quita el video»."
 )
 
 READ_FINANCES_DESCRIPTION = (
@@ -586,6 +618,23 @@ SEARCH_WEB_PARAMETERS: dict[str, Any] = {
     "required": ["query"],
 }
 
+PLAY_YOUTUBE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "description": (
+                "Qué video buscar en YouTube (canción, artista, tema). "
+                "Ej: 'música de Juan Luis Guerra', 'cómo cambiar un neumático'."
+            ),
+        },
+    },
+    "required": ["query"],
+}
+PAUSE_YOUTUBE_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+RESUME_YOUTUBE_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+CLOSE_YOUTUBE_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+
 READ_FINANCES_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -832,6 +881,50 @@ def build_search_web_tool(*, api_public_url: str) -> dict[str, Any]:
         parameters=SEARCH_WEB_PARAMETERS,
         filler="Investigando, señor.",
         timeout_ms=25_000,
+    )
+
+
+def build_play_youtube_video_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="play_youtube_video",
+        description=PLAY_YOUTUBE_DESCRIPTION,
+        parameters=PLAY_YOUTUBE_PARAMETERS,
+        filler="Buscando en YouTube, señor.",
+        timeout_ms=15_000,
+    )
+
+
+def build_pause_youtube_video_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="pause_youtube_video",
+        description=PAUSE_YOUTUBE_DESCRIPTION,
+        parameters=PAUSE_YOUTUBE_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_resume_youtube_video_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="resume_youtube_video",
+        description=RESUME_YOUTUBE_DESCRIPTION,
+        parameters=RESUME_YOUTUBE_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
+def build_close_youtube_player_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="close_youtube_player",
+        description=CLOSE_YOUTUBE_DESCRIPTION,
+        parameters=CLOSE_YOUTUBE_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
     )
 
 
@@ -1127,6 +1220,10 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_gmail_confirm_send_tool(api_public_url=api_public_url),
                 build_gmail_cancel_send_tool(api_public_url=api_public_url),
                 build_search_web_tool(api_public_url=api_public_url),
+                build_play_youtube_video_tool(api_public_url=api_public_url),
+                build_pause_youtube_video_tool(api_public_url=api_public_url),
+                build_resume_youtube_video_tool(api_public_url=api_public_url),
+                build_close_youtube_player_tool(api_public_url=api_public_url),
                 build_check_meta_networks_tool(api_public_url=api_public_url),
                 build_meta_prepare_publish_tool(api_public_url=api_public_url),
                 build_meta_confirm_publish_tool(api_public_url=api_public_url),
@@ -1421,6 +1518,10 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "gmail_confirm_send": _stats("gmail_confirm_send"),
         "gmail_cancel_send": _stats("gmail_cancel_send"),
         "search_web": _stats("search_web"),
+        "play_youtube_video": _stats("play_youtube_video"),
+        "pause_youtube_video": _stats("pause_youtube_video"),
+        "resume_youtube_video": _stats("resume_youtube_video"),
+        "close_youtube_player": _stats("close_youtube_player"),
         "meta_prepare_publish": _stats("meta_prepare_publish"),
         "meta_confirm_publish": _stats("meta_confirm_publish"),
         "meta_cancel_publish": _stats("meta_cancel_publish"),
@@ -2617,6 +2718,44 @@ async def execute_navigation_status_tool(*, user_id: str, payload: dict[str, Any
     return await _execute_native_voice_alias_tool(
         tool_name="navigation_status",
         voice_tool_name="navigation_status",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_play_youtube_video_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    query = str(args.get("query") or "").strip() or resolve_tool_query(payload, args)
+    return await _execute_native_voice_alias_tool(
+        tool_name="play_youtube_video",
+        voice_tool_name="play_youtube_video",
+        user_id=user_id,
+        payload=payload,
+        args={"query": query},
+    )
+
+
+async def execute_pause_youtube_video_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="pause_youtube_video",
+        voice_tool_name="pause_youtube_video",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_resume_youtube_video_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="resume_youtube_video",
+        voice_tool_name="resume_youtube_video",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_close_youtube_player_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="close_youtube_player",
+        voice_tool_name="close_youtube_player",
         user_id=user_id,
         payload=payload,
     )

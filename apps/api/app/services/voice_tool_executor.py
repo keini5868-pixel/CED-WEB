@@ -1254,6 +1254,90 @@ async def _execute_voice_tool_body(
             vcs.clear_last_publishable_image(user_id)
             return _spoken_ok(spoken)
 
+        if name == "play_youtube_video":
+            query = str(params.get("query") or params.get("consulta") or "").strip()
+            if not query:
+                return _spoken_err(
+                    "No escuché qué desea ver en YouTube, señor.",
+                    error="youtube_empty_query",
+                )
+            from app.services.youtube_search import (
+                YouTubeSearchError,
+                search_youtube_video,
+            )
+
+            try:
+                video = await asyncio.to_thread(search_youtube_video, query)
+            except YouTubeSearchError as exc:
+                if exc.code == "missing_api_key":
+                    return _spoken_err(
+                        "Señor, el reproductor de YouTube no está configurado todavía.",
+                        error="youtube_api_key_missing",
+                    )
+                if exc.code == "timeout":
+                    return _spoken_err(
+                        "Señor, YouTube tardó demasiado en responder. ¿Intento de nuevo?",
+                        error="youtube_timeout",
+                    )
+                return _spoken_err(
+                    "No pude buscar en YouTube en este momento, señor.",
+                    error=f"youtube_{exc.code}",
+                )
+            if not video:
+                return _spoken_err(
+                    f"No encontré un video de {query} en YouTube, señor.",
+                    error="youtube_no_results",
+                )
+            payload = {
+                "video_id": video["video_id"],
+                "title": video.get("title") or "",
+                "channel_title": video.get("channel_title") or "",
+                "thumbnail_url": video.get("thumbnail_url") or "",
+            }
+            vcs.set_active_mode(user_id, "youtube")
+            vcs.push_client_action(user_id, "youtube_play", payload)
+            vcs.push_tool_event(user_id, {"type": "youtube_play", **payload})
+            title = payload["title"] or query
+            channel = payload["channel_title"]
+            detail = f", de {channel}" if channel else ""
+            return {
+                "ok": True,
+                "spoken": fit_voice_spoken(
+                    f"Reproduciendo {title}{detail} en YouTube, señor."
+                ),
+                "client_action": "youtube_play",
+                "video": payload,
+            }
+
+        if name == "pause_youtube_video":
+            vcs.push_client_action(user_id, "youtube_pause", {})
+            vcs.push_tool_event(user_id, {"type": "youtube_pause"})
+            return {
+                "ok": True,
+                "spoken": "Video en pausa, señor.",
+                "client_action": "youtube_pause",
+            }
+
+        if name == "resume_youtube_video":
+            vcs.push_client_action(user_id, "youtube_resume", {})
+            vcs.push_tool_event(user_id, {"type": "youtube_resume"})
+            return {
+                "ok": True,
+                "spoken": "Reanudando el video, señor.",
+                "client_action": "youtube_resume",
+            }
+
+        if name == "close_youtube_player":
+            vcs.push_client_action(user_id, "youtube_close", {})
+            vcs.push_tool_event(user_id, {"type": "youtube_close"})
+            if vcs.get_active_mode(user_id) == "youtube":
+                vcs.set_active_mode(user_id, None)
+            return {
+                "ok": True,
+                "spoken": "Cerrando YouTube, señor.",
+                "client_action": "youtube_close",
+            }
+
         if name == "activar_modo_conducir":
             vcs.set_active_mode(user_id, "map")
             vcs.set_map_search_results(user_id, [])

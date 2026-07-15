@@ -15,4 +15,5 @@ MODULE_ACKS: dict[str, str] = {
     "prospection": "Activando prospección, señor.",
     "memory": "Un momento, señor.",
     "finance": "Revisando sus finanzas, señor.",
+    "youtube": "Buscando en YouTube, señor.",
 }

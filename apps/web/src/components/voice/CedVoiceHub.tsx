@@ -34,6 +34,7 @@ import {
   CedSettingsModal,
   CedStopConfirmModal,
 } from "@/components/voice/CedVoiceModals";
+import { CedYoutubePlayerPanel } from "@/components/voice/CedYoutubePlayerPanel";
 
 const JarvisOrbScene = dynamic(
   () => import("@/components/orb/JarvisOrbScene"),
@@ -321,6 +322,8 @@ export function CedVoiceHub() {
       />
 
       <CedHudQuickPopups active={quickPopup} onClose={() => setQuickPopup(null)} />
+
+      <CedYoutubePlayerPanel />
 
       <CedStopConfirmModal
         open={voice.stopConfirmOpen}
