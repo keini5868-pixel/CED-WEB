@@ -75,32 +75,130 @@ export function closestPathIndex(path: NavLatLng[], point: NavLatLng): number {
   return bestIdx;
 }
 
+function projectOnSegment(a: NavLatLng, b: NavLatLng, point: NavLatLng): NavLatLng {
+  const abLat = b.lat - a.lat;
+  const abLng = b.lng - a.lng;
+  const apLat = point.lat - a.lat;
+  const apLng = point.lng - a.lng;
+  const ab2 = abLat * abLat + abLng * abLng;
+  if (ab2 <= 0) return a;
+  const t = Math.max(0, Math.min(1, (apLat * abLat + apLng * abLng) / ab2));
+  return { lat: a.lat + abLat * t, lng: a.lng + abLng * t };
+}
+
 /** Ancla el pin a la polilínea (evita flecha al lado de la ruta). */
 export function snapToRoutePath(path: NavLatLng[], point: NavLatLng): NavLatLng {
   if (path.length < 1) return point;
   if (path.length === 1) return path[0]!;
+  return trackRouteProgress(path, point, null).snapped;
+}
 
-  const idx = closestPathIndex(path, point);
+/** Dentro de este radio el usuario cuenta como «en ruta»: la geometría manda el rumbo. */
+export const NAV_ON_ROUTE_MAX_M = 35;
+
+export type RouteProgress = {
+  /** Índice del vértice de ruta más cercano (monotónico si se pasa lastIdx). */
+  idx: number;
+  /** Posición proyectada sobre la polilínea. */
+  snapped: NavLatLng;
+  /** Distancia del GPS a la ruta (metros). */
+  offRouteM: number;
+};
+
+/**
+ * Progreso sobre la ruta con ventana alrededor del último índice conocido.
+ * Evita que el ruido del GPS haga saltar el anclaje a segmentos lejanos
+ * (vías paralelas, tréboles, tramos que se cruzan) o retroceder en la ruta.
+ */
+export function trackRouteProgress(
+  path: NavLatLng[],
+  point: NavLatLng,
+  lastIdx: number | null | undefined,
+): RouteProgress {
+  if (path.length === 0) return { idx: 0, snapped: point, offRouteM: 0 };
+  if (path.length === 1) {
+    return { idx: 0, snapped: path[0]!, offRouteM: distanceMeters(point, path[0]!) };
+  }
+
+  let idx: number;
+  if (lastIdx == null || lastIdx < 0 || lastIdx >= path.length) {
+    idx = closestPathIndex(path, point);
+  } else {
+    const start = Math.max(0, lastIdx - 8);
+    const end = Math.min(path.length - 1, lastIdx + 80);
+    let bestIdx = lastIdx;
+    let bestDist = Infinity;
+    for (let i = start; i <= end; i += 1) {
+      const d = distanceMeters(point, path[i]!);
+      if (d < bestDist) {
+        bestDist = d;
+        bestIdx = i;
+      }
+    }
+    // GPS muy lejos de la ventana (recálculo, túnel): re-búsqueda global.
+    idx = bestDist > 120 ? closestPathIndex(path, point) : bestIdx;
+  }
+
   const prev = path[Math.max(0, idx - 1)]!;
   const curr = path[idx]!;
   const next = path[Math.min(path.length - 1, idx + 1)]!;
+  const onPrev = projectOnSegment(prev, curr, point);
+  const onNext = projectOnSegment(curr, next, point);
+  const dPrev = distanceMeters(point, onPrev);
+  const dNext = distanceMeters(point, onNext);
+  return dPrev <= dNext
+    ? { idx, snapped: onPrev, offRouteM: dPrev }
+    : { idx, snapped: onNext, offRouteM: dNext };
+}
 
-  const project = (a: NavLatLng, b: NavLatLng): NavLatLng => {
-    const abLat = b.lat - a.lat;
-    const abLng = b.lng - a.lng;
-    const apLat = point.lat - a.lat;
-    const apLng = point.lng - a.lng;
-    const ab2 = abLat * abLat + abLng * abLng;
-    if (ab2 <= 0) return a;
-    const t = Math.max(0, Math.min(1, (apLat * abLat + apLng * abLng) / ab2));
-    return { lat: a.lat + abLat * t, lng: a.lng + abLng * t };
-  };
+/** Punto a `aheadM` metros siguiendo la polilínea desde `fromPoint` (vértice fromIdx). */
+export function pointAlongPath(
+  path: NavLatLng[],
+  fromIdx: number,
+  fromPoint: NavLatLng,
+  aheadM: number,
+): NavLatLng {
+  let acc = 0;
+  let cursor = fromPoint;
+  for (let i = Math.max(0, fromIdx); i < path.length - 1; i += 1) {
+    const to = path[i + 1]!;
+    const seg = distanceMeters(cursor, to);
+    if (seg <= 0) {
+      cursor = to;
+      continue;
+    }
+    if (acc + seg >= aheadM) {
+      const ratio = (aheadM - acc) / seg;
+      return {
+        lat: cursor.lat + (to.lat - cursor.lat) * ratio,
+        lng: cursor.lng + (to.lng - cursor.lng) * ratio,
+      };
+    }
+    acc += seg;
+    cursor = to;
+  }
+  return path[path.length - 1] ?? fromPoint;
+}
 
-  const onPrev = project(prev, curr);
-  const onNext = project(curr, next);
-  return distanceMeters(point, onPrev) <= distanceMeters(point, onNext)
-    ? onPrev
-    : onNext;
+/** Rumbo de la ruta en el punto snapped — look-ahead por DISTANCIA (no % del path). */
+export function routeHeadingAt(
+  path: NavLatLng[],
+  idx: number,
+  snapped: NavLatLng,
+  aheadM = 30,
+): number | null {
+  if (path.length < 2) return null;
+  const target = pointAlongPath(path, idx, snapped, aheadM);
+  if (distanceMeters(snapped, target) >= 2) {
+    return bearingDegrees(snapped, target);
+  }
+  // Fin de ruta: usa el último segmento no degenerado.
+  for (let i = path.length - 1; i > 0; i -= 1) {
+    const a = path[i - 1]!;
+    const b = path[i]!;
+    if (distanceMeters(a, b) >= 1) return bearingDegrees(a, b);
+  }
+  return null;
 }
 
 export function offsetByMeters(
@@ -153,72 +251,66 @@ export function smoothHeading(
   return (previous + delta + 360) % 360;
 }
 
+/** Suaviza cambios de zoom por velocidad — sin saltos visibles entre escalones. */
+export function smoothZoom(
+  previous: number | null | undefined,
+  next: number,
+  maxDelta = 0.25,
+): number {
+  if (previous == null || Number.isNaN(previous)) return next;
+  const delta = next - previous;
+  if (Math.abs(delta) <= maxDelta) return next;
+  return previous + Math.sign(delta) * maxDelta;
+}
+
 /** Punto de mira adelante en la ruta — centra la cámara como Google Maps. */
 export function navigationLookAheadCenter(
   position: NavLatLng,
   path: NavLatLng[],
   heading: number,
   speedMps: number | null | undefined,
+  fromIdx: number | null = null,
 ): NavLatLng {
   const speed = speedMps ?? 0;
   // Look-ahead corto → cámara más “primera persona” (Waze), no panorama de toda la ruta.
   const aheadM = Math.min(70, Math.max(18, speed * 5 + 22));
 
   if (path.length >= 2) {
-    const idx = closestPathIndex(path, position);
-    let acc = 0;
-    for (let i = idx; i < path.length - 1; i += 1) {
-      const from = path[i]!;
-      const to = path[i + 1]!;
-      const seg = distanceMeters(from, to);
-      if (seg <= 0) continue;
-      if (acc + seg >= aheadM) {
-        const ratio = (aheadM - acc) / seg;
-        return {
-          lat: from.lat + (to.lat - from.lat) * ratio,
-          lng: from.lng + (to.lng - from.lng) * ratio,
-        };
-      }
-      acc += seg;
-    }
-    return path[path.length - 1]!;
+    const idx = fromIdx ?? closestPathIndex(path, position);
+    return pointAlongPath(path, idx, position, aheadM);
   }
 
   return offsetByMeters(position, heading, aheadM);
 }
 
+/**
+ * Rumbo de navegación estable:
+ * - EN RUTA (≤ NAV_ON_ROUTE_MAX_M): manda la geometría de la ruta con look-ahead
+ *   por distancia — una sola fuente, sin alternar con el GPS crudo entre ticks.
+ * - Fuera de ruta: GPS si es válido y hay velocidad; si no, la ruta como respaldo.
+ */
 export function navigationHeading(
   position: NavLatLng,
   path: NavLatLng[],
   gpsHeading: number | null | undefined,
   speedMps: number | null | undefined = null,
+  lastIdx: number | null = null,
 ): number {
-  let routeHeading: number | null = null;
+  const gpsValid =
+    gpsHeading != null && !Number.isNaN(gpsHeading) && (speedMps ?? 0) > 3.5;
+
   if (path.length >= 2) {
-    const snapped = snapToRoutePath(path, position);
-    const idx = closestPathIndex(path, snapped);
-    const lookIdx = Math.min(idx + Math.max(2, Math.floor(path.length * 0.01) + 2), path.length - 1);
-    const next = path[lookIdx] ?? path[path.length - 1]!;
-    if (next.lat !== snapped.lat || next.lng !== snapped.lng) {
-      routeHeading = bearingDegrees(snapped, next);
-    } else if (idx + 1 < path.length) {
-      routeHeading = bearingDegrees(snapped, path[idx + 1]!);
+    const progress = trackRouteProgress(path, position, lastIdx);
+    const routeHeading = routeHeadingAt(path, progress.idx, progress.snapped);
+    if (routeHeading != null && progress.offRouteM <= NAV_ON_ROUTE_MAX_M) {
+      return routeHeading;
     }
+    if (gpsValid) return gpsHeading;
+    if (routeHeading != null) return routeHeading;
   }
 
-  // Priorizar rumbo de la ruta (orientación «hacia arriba»). GPS solo a velocidad.
-  if (
-    speedMps != null &&
-    speedMps > 3.5 &&
-    gpsHeading != null &&
-    !Number.isNaN(gpsHeading)
-  ) {
-    return gpsHeading;
-  }
-  if (routeHeading != null) return routeHeading;
-  if (gpsHeading != null && !Number.isNaN(gpsHeading)) {
-    return gpsHeading;
-  }
+  if (gpsValid) return gpsHeading;
+  if (gpsHeading != null && !Number.isNaN(gpsHeading)) return gpsHeading;
   return 0;
 }
 

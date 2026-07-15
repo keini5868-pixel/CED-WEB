@@ -22,12 +22,14 @@ import {
   NAV_FOLLOW_TILT,
   NAV_IDLE_ZOOM,
   NAV_MAP_PADDING,
+  NAV_ON_ROUTE_MAX_M,
   navigationFollowZoom,
   navigationHeading,
   navigationLookAheadCenter,
   ROUTE_PREVIEW_MIN_ZOOM,
   smoothHeading,
-  snapToRoutePath,
+  smoothZoom,
+  trackRouteProgress,
 } from "@/lib/navigation/geo";
 
 type DriveMapViewProps = {
@@ -172,20 +174,51 @@ function applyNavigationMapPadding(map: google.maps.Map) {
   map.setOptions({ padding: { ...NAV_MAP_PADDING } } as google.maps.MapOptions);
 }
 
+/** Estado continuo de la cámara de navegación entre ticks GPS. */
+type NavCameraState = {
+  heading: number | null;
+  zoom: number | null;
+  routeIdx: number | null;
+};
+
 /** Cámara estilo Google Maps: zoom cercano, tilt 3D, rotación y look-ahead. */
 function followNavigationCamera(
   map: google.maps.Map,
   position: GeoPosition,
   path: NavLatLng[],
-  lastHeadingRef: { current: number | null },
-) {
+  cam: NavCameraState,
+): { heading: number; snapped: NavLatLng } {
   const user = { lat: position.lat, lng: position.lng };
-  const snapped = path.length >= 2 ? snapToRoutePath(path, user) : user;
-  const rawHeading = navigationHeading(snapped, path, position.heading, position.speed);
-  const heading = smoothHeading(lastHeadingRef.current, rawHeading, 45);
-  lastHeadingRef.current = heading;
-  const zoom = navigationFollowZoom(position.speed);
-  const center = navigationLookAheadCenter(snapped, path, heading, position.speed);
+  let snapped = user;
+  let routeIdx: number | null = null;
+
+  if (path.length >= 2) {
+    const progress = trackRouteProgress(path, user, cam.routeIdx);
+    routeIdx = progress.idx;
+    // Fuera de ruta NO anclamos a una polilínea lejana — se vería un salto.
+    snapped = progress.offRouteM <= NAV_ON_ROUTE_MAX_M ? progress.snapped : user;
+  }
+
+  const rawHeading = navigationHeading(
+    user,
+    path,
+    position.heading,
+    position.speed,
+    cam.routeIdx,
+  );
+  const heading = smoothHeading(cam.heading, rawHeading, 30);
+  const zoom = smoothZoom(cam.zoom, navigationFollowZoom(position.speed));
+  cam.heading = heading;
+  cam.zoom = zoom;
+  cam.routeIdx = routeIdx;
+
+  const center = navigationLookAheadCenter(
+    snapped,
+    path,
+    heading,
+    position.speed,
+    routeIdx,
+  );
 
   applyNavigationMapPadding(map);
 
@@ -202,6 +235,7 @@ function followNavigationCamera(
   if (typeof map.setTilt === "function") {
     map.setTilt(NAV_FOLLOW_TILT);
   }
+  return { heading, snapped };
 }
 
 export function DriveMapView({
@@ -223,8 +257,13 @@ export function DriveMapView({
   const idleCenteredRef = useRef(false);
   const destViewReadyRef = useRef(false);
   const navCameraReadyRef = useRef(false);
-  const lastNavHeadingRef = useRef<number | null>(null);
+  const navCamRef = useRef<NavCameraState>({
+    heading: null,
+    zoom: null,
+    routeIdx: null,
+  });
   const routePathRef = useRef<NavLatLng[]>([]);
+  const routeIdentityRef = useRef<NavRoute | null>(null);
   const [mapsReady, setMapsReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
@@ -277,20 +316,23 @@ export function DriveMapView({
 
     if (mapState === "navegando") {
       applyNavigationMapPadding(map);
-      if (position) {
+      // Solo el encuadre inicial al ENTRAR en navegación; el seguimiento
+      // continuo lo lleva un único efecto (evita 2-3 llamadas por tick GPS
+      // que anulaban el suavizado de heading).
+      if (position && !navCameraReadyRef.current) {
         const path =
           routePathRef.current.length > 1
             ? routePathRef.current
             : route
               ? routePathPoints(route, position)
               : [];
-        followNavigationCamera(map, position, path, lastNavHeadingRef);
+        followNavigationCamera(map, position, path, navCamRef.current);
         navCameraReadyRef.current = true;
       }
     } else {
       resetMapPadding(map);
       navCameraReadyRef.current = false;
-      lastNavHeadingRef.current = null;
+      navCamRef.current = { heading: null, zoom: null, routeIdx: null };
       if (mapState === "idle" || mapState === "searching") {
         resetMapBearing(map);
       }
@@ -353,11 +395,16 @@ export function DriveMapView({
             ? routePathPoints(route, position)
             : [];
       if (path.length > 1) routePathRef.current = path;
-      const snapped = path.length >= 2 ? snapToRoutePath(path, latLng) : latLng;
-      marker.position = snapped;
-      const heading = navigationHeading(snapped, path, position.heading, position.speed);
-      followNavigationCamera(map, position, path, lastNavHeadingRef);
+      // Driver ÚNICO del seguimiento: cámara y flecha usan el mismo heading
+      // suavizado y la misma posición anclada — sin desfase entre ambos.
+      const { heading, snapped } = followNavigationCamera(
+        map,
+        position,
+        path,
+        navCamRef.current,
+      );
       navCameraReadyRef.current = true;
+      marker.position = snapped;
       marker.content = createUserLocationContent(heading, true, true);
       return;
     }
@@ -372,19 +419,6 @@ export function DriveMapView({
     mapState,
     route,
   ]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || mapState !== "navegando" || !position) return;
-    const path =
-      routePathRef.current.length > 1
-        ? routePathRef.current
-        : route
-          ? routePathPoints(route, position)
-          : [];
-    if (path.length < 2) return;
-    followNavigationCamera(map, position, path, lastNavHeadingRef);
-  }, [mapState, route, position?.lat, position?.lng, position?.heading]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -447,6 +481,11 @@ export function DriveMapView({
     const path = routePathPoints(route, position);
     if (path.length < 2) return;
     routePathRef.current = path;
+    if (routeIdentityRef.current !== route) {
+      // Ruta nueva o recalculada: el índice de progreso anterior ya no aplica.
+      routeIdentityRef.current = route;
+      navCamRef.current.routeIdx = null;
+    }
 
     if (mapState === "ruta_lista") {
       if (routePolylineRef.current) {
