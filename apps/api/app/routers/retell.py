@@ -1252,6 +1252,7 @@ async def retell_jarvis_voice_setup() -> dict[str, Any]:
         JARVIS_CLONED_ELEVENLABS_ID,
         ensure_jarvis_voice_in_retell,
         find_retell_voice_by_elevenlabs_id,
+        find_voice_by_id,
         search_jarvis_voices,
         _normalize_voice_id,
         list_custom_voices,
@@ -1262,12 +1263,24 @@ async def retell_jarvis_voice_setup() -> dict[str, Any]:
     mapped = find_retell_voice_by_elevenlabs_id(client, configured or el_id)
     retell_id, err = ensure_jarvis_voice_in_retell(client)
     agent_voice_id: str | None = None
+    native_voice_id: str | None = None
     agent_ref = get_retell_agent_id() or settings.retell_agent_id.strip()
     if agent_ref:
         try:
             agent_voice_id = str(getattr(client.agent.retrieve(agent_id=agent_ref), "voice_id", "") or "") or None
         except Exception:  # noqa: BLE001
             pass
+    native_ref = get_native_staging_agent_id() or settings.retell_native_staging_agent_id.strip()
+    if native_ref:
+        try:
+            native_voice_id = (
+                str(getattr(client.agent.retrieve(agent_id=native_ref), "voice_id", "") or "") or None
+            )
+        except Exception:  # noqa: BLE001
+            pass
+
+    active_voice_id = native_voice_id or agent_voice_id
+    active_voice = find_voice_by_id(client, active_voice_id or "") if active_voice_id else None
 
     return {
         "ok": bool(mapped or retell_id or (agent_voice_id and agent_voice_id != "11labs-Brian")),
@@ -1276,6 +1289,18 @@ async def retell_jarvis_voice_setup() -> dict[str, Any]:
         "retell_voice_id_from_library": mapped,
         "retell_voice_id": mapped or retell_id,
         "agent_voice_id": agent_voice_id,
+        "native_pilot_agent_id": native_ref or None,
+        "native_pilot_voice_id": native_voice_id,
+        "active_voice": active_voice,
+        "tts_billing_hint": {
+            "elevenlabs": 0.040,
+            "platform": 0.015,
+            "cartesia": 0.015,
+            "minimax": 0.015,
+            "fish_audio": 0.015,
+            "openai": 0.015,
+            "retell": 0.015,
+        },
         "jarvis_voice_matches": search_jarvis_voices(client, query=configured or el_id),
         "custom_voices": list_custom_voices(client),
         "error": err,

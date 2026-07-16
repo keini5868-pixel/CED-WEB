@@ -300,8 +300,32 @@ def list_custom_voices(client: Any) -> list[dict[str, str]]:
     for voice in _list_retell_voices(client):
         vid = _voice_field(voice, "voice_id")
         if vid.startswith("custom_voice_"):
-            rows.append({"voice_id": vid, "voice_name": _voice_field(voice, "voice_name").strip()})
+            rows.append(
+                {
+                    "voice_id": vid,
+                    "voice_name": _voice_field(voice, "voice_name").strip(),
+                    "provider": _voice_field(voice, "provider").strip().lower(),
+                    "provider_voice_id": _voice_field(voice, "provider_voice_id").strip(),
+                }
+            )
     return rows
+
+
+def find_voice_by_id(client: Any, voice_id: str) -> dict[str, str] | None:
+    """Busca una voz por voice_id e incluye provider (para billing TTS)."""
+    target = _normalize_voice_id(voice_id)
+    if not target:
+        return None
+    for voice in _list_retell_voices(client):
+        vid = _voice_field(voice, "voice_id")
+        if vid == target:
+            return {
+                "voice_id": vid,
+                "voice_name": _voice_field(voice, "voice_name").strip(),
+                "provider": _voice_field(voice, "provider").strip().lower(),
+                "provider_voice_id": _voice_field(voice, "provider_voice_id").strip(),
+            }
+    return None
 
 
 def _retrieve_agent_voice_id(client: Any, agent_id: str) -> str | None:
