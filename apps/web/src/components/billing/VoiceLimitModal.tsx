@@ -94,7 +94,9 @@ export function VoiceLimitModal({
                 <p className="text-[10px] uppercase tracking-wider text-cyan-600">
                   Planes desde $30/mes
                 </p>
-                {PUBLIC_PLANS.slice(0, 2).map((p) => (
+                {PUBLIC_PLANS.filter((p) => p.id !== "free_basic")
+                  .slice(0, 2)
+                  .map((p) => (
                   <button
                     key={p.id}
                     type="button"
