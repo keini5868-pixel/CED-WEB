@@ -488,8 +488,23 @@ export function useCedVoiceSession(
         return;
       }
       if (isYoutubeBridgeAction(action.action)) {
-        // El backend duplica estas acciones como tool_events (canal ordenado
-        // que sí soporta ráfagas); aquí solo se libera el slot de client_action.
+        // Antes: el panel solo escuchaba tool_events; si el slot client_action
+        // llegaba y el evento se perdía/adelantaba el cursor, CED decía
+        // «Reproduciendo» sin abrir el player. Despachar desde ambos canales.
+        const ytAction = youtubeActionFromBridge(
+          action.action,
+          action.payload ?? {},
+        );
+        if (ytAction) {
+          console.log("[YOUTUBE] client_action → panel", action.action, ytAction);
+          dispatchCedYoutubeEvent(ytAction);
+        } else {
+          console.warn(
+            "[YOUTUBE] client_action ignorado (payload inválido)",
+            action.action,
+            action.payload,
+          );
+        }
         await ackVoiceClientAction(action.id);
         return;
       }
@@ -602,7 +617,12 @@ export function useCedVoiceSession(
               ev.type,
               ev as unknown as Record<string, unknown>,
             );
-            if (ytAction) dispatchCedYoutubeEvent(ytAction);
+            if (ytAction) {
+              console.log("[YOUTUBE] tool_event → panel", ev.type, ytAction);
+              dispatchCedYoutubeEvent(ytAction);
+            } else {
+              console.warn("[YOUTUBE] tool_event ignorado", ev.type, ev);
+            }
           }
           if (ev.type === "module_activated" && ev.module) {
             window.dispatchEvent(
@@ -1478,7 +1498,6 @@ export function useCedVoiceSession(
         micUnmuteTimerRef.current = window.setTimeout(() => {
           micUnmuteTimerRef.current = null;
           if (isStale() || pausedRef.current) return;
-          if (youtubeMediaModeRef.current) return;
           if (modelSpeakingRef.current || client.isResponseActive()) return;
           client.setMicTrackEnabled(true);
           enableListeningUi();
@@ -2812,30 +2831,26 @@ export function useCedVoiceSession(
   ]);
 
   useEffect(() => {
-    if (youtubeMediaModeRef.current) {
-      // YouTube activo: mic queda muteado; no aplicar unmute del UI.
-      retellClientRef.current?.setMuted(true);
-      clientRef.current?.setRemoteMuted(true);
-      return;
-    }
+    // Opción A: YouTube no fuerza mute de mic — solo el agente se silencia
+    // vía setYoutubeMediaMode en el cliente Retell.
     clientRef.current?.setRemoteMuted(muted);
     retellClientRef.current?.setMuted(muted);
   }, [muted]);
 
   useEffect(() => {
     if (!micOn) return;
-    if (youtubeMediaModeRef.current) {
-      retellClientRef.current?.setMuted(true);
-      clientRef.current?.setMicTrackEnabled(false);
-      clientRef.current?.setRemoteMuted(true);
-      return;
-    }
     if (isRetellSessionRef.current) {
       retellClientRef.current?.setMuted(paused || mutedRef.current);
       return;
     }
     const client = clientRef.current;
     if (!client) return;
+    if (youtubeMediaModeRef.current) {
+      // Live: agent/remote mute; mic sigue para comandos por voz.
+      client.setRemoteMuted(true);
+      client.setMicTrackEnabled(!paused);
+      return;
+    }
     client.setMicTrackEnabled(!paused);
     if (paused) {
       client.hardPause();
@@ -2853,16 +2868,15 @@ export function useCedVoiceSession(
       if (isRetellSessionRef.current) {
         const retell = retellClientRef.current;
         retell?.setYoutubeMediaMode(active);
-        if (!active) {
-          retell?.setMuted(pausedRef.current || mutedRef.current);
-        }
+        // Mic sigue según pause/mute del usuario — no forzar mute por YouTube.
+        retell?.setMuted(pausedRef.current || mutedRef.current);
         return;
       }
       const client = clientRef.current;
       if (!client) return;
       if (active) {
-        client.setMicTrackEnabled(false);
         client.setRemoteMuted(true);
+        client.setMicTrackEnabled(!pausedRef.current);
       } else {
         client.setRemoteMuted(mutedRef.current);
         if (!pausedRef.current) {
@@ -2937,12 +2951,13 @@ export function useCedVoiceSession(
   const togglePause = useCallback(() => {
     setPaused((p) => {
       const next = !p;
-      if (youtubeMediaModeRef.current) {
-        // YouTube: mic sigue muteado; solo actualiza UI/orb.
-      } else if (isRetellSessionRef.current) {
+      if (isRetellSessionRef.current) {
         retellClientRef.current?.setMuted(next || mutedRef.current);
       } else {
         clientRef.current?.setMicTrackEnabled(!next);
+        if (youtubeMediaModeRef.current) {
+          clientRef.current?.setRemoteMuted(true);
+        }
       }
       setOrbState(next ? "paused" : micOn ? "listening" : "idle");
       setStatusLabel(

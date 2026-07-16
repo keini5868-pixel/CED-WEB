@@ -460,32 +460,24 @@ export class CedRetellClient {
   }
 
   setMuted(muted: boolean): void {
-    // Durante YouTube el mic se mantiene muteado aunque el UI diga unmute.
-    if (this.youtubeMediaMode) {
-      this.client.mute();
-      return;
-    }
     if (muted) this.client.mute();
     else this.client.unmute();
   }
 
   /**
-   * Modo media (YouTube): mutea mic + baja a 0 el audio del agente para que
-   * el AEC/AGC de la llamada WebRTC no “bombeé” la música al carro por USB.
+   * Modo media (YouTube) — Opción A:
+   * Solo silencia el TTS del agente. El mic sigue activo para mandos por voz
+   * (pausa / cierra / siguiente) sin reconectar la llamada.
    */
   setYoutubeMediaMode(active: boolean): void {
     if (this.youtubeMediaMode === active) {
-      if (active) {
-        this.client.mute();
-        this.setAgentTrackVolume(0);
-      }
+      if (active) this.setAgentTrackVolume(0);
       return;
     }
     this.youtubeMediaMode = active;
     if (active) {
-      this.client.mute();
       this.setAgentTrackVolume(0);
-      retellLog("youtube media mode ON — mic+agent silenciados");
+      retellLog("youtube media mode ON — solo agent silenciado (mic activo)");
     } else {
       this.setAgentTrackVolume(1);
       retellLog("youtube media mode OFF");

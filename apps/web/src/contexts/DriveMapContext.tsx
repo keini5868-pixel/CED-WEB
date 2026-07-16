@@ -36,6 +36,15 @@ const DriveModePage = dynamic(
   { ssr: false },
 );
 
+/** Fuera del hub de voz: sobrevive al overlay de conducir y recibe el bridge. */
+const CedYoutubePlayerPanel = dynamic(
+  () =>
+    import("@/components/voice/CedYoutubePlayerPanel").then(
+      (m) => m.CedYoutubePlayerPanel,
+    ),
+  { ssr: false },
+);
+
 export function DriveMapProvider({ children }: { children: React.ReactNode }) {
   const [isOpen, setIsOpen] = useState(false);
   const [mapVoiceHandlers, setMapVoiceHandlers] = useState<MapVoiceHandlers | null>(
@@ -100,6 +109,8 @@ export function DriveMapProvider({ children }: { children: React.ReactNode }) {
           <DriveModePage embedded onClose={closeDriveMap} />
         </div>
       ) : null}
+      {/* Después del overlay + portal interno → visible encima del mapa. */}
+      <CedYoutubePlayerPanel />
     </DriveMapContext.Provider>
   );
 }

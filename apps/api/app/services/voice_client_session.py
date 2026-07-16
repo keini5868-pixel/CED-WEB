@@ -10,10 +10,20 @@ from typing import Any
 _lock = threading.Lock()
 _sessions: dict[str, dict[str, Any]] = {}
 _TTL_SEC = 3600
+_event_seq = 0
 
 
 def _now() -> float:
     return time.time()
+
+
+def _next_event_id() -> int:
+    """ID monotónico (evita colisiones same-ms que saltan tool_events en el cliente)."""
+    global _event_seq
+    with _lock:
+        _event_seq += 1
+        # epoch-ms * 1000 + seq bajo → ordenable y único en proceso
+        return int(_now() * 1000) * 1000 + (_event_seq % 1000)
 
 
 def _fresh_session() -> dict[str, Any]:
@@ -189,7 +199,7 @@ def get_camera_status(user_id: str) -> dict[str, bool | float]:
 
 def push_tool_event(user_id: str, event: dict[str, Any]) -> int:
     session = _get(user_id)
-    event_id = int(_now() * 1000)
+    event_id = _next_event_id()
     row = {"id": event_id, "at": _now(), **event}
     with _lock:
         events: list[dict[str, Any]] = list(session.get("tool_events") or [])
@@ -213,7 +223,7 @@ def consume_tool_events(user_id: str, *, since_id: int = 0) -> list[dict[str, An
 
 def push_client_action(user_id: str, action: str, payload: dict[str, Any] | None = None) -> int:
     session = _get(user_id)
-    action_id = int(_now() * 1000)
+    action_id = _next_event_id()
     with _lock:
         session["client_action"] = {
             "action": action,

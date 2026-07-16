@@ -1304,6 +1304,12 @@ async def _execute_voice_tool_body(
                     vcs.set_active_mode(user_id, "youtube")
                     vcs.push_client_action(user_id, "youtube_play", payload)
                     vcs.push_tool_event(user_id, {"type": "youtube_play", **payload})
+                    logger.info(
+                        "[YOUTUBE] play confirm ok user=%s video_id=%s title=%s",
+                        user_id[:8],
+                        payload.get("video_id"),
+                        (payload.get("title") or "")[:80],
+                    )
                     title = payload["title"] or "el video"
                     channel = payload["channel_title"]
                     detail = f", de {channel}" if channel else ""
@@ -1384,6 +1390,12 @@ async def _execute_voice_tool_body(
             vcs.set_active_mode(user_id, "youtube")
             vcs.push_client_action(user_id, "youtube_play", payload)
             vcs.push_tool_event(user_id, {"type": "youtube_play", **payload})
+            logger.info(
+                "[YOUTUBE] play ok user=%s video_id=%s title=%s",
+                user_id[:8],
+                payload.get("video_id"),
+                (payload.get("title") or "")[:80],
+            )
             title = payload["title"] or query
             channel = payload["channel_title"]
             detail = f", de {channel}" if channel else ""

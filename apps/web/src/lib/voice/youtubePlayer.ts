@@ -150,9 +150,8 @@ export function postYoutubeListening(iframe: HTMLIFrameElement | null): void {
 }
 
 /**
- * Evento de ventana: la sesión de voz debe soltar el “modo llamada”
- * (mutear mic + audio del agente) mientras suena YouTube, para que el
- * AGC/AEC del WebRTC no bombee/comprima la música al pasar audio por USB.
+ * Evento de ventana: silenciar solo el TTS del agente mientras suena YouTube
+ * (Opción A — mic activo para mandos por voz). No termina la llamada.
  */
 export const CED_YOUTUBE_MEDIA_MODE_EVENT = "ced-youtube-media-mode";
 

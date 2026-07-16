@@ -74,6 +74,7 @@ export function CedYoutubePlayerPanel() {
     const onBridgeAction = (ev: Event) => {
       const detail = (ev as CustomEvent<CedYoutubeAction>).detail;
       if (!detail) return;
+      console.log("[YOUTUBE] panel recibió", detail.action, detail);
       if (detail.action === "play") {
         setVideo((prev) => {
           if (prev?.videoId === detail.video.videoId) {
