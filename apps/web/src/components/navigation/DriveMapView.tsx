@@ -14,7 +14,6 @@ import {
 import type { NavLatLng, NavPlaceOption, NavRoute } from "@/lib/api/navigation";
 import type { MapState } from "@/lib/navigation/mapState";
 import {
-  closestPathIndex,
   CATEGORY_OVERVIEW_MAX_ZOOM,
   DESTINATION_VIEW_TILT,
   DESTINATION_VIEW_ZOOM,
@@ -26,6 +25,7 @@ import {
   navigationFollowZoom,
   navigationHeading,
   navigationLookAheadCenter,
+  remainingRouteAhead,
   ROUTE_PREVIEW_MIN_ZOOM,
   smoothHeading,
   smoothZoom,
@@ -88,17 +88,14 @@ function routePathPoints(
 function remainingRoutePath(
   path: NavLatLng[],
   position: GeoPosition | null,
+  lastIdx: number | null = null,
 ): NavLatLng[] {
   if (!position || path.length < 2) return path;
-  const idx = closestPathIndex(path, position);
-  let remaining = path.slice(idx);
-  if (remaining.length < 2) {
-    remaining = [
-      { lat: position.lat, lng: position.lng },
-      ...(remaining.length ? remaining : [path[path.length - 1]!]),
-    ];
-  }
-  return remaining;
+  return remainingRouteAhead(
+    path,
+    { lat: position.lat, lng: position.lng },
+    lastIdx,
+  );
 }
 
 function resetMapBearing(map: google.maps.Map) {
@@ -530,7 +527,11 @@ export function DriveMapView({
 
     const drawPath =
       position && routePathRef.current.length > 1
-        ? remainingRoutePath(routePathRef.current, position)
+        ? remainingRoutePath(
+            routePathRef.current,
+            position,
+            navCamRef.current.routeIdx,
+          )
         : path;
 
     if (routePolylineRef.current) {

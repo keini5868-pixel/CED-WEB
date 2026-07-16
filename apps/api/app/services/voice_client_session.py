@@ -43,6 +43,7 @@ def _fresh_session() -> dict[str, Any]:
         "advanced_mode_active": False,
         "advanced_last_topic": "",
         "advanced_turn_count": 0,
+        "youtube_pending_confirm": None,
     }
 
 
@@ -574,6 +575,41 @@ def set_gmail_awaiting_pick(user_id: str, awaiting: bool) -> None:
 
 def is_gmail_awaiting_pick(user_id: str) -> bool:
     return bool(_get(user_id).get("gmail_awaiting_pick"))
+
+
+def set_youtube_pending_confirm(user_id: str, video: dict[str, Any] | None) -> None:
+    session = _get(user_id)
+    with _lock:
+        if video and video.get("video_id"):
+            session["youtube_pending_confirm"] = {
+                "video": deepcopy(video),
+                "set_at": _now(),
+            }
+        else:
+            session["youtube_pending_confirm"] = None
+        session["updated_at"] = _now()
+
+
+def get_youtube_pending_confirm(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("youtube_pending_confirm")
+    if not isinstance(row, dict):
+        return None
+    video = row.get("video")
+    if not isinstance(video, dict) or not video.get("video_id"):
+        return None
+    set_at = float(row.get("set_at") or 0)
+    if set_at and _now() - set_at > 120:
+        clear_youtube_pending_confirm(user_id)
+        return None
+    return deepcopy(video)
+
+
+def clear_youtube_pending_confirm(user_id: str) -> None:
+    set_youtube_pending_confirm(user_id, None)
+
+
+def is_youtube_awaiting_confirm(user_id: str) -> bool:
+    return get_youtube_pending_confirm(user_id) is not None
 
 
 def set_gmail_last_read(user_id: str, message: dict[str, Any] | None) -> None:

@@ -61,12 +61,36 @@ _TRAILING_FILLERS = re.compile(
     r"\s*(?:,?\s*por\s+favor|,?\s*se[nñ]or|,?\s*gracias)\s*$", re.I
 )
 
+_CONFIRM_YES = re.compile(
+    r"^(?:"
+    r"s[ií]|sip|sep|dale|adelante|ok|okay|vale|claro|correcto|"
+    r"ese|esa|eso|el\s+primero|la\s+primera|"
+    r"s[ií]\s*(?:,|\.|!)?\s*(?:ese|esa|eso|dale|por\s+favor)?"
+    r")\s*[.!?]*$",
+    re.I,
+)
+_CONFIRM_NO = re.compile(
+    r"^(?:"
+    r"no|nop|nel|cancel[ae]|cancela|olv[ií]dalo|mejor\s+no|"
+    r"ninguno|ninguna|otro"
+    r")\s*[.!?]*$",
+    re.I,
+)
+
 
 def normalize_youtube_query(query: str) -> str:
     q = " ".join((query or "").strip().split())
     q = _TRAILING_FILLERS.sub("", q)
     q = _STRIP_QUERY.sub("", q).strip(" ¿?¡!.,:;")
     return q[:120]
+
+
+def is_youtube_confirm_yes(user_text: str) -> bool:
+    return bool(_CONFIRM_YES.match((user_text or "").strip()))
+
+
+def is_youtube_confirm_no(user_text: str) -> bool:
+    return bool(_CONFIRM_NO.match((user_text or "").strip()))
 
 
 def resolve_youtube_play_request(user_text: str) -> dict[str, str] | None:

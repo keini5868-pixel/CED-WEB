@@ -11,6 +11,8 @@ from app.services import voice_client_session as vcs
 from app.services.orchestrator_types import ModuleResult
 from app.services.retell_llm_types import Utterance
 from app.services.youtube_voice_intent import (
+    is_youtube_confirm_no,
+    is_youtube_confirm_yes,
     resolve_youtube_control,
     resolve_youtube_play_request,
 )
@@ -49,6 +51,17 @@ class YouTubeModule(BaseModule):
         self._enter_active()
         vcs.set_active_mode(user_id, "youtube")
 
+        if vcs.is_youtube_awaiting_confirm(user_id):
+            if is_youtube_confirm_yes(user_text):
+                return await self._play(user_id, "sí")
+            if is_youtube_confirm_no(user_text):
+                vcs.clear_youtube_pending_confirm(user_id)
+                return ModuleResult(
+                    ok=True,
+                    spoken="De acuerdo, señor. Diga otra canción o video y lo busco.",
+                    handles_response=True,
+                )
+
         control = resolve_youtube_control(user_text)
         if control:
             return await self._control(user_id, control)
@@ -75,6 +88,17 @@ class YouTubeModule(BaseModule):
     ) -> ModuleResult:
         if idle := self._guard_passive():
             return idle
+
+        if vcs.is_youtube_awaiting_confirm(user_id):
+            if is_youtube_confirm_yes(user_text):
+                return await self._play(user_id, "sí")
+            if is_youtube_confirm_no(user_text):
+                vcs.clear_youtube_pending_confirm(user_id)
+                return ModuleResult(
+                    ok=True,
+                    spoken="De acuerdo, señor. Diga otra canción o video y lo busco.",
+                    handles_response=True,
+                )
 
         control = resolve_youtube_control(user_text)
         if control:

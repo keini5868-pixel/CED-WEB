@@ -151,6 +151,31 @@ export function trackRouteProgress(
     : { idx, snapped: onNext, offRouteM: dNext };
 }
 
+/**
+ * Polilínea restante: desde el punto snapped en la ruta hacia el destino.
+ * Usa progreso monotónico (mismo que cámara/marcador) para "consumir" el trazo atrás.
+ */
+export function remainingRouteAhead(
+  path: NavLatLng[],
+  point: NavLatLng,
+  lastIdx: number | null | undefined = null,
+): NavLatLng[] {
+  if (path.length < 2) return path.slice();
+  const { idx, snapped } = trackRouteProgress(path, point, lastIdx);
+  const tail = path.slice(Math.min(idx + 1, path.length));
+  if (tail.length === 0) {
+    const dest = path[path.length - 1]!;
+    if (
+      Math.abs(snapped.lat - dest.lat) < 1e-7 &&
+      Math.abs(snapped.lng - dest.lng) < 1e-7
+    ) {
+      return [snapped];
+    }
+    return [snapped, dest];
+  }
+  return [snapped, ...tail];
+}
+
 /** Punto a `aheadM` metros siguiendo la polilínea desde `fromPoint` (vértice fromIdx). */
 export function pointAlongPath(
   path: NavLatLng[],

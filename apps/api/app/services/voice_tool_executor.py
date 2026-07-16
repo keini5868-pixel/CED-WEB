@@ -1277,6 +1277,54 @@ async def _execute_voice_tool_body(
 
         if name == "play_youtube_video":
             query = str(params.get("query") or params.get("consulta") or "").strip()
+            # Confirmación pendiente: «sí» reproduce el candidato guardado.
+            pending = vcs.get_youtube_pending_confirm(user_id)
+            if pending and (
+                not query
+                or query.lower() in {"sí", "si", "dale", "ok", "ese", "esa", "eso"}
+            ):
+                from app.services.youtube_voice_intent import is_youtube_confirm_yes
+
+                if not query or is_youtube_confirm_yes(query) or query.lower() in {
+                    "sí",
+                    "si",
+                    "dale",
+                    "ok",
+                    "ese",
+                    "esa",
+                    "eso",
+                }:
+                    vcs.clear_youtube_pending_confirm(user_id)
+                    payload = {
+                        "video_id": pending["video_id"],
+                        "title": pending.get("title") or "",
+                        "channel_title": pending.get("channel_title") or "",
+                        "thumbnail_url": pending.get("thumbnail_url") or "",
+                    }
+                    vcs.set_active_mode(user_id, "youtube")
+                    vcs.push_client_action(user_id, "youtube_play", payload)
+                    vcs.push_tool_event(user_id, {"type": "youtube_play", **payload})
+                    title = payload["title"] or "el video"
+                    channel = payload["channel_title"]
+                    detail = f", de {channel}" if channel else ""
+                    return {
+                        "ok": True,
+                        "spoken": fit_voice_spoken(
+                            f"Reproduciendo {title}{detail} en YouTube, señor."
+                        ),
+                        "client_action": "youtube_play",
+                        "video": payload,
+                    }
+
+            if pending and query:
+                from app.services.youtube_voice_intent import is_youtube_confirm_no
+
+                if is_youtube_confirm_no(query):
+                    vcs.clear_youtube_pending_confirm(user_id)
+                    return _spoken_ok(
+                        "De acuerdo, señor. Diga otra canción o video y lo busco."
+                    )
+
             if not query:
                 return _spoken_err(
                     "No escuché qué desea ver en YouTube, señor.",
@@ -1309,12 +1357,30 @@ async def _execute_voice_tool_body(
                     f"No encontré un video de {query} en YouTube, señor.",
                     error="youtube_no_results",
                 )
+
             payload = {
                 "video_id": video["video_id"],
                 "title": video.get("title") or "",
                 "channel_title": video.get("channel_title") or "",
                 "thumbnail_url": video.get("thumbnail_url") or "",
             }
+
+            if video.get("ambiguous"):
+                vcs.set_youtube_pending_confirm(user_id, payload)
+                vcs.set_active_mode(user_id, "youtube")
+                title = payload["title"] or query
+                channel = payload["channel_title"]
+                detail = f" de {channel}" if channel else ""
+                return {
+                    "ok": True,
+                    "spoken": fit_voice_spoken(
+                        f"Encontré «{title}»{detail}. ¿Es ese, señor?"
+                    ),
+                    "awaiting_youtube_confirm": True,
+                    "video": payload,
+                }
+
+            vcs.clear_youtube_pending_confirm(user_id)
             vcs.set_active_mode(user_id, "youtube")
             vcs.push_client_action(user_id, "youtube_play", payload)
             vcs.push_tool_event(user_id, {"type": "youtube_play", **payload})

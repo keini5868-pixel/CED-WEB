@@ -136,18 +136,43 @@ def test_search_returns_video_and_sends_expected_params():
     video = search_youtube_video(
         "bachata", api_key="test-key", transport=_transport(handler)
     )
-    assert video == {
-        "video_id": "dQw4w9WgXcQ",
-        "title": "Video de prueba",
-        "channel_title": "Canal Demo",
-        "thumbnail_url": "https://i.ytimg.com/vi/x/mq.jpg",
-    }
+    assert video["video_id"] == "dQw4w9WgXcQ"
+    assert video["title"] == "Video de prueba"
+    assert video["channel_title"] == "Canal Demo"
     assert captured["type"] == "video"
     assert captured["videoEmbeddable"] == "true"
-    assert captured["maxResults"] == "1"
+    assert captured["maxResults"] == "8"
     assert captured["part"] == "snippet"
     assert captured["q"] == "bachata"
     assert captured["key"] == "test-key"
+
+
+def test_rank_prefers_title_match_over_first_api_result():
+    from app.services.youtube_search import rank_youtube_candidates, _pick_from_ranked
+
+    items = [
+        {
+            "id": {"videoId": "AAAAAAAAAAA"},
+            "snippet": {
+                "title": "Bachata Mix 2024",
+                "channelTitle": "Mix Channel",
+                "thumbnails": {},
+            },
+        },
+        {
+            "id": {"videoId": "BBBBBBBBBBB"},
+            "snippet": {
+                "title": "Propuesta Indecente - Romeo Santos (Official Video)",
+                "channelTitle": "RomeoSantosVEVO",
+                "thumbnails": {},
+            },
+        },
+    ]
+    ranked = rank_youtube_candidates("Propuesta Indecente Romeo Santos", items)
+    picked = _pick_from_ranked(ranked)
+    assert picked is not None
+    assert picked["video_id"] == "BBBBBBBBBBB"
+    assert picked.get("ambiguous") is False
 
 
 def test_search_no_results_returns_none():
