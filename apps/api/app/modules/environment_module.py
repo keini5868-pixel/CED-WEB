@@ -12,6 +12,34 @@ from app.services.retell_llm_types import Utterance
 
 logger = logging.getLogger(__name__)
 
+# Cache corta: misma consulta de clima no debe re-pagar 8–12s de grounding.
+_ENV_CACHE: dict[str, tuple[float, str]] = {}
+_ENV_CACHE_TTL_SEC = 90.0
+_ENV_CACHE_MAX = 64
+
+
+def _env_cache_get(key: str) -> str | None:
+    import time
+
+    row = _ENV_CACHE.get(key)
+    if not row:
+        return None
+    ts, spoken = row
+    if time.monotonic() - ts > _ENV_CACHE_TTL_SEC:
+        _ENV_CACHE.pop(key, None)
+        return None
+    return spoken
+
+
+def _env_cache_set(key: str, spoken: str) -> None:
+    import time
+
+    if len(_ENV_CACHE) >= _ENV_CACHE_MAX:
+        oldest = min(_ENV_CACHE.items(), key=lambda kv: kv[1][0])[0]
+        _ENV_CACHE.pop(oldest, None)
+    _ENV_CACHE[key] = (time.monotonic(), spoken)
+
+
 ENVIRONMENT_PATTERNS: tuple[str, ...] = (
     r"\b(clima|tiempo|temperatura|calor|fr[ií]o)\b",
     r"\b(va a llover|lluvia|nublado|despejado)\b",
@@ -325,12 +353,19 @@ def _web_search_environment(user_id: str, transcript: str) -> str:
     from app.services.gemini_grounded import execute_search_web_sync
 
     query = build_environment_search_query(user_id, transcript)
+    cache_key = f"{user_id}:{query.lower()}"
+    cached = _env_cache_get(cache_key)
+    if cached:
+        logger.info("[ENV] cache hit query=%s", query[:80])
+        return cached
+
     result = execute_search_web_sync(query, kind="weather")
     summary = str(result.get("summary") or result.get("message") or "").strip()
     if result.get("ok") and summary:
         spoken = summary if summary.lower().startswith("señor") else f"Señor, {summary.rstrip('.')}."
         if any(w in (transcript or "").lower() for w in ["afuera", "exterior", "trabajar"]):
             spoken = spoken.rstrip(".") + ". Excelente referencia para planificar actividades al exterior."
+        _env_cache_set(cache_key, spoken)
         return spoken
     return (
         "No pude obtener datos ambientales en este momento, señor. "

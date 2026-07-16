@@ -21,6 +21,9 @@ READ_TOOLS_PROMPT = """
 Reglas de tools (schemas definen nombre/params — no inventes tools):
 - Charla casual, gracias, check-ins: SIN tools. Respuesta 1-4 oraciones.
 - Tras tool: di el resultado tal cual. No re-llames sin petición nueva.
+- Tools lentas (clima, PDF, imagen, búsqueda, cámara, avanzado): invoca la tool YA.
+  NO digas antes «ok, creo el PDF», «voy a consultar» ni «deme un momento» —
+  el filler de la tool habla al empezar; luego espera el resultado.
 - Escritura (Gmail/calendario/finanzas/Meta): prepare → «sí» en voz → confirm_*. NUNCA prepare+confirm en el mismo turno. Un «sí» basta si hay borrador. Tras confirm OK: di el mensaje y EN EL MISMO TURNO transition_to_general_assistant.
 - Lecturas: clima→get_environment; hechos/noticias→search_web; Gmail→read_gmail (si nombra un correo tras listado, léelo YA sin preguntar «¿cuerpo completo?»); finanzas→read_finances; calendario→list_calendar_events.
 - Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar).
@@ -586,9 +589,17 @@ def _build_custom_tool(
     parameters: dict[str, Any],
     filler: str,
     timeout_ms: int,
+    typing_sound: bool | None = None,
 ) -> dict[str, Any]:
+    """Custom Function Retell.
+
+    Retell solo dice el filler UNA vez al inicio de la tool (docs). Para esperas
+    largas (PDF/clima/imagen) activamos enable_typing_sound para evitar silencio
+    muerto el resto de la ejecución.
+    """
     base = api_public_url.rstrip("/")
-    return {
+    use_typing = typing_sound if typing_sound is not None else timeout_ms >= 15_000
+    tool: dict[str, Any] = {
         "type": "custom",
         "name": name,
         "description": description,
@@ -601,6 +612,9 @@ def _build_custom_tool(
         "execution_message_description": filler,
         "timeout_ms": timeout_ms,
     }
+    if use_typing:
+        tool["enable_typing_sound"] = True
+    return tool
 
 
 def build_get_environment_tool(*, api_public_url: str) -> dict[str, Any]:
@@ -609,8 +623,12 @@ def build_get_environment_tool(*, api_public_url: str) -> dict[str, Any]:
         name="get_environment",
         description=GET_ENVIRONMENT_DESCRIPTION,
         parameters=GET_ENVIRONMENT_PARAMETERS,
-        filler="Un momento, consultando el clima, señor.",
+        filler=(
+            "Un momento, consultando el clima, señor. "
+            "Puede tardar unos segundos."
+        ),
         timeout_ms=22_000,
+        typing_sound=True,
     )
 
 
@@ -774,8 +792,12 @@ def build_generar_pdf_tool(*, api_public_url: str) -> dict[str, Any]:
         name="generar_pdf",
         description=GENERAR_PDF_DESCRIPTION,
         parameters=GENERAR_PDF_PARAMETERS,
-        filler="Un momento, preparando su PDF, señor.",
+        filler=(
+            "Un momento, preparando su PDF, señor. "
+            "Puede tardar unos segundos mientras lo redacto."
+        ),
         timeout_ms=45_000,
+        typing_sound=True,
     )
 
 

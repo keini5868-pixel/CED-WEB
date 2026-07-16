@@ -25,6 +25,8 @@ def test_build_get_environment_tool_has_static_filler():
     assert tool["name"] == "get_environment"
     assert tool["execution_message_type"] == "static_text"
     assert "consultando el clima" in tool["execution_message_description"].lower()
+    assert tool.get("enable_typing_sound") is True
+    assert "tardar" in tool["execution_message_description"].lower()
 
 
 def test_phase_a_general_assistant_token_floor_under_retell_threshold():
@@ -299,6 +301,8 @@ def test_native_image_pdf_tools_have_fillers_and_timeouts():
     assert pdf["name"] == "generar_pdf"
     assert "preparando su pdf" in pdf["execution_message_description"].lower()
     assert pdf["timeout_ms"] == 45_000
+    assert pdf.get("enable_typing_sound") is True
+    assert "tardar" in pdf["execution_message_description"].lower()
     assert pdf["url"].endswith("/v1/retell/tools/generar_pdf")
 
 

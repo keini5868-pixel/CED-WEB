@@ -215,8 +215,9 @@ def compose_pdf_body(
         context_snippets=context_snippets,
         detail_level=level,
     )
-    max_tokens = 4096 if level == "full" else 1200
-
+    max_tokens = 4096 if level == "full" else 700
+    # brief: menos tokens → compose más rápido en voz (~5–8s vs 10–15s).
+    compose_timeout = PDF_COMPOSE_TIMEOUT_SEC if level == "full" else min(PDF_COMPOSE_TIMEOUT_SEC, 12.0)
     def _call_gemini() -> str:
         from google import genai
         from google.genai import types
@@ -235,7 +236,7 @@ def compose_pdf_body(
     if api_key:
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:
-                text = pool.submit(_call_gemini).result(timeout=PDF_COMPOSE_TIMEOUT_SEC)
+                text = pool.submit(_call_gemini).result(timeout=compose_timeout)
             if text and len(text) >= 80:
                 cleaned = _sanitize_pdf_composed_body(text)
                 logger.info(

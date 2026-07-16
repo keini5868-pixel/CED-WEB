@@ -48,3 +48,24 @@ def test_handle_environment_query_sync_uses_web_search():
     ):
         result = handle_environment_query_sync("user-1", "¿qué clima hay hoy?")
     assert "28" in result["spoken"]
+
+
+def test_environment_query_caches_same_place_briefly():
+    from app.modules import environment_module as env_mod
+
+    env_mod._ENV_CACHE.clear()
+    calls = {"n": 0}
+
+    def fake_search(query, kind="weather"):
+        calls["n"] += 1
+        return {"ok": True, "summary": "30°C, nublado."}
+
+    with patch(
+        "app.services.gemini_grounded.execute_search_web_sync",
+        side_effect=fake_search,
+    ):
+        a = handle_environment_query_sync("user-cache", "¿qué clima hay hoy?")
+        b = handle_environment_query_sync("user-cache", "¿qué clima hay hoy?")
+    assert "30" in a["spoken"]
+    assert a["spoken"] == b["spoken"]
+    assert calls["n"] == 1
