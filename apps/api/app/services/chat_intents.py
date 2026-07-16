@@ -27,10 +27,9 @@ _IMAGE_PATTERNS = (
     re.compile(rf"\bnecesito\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\bcan\s+you\s+{_CREATE_VERBS}\s+(?:an?\s+)?{_IMAGE_NOUN}\b", re.I),
-    re.compile(
-        rf"\b{_CREATE_VERBS}\b.+\b{_IMAGE_NOUN}\b|\b{_IMAGE_NOUN}\b.+\b{_CREATE_VERBS}\b",
-        re.I,
-    ),
+    # Verbo de creación cerca del sustantivo (no "dame una lista … imagen" a 200 chars).
+    re.compile(rf"\b{_CREATE_VERBS}\b.{{0,48}}\b{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\b{_IMAGE_NOUN}\b.{{0,48}}\b{_CREATE_VERBS}\b", re.I),
 )
 
 _IMAGE_PROMPT_PATTERNS = (
@@ -104,7 +103,9 @@ def is_generate_image_intent(text: str) -> bool:
     t = text.strip()
     if len(t) < 8:
         return False
-    if mentions_pdf(t):
+    # Pedido real de PDF gana; mención casual de "PDF" en una lista no bloquea imagen
+    # ni la dispara (is_pdf_intent ya no es solo mentions_pdf).
+    if is_pdf_intent(t):
         return False
     return any(p.search(t) for p in _IMAGE_PATTERNS)
 
@@ -226,11 +227,12 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
 
 
 def is_pdf_intent(text: str) -> bool:
+    """True solo ante pedido real de crear/exportar un PDF — no por mencionar la palabra."""
     t = text.strip()
     if len(t) < 6:
         return False
-    if mentions_pdf(t):
-        return True
+    # Nunca basarse solo en mentions_pdf("… PDF …"): eso disparaba PDFs falsos en listas
+    # de capacidades ("generación de imágenes y PDF", etc.).
     return any(p.search(t) for p in _PDF_PATTERNS[1:])
 
 

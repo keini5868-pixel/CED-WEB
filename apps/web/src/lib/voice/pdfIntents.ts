@@ -1,7 +1,7 @@
 /** Intents para generar PDF por voz (fallback si el modelo no invoca generar_pdf). */
 
 const PDF_INTENT_PATTERNS = [
-  /\bpdf\b/i,
+  // NO usar solo /\bpdf\b/ — dispara falsos positivos en listas de capacidades.
   /\b(genera|generar|gener[aá]me|crea|crear|cr[eé]ame|exporta|exportar|convierte|convertir|guarda|guárdame|dame|pon|pásalo|pasalo)\s+(?:.{0,48}?\s+)?(?:en\s+)?(?:un(?:a)?\s+)?pdf\b/i,
   /\b(?:esto|lo|la\s+informaci[oó]n|el\s+plan|la\s+estrategia)\s+(?:en\s+)?(?:un(?:a)?\s+)?pdf\b/i,
   /\bpdf\s+(?:de|con|sobre)\b/i,

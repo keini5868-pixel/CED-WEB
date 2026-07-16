@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "retell-native-pilot-v27-voice-image-pdf"
+BUILD_VERSION = "fix-advanced-pdf-false-intent-v28"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

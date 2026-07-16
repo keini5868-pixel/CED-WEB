@@ -19,6 +19,29 @@ def test_is_pdf_intent_dame_esto_en_pdf():
     assert is_pdf_intent("pon lo en un pdf por favor")
 
 
+def test_pdf_mention_in_capability_list_is_not_intent():
+    """Bug reportado: enumerar 'generación de imágenes y PDF' no debe crear un PDF."""
+    msg = (
+        "Dame una lista donde especifique así por número, por ejemplo número uno "
+        "publicación en redes, número dos sistema avanzado de análisis profundo, "
+        "número tres generación de imágenes y PDF, y así sucesivamente todas las "
+        "habilidades y las herramientas que tiene el sistema CED."
+    )
+    assert mentions_pdf(msg)
+    assert not is_pdf_intent(msg)
+    assert resolve_pdf_request(msg, []) is None
+    assert not is_generate_image_intent(msg)
+
+
+def test_image_mention_in_capability_list_is_not_intent():
+    msg = (
+        "Dame una lista de capacidades: número uno publicación, "
+        "número dos generación de imágenes, número tres clima."
+    )
+    assert not is_generate_image_intent(msg)
+    assert not is_pdf_intent(msg)
+
+
 def test_pdf_priority_over_image_intent():
     msg = "genérame un PDF con un resumen de la historia del alquimista"
     assert mentions_pdf(msg)
