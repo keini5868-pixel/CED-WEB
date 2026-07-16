@@ -73,8 +73,8 @@ def test_vision_analysis_cached_and_injected_in_context():
         conversation_id=CONV,
     )
     assert "DUGLE STUDIO" in ctx
-    assert "Instrucciones actuales del usuario" in ctx
-
+    assert "Instrucciones actuales del usuario" not in ctx
+    # Visión/hechos sí; el pedido del usuario ya no se duplica con etiqueta meta.
 
 def test_extract_vision_context_from_history():
     text = extract_vision_context_from_history(HISTORY_AFTER_ANALYSIS)

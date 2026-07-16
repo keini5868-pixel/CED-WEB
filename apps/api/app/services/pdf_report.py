@@ -151,7 +151,21 @@ INSTRUCCIONES:
 - Usa secciones numeradas o viñetas cuando ayude.
 {length_rules}
 - Texto plano legible (sin markdown con asteriscos).
-- Entrega SOLO el cuerpo del documento, sin saludo ni despedida."""
+- Entrega SOLO el cuerpo del documento, sin saludo ni despedida.
+- PROHIBIDO copiar este bloque de instrucciones ni la etiqueta «INSTRUCCIONES» en el documento."""
+
+
+def _sanitize_pdf_composed_body(text: str) -> str:
+    """Evita que el modelo de texto filtre el bloque de instrucciones al PDF."""
+    body = (text or "").strip()
+    if not body:
+        return ""
+    if body.upper().startswith("INSTRUCCIONES"):
+        parts = re.split(r"\n\s*\n", body, maxsplit=1)
+        if len(parts) == 2 and len(parts[1].strip()) >= 40:
+            body = parts[1].strip()
+    body = re.sub(r"(?im)^\s*INSTRUCCIONES\s*:\s*$", "", body).strip()
+    return body[:_PDF_BODY_MAX_CHARS]
 
 
 def _compose_pdf_body_cloud_fallback(prompt: str, *, detail_level: str = "brief") -> str:
@@ -172,7 +186,7 @@ def _compose_pdf_body_cloud_fallback(prompt: str, *, detail_level: str = "brief"
         )
         if text and len(text.strip()) >= 80:
             logger.info("[PDF] composed body via cloud fallback chars=%s", len(text))
-            return text.strip()[:_PDF_BODY_MAX_CHARS]
+            return _sanitize_pdf_composed_body(text.strip())
     except Exception:  # noqa: BLE001
         logger.exception("[PDF] cloud compose fallback failed")
     return ""
@@ -223,13 +237,14 @@ def compose_pdf_body(
             with ThreadPoolExecutor(max_workers=1) as pool:
                 text = pool.submit(_call_gemini).result(timeout=PDF_COMPOSE_TIMEOUT_SEC)
             if text and len(text) >= 80:
+                cleaned = _sanitize_pdf_composed_body(text)
                 logger.info(
                     "[PDF] composed body chars=%s title=%s level=%s",
-                    len(text),
+                    len(cleaned),
                     safe_title[:60],
                     level,
                 )
-                return text[:_PDF_BODY_MAX_CHARS]
+                return cleaned
         except FuturesTimeoutError:
             logger.warning("[PDF] compose timeout title=%s", safe_title[:60])
         except Exception:  # noqa: BLE001

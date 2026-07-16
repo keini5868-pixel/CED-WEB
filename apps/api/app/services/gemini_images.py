@@ -57,6 +57,9 @@ _SPECS_BENEFITS = re.compile(
     r"\b(especificaciones|beneficios|veneficios|ingredientes|caracter[ií]sticas)\b",
     re.I,
 )
+_NO_META_TEXT_ON_IMAGE = (
+    "Sin texto, tipografía, subtítulos, marcas de agua ni etiquetas en la imagen."
+)
 
 
 def _pick_quality(prompt: str, requested: str | None) -> str:
@@ -112,6 +115,13 @@ def strip_image_generation_instruction(text: str) -> str:
     return t or (text or "").strip()
 
 
+def strip_image_prompt_meta(text: str) -> str:
+    """Elimina wrappers internos que Gemini suele renderizar como tipografía."""
+    from app.services.copy_quality import strip_prompt_meta_for_image
+
+    return strip_prompt_meta_for_image(text)
+
+
 def _extract_visual_subject(text: str) -> str:
     for pattern in (
         r"\b([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,40})\s+de\s+([A-Za-zÁÉÍÓÚáéíóúÑñ][\w\s\-]{2,40})\b",
@@ -151,21 +161,28 @@ def _resolve_vague_subject(topic: str, context: str) -> str:
 
 
 def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
-    """Convierte el pedido del usuario + contexto en un brief visual para Gemini."""
+    """Convierte el pedido del usuario + contexto en un brief visual para Gemini.
+
+    Devuelve SOLO descripción visual (+ reglas anti-fuga / textos literales si aplica).
+    Nunca incluye wrappers tipo «Instrucciones actuales…» o «Genera una imagen según…».
+    """
     from app.services.copy_quality import augment_image_prompt, normalize_spanish
 
-    topic = strip_image_generation_instruction(user_prompt)
-    ctx = (context or "").strip()
-    topic = _resolve_vague_subject(topic, ctx)
+    topic = strip_image_prompt_meta(strip_image_generation_instruction(user_prompt))
+    ctx_raw = strip_image_prompt_meta(context or "")
+    topic = _resolve_vague_subject(topic, ctx_raw)
     merged = topic
-    if ctx and (
+    if ctx_raw and (
         len(topic) < 120
         or _VAGUE_PRODUCT_REF.search(topic)
-        or (_SPECS_BENEFITS.search(topic) and len(ctx) > 80)
+        or (_SPECS_BENEFITS.search(topic) and len(ctx_raw) > 80)
     ):
-        merged = f"{topic}. Referencia: {ctx[:900]}"
+        # Hechos visuales del historial — sin etiquetas meta que el modelo pinte.
+        facts = ctx_raw[:900].strip()
+        if facts and facts.lower() not in merged.lower():
+            merged = f"{topic}. {facts}"
     merged = normalize_spanish(merged)[:4000]
-    return augment_image_prompt(merged, ctx)
+    return augment_image_prompt(merged, ctx_raw)
 
 
 def enrich_image_prompt_from_context(prompt: str, context: str = "") -> str:
@@ -174,15 +191,16 @@ def enrich_image_prompt_from_context(prompt: str, context: str = "") -> str:
 
 
 def build_image_generation_prompts(user_prompt: str) -> list[str]:
-    """Variantes genéricas de prompt para maximizar respuesta con imagen de Gemini."""
-    topic = (user_prompt or "").strip()
+    """Variantes visuales para Gemini — sin wrappers de instrucción que se pinten en la foto."""
+    topic = strip_image_prompt_meta(strip_image_generation_instruction(user_prompt or ""))
     if not topic:
         return []
 
     variants: list[str] = []
+    # Descripción directa del sujeto; la anti-fuga va al final (no como “título” legible).
     faithful = (
-        f"Genera una imagen de alta calidad según este pedido: {topic}. "
-        "Composición clara, buena iluminación, resultado profesional."
+        f"{topic}. Alta calidad, composición clara, buena iluminación, resultado profesional. "
+        f"{_NO_META_TEXT_ON_IMAGE}"
     )
     variants.append(faithful)
 
@@ -190,17 +208,17 @@ def build_image_generation_prompts(user_prompt: str) -> list[str]:
         variants.append(
             "Fotografía de producto premium sobre fondo neutro, composición 1:1, "
             "iluminación de estudio, sin texto incrustado. "
-            f"Concepto: {_extract_visual_subject(topic)[:350]}."
+            f"Concepto: {_extract_visual_subject(topic)[:350]}. {_NO_META_TEXT_ON_IMAGE}"
         )
 
     if _SOCIAL_AD_CONTEXT.search(topic):
         social = (
-            f"Crea una imagen cuadrada profesional para redes sociales. "
-            f"Sujeto: {topic}. Estilo publicitario, fondo limpio, fotorrealista o ilustrado según corresponda."
+            f"Imagen cuadrada profesional para redes sociales. "
+            f"Sujeto: {topic[:700]}. Estilo publicitario, fondo limpio. {_NO_META_TEXT_ON_IMAGE}"
         )
         product = (
             f"Mockup o fotografía de producto/servicio sobre fondo neutro, composición 1:1. "
-            f"{topic[:700]}. Calidad publicitaria, poca tipografía incrustada."
+            f"{topic[:700]}. Calidad publicitaria. {_NO_META_TEXT_ON_IMAGE}"
         )
         variants.extend([social, product])
         return variants
@@ -208,19 +226,20 @@ def build_image_generation_prompts(user_prompt: str) -> list[str]:
     if _PRODUCT_CONTEXT.search(topic):
         product = (
             f"Fotografía o mockup profesional de producto/servicio. "
-            f"{topic[:700]}. Iluminación de estudio, fondo limpio."
+            f"{topic[:700]}. Iluminación de estudio, fondo limpio. {_NO_META_TEXT_ON_IMAGE}"
         )
         clean = (
-            f"Imagen comercial elegante, enfoque en el sujeto principal: {topic[:600]}."
+            f"Imagen comercial elegante, enfoque en el sujeto principal: {topic[:600]}. "
+            f"{_NO_META_TEXT_ON_IMAGE}"
         )
         variants.extend([product, clean])
         return variants
 
     illustrated = (
         f"Ilustración o fotografía detallada: {topic[:650]}. "
-        "Estilo coherente con el tema, sin marcas de agua."
+        f"Estilo coherente con el tema, sin marcas de agua. {_NO_META_TEXT_ON_IMAGE}"
     )
-    simplified = f"Imagen visual clara y atractiva: {topic[:500]}."
+    simplified = f"{topic[:500]}. Imagen visual clara y atractiva. {_NO_META_TEXT_ON_IMAGE}"
     variants.extend([illustrated, simplified])
     return variants
 
@@ -260,24 +279,26 @@ def _extract_image_payload(response: Any) -> tuple[bytes, str] | None:
 
 
 def _reference_prompt(user_prompt: str, style_mode: str) -> str:
-    topic = (user_prompt or "").strip() or "Genera una nueva versión de la imagen de referencia."
+    topic = strip_image_prompt_meta(
+        strip_image_generation_instruction(user_prompt or "")
+    ) or "nueva versión de la imagen de referencia"
+    anti = _NO_META_TEXT_ON_IMAGE
     if style_mode == "inspired":
         return (
-            "Usa la imagen adjunta como inspiración de estilo, paleta y composición. "
-            f"Genera una imagen nueva que cumpla: {topic}. "
-            "Mantén la esencia visual pero adapta al pedido."
+            f"Misma esencia visual (estilo, paleta, composición) que la imagen adjunta. "
+            f"Escena pedida: {topic}. {anti}"
         )
     if style_mode == "variation":
         return (
-            f"Genera una variación de la imagen adjunta: {topic}. "
-            "Conserva elementos clave (estilo, tonos, composición) con cambios según las instrucciones."
+            f"Variación de la imagen adjunta. Cambios pedidos: {topic}. "
+            f"Conserva estilo y tonos clave. {anti}"
         )
     if style_mode == "edit":
         return (
-            f"Edita la imagen adjunta: {topic}. "
-            "Mantén intacto todo lo que no se pide cambiar explícitamente."
+            f"Edición de la imagen adjunta: {topic}. "
+            f"Mantén intacto lo no pedido. {anti}"
         )
-    return topic
+    return f"{topic}. {anti}"
 
 
 def _prepare_reference_gemini_prompt(prompt: str, mode: str) -> str:
@@ -285,7 +306,7 @@ def _prepare_reference_gemini_prompt(prompt: str, mode: str) -> str:
     from app.services.copy_quality import augment_image_prompt
     from app.services.marketing_creative import CREATIVO_PROMPT_MARKER
 
-    p = (prompt or "").strip()
+    p = strip_image_prompt_meta((prompt or "").strip())
     if p.startswith(CREATIVO_PROMPT_MARKER):
         return p[:3800]
     base = _reference_prompt(p, mode)
@@ -311,22 +332,38 @@ def generate_image_gemini(
     quality: str = "standard",
     context: str = "",
 ) -> dict[str, Any]:
-    """Genera imagen con Gemini. Requiere GOOGLE_API_KEY."""
+    """Genera imagen con Gemini. Requiere GOOGLE_API_KEY.
+
+    `prompt` debe ser un brief visual (salida de prepare_image_prompt).
+    No reinyecta wrappers meta del chat ni vuelve a pegar el context etiquetado.
+    """
     from google import genai
-    from app.services.copy_quality import augment_image_prompt
 
     settings = get_settings()
     api_key = settings.google_api_key.strip()
-    topic = (prompt or "").strip()
+    topic = strip_image_prompt_meta((prompt or "").strip())
     if not topic:
         return {"ok": False, "error": "Prompt vacío"}
     if not api_key:
         return {"ok": False, "error": "GOOGLE_API_KEY no configurada", "code": "config_error"}
+    if _NO_META_TEXT_ON_IMAGE[:40] not in topic:
+        topic = f"{topic} {_NO_META_TEXT_ON_IMAGE}"
 
     client = genai.Client(api_key=api_key)
     last_error = "No pude generar la imagen con Gemini."
-    raw_variants = build_image_generation_prompts(topic) or [topic[:4000]]
-    prompt_variants = [augment_image_prompt(variant, context) for variant in raw_variants]
+    # Primario: brief ya preparado. Fallbacks: variantes cortas del sujeto visual puro.
+    prompt_variants: list[str] = [topic[:4000]]
+    visual_core = re.split(
+        r"(?:Ortografía española|TEXTOS EXACTOS|Minimiza texto|No dibujes texto)",
+        topic,
+        maxsplit=1,
+    )[0].strip(" .")
+    visual_core = strip_image_prompt_meta(strip_image_generation_instruction(visual_core))
+    for variant in build_image_generation_prompts(visual_core)[1:]:
+        if variant not in prompt_variants:
+            prompt_variants.append(variant[:4000])
+    # `context` se ignora aquí a propósito: prepare_image_prompt ya incorporó hechos limpios.
+    _ = context
 
     for model in _image_models():
         for attempt, variant in enumerate(prompt_variants):

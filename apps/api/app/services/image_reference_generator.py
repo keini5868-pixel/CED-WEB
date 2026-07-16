@@ -39,26 +39,33 @@ _EXT_BY_MIME = {
 
 
 def build_reference_prompt(user_prompt: str, style_mode: str) -> str:
-    """Enriquece el prompt según el modo de referencia."""
-    topic = (user_prompt or "").strip() or "Genera una nueva versión de la imagen de referencia."
+    """Enriquece el prompt según el modo de referencia — solo escena visual, sin wrappers meta."""
+    from app.services.gemini_images import (
+        _NO_META_TEXT_ON_IMAGE,
+        strip_image_generation_instruction,
+        strip_image_prompt_meta,
+    )
+
+    topic = strip_image_prompt_meta(
+        strip_image_generation_instruction(user_prompt or "")
+    ) or "nueva versión de la imagen de referencia"
+    anti = _NO_META_TEXT_ON_IMAGE
     if style_mode == "inspired":
         return (
-            "Basándote en el estilo, paleta de colores y composición de la imagen de referencia "
-            f"proporcionada, genera una nueva imagen que cumpla con: {topic}. "
-            "Mantén la esencia visual de la referencia pero adapta al pedido."
+            f"Misma esencia visual (estilo, paleta, composición) que la imagen de referencia. "
+            f"Escena pedida: {topic}. {anti}"
         )
     if style_mode == "variation":
         return (
-            f"Genera una variación de la imagen de referencia que: {topic}. "
-            "Mantén elementos clave de la referencia (composición, estilo, tonos) "
-            "pero crea una versión distinta según las instrucciones."
+            f"Variación de la imagen de referencia. Cambios: {topic}. "
+            f"Conserva estilo y tonos clave. {anti}"
         )
     if style_mode == "edit":
         return (
-            f"Edita la imagen de referencia: {topic}. "
-            "Mantén intacto todo lo que no se menciona explícitamente."
+            f"Edición de la imagen de referencia: {topic}. "
+            f"Mantén intacto lo no pedido. {anti}"
         )
-    return topic
+    return f"{topic}. {anti}"
 
 
 def _image_hash(image_bytes: bytes) -> str:

@@ -40,6 +40,30 @@ def test_prepare_image_prompt_uses_conversation_for_specs():
     assert "basics" in prepared.lower() or "fitline" in prepared.lower()
     assert "me generas una imagen" not in prepared.lower()
     assert "el producto y sus" not in prepared.lower()
+    assert "Instrucciones actuales" not in prepared
+    assert "según este pedido" not in prepared.lower()
+
+
+def test_prepare_image_prompt_strips_meta_wrappers_that_leak_into_pixels():
+    """Regression: wrappers internos no deben llegar al brief que ve Gemini Image."""
+    leaked = (
+        "Instrucciones actuales del usuario (obligatorias):\n"
+        "Genera una imagen de alta calidad según este pedido: Goku en Super Saiyan."
+    )
+    prepared = prepare_image_prompt("genera una imagen de Goku en Super Saiyan", leaked)
+    low = prepared.lower()
+    assert "goku" in low
+    assert "instrucciones actuales del usuario" not in low
+    assert "según este pedido" not in low
+    assert "genera una imagen de alta calidad" not in low
+
+
+def test_build_image_generation_prompts_are_visual_only():
+    variants = build_image_generation_prompts("Goku en Super Saiyan azul")
+    joined = " ".join(variants).lower()
+    assert "goku" in joined
+    assert "genera una imagen de alta calidad según este pedido" not in joined
+    assert "instrucciones actuales" not in joined
 
 
 def test_generate_image_with_reference_gemini_imports_augment_prompt():

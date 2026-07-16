@@ -49,6 +49,19 @@ def test_augment_image_prompt_generic_castle():
     assert "TEXTOS EXACTOS" in prompt or "Fortaleza" in prompt
 
 
+def test_augment_image_prompt_plain_scene_has_no_instruction_words():
+    from app.services.copy_quality import augment_image_prompt
+
+    prompt = augment_image_prompt("Goku en Super Saiyan", "")
+    low = prompt.lower()
+    assert "goku" in low
+    assert "instrucciones actuales" not in low
+    assert "según este pedido" not in low
+    assert "usuario" not in low
+    assert "obligatorias" not in low
+    assert "sin texto" in low
+
+
 def test_build_image_headline_from_any_context():
     headline = build_image_headline(
         "Tour por Charlotte: historia y arquitectura moderna.",

@@ -313,8 +313,34 @@ def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None)
 
 _CREATIVE_NO_LEAK = (
     "PROHIBIDO escribir en la imagen instrucciones del prompt, metadatos, typos del usuario "
-    "ni palabras como: genera, imagen, características, referencia, instrucción, prompt."
+    "ni palabras como: genera, imagen, características, referencia, instrucción, prompt, "
+    "usuario, obligatorias, pedido."
 )
+
+_PROMPT_META_LEAK = re.compile(
+    r"(?is)\b(?:"
+    r"instrucciones\s+actuales\s+del\s+usuario(?:\s*\([^)]*\))?|"
+    r"instrucciones\s+adicionales\s+del\s+usuario(?:\s*\([^)]*\))?|"
+    r"contexto\s+reciente\s+del\s+chat|"
+    r"an[aá]lisis\s+previo\s+de\s+la\s+imagen[^\n:]*|"
+    r"genera\s+una\s+imagen\s+de\s+alta\s+calidad\s+seg[uú]n\s+este\s+pedido"
+    r")\s*:?\s*"
+)
+
+
+def strip_prompt_meta_for_image(text: str) -> str:
+    """Quita wrappers internos que los modelos de imagen suelen pintar como tipografía."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    prev = None
+    while prev != t:
+        prev = t
+        t = _PROMPT_META_LEAK.sub(" ", t)
+        t = re.sub(r"\bReferencia:\s*", " ", t, flags=re.I)
+        t = re.sub(r"[ \t]{2,}", " ", t)
+        t = re.sub(r"\n{3,}", "\n\n", t).strip(" \n,.;:")
+    return t
 
 
 def format_creative_image_copy(
@@ -349,29 +375,36 @@ def format_creative_image_copy(
 
 
 def augment_image_prompt(prompt: str, context: str = "") -> str:
-    """Capa universal de ortografía + textos literales para CUALQUIER imagen."""
-    base = (prompt or "").strip()
+    """Capa de brief visual: anti-fuga + textos literales SOLO si el pedido los exige."""
+    base = strip_prompt_meta_for_image((prompt or "").strip())
     if not base:
         return base
+    ctx = strip_prompt_meta_for_image(context or "")
     if "TEXTOS EXACTOS" in base:
         if _ORTHOGRAPHY_RULE.split(".")[0] not in base:
-            return f"{base} {_ORTHOGRAPHY_RULE}"
+            return f"{base} {_ORTHOGRAPHY_RULE} {_CREATIVE_NO_LEAK}"
+        if "PROHIBIDO escribir" not in base:
+            return f"{base} {_CREATIVE_NO_LEAK}"
         return base
 
-    overlay = collect_image_overlay_lines(base, context)
-    headline = build_image_headline(context, overlay[0] if overlay else base[:60])
+    overlay = collect_image_overlay_lines(base, ctx)
+    headline = build_image_headline(ctx, overlay[0] if overlay else base[:60])
 
-    if overlay or image_prompt_needs_verbatim_text(base, context):
+    if overlay or image_prompt_needs_verbatim_text(base, ctx):
         verbatim = format_verbatim_image_copy(overlay, headline=headline or None)
         if verbatim:
             return (
-                f"{base} {_ORTHOGRAPHY_RULE} {verbatim} "
+                f"{base} {_ORTHOGRAPHY_RULE} {verbatim} {_CREATIVE_NO_LEAK} "
                 "Prefiere tipografía grande y clara; máximo una frase corta (≤12 palabras) "
                 "si el texto es largo. Mejor poco texto correcto que un párrafo ilegible."
             )
 
-    return f"{base} {_ORTHOGRAPHY_RULE} Minimiza texto incrustado salvo que el pedido lo exija."
-
+    # Escena pura: NO mencionar «instrucciones/usuario/pedido» (el modelo las pinta).
+    # NO hablar de «texto visible» si no pedimos tipografía.
+    return (
+        f"{base}. "
+        "Sin texto, tipografía, subtítulos, marcas de agua ni etiquetas en la imagen."
+    )
 
 IMAGE_EMBEDDED_TEXT_DISCLAIMER = (
     "Señor, aviso: el texto dentro de imágenes generadas por IA (modelo actual: "

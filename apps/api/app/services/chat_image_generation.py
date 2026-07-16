@@ -65,6 +65,11 @@ def build_enriched_generation_context(
     user_id: str,
     conversation_id: str | None,
 ) -> str:
+    """Hechos visuales del historial/visión — sin etiquetas meta que Gemini pinte en la foto.
+
+    El pedido actual del usuario va en `prompt`, no aquí. Duplicarlo con
+    «Instrucciones actuales del usuario…» hacía que el modelo lo dibujara como tipografía.
+    """
     from app.services.publish_image_context import get_session_vision_analysis
 
     parts: list[str] = []
@@ -72,16 +77,15 @@ def build_enriched_generation_context(
     if not vision:
         vision = extract_vision_context_from_history(history)
     if vision:
-        parts.append(
-            "Análisis previo de la imagen de referencia (respeta textos, precios y diseño visibles):\n"
-            f"{vision}"
-        )
+        parts.append(vision[:3500])
     recent = _recent_chat_context(history or [])
     if recent:
-        parts.append(f"Contexto reciente del chat:\n{recent[:2200]}")
-    clean = (user_text or "").strip()
-    if clean:
-        parts.append(f"Instrucciones actuales del usuario (obligatorias):\n{clean}")
+        # Evita reinyectar el mismo pedido del usuario como “contexto”.
+        clean = (user_text or "").strip()
+        if clean and clean in recent:
+            recent = recent.replace(clean, " ").strip()
+        if recent:
+            parts.append(recent[:2200])
     return "\n\n".join(parts)[:4000]
 
 
@@ -147,15 +151,15 @@ def _format_error(raw_error: str) -> str:
     return f"No pude generar la imagen: {err}"
 
 
-def _append_user_instructions(prompt: str, user_text: str) -> str:
-    clean = (user_text or "").strip()
-    if not clean or clean in prompt:
-        return prompt
-    return (
-        f"{prompt.rstrip()}\n\n"
-        f"Instrucciones adicionales del usuario (obligatorias, incluir textos exactos): {clean[:900]}"
-    )[:3800]
+def _merge_creative_user_request(prompt: str, user_text: str) -> str:
+    """Añade el pedido del usuario al brief creativo sin etiquetas meta pintables."""
+    from app.services.gemini_images import strip_image_generation_instruction, strip_image_prompt_meta
 
+    clean = strip_image_prompt_meta(strip_image_generation_instruction(user_text or ""))
+    base = strip_image_prompt_meta((prompt or "").strip())
+    if not clean or clean.lower() in base.lower():
+        return base[:3800]
+    return f"{base.rstrip()}\n\nPedido visual del usuario: {clean[:900]}"[:3800]
 
 def run_chat_image_generation(
     user_id: str,
@@ -207,7 +211,7 @@ def run_chat_image_generation(
         display_label = creation["display_label"]
         success_reply = creation.get("reply") or "Listo. Aquí está su creativo."
         style_mode = creation.get("style_mode") or "edit"
-        model_prompt = _append_user_instructions(creation["internal_prompt"], user_text)
+        model_prompt = _merge_creative_user_request(creation["internal_prompt"], user_text)
     else:
         chat_context = _recent_chat_context(history or [])
         if is_marketing_creative_intent(user_text):
@@ -221,10 +225,11 @@ def run_chat_image_generation(
         ref_bytes, ref_mime = ref_payload
         ref_prompt = model_prompt
         if not creation:
-            ref_prompt = (
-                f"Genera un creativo fiel a la imagen de referencia adjunta. "
-                f"{enriched_context[:3200]}"
-            )
+            # Pedido visual + hechos de visión/historial — sin wrappers «Instrucciones…».
+            bits = [effective]
+            if enriched_context:
+                bits.append(enriched_context[:2000])
+            ref_prompt = "\n\n".join(b for b in bits if b).strip()
         logger.info(
             "[CHAT:IMG-GEN] reference path user=%s bytes=%s conv=%s",
             user_id[:8],
