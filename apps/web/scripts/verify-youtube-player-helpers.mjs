@@ -95,4 +95,8 @@ assert.equal(
   null,
 );
 
+assert.equal(typeof mod.boostYoutubeEmbedAudio, "function");
+assert.equal(typeof mod.dispatchYoutubeMediaMode, "function");
+assert.equal(mod.CED_YOUTUBE_MEDIA_MODE_EVENT, "ced-youtube-media-mode");
+
 console.log("OK: todos los asserts de youtubePlayer pasaron.");

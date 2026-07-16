@@ -77,6 +77,8 @@ export class CedRetellClient {
   private audioPlaybackStarted = false;
   private agentSpeaking = false;
   private agentMutedForBargeIn = false;
+  /** YouTube activo: mic mute + agent volume 0 (anti AGC/USB pump). */
+  private youtubeMediaMode = false;
   private agentTurnSeq = 0;
   private currentAgentStreamKey = "";
   private lastTurntaking = "";
@@ -96,36 +98,34 @@ export class CedRetellClient {
     return (this.client as unknown as { room?: RetellLiveRoom }).room;
   }
 
-  private muteAgentPlayback(): void {
+  private setAgentTrackVolume(volume: number): void {
     try {
       const room = this.liveKitRoom();
       if (!room) return;
       room.remoteParticipants.forEach((participant) => {
         participant.audioTrackPublications.forEach((publication) => {
           if (publication.trackName !== "agent_audio") return;
-          publication.track?.setVolume?.(0);
+          publication.track?.setVolume?.(volume);
         });
-      });      this.agentMutedForBargeIn = true;
-      retellLog("barge-in: agent audio silenciado");
+      });
     } catch (err) {
-      retellLog("barge-in mute falló", err);
+      retellLog("setAgentTrackVolume falló", err);
     }
+  }
+
+  private muteAgentPlayback(): void {
+    this.setAgentTrackVolume(0);
+    this.agentMutedForBargeIn = true;
+    retellLog("barge-in: agent audio silenciado");
   }
 
   private restoreAgentPlayback(): void {
     if (!this.agentMutedForBargeIn) return;
-    try {
-      const room = this.liveKitRoom();
-      if (!room) return;
-      room.remoteParticipants.forEach((participant) => {
-        participant.audioTrackPublications.forEach((publication) => {
-          if (publication.trackName !== "agent_audio") return;
-          publication.track?.setVolume?.(1);
-        });
-      });      this.agentMutedForBargeIn = false;
-    } catch (err) {
-      retellLog("barge-in restore falló", err);
+    // YouTube manda: no devolver volumen del agente mientras suene música.
+    if (!this.youtubeMediaMode) {
+      this.setAgentTrackVolume(1);
     }
+    this.agentMutedForBargeIn = false;
   }
 
   private maybeBargeIn(): void {
@@ -456,11 +456,44 @@ export class CedRetellClient {
     this.audioPlaybackStarted = false;
     this.agentSpeaking = false;
     this.agentMutedForBargeIn = false;
+    this.youtubeMediaMode = false;
   }
 
   setMuted(muted: boolean): void {
+    // Durante YouTube el mic se mantiene muteado aunque el UI diga unmute.
+    if (this.youtubeMediaMode) {
+      this.client.mute();
+      return;
+    }
     if (muted) this.client.mute();
     else this.client.unmute();
+  }
+
+  /**
+   * Modo media (YouTube): mutea mic + baja a 0 el audio del agente para que
+   * el AEC/AGC de la llamada WebRTC no “bombeé” la música al carro por USB.
+   */
+  setYoutubeMediaMode(active: boolean): void {
+    if (this.youtubeMediaMode === active) {
+      if (active) {
+        this.client.mute();
+        this.setAgentTrackVolume(0);
+      }
+      return;
+    }
+    this.youtubeMediaMode = active;
+    if (active) {
+      this.client.mute();
+      this.setAgentTrackVolume(0);
+      retellLog("youtube media mode ON — mic+agent silenciados");
+    } else {
+      this.setAgentTrackVolume(1);
+      retellLog("youtube media mode OFF");
+    }
+  }
+
+  isYoutubeMediaMode(): boolean {
+    return this.youtubeMediaMode;
   }
 
   getCallId(): string | null {

@@ -6,7 +6,9 @@ import { Pause, Play, X } from "lucide-react";
 
 import {
   CED_YOUTUBE_EVENT,
+  boostYoutubeEmbedAudio,
   buildYoutubeEmbedUrl,
+  dispatchYoutubeMediaMode,
   parseYoutubePlayerState,
   postYoutubeCommand,
   postYoutubeListening,
@@ -45,14 +47,19 @@ export function CedYoutubePlayerPanel() {
     postYoutubeCommand(iframeRef.current, "stopVideo");
   }, []);
 
+  const setMediaMode = useCallback((active: boolean) => {
+    dispatchYoutubeMediaMode(active);
+  }, []);
+
   const close = useCallback(() => {
     stopPlayback();
     clearAutoplayTimer();
+    setMediaMode(false);
     setVideo(null);
     setPlayerState(null);
     setAutoplayBlocked(false);
     playerStateRef.current = null;
-  }, [stopPlayback, clearAutoplayTimer]);
+  }, [stopPlayback, clearAutoplayTimer, setMediaMode]);
 
   useEffect(() => {
     const onBridgeAction = (ev: Event) => {
@@ -62,6 +69,8 @@ export function CedYoutubePlayerPanel() {
         setVideo((prev) => {
           if (prev?.videoId === detail.video.videoId) {
             postYoutubeCommand(iframeRef.current, "playVideo");
+            boostYoutubeEmbedAudio(iframeRef.current);
+            setMediaMode(true);
             return prev;
           }
           setPlayerState(null);
@@ -73,17 +82,20 @@ export function CedYoutubePlayerPanel() {
       }
       if (detail.action === "pause") {
         postYoutubeCommand(iframeRef.current, "pauseVideo");
+        setMediaMode(false);
         return;
       }
       if (detail.action === "resume") {
         postYoutubeCommand(iframeRef.current, "playVideo");
+        boostYoutubeEmbedAudio(iframeRef.current);
+        setMediaMode(true);
         return;
       }
       close();
     };
     window.addEventListener(CED_YOUTUBE_EVENT, onBridgeAction);
     return () => window.removeEventListener(CED_YOUTUBE_EVENT, onBridgeAction);
-  }, [close]);
+  }, [close, setMediaMode]);
 
   useEffect(() => {
     if (!video) return;
@@ -94,11 +106,15 @@ export function CedYoutubePlayerPanel() {
       setPlayerState(state);
       if (state === YT_STATE.playing || state === YT_STATE.buffering) {
         setAutoplayBlocked(false);
+        boostYoutubeEmbedAudio(iframeRef.current);
+        setMediaMode(true);
+      } else if (state === YT_STATE.paused || state === YT_STATE.ended) {
+        setMediaMode(false);
       }
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [video]);
+  }, [video, setMediaMode]);
 
   useEffect(() => {
     if (!video) return;
@@ -114,30 +130,42 @@ export function CedYoutubePlayerPanel() {
     return () => {
       stopPlayback();
       clearAutoplayTimer();
+      dispatchYoutubeMediaMode(false);
     };
   }, [stopPlayback, clearAutoplayTimer]);
 
   const onIframeLoad = useCallback(() => {
     postYoutubeListening(iframeRef.current);
+    boostYoutubeEmbedAudio(iframeRef.current);
     clearAutoplayTimer();
     autoplayTimerRef.current = window.setTimeout(() => {
       const state = playerStateRef.current;
       if (state !== YT_STATE.playing && state !== YT_STATE.buffering) {
         setAutoplayBlocked(true);
+      } else {
+        boostYoutubeEmbedAudio(iframeRef.current);
+        setMediaMode(true);
       }
     }, AUTOPLAY_GRACE_MS);
-  }, [clearAutoplayTimer]);
+  }, [clearAutoplayTimer, setMediaMode]);
 
   const isPlaying =
     playerState === YT_STATE.playing || playerState === YT_STATE.buffering;
 
   const togglePlayback = useCallback(() => {
+    const willPause = playerStateRef.current === YT_STATE.playing;
     postYoutubeCommand(
       iframeRef.current,
-      playerStateRef.current === YT_STATE.playing ? "pauseVideo" : "playVideo",
+      willPause ? "pauseVideo" : "playVideo",
     );
+    if (!willPause) {
+      boostYoutubeEmbedAudio(iframeRef.current);
+      setMediaMode(true);
+    } else {
+      setMediaMode(false);
+    }
     setAutoplayBlocked(false);
-  }, []);
+  }, [setMediaMode]);
 
   const embedUrl = video
     ? buildYoutubeEmbedUrl(

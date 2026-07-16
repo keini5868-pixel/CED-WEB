@@ -101,7 +101,7 @@ export const YT_STATE = {
   cued: 5,
 } as const;
 
-type YoutubeCommand = "playVideo" | "pauseVideo" | "stopVideo";
+type YoutubeCommand = "playVideo" | "pauseVideo" | "stopVideo" | "unMute" | "setVolume";
 
 /**
  * Envía un comando oficial de la IFrame API vía postMessage al embed
@@ -110,13 +110,33 @@ type YoutubeCommand = "playVideo" | "pauseVideo" | "stopVideo";
 export function postYoutubeCommand(
   iframe: HTMLIFrameElement | null,
   func: YoutubeCommand,
+  args: unknown[] = [],
 ): void {
   const target = iframe?.contentWindow;
   if (!target) return;
   target.postMessage(
-    JSON.stringify({ event: "command", func, args: [] }),
+    JSON.stringify({ event: "command", func, args }),
     YOUTUBE_EMBED_ORIGIN,
   );
+}
+
+/** Volumen 0–100 del embed (máximo = menos “apagado” vs YouTube nativo). */
+export function postYoutubeSetVolume(
+  iframe: HTMLIFrameElement | null,
+  volume: number,
+): void {
+  const v = Math.max(0, Math.min(100, Math.round(volume)));
+  postYoutubeCommand(iframe, "setVolume", [v]);
+}
+
+/** Asegura audio a tope en el iframe (USB/carro + sesión de voz tienden a comprimirlo). */
+export function boostYoutubeEmbedAudio(iframe: HTMLIFrameElement | null): void {
+  postYoutubeUnMute(iframe);
+  postYoutubeSetVolume(iframe, 100);
+}
+
+export function postYoutubeUnMute(iframe: HTMLIFrameElement | null): void {
+  postYoutubeCommand(iframe, "unMute");
 }
 
 /** Handshake para que el embed empiece a emitir infoDelivery/onReady. */
@@ -126,6 +146,20 @@ export function postYoutubeListening(iframe: HTMLIFrameElement | null): void {
   target.postMessage(
     JSON.stringify({ event: "listening", id: "ced-youtube", channel: "widget" }),
     YOUTUBE_EMBED_ORIGIN,
+  );
+}
+
+/**
+ * Evento de ventana: la sesión de voz debe soltar el “modo llamada”
+ * (mutear mic + audio del agente) mientras suena YouTube, para que el
+ * AGC/AEC del WebRTC no bombee/comprima la música al pasar audio por USB.
+ */
+export const CED_YOUTUBE_MEDIA_MODE_EVENT = "ced-youtube-media-mode";
+
+export function dispatchYoutubeMediaMode(active: boolean): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(CED_YOUTUBE_MEDIA_MODE_EVENT, { detail: { active } }),
   );
 }
 

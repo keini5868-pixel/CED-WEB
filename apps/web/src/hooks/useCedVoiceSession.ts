@@ -33,6 +33,7 @@ import {
   dispatchCedYoutubeEvent,
   isYoutubeBridgeAction,
   youtubeActionFromBridge,
+  CED_YOUTUBE_MEDIA_MODE_EVENT,
 } from "@/lib/voice/youtubePlayer";
 import {
   endVoiceSession,
@@ -312,6 +313,7 @@ export function useCedVoiceSession(
   const retellCallStartedAtRef = useRef(0);
   const retellEarlyEndRetriesRef = useRef(0);
   const lastPersistedAgentLineRef = useRef("");
+  const youtubeMediaModeRef = useRef(false);
 
   useEffect(() => {
     prefsRef.current = prefs;
@@ -1476,6 +1478,7 @@ export function useCedVoiceSession(
         micUnmuteTimerRef.current = window.setTimeout(() => {
           micUnmuteTimerRef.current = null;
           if (isStale() || pausedRef.current) return;
+          if (youtubeMediaModeRef.current) return;
           if (modelSpeakingRef.current || client.isResponseActive()) return;
           client.setMicTrackEnabled(true);
           enableListeningUi();
@@ -2809,12 +2812,24 @@ export function useCedVoiceSession(
   ]);
 
   useEffect(() => {
+    if (youtubeMediaModeRef.current) {
+      // YouTube activo: mic queda muteado; no aplicar unmute del UI.
+      retellClientRef.current?.setMuted(true);
+      clientRef.current?.setRemoteMuted(true);
+      return;
+    }
     clientRef.current?.setRemoteMuted(muted);
     retellClientRef.current?.setMuted(muted);
   }, [muted]);
 
   useEffect(() => {
     if (!micOn) return;
+    if (youtubeMediaModeRef.current) {
+      retellClientRef.current?.setMuted(true);
+      clientRef.current?.setMicTrackEnabled(false);
+      clientRef.current?.setRemoteMuted(true);
+      return;
+    }
     if (isRetellSessionRef.current) {
       retellClientRef.current?.setMuted(paused || mutedRef.current);
       return;
@@ -2828,6 +2843,48 @@ export function useCedVoiceSession(
       client.resumeListening();
     }
   }, [micOn, paused]);
+
+  useEffect(() => {
+    const onYoutubeMediaMode = (ev: Event) => {
+      const active = Boolean(
+        (ev as CustomEvent<{ active?: boolean }>).detail?.active,
+      );
+      youtubeMediaModeRef.current = active;
+      if (isRetellSessionRef.current) {
+        const retell = retellClientRef.current;
+        retell?.setYoutubeMediaMode(active);
+        if (!active) {
+          retell?.setMuted(pausedRef.current || mutedRef.current);
+        }
+        return;
+      }
+      const client = clientRef.current;
+      if (!client) return;
+      if (active) {
+        client.setMicTrackEnabled(false);
+        client.setRemoteMuted(true);
+      } else {
+        client.setRemoteMuted(mutedRef.current);
+        if (!pausedRef.current) {
+          client.setMicTrackEnabled(true);
+          if (!client.isGreetingInProgress()) {
+            client.resumeListening();
+          }
+        }
+      }
+    };
+    window.addEventListener(CED_YOUTUBE_MEDIA_MODE_EVENT, onYoutubeMediaMode);
+    return () => {
+      window.removeEventListener(
+        CED_YOUTUBE_MEDIA_MODE_EVENT,
+        onYoutubeMediaMode,
+      );
+      if (youtubeMediaModeRef.current) {
+        youtubeMediaModeRef.current = false;
+        retellClientRef.current?.setYoutubeMediaMode(false);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -2880,7 +2937,9 @@ export function useCedVoiceSession(
   const togglePause = useCallback(() => {
     setPaused((p) => {
       const next = !p;
-      if (isRetellSessionRef.current) {
+      if (youtubeMediaModeRef.current) {
+        // YouTube: mic sigue muteado; solo actualiza UI/orb.
+      } else if (isRetellSessionRef.current) {
         retellClientRef.current?.setMuted(next || mutedRef.current);
       } else {
         clientRef.current?.setMicTrackEnabled(!next);
