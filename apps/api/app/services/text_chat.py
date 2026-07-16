@@ -16,11 +16,14 @@ from app.config import get_settings
 from app.services import supabase_db
 from app.services.cognitive_router import build_chat_system_extras, route_message
 from app.services.chat_intents import (
+    PDF_DETAIL_CLARIFY_QUESTION,
     is_generate_image_intent,
     is_pdf_intent,
     parse_followup_image_prompt,
     parse_generate_image_prompt,
     parse_pdf_request,
+    prior_pdf_user_request,
+    resolve_pdf_detail_for_turn,
     resolve_pdf_request,
 )
 from app.domain.ced_identity import (
@@ -596,6 +599,7 @@ def _execute_direct_pdf(
     history: list[dict[str, Any]],
     conversation_id: str | None,
     user_request: str,
+    detail_level: str = "brief",
 ) -> tuple[str, dict[str, Any]] | None:
     """Genera PDF real y devuelve mensaje + adjunto para el chat."""
     from app.deps.plan_access import effective_plan_limits
@@ -614,6 +618,7 @@ def _execute_direct_pdf(
     fallbacks = assistant_fallback_texts_from_messages(_anthropic_messages(history))
     user_texts = user_texts_from_messages(_anthropic_messages(history))
     resolved_request = user_request or (user_texts[-1] if user_texts else pdf_title)
+    level = (detail_level or "brief").strip().lower() or "brief"
     try:
         artifact = store_pdf_with_timeout(
             user_id=user_id,
@@ -622,6 +627,7 @@ def _execute_direct_pdf(
             conversation_id=conversation_id,
             fallback_texts=fallbacks,
             user_request=resolved_request,
+            detail_level=level,
         )
     except TimeoutError:
         return (
@@ -653,7 +659,21 @@ def _try_direct_pdf_from_context(
     history: list[dict[str, Any]],
     conversation_id: str | None,
 ) -> tuple[str, dict[str, Any]] | None:
-    req = resolve_pdf_request(text, history)
+    detail = resolve_pdf_detail_for_turn(text, history)
+    if detail is None:
+        return None
+    if detail == "ask":
+        return PDF_DETAIL_CLARIFY_QUESTION, {}
+
+    level = detail if detail in ("brief", "full") else "brief"
+    source_text = text
+    if not is_pdf_intent(text):
+        prior = prior_pdf_user_request(history)
+        if not prior:
+            return None
+        source_text = prior
+
+    req = resolve_pdf_request(source_text, history)
     if not req:
         return None
     title, body = req
@@ -663,7 +683,8 @@ def _try_direct_pdf_from_context(
         content=body,
         history=history,
         conversation_id=conversation_id,
-        user_request=text,
+        user_request=source_text,
+        detail_level=level,
     )
     if not result:
         return None
@@ -2493,22 +2514,27 @@ def send_message(
             route_meta={"intent": "finance", "source": "direct"},
         )
 
-    pdf_req = resolve_pdf_request(text, history)
-    if pdf_req and is_pdf_intent(text):
-        pdf_title, pdf_body = pdf_req
-        pdf_result = _execute_direct_pdf(
+    detail = resolve_pdf_detail_for_turn(text, history)
+    if detail == "ask" or (
+        detail in ("brief", "full") and (
+            resolve_pdf_request(text, history) or prior_pdf_user_request(history)
+        )
+    ):
+        direct_pdf = _try_direct_pdf_from_context(
             user_id,
-            title=pdf_title,
-            content=pdf_body,
+            text=text,
             history=history,
             conversation_id=conversation_id,
-            user_request=text,
         )
-        if pdf_result:
-            reply, attachment = pdf_result
+        if direct_pdf:
+            reply, attachment = direct_pdf
             return _finish(
                 _finalize_chat_reply(reply),
-                route_meta={"intent": "pdf", "source": "direct"},
+                route_meta={
+                    "intent": "pdf_clarify" if detail == "ask" else "pdf",
+                    "source": "direct",
+                    "pdf_detail": detail,
+                },
                 pdf=attachment if attachment.get("file_id") else None,
             )
 

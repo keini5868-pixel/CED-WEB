@@ -108,6 +108,7 @@ def _compose_pdf_prompt(
     user_request: str,
     draft_content: str = "",
     context_snippets: list[str] | None = None,
+    detail_level: str = "brief",
 ) -> str:
     req = (user_request or title or "").strip()
     safe_title = (title or "Documento CED").strip()
@@ -120,7 +121,18 @@ def _compose_pdf_prompt(
     context_block = (
         "\n".join(f"- {line}" for line in context_lines) if context_lines else "(sin contexto previo)"
     )
-    return f"""Redacta el CONTENIDO COMPLETO de un documento PDF en español.
+    level = (detail_level or "brief").strip().lower()
+    if level == "full":
+        length_rules = (
+            "- Extensión: contenido COMPLETO y detallado (aprox. 500–900 palabras cuando el tema lo permita).\n"
+            "- Desarrolla secciones con explicación útil; no rellenes con paja."
+        )
+    else:
+        length_rules = (
+            "- Extensión: RESUMEN BREVE por defecto (aprox. 120–220 palabras).\n"
+            "- Solo lo esencial: 3–6 puntos o secciones cortas. PROHIBIDO un tratado largo."
+        )
+    return f"""Redacta el CONTENIDO de un documento PDF en español.
 
 Título del documento: {safe_title}
 
@@ -137,24 +149,26 @@ INSTRUCCIONES:
 - PROHIBIDO devolver solo el título o repetir la petición del usuario.
 - Si piden consejos de "El Alquimista", escribe consejos reales inspirados en la obra de Paulo Coelho (Leyenda Personal, señales, miedo, viaje, tesoro, etc.).
 - Usa secciones numeradas o viñetas cuando ayude.
-- Mínimo 350 palabras cuando el tema lo permita.
+{length_rules}
 - Texto plano legible (sin markdown con asteriscos).
 - Entrega SOLO el cuerpo del documento, sin saludo ni despedida."""
 
 
-def _compose_pdf_body_cloud_fallback(prompt: str) -> str:
+def _compose_pdf_body_cloud_fallback(prompt: str, *, detail_level: str = "brief") -> str:
     """Gemini/Claude cuando la composición directa con Gemini falla."""
     from app.services.cloud_llm_fallback import chat_cloud_reply
 
+    max_tokens = 4096 if (detail_level or "").lower() == "full" else 1200
     try:
         text = chat_cloud_reply(
             system=(
                 "Eres un redactor profesional en español. "
-                "Genera el cuerpo completo de documentos PDF claros y útiles."
+                "Genera el cuerpo de documentos PDF claros y útiles. "
+                "Respeta la extensión pedida (breve por defecto)."
             ),
             messages=[{"role": "user", "content": prompt}],
             user_text=prompt[:240],
-            max_tokens=4096,
+            max_tokens=max_tokens,
         )
         if text and len(text.strip()) >= 80:
             logger.info("[PDF] composed body via cloud fallback chars=%s", len(text))
@@ -170,6 +184,7 @@ def compose_pdf_body(
     user_request: str,
     draft_content: str = "",
     context_snippets: list[str] | None = None,
+    detail_level: str = "brief",
 ) -> str:
     """Redacta el cuerpo del PDF con Gemini cuando el modelo no pasó contenido sustantivo."""
     from app.config import get_settings
@@ -178,12 +193,15 @@ def compose_pdf_body(
     api_key = settings.google_api_key.strip()
     safe_title = (title or "Documento CED").strip()
     req = (user_request or title or "").strip()
+    level = (detail_level or "brief").strip().lower() or "brief"
     prompt = _compose_pdf_prompt(
         title=safe_title,
         user_request=req,
         draft_content=draft_content,
         context_snippets=context_snippets,
+        detail_level=level,
     )
+    max_tokens = 4096 if level == "full" else 1200
 
     def _call_gemini() -> str:
         from google import genai
@@ -195,7 +213,7 @@ def compose_pdf_body(
             contents=prompt,
             config=types.GenerateContentConfig(
                 temperature=0.55,
-                max_output_tokens=4096,
+                max_output_tokens=max_tokens,
             ),
         )
         return (response.text or "").strip()
@@ -205,7 +223,12 @@ def compose_pdf_body(
             with ThreadPoolExecutor(max_workers=1) as pool:
                 text = pool.submit(_call_gemini).result(timeout=PDF_COMPOSE_TIMEOUT_SEC)
             if text and len(text) >= 80:
-                logger.info("[PDF] composed body chars=%s title=%s", len(text), safe_title[:60])
+                logger.info(
+                    "[PDF] composed body chars=%s title=%s level=%s",
+                    len(text),
+                    safe_title[:60],
+                    level,
+                )
                 return text[:_PDF_BODY_MAX_CHARS]
         except FuturesTimeoutError:
             logger.warning("[PDF] compose timeout title=%s", safe_title[:60])
@@ -214,7 +237,7 @@ def compose_pdf_body(
     else:
         logger.warning("[PDF] compose skipped — no GOOGLE_API_KEY")
 
-    return _compose_pdf_body_cloud_fallback(prompt)
+    return _compose_pdf_body_cloud_fallback(prompt, detail_level=level)
 
 
 def _persist_pdf_artifact(
@@ -353,12 +376,14 @@ def store_pdf(
     conversation_id: str | None = None,
     fallback_texts: list[str] | None = None,
     user_request: str | None = None,
+    detail_level: str = "brief",
 ) -> PdfArtifact:
     _purge_expired()
     file_id = uuid.uuid4().hex
     safe_title = _strip_markdown(title) or "Documento CED"
     raw_body = _strip_markdown(content)
     req = (user_request or safe_title).strip()
+    level = (detail_level or "brief").strip().lower() or "brief"
     resolved = resolve_pdf_content(
         safe_title,
         raw_body,
@@ -374,6 +399,7 @@ def store_pdf(
             user_request=req,
             draft_content=raw_body or resolved,
             context_snippets=context,
+            detail_level=level,
         )
         if composed:
             resolved = composed

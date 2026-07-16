@@ -281,10 +281,17 @@ def run_chat_image_generation(
         register_text_chat_image_url(user_id, conversation_id, url)
 
     caption = str(img_result.get("caption") or display_label or "Imagen generada")
+    from app.services.copy_quality import with_image_text_disclaimer
+
+    reply = with_image_text_disclaimer(
+        str(success_reply),
+        user_text or model_prompt,
+        enriched_context or "",
+    )
     return {
         "ok": True,
         "url": url,
-        "reply": success_reply,
+        "reply": reply,
         "caption": caption,
         "quality": str(img_result.get("quality") or ""),
         "display_label": display_label,

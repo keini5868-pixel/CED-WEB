@@ -934,6 +934,10 @@ async def _execute_voice_tool_body(
                 or params.get("call_id")
                 or ""
             ).strip() or None
+            from app.services.chat_intents import pdf_detail_level
+
+            # Voz: sin multi-turno de aclaración — breve por defecto salvo que pidan completo.
+            voice_detail = pdf_detail_level(user_request) or "brief"
             try:
                 artifact = await asyncio.to_thread(
                     store_pdf_with_timeout,
@@ -943,6 +947,7 @@ async def _execute_voice_tool_body(
                     conversation_id=conversation_id,
                     fallback_texts=fallback_list,
                     user_request=user_request,
+                    detail_level=voice_detail,
                 )
             except TimeoutError:
                 return _spoken_err(

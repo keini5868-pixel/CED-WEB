@@ -306,25 +306,6 @@ def send_advanced_message(
             pdf=attachment if attachment.get("file_id") else None,
         )
 
-    pdf_req = resolve_pdf_request(text, history_rows)
-    if pdf_req and is_pdf_intent(text):
-        title, body = pdf_req
-        pdf_result = _execute_direct_pdf(
-            user_id,
-            title=title,
-            content=body,
-            history=history_rows,
-            conversation_id=conv_id,
-            user_request=text,
-        )
-        if pdf_result:
-            reply, attachment = pdf_result
-            return _finish_payload(
-                response=_finalize_chat_reply(reply),
-                model=ADVANCED_MODEL_LABEL,
-                pdf=attachment if attachment.get("file_id") else None,
-            )
-
     anthropic_key = require_anthropic_api_key()
 
     image_result = _try_direct_image(user_id, text, history_rows, conv_id)

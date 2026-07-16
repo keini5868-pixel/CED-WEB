@@ -364,9 +364,32 @@ def augment_image_prompt(prompt: str, context: str = "") -> str:
     if overlay or image_prompt_needs_verbatim_text(base, context):
         verbatim = format_verbatim_image_copy(overlay, headline=headline or None)
         if verbatim:
-            return f"{base} {_ORTHOGRAPHY_RULE} {verbatim}"
+            return (
+                f"{base} {_ORTHOGRAPHY_RULE} {verbatim} "
+                "Prefiere tipografía grande y clara; máximo una frase corta (≤12 palabras) "
+                "si el texto es largo. Mejor poco texto correcto que un párrafo ilegible."
+            )
 
     return f"{base} {_ORTHOGRAPHY_RULE} Minimiza texto incrustado salvo que el pedido lo exija."
+
+
+IMAGE_EMBEDDED_TEXT_DISCLAIMER = (
+    "Señor, aviso: el texto dentro de imágenes generadas por IA (modelo actual: "
+    "Gemini 2.5 Flash Image) suele no salir perfectamente legible. "
+    "Aquí está el resultado:"
+)
+
+
+def with_image_text_disclaimer(reply: str, prompt: str, context: str = "") -> str:
+    """Aviso honesto cuando el pedido incluye texto visible en la imagen."""
+    body = (reply or "").strip()
+    if not body:
+        return body
+    if not image_prompt_needs_verbatim_text(prompt, context):
+        return body
+    if "aviso:" in body.lower() and "legible" in body.lower():
+        return body
+    return f"{IMAGE_EMBEDDED_TEXT_DISCLAIMER}\n\n{body}"
 
 
 def polish_spanish_for_user(text: str) -> str:

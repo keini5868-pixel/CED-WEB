@@ -406,3 +406,147 @@ def resolve_pdf_request(
         return title[:200], ""
 
     return title[:200], content[:12000]
+
+
+PDF_DETAIL_CLARIFY_QUESTION = (
+    "¿Prefiere un resumen breve o el contenido completo para el PDF, señor?"
+)
+
+_PDF_BRIEF = re.compile(
+    r"\b("
+    r"resumen(?:\s+breve)?|breve|corto|conciso|sint[eé]sis|resumid[oa]|"
+    r"versi[oó]n\s+corta|poco\s+detalle|solo\s+lo\s+esencial|"
+    r"executive\s+summary|tl;?dr"
+    r")\b",
+    re.I,
+)
+_PDF_FULL = re.compile(
+    r"\b("
+    r"completo|completa|extenso|extensa|detallad[oa]|a\s+fondo|"
+    r"todo\s+el\s+detalle|con\s+(?:todo\s+)?detalle|versi[oó]n\s+larga|"
+    r"exhaustiv[oa]|desarrollad[oa]|ampli[oa]|en\s+profundidad"
+    r")\b",
+    re.I,
+)
+_PDF_CLARIFY_ASSISTANT = re.compile(
+    r"resumen\s+breve\s+o\s+el\s+contenido\s+completo",
+    re.I,
+)
+_PDF_ANSWER_BRIEF = re.compile(
+    r"\b(breve|corto|resumen|conciso|esencial|sint[eé]sis)\b",
+    re.I,
+)
+_PDF_ANSWER_FULL = re.compile(
+    r"\b(completo|completa|extenso|detallad[oa]|largo|todo|full)\b",
+    re.I,
+)
+
+
+def pdf_detail_level(text: str) -> str | None:
+    """'brief' | 'full' | None si la petición no especifica extensión."""
+    t = (text or "").strip()
+    if not t:
+        return None
+    brief = bool(_PDF_BRIEF.search(t))
+    full = bool(_PDF_FULL.search(t))
+    if brief and not full:
+        return "brief"
+    if full and not brief:
+        return "full"
+    if brief and full:
+        # Ambos: prioriza lo más específico cerca de "pdf" o el último.
+        if re.search(r"\b(completo|detallad[oa]|extenso).{0,40}\bpdf\b", t, re.I) or re.search(
+            r"\bpdf\b.{0,40}\b(completo|detallad[oa]|extenso)\b", t, re.I
+        ):
+            return "full"
+        if re.search(r"\b(resumen|breve|corto).{0,40}\bpdf\b", t, re.I) or re.search(
+            r"\bpdf\b.{0,40}\b(resumen|breve|corto)\b", t, re.I
+        ):
+            return "brief"
+        return None
+    return None
+
+
+def is_pdf_length_clarify_question(text: str) -> bool:
+    return bool(_PDF_CLARIFY_ASSISTANT.search((text or "").strip()))
+
+
+def parse_pdf_detail_answer(text: str) -> str | None:
+    """Respuesta a la pregunta resumen vs completo."""
+    t = (text or "").strip()
+    if not t or len(t) > 160:
+        return None
+    brief = bool(_PDF_ANSWER_BRIEF.search(t))
+    full = bool(_PDF_ANSWER_FULL.search(t))
+    if brief and not full:
+        return "brief"
+    if full and not brief:
+        return "full"
+    if re.fullmatch(r"(?:el\s+)?(?:resumen(?:\s+breve)?|breve|corto)", t, re.I):
+        return "brief"
+    if re.fullmatch(r"(?:el\s+)?(?:completo|contenido\s+completo|detallado|extenso)", t, re.I):
+        return "full"
+    return None
+
+
+def last_assistant_asked_pdf_detail(history: list[dict] | None) -> bool:
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        if role not in ("assistant", "model"):
+            continue
+        content = row.get("content")
+        if isinstance(content, str) and is_pdf_length_clarify_question(content):
+            return True
+        break
+    return False
+
+
+def prior_pdf_user_request(history: list[dict] | None) -> str | None:
+    """Último mensaje de usuario con intención real de PDF (antes de la pregunta de extensión)."""
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        content = row.get("content")
+        if not isinstance(content, str):
+            continue
+        text = content.strip()
+        if not text:
+            continue
+        if role in ("assistant", "model"):
+            if is_pdf_length_clarify_question(text):
+                continue
+            continue
+        if role == "user" and is_pdf_intent(text):
+            return text
+    return None
+
+
+def resolve_pdf_detail_for_turn(
+    text: str,
+    history: list[dict] | None = None,
+) -> str | None:
+    """
+    Devuelve:
+      - 'brief' | 'full' → generar con ese nivel
+      - 'ask' → preguntar antes de generar
+      - None → no es un turno de PDF
+    """
+    t = (text or "").strip()
+    if last_assistant_asked_pdf_detail(history):
+        answered = parse_pdf_detail_answer(t)
+        if answered:
+            return answered
+        level = pdf_detail_level(t)
+        if level:
+            return level
+        if is_pdf_intent(t):
+            return "ask"
+        # Respuesta ambigua tras la pregunta → default breve.
+        return "brief"
+
+    if not is_pdf_intent(t):
+        return None
+
+    level = pdf_detail_level(t)
+    if level:
+        return level
+    return "ask"
