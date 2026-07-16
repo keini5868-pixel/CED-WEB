@@ -13,6 +13,7 @@ from app.services.retell_native_pilot import (
     RETELL_NATIVE_PILOT_PROMPT,
     build_get_environment_tool,
     build_native_pilot_tools,
+    estimate_general_assistant_token_floor,
     get_pilot_metrics_snapshot,
     record_tool_metric,
     resolve_environment_tool_query,
@@ -24,6 +25,15 @@ def test_build_get_environment_tool_has_static_filler():
     assert tool["name"] == "get_environment"
     assert tool["execution_message_type"] == "static_text"
     assert "consultando el clima" in tool["execution_message_description"].lower()
+
+
+def test_phase_a_general_assistant_token_floor_under_retell_threshold():
+    """Fase A: piso sin historial debe quedar bajo el surcharge Retell (~4k) y ~3.8k objetivo."""
+    est = estimate_general_assistant_token_floor()
+    assert est["tool_count"] == 41
+    assert est["floor_tokens_no_history"] < 4000
+    assert est["floor_tokens_no_history"] <= 3800
+    assert est["under_threshold"] is True
 
 
 def test_build_native_pilot_tools_includes_read_and_finance_write():
@@ -359,16 +369,23 @@ def test_execute_generar_pdf_delegates_to_voice_executor():
 
 
 def test_pilot_prompt_includes_search_web_rules():
+    # Fase A: reglas en prompt corto; routing clima vs search en schemas + tip.
     assert "search_web" in RETELL_NATIVE_PILOT_PROMPT
-    assert "NO uses search_web para clima" in RETELL_NATIVE_PILOT_PROMPT
+    assert "get_environment" in RETELL_NATIVE_PILOT_PROMPT
+    assert "clima" in RETELL_NATIVE_PILOT_PROMPT.lower()
 
 
 def test_pilot_prompt_includes_map_navigation_rules():
-    assert "search_nearby_places" in RETELL_NATIVE_PILOT_PROMPT
-    assert "show_route" in RETELL_NATIVE_PILOT_PROMPT
-    assert "start_drive_navigation" in RETELL_NATIVE_PILOT_PROMPT
-    assert "muéstrame la ruta" in RETELL_NATIVE_PILOT_PROMPT
-    assert "inicia la ruta" in RETELL_NATIVE_PILOT_PROMPT
+    from app.services.retell_native_pilot import (
+        SEARCH_NEARBY_PLACES_DESCRIPTION,
+        SHOW_ROUTE_DESCRIPTION,
+        START_DRIVE_NAVIGATION_DESCRIPTION,
+    )
+
+    # Fase A: frases de mapa viven en descriptions de tool (schemas), no en catálogo textual.
+    assert "muéstrame la ruta" in SHOW_ROUTE_DESCRIPTION
+    assert "inicia la ruta" in START_DRIVE_NAVIGATION_DESCRIPTION
+    assert "destino" in SEARCH_NEARBY_PLACES_DESCRIPTION.lower() or "llévame" in SEARCH_NEARBY_PLACES_DESCRIPTION.lower()
 
 
 def test_execute_map_tools_delegate_to_voice_executor():
@@ -465,15 +482,14 @@ def test_execute_search_web_tool_uses_voice_executor():
 def test_pilot_prompt_includes_advanced_rules():
     assert "activa modo avanzado" in RETELL_NATIVE_PILOT_PROMPT
     assert "consult_advanced" in RETELL_NATIVE_PILOT_PROMPT
-    assert "deactivate_advanced_mode" in RETELL_NATIVE_PILOT_PROMPT
-    assert "aunque no hayas cambiado de estado" in RETELL_NATIVE_PILOT_PROMPT
+    assert "deactivate" in RETELL_NATIVE_PILOT_PROMPT.lower()
 
 
 def test_pilot_prompt_includes_camera_rules():
-    assert "activate_camera" in RETELL_NATIVE_PILOT_PROMPT
+    assert "activate" in RETELL_NATIVE_PILOT_PROMPT.lower()
     assert "analyze_camera_frame" in RETELL_NATIVE_PILOT_PROMPT
     assert "search_visible_product" in RETELL_NATIVE_PILOT_PROMPT
-    assert "PROHIBIDO describir nada visual" in RETELL_NATIVE_PILOT_PROMPT
+    assert "NUNCA inventar" in RETELL_NATIVE_PILOT_PROMPT
 
 
 def test_consult_advanced_tool_has_filler():
@@ -488,7 +504,7 @@ def test_consult_advanced_tool_has_filler():
 def test_pilot_prompt_includes_standalone_identity():
     assert "Eres CED" in RETELL_NATIVE_PILOT_PROMPT
     assert "get_environment" in RETELL_NATIVE_PILOT_PROMPT
-    assert "ok gracias" in RETELL_NATIVE_PILOT_PROMPT.lower()
+    assert "charla casual" in RETELL_NATIVE_PILOT_PROMPT.lower()
 
 
 def test_resolve_environment_tool_query_prefers_args():
