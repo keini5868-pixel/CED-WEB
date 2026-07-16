@@ -143,6 +143,7 @@ Re-ejecutar bootstrap tras cada deploy que cambie tools o prompt — actualiza e
 3. Frases de prueba calendario: "¿qué tengo hoy?", "eventos de mañana"
 4. Frases Gmail: "léeme mis correos", "correos importantes", "lee el correo de X"
 5. Frases YouTube (requiere `YOUTUBE_API_KEY`): "pon Bohemian Rhapsody en YouTube", "pausa el video", "reanuda el video", "cierra YouTube"
+6. Frases imagen/PDF: "genera una imagen de un café al atardecer", "genera un PDF con una lista de tareas para mañana"
 
 ### Métricas
 

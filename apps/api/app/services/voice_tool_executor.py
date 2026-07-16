@@ -7,7 +7,6 @@ import logging
 import re
 import uuid
 from typing import Any
-from app.services.gemini_images import generate_image
 from app.services.conversation_memory import (
     format_recall_for_voice,
     recall_previous_conversations,
@@ -651,23 +650,37 @@ async def _execute_voice_tool_body(
 
 
         if name == "generate_image":
+            from app.services.chat_image_generation import run_chat_image_generation
+
             prompt = str(params.get("prompt") or "").strip()
-            quality = str(params.get("quality") or "auto")
+            if not prompt:
+                return _spoken_err(
+                    "Indique qué imagen desea generar, señor.",
+                    error="missing_prompt",
+                )
             balance = voice_access_state(user_id)
+            conversation_id = str(
+                params.get("conversation_id")
+                or params.get("session_id")
+                or params.get("call_id")
+                or ""
+            ).strip() or None
             logger.info("[VOICE:IMAGE] start user=%s prompt=%s", user_id[:8], prompt[:80])
+            # Misma pipeline que chat; voz v1 sin referencia visual.
             result = await asyncio.to_thread(
-                generate_image,
-                user_id=user_id,
-                plan_id=str(balance.get("plan_id") or ""),
-                prompt=prompt,
-                quality=quality,
+                run_chat_image_generation,
+                user_id,
+                conversation_id,
+                prompt,
+                None,
+                plan_id=str(balance.get("plan_id") or "") or None,
+                allow_reference=False,
             )
-            if result.get("ok"):
+            if result.get("ok") and result.get("url"):
                 url = str(result.get("url") or "")
                 logger.info(
-                    "[VOICE:IMAGE] ok user=%s provider=%s url=%s",
+                    "[VOICE:IMAGE] ok user=%s url=%s",
                     user_id[:8],
-                    result.get("provider") or result.get("model"),
                     url[:120],
                 )
                 vcs.push_tool_event(
@@ -680,29 +693,32 @@ async def _execute_voice_tool_body(
                 )
                 return {
                     "ok": True,
-                    "spoken": "Imagen generada, señor.",
+                    "spoken": "Imagen generada, señor. Ya la puede ver en pantalla.",
                     "url": url,
                     "image_url": url,
                     "prompt": prompt,
+                    "caption": str(result.get("caption") or ""),
                 }
-            err = str(result.get("error") or "image_failed")
-            code = str(result.get("code") or "")
+            err = str(result.get("error") or result.get("reply") or "image_failed")
             logger.error(
-                "[VOICE:IMAGE] fail user=%s code=%s error=%s",
+                "[VOICE:IMAGE] fail user=%s error=%s",
                 user_id[:8],
-                code,
                 err[:200],
             )
-            if code == "config_error":
+            err_l = err.lower()
+            if "api_key" in err_l or "config" in err_l:
                 return _spoken_err(
                     "No fue posible generar la imagen: falta configurar GOOGLE_API_KEY o OPENAI_API_KEY, señor.",
                     error=err,
                 )
-            if code in ("quota_exhausted", "plan_limit"):
-                return _spoken_err(f"No fue posible generar la imagen, señor. {err}", error=code)
+            if "quota" in err_l or "límite" in err_l or "limit" in err_l:
+                return _spoken_err(
+                    f"No fue posible generar la imagen, señor. {err}",
+                    error="quota_or_limit",
+                )
             return _spoken_err(
                 f"No fue posible generar la imagen en este momento, señor. {err}".strip(),
-                error=code or err,
+                error=err,
             )
 
         if name == "generate_image_with_reference":

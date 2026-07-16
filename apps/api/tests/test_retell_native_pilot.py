@@ -44,6 +44,8 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "pause_youtube_video",
         "resume_youtube_video",
         "close_youtube_player",
+        "generate_image",
+        "generar_pdf",
         "check_meta_networks",
         "meta_prepare_publish",
         "meta_confirm_publish",
@@ -210,6 +212,8 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "activate_advanced_mode" in general_tools
     assert "consult_advanced" in general_tools
     assert "deactivate_advanced_mode" in general_tools
+    assert "generate_image" in general_tools
+    assert "generar_pdf" in general_tools
     assert "finance_confirm_write" in confirm_tools
     assert "finance_cancel_write" in confirm_tools
     assert "read_finances" in confirm_tools
@@ -256,6 +260,8 @@ def test_build_native_pilot_states_restrict_confirm_tools():
         "deactivate_advanced_mode",
         "get_environment",
         "read_finances",
+        "generate_image",
+        "generar_pdf",
     }
     assert "read_gmail" not in advanced_tools
     assert "activate_camera" not in advanced_tools
@@ -263,6 +269,93 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "gmail_prepare_send" not in advanced_tools
     assert "search_web" not in advanced_tools
     assert "meta_prepare_publish" not in advanced_tools
+
+
+def test_native_image_pdf_tools_have_fillers_and_timeouts():
+    from app.services.retell_native_pilot import (
+        build_generate_image_tool,
+        build_generar_pdf_tool,
+    )
+
+    img = build_generate_image_tool(api_public_url="https://api.example.com")
+    assert img["name"] == "generate_image"
+    assert img["speak_during_execution"] is True
+    assert "generando su imagen" in img["execution_message_description"].lower()
+    assert img["timeout_ms"] == 60_000
+    assert img["url"].endswith("/v1/retell/tools/generate_image")
+    assert "prompt" in img["parameters"]["properties"]
+
+    pdf = build_generar_pdf_tool(api_public_url="https://api.example.com")
+    assert pdf["name"] == "generar_pdf"
+    assert "preparando su pdf" in pdf["execution_message_description"].lower()
+    assert pdf["timeout_ms"] == 45_000
+    assert pdf["url"].endswith("/v1/retell/tools/generar_pdf")
+
+
+def test_pilot_prompt_includes_image_pdf_rules():
+    assert "generate_image" in RETELL_NATIVE_PILOT_PROMPT
+    assert "generar_pdf" in RETELL_NATIVE_PILOT_PROMPT
+    assert "NUNCA digas que la imagen o el PDF están listos" in RETELL_NATIVE_PILOT_PROMPT
+
+
+def test_execute_generate_image_delegates_to_voice_executor():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_generate_image_tool
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={
+                "ok": True,
+                "spoken": "Imagen generada, señor. Ya la puede ver en pantalla.",
+                "url": "https://cdn.example.com/img.png",
+            },
+        ) as mock_exec:
+            out = await execute_generate_image_tool(
+                user_id="u-img",
+                payload={"call": {"call_id": "c1"}},
+                args={"prompt": "un café al atardecer"},
+            )
+            mock_exec.assert_awaited_once()
+            assert mock_exec.await_args.args[0] == "generate_image"
+            assert mock_exec.await_args.args[2]["prompt"] == "un café al atardecer"
+            assert out["ok"] is True
+            assert "pantalla" in out["result"].lower()
+            return out
+
+    asyncio.run(run())
+
+
+def test_execute_generar_pdf_delegates_to_voice_executor():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_generar_pdf_tool
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={
+                "ok": True,
+                "spoken": "PDF listo, señor. Título: Tareas. Ya está en su historial.",
+                "file_id": "pdf-1",
+            },
+        ) as mock_exec:
+            out = await execute_generar_pdf_tool(
+                user_id="u-pdf",
+                payload={"call": {"call_id": "c2"}},
+                args={"titulo": "Tareas", "contenido": "1. Comprar café"},
+            )
+            mock_exec.assert_awaited_once()
+            assert mock_exec.await_args.args[0] == "generar_pdf"
+            assert mock_exec.await_args.args[2]["titulo"] == "Tareas"
+            assert out["ok"] is True
+            assert "historial" in out["result"].lower()
+            return out
+
+    asyncio.run(run())
 
 
 def test_pilot_prompt_includes_search_web_rules():

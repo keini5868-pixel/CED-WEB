@@ -55,6 +55,8 @@ Herramientas (usar solo cuando el usuario lo pida explícitamente):
 - pause_youtube_video: pausar el video de YouTube en curso.
 - resume_youtube_video: reanudar el video de YouTube pausado.
 - close_youtube_player: cerrar el panel/reproductor de YouTube.
+- generate_image: generar una imagen con IA a partir de la descripción hablada (aparece en pantalla).
+- generar_pdf: generar un PDF descargable con título y contenido (aparece en el historial).
 - activate_advanced_mode: activar modo avanzado con Claude (solo frase «activa modo avanzado»).
 - consult_advanced: consulta profunda vía Claude — solo en modo avanzado.
 - deactivate_advanced_mode: salir a modo conversacional normal.
@@ -68,6 +70,8 @@ Reglas generales:
 - EXCEPCIÓN Finanzas confirmación: tras finance_confirm_write exitoso, di el mensaje de confirmación sin parafrasear.
 - EXCEPCIÓN Cámara: tras activate/deactivate/analyze/search, di el resultado de la herramienta tal cual.
 - EXCEPCIÓN search_web: tras search_web, di el resultado de la herramienta tal cual (1-4 oraciones).
+- EXCEPCIÓN Imagen/PDF: tras generate_image / generar_pdf, di el resultado de la herramienta tal cual.
+  NUNCA digas que la imagen o el PDF están listos sin resultado exitoso de la tool.
 - EXCEPCIÓN Modo avanzado: tras activate/consult/deactivate avanzado, di el resultado de la herramienta tal cual.
 - Calendario escritura: prepare → confirmación → confirm_write. NUNCA inventes que ya se agendó.
 - PROHIBIDO llamar calendar_confirm_write en el mismo turno que calendar_prepare_write.
@@ -149,11 +153,17 @@ Modo avanzado (Claude):
 1. Solo la frase «activa modo avanzado» → activate_advanced_mode. Luego transition_to_advanced_mode_active.
 2. Tras activar (aunque no hayas cambiado de estado), preguntas sustantivas / análisis / comparación → consult_advanced SIEMPRE. consult_advanced también está disponible en este estado general.
 3. PROHIBIDO responder tú mismo análisis profundo, filosófico o literario — debe ser consult_advanced.
-4. Clima (get_environment) y lectura de finanzas (read_finances) SÍ disponibles en modo avanzado sin salir.
+4. Clima (get_environment), lectura de finanzas (read_finances), imagen (generate_image) y PDF (generar_pdf) SÍ disponibles en modo avanzado sin salir.
 5. Gmail, escritura de finanzas y cámara: si el usuario las pide en modo avanzado, usa la tool correspondiente o pide salir — no inventes.
 6. Salida solo explícita: «modo normal», «sal del modo avanzado», «desactiva modo avanzado» → deactivate_advanced_mode.
 7. NO salgas solo tras una respuesta — el modo permanece activo hasta salida explícita.
 8. Tras consult_advanced, di el resultado tal cual (sin inventar ni cortar).
+
+Imagen / PDF (sin confirmación — el archivo aparece en pantalla/historial):
+1. «genera / créame / hazme una imagen de …» → generate_image con la descripción completa. Solo texto hablado (sin imagen de referencia en voz).
+2. «genera / créame un PDF con …» → generar_pdf (redacta título y contenido si hace falta).
+3. NUNCA confirmes que la imagen o el PDF están listos sin resultado exitoso de la tool. Di el spoken tal cual.
+4. Si piden variación a partir de una foto/referencia por voz: explica que por voz solo trabajas con descripción; en el chat pueden subir una referencia.
 
 Finanzas — escritura con confirmación obligatoria:
 1. finance_prepare_write requiere monto y concepto claros (gasto, ingreso o pago pendiente con fecha).
@@ -168,12 +178,15 @@ read_finances / get_environment / list_calendar_events / read_gmail: reglas de l
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
-Estado general — clima, calendario, Gmail, finanzas, Meta/redes, búsqueda web, cámara, YouTube, modo avanzado.
+Estado general — clima, calendario, Gmail, finanzas, Meta/redes, búsqueda web, cámara, YouTube, imagen, PDF, modo avanzado.
 - search_web: hechos actuales / noticias / datos externos (no clima → get_environment; no cámara → search_visible_product).
 - YouTube: «pon/reproduce/busca X en YouTube» → play_youtube_video. «pausa el video» → pause_youtube_video.
   «reanuda el video» → resume_youtube_video. «cierra YouTube» → close_youtube_player.
   Di el resultado tal cual — NUNCA confirmes reproducción sin resultado exitoso.
   Con música sonando: UNA frase breve y SILENCIO — sin ofrecer más ayuda ni charla (solo en YouTube).
+- Imagen: «genera/créame una imagen de …» → generate_image. Di el resultado tal cual — NUNCA confirmes sin éxito.
+  Solo descripción hablada (sin referencia visual por voz).
+- PDF: «genera/créame un PDF con …» → generar_pdf. Di el resultado tal cual — NUNCA confirmes sin éxito.
 - Meta: meta_prepare_publish → confirmar → meta_confirm_publish. check_meta_networks para estado de conexión.
 - Prospección: enable_prospection / disable_prospection / prospection_report / read_social_comments.
 - Mapa: open_drive_map, search_nearby_places, show_route, start_drive_navigation, stop_drive_navigation, navigation_status.
@@ -208,6 +221,8 @@ Estado modo avanzado (Claude) — investigación profunda activa.
 - Preguntas sustantivas / análisis / investigación → consult_advanced. Di el resultado tal cual.
 - Clima o ambiente → get_environment (sin salir del modo).
 - Consulta de finanzas (solo lectura) → read_finances (sin salir del modo).
+- Generar imagen → generate_image (sin salir del modo). Di el resultado tal cual — NUNCA confirmes sin éxito.
+- Generar PDF → generar_pdf (sin salir del modo). Di el resultado tal cual — NUNCA confirmes sin éxito.
 - Si dice «modo normal», «sal del modo avanzado» o «desactiva modo avanzado» → deactivate_advanced_mode y transition_to_general_assistant.
 - NO llames Gmail, cámara ni escritura de finanzas aquí — indica que debe salir al modo normal primero.
 - NO salgas del modo avanzado tras responder una sola consulta.
@@ -380,6 +395,18 @@ RESUME_YOUTUBE_DESCRIPTION = (
 
 CLOSE_YOUTUBE_DESCRIPTION = (
     "Cierra el panel/reproductor de YouTube. Usar con «cierra YouTube / quita el video»."
+)
+
+GENERATE_IMAGE_DESCRIPTION = (
+    "Genera una imagen con IA a partir de la descripción hablada y la muestra en pantalla. "
+    "Usar con «genera / créame / hazme una imagen de …». Solo descripción de texto "
+    "(sin imagen de referencia por voz). Di el resultado tal cual — NUNCA confirmes sin éxito."
+)
+
+GENERAR_PDF_DESCRIPTION = (
+    "Genera un PDF descargable con título y contenido; aparece en el historial del usuario. "
+    "Usar con «genera / créame un PDF con …». Redacta el contenido si el usuario no lo dictó "
+    "completo. Di el resultado tal cual — NUNCA confirmes sin éxito."
 )
 
 READ_FINANCES_DESCRIPTION = (
@@ -661,6 +688,39 @@ PLAY_YOUTUBE_PARAMETERS: dict[str, Any] = {
 PAUSE_YOUTUBE_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
 RESUME_YOUTUBE_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
 CLOSE_YOUTUBE_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+
+GENERATE_IMAGE_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "prompt": {
+            "type": "string",
+            "description": (
+                "Descripción detallada de la imagen a generar "
+                "(ej. 'un café al atardecer con luz cálida')."
+            ),
+        },
+        "quality": {
+            "type": "string",
+            "description": "Calidad opcional: auto, standard o hd. Por defecto auto.",
+        },
+    },
+    "required": ["prompt"],
+}
+
+GENERAR_PDF_PARAMETERS: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "titulo": {
+            "type": "string",
+            "description": "Título del documento PDF.",
+        },
+        "contenido": {
+            "type": "string",
+            "description": "Texto completo del PDF (redacta si el usuario no lo dictó entero).",
+        },
+    },
+    "required": ["titulo", "contenido"],
+}
 
 READ_FINANCES_PARAMETERS: dict[str, Any] = {
     "type": "object",
@@ -952,6 +1012,28 @@ def build_close_youtube_player_tool(*, api_public_url: str) -> dict[str, Any]:
         parameters=CLOSE_YOUTUBE_PARAMETERS,
         filler="Un momento, señor.",
         timeout_ms=8_000,
+    )
+
+
+def build_generate_image_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="generate_image",
+        description=GENERATE_IMAGE_DESCRIPTION,
+        parameters=GENERATE_IMAGE_PARAMETERS,
+        filler="Un momento, generando su imagen, señor.",
+        timeout_ms=60_000,
+    )
+
+
+def build_generar_pdf_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="generar_pdf",
+        description=GENERAR_PDF_DESCRIPTION,
+        parameters=GENERAR_PDF_PARAMETERS,
+        filler="Un momento, preparando su PDF, señor.",
+        timeout_ms=45_000,
     )
 
 
@@ -1251,6 +1333,8 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_pause_youtube_video_tool(api_public_url=api_public_url),
                 build_resume_youtube_video_tool(api_public_url=api_public_url),
                 build_close_youtube_player_tool(api_public_url=api_public_url),
+                build_generate_image_tool(api_public_url=api_public_url),
+                build_generar_pdf_tool(api_public_url=api_public_url),
                 build_check_meta_networks_tool(api_public_url=api_public_url),
                 build_meta_prepare_publish_tool(api_public_url=api_public_url),
                 build_meta_confirm_publish_tool(api_public_url=api_public_url),
@@ -1409,6 +1493,8 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_deactivate_advanced_mode_tool(api_public_url=api_public_url),
                 build_get_environment_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
+                build_generate_image_tool(api_public_url=api_public_url),
+                build_generar_pdf_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
@@ -2785,6 +2871,38 @@ async def execute_close_youtube_player_tool(*, user_id: str, payload: dict[str, 
         voice_tool_name="close_youtube_player",
         user_id=user_id,
         payload=payload,
+    )
+
+
+async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    prompt = str(args.get("prompt") or "").strip() or resolve_tool_query(payload, args)
+    quality = str(args.get("quality") or "auto").strip() or "auto"
+    call_id = _extract_call_id(payload)
+    return await _execute_native_voice_alias_tool(
+        tool_name="generate_image",
+        voice_tool_name="generate_image",
+        user_id=user_id,
+        payload=payload,
+        args={"prompt": prompt, "quality": quality, "call_id": call_id},
+    )
+
+
+async def execute_generar_pdf_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    titulo = str(args.get("titulo") or args.get("title") or "").strip()
+    contenido = str(args.get("contenido") or args.get("content") or "").strip()
+    query = resolve_tool_query(payload, args)
+    call_id = _extract_call_id(payload)
+    return await _execute_native_voice_alias_tool(
+        tool_name="generar_pdf",
+        voice_tool_name="generar_pdf",
+        user_id=user_id,
+        payload=payload,
+        args={
+            "titulo": titulo,
+            "contenido": contenido,
+            "_user_request": query or f"{titulo} {contenido}".strip(),
+            "call_id": call_id,
+        },
     )
 
 

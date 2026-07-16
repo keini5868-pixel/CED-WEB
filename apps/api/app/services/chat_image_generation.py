@@ -164,9 +164,12 @@ def run_chat_image_generation(
     history: list[dict[str, str]] | None,
     *,
     plan_id: str | None = None,
+    allow_reference: bool = True,
 ) -> dict[str, Any]:
     """
     Ejecuta generación de imagen para chat. Nunca devuelve ok=True sin url.
+
+    allow_reference=False: solo descripción de texto (voz v1 — sin imagen de referencia).
     """
     from app.services.gemini_images import generate_image
     from app.services.image_reference_generator import generate_image_with_reference
@@ -183,7 +186,7 @@ def run_chat_image_generation(
         user_id=user_id,
         conversation_id=conversation_id,
     )
-    use_reference = should_use_reference_generation(
+    use_reference = allow_reference and should_use_reference_generation(
         user_text,
         history,
         user_id=user_id,

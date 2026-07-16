@@ -59,6 +59,8 @@ from app.services.retell_native_pilot import (
     execute_pause_youtube_video_tool,
     execute_resume_youtube_video_tool,
     execute_close_youtube_player_tool,
+    execute_generate_image_tool,
+    execute_generar_pdf_tool,
     execute_search_nearby_places_tool,
     execute_show_route_tool,
     execute_start_drive_navigation_tool,
@@ -470,6 +472,30 @@ async def retell_close_youtube_player_tool(request: Request) -> JSONResponse:
     args = payload.get("args") or {}
     user_id = _extract_user_id(payload)
     result = await execute_close_youtube_player_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/generate_image")
+async def retell_generate_image_tool(request: Request) -> JSONResponse:
+    """Genera imagen con IA — piloto nativo (preview en pantalla)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_generate_image_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/generar_pdf")
+async def retell_generar_pdf_tool(request: Request) -> JSONResponse:
+    """Genera PDF descargable — piloto nativo (historial)."""
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_generar_pdf_tool(
         user_id=user_id, payload=payload, args=args
     )
     return JSONResponse(status_code=200, content={"result": result["result"]})

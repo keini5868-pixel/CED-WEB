@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 TOOL_DEFAULT_TIMEOUT_SEC = 18.0
 PDF_TOOL_TIMEOUT_SEC = 35.0
+IMAGE_TOOL_TIMEOUT_SEC = 60.0
 PUBLISH_TOOL_TIMEOUT_SEC = 35.0
 
 _TOOL_ACK: dict[str, str] = {
@@ -30,6 +31,7 @@ _TOOL_ACK: dict[str, str] = {
     "publicar_instagram": "Un momento, señor.",
     "publicar_facebook": "Un momento, señor.",
     "generar_pdf": "Preparando el PDF, señor.",
+    "generate_image": "Un momento, generando su imagen, señor.",
     "analyze_camera_frame": "Analizando, señor.",
     "buscar_lo_visible": "Analizando, señor.",
     "registrar_movimiento_financiero": "Anotando el movimiento, señor.",
@@ -41,6 +43,7 @@ _TOOL_FALLBACK: dict[str, str] = {
     "search_web": "Señor, no pude completar la búsqueda. ¿Repito?",
     "play_youtube_video": "No pude buscar el video en YouTube, señor. ¿Repito?",
     "generar_pdf": "No pude preparar el PDF, señor. ¿Lo intento de nuevo?",
+    "generate_image": "No pude generar la imagen, señor. ¿Lo intento de nuevo?",
     "leer_gmail": "No pude leer su correo, señor. ¿Lo intento de nuevo?",
     "enviar_gmail": "No pude enviar el correo, señor. ¿Lo intento de nuevo?",
     "publicar_instagram": "No pude publicar en Instagram, señor.",
@@ -73,6 +76,8 @@ def tool_timeout_sec(tool_name: str) -> float:
     key = (tool_name or "").strip().lower()
     if key == "generar_pdf":
         return PDF_TOOL_TIMEOUT_SEC
+    if key == "generate_image":
+        return IMAGE_TOOL_TIMEOUT_SEC
     if key in ("publicar_facebook", "publicar_instagram"):
         return PUBLISH_TOOL_TIMEOUT_SEC
     return TOOL_DEFAULT_TIMEOUT_SEC
