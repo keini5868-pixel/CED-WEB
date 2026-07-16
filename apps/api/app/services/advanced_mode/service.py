@@ -111,9 +111,14 @@ def _conversation_id(user_id: str, explicit: str | None) -> str:
     return explicit or f"advanced-{user_id}"
 
 
-def _stream_system_with_clock() -> str:
+def _stream_system_with_clock(user_id: str | None = None) -> str:
+    from app.domain.ced_identity import creator_partnership_overlay_for_user
+
+    partnership = creator_partnership_overlay_for_user(user_id) if user_id else ""
+    partnership_block = f"\n\n{partnership}" if partnership else ""
     return (
         ADVANCED_STREAM_SYSTEM
+        + partnership_block
         + f"\n\n{clock_context_block()}"
         + "\nPROHIBIDO escribir tool_code, print(), search_web() ni pseudo-código. "
         "Responde en español natural o deja que el backend use herramientas."
@@ -330,10 +335,16 @@ def send_advanced_message(
     anthropic_messages.append({"role": "user", "content": text})
 
     try:
+        from app.domain.ced_identity import creator_partnership_overlay_for_user
+
+        partnership = creator_partnership_overlay_for_user(user_id)
+        system_prompt = ADVANCED_SYSTEM_PROMPT
+        if partnership:
+            system_prompt = f"{ADVANCED_SYSTEM_PROMPT}\n\n{partnership}"
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,
             api_key=anthropic_key,
-            system=ADVANCED_SYSTEM_PROMPT,
+            system=system_prompt,
             messages=anthropic_messages,
             conversation_id=conv_id,
         )
@@ -570,7 +581,7 @@ def iter_advanced_message_stream(
 
     stream_messages = [*history_for_stream(history), {"role": "user", "content": text}]
     max_tokens = stream_max_tokens(text)
-    stream_system = _stream_system_with_clock()
+    stream_system = _stream_system_with_clock(user_id)
 
     accumulated: list[str] = []
     stream_buf = ""

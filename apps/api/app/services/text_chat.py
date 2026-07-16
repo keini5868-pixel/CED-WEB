@@ -1092,9 +1092,13 @@ def _build_chat_system(
 
 def _build_chat_system_light(user_id: str, user_text: str) -> str:
     """System prompt mínimo para streaming — sin consultas DB (meta, dirección, KB)."""
+    from app.domain.ced_identity import creator_partnership_overlay_for_user
     from app.services.system_clock import clock_context_block
 
     parts = [CHAT_SYSTEM_BASE, clock_context_block()]
+    partnership = creator_partnership_overlay_for_user(user_id)
+    if partnership:
+        parts.append(partnership)
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
@@ -1102,16 +1106,20 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
 
 
 def _chat_system_for_user(user_id: str) -> str:
+    from app.domain.ced_identity import creator_partnership_overlay_for_user
+
     conn = supabase_db.get_meta_connection(user_id)
+    partnership = creator_partnership_overlay_for_user(user_id)
+    partnership_block = f"\n\n{partnership}" if partnership else ""
     if conn and conn.get("access_token"):
         username = conn.get("ig_username") or "Instagram"
         return (
-            f"{CHAT_SYSTEM_BASE}\n\n"
+            f"{CHAT_SYSTEM_BASE}{partnership_block}\n\n"
             f"Estado Meta del usuario: CONECTADO (@{username}). "
             "Puedes publicar con las herramientas cuando confirme el texto."
         )
     return (
-        f"{CHAT_SYSTEM_BASE}\n\n"
+        f"{CHAT_SYSTEM_BASE}{partnership_block}\n\n"
         "Estado Meta del usuario: NO conectado. "
         "Para publicar directo, debe usar Conectar Redes en el dashboard."
     )

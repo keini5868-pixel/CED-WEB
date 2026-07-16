@@ -265,6 +265,17 @@ async def register_retell_native_pilot_call(
 
     await _voice_access_or_raise(user_id)
 
+    creator_mode = "false"
+    try:
+        from app.deps.auth import is_super_admin
+        from app.services import supabase_db
+
+        profile = supabase_db.get_profile(user_id) or {}
+        if is_super_admin(profile.get("email"), profile.get("role")):
+            creator_mode = "true"
+    except Exception:  # noqa: BLE001
+        creator_mode = "false"
+
     try:
         await asyncio.to_thread(ensure_native_staging_agent, agent_id=agent_id)
     except Exception as exc:  # noqa: BLE001
@@ -275,6 +286,10 @@ async def register_retell_native_pilot_call(
             client.call.create_web_call,
             agent_id=agent_id,
             metadata={"user_id": user_id, "pilot": "native-llm-environment"},
+            retell_llm_dynamic_variables={
+                "user_id": user_id,
+                "creator_mode": creator_mode,
+            },
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("[NATIVE-PILOT] create_web_call failed: %s", exc)

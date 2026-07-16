@@ -234,7 +234,16 @@ def build_base_voice_system(
             pass
     from app.services.system_clock import clock_context_block
 
-    return f"{base}\n\n{clock_context_block()}"
+    base = f"{base}\n\n{clock_context_block()}"
+    try:
+        from app.domain.ced_identity import creator_partnership_overlay_for_user
+
+        partnership = creator_partnership_overlay_for_user(uid)
+        if partnership:
+            base = f"{base}\n\n{partnership}"
+    except Exception:  # noqa: BLE001
+        pass
+    return base
 
 
 def _append_legacy_global_memory(base: str, user_id: str) -> str:
