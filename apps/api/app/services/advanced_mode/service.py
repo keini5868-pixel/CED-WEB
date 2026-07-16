@@ -31,14 +31,11 @@ from app.services.text_chat import (
     _anthropic_messages,
     _chat_image_attachment,
     _complete_chat_with_tools,
-    _execute_direct_pdf,
     _finalize_chat_reply,
     _try_direct_pdf_from_context,
     is_generate_image_intent,
-    is_pdf_intent,
     parse_followup_image_prompt,
     parse_generate_image_prompt,
-    resolve_pdf_request,
 )
 
 logger = logging.getLogger(__name__)
