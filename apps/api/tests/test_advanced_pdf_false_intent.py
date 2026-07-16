@@ -29,13 +29,6 @@ def test_capability_list_not_pdf_or_image_intent():
 
 def test_send_advanced_message_capability_list_does_not_create_pdf():
     """Prueba real del path de modo avanzado con el mensaje exacto del bug."""
-    list_reply = (
-        "1. Publicación en redes\n"
-        "2. Sistema avanzado de análisis profundo\n"
-        "3. Generación de imágenes y PDF\n"
-        "4. Clima, calendario, Gmail y finanzas\n"
-    )
-
     with (
         patch(
             "app.services.advanced_mode.service.require_anthropic_api_key",
@@ -43,7 +36,7 @@ def test_send_advanced_message_capability_list_does_not_create_pdf():
         ),
         patch(
             "app.services.advanced_mode.service._complete_chat_with_tools",
-            return_value=(list_reply, None, None),
+            return_value=("should-not-run", None, None),
         ) as mock_claude,
         patch("app.services.text_chat._execute_direct_pdf") as mock_pdf,
         patch("app.services.text_chat.store_pdf_with_timeout") as mock_store,
@@ -59,12 +52,10 @@ def test_send_advanced_message_capability_list_does_not_create_pdf():
         )
 
     assert out.get("pdf") in (None, {})
-    assert "PDF" not in (out.get("response") or "") or "generado" not in (
-        out.get("response") or ""
-    ).lower()
     assert "Listo. PDF" not in (out.get("response") or "")
-    assert "1." in out["response"] or "Publicación" in out["response"]
-    mock_claude.assert_called_once()
+    assert "WhatsApp" not in (out.get("response") or "")
+    assert "Gmail" in out["response"] or "1." in out["response"]
+    mock_claude.assert_not_called()
     mock_pdf.assert_not_called()
     mock_store.assert_not_called()
     mock_img.assert_not_called()

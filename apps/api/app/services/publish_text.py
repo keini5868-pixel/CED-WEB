@@ -509,6 +509,10 @@ def is_explicit_social_publish_request(text: str, *, with_image: bool = False) -
     t = (text or "").strip()
     if not t:
         return False
+    from app.domain.ced_product_capabilities import is_capability_catalog_request
+
+    if is_capability_catalog_request(t):
+        return False
     has_verb = bool(_PUBLISH_VERB.search(t) or _PUBLISH_STEM.search(t))
     has_platform = bool(_SOCIAL_PLATFORM.search(t) or is_publish_platform_reply(t))
     has_image_ref = bool(re.search(r"\b(imagen|foto|esto|esta)\b", t, re.I))
@@ -561,6 +565,10 @@ def is_image_for_publish_signal(text: str) -> bool:
 def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     t = (text or "").strip()
     if not t:
+        return False
+    from app.domain.ced_product_capabilities import is_capability_catalog_request
+
+    if is_capability_catalog_request(t):
         return False
     if with_image and is_image_for_publish_signal(t):
         return True

@@ -321,9 +321,13 @@ def is_volatile_query(text: str) -> bool:
 
 
 def is_meta_publish_intent(text: str) -> bool:
-    """Publicar en redes — no confundir con guion."""
+    """Publicar en redes — no confundir con guion ni con lista de capacidades."""
+    from app.domain.ced_product_capabilities import is_capability_catalog_request
+
     t = normalize_text(text)
     if len(t) < 6:
+        return False
+    if is_capability_catalog_request(text):
         return False
     return _matches(t, META_PATTERNS)
 

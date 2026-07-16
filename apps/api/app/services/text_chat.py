@@ -2303,6 +2303,15 @@ def send_message(
                 http_status=503,
             ) from exc
 
+    from app.domain.ced_product_capabilities import try_capability_catalog_reply
+
+    catalog_reply = try_capability_catalog_reply(text)
+    if catalog_reply:
+        return _finish(
+            _finalize_chat_reply(catalog_reply),
+            route_meta={"intent": "capability_catalog", "source": "direct"},
+        )
+
     publish_reply = handle_publish_flow_turn(
         user_id,
         conversation_id,

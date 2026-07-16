@@ -286,6 +286,15 @@ def send_advanced_message(
     if instant:
         return _finish_payload(response=instant, model=ADVANCED_STREAM_MODEL_LABEL)
 
+    from app.domain.ced_product_capabilities import try_capability_catalog_reply
+
+    catalog_reply = try_capability_catalog_reply(text)
+    if catalog_reply:
+        return _finish_payload(
+            response=_finalize_chat_reply(catalog_reply),
+            model=ADVANCED_STREAM_MODEL_LABEL,
+        )
+
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = history_as_chat_rows(history)
 
@@ -463,6 +472,20 @@ def iter_advanced_message_stream(
         payload = _finish_payload(response=instant, model=ADVANCED_STREAM_MODEL_LABEL)
         _dup_remember(user_id, text, payload)
         yield _sse_event("token", {"text": instant})
+        yield _sse_flush()
+        yield _sse_event("done", payload)
+        return
+
+    from app.domain.ced_product_capabilities import try_capability_catalog_reply
+
+    catalog_reply = try_capability_catalog_reply(text)
+    if catalog_reply:
+        payload = _finish_payload(
+            response=_finalize_chat_reply(catalog_reply),
+            model=ADVANCED_STREAM_MODEL_LABEL,
+        )
+        _dup_remember(user_id, text, payload)
+        yield _sse_event("token", {"text": catalog_reply})
         yield _sse_flush()
         yield _sse_event("done", payload)
         return
