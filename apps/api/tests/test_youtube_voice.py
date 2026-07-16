@@ -238,6 +238,7 @@ from app.services.voice_tool_executor import execute_voice_tool  # noqa: E402
 
 def test_play_tool_pushes_client_action():
     uid = "user-youtube-play"
+    vcs.clear_youtube_pending_confirm(uid)
     vcs.consume_client_action(uid)
     vcs.consume_tool_events(uid)
 
@@ -267,6 +268,42 @@ def test_play_tool_pushes_client_action():
 
     events = vcs.consume_tool_events(uid)
     assert any(e.get("type") == "youtube_play" for e in events)
+
+
+def test_play_tool_asks_confirm_when_ambiguous():
+    uid = "user-youtube-amb"
+    vcs.clear_youtube_pending_confirm(uid)
+    vcs.consume_client_action(uid)
+
+    video = {
+        "video_id": "CCCCCCCCCCC",
+        "title": "Algo Parecido Mix",
+        "channel_title": "Random",
+        "thumbnail_url": "",
+        "score": 0.3,
+        "ambiguous": True,
+    }
+    with patch(
+        "app.services.youtube_search.search_youtube_video",
+        return_value=video,
+    ):
+        result = asyncio.run(
+            execute_voice_tool("play_youtube_video", uid, {"query": "canción rara xyz"})
+        )
+
+    assert result["ok"] is True
+    assert "¿Es ese" in result["spoken"] or "Es ese" in result["spoken"]
+    assert vcs.consume_client_action(uid) is None
+    assert vcs.is_youtube_awaiting_confirm(uid)
+
+    confirm = asyncio.run(
+        execute_voice_tool("play_youtube_video", uid, {"query": "sí"})
+    )
+    assert confirm["ok"] is True
+    assert "Reproduciendo" in confirm["spoken"]
+    action = vcs.consume_client_action(uid)
+    assert action and action["action"] == "youtube_play"
+    assert action["payload"]["video_id"] == "CCCCCCCCCCC"
     assert vcs.get_active_mode(uid) == "youtube"
 
 
