@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Pause, Play, X } from "lucide-react";
 
@@ -27,14 +28,22 @@ const hudControlBtn =
  * Mini-panel HUD flotante con el reproductor oficial de YouTube.
  * Recibe acciones del puente de voz vía CustomEvent `ced-youtube-event`
  * (emitidas por useCedVoiceSession al leer voice/client-state).
+ *
+ * Se porta a document.body con z > overlay de modo conducir (z-250),
+ * porque el hub vive debajo de ese overlay y un z local no lo atraviesa.
  */
 export function CedYoutubePlayerPanel() {
   const [video, setVideo] = useState<CedYoutubeVideo | null>(null);
   const [playerState, setPlayerState] = useState<number | null>(null);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const playerStateRef = useRef<number | null>(null);
   const autoplayTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   const clearAutoplayTimer = useCallback(() => {
     if (autoplayTimerRef.current !== null) {
@@ -174,7 +183,7 @@ export function CedYoutubePlayerPanel() {
       )
     : null;
 
-  return (
+  const panel = (
     <AnimatePresence>
       {video && embedUrl ? (
         <motion.section
@@ -183,7 +192,7 @@ export function CedYoutubePlayerPanel() {
           exit={{ opacity: 0, y: 24 }}
           transition={{ duration: 0.2 }}
           aria-label="Reproductor de YouTube"
-          className="fixed bottom-24 right-3 z-[120] w-[min(92vw,380px)] sm:right-5"
+          className="fixed bottom-24 right-3 z-[260] w-[min(92vw,380px)] sm:right-5"
         >
           <div className="relative flex flex-col rounded-sm border border-cyan-400/70 bg-[#0a0a0acc] p-2 text-[#00ffff] shadow-[0_0_18px_rgba(0,229,255,0.25)] backdrop-blur-sm">
             <span className="pointer-events-none absolute left-0 top-0 h-3 w-3 border-l-2 border-t-2 border-current opacity-60" />
@@ -261,4 +270,7 @@ export function CedYoutubePlayerPanel() {
       ) : null}
     </AnimatePresence>
   );
+
+  if (!portalReady) return null;
+  return createPortal(panel, document.body);
 }
