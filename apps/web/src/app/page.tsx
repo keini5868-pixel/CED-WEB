@@ -76,7 +76,7 @@ export default function HomePage() {
         </div>
 
         <div className="mt-10 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {PUBLIC_PLANS.map((plan) => {
+          {PUBLIC_PLANS.filter((p) => p.id !== "free_basic").map((plan) => {
             const style = PLAN_STYLES[plan.id] ?? PLAN_STYLES.starter!;
             const isFounding = plan.id === "founding";
             return (
@@ -108,7 +108,7 @@ export default function HomePage() {
                 </p>
                 {isFounding && (
                   <p className="mt-1 text-[10px] text-amber-400/90">
-                    Precio bloqueado · {FOUNDING_MEMBER_MAX_SLOTS} cupos
+                    Precio bloqueado 6 meses · {FOUNDING_MEMBER_MAX_SLOTS} cupos
                   </p>
                 )}
                 <ul className="mt-4 flex-1 space-y-1.5 text-xs text-cyan-100/75">
@@ -147,7 +147,7 @@ export default function HomePage() {
         </div>
 
         <p className="mt-8 text-center text-[11px] text-cyan-700">
-          Las recargas de voz extra solo aparecen cuando agotas tu cupo diario.
+          Al llegar al límite puedes recargar desde $10 — crédito proporcional, no expira.
         </p>
       </section>
     </main>

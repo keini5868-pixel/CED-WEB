@@ -10,7 +10,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
-from app.deps.plan_access import require_pdf_reports
+from app.deps.plan_access import charge_pdf_from_wallet_if_needed, require_pdf_reports
 from app.services.pdf_report import get_pdf, list_pdfs_for_user, store_pdf_with_timeout
 
 router = APIRouter(prefix="/v1/pdf", tags=["pdf"])
@@ -47,6 +47,7 @@ def post_generate_pdf(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+    charge_pdf_from_wallet_if_needed(user_id)
     return {
         "ok": True,
         "file_id": artifact.file_id,

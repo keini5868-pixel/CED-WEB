@@ -22,15 +22,35 @@ TRIAL_DAYS = 7
 TRIAL_VOICE_MINUTES_PER_DAY = 15
 USAGE_WARNING_PERCENT = 80
 
-# Costo referencia voz OpenAI Realtime Mini (~$0.20/min sesión activa)
-OPENAI_VOICE_COST_PER_HOUR_USD = 12.0
-# Legacy alias recargas
+# Costo unitario de recarga (monedero multi-recurso) — aprobado Keini 2026-07
+VOICE_COST_PER_MIN_USD = 0.10
+IMAGE_STD_COST_USD = 0.02
+IMAGE_HD_COST_USD = 0.04
+WEB_SEARCH_COST_USD = 0.01
+PDF_COST_USD = 0.05
+VISION_COST_USD = 0.03
+ADVANCED_TURN_COST_USD = 0.05
+MAPS_ROUTE_COST_USD = 0.02
+
+# Alias: 1 h voz = 60 * $0.10
+OPENAI_VOICE_COST_PER_HOUR_USD = VOICE_COST_PER_MIN_USD * 60.0
 GEMINI_COST_PER_HOUR_USD = OPENAI_VOICE_COST_PER_HOUR_USD
 RECHARGE_MARGIN_KEINI = 0.40
 RECHARGE_CLIENT_SHARE = 0.60
 RECHARGE_MIN_USD = 10
 RECHARGE_MAX_USD = 500
 RECHARGE_QUICK_AMOUNTS_USD = (10, 20, 40, 50, 100)
+
+RESOURCE_UNIT_COSTS_USD: dict[str, float] = {
+    "voice_min": VOICE_COST_PER_MIN_USD,
+    "image_std": IMAGE_STD_COST_USD,
+    "image_hd": IMAGE_HD_COST_USD,
+    "web_search": WEB_SEARCH_COST_USD,
+    "pdf": PDF_COST_USD,
+    "vision": VISION_COST_USD,
+    "advanced_turn": ADVANCED_TURN_COST_USD,
+    "maps_route": MAPS_ROUTE_COST_USD,
+}
 
 # Minutos diarios Founding (cap margen)
 FOUNDING_VOICE_CAP_MINUTES = 90
@@ -191,26 +211,44 @@ CED_ELITE = get_plan_limits(PlanId.ELITE.value)
 
 
 def recharge_balance_to_bonus_minutes(balance_usd: float) -> float:
-    if balance_usd <= 0:
+    """Minutos de voz equivalentes al monedero (balance ya es crédito neto 60%)."""
+    if balance_usd <= 0 or VOICE_COST_PER_MIN_USD <= 0:
         return 0.0
-    client_share = balance_usd * RECHARGE_CLIENT_SHARE
-    hours = client_share / GEMINI_COST_PER_HOUR_USD if GEMINI_COST_PER_HOUR_USD else 0.0
-    return round(hours * 60, 2)
+    return round(float(balance_usd) / VOICE_COST_PER_MIN_USD, 2)
 
 
-def quote_recharge(amount_usd: float) -> dict[str, float | bool]:
+def quote_recharge(amount_usd: float) -> dict[str, float | bool | int]:
     paid = max(RECHARGE_MIN_USD, min(RECHARGE_MAX_USD, float(amount_usd)))
     client_balance = paid * RECHARGE_CLIENT_SHARE
     margin_keini = paid * RECHARGE_MARGIN_KEINI
-    extra_hours = client_balance / GEMINI_COST_PER_HOUR_USD if GEMINI_COST_PER_HOUR_USD else 0.0
+    voice_mins = (
+        client_balance / VOICE_COST_PER_MIN_USD if VOICE_COST_PER_MIN_USD else 0.0
+    )
+    extra_hours = voice_mins / 60.0
     return {
         "amount_paid_usd": round(paid, 2),
         "client_balance_usd": round(client_balance, 2),
         "margin_keini_usd": round(margin_keini, 2),
         "estimated_extra_hours": round(extra_hours, 2),
+        "estimated_voice_minutes": int(voice_mins),
+        "estimated_images_std": int(
+            client_balance / IMAGE_STD_COST_USD if IMAGE_STD_COST_USD else 0
+        ),
+        "estimated_images_hd": int(
+            client_balance / IMAGE_HD_COST_USD if IMAGE_HD_COST_USD else 0
+        ),
+        "estimated_web_searches": int(
+            client_balance / WEB_SEARCH_COST_USD if WEB_SEARCH_COST_USD else 0
+        ),
+        "estimated_pdfs": int(client_balance / PDF_COST_USD if PDF_COST_USD else 0),
         "never_expires": True,
         "margin_percent_keini": RECHARGE_MARGIN_KEINI * 100,
+        "voice_cost_per_min_usd": VOICE_COST_PER_MIN_USD,
     }
+
+
+def unit_cost_usd(resource: str) -> float:
+    return float(RESOURCE_UNIT_COSTS_USD.get(resource) or 0.0)
 
 
 def public_plans_catalog() -> list[dict]:

@@ -9,6 +9,7 @@ from typing import Any
 from uuid import uuid4
 
 from app.config import get_settings
+from app.domain.plans import VOICE_COST_PER_MIN_USD
 
 logger = logging.getLogger(__name__)
 
@@ -840,7 +841,12 @@ def credit_recharge_balance(
                 "amount_paid_usd": round(amount_paid_usd, 2),
                 "client_balance_usd": round(client_balance_usd, 2),
                 "margin_keini_usd": round(margin_keini_usd, 2),
-                "estimated_hours": round(client_balance_usd / 1.5, 2) if client_balance_usd else 0,
+                "estimated_hours": round(
+                    client_balance_usd / max(VOICE_COST_PER_MIN_USD * 60.0, 0.01), 2
+                )
+                if client_balance_usd
+                else 0,
+
                 "stripe_payment_intent_id": stripe_payment_intent_id,
             }
         ).execute()
@@ -855,11 +861,23 @@ def credit_recharge_balance(
         logger.exception("[DB] credit_recharge_balance failed")
 
 
-def debit_recharge_balance(user_id: str, amount_usd: float) -> None:
+def debit_recharge_balance(
+    user_id: str,
+    amount_usd: float,
+    *,
+    resource: str | None = None,
+    units: float | None = None,
+) -> bool:
+    """Debita monedero. Devuelve False si no hay saldo suficiente o falla DB."""
     try:
+        amount = round(float(amount_usd), 4)
+        if amount <= 0:
+            return True
         client = _client()
         current = get_recharge_balance_usd(user_id)
-        new_balance = max(0.0, round(current - amount_usd, 2))
+        if current + 1e-9 < amount:
+            return False
+        new_balance = max(0.0, round(current - amount, 2))
         client.table("recharge_balances").upsert(
             {
                 "user_id": user_id,
@@ -868,8 +886,18 @@ def debit_recharge_balance(user_id: str, amount_usd: float) -> None:
             },
             on_conflict="user_id",
         ).execute()
+        logger.info(
+            "[DB] wallet debit user=%s amount=%.4f resource=%s units=%s bal=%.2f",
+            user_id[:8],
+            amount,
+            resource,
+            units,
+            new_balance,
+        )
+        return True
     except Exception:  # noqa: BLE001
-        pass
+        logger.exception("[DB] debit_recharge_balance failed")
+        return False
 
 
 def get_founding_slots() -> tuple[int, int]:

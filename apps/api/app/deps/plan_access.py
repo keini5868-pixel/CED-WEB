@@ -35,15 +35,35 @@ def effective_plan_limits(user_id: str) -> tuple[PlanLimits, str, bool]:
 
 def require_pdf_reports(user_id: str) -> None:
     limits, reason, _ = effective_plan_limits(user_id)
-    if reason == "trial_expired":
-        raise HTTPException(
-            status_code=403,
-            detail="Tu prueba terminó. Elige un plan de pago o continúa con el plan Básico gratis.",
+    if limits.pdf_reports:
+        return
+    from app.services.wallet import can_afford
+
+    if can_afford(user_id, "pdf", units=1.0):
+        return
+    detail = (
+        "Tu prueba terminó. Elige un plan o recarga desde $10 para PDF."
+        if reason == "trial_expired"
+        else (
+            "Los PDFs requieren plan Élite/Founding o recarga desde $10. "
+            f"{PLAN_UPGRADE_HINT}"
         )
-    if not limits.pdf_reports:
+    )
+    raise HTTPException(status_code=402, detail=detail)
+
+
+def charge_pdf_from_wallet_if_needed(user_id: str) -> None:
+    """Tras PDF exitoso: si el plan no incluye PDF, debita monedero."""
+    limits, _, _ = effective_plan_limits(user_id)
+    if limits.pdf_reports:
+        return
+    from app.services.wallet import try_spend
+
+    spend = try_spend(user_id, "pdf", units=1.0)
+    if not spend.get("ok"):
         raise HTTPException(
-            status_code=403,
-            detail=f"Los PDFs requieren plan Élite o Founding. {PLAN_UPGRADE_HINT}",
+            status_code=402,
+            detail=spend.get("error") or "Recarga desde $10 para generar PDF.",
         )
 
 

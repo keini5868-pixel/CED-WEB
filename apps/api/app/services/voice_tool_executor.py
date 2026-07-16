@@ -571,6 +571,15 @@ async def _execute_voice_tool_body(
         if name == "search_web":
             query = str(params.get("query") or "").strip()
             kind = str(params.get("kind") or "general")
+            from app.services.web_search_quota import gate_web_search
+
+            gated = gate_web_search(user_id)
+            if gated and not gated.get("ok", True):
+                return {
+                    "ok": False,
+                    "spoken": str(gated.get("spoken") or ""),
+                    "error": str(gated.get("error") or "needs_recharge"),
+                }
             from app.services.cognitive_intents import (
                 is_internal_knowledge_query,
                 is_web_research_intent,

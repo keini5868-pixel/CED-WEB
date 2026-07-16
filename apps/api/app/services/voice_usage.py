@@ -76,21 +76,32 @@ def voice_access_state(user_id: str) -> dict:
             )
             recharge_balance = 0.0
         bonus_minutes = recharge_balance_to_bonus_minutes(recharge_balance)
-        total_available = (plan_minutes + bonus_minutes) if allowed else 0.0
+        # free_basic / sin plan: monedero puede desbloquear voz
+        free_basic = (not allowed and access_msg == "free_basic") or plan_id == "free_basic"
+        wallet_unlocks = bonus_minutes > 0
+        effective_allowed = allowed or (free_basic and wallet_unlocks)
+        total_available = (
+            (plan_minutes + bonus_minutes) if effective_allowed else 0.0
+        )
 
         access_denied = not allowed and access_msg not in ("free_basic", "trial")
-        quota_exhausted = allowed and total_available > 0 and used >= total_available
+        quota_exhausted = (
+            effective_allowed and total_available > 0 and used >= total_available
+        )
 
         if access_denied:
             voice_blocked = False
-        elif not allowed and access_msg == "free_basic":
-            voice_blocked = plan_minutes <= 0 and bonus_minutes <= 0
-        elif allowed and total_available <= 0:
+        elif free_basic and not wallet_unlocks and plan_minutes <= 0:
+            voice_blocked = True
+        elif effective_allowed and total_available <= 0:
             voice_blocked = True
         else:
             voice_blocked = quota_exhausted
 
-        pct = (used / plan_minutes * 100) if plan_minutes else 0
+        needs_recharge = bool(voice_blocked) and not access_denied
+        pct = (used / plan_minutes * 100) if plan_minutes else (
+            100.0 if voice_blocked and used > 0 else 0.0
+        )
 
         return {
             "plan_id": plan_id,
@@ -106,17 +117,14 @@ def voice_access_state(user_id: str) -> dict:
             "warning_at_percent": USAGE_WARNING_PERCENT,
             "blocked": voice_blocked,
             "quota_exhausted": quota_exhausted,
-            "needs_recharge": quota_exhausted
-            and allowed
-            and recharge_balance <= 0
-            and plan_minutes > 0,
+            "needs_recharge": needs_recharge,
             "access_denied": access_denied,
             "access_message": access_msg
             if (not allowed or access_msg in ("free_basic", "trial"))
             else None,
             "usage_percent": round(pct, 1),
             "timezone": "America/Mexico_City",
-            "allowed": allowed,
+            "allowed": effective_allowed,
             "has_stripe_customer": bool((sub or {}).get("stripe_customer_id")),
             "degraded": False,
         }

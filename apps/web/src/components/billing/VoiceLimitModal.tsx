@@ -39,11 +39,11 @@ export function VoiceLimitModal({
 
   const body =
     reason === "daily_limit"
-      ? "Has alcanzado tu límite diario del asistente de voz. Recarga desde $10 para seguir hoy, o adquiere un plan con más minutos. El chat de texto sigue disponible sin costo."
+      ? "Has alcanzado el límite de tu plan. Recarga desde $10: el crédito es proporcional (voz, imágenes, búsquedas, PDF…) y no expira. El chat de texto sigue disponible."
       : reason === "trial_expired"
-        ? "Los 7 días de prueba de voz finalizaron. Adquiere un plan o recarga desde $10 para usar el asistente de voz. El chat de texto sigue gratis en plan Básico."
+        ? "Los 7 días de prueba de voz finalizaron. Adquiere un plan o recarga desde $10. El chat de texto sigue gratis en plan Básico."
         : reason === "no_voice"
-          ? "Tu plan actual no incluye minutos de voz. Adquiere un paquete o recarga desde $10 para activar el asistente. El chat de texto sigue disponible."
+          ? "Tu plan no incluye voz incluida. Recarga desde $10 para activar el asistente con crédito proporcional, o elige un plan. El chat de texto sigue disponible."
           : "Renueva tu suscripción para reactivar el asistente de voz. El chat de texto sigue disponible.";
 
   const subscribe = async (planId: string) => {

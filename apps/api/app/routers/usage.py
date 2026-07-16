@@ -108,6 +108,10 @@ async def session_tick(
 
     minutes = body.seconds / 60.0
     try:
+        used_before = await run_sync(supabase_db.get_usage_minutes_today, user_id)
+    except Exception:  # noqa: BLE001
+        used_before = 0.0
+    try:
         used = await run_sync(
             supabase_db.add_usage_minutes,
             user_id,
@@ -132,6 +136,33 @@ async def session_tick(
             "warning_level": None,
             "should_disconnect": False,
         }
+
+    # Monedero: cobrar solo el tramo que supera el cupo del plan
+    state_pre = await voice_access_state_async(user_id)
+    plan_minutes = float(state_pre.get("plan_minutes_daily") or 0)
+    overage = max(0.0, float(used) - max(float(used_before), plan_minutes))
+    if overage > 0:
+        from app.services.wallet import try_spend
+
+        spend = await run_sync(
+            try_spend,
+            user_id,
+            "voice_min",
+            units=overage,
+        )
+        if not spend.get("ok"):
+            state = await voice_access_state_async(user_id)
+            return {
+                "used_minutes_today": round(used, 2),
+                "plan_minutes_daily": state["plan_minutes_daily"],
+                "blocked": True,
+                "access_denied": False,
+                "needs_recharge": True,
+                "usage_percent": state.get("usage_percent", 100),
+                "warning_level": "blocked",
+                "should_disconnect": True,
+                "recharge_balance_usd": spend.get("balance_usd", 0),
+            }
 
     state = await voice_access_state_async(user_id)
     if state.get("degraded"):

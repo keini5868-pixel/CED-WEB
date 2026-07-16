@@ -60,11 +60,12 @@ export function RechargeModal({
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 p-4">
       <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded border border-cyan-500/40 bg-[#0a0f14] p-6 shadow-xl">
         <h2 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wider text-cyan-300">
-          Recarga de voz desde $10
+          Recarga desde $10
         </h2>
         <p className="mt-2 text-sm text-cyan-100/80">
-          Ya usaste tus {planMinutesDaily} minutos diarios incluidos en {planLabel}.
-          Elige un monto para seguir con el asistente de voz hoy.
+          Llegaste al límite de tu plan{planLabel ? ` (${planLabel})` : ""}.
+          Recarga crédito proporcional: voz, imágenes, búsquedas, PDF y más.
+          El saldo no expira.
         </p>
 
         <div className="mt-5 grid grid-cols-2 gap-3">
@@ -84,7 +85,10 @@ export function RechargeModal({
                   ${amount}
                 </div>
                 <div className="text-xs text-cyan-400">
-                  +{q.estimatedExtraHours}h aprox.
+                  ~{q.estimatedVoiceMinutes} min voz
+                </div>
+                <div className="text-[10px] text-cyan-600">
+                  o ~{q.estimatedImagesStd} img · ~{q.estimatedWebSearches} búsquedas
                 </div>
                 {popular && (
                   <div className="mt-1 text-[10px] text-amber-400">POPULAR</div>
@@ -120,13 +124,14 @@ export function RechargeModal({
           </div>
           {customQuote && (
             <p className="mt-1 text-xs text-cyan-600">
-              Calculado: ~{customQuote.estimatedExtraHours}h extra
+              ~{customQuote.estimatedVoiceMinutes} min voz · crédito $
+              {customQuote.clientBalanceUsd}
             </p>
           )}
         </div>
 
         <p className="mt-4 text-xs text-cyan-600">
-          El saldo no expira. Es permanente y acumulable.
+          60% del pago va a tu monedero · proporcional al monto · no expira.
         </p>
 
         {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
@@ -200,7 +205,7 @@ export function TrialExpiredModal({ open, onClose }: TrialExpiredModalProps) {
           disponible gratis en plan Básico.
         </p>
         <div className="mt-4 space-y-2">
-          {PUBLIC_PLANS.map((p) => (
+          {PUBLIC_PLANS.filter((p) => p.id !== "free_basic").map((p) => (
             <button
               key={p.id}
               type="button"

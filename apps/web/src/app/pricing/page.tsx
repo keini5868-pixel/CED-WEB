@@ -67,7 +67,7 @@ function PricingContent() {
 
   useEffect(() => {
     if (!pendingPlan || loggedIn !== true || busy) return;
-    const valid = PUBLIC_PLANS.some((p) => p.id === pendingPlan);
+    const valid = PUBLIC_PLANS.some((p) => p.id === pendingPlan && p.id !== "free_basic");
     if (!valid) return;
     void subscribe(pendingPlan);
   }, [pendingPlan, loggedIn, busy, subscribe]);
@@ -133,19 +133,27 @@ function PricingContent() {
               className={`rounded border p-6 ${
                 plan.id === "founding"
                   ? "border-amber-400/50 bg-amber-400/5"
-                  : "border-cyan-500/30 bg-black/40"
+                  : plan.id === "free_basic"
+                    ? "border-cyan-500/20 bg-black/30"
+                    : "border-cyan-500/30 bg-black/40"
               }`}
             >
               <h3 className="font-[family-name:var(--font-orbitron)] text-lg text-white">
                 {plan.label}
               </h3>
               <p className="mt-2 font-[family-name:var(--font-orbitron)] text-3xl text-cyan-300">
-                ${plan.priceUsd}
-                <span className="text-sm text-cyan-600">/mes</span>
+                {plan.priceUsd === 0 ? (
+                  "Gratis"
+                ) : (
+                  <>
+                    ${plan.priceUsd}
+                    <span className="text-sm text-cyan-600">/mes</span>
+                  </>
+                )}
               </p>
               {plan.id === "founding" && (
                 <p className="mt-1 text-xs text-amber-400">
-                  Cupos {FOUNDING_MEMBER_MAX_SLOTS} · precio bloqueado de por vida
+                  Cupos {FOUNDING_MEMBER_MAX_SLOTS} · precio bloqueado por 6 meses
                 </p>
               )}
               <ul className="mt-4 space-y-1 text-sm text-cyan-100/75">
@@ -153,14 +161,23 @@ function PricingContent() {
                   <li key={h}>· {h}</li>
                 ))}
               </ul>
-              <button
-                type="button"
-                disabled={busy !== null}
-                onClick={() => void subscribe(plan.id)}
-                className="mt-6 w-full rounded border border-cyan-400 py-3 font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-50"
-              >
-                {busy === plan.id ? "REDIRIGIENDO A STRIPE…" : "SUSCRIBIRME"}
-              </button>
+              {plan.id === "free_basic" ? (
+                <Link
+                  href={signupHref}
+                  className="mt-6 block w-full rounded border border-cyan-700 py-3 text-center font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-cyan-400 hover:bg-cyan-400/5"
+                >
+                  EMPEZAR GRATIS
+                </Link>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy !== null}
+                  onClick={() => void subscribe(plan.id)}
+                  className="mt-6 w-full rounded border border-cyan-400 py-3 font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-cyan-300 hover:bg-cyan-400/10 disabled:opacity-50"
+                >
+                  {busy === plan.id ? "REDIRIGIENDO A STRIPE…" : "SUSCRIBIRME"}
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -168,7 +185,8 @@ function PricingContent() {
         {error && <p className="mt-6 text-center text-sm text-red-400">{error}</p>}
 
         <p className="mt-10 text-center text-xs text-cyan-600">
-          Las recargas de voz extra solo aparecen cuando agotas tu cupo diario — no expiran.
+          Al alcanzar cualquier límite (voz, imágenes, PDF, búsquedas…) puedes recargar
+          desde $10 — crédito proporcional al monto, no expira. Aplica a todos los planes.
         </p>
       </section>
     </main>

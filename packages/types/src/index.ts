@@ -35,15 +35,34 @@ export const PLAN_PRICES_USD: Record<
 
 export const RECHARGE_MARGIN_KEINI = 0.4;
 export const RECHARGE_CLIENT_SHARE = 0.6;
-export const GEMINI_COST_PER_HOUR_USD = 1.5;
+/** $0.10/min voz — alineado con API (monedero multi-recurso). */
+export const VOICE_COST_PER_MIN_USD = 0.1;
+export const IMAGE_STD_COST_USD = 0.02;
+export const IMAGE_HD_COST_USD = 0.04;
+export const WEB_SEARCH_COST_USD = 0.01;
+export const PDF_COST_USD = 0.05;
+/** @deprecated usar VOICE_COST_PER_MIN_USD * 60 */
+export const GEMINI_COST_PER_HOUR_USD = VOICE_COST_PER_MIN_USD * 60;
 export const RECHARGE_MIN_USD = 10;
 export const RECHARGE_MAX_USD = 500;
 export const RECHARGE_QUICK_AMOUNTS_USD = [10, 20, 40, 50, 100] as const;
+
+/** Capacidades incluidas en todos los planes (sin costo variable de uso). */
+export const PLAN_INCLUDED_ALWAYS = [
+  "YouTube",
+  "Calendario Google",
+  "Gmail",
+  "Memoria conversacional",
+] as const;
 
 export interface RechargeQuote {
   amountPaidUsd: number;
   clientBalanceUsd: number;
   estimatedExtraHours: number;
+  estimatedVoiceMinutes: number;
+  estimatedImagesStd: number;
+  estimatedWebSearches: number;
+  estimatedPdfs: number;
   marginKeiniUsd: number;
   neverExpires: true;
 }
@@ -52,30 +71,56 @@ export function quoteRecharge(amountUsd: number): RechargeQuote {
   const paid = Math.max(RECHARGE_MIN_USD, Math.min(RECHARGE_MAX_USD, amountUsd));
   const clientBalanceUsd = paid * RECHARGE_CLIENT_SHARE;
   const marginKeiniUsd = paid * RECHARGE_MARGIN_KEINI;
-  const estimatedExtraHours =
-    GEMINI_COST_PER_HOUR_USD > 0
-      ? clientBalanceUsd / GEMINI_COST_PER_HOUR_USD
-      : 0;
+  const estimatedVoiceMinutes =
+    VOICE_COST_PER_MIN_USD > 0 ? clientBalanceUsd / VOICE_COST_PER_MIN_USD : 0;
+  const estimatedExtraHours = estimatedVoiceMinutes / 60;
   return {
     amountPaidUsd: paid,
     clientBalanceUsd: Math.round(clientBalanceUsd * 100) / 100,
     estimatedExtraHours: Math.round(estimatedExtraHours * 100) / 100,
+    estimatedVoiceMinutes: Math.floor(estimatedVoiceMinutes),
+    estimatedImagesStd: Math.floor(
+      IMAGE_STD_COST_USD > 0 ? clientBalanceUsd / IMAGE_STD_COST_USD : 0,
+    ),
+    estimatedWebSearches: Math.floor(
+      WEB_SEARCH_COST_USD > 0 ? clientBalanceUsd / WEB_SEARCH_COST_USD : 0,
+    ),
+    estimatedPdfs: Math.floor(PDF_COST_USD > 0 ? clientBalanceUsd / PDF_COST_USD : 0),
     marginKeiniUsd: Math.round(marginKeiniUsd * 100) / 100,
     neverExpires: true,
   };
 }
 
+const COMMON_FREE_TOOLS = [
+  "YouTube",
+  "Calendario Google",
+  "Gmail",
+  "Memoria conversacional",
+] as const;
+
 export const PUBLIC_PLANS = [
+  {
+    id: "free_basic" as const,
+    label: "CED Básico",
+    priceUsd: 0,
+    minutesPerDay: 0,
+    highlights: [
+      ...COMMON_FREE_TOOLS,
+      "Chat de texto",
+      "Recarga desde $10 al llegar al límite",
+    ],
+  },
   {
     id: "starter" as const,
     label: "CED Starter",
     priceUsd: 30,
     minutesPerDay: 15,
     highlights: [
-      "Chat texto ilimitado",
-      "15 min/día voz CED",
-      "30 búsquedas web/día",
-      "20 imágenes IA/día",
+      ...COMMON_FREE_TOOLS,
+      "Chat de texto",
+      "Asistente de voz CED",
+      "Búsquedas web",
+      "Creación de imágenes",
     ],
   },
   {
@@ -85,10 +130,12 @@ export const PUBLIC_PLANS = [
     minutesPerDay: 30,
     highlights: [
       "Todo Starter +",
-      "30 min/día voz",
-      "Cámara por voz",
-      "Búsquedas ilimitadas",
-      "45 std + 5 HD imágenes/día",
+      ...COMMON_FREE_TOOLS,
+      "Asistente de voz CED",
+      "Cámara y análisis de imagen",
+      "Búsquedas web",
+      "Creación de imágenes",
+      "Google Maps / navegación",
     ],
   },
   {
@@ -98,10 +145,13 @@ export const PUBLIC_PLANS = [
     minutesPerDay: 60,
     highlights: [
       "Todo Pro +",
-      "60 min/día voz",
-      "Instagram/Facebook",
+      ...COMMON_FREE_TOOLS,
+      "Asistente de voz CED",
+      "Instagram / Facebook",
       "Modo prospección",
-      "95 std + 15 HD imágenes/día",
+      "Creación de imágenes",
+      "Informes PDF",
+      "Modo avanzado",
     ],
   },
   {
@@ -111,10 +161,11 @@ export const PUBLIC_PLANS = [
     minutesPerDay: 90,
     highlights: [
       "Todo Élite +",
-      "90 min/día voz",
-      "Precio bloqueado de por vida",
-      "145 std + 25 HD imágenes/día",
-      "Cupos limitados (50)",
+      ...COMMON_FREE_TOOLS,
+      "Asistente de voz CED",
+      "Precio bloqueado por 6 meses",
+      "Creación de imágenes",
+      "Cupos limitados",
     ],
   },
 ] as const;

@@ -550,18 +550,28 @@ def generate_image(
         cap = limits.ai_images_standard_per_day
         used = std_used
 
-    if cap <= 0:
-        return {
-            "ok": False,
-            "error": "Tu plan actual no incluye generación de imágenes. Mejora tu plan en Precios.",
-            "code": "plan_limit",
-        }
-    if used >= cap:
-        return {
-            "ok": False,
-            "error": f"Límite diario de imágenes {picked} alcanzado ({cap}/día). Mañana se reinicia tu cupo.",
-            "code": "quota_exhausted",
-        }
+    if cap <= 0 or used >= cap:
+        from app.services.wallet import try_spend
+
+        resource = "image_hd" if picked == "hd" else "image_std"
+        spend = try_spend(user_id, resource, units=1.0)
+        if not spend.get("ok"):
+            if cap <= 0:
+                return {
+                    "ok": False,
+                    "error": spend.get("error")
+                    or "Tu plan no incluye imágenes. Recarga desde $10 o mejora tu plan.",
+                    "code": "needs_recharge",
+                }
+            return {
+                "ok": False,
+                "error": spend.get("error")
+                or (
+                    f"Límite diario de imágenes {picked} alcanzado. "
+                    "Recarga desde $10 para continuar."
+                ),
+                "code": "needs_recharge",
+            }
 
     gemini_result = generate_image_gemini(prompt=topic, quality=picked, context=context)
     if not gemini_result.get("ok"):
