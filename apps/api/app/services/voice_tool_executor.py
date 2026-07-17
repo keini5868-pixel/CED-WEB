@@ -1286,58 +1286,67 @@ async def _execute_voice_tool_body(
 
         if name == "play_youtube_video":
             query = str(params.get("query") or params.get("consulta") or "").strip()
-            # Confirmación pendiente: «sí» reproduce el candidato guardado.
+            # NUNCA bloquear play detrás de una confirmación hablada — logs reales
+            # confirmaron que el usuario no respondía "sí" a "¿Es ese, señor?" (no
+            # sabía que debía hacerlo), el turno caía en la IA conversacional, y
+            # esta alucinaba continuidad ("¿es ese el video que desea...?") sin
+            # haber tocado la tool real: panel/audio nunca llegaban a activarse.
+            # Ahora SIEMPRE se reproduce el mejor candidato de inmediato; si la
+            # búsqueda es ambigua, se guardan alternativas para un "otra" opcional.
             pending = vcs.get_youtube_pending_confirm(user_id)
-            if pending and (
-                not query
-                or query.lower() in {"sí", "si", "dale", "ok", "ese", "esa", "eso"}
-            ):
-                from app.services.youtube_voice_intent import is_youtube_confirm_yes
-
-                if not query or is_youtube_confirm_yes(query) or query.lower() in {
-                    "sí",
-                    "si",
-                    "dale",
-                    "ok",
-                    "ese",
-                    "esa",
-                    "eso",
-                }:
-                    vcs.clear_youtube_pending_confirm(user_id)
-                    payload = {
-                        "video_id": pending["video_id"],
-                        "title": pending.get("title") or "",
-                        "channel_title": pending.get("channel_title") or "",
-                        "thumbnail_url": pending.get("thumbnail_url") or "",
-                    }
-                    vcs.set_active_mode(user_id, "youtube")
-                    vcs.push_client_action(user_id, "youtube_play", payload)
-                    vcs.push_tool_event(user_id, {"type": "youtube_play", **payload})
-                    logger.info(
-                        "[YOUTUBE] play confirm ok user=%s video_id=%s title=%s",
-                        user_id[:8],
-                        payload.get("video_id"),
-                        (payload.get("title") or "")[:80],
-                    )
-                    title = payload["title"] or "el video"
-                    channel = payload["channel_title"]
-                    detail = f", de {channel}" if channel else ""
-                    return {
-                        "ok": True,
-                        "spoken": fit_voice_spoken(
-                            f"Reproduciendo {title}{detail} en YouTube, señor."
-                        ),
-                        "client_action": "youtube_play",
-                        "video": payload,
-                    }
 
             if pending and query:
                 from app.services.youtube_voice_intent import is_youtube_confirm_no
 
-                if is_youtube_confirm_no(query):
+                if is_youtube_confirm_no(query) or query.strip().lower() in {
+                    "otra",
+                    "otro",
+                    "no es esa",
+                    "no es ese",
+                    "no era esa",
+                    "no era ese",
+                    "busca otra",
+                    "busca otro",
+                }:
+                    alt_candidates = list(pending.get("candidates") or [])
+                    if alt_candidates:
+                        nxt = alt_candidates[0]
+                        remaining = alt_candidates[1:]
+                        payload = {
+                            "video_id": nxt.get("video_id") or "",
+                            "title": nxt.get("title") or "",
+                            "channel_title": nxt.get("channel_title") or "",
+                            "thumbnail_url": nxt.get("thumbnail_url") or "",
+                        }
+                        vcs.set_youtube_pending_confirm(
+                            user_id, {**payload, "candidates": remaining}
+                        )
+                        vcs.set_active_mode(user_id, "youtube")
+                        vcs.push_client_action(user_id, "youtube_play", payload)
+                        vcs.push_tool_event(
+                            user_id, {"type": "youtube_play", **payload}
+                        )
+                        logger.info(
+                            "[YOUTUBE] play alt-candidate ok user=%s video_id=%s title=%s",
+                            user_id[:8],
+                            payload.get("video_id"),
+                            (payload.get("title") or "")[:80],
+                        )
+                        title = payload["title"] or "otra opción"
+                        channel = payload["channel_title"]
+                        detail = f", de {channel}" if channel else ""
+                        return {
+                            "ok": True,
+                            "spoken": fit_voice_spoken(
+                                f"Probando otra opción: {title}{detail}, señor."
+                            ),
+                            "client_action": "youtube_play",
+                            "video": payload,
+                        }
                     vcs.clear_youtube_pending_confirm(user_id)
                     return _spoken_ok(
-                        "De acuerdo, señor. Diga otra canción o video y lo busco."
+                        "No tengo más opciones para esa búsqueda, señor. "
+                        "Dígame otra canción o video."
                     )
 
             if not query:
@@ -1379,40 +1388,41 @@ async def _execute_voice_tool_body(
                 "channel_title": video.get("channel_title") or "",
                 "thumbnail_url": video.get("thumbnail_url") or "",
             }
+            ambiguous = bool(video.get("ambiguous"))
+            raw_candidates = video.get("candidates") or []
+            alt_candidates = [
+                c for c in raw_candidates if c.get("video_id") != payload["video_id"]
+            ]
 
-            if video.get("ambiguous"):
-                vcs.set_youtube_pending_confirm(user_id, payload)
-                vcs.set_active_mode(user_id, "youtube")
-                title = payload["title"] or query
-                channel = payload["channel_title"]
-                detail = f" de {channel}" if channel else ""
-                return {
-                    "ok": True,
-                    "spoken": fit_voice_spoken(
-                        f"Encontré «{title}»{detail}. ¿Es ese, señor?"
-                    ),
-                    "awaiting_youtube_confirm": True,
-                    "video": payload,
-                }
-
-            vcs.clear_youtube_pending_confirm(user_id)
             vcs.set_active_mode(user_id, "youtube")
             vcs.push_client_action(user_id, "youtube_play", payload)
             vcs.push_tool_event(user_id, {"type": "youtube_play", **payload})
+            if ambiguous and alt_candidates:
+                vcs.set_youtube_pending_confirm(
+                    user_id, {**payload, "candidates": alt_candidates}
+                )
+            else:
+                vcs.clear_youtube_pending_confirm(user_id)
             logger.info(
-                "[YOUTUBE] play ok user=%s video_id=%s title=%s",
+                "[YOUTUBE] play ok user=%s video_id=%s title=%s ambiguous=%s",
                 user_id[:8],
                 payload.get("video_id"),
                 (payload.get("title") or "")[:80],
+                ambiguous,
             )
             title = payload["title"] or query
             channel = payload["channel_title"]
             detail = f", de {channel}" if channel else ""
+            if ambiguous and alt_candidates:
+                spoken = (
+                    f"Reproduciendo {title}{detail} en YouTube, señor. "
+                    "Si no es la que busca, diga «otra»."
+                )
+            else:
+                spoken = f"Reproduciendo {title}{detail} en YouTube, señor."
             return {
                 "ok": True,
-                "spoken": fit_voice_spoken(
-                    f"Reproduciendo {title}{detail} en YouTube, señor."
-                ),
+                "spoken": fit_voice_spoken(spoken),
                 "client_action": "youtube_play",
                 "video": payload,
             }

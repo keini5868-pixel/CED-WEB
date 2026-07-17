@@ -90,6 +90,7 @@ from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 from app.services.retell_ws_tracker import (
     active_ws_calls,
     clear_pending_advanced_topic,
+    has_greeting_been_sent,
     is_script_delivered,
     mark_greeting_sent,
     mark_script_delivered,
@@ -567,6 +568,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     async def handle_message(request_json: dict) -> None:
         nonlocal active_response_id, debounce_task, last_scheduled_user_key, generation_seq
         nonlocal turn_draft_in_progress, turn_draft_user_key, latest_incoming_rid
+        nonlocal greeting_sent
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
@@ -617,6 +619,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if interaction == "call_details":
             if greeting_fallback_task and not greeting_fallback_task.done():
                 greeting_fallback_task.cancel()
+            if has_greeting_been_sent(call_id):
+                # Retell reconectó el WebSocket LLM (`auto_reconnect`) para esta
+                # MISMA llamada — ya saludamos antes. Re-saludar aquí producía un
+                # "Hola, señor..." fantasma a mitad de conversación (confirmado en
+                # logs reales durante pruebas de YouTube) sin que el usuario haya
+                # colgado. Marcar local para mantener consistencia con send_greeting().
+                greeting_sent = True
+                post_greeting_ready.set()
+                logger.info(
+                    "[GREETING] skip re-saludo tras reconexión call=%s", call_id
+                )
+                return
             await send_greeting(0, reason="call_details")
             return
 

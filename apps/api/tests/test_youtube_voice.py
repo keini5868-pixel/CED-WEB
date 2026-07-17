@@ -270,7 +270,13 @@ def test_play_tool_pushes_client_action():
     assert any(e.get("type") == "youtube_play" for e in events)
 
 
-def test_play_tool_asks_confirm_when_ambiguous():
+def test_play_tool_plays_immediately_even_when_ambiguous():
+    """Nunca bloquear play detrás de una confirmación hablada (causa raíz del
+
+    bug de panel/audio que no se activaban: el usuario no respondía «sí» a
+    la pregunta de confirmación y el turno se perdía). Ambiguo → igual
+    reproduce el top YA y ofrece «otra» para probar alternativas guardadas.
+    """
     uid = "user-youtube-amb"
     vcs.clear_youtube_pending_confirm(uid)
     vcs.consume_client_action(uid)
@@ -282,6 +288,20 @@ def test_play_tool_asks_confirm_when_ambiguous():
         "thumbnail_url": "",
         "score": 0.3,
         "ambiguous": True,
+        "candidates": [
+            {
+                "video_id": "CCCCCCCCCCC",
+                "title": "Algo Parecido Mix",
+                "channel_title": "Random",
+                "thumbnail_url": "",
+            },
+            {
+                "video_id": "DDDDDDDDDDD",
+                "title": "Algo Parecido Live",
+                "channel_title": "Otro Canal",
+                "thumbnail_url": "",
+            },
+        ],
     }
     with patch(
         "app.services.youtube_search.search_youtube_video",
@@ -292,19 +312,24 @@ def test_play_tool_asks_confirm_when_ambiguous():
         )
 
     assert result["ok"] is True
-    assert "¿Es ese" in result["spoken"] or "Es ese" in result["spoken"]
-    assert vcs.consume_client_action(uid) is None
-    assert vcs.is_youtube_awaiting_confirm(uid)
-
-    confirm = asyncio.run(
-        execute_voice_tool("play_youtube_video", uid, {"query": "sí"})
-    )
-    assert confirm["ok"] is True
-    assert "Reproduciendo" in confirm["spoken"]
+    assert "Reproduciendo" in result["spoken"]
+    assert "otra" in result["spoken"].lower()
     action = vcs.consume_client_action(uid)
-    assert action and action["action"] == "youtube_play"
+    assert action is not None
+    assert action["action"] == "youtube_play"
     assert action["payload"]["video_id"] == "CCCCCCCCCCC"
     assert vcs.get_active_mode(uid) == "youtube"
+    # Alternativa disponible para un «otra» posterior — sin bloquear la actual.
+    assert vcs.is_youtube_awaiting_confirm(uid)
+
+    alt = asyncio.run(
+        execute_voice_tool("play_youtube_video", uid, {"query": "otra"})
+    )
+    assert alt["ok"] is True
+    assert "otra opción" in alt["spoken"].lower()
+    alt_action = vcs.consume_client_action(uid)
+    assert alt_action and alt_action["action"] == "youtube_play"
+    assert alt_action["payload"]["video_id"] == "DDDDDDDDDDD"
 
 
 def test_play_tool_no_results_never_confirms():
