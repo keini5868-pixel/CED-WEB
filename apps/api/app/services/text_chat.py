@@ -611,7 +611,7 @@ def _execute_direct_pdf(
             {},
         )
     if not limits.pdf_reports:
-        return ("Los PDFs requieren plan Élite o Founding. Mejora tu plan en /pricing.", {})
+        return ("Los PDFs requieren plan Pro, Élite o Founding. Mejora tu plan en /pricing.", {})
 
     pdf_title = (title or "Documento CED").strip()[:200]
     pdf_body = (content or "").strip()
@@ -1367,7 +1367,7 @@ def _run_chat_tool(
                 return json.dumps(
                     {
                         "ok": False,
-                        "error": "Los PDFs requieren plan Élite o Founding. Mejora en /pricing.",
+                        "error": "Los PDFs requieren plan Pro, Élite o Founding. Mejora en /pricing.",
                     },
                 )
             title, content = normalize_pdf_fields(tool_input)

@@ -909,7 +909,7 @@ async def _execute_voice_tool_body(
                 return _spoken_err("Tu prueba terminó, señor. Elige un plan en Precios.")
             if not limits.pdf_reports:
                 return _spoken_err(
-                    "Los PDFs requieren plan Élite o Founding, señor. Mejora en Precios."
+                    "Los PDFs requieren plan Pro, Élite o Founding, señor. Mejora en Precios."
                 )
             titulo, contenido = normalize_pdf_fields(params)
             fallbacks = params.get("_pdf_fallback_texts")

@@ -156,6 +156,9 @@ function PricingContent() {
                   Cupos {FOUNDING_MEMBER_MAX_SLOTS} · precio bloqueado por 6 meses
                 </p>
               )}
+              {plan.id === "free_basic" && (
+                <p className="mt-1 text-xs text-cyan-500">Acceso por tiempo limitado</p>
+              )}
               <ul className="mt-4 space-y-1 text-sm text-cyan-100/75">
                 {plan.highlights.map((h) => (
                   <li key={h}>· {h}</li>

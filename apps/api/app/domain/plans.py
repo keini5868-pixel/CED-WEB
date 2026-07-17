@@ -130,9 +130,9 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         ai_images_hd_per_day=5,
         voice_enabled=True,
         camera_enabled=True,
-        meta_social_enabled=False,
+        meta_social_enabled=True,
         prospection_enabled=False,
-        pdf_reports=False,
+        pdf_reports=True,
         claude_messages_per_day=-1,
     ),
     PlanId.ELITE.value: PlanLimits(

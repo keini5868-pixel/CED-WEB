@@ -98,17 +98,24 @@ const COMMON_FREE_TOOLS = [
   "Memoria conversacional",
 ] as const;
 
+/**
+ * Progresión acumulativa — cada plan incluye todo lo del anterior + lo nuevo.
+ * Regla: NUNCA poner cantidades numéricas aquí (minutos, cantidad de imágenes,
+ * límites, etc.). Solo nombres de capacidad. Los límites reales viven en
+ * `apps/api/app/domain/plans.py`, sin exponerse en la página pública.
+ *
+ * Orden dentro de cada `highlights`: primero las capacidades NUEVAS de ese
+ * nivel (para que se vean en el resumen de 5 items de la home) y al final las
+ * heredadas de niveles previos, para que la lista completa (página /pricing)
+ * muestre la progresión completa.
+ */
 export const PUBLIC_PLANS = [
   {
     id: "free_basic" as const,
     label: "CED Básico",
     priceUsd: 0,
     minutesPerDay: 0,
-    highlights: [
-      ...COMMON_FREE_TOOLS,
-      "Chat de texto",
-      "Recarga desde $10 al llegar al límite",
-    ],
+    highlights: [...COMMON_FREE_TOOLS, "Chat de texto"],
   },
   {
     id: "starter" as const,
@@ -116,11 +123,12 @@ export const PUBLIC_PLANS = [
     priceUsd: 30,
     minutesPerDay: 15,
     highlights: [
-      ...COMMON_FREE_TOOLS,
-      "Chat de texto",
+      "Todo lo de Básico, sin límite de tiempo +",
       "Asistente de voz CED",
       "Búsquedas web",
       "Creación de imágenes",
+      ...COMMON_FREE_TOOLS,
+      "Chat de texto",
     ],
   },
   {
@@ -130,12 +138,14 @@ export const PUBLIC_PLANS = [
     minutesPerDay: 30,
     highlights: [
       "Todo Starter +",
-      ...COMMON_FREE_TOOLS,
+      "Cámara por voz (análisis de imagen)",
+      "Búsquedas web ilimitadas",
+      "Creación de PDF",
+      "Publicación en redes sociales (Facebook / Instagram)",
       "Asistente de voz CED",
-      "Cámara y análisis de imagen",
-      "Búsquedas web",
       "Creación de imágenes",
-      "Google Maps / navegación",
+      ...COMMON_FREE_TOOLS,
+      "Chat de texto",
     ],
   },
   {
@@ -145,13 +155,17 @@ export const PUBLIC_PLANS = [
     minutesPerDay: 60,
     highlights: [
       "Todo Pro +",
-      ...COMMON_FREE_TOOLS,
+      "Modo avanzado (análisis profundo con Claude)",
+      "Modo de prospección",
+      "Mapa y navegación",
+      "Publicación en redes sociales (Facebook / Instagram)",
+      "Cámara por voz (análisis de imagen)",
+      "Búsquedas web ilimitadas",
+      "Creación de PDF",
       "Asistente de voz CED",
-      "Instagram / Facebook",
-      "Modo prospección",
       "Creación de imágenes",
-      "Informes PDF",
-      "Modo avanzado",
+      ...COMMON_FREE_TOOLS,
+      "Chat de texto",
     ],
   },
   {
@@ -161,11 +175,19 @@ export const PUBLIC_PLANS = [
     minutesPerDay: 90,
     highlights: [
       "Todo Élite +",
-      ...COMMON_FREE_TOOLS,
-      "Asistente de voz CED",
       "Precio bloqueado por 6 meses",
-      "Creación de imágenes",
       "Cupos limitados",
+      "Modo avanzado (análisis profundo con Claude)",
+      "Modo de prospección",
+      "Mapa y navegación",
+      "Publicación en redes sociales (Facebook / Instagram)",
+      "Cámara por voz (análisis de imagen)",
+      "Búsquedas web ilimitadas",
+      "Creación de PDF",
+      "Asistente de voz CED",
+      "Creación de imágenes",
+      ...COMMON_FREE_TOOLS,
+      "Chat de texto",
     ],
   },
 ] as const;

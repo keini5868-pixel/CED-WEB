@@ -45,7 +45,7 @@ def require_pdf_reports(user_id: str) -> None:
         "Tu prueba terminó. Elige un plan o recarga desde $10 para PDF."
         if reason == "trial_expired"
         else (
-            "Los PDFs requieren plan Élite/Founding o recarga desde $10. "
+            "Los PDFs requieren plan Pro, Élite o Founding, o recarga desde $10. "
             f"{PLAN_UPGRADE_HINT}"
         )
     )
@@ -77,7 +77,7 @@ def require_meta_social(user_id: str) -> None:
     if not limits.meta_social_enabled:
         raise HTTPException(
             status_code=403,
-            detail=f"Publicar en Facebook e Instagram requiere plan Élite o Founding. {PLAN_UPGRADE_HINT}",
+            detail=f"Publicar en Facebook e Instagram requiere plan Pro, Élite o Founding. {PLAN_UPGRADE_HINT}",
         )
 
 
