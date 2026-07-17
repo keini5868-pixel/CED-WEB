@@ -265,11 +265,21 @@ def _persist_pdf_artifact(
     pdf_bytes: bytes,
     conversation_id: str | None,
 ) -> bool:
+    import uuid as _uuid
+
     from app.services import supabase_db
 
     attempts: list[str | None] = []
     if conversation_id:
-        attempts.append(conversation_id)
+        try:
+            _uuid.UUID(str(conversation_id))
+        except (ValueError, AttributeError, TypeError):
+            # IDs sintéticos (p.ej. "advanced-<user_id>" del modo avanzado) no son
+            # UUID válidos para la columna conversation_id — ni lo intentamos,
+            # evita un roundtrip fallido + log de error en cada PDF de ese modo.
+            pass
+        else:
+            attempts.append(conversation_id)
     attempts.append(None)
     seen: set[str | None] = set()
     for conv_id in attempts:
