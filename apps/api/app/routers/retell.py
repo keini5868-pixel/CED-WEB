@@ -1311,6 +1311,82 @@ async def retell_jarvis_voice_setup() -> dict[str, Any]:
     }
 
 
+@router.get("/voice-raw-debug")
+async def retell_voice_raw_debug() -> dict[str, Any]:
+    """Diagnóstico de solo lectura — NUNCA modifica agente ni voces.
+
+    Vuelca los objetos crudos que devuelve la API de Retell para las voces
+    custom_voice_* candidatas y para el voice_id actualmente asignado a los
+    agentes de producción/piloto, con TODOS los campos que expone el SDK
+    (para buscar metadata de creación/actualización, no solo voice_id/name).
+    También hace un retrieve fresco (sin caché) de ambos agentes.
+    """
+    from app.services.retell_agent_setup import _list_retell_voices, _voice_field
+
+    client = get_retell_client()
+    if not client:
+        return {"ok": False, "error": "RETELL_API_KEY no configurada"}
+
+    def _raw_voice_dump(voice: Any) -> dict[str, Any]:
+        if isinstance(voice, dict):
+            return _json_safe(voice)
+        if hasattr(voice, "model_dump"):
+            return _json_safe(voice.model_dump())
+        return {
+            k: _json_safe(getattr(voice, k))
+            for k in dir(voice)
+            if not k.startswith("_") and not callable(getattr(voice, k, None))
+        }
+
+    all_voices = _list_retell_voices(client)
+    voices_by_id = {_voice_field(v, "voice_id"): v for v in all_voices}
+
+    watch_ids = [
+        "custom_voice_8b067b589132b1ae5a05e2e4b0",
+        "custom_voice_40933c7909bce8f877746d0638",
+    ]
+    voice_dumps: dict[str, Any] = {}
+    for vid in watch_ids:
+        v = voices_by_id.get(vid)
+        voice_dumps[vid] = _raw_voice_dump(v) if v is not None else {"error": "not found in voice.list()"}
+
+    all_custom_voices_raw = [
+        _raw_voice_dump(v)
+        for v in all_voices
+        if _voice_field(v, "voice_id").startswith("custom_voice_")
+    ]
+
+    agent_dumps: dict[str, Any] = {}
+    prod_id = get_retell_agent_id()
+    native_id = get_native_staging_agent_id()
+    for label, agent_id in (("production", prod_id), ("native_pilot", native_id)):
+        if not agent_id:
+            agent_dumps[label] = {"error": "no agent_id configured"}
+            continue
+        try:
+            agent = client.agent.retrieve(agent_id=agent_id)
+            agent_dumps[label] = {
+                "agent_id": agent_id,
+                "fresh_voice_id": getattr(agent, "voice_id", None),
+                "voice_model": getattr(agent, "voice_model", None),
+                "voice_speed": getattr(agent, "voice_speed", None),
+                "voice_temperature": getattr(agent, "voice_temperature", None),
+                "last_modification_timestamp": getattr(
+                    agent, "last_modification_timestamp", None
+                ),
+            }
+        except Exception as exc:  # noqa: BLE001
+            agent_dumps[label] = {"error": str(exc)}
+
+    return {
+        "ok": True,
+        "note": "Solo lectura — no se modificó ningún agente ni voz.",
+        "agents_fresh_retrieve": agent_dumps,
+        "watch_voice_ids_raw": voice_dumps,
+        "all_custom_voices_raw": all_custom_voices_raw,
+    }
+
+
 @router.get("/warmup")
 async def retell_warmup() -> dict[str, Any]:
     """Despierta la API sin bootstrap pesado — precalentamiento al cargar la web."""
