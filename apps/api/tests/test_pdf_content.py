@@ -83,6 +83,34 @@ def test_store_pdf_raises_when_compose_fails(mock_compose):
         raise AssertionError("expected ValueError")
 
 
+def test_store_pdf_accepts_short_composed_body_between_80_and_160_chars(monkeypatch):
+    """Regresión: cuerpo redactado de 80-159 chars (o que menciona 'documento')
+    no debe rechazarse — `compose_pdf_body` ya validó que es contenido real.
+    """
+    composed = (
+        "Este documento presenta una breve descripción del clima de Caracas, "
+        "la capital de Venezuela."
+    )
+    assert 80 <= len(composed) < 220
+    fake_pdf = b"%PDF-1.4 " + (b"x" * 200)
+
+    monkeypatch.setattr("app.services.pdf_report.compose_pdf_body", lambda **_: composed)
+    monkeypatch.setattr("app.services.supabase_db.save_pdf_artifact", lambda **_: True)
+    monkeypatch.setattr(
+        "app.services.supabase_db.get_pdf_artifact",
+        lambda file_id, user_id: (fake_pdf, "doc.pdf", "Prueba"),
+    )
+
+    artifact = store_pdf(
+        user_id="user-test",
+        title="Prueba diagnostico",
+        content="Este es un PDF de prueba",
+        user_request="genera un pdf de prueba sobre el clima en Caracas",
+        detail_level="brief",
+    )
+    assert artifact.file_id
+
+
 def test_compose_pdf_body_uses_cloud_fallback_when_gemini_empty(monkeypatch):
     from app.services.pdf_report import compose_pdf_body
 
@@ -105,7 +133,7 @@ def test_compose_pdf_body_uses_cloud_fallback_when_gemini_empty(monkeypatch):
     )
     monkeypatch.setattr(
         "app.services.pdf_report._compose_pdf_body_cloud_fallback",
-        lambda prompt: "Contenido extenso del documento generado por fallback cloud. " * 8,
+        lambda prompt, **_kwargs: "Contenido extenso del documento generado por fallback cloud. " * 8,
     )
     body = compose_pdf_body(
         title="Plan semanal",

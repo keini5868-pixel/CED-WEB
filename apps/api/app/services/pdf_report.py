@@ -409,6 +409,7 @@ def store_pdf(
     if req and req not in context:
         context.append(req)
 
+    composed_ok = False
     if pdf_content_needs_composition(safe_title, resolved, user_request=req):
         composed = compose_pdf_body(
             title=safe_title,
@@ -419,8 +420,17 @@ def store_pdf(
         )
         if composed:
             resolved = composed
+            composed_ok = True
 
-    if pdf_content_needs_composition(safe_title, resolved, user_request=req):
+    # `compose_pdf_body` ya aplica su propio umbral de calidad (>=80 chars,
+    # saneado). Re-aplicar el heurístico `pdf_content_needs_composition`
+    # —pensado para detectar contenido SIN redactar— sobre texto que Gemini
+    # ya redactó producía falsos positivos (p.ej. cuerpos de 80-159 chars, o
+    # que mencionan "documento"/"pdf" en la primera frase) y tumbaba el PDF
+    # con "No pude armar el contenido" pese a tener contenido válido. Por
+    # eso solo repetimos la validación estricta cuando la composición NO
+    # se ejecutó o falló (vino vacía) — nunca sobre el resultado ya redactado.
+    if not composed_ok and pdf_content_needs_composition(safe_title, resolved, user_request=req):
         raise ValueError("No se pudo redactar el contenido del PDF")
 
     from app.services.chat_intents import infer_pdf_title
