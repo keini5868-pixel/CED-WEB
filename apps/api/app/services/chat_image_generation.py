@@ -277,6 +277,7 @@ def run_chat_image_generation(
             "ok": False,
             "error": err,
             "reply": err,
+            "code": img_result.get("code"),
             "url": None,
             "display_label": display_label,
         }

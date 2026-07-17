@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
 
-const WEB_BUILD = "plans-progression-pro-pdf-social-v42";
+const WEB_BUILD = "recharge-modal-voice-chat-v44";
 
 /** Diagnóstico BFF: comprueba que el web alcanza la API (sin auth). */
 export async function GET() {

@@ -22,6 +22,8 @@ type RechargeModalProps = {
   onClose: () => void;
   planMinutesDaily: number;
   planLabel?: string;
+  /** Mensaje puntual del recurso que gatilló la recarga (voz/imagen/PDF/búsqueda). */
+  contextMessage?: string | null;
 };
 
 export function RechargeModal({
@@ -29,6 +31,7 @@ export function RechargeModal({
   onClose,
   planMinutesDaily,
   planLabel = "tu plan",
+  contextMessage,
 }: RechargeModalProps) {
   const [busy, setBusy] = useState<number | null>(null);
   const [custom, setCustom] = useState("");
@@ -67,6 +70,11 @@ export function RechargeModal({
           Recarga crédito proporcional: voz, imágenes, búsquedas, PDF y más.
           El saldo no expira.
         </p>
+        {contextMessage ? (
+          <p className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-2 text-xs text-amber-200">
+            {contextMessage}
+          </p>
+        ) : null}
 
         <div className="mt-5 grid grid-cols-2 gap-3">
           {RECHARGE_QUICK_AMOUNTS_USD.map((amount) => {

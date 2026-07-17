@@ -508,6 +508,18 @@ export function useCedVoiceSession(
         await ackVoiceClientAction(action.id);
         return;
       }
+      if (action.action === "recharge_needed") {
+        const resource = String(action.payload.resource || "");
+        const message = String(action.payload.message || "");
+        console.log("[WALLET] client_action recharge_needed", resource, message);
+        window.dispatchEvent(
+          new CustomEvent("ced-recharge-needed", {
+            detail: { resource, message },
+          }),
+        );
+        await ackVoiceClientAction(action.id);
+        return;
+      }
       if (action.action !== "camera_capture") return;
 
       const requestId = Number(action.payload.request_id || 0);
@@ -603,6 +615,16 @@ export function useCedVoiceSession(
           }
           if (ev.type === "camera_activate") {
             activateCameraFromVoiceRef.current({ showFeedback: false });
+          }
+          if (ev.type === "recharge_needed") {
+            const resource = String(ev.resource || "");
+            const message = String(ev.message || "");
+            console.log("[WALLET] tool_event recharge_needed", resource, message);
+            window.dispatchEvent(
+              new CustomEvent("ced-recharge-needed", {
+                detail: { resource, message },
+              }),
+            );
           }
           if (ev.type === "navigation_instruction" && ev.text) {
             const text = String(ev.text);

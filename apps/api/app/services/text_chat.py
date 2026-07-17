@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import re
@@ -64,6 +65,26 @@ CHAT_MODEL = "claude-sonnet-4-6"
 CHAT_MODEL_FAST = "claude-3-5-haiku-20241022"
 CHAT_GEMINI_MODEL = "gemini-2.5-flash"
 CHAT_SYSTEM_MAX_CHARS = 14_000
+
+# Señal "recarga necesaria" desde una tool (imagen/PDF/búsqueda) hasta la
+# respuesta HTTP final del turno — sin re-hilar el tipo de retorno por las
+# ~15 funciones que ya encadenan (reply, pdf_attachment, image_attachment).
+# Se fija dentro de _run_chat_tool y se lee/limpia una sola vez en _finish()
+# o en el payload final del streaming, ambos dentro del mismo turno/contexto.
+_pending_recharge_signal: contextvars.ContextVar[dict[str, Any] | None] = (
+    contextvars.ContextVar("pending_recharge_signal", default=None)
+)
+
+
+def _mark_recharge_needed(resource: str, message: str) -> None:
+    _pending_recharge_signal.set({"resource": resource, "message": message})
+
+
+def _consume_recharge_needed() -> dict[str, Any] | None:
+    signal = _pending_recharge_signal.get()
+    if signal is not None:
+        _pending_recharge_signal.set(None)
+    return signal
 
 
 def _gemini_chat_model() -> str:
@@ -610,8 +631,18 @@ def _execute_direct_pdf(
             "Tu prueba terminó. Elige un plan en Precios o continúa con el plan Básico gratis.",
             {},
         )
+    pdf_wallet_charge_needed = False
     if not limits.pdf_reports:
-        return ("Los PDFs requieren plan Pro, Élite o Founding. Mejora tu plan en /pricing.", {})
+        from app.services.wallet import can_afford
+
+        if not can_afford(user_id, "pdf", units=1.0):
+            msg = (
+                "Los PDFs requieren plan Pro, Élite o Founding, "
+                "o recarga desde $10. Mejora tu plan en /pricing."
+            )
+            _mark_recharge_needed("pdf", msg)
+            return (msg, {})
+        pdf_wallet_charge_needed = True
 
     pdf_title = (title or "Documento CED").strip()[:200]
     pdf_body = (content or "").strip()
@@ -647,6 +678,15 @@ def _execute_direct_pdf(
     except Exception as exc:  # noqa: BLE001
         logger.exception("[CHAT] direct PDF failed: %s", exc)
         return ("No pude generar el PDF en este momento. Intenta de nuevo.", {})
+
+    if pdf_wallet_charge_needed:
+        from app.services.wallet import try_spend
+
+        spend = try_spend(user_id, "pdf", units=1.0)
+        if not spend.get("ok"):
+            msg = str(spend.get("error") or "Recarga desde $10 para generar PDF.")
+            _mark_recharge_needed("pdf", msg)
+            return (msg, {})
 
     attachment = _pdf_attachment_from_artifact(artifact)
     return _pdf_success_message(artifact.title), attachment
@@ -1361,15 +1401,26 @@ def _run_chat_tool(
             limits, reason, _ = effective_plan_limits(user_id)
             if reason == "trial_expired":
                 return json.dumps(
-                    {"ok": False, "error": "Tu prueba terminó. Elige un plan en Precios."},
-                )
-            if not limits.pdf_reports:
-                return json.dumps(
                     {
                         "ok": False,
-                        "error": "Los PDFs requieren plan Pro, Élite o Founding. Mejora en /pricing.",
+                        "error": "Tu prueba terminó. Elige un plan en Precios.",
+                        "code": "trial_expired",
                     },
                 )
+            pdf_wallet_charge_needed = False
+            if not limits.pdf_reports:
+                from app.services.wallet import can_afford
+
+                if not can_afford(user_id, "pdf", units=1.0):
+                    msg = (
+                        "Los PDFs requieren plan Pro, Élite o Founding, "
+                        "o recarga desde $10. Mejora en /pricing."
+                    )
+                    _mark_recharge_needed("pdf", msg)
+                    return json.dumps(
+                        {"ok": False, "error": msg, "code": "needs_recharge"},
+                    )
+                pdf_wallet_charge_needed = True
             title, content = normalize_pdf_fields(tool_input)
             fallbacks = assistant_fallback_texts_from_messages(chat_messages or [])
             user_texts = user_texts_from_messages(chat_messages or [])
@@ -1392,6 +1443,16 @@ def _run_chat_tool(
                 )
             except (ValueError, RuntimeError) as exc:
                 return json.dumps({"ok": False, "error": str(exc) or "PDF failed"})
+            if pdf_wallet_charge_needed:
+                from app.services.wallet import try_spend
+
+                spend = try_spend(user_id, "pdf", units=1.0)
+                if not spend.get("ok"):
+                    msg = str(spend.get("error") or "Recarga desde $10 para generar PDF.")
+                    _mark_recharge_needed("pdf", msg)
+                    return json.dumps(
+                        {"ok": False, "error": msg, "code": "needs_recharge"},
+                    )
             return json.dumps(
                 {
                     "ok": True,
@@ -1437,11 +1498,15 @@ def _run_chat_tool(
                         "used_reference": gen.get("used_reference"),
                     }
                 )
+            gen_code = str(gen.get("code") or "generation_failed")
+            gen_err = str(gen.get("error") or gen.get("reply") or "No pude generar la imagen.")
+            if gen_code == "needs_recharge":
+                _mark_recharge_needed("image", gen_err)
             return json.dumps(
                 {
                     "ok": False,
-                    "error": gen.get("error") or gen.get("reply"),
-                    "code": "generation_failed",
+                    "error": gen_err,
+                    "code": gen_code,
                 }
             )
         if name == "recall_previous_conversations":
@@ -2270,6 +2335,9 @@ def send_message(
             out["pdf"] = pdf
         if image:
             out["image"] = image
+        recharge_needed = _consume_recharge_needed()
+        if recharge_needed:
+            out["recharge_needed"] = recharge_needed
         return out
 
     from app.services.publish_image_context import (
@@ -2585,8 +2653,11 @@ def send_message(
                     quality=str(gen.get("quality") or ""),
                 ),
             )
+        direct_err = str(gen.get("error") or gen.get("reply") or "")
+        if gen.get("code") == "needs_recharge":
+            _mark_recharge_needed("image", direct_err)
         return _finish(
-            _format_image_generation_error(str(gen.get("error") or gen.get("reply") or "")),
+            _format_image_generation_error(direct_err),
             route_meta={"intent": "generate_image", "source": "direct_error"},
         )
 
@@ -3188,6 +3259,8 @@ def iter_send_message_stream(
         }
         if image_attachment:
             payload["image"] = image_attachment
+        elif gen.get("code") == "needs_recharge":
+            payload["recharge_needed"] = {"resource": "image", "message": reply}
         yield _sse_event("token", {"text": reply})
         yield _sse_flush()
         yield _sse_event("done", payload)
@@ -3408,4 +3481,7 @@ def iter_send_message_stream(
         payload["pdf"] = pdf_attachment
     if image_attachment:
         payload["image"] = image_attachment
+    recharge_needed = _consume_recharge_needed()
+    if recharge_needed:
+        payload["recharge_needed"] = recharge_needed
     yield _sse_event("done", payload)

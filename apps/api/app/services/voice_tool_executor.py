@@ -433,6 +433,21 @@ def _spoken_err(text: str, *, error: str | None = None) -> dict[str, Any]:
     return out
 
 
+def _push_recharge_needed(user_id: str, resource: str, message: str) -> None:
+    """Empuja aviso de recarga al frontend de voz — mismo canal que YouTube.
+
+    Usa client_action (slot único, el poll lo agarra rápido) y tool_event
+    (respaldo si el slot ya se sobreescribió) para que el modal de recarga
+    se abra de forma confiable, igual que el panel de YouTube.
+    """
+    payload = {"resource": resource, "message": message}
+    try:
+        vcs.push_client_action(user_id, "recharge_needed", payload)
+        vcs.push_tool_event(user_id, {"type": "recharge_needed", **payload})
+    except Exception:  # noqa: BLE001
+        logger.warning("[WALLET] push recharge_needed failed user=%s", user_id[:8])
+
+
 def _resolve_image_for_publishing(
     user_id: str,
     params: dict[str, Any],
@@ -575,10 +590,15 @@ async def _execute_voice_tool_body(
 
             gated = gate_web_search(user_id)
             if gated and not gated.get("ok", True):
+                gated_error = str(gated.get("error") or "needs_recharge")
+                if gated_error == "needs_recharge":
+                    _push_recharge_needed(
+                        user_id, "web_search", str(gated.get("spoken") or "")
+                    )
                 return {
                     "ok": False,
                     "spoken": str(gated.get("spoken") or ""),
-                    "error": str(gated.get("error") or "needs_recharge"),
+                    "error": gated_error,
                 }
             from app.services.cognitive_intents import (
                 is_internal_knowledge_query,
@@ -710,10 +730,17 @@ async def _execute_voice_tool_body(
                 }
             err = str(result.get("error") or result.get("reply") or "image_failed")
             logger.error(
-                "[VOICE:IMAGE] fail user=%s error=%s",
+                "[VOICE:IMAGE] fail user=%s error=%s code=%s",
                 user_id[:8],
                 err[:200],
+                result.get("code"),
             )
+            if result.get("code") == "needs_recharge":
+                _push_recharge_needed(user_id, "image", err)
+                return _spoken_err(
+                    f"No fue posible generar la imagen, señor. {err}",
+                    error="needs_recharge",
+                )
             err_l = err.lower()
             if "api_key" in err_l or "config" in err_l:
                 return _spoken_err(
@@ -907,10 +934,18 @@ async def _execute_voice_tool_body(
             limits, reason, _ = effective_plan_limits(user_id)
             if reason == "trial_expired":
                 return _spoken_err("Tu prueba terminó, señor. Elige un plan en Precios.")
+            pdf_wallet_charge_needed = False
             if not limits.pdf_reports:
-                return _spoken_err(
-                    "Los PDFs requieren plan Pro, Élite o Founding, señor. Mejora en Precios."
-                )
+                from app.services.wallet import can_afford
+
+                if not can_afford(user_id, "pdf", units=1.0):
+                    msg = (
+                        "Los PDFs requieren plan Pro, Élite o Founding, señor, "
+                        "o recarga desde diez dólares. Mejore en Precios."
+                    )
+                    _push_recharge_needed(user_id, "pdf", msg)
+                    return _spoken_err(msg, error="needs_recharge")
+                pdf_wallet_charge_needed = True
             titulo, contenido = normalize_pdf_fields(params)
             fallbacks = params.get("_pdf_fallback_texts")
             fallback_list = fallbacks if isinstance(fallbacks, list) else None
@@ -981,6 +1016,17 @@ async def _execute_voice_tool_body(
                     f"No pude generar el PDF, señor. Detalle: {msg[:100]}.",
                     error="pdf_store_failed",
                 )
+            if pdf_wallet_charge_needed:
+                from app.services.wallet import try_spend
+
+                spend = try_spend(user_id, "pdf", units=1.0)
+                if not spend.get("ok"):
+                    # Carrera rara: el saldo se gastó entre el check y aquí.
+                    msg = str(
+                        spend.get("error") or "Recarga desde $10 para generar PDF, señor."
+                    )
+                    _push_recharge_needed(user_id, "pdf", msg)
+                    return _spoken_err(msg, error="needs_recharge")
             spoken = (
                 f"PDF listo, señor. Título: {artifact.title}. "
                 "Ya está en su historial."

@@ -29,6 +29,8 @@ export type VoiceToolEvent = {
   video_id?: string;
   channel_title?: string;
   thumbnail_url?: string;
+  resource?: string;
+  message?: string;
 };
 
 export type VoiceClientState = {

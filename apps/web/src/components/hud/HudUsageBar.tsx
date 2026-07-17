@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { RechargeModal } from "@/components/billing/RechargeModal";
 import {
@@ -16,6 +16,18 @@ export function HudUsageBar() {
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
   const [portalBusy, setPortalBusy] = useState(false);
+  const [rechargeReason, setRechargeReason] = useState<string | null>(null);
+
+  useEffect(() => {
+    const onRechargeNeeded = (e: Event) => {
+      const detail = (e as CustomEvent<{ resource?: string; message?: string }>).detail;
+      console.log("[WALLET] ced-recharge-needed", detail);
+      setRechargeReason(detail?.message || null);
+      setRechargeOpen(true);
+    };
+    window.addEventListener("ced-recharge-needed", onRechargeNeeded);
+    return () => window.removeEventListener("ced-recharge-needed", onRechargeNeeded);
+  }, []);
   const pct = Math.min(
     100,
     balance.plan > 0 ? (balance.used / balance.plan) * 100 : 0,
@@ -191,8 +203,12 @@ export function HudUsageBar() {
 
       <RechargeModal
         open={rechargeOpen}
-        onClose={() => setRechargeOpen(false)}
+        onClose={() => {
+          setRechargeOpen(false);
+          setRechargeReason(null);
+        }}
         planMinutesDaily={balance.plan}
+        contextMessage={rechargeReason}
       />
       <VoiceLimitModal
         open={limitModalOpen}

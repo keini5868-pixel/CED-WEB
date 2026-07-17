@@ -37,6 +37,11 @@ export type ChatImageAttachment = {
   quality?: string;
 };
 
+export type ChatRechargeNeeded = {
+  resource: string;
+  message: string;
+};
+
 export type ChatMessage = {
   id?: string;
   role: "user" | "model" | "system";
@@ -46,6 +51,7 @@ export type ChatMessage = {
   image?: ChatImageAttachment | null;
   /** Preview local de imagen adjunta por el usuario (solo UI) */
   user_image_preview?: string | null;
+  recharge_needed?: ChatRechargeNeeded | null;
 };
 
 export type ChatStatus = {
@@ -91,6 +97,7 @@ export async function sendChatMessage(
   usage: ChatStatus;
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
+  recharge_needed?: ChatRechargeNeeded | null;
 }> {
   if (image) {
     return sendChatMessageBlocking(
@@ -116,6 +123,7 @@ async function sendChatMessageBlocking(
   usage: ChatStatus;
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
+  recharge_needed?: ChatRechargeNeeded | null;
 }> {
   let res: Response;
 
@@ -153,6 +161,7 @@ async function sendChatMessageBlocking(
     usage?: ChatStatus;
     pdf?: ChatPdfAttachment;
     image?: ChatImageAttachment;
+    recharge_needed?: ChatRechargeNeeded;
     detail?: string;
   }>(res);
   if (!res.ok) {
@@ -164,6 +173,7 @@ async function sendChatMessageBlocking(
     usage: data.usage!,
     pdf: data.pdf ?? null,
     image: data.image ?? null,
+    recharge_needed: data.recharge_needed ?? null,
   };
 }
 
@@ -173,6 +183,7 @@ type StreamDonePayload = {
   usage: ChatStatus;
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
+  recharge_needed?: ChatRechargeNeeded | null;
 };
 
 /** Chat con streaming SSE — primer token en <1s. */
@@ -261,6 +272,8 @@ export async function sendChatMessageStream(
         usage: parsed.usage as ChatStatus,
         pdf: (parsed.pdf as ChatPdfAttachment | undefined) ?? null,
         image: (parsed.image as ChatImageAttachment | undefined) ?? null,
+        recharge_needed:
+          (parsed.recharge_needed as ChatRechargeNeeded | undefined) ?? null,
       };
     }
   };
@@ -319,6 +332,7 @@ export async function sendChatMessageStream(
       },
       pdf: payload?.pdf ?? null,
       image: payload?.image ?? null,
+      recharge_needed: payload?.recharge_needed ?? null,
     };
   }
   throw new Error("Respuesta incompleta del chat.");

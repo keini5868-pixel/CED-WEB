@@ -22,8 +22,10 @@ import {
   type ChatImageAttachment,
   type ChatMessage,
   type ChatPdfAttachment,
+  type ChatRechargeNeeded,
   type ChatStatus,
 } from "@/lib/api/chat";
+import { startRechargeCheckout } from "@/lib/api/billing";
 import { appendStreamChunk } from "@/lib/stream-chunk";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
@@ -75,8 +77,10 @@ function dedupeChatMessages(messages: ChatMessage[]): ChatMessage[] {
       prev.content.trim() === msg.content.trim() &&
       !msg.pdf &&
       !msg.image &&
+      !msg.recharge_needed &&
       !prev.pdf &&
-      !prev.image
+      !prev.image &&
+      !prev.recharge_needed
     ) {
       continue;
     }
@@ -117,6 +121,52 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
       >
         {busy ? "Descargando…" : `📄 Descargar PDF${pdf.title ? `: ${pdf.title}` : ""}`}
       </button>
+      {error ? <p className="mt-1 text-[10px] text-red-400">{error}</p> : null}
+    </div>
+  );
+}
+
+const RECHARGE_QUICK_AMOUNTS_CHAT = [10, 25, 50];
+
+function RechargeInChatButton({ recharge }: { recharge: ChatRechargeNeeded }) {
+  const [busy, setBusy] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleRecharge = async (amount: number) => {
+    setBusy(amount);
+    setError(null);
+    try {
+      const url = await startRechargeCheckout(amount);
+      if (url) window.location.href = url;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo iniciar la recarga.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="mt-3 rounded border border-amber-500/40 bg-amber-500/10 p-3">
+      <p className="text-[11px] font-semibold text-amber-200">
+        Límite alcanzado — recarga desde $10
+      </p>
+      <p className="mt-1 text-[10px] text-amber-100/80">
+        {recharge.message ||
+          "El crédito es proporcional al monto y no expira. Se aplica a voz, imágenes, búsquedas, PDF y más."}
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {RECHARGE_QUICK_AMOUNTS_CHAT.map((amount) => (
+          <button
+            key={amount}
+            type="button"
+            disabled={busy !== null}
+            onClick={() => void handleRecharge(amount)}
+            className="rounded border border-amber-400/60 bg-amber-400/10 px-3 py-1.5 text-[11px] font-bold tracking-wide text-amber-200 hover:bg-amber-400/20 disabled:opacity-60"
+          >
+            {busy === amount ? "Abriendo…" : `RECARGAR $${amount}`}
+          </button>
+        ))}
+      </div>
       {error ? <p className="mt-1 text-[10px] text-red-400">{error}</p> : null}
     </div>
   );
@@ -444,6 +494,7 @@ export function CedTextChatPanel({
               content: result.reply,
               pdf: result.pdf,
               image: result.image,
+              recharge_needed: result.recharge_needed,
             };
           }
           return dedupeChatMessages(next);
@@ -637,6 +688,7 @@ export function CedTextChatPanel({
               image: result.image
                 ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
                 : null,
+              recharge_needed: result.recharge_needed ?? null,
             },
           ]),
         );
@@ -654,6 +706,7 @@ export function CedTextChatPanel({
               image: result.image
                 ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
                 : null,
+              recharge_needed: result.recharge_needed ?? null,
             };
           }
           return dedupeChatMessages(next);
@@ -771,6 +824,7 @@ export function CedTextChatPanel({
             const isUser = msg.role === "user";
             const pdfAttachment = msg.pdf ?? null;
             const imageAttachment = msg.image ?? null;
+            const rechargeNeeded = msg.recharge_needed ?? null;
             const userImagePreview = msg.user_image_preview ?? null;
             const displayContent = isUser ? msg.content : stripPdfLinks(msg.content);
             return (
@@ -794,6 +848,9 @@ export function CedTextChatPanel({
                   {userImagePreview ? <UserImagePreview preview={userImagePreview} /> : null}
                   {imageAttachment ? <ChatImagePreview image={imageAttachment} /> : null}
                   {pdfAttachment ? <PdfDownloadButton pdf={pdfAttachment} /> : null}
+                  {rechargeNeeded ? (
+                    <RechargeInChatButton recharge={rechargeNeeded} />
+                  ) : null}
                   <p className="mt-1 text-[9px] opacity-50">{formatTime(msg.created_at)}</p>
                 </div>
               </div>
