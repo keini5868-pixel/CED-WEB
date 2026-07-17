@@ -590,17 +590,16 @@ def _build_custom_tool(
     parameters: dict[str, Any],
     filler: str,
     timeout_ms: int,
-    typing_sound: bool | None = None,
 ) -> dict[str, Any]:
     """Custom Function Retell.
 
-    Retell solo dice el filler UNA vez al inicio de la tool (docs). Para esperas
-    largas (PDF/clima/imagen) activamos enable_typing_sound para evitar silencio
-    muerto el resto de la ejecución.
+    Retell solo dice el filler UNA vez al inicio de la tool (docs). Se probó
+    `enable_typing_sound` para esperas largas (PDF/clima/imagen) pero el "taca,
+    taca" de fondo interfería con la voz de CED al hablar/confirmar — se retiró
+    por completo. La espera silenciosa tras el filler es preferible.
     """
     base = api_public_url.rstrip("/")
-    use_typing = typing_sound if typing_sound is not None else timeout_ms >= 15_000
-    tool: dict[str, Any] = {
+    return {
         "type": "custom",
         "name": name,
         "description": description,
@@ -613,9 +612,6 @@ def _build_custom_tool(
         "execution_message_description": filler,
         "timeout_ms": timeout_ms,
     }
-    if use_typing:
-        tool["enable_typing_sound"] = True
-    return tool
 
 
 def build_get_environment_tool(*, api_public_url: str) -> dict[str, Any]:
@@ -629,7 +625,6 @@ def build_get_environment_tool(*, api_public_url: str) -> dict[str, Any]:
             "Puede tardar unos segundos."
         ),
         timeout_ms=22_000,
-        typing_sound=True,
     )
 
 
@@ -798,7 +793,6 @@ def build_generar_pdf_tool(*, api_public_url: str) -> dict[str, Any]:
             "Puede tardar unos segundos mientras lo redacto."
         ),
         timeout_ms=45_000,
-        typing_sound=True,
     )
 
 
