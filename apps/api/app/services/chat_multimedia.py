@@ -256,7 +256,7 @@ def _anthropic_vision_reply(
     b64 = base64.b64encode(image_bytes).decode("utf-8")
     prompt = build_chat_vision_prompt(user_text)
     payload = {
-        "model": "claude-3-5-haiku-20241022",
+        "model": "claude-haiku-4-5-20251001",
         "max_tokens": CHAT_VISION_MAX_TOKENS,
         "messages": [
             {

@@ -67,13 +67,14 @@ def test_research_question_uses_live_web_not_internal_kb():
 
     with patch("app.services.voice_tool_executor.search_internal_knowledge", fake_internal):
         with patch("app.services.voice_tool_executor.fetch_voice_brief_parallel", fake_brief):
-            result = asyncio.run(
-                execute_voice_tool(
-                    "search_web",
-                    "user-test-123",
-                    {"query": query, "kind": "general"},
+            with patch("app.services.web_search_quota.gate_web_search", return_value=None):
+                result = asyncio.run(
+                    execute_voice_tool(
+                        "search_web",
+                        "user-test-123",
+                        {"query": query, "kind": "general"},
+                    )
                 )
-            )
 
     assert web_called["v"] is True
     assert internal_called["v"] is False

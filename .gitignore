@@ -39,6 +39,7 @@ Thumbs.db
 
 # Imágenes temporales Meta (API)
 apps/api/data/publish_media/
+apps/api/app/data/publish_media/
 
 # Python venv
 .venv/

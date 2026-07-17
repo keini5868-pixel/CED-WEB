@@ -58,13 +58,16 @@ _CREATIVE_TYPO_REPLACEMENTS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"caracteristicas?", re.I), "características"),
 )
 
+# Solo palabras que POR SÍ SOLAS casi siempre implican pedir un activo visual/gráfico.
+# Palabras genéricas de negocio/contenido (beneficios, ventajas, evento, vender…) NO van
+# aquí: aparecen constantemente en preguntas puramente analíticas/informativas («ventajas
+# y desventajas de X», «cómo puedo vender más») y disparaban imagen en vez de responder.
+# Esas van en _STRUCTURED_CONTENT, que solo cuenta combinado con is_generate_image_intent
+# (ver is_marketing_creative_intent) — así necesitan una señal explícita de "generar imagen".
 _MARKETING_CREATIVE = re.compile(
     r"\b("
     r"flyer|creativo|banner|publicidad|anuncio|post\s+de\s+venta|"
-    r"especificaciones|beneficios|veneficios|ventajas|puntos?\s+clave|caracter[ií]sticas|"
-    r"agenda|horarios?|m[oó]dulos?|programa|invitaci[oó]n|promoci[oó]n|"
-    r"evento|curso|taller|servicio|"
-    r"vender|vendiendo|dise[nñ]o\s+(?:de\s+)?venta|"
+    r"dise[nñ]o\s+(?:de\s+)?venta|"
     r"pon\s+(?:de\s+)?fondo|usa\s+(?:esta|esta)\s+imagen|"
     r"textos?\s+(?:escritos|encima|sobre)|"
     r"presentaci[oó]n\s+(?:de\s+)?(?:producto|servicio|evento|marca)"
@@ -75,7 +78,8 @@ _STRUCTURED_CONTENT = re.compile(
     r"\b("
     r"beneficios?|veneficios?|ventajas?|puntos?\s+clave|caracter[ií]sticas|"
     r"especificaciones|agenda|horarios?|m[oó]dulos?|temas?|programa|"
-    r"servicios?|promoci[oó]n|invitaci[oó]n|incluye"
+    r"servicios?|promoci[oó]n|invitaci[oó]n|incluye|evento|curso|taller|"
+    r"vender|vendiendo"
     r")\b",
     re.I,
 )

@@ -13,7 +13,10 @@ def test_search_web_timeout_returns_fallback():
         await asyncio.sleep(SEARCH_WEB_TIMEOUT_SEC + 2)
         return {"ok": True, "summary": "resultado tardío"}
 
-    with patch("app.services.voice_tool_executor.fetch_voice_brief_parallel", slow_brief):
+    with (
+        patch("app.services.voice_tool_executor.fetch_voice_brief_parallel", slow_brief),
+        patch("app.services.web_search_quota.gate_web_search", return_value=None),
+    ):
         result = asyncio.run(
             execute_voice_tool(
                 "search_web",
@@ -31,9 +34,12 @@ def test_search_web_empty_result_returns_fallback():
     async def empty_brief(*_a, **_k):
         return {"ok": False, "error": "vacío", "code": "empty_result"}
 
-    with patch(
-        "app.services.voice_tool_executor.fetch_voice_brief_parallel",
-        side_effect=empty_brief,
+    with (
+        patch(
+            "app.services.voice_tool_executor.fetch_voice_brief_parallel",
+            side_effect=empty_brief,
+        ),
+        patch("app.services.web_search_quota.gate_web_search", return_value=None),
     ):
         result = asyncio.run(
             execute_voice_tool(
@@ -55,9 +61,12 @@ def test_search_web_success_returns_status_success():
             "source": "tavily",
         }
 
-    with patch(
-        "app.services.voice_tool_executor.fetch_voice_brief_parallel",
-        side_effect=ok_brief,
+    with (
+        patch(
+            "app.services.voice_tool_executor.fetch_voice_brief_parallel",
+            side_effect=ok_brief,
+        ),
+        patch("app.services.web_search_quota.gate_web_search", return_value=None),
     ):
         result = asyncio.run(
             execute_voice_tool(

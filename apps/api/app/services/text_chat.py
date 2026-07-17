@@ -62,7 +62,7 @@ from app.services.publish_text import PUBLISH_INSTRUCTION_ABSOLUTE_RULES
 logger = logging.getLogger(__name__)
 
 CHAT_MODEL = "claude-sonnet-4-6"
-CHAT_MODEL_FAST = "claude-3-5-haiku-20241022"
+CHAT_MODEL_FAST = "claude-haiku-4-5-20251001"
 CHAT_GEMINI_MODEL = "gemini-2.5-flash"
 CHAT_SYSTEM_MAX_CHARS = 14_000
 
