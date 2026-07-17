@@ -104,10 +104,15 @@ const COMMON_FREE_TOOLS = [
  * límites, etc.). Solo nombres de capacidad. Los límites reales viven en
  * `apps/api/app/domain/plans.py`, sin exponerse en la página pública.
  *
+ * Regla: cada `highlights` lista TODAS las herramientas del plan de forma
+ * explícita y completa (acumulativo) — NUNCA usar un atajo tipo "Todo
+ * Starter +" / "Todo Pro +". Cada tarjeta debe ser autosuficiente, sin
+ * obligar a mirar el plan anterior para saber qué incluye.
+ *
  * Orden dentro de cada `highlights`: primero las capacidades NUEVAS de ese
- * nivel (para que se vean en el resumen de 5 items de la home) y al final las
- * heredadas de niveles previos, para que la lista completa (página /pricing)
- * muestre la progresión completa.
+ * nivel (para que se vean en el resumen de 5 items de la home vía
+ * `.slice(0, 5)`) y al final las heredadas de niveles previos — la página
+ * completa (/pricing) siempre muestra el arreglo entero, sin recortar.
  */
 export const PUBLIC_PLANS = [
   {
@@ -121,9 +126,8 @@ export const PUBLIC_PLANS = [
     id: "starter" as const,
     label: "CED Starter",
     priceUsd: 30,
-    minutesPerDay: 15,
+    minutesPerDay: 8,
     highlights: [
-      "Todo lo de Básico, sin límite de tiempo +",
       "Asistente de voz CED",
       "Búsquedas web",
       "Creación de imágenes",
@@ -135,14 +139,14 @@ export const PUBLIC_PLANS = [
     id: "pro" as const,
     label: "CED Pro",
     priceUsd: 59,
-    minutesPerDay: 30,
+    minutesPerDay: 18,
     highlights: [
-      "Todo Starter +",
       "Cámara por voz (análisis de imagen)",
       "Búsquedas web ilimitadas",
       "Creación de PDF",
       "Publicación en redes sociales (Facebook / Instagram)",
       "Asistente de voz CED",
+      "Búsquedas web",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
       "Chat de texto",
@@ -152,9 +156,8 @@ export const PUBLIC_PLANS = [
     id: "elite" as const,
     label: "CED Élite",
     priceUsd: 99,
-    minutesPerDay: 60,
+    minutesPerDay: 30,
     highlights: [
-      "Todo Pro +",
       "Modo avanzado (análisis profundo con Claude)",
       "Modo de prospección",
       "Mapa y navegación",
@@ -163,6 +166,7 @@ export const PUBLIC_PLANS = [
       "Búsquedas web ilimitadas",
       "Creación de PDF",
       "Asistente de voz CED",
+      "Búsquedas web",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
       "Chat de texto",
@@ -172,9 +176,8 @@ export const PUBLIC_PLANS = [
     id: "founding" as const,
     label: "CED Founding",
     priceUsd: 149,
-    minutesPerDay: 90,
+    minutesPerDay: 40,
     highlights: [
-      "Todo Élite +",
       "Precio bloqueado por 6 meses",
       "Cupos limitados",
       "Modo avanzado (análisis profundo con Claude)",
@@ -185,6 +188,7 @@ export const PUBLIC_PLANS = [
       "Búsquedas web ilimitadas",
       "Creación de PDF",
       "Asistente de voz CED",
+      "Búsquedas web",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
       "Chat de texto",

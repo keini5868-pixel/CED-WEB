@@ -19,7 +19,9 @@ class PlanId(StrEnum):
 
 FOUNDING_MEMBER_MAX_SLOTS = 50
 TRIAL_DAYS = 7
-TRIAL_VOICE_MINUTES_PER_DAY = 15
+# Voz durante los 7 días de prueba — se renueva cada día (usage_logs es por
+# fecha). Al día 8 el usuario cae a free_basic (voice_enabled=False, 0 min).
+TRIAL_VOICE_MINUTES_PER_DAY = 5
 USAGE_WARNING_PERCENT = 80
 
 # Costo unitario de recarga (monedero multi-recurso) — aprobado Keini 2026-07
@@ -53,7 +55,7 @@ RESOURCE_UNIT_COSTS_USD: dict[str, float] = {
 }
 
 # Minutos diarios Founding (cap margen)
-FOUNDING_VOICE_CAP_MINUTES = 90
+FOUNDING_VOICE_CAP_MINUTES = 40
 
 PLAN_PRICES_USD: dict[str, int] = {
     PlanId.STARTER.value: 30,
@@ -112,7 +114,7 @@ class PlanLimits:
 
 PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.STARTER.value: PlanLimits(
-        voice_minutes_per_day=15,
+        voice_minutes_per_day=8,
         web_searches_per_day=30,
         ai_images_standard_per_day=20,
         ai_images_hd_per_day=0,
@@ -124,7 +126,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         claude_messages_per_day=-1,
     ),
     PlanId.PRO.value: PlanLimits(
-        voice_minutes_per_day=30,
+        voice_minutes_per_day=18,
         web_searches_per_day=-1,
         ai_images_standard_per_day=45,
         ai_images_hd_per_day=5,
@@ -136,7 +138,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         claude_messages_per_day=-1,
     ),
     PlanId.ELITE.value: PlanLimits(
-        voice_minutes_per_day=60,
+        voice_minutes_per_day=30,
         web_searches_per_day=-1,
         ai_images_standard_per_day=95,
         ai_images_hd_per_day=15,
@@ -159,6 +161,11 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         pdf_reports=True,
         claude_messages_per_day=-1,
     ),
+    # Básico permanente (post-trial): SIN voz, siempre. Blindado a propósito —
+    # el trial de 7 días ya dio 5 min/día vía TRIAL_VOICE_MINUTES_PER_DAY
+    # (get_user_access status=="trialing"); una vez ese trial vence, la
+    # suscripción cae a este plan y voice_enabled=False corta la voz a 0 sin
+    # excepción, para que nadie use voz gratis indefinidamente sin pagar.
     PlanId.FREE_BASIC.value: PlanLimits(
         voice_minutes_per_day=0,
         web_searches_per_day=0,

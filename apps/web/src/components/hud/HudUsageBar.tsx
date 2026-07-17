@@ -41,13 +41,15 @@ export function HudUsageBar() {
     ? "Cargando…"
     : voiceLimit === "daily_limit"
       ? "Límite alcanzado"
-      : voiceLimit === "trial_expired"
-        ? "Prueba de voz terminada"
-        : voiceLimit === "subscription"
-          ? "Suscripción requerida"
-          : voiceLimit === "no_voice"
-            ? "Voz no incluida"
-            : criticalWarn
+      : voiceLimit === "trial_daily_limit"
+        ? "Voz de hoy agotada (prueba)"
+        : voiceLimit === "trial_expired"
+          ? "Prueba de voz terminada"
+          : voiceLimit === "subscription"
+            ? "Suscripción requerida"
+            : voiceLimit === "no_voice"
+              ? "Voz no incluida"
+              : criticalWarn
               ? "Casi sin cupo"
               : warn
                 ? "Uso elevado"
@@ -97,13 +99,17 @@ export function HudUsageBar() {
           <p className="font-semibold text-red-200">
             {voiceLimit === "daily_limit"
               ? "Has alcanzado tu límite diario de voz"
-              : voiceLimit === "trial_expired"
-                ? "Tu prueba de 7 días de voz terminó"
-                : "El asistente de voz requiere plan o recarga"}
+              : voiceLimit === "trial_daily_limit"
+                ? "Usaste tus 5 min de voz de hoy (prueba gratis)"
+                : voiceLimit === "trial_expired"
+                  ? "Tu prueba de 7 días de voz terminó"
+                  : "El asistente de voz requiere plan o recarga"}
           </p>
           <p className="mt-2 opacity-90">
-            Adquiere un paquete para seguir disfrutando del servicio de voz, o recarga
-            desde <strong className="text-white">$10</strong> para usar el asistente hoy.
+            {voiceLimit === "daily_limit"
+              ? "Recarga desde "
+              : "Suscríbete a un plan, o recarga desde "}
+            <strong className="text-white">$10</strong> para usar el asistente hoy.
             El chat y otras funciones gratuitas siguen disponibles.
           </p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
@@ -114,12 +120,14 @@ export function HudUsageBar() {
             >
               RECARGAR DESDE $10
             </button>
-            <Link
-              href="/pricing"
-              className="rounded border border-purple-400/60 bg-purple-500/10 px-3 py-2 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-purple-200 hover:bg-purple-500/20"
-            >
-              ADQUIRIR UN PLAN
-            </Link>
+            {voiceLimit !== "daily_limit" && (
+              <Link
+                href="/pricing"
+                className="rounded border border-purple-400/60 bg-purple-500/10 px-3 py-2 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-purple-200 hover:bg-purple-500/20"
+              >
+                ADQUIRIR UN PLAN
+              </Link>
+            )}
             <button
               type="button"
               onClick={() => setLimitModalOpen(true)}
