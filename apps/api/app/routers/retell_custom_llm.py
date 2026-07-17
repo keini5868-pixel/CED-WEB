@@ -1388,6 +1388,25 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     else:
                         await anti_silence_if_unanswered(reason="orch_empty_spoken")
                     return
+                if mod_hint == "youtube" and has_explicit_module_signal(user_text):
+                    # Señal YouTube explícita (dijo "YouTube") pero ni play/control/
+                    # confirm resolvieron nada (ASR entrecortado/ruido de carretera).
+                    # JAMÁS caer al LLM conversacional aquí: inventaría un "éxito"
+                    # falso ("excelente elección") sin haber tocado la tool real.
+                    clarify = (
+                        "Disculpe, señor, no entendí bien qué desea ver en "
+                        "YouTube. ¿Puede repetir el nombre?"
+                    )
+                    if not await complete_partial_or_deliver(clarify):
+                        await anti_silence_if_unanswered(
+                            reason="youtube_unresolved_deliver_failed"
+                        )
+                    logger.info(
+                        "[RETELL-ORCH] youtube signal sin resolver — clarify call=%s text=%s",
+                        call_id,
+                        user_text[:60],
+                    )
+                    return
             elif uid:
                 llm.set_module_overlay(
                     get_context_overlay(get_orchestrator(call_id).active_module) or ""

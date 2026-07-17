@@ -22,6 +22,7 @@ from app.services.integrations import (
     check_supabase_auth_api_key,
 )
 from app.services.google_oauth import google_oauth_diagnostics
+from app.services.process_identity import PROCESS_BOOT_ID
 from app.domain.plans import (
     CED_ELITE,
     FOUNDING_MEMBER_MAX_SLOTS,
@@ -60,6 +61,8 @@ def health(_request: Request) -> dict[str, str]:
         "build": BUILD_VERSION,
         "timestamp": BUILD_TIMESTAMP,
         "llm_provider": settings.llm_provider,
+        "pid": str(os.getpid()),
+        "boot_id": PROCESS_BOOT_ID,
     }
     from app.services.voice_test_mode import (
         is_gemini_standalone_voice_test,
