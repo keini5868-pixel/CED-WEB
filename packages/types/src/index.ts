@@ -109,10 +109,12 @@ const COMMON_FREE_TOOLS = [
  * Starter +" / "Todo Pro +". Cada tarjeta debe ser autosuficiente, sin
  * obligar a mirar el plan anterior para saber qué incluye.
  *
- * Orden dentro de cada `highlights`: primero las capacidades NUEVAS de ese
- * nivel (para que se vean en el resumen de 5 items de la home vía
- * `.slice(0, 5)`) y al final las heredadas de niveles previos — la página
- * completa (/pricing) siempre muestra el arreglo entero, sin recortar.
+ * Tanto la home (`/`) como `/pricing` renderizan el arreglo `highlights`
+ * COMPLETO, sin recortar (nunca usar `.slice()` sobre esto — un recorte
+ * parcial rompe la regla de listado explícito, sobre todo en Founding, cuyo
+ * valor está justamente en mostrarlo todo). El orden solo importa para
+ * legibilidad: primero las capacidades NUEVAS de ese nivel, al final las
+ * heredadas de niveles previos.
  */
 export const PUBLIC_PLANS = [
   {

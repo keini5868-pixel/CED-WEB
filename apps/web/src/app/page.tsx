@@ -112,7 +112,7 @@ export default function HomePage() {
                   </p>
                 )}
                 <ul className="mt-4 flex-1 space-y-1.5 text-xs text-cyan-100/75">
-                  {plan.highlights.slice(0, 5).map((h) => (
+                  {plan.highlights.map((h) => (
                     <li key={h}>· {h}</li>
                   ))}
                 </ul>
