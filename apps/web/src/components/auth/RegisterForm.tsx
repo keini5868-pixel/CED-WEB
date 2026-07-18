@@ -47,6 +47,21 @@ export function RegisterForm() {
       setError(authError.message);
       return;
     }
+    // Supabase no devuelve error si el correo ya existe y está confirmado
+    // (anti-enumeración): responde un usuario "obfuscado" con `identities`
+    // vacío y sin sesión — idéntico en apariencia a un registro nuevo
+    // pendiente de confirmar. Sin esta comprobación, quien reutiliza un
+    // correo de una cuenta vieja (p. ej. una ya degradada a plan Básico
+    // gratis tras un trial expirado) termina en "revisa tu correo" sin
+    // enterarse de que en realidad sigue en su cuenta antigua — nunca
+    // obtiene el trial nuevo de 5 min/día de voz que sí le corresponde a
+    // una cuenta realmente nueva.
+    if (data.user && data.user.identities?.length === 0) {
+      setError(
+        "Ya existe una cuenta con este correo. Inicia sesión en su lugar, o usa otro correo para crear una cuenta nueva.",
+      );
+      return;
+    }
     if (data.user && !data.session) {
       router.push(
         `/verify-email?email=${encodeURIComponent(email.trim())}&next=${callbackNext}`,
