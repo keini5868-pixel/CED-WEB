@@ -147,15 +147,20 @@ def should_take_direct_image_path(
 def _format_error(raw_error: str) -> str:
     err = (raw_error or "").strip() or "No pude generar la imagen."
     if "no devolvió imagen" in err.lower():
-        # Gemini bloqueó el pedido sin excepción ni motivo explícito — típico de
-        # personajes/marcas con derechos de autor (Marvel, DC, etc.). No hubo
-        # imagen generada; decirlo con honestidad en vez del hint genérico de
-        # "sea más concreto" (engañoso: el problema no es vaguedad).
+        # Gemini no devolvió imagen tras varios intentos/modelos sin excepción ni
+        # motivo explícito. Dos causas típicas: (a) personajes/marcas con derechos
+        # de autor (Marvel, DC, etc.) bloqueados por el filtro de contenido, o
+        # (b) un límite temporal de la API. No hubo imagen generada en ningún caso;
+        # decirlo con honestidad y sin afirmar la causa como certeza (antes se
+        # aseguraba "es por copyright", lo cual es engañoso si en realidad fue un
+        # límite temporal — y también engañoso el hint genérico de "sea más
+        # concreto", porque el problema no es vaguedad del pedido).
         return (
-            "No pude generar la imagen: el sistema de generación la bloqueó, "
-            "probablemente porque describe un personaje o marca con derechos de autor "
-            "protegidos. No se generó ninguna imagen. Puedo crear algo similar sin usar "
-            "esa marca específica, o intenta con otra idea."
+            "No pude generar la imagen: no se generó ninguna imagen. Puede ser que el "
+            "sistema bloqueara el pedido — por ejemplo si describe un personaje o marca "
+            "con derechos de autor protegidos — o un límite temporal del servicio. "
+            "Puedo intentarlo de nuevo, o si es un personaje con marca registrada, "
+            "puedo crear algo similar sin usar esa marca específica."
         )
     if err.lower().startswith("no pude generar la imagen"):
         return err
