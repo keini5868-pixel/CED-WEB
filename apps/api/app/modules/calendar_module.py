@@ -45,15 +45,29 @@ _WEEKDAYS = {
 
 
 def _parse_time(text: str, default_hour: int = 9) -> tuple[int, int]:
-    m = re.search(r"(?:a\s+las?\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm|a\.?\s*m\.?|p\.?\s*m\.?)?", text, re.I)
+    # Además de "am/pm" explícito, reconoce los meridianos en español que la
+    # gente realmente dice por voz ("a las 5 de la tarde/noche/madrugada/mañana").
+    # Antes solo se detectaba am/pm literal — "5 de la tarde" caía sin meridiano
+    # y se guardaba como 5:00 a.m. en vez de 5:00 p.m.
+    m = re.search(
+        r"(?:a\s+las?\s+)?(\d{1,2})(?::(\d{2}))?\s*"
+        r"(am|pm|a\.?\s*m\.?|p\.?\s*m\.?|"
+        r"de\s+la\s+tarde|de\s+la\s+noche|de\s+la\s+madrugada|de\s+la\s+ma[nñ]ana)?",
+        text,
+        re.I,
+    )
     if not m:
         return default_hour, 0
     hour = int(m.group(1))
     minute = int(m.group(2) or 0)
     meridiem = (m.group(3) or "").lower()
-    if meridiem.startswith("p") and hour < 12:
+    is_pm = meridiem.startswith("p") or "tarde" in meridiem or "noche" in meridiem
+    is_am = meridiem.startswith("a") or "madrugada" in meridiem or "ma\u00f1ana" in meridiem or "manana" in meridiem
+    if is_pm and hour < 12:
         hour += 12
-    if meridiem.startswith("a") and hour == 12:
+    if "noche" in meridiem and hour == 12:
+        hour = 0  # "12 de la noche" = medianoche
+    if is_am and hour == 12:
         hour = 0
     return max(0, min(hour, 23)), max(0, min(minute, 59))
 

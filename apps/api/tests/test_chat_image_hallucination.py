@@ -5,9 +5,11 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from app.services.chat_image_generation import (
+    _format_error,
     extract_hallucinated_generate_image_prompt,
     looks_like_hallucinated_generate_image,
     reply_promises_image_without_attachment,
+    run_chat_image_generation,
     salvage_image_turn,
     should_take_direct_image_path,
     strip_hallucinated_generate_image_text,
@@ -147,3 +149,48 @@ def test_salvage_variants_for_direct_prompts(mock_gen: MagicMock):
         )
         assert attachment and attachment.get("url"), prompt
         assert "generate_image" not in reply, prompt
+
+
+def test_format_error_is_honest_about_content_block_not_vagueness():
+    """Regresión: cuando Gemini bloquea el pedido en silencio (personajes/marcas con
+    copyright — Iron Man, Spider-Man, etc.), el mensaje no debía sugerir "sea más
+    concreto" (engañoso — el problema no es vaguedad) ni, peor, dejar que capas
+    superiores narren un falso éxito. Debe decir explícitamente que NO se generó
+    ninguna imagen y ofrecer una alternativa sin la marca protegida.
+    """
+    raw = (
+        "Gemini (gemini-2.5-flash-image) no devolvió imagen usable Intente un pedido "
+        "más concreto, por ejemplo: 'genera una imagen de un atardecer en la playa "
+        "con estilo fotorrealista'."
+    )
+    out = _format_error(raw)
+    low = out.lower()
+    assert "no pude generar la imagen" in low
+    assert "no se generó ninguna imagen" in low
+    assert "derechos de autor" in low
+    assert "sea más concreto" not in low
+    assert "pedido más concreto" not in low
+
+
+@patch("app.services.gemini_images.generate_image")
+def test_run_chat_image_generation_reports_content_block_honestly(mock_generate: MagicMock):
+    mock_generate.return_value = {
+        "ok": False,
+        "error": (
+            "Gemini (gemini-2.5-flash-image) no devolvió imagen usable Intente un "
+            "pedido más concreto, por ejemplo: algo distinto."
+        ),
+        "code": "gemini_error",
+    }
+    result = run_chat_image_generation(
+        "user-1",
+        "conv-1",
+        "genérame una imagen de la armadura de Iron Man",
+        [],
+        plan_id=None,
+    )
+    assert result["ok"] is False
+    assert result.get("url") is None
+    low = result["error"].lower()
+    assert "derechos de autor" in low
+    assert "no se generó ninguna imagen" in low

@@ -752,6 +752,11 @@ async def _execute_voice_tool_body(
                     f"No fue posible generar la imagen, señor. {err}",
                     error="quota_or_limit",
                 )
+            if "derechos de autor" in err_l or "no devolvió imagen" in err_l:
+                # `_format_error` (chat_image_generation.py) ya redacta el mensaje honesto
+                # de bloqueo de contenido — no lo envolvemos de nuevo para no duplicar la
+                # explicación ("No fue posible... No pude generar...").
+                return _spoken_err(f"Señor, {err[0].lower()}{err[1:]}", error="content_blocked")
             return _spoken_err(
                 f"No fue posible generar la imagen en este momento, señor. {err}".strip(),
                 error=err,

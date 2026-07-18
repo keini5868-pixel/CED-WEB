@@ -28,33 +28,40 @@ logger = logging.getLogger(__name__)
 CALENDAR_WRITE_TTL_SEC = 600
 DraftStatus = Literal["pending", "writing", "written", "cancelled"]
 
+# Palabra "sí/si" aislada — el confirmador real y más frecuente en voz. Se usa con
+# \b para no matchear dentro de otras palabras ("así", "revisión").
+_YES_WORD = re.compile(r"\bs[ií]\b", re.I)
+
 _CALENDAR_WRITE_CONFIRM = re.compile(
     r"\b("
-    r"s[ií]\s*,?\s*(?:ag[eé]nda(?:lo|la|me|r)?|confirma(?:lo)?|gu[aá]rdalo)|"
     r"ag[eé]nda(?:lo|la|me|r)?|gu[aá]rdalo|"
     r"dale|adelante|de\s+acuerdo|confirmo|confirma(?:do)?|correcto|exacto|"
-    r"procede|hazlo|s[ií]\s+por\s+favor"
+    r"procede|hazlo|claro|as[ií]\s+es|est[aá]\s+bien|obvio|"
+    r"perfecto|de\s+una|hag[aá]moslo"
     r")\b",
     re.I,
 )
 
 _CALENDAR_WRITE_CANCEL = re.compile(
     r"\b("
-    r"no\s*,?\s*(?:agendes|lo\s+hagas|gu[aá]rdes)?|"
-    r"cancela(?:r)?|olv[ií]dalo|olvidalo|mejor\s+no|"
-    r"no\s+lo\s+agendes|detente|para"
+    r"no\s+lo\s+agendes|no\s+lo\s+hagas|no\s+lo\s+guardes|"
+    r"cancela(?:r|lo)?|olv[ií]dalo|olvidalo|mejor\s+no|"
+    r"detente|espera|todav[ií]a\s+no|a[uú]n\s+no"
     r")\b",
     re.I,
 )
 
 _AGENT_CONFIRM_ASK = re.compile(
-    r"\b(confirm(?:o|a|ar|e)?|agenda(?:r|lo)?|guard(?:o|e|ar)|preparad|"
-    r"¿\s*desea|desea\s+que|procedo|pendiente)\b",
+    r"\b(confirm(?:o|a|ar|e)?|agenda(?:r|lo)?|guard(?:o|e|ar)|prepar[ée]|preparad|"
+    r"¿\s*desea|desea\s+que|procedo|pendiente|registro|anoto)\b",
     re.I,
 )
 
-_SHORT_AFFIRMATIVE = re.compile(
-    r"^(?:s[ií]|dale|adelante|correcto|exacto|confirmo|de\s+acuerdo|ok(?:ay)?)[\s!.]*$",
+# Ruido de cortesía / muletillas frecuentes en voz que no cambian el significado
+# de la respuesta ("Sí señor", "Sí, por favor", "Eh, sí", "Sí, gracias"...).
+# Se elimina antes de contar palabras para decidir si es una afirmación corta.
+_CONFIRM_NOISE = re.compile(
+    r"\b(por\s+favor|se[nñ]or(?:a)?|gracias|eh+|ehh+|bueno|vale|okay|ok)\b",
     re.I,
 )
 
@@ -68,19 +75,41 @@ def is_calendar_write_intent(text: str) -> bool:
     return bool(_WRITE_INTENT.search(text or ""))
 
 
+def _strip_confirm_noise(text: str) -> str:
+    cleaned = _CONFIRM_NOISE.sub(" ", text or "")
+    cleaned = re.sub(r"[^\w\sáéíóúñÁÉÍÓÚÑ]", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip()
+
+
 def is_calendar_write_confirm(text: str, *, allow_short_yes: bool = False) -> bool:
+    """True si el usuario confirma agendar. Tolerante a ruido real de voz:
+    puntuación STT ("Sí,"), vocativos ("Sí señor"), cortesía ("Sí, por favor")
+    y muletillas ("Eh, sí"). No usar `allow_short_yes` no cambia el resultado —
+    se mantiene el parámetro por compatibilidad con las llamadas existentes.
+    """
     t = (text or "").strip()
     if not t:
         return False
-    if allow_short_yes and _SHORT_AFFIRMATIVE.match(t):
-        return True
-    if re.fullmatch(r"s[ií]\s*(?:ag[eé]nda(?:lo|la)?)[\s!.]*", t, re.I):
+    if _YES_WORD.search(t):
         return True
     return bool(_CALENDAR_WRITE_CONFIRM.search(t))
 
 
 def is_short_calendar_affirmative(text: str) -> bool:
-    return bool(_SHORT_AFFIRMATIVE.match((text or "").strip()))
+    """True si, tras quitar cortesía/muletillas, queda una afirmación corta
+    (<=5 palabras) — permite saltar la verificación de contexto del agente
+    cuando la respuesta del usuario es un "sí" inequívoco aunque venga con
+    ruido natural de voz alrededor.
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    cleaned = _strip_confirm_noise(t)
+    if not cleaned:
+        return False
+    if len(cleaned.split()) > 5:
+        return False
+    return bool(_YES_WORD.search(cleaned) or _CALENDAR_WRITE_CONFIRM.search(cleaned))
 
 
 def is_calendar_write_cancel(text: str) -> bool:
@@ -247,6 +276,13 @@ def confirm_calendar_write(
     """Escribe el evento solo con confirmación explícita en el transcript."""
     draft = vcs.get_calendar_pending_write(user_id)
     if not draft:
+        logger.warning(
+            "[CALENDAR-WRITE] confirm FAILED status=no_draft user=%s draft_id_arg=%r "
+            "(no hay borrador en memoria para este user_id — revisar si prepare_write "
+            "se ejecutó con el mismo user_id resuelto, o si expiró/fue limpiado antes)",
+            user_id[:8],
+            draft_id,
+        )
         return {
             "ok": False,
             "status": "no_draft",
@@ -256,6 +292,12 @@ def confirm_calendar_write(
 
     wanted = (draft_id or "").strip()
     if wanted and wanted != draft.get("draft_id"):
+        logger.warning(
+            "[CALENDAR-WRITE] confirm FAILED status=draft_mismatch user=%s wanted=%r actual=%r",
+            user_id[:8],
+            wanted,
+            draft.get("draft_id"),
+        )
         return {
             "ok": False,
             "status": "draft_mismatch",
@@ -265,6 +307,11 @@ def confirm_calendar_write(
 
     if vcs.is_calendar_pending_write_expired(user_id):
         vcs.clear_calendar_pending_write(user_id, reason="expired")
+        logger.warning(
+            "[CALENDAR-WRITE] confirm FAILED status=expired user=%s draft=%s",
+            user_id[:8],
+            str(draft.get("draft_id", ""))[:8],
+        )
         return {
             "ok": False,
             "status": "expired",
@@ -303,6 +350,12 @@ def confirm_calendar_write(
         user_line[:80],
     )
     if not is_calendar_write_confirm(user_line, allow_short_yes=True):
+        logger.warning(
+            "[CALENDAR-WRITE] confirm FAILED status=confirm_required user=%s utterance=%r "
+            "(is_calendar_write_confirm devolvió False para esta frase)",
+            user_id[:8],
+            user_line[:120],
+        )
         return {
             "ok": False,
             "status": "confirm_required",
@@ -313,6 +366,14 @@ def confirm_calendar_write(
         }
     short_yes = is_short_calendar_affirmative(user_line)
     if not short_yes and not _agent_recently_asked_confirm(transcript):
+        logger.warning(
+            "[CALENDAR-WRITE] confirm FAILED status=confirm_context_missing user=%s utterance=%r "
+            "agent_lines_checked=%d (ninguna línea reciente del agente coincidió con "
+            "_AGENT_CONFIRM_ASK y la frase no calificó como short_yes)",
+            user_id[:8],
+            user_line[:120],
+            len(transcript),
+        )
         return {
             "ok": False,
             "status": "confirm_context_missing",
@@ -330,6 +391,12 @@ def confirm_calendar_write(
                 "spoken": "Señor, esa cita ya fue agendada.",
                 "transition": "transition_to_general_assistant",
             }
+        logger.warning(
+            "[CALENDAR-WRITE] confirm FAILED status=race user=%s draft=%s refreshed_status=%r",
+            user_id[:8],
+            str(draft.get("draft_id", ""))[:8],
+            refreshed.get("status"),
+        )
         return {
             "ok": False,
             "status": "race",
@@ -395,6 +462,11 @@ def confirm_calendar_write(
                 "spoken": _not_connected_message(),
                 "transition": "transition_to_general_assistant",
             }
+        logger.warning(
+            "[CALENDAR-WRITE] confirm FAILED status=error(ValueError) user=%s reason=%r",
+            user_id[:8],
+            str(exc)[:200],
+        )
         return {
             "ok": False,
             "status": "error",

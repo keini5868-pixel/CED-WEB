@@ -164,7 +164,7 @@ def _awaiting_confirmation_response(draft: dict[str, Any]) -> dict[str, Any]:
     plat = str(draft.get("platform") or "")
     label = "Facebook" if plat == "facebook" else "Instagram"
     has_image = bool(str(draft.get("image_url") or "").strip())
-    image_note = " con la imagen que subió" if has_image and plat == "instagram" else ""
+    image_note = " con la imagen que subió" if has_image else ""
     spoken = (
         f"Le preparo una publicación en {label}{image_note} que dice: «{preview}». "
         f"¿Confirma que la publique?"
@@ -351,6 +351,19 @@ def prepare_meta_publish(
                     "«ya subí la imagen» o repita el texto a publicar."
                 ),
             }
+    else:
+        # Facebook admite texto solo, pero si el usuario ya subió/generó una imagen
+        # reciente en esta sesión (panel Diálogo en Vivo, cámara, generación) debe
+        # usarla también — antes se ignoraba por completo y el post salía sin foto
+        # aunque el usuario acabara de subir una imagen y pidiera publicarla.
+        try:
+            resolved = resolve_publishable_image_for_meta(user_id)
+            if resolved and resolved.get("url"):
+                image_url = resolved["url"]
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "[META-PUBLISH] facebook image resolve failed user=%s", user_id[:8]
+            )
 
     draft_id = str(uuid.uuid4())
     # Si reanudamos un awaiting_image, conservar el mismo draft_id.

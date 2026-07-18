@@ -187,6 +187,85 @@ def test_confirm_publishes_facebook():
     vcs.clear_meta_pending_publish(USER)
 
 
+def test_prepare_facebook_uses_uploaded_image():
+    """Bug 4 regression: subir imagen (panel Diálogo en Vivo) y pedir Facebook debe
+    adjuntar esa imagen al borrador — antes se ignoraba por completo para Facebook."""
+    vcs.clear_meta_pending_publish(USER)
+    with patch("app.services.meta_publish_flow._meta_connected", return_value=True):
+        with patch(
+            "app.services.meta_publish_flow.resolve_publishable_image_for_meta",
+            return_value={"url": IMG},
+        ):
+            out = prepare_meta_publish(
+                USER,
+                call_id=CALL,
+                platform="facebook",
+                caption="Publícala en Facebook también",
+            )
+    assert out["ok"] is True
+    assert out["status"] == "awaiting_confirmation"
+    assert out.get("has_image") is True
+    assert "imagen que subió" in out["spoken"]
+    draft = vcs.get_meta_pending_publish(USER)
+    assert draft["image_url"] == IMG
+    vcs.clear_meta_pending_publish(USER)
+
+
+def test_confirm_facebook_passes_uploaded_image_url():
+    """Bug 4 regression: la publicación real a Facebook debe recibir la imagen."""
+    vcs.clear_meta_pending_publish(USER)
+    with patch("app.services.meta_publish_flow._meta_connected", return_value=True):
+        with patch(
+            "app.services.meta_publish_flow.resolve_publishable_image_for_meta",
+            return_value={"url": IMG},
+        ):
+            prepare_meta_publish(
+                USER,
+                call_id=CALL,
+                platform="facebook",
+                caption="Publícala en Facebook también",
+            )
+    draft_id = vcs.get_meta_pending_publish(USER)["draft_id"]
+    payload = {
+        "call": {
+            "transcript_object": [
+                {"role": "agent", "content": "¿Confirma que la publique?"},
+                {"role": "user", "content": "Sí."},
+            ]
+        }
+    }
+    with patch(
+        "app.services.meta_publish_flow.publish_facebook",
+        return_value={"ok": True, "post_id": "fb_2", "spoken": "Publicado en Facebook."},
+    ) as mock_fb:
+        result = confirm_meta_publish(USER, call_id=CALL, payload=payload, draft_id=draft_id)
+    assert result["ok"] is True
+    assert result["status"] == "published"
+    assert mock_fb.call_args.kwargs.get("image_url") == IMG
+    vcs.clear_meta_pending_publish(USER)
+
+
+def test_prepare_facebook_without_image_stays_text_only():
+    """Facebook sin imagen subida debe seguir funcionando como post de solo texto."""
+    vcs.clear_meta_pending_publish(USER)
+    with patch("app.services.meta_publish_flow._meta_connected", return_value=True):
+        with patch(
+            "app.services.meta_publish_flow.resolve_publishable_image_for_meta",
+            return_value=None,
+        ):
+            out = prepare_meta_publish(
+                USER,
+                call_id=CALL,
+                platform="facebook",
+                caption="Oferta especial hoy en CED",
+            )
+    assert out["ok"] is True
+    assert out.get("has_image") is False
+    draft = vcs.get_meta_pending_publish(USER)
+    assert not draft.get("image_url")
+    vcs.clear_meta_pending_publish(USER)
+
+
 def test_cancel_clears():
     with patch("app.services.meta_publish_flow._meta_connected", return_value=True):
         prepare_meta_publish(

@@ -27,6 +27,46 @@ def test_is_calendar_write_confirm():
     assert not is_calendar_write_confirm("ok gracias")
 
 
+def test_is_calendar_write_confirm_tolerates_natural_voice_noise():
+    """Regresión: confirmaciones reales por voz vienen con ruido (vocativos,
+    puntuación de STT, cortesía, muletillas) — antes un "sí" con cualquier
+    palabra extra (p.ej. "Sí señor") no se detectaba como confirmación y el
+    flujo fallaba con "no detecté una confirmación clara" pese a que el
+    usuario sí confirmó.
+    """
+    variantes_validas = [
+        "Sí",
+        "Sí.",
+        "Sí,",
+        "Sí señor",
+        "Sí, por favor",
+        "Sí, adelante",
+        "Eh, sí",
+        "Sí, así es",
+        "Claro que sí",
+        "Sí, agéndalo para mañana",
+    ]
+    for v in variantes_validas:
+        assert is_calendar_write_confirm(v, allow_short_yes=True), f"debió confirmar: {v!r}"
+
+    variantes_invalidas = ["No", "No, cancela", "Mejor no", "¿Qué hora es?"]
+    for v in variantes_invalidas:
+        assert not is_calendar_write_confirm(v, allow_short_yes=True), f"NO debió confirmar: {v!r}"
+
+
+def test_parse_time_spanish_meridiem_phrases():
+    """Regresión: '5 de la tarde' se guardaba como 5:00 a.m. (solo se
+    reconocía am/pm literal, no los meridianos en español que la gente
+    realmente dice por voz)."""
+    from app.modules.calendar_module import _parse_time
+
+    assert _parse_time("hoy a las 5 de la tarde") == (17, 0)
+    assert _parse_time("a las 9 de la mañana") == (9, 0)
+    assert _parse_time("a las 11 de la noche") == (23, 0)
+    assert _parse_time("a las 12 de la noche") == (0, 0)
+    assert _parse_time("a las 2 de la madrugada") == (2, 0)
+
+
 def test_prepare_needs_details():
     out = prepare_calendar_write(USER, call_id=CALL, query="hola")
     assert out["status"] == "needs_details"
@@ -100,6 +140,62 @@ def test_prepare_and_confirm_short_yes():
     assert conf["ok"] is True
     assert conf["status"] == "written"
     assert "Ana" in conf["spoken"] or "reunión" in conf["spoken"].lower()
+
+
+def test_prepare_and_confirm_with_natural_noisy_yes():
+    """Regresión del bug reportado: 'Agéndame llamar a mi papá hoy a las 5 de
+    la tarde' -> confirmar con 'Sí señor' (frase natural, no un 'sí' limpio)
+    debía fallar con confirm_required antes del fix.
+    """
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            prep = prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="agéndame llamar a mi papá hoy a las 5 de la tarde",
+            )
+    assert prep["status"] == "awaiting_confirmation"
+    assert "5:00 PM" in prep["spoken"]
+    draft_id = prep["draft_id"]
+
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            with patch(
+                "app.services.calendar_write_flow._calendar_api_call",
+                side_effect=lambda _uid, fn: fn("tok"),
+            ):
+                with patch(
+                    "app.services.calendar_write_flow.create_event",
+                    return_value={"id": "evt-2"},
+                ):
+                    conf = confirm_calendar_write(
+                        USER,
+                        call_id=CALL,
+                        draft_id=draft_id,
+                        payload={
+                            "call": {
+                                "transcript_object": [
+                                    {"role": "user", "content": "agéndame llamar a mi papá hoy a las 5 de la tarde"},
+                                    {"role": "agent", "content": prep["spoken"]},
+                                    {"role": "user", "content": "Sí señor"},
+                                ]
+                            }
+                        },
+                    )
+    assert conf["ok"] is True
+    assert conf["status"] == "written"
 
 
 def test_confirm_reports_missing_write_scope():
