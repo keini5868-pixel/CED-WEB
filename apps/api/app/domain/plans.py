@@ -89,6 +89,9 @@ class PlanLimits:
     prospection_enabled: bool
     pdf_reports: bool
     claude_messages_per_day: int  # -1 = ilimitado
+    # -1 = ilimitado (planes pagados, sin cambios). Solo Básico usa un tope > 0
+    # para dar PDF gratis de forma permanente sin abrir la puerta a abuso.
+    pdf_reports_per_day: int = -1
 
     @property
     def gemini_minutes_per_day(self) -> int:
@@ -166,17 +169,21 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     # (get_user_access status=="trialing"); una vez ese trial vence, la
     # suscripción cae a este plan y voice_enabled=False corta la voz a 0 sin
     # excepción, para que nadie use voz gratis indefinidamente sin pagar.
+    # Imágenes y PDF SÍ quedan gratis de forma permanente (muestra continua de
+    # capacidades CED, aprobado Keini 2026-07) con tope diario bajo — costo
+    # real por unidad ($0.02 imagen, $0.05 PDF) es marginal incluso a escala.
     PlanId.FREE_BASIC.value: PlanLimits(
         voice_minutes_per_day=0,
         web_searches_per_day=0,
-        ai_images_standard_per_day=0,
+        ai_images_standard_per_day=2,
         ai_images_hd_per_day=0,
         voice_enabled=False,
         camera_enabled=False,
         meta_social_enabled=False,
         prospection_enabled=False,
-        pdf_reports=False,
+        pdf_reports=True,
         claude_messages_per_day=50,
+        pdf_reports_per_day=1,
     ),
 }
 

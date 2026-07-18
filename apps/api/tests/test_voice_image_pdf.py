@@ -91,7 +91,11 @@ def test_voice_generar_pdf_pushes_event_on_success():
     with (
         patch(
             "app.deps.plan_access.effective_plan_limits",
-            return_value=(SimpleNamespace(pdf_reports=True), None, None),
+            return_value=(
+                SimpleNamespace(pdf_reports=True, pdf_reports_per_day=-1),
+                None,
+                None,
+            ),
         ),
         patch(
             "app.services.voice_tool_executor.store_pdf_with_timeout",

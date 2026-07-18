@@ -33,29 +33,52 @@ def effective_plan_limits(user_id: str) -> tuple[PlanLimits, str, bool]:
     return get_plan_limits(plan_id), reason or ("ok" if allowed else "denied"), False
 
 
-def require_pdf_reports(user_id: str) -> None:
+def pdf_included_in_plan_today(user_id: str, limits: PlanLimits) -> bool:
+    """True si el siguiente PDF de hoy está cubierto por el plan (sin monedero).
+
+    Planes pagados: pdf_reports_per_day=-1 (ilimitado, sin cambio de comportamiento).
+    Básico gratis: pdf_reports_per_day=1 — cuenta lo ya generado HOY antes de este
+    turno; una vez alcanzado el tope, cae a monedero igual que un plan sin PDF.
+    """
+    if not limits.pdf_reports:
+        return False
+    if limits.pdf_reports_per_day < 0:
+        return True
+    from app.services.supabase_db import count_pdfs_today
+
+    return count_pdfs_today(user_id) < limits.pdf_reports_per_day
+
+
+def require_pdf_reports(user_id: str) -> bool:
+    """Verifica cupo de PDF. Retorna True si el PDF de este turno va incluido en el
+    plan (no cobrar monedero después) — el llamador debe pasar ese valor a
+    `charge_pdf_from_wallet_if_needed` para no recontar tras guardar el artefacto."""
     limits, reason, _ = effective_plan_limits(user_id)
-    if limits.pdf_reports:
-        return
+    included = pdf_included_in_plan_today(user_id, limits)
+    if included:
+        return True
     from app.services.wallet import can_afford
 
     if can_afford(user_id, "pdf", units=1.0):
-        return
-    detail = (
-        "Tu prueba terminó. Elige un plan o recarga desde $10 para PDF."
-        if reason == "trial_expired"
-        else (
+        return False
+    if reason == "trial_expired":
+        detail = "Tu prueba terminó. Elige un plan o recarga desde $10 para PDF."
+    elif limits.pdf_reports:
+        detail = (
+            f"Alcanzaste tu límite diario de {limits.pdf_reports_per_day} PDF gratis. "
+            "Recarga desde $10 para seguir generando PDFs hoy."
+        )
+    else:
+        detail = (
             "Los PDFs requieren plan Pro, Élite o Founding, o recarga desde $10. "
             f"{PLAN_UPGRADE_HINT}"
         )
-    )
     raise HTTPException(status_code=402, detail=detail)
 
 
-def charge_pdf_from_wallet_if_needed(user_id: str) -> None:
-    """Tras PDF exitoso: si el plan no incluye PDF, debita monedero."""
-    limits, _, _ = effective_plan_limits(user_id)
-    if limits.pdf_reports:
+def charge_pdf_from_wallet_if_needed(user_id: str, *, included_in_plan: bool) -> None:
+    """Tras PDF exitoso: si no estaba incluido en el plan/tope de hoy, debita monedero."""
+    if included_in_plan:
         return
     from app.services.wallet import try_spend
 

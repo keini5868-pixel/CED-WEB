@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "fix-image-block-message-not-overclaim-copyright-v52"
+BUILD_VERSION = "feat-free-basic-permanent-images-pdf-daily-cap-v53"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

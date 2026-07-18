@@ -28,7 +28,7 @@ def post_generate_pdf(
     body: GeneratePdfBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
-    require_pdf_reports(user_id)
+    included_in_plan = require_pdf_reports(user_id)
     user_request = (body.user_request or body.content or body.title).strip()
     try:
         artifact = store_pdf_with_timeout(
@@ -47,7 +47,7 @@ def post_generate_pdf(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
-    charge_pdf_from_wallet_if_needed(user_id)
+    charge_pdf_from_wallet_if_needed(user_id, included_in_plan=included_in_plan)
     return {
         "ok": True,
         "file_id": artifact.file_id,

@@ -623,7 +623,7 @@ def _execute_direct_pdf(
     detail_level: str = "brief",
 ) -> tuple[str, dict[str, Any]] | None:
     """Genera PDF real y devuelve mensaje + adjunto para el chat."""
-    from app.deps.plan_access import effective_plan_limits
+    from app.deps.plan_access import effective_plan_limits, pdf_included_in_plan_today
 
     limits, reason, _trial = effective_plan_limits(user_id)
     if reason == "trial_expired":
@@ -631,14 +631,20 @@ def _execute_direct_pdf(
             "Tu prueba terminó. Elige un plan en Precios o continúa con el plan Básico gratis.",
             {},
         )
+    included = pdf_included_in_plan_today(user_id, limits)
     pdf_wallet_charge_needed = False
-    if not limits.pdf_reports:
+    if not included:
         from app.services.wallet import can_afford
 
         if not can_afford(user_id, "pdf", units=1.0):
             msg = (
-                "Los PDFs requieren plan Pro, Élite o Founding, "
-                "o recarga desde $10. Mejora tu plan en /pricing."
+                f"Alcanzaste tu límite diario de {limits.pdf_reports_per_day} PDF gratis. "
+                "Recarga desde $10 para seguir hoy."
+                if limits.pdf_reports
+                else (
+                    "Los PDFs requieren plan Pro, Élite o Founding, "
+                    "o recarga desde $10. Mejora tu plan en /pricing."
+                )
             )
             _mark_recharge_needed("pdf", msg)
             return (msg, {})
@@ -1396,7 +1402,7 @@ def _run_chat_tool(
             )
             return json.dumps(result)
         if name == "generar_pdf":
-            from app.deps.plan_access import effective_plan_limits
+            from app.deps.plan_access import effective_plan_limits, pdf_included_in_plan_today
 
             limits, reason, _ = effective_plan_limits(user_id)
             if reason == "trial_expired":
@@ -1407,14 +1413,20 @@ def _run_chat_tool(
                         "code": "trial_expired",
                     },
                 )
+            included = pdf_included_in_plan_today(user_id, limits)
             pdf_wallet_charge_needed = False
-            if not limits.pdf_reports:
+            if not included:
                 from app.services.wallet import can_afford
 
                 if not can_afford(user_id, "pdf", units=1.0):
                     msg = (
-                        "Los PDFs requieren plan Pro, Élite o Founding, "
-                        "o recarga desde $10. Mejora en /pricing."
+                        f"Alcanzaste tu límite diario de {limits.pdf_reports_per_day} PDF gratis. "
+                        "Recarga desde $10 para seguir hoy."
+                        if limits.pdf_reports
+                        else (
+                            "Los PDFs requieren plan Pro, Élite o Founding, "
+                            "o recarga desde $10. Mejora en /pricing."
+                        )
                     )
                     _mark_recharge_needed("pdf", msg)
                     return json.dumps(

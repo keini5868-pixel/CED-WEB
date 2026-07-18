@@ -122,7 +122,12 @@ export const PUBLIC_PLANS = [
     label: "CED Básico",
     priceUsd: 0,
     minutesPerDay: 0,
-    highlights: [...COMMON_FREE_TOOLS, "Chat de texto"],
+    highlights: [
+      "Creación de imágenes",
+      "Creación de PDF",
+      ...COMMON_FREE_TOOLS,
+      "Chat de texto",
+    ],
   },
   {
     id: "starter" as const,

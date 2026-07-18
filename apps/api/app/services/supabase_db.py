@@ -1035,6 +1035,23 @@ def list_pdf_artifacts(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]
         return []
 
 
+def count_pdfs_today(user_id: str) -> int:
+    """Cuenta PDFs generados hoy (UTC) — usado para el tope diario gratis de Básico."""
+    try:
+        client = _client()
+        start = today_utc().isoformat()
+        result = (
+            client.table("ced_pdf_artifacts")
+            .select("file_id")
+            .eq("user_id", user_id)
+            .gte("created_at", start)
+            .execute()
+        )
+        return len(result.data or [])
+    except Exception:  # noqa: BLE001
+        return 0
+
+
 def count_generated_images_today(user_id: str) -> tuple[int, int]:
     """Cuenta imágenes standard y HD del día actual (UTC)."""
     try:

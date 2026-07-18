@@ -934,19 +934,25 @@ async def _execute_voice_tool_body(
             )
 
         if name == "generar_pdf":
-            from app.deps.plan_access import effective_plan_limits
+            from app.deps.plan_access import effective_plan_limits, pdf_included_in_plan_today
 
             limits, reason, _ = effective_plan_limits(user_id)
             if reason == "trial_expired":
                 return _spoken_err("Tu prueba terminó, señor. Elige un plan en Precios.")
+            included = pdf_included_in_plan_today(user_id, limits)
             pdf_wallet_charge_needed = False
-            if not limits.pdf_reports:
+            if not included:
                 from app.services.wallet import can_afford
 
                 if not can_afford(user_id, "pdf", units=1.0):
                     msg = (
-                        "Los PDFs requieren plan Pro, Élite o Founding, señor, "
-                        "o recarga desde diez dólares. Mejore en Precios."
+                        f"Señor, alcanzó su límite diario de {limits.pdf_reports_per_day} "
+                        "PDF gratis. Recargue desde diez dólares para seguir hoy."
+                        if limits.pdf_reports
+                        else (
+                            "Los PDFs requieren plan Pro, Élite o Founding, señor, "
+                            "o recarga desde diez dólares. Mejore en Precios."
+                        )
                     )
                     _push_recharge_needed(user_id, "pdf", msg)
                     return _spoken_err(msg, error="needs_recharge")
