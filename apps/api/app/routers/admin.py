@@ -122,9 +122,9 @@ def admin_llama_pull_model(
     body: LlamaPullBody,
     _admin_id: str = Depends(require_super_admin),
 ) -> dict:
-    """DIAGNÓSTICO TEMPORAL — descarga un modelo en el Ollama de texto (ced-llama)
-    desde dentro de la red privada de Railway. Solo admin. Quitar cuando ya no
-    haga falta cambiar de modelo desde aquí."""
+    """Descarga un modelo en el Ollama de texto (ced-llama) desde dentro de la
+    red privada de Railway — útil porque no hay acceso de shell al contenedor.
+    Solo admin. No cambia LLAMA_MODEL; eso sigue siendo manual en Railway."""
     import httpx
 
     from app.services.llama_service import _ollama_base
@@ -153,7 +153,7 @@ def admin_llama_pull_model(
 
 @router.get("/llama/models")
 def admin_llama_list_models(_admin_id: str = Depends(require_super_admin)) -> dict:
-    """DIAGNÓSTICO TEMPORAL — lista modelos descargados en ced-llama."""
+    """Lista modelos descargados en ced-llama."""
     import httpx
 
     from app.services.llama_service import _ollama_base
