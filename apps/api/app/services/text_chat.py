@@ -1780,27 +1780,9 @@ def _simple_chat_cascade(
     user_text: str = "",
     max_tokens: int | None = None,
 ) -> tuple[str, dict[str, Any] | None, dict[str, Any] | None]:
-    """Llama primero; Claude como único fallback cloud conversacional."""
-    from app.services.llama_service import should_route_to_llama, use_llama
-
+    """Claude como fallback cloud conversacional — sin Llama (ver iter_send_message_stream)."""
     last_exc: Exception | None = None
     token_budget = max_tokens or _chat_max_tokens(user_text)
-
-    if use_llama() and should_route_to_llama():
-        try:
-            reply = _gemini_simple_reply(
-                api_key="",
-                model="",
-                system=system,
-                messages=messages,
-                max_tokens=token_budget,
-            )
-            return reply, None, None
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[CHAT] Llama cascade failed, fallback Claude: %s", exc)
-            last_exc = exc
-    elif use_llama():
-        logger.warning("[CHAT] Llama configurado pero modelo no listo — fallback Claude")
 
     if anthropic_key:
         try:
@@ -3424,8 +3406,12 @@ def iter_send_message_stream(
     try:
         from app.services.stream_delta import stream_piece_delta
 
-        # Llama primero; si falla → Claude (no Gemini) vía _gemini_simple_reply_stream.
-        allow_llama = True
+        # Claude directo — sin Llama. Medido en producción: Llama (13B, CPU en
+        # Railway) agota siempre su timeout sin producir un token y el pipeline
+        # termina cayendo a Claude de todos modos (mismo techo que llevó a migrar
+        # voz por completo a Gemini). Mantener el intento de Llama solo agregaba
+        # varios segundos de espera muerta a cada turno sin ningún beneficio real.
+        allow_llama = False
         for piece in _gemini_simple_reply_stream(
             api_key=google_key,
             model=gemini_model,
