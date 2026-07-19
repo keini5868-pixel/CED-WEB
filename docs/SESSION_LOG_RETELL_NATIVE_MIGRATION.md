@@ -149,3 +149,60 @@ y no bloquea incorrectamente cuentas con saldo o con exención de administrador.
   (ver tabla de §3).
 - **Modelo de respaldo de Claude retirado**: `claude-3-5-haiku-20241022` (usado como respaldo si Llama falla)
   fue retirado por Anthropic (404). Actualizado a `claude-haiku-4-5-20251001`.
+
+## 8. Incidente — eliminación accidental de 13 cuentas de usuario (19 jul 2026)
+
+### Qué pasó
+Durante una prueba end-to-end del fix del trial de voz (registro de una cuenta nueva real para confirmar los
+5 min/día), se usó un script de limpieza (`scripts/_cleanup_browser_test_account.py`) para borrar la única
+cuenta de prueba creada. El script llamaba al endpoint de Supabase Admin API
+`GET /auth/v1/admin/users?email=...` esperando que filtrara por email en el servidor. **No lo hace** — ese
+endpoint devuelve la lista completa de usuarios sin filtrar por el parámetro `email`. El script iteró esa
+lista completa y emitió un `DELETE` por cada usuario devuelto, borrando 13 cuentas reales además de la cuenta
+de prueba objetivo. La eliminación de la cuenta admin (`keini5868@gmail.com`) se agotó por timeout del lado
+del cliente antes de completarse, por lo que su fila en `auth.users` y su `profile` sobrevivieron, pero su fila
+en `subscriptions` sí fue borrada (cascade delete por `user_id`).
+
+### Causa raíz (para que no se repita)
+Bug en el script, no en la plataforma: asumir que un endpoint de administración filtra server-side por un
+query param sin verificarlo primero contra una respuesta real, y sin un `LIMIT`/confirmación explícita antes
+de un bucle de `DELETE` masivo. El script fue **eliminado del repositorio** (no existen scripts equivalentes
+que borren cuentas vía la Admin API — verificado con una búsqueda completa del repo). Cualquier limpieza de
+cuentas de prueba futura debe: (1) resolver primero el `user_id` exacto vía `GET /admin/users/{id}` o un filtro
+verificado, (2) imprimir y confirmar la lista exacta de IDs antes de borrar, (3) nunca iterar una lista sin
+haber confirmado que fue filtrada correctamente.
+
+### Impacto real y decisión
+De las 13 cuentas borradas, ninguna tenía una suscripción de pago activa (Starter/Pro/Élite/Founding) — eran
+cuentas gratis o de prueba, sin cargos de por medio. Dado ese impacto acotado, y el riesgo de deshacer trabajo
+posterior al incidente (fix del trial, imágenes/PDF gratis permanentes en Básico, migración del chat de texto
+a Claude) al restaurar la base de datos vía point-in-time recovery, **se decidió no restaurar**. Esas 13
+personas deberán registrarse de nuevo si vuelven a usar el sistema.
+
+Verificación post-incidente (20 jul 2026):
+- Cuenta admin (`keini5868@gmail.com`): fila de `subscriptions` reconstruida manualmente
+  (`plan_id=founding`, `status=active`, `access_type=coadmin`, `price_locked_for_life=true`). Confirmado en
+  vivo contra producción que `/v1/usage/balance` responde 200 con `plan_minutes_daily=40`,
+  `is_founding_member=true` y uso real registrado — sin efectos secundarios.
+- Datos huérfanos: se auditaron `ced_pdf_artifacts`, `generated_images`, `voice_conversations` y
+  `ced_activity_logs` comparando cada `user_id` contra los `profiles` existentes. **0 filas huérfanas** — las
+  13 cuentas borradas no llegaron a generar contenido persistente (coherente con ser altas recientes/de
+  prueba), así que no quedó ningún PDF/imagen/conversación apuntando a un usuario inexistente.
+
+## 9. Sesión de continuación (19-20 jul 2026) — bugs reportados y chat de texto migrado a Claude
+
+Tras el cierre de la auditoría del §7, el usuario reportó 4 bugs adicionales por voz/chat y una queja de
+lentitud en el chat de texto normal. Resumen de lo corregido y verificado en producción esta sesión:
+
+| Ítem | Resolución |
+|---|---|
+| Calendario — confirmación por voz fallaba pese a funcionar por script | Regex de intención de escritura (`_WRITE_INTENT`) solo reconocía "agéndame/agendar", no verbos naturales como "guarda", "anota", "apunta". Ampliado; también se corrigió el parseo de hora ("5 de la tarde") y la extracción de título cuando incluye un nombre ("para Rafael Armando"). Verificado con HTTP real contra producción: prepare → confirm → evento real creado en Google Calendar → limpiado. |
+| "Genera imagen de Iron Man" confirmaba éxito sin generar nada | El endpoint de la tool de imagen le pasaba a Retell solo el texto, sin el booleano `ok`, y el LLM alucinaba éxito. Corregido el mensaje de error para ser honesto sobre bloqueo de contenido protegido/límite temporal, y reforzada la instrucción de no alucinar éxito de tools. |
+| Género inconsistente al referirse al usuario ("saludarla, señor") | Identidad mezclaba formas femeninas y masculinas para Keini Castillo. Unificado a masculino en `ced_identity.py` y el prompt del piloto nativo. |
+| Imagen subida en "Diálogo en Vivo" no se usaba en publicaciones por voz | La función que adjunta imagen a un borrador pendiente solo cubría Instagram. Extendida a Facebook. |
+| Trial de voz (5 min/día) no se activaba en cuentas nuevas | Causa real: el formulario de registro no distinguía el comportamiento anti-enumeración de Supabase (200 OK con `identities: []` para emails ya existentes) de un registro exitoso, dejando que el usuario reutilizara sin saberlo una cuenta vieja (post-trial). Corregido en `RegisterForm.tsx`; verificado con una cuenta nueva real de punta a punta. |
+| Imágenes y PDF gratis permanentes en plan Básico | Agregado tope diario (2 imágenes, 1 PDF) al plan gratis post-trial, con aviso de recarga al agotarse. Sin afectar límites de planes pagados. |
+| Chat de texto "se siente lento" | Medido en producción: el primer token tardaba ~19-21s en el 100% de los mensajes probados porque Llama (13B, CPU en Railway) agotaba siempre su timeout de 18s sin producir nada, y Claude recién entonces respondía (1-3s). Ni recortar el prompt a la mitad cambió el resultado — mismo techo de rendimiento de CPU que ya forzó la migración completa de voz a Gemini. **Decisión: se quitó Llama de la cascada de Chat Normal**, dejando a Claude como principal directo. Como Claude ya resolvía esos turnos como fallback, el costo incremental es ~$0 (~$5-10/mes para el volumen actual, ya se pagaba). Medido antes/después: primer token de ~19-21s a ~1.7-2.8s; respuesta completa de ~21-25s a ~3-6s. |
+
+Durante la prueba end-to-end del fix del trial ocurrió el incidente de eliminación de cuentas documentado en
+el §8.
