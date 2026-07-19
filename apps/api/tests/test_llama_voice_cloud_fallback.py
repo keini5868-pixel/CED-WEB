@@ -14,7 +14,7 @@ def test_llama_reply_uses_cloud_when_llama_fails():
 
     async def run() -> str:
         with patch(
-            "app.services.llama_voice_llm.call_llama_chat",
+            "app.services.llama_voice_llm.call_llama_voice_chat",
             side_effect=RuntimeError("llama down"),
         ), patch(
             "app.services.cloud_llm_fallback.chat_cloud_reply",
@@ -36,7 +36,7 @@ def test_llama_reply_returns_fallback_when_all_fail():
 
     async def run() -> str:
         with patch(
-            "app.services.llama_voice_llm.call_llama_chat",
+            "app.services.llama_voice_llm.call_llama_voice_chat",
             side_effect=RuntimeError("llama down"),
         ), patch(
             "app.services.cloud_llm_fallback.chat_cloud_reply",

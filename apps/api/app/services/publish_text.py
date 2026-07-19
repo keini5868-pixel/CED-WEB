@@ -544,8 +544,8 @@ def is_publish_platform_reply(text: str) -> bool:
 
 _IMAGE_FOR_PUBLISH = re.compile(
     r"(?:"
-    r"^(?:esa|esta)\s+(?:es\s+(?:la\s+)?)?imagen\b|"
-    r"\b(?:usa|usar|utiliza)\w*\s+(?:esta|esa)\s+imagen\b|"
+    r"^(?:esa|esta)\s+(?:es\s+(?:la\s+)?)?imagen\b(?!\s+(?:de\s+)?(?:referencia|fondo))|"
+    r"\b(?:usa|usar|utiliza)\w*\s+(?:esta|esa)\s+imagen\b(?!\s+(?:de\s+)?(?:referencia|fondo))|"
     r"\b(?:para\s+)?publicar\b.*\b(?:esta|esa)\s+imagen\b|"
     r"\b(?:esta|esa)\s+imagen\b.*\b(?:para\s+)?publicar\b|"
     r"\busar\s+para\s+publicar\b|"
