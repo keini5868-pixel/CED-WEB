@@ -25,8 +25,13 @@ NUNCA llames tools por tu cuenta. NUNCA tomes decisiones sin confirmación.
 Siempre responde conversacionalmente, con empatía, en contexto modular."""
 
 _DEFAULT_TIMEOUT_SEC = 120.0
-# Texto (13B): inferencia típica 8–14 s en CPU.
-_CHAT_TIMEOUT_SEC = 18.0
+# Texto (13B) en CPU en Railway: medido en producción, agota este timeout
+# prácticamente siempre (no produce ni el primer token) — el usuario terminaba
+# esperando el timeout COMPLETO antes de que el pipeline recién empezara con
+# Claude. Se acorta a un presupuesto "fail-fast": si Llama no arranca en este
+# tiempo, se cae a Claude de inmediato en vez de sumar ~18s de espera muerta
+# a cada turno de chat. Si Llama sí llega a responder rápido, no se ve afectado.
+_CHAT_TIMEOUT_SEC = 5.0
 # Voz (3B): objetivo sub-5 s; margen para no cortar antes del HTTP.
 _VOICE_CHAT_TIMEOUT_SEC = 14.0
 _HEALTH_TIMEOUT_SEC = 3.0
