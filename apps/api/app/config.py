@@ -97,7 +97,9 @@ class Settings(BaseSettings):
     # Chat Avanzado sigue usando Claude. Imágenes/visión siguen en Gemini.
     llm_provider: str = "llama"
     llama_endpoint: str = "http://localhost:11434"
-    llama_model: str = "llama2:13b"
+    # llama3.1:8b: notablemente más rápido que llama2:13b en CPU y de generación
+    # más moderna — mejor equilibrio velocidad/calidad para chat de texto.
+    llama_model: str = "llama3.1:8b"
     # Modelo liviano solo para conversación de voz (Retell Custom LLM).
     llama_voice_model: str = "llama3.2:3b"
     # Ollama dedicado a voz — si vacío, voz usa llama_endpoint (transición).

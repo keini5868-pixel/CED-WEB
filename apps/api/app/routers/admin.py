@@ -111,3 +111,59 @@ def admin_user_defaults(_admin_id: str = Depends(require_super_admin)) -> dict:
         "duration_options": [7, 14, 30, 60, 90, 365, "indefinite"],
         "max_creations_per_day": 10,
     }
+
+
+class LlamaPullBody(BaseModel):
+    model: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/llama/pull")
+def admin_llama_pull_model(
+    body: LlamaPullBody,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """DIAGNÓSTICO TEMPORAL — descarga un modelo en el Ollama de texto (ced-llama)
+    desde dentro de la red privada de Railway. Solo admin. Quitar cuando ya no
+    haga falta cambiar de modelo desde aquí."""
+    import httpx
+
+    from app.services.llama_service import _ollama_base
+
+    base = _ollama_base()
+    model = body.model.strip()
+    try:
+        with httpx.Client(timeout=600.0) as client:
+            with client.stream(
+                "POST", f"{base}/api/pull", json={"model": model, "stream": True}
+            ) as resp:
+                last: dict = {}
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    import json as _json
+
+                    try:
+                        last = _json.loads(line)
+                    except _json.JSONDecodeError:
+                        continue
+        return {"ok": True, "model": model, "last_status": last}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "model": model, "error": str(exc)[:300]}
+
+
+@router.get("/llama/models")
+def admin_llama_list_models(_admin_id: str = Depends(require_super_admin)) -> dict:
+    """DIAGNÓSTICO TEMPORAL — lista modelos descargados en ced-llama."""
+    import httpx
+
+    from app.services.llama_service import _ollama_base
+
+    base = _ollama_base()
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            res = client.get(f"{base}/api/tags")
+            res.raise_for_status()
+            data = res.json()
+        return {"ok": True, "models": [m.get("name") for m in data.get("models") or []]}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": str(exc)[:300]}

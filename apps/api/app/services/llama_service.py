@@ -97,7 +97,7 @@ def _voice_tags_url() -> str:
 
 
 def llama_model() -> str:
-    return (get_settings().llama_model or "llama2:13b").strip() or "llama2:13b"
+    return (get_settings().llama_model or "llama3.1:8b").strip() or "llama3.1:8b"
 
 
 def llama_voice_model() -> str:

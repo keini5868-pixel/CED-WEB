@@ -7,20 +7,24 @@
 #
 # VOLUMEN PERSISTENTE (recomendado):
 #   Settings → Volumes → Add Volume → Mount path: /data
-#   Solo el modelo 13B (~7.4 GB). El 3B de voz vive en CED-Llama-Voice.
+#   Modelo 8B (~4.7 GB) — cambiado desde 13B por velocidad de respuesta en CPU
+#   (13B rondaba 8-20s por respuesta; 8B es notablemente más rápido). El 3B
+#   de voz vive en CED-Llama-Voice.
 #
 # RED PRIVADA:
 #   - Hostname: ced-llama.railway.internal
 #   - OLLAMA_HOST=[::]:11434
 #
 # Variables en CED-Llama:
-#   OLLAMA_MODEL=llama2:13b
+#   OLLAMA_MODEL=llama3.1:8b
 #   OLLAMA_NUM_PARALLEL=1
 #   OLLAMA_MAX_LOADED_MODELS=1
 #
-# Variables en API:
+# Variables en API — IMPORTANTE: si LLAMA_MODEL está fijado explícitamente como
+# variable de entorno en Railway, hay que actualizarlo ahí también (el env var
+# gana sobre el default del código):
 #   LLAMA_ENDPOINT=http://ced-llama.railway.internal:11434
-#   LLAMA_MODEL=llama2:13b
+#   LLAMA_MODEL=llama3.1:8b
 #   LLAMA_VOICE_ENDPOINT=http://ced-llama-voice.railway.internal:11434
 #   LLAMA_VOICE_MODEL=llama3.2:3b
 #
