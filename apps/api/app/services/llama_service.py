@@ -34,7 +34,12 @@ _MODEL_READY_CACHE_TTL_SEC = 15.0
 _CHAT_HEALTH_TIMEOUT_SEC = 2.0
 _OLLAMA_KEEP_ALIVE = "24h"
 
-_model_ready_cache: tuple[float, bool] | None = None
+# Cacheado por (base, modelo): antes de generar, tanto should_route_to_llama
+# (fast_probe) como call_llama_chat/iter_llama_chat_stream comprobaban el
+# mismo /api/tags por separado — dos round-trips síncronos antes de cada
+# turno de chat. Con esta cache, el segundo check reusa el resultado reciente
+# en vez de golpear la red otra vez.
+_model_ready_cache: dict[tuple[str, str], tuple[float, bool]] = {}
 
 
 class LlamaNotReadyError(RuntimeError):
@@ -235,33 +240,43 @@ def _llama_health_model_ready(
         return False
 
 
+def _cached_model_ready(
+    *,
+    model_name: str,
+    base: str,
+    timeout_sec: float,
+    force_refresh: bool = False,
+) -> bool:
+    global _model_ready_cache
+    key = (base, model_name)
+    now = time.monotonic()
+    if not force_refresh:
+        cached = _model_ready_cache.get(key)
+        if cached is not None and now - cached[0] < _MODEL_READY_CACHE_TTL_SEC:
+            return cached[1]
+    ready = bool(_llama_health_model_ready(timeout_sec=timeout_sec, model_name=model_name, base=base))
+    _model_ready_cache[key] = (now, ready)
+    return ready
+
+
 def llama_model_ready(*, force_refresh: bool = False, timeout_sec: float | None = None) -> bool:
     """True si Ollama tiene el modelo configurado (no solo el daemon)."""
-    global _model_ready_cache
-    import time
-
-    now = time.monotonic()
-    if (
-        not force_refresh
-        and timeout_sec is None
-        and _model_ready_cache is not None
-        and now - _model_ready_cache[0] < _MODEL_READY_CACHE_TTL_SEC
-    ):
-        return _model_ready_cache[1]
     probe_timeout = timeout_sec if timeout_sec is not None else _HEALTH_TIMEOUT_SEC
-    ready = bool(_llama_health_model_ready(timeout_sec=probe_timeout, model_name=llama_model()))
-    if timeout_sec is None:
-        _model_ready_cache = (now, ready)
-    return ready
+    return _cached_model_ready(
+        model_name=llama_model(),
+        base=_ollama_base(),
+        timeout_sec=probe_timeout,
+        force_refresh=force_refresh,
+    )
 
 
 def llama_voice_model_ready(*, timeout_sec: float | None = None) -> bool:
     """True si el modelo liviano de voz está descargado en su Ollama."""
     probe_timeout = timeout_sec if timeout_sec is not None else _HEALTH_TIMEOUT_SEC
-    return _llama_health_model_ready(
-        timeout_sec=probe_timeout,
+    return _cached_model_ready(
         model_name=llama_voice_model(),
         base=_ollama_voice_base(),
+        timeout_sec=probe_timeout,
     )
 
 
@@ -410,7 +425,7 @@ def call_llama_chat(
         "keep_alive": _OLLAMA_KEEP_ALIVE,
         "options": options,
     }
-    if not _llama_health_model_ready(timeout_sec=_HEALTH_TIMEOUT_SEC, model_name=target_model, base=base):
+    if not _cached_model_ready(model_name=target_model, base=base, timeout_sec=_HEALTH_TIMEOUT_SEC):
         raise LlamaNotReadyError(f"modelo {target_model} no descargado en Ollama")
     started = time.monotonic()
     with httpx.Client(timeout=http_timeout) as client:
@@ -596,7 +611,7 @@ def iter_llama_chat_stream(
         "keep_alive": _OLLAMA_KEEP_ALIVE,
         "options": {"temperature": temperature, "num_predict": max_tokens},
     }
-    if not _llama_health_model_ready(timeout_sec=_HEALTH_TIMEOUT_SEC, model_name=target_model, base=base):
+    if not _cached_model_ready(model_name=target_model, base=base, timeout_sec=_HEALTH_TIMEOUT_SEC):
         raise LlamaNotReadyError(f"modelo {target_model} no descargado en Ollama")
     accumulated = ""
     started = time.monotonic()

@@ -38,6 +38,7 @@ def test_call_llama_local_parses_response(monkeypatch):
     get_settings.cache_clear()
 
     mock_response = MagicMock()
+    mock_response.status_code = 200
     mock_response.json.return_value = {"response": "Hola, señor."}
     mock_response.raise_for_status = MagicMock()
 
@@ -62,6 +63,7 @@ def test_call_llama_chat_parses_message(monkeypatch):
     get_settings.cache_clear()
 
     mock_response = MagicMock()
+    mock_response.status_code = 200
     mock_response.json.return_value = {"message": {"content": "Respuesta chat"}}
     mock_response.raise_for_status = MagicMock()
 
@@ -71,7 +73,7 @@ def test_call_llama_chat_parses_message(monkeypatch):
     mock_client.post.return_value = mock_response
 
     with patch("app.services.llama_service.httpx.Client", return_value=mock_client):
-        with patch("app.services.llama_service.llama_model_ready", return_value=True):
+        with patch("app.services.llama_service._llama_health_model_ready", return_value=True):
             from app.services.llama_service import call_llama_chat
 
             text = call_llama_chat(

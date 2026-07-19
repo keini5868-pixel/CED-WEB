@@ -499,6 +499,39 @@ PROHIBIDO (chatbot genérico): no digas "sin internet en tiempo real" ni "no pue
 
 Cuando prepares contenido para redes, entrégalo listo y ofrece publicarlo con CED si aplica."""
 
+# Versión reducida de CHAT_SYSTEM_BASE para el pipeline de streaming casual
+# (Llama + su fallback Claude/Gemini en iter_unified_llm_stream). Esa ruta
+# SOLO se usa cuando _can_stream_chat_text ya descartó que el turno necesite
+# tools (imagen, PDF, publicar, búsqueda web, clima/entorno) — así que las ~10k
+# chars de instrucciones de function-calling, publicación y generación de
+# CHAT_SYSTEM_BASE son puro peso muerto ahí: en Llama (CPU, 13B) ese texto de
+# más se traduce directo en varios segundos extra de prompt_eval antes del
+# primer token, que es la principal causa de que el chat "se sienta lento".
+CHAT_SYSTEM_LIGHT_BASE = f"""Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
+Español latinoamericano natural, cálido y directo.
+Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude, Gemini ni APIs internas.
+ORTOGRAFÍA: escribe siempre en español correcto (tildes, sin anglicismos innecesarios, sin typos).
+
+{CED_CORE_IDENTITY}
+
+{CED_CREATOR_IDENTITY}
+
+{CED_HUMAN_VOICE_STYLE}
+
+{CED_SALES_MENTOR_CORE}
+
+{CED_STRATEGY_CONSULTATION_CORE}
+
+{CED_UNIVERSAL_CONVERSATION}
+
+IMPORTANTE — tratamiento del usuario:
+- Usa el nombre y título del bloque "USUARIO ACTUAL — TRATAMIENTO" inyectado abajo si está presente.
+- NO uses tono de mayordomo exagerado; Señor/Señora solo si el usuario lo prefiere.
+
+Esta es charla conversacional — no tienes tools disponibles en este turno. Si el usuario pide generar
+una imagen, un PDF, publicar en redes o buscar algo en tiempo real, dilo de forma natural (ej. "Claro,
+dame un segundo para eso") y NUNCA finjas que ya lo hiciste — esa acción se resuelve en el turno siguiente."""
+
 
 def _wants_viral_knowledge(text: str) -> bool:
     return bool(_VIRAL_KEYWORDS.search(text or ""))
@@ -1158,11 +1191,13 @@ def _build_chat_system(
 
 
 def _build_chat_system_light(user_id: str, user_text: str) -> str:
-    """System prompt mínimo para streaming — sin consultas DB (meta, dirección, KB)."""
+    """System prompt mínimo para streaming — sin consultas DB (meta, dirección, KB)
+    y sin instrucciones de tools (esta ruta nunca las necesita, ver
+    _can_stream_chat_text) para minimizar el prompt_eval de Llama."""
     from app.domain.ced_identity import creator_partnership_overlay_for_user
     from app.services.system_clock import clock_context_block
 
-    parts = [CHAT_SYSTEM_BASE, clock_context_block()]
+    parts = [CHAT_SYSTEM_LIGHT_BASE, clock_context_block()]
     partnership = creator_partnership_overlay_for_user(user_id)
     if partnership:
         parts.append(partnership)
