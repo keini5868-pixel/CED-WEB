@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 import httpx
 
 from app.config import get_settings
-from app.deps.auth import require_user_id
+from app.deps.auth import require_super_admin, require_user_id
 from app.services.retell_agent_cache import (
     get_last_bootstrap_error,
     get_last_bootstrap_info,
@@ -370,6 +370,48 @@ async def retell_calendar_cancel_write_tool(request: Request) -> JSONResponse:
     result = await execute_calendar_cancel_write_tool(
         user_id=user_id, payload=payload, args=args
     )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+class _CalendarFlowProbeBody(BaseModel):
+    action: str
+    query: str = ""
+    utterance: str = ""
+    call_id: str = "probe-call-fixed-id"
+    draft_id: str = ""
+
+
+@router.post("/debug/calendar-flow-probe")
+async def retell_debug_calendar_flow_probe(
+    body: _CalendarFlowProbeBody,
+    user_id: str = Depends(require_super_admin),
+) -> JSONResponse:
+    """DIAGNÓSTICO TEMPORAL — reproduce prepare/confirm en 2 requests HTTP reales
+    contra el proceso en vivo, igual que Retell, para descartar pérdida de estado
+    en memoria entre pasos. Solo admin. Quitar tras diagnosticar."""
+    fake_payload = {
+        "call": {
+            "call_id": body.call_id,
+            "metadata": {"user_id": user_id},
+            "transcript_object": (
+                [{"role": "agent", "content": "¿Desea que lo agende en su calendario?"},
+                 {"role": "user", "content": body.utterance}]
+                if body.utterance
+                else []
+            ),
+        }
+    }
+    args = {"query": body.query, "draft_id": body.draft_id}
+    if body.action == "prepare":
+        result = await execute_calendar_prepare_write_tool(
+            user_id=user_id, payload=fake_payload, args=args
+        )
+    elif body.action == "confirm":
+        result = await execute_calendar_confirm_write_tool(
+            user_id=user_id, payload=fake_payload, args=args
+        )
+    else:
+        raise HTTPException(status_code=400, detail="action debe ser prepare|confirm")
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
