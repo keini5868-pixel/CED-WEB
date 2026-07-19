@@ -198,6 +198,89 @@ def test_prepare_and_confirm_with_natural_noisy_yes():
     assert conf["status"] == "written"
 
 
+def test_write_intent_recognizes_natural_verbs_beyond_agendame():
+    """Regresión: 'Guarda una llamada para Rafael a las 10 am del lunes' no
+    era reconocida como intención de agendar (solo 'agéndame/agendar/
+    programa(me)/recuérdame' matcheaban) — prepare_calendar_write devolvía
+    needs_details en silencio, dejando al LLM sin borrador real que confirmar
+    aunque el usuario ya había dicho claramente qué quería agendar.
+    """
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            for query in [
+                "guarda una llamada para Rafael Armando a las 10 de la mañana del día lunes",
+                "anótame una cita con el doctor mañana a las 3 pm",
+                "apunta reunión con Ana el lunes a las 9 am",
+                "reserva una llamada con mi papá mañana a las 5 de la tarde",
+            ]:
+                out = prepare_calendar_write(USER, call_id=CALL, query=query)
+                assert out["status"] == "awaiting_confirmation", (
+                    f"debió preparar un borrador real para: {query!r}, obtuvo: {out}"
+                )
+                vcs.clear_calendar_pending_write(USER)
+
+
+def test_prepare_and_confirm_with_guarda_verb_end_to_end():
+    """Reproduce el reporte exacto del usuario end-to-end: preparar con
+    'Guarda...' y confirmar con 'Sí, guárdalo' debe escribir el evento real,
+    no fallar con 'no encontró el borrador'."""
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            prep = prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="Guarda una llamada para Rafael Armando a las 10 de la mañana del día lunes",
+            )
+    assert prep["status"] == "awaiting_confirmation", prep
+    assert "Rafael Armando" in prep["spoken"]
+    draft_id = prep["draft_id"]
+
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            with patch(
+                "app.services.calendar_write_flow._calendar_api_call",
+                side_effect=lambda _uid, fn: fn("tok"),
+            ):
+                with patch(
+                    "app.services.calendar_write_flow.create_event",
+                    return_value={"id": "evt-guarda-1"},
+                ):
+                    conf = confirm_calendar_write(
+                        USER,
+                        call_id=CALL,
+                        draft_id=draft_id,
+                        payload={
+                            "call": {
+                                "transcript_object": [
+                                    {"role": "agent", "content": prep["spoken"]},
+                                    {"role": "user", "content": "Sí, guárdalo"},
+                                ]
+                            }
+                        },
+                    )
+    assert conf["ok"] is True
+    assert conf["status"] == "written"
+    assert conf["event_id"] == "evt-guarda-1"
+
+
 def test_confirm_reports_missing_write_scope():
     with patch(
         "app.services.calendar_write_flow.get_valid_access_token",

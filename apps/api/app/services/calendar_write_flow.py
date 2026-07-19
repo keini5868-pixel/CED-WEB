@@ -65,8 +65,17 @@ _CONFIRM_NOISE = re.compile(
     re.I,
 )
 
+# Amplio a propósito: esta regex solo corre DESPUÉS de que el LLM ya decidió
+# invocar calendar_prepare_write, así que el riesgo de falso positivo es bajo
+# y el costo de un falso negativo (pedir aclaración de la nada) es alto — el
+# usuario dice "guarda", "anota", "apunta", "pon", "reserva", "registra" con
+# la misma frecuencia que "agéndame" para pedir agendar algo.
 _WRITE_INTENT = re.compile(
-    r"\b(?:ag[eé]ndame|agendar|programa(?:r|me)|recu[eé]rdame)\b",
+    r"\b(?:"
+    r"ag[eé]nda(?:me)?|agendar|programa(?:r|me)?|recu[eé]rdame|"
+    r"guarda(?:me)?|an[oó]ta(?:me)?|apunta(?:me)?|reserva(?:me)?|"
+    r"registra(?:me)?|ponme"
+    r")\b",
     re.I,
 )
 

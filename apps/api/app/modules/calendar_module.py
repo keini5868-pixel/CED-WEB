@@ -95,7 +95,16 @@ def _extract_title(text: str, *, reminder: bool = False) -> str:
             title = m.group(1).strip(" .,")
             if len(title) >= 3:
                 return title[:120]
-    m = re.search(r"ag[eé]ndame\s+(.+?)(?:\s+(?:el\s+|para\s+|ma[nñ]ana|hoy|a\s+las|\d{1,2}(?::\d{2})?\s*(?:am|pm))|$)", text, re.I)
+    # "para" es ambiguo: "reunión para las 3pm" (hora) vs "llamada para Rafael" (persona).
+    # Solo se corta el título en "para" si le sigue algo con pinta de hora/día — si no,
+    # se asume que introduce a la persona y se conserva como parte del título.
+    _TIME_STOP = r"el\s+|ma[nñ]ana|hoy|a\s+las|para\s+(?:el\s+|las\s+|\d)|\d{1,2}(?::\d{2})?\s*(?:am|pm)"
+    m = re.search(
+        r"(?:ag[eé]ndame|guarda(?:me)?|an[oó]ta(?:me)?|apunta(?:me)?|reserva(?:me)?|"
+        rf"registra(?:me)?|ponme)\s+(?:una?\s+)?(.+?)(?:\s+(?:{_TIME_STOP})|$)",
+        text,
+        re.I,
+    )
     if m:
         title = m.group(1).strip(" .,")
         if len(title) >= 3:
