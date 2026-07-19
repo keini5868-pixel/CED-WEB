@@ -29,6 +29,15 @@ def test_is_finance_write_confirm():
     assert not is_finance_write_confirm("perfecto")
 
 
+def test_is_finance_write_confirm_recognizes_accented_confirmalo():
+    """Regresión (auditoría pre-lanzamiento): 'confírmalo' con tilde no era
+    reconocido porque el regex solo cubría 'confirma'/'confirmado' sin acento,
+    dejando la confirmación por voz sin efecto ('no detecté confirmación clara')."""
+    assert is_finance_write_confirm("sí, confírmalo")
+    assert is_finance_write_confirm("confírmalo")
+    assert is_finance_write_confirm("confirmado")
+
+
 def test_is_finance_write_cancel():
     assert is_finance_write_cancel("no, cancela")
     assert is_finance_write_cancel("mejor no")

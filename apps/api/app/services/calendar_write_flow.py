@@ -35,7 +35,7 @@ _YES_WORD = re.compile(r"\bs[ií]\b", re.I)
 _CALENDAR_WRITE_CONFIRM = re.compile(
     r"\b("
     r"ag[eé]nda(?:lo|la|me|r)?|gu[aá]rdalo|"
-    r"dale|adelante|de\s+acuerdo|confirmo|confirma(?:do)?|correcto|exacto|"
+    r"dale|adelante|de\s+acuerdo|confirmo|conf[ií]rma(?:do|lo)?|correcto|exacto|"
     r"procede|hazlo|claro|as[ií]\s+es|est[aá]\s+bien|obvio|"
     r"perfecto|de\s+una|hag[aá]moslo"
     r")\b",

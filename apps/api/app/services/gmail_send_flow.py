@@ -23,10 +23,10 @@ _EMAIL_RE = re.compile(r"^[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}$")
 
 _GMAIL_SEND_CONFIRM = re.compile(
     r"\b("
-    r"s[ií]\s*,?\s*(?:env[ií]a(?:lo|la|me|r)?|m[aá]ndalo|mandalo|confirma(?:lo)?|"
+    r"s[ií]\s*,?\s*(?:env[ií]a(?:lo|la|me|r)?|m[aá]ndalo|mandalo|conf[ií]rma(?:lo)?|"
     r"int[eé]nta(?:lo|r)?(?:\s+de\s+nuevo)?|reintenta(?:lo|r)?|prueba(?:lo)?\s+de\s+nuevo)|"
     r"env[ií]a(?:lo|la|me|r)?|m[aá]ndalo|mandalo|"
-    r"dale|adelante|de\s+acuerdo|confirmo|confirma(?:do)?|"
+    r"dale|adelante|de\s+acuerdo|confirmo|conf[ií]rma(?:do|lo)?|"
     r"procede|hazlo|s[ií]\s+por\s+favor|"
     r"int[eé]nta(?:lo)?\s+de\s+nuevo|reint[eé]nta(?:lo)?|prueba\s+otra\s+vez"
     r")\b",

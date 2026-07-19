@@ -27,6 +27,12 @@ def test_is_calendar_write_confirm():
     assert not is_calendar_write_confirm("ok gracias")
 
 
+def test_is_calendar_write_confirm_recognizes_accented_confirmalo():
+    """Regresión (auditoría pre-lanzamiento): mismo bug de tilde que en finanzas/gmail."""
+    assert is_calendar_write_confirm("sí, confírmalo")
+    assert is_calendar_write_confirm("confírmalo")
+
+
 def test_is_calendar_write_confirm_tolerates_natural_voice_noise():
     """Regresión: confirmaciones reales por voz vienen con ruido (vocativos,
     puntuación de STT, cortesía, muletillas) — antes un "sí" con cualquier

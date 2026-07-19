@@ -42,6 +42,7 @@ _SOCIAL_PLATFORM = re.compile(
 )
 _PUBLISH_CONFIRM = re.compile(
     r"\b(env[ií]a(?:la|lo|me|r)?|enviar|publica(?:la|lo|me|r)?|publ[ií]calo|dale|adelante|confirmo|"
+    r"conf[ií]rma(?:lo|la)?|"
     r"s[ií]\s*(?:env[ií]a|publica)|m[aá]ndala|mandala|hazlo|procede|env[ií]a\s+la\s+imagen|"
     r"enviar\s+publicaci[oó]n|haz(?:me)?\s+la\s+publicaci[oó]n|haz(?:me)?\s+(?:el|la)\s+post)\b",
     re.I,

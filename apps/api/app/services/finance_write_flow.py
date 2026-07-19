@@ -27,9 +27,9 @@ DraftStatus = Literal["pending", "writing", "written", "cancelled"]
 
 _FINANCE_WRITE_CONFIRM = re.compile(
     r"\b("
-    r"s[ií]\s*,?\s*(?:reg[ií]stra(?:lo|la|me|r)?|anota(?:lo|la|me|r)?|confirma(?:lo)?|gu[aá]rdalo)|"
+    r"s[ií]\s*,?\s*(?:reg[ií]stra(?:lo|la|me|r)?|anota(?:lo|la|me|r)?|conf[ií]rma(?:lo)?|gu[aá]rdalo)|"
     r"reg[ií]stra(?:lo|la|me|r)?|anota(?:lo|la|me|r)?|gu[aá]rdalo|"
-    r"dale|adelante|de\s+acuerdo|confirmo|confirma(?:do)?|correcto|exacto|"
+    r"dale|adelante|de\s+acuerdo|confirmo|conf[ií]rma(?:do|lo)?|correcto|exacto|"
     r"procede|hazlo|s[ií]\s+por\s+favor"
     r")\b",
     re.I,

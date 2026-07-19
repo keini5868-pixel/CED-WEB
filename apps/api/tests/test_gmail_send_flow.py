@@ -44,6 +44,12 @@ def test_is_gmail_send_confirm():
     assert not is_gmail_send_confirm("perfecto")
 
 
+def test_is_gmail_send_confirm_recognizes_accented_confirmalo():
+    """Regresión (auditoría pre-lanzamiento): mismo bug de tilde que en finanzas."""
+    assert is_gmail_send_confirm("sí, confírmalo")
+    assert is_gmail_send_confirm("confírmalo")
+
+
 def test_is_gmail_send_cancel():
     assert is_gmail_send_cancel("no, cancela")
     assert is_gmail_send_cancel("mejor no")
