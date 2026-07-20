@@ -1076,12 +1076,20 @@ async def retell_bootstrap_status(
 @router.get("/ideogram-probe")
 async def retell_ideogram_probe(
     x_bootstrap_secret: str | None = Header(default=None, alias="X-Bootstrap-Secret"),
+    authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:
     """Diagnóstico Ideogram — confirma IDEOGRAM_API_KEY configurada y respuesta real
-    de la API. Protegido con X-Bootstrap-Secret. No consume cupo/monedero de usuario
-    (llama directo al servicio, sin pasar por generate_image())."""
-    _verify_bootstrap_secret(x_bootstrap_secret)
+    de la API. Acepta X-Bootstrap-Secret O un JWT de super admin. No consume
+    cupo/monedero de usuario (llama directo al servicio, sin pasar por generate_image())."""
     settings = get_settings()
+    expected_secret = settings.retell_bootstrap_secret.strip() or settings.retell_api_key.strip()
+    secret_ok = bool(expected_secret) and bool(x_bootstrap_secret) and x_bootstrap_secret.strip() == expected_secret
+    if not secret_ok:
+        from app.deps.auth import is_super_admin, require_auth_user
+
+        user = await require_auth_user(authorization)
+        if not is_super_admin(user.get("email"), user.get("role")):
+            raise HTTPException(status_code=401, detail="Secret inválido o cuenta no es super admin.")
     has_key = bool(settings.ideogram_api_key.strip())
     if not has_key:
         return {"ok": False, "has_api_key": False, "error": "IDEOGRAM_API_KEY no configurada"}
