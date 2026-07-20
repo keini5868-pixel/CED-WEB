@@ -70,7 +70,11 @@ def test_generate_image_ideogram_success_returns_gemini_compatible_shape():
     client.post.assert_called_once()
     _, kwargs = client.post.call_args
     assert kwargs["headers"]["Api-Key"] == "ik-test-key"
-    assert kwargs["data"]["rendering_speed"] == "TURBO"
+    # Debe ir como multipart/form-data real (Ideogram rechaza urlencoded con 415) —
+    # httpx solo codifica como multipart si los campos van en `files=`.
+    assert "data" not in kwargs or not kwargs.get("data")
+    assert kwargs["files"]["rendering_speed"] == (None, "TURBO")
+    assert kwargs["files"]["text_prompt"] == (None, 'cartel que diga "Hola"')
 
 
 def test_generate_image_ideogram_missing_api_key():

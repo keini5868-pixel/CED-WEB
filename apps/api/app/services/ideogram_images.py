@@ -51,10 +51,14 @@ def generate_image_ideogram(*, prompt: str, quality: str = "text") -> dict[str, 
             response = client.post(
                 IDEOGRAM_GENERATE_URL,
                 headers={"Api-Key": api_key},
-                data={
-                    "text_prompt": topic[:2000],
-                    "rendering_speed": rendering_speed,
-                    "resolution": resolution,
+                # Ideogram exige Content-Type multipart/form-data (rechaza urlencoded
+                # con 415). httpx solo codifica como multipart si los campos van en
+                # `files=` — con tuplas (None, valor) quedan como campos de texto
+                # normales, sin agregar ningún campo extra al cuerpo.
+                files={
+                    "text_prompt": (None, topic[:2000]),
+                    "rendering_speed": (None, rendering_speed),
+                    "resolution": (None, resolution),
                 },
             )
     except httpx.TimeoutException:
