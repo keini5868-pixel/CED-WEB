@@ -198,8 +198,14 @@ def run_chat_image_generation(
         resolve_reference_image_bytes,
     )
 
+    from app.services.copy_quality import prompt_requires_ideogram_text
+
     user_text = (text or "").strip()
     effective = effective_user_prompt(user_text, history)
+    # Señal ESTRICTA (comillas explícitas o "que diga/ponga X") tomada solo del pedido
+    # ACTUAL del usuario — decide si intentar Ideogram (texto legible) antes de Gemini.
+    # Ideogram no aplica a ediciones sobre imagen de referencia (ver ref_payload abajo).
+    wants_literal_text = prompt_requires_ideogram_text(user_text)
     enriched_context = build_enriched_generation_context(
         user_text,
         history,
@@ -269,6 +275,7 @@ def run_chat_image_generation(
             quality="auto",
             context=enriched_context,
             display_label=display_label,
+            prefer_ideogram=wants_literal_text,
         )
     else:
         logger.info("[CHAT:IMG-GEN] plain generate user=%s", user_id[:8])
@@ -279,6 +286,7 @@ def run_chat_image_generation(
             quality="auto",
             context=enriched_context or _recent_chat_context(history or []),
             display_label=display_label or None,
+            prefer_ideogram=wants_literal_text,
         )
 
     if not img_result.get("ok") or not img_result.get("url"):
@@ -303,13 +311,25 @@ def run_chat_image_generation(
         register_text_chat_image_url(user_id, conversation_id, url)
 
     caption = str(img_result.get("caption") or display_label or "Imagen generada")
-    from app.services.copy_quality import with_image_text_disclaimer
 
-    reply = with_image_text_disclaimer(
-        str(success_reply),
-        user_text or model_prompt,
-        enriched_context or "",
-    )
+    if img_result.get("ideogram_used"):
+        # Ideogram ya renderiza texto legible — el aviso de "texto puede salir mal"
+        # (pensado para Gemini) no aplica y solo generaría desconfianza injustificada.
+        reply = str(success_reply)
+    else:
+        from app.services.copy_quality import with_image_text_disclaimer
+
+        reply = with_image_text_disclaimer(
+            str(success_reply),
+            user_text or model_prompt,
+            enriched_context or "",
+        )
+        if img_result.get("ideogram_declined_reason") == "basic_excluded":
+            reply = (
+                f"{reply}\n\nCon un plan de pago (desde Starter) puedo usar un motor "
+                "especializado en texto (Ideogram) para que se vea más legible, señor."
+            )
+
     return {
         "ok": True,
         "url": url,
@@ -318,6 +338,7 @@ def run_chat_image_generation(
         "quality": str(img_result.get("quality") or ""),
         "display_label": display_label,
         "used_reference": bool(ref_payload),
+        "provider": img_result.get("provider"),
     }
 
 

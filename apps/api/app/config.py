@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     gemini_voice_model: str = "gemini-2.5-flash"
     gemini_image_model: str = "gemini-2.5-flash-image"
 
+    # Ideogram 4.0 — opción alternativa para imágenes con texto legible (aprobado
+    # Keini 2026-07). NO reemplaza a Gemini; solo se usa cuando el pedido exige texto
+    # literal explícito y el plan/monedero del usuario lo permite (ver copy_quality.
+    # prompt_requires_ideogram_text y gemini_images._maybe_generate_with_ideogram).
+    ideogram_api_key: str = ""
+    ideogram_rendering_speed: str = "TURBO"
+    ideogram_resolution: str = "2048x2048"
+
     # Cerebro conversacional local (Ollama/Llama) — reemplaza Gemini en chats y voz.
     # Chat Avanzado sigue usando Claude. Imágenes/visión siguen en Gemini.
     llm_provider: str = "llama"

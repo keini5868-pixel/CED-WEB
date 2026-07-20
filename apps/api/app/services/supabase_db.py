@@ -1052,8 +1052,8 @@ def count_pdfs_today(user_id: str) -> int:
         return 0
 
 
-def count_generated_images_today(user_id: str) -> tuple[int, int]:
-    """Cuenta imágenes standard y HD del día actual (UTC)."""
+def count_generated_images_today(user_id: str) -> tuple[int, int, int]:
+    """Cuenta imágenes standard, HD y con texto (Ideogram) del día actual (UTC)."""
     try:
         client = _client()
         start = today_utc().isoformat()
@@ -1065,15 +1065,16 @@ def count_generated_images_today(user_id: str) -> tuple[int, int]:
             .execute()
         )
         rows = result.data or []
-        std = sum(1 for r in rows if (r.get("quality") or "standard") != "hd")
+        text_n = sum(1 for r in rows if (r.get("quality") or "") == "text")
         hd = sum(1 for r in rows if (r.get("quality") or "") == "hd")
-        return std, hd
+        std = len(rows) - text_n - hd
+        return std, hd, text_n
     except Exception:  # noqa: BLE001
-        return 0, 0
+        return 0, 0, 0
 
 
-def count_generated_images_this_month(user_id: str) -> tuple[int, int]:
-    """Cuenta imágenes standard y HD del mes actual."""
+def count_generated_images_this_month(user_id: str) -> tuple[int, int, int]:
+    """Cuenta imágenes standard, HD y con texto (Ideogram) del mes actual."""
     try:
         client = _client()
         start = today_utc().replace(day=1).isoformat()
@@ -1085,11 +1086,12 @@ def count_generated_images_this_month(user_id: str) -> tuple[int, int]:
             .execute()
         )
         rows = result.data or []
-        std = sum(1 for r in rows if (r.get("quality") or "standard") != "hd")
+        text_n = sum(1 for r in rows if (r.get("quality") or "") == "text")
         hd = sum(1 for r in rows if (r.get("quality") or "") == "hd")
-        return std, hd
+        std = len(rows) - text_n - hd
+        return std, hd, text_n
     except Exception:  # noqa: BLE001
-        return 0, 0
+        return 0, 0, 0
 
 
 def insert_generated_image(

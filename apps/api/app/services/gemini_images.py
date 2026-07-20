@@ -74,11 +74,11 @@ def _pick_quality(prompt: str, requested: str | None) -> str:
     return "standard"
 
 
-def _day_image_counts(user_id: str) -> tuple[int, int]:
+def _day_image_counts(user_id: str) -> tuple[int, int, int]:
     try:
         return supabase_db.count_generated_images_today(user_id)
     except Exception:  # noqa: BLE001
-        return 0, 0
+        return 0, 0, 0
 
 
 def _image_models() -> tuple[str, ...]:
@@ -512,6 +512,108 @@ def generate_image_with_reference_gemini(
     return {"ok": False, "error": _friendly_image_error(last_error), "code": "gemini_error"}
 
 
+def _finalize_generated_image(
+    *,
+    user_id: str,
+    topic: str,
+    display_label: str | None,
+    result: dict[str, Any],
+    ideogram_declined_reason: str | None = None,
+) -> dict[str, Any]:
+    raw = result.get("raw_bytes")
+    if not isinstance(raw, (bytes, bytearray)) or not raw:
+        return {"ok": False, "error": "No se generó una imagen usable", "code": "gemini_error"}
+
+    mime = str(result.get("mime_type") or "image/png")
+    model = str(result.get("model") or "gemini-2.5-flash-image")
+    provider = str(result.get("provider") or "gemini")
+    picked = str(result.get("quality") or "standard")
+
+    from app.services.publish_media import store_publish_image_for_client
+
+    public_url = store_publish_image_for_client(user_id, bytes(raw), mime)
+    cost = float(result.get("estimated_cost_usd") or GEMINI_STD_COST_USD)
+    db_quality = "text" if provider == "ideogram" else picked
+    try:
+        supabase_db.insert_generated_image(
+            user_id=user_id,
+            prompt=topic,
+            quality=db_quality,
+            model=model,
+            public_url=public_url,
+            estimated_cost_usd=cost,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("[IMAGE] log insert failed provider=%s", provider)
+
+    caption = (display_label or "").strip() or "Imagen generada"
+    return {
+        "ok": True,
+        "url": public_url,
+        "caption": caption,
+        "prompt": caption,
+        "quality": picked,
+        "model": model,
+        "provider": provider,
+        "estimated_cost_usd": cost,
+        "ideogram_used": provider == "ideogram",
+        "ideogram_declined_reason": None if provider == "ideogram" else ideogram_declined_reason,
+    }
+
+
+def _maybe_generate_with_ideogram(
+    *,
+    user_id: str,
+    prefer_ideogram: bool,
+    topic: str,
+    text_used: int,
+    text_cap: int,
+) -> tuple[dict[str, Any] | None, str | None]:
+    """Intenta Ideogram si el pedido lo exige y el plan/monedero lo permite.
+
+    Retorna (resultado_ok_o_None, motivo_de_no_uso). Nunca lanza — cualquier falla
+    (config, red, safety, cupo/saldo insuficiente) devuelve (None, motivo) para que el
+    llamador degrade a Gemini sin exponer el error al usuario.
+    """
+    if not prefer_ideogram:
+        return None, None
+    if text_cap <= 0:
+        return None, "basic_excluded"
+
+    settings = get_settings()
+    if not settings.ideogram_api_key.strip():
+        return None, "not_configured"
+
+    within_quota = text_used < text_cap
+    if not within_quota:
+        from app.services.wallet import can_afford
+
+        if not can_afford(user_id, "image_text", units=1.0):
+            return None, "no_quota_no_balance"
+
+    from app.services.ideogram_images import generate_image_ideogram
+
+    result = generate_image_ideogram(prompt=topic)
+    if not result.get("ok"):
+        logger.info(
+            "[IMAGE:ROUTER] ideogram failed, fallback a Gemini user=%s error=%s",
+            user_id[:8],
+            str(result.get("error"))[:120],
+        )
+        return None, "ideogram_failed"
+
+    if not within_quota:
+        from app.services.wallet import try_spend
+
+        spend = try_spend(user_id, "image_text", units=1.0)
+        if not spend.get("ok"):
+            logger.warning(
+                "[IMAGE:ROUTER] ideogram entregada pero débito de monedero falló user=%s",
+                user_id[:8],
+            )
+    return result, None
+
+
 def generate_image(
     *,
     user_id: str,
@@ -520,8 +622,10 @@ def generate_image(
     quality: str | None = "auto",
     context: str = "",
     display_label: str | None = None,
+    prefer_ideogram: bool = False,
 ) -> dict[str, Any]:
-    """Genera imagen con Gemini — único provider de imágenes CED."""
+    """Genera imagen — Ideogram si el pedido exige texto legible y el plan lo permite;
+    en cualquier otro caso (o si Ideogram falla), Gemini como siempre."""
     settings = get_settings()
     google_key = settings.google_api_key.strip()
     topic = prepare_image_prompt(prompt, context)
@@ -540,7 +644,23 @@ def generate_image(
     else:
         limits, _reason, _trial = effective_plan_limits(user_id)
 
-    std_used, hd_used = _day_image_counts(user_id)
+    std_used, hd_used, text_used = _day_image_counts(user_id)
+
+    ideogram_result, ideogram_declined_reason = _maybe_generate_with_ideogram(
+        user_id=user_id,
+        prefer_ideogram=prefer_ideogram,
+        topic=topic,
+        text_used=text_used,
+        text_cap=limits.ai_images_text_per_day,
+    )
+    if ideogram_result is not None:
+        return _finalize_generated_image(
+            user_id=user_id,
+            topic=topic,
+            display_label=display_label,
+            result=ideogram_result,
+        )
+
     picked = _pick_quality(topic, None if quality == "auto" else quality)
 
     if picked == "hd":
@@ -583,36 +703,10 @@ def generate_image(
             "code": str(gemini_result.get("code") or "gemini_error"),
         }
 
-    raw = gemini_result.get("raw_bytes")
-    mime = str(gemini_result.get("mime_type") or "image/png")
-    model = str(gemini_result.get("model") or "gemini-2.5-flash-image")
-    if not isinstance(raw, (bytes, bytearray)) or not raw:
-        return {"ok": False, "error": "Gemini no devolvió imagen usable", "code": "gemini_error"}
-
-    from app.services.publish_media import store_publish_image_for_client
-
-    public_url = store_publish_image_for_client(user_id, bytes(raw), mime)
-    cost = float(gemini_result.get("estimated_cost_usd") or GEMINI_STD_COST_USD)
-    try:
-        supabase_db.insert_generated_image(
-            user_id=user_id,
-            prompt=topic,
-            quality=picked,
-            model=model,
-            public_url=public_url,
-            estimated_cost_usd=cost,
-        )
-    except Exception:  # noqa: BLE001
-        logger.warning("[GEMINI:IMAGE] log insert failed")
-
-    caption = (display_label or "").strip() or "Imagen generada"
-    return {
-        "ok": True,
-        "url": public_url,
-        "caption": caption,
-        "prompt": caption,
-        "quality": picked,
-        "model": model,
-        "provider": "gemini",
-        "estimated_cost_usd": cost,
-    }
+    return _finalize_generated_image(
+        user_id=user_id,
+        topic=topic,
+        display_label=display_label,
+        result=gemini_result,
+        ideogram_declined_reason=ideogram_declined_reason,
+    )

@@ -261,6 +261,37 @@ def build_image_headline(context: str = "", subject: str = "") -> str:
 build_flyer_headline = build_image_headline  # compat
 
 
+_IDEOGRAM_EXPLICIT_TEXT_REQUEST = re.compile(
+    r"\b(?:"
+    r"que\s+diga[n]?|que\s+ponga[n]?|con\s+el\s+texto|con\s+la\s+frase|"
+    r"con\s+las?\s+palabras?|el\s+texto\s+debe\s+decir|letras?\s+que\s+diga[n]?"
+    r")\b",
+    re.I,
+)
+
+
+def prompt_requires_ideogram_text(prompt: str) -> bool:
+    """Señal ESTRICTA de texto literal a renderizar — para enrutar hacia un proveedor
+    de pago (Ideogram), NO para decorar el prompt de Gemini.
+
+    A propósito NO reutiliza `image_prompt_needs_verbatim_text`: esa función es amplia
+    por diseño (dispara con palabras genéricas de marketing como "beneficios", "evento"
+    o "servicio" para añadir instrucciones de texto a Gemini, donde un falso positivo
+    solo agrega una frase al prompt). Aquí un falso positivo significa gastar dinero
+    real en una llamada a Ideogram sin necesidad, así que solo dos señales fuertes:
+    comillas explícitas o un pedido en lenguaje natural de "que diga/ponga X".
+
+    Solo mira el pedido ACTUAL del usuario (nunca el historial/contexto de chat) para
+    no heredar comillas o títulos de turnos anteriores no relacionados con este pedido.
+    """
+    t = (prompt or "").strip()
+    if not t:
+        return False
+    if extract_quoted_phrases(t):
+        return True
+    return bool(_IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t))
+
+
 def image_prompt_needs_verbatim_text(prompt: str, context: str = "") -> bool:
     blob = f"{prompt} {context}"
     if _IMAGE_TEXT_HINT.search(blob):

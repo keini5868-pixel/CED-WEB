@@ -14,6 +14,7 @@ RESOURCE_LABELS_ES: dict[str, str] = {
     "voice_min": "voz",
     "image_std": "imágenes",
     "image_hd": "imágenes HD",
+    "image_text": "imágenes con texto (Ideogram)",
     "web_search": "búsquedas web",
     "pdf": "PDF",
     "vision": "cámara / visión",

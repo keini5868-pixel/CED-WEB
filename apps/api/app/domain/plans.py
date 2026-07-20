@@ -28,6 +28,8 @@ USAGE_WARNING_PERCENT = 80
 VOICE_COST_PER_MIN_USD = 0.10
 IMAGE_STD_COST_USD = 0.02
 IMAGE_HD_COST_USD = 0.04
+# Ideogram 4.0 Turbo ($0.03 costo real) — texto legible en imagen (aprobado Keini 2026-07)
+IMAGE_TEXT_COST_USD = 0.06
 WEB_SEARCH_COST_USD = 0.01
 PDF_COST_USD = 0.05
 VISION_COST_USD = 0.03
@@ -47,6 +49,7 @@ RESOURCE_UNIT_COSTS_USD: dict[str, float] = {
     "voice_min": VOICE_COST_PER_MIN_USD,
     "image_std": IMAGE_STD_COST_USD,
     "image_hd": IMAGE_HD_COST_USD,
+    "image_text": IMAGE_TEXT_COST_USD,
     "web_search": WEB_SEARCH_COST_USD,
     "pdf": PDF_COST_USD,
     "vision": VISION_COST_USD,
@@ -92,6 +95,9 @@ class PlanLimits:
     # -1 = ilimitado (planes pagados, sin cambios). Solo Básico usa un tope > 0
     # para dar PDF gratis de forma permanente sin abrir la puerta a abuso.
     pdf_reports_per_day: int = -1
+    # Ideogram (texto legible en imagen) — 0 = sin acceso (Básico gratis, aprobado
+    # Keini 2026-07: excluido por completo, solo Gemini + disclaimer + upsell suave).
+    ai_images_text_per_day: int = 0
 
     @property
     def gemini_minutes_per_day(self) -> int:
@@ -127,6 +133,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         prospection_enabled=False,
         pdf_reports=False,
         claude_messages_per_day=-1,
+        ai_images_text_per_day=2,
     ),
     PlanId.PRO.value: PlanLimits(
         voice_minutes_per_day=18,
@@ -139,6 +146,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         prospection_enabled=False,
         pdf_reports=True,
         claude_messages_per_day=-1,
+        ai_images_text_per_day=5,
     ),
     PlanId.ELITE.value: PlanLimits(
         voice_minutes_per_day=30,
@@ -151,6 +159,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         prospection_enabled=True,
         pdf_reports=True,
         claude_messages_per_day=-1,
+        ai_images_text_per_day=10,
     ),
     PlanId.FOUNDING.value: PlanLimits(
         voice_minutes_per_day=FOUNDING_VOICE_CAP_MINUTES,
@@ -163,6 +172,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         prospection_enabled=True,
         pdf_reports=True,
         claude_messages_per_day=-1,
+        ai_images_text_per_day=15,
     ),
     # Básico permanente (post-trial): SIN voz, siempre. Blindado a propósito —
     # el trial de 7 días ya dio 5 min/día vía TRIAL_VOICE_MINUTES_PER_DAY
@@ -184,6 +194,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         pdf_reports=True,
         claude_messages_per_day=50,
         pdf_reports_per_day=1,
+        ai_images_text_per_day=0,
     ),
 }
 
@@ -255,6 +266,9 @@ def quote_recharge(amount_usd: float) -> dict[str, float | bool | int]:
             client_balance / WEB_SEARCH_COST_USD if WEB_SEARCH_COST_USD else 0
         ),
         "estimated_pdfs": int(client_balance / PDF_COST_USD if PDF_COST_USD else 0),
+        "estimated_images_text": int(
+            client_balance / IMAGE_TEXT_COST_USD if IMAGE_TEXT_COST_USD else 0
+        ),
         "never_expires": True,
         "margin_percent_keini": RECHARGE_MARGIN_KEINI * 100,
         "voice_cost_per_min_usd": VOICE_COST_PER_MIN_USD,
@@ -279,6 +293,7 @@ def public_plans_catalog() -> list[dict]:
                 "web_searches_per_day": limits.web_searches_per_day,
                 "ai_images_standard_per_day": limits.ai_images_standard_per_day,
                 "ai_images_hd_per_day": limits.ai_images_hd_per_day,
+                "ai_images_text_per_day": limits.ai_images_text_per_day,
                 "voice_enabled": limits.voice_enabled,
                 "camera_enabled": limits.camera_enabled,
                 "meta_social_enabled": limits.meta_social_enabled,
