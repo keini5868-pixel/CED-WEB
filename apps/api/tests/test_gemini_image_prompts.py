@@ -107,6 +107,37 @@ def test_parse_followup_image_prompt_after_any_image_thread():
     assert parse_followup_image_prompt("ok gracias", history) is None
 
 
+def test_parse_followup_image_prompt_does_not_hijack_casual_chat_after_image():
+    """Regresión: tras generar una imagen, cualquier mensaje casual sin señal real de
+    edición NO debe interpretarse como continuación del hilo visual (bug reportado:
+    chat normal generaba imagen con cualquier mensaje tras el primer pedido)."""
+    from app.services.chat_image_generation import should_take_direct_image_path
+
+    history = [
+        {"role": "user", "content": "genera una imagen de un atardecer en la playa"},
+        {"role": "assistant", "content": "Listo. Aquí está tu imagen generada."},
+    ]
+    casual_messages = [
+        "¿cómo estás?",
+        "cuéntame sobre el sistema solar",
+        "qué opinas de la economía actual",
+        "tengo una duda sobre mi negocio",
+        "quiero hablar de otra cosa",
+        "cuánto es 2 más 2",
+        "qué hora es en España",
+        "me puedes explicar qué es la inflación",
+    ]
+    for msg in casual_messages:
+        assert parse_followup_image_prompt(msg, history) is None, msg
+        assert should_take_direct_image_path(msg, history) is False, msg
+
+    # Pero un seguimiento real de edición sigue funcionando.
+    assert parse_followup_image_prompt("hazla más grande", history) == "hazla más grande"
+    assert should_take_direct_image_path("hazla más grande", history) is True
+    # Y un pedido explícito de imagen nueva sigue disparando normalmente.
+    assert should_take_direct_image_path("genera una imagen de un gato", history) is True
+
+
 def test_parse_followup_image_prompt_not_after_strategy_plan_only():
     """Plan estratégico menciona creativo/imagen pero no hubo generación real."""
     history = [

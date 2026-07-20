@@ -135,6 +135,23 @@ _FOLLOWUP_SKIP = re.compile(
     r"^(?:ok|gracias|s[ií]|no|vale|perfecto|listo|env[ií]a|publica|dale|hola|buenas)\b",
     re.I,
 )
+# El mensaje ACTUAL (no el historial) debe traer una señal real de edición/continuación
+# visual — de lo contrario cualquier mensaje casual dentro de las 8 líneas siguientes a
+# una imagen ya generada se interpretaba como "seguir con la imagen" (bug: chat normal
+# generaba imagen con cualquier mensaje tras el primer pedido de imagen en la conversación).
+_FOLLOWUP_EDIT_SIGNAL = re.compile(
+    r"\b("
+    r"hazl[oa]s?|c[aá]mbial[oa]|ajust[aá]l[oa]|ponle|qu[ií]tale|agr[eé]gale|mejor[aá]l[oa]|"
+    r"otra\s+versi[oó]n|otra\s+variaci[oó]n|otra\s+vez|de\s+nuevo|una\s+m[aá]s|"
+    r"m[aá]s\s+(?:grande|peque[nñ]|oscur|clar|colorid|realist|simple|detall)|"
+    r"en\s+otro\s+color|otro\s+color|diferente\s+color|otro\s+estilo|otro\s+fondo|"
+    r"con\s+(?:otro|un)\s+(?:fondo|estilo)|as[ií]\s+pero|en\s+vez\s+de|"
+    r"cambia(?:le)?\s+(?:el|la|los|las)|quita(?:le)?\s+(?:el|la|los|las)|"
+    r"agrega(?:le)?\s+(?:el|la|los|las|un|una)|"
+    r"ahora\s+(?:con|sin)|pero\s+(?:con|sin)"
+    r")\b",
+    re.I,
+)
 _IMAGE_THREAD_USER = re.compile(
     r"\b(?:genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|haz(?:me|nos|lo|la)?|dise[nñ]a(?:r|me|mos|s|is|n|do)?)"
     r"\s+(?:una?\s+)?(?:imagen|foto|creativo|flyer|logo|banner|portada|dise[nñ]o)\b",
@@ -213,6 +230,13 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
 
     has_thread = history_has_active_image_thread(history)
     if not has_thread and not user_requests_prior_reference(t):
+        return None
+
+    # El historial reciente casi siempre menciona "imagen" tras generar una (p.ej. el
+    # propio "aquí está tu imagen generada"), así que basarse solo en el blob de
+    # historial no distingue un mensaje casual de un pedido real de continuar editando
+    # la imagen. Exigimos que el mensaje ACTUAL traiga la señal, no el historial.
+    if not _FOLLOWUP_EDIT_SIGNAL.search(t) and not user_requests_prior_reference(t):
         return None
 
     recent: list[str] = []

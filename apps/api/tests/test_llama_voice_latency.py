@@ -17,7 +17,7 @@ def test_llama_voice_marks_latency_on_conversational_reply() -> None:
 
     async def run() -> str | None:
         with patch(
-            "app.services.llama_voice_llm.call_llama_voice_chat",
+            "app.services.llama_service.call_llama_voice_generate",
             return_value="Respuesta de prueba, señor.",
         ):
             req = ResponseRequiredRequest(
