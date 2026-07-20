@@ -71,12 +71,14 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\benv[ií]a\s+(?:un\s+)?(?:email|correo)\b",
     ),
     "environment": (
-        r"\b(clima|tiempo|temperatura|calor|fr[ií]o)\b",
+        r"\b(clima|temperatura|calor|fr[ií]o)\b",
         r"\b(va a llover|lluvia|nublado|despejado)\b",
-        r"\b(calidad del aire|contaminaci[oó]n|aire)\b",
+        r"\b(calidad del aire|contaminaci[oó]n)\b",
         r"\b(horas de sol|sol hoy|trabajar afuera)\b",
         r"\b(polen|alergia|al[eé]rgico)\b",
-        r"\b(c[oó]mo est[aá] el tiempo|qu[eé] clima)\b",
+        r"\b(c[oó]mo\s+est[aá]\s+el\s+tiempo|qu[eé]\s+tiempo\s+hace|qu[eé]\s+clima)\b",
+        r"\b(?:el\s+)?tiempo\s+(?:hoy|actual|de\s+hoy|ma[nñ]ana)\b",
+        r"\binformaci[oó]n\s+(?:del?\s+|sobre\s+(?:el\s+)?)tiempo\b",
     ),
     "web_search": (
         r"\b(noticias|últimas noticias|qué pasó)\b",

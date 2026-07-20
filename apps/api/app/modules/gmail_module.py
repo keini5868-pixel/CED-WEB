@@ -125,6 +125,11 @@ def is_gmail_intent(text: str) -> bool:
     t = (text or "").strip().lower()
     if len(t) < 6:
         return False
+    # «hazme un PDF/imagen que diga … correo pendiente …» no es Gmail.
+    from app.services.chat_intents import is_creative_artifact_intent
+
+    if is_creative_artifact_intent(text):
+        return False
     return any(re.search(p, t) for p in GMAIL_PATTERNS)
 
 

@@ -240,6 +240,11 @@ def is_weather_intent(text: str) -> bool:
         return False
     if re.search(r"\b(mucho|tanto|poco|largo|breve|demasiado)\s+tiempo\b", t):
         return False
+    # «genera una imagen con la frase 'el tiempo…'» no es clima.
+    from app.services.chat_intents import is_creative_artifact_intent
+
+    if is_creative_artifact_intent(text):
+        return False
     return _matches(t, WEATHER_PATTERNS)
 
 

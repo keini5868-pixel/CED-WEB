@@ -2550,10 +2550,17 @@ def send_message(
             route_meta={"intent": "datetime", "source": "instant"},
         )
 
-    from app.services.chat_intents import is_casual_chat_interrupt
+    from app.services.chat_intents import (
+        is_casual_chat_interrupt,
+        is_creative_artifact_intent,
+    )
     from app.services.cognitive_intents import is_conversation_recall_intent
     from app.modules.environment_module import is_environment_intent
     from app.services.session_memory import build_conversation_recall_reply
+    from app.services.chat_image_generation import (
+        should_take_direct_image_path,
+        run_chat_image_generation,
+    )
 
     if is_conversation_recall_intent(text):
         recall_reply = build_conversation_recall_reply(
@@ -2567,59 +2574,8 @@ def send_message(
             route_meta={"intent": "memory_recall", "source": "direct"},
         )
 
-    if is_environment_intent(text):
-        from app.modules.environment_module import handle_environment_query_sync
-
-        env_result = handle_environment_query_sync(user_id, text)
-        return _finish(
-            _finalize_chat_reply(str(env_result.get("spoken") or "")),
-            route_meta={"intent": "environment", "source": "direct"},
-        )
-
-    from app.services.hud_reminders import (
-        handle_reminder_create_sync,
-        handle_reminder_query_sync,
-        is_reminder_intent,
-    )
-    from app.modules.calendar_module import handle_calendar_query_sync, is_calendar_intent
-    from app.modules.finance_module import handle_finance_query_sync, is_finance_intent
-    from app.modules.gmail_module import handle_gmail_query_sync, is_gmail_intent
-
-    if is_reminder_intent(text) and re.search(r"recu[eé]rdame", text, re.I):
-        reminder_result = handle_reminder_create_sync(user_id, text)
-        return _finish(
-            _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
-            route_meta={"intent": "reminder_create", "source": "direct"},
-        )
-
-    if is_reminder_intent(text):
-        reminder_result = handle_reminder_query_sync(user_id, text)
-        return _finish(
-            _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
-            route_meta={"intent": "reminder_list", "source": "direct"},
-        )
-
-    if is_calendar_intent(text):
-        calendar_result = handle_calendar_query_sync(user_id, text)
-        return _finish(
-            _finalize_chat_reply(str(calendar_result.get("spoken") or "")),
-            route_meta={"intent": "calendar", "source": "direct"},
-        )
-
-    if is_gmail_intent(text):
-        gmail_result = handle_gmail_query_sync(user_id, text)
-        return _finish(
-            _finalize_chat_reply(str(gmail_result.get("spoken") or "")),
-            route_meta={"intent": "gmail", "source": "direct"},
-        )
-
-    if is_finance_intent(text):
-        finance_result = handle_finance_query_sync(user_id, text)
-        return _finish(
-            _finalize_chat_reply(str(finance_result.get("spoken") or "")),
-            route_meta={"intent": "finance", "source": "direct"},
-        )
-
+    # Imagen/PDF ANTES de clima/calendario/gmail/finanzas: palabras trampa dentro
+    # del texto citado («tiempo», «cita», «correo») no deben secuestrar el pedido.
     detail = resolve_pdf_detail_for_turn(text, history)
     if detail == "ask" or (
         detail in ("brief", "full") and (
@@ -2643,11 +2599,6 @@ def send_message(
                 },
                 pdf=attachment if attachment.get("file_id") else None,
             )
-
-    from app.services.chat_image_generation import (
-        should_take_direct_image_path,
-        run_chat_image_generation,
-    )
 
     if should_take_direct_image_path(text, history):
         plan_id = None
@@ -2688,6 +2639,62 @@ def send_message(
         return _finish(
             _format_image_generation_error(direct_err),
             route_meta={"intent": "generate_image", "source": "direct_error"},
+        )
+
+    # Tras imagen/PDF: módulos LIFE. Si el pedido era creativo, no competir.
+    creative = is_creative_artifact_intent(text)
+
+    if not creative and is_environment_intent(text):
+        from app.modules.environment_module import handle_environment_query_sync
+
+        env_result = handle_environment_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(env_result.get("spoken") or "")),
+            route_meta={"intent": "environment", "source": "direct"},
+        )
+
+    from app.services.hud_reminders import (
+        handle_reminder_create_sync,
+        handle_reminder_query_sync,
+        is_reminder_intent,
+    )
+    from app.modules.calendar_module import handle_calendar_query_sync, is_calendar_intent
+    from app.modules.finance_module import handle_finance_query_sync, is_finance_intent
+    from app.modules.gmail_module import handle_gmail_query_sync, is_gmail_intent
+
+    if not creative and is_reminder_intent(text) and re.search(r"recu[eé]rdame", text, re.I):
+        reminder_result = handle_reminder_create_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
+            route_meta={"intent": "reminder_create", "source": "direct"},
+        )
+
+    if not creative and is_reminder_intent(text):
+        reminder_result = handle_reminder_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
+            route_meta={"intent": "reminder_list", "source": "direct"},
+        )
+
+    if not creative and is_calendar_intent(text):
+        calendar_result = handle_calendar_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(calendar_result.get("spoken") or "")),
+            route_meta={"intent": "calendar", "source": "direct"},
+        )
+
+    if not creative and is_gmail_intent(text):
+        gmail_result = handle_gmail_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(gmail_result.get("spoken") or "")),
+            route_meta={"intent": "gmail", "source": "direct"},
+        )
+
+    if not creative and is_finance_intent(text):
+        finance_result = handle_finance_query_sync(user_id, text)
+        return _finish(
+            _finalize_chat_reply(str(finance_result.get("spoken") or "")),
+            route_meta={"intent": "finance", "source": "direct"},
         )
 
     route = route_message(

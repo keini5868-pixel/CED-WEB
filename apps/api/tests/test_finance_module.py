@@ -220,6 +220,17 @@ def test_gasto_de_manana_routes_to_pending():
     assert rows[0]["due_date"]
 
 
+def test_future_write_does_not_hijack_unrelated_percentage_plus_day():
+    """Regresión: 'cartel que diga que hoy hay 20% de descuento' se confundía con un
+    registro financiero futuro (número + palabra de día, sin ningún sustantivo
+    gasto/pago) y secuestraba pedidos de imagen en el chat normal."""
+    from app.modules.finance_module import is_finance_future_write, is_finance_intent
+
+    text = "Necesito un cartel que diga que hoy hay 20% de descuento en todos los servicios"
+    assert not is_finance_future_write(text)
+    assert not is_finance_intent(text)
+
+
 def test_breakdown_intent_de_que():
     from app.modules.finance_module import is_finance_breakdown_intent
 

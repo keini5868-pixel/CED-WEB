@@ -110,6 +110,20 @@ def is_generate_image_intent(text: str) -> bool:
     return any(p.search(t) for p in _IMAGE_PATTERNS)
 
 
+def is_creative_artifact_intent(text: str) -> bool:
+    """Pedido claro de generar imagen o PDF — gana sobre módulos con palabras trampa.
+
+    Evita colisiones del tipo: «genera una imagen con la frase 'el tiempo va a
+    pasar'» (disparaba clima por «tiempo»), o «hazme un PDF que diga … cita /
+    correo …» (calendario/Gmail). Usar en chat y voz antes de enrutar a
+    environment/calendar/gmail/finance.
+    """
+    t = (text or "").strip()
+    if len(t) < 8:
+        return False
+    return is_pdf_intent(t) or is_generate_image_intent(t)
+
+
 def parse_generate_image_prompt(text: str) -> str | None:
     t = text.strip()
     if not is_generate_image_intent(t):

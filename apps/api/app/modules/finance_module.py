@@ -88,6 +88,7 @@ _SCHEDULED_GASTO = re.compile(
     r"\b(?:guardar|registrar|anotar|programar|dejar)\s+(?:un\s+)?(?:gasto|pago)\b",
     re.I,
 )
+_FUTURE_WRITE_NOUN = re.compile(r"\b(?:gasto|gastos|pago|pagos)\b", re.I)
 _FUTURE_SCHEDULE_HINT = re.compile(
     r"\b(?:para\s+(?:el\s+)?(?:d[ií]a\s+de\s+)?(?:ma[nñ]ana|pasado\s+ma[nñ]ana|"
     r"lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|"
@@ -176,6 +177,12 @@ def is_finance_future_write(text: str) -> bool:
         return True
     if len(t) < 6 or not _AMOUNT_RE.search(t):
         return False
+    # Exigir el sustantivo "gasto(s)"/"pago(s)" explícito: sin esto, cualquier frase
+    # con un número + palabra de día (p.ej. "cartel que diga que hoy hay 20% de
+    # descuento") se confundía con un registro financiero futuro (bug: chat normal
+    # secuestraba pedidos de imagen/cartel como si fueran finanzas).
+    if not _FUTURE_WRITE_NOUN.search(t):
+        return False
     rows = parse_pending_statements(t)
     return bool(rows and any(r.get("due_date") for r in rows))
 
@@ -248,6 +255,11 @@ def is_finance_register_intent(text: str) -> bool:
 
 
 def is_finance_intent(text: str) -> bool:
+    # «cartel/PDF que diga … 20% de descuento …» no es un gasto a registrar.
+    from app.services.chat_intents import is_creative_artifact_intent
+
+    if is_creative_artifact_intent(text):
+        return False
     return (
         is_finance_register_intent(text)
         or is_finance_query_intent(text)

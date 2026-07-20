@@ -40,13 +40,18 @@ def _env_cache_set(key: str, spoken: str) -> None:
     _ENV_CACHE[key] = (time.monotonic(), spoken)
 
 
+# "tiempo" NUNCA va solo: colisiona con frases literales en pedidos de imagen/PDF
+# («el tiempo va a pasar»). Solo frases inequívocas de clima + sinónimos seguros.
 ENVIRONMENT_PATTERNS: tuple[str, ...] = (
-    r"\b(clima|tiempo|temperatura|calor|fr[ií]o)\b",
+    r"\b(clima|temperatura|calor|fr[ií]o)\b",
     r"\b(va a llover|lluvia|nublado|despejado)\b",
     r"\b(calidad\s+(?:del?\s+)?aire|contaminaci[oó]n)\b",
     r"\b(horas de sol|sol hoy|trabajar afuera)\b",
     r"\b(polen|alergia|al[eé]rgico)\b",
-    r"\b(c[oó]mo est[aá] el tiempo|qu[eé] clima)\b",
+    r"\b(c[oó]mo\s+est[aá]\s+el\s+tiempo|qu[eé]\s+tiempo\s+hace|qu[eé]\s+clima)\b",
+    r"\b(?:el\s+)?tiempo\s+(?:hoy|actual|de\s+hoy|ma[nñ]ana)\b",
+    r"\binformaci[oó]n\s+(?:del?\s+|sobre\s+(?:el\s+)?)tiempo\b",
+    r"\bpron[oó]stico\s+(?:del?\s+)?tiempo\b",
 )
 
 _LOCATION_IN_QUERY = re.compile(
@@ -115,13 +120,17 @@ _ACK_TOKENS = frozenset(
 )
 
 # Capa 3 standalone — tema ambiental + señal de petición (sin LLM).
+# "tiempo" solo en frases de clima (no la palabra suelta — ver ENVIRONMENT_PATTERNS).
 _ENV_TOPIC = re.compile(
     r"\b("
-    r"clima|tiempo|temperatura|lluvia|llover|nublado|despejado|"
+    r"clima|temperatura|lluvia|llover|nublado|despejado|"
     r"polen|alergia|al[eé]rgico|"
     r"calidad\s+(?:del?\s+)?aire|contaminaci[oó]n|"
     r"pron[óo]stico|horas\s+de\s+sol|"
-    r"[íi]ndice\s+(?:de\s+)?(?:calidad\s+(?:del?\s+)?)?aire"
+    r"[íi]ndice\s+(?:de\s+)?(?:calidad\s+(?:del?\s+)?)?aire|"
+    r"(?:el\s+)?tiempo\s+(?:hoy|actual|de\s+hoy|ma[nñ]ana)|"
+    r"(?:c[óo]mo\s+est[áa]\s+el\s+tiempo|qu[ée]\s+tiempo\s+hace)|"
+    r"informaci[óo]n\s+(?:del?\s+|sobre\s+(?:el\s+)?)tiempo"
     r")\b",
     re.I,
 )
@@ -129,7 +138,11 @@ _ENV_TOPIC = re.compile(
 _ENV_ACTION = re.compile(
     r"\b("
     r"dame|dime|d[íi]me|informaci[óo]n|datos|pron[óo]stico|"
-    r"qu[ée]|c[óo]mo|cu[áa]l|cu[áa]nto|"
+    # "qué/cómo" solo como pregunta de clima — NO el "que" de "que diga…"
+    # (antes \bqu[ée]\b disparaba env_action en "banner que diga el tiempo…").
+    r"qu[ée]\s+(?:clima|tiempo|temperatura|aire|hace|hay|tal|tan|pron[óo]stico)|"
+    r"c[óo]mo\s+(?:est[áa]|va|anda|estará|estar[áa])|"
+    r"cu[áa]l|cu[áa]nto|"
     r"necesito|quiero\s+saber|d[íi]as?\s+de\s+hoy"
     r")\b",
     re.I,
@@ -165,6 +178,11 @@ def is_environment_intent(text: str) -> bool:
     t = (text or "").strip().lower()
     if len(t) < 4:
         return False
+    # Imagen/PDF con texto citado («el tiempo va a pasar») no es clima.
+    from app.services.chat_intents import is_creative_artifact_intent
+
+    if is_creative_artifact_intent(text):
+        return False
     return any(re.search(p, t) for p in ENVIRONMENT_PATTERNS)
 
 
@@ -172,6 +190,10 @@ def is_environment_action_request(text: str) -> bool:
     """Capa 3: petición activa de clima/aire/polen — excluye menciones casuales."""
     t = (text or "").strip()
     if len(t) < 4:
+        return False
+    from app.services.chat_intents import is_creative_artifact_intent
+
+    if is_creative_artifact_intent(t):
         return False
     t_lower = t.lower()
 
