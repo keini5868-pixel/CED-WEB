@@ -206,3 +206,81 @@ lentitud en el chat de texto normal. Resumen de lo corregido y verificado en pro
 
 Durante la prueba end-to-end del fix del trial ocurrió el incidente de eliminación de cuentas documentado en
 el §8.
+
+## 10. Cierre del incidente §8 + auditoría final completa pre-lanzamiento (19-20 jul 2026)
+
+### 10.1 Cierre formal del incidente de eliminación de cuentas
+
+Confirmado con el usuario: ninguna de las 13 cuentas eliminadas tenía suscripción de pago activa. **Decisión
+final: no se restaura vía PITR.** Verificaciones de cierre:
+
+- Cuenta admin (`keini5868@gmail.com`): estable, sin efectos secundarios — ver verificación en vivo en §8.
+- Datos huérfanos: **0 filas** en `ced_pdf_artifacts`, `generated_images`, `voice_conversations` y
+  `ced_activity_logs` apuntando a un `user_id` inexistente — ver auditoría en §8.
+- Script causante (`scripts/_cleanup_browser_test_account.py`): confirmado eliminado del repositorio; no
+  existen scripts equivalentes que listen y borren usuarios vía Admin API sin filtrar primero por un
+  `user_id` exacto conocido.
+
+### 10.2 Bug adicional encontrado y corregido en esta ronda final
+
+- **Ambigüedad "usa esta imagen de referencia en el fondo" vs. "publica esta imagen"**: el regex
+  `_IMAGE_FOR_PUBLISH` en `publish_text.py` interpretaba cualquier frase "usa esta imagen…" como intención de
+  publicar directamente, incluso cuando el usuario pedía usarla como referencia visual de fondo para un
+  creativo nuevo (ej. "Usa esta imagen de referencia en el fondo del flyer" con un curso de varios módulos).
+  Esto hacía que `is_attachment_creative_request` devolviera `False` y se perdiera el pedido de creativo.
+  Corregido con un lookahead negativo que excluye "de referencia"/"de fondo" inmediatamente después de
+  "imagen". Con regresión (`test_attachment_creative_for_course_without_beneficios_word`) que ya pasa.
+- **Tests con patch target obsoleto**: `test_llama_voice_cloud_fallback.py` mockeaba
+  `llama_voice_llm.call_llama_chat`, función que ya no existe (renombrada a `call_llama_voice_chat` en un
+  refactor previo de esta misma sesión). Corregido; los 2 tests vuelven a pasar. Suite completa tras el fix:
+  903 pasan, solo quedan 2 fallos preexistentes y no relacionados en `test_orchestrator_chaining.py`
+  (anteriores a toda esta sesión, no tocados).
+
+### 10.3 Pipeline de despliegue de Railway — confirmado saludable
+
+Se sospechaba que los despliegues se habían detenido (el `build`/`timestamp` de `/health` no cambiaba tras
+varios pushes). Se hizo una prueba directa: se subió un cambio trivial en `build_info.py` (bump de versión) y
+se confirmó que Railway lo desplegó en ~2 minutos. **El pipeline de despliegue funciona correctamente** — la
+sospecha inicial era una falsa alarma por revisar el `/health` demasiado pronto tras el push.
+
+### 10.4 Tráfico de voz en producción — confirmado en el agente correcto (piloto nativo)
+
+Preocupación inicial: la función `isRetellNativePilot()` en `voiceProvider.ts` decide qué agente de voz usar
+sin el parámetro `?voicePilot=native` en la URL, dependiendo de la variable de entorno de build
+`NEXT_PUBLIC_RETELL_NATIVE_PILOT` del servicio **frontend** en Railway. Como esa variable no aparece en
+`.env.production.example` (solo comentada como plantilla), se sospechó que el valor real en Railway podía
+estar sin configurar, y que el tráfico real caería al sistema viejo "r7".
+
+**Descartado con evidencia empírica en vivo**: se interceptó `window.fetch` en el navegador contra
+`cedweb-production.up.railway.app` (sin ningún parámetro `?voicePilot=` en la URL) y se hizo clic real en el
+botón "Activar asistente CED". La llamada de red capturada fue:
+
+```
+POST /api/ced/retell/register-call-native-pilot
+```
+
+Esto confirma que `NEXT_PUBLIC_RETELL_NATIVE_PILOT=true` **sí está configurado** en el servicio frontend de
+Railway, y que el tráfico real de usuarios nuevos — sin ningún parámetro especial — ya usa el piloto nativo,
+no "r7". Todo el trabajo de esta migración (calendario, Gmail, finanzas, redes, mapa, YouTube, imagen/PDF por
+voz, prompts, LLM States) sí llega a usuarios reales.
+
+### 10.5 Verificación en navegador real contra producción (cuenta de prueba con email/password)
+
+Se creó una cuenta de prueba persistente (`ced-browser-audit-2026@example.com`, plan Élite en trial) para
+evitar depender de OAuth de Google de la cuenta admin. Con esa cuenta, verificado en vivo en
+`cedweb-production.up.railway.app`:
+
+- `/pricing`: 5 planes completos, listas de características sin truncar (Básico 7, Starter 8, Pro 13, Élite
+  16, Founding 16 items).
+- `/` (home): 4 planes de pago con listas completas (Básico no se muestra en home, solo en /pricing — por
+  diseño).
+- Login con email/password: funciona sin OAuth.
+- Chat de texto: carga instantánea, respuesta a "hola, ¿cómo estás?" en ~3-4 segundos.
+- Generación de imagen: NO confirma antes de que la imagen aparezca; imagen real generada; botón de
+  descarga/expandir presente.
+- Generación de PDF: PDF real generado con nivel de detalle razonable.
+- Modo avanzado: pregunta analítica sobre "ventajas y desventajas de vender por redes sociales" devuelve
+  análisis de texto real de Claude, sin generar imagen — bug de detección de intención confirmado corregido.
+- Indicadores de trial visibles en la UI ("Plan elite · trialing", contador de minutos de voz usados).
+- Widget de voz: al activarse entra en estado "Escuchándote… (habla o interrumpe)" con micrófono activo —
+  confirma que la conexión de voz funciona técnicamente de punta a punta en el navegador real.
