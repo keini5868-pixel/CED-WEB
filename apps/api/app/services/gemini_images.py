@@ -605,12 +605,29 @@ def _maybe_generate_with_ideogram(
     if not within_quota:
         from app.services.wallet import try_spend
 
+        # Siempre 1 unidad ($0.06) — una imagen visible al usuario, nunca N variantes.
         spend = try_spend(user_id, "image_text", units=1.0)
         if not spend.get("ok"):
             logger.warning(
                 "[IMAGE:ROUTER] ideogram entregada pero débito de monedero falló user=%s",
                 user_id[:8],
             )
+        else:
+            logger.info(
+                "[IMAGE:ROUTER] ideogram wallet charge user=%s charged_usd=%.4f "
+                "num_returned=%s",
+                user_id[:8],
+                float(spend.get("charged_usd") or 0),
+                result.get("num_images_returned"),
+            )
+    else:
+        logger.info(
+            "[IMAGE:ROUTER] ideogram within free quota user=%s num_returned=%s "
+            "provider_request_cost=%.4f",
+            user_id[:8],
+            result.get("num_images_returned"),
+            float(result.get("provider_request_cost_usd") or result.get("estimated_cost_usd") or 0),
+        )
     return result, None
 
 

@@ -1106,8 +1106,14 @@ async def retell_ideogram_probe(
         "error": result.get("error"),
         "code": result.get("code"),
         "bytes": len(result.get("raw_bytes") or b"") if result.get("ok") else 0,
-        "rendering_speed": settings.ideogram_rendering_speed,
+        "rendering_speed": result.get("rendering_speed") or settings.ideogram_rendering_speed,
         "resolution": settings.ideogram_resolution,
+        "num_images_requested": result.get("num_images_requested"),
+        "num_images_returned": result.get("num_images_returned"),
+        "estimated_cost_usd": result.get("estimated_cost_usd"),
+        "provider_request_cost_usd": result.get("provider_request_cost_usd"),
+        "wallet_unit_cost_usd": result.get("wallet_unit_cost_usd"),
+        "model": result.get("model"),
     }
 
 

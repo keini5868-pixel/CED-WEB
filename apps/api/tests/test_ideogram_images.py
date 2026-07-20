@@ -67,6 +67,9 @@ def test_generate_image_ideogram_success_returns_gemini_compatible_shape():
     assert result["provider"] == "ideogram"
     assert result["model"] == "ideogram-v4-turbo"
     assert result["estimated_cost_usd"] == ideogram_images.IDEOGRAM_TURBO_COST_USD
+    assert result["num_images_requested"] == 1
+    assert result["num_images_returned"] == 1
+    assert result["wallet_unit_cost_usd"] == ideogram_images.IDEOGRAM_WALLET_COST_USD
     client.post.assert_called_once()
     _, kwargs = client.post.call_args
     assert kwargs["headers"]["Api-Key"] == "ik-test-key"
@@ -74,6 +77,7 @@ def test_generate_image_ideogram_success_returns_gemini_compatible_shape():
     # httpx solo codifica como multipart si los campos van en `files=`.
     assert "data" not in kwargs or not kwargs.get("data")
     assert kwargs["files"]["rendering_speed"] == (None, "TURBO")
+    assert kwargs["files"]["num_images"] == (None, "1")
     assert kwargs["files"]["text_prompt"] == (None, 'cartel que diga "Hola"')
 
 
@@ -166,3 +170,71 @@ def test_generate_image_ideogram_timeout():
 
     assert result["ok"] is False
     assert result["code"] == "ideogram_timeout"
+
+
+def test_generate_image_ideogram_warns_but_uses_first_when_api_returns_many():
+    """Si Ideogram devolviera N>1, solo usamos data[0] (no descargamos el resto)."""
+    from app.services import ideogram_images
+
+    entries = [
+        {
+            "url": f"https://ideogram.ai/api/images/ephemeral/{i}.png",
+            "is_image_safe": True,
+            "seed": i,
+            "prompt": "x",
+            "resolution": "2048x2048",
+        }
+        for i in range(5)
+    ]
+    post_resp = _fake_response(json_data={"data": entries})
+    get_resp = _fake_response(content=b"ONLY-FIRST", headers={"content-type": "image/png"})
+    client = _fake_client(post_response=post_resp, get_response=get_resp)
+
+    with (
+        patch("app.services.ideogram_images.httpx.Client", return_value=client),
+        patch("app.services.ideogram_images.get_settings", return_value=_settings()),
+    ):
+        result = ideogram_images.generate_image_ideogram(prompt='frase "tiempo"')
+
+    assert result["ok"] is True
+    assert result["num_images_returned"] == 5
+    assert result["num_images_requested"] == 1
+    assert result["raw_bytes"] == b"ONLY-FIRST"
+    assert result["provider_request_cost_usd"] == round(ideogram_images.IDEOGRAM_TURBO_COST_USD * 5, 4)
+    client.get.assert_called_once_with("https://ideogram.ai/api/images/ephemeral/0.png")
+
+
+def test_generate_image_ideogram_retries_without_num_images_on_400():
+    from app.services import ideogram_images
+
+    bad = _fake_response(status_code=400, text='{"error":"Unknown field num_images"}')
+    good = _fake_response(
+        json_data={
+            "data": [
+                {
+                    "url": "https://ideogram.ai/api/images/ephemeral/ok.png",
+                    "is_image_safe": True,
+                    "seed": 1,
+                    "prompt": "x",
+                    "resolution": "2048x2048",
+                }
+            ]
+        }
+    )
+    get_resp = _fake_response(content=b"PNG", headers={"content-type": "image/png"})
+    client = MagicMock()
+    client.__enter__ = MagicMock(return_value=client)
+    client.__exit__ = MagicMock(return_value=False)
+    client.post = MagicMock(side_effect=[bad, good])
+    client.get = MagicMock(return_value=get_resp)
+
+    with (
+        patch("app.services.ideogram_images.httpx.Client", return_value=client),
+        patch("app.services.ideogram_images.get_settings", return_value=_settings()),
+    ):
+        result = ideogram_images.generate_image_ideogram(prompt="algo")
+
+    assert result["ok"] is True
+    assert client.post.call_count == 2
+    second_files = client.post.call_args_list[1].kwargs["files"]
+    assert "num_images" not in second_files
