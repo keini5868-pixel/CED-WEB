@@ -148,6 +148,13 @@ class Settings(BaseSettings):
     retell_voice_model: str = ""
     retell_voice_speed: float = 0.0
     retell_voice_temperature: float = 0.0
+    # Anti-eco manos libres (bocinas de carro/Bluetooth): "noise-and-background-speech-cancellation"
+    # aísla al hablante principal y suprime la propia voz de CED si se filtra de vuelta al micrófono
+    # (surcharge $0.005/min en Retell). "noise-cancellation" es el default de Retell (sin este filtro).
+    retell_denoising_mode: str = "noise-and-background-speech-cancellation"
+    # Más bajo que el default de Retell (docs recomiendan bajar esto para reducir falsas
+    # interrupciones por ruido/voz de fondo — p.ej. eco de CED por bocinas del carro).
+    retell_interruption_sensitivity: float = 0.7
     # Provider voice ID Cartesia (opcional — Retell usa RETELL_VOICE_ID en prod)
     cartesia_jarvis_voice_id: str = ""
     support_chat_enabled: bool = True
