@@ -1073,6 +1073,36 @@ async def retell_bootstrap_status(
     }
 
 
+@router.get("/ideogram-probe")
+async def retell_ideogram_probe(
+    x_bootstrap_secret: str | None = Header(default=None, alias="X-Bootstrap-Secret"),
+) -> dict[str, Any]:
+    """Diagnóstico Ideogram — confirma IDEOGRAM_API_KEY configurada y respuesta real
+    de la API. Protegido con X-Bootstrap-Secret. No consume cupo/monedero de usuario
+    (llama directo al servicio, sin pasar por generate_image())."""
+    _verify_bootstrap_secret(x_bootstrap_secret)
+    settings = get_settings()
+    has_key = bool(settings.ideogram_api_key.strip())
+    if not has_key:
+        return {"ok": False, "has_api_key": False, "error": "IDEOGRAM_API_KEY no configurada"}
+
+    from app.services.ideogram_images import generate_image_ideogram
+
+    result = await asyncio.to_thread(
+        generate_image_ideogram,
+        prompt='Un cartel simple que diga "PRUEBA"',
+    )
+    return {
+        "has_api_key": True,
+        "ok": result.get("ok"),
+        "error": result.get("error"),
+        "code": result.get("code"),
+        "bytes": len(result.get("raw_bytes") or b"") if result.get("ok") else 0,
+        "rendering_speed": settings.ideogram_rendering_speed,
+        "resolution": settings.ideogram_resolution,
+    }
+
+
 @router.get("/bootstrap-now")
 async def retell_bootstrap_now(voice_id: str | None = None) -> dict[str, Any]:
     """Ejecuta bootstrap Retell sin auth — devuelve agent_id o error exacto."""

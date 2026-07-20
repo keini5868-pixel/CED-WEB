@@ -114,6 +114,10 @@ def health(_request: Request) -> dict[str, str]:
                 voice_diag.get("error") or "modelo voz no descargado en Ollama"
             )
             payload["llama_voice_probe_url"] = str(voice_diag.get("url") or "")
+    ideogram_key = settings.ideogram_api_key.strip()
+    payload["ideogram_configured"] = "true" if ideogram_key else "false"
+    if ideogram_key:
+        payload["ideogram_key_length"] = str(len(ideogram_key))
     return payload
 
 
