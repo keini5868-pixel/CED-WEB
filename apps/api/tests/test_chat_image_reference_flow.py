@@ -209,6 +209,63 @@ def test_should_use_reference_when_session_has_upload():
     )
 
 
+def test_plain_image_request_ignores_stale_session_upload():
+    """Una imagen en sesión (análisis/edit fallido) no debe secuestrar text-to-image plano."""
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    assert not should_use_reference_generation(
+        "Genera una imagen de un pajaro",
+        HISTORY_AFTER_ANALYSIS,
+        user_id=USER,
+        conversation_id=CONV,
+    )
+    assert should_use_reference_generation(
+        "Haz una variacion de esta imagen con colores mas vivos",
+        HISTORY_AFTER_ANALYSIS,
+        user_id=USER,
+        conversation_id=CONV,
+    )
+
+
+@patch("app.services.gemini_images.generate_image")
+@patch("app.services.image_reference_generator.generate_image_with_reference")
+def test_failed_reference_does_not_block_later_plain(
+    mock_ref: MagicMock, mock_gen: MagicMock
+):
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    mock_ref.return_value = {
+        "ok": False,
+        "error": "No pude generar la imagen con referencia. Reintenta en unos segundos.",
+        "code": "internal_error",
+    }
+    mock_gen.return_value = {
+        "ok": True,
+        "url": "https://example.com/plain-after.jpg",
+        "caption": "Pajaro",
+        "quality": "standard",
+    }
+
+    fail = run_chat_image_generation(
+        USER,
+        CONV,
+        "Haz una variacion de esta imagen con colores mas vivos",
+        HISTORY_AFTER_ANALYSIS,
+        plan_id="elite",
+    )
+    assert fail["ok"] is False
+    mock_ref.assert_called_once()
+
+    plain = run_chat_image_generation(
+        USER,
+        CONV,
+        "Genera una imagen de un pajaro",
+        HISTORY_AFTER_ANALYSIS,
+        plan_id="elite",
+    )
+    assert plain["ok"] is True
+    assert plain["used_reference"] is False
+    mock_gen.assert_called_once()
+
+
 @patch("app.services.chat_image_generation.run_chat_image_generation")
 @patch("app.services.text_chat.supabase_db")
 def test_text_chat_direct_path_returns_image_not_template(mock_db: MagicMock, mock_run: MagicMock):

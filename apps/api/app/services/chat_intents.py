@@ -81,7 +81,7 @@ _PRIOR_REFERENCE = re.compile(
     r"\b("
     r"igual\s+a\s+(?:la\s+)?(?:que\s+)?(?:te\s+)?(?:pas[eé]|sub[ií]|mand[eé]|envi[eé])"
     r"|(?:la|el)\s+(?:misma|mismo)\s+(?:imagen|foto|flyer|creativo|dise[nñ]o|referencia)"
-    r"|(?:mism[oa]s?\s+)?(?:precios?|nombre|dise[nñ]o|estilo|textos?)"
+    r"|(?:mism[oa]s?\s+)(?:precios?|nombre|dise[nñ]o|estilo|textos?)"
     r"|(?:imagen|foto|flyer|creativo)\s+(?:de\s+)?referencia"
     r"|(?:que|la\s+que)\s+(?:te\s+)?(?:pas[eé]|sub[ií]|mand[eé]|envi[eé]|compart[ií])"
     r"|(?:usa|utiliza)\w*\s+(?:esa|esta|la)\s+(?:imagen|foto|referencia)"
@@ -90,9 +90,35 @@ _PRIOR_REFERENCE = re.compile(
     re.I,
 )
 
+# Pedidos explícitos de variación/edición sobre una imagen ya presente en el hilo.
+_REFERENCE_EDIT_OR_VARIATION = re.compile(
+    r"\b("
+    r"variaci[oó]n(?:es)?"
+    r"|variar"
+    r"|edita(?:r|ci[oó]n)?"
+    r"|modifica(?:r)?"
+    r"|retoca(?:r)?"
+    r"|inspirad[oa]\s+en"
+    r"|basad[oa]\s+en\s+(?:esta|esa|la)"
+    r"|haz(?:me)?\s+una\s+variaci[oó]n"
+    r"|cambia\s+(?:esta|esa|la)\s+(?:imagen|foto)"
+    r")\b",
+    re.I,
+)
+
 
 def user_requests_prior_reference(text: str) -> bool:
     return bool(_PRIOR_REFERENCE.search((text or "").strip()))
+
+
+def wants_image_reference_edit(text: str) -> bool:
+    """True si el usuario pide variar/editar/inspirarse en una imagen de referencia."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if user_requests_prior_reference(t):
+        return True
+    return bool(_REFERENCE_EDIT_OR_VARIATION.search(t))
 
 
 def mentions_pdf(text: str) -> bool:

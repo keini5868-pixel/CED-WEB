@@ -88,14 +88,16 @@ def _pick_quality(requested: str | None, *, plan_allows_hd: bool) -> str:
 def _check_image_quota(user_id: str, quality: str) -> dict[str, Any] | None:
     """Devuelve dict de error si no puede generar; None si OK."""
     profile = supabase_db.get_profile(user_id) or {}
-    if is_super_admin(profile.get("email"), profile.get("role")):
+    admin_bypass = is_super_admin(profile.get("email"), profile.get("role"))
+    if admin_bypass:
         limits = get_plan_limits(PlanId.FOUNDING.value)
     else:
         limits, reason, _trial = effective_plan_limits(user_id)
         if reason == "trial_expired":
             limits = get_plan_limits(PlanId.FREE_BASIC.value)
 
-    std_used, hd_used = _day_image_counts(user_id)
+    # count_generated_images_today → (standard, hd, text/ideogram)
+    std_used, hd_used, _text_used = _day_image_counts(user_id)
     if quality == "hd":
         cap = limits.ai_images_hd_per_day
         used = hd_used
@@ -103,16 +105,30 @@ def _check_image_quota(user_id: str, quality: str) -> dict[str, Any] | None:
         cap = limits.ai_images_standard_per_day
         used = std_used
 
-    if cap <= 0:
+    if admin_bypass:
+        return None
+
+    if (cap <= 0 or used >= cap):
+        from app.services.wallet import try_spend
+
+        resource = "image_hd" if quality == "hd" else "image_std"
+        spend = try_spend(user_id, resource, units=1.0)
+        if spend.get("ok"):
+            return None
+        if cap <= 0:
+            return {
+                "ok": False,
+                "error": spend.get("error")
+                or (
+                    "Generación con referencias requiere plan Starter o superior, "
+                    "o una recarga. Mejora tu plan en Precios."
+                ),
+                "code": "plan_limit",
+            }
         return {
             "ok": False,
-            "error": "Generación con referencias requiere plan Starter o superior. Mejora tu plan en Precios.",
-            "code": "plan_limit",
-        }
-    if used >= cap:
-        return {
-            "ok": False,
-            "error": f"Límite diario de imágenes {quality} alcanzado ({cap}/día).",
+            "error": spend.get("error")
+            or f"Límite diario de imágenes {quality} alcanzado ({cap}/día).",
             "code": "quota_exhausted",
         }
     return None

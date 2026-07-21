@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "fix-voice-image-standalone-guard-v65"
+BUILD_VERSION = "fix-image-ref-stuck-isolation-v66"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

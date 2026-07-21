@@ -13,6 +13,7 @@ from app.services.chat_intents import (
     parse_followup_image_prompt,
     parse_generate_image_prompt,
     user_requests_prior_reference,
+    wants_image_reference_edit,
 )
 from app.services.marketing_creative import (
     build_display_label,
@@ -108,20 +109,24 @@ def should_use_reference_generation(
     user_id: str,
     conversation_id: str | None,
 ) -> bool:
-    from app.services.publish_image_context import (
-        has_publishable_image,
-        resolve_reference_image_bytes,
-    )
+    """Solo ruta con referencia si el pedido lo pide de forma explícita.
+
+    Tener bytes de imagen en sesión (p.ej. tras analizar o tras un edit fallido)
+    NO debe forzar generate_image_with_reference en un «genera una imagen de X»
+    plano: eso dejaba el chat atascado en el path de referencia tras un fallo.
+    """
+    from app.services.publish_image_context import resolve_reference_image_bytes
 
     if not resolve_reference_image_bytes(user_id, conversation_id):
         return False
-    if user_requests_prior_reference(text):
+    # Variación / edición / «igual a la que te pasé» / «mismos precios».
+    if wants_image_reference_edit(text):
         return True
-    if is_image_creation_request(text, history):
-        return True
+    # Follow-up corto que continúa editando el hilo visual.
     if parse_followup_image_prompt(text, history):
         return True
-    if has_publishable_image(user_id, conversation_id) and extract_vision_context_from_history(history):
+    # Flyer/creativo/banner: suele querer la foto de producto ya subida.
+    if is_marketing_creative_intent(text):
         return True
     return False
 
@@ -266,6 +271,26 @@ def run_chat_image_generation(
             style_mode=style_mode if creation else "edit",
             quality="auto",
         )
+        # Aislamiento: si el path de referencia falla y el pedido NO era edit/variación
+        # explícito, reintentar como generación plana para no tumbar el chat.
+        if (not img_result.get("ok") or not img_result.get("url")) and not wants_image_reference_edit(
+            user_text
+        ):
+            logger.warning(
+                "[CHAT:IMG-GEN] reference failed; falling back to plain user=%s code=%s",
+                user_id[:8],
+                img_result.get("code"),
+            )
+            img_result = generate_image(
+                user_id=user_id,
+                plan_id=plan_id,
+                prompt=model_prompt,
+                quality="auto",
+                context=enriched_context or _recent_chat_context(history or []),
+                display_label=display_label or None,
+                prefer_ideogram=wants_literal_text,
+            )
+            ref_payload = None
     elif creation:
         logger.info("[CHAT:IMG-GEN] creative brief without bytes user=%s", user_id[:8])
         img_result = generate_image(
