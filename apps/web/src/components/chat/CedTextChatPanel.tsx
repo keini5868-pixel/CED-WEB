@@ -186,13 +186,20 @@ function isInternalImagePrompt(text: string): boolean {
   return false;
 }
 
-/** Creativos con mucho texto deben pasar por chat (brief limpio + publicar después). */
+/** Creativos con mucho texto estructurado deben pasar por chat (brief limpio). */
 function shouldRouteAttachmentViaChat(text: string, mode: ImageActionMode): boolean {
   if (mode === "analyze" || mode === "publish") return true;
   const t = text.trim();
   if (!t) return false;
+  // En edit/variation/inspired: no forzar creativo de marketing solo por
+  // «características» o «hazme una imagen» — eso debe ir al path de referencia.
+  if (mode === "edit" || mode === "variation" || mode === "inspired") {
+    return /(?:beneficios?|veneficios?|puntos clave|flyer\s+de\s+venta|creativo\s+publicitario)/i.test(
+      t,
+    );
+  }
   if (t.length > 100) return true;
-  return /beneficios?|veneficios?|caracter[ií]sticas|puntos clave|ventajas|flyer|creativo|referencia|fondo|genera\s+una\s+imagen|vbeneficios|imegen/i.test(
+  return /beneficios?|veneficios?|puntos clave|ventajas|flyer|creativo|referencia|fondo|vbeneficios|imegen/i.test(
     t,
   );
 }
@@ -200,8 +207,10 @@ function shouldRouteAttachmentViaChat(text: string, mode: ImageActionMode): bool
 function recentMessagesAwaitPublish(messages: ChatMessage[]): boolean {
   const recent = messages.slice(-8);
   const blob = recent.map((m) => m.content || "").join(" ");
-  return /facebook|instagram|\bface\b|\bfb\b|publicar|publicaci[oó]n/i.test(blob)
-    && /imagen|foto|adjunt|suba|sube/i.test(blob);
+  // Exige señal clara de flujo de publicación, no mención casual de «redes».
+  return /(?:publica(?:r)?\s+(?:en\s+)?(?:facebook|instagram|face|ig|fb)|desea publicar|para publicar)/i.test(
+    blob,
+  ) && /imagen|foto|adjunt|suba|sube/i.test(blob);
 }
 
 function imageUserLabel(image: ChatImageAttachment): string {
@@ -680,8 +689,8 @@ export function CedTextChatPanel({
             {
               role: "model",
               content: claimsCreativeSuccess
-                ? "No pude completar esa acción con la imagen, señor. "
-                  + "¿Desea publicarla, analizarla o generar una variación?"
+                ? "No pude completar la generación de esa imagen, señor. "
+                  + "Puede intentar de nuevo, editarla con otra instrucción, o publicarla si ya la tiene."
                 : reply,
               created_at: new Date().toISOString(),
               pdf: result.pdf ?? null,

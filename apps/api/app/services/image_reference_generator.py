@@ -414,11 +414,16 @@ def _generate_image_with_reference_impl(
 
     from app.services.marketing_creative import (
         build_marketing_creative_brief,
+        is_marketing_creative_intent,
         should_build_creative_brief,
     )
 
     display_label = ""
-    if should_build_creative_brief(topic, history=None, has_reference_image=True):
+    # Solo reescribir a brief [[CREATIVO]] en pedidos de flyer/marketing reales.
+    # Ediciones libres («pon un lobo», «que diga…») deben conservar el prompt del usuario.
+    if is_marketing_creative_intent(topic) and should_build_creative_brief(
+        topic, history=None, has_reference_image=True
+    ):
         topic, display_label, brief_mode = build_marketing_creative_brief(
             topic,
             history=None,

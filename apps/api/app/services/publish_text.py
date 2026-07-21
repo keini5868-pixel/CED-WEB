@@ -571,20 +571,46 @@ def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
 
     if is_capability_catalog_request(t):
         return False
-    if with_image and is_image_for_publish_signal(t):
+
+    from app.services.chat_intents import (
+        is_attachment_image_edit_request,
+        is_explicit_publish_to_social,
+    )
+
+    # «publica en Facebook» gana; «pon un cuadro que diga publicaciones en redes» NO.
+    if is_explicit_publish_to_social(t):
         return True
-    if is_explicit_social_publish_request(t, with_image=with_image):
-        return True
+    if is_attachment_image_edit_request(t):
+        return False
+
     from app.services.marketing_creative import blocks_publish_intent
 
     if blocks_publish_intent(t):
         return False
-    has_platform = bool(_SOCIAL_PLATFORM.search(t))
+
+    # Señal corta «esa imagen» solo si el mensaje es breve (señalar adjunto para publicar).
+    if with_image and is_image_for_publish_signal(t):
+        if len(t) <= 72 or bool(_PUBLISH_VERB.search(t)):
+            return True
+        return False
+
+    if is_explicit_social_publish_request(t, with_image=with_image):
+        # Evita que «publicaciones» + «redes» (texto a pintar) dispare publish.
+        real_platform = bool(
+            re.search(r"\b(?:facebook|instagram|face\b|fb\b|ig\b)\b", t, re.I)
+        )
+        if not real_platform and not _PUBLISH_VERB.search(t):
+            return False
+        return True
+
+    has_platform = bool(
+        re.search(r"\b(?:facebook|instagram|face\b|fb\b|ig\b)\b", t, re.I)
+    )
     has_image_ref = bool(re.search(r"\b(imagen|foto|esto|esta)\b", t, re.I))
-    has_verb = bool(_PUBLISH_VERB.search(t) or _PUBLISH_STEM.search(t))
+    has_verb = bool(_PUBLISH_VERB.search(t))
     if has_verb and (has_platform or has_image_ref):
         return True
-    if with_image and has_platform:
+    if with_image and has_platform and has_verb:
         return True
     if with_image and has_verb and has_image_ref:
         return True

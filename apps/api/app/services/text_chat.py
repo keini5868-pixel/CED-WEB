@@ -18,6 +18,7 @@ from app.services import supabase_db
 from app.services.cognitive_router import build_chat_system_extras, route_message
 from app.services.chat_intents import (
     PDF_DETAIL_CLARIFY_QUESTION,
+    is_attachment_image_edit_request,
     is_generate_image_intent,
     is_pdf_intent,
     parse_followup_image_prompt,
@@ -2381,7 +2382,6 @@ def send_message(
     from app.services.text_publish_flow import (
         continue_publish_after_image,
         handle_publish_flow_turn,
-        start_publish_flow_from_image,
     )
 
     # Registrar imagen ANTES del flujo de publicación (awaiting_image → attach).
@@ -2426,11 +2426,17 @@ def send_message(
     if image_bytes:
         try:
             from app.services.chat_multimedia import analyze_chat_image
-            from app.services.marketing_creative import resolve_image_creation_from_attachment
+            from app.services.chat_image_generation import _merge_creative_user_request
+            from app.services.marketing_creative import (
+                is_marketing_creative_intent,
+                resolve_image_creation_from_attachment,
+            )
 
             flow = get_publish_flow(user_id, conversation_id)
             awaiting_pub = bool(flow and str(flow.get("stage") or "") == "awaiting_image")
-            explicit_analyze = mode == "analyze" or bool(
+            mode_l = (mode or "").strip().lower()
+            edit_modes = {"edit", "variation", "inspired"}
+            explicit_analyze = mode_l == "analyze" and bool(
                 re.search(
                     r"\b(analiza|analizá|describe|expl[ií]came)\b|"
                     r"qu[eé]\s+piensas\s+de\s+esta\s+imagen",
@@ -2438,15 +2444,89 @@ def send_message(
                     re.I,
                 )
             )
-            wants_publish = mode == "publish" or (
-                not explicit_analyze
+            # Analyze-only UI default still allows free-form edits in the caption.
+            wants_edit = mode_l in edit_modes or (
+                mode_l != "publish"
+                and is_attachment_image_edit_request(text)
+                and not explicit_analyze
+            )
+
+            # Edit/variation beats publish: «que diga publicaciones en redes» ≠ publicar.
+            wants_publish = mode_l == "publish" or (
+                not wants_edit
+                and not explicit_analyze
                 and (
                     is_social_publish_intent(text, with_image=True)
-                    or is_image_for_publish_signal(text)
+                    or (
+                        is_image_for_publish_signal(text)
+                        and len((text or "").strip()) <= 72
+                    )
                     or awaiting_pub
                     or history_awaits_publish_image(history)
                 )
             )
+
+            if wants_edit:
+                style_mode = mode_l if mode_l in edit_modes else "edit"
+                use_marketing = (
+                    is_marketing_creative_intent(text)
+                    and not re.search(
+                        r"\b(?:lobo|cuadro|cerebro|fragment|pon\s+un|agrega|que\s+diga)\b",
+                        text,
+                        re.I,
+                    )
+                )
+                creation = (
+                    resolve_image_creation_from_attachment(text, history)
+                    if use_marketing
+                    else None
+                )
+                if creation:
+                    ref_prompt = _merge_creative_user_request(
+                        creation["internal_prompt"],
+                        text,
+                    )
+                    success_reply = creation.get("reply") or "Listo. Aquí está su creativo."
+                    caption = creation.get("display_label") or "Creativo"
+                    style_mode = creation.get("style_mode") or style_mode
+                    route_intent = "marketing_creative"
+                else:
+                    # Pedido libre: conservar instrucciones del usuario (lobo, textos, etc.).
+                    ref_prompt = (text or "").strip() or "Edita esta imagen según lo pedido."
+                    success_reply = "Listo. Aquí está la imagen con los cambios pedidos."
+                    caption = ref_prompt[:72] if len(ref_prompt) <= 72 else "Imagen editada"
+                    route_intent = "image_reference_edit"
+
+                ref_result = _generate_chat_image_with_reference(
+                    user_id,
+                    prompt=ref_prompt,
+                    reference_bytes=image_bytes,
+                    media_type=image_media_type or "image/jpeg",
+                    style_mode=style_mode,
+                )
+                if ref_result.get("ok") and ref_result.get("url"):
+                    from app.services.publish_image_context import register_text_chat_image_url
+
+                    register_text_chat_image_url(
+                        user_id,
+                        conversation_id,
+                        str(ref_result["url"]),
+                    )
+                    return _finish(
+                        success_reply,
+                        route_meta={"intent": route_intent, "source": "attachment_reference"},
+                        image=_chat_image_attachment(
+                            str(ref_result["url"]),
+                            caption=str(caption),
+                            quality=str(ref_result.get("quality") or ""),
+                        ),
+                    )
+                err = str(ref_result.get("error") or "No pude editar la imagen.")
+                return _finish(
+                    _format_image_generation_error(err),
+                    route_meta={"intent": route_intent, "source": "attachment_error"},
+                )
+
             if wants_publish:
                 reply = continue_publish_after_image(
                     user_id,
@@ -2459,23 +2539,15 @@ def send_message(
                     route_meta={"intent": "publish_flow", "source": "image_upload"},
                 )
 
-            if is_social_publish_intent(text, with_image=True):
-                reply = start_publish_flow_from_image(
-                    user_id,
-                    conversation_id,
-                    text,
-                    history=history,
-                )
-                return _finish(
-                    reply,
-                    route_meta={"intent": "publish_flow", "source": "image_upload"},
-                )
-
             creation = resolve_image_creation_from_attachment(text, history)
             if creation:
+                ref_prompt = _merge_creative_user_request(
+                    creation["internal_prompt"],
+                    text,
+                )
                 ref_result = _generate_chat_image_with_reference(
                     user_id,
-                    prompt=creation["internal_prompt"],
+                    prompt=ref_prompt,
                     reference_bytes=image_bytes,
                     media_type=image_media_type or "image/jpeg",
                     style_mode=creation.get("style_mode") or "edit",
@@ -2510,8 +2582,8 @@ def send_message(
             }:
                 analyze_prompt = (
                     "Describe brevemente qué se ve en esta imagen. "
-                    "Si no hay suficiente contexto, pregunta: "
-                    "¿desea publicarla, analizarla o generar una variación?"
+                    "Si el usuario no pidió nada más, pregunta si desea "
+                    "analizarla con más detalle, editarla/variarla, o publicarla."
                 )
             reply = analyze_chat_image(
                 user_id,

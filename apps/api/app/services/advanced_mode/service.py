@@ -398,7 +398,14 @@ def send_advanced_message_with_image(
     api_key = require_anthropic_api_key()
     _conversation_id(user_id, conversation_id)
 
-    if mode in ("variation", "inspired", "edit"):
+    from app.services.chat_intents import is_attachment_image_edit_request
+
+    # Default UI mode is "analyze"; free-form edit prompts still must edit, not only describe.
+    effective_mode = mode
+    if mode == "analyze" and is_attachment_image_edit_request(text):
+        effective_mode = "edit"
+
+    if effective_mode in ("variation", "inspired", "edit"):
         from app.services.image_reference_generator import generate_image_with_reference
 
         style_map = {
@@ -407,19 +414,20 @@ def send_advanced_message_with_image(
             "edit": "edit",
         }
         prompt = text
-        if mode == "variation" and "variación" not in text.lower():
+        if effective_mode == "variation" and "variación" not in text.lower():
             prompt = f"Genera una variación de esta imagen: {text}"
-        elif mode == "inspired":
+        elif effective_mode == "inspired":
             prompt = f"Crea una imagen inspirada en esta referencia: {text}"
-        elif mode == "edit":
-            prompt = f"Edita esta imagen: {text}"
+        elif effective_mode == "edit":
+            # Conservar el pedido completo del usuario (textos, sujetos, etc.).
+            prompt = text if text else "Edita esta imagen según lo pedido."
 
         ref_result = generate_image_with_reference(
             user_id=user_id,
             prompt=prompt,
             reference_image=image_bytes,
             content_type=image_media_type or "image/jpeg",
-            style_mode=style_map.get(mode, "edit"),
+            style_mode=style_map.get(effective_mode, "edit"),
         )
         if ref_result.get("ok") and ref_result.get("url"):
             caption = text[:72] if len(text) <= 72 else "Imagen generada"
@@ -436,8 +444,8 @@ def send_advanced_message_with_image(
         # Nunca fingir éxito sin URL.
         return _finish_payload(
             response=(
-                f"{err} ¿Desea publicarla, analizarla de nuevo "
-                "o probar otra variación?"
+                f"{err} Puede intentar de nuevo con otra instrucción de edición, "
+                "analizar la imagen, o publicarla si eso era lo que buscaba."
             ),
             model=ADVANCED_MODEL_LABEL,
         )

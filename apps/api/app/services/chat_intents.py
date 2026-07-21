@@ -101,8 +101,26 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|inspirad[oa]\s+en"
     r"|basad[oa]\s+en\s+(?:esta|esa|la)"
     r"|haz(?:me)?\s+una\s+variaci[oó]n"
-    r"|cambia\s+(?:esta|esa|la)\s+(?:imagen|foto)"
+    r"|cambia\s+(?:esta|esa|la)\s+(?:imagen|foto|flyer|dise[nñ]o)"
+    r"|(?:en|con)\s+(?:esta|esa)\s+(?:misma\s+)?(?:imagen|foto|flyer)"
+    r"|as[ií]\s+como\s+(?:esta|esa)"
+    r"|con\s+(?:esta|esa)\s+misma"
+    r"|mism[oa]s?\s+caracter[ií]sticas?"
+    r"|(?:pon|pone|ponga|agrega|a[nñ]ade|coloca|incluye)\w*"
+    r"|que\s+(?:diga|ponga|aparezca|lea|salga)"
+    r"|mant[eé]n(?:me)?\s+(?:l[ao]s?\s+)?(?:precios?|textos?|lista|dise[nñ]o)"
+    r"|conserva\s+(?:l[ao]s?\s+)?(?:precios?|textos?|lista)"
+    r"|cambia\s+(?:el\s+)?(?:fondo|dise[nñ]o|estilo)"
     r")\b",
+    re.I,
+)
+
+_REAL_PUBLISH_PLATFORM = re.compile(
+    r"\b(?:facebook|instagram|face\b|fb\b|ig\b)\b",
+    re.I,
+)
+_REAL_PUBLISH_VERB = re.compile(
+    r"\b(?:publica(?:r|me|lo|mos|is|dan)?|postea(?:r|me|lo)?)\b",
     re.I,
 )
 
@@ -119,6 +137,33 @@ def wants_image_reference_edit(text: str) -> bool:
     if user_requests_prior_reference(t):
         return True
     return bool(_REFERENCE_EDIT_OR_VARIATION.search(t))
+
+
+def is_explicit_publish_to_social(text: str) -> bool:
+    """True solo ante «publica en Facebook/Instagram» real — no «que diga publicaciones»."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    return bool(_REAL_PUBLISH_VERB.search(t) and _REAL_PUBLISH_PLATFORM.search(t))
+
+
+def is_attachment_image_edit_request(text: str) -> bool:
+    """Pedido de editar/variar la imagen adjunta (no publicar ni solo analizar)."""
+    t = (text or "").strip()
+    if not t or len(t) < 6:
+        return False
+    if is_explicit_publish_to_social(t):
+        return False
+    if wants_image_reference_edit(t):
+        return True
+    # «hazme una imagen…» + deíctico / cambio visual sobre la adjunto.
+    if is_generate_image_intent(t) and (
+        re.search(r"\b(?:esta|esa|la)\s+(?:imagen|foto|flyer)\b", t, re.I)
+        or re.search(r"\b(?:misma|mismo|as[ií]|igual)\b", t, re.I)
+        or re.search(r"\b(?:pon|agrega|cambia|que\s+diga|lobo|cuadro|texto)\b", t, re.I)
+    ):
+        return True
+    return False
 
 
 def mentions_pdf(text: str) -> bool:
