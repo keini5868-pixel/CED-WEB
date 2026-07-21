@@ -546,6 +546,7 @@ export function CedTextChatPanel({
       } finally {
         setBusy(false);
         setTyping(false);
+        setStatusHint(null);
         setInput("");
       }
     })();
