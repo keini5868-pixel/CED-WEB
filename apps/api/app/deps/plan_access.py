@@ -80,6 +80,9 @@ def charge_pdf_from_wallet_if_needed(user_id: str, *, included_in_plan: bool) ->
     """Tras PDF exitoso: si no estaba incluido en el plan/tope de hoy, debita monedero."""
     if included_in_plan:
         return
+    profile = supabase_db.get_profile(user_id) or {}
+    if is_super_admin(profile.get("email"), profile.get("role")):
+        return
     from app.services.wallet import try_spend
 
     spend = try_spend(user_id, "pdf", units=1.0)

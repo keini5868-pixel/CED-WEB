@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from app.config import get_settings
 from app.services.llama_service import use_llama
-from app.services.voice_test_mode import GEMINI_STANDALONE_MODE
+from app.services.voice_test_mode import is_gemini_standalone_voice_test
 
 
 class VoiceLlmProtocol(Protocol):
@@ -29,8 +28,9 @@ class VoiceLlmProtocol(Protocol):
 
 
 def build_voice_llm() -> VoiceLlmProtocol:
-    mode = (get_settings().voice_test_mode or "").strip().lower()
-    if mode == GEMINI_STANDALONE_MODE:
+    # Usa is_gemini_standalone_voice_test() (no el env crudo): en production el
+    # modo standalone se ignora salvo VOICE_STANDALONE_ALLOW_PROD=true.
+    if is_gemini_standalone_voice_test():
         from app.services.gemini_voice_standalone import GeminiStandaloneVoiceLlm
 
         return GeminiStandaloneVoiceLlm()

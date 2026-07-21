@@ -49,6 +49,7 @@ OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 CONVERSATIONAL_TIMEOUT_SEC = 18.0
 GREETING_TIMEOUT_SEC = 12.0
 TOOL_TIMEOUT_SEC = 25.0
+IMAGE_TOOL_TIMEOUT_SEC = 60.0
 PDF_TOOL_TIMEOUT_SEC = 90.0
 SEARCH_WEB_TIMEOUT_SEC = 17.0
 MAX_TOOL_ROUNDS = 3
@@ -523,6 +524,8 @@ class OpenAIVoiceLlm:
                     timeout = SEARCH_WEB_TIMEOUT_SEC
                 elif name == "generar_pdf":
                     timeout = PDF_TOOL_TIMEOUT_SEC
+                elif name in ("generate_image", "generate_image_with_reference"):
+                    timeout = IMAGE_TOOL_TIMEOUT_SEC
                 else:
                     timeout = TOOL_TIMEOUT_SEC
                 try:

@@ -585,7 +585,9 @@ def _maybe_generate_with_ideogram(
         return None, "not_configured"
 
     within_quota = text_used < text_cap
-    if not within_quota:
+    profile = supabase_db.get_profile(user_id) or {}
+    admin_bypass = is_super_admin(profile.get("email"), profile.get("role"))
+    if not within_quota and not admin_bypass:
         from app.services.wallet import can_afford
 
         if not can_afford(user_id, "image_text", units=1.0):
@@ -602,7 +604,7 @@ def _maybe_generate_with_ideogram(
         )
         return None, "ideogram_failed"
 
-    if not within_quota:
+    if not within_quota and not admin_bypass:
         from app.services.wallet import try_spend
 
         # Siempre 1 unidad ($0.06) — una imagen visible al usuario, nunca N variantes.
@@ -623,10 +625,11 @@ def _maybe_generate_with_ideogram(
     else:
         logger.info(
             "[IMAGE:ROUTER] ideogram within free quota user=%s num_returned=%s "
-            "provider_request_cost=%.4f",
+            "provider_request_cost=%.4f admin_bypass=%s",
             user_id[:8],
             result.get("num_images_returned"),
             float(result.get("provider_request_cost_usd") or result.get("estimated_cost_usd") or 0),
+            admin_bypass,
         )
     return result, None
 
@@ -687,7 +690,9 @@ def generate_image(
         cap = limits.ai_images_standard_per_day
         used = std_used
 
-    if cap <= 0 or used >= cap:
+    # Super admin nunca se bloquea por monedero vacío (cuenta de pruebas / ops).
+    admin_bypass = is_super_admin(profile.get("email"), profile.get("role"))
+    if (cap <= 0 or used >= cap) and not admin_bypass:
         from app.services.wallet import try_spend
 
         resource = "image_hd" if picked == "hd" else "image_std"

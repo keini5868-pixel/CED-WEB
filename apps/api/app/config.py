@@ -145,9 +145,12 @@ class Settings(BaseSettings):
     retell_bootstrap_secret: str = ""
     retell_llm_provider: str = "llama"
     # Prueba aislada de voz: gemini_standalone = Retell → Gemini directo, sin orquestador.
+    # En production se IGNORA salvo voice_standalone_allow_prod=true (deja la voz sin tools).
     voice_test_mode: str = ""
     # Módulos orquestador habilitados en modo standalone (csv): environment, calendar, finance
     voice_standalone_modules: str = ""
+    # Solo para staging deliberado. Si false (default), gemini_standalone no aplica en production.
+    voice_standalone_allow_prod: bool = False
     elevenlabs_api_key: str = ""
     # Clon Jarvis en ElevenLabs — se registra en Retell al bootstrap si no hay RETELL_VOICE_ID
     elevenlabs_jarvis_voice_id: str = "UKhFmKblQwXqi7vvaALt"

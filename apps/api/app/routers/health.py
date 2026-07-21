@@ -75,6 +75,12 @@ def health(_request: Request) -> dict[str, str]:
         payload["voice_test_mode_active"] = (
             "true" if is_gemini_standalone_voice_test() else "false"
         )
+        # Si el env pide standalone pero production lo ignora, dejarlo visible.
+        if (
+            voice_test_mode() == "gemini_standalone"
+            and not is_gemini_standalone_voice_test()
+        ):
+            payload["voice_test_mode_ignored"] = "production_guard"
         modules = sorted(voice_standalone_modules())
         if modules:
             payload["voice_standalone_modules"] = ",".join(modules)

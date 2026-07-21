@@ -934,14 +934,18 @@ async def _execute_voice_tool_body(
             )
 
         if name == "generar_pdf":
+            from app.deps.auth import is_super_admin
             from app.deps.plan_access import effective_plan_limits, pdf_included_in_plan_today
+            from app.services import supabase_db as _pdf_db
 
             limits, reason, _ = effective_plan_limits(user_id)
             if reason == "trial_expired":
                 return _spoken_err("Tu prueba terminó, señor. Elige un plan en Precios.")
             included = pdf_included_in_plan_today(user_id, limits)
             pdf_wallet_charge_needed = False
-            if not included:
+            _pdf_profile = _pdf_db.get_profile(user_id) or {}
+            _pdf_admin = is_super_admin(_pdf_profile.get("email"), _pdf_profile.get("role"))
+            if not included and not _pdf_admin:
                 from app.services.wallet import can_afford
 
                 if not can_afford(user_id, "pdf", units=1.0):

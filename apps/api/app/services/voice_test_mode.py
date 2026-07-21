@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import logging
+
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 GEMINI_STANDALONE_MODE = "gemini_standalone"
 
@@ -28,7 +32,24 @@ def voice_test_mode() -> str:
 
 
 def is_gemini_standalone_voice_test() -> bool:
-    return voice_test_mode() == GEMINI_STANDALONE_MODE
+    """True solo cuando el modo prueba está activo de forma segura.
+
+    En production, `VOICE_TEST_MODE=gemini_standalone` se ignora a menos que
+    `VOICE_STANDALONE_ALLOW_PROD=true`. Sin tools, imagen/PDF/Gmail fallan con
+    mensajes inventados del LLM ("inténtalo más tarde") aunque Gemini Image sí
+    funcione por chat — regresión observada 2026-07.
+    """
+    if voice_test_mode() != GEMINI_STANDALONE_MODE:
+        return False
+    settings = get_settings()
+    if settings.is_production() and not bool(settings.voice_standalone_allow_prod):
+        logger.error(
+            "[VOICE] VOICE_TEST_MODE=gemini_standalone IGNORADO en production "
+            "(deja la voz sin tools). Quite VOICE_TEST_MODE o ponga "
+            "VOICE_STANDALONE_ALLOW_PROD=true solo para staging deliberado."
+        )
+        return False
+    return True
 
 
 def voice_standalone_modules() -> frozenset[str]:

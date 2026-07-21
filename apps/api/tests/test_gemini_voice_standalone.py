@@ -23,18 +23,54 @@ def test_standalone_mode_flag() -> None:
     import os
 
     os.environ["VOICE_TEST_MODE"] = GEMINI_STANDALONE_MODE
+    os.environ.pop("APP_ENV", None)
+    get_settings.cache_clear()
+    assert is_gemini_standalone_voice_test() is True
+
+
+def test_standalone_ignored_in_production_without_allow_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regresión: VOICE_TEST_MODE=gemini_standalone en Railway dejaba la voz
+    sin tools → imagen/PDF fallaban con 'inténtalo más tarde' aunque el API
+    de imágenes sí funcionara por chat.
+    """
+    monkeypatch.setenv("VOICE_TEST_MODE", GEMINI_STANDALONE_MODE)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("VOICE_STANDALONE_ALLOW_PROD", raising=False)
+    get_settings.cache_clear()
+    assert is_gemini_standalone_voice_test() is False
+
+    monkeypatch.setenv("VOICE_STANDALONE_ALLOW_PROD", "true")
     get_settings.cache_clear()
     assert is_gemini_standalone_voice_test() is True
 
 
 def test_factory_returns_standalone_llm(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VOICE_TEST_MODE", GEMINI_STANDALONE_MODE)
+    monkeypatch.setenv("APP_ENV", "development")
     get_settings.cache_clear()
     from app.services.gemini_voice_standalone import GeminiStandaloneVoiceLlm
     from app.services.voice_llm_factory import build_voice_llm
 
     llm = build_voice_llm()
     assert isinstance(llm, GeminiStandaloneVoiceLlm)
+
+
+def test_factory_skips_standalone_in_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VOICE_TEST_MODE", GEMINI_STANDALONE_MODE)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.delenv("VOICE_STANDALONE_ALLOW_PROD", raising=False)
+    monkeypatch.setenv("USE_LLAMA", "false")
+    get_settings.cache_clear()
+    from app.services.gemini_voice_llm import GeminiVoiceLlm
+    from app.services.gemini_voice_standalone import GeminiStandaloneVoiceLlm
+    from app.services.voice_llm_factory import build_voice_llm
+
+    with patch("app.services.voice_llm_factory.use_llama", return_value=False):
+        llm = build_voice_llm()
+    assert isinstance(llm, GeminiVoiceLlm)
+    assert not isinstance(llm, GeminiStandaloneVoiceLlm)
 
 
 def test_standalone_draft_logs_latency(monkeypatch: pytest.MonkeyPatch) -> None:
