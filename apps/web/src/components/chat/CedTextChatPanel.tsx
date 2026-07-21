@@ -494,7 +494,12 @@ export function CedTextChatPanel({
           { role: "model", content: "", created_at: new Date().toISOString() },
         ]),
       );
-      setTyping(false);
+      if (looksLikeImageGenerationRequest(prompt)) {
+        setStatusHint("Generando imagen con IA…");
+        setTyping(true);
+      } else {
+        setTyping(false);
+      }
       try {
         const result = await sendChatMessage(
           prompt,
@@ -502,6 +507,7 @@ export function CedTextChatPanel({
           null,
           voicePublishActive || Boolean(onVoiceImageAttached),
           (chunk) => {
+            setTyping(false);
             setMessages((prev) => {
               const next = [...prev];
               const last = next[next.length - 1];
@@ -512,6 +518,11 @@ export function CedTextChatPanel({
               };
               return dedupeChatMessages(next);
             });
+          },
+          null,
+          (hint) => {
+            setStatusHint(hint);
+            setTyping(true);
           },
         );
         if (result.conversation_id) setConversationId(result.conversation_id);
