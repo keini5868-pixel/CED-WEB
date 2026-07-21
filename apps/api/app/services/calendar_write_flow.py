@@ -390,6 +390,20 @@ def confirm_calendar_write(
             user_id[:8],
         )
         user_line = "sí"
+    elif (
+        is_calendar_write_intent(user_line)
+        and not is_calendar_write_confirm(user_line, allow_short_yes=True)
+        and not is_calendar_write_cancel(user_line)
+    ):
+        # Transcript stale: la última línea del usuario sigue siendo el prepare
+        # («Guarda…», «Anota…») pero Retell ya invocó calendar_confirm_write.
+        logger.warning(
+            "[CALENDAR-WRITE] stale prepare utterance with pending draft user=%s "
+            "utterance=%r — treating confirm tool invoke as affirmative",
+            user_id[:8],
+            user_line[:80],
+        )
+        user_line = "sí"
     if not is_calendar_write_confirm(user_line, allow_short_yes=True):
         logger.warning(
             "[CALENDAR-WRITE] confirm FAILED status=confirm_required user=%s utterance=%r "

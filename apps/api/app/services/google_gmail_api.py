@@ -163,25 +163,25 @@ def list_messages_by_category(
     *,
     max_results: int = 10,
 ) -> list[dict[str, str]]:
-    label = GMAIL_CATEGORY_LABELS.get(category, GMAIL_CATEGORY_LABELS["primary"])
-    params: list[tuple[str, str | int]] = [
-        ("maxResults", max_results),
-        ("labelIds", "INBOX"),
-        ("labelIds", label),
-    ]
-    with httpx.Client(timeout=20.0) as client:
-        res = client.get(
-            f"{_GMAIL_BASE}/messages",
-            headers=_headers(access_token),
-            params=params,
-        )
-        res.raise_for_status()
-        data = res.json()
-        ids = [str(m.get("id")) for m in (data.get("messages") or []) if m.get("id")]
-        return [
-            _fetch_message_metadata(client, access_token, msg_id)
-            for msg_id in ids[:max_results]
-        ]
+    """Lista por pestaña Gmail usando ``q=category:…`` (API estable).
+
+    El filtro ``labelIds=INBOX`` + ``labelIds=CATEGORY_PERSONAL`` devolvía
+    bandejas vacías en cuentas reales aunque hubiera correo en Principal.
+    """
+    # Map UI category → Gmail search operator (docs: category:primary|…).
+    q_map: dict[GmailCategory, str] = {
+        "primary": "in:inbox category:primary",
+        "promotions": "in:inbox category:promotions",
+        "social": "in:inbox category:social",
+        "updates": "in:inbox category:updates",
+        "forums": "in:inbox category:forums",
+    }
+    query = q_map.get(category, q_map["primary"])
+    msgs = list_messages(access_token, query=query, max_results=max_results)
+    # Fallback: Primary vacío a veces por etiquetado; no fingir bandeja vacía.
+    if not msgs and category == "primary":
+        return list_inbox_messages(access_token, max_results=max_results)
+    return msgs
 
 
 def get_gmail_emails(user_id: str, category: GmailCategory = "primary") -> dict[str, Any]:
@@ -216,11 +216,12 @@ def get_gmail_emails(user_id: str, category: GmailCategory = "primary") -> dict[
         raise
     except Exception as exc:  # noqa: BLE001
         return {
-            "connected": True,
+            "connected": False,
             "category": category,
             "messages": [],
             "count": 0,
             "error": str(exc)[:200],
+            "needs_reconnect": True,
         }
 
 

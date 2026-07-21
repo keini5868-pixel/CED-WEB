@@ -280,6 +280,7 @@ export function useCedVoiceSession(
   const usageSessionRef = useRef<string | null>(null);
   const conversationRef = useRef<string | null>(null);
   const usageIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const usageTickInFlightRef = useRef(false);
   const lastVideoSentRef = useRef(0);
   const mutedRef = useRef(muted);
   const pausedRef = useRef(paused);
@@ -1336,9 +1337,12 @@ export function useCedVoiceSession(
           },
         });
 
+        clearUsageInterval();
+        usageTickInFlightRef.current = false;
         usageIntervalRef.current = setInterval(() => {
           const sid = usageSessionRef.current;
-          if (!sid) return;
+          if (!sid || usageTickInFlightRef.current) return;
+          usageTickInFlightRef.current = true;
           void (async () => {
             try {
               const result = await tickVoiceSessionDetailed(
@@ -1374,6 +1378,8 @@ export function useCedVoiceSession(
               }
             } catch {
               /* ignore — no cerrar voz por fallo de red */
+            } finally {
+              usageTickInFlightRef.current = false;
             }
           })();
         }, USAGE_TICK_SECONDS * 1000);
@@ -1391,9 +1397,12 @@ export function useCedVoiceSession(
       client.setRemoteMuted(mutedRef.current);
       client.setMicTrackEnabled(false);
 
+      clearUsageInterval();
+      usageTickInFlightRef.current = false;
       usageIntervalRef.current = setInterval(() => {
         const sid = usageSessionRef.current;
-        if (!sid) return;
+        if (!sid || usageTickInFlightRef.current) return;
+        usageTickInFlightRef.current = true;
         void (async () => {
           try {
             const result = await tickVoiceSessionDetailed(
@@ -1428,6 +1437,8 @@ export function useCedVoiceSession(
             }
           } catch {
             /* ignore — no cerrar voz por fallo de red */
+          } finally {
+            usageTickInFlightRef.current = false;
           }
         })();
       }, USAGE_TICK_SECONDS * 1000);

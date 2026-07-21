@@ -444,3 +444,57 @@ def test_cancel_calendar_write():
     out = cancel_calendar_write(USER)
     assert out["status"] == "cancelled"
     assert vcs.get_calendar_pending_write(USER) is None
+
+
+def test_confirm_with_stale_prepare_utterance_writes():
+    """Retell invokes confirm while transcript still shows «Guarda…» prepare line."""
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            prep = prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="Guarda una llamada con Ana mañana a las 3 pm",
+            )
+    assert prep["ok"] is True
+    draft_id = prep["draft_id"]
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            with patch(
+                "app.services.calendar_write_flow._calendar_api_call",
+                side_effect=lambda _uid, fn: fn("tok"),
+            ):
+                with patch(
+                    "app.services.calendar_write_flow.create_event",
+                    return_value={"id": "evt-stale-1", "htmlLink": "https://cal.test/1"},
+                ) as mock_create:
+                    conf = confirm_calendar_write(
+                        USER,
+                        call_id=CALL,
+                        draft_id=draft_id,
+                        payload={
+                            "call": {
+                                "transcript_object": [
+                                    {
+                                        "role": "user",
+                                        "content": "Guarda una llamada con Ana mañana a las 3 pm",
+                                    },
+                                    {"role": "agent", "content": prep["spoken"]},
+                                ]
+                            }
+                        },
+                    )
+    assert conf["ok"] is True, conf
+    assert conf["status"] == "written"
+    mock_create.assert_called_once()

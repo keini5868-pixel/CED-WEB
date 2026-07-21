@@ -12,11 +12,17 @@ from app.services.text_chat import (
     resolve_pdf_request,
 )
 
+# Investigación / hechos actuales deben usar search_web — no Claude sin grounding.
+# Antes «investiga quién ganó…» (sin «en internet») caía a stream plano → alucinaciones.
 _EXPLICIT_WEB = re.compile(
-    r"\b(busca(r|me)?\s+(en\s+)?(internet|la web|google)|"
-    r"investiga(r|me)?\s+(en\s+)?(internet|la web)|"
-    r"noticias?\s+(de|sobre|del)|"
-    r"clima|tiempo\s+en|titulares|última hora)\b",
+    r"\b("
+    r"busca(?:r|me)?\s+(en\s+)?(internet|la\s+web|google|noticias)|"
+    r"investiga(?:r|me)?(?:\s+(en\s+)?(internet|la\s+web))?"
+    r"|noticias?\s+(de|sobre|del|hoy|actuales)"
+    r"|clima|tiempo\s+en|titulares|última\s+hora"
+    r"|datos?\s+(actuales?|recientes?|en\s+tiempo\s+real)"
+    r"|verifica(?:r)?\s+(en\s+)?(internet|la\s+web|fuentes)"
+    r")\b",
     re.I,
 )
 

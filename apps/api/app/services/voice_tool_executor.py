@@ -1419,6 +1419,30 @@ async def _execute_voice_tool_body(
                 YouTubeSearchError,
                 search_youtube_video,
             )
+            from app.services.youtube_voice_intent import (
+                normalize_youtube_query,
+                resolve_youtube_play_request,
+            )
+
+            # Conservar título+artista: re-extraer si el LLM pasó la frase completa
+            # o recortó mal; quitar «en youtube» / verbos de play del query.
+            resolved = resolve_youtube_play_request(query)
+            if resolved and resolved.get("query"):
+                query = str(resolved["query"]).strip()
+            else:
+                query = normalize_youtube_query(query)
+                query = re.sub(r"\s+en\s+youtube\s*$", "", query, flags=re.I).strip()
+                query = re.sub(
+                    r"^(?:pon(?:me)?|reproduce|play|busca|quiero\s+escuchar)\s+",
+                    "",
+                    query,
+                    flags=re.I,
+                ).strip()
+            if not query:
+                return _spoken_err(
+                    "No escuché qué desea ver en YouTube, señor.",
+                    error="youtube_empty_query",
+                )
 
             try:
                 video = await asyncio.to_thread(search_youtube_video, query)
