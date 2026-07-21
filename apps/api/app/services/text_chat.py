@@ -100,7 +100,7 @@ _STREAM_USAGE_CACHE_TTL = 45.0
 CHAT_SIMPLE_MAX_TOKENS = 1400
 CHAT_DELIVERABLE_MAX_TOKENS = 3200
 CHAT_TOOLS_MAX_TOKENS = 1600
-DIRECT_IMAGE_MAX_CHARS = 500
+DIRECT_IMAGE_MAX_CHARS = 8000
 
 _VIRAL_KEYWORDS = re.compile(
     r"\b(instagram|tiktok|reels?|viral|horario|publicar|contenido|linkedin|facebook|"
@@ -3162,17 +3162,31 @@ def _iter_blocking_send(
     from concurrent.futures import ThreadPoolExecutor
     from concurrent.futures import TimeoutError as _FutureTimeout
 
+    from app.services.chat_image_generation import should_take_direct_image_path
+
+    if should_take_direct_image_path(text, None):
+        yield _sse_event("status", {"text": "Generando imagen con IA…"})
+        yield _sse_flush()
+
     result: dict[str, Any] | None = None
     error_reply: str | None = None
+    started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(
             send_message, user_id, content=text, conversation_id=conversation_id
         )
         while True:
+            if time.perf_counter() - started > 180.0:
+                error_reply = (
+                    "La operación tardó demasiado. Intenta de nuevo en unos segundos."
+                )
+                break
             try:
                 result = future.result(timeout=10.0)
                 break
             except _FutureTimeout:
+                if should_take_direct_image_path(text, None):
+                    yield _sse_event("status", {"text": "Generando imagen con IA…"})
                 yield _sse_flush()
             except TextChatError as exc:
                 error_reply = str(exc) or "No pude completar esa acción."
@@ -3317,16 +3331,52 @@ def iter_send_message_stream(
     )
 
     if should_take_direct_image_path(text, history):
-        yield _sse_event("status", {"text": "Generando imagen con IA…"})
+        status = "Generando imagen con IA…"
+        yield _sse_event("status", {"text": status})
         yield _sse_flush()
-        gen = run_chat_image_generation(
-            user_id,
-            conversation_id,
-            text,
-            history,
-            plan_id=_plan_id_for_user(user_id),
-        )
-        if gen.get("ok") and gen.get("url"):
+
+        def _run_image_job() -> dict[str, Any]:
+            return run_chat_image_generation(
+                user_id,
+                conversation_id,
+                text,
+                history,
+                plan_id=_plan_id_for_user(user_id),
+            )
+
+        gen: dict[str, Any] | None = None
+        image_error: str | None = None
+        from concurrent.futures import TimeoutError as _FutureTimeout
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_run_image_job)
+            # Keepalives: sin bytes el cliente aborta (~45–90s) y la UI queda muda.
+            hard_deadline = time.perf_counter() + 180.0
+            while True:
+                if time.perf_counter() > hard_deadline:
+                    image_error = (
+                        "La generación de imagen tardó demasiado. "
+                        "Intenta de nuevo en unos segundos."
+                    )
+                    break
+                try:
+                    gen = future.result(timeout=8.0)
+                    break
+                except _FutureTimeout:
+                    yield _sse_event("status", {"text": status})
+                    yield _sse_flush()
+                except Exception:
+                    logger.exception(
+                        "[CHAT] stream image job failed user=%s", user_id[:8]
+                    )
+                    image_error = "No pude generar la imagen. Intenta de nuevo."
+                    break
+
+        if image_error is not None or gen is None:
+            reply = image_error or "No pude generar la imagen."
+            image_attachment = None
+            gen = {"ok": False, "code": "timeout" if image_error and "tardó" in image_error else "error"}
+        elif gen.get("ok") and gen.get("url"):
             reply = str(gen.get("reply") or "Listo. Aquí está tu imagen generada.")
             image_attachment = _chat_image_attachment(
                 str(gen["url"]),

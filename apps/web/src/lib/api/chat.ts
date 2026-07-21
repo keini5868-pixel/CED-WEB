@@ -91,6 +91,7 @@ export async function sendChatMessage(
   voicePublish?: boolean,
   onToken?: (chunk: string) => void,
   imageMode?: string | null,
+  onStatus?: (text: string) => void,
 ): Promise<{
   conversation_id: string;
   reply: string;
@@ -108,7 +109,12 @@ export async function sendChatMessage(
       imageMode,
     );
   }
-  return sendChatMessageStream(content, conversationId, onToken ?? (() => {}));
+  return sendChatMessageStream(
+    content,
+    conversationId,
+    onToken ?? (() => {}),
+    onStatus,
+  );
 }
 
 async function sendChatMessageBlocking(
@@ -191,6 +197,7 @@ export async function sendChatMessageStream(
   content: string,
   conversationId: string | null | undefined,
   onToken: (chunk: string) => void,
+  onStatus?: (text: string) => void,
 ): Promise<StreamDonePayload> {
   const controller = new AbortController();
   let stalled = false;
@@ -257,6 +264,11 @@ export async function sendChatMessageStream(
     }
     if (!dataLine) return;
     const parsed = JSON.parse(dataLine) as Record<string, unknown>;
+    if (eventName === "status") {
+      const statusText = String(parsed.text ?? "").trim();
+      if (statusText) onStatus?.(statusText);
+      return;
+    }
     if (eventName === "token") {
       const text = String(parsed.text ?? "");
       if (text) {

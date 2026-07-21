@@ -258,7 +258,13 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       return next;
     });
     setStreaming(true);
-    setStatusHint(null);
+    const expectsImageGen =
+      Boolean(imageFile && (currentMode === "edit" || currentMode === "variation" || currentMode === "inspired")) ||
+      (!imageFile &&
+        /\b(genera|crear?|haz(?:me)?|dise[nñ]a)\w*.{0,60}\b(imagen|foto|flyer|creativo|banner)\b/i.test(
+          text,
+        ));
+    setStatusHint(expectsImageGen ? "Generando imagen con IA…" : null);
 
     const applyResult = (result: {
       response: string;
@@ -269,6 +275,13 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       const idx = assistantIndex;
       setModelLabel(result.model.replace("claude-", "Claude ").replace(/-/g, " "));
       setStatusHint(null);
+      const reply = stripPdfLinks(result.response);
+      const missingImage =
+        expectsImageGen &&
+        !result.image?.url &&
+        (!reply.trim() ||
+          /\b(un\s+momento|estoy\s+generando|voy\s+a\s+generar)\b/i.test(reply) ||
+          /listo[^.]*aqu[ií]\s+est/i.test(reply));
       setMessages((prev) => {
         if (idx < 0 || idx >= prev.length) return prev;
         const target = prev[idx];
@@ -276,7 +289,9 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         const next = [...prev];
         next[idx] = {
           ...target,
-          content: stripPdfLinks(result.response),
+          content: missingImage
+            ? "No pude generar la imagen a tiempo, señor. Intenta de nuevo en unos segundos."
+            : reply,
           pdf: result.pdf ?? null,
           image: result.image?.url
             ? {

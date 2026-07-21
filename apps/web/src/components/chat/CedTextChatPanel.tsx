@@ -204,6 +204,25 @@ function shouldRouteAttachmentViaChat(text: string, mode: ImageActionMode): bool
   );
 }
 
+function looksLikeImageGenerationRequest(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return (
+    /\b(genera|crear?|haz(?:me)?|dise[nñ]a|ilustra)\w*.{0,60}\b(imagen|foto|flyer|creativo|banner|ilustraci[oó]n)\b/i.test(
+      t,
+    ) ||
+    /\b(imagen|foto|flyer|creativo)\b.{0,40}\b(con|de|que\s+diga|fondo|tipograf)/i.test(t)
+  );
+}
+
+function looksLikeImageWaitFiller(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 280) return false;
+  return /\b(un\s+momento|en\s+seguida|estoy\s+generando|voy\s+a\s+generar|generando\s+(?:la\s+)?(?:imagen|foto))\b/i.test(
+    t,
+  );
+}
+
 function recentMessagesAwaitPublish(messages: ChatMessage[]): boolean {
   const recent = messages.slice(-8);
   const blob = recent.map((m) => m.content || "").join(" ");
@@ -212,6 +231,7 @@ function recentMessagesAwaitPublish(messages: ChatMessage[]): boolean {
     blob,
   ) && /imagen|foto|adjunt|suba|sube/i.test(blob);
 }
+
 
 function imageUserLabel(image: ChatImageAttachment): string {
   const caption = image.caption?.trim();
@@ -325,6 +345,7 @@ export function CedTextChatPanel({
   const [isDictating, setIsDictating] = useState(false);
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
+  const [statusHint, setStatusHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [status, setStatus] = useState<ChatStatus | null>(null);
@@ -563,18 +584,36 @@ export function CedTextChatPanel({
     setImageMode("analyze");
     setBusy(true);
     setTyping(true);
+    setStatusHint(null);
     focusInput();
-
-    const sendGuard = setTimeout(() => {
-      setBusy(false);
-      setTyping(false);
-      streamTargetIndexRef.current = null;
-    }, 120_000);
 
     const outboundText =
       currentMode === "publish" && imageFile
         ? text || "Usa esta imagen para publicar"
         : text;
+
+    const expectsImage =
+      Boolean(imageFile) ||
+      looksLikeImageGenerationRequest(outboundText) ||
+      (currentMode === "variation" ||
+        currentMode === "inspired" ||
+        currentMode === "edit");
+
+    if (expectsImage) {
+      setStatusHint("Generando imagen con IA…");
+    }
+
+    const sendGuard = setTimeout(() => {
+      setBusy(false);
+      setTyping(false);
+      setStatusHint(null);
+      streamTargetIndexRef.current = null;
+      setError(
+        expectsImage
+          ? "La generación de imagen tardó demasiado. Intenta de nuevo."
+          : "La respuesta tardó demasiado. Intenta de nuevo.",
+      );
+    }, 200_000);
 
     const userMsg: ChatMessage = {
       role: "user",
@@ -597,6 +636,7 @@ export function CedTextChatPanel({
         !shouldRouteAttachmentViaChat(outboundText, currentMode) &&
         (currentMode === "variation" || currentMode === "inspired" || currentMode === "edit")
       ) {
+        setStatusHint("Generando imagen con IA…");
         const prompt =
           outboundText ||
           (currentMode === "variation"
@@ -651,13 +691,22 @@ export function CedTextChatPanel({
           streamTargetIndexRef.current = assistantIndex;
           return next;
         });
-        setTyping(false);
+        // Mantener indicador visible hasta status/token/done (no apagar typing aquí).
       } else {
         setMessages((prev) => dedupeChatMessages([...prev, userMsg]));
         streamTargetIndexRef.current = null;
+        if (
+          currentMode === "edit" ||
+          currentMode === "variation" ||
+          currentMode === "inspired" ||
+          looksLikeImageGenerationRequest(outboundText)
+        ) {
+          setStatusHint("Generando imagen con IA…");
+        }
       }
 
       const applyStreamChunk = (chunk: string) => {
+        setTyping(false);
         setMessages((prev) => {
           const idx = streamTargetIndexRef.current;
           if (idx == null || idx < 0 || idx >= prev.length) return prev;
@@ -669,6 +718,11 @@ export function CedTextChatPanel({
         });
       };
 
+      const applyStatus = (hint: string) => {
+        setStatusHint(hint);
+        setTyping(true);
+      };
+
       const result = await sendChatMessage(
         outboundText,
         conversationId,
@@ -676,6 +730,7 @@ export function CedTextChatPanel({
         voicePublishActive || Boolean(onVoiceImageAttached),
         !imageFile ? applyStreamChunk : undefined,
         imageFile ? currentMode : null,
+        applyStatus,
       );
       setConversationId(result.conversation_id);
       if (imageFile) {
@@ -683,12 +738,16 @@ export function CedTextChatPanel({
         const claimsCreativeSuccess =
           /listo[^.]*aqu[ií]\s+est[aá]\s+su\s+creativo/i.test(reply) &&
           !result.image?.url;
+        const missingEditImage =
+          expectsImage &&
+          !result.image?.url &&
+          (looksLikeImageWaitFiller(reply) || !reply.trim());
         setMessages((prev) =>
           dedupeChatMessages([
             ...prev,
             {
               role: "model",
-              content: claimsCreativeSuccess
+              content: claimsCreativeSuccess || missingEditImage
                 ? "No pude completar la generación de esa imagen, señor. "
                   + "Puede intentar de nuevo, editarla con otra instrucción, o publicarla si ya la tiene."
                 : reply,
@@ -702,6 +761,9 @@ export function CedTextChatPanel({
           ]),
         );
       } else {
+        const reply = result.reply || "";
+        const missingImage =
+          expectsImage && !result.image?.url && !result.recharge_needed;
         setMessages((prev) => {
           const idx = assistantIndex;
           if (idx < 0 || idx >= prev.length) return prev;
@@ -710,7 +772,13 @@ export function CedTextChatPanel({
           if (target?.role === "model") {
             next[idx] = {
               ...target,
-              content: result.reply,
+              content: missingImage
+                ? reply && !looksLikeImageWaitFiller(reply)
+                  ? reply.includes("No pude")
+                    ? reply
+                    : `${reply}\n\nNo se adjuntó la imagen. Intenta de nuevo en unos segundos.`
+                  : "No pude generar la imagen a tiempo, señor. Intenta de nuevo en unos segundos."
+                : reply,
               pdf: result.pdf ?? null,
               image: result.image
                 ? { ...result.image, url: normalizeCedMediaUrl(result.image.url) }
@@ -739,6 +807,7 @@ export function CedTextChatPanel({
       streamTargetIndexRef.current = null;
       setBusy(false);
       setTyping(false);
+      setStatusHint(null);
       keepInputFocusRef.current = false;
       focusInput();
     }
@@ -853,7 +922,16 @@ export function CedTextChatPanel({
                       CED
                     </div>
                   )}
-                  <p className="whitespace-pre-wrap break-words">{displayContent}</p>
+                  {displayContent ? (
+                    <p className="whitespace-pre-wrap break-words">{displayContent}</p>
+                  ) : busy && streamTargetIndexRef.current === i ? (
+                    <p className="animate-pulse text-cyan-400/90">
+                      {statusHint || "Generando…"}
+                    </p>
+                  ) : (
+                    <p className="whitespace-pre-wrap break-words">{displayContent}</p>
+                  )}
+
                   {userImagePreview ? <UserImagePreview preview={userImagePreview} /> : null}
                   {imageAttachment ? <ChatImagePreview image={imageAttachment} /> : null}
                   {pdfAttachment ? <PdfDownloadButton pdf={pdfAttachment} /> : null}
@@ -865,9 +943,11 @@ export function CedTextChatPanel({
               </div>
             );
           })}
-          {typing && (
-            <p className="text-xs text-cyan-500 animate-pulse">CED está escribiendo…</p>
-          )}
+          {typing || (busy && statusHint) ? (
+            <p className="text-xs text-cyan-500 animate-pulse">
+              {statusHint || "CED está escribiendo…"}
+            </p>
+          ) : null}
         </div>
 
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}

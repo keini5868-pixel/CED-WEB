@@ -350,6 +350,15 @@ def generate_image_gemini(
         topic = f"{topic} {_NO_META_TEXT_ON_IMAGE}"
 
     client = genai.Client(api_key=api_key)
+    try:
+        from google.genai import types as _genai_types
+
+        client = genai.Client(
+            api_key=api_key,
+            http_options=_genai_types.HttpOptions(timeout=120_000),
+        )
+    except Exception:  # noqa: BLE001 — SDK sin soporte de http_options.timeout
+        client = genai.Client(api_key=api_key)
     last_error = "No pude generar la imagen con Gemini."
     # Primario: brief ya preparado. Fallbacks: variantes cortas del sujeto visual puro.
     prompt_variants: list[str] = [topic[:4000]]
@@ -462,7 +471,15 @@ def generate_image_with_reference_gemini(
 
     try:
         enriched = _prepare_reference_gemini_prompt(topic, mode)
-        client = genai.Client(api_key=api_key)
+        try:
+            from google.genai import types as _genai_types
+
+            client = genai.Client(
+                api_key=api_key,
+                http_options=_genai_types.HttpOptions(timeout=120_000),
+            )
+        except Exception:  # noqa: BLE001
+            client = genai.Client(api_key=api_key)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[GEMINI:REF-IMG] setup failed: %s", exc)
         return {"ok": False, "error": _friendly_image_error(str(exc)), "code": "gemini_error"}

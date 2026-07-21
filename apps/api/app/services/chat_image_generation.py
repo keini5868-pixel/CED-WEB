@@ -24,7 +24,7 @@ from app.services.marketing_creative import (
     strip_creative_user_noise,
 )
 
-DIRECT_IMAGE_MAX_CHARS = 500
+DIRECT_IMAGE_MAX_CHARS = 8000
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +34,20 @@ _VISION_ANALYSIS_MARKERS = (
     "Qué es —",
     "**Contexto**",
     "**Observaciones**",
+)
+
+_IMAGE_WAIT_FILLER = re.compile(
+    r"\b("
+    r"un\s+momento"
+    r"|en\s+seguida"
+    r"|dame\s+un\s+(?:momento|segundo)"
+    r"|estoy\s+generando"
+    r"|voy\s+a\s+generar"
+    r"|generando\s+(?:la\s+)?(?:imagen|foto|creativo)"
+    r"|perm[ií]teme\s+generar"
+    r"|ahora\s+mismo\s+(?:la\s+)?genero"
+    r")\b",
+    re.I,
 )
 
 
@@ -135,6 +149,11 @@ def should_take_direct_image_path(
     text: str,
     history: list[dict[str, str]] | None,
 ) -> bool:
+    """True si el turno debe generar imagen de forma directa (sin narrar «un momento»).
+
+    Los briefs largos (fondo + tipografía + overlays) DEBEN entrar aquí: el límite
+    anterior de 500 chars desviaba a Claude/texto y terminaba en stall silencioso.
+    """
     t = (text or "").strip()
     if not t or is_casual_chat_interrupt(t) or is_pdf_intent(t):
         return False
@@ -147,6 +166,14 @@ def should_take_direct_image_path(
     if is_image_creation_request(t, history):
         return True
     return False
+
+
+def reply_is_image_wait_filler(text: str) -> bool:
+    """True si la respuesta solo promete generar sin adjuntar imagen."""
+    t = (text or "").strip()
+    if not t or len(t) > 280:
+        return False
+    return bool(_IMAGE_WAIT_FILLER.search(t))
 
 
 def _format_error(raw_error: str) -> str:
@@ -466,15 +493,17 @@ def salvage_image_turn(
     wants_image = should_take_direct_image_path(user_text, history)
     hallucinated = looks_like_hallucinated_generate_image(reply)
     false_success = reply_promises_image_without_attachment(reply)
-    if not wants_image and not hallucinated and not false_success:
+    wait_filler = wants_image and reply_is_image_wait_filler(reply)
+    if not wants_image and not hallucinated and not false_success and not wait_filler:
         return reply, image_attachment
 
     logger.warning(
-        "[CHAT:IMG-GEN] salvage turn user=%s wants=%s halluc=%s false_ok=%s",
+        "[CHAT:IMG-GEN] salvage turn user=%s wants=%s halluc=%s false_ok=%s wait=%s",
         user_id[:8],
         wants_image,
         hallucinated,
         false_success,
+        wait_filler,
     )
     gen = run_chat_image_generation(
         user_id,
@@ -485,7 +514,7 @@ def salvage_image_turn(
     )
     if gen.get("ok") and gen.get("url"):
         clean = strip_hallucinated_generate_image_text(reply)
-        if not clean or false_success or hallucinated:
+        if not clean or false_success or hallucinated or wait_filler:
             clean = str(gen.get("reply") or "Listo. Aquí está tu imagen generada.")
         attachment = {
             "url": str(gen["url"]),
@@ -497,6 +526,6 @@ def salvage_image_turn(
 
     err = str(gen.get("error") or gen.get("reply") or "No pude generar la imagen.")
     clean = strip_hallucinated_generate_image_text(reply)
-    if clean and not hallucinated and not false_success:
+    if clean and not hallucinated and not false_success and not wait_filler:
         return f"{clean}\n\n{err}", None
     return err, None
