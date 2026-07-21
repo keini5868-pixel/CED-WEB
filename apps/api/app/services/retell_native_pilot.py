@@ -1749,7 +1749,23 @@ async def _execute_native_finance_action_tool(
         ok = bool(action.get("ok"))
     except Exception:  # noqa: BLE001
         logger.exception("[NATIVE-PILOT] %s failed user=%s", tool_name, user_id[:8])
-        spoken = "Señor, no pude completar la operación de finanzas en este momento."
+        if tool_name.startswith("calendar_"):
+            spoken = (
+                "Señor, falló la operación de calendario. "
+                "El evento no quedó agendado. Intente de nuevo o diga «cancela»."
+            )
+        elif tool_name.startswith("gmail_"):
+            spoken = (
+                "Señor, falló la operación de Gmail. "
+                "El correo no se envió. Intente de nuevo o diga «cancela»."
+            )
+        elif tool_name.startswith("meta_"):
+            spoken = (
+                "Señor, falló la operación de publicación. "
+                "No se publicó. Intente de nuevo o diga «cancela»."
+            )
+        else:
+            spoken = "Señor, no pude completar la operación de finanzas en este momento."
         ok = False
 
     latency_ms = int((time.perf_counter() - started) * 1000)

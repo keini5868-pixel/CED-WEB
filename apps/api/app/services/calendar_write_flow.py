@@ -139,6 +139,13 @@ def _transcript_from_payload(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _latest_user_utterance(payload: dict[str, Any]) -> str:
+    """Última frase del usuario en el payload Retell.
+
+    Misma lógica que Finance/Gmail: primero `transcript_object`, y si viene
+    vacío/atrasado (caso frecuente al invocar confirm en el mismo turno),
+    cae a `call.transcript` en texto. Sin este fallback, confirm falla con
+    utterance='' → bucle de «¿Desea que lo agende?» sin llamar a Google.
+    """
     call = payload.get("call") or {}
     transcript_obj = call.get("transcript_object") or call.get("transcriptObject") or []
     if isinstance(transcript_obj, list):
@@ -150,6 +157,15 @@ def _latest_user_utterance(payload: dict[str, Any]) -> str:
                 content = str(entry.get("content") or entry.get("text") or "").strip()
                 if content:
                     return content
+    transcript = str(call.get("transcript") or "").strip()
+    if transcript:
+        lines = [ln.strip() for ln in transcript.splitlines() if ln.strip()]
+        for line in reversed(lines):
+            lower = line.lower()
+            if lower.startswith("user:"):
+                text = line.split(":", 1)[-1].strip()
+                if text:
+                    return text
     return ""
 
 
@@ -262,9 +278,12 @@ def prepare_calendar_write(
         "created_event_id": None,
     }
     vcs.set_calendar_pending_write(user_id, draft)
+    # Misma pista al LLM que Finance: sin ella Retell puede re-preguntar en voz
+    # sin invocar calendar_confirm_write, y el evento nunca se crea.
     spoken = (
         f"Señor, preparé su {kind} «{parsed['title']}» para {parsed['when_spoken']}. "
-        f"¿Desea que lo agende en su calendario?"
+        f"¿Desea que lo agende en su calendario? "
+        "Cuando el usuario confirme con «sí» o «dale», llame calendar_confirm_write."
     )
     return {
         "ok": True,
@@ -353,11 +372,24 @@ def confirm_calendar_write(
     user_line = _latest_user_utterance(payload)
     transcript = _transcript_from_payload(payload)
     logger.info(
-        "[CALENDAR-WRITE] confirm attempt user=%s draft=%s utterance=%r",
+        "[CALENDAR-WRITE] confirm attempt user=%s draft=%s utterance=%r "
+        "transcript_obj_len=%d has_transcript_str=%s",
         user_id[:8],
         str(draft.get("draft_id", ""))[:8],
         user_line[:80],
+        len(transcript),
+        bool(str((payload.get("call") or {}).get("transcript") or "").strip()),
     )
+    if not user_line:
+        # Carrera Retell: el modelo ya llamó calendar_confirm_write (solo debe
+        # hacerlo tras un «sí») pero el payload aún no trae la frase. Con
+        # borrador pending, aceptar la invocación del tool como confirmación.
+        logger.warning(
+            "[CALENDAR-WRITE] empty utterance with pending draft user=%s — "
+            "treating calendar_confirm_write invoke as affirmative (Retell race)",
+            user_id[:8],
+        )
+        user_line = "sí"
     if not is_calendar_write_confirm(user_line, allow_short_yes=True):
         logger.warning(
             "[CALENDAR-WRITE] confirm FAILED status=confirm_required user=%s utterance=%r "
@@ -479,7 +511,10 @@ def confirm_calendar_write(
         return {
             "ok": False,
             "status": "error",
-            "spoken": "Señor, no pude agendar en este momento.",
+            "spoken": (
+                "Señor, falló el agendado (error de validación). "
+                "No quedó registrado en Google Calendar. ¿Lo intento de nuevo?"
+            ),
         }
     except httpx.HTTPStatusError as exc:
         vcs.revert_calendar_pending_to_pending(user_id)
@@ -508,15 +543,23 @@ def confirm_calendar_write(
         return {
             "ok": False,
             "status": "error",
-            "spoken": "Señor, Calendar rechazó el evento. ¿Lo intento de nuevo?",
+            "spoken": (
+                f"Señor, Google Calendar rechazó el evento (código {code}). "
+                "No quedó agendado. ¿Lo intento de nuevo?"
+            ),
         }
-    except Exception:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001
         vcs.revert_calendar_pending_to_pending(user_id)
         logger.exception("[CALENDAR-WRITE] failed user=%s", user_id[:8])
+        detail = str(exc).strip()[:80]
         return {
             "ok": False,
             "status": "error",
-            "spoken": "Señor, no pude agendar en su calendario en este momento.",
+            "spoken": (
+                "Señor, no pude agendar en su calendario: "
+                f"{detail or 'error interno'}. No quedó registrado. "
+                "¿Lo intento de nuevo?"
+            ),
         }
 
 

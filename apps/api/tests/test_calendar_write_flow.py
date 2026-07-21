@@ -113,6 +113,7 @@ def test_prepare_and_confirm_short_yes():
             )
     assert prep["status"] == "awaiting_confirmation"
     assert prep["transition"] == "transition_to_calendar_confirm_pending"
+    assert "calendar_confirm_write" in prep["spoken"]
     draft_id = prep["draft_id"]
 
     with patch(
@@ -146,6 +147,108 @@ def test_prepare_and_confirm_short_yes():
     assert conf["ok"] is True
     assert conf["status"] == "written"
     assert "Ana" in conf["spoken"] or "reunión" in conf["spoken"].lower()
+
+
+def test_confirm_uses_transcript_string_fallback_like_finance():
+    """Regresión: Retell a veces envía transcript_object vacío al confirmar;
+    Finance ya caía a call.transcript — Calendar debe hacer lo mismo o el
+    write nunca ejecuta y el usuario queda en bucle de confirmación.
+    """
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            prep = prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="agéndame junta con Luis mañana a las 4 pm",
+            )
+    draft_id = prep["draft_id"]
+
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            with patch(
+                "app.services.calendar_write_flow._calendar_api_call",
+                side_effect=lambda _uid, fn: fn("tok"),
+            ):
+                with patch(
+                    "app.services.calendar_write_flow.create_event",
+                    return_value={"id": "evt-transcript-str"},
+                ) as mock_create:
+                    conf = confirm_calendar_write(
+                        USER,
+                        call_id=CALL,
+                        draft_id=draft_id,
+                        payload={
+                            "call": {
+                                "transcript_object": [],
+                                "transcript": (
+                                    "User: agéndame junta con Luis mañana a las 4 pm\n"
+                                    "Agent: ¿Desea que lo agende?\n"
+                                    "User: sí"
+                                ),
+                            }
+                        },
+                    )
+    assert conf["ok"] is True, conf
+    assert conf["status"] == "written"
+    mock_create.assert_called_once()
+
+
+def test_confirm_treats_empty_utterance_as_yes_when_tool_invoked_with_pending_draft():
+    """Si Retell llama calendar_confirm_write con transcript aún vacío (carrera),
+    no deben quedarse en confirm_required: la invocación del tool cuenta.
+    """
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            prep = prepare_calendar_write(
+                USER,
+                call_id=CALL,
+                query="agéndame yoga mañana a las 8 am",
+            )
+    draft_id = prep["draft_id"]
+
+    with patch(
+        "app.services.calendar_write_flow.get_valid_access_token",
+        return_value="tok",
+    ):
+        with patch(
+            "app.services.calendar_write_flow.token_has_calendar_write_scope",
+            return_value=True,
+        ):
+            with patch(
+                "app.services.calendar_write_flow._calendar_api_call",
+                side_effect=lambda _uid, fn: fn("tok"),
+            ):
+                with patch(
+                    "app.services.calendar_write_flow.create_event",
+                    return_value={"id": "evt-empty-utterance"},
+                ) as mock_create:
+                    conf = confirm_calendar_write(
+                        USER,
+                        call_id=CALL,
+                        draft_id=draft_id,
+                        payload={"call": {"transcript_object": [], "transcript": ""}},
+                    )
+    assert conf["ok"] is True, conf
+    assert conf["status"] == "written"
+    mock_create.assert_called_once()
 
 
 def test_prepare_and_confirm_with_natural_noisy_yes():
