@@ -20,11 +20,37 @@ def _fallback_report(
     sources: list[dict[str, Any]],
     *,
     region: str | None,
+    search_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     comps = list(facts.get("competitors") or [])[:3]
     prices = list(facts.get("prices") or [])[:4]
     trends = list(facts.get("trends") or [])[:3]
     data_gaps: list[str] = []
+    meta = search_meta or {}
+
+    # Distinguish "search failed" from "market has no data"
+    if not sources:
+        if meta.get("missing_key"):
+            data_gaps.append(
+                "La búsqueda web no está configurada (falta TAVILY_API_KEY). "
+                "No es una conclusión de mercado."
+            )
+        elif meta.get("rate_limited"):
+            data_gaps.append(
+                "El proveedor de búsqueda limitó la tasa (429). "
+                "Reintente en unos segundos — no implica ausencia de datos de mercado."
+            )
+        elif meta.get("errors"):
+            data_gaps.append(
+                "La búsqueda web falló o no devolvió resultados en esta sesión "
+                f"(errores: {len(meta.get('errors') or [])}). "
+                "Reintente; no trate esto como evidencia de que el mercado esté vacío."
+            )
+        else:
+            data_gaps.append(
+                "La búsqueda web no devolvió resultados en esta sesión. "
+                "Reintente; no implica que no existan competidores o precios en el mercado."
+            )
 
     competitors_out = []
     for c in comps:
@@ -38,7 +64,7 @@ def _fallback_report(
                 "attribution": "search",
             }
         )
-    if len(competitors_out) < 2:
+    if len(competitors_out) < 2 and sources:
         data_gaps.append(
             "No se encontraron suficientes competidores/comparables verificables "
             "en las búsquedas de esta sesión."
@@ -56,7 +82,7 @@ def _fallback_report(
                 "attribution": "search",
             }
         )
-    if not pricing_findings:
+    if not pricing_findings and sources:
         data_gaps.append(
             "No aparecieron precios concretos atribuibles en los resultados de búsqueda."
         )
@@ -72,7 +98,7 @@ def _fallback_report(
                 "attribution": "search",
             }
         )
-    if not trend_findings:
+    if not trend_findings and sources:
         data_gaps.append(
             "No hubo señales de tendencia claras en los resultados de esta sesión."
         )
@@ -97,10 +123,17 @@ def _fallback_report(
     else:
         band = "no estimable"
         label = "sin base suficiente"
-        rationale = (
-            "Sin competidores ni precios atribuibles, no se puede estimar "
-            "probabilidad de éxito con datos de esta sesión."
-        )
+        if not sources:
+            rationale = (
+                "No hubo resultados de búsqueda utilizables en esta sesión "
+                "(fallo o vacío del proveedor). No se puede estimar viabilidad "
+                "hasta obtener datos reales — reintente."
+            )
+        else:
+            rationale = (
+                "Sin competidores ni precios atribuibles en los resultados obtenidos, "
+                "no se puede estimar probabilidad de éxito con datos de esta sesión."
+            )
         data_gaps.append(
             "Probabilidad de éxito no estimable: faltan hechos de mercado verificables."
         )
@@ -208,6 +241,7 @@ def _fallback_report(
             }
             for s in sources[:24]
         ],
+        "search_meta": meta,
         "research_markdown": "\n".join(research_lines),
         "advice_markdown": "\n".join(advice_lines),
         "report_markdown": markdown,
@@ -332,8 +366,11 @@ def build_viability_report(
     *,
     region: str | None = None,
     polish: bool = True,
+    search_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    report = _fallback_report(offering, facts, sources, region=region)
+    report = _fallback_report(
+        offering, facts, sources, region=region, search_meta=search_meta
+    )
     if polish:
         report = _llm_polish(report, offering)
     return report

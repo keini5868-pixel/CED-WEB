@@ -34,6 +34,14 @@ export type ViabilityReport = {
   trends?: Array<{ text: string; source_url?: string; source_title?: string }>;
   improvements?: Array<{ idea: string; attribution?: string }>;
   data_gaps?: string[];
+  search_meta?: {
+    sources?: number;
+    result_rows?: number;
+    errors?: Array<{ error?: string }>;
+    rate_limited?: boolean;
+    fallback_used?: boolean;
+    missing_key?: boolean;
+  };
   report_markdown?: string;
   research_markdown?: string;
   advice_markdown?: string;

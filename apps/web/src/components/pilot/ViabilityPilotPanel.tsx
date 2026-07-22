@@ -113,6 +113,21 @@ function ReportView({ report }: { report: ViabilityReport }) {
         </section>
       ) : null}
 
+      {report.search_meta &&
+      (report.search_meta.sources === 0 ||
+        report.search_meta.rate_limited ||
+        report.search_meta.missing_key ||
+        (report.search_meta.errors && report.search_meta.errors.length > 0)) ? (
+        <p className="text-[10px] text-slate-500">
+          Diagnóstico búsqueda: sources={report.search_meta.sources ?? 0}
+          {report.search_meta.rate_limited ? " · rate-limited" : ""}
+          {report.search_meta.fallback_used ? " · fallback EN" : ""}
+          {(report.search_meta.errors?.length || 0) > 0
+            ? ` · errores=${report.search_meta.errors?.length}`
+            : ""}
+        </p>
+      ) : null}
+
       <section>
         <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-violet-300/90">
           Ideas de mejora

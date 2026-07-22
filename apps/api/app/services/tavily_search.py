@@ -61,12 +61,19 @@ def tavily_raw_search(
     topic: str | None = None,
     kind: str = "general",
     research: bool = False,
+    timeout_sec: float = 5.0,
 ) -> dict[str, Any]:
     """Respuesta completa Tavily: answer, results, response_time."""
     settings = get_settings()
     key = settings.tavily_api_key.strip()
     if not key:
-        return {"query": query, "answer": None, "results": [], "response_time": 0}
+        return {
+            "query": query,
+            "answer": None,
+            "results": [],
+            "response_time": 0,
+            "error": "missing_tavily_key",
+        }
 
     depth = search_depth or resolve_search_depth(query, kind=kind, research=research)
     tavily_topic = topic or infer_tavily_topic(query, kind=kind)
@@ -83,7 +90,7 @@ def tavily_raw_search(
         payload["include_domains"] = include_domains
 
     try:
-        with httpx.Client(timeout=5.0) as client:
+        with httpx.Client(timeout=timeout_sec) as client:
             res = client.post(TAVILY_URL, json=payload)
         if res.status_code == 429:
             logger.warning(
@@ -96,10 +103,17 @@ def tavily_raw_search(
                 "results": [],
                 "response_time": 0,
                 "rate_limited": True,
+                "error": "rate_limited",
             }
         if res.status_code != 200:
             logger.warning("[TAVILY] status=%s body=%s", res.status_code, res.text[:200])
-            return {"query": query, "answer": None, "results": [], "response_time": 0}
+            return {
+                "query": query,
+                "answer": None,
+                "results": [],
+                "response_time": 0,
+                "error": f"http_{res.status_code}",
+            }
         data = res.json()
         logger.info(
             "[TAVILY] q=%s topic=%s depth=%s max=%s rt=%s",
@@ -112,7 +126,13 @@ def tavily_raw_search(
         return data
     except Exception as exc:  # noqa: BLE001
         logger.warning("[TAVILY] %s", exc)
-        return {"query": query, "answer": None, "results": [], "response_time": 0}
+        return {
+            "query": query,
+            "answer": None,
+            "results": [],
+            "response_time": 0,
+            "error": f"exception:{type(exc).__name__}",
+        }
 
 
 def tavily_answer(

@@ -47,7 +47,9 @@ def analyze_viability(
         region=region,
         category_hint=category_hint,
     )
-    sources = run_targeted_searches(queries)
+    sources, search_meta = run_targeted_searches(
+        queries, offering=offering, region=region
+    )
     facts = extract_attributed_facts(sources, offering=offering)
     report = build_viability_report(
         offering,
@@ -55,20 +57,28 @@ def analyze_viability(
         sources,
         region=region,
         polish=polish,
+        search_meta=search_meta,
     )
     report["ok"] = True
     report["queries"] = queries
+    report["search_meta"] = search_meta
     report["extraction"] = {
         "text_input": resolved["text_input"],
         "image_description": resolved["image_description"],
         "has_image": resolved["has_image"],
     }
     logger.info(
-        "[VIABILITY-PILOT] ok sources=%s competitors=%s prices=%s gaps=%s",
+        "[VIABILITY-PILOT] ok sources=%s competitors=%s prices=%s gaps=%s meta=%s",
         len(sources),
         len(report.get("competitors") or []),
         len((report.get("pricing") or {}).get("findings") or []),
         len(report.get("data_gaps") or []),
+        {
+            "result_rows": search_meta.get("result_rows"),
+            "errors": len(search_meta.get("errors") or []),
+            "rate_limited": search_meta.get("rate_limited"),
+            "fallback_used": search_meta.get("fallback_used"),
+        },
     )
     return report
 
