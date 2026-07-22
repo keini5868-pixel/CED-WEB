@@ -28,8 +28,28 @@ function fileToBase64(file: File): Promise<string> {
 
 function ReportView({ report }: { report: ViabilityReport }) {
   const likelihood = report.likelihood;
+  const profile = report.offering_profile;
   return (
     <div className="space-y-4 text-[12px] leading-relaxed text-slate-200">
+      {profile?.product_name || profile?.channel ? (
+        <section className="rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[11px] text-slate-300">
+          {profile.product_name ? (
+            <div>
+              Producto ancla:{" "}
+              <span className="text-cyan-100">{profile.product_name}</span>
+              {profile.brand ? (
+                <span className="text-slate-500"> · {profile.brand}</span>
+              ) : null}
+            </div>
+          ) : null}
+          {profile.channel ? (
+            <div className="text-[10px] text-slate-500">
+              Canal: {profile.channel}
+              {profile.category ? ` · ${profile.category}` : ""}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
       {likelihood ? (
         <section>
           <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-300/90">

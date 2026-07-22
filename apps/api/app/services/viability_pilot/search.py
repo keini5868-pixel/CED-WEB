@@ -70,27 +70,147 @@ def build_search_queries(
     *,
     region: str | None = None,
     category_hint: str | None = None,
-    profile: dict[str, str] | None = None,
+    profile: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
-    """Consultas ancladas a categoría/uso — no a sabor/formato suelto."""
+    """Consultas: nombre propio primero; MLM usa canal de venta directa."""
     topic = (offering or "").strip()[:180]
     if not topic:
         return []
     loc = (region or "").strip()[:80]
     cat_hint = (category_hint or "").strip()[:80]
-    focus = (profile or {}).get("search_focus") or topic
-    category = (profile or {}).get("category") or cat_hint
-    use_case = (profile or {}).get("use_case") or ""
+    profile = profile or {}
+    product_name = (profile.get("product_name") or "").strip()
+    brand = (profile.get("brand") or "").strip()
+    focus = (profile.get("search_focus") or "").strip() or topic
+    category = (profile.get("category") or cat_hint or "").strip()
+    use_case = (profile.get("use_case") or "").strip()
+    channel = (profile.get("channel") or "").strip().lower()
+    is_mlm = channel == "mlm_direct"
 
-    # Competitor queries: categoría + uso, no la descripción completa con distractores
+    # Primary identity for lookups
+    identity = product_name or focus
+    if brand and brand.lower() not in identity.lower():
+        identity = f"{identity} {brand}".strip()
+    identity = identity[:120]
+
+    loc_suffix = f" {loc}" if loc else ""
+    english = _prefer_english_queries(
+        f"{identity} {category} {topic} {channel}", loc
+    ) or bool(product_name)
+
+    if product_name:
+        # Named SKU: always query the exact product first
+        if is_mlm:
+            if english:
+                return [
+                    {
+                        "purpose": "identity",
+                        "query": f"{identity} official product what is{loc_suffix}".strip(),
+                    },
+                    {
+                        "purpose": "pricing",
+                        "query": (
+                            f"{identity} price USD distributor direct selling{loc_suffix}"
+                        ).strip(),
+                    },
+                    {
+                        "purpose": "competitors",
+                        "query": (
+                            f"{identity} MLM competitors direct selling "
+                            f"network marketing wellness{loc_suffix}"
+                        ).strip(),
+                    },
+                    {
+                        "purpose": "comparables",
+                        "query": (
+                            f"{brand or identity} vs Amway Herbalife Nu Skin "
+                            f"direct sales competitors{loc_suffix}"
+                        ).strip(),
+                    },
+                ][:MAX_QUERIES]
+            return [
+                {
+                    "purpose": "identity",
+                    "query": f"{identity} qué es producto oficial{loc_suffix}".strip(),
+                },
+                {
+                    "purpose": "pricing",
+                    "query": (
+                        f"{identity} precio distribuidor venta directa{loc_suffix}"
+                    ).strip(),
+                },
+                {
+                    "purpose": "competitors",
+                    "query": (
+                        f"{identity} competidores MLM multinivel "
+                        f"venta directa wellness{loc_suffix}"
+                    ).strip(),
+                },
+                {
+                    "purpose": "comparables",
+                    "query": (
+                        f"{brand or identity} vs Amway Herbalife "
+                        f"competencia venta directa{loc_suffix}"
+                    ).strip(),
+                },
+            ][:MAX_QUERIES]
+
+        # Named retail / unknown channel
+        if english:
+            return [
+                {
+                    "purpose": "identity",
+                    "query": f"{identity} product review brand{loc_suffix}".strip(),
+                },
+                {
+                    "purpose": "pricing",
+                    "query": f"{identity} price USD buy{loc_suffix}".strip(),
+                },
+                {
+                    "purpose": "competitors",
+                    "query": (
+                        f"direct competitors to {identity} "
+                        f"{category} alternatives{loc_suffix}"
+                    ).strip(),
+                },
+                {
+                    "purpose": "comparables",
+                    "query": (
+                        f"{identity} vs competing brands same category{loc_suffix}"
+                    ).strip(),
+                },
+            ][:MAX_QUERIES]
+        return [
+            {
+                "purpose": "identity",
+                "query": f"{identity} producto marca{loc_suffix}".strip(),
+            },
+            {
+                "purpose": "pricing",
+                "query": f"{identity} precio típico{loc_suffix}".strip(),
+            },
+            {
+                "purpose": "competitors",
+                "query": (
+                    f"competidores directos de {identity} "
+                    f"{category} alternativas{loc_suffix}"
+                ).strip(),
+            },
+            {
+                "purpose": "comparables",
+                "query": (
+                    f"{identity} vs marcas competencia misma categoria{loc_suffix}"
+                ).strip(),
+            },
+        ][:MAX_QUERIES]
+
+    # Unnamed offering — category/use anchored (previous behavior)
     rival_core = focus
     if category and category.lower() not in focus.lower():
         rival_core = f"{category} {focus}".strip()
     rival_core = rival_core[:140]
-    loc_suffix = f" {loc}" if loc else ""
     use_bit = ""
     if use_case:
-        # Keep use short — avoid dumping full sentence into query
         short_use = re.split(r"[.]", use_case)[0].strip()[:60]
         if short_use.lower() not in rival_core.lower():
             use_bit = f" {short_use}"
@@ -377,11 +497,16 @@ def _extract_competitors_llm(
     if not api_key or not sources:
         return []
 
-    # Prefer competitor/comparable sources for extraction
-    ranked = sorted(
-        sources,
-        key=lambda s: 0 if (s.get("purpose") or "") in ("competitors", "comparables") else 1,
-    )
+    # Prefer competitor/comparable/identity sources for extraction
+    def _rank(purpose: str) -> int:
+        p = purpose or ""
+        if p in ("competitors", "comparables"):
+            return 0
+        if p == "identity":
+            return 1
+        return 2
+
+    ranked = sorted(sources, key=lambda s: _rank(str(s.get("purpose") or "")))
     indexed = []
     for i, src in enumerate(ranked[:16]):
         indexed.append(
@@ -400,22 +525,36 @@ def _extract_competitors_llm(
     category = profile.get("category") or ""
     use_case = profile.get("use_case") or ""
     focus = profile.get("search_focus") or offering[:120]
+    product_name = profile.get("product_name") or ""
+    brand = profile.get("brand") or ""
+    channel = profile.get("channel") or ""
+    mlm_rules = ""
+    if channel == "mlm_direct":
+        mlm_rules = (
+            "6) Canal MLM/venta directa: prioriza competidores del MISMO canal "
+            "(Amway, Herbalife, Nu Skin, Forever Living, otros network marketing). "
+            "NO uses vitaminas de supermercado/Amazon (Centrum, Metamucil retail) "
+            "salvo que la fuente los compare explícitamente con este producto MLM.\n"
+        )
 
     prompt = (
         "Eres analista de competencia. Extrae hasta 3 COMPETIDORES DIRECTOS del producto.\n"
         "REGLAS ESTRICTAS:\n"
-        "1) Un competidor debe servir el MISMO uso/categoría (sustituto real que el "
-        "cliente compararía al comprar). Ej: dos fibras solubles sí; fibra vs colágeno NO.\n"
-        "2) PROHIBIDO elegir marcas solo porque comparten sabor (naranja), formato "
-        "(polvo/cápsulas), o la palabra genérica 'suplemento'.\n"
+        "1) Un competidor debe ser sustituto real que el cliente compararía al comprar "
+        "(mismo canal + categoría cuando aplique).\n"
+        "2) PROHIBIDO elegir marcas solo por sabor/formato o la palabra 'suplemento'.\n"
         "3) El nombre DEBE aparecer literalmente en title/snippet de una fuente.\n"
-        "4) Si en las fuentes no hay competidores claros del mismo uso, devuelve lista vacía.\n"
-        "5) NO inventes.\n"
-        'JSON: {"competitors":[{"name":"...","competition_basis":"mismo uso: ...",'
+        "4) Si no hay competidores claros en las fuentes, lista vacía.\n"
+        "5) NO inventes. NO ignores el nombre propio del producto analizado.\n"
+        f"{mlm_rules}"
+        'JSON: {"competitors":[{"name":"...","competition_basis":"mismo canal/uso: ...",'
         '"note":"una linea desde la fuente","source_index":0,"confidence":"high|medium"}]}\n'
+        f"Nombre producto: {product_name or '(sin nombre propio)'}\n"
+        f"Marca: {brand or '(desconocida)'}\n"
+        f"Canal: {channel or 'unknown'}\n"
         f"Producto (focus): {focus}\n"
-        f"Categoría esperada: {category or '(inferir de la oferta)'}\n"
-        f"Uso esperado: {use_case or '(inferir de la oferta)'}\n"
+        f"Categoría esperada: {category or '(inferir)'}\n"
+        f"Uso esperado: {use_case or '(inferir)'}\n"
         f"Oferta original: {offering[:400]}\n"
         f"Fuentes:\n{json.dumps(indexed, ensure_ascii=False)[:9000]}"
     )
@@ -550,8 +689,11 @@ def _filter_direct_competitors(
     profile = profile or {}
     payload = {
         "offering": offering[:400],
+        "product_name": profile.get("product_name"),
+        "brand": profile.get("brand"),
         "category": profile.get("category"),
         "use_case": profile.get("use_case"),
+        "channel": profile.get("channel"),
         "candidates": [
             {
                 "name": c.get("name"),
@@ -563,11 +705,12 @@ def _filter_direct_competitors(
     }
     prompt = (
         "Filtra candidatos a competidor DIRECTO. Conserva solo marcas/productos que "
-        "un comprador compararía como sustituto del MISMO uso/categoría.\n"
-        "RECHAZA si la única similitud es sabor (naranja), formato (polvo) o la palabra "
-        "'suplemento' genérica.\n"
-        "Devuelve JSON: {\"keep\":[\"Name Exacto\", ...]} usando nombres exactos de "
-        "candidates. Si ninguno sirve, keep=[].\n"
+        "un comprador compararía como sustituto real.\n"
+        "Si channel=mlm_direct: prioriza otros MLM/venta directa; rechaza retail "
+        "genérico (Centrum, Metamucil de supermercado) salvo evidencia explícita.\n"
+        "RECHAZA similitud solo por sabor/formato/'suplemento'.\n"
+        "Devuelve JSON: {\"keep\":[\"Name Exacto\", ...]} usando nombres exactos. "
+        "Si ninguno sirve, keep=[].\n"
         f"{json.dumps(payload, ensure_ascii=False)[:5000]}"
     )
     try:

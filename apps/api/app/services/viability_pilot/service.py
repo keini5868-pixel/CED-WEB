@@ -46,7 +46,11 @@ def analyze_viability(
             "pilot": True,
         }
 
-    profile = summarize_offering_profile(offering)
+    profile = summarize_offering_profile(
+        offering,
+        text_input=resolved["text_input"],
+        image_description=resolved["image_description"],
+    )
     if category_hint and not profile.get("category"):
         profile["category"] = category_hint.strip()[:100]
 
@@ -57,7 +61,11 @@ def analyze_viability(
         profile=profile,
     )
     sources, search_meta = run_targeted_searches(
-        queries, offering=profile.get("search_focus") or offering, region=region
+        queries,
+        offering=profile.get("product_name")
+        or profile.get("search_focus")
+        or offering,
+        region=region,
     )
     facts = extract_attributed_facts(
         sources, offering=offering, profile=profile
@@ -85,7 +93,7 @@ def analyze_viability(
         len(report.get("competitors") or []),
         len((report.get("pricing") or {}).get("findings") or []),
         len(report.get("data_gaps") or []),
-        (profile.get("search_focus") or "")[:80],
+        (profile.get("product_name") or profile.get("search_focus") or "")[:80],
         {
             "result_rows": search_meta.get("result_rows"),
             "errors": len(search_meta.get("errors") or []),

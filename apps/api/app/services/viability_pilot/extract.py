@@ -14,10 +14,10 @@ VISION_MODEL = "gemini-2.5-flash"
 
 PRODUCT_VISION_PROMPT = (
     "Describe el producto o servicio mostrado en esta imagen/flyer para un estudio "
-    "de viabilidad de mercado. En español, 3-6 oraciones. Incluye: qué se ofrece, "
-    "público aparente, precio o texto de oferta si es legible, diferenciadores visibles. "
-    "Si es un flyer, resume el mensaje de venta. NO inventes marcas ni precios que no "
-    "se lean claramente. Si no hay precio visible, dilo."
+    "de viabilidad de mercado. En español, 2-5 oraciones. Incluye: qué se ofrece, "
+    "textos/marcas LEGIBLES en el empaque entre comillas, precio si se lee. "
+    "Si el usuario ya nombró un producto, confirma si el empaque coincide; "
+    "NO inventes otro nombre de marca. Si no hay marca legible, dilo."
 )
 
 
@@ -28,7 +28,11 @@ def _decode_image(image_b64: str) -> bytes:
     return base64.b64decode(raw)
 
 
-def describe_offering_from_image(image_b64: str) -> str:
+def describe_offering_from_image(
+    image_b64: str,
+    *,
+    user_text: str = "",
+) -> str:
     """Visión aislada — no registra contexto de publicación ni chat."""
     settings = get_settings()
     api_key = settings.google_api_key.strip()
@@ -41,6 +45,14 @@ def describe_offering_from_image(image_b64: str) -> str:
         return ""
     if len(image_bytes) < 80:
         return ""
+
+    prompt = PRODUCT_VISION_PROMPT
+    named = (user_text or "").strip()[:300]
+    if named:
+        prompt = (
+            f"{PRODUCT_VISION_PROMPT}\n\n"
+            f"Contexto del usuario (prioridad de nombre): {named}"
+        )
 
     try:
         from google import genai
@@ -60,7 +72,7 @@ def describe_offering_from_image(image_b64: str) -> str:
                     role="user",
                     parts=[
                         types.Part.from_bytes(data=image_bytes, mime_type=mime),
-                        types.Part.from_text(text=PRODUCT_VISION_PROMPT),
+                        types.Part.from_text(text=prompt),
                     ],
                 )
             ],
@@ -85,9 +97,14 @@ def resolve_offering_text(
     text = (description or "").strip()
     image_desc = ""
     if image_b64 and image_b64.strip():
-        image_desc = describe_offering_from_image(image_b64)
+        image_desc = describe_offering_from_image(image_b64, user_text=text)
 
-    parts = [p for p in (text, image_desc) if p]
+    # Texto del usuario primero y etiquetado — la imagen no reemplaza el nombre propio
+    parts: list[str] = []
+    if text:
+        parts.append(f"TEXTO_USUARIO:\n{text}")
+    if image_desc:
+        parts.append(f"DESCRIPCION_IMAGEN:\n{image_desc}")
     combined = "\n\n".join(parts).strip()
     return {
         "offering": combined,
