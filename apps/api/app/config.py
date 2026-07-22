@@ -172,6 +172,8 @@ class Settings(BaseSettings):
     # Piloto módulo viabilidad producto/servicio — aislado; UI con ?viabilityModule=pilot
     # y header X-CED-Viability-Pilot. No afecta rutas públicas sin el header.
     viability_module_pilot: bool = True
+    # Piloto módulo tendencias de industria — ?trendsModule=pilot + X-CED-Trends-Pilot
+    trends_module_pilot: bool = True
 
     @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:

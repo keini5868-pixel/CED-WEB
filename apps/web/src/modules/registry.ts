@@ -1,5 +1,6 @@
-import { Target } from "lucide-react";
+import { Target, TrendingUp } from "lucide-react";
 
+import { isTrendsModulePilot } from "@/lib/pilot/trendsModule";
 import { isViabilityModulePilot } from "@/lib/pilot/viabilityModule";
 import type { CedModuleRegistration } from "@/modules/types";
 
@@ -17,6 +18,17 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     load: () =>
       import("@/components/pilot/ViabilityPilotPanel").then((m) => ({
         default: m.ViabilityModuleContent,
+      })),
+  },
+  {
+    id: "trends",
+    name: "Tendencias",
+    short: "TRENDS",
+    icon: TrendingUp,
+    isPilotEnabled: isTrendsModulePilot,
+    load: () =>
+      import("@/components/pilot/TrendsPilotPanel").then((m) => ({
+        default: m.TrendsModuleContent,
       })),
   },
 ];

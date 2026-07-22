@@ -46,6 +46,7 @@ from app.routers import (
     navigation,
     voice_client,
     viability_pilot,
+    trends_pilot,
 )
 
 logger = logging.getLogger("ced.api")
@@ -124,6 +125,7 @@ def create_app() -> FastAPI:
             "Content-Type",
             "X-Request-Id",
             "X-CED-Viability-Pilot",
+            "X-CED-Trends-Pilot",
         ],
     )
     application.add_middleware(SecurityHeadersMiddleware, settings=settings)
@@ -163,6 +165,7 @@ def create_app() -> FastAPI:
     application.include_router(navigation.router)
     application.include_router(voice_client.router)
     application.include_router(viability_pilot.router)
+    application.include_router(trends_pilot.router)
     if settings.support_chat_enabled:
         application.include_router(support.router)
 

@@ -2,7 +2,7 @@ import { getPilotVisibleModules } from "@/modules/registry";
 
 /**
  * Shell visible when ?modulesShell=pilot OR any registered module pilot is on
- * (e.g. ?viabilityModule=pilot).
+ * (e.g. ?viabilityModule=pilot or ?trendsModule=pilot).
  */
 export function isModulesShellPilot(): boolean {
   if (typeof window !== "undefined") {
