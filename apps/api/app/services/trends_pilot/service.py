@@ -32,9 +32,14 @@ def analyze_trends(
         }
 
     profile = build_industry_profile(text)
-    queries = build_trends_queries(profile.get("anchor") or text, region=region)
+    queries = build_trends_queries(
+        profile.get("anchor") or text,
+        region=region,
+        category=profile.get("category") or None,
+        product_kind=profile.get("product_kind") or None,
+    )
     sources, search_meta = run_trends_searches(queries)
-    facts = extract_trend_facts(sources)
+    facts = extract_trend_facts(sources, profile=profile)
     report = build_trends_report(
         description=text,
         profile=profile,

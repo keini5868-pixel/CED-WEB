@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
@@ -14,41 +15,139 @@ MAX_RESULTS = 5
 SNIPPET_MAX = 420
 TIMEOUT_SEC = 14.0
 
+# Off-category: finance/crypto noise when the anchor is a physical product.
+_CRYPTO_FINANCE = re.compile(
+    r"(?:"
+    r"\b(?:cryptocurrenc\w*|crypto(?:currency)?|memecoin|altcoin|stablecoin|"
+    r"blockchain|defi\b|web3|tokenomics|airdrop|hodl|satoshi|"
+    r"binance|coinbase|kraken|dex\b|cex\b|liquidity\s*pool|"
+    r"market\s*cap|fully\s*diluted|fdv\b|trading\s*pair|"
+    r"price\s*prediction|predicc(?:i[oó]n)?\s*(?:de\s*)?(?:precio|price)|"
+    r"token\s+price|precio\s+del\s+token|crypto\s*token|"
+    r"nft\s*(?:floor|mint)|stock\s*ticker|equity\s*share)\b"
+    r"|\$0\.0+\d+"
+    r"|(?:alcanzar|reach(?:es|ing)?|target(?:s|ing)?)\s+\$?\d*\.?\d+\s*"
+    r"(?:por|by|in)\s*20\d{2}"
+    r")",
+    re.I,
+)
+
+_PHYSICAL_SIGNAL = re.compile(
+    r"\b("
+    r"figuras?|figurines?|action\s*figures?|coleccion(?:able)?s?|collectibles?|"
+    r"juguetes?|toys?|merchandis\w*|estatuas?|statues?|plush|funko|nendoroid|"
+    r"retail|walmart|amazon|suplementos?|alimentos?|cafeter\w*|ropa|calzado|"
+    r"producto\s*f[ií]sico|shipping|env[ií]o|sku\b|inventario|inventory"
+    r")\b",
+    re.I,
+)
+
 
 def build_trends_queries(
     anchor: str,
     *,
     region: str | None = None,
+    category: str | None = None,
+    product_kind: str | None = None,
 ) -> list[dict[str, str]]:
     a = (anchor or "").strip()[:140]
     if not a:
         return []
     loc = (region or "").strip()[:80]
     loc_s = f" {loc}" if loc else ""
+    cat = (category or "").strip()[:80]
+    kind = (product_kind or "").strip()
+
+    # Disambiguate named entities that collide with unrelated markets (e.g. Goku
+    # figures vs GOKU crypto token).
+    focus = a
+    if cat and cat.lower() not in a.lower():
+        focus = f"{a} {cat}".strip()[:180]
+    elif kind == "physical_good":
+        focus = f"{a} physical product retail".strip()[:180]
+
+    crypto_guard = ""
+    if kind == "physical_good" or (
+        cat and re.search(r"figura|collect|juguete|merch|retail|suplement", cat, re.I)
+    ):
+        crypto_guard = " -crypto -token -cryptocurrency -blockchain"
+
     return [
         {
             "purpose": "trending_now",
-            "query": f"{a} trends 2025 2026 what's trending{loc_s}".strip(),
+            "query": f"{focus} trends 2025 2026 what's trending{loc_s}{crypto_guard}".strip(),
         },
         {
             "purpose": "consumer_needs",
             "query": (
-                f"{a} consumer needs pain points emerging demand{loc_s}"
+                f"{focus} consumer needs pain points emerging demand{loc_s}{crypto_guard}"
             ).strip(),
         },
         {
             "purpose": "outlook_6m",
             "query": (
-                f"{a} market outlook forecast next 6 months 2026{loc_s}"
+                f"{focus} industry demand outlook collectors market next 6 months 2026"
+                f"{loc_s}{crypto_guard}"
+            ).strip()
+            if kind == "physical_good"
+            or (cat and re.search(r"figura|collect|juguete|merch", cat, re.I))
+            else (
+                f"{focus} market outlook demand forecast next 6 months 2026"
+                f"{loc_s}{crypto_guard}"
             ).strip(),
         },
         {
             "purpose": "opportunities",
             "query": (
-                f"{a} emerging opportunities niches growth{loc_s}"
+                f"{focus} emerging opportunities niches growth{loc_s}{crypto_guard}"
             ).strip(),
         },
     ]
+
+
+def source_matches_category(
+    *,
+    title: str,
+    snippet: str,
+    url: str = "",
+    profile: dict[str, Any] | None = None,
+) -> bool:
+    """Reject results from a clearly different market than the user's anchor.
+
+    Same idea as VIABLE same-category/use: when the anchor is a physical good,
+    drop crypto/finance price-prediction noise even if the name overlaps.
+    """
+    profile = profile or {}
+    kind = str(profile.get("product_kind") or "")
+    category = str(profile.get("category") or "")
+    anchor = str(profile.get("anchor") or "")
+    blob = f"{title} {snippet} {url}"
+
+    physical_anchor = kind == "physical_good" or bool(
+        re.search(
+            r"figura|collect|juguete|merch|suplement|cafeter|ropa|alimento",
+            f"{category} {anchor}",
+            re.I,
+        )
+    )
+    if not physical_anchor:
+        return True
+
+    if not _CRYPTO_FINANCE.search(blob):
+        return True
+
+    # Crypto/finance hit: only keep if the same snippet also clearly talks about
+    # the physical product category (rare). Prefer discard.
+    if _PHYSICAL_SIGNAL.search(blob) and not re.search(
+        r"\b(?:token|crypto|blockchain|\$0\.0)\b", blob, re.I
+    ):
+        return True
+
+    logger.info(
+        "[TRENDS-PILOT] drop off-category (crypto/finance) title=%s",
+        (title or "")[:80],
+    )
+    return False
 
 
 def _row_to_source(row: dict[str, Any], *, query: str, purpose: str) -> dict[str, Any] | None:
@@ -76,6 +175,7 @@ def run_trends_searches(queries: list[dict[str, str]]) -> tuple[list[dict[str, A
         "rate_limited": False,
         "missing_key": False,
         "sources": 0,
+        "dropped_off_category": 0,
     }
     if not queries:
         return sources, meta
@@ -163,14 +263,19 @@ def run_trends_searches(queries: list[dict[str, str]]) -> tuple[list[dict[str, A
     return unique, meta
 
 
-def extract_trend_facts(sources: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
-    """Agrupa snippets por purpose — solo hechos de la sesión."""
+def extract_trend_facts(
+    sources: list[dict[str, Any]],
+    *,
+    profile: dict[str, Any] | None = None,
+) -> dict[str, list[dict[str, Any]]]:
+    """Agrupa snippets por purpose — solo hechos de la sesión y misma categoría."""
     buckets: dict[str, list[dict[str, Any]]] = {
         "trending_now": [],
         "consumer_needs": [],
         "outlook_6m": [],
         "opportunities": [],
     }
+    dropped = 0
     for src in sources:
         purpose = str(src.get("purpose") or "")
         if purpose not in buckets:
@@ -178,15 +283,24 @@ def extract_trend_facts(sources: list[dict[str, Any]]) -> dict[str, list[dict[st
         snippet = str(src.get("snippet") or "").strip()
         if len(snippet) < 40:
             continue
+        title = str(src.get("title") or "")
+        url = str(src.get("url") or "")
+        if not source_matches_category(
+            title=title, snippet=snippet, url=url, profile=profile
+        ):
+            dropped += 1
+            continue
         buckets[purpose].append(
             {
                 "text": snippet[:280],
-                "source_title": src.get("title") or "",
-                "source_url": src.get("url") or "",
+                "source_title": title,
+                "source_url": url,
                 "query": src.get("query") or "",
                 "attribution": "search",
             }
         )
+    if dropped:
+        logger.info("[TRENDS-PILOT] off-category drops=%s", dropped)
     # Cap per bucket
     for key in buckets:
         buckets[key] = buckets[key][:5]

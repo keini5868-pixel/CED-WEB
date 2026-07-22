@@ -18,6 +18,8 @@ export type TrendsReport = {
   profile?: {
     anchor?: string;
     industry_label?: string;
+    category?: string;
+    product_kind?: string;
     named_entities?: string[];
   };
   trending_now?: TrendsFinding[];

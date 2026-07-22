@@ -64,8 +64,11 @@ function ReportView({ report }: { report: TrendsReport }) {
         <section className="rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[11px]">
           Ancla de búsqueda:{" "}
           <span className="text-cyan-100">{report.profile.anchor}</span>
-          {report.profile.industry_label ? (
-            <span className="text-slate-500"> · {report.profile.industry_label}</span>
+          {report.profile.category || report.profile.industry_label ? (
+            <span className="text-slate-500">
+              {" "}
+              · {report.profile.category || report.profile.industry_label}
+            </span>
           ) : null}
         </section>
       ) : null}

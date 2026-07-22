@@ -157,6 +157,8 @@ def build_trends_report(
         "profile": {
             "anchor": profile.get("anchor") or "",
             "industry_label": profile.get("industry_label") or "",
+            "category": profile.get("category") or "",
+            "product_kind": profile.get("product_kind") or "",
             "named_entities": profile.get("named_entities") or [],
         },
         "trending_now": trending,
