@@ -133,7 +133,7 @@ export function ModuleShell() {
               key={`drawer-${activeId}-${openGeneration}`}
               role="dialog"
               aria-label={active.name}
-              className="fixed bottom-0 left-0 top-0 z-[75] flex w-full max-w-md flex-col border-r border-cyan-500/30 bg-[#0a1220] shadow-2xl sm:left-[3.75rem]"
+              className="fixed bottom-0 left-0 top-0 z-[75] flex w-full flex-col border-r border-cyan-500/30 bg-[#0a1220] shadow-2xl sm:left-[3.75rem] sm:w-[min(58vw,52rem)]"
               initial={{ x: -28, opacity: 0.85 }}
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: -40, opacity: 0 }}
