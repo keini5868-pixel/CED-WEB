@@ -83,6 +83,34 @@ def test_answer_after_clarify_uses_prior_request():
     assert "alquimista" in mock_exec.call_args.kwargs["user_request"].lower()
 
 
+def test_completo_followup_is_pdf_detail_full():
+    """Regresión prod: 'completo' no es is_pdf_intent pero SÍ debe generar PDF."""
+    from app.services.advanced_mode.intents import needs_advanced_full_pipeline
+
+    history = [
+        {"role": "user", "content": "genera un pdf con esa información"},
+        {"role": "assistant", "content": PDF_DETAIL_CLARIFY_QUESTION},
+    ]
+    assert is_pdf_intent("completo") is False
+    assert resolve_pdf_detail_for_turn("completo", history) == "full"
+    assert needs_advanced_full_pipeline("completo", history) is True
+    assert needs_advanced_full_pipeline("completo", []) is False
+
+
+def test_keepalive_yields_done_when_fn_already_finished():
+    """Regresión prod avanzado: clarify PDF instantáneo no debe perderse (result=None)."""
+    from app.services.advanced_mode.service import _iter_blocking_with_keepalives
+
+    kinds = []
+    payload = None
+    for kind, value in _iter_blocking_with_keepalives(lambda: {"ok": True, "fast": 1}):
+        kinds.append(kind)
+        if kind == "done":
+            payload = value
+    assert "done" in kinds
+    assert payload == {"ok": True, "fast": 1}
+
+
 def test_compose_prompt_brief_by_default():
     prompt = _compose_pdf_prompt(
         title="Consejos",

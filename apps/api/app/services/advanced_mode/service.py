@@ -183,15 +183,21 @@ def _iter_blocking_with_keepalives(
     *,
     interval: float = _KEEPALIVE_INTERVAL_SEC,
 ) -> Iterator[tuple[str, _T | None]]:
+    """Run fn in a worker; emit pings until it finishes.
+
+    CRITICAL: if fn finishes before the first loop check (`fut.done()` True
+    immediately), we must still yield ("done", result). The previous
+    `while not fut.done()` pattern dropped instant PDF clarify replies and
+    the stream fell through to "inconveniente técnico" with result=None.
+    """
     with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
         fut = pool.submit(fn)
-        while not fut.done():
-            yield ("ping", None)
+        while True:
             try:
                 yield ("done", fut.result(timeout=interval))
                 return
             except concurrent.futures.TimeoutError:
-                continue
+                yield ("ping", None)
 
 
 def _stream_fallback_reply(

@@ -3325,6 +3325,15 @@ def iter_send_message_stream(
         yield from _iter_blocking_send(user_id, text, conversation_id)
         return
 
+    # PDF follow-up ("completo"/"breve") no pasa is_pdf_intent → sin este check
+    # cae a Gemini stream y finge "Generando el PDF…" sin adjunto (repro prod).
+    from app.services.chat_intents import resolve_pdf_detail_for_turn
+
+    pdf_detail = resolve_pdf_detail_for_turn(text, history)
+    if pdf_detail in ("ask", "brief", "full"):
+        yield from _iter_blocking_send(user_id, text, conversation_id)
+        return
+
     from app.services.chat_image_generation import (
         run_chat_image_generation,
         should_take_direct_image_path,
