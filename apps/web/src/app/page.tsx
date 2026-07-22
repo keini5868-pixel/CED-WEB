@@ -149,6 +149,15 @@ export default function HomePage() {
         <p className="mt-8 text-center text-[11px] text-cyan-700">
           Al llegar al límite puedes recargar desde $10 — crédito proporcional, no expira.
         </p>
+        <p className="mt-4 text-center text-[11px] text-cyan-600">
+          <Link href="/privacy" className="hover:text-cyan-400">
+            Privacidad
+          </Link>
+          {" · "}
+          <Link href="/terms" className="hover:text-cyan-400">
+            Términos
+          </Link>
+        </p>
       </section>
     </main>
   );
