@@ -7,6 +7,7 @@ import {
 export type ViabilityCompetitor = {
   name: string;
   note: string;
+  competition_basis?: string;
   source_url?: string;
   source_title?: string;
   attribution?: string;

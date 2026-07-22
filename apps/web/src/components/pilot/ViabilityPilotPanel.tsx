@@ -59,6 +59,11 @@ function ReportView({ report }: { report: ViabilityReport }) {
                 className="rounded border border-white/10 bg-black/30 px-2 py-1.5"
               >
                 <div className="font-medium text-cyan-100">{c.name}</div>
+                {c.competition_basis ? (
+                  <div className="text-[10px] text-emerald-300/90">
+                    Por qué compite: {c.competition_basis}
+                  </div>
+                ) : null}
                 <div className="text-[11px] text-slate-400">{c.note}</div>
                 {c.source_url ? (
                   <a

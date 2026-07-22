@@ -59,6 +59,7 @@ def _fallback_report(
             {
                 "name": c["name"],
                 "note": (c.get("note") or "")[:180],
+                "competition_basis": (c.get("competition_basis") or "")[:180],
                 "source_url": src.get("url") or "",
                 "source_title": src.get("title") or "",
                 "attribution": "search",

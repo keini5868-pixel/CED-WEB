@@ -6,6 +6,10 @@ import logging
 from typing import Any
 
 from app.services.viability_pilot.extract import resolve_offering_text
+from app.services.viability_pilot.offering_profile import (
+    profile_for_report,
+    summarize_offering_profile,
+)
 from app.services.viability_pilot.search import (
     build_search_queries,
     extract_attributed_facts,
@@ -42,15 +46,22 @@ def analyze_viability(
             "pilot": True,
         }
 
+    profile = summarize_offering_profile(offering)
+    if category_hint and not profile.get("category"):
+        profile["category"] = category_hint.strip()[:100]
+
     queries = build_search_queries(
         offering,
         region=region,
         category_hint=category_hint,
+        profile=profile,
     )
     sources, search_meta = run_targeted_searches(
-        queries, offering=offering, region=region
+        queries, offering=profile.get("search_focus") or offering, region=region
     )
-    facts = extract_attributed_facts(sources, offering=offering)
+    facts = extract_attributed_facts(
+        sources, offering=offering, profile=profile
+    )
     report = build_viability_report(
         offering,
         facts,
@@ -62,17 +73,19 @@ def analyze_viability(
     report["ok"] = True
     report["queries"] = queries
     report["search_meta"] = search_meta
+    report["offering_profile"] = profile_for_report(profile)
     report["extraction"] = {
         "text_input": resolved["text_input"],
         "image_description": resolved["image_description"],
         "has_image": resolved["has_image"],
     }
     logger.info(
-        "[VIABILITY-PILOT] ok sources=%s competitors=%s prices=%s gaps=%s meta=%s",
+        "[VIABILITY-PILOT] ok sources=%s competitors=%s prices=%s gaps=%s focus=%s meta=%s",
         len(sources),
         len(report.get("competitors") or []),
         len((report.get("pricing") or {}).get("findings") or []),
         len(report.get("data_gaps") or []),
+        (profile.get("search_focus") or "")[:80],
         {
             "result_rows": search_meta.get("result_rows"),
             "errors": len(search_meta.get("errors") or []),
