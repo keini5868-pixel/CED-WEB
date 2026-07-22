@@ -1073,55 +1073,79 @@ def build_deactivate_advanced_mode_tool(*, api_public_url: str) -> dict[str, Any
 
 def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, Any]], str]:
     """Retell States — tools restringidas por estado (general_tools vacío)."""
+    general_tools: list[dict[str, Any]] = [
+        build_get_environment_tool(api_public_url=api_public_url),
+        build_list_calendar_events_tool(api_public_url=api_public_url),
+        build_calendar_prepare_write_tool(api_public_url=api_public_url),
+        build_calendar_confirm_write_tool(api_public_url=api_public_url),
+        build_calendar_cancel_write_tool(api_public_url=api_public_url),
+        build_read_gmail_tool(api_public_url=api_public_url),
+        build_gmail_prepare_send_tool(api_public_url=api_public_url),
+        build_gmail_confirm_send_tool(api_public_url=api_public_url),
+        build_gmail_cancel_send_tool(api_public_url=api_public_url),
+        build_search_web_tool(api_public_url=api_public_url),
+        build_play_youtube_video_tool(api_public_url=api_public_url),
+        build_pause_youtube_video_tool(api_public_url=api_public_url),
+        build_resume_youtube_video_tool(api_public_url=api_public_url),
+        build_close_youtube_player_tool(api_public_url=api_public_url),
+        build_generate_image_tool(api_public_url=api_public_url),
+        build_generar_pdf_tool(api_public_url=api_public_url),
+        build_check_meta_networks_tool(api_public_url=api_public_url),
+        build_meta_prepare_publish_tool(api_public_url=api_public_url),
+        build_meta_confirm_publish_tool(api_public_url=api_public_url),
+        build_meta_cancel_publish_tool(api_public_url=api_public_url),
+        build_enable_prospection_tool(api_public_url=api_public_url),
+        build_disable_prospection_tool(api_public_url=api_public_url),
+        build_prospection_report_tool(api_public_url=api_public_url),
+        build_read_social_comments_tool(api_public_url=api_public_url),
+        build_open_drive_map_tool(api_public_url=api_public_url),
+        build_search_nearby_places_tool(api_public_url=api_public_url),
+        build_show_route_tool(api_public_url=api_public_url),
+        build_start_drive_navigation_tool(api_public_url=api_public_url),
+        build_stop_drive_navigation_tool(api_public_url=api_public_url),
+        build_navigation_status_tool(api_public_url=api_public_url),
+        build_read_finances_tool(api_public_url=api_public_url),
+        build_finance_prepare_write_tool(api_public_url=api_public_url),
+        build_finance_confirm_write_tool(api_public_url=api_public_url),
+        build_finance_cancel_write_tool(api_public_url=api_public_url),
+        build_activate_camera_tool(api_public_url=api_public_url),
+        build_deactivate_camera_tool(api_public_url=api_public_url),
+        build_analyze_camera_frame_tool(api_public_url=api_public_url),
+        build_search_visible_product_tool(api_public_url=api_public_url),
+        build_activate_advanced_mode_tool(api_public_url=api_public_url),
+        # Mismo patrón que finance_confirm_write: disponibles en general
+        # por si Retell no transiciona a advanced_mode_active.
+        build_consult_advanced_tool(api_public_url=api_public_url),
+        build_deactivate_advanced_mode_tool(api_public_url=api_public_url),
+    ]
+    # Piloto viabilidad — solo si VIABILITY_MODULE_PILOT (nunca en agente prod).
+    try:
+        from app.services.viability_pilot.voice_tool import (
+            build_analyze_product_viability_tool,
+            should_register_viability_voice_tool,
+            voice_prompt_line,
+        )
+
+        if should_register_viability_voice_tool():
+            general_tools.append(
+                build_analyze_product_viability_tool(api_public_url=api_public_url)
+            )
+            viability_line = voice_prompt_line()
+        else:
+            viability_line = ""
+    except Exception:  # noqa: BLE001
+        logger.exception("[NATIVE-PILOT] viability tool registration skipped")
+        viability_line = ""
+
+    general_prompt = GENERAL_ASSISTANT_STATE_PROMPT
+    if viability_line:
+        general_prompt = f"{GENERAL_ASSISTANT_STATE_PROMPT}\n{viability_line}"
+
     return [
         {
             "name": STATE_GENERAL_ASSISTANT,
-            "state_prompt": GENERAL_ASSISTANT_STATE_PROMPT,
-            "tools": [
-                build_get_environment_tool(api_public_url=api_public_url),
-                build_list_calendar_events_tool(api_public_url=api_public_url),
-                build_calendar_prepare_write_tool(api_public_url=api_public_url),
-                build_calendar_confirm_write_tool(api_public_url=api_public_url),
-                build_calendar_cancel_write_tool(api_public_url=api_public_url),
-                build_read_gmail_tool(api_public_url=api_public_url),
-                build_gmail_prepare_send_tool(api_public_url=api_public_url),
-                build_gmail_confirm_send_tool(api_public_url=api_public_url),
-                build_gmail_cancel_send_tool(api_public_url=api_public_url),
-                build_search_web_tool(api_public_url=api_public_url),
-                build_play_youtube_video_tool(api_public_url=api_public_url),
-                build_pause_youtube_video_tool(api_public_url=api_public_url),
-                build_resume_youtube_video_tool(api_public_url=api_public_url),
-                build_close_youtube_player_tool(api_public_url=api_public_url),
-                build_generate_image_tool(api_public_url=api_public_url),
-                build_generar_pdf_tool(api_public_url=api_public_url),
-                build_check_meta_networks_tool(api_public_url=api_public_url),
-                build_meta_prepare_publish_tool(api_public_url=api_public_url),
-                build_meta_confirm_publish_tool(api_public_url=api_public_url),
-                build_meta_cancel_publish_tool(api_public_url=api_public_url),
-                build_enable_prospection_tool(api_public_url=api_public_url),
-                build_disable_prospection_tool(api_public_url=api_public_url),
-                build_prospection_report_tool(api_public_url=api_public_url),
-                build_read_social_comments_tool(api_public_url=api_public_url),
-                build_open_drive_map_tool(api_public_url=api_public_url),
-                build_search_nearby_places_tool(api_public_url=api_public_url),
-                build_show_route_tool(api_public_url=api_public_url),
-                build_start_drive_navigation_tool(api_public_url=api_public_url),
-                build_stop_drive_navigation_tool(api_public_url=api_public_url),
-                build_navigation_status_tool(api_public_url=api_public_url),
-                build_read_finances_tool(api_public_url=api_public_url),
-                build_finance_prepare_write_tool(api_public_url=api_public_url),
-                build_finance_confirm_write_tool(api_public_url=api_public_url),
-                build_finance_cancel_write_tool(api_public_url=api_public_url),
-                build_activate_camera_tool(api_public_url=api_public_url),
-                build_deactivate_camera_tool(api_public_url=api_public_url),
-                build_analyze_camera_frame_tool(api_public_url=api_public_url),
-                build_search_visible_product_tool(api_public_url=api_public_url),
-                build_activate_advanced_mode_tool(api_public_url=api_public_url),
-                # Mismo patrón que finance_confirm_write: disponibles en general
-                # por si Retell no transiciona a advanced_mode_active.
-                build_consult_advanced_tool(api_public_url=api_public_url),
-                build_deactivate_advanced_mode_tool(api_public_url=api_public_url),
-            ],
+            "state_prompt": general_prompt,
+            "tools": general_tools,
             "edges": [
                 {
                     "destination_state_name": STATE_FINANCE_CONFIRM_PENDING,

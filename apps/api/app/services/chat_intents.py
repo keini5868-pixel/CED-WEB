@@ -659,3 +659,16 @@ def resolve_pdf_detail_for_turn(
     if level:
         return level
     return "ask"
+
+
+def is_viability_module_intent(text: str) -> bool:
+    """Intent de viabilidad (piloto). NO se usa en text_chat de producción.
+
+    El panel/API de viabilidad y el tool Retell native pilot son los únicos
+    callers. Re-export para el router de intents de chat y tests de colisión.
+    """
+    from app.services.viability_pilot.intents import (
+        is_viability_module_intent as _viability_intent,
+    )
+
+    return _viability_intent(text)

@@ -429,6 +429,22 @@ async def retell_search_web_tool(request: Request) -> JSONResponse:
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
+@router.post("/tools/analyze_product_viability")
+async def retell_analyze_product_viability_tool(request: Request) -> JSONResponse:
+    """Viabilidad de producto/servicio — solo piloto nativo + flag de módulo."""
+    from app.services.viability_pilot.voice_tool import (
+        execute_analyze_product_viability_tool,
+    )
+
+    payload = await _verify_retell_request(request)
+    args = payload.get("args") or {}
+    user_id = _extract_user_id(payload)
+    result = await execute_analyze_product_viability_tool(
+        user_id=user_id, payload=payload, args=args
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
 @router.post("/tools/play_youtube_video")
 async def retell_play_youtube_video_tool(request: Request) -> JSONResponse:
     """Busca y reproduce un video de YouTube — piloto nativo."""

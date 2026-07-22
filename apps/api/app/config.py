@@ -169,6 +169,9 @@ class Settings(BaseSettings):
     # Provider voice ID Cartesia (opcional — Retell usa RETELL_VOICE_ID en prod)
     cartesia_jarvis_voice_id: str = ""
     support_chat_enabled: bool = True
+    # Piloto módulo viabilidad producto/servicio — aislado; UI con ?viabilityModule=pilot
+    # y header X-CED-Viability-Pilot. No afecta rutas públicas sin el header.
+    viability_module_pilot: bool = True
 
     @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:

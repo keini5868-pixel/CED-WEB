@@ -8,6 +8,7 @@ import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions"
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
 import { AdvancedChatPanel } from "@/components/chat/AdvancedChatPanel";
 import { FinanceChatPanel } from "@/components/chat/FinanceChatPanel";
+import { ModuleShell } from "@/components/modules/ModuleShell";
 import { CedOrbOverlay } from "@/components/orb/CedOrbOverlay";
 import { useHudFeed } from "@/contexts/HudFeedContext";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
@@ -352,6 +353,8 @@ export function CedVoiceHub() {
         open={financeOpen}
         onClose={() => setFinanceOpen(false)}
       />
+
+      <ModuleShell />
 
       <CedTextChatPanel
         open={chatOpen}
