@@ -73,8 +73,23 @@ def build_opportunity_detail(
                 "search_updates": search_notes,
                 # Soft-tone does NOT apply to risks — UI may flag this.
                 "honest_risks": key == "risks",
+                "embed": None,
             }
         )
+
+    # YouTube at top of "Qué es"
+    media = plugin.get("media") or {}
+    yt_id = str(media.get("what_is_youtube_id") or "").strip()
+    if yt_id:
+        for sec in sections_out:
+            if sec["id"] == "what_is":
+                sec["embed"] = {
+                    "type": "youtube",
+                    "video_id": yt_id,
+                    "url": str(media.get("what_is_youtube_url") or "")
+                    or f"https://youtu.be/{yt_id}",
+                }
+                break
 
     sponsorship = plugin.get("sponsorship") or {}
     curated_sources = list(curated.get("sources") or [])

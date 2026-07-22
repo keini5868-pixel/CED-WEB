@@ -25,6 +25,11 @@ export type OpportunitySection = {
   attribution?: string;
   search_updates?: OpportunitySearchNote[];
   honest_risks?: boolean;
+  embed?: {
+    type?: string;
+    video_id?: string;
+    url?: string;
+  } | null;
 };
 
 export type OpportunityDetail = {

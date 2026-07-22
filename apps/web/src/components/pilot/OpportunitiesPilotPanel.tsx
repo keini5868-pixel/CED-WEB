@@ -19,6 +19,7 @@ function SectionBlock({
   attribution,
   searchUpdates,
   honestRisks,
+  embed,
 }: {
   title: string;
   body: string;
@@ -29,7 +30,13 @@ function SectionBlock({
     source_title?: string;
   }>;
   honestRisks?: boolean;
+  embed?: { type?: string; video_id?: string; url?: string } | null;
 }) {
+  const youtubeId =
+    embed?.type === "youtube" && embed.video_id
+      ? embed.video_id.replace(/[^a-zA-Z0-9_-]/g, "")
+      : "";
+
   return (
     <section
       className={
@@ -50,6 +57,19 @@ function SectionBlock({
           </span>
         ) : null}
       </h3>
+      {youtubeId ? (
+        <div className="mb-2 aspect-video w-full overflow-hidden rounded border border-white/10 bg-black">
+          <iframe
+            title={`${title} — video`}
+            src={`https://www.youtube-nocookie.com/embed/${youtubeId}`}
+            className="h-full w-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+            loading="lazy"
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
+        </div>
+      ) : null}
       <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300">
         {body}
       </div>
@@ -121,6 +141,7 @@ function DetailView({
           attribution={s.attribution}
           searchUpdates={s.search_updates}
           honestRisks={s.honest_risks}
+          embed={s.embed}
         />
       ))}
 

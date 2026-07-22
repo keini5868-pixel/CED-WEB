@@ -33,10 +33,14 @@ def fitline_pm_plugin() -> dict[str, Any]:
         "category": "direct_sales_network",
         "status": "available",
         "search_anchors": [
+            "PM International",
+            "FitLine",
             "PM International FitLine",
-            "FitLine business opportunity",
-            "PM International FitLine manager package",
         ],
+        "media": {
+            "what_is_youtube_id": "2kGPd94Ou4o",
+            "what_is_youtube_url": "https://youtu.be/2kGPd94Ou4o",
+        },
         "sponsorship": {
             "url": sponsor,
             "cta_label": "Activar su negocio (paquete manager)",
