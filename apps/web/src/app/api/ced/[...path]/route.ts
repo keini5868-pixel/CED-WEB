@@ -97,6 +97,7 @@ function isLongRunningChatPath(path: string): boolean {
     normalized.includes("finance/chat") ||
     normalized.includes("viability-pilot/analyze") ||
     normalized.includes("trends-pilot/analyze") ||
+    normalized.includes("opportunities-pilot/opportunities") ||
     normalized.includes("images/generate-with-reference") ||
     normalized.includes("images/generate") ||
     normalized.includes("vision/") ||
@@ -146,6 +147,10 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   const trendsPilot = request.headers.get("x-ced-trends-pilot");
   if (trendsPilot) {
     headers["X-CED-Trends-Pilot"] = trendsPilot;
+  }
+  const opportunitiesPilot = request.headers.get("x-ced-opportunities-pilot");
+  if (opportunitiesPilot) {
+    headers["X-CED-Opportunities-Pilot"] = opportunitiesPilot;
   }
 
   let body: BodyInit | undefined;

@@ -1,0 +1,1 @@
+"""Package marker — opportunity plugins."""

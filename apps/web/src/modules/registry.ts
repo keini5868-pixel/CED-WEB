@@ -1,5 +1,6 @@
-import { Target, TrendingUp } from "lucide-react";
+import { Briefcase, Target, TrendingUp } from "lucide-react";
 
+import { isOpportunitiesModulePilot } from "@/lib/pilot/opportunitiesModule";
 import { isTrendsModulePilot } from "@/lib/pilot/trendsModule";
 import { isViabilityModulePilot } from "@/lib/pilot/viabilityModule";
 import type { CedModuleRegistration } from "@/modules/types";
@@ -29,6 +30,17 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     load: () =>
       import("@/components/pilot/TrendsPilotPanel").then((m) => ({
         default: m.TrendsModuleContent,
+      })),
+  },
+  {
+    id: "opportunities",
+    name: "Oportunidades",
+    short: "OPPS",
+    icon: Briefcase,
+    isPilotEnabled: isOpportunitiesModulePilot,
+    load: () =>
+      import("@/components/pilot/OpportunitiesPilotPanel").then((m) => ({
+        default: m.OpportunitiesModuleContent,
       })),
   },
 ];

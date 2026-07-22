@@ -174,6 +174,10 @@ class Settings(BaseSettings):
     viability_module_pilot: bool = True
     # Piloto módulo tendencias de industria — ?trendsModule=pilot + X-CED-Trends-Pilot
     trends_module_pilot: bool = True
+    # Piloto módulo oportunidades — ?opportunitiesModule=pilot + X-CED-Opportunities-Pilot
+    opportunities_module_pilot: bool = True
+    # Enlace personal FitLine / paquete manager (sección Afiliación)
+    opportunities_fitline_sponsor_url: str = ""
 
     @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:
