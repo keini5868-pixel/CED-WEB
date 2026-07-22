@@ -124,6 +124,8 @@ def health(_request: Request) -> dict[str, str]:
     payload["ideogram_configured"] = "true" if ideogram_key else "false"
     if ideogram_key:
         payload["ideogram_key_length"] = str(len(ideogram_key))
+    tavily_key = settings.tavily_api_key.strip()
+    payload["tavily_configured"] = "true" if tavily_key else "false"
     return payload
 
 
