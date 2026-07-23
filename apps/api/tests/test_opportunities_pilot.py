@@ -1,8 +1,17 @@
-"""Intents de tono y catálogo — módulo Oportunidades piloto."""
+"""Intents de tono, catálogo y gate — módulo Oportunidades (producción)."""
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
+import pytest
+from fastapi import HTTPException
+
 from app.services.opportunities_pilot.catalog import catalog_summaries, get_plugin
+from app.services.opportunities_pilot.gate import (
+    opportunities_module_enabled,
+    require_opportunities_module_enabled,
+)
 from app.services.opportunities_pilot.plugins.fitline_pm import fitline_pm_plugin
 from app.services.opportunities_pilot.search import (
     _normalize_anchors,
@@ -13,6 +22,35 @@ from app.services.opportunities_pilot.search import (
 from app.services.opportunities_pilot.synthesize import build_opportunity_detail
 
 _SOFT_BANNED = ("multinivel", "mlm", "red de mercadeo", "afiliados")
+
+
+def test_gate_enabled_by_default() -> None:
+    with patch(
+        "app.services.opportunities_pilot.gate.get_settings",
+    ) as mock_settings:
+        mock_settings.return_value.opportunities_module_enabled = True
+        assert opportunities_module_enabled() is True
+        require_opportunities_module_enabled()  # no raise
+
+
+def test_gate_kill_switch_returns_404() -> None:
+    with patch(
+        "app.services.opportunities_pilot.gate.get_settings",
+    ) as mock_settings:
+        mock_settings.return_value.opportunities_module_enabled = False
+        assert opportunities_module_enabled() is False
+        with pytest.raises(HTTPException) as exc:
+            require_opportunities_module_enabled()
+        assert exc.value.status_code == 404
+
+
+def test_detail_marks_production_not_pilot() -> None:
+    plugin = fitline_pm_plugin()
+    detail = build_opportunity_detail(
+        plugin, search_updates={}, search_meta={}, sources=[]
+    )
+    assert detail["pilot"] is False
+    assert detail["production"] is True
 
 
 def test_catalog_only_fitline() -> None:

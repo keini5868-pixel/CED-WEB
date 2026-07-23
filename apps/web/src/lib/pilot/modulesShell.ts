@@ -1,22 +1,26 @@
-import { getPilotVisibleModules } from "@/modules/registry";
+import { getVisibleModules } from "@/modules/registry";
 
 /**
- * Shell visible when ?modulesShell=pilot OR any registered module pilot is on
- * (e.g. ?viabilityModule=pilot, ?trendsModule=pilot, or ?opportunitiesModule=pilot).
+ * Lateral module shell is visible when any registered module is enabled
+ * (production modules like Oportunidades, and/or pilot modules via query flags).
+ * Escape: ?modulesShell=off hides the entire shell.
  */
-export function isModulesShellPilot(): boolean {
+export function isModulesShellVisible(): boolean {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
     const shell = params.get("modulesShell")?.trim().toLowerCase();
+    if (shell === "off" || shell === "false" || shell === "0") return false;
     if (shell === "pilot" || shell === "1" || shell === "true") return true;
-    if (shell === "off" || shell === "prod" || shell === "production") {
-      return false;
-    }
   }
   if (process.env.NEXT_PUBLIC_MODULES_SHELL_PILOT === "true") return true;
   try {
-    return getPilotVisibleModules().length > 0;
+    return getVisibleModules().length > 0;
   } catch {
     return false;
   }
+}
+
+/** @deprecated use isModulesShellVisible */
+export function isModulesShellPilot(): boolean {
+  return isModulesShellVisible();
 }

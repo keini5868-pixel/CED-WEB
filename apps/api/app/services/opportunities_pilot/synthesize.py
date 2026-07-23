@@ -106,7 +106,8 @@ def build_opportunity_detail(
 
     return {
         "ok": True,
-        "pilot": True,
+        "pilot": False,
+        "production": True,
         "id": plugin.get("id"),
         "title": plugin.get("title"),
         "tagline": plugin.get("tagline"),

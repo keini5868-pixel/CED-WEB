@@ -148,11 +148,6 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   if (trendsPilot) {
     headers["X-CED-Trends-Pilot"] = trendsPilot;
   }
-  const opportunitiesPilot = request.headers.get("x-ced-opportunities-pilot");
-  if (opportunitiesPilot) {
-    headers["X-CED-Opportunities-Pilot"] = opportunitiesPilot;
-  }
-
   let body: BodyInit | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
     if (requestContentType?.includes("multipart/form-data")) {

@@ -128,7 +128,6 @@ def create_app() -> FastAPI:
             "X-Request-Id",
             "X-CED-Viability-Pilot",
             "X-CED-Trends-Pilot",
-            "X-CED-Opportunities-Pilot",
         ],
     )
     application.add_middleware(SecurityHeadersMiddleware, settings=settings)

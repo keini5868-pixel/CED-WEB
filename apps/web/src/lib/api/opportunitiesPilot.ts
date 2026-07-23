@@ -1,8 +1,4 @@
 import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
-import {
-  OPPORTUNITIES_PILOT_HEADER,
-  OPPORTUNITIES_PILOT_HEADER_VALUE,
-} from "@/lib/pilot/opportunitiesModule";
 
 export type OpportunitySummary = {
   id: string;
@@ -50,13 +46,11 @@ export type OpportunityDetail = {
   };
   data_gaps?: string[];
   pilot?: boolean;
+  production?: boolean;
 };
 
-function pilotHeaders(): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    [OPPORTUNITIES_PILOT_HEADER]: OPPORTUNITIES_PILOT_HEADER_VALUE,
-  };
+function jsonHeaders(): Record<string, string> {
+  return { "Content-Type": "application/json" };
 }
 
 export async function fetchOpportunitiesPilotStatus(): Promise<{
@@ -65,7 +59,7 @@ export async function fetchOpportunitiesPilotStatus(): Promise<{
 } | null> {
   try {
     const res = await proxyFetchAuthed("opportunities-pilot/status", {
-      headers: pilotHeaders(),
+      headers: jsonHeaders(),
     });
     if (!res.ok) return null;
     return (await res.json()) as {
@@ -79,7 +73,7 @@ export async function fetchOpportunitiesPilotStatus(): Promise<{
 
 export async function fetchOpportunitiesCatalog(): Promise<OpportunitySummary[]> {
   const res = await proxyFetchAuthed("opportunities-pilot/catalog", {
-    headers: pilotHeaders(),
+    headers: jsonHeaders(),
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
@@ -94,7 +88,7 @@ export async function fetchOpportunityDetail(
 ): Promise<OpportunityDetail> {
   const res = await proxyFetchAuthed(
     `opportunities-pilot/opportunities/${encodeURIComponent(opportunityId)}`,
-    { headers: pilotHeaders() },
+    { headers: jsonHeaders() },
   );
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
@@ -104,4 +98,4 @@ export async function fetchOpportunityDetail(
 }
 
 export const OPPORTUNITIES_WELCOME =
-  "Módulo piloto de oportunidades. Por ahora: PM International / FitLine. Contenido base curado más búsqueda con fuentes; sin inventar cifras de ingreso.";
+  "Oportunidades de negocio disponibles en CED. Por ahora: PM International / FitLine. Contenido base curado más búsqueda con fuentes; sin inventar cifras de ingreso.";

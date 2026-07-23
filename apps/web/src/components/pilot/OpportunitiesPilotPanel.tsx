@@ -249,7 +249,7 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
             <p className="text-[11px] text-slate-400">{OPPORTUNITIES_WELCOME}</p>
             {configured === false ? (
               <p className="text-[11px] text-red-300">
-                OPPORTUNITIES_MODULE_PILOT desactivado en la API.
+                OPPORTUNITIES_MODULE_ENABLED desactivado en la API.
               </p>
             ) : null}
             {error ? <p className="text-[11px] text-red-400">{error}</p> : null}

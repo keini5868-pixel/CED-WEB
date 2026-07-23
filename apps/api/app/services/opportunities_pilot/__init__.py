@@ -1,6 +1,6 @@
-"""Piloto módulo Oportunidades — catálogo de oportunidades de negocio.
+"""Módulo Oportunidades — producción (catálogo de oportunidades de negocio).
 
-Solo activo con flag de piloto (header X-CED-Opportunities-Pilot / env).
+Kill-switch: OPPORTUNITIES_MODULE_ENABLED=false.
 """
 
 from __future__ import annotations

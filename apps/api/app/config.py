@@ -174,8 +174,8 @@ class Settings(BaseSettings):
     viability_module_pilot: bool = True
     # Piloto módulo tendencias de industria — ?trendsModule=pilot + X-CED-Trends-Pilot
     trends_module_pilot: bool = True
-    # Piloto módulo oportunidades — ?opportunitiesModule=pilot + X-CED-Opportunities-Pilot
-    opportunities_module_pilot: bool = True
+    # Módulo oportunidades (producción). Kill-switch: OPPORTUNITIES_MODULE_ENABLED=false
+    opportunities_module_enabled: bool = True
     # Enlace personal FitLine / paquete manager (sección Afiliación)
     opportunities_fitline_sponsor_url: str = ""
 

@@ -11,11 +11,8 @@ import {
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
-import { isModulesShellPilot } from "@/lib/pilot/modulesShell";
-import {
-  getModuleById,
-  getPilotVisibleModules,
-} from "@/modules/registry";
+import { isModulesShellVisible } from "@/lib/pilot/modulesShell";
+import { getModuleById, getVisibleModules } from "@/modules/registry";
 import type { CedModuleRegistration, ModulePanelProps } from "@/modules/types";
 
 type LoadedPanel = ComponentType<ModulePanelProps>;
@@ -25,7 +22,7 @@ type LoadedPanel = ComponentType<ModulePanelProps>;
  * - Left rail of square icons
  * - Drawer expands per module
  * - State discarded on close (unmount)
- * - Pilot-only; main CED UI unchanged
+ * - Does not touch main CED chat or voice session
  */
 export function ModuleShell() {
   const [enabled, setEnabled] = useState(false);
@@ -37,7 +34,7 @@ export function ModuleShell() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
-    const visible = isModulesShellPilot() ? getPilotVisibleModules() : [];
+    const visible = isModulesShellVisible() ? getVisibleModules() : [];
     setEnabled(visible.length > 0);
     setModules(visible);
   }, []);
@@ -46,6 +43,9 @@ export function ModuleShell() {
     () => (activeId ? getModuleById(activeId) : undefined),
     [activeId],
   );
+
+  const hasPilotModules = modules.some((m) => m.stage === "pilot");
+  const activeIsPilot = active?.stage === "pilot";
 
   const closeModule = useCallback(() => {
     setActiveId(null);
@@ -85,11 +85,13 @@ export function ModuleShell() {
       {/* Left rail */}
       <aside
         className="pointer-events-auto fixed left-2 top-1/2 z-[70] flex -translate-y-1/2 flex-col gap-2 rounded-2xl border border-cyan-500/25 bg-[#060b14]/95 p-2 shadow-xl backdrop-blur-md sm:left-3"
-        aria-label="Módulos piloto"
+        aria-label="Módulos CED"
       >
-        <div className="mb-0.5 px-0.5 text-center text-[8px] font-semibold uppercase tracking-wider text-amber-400/80">
-          Piloto
-        </div>
+        {hasPilotModules ? (
+          <div className="mb-0.5 px-0.5 text-center text-[8px] font-semibold uppercase tracking-wider text-amber-400/80">
+            Piloto
+          </div>
+        ) : null}
         {modules.map((m) => {
           const Icon = m.icon;
           const activeMod = activeId === m.id;
@@ -149,8 +151,16 @@ export function ModuleShell() {
                     <div className="text-sm font-semibold text-cyan-100">
                       {active.name}
                     </div>
-                    <div className="text-[10px] uppercase tracking-wider text-amber-400/80">
-                      Piloto — se descarta al cerrar
+                    <div
+                      className={`text-[10px] uppercase tracking-wider ${
+                        activeIsPilot
+                          ? "text-amber-400/80"
+                          : "text-slate-500"
+                      }`}
+                    >
+                      {activeIsPilot
+                        ? "Piloto — se descarta al cerrar"
+                        : "Se descarta al cerrar"}
                     </div>
                   </div>
                 </div>

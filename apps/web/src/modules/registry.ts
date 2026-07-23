@@ -1,6 +1,6 @@
 import { Briefcase, Target, TrendingUp } from "lucide-react";
 
-import { isOpportunitiesModulePilot } from "@/lib/pilot/opportunitiesModule";
+import { isOpportunitiesModuleEnabled } from "@/lib/pilot/opportunitiesModule";
 import { isTrendsModulePilot } from "@/lib/pilot/trendsModule";
 import { isViabilityModulePilot } from "@/lib/pilot/viabilityModule";
 import type { CedModuleRegistration } from "@/modules/types";
@@ -15,7 +15,8 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     name: "Viabilidad",
     short: "VIABLE",
     icon: Target,
-    isPilotEnabled: isViabilityModulePilot,
+    stage: "pilot",
+    isEnabled: isViabilityModulePilot,
     load: () =>
       import("@/components/pilot/ViabilityPilotPanel").then((m) => ({
         default: m.ViabilityModuleContent,
@@ -26,7 +27,8 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     name: "Tendencias",
     short: "TRENDS",
     icon: TrendingUp,
-    isPilotEnabled: isTrendsModulePilot,
+    stage: "pilot",
+    isEnabled: isTrendsModulePilot,
     load: () =>
       import("@/components/pilot/TrendsPilotPanel").then((m) => ({
         default: m.TrendsModuleContent,
@@ -37,7 +39,8 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     name: "Oportunidades",
     short: "OPPS",
     icon: Briefcase,
-    isPilotEnabled: isOpportunitiesModulePilot,
+    stage: "production",
+    isEnabled: isOpportunitiesModuleEnabled,
     load: () =>
       import("@/components/pilot/OpportunitiesPilotPanel").then((m) => ({
         default: m.OpportunitiesModuleContent,
@@ -45,14 +48,20 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
   },
 ];
 
-export function getPilotVisibleModules(): CedModuleRegistration[] {
+/** Modules visible in the lateral rail (pilot flags + production kill-switches). */
+export function getVisibleModules(): CedModuleRegistration[] {
   return CED_MODULE_REGISTRY.filter((m) => {
     try {
-      return m.isPilotEnabled();
+      return m.isEnabled();
     } catch {
       return false;
     }
   });
+}
+
+/** @deprecated use getVisibleModules */
+export function getPilotVisibleModules(): CedModuleRegistration[] {
+  return getVisibleModules();
 }
 
 export function getModuleById(id: string): CedModuleRegistration | undefined {

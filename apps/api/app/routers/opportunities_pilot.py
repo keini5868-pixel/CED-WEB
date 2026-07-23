@@ -1,4 +1,4 @@
-"""HTTP API piloto — oportunidades de negocio."""
+"""HTTP API — oportunidades de negocio (producción; kill-switch por env)."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.deps.auth import require_user_id
 from app.services.opportunities_pilot.gate import (
-    opportunities_pilot_enabled,
-    require_opportunities_pilot_header,
+    opportunities_module_enabled,
+    require_opportunities_module_enabled,
 )
 from app.services.opportunities_pilot.service import (
     get_opportunity_detail,
@@ -21,24 +21,24 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/v1/opportunities-pilot",
-    tags=["opportunities-pilot"],
-    dependencies=[Depends(require_opportunities_pilot_header)],
+    tags=["opportunities"],
+    dependencies=[Depends(require_opportunities_module_enabled)],
 )
 
 
 @router.get("/status")
-def opportunities_pilot_status(_user_id: str = Depends(require_user_id)) -> dict:
+def opportunities_status(_user_id: str = Depends(require_user_id)) -> dict:
     from app.config import get_settings
 
     settings = get_settings()
     return {
-        "pilot": True,
-        "enabled": opportunities_pilot_enabled(),
+        "pilot": False,
+        "production": True,
+        "enabled": opportunities_module_enabled(),
         "tavily": bool(settings.tavily_api_key.strip()),
         "sponsor_url_configured": bool(
             settings.opportunities_fitline_sponsor_url.strip()
         ),
-        "entry": "?opportunitiesModule=pilot",
     }
 
 
@@ -58,7 +58,7 @@ async def opportunity_detail(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception(
-            "[OPPS-PILOT] detail failed user=%s id=%s",
+            "[OPPS] detail failed user=%s id=%s",
             user_id[:8],
             opportunity_id[:40],
         )

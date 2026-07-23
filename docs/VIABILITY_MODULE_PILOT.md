@@ -32,7 +32,7 @@
 ### Adding a module
 
 1. Implement a self-contained panel exporting `ComponentType<ModulePanelProps>`.
-2. Append one entry to `apps/web/src/modules/registry.ts` (id, name, icon, `isPilotEnabled`, `load`).
+2. Append one entry to `apps/web/src/modules/registry.ts` (id, name, icon, `stage`, `isEnabled`, `load`).
 3. Do **not** edit `CedVoiceControls`, `text_chat`, or shared voice session for the new module.
 4. Keep voice tools on native/staging pilot until graduation.
 

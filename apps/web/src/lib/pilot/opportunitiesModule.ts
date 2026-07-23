@@ -1,14 +1,19 @@
-/** Piloto módulo oportunidades — activar con ?opportunitiesModule=pilot */
+/**
+ * Módulo Oportunidades — producción.
+ * Visible para usuarios logueados salvo kill-switch NEXT_PUBLIC_OPPORTUNITIES_MODULE_ENABLED=false
+ * (el API también respeta OPPORTUNITIES_MODULE_ENABLED).
+ */
 
-export function isOpportunitiesModulePilot(): boolean {
+export function isOpportunitiesModuleEnabled(): boolean {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
-    const pilot = params.get("opportunitiesModule")?.trim().toLowerCase();
-    if (pilot === "pilot" || pilot === "1" || pilot === "true") return true;
-    if (pilot === "off" || pilot === "prod" || pilot === "production") return false;
+    const forceOff = params.get("opportunitiesModule")?.trim().toLowerCase();
+    // Escape hatch local: ?opportunitiesModule=off (no reintroduce el flag pilot)
+    if (forceOff === "off" || forceOff === "false" || forceOff === "0") {
+      return false;
+    }
   }
-  return process.env.NEXT_PUBLIC_OPPORTUNITIES_MODULE_PILOT === "true";
+  const env = process.env.NEXT_PUBLIC_OPPORTUNITIES_MODULE_ENABLED;
+  if (env === "false" || env === "0" || env === "off") return false;
+  return true;
 }
-
-export const OPPORTUNITIES_PILOT_HEADER = "X-CED-Opportunities-Pilot";
-export const OPPORTUNITIES_PILOT_HEADER_VALUE = "1";

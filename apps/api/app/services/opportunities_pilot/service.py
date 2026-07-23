@@ -1,4 +1,4 @@
-"""Orquestación Oportunidades — piloto aislado."""
+"""Orquestación Oportunidades — módulo en producción (aislado del chat/voz)."""
 
 from __future__ import annotations
 
@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 def list_opportunity_catalog() -> dict[str, Any]:
     return {
         "ok": True,
-        "pilot": True,
+        "pilot": False,
+        "production": True,
         "opportunities": catalog_summaries(),
     }
 
@@ -34,7 +35,8 @@ def get_opportunity_detail(opportunity_id: str) -> dict[str, Any]:
                 "Esa oportunidad aún no está integrada en CED. "
                 "Las disponibles aparecen en el catálogo del módulo."
             ),
-            "pilot": True,
+            "pilot": False,
+            "production": True,
         }
 
     anchors = [str(a) for a in (plugin.get("search_anchors") or []) if str(a).strip()]
