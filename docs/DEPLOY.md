@@ -173,6 +173,12 @@ Si despliegas `@ced/web` en Railway **no uses Railpack** con `pnpm start` — el
 
 5. Redeploy y validar `GET /login` responde 200
 
+### Dominio apex `ced-castillo.com`
+
+Hoy el apex no debe apuntar al servicio API. Guía paso a paso:
+
+→ [`docs/CED_CASTILLO_DOMAIN.md`](./CED_CASTILLO_DOMAIN.md)
+
 **Recomendación:** Vercel sigue siendo mejor para Next.js (Fase 3). Usa Railway solo para la API.
 
 ---

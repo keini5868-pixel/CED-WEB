@@ -1,8 +1,23 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS, TRIAL_DAYS } from "@ced/types";
 
 import { PublicHeaderLink, PublicHeaderText, PublicSiteHeader } from "@/components/layout/PublicSiteHeader";
+
+export const metadata: Metadata = {
+  title: "CED — Castillo de la Evolución Digital",
+  description:
+    "CED es un asistente virtual inteligente que ayuda a gestionar tareas de negocio y personales con voz, texto e imágenes: correo, calendario, documentos, mapas y más.",
+  openGraph: {
+    title: "CED — Castillo de la Evolución Digital",
+    description:
+      "Asistente virtual con voz en vivo, chat, calendario, correo, generación de imágenes y PDF, y herramientas de negocio.",
+    url: "https://ced-castillo.com",
+    siteName: "CED",
+    type: "website",
+  },
+};
 
 const PLAN_STYLES: Record<
   string,
@@ -45,16 +60,21 @@ export default function HomePage() {
         left={
           <PublicHeaderText>
             <span className="font-[family-name:var(--font-orbitron)] text-[10px] tracking-[0.2em] text-cyan-400 sm:text-sm sm:tracking-[0.3em]">
-              SYS: ONLINE
+              CED
             </span>
           </PublicHeaderText>
         }
         center={
-          <h1 className="font-[family-name:var(--font-orbitron)] text-base font-bold tracking-widest text-cyan-300 ced-glow-text sm:text-lg">
-            CED
-          </h1>
+          <p className="font-[family-name:var(--font-orbitron)] text-[11px] tracking-[0.18em] text-cyan-400/90 sm:text-sm">
+            CASTILLO DE LA EVOLUCIÓN DIGITAL
+          </p>
         }
-        right={<PublicHeaderLink href="/login">LOGIN</PublicHeaderLink>}
+        right={
+          <div className="flex items-center gap-2">
+            <PublicHeaderLink href="/privacy">Privacidad</PublicHeaderLink>
+            <PublicHeaderLink href="/login">LOGIN</PublicHeaderLink>
+          </div>
+        }
       />
 
       <section className="relative z-10 mx-auto max-w-6xl px-4 py-12 sm:px-6">
@@ -64,14 +84,22 @@ export default function HomePage() {
               CED
             </span>
           </div>
-          <h2 className="font-[family-name:var(--font-orbitron)] text-xl font-bold tracking-[0.12em] text-cyan-300 sm:text-2xl md:text-3xl">
-            TU ASISTENTE JARVIS CON VOZ EN VIVO
-          </h2>
-          <p className="mt-3 text-sm text-cyan-100/70">
-            Chat + voz + HUD en vivo · Memoria cognitiva · Instagram
+          <h1 className="font-[family-name:var(--font-orbitron)] text-3xl font-bold tracking-[0.14em] text-cyan-200 sm:text-4xl md:text-5xl">
+            CED
+          </h1>
+          <p className="mt-2 font-[family-name:var(--font-orbitron)] text-sm tracking-[0.2em] text-cyan-400/90 sm:text-base">
+            Castillo de la Evolución Digital
           </p>
-          <p className="mt-2 text-xs text-cyan-500">
-            {TRIAL_DAYS} días gratis al registrarte — sin tarjeta
+          <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-cyan-100/85 sm:text-base">
+            CED es un asistente virtual inteligente que te ayuda a gestionar
+            tareas de negocio y personales mediante voz, texto e imágenes.
+            Puedes chatear o hablar con CED, conectar Gmail y Google Calendar,
+            generar imágenes y documentos PDF, usar mapas y GPS, y publicar en
+            redes cuando tú lo autorices.
+          </p>
+          <p className="mt-3 text-xs text-cyan-500">
+            Página pública — no necesitas iniciar sesión para conocer CED.{" "}
+            {TRIAL_DAYS} días gratis al registrarte.
           </p>
         </div>
 
