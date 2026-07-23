@@ -65,8 +65,8 @@ export default function HomePage() {
           </PublicHeaderText>
         }
         center={
-          <p className="font-[family-name:var(--font-orbitron)] text-[11px] tracking-[0.18em] text-cyan-400/90 sm:text-sm">
-            CASTILLO DE LA EVOLUCIÓN DIGITAL
+          <p className="font-[family-name:var(--font-orbitron)] text-[11px] tracking-[0.12em] text-cyan-400/90 sm:text-sm">
+            Castillo de la Evolución Digital
           </p>
         }
         right={
@@ -84,12 +84,12 @@ export default function HomePage() {
               CED
             </span>
           </div>
-          <h1 className="font-[family-name:var(--font-orbitron)] text-3xl font-bold tracking-[0.14em] text-cyan-200 sm:text-4xl md:text-5xl">
+          <p className="font-[family-name:var(--font-orbitron)] text-lg font-bold tracking-[0.2em] text-cyan-300 sm:text-xl">
             CED
-          </h1>
-          <p className="mt-2 font-[family-name:var(--font-orbitron)] text-sm tracking-[0.2em] text-cyan-400/90 sm:text-base">
-            Castillo de la Evolución Digital
           </p>
+          <h1 className="mt-2 font-[family-name:var(--font-orbitron)] text-2xl font-bold tracking-[0.06em] text-cyan-100 sm:text-3xl md:text-4xl">
+            Castillo de la Evolución Digital
+          </h1>
           <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-cyan-100/85 sm:text-base">
             CED es un asistente virtual inteligente que te ayuda a gestionar
             tareas de negocio y personales mediante voz, texto e imágenes.
