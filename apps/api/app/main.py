@@ -124,8 +124,6 @@ def create_app() -> FastAPI:
             "Authorization",
             "Content-Type",
             "X-Request-Id",
-            "X-CED-Viability-Pilot",
-            "X-CED-Trends-Pilot",
         ],
     )
     application.add_middleware(SecurityHeadersMiddleware, settings=settings)

@@ -1,7 +1,7 @@
-"""Módulo piloto — análisis de tendencias de industria.
+"""Módulo de tendencias de industria (producción).
 
-Solo activo con flag de piloto (header X-CED-Trends-Pilot / env).
-Aislado de VIABLE, chat público y voz.
+Kill-switch: TRENDS_MODULE_ENABLED=false.
+Aislado de chat público y voz (salvo tool Retell si el kill-switch está ON).
 """
 
 from app.services.trends_pilot.intents import is_trends_module_intent

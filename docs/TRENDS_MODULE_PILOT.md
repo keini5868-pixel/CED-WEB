@@ -1,31 +1,24 @@
-# Industry Trends Module (Tendencias) — pilot
+# Trends Module (Tendencias) — production
 
-Isolated like Viability: rail module only, no public chat, no voice (yet).
+Isolated rail module: industry trends analysis.
+Graduated from pilot — visible for logged-in users unless kill-switched off.
 
 | Layer | Gate |
 |--------|------|
-| Web UI | `?trendsModule=pilot` (shell + **Tendencias** / TRENDS) |
-| HTTP API | Header `X-CED-Trends-Pilot: 1` **required** (404 without it) |
-| Env | `TRENDS_MODULE_PILOT` (set `false` to disable API) |
-| Voice | Not wired |
-| Public chat | Not wired |
-
-### Product decisions
-
-| Topic | Decision |
-|--------|----------|
-| Visible name | **Tendencias** (id interno `trends`) |
-| Región | Optional field (same as VIABLE) |
-| Outlook ~6 months | Always shown; if no search forecast → `model_reasoning` + data gap (do not omit) |
+| Web UI | On by default (`NEXT_PUBLIC_TRENDS_MODULE_ENABLED=false` to hide; `?trendsModule=off` local escape) |
+| HTTP API | Auth required (`require_user_id`); kill-switch `TRENDS_MODULE_ENABLED=false` → 404 |
+| Voice / chat | Not wired |
 
 ### How to test
 
-1. Open CED with `?trendsModule=pilot` (can combine with `?viabilityModule=pilot`).
-2. Left rail → **TRENDS** → describe rubro; optional region → Analizar.
-3. Closing the drawer discards state (shell unmount).
+1. Open CED logged in (no query flag needed).
+2. Left rail → **TRENDS** → describe industry/rubro.
+3. Closing the drawer discards state.
+4. Emergency off: `TRENDS_MODULE_ENABLED=false` (API) and/or `NEXT_PUBLIC_TRENDS_MODULE_ENABLED=false` (web).
 
 ### Key paths
 
 - Content: `TrendsModuleContent` in `TrendsPilotPanel.tsx`
 - API: `apps/api/app/services/trends_pilot/` + `routers/trends_pilot.py`
 - Registry: `apps/web/src/modules/registry.ts`
+- Kill-switch: `TRENDS_MODULE_ENABLED`

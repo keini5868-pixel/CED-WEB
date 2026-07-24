@@ -1,4 +1,4 @@
-"""Tool Retell — solo piloto nativo + VIABILITY_MODULE_PILOT. Aislada del prod agent."""
+"""Tool Retell — módulo viabilidad (kill-switch VIABILITY_MODULE_ENABLED)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import logging
 import time
 from typing import Any
 
-from app.services.viability_pilot.gate import viability_pilot_enabled
+from app.services.viability_pilot.gate import viability_module_enabled
 from app.services.viability_pilot.service import analyze_viability, format_report_for_voice
 
 logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ def build_analyze_product_viability_tool(*, api_public_url: str) -> dict[str, An
 
 
 def should_register_viability_voice_tool() -> bool:
-    return viability_pilot_enabled()
+    return viability_module_enabled()
 
 
 async def execute_analyze_product_viability_tool(
@@ -65,9 +65,9 @@ async def execute_analyze_product_viability_tool(
     payload: dict[str, Any],
     args: dict[str, Any],
 ) -> dict[str, Any]:
-    """Ejecutor Retell — no toca pending de Gmail/Calendar/Finance."""
+    """Ejecutor Retell — no toca pending de finanzas."""
     started = time.perf_counter()
-    if not viability_pilot_enabled():
+    if not viability_module_enabled():
         return {
             "result": "El módulo de viabilidad no está activo en este entorno, señor.",
             "ok": False,

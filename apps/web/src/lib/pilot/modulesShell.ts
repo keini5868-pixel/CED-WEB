@@ -2,7 +2,7 @@ import { getVisibleModules } from "@/modules/registry";
 
 /**
  * Lateral module shell is visible when any registered module is enabled
- * (production modules like Oportunidades, and/or pilot modules via query flags).
+ * (production modules: Viabilidad, Tendencias, Oportunidades).
  * Escape: ?modulesShell=off hides the entire shell.
  */
 export function isModulesShellVisible(): boolean {

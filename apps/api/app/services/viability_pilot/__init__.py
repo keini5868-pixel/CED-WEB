@@ -1,6 +1,6 @@
-"""Módulo piloto aislado — análisis de viabilidad de producto/servicio.
+"""Módulo de viabilidad de producto/servicio (producción).
 
-Solo activo con flag de piloto (header X-CED-Viability-Pilot / env).
+Kill-switch: VIABILITY_MODULE_ENABLED=false.
 No comparte estado de sesión con chat, imagen, prospección ni modo avanzado.
 """
 

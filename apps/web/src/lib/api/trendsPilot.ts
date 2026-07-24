@@ -1,8 +1,4 @@
 import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
-import {
-  TRENDS_PILOT_HEADER,
-  TRENDS_PILOT_HEADER_VALUE,
-} from "@/lib/pilot/trendsModule";
 
 export type TrendsFinding = {
   text: string;
@@ -45,13 +41,11 @@ export type TrendsReport = {
   spoken?: string;
   queries?: Array<{ purpose: string; query: string }>;
   pilot?: boolean;
+  production?: boolean;
 };
 
-function pilotHeaders(): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    [TRENDS_PILOT_HEADER]: TRENDS_PILOT_HEADER_VALUE,
-  };
+function jsonHeaders(): Record<string, string> {
+  return { "Content-Type": "application/json" };
 }
 
 export async function fetchTrendsPilotStatus(): Promise<{
@@ -60,7 +54,7 @@ export async function fetchTrendsPilotStatus(): Promise<{
 } | null> {
   try {
     const res = await proxyFetchAuthed("trends-pilot/status", {
-      headers: pilotHeaders(),
+      headers: jsonHeaders(),
     });
     if (!res.ok) return null;
     return (await res.json()) as { enabled: boolean };
@@ -75,7 +69,7 @@ export async function analyzeTrends(params: {
 }): Promise<TrendsReport> {
   const res = await proxyFetchAuthed("trends-pilot/analyze", {
     method: "POST",
-    headers: pilotHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify({
       description: params.description,
       region: params.region || null,
@@ -89,4 +83,4 @@ export async function analyzeTrends(params: {
 }
 
 export const TRENDS_WELCOME =
-  "Módulo piloto de tendencias. Describa su rubro o industria y generaré un informe con hallazgos de búsqueda separados del razonamiento. Nombres propios anclan la búsqueda; no invento porcentajes sin fuente.";
+  "Módulo de tendencias. Describa su rubro o industria y generaré un informe con hallazgos de búsqueda separados del razonamiento. Nombres propios anclan la búsqueda; no invento porcentajes sin fuente.";

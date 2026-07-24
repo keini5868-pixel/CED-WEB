@@ -11,7 +11,7 @@ Graduated from pilot — always visible for logged-in users unless kill-switched
 | Voice / chat | Not wired |
 | Q&A | Not in v1 |
 
-Viability and Tendencias remain pilot-gated (`?viabilityModule=pilot`, `?trendsModule=pilot`).
+Viability, Tendencias and Oportunidades are production modules (kill-switches default ON).
 
 ### Product decisions
 

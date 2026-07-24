@@ -1,8 +1,8 @@
 import { Briefcase, Target, TrendingUp } from "lucide-react";
 
 import { isOpportunitiesModuleEnabled } from "@/lib/pilot/opportunitiesModule";
-import { isTrendsModulePilot } from "@/lib/pilot/trendsModule";
-import { isViabilityModulePilot } from "@/lib/pilot/viabilityModule";
+import { isTrendsModuleEnabled } from "@/lib/pilot/trendsModule";
+import { isViabilityModuleEnabled } from "@/lib/pilot/viabilityModule";
 import type { CedModuleRegistration } from "@/modules/types";
 
 /**
@@ -15,8 +15,8 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     name: "Viabilidad",
     short: "VIABLE",
     icon: Target,
-    stage: "pilot",
-    isEnabled: isViabilityModulePilot,
+    stage: "production",
+    isEnabled: isViabilityModuleEnabled,
     load: () =>
       import("@/components/pilot/ViabilityPilotPanel").then((m) => ({
         default: m.ViabilityModuleContent,
@@ -27,8 +27,8 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     name: "Tendencias",
     short: "TRENDS",
     icon: TrendingUp,
-    stage: "pilot",
-    isEnabled: isTrendsModulePilot,
+    stage: "production",
+    isEnabled: isTrendsModuleEnabled,
     load: () =>
       import("@/components/pilot/TrendsPilotPanel").then((m) => ({
         default: m.TrendsModuleContent,

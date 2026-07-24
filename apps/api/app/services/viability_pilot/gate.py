@@ -1,37 +1,33 @@
-"""Gate de piloto — sin header/env, el módulo no existe para callers públicos."""
+"""Gate de producción — módulo Viabilidad.
+
+Kill-switch: VIABILITY_MODULE_ENABLED=false → 404.
+Auth: require_user_id en el router (usuarios logueados).
+Sin header de piloto.
+"""
 
 from __future__ import annotations
 
-from fastapi import Header, HTTPException, Request
+from fastapi import HTTPException
 
 from app.config import get_settings
 
-PILOT_HEADER = "X-CED-Viability-Pilot"
-PILOT_HEADER_VALUE = "1"
+
+def viability_module_enabled() -> bool:
+    return bool(get_settings().viability_module_enabled)
 
 
+def require_viability_module_enabled() -> None:
+    if not viability_module_enabled():
+        raise HTTPException(
+            status_code=404,
+            detail="Módulo de viabilidad no disponible.",
+        )
+
+
+# Compat aliases (pre-graduation names)
 def viability_pilot_enabled() -> bool:
-    """Env master switch. Default True so staging can use it; still needs header."""
-    return bool(get_settings().viability_module_pilot)
+    return viability_module_enabled()
 
 
-def require_viability_pilot_header(
-    x_ced_viability_pilot: str | None = Header(default=None, alias=PILOT_HEADER),
-) -> None:
-    if not viability_pilot_enabled():
-        raise HTTPException(
-            status_code=404,
-            detail="Módulo de viabilidad no disponible.",
-        )
-    if (x_ced_viability_pilot or "").strip() != PILOT_HEADER_VALUE:
-        raise HTTPException(
-            status_code=404,
-            detail="Módulo de viabilidad no disponible.",
-        )
-
-
-def request_has_viability_pilot_header(request: Request) -> bool:
-    raw = request.headers.get(PILOT_HEADER) or request.headers.get(
-        PILOT_HEADER.lower()
-    )
-    return (raw or "").strip() == PILOT_HEADER_VALUE
+def require_viability_pilot_header() -> None:
+    require_viability_module_enabled()

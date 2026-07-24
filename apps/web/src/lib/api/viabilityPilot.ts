@@ -1,8 +1,4 @@
 import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
-import {
-  VIABILITY_PILOT_HEADER,
-  VIABILITY_PILOT_HEADER_VALUE,
-} from "@/lib/pilot/viabilityModule";
 
 export type ViabilityCompetitor = {
   name: string;
@@ -64,13 +60,11 @@ export type ViabilityReport = {
   }>;
   queries?: Array<{ purpose: string; query: string }>;
   pilot?: boolean;
+  production?: boolean;
 };
 
-function pilotHeaders(): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    [VIABILITY_PILOT_HEADER]: VIABILITY_PILOT_HEADER_VALUE,
-  };
+function jsonHeaders(): Record<string, string> {
+  return { "Content-Type": "application/json" };
 }
 
 export async function fetchViabilityPilotStatus(): Promise<{
@@ -80,7 +74,7 @@ export async function fetchViabilityPilotStatus(): Promise<{
 } | null> {
   try {
     const res = await proxyFetchAuthed("viability-pilot/status", {
-      headers: pilotHeaders(),
+      headers: jsonHeaders(),
     });
     if (!res.ok) return null;
     return (await res.json()) as { enabled: boolean };
@@ -96,7 +90,7 @@ export async function analyzeViability(params: {
 }): Promise<ViabilityReport> {
   const res = await proxyFetchAuthed("viability-pilot/analyze", {
     method: "POST",
-    headers: pilotHeaders(),
+    headers: jsonHeaders(),
     body: JSON.stringify({
       description: params.description || null,
       image_base64: params.imageBase64 || null,
@@ -112,4 +106,4 @@ export async function analyzeViability(params: {
 }
 
 export const VIABILITY_WELCOME =
-  "Módulo piloto de viabilidad. Describa un producto o servicio, o suba un flyer/foto, y generaré un informe con hechos de búsqueda separados del consejo estratégico. No inventaré competidores ni precios.";
+  "Módulo de viabilidad. Describa un producto o servicio, o suba un flyer/foto, y generaré un informe con hechos de búsqueda separados del consejo estratégico. No inventaré competidores ni precios.";

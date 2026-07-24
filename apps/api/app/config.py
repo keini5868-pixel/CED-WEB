@@ -162,11 +162,10 @@ class Settings(BaseSettings):
     # Provider voice ID Cartesia (opcional — Retell usa RETELL_VOICE_ID en prod)
     cartesia_jarvis_voice_id: str = ""
     support_chat_enabled: bool = True
-    # Piloto módulo viabilidad producto/servicio — aislado; UI con ?viabilityModule=pilot
-    # y header X-CED-Viability-Pilot. No afecta rutas públicas sin el header.
-    viability_module_pilot: bool = True
-    # Piloto módulo tendencias de industria — ?trendsModule=pilot + X-CED-Trends-Pilot
-    trends_module_pilot: bool = True
+    # Módulo viabilidad (producción). Kill-switch: VIABILITY_MODULE_ENABLED=false
+    viability_module_enabled: bool = True
+    # Módulo tendencias (producción). Kill-switch: TRENDS_MODULE_ENABLED=false
+    trends_module_enabled: bool = True
     # Módulo oportunidades (producción). Kill-switch: OPPORTUNITIES_MODULE_ENABLED=false
     opportunities_module_enabled: bool = True
     # Enlace personal FitLine / paquete manager (sección Afiliación)

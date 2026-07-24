@@ -1,14 +1,24 @@
-/** Piloto módulo viabilidad — activar con ?viabilityModule=pilot */
+/**
+ * Módulo Viabilidad — producción.
+ * Visible para usuarios logueados salvo kill-switch NEXT_PUBLIC_VIABILITY_MODULE_ENABLED=false
+ * (el API también respeta VIABILITY_MODULE_ENABLED).
+ */
 
-export function isViabilityModulePilot(): boolean {
+export function isViabilityModuleEnabled(): boolean {
   if (typeof window !== "undefined") {
     const params = new URLSearchParams(window.location.search);
-    const pilot = params.get("viabilityModule")?.trim().toLowerCase();
-    if (pilot === "pilot" || pilot === "1" || pilot === "true") return true;
-    if (pilot === "off" || pilot === "prod" || pilot === "production") return false;
+    const forceOff = params.get("viabilityModule")?.trim().toLowerCase();
+    // Escape hatch local: ?viabilityModule=off (no reintroduce el flag pilot)
+    if (forceOff === "off" || forceOff === "false" || forceOff === "0") {
+      return false;
+    }
   }
-  return process.env.NEXT_PUBLIC_VIABILITY_MODULE_PILOT === "true";
+  const env = process.env.NEXT_PUBLIC_VIABILITY_MODULE_ENABLED;
+  if (env === "false" || env === "0" || env === "off") return false;
+  return true;
 }
 
-export const VIABILITY_PILOT_HEADER = "X-CED-Viability-Pilot";
-export const VIABILITY_PILOT_HEADER_VALUE = "1";
+/** @deprecated use isViabilityModuleEnabled */
+export function isViabilityModulePilot(): boolean {
+  return isViabilityModuleEnabled();
+}

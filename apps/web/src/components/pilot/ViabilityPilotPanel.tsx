@@ -245,7 +245,7 @@ export function ViabilityModuleContent(_props: ModulePanelProps) {
         <p className="text-sm leading-relaxed text-slate-400">{VIABILITY_WELCOME}</p>
         {configured === false ? (
           <p className="text-sm text-red-300">
-            El flag de API tiene el módulo desactivado (VIABILITY_MODULE_PILOT).
+            El flag de API tiene el módulo desactivado (VIABILITY_MODULE_ENABLED).
           </p>
         ) : null}
 

@@ -130,14 +130,6 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   if (ephemeralKey) {
     headers["X-OpenAI-Ephemeral-Key"] = ephemeralKey;
   }
-    const viabilityPilot = request.headers.get("x-ced-viability-pilot");
-  if (viabilityPilot) {
-    headers["X-CED-Viability-Pilot"] = viabilityPilot;
-  }
-  const trendsPilot = request.headers.get("x-ced-trends-pilot");
-  if (trendsPilot) {
-    headers["X-CED-Trends-Pilot"] = trendsPilot;
-  }
   let body: BodyInit | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
     if (requestContentType?.includes("multipart/form-data")) {

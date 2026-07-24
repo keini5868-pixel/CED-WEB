@@ -1,4 +1,4 @@
-"""HTTP API del módulo piloto de viabilidad — requiere header de piloto."""
+"""HTTP API — viabilidad de producto/servicio (producción; kill-switch por env)."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services.viability_pilot.gate import (
-    require_viability_pilot_header,
-    viability_pilot_enabled,
+    require_viability_module_enabled,
+    viability_module_enabled,
 )
 from app.services.viability_pilot.intents import is_viability_module_intent
 from app.services.viability_pilot.service import analyze_viability
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/v1/viability-pilot",
-    tags=["viability-pilot"],
-    dependencies=[Depends(require_viability_pilot_header)],
+    tags=["viability"],
+    dependencies=[Depends(require_viability_module_enabled)],
 )
 
 
@@ -39,16 +39,16 @@ class ViabilityIntentCheckRequest(BaseModel):
 
 
 @router.get("/status")
-def viability_pilot_status(_user_id: str = Depends(require_user_id)) -> dict:
+def viability_status(_user_id: str = Depends(require_user_id)) -> dict:
     from app.config import get_settings
 
     settings = get_settings()
     return {
-        "pilot": True,
-        "enabled": viability_pilot_enabled(),
+        "pilot": False,
+        "production": True,
+        "enabled": viability_module_enabled(),
         "tavily": bool(settings.tavily_api_key.strip()),
         "google": bool(settings.google_api_key.strip()),
-        "entry": "?viabilityModule=pilot",
     }
 
 
@@ -59,7 +59,7 @@ def viability_intent_check(
 ) -> dict:
     return {
         "is_viability_intent": is_viability_module_intent(body.text),
-        "pilot": True,
+        "production": True,
     }
 
 
@@ -96,7 +96,7 @@ async def viability_analyze(
             polish=True,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[VIABILITY-PILOT] analyze failed user=%s", user_id[:8])
+        logger.exception("[VIABILITY] analyze failed user=%s", user_id[:8])
         raise HTTPException(
             status_code=502,
             detail="No pude completar el análisis de viabilidad. Reintenta.",

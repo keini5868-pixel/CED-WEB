@@ -896,7 +896,7 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
         build_consult_advanced_tool(api_public_url=api_public_url),
         build_deactivate_advanced_mode_tool(api_public_url=api_public_url),
     ]
-    # Piloto viabilidad — solo si VIABILITY_MODULE_PILOT (nunca en agente prod).
+    # Viabilidad — kill-switch VIABILITY_MODULE_ENABLED (default ON).
     try:
         from app.services.viability_pilot.voice_tool import (
             build_analyze_product_viability_tool,

@@ -1,4 +1,4 @@
-"""HTTP API piloto — tendencias de industria."""
+"""HTTP API — tendencias de industria (producción; kill-switch por env)."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.services.trends_pilot.gate import (
-    require_trends_pilot_header,
-    trends_pilot_enabled,
+    require_trends_module_enabled,
+    trends_module_enabled,
 )
 from app.services.trends_pilot.intents import is_trends_module_intent
 from app.services.trends_pilot.service import analyze_trends
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/v1/trends-pilot",
-    tags=["trends-pilot"],
-    dependencies=[Depends(require_trends_pilot_header)],
+    tags=["trends"],
+    dependencies=[Depends(require_trends_module_enabled)],
 )
 
 
@@ -35,16 +35,16 @@ class TrendsIntentCheckRequest(BaseModel):
 
 
 @router.get("/status")
-def trends_pilot_status(_user_id: str = Depends(require_user_id)) -> dict:
+def trends_status(_user_id: str = Depends(require_user_id)) -> dict:
     from app.config import get_settings
 
     settings = get_settings()
     return {
-        "pilot": True,
-        "enabled": trends_pilot_enabled(),
+        "pilot": False,
+        "production": True,
+        "enabled": trends_module_enabled(),
         "tavily": bool(settings.tavily_api_key.strip()),
         "google": bool(settings.google_api_key.strip()),
-        "entry": "?trendsModule=pilot",
     }
 
 
@@ -55,7 +55,7 @@ def trends_intent_check(
 ) -> dict:
     return {
         "is_trends_intent": is_trends_module_intent(body.text),
-        "pilot": True,
+        "production": True,
     }
 
 
@@ -71,7 +71,7 @@ async def trends_analyze(
             region=(body.region or "").strip() or None,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[TRENDS-PILOT] analyze failed user=%s", user_id[:8])
+        logger.exception("[TRENDS] analyze failed user=%s", user_id[:8])
         raise HTTPException(
             status_code=502,
             detail="No pude completar el análisis de tendencias. Reintenta.",

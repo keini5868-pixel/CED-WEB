@@ -192,7 +192,7 @@ export function TrendsModuleContent(_props: ModulePanelProps) {
         <p className="text-sm leading-relaxed text-slate-400">{TRENDS_WELCOME}</p>
         {configured === false ? (
           <p className="text-sm text-red-300">
-            TRENDS_MODULE_PILOT desactivado en la API.
+            TRENDS_MODULE_ENABLED desactivado en la API.
           </p>
         ) : null}
 
