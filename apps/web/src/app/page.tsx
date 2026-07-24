@@ -68,11 +68,6 @@ export default function HomePage() {
             </span>
           </PublicHeaderText>
         }
-        center={
-          <p className="font-[family-name:var(--font-orbitron)] text-[11px] tracking-[0.18em] text-cyan-400/90 sm:text-sm">
-            CASTILLO DE LA EVOLUCIÓN DIGITAL
-          </p>
-        }
         right={
           <div className="flex items-center gap-2">
             <PublicHeaderLink href="/privacy">Privacidad</PublicHeaderLink>
