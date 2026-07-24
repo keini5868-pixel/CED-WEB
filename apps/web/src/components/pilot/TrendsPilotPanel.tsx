@@ -23,17 +23,17 @@ function FindingList({
 }) {
   return (
     <section>
-      <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/90">
+      <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-cyan-300/90">
         {title}
       </h3>
       {items.length > 0 ? (
-        <ul className="space-y-2">
+        <ul className="space-y-3">
           {items.slice(0, 4).map((f, i) => (
             <li
               key={`${f.text.slice(0, 40)}-${i}`}
-              className="rounded border border-white/10 bg-black/30 px-2 py-1.5"
+              className="rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5"
             >
-              <div className="text-[11px] text-slate-300">{f.text}</div>
+              <div className="text-sm leading-relaxed text-slate-300">{f.text}</div>
               {f.source_url ? (
                 <a
                   href={f.source_url}
@@ -50,7 +50,7 @@ function FindingList({
           ))}
         </ul>
       ) : (
-        <p className="text-[11px] text-slate-500">{empty}</p>
+        <p className="text-sm text-slate-500">{empty}</p>
       )}
     </section>
   );
@@ -59,9 +59,9 @@ function FindingList({
 function ReportView({ report }: { report: TrendsReport }) {
   const outlook = report.outlook_6m;
   return (
-    <div className="space-y-4 text-[12px] leading-relaxed text-slate-200">
+    <div className="space-y-6 text-[14px] leading-[1.65] text-slate-200">
       {report.profile?.anchor ? (
-        <section className="rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[11px]">
+        <section className="rounded-xl border border-white/10 bg-black/25 px-3.5 py-2.5 text-sm">
           Ancla de búsqueda:{" "}
           <span className="text-cyan-100">{report.profile.anchor}</span>
           {report.profile.category || report.profile.industry_label ? (
@@ -85,18 +85,18 @@ function ReportView({ report }: { report: TrendsReport }) {
       />
 
       <section>
-        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-300/90">
+        <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-amber-300/90">
           Outlook ~6 meses
           <span className="ml-1 font-normal normal-case text-slate-500">
             ({outlook?.attribution === "search" ? "búsqueda" : "razonamiento"})
           </span>
         </h3>
         {outlook?.attribution === "search" && (outlook.findings || []).length > 0 ? (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {(outlook.findings || []).slice(0, 3).map((f, i) => (
               <li
                 key={`out-${i}`}
-                className="rounded border border-white/10 bg-black/30 px-2 py-1.5 text-[11px] text-slate-300"
+                className="rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-sm leading-relaxed text-slate-300"
               >
                 {f.text}
                 {f.source_url ? (
@@ -113,7 +113,7 @@ function ReportView({ report }: { report: TrendsReport }) {
             ))}
           </ul>
         ) : (
-          <p className="rounded border border-amber-500/20 bg-amber-500/5 px-2 py-1.5 text-[11px] text-amber-100/90">
+          <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3.5 py-2.5 text-sm leading-relaxed text-amber-100/90">
             {outlook?.model_note ||
               "Sin forecast en búsqueda — razonamiento etiquetado pendiente."}
           </p>
@@ -121,10 +121,10 @@ function ReportView({ report }: { report: TrendsReport }) {
       </section>
 
       <section>
-        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-violet-300/90">
+        <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-violet-300/90">
           Oportunidades
         </h3>
-        <ol className="list-decimal space-y-1 pl-4 text-[11px] text-slate-300">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-300">
           {(report.opportunities || []).map((o) => (
             <li key={o.idea}>
               <span className="text-[9px] uppercase text-slate-500">
@@ -188,45 +188,45 @@ export function TrendsModuleContent(_props: ModulePanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
-        <p className="text-[11px] text-slate-400">{TRENDS_WELCOME}</p>
+      <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-8 sm:py-6">
+        <p className="text-sm leading-relaxed text-slate-400">{TRENDS_WELCOME}</p>
         {configured === false ? (
-          <p className="text-[11px] text-red-300">
+          <p className="text-sm text-red-300">
             TRENDS_MODULE_PILOT desactivado en la API.
           </p>
         ) : null}
 
-        <label className="block text-[10px] uppercase text-slate-500">
+        <label className="block text-[11px] uppercase tracking-[0.08em] text-slate-500">
           Rubro / industria
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
             placeholder='Ej: vendo suplementos alimenticios FitLine / tengo una cafetería de especialidad…'
-            className="mt-1 w-full resize-none rounded border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-slate-100 outline-none focus:border-cyan-500/50"
+            className="mt-2 w-full resize-none rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm leading-relaxed text-slate-100 outline-none focus:border-cyan-500/50"
           />
         </label>
 
-        <label className="block text-[10px] uppercase text-slate-500">
+        <label className="block text-[11px] uppercase tracking-[0.08em] text-slate-500">
           Región (opcional)
           <input
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             placeholder="Ej: Estados Unidos / CDMX"
-            className="mt-1 w-full rounded border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-slate-100 outline-none focus:border-cyan-500/50"
+            className="mt-2 w-full rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm text-slate-100 outline-none focus:border-cyan-500/50"
           />
         </label>
 
-        {error ? <p className="text-[11px] text-red-400">{error}</p> : null}
+        {error ? <p className="text-sm text-red-400">{error}</p> : null}
         {report ? <ReportView report={report} /> : null}
       </div>
 
-      <footer className="border-t border-white/10 px-4 py-3">
+      <footer className="border-t border-white/10 px-5 py-4 sm:px-8">
         <button
           type="button"
           disabled={busy}
           onClick={() => void submit()}
-          className="inline-flex w-full items-center justify-center gap-2 rounded bg-cyan-600/90 px-3 py-2.5 text-[12px] font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
         >
           {busy ? (
             <>

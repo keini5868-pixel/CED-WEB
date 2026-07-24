@@ -3,20 +3,22 @@ import Link from "next/link";
 
 import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS, TRIAL_DAYS } from "@ced/types";
 
-import { PublicHeaderLink, PublicSiteHeader } from "@/components/layout/PublicSiteHeader";
-
-const APP_NAME = "Castillo de la Evolución Digital";
+import {
+  PublicHeaderLink,
+  PublicHeaderText,
+  PublicSiteHeader,
+} from "@/components/layout/PublicSiteHeader";
 
 export const metadata: Metadata = {
-  title: `${APP_NAME} — asistente virtual con voz, chat y Google`,
+  title: "CED — Castillo de la Evolución Digital",
   description:
-    "Castillo de la Evolución Digital es un asistente virtual inteligente que ayuda a gestionar tareas de negocio y personales con voz, texto e imágenes. Con tu permiso, puede usar tu cuenta de Google (inicio de sesión, Gmail y Calendar) para actuar solo cuando tú lo solicitas.",
+    "CED es un asistente virtual inteligente que ayuda a gestionar tareas de negocio y personales con voz, texto e imágenes: correo, calendario, documentos, mapas y más.",
   openGraph: {
-    title: APP_NAME,
+    title: "CED — Castillo de la Evolución Digital",
     description:
-      "Asistente virtual con voz y chat. Usa Gmail, Google Calendar y otras herramientas solo con tu autorización explícita.",
+      "Asistente virtual con voz en vivo, chat, calendario, correo, generación de imágenes y PDF, y herramientas de negocio.",
     url: "https://ced-castillo.com",
-    siteName: APP_NAME,
+    siteName: "CED",
     type: "website",
   },
 };
@@ -60,13 +62,15 @@ export default function HomePage() {
 
       <PublicSiteHeader
         left={
-          <span className="inline-flex min-h-[48px] items-center font-[family-name:var(--font-orbitron)] text-[10px] tracking-wide text-cyan-500 sm:text-xs">
-            CED
-          </span>
+          <PublicHeaderText>
+            <span className="font-[family-name:var(--font-orbitron)] text-[10px] tracking-[0.2em] text-cyan-400 sm:text-sm sm:tracking-[0.3em]">
+              CED
+            </span>
+          </PublicHeaderText>
         }
         center={
-          <p className="font-[family-name:var(--font-orbitron)] text-[11px] tracking-[0.08em] text-cyan-200 sm:text-sm">
-            {APP_NAME}
+          <p className="font-[family-name:var(--font-orbitron)] text-[11px] tracking-[0.18em] text-cyan-400/90 sm:text-sm">
+            CASTILLO DE LA EVOLUCIÓN DIGITAL
           </p>
         }
         right={
@@ -78,92 +82,31 @@ export default function HomePage() {
         }
       />
 
-      <section className="relative z-10 mx-auto max-w-3xl px-4 py-12 sm:px-6">
+      <section className="relative z-10 mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="text-center">
-          <p className="text-[11px] uppercase tracking-[0.25em] text-cyan-500">
-            Aplicación
-          </p>
-          <h1 className="mt-3 font-[family-name:var(--font-orbitron)] text-2xl font-bold leading-tight tracking-[0.04em] text-cyan-50 sm:text-3xl md:text-4xl">
-            {APP_NAME}
+          <div className="mx-auto mb-6 flex h-28 w-28 items-center justify-center rounded-full border-2 border-cyan-400/60 ced-glow sm:h-36 sm:w-36">
+            <span className="font-[family-name:var(--font-orbitron)] text-3xl font-bold text-cyan-300 sm:text-4xl">
+              CED
+            </span>
+          </div>
+          <h1 className="font-[family-name:var(--font-orbitron)] text-3xl font-bold tracking-[0.14em] text-cyan-200 sm:text-4xl md:text-5xl">
+            CED
           </h1>
-          <p className="mt-2 text-sm text-cyan-400/90">
-            Nombre corto de marca: <span className="text-cyan-200">CED</span>
+          <p className="mt-2 font-[family-name:var(--font-orbitron)] text-sm tracking-[0.2em] text-cyan-400/90 sm:text-base">
+            Castillo de la Evolución Digital
+          </p>
+          <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-cyan-100/85 sm:text-base">
+            CED es un asistente virtual inteligente que te ayuda a gestionar
+            tareas de negocio y personales mediante voz, texto e imágenes.
+            Puedes chatear o hablar con CED, conectar Gmail y Google Calendar,
+            generar imágenes y documentos PDF, usar mapas y GPS, y publicar en
+            redes cuando tú lo autorices.
+          </p>
+          <p className="mt-3 text-xs text-cyan-500">
+            Página pública — no necesitas iniciar sesión para conocer CED.{" "}
+            {TRIAL_DAYS} días gratis al registrarte.
           </p>
         </div>
-
-        <section className="mt-10 rounded-lg border border-cyan-500/25 bg-cyan-500/5 px-5 py-6 text-left">
-          <h2 className="font-[family-name:var(--font-orbitron)] text-sm font-semibold tracking-wide text-cyan-200">
-            Finalidad de la aplicación
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-cyan-50/90">
-            <strong className="text-cyan-100">{APP_NAME}</strong> es un
-            asistente virtual inteligente cuya finalidad es ayudarte a gestionar
-            tareas de negocio y personales desde un solo lugar. Puedes
-            interactuar por <strong>voz</strong> o <strong>texto</strong>, pedir
-            análisis, generar imágenes y documentos PDF, usar mapas y
-            navegación, y —solo cuando tú lo indiques— publicar contenido en
-            redes sociales conectadas.
-          </p>
-          <p className="mt-3 text-sm leading-relaxed text-cyan-50/90">
-            Esta página es pública: no necesitas iniciar sesión para conocer la
-            finalidad de la aplicación. El registro y el login existen para
-            usar las funciones con tu cuenta.
-          </p>
-        </section>
-
-        <section className="mt-6 rounded-lg border border-white/15 bg-black/40 px-5 py-6 text-left">
-          <h2 className="font-[family-name:var(--font-orbitron)] text-sm font-semibold tracking-wide text-cyan-200">
-            Por qué solicitamos acceso a Google
-          </h2>
-          <p className="mt-3 text-sm leading-relaxed text-cyan-50/90">
-            {APP_NAME} puede pedir permiso para usar tu cuenta de Google con
-            estos fines concretos (siempre con tu consentimiento en la pantalla
-            de Google):
-          </p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-cyan-50/90">
-            <li>
-              <strong className="text-cyan-100">Inicio de sesión (OAuth):</strong>{" "}
-              crear o acceder a tu cuenta de forma segura sin que guardemos tu
-              contraseña de Google.
-            </li>
-            <li>
-              <strong className="text-cyan-100">Gmail:</strong> leer o enviar
-              correos únicamente cuando tú se lo pides al asistente.
-            </li>
-            <li>
-              <strong className="text-cyan-100">Google Calendar:</strong> consultar
-              o crear eventos únicamente cuando tú se lo pides.
-            </li>
-          </ul>
-          <p className="mt-3 text-sm leading-relaxed text-cyan-50/90">
-            No usamos tus datos de Google para publicidad. Puedes revocar el
-            acceso en cualquier momento desde la configuración de tu cuenta de
-            Google. Detalles en nuestra{" "}
-            <Link href="/privacy" className="text-cyan-300 underline hover:text-cyan-100">
-              Política de Privacidad
-            </Link>
-            .
-          </p>
-        </section>
-
-        <section className="mt-6 rounded-lg border border-white/10 bg-black/30 px-5 py-6 text-left">
-          <h2 className="font-[family-name:var(--font-orbitron)] text-sm font-semibold tracking-wide text-cyan-200">
-            Funciones principales
-          </h2>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm leading-relaxed text-cyan-50/90">
-            <li>Chat y voz en vivo con el asistente.</li>
-            <li>Integración opcional con Gmail y Google Calendar.</li>
-            <li>Generación de imágenes y documentos PDF.</li>
-            <li>Mapas / GPS (Modo Conducir) cuando lo actives.</li>
-            <li>
-              Publicación en Facebook o Instagram solo si conectas esas cuentas
-              y lo autorizas.
-            </li>
-          </ul>
-          <p className="mt-4 text-xs text-cyan-500">
-            {TRIAL_DAYS} días gratis al registrarte — sin tarjeta.
-          </p>
-        </section>
       </section>
 
       <section className="relative z-10 mx-auto max-w-6xl px-4 pb-16 sm:px-6">
@@ -254,7 +197,7 @@ export default function HomePage() {
           </Link>
         </p>
         <p className="mt-2 text-center text-[10px] text-cyan-700">
-          {APP_NAME} · ced-castillo.com
+          CED · Castillo de la Evolución Digital · ced-castillo.com
         </p>
       </section>
     </main>

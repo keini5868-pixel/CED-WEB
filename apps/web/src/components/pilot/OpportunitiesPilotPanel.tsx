@@ -46,7 +46,7 @@ function SectionBlock({
       }
     >
       <h3
-        className={`mb-1 text-[11px] font-semibold uppercase tracking-wide ${
+        className={`mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] ${
           honestRisks ? "text-amber-200" : "text-cyan-300/90"
         }`}
       >
@@ -70,7 +70,7 @@ function SectionBlock({
           />
         </div>
       ) : null}
-      <div className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300">
+      <div className="whitespace-pre-wrap text-[14px] leading-[1.65] text-slate-300">
         {body}
       </div>
       {(searchUpdates || []).length > 0 ? (
@@ -111,20 +111,22 @@ function DetailView({
 }) {
   const sponsor = detail.sponsorship;
   return (
-    <div className="space-y-4 text-[12px] leading-relaxed text-slate-200">
+    <div className="space-y-6 text-[14px] leading-[1.65] text-slate-200">
       <button
         type="button"
         onClick={onBack}
-        className="inline-flex items-center gap-1 text-[11px] text-cyan-400 hover:text-cyan-200"
+        className="inline-flex items-center gap-1.5 text-sm text-cyan-400 hover:text-cyan-200"
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
+        <ArrowLeft className="h-4 w-4" />
         Volver al listado
       </button>
 
       <header>
-        <h2 className="text-[14px] font-semibold text-cyan-100">{detail.title}</h2>
+        <h2 className="font-[family-name:var(--font-orbitron)] text-lg font-semibold tracking-wide text-cyan-100 sm:text-xl">
+          {detail.title}
+        </h2>
         {detail.tagline ? (
-          <p className="mt-1 text-[11px] text-slate-400">{detail.tagline}</p>
+          <p className="mt-2 text-sm leading-relaxed text-slate-400">{detail.tagline}</p>
         ) : null}
         {detail.curated_as_of ? (
           <p className="mt-1 text-[10px] text-slate-500">
@@ -145,8 +147,8 @@ function DetailView({
         />
       ))}
 
-      <section className="rounded border border-cyan-500/25 bg-cyan-500/5 px-2.5 py-2">
-        <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-cyan-200">
+      <section className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3.5">
+        <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.08em] text-cyan-200">
           Activar negocio
         </h3>
         {sponsor?.configured && sponsor.url ? (
@@ -154,13 +156,13 @@ function DetailView({
             href={sponsor.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex w-full items-center justify-center gap-2 rounded bg-cyan-600/90 px-3 py-2.5 text-[12px] font-semibold text-white hover:bg-cyan-500"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500"
           >
             {sponsor.cta_label || "Activar su negocio (paquete manager)"}
-            <ExternalLink className="h-3.5 w-3.5" />
+            <ExternalLink className="h-4 w-4" />
           </a>
         ) : (
-          <p className="text-[11px] text-amber-100/90">
+          <p className="text-sm leading-relaxed text-amber-100/90">
             El enlace de patrocinio aún no está configurado
             (OPPORTUNITIES_FITLINE_SPONSOR_URL). Cuando esté en Railway, aparecerá
             aquí el botón «Activar su negocio (paquete manager)».
@@ -243,29 +245,31 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
+      <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-8 sm:py-6">
         {!detail ? (
           <>
-            <p className="text-[11px] text-slate-400">{OPPORTUNITIES_WELCOME}</p>
+            <p className="text-sm leading-relaxed text-slate-400">
+              {OPPORTUNITIES_WELCOME}
+            </p>
             {configured === false ? (
-              <p className="text-[11px] text-red-300">
+              <p className="text-sm text-red-300">
                 OPPORTUNITIES_MODULE_ENABLED desactivado en la API.
               </p>
             ) : null}
-            {error ? <p className="text-[11px] text-red-400">{error}</p> : null}
-            <ul className="space-y-2">
+            {error ? <p className="text-sm text-red-400">{error}</p> : null}
+            <ul className="space-y-3">
               {catalog.map((item) => (
                 <li key={item.id}>
                   <button
                     type="button"
                     disabled={busy}
                     onClick={() => void openDetail(item.id)}
-                    className="w-full rounded border border-white/15 bg-black/40 px-3 py-2.5 text-left hover:border-cyan-500/40 disabled:opacity-60"
+                    className="w-full rounded-xl border border-white/15 bg-black/40 px-4 py-3.5 text-left transition hover:border-cyan-500/40 disabled:opacity-60"
                   >
-                    <div className="text-[12px] font-semibold text-cyan-100">
+                    <div className="text-[15px] font-semibold tracking-wide text-cyan-100">
                       {item.title}
                     </div>
-                    <div className="mt-0.5 text-[11px] text-slate-400">
+                    <div className="mt-1.5 text-sm leading-relaxed text-slate-400">
                       {item.tagline}
                     </div>
                   </button>
@@ -273,15 +277,15 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
               ))}
             </ul>
             {busy ? (
-              <p className="inline-flex items-center gap-2 text-[11px] text-slate-400">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <p className="inline-flex items-center gap-2 text-sm text-slate-400">
+                <Loader2 className="h-4 w-4 animate-spin" />
                 Cargando ficha…
               </p>
             ) : null}
           </>
         ) : (
           <>
-            {error ? <p className="text-[11px] text-red-400">{error}</p> : null}
+            {error ? <p className="text-sm text-red-400">{error}</p> : null}
             <DetailView detail={detail} onBack={() => setDetail(null)} />
           </>
         )}

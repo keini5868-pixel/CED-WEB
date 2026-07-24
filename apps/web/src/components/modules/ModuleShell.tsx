@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, PanelLeftClose, X } from "lucide-react";
+import { Loader2, X } from "lucide-react";
 import {
   Suspense,
   useCallback,
@@ -20,7 +20,7 @@ type LoadedPanel = ComponentType<ModulePanelProps>;
 /**
  * Lateral module shell (signed-off):
  * - Left rail of square icons
- * - Drawer expands per module
+ * - Fullscreen panel per module (safe-area aware)
  * - State discarded on close (unmount)
  * - Does not touch main CED chat or voice session
  */
@@ -78,6 +78,15 @@ export function ModuleShell() {
     };
   }, [activeId, openGeneration]);
 
+  useEffect(() => {
+    if (!activeId) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [activeId]);
+
   if (!enabled || modules.length === 0) return null;
 
   return (
@@ -121,86 +130,76 @@ export function ModuleShell() {
 
       <AnimatePresence>
         {activeId && active ? (
-          <>
-            <motion.button
-              type="button"
-              aria-label="Cerrar módulo"
-              className="fixed inset-0 z-[74] bg-black/45"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={closeModule}
-            />
-            <motion.div
-              key={`drawer-${activeId}-${openGeneration}`}
-              role="dialog"
-              aria-label={active.name}
-              className="fixed bottom-0 left-0 top-0 z-[75] flex w-full flex-col border-r border-cyan-500/30 bg-[#0a1220] shadow-2xl sm:left-[3.75rem] sm:w-[min(58vw,52rem)]"
-              initial={{ x: -28, opacity: 0.85 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -40, opacity: 0 }}
-              transition={{ type: "spring", stiffness: 380, damping: 34 }}
-            >
-              <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-                <div className="flex items-center gap-2">
-                  {(() => {
-                    const ActiveIcon = active.icon;
-                    return <ActiveIcon className="h-4 w-4 text-cyan-400" />;
-                  })()}
-                  <div>
-                    <div className="text-sm font-semibold text-cyan-100">
-                      {active.name}
-                    </div>
-                    <div
-                      className={`text-[10px] uppercase tracking-wider ${
-                        activeIsPilot
-                          ? "text-amber-400/80"
-                          : "text-slate-500"
-                      }`}
-                    >
-                      {activeIsPilot
-                        ? "Piloto — se descarta al cerrar"
-                        : "Se descarta al cerrar"}
-                    </div>
+          <motion.div
+            key={`drawer-${activeId}-${openGeneration}`}
+            role="dialog"
+            aria-modal="true"
+            aria-label={active.name}
+            className="fixed inset-0 z-[75] flex flex-col bg-[#0a1220]"
+            initial={{ opacity: 0.92, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ type: "spring", stiffness: 380, damping: 34 }}
+          >
+            <header className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 pb-3.5 pt-[max(2.75rem,env(safe-area-inset-top,0px))] sm:px-6 sm:pb-4 sm:pt-4">
+              <div className="flex min-w-0 items-center gap-3">
+                {(() => {
+                  const ActiveIcon = active.icon;
+                  return (
+                    <ActiveIcon
+                      className="h-5 w-5 shrink-0 text-cyan-400"
+                      strokeWidth={1.75}
+                    />
+                  );
+                })()}
+                <div className="min-w-0">
+                  <div className="truncate font-[family-name:var(--font-orbitron)] text-base font-semibold tracking-[0.04em] text-cyan-50 sm:text-lg">
+                    {active.name}
+                  </div>
+                  <div
+                    className={`mt-0.5 text-[11px] tracking-wide ${
+                      activeIsPilot ? "text-amber-400/80" : "text-slate-500"
+                    }`}
+                  >
+                    {activeIsPilot
+                      ? "Piloto — se descarta al cerrar"
+                      : "Se descarta al cerrar"}
                   </div>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    onClick={closeModule}
-                    className="rounded p-1.5 text-slate-400 hover:bg-white/10 hover:text-white"
-                    aria-label="Cerrar drawer"
-                    title="Cerrar"
-                  >
-                    <PanelLeftClose className="h-4 w-4 sm:hidden" />
-                    <X className="hidden h-4 w-4 sm:block" />
-                  </button>
-                </div>
-              </header>
-
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                {loadError ? (
-                  <p className="p-4 text-[12px] text-red-400">{loadError}</p>
-                ) : Panel ? (
-                  <Suspense
-                    fallback={
-                      <div className="flex flex-1 items-center justify-center gap-2 text-[12px] text-slate-400">
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        Cargando…
-                      </div>
-                    }
-                  >
-                    <Panel key={openGeneration} onClose={closeModule} />
-                  </Suspense>
-                ) : (
-                  <div className="flex flex-1 items-center justify-center gap-2 text-[12px] text-slate-400">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Cargando…
-                  </div>
-                )}
               </div>
-            </motion.div>
-          </>
+              <button
+                type="button"
+                onClick={closeModule}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-slate-200 transition hover:border-cyan-400/50 hover:bg-cyan-500/15 hover:text-white"
+                aria-label="Cerrar módulo"
+                title="Cerrar"
+              >
+                <X className="h-5 w-5" strokeWidth={2} />
+              </button>
+            </header>
+
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+              {loadError ? (
+                <p className="p-5 text-sm text-red-400">{loadError}</p>
+              ) : Panel ? (
+                <Suspense
+                  fallback={
+                    <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-400">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Cargando…
+                    </div>
+                  }
+                >
+                  <Panel key={openGeneration} onClose={closeModule} />
+                </Suspense>
+              ) : (
+                <div className="flex flex-1 items-center justify-center gap-2 text-sm text-slate-400">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Cargando…
+                </div>
+              )}
+            </div>
+          </motion.div>
         ) : null}
       </AnimatePresence>
     </>

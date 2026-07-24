@@ -30,9 +30,9 @@ function ReportView({ report }: { report: ViabilityReport }) {
   const likelihood = report.likelihood;
   const profile = report.offering_profile;
   return (
-    <div className="space-y-4 text-[12px] leading-relaxed text-slate-200">
+    <div className="space-y-6 text-[14px] leading-[1.65] text-slate-200">
       {profile?.product_name || profile?.channel ? (
-        <section className="rounded border border-white/10 bg-black/25 px-2 py-1.5 text-[11px] text-slate-300">
+        <section className="rounded-xl border border-white/10 bg-black/25 px-3.5 py-2.5 text-sm text-slate-300">
           {profile.product_name ? (
             <div>
               Producto ancla:{" "}
@@ -43,7 +43,7 @@ function ReportView({ report }: { report: ViabilityReport }) {
             </div>
           ) : null}
           {profile.channel ? (
-            <div className="text-[10px] text-slate-500">
+            <div className="mt-1 text-[12px] text-slate-500">
               Canal: {profile.channel}
               {profile.category ? ` · ${profile.category}` : ""}
             </div>
@@ -52,13 +52,13 @@ function ReportView({ report }: { report: ViabilityReport }) {
       ) : null}
       {likelihood ? (
         <section>
-          <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-300/90">
+          <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-amber-300/90">
             Probabilidad orientativa
           </h3>
-          <p className="text-sm text-amber-100">
+          <p className="text-base text-amber-100">
             {likelihood.range} — {likelihood.label}
           </p>
-          <p className="mt-1 text-[11px] text-slate-400">
+          <p className="mt-1.5 text-sm leading-relaxed text-slate-400">
             {likelihood.rationale}
             <span className="ml-1 text-slate-500">
               (razonamiento — no métrica verificada)
@@ -68,29 +68,29 @@ function ReportView({ report }: { report: ViabilityReport }) {
       ) : null}
 
       <section>
-        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-cyan-300/90">
+        <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-cyan-300/90">
           Hallazgos de búsqueda
         </h3>
         {(report.competitors || []).length > 0 ? (
-          <ul className="space-y-2">
+          <ul className="space-y-3">
             {(report.competitors || []).slice(0, 3).map((c) => (
               <li
                 key={c.name}
-                className="rounded border border-white/10 bg-black/30 px-2 py-1.5"
+                className="rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5"
               >
                 <div className="font-medium text-cyan-100">{c.name}</div>
                 {c.competition_basis ? (
-                  <div className="text-[10px] text-emerald-300/90">
+                  <div className="mt-0.5 text-xs text-emerald-300/90">
                     Por qué compite: {c.competition_basis}
                   </div>
                 ) : null}
-                <div className="text-[11px] text-slate-400">{c.note}</div>
+                <div className="mt-1 text-sm leading-relaxed text-slate-400">{c.note}</div>
                 {c.source_url ? (
                   <a
                     href={c.source_url}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-0.5 block truncate text-[10px] text-cyan-500/80 hover:underline"
+                    className="mt-1 block truncate text-xs text-cyan-500/80 hover:underline"
                   >
                     {c.source_title || c.source_url}
                   </a>
@@ -99,19 +99,19 @@ function ReportView({ report }: { report: ViabilityReport }) {
             ))}
           </ul>
         ) : (
-          <p className="text-[11px] text-slate-500">
+          <p className="text-sm text-slate-500">
             Sin competidores verificables en esta sesión.
           </p>
         )}
 
         {(report.pricing?.findings || []).length > 0 ? (
-          <div className="mt-3">
-            <div className="mb-1 text-[10px] uppercase text-slate-500">
+          <div className="mt-4">
+            <div className="mb-2 text-[11px] uppercase tracking-[0.08em] text-slate-500">
               Precios en resultados
             </div>
-            <ul className="space-y-1">
+            <ul className="space-y-2">
               {(report.pricing?.findings || []).slice(0, 4).map((p, i) => (
-                <li key={`${p.text}-${i}`} className="text-[11px] text-slate-300">
+                <li key={`${p.text}-${i}`} className="text-sm leading-relaxed text-slate-300">
                   <span className="text-emerald-300">{p.text}</span>
                   {p.context ? ` — ${p.context.slice(0, 100)}` : ""}
                 </li>
@@ -119,18 +119,18 @@ function ReportView({ report }: { report: ViabilityReport }) {
             </ul>
           </div>
         ) : (
-          <p className="mt-2 text-[11px] text-slate-500">
+          <p className="mt-3 text-sm text-slate-500">
             Sin precios atribuibles en los resultados.
           </p>
         )}
       </section>
 
       {(report.data_gaps || []).length > 0 ? (
-        <section className="rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">
-          <h3 className="mb-1 text-[11px] font-semibold text-amber-200">
+        <section className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-2.5">
+          <h3 className="mb-2 text-[12px] font-semibold text-amber-200">
             Limitaciones de datos
           </h3>
-          <ul className="list-disc space-y-0.5 pl-4 text-[11px] text-amber-100/80">
+          <ul className="list-disc space-y-1 pl-5 text-sm leading-relaxed text-amber-100/80">
             {(report.data_gaps || []).map((g) => (
               <li key={g}>{g}</li>
             ))}
@@ -143,7 +143,7 @@ function ReportView({ report }: { report: ViabilityReport }) {
         report.search_meta.rate_limited ||
         report.search_meta.missing_key ||
         (report.search_meta.errors && report.search_meta.errors.length > 0)) ? (
-        <p className="text-[10px] text-slate-500">
+        <p className="text-xs text-slate-500">
           Diagnóstico búsqueda: sources={report.search_meta.sources ?? 0}
           {report.search_meta.rate_limited ? " · rate-limited" : ""}
           {report.search_meta.fallback_used ? " · fallback EN" : ""}
@@ -154,13 +154,13 @@ function ReportView({ report }: { report: ViabilityReport }) {
       ) : null}
 
       <section>
-        <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-violet-300/90">
+        <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-violet-300/90">
           Ideas de mejora
           <span className="ml-1 font-normal normal-case text-slate-500">
             (razonamiento general)
           </span>
         </h3>
-        <ol className="list-decimal space-y-1 pl-4 text-[11px] text-slate-300">
+        <ol className="list-decimal space-y-2 pl-5 text-sm leading-relaxed text-slate-300">
           {(report.improvements || []).map((idea) => (
             <li key={idea.idea}>{idea.idea}</li>
           ))}
@@ -241,48 +241,48 @@ export function ViabilityModuleContent(_props: ModulePanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-3">
-        <p className="text-[11px] text-slate-400">{VIABILITY_WELCOME}</p>
+      <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-8 sm:py-6">
+        <p className="text-sm leading-relaxed text-slate-400">{VIABILITY_WELCOME}</p>
         {configured === false ? (
-          <p className="text-[11px] text-red-300">
+          <p className="text-sm text-red-300">
             El flag de API tiene el módulo desactivado (VIABILITY_MODULE_PILOT).
           </p>
         ) : null}
 
-        <label className="block text-[10px] uppercase text-slate-500">
+        <label className="block text-[11px] uppercase tracking-[0.08em] text-slate-500">
           Descripción del producto / servicio
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
             placeholder="Ej: Cafetería de especialidad en Santo Domingo con suscripción mensual de café..."
-            className="mt-1 w-full resize-none rounded border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-slate-100 outline-none focus:border-cyan-500/50"
+            className="mt-2 w-full resize-none rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm leading-relaxed text-slate-100 outline-none focus:border-cyan-500/50"
           />
         </label>
 
-        <label className="block text-[10px] uppercase text-slate-500">
+        <label className="block text-[11px] uppercase tracking-[0.08em] text-slate-500">
           Región (opcional)
           <input
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             placeholder="Ej: República Dominicana / CDMX"
-            className="mt-1 w-full rounded border border-white/15 bg-black/40 px-3 py-2 text-[12px] text-slate-100 outline-none focus:border-cyan-500/50"
+            className="mt-2 w-full rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm text-slate-100 outline-none focus:border-cyan-500/50"
           />
         </label>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="inline-flex items-center gap-1.5 rounded border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] text-slate-200 hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/10"
           >
-            <ImagePlus className="h-3.5 w-3.5" />
+            <ImagePlus className="h-4 w-4" />
             Subir flyer / foto
           </button>
           {preview ? (
             <button
               type="button"
-              className="text-[10px] text-slate-500 hover:text-slate-300"
+              className="text-xs text-slate-500 hover:text-slate-300"
               onClick={() => {
                 setPreview((prev) => {
                   if (prev) URL.revokeObjectURL(prev);
@@ -307,20 +307,20 @@ export function ViabilityModuleContent(_props: ModulePanelProps) {
           <img
             src={preview}
             alt="Vista previa"
-            className="max-h-36 rounded border border-white/10 object-contain"
+            className="max-h-40 rounded-xl border border-white/10 object-contain"
           />
         ) : null}
 
-        {error ? <p className="text-[11px] text-red-400">{error}</p> : null}
+        {error ? <p className="text-sm text-red-400">{error}</p> : null}
         {report ? <ReportView report={report} /> : null}
       </div>
 
-      <footer className="border-t border-white/10 px-4 py-3">
+      <footer className="border-t border-white/10 px-5 py-4 sm:px-8">
         <button
           type="button"
           disabled={busy}
           onClick={() => void submit()}
-          className="inline-flex w-full items-center justify-center gap-2 rounded bg-cyan-600/90 px-3 py-2.5 text-[12px] font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
         >
           {busy ? (
             <>
