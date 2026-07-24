@@ -1,8 +1,7 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
-  "https://ced-castillo.com";
+/** Dominio canónico público — no usar NEXT_PUBLIC_APP_URL (Railway). */
+const SITE_URL = "https://ced-castillo.com";
 
 /** Páginas públicas indexables — accesible en /sitemap.xml */
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -10,7 +9,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
 
   return [
     {
-      url: SITE_URL,
+      url: `${SITE_URL}/`,
       lastModified,
       changeFrequency: "weekly",
       priority: 1,

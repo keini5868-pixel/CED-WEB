@@ -1,8 +1,7 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_APP_URL?.trim().replace(/\/$/, "") ||
-  "https://ced-castillo.com";
+/** Dominio canónico público — no usar NEXT_PUBLIC_APP_URL (Railway). */
+const SITE_URL = "https://ced-castillo.com";
 
 /** robots.txt — apunta al sitemap para Search Console / crawlers. */
 export default function robots(): MetadataRoute.Robots {
