@@ -48,6 +48,7 @@ from app.routers import (
     viability_pilot,
     trends_pilot,
     opportunities_pilot,
+    pocket_option,
 )
 
 logger = logging.getLogger("ced.api")
@@ -94,7 +95,26 @@ async def lifespan(_app: FastAPI):
             from app.services.retell_agent_setup import bootstrap_retell_if_needed
 
             bootstrap_retell_if_needed()
+
+    po_stop = None
+    try:
+        from app.services.pocket_option.worker import (
+            start_worker_if_enabled,
+            stop_worker as po_stop_worker,
+        )
+
+        start_worker_if_enabled()
+        po_stop = po_stop_worker
+    except Exception:  # noqa: BLE001
+        logger.exception("Pocket Option worker no arrancó")
+
     yield
+
+    if po_stop is not None:
+        try:
+            await po_stop()
+        except Exception:  # noqa: BLE001
+            logger.exception("Pocket Option worker stop falló")
 
 
 def create_app() -> FastAPI:
@@ -164,6 +184,7 @@ def create_app() -> FastAPI:
     application.include_router(viability_pilot.router)
     application.include_router(trends_pilot.router)
     application.include_router(opportunities_pilot.router)
+    application.include_router(pocket_option.router)
     if settings.support_chat_enabled:
         application.include_router(support.router)
 

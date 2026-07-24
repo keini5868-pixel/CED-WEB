@@ -21,3 +21,6 @@ fpdf2>=2.8.0
 # Retell AI — voz web
 retell-sdk>=4.0.0
 tzdata>=2024.1
+
+# Pocket Option demo (solo admin; kill-switch OFF por defecto)
+BinaryOptionsToolsV2>=0.2.13

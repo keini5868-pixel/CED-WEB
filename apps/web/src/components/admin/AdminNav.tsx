@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/admin", label: "Usuarios" },
   ...(SUPPORT_CHAT_ENABLED ? [{ href: "/admin/support", label: "Soporte" }] : []),
   { href: "/admin/monitoring", label: "Monitoreo" },
+  { href: "/admin/pocket-option", label: "PO Demo" },
 ];
 
 export function AdminNav() {

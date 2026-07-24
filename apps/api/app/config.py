@@ -170,6 +170,16 @@ class Settings(BaseSettings):
     opportunities_module_enabled: bool = True
     # Enlace personal FitLine / paquete manager (sección Afiliación)
     opportunities_fitline_sponsor_url: str = ""
+    # Pocket Option demo (solo admin). DEFAULT OFF. Nunca en planes/landing.
+    pocket_option_module_enabled: bool = False
+    pocket_option_ssid: str = ""
+    pocket_option_asset: str = "EURUSD_otc"
+    pocket_option_amount: float = 1.0
+    pocket_option_interval_seconds: int = 300
+    pocket_option_expiry_seconds: int = 60
+    pocket_option_strategy_bos_enabled: bool = True
+    pocket_option_strategy_alt_enabled: bool = False
+
 
     @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:
