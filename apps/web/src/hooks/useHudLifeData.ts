@@ -48,14 +48,6 @@ function weatherSummaryFrom(data: LifeDashboardSnapshot) {
   return { temp, condition: condition || "Consultando", line };
 }
 
-function calendarSummaryFrom(data: LifeDashboardSnapshot) {
-  if (!data.calendar.connected) return null;
-  if (!data.calendar.events.length) return "Sin eventos hoy";
-  const first = data.calendar.events[0] ?? "";
-  if (first.toLowerCase().includes("sin eventos")) return "Sin eventos hoy";
-  return first.length > 36 ? `${first.slice(0, 36)}…` : first;
-}
-
 /**
  * Datos LIFE del HUD. Caché inmediato + refresh silencioso en background.
  * No bloquea el chat de texto — store singleton (un fetch, N suscriptores).
@@ -80,7 +72,6 @@ export function useHudLifeData() {
   }, []);
 
   const weatherSummary = useCallback(() => weatherSummaryFrom(data), [data]);
-  const calendarSummary = useCallback(() => calendarSummaryFrom(data), [data]);
 
   const castilloStripText = useCallback(() => {
     const place = formatPlace(data.place);
@@ -97,10 +88,7 @@ export function useHudLifeData() {
         ? `${line} · ${place}`
         : `${temp} · ${place}`;
 
-    const cal = calendarSummaryFrom(data);
-    const segments = [`🌤️ ${weatherPart}`, `📅 ${dateLabel}`];
-    if (cal) segments.push(cal);
-    return segments.join("  |  ");
+    return [`🌤️ ${weatherPart}`, `📅 ${dateLabel}`].join("  |  ");
   }, [data]);
 
   return {
@@ -111,7 +99,6 @@ export function useHudLifeData() {
     refresh,
     refreshConnections: refreshConnectionsBg,
     weatherSummary,
-    calendarSummary,
     castilloStripText,
   };
 }

@@ -72,16 +72,6 @@ def test_strict_datetime():
     assert d.confidence == CONF_ANCHOR
 
 
-def test_strict_gmail_read():
-    d = detect_intent("léeme los correos importantes", classify=_never_action)
-    assert d.module == "gmail"
-    assert d.confidence == CONF_ANCHOR
-
-
-def test_strict_calendar():
-    d = detect_intent("qué tengo programado mañana", classify=_never_action)
-    assert d.module == "calendar"
-    assert d.confidence == CONF_ANCHOR
 
 
 def test_strict_stripe():
@@ -137,12 +127,6 @@ def test_soft_weather_confirmed_as_action():
     assert d.activate is True
 
 
-def test_soft_gmail_confirmed_as_action():
-    d = detect_intent("revisa mi bandeja", classify=_always_action)
-    # "bandeja" es suave para gmail; strict "revisa ... bandeja" también aplica.
-    assert d.module == "gmail"
-    assert d.activate is True
-
 
 # ---------------------------------------------------------------------------
 # Modo solo-estricto y candidatos sin resolver.
@@ -178,16 +162,7 @@ def test_pdf_priority_over_finance_soft():
 # ---------------------------------------------------------------------------
 # Frases reales del usuario — anchors estrictos agregados.
 # ---------------------------------------------------------------------------
-def test_user_phrase_gmail_leer_mis_correos():
-    d = detect_intent("leer mis correos", classify=_never_action)
-    assert d.module == "gmail"
-    assert d.activate is True
 
-
-def test_user_phrase_gmail_leeme_correo_de():
-    d = detect_intent("léeme el correo de Juan", classify=_never_action)
-    assert d.module == "gmail"
-    assert d.activate is True
 
 
 def test_user_phrase_camera_abre_y_analiza():

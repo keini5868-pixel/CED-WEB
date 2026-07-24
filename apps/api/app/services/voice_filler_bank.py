@@ -24,20 +24,6 @@ _WEB_SEARCH_FILLERS: tuple[str, ...] = (
 )
 
 _MODULE_FILLERS: dict[str, tuple[str, ...]] = {
-    "gmail": (
-        "Ya reviso su correo, señor.",
-        "Un momento, consulto Gmail, señor.",
-        "Permítame revisar su bandeja, señor.",
-        "Reviso sus mensajes ahora, señor.",
-        "Consulto su correo enseguida, señor.",
-    ),
-    "calendar": (
-        "Consulto su calendario, señor.",
-        "Reviso sus eventos ahora, señor.",
-        "Un momento, miro su agenda, señor.",
-        "Permítame ver su calendario, señor.",
-        "Verifico sus citas, señor.",
-    ),
     "finance": (
         "Reviso sus finanzas, señor.",
         "Consulto sus registros financieros, señor.",

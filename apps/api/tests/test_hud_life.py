@@ -5,31 +5,11 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from app.services.hud_life import (
-    build_life_connections,
     build_life_dashboard,
     build_life_dashboard_fallback,
     clean_life_text,
-    check_calendar_token,
-    check_gmail_token,
     update_weather_cache,
 )
-
-
-def test_build_life_connections_fast_path():
-    with patch(
-        "app.services.hud_life._calendar_section",
-        return_value={"connected": True, "events": ["9:00 — Standup"], "hint": ""},
-    ):
-        with patch(
-            "app.services.hud_life._gmail_section",
-            return_value={"connected": False, "unread_count": 0, "messages": [], "hint": "Conecte Gmail"},
-        ):
-            data = build_life_connections("user-1")
-
-    assert data["calendar"]["connected"] is True
-    assert "Standup" in data["calendar"]["events"][0]
-    assert "updated_at" in data
-    assert "weather" not in data
 
 
 def test_build_life_dashboard_structure():
@@ -41,27 +21,23 @@ def test_build_life_dashboard_structure():
             ["Árbol: Bajo · Pasto: Moderado"],
         ],
     ):
-        with patch("app.services.hud_life._calendar_section", return_value={"connected": False, "events": [], "hint": "Conecte Calendar"}):
-            with patch(
-                "app.services.hud_life._gmail_section",
-                return_value={"connected": False, "unread_count": 0, "messages": [], "hint": "Conecte Gmail"},
-            ):
-                update_weather_cache("user-1")
-                data = build_life_dashboard("user-1")
+        update_weather_cache("user-1")
+        data = build_life_dashboard("user-1")
 
     assert "date_label" in data
     assert data["weather"]["lines"][0].startswith("28")
     assert data["air_quality"]["lines"][0].startswith("Buena")
     assert data["pollen"]["lines"][0].startswith("Árbol")
-    assert data["calendar"]["hint"]
+    assert "calendar" not in data
+    assert "gmail" not in data
 
 
 def test_build_life_dashboard_fallback_always_has_date():
     data = build_life_dashboard_fallback("user-1")
     assert data["date_label"]
     assert data["weather"]["lines"]
-    assert data["calendar"]["hint"] or data["calendar"]["connected"]
-    assert data["gmail"]["hint"] or data["gmail"]["connected"]
+    assert "calendar" not in data
+    assert "gmail" not in data
 
 
 def test_clean_life_text_removes_cite():
@@ -69,40 +45,6 @@ def test_clean_life_text_removes_cite():
     cleaned = clean_life_text(raw)
     assert "[cite" not in cleaned.lower()
     assert "Charlotte" in cleaned
-
-
-def test_calendar_connected_when_token_exists():
-    from datetime import datetime, timezone
-
-    with patch("app.services.hud_life.check_calendar_token", return_value=True):
-        with patch(
-            "app.services.google_oauth.get_valid_access_token",
-            return_value="token",
-        ):
-            with patch(
-                "app.services.google_calendar_api.resolve_window",
-                return_value=(datetime.now(timezone.utc), datetime.now(timezone.utc)),
-            ):
-                with patch(
-                    "app.services.google_calendar_api.list_events_structured",
-                    return_value=[
-                        {
-                            "id": "1",
-                            "title": "Reunión",
-                            "display": "9:00 AM — Reunión",
-                            "is_today": True,
-                        }
-                    ],
-                ):
-                    with patch(
-                        "app.services.google_oauth.get_connection_status",
-                        return_value={"connected": True},
-                    ):
-                        from app.services.hud_life import _calendar_section
-
-                        section = _calendar_section("user-1")
-    assert section["connected"] is True
-    assert "Reunión" in section["events"][0]
 
 
 def test_universal_conversation_in_voice_and_chat_prompts():

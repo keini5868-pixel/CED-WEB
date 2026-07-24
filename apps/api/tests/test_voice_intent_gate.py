@@ -21,8 +21,8 @@ from app.services.voice_intent_gate import (
         ("Hola, ¿cómo estás?", False),
         ("Me siento cansado hoy", False),
         ("¿Cuál es la capital de Francia?", False),
-        ("Lee mi último correo de Gmail", True),
-        ("Agéndame una cita mañana a las 3", True),
+        ("Lee mi último correo de Gmail", False),
+        ("Agéndame una cita mañana a las 3", False),
         ("Guárdame en finanzas que gasté 50 dólares", True),
         ("Activa la cámara y dime qué ves", True),
         ("Llévame al aeropuerto en modo conducir", True),
@@ -41,8 +41,6 @@ def test_has_explicit_module_signal(phrase: str, expect_signal: bool) -> None:
 @pytest.mark.parametrize(
     ("phrase", "expected_module"),
     [
-        ("Lee mi correo de Gmail", "gmail"),
-        ("Agenda una reunión en calendario", "calendar"),
         ("Registra un gasto de 20 en finanzas", "finance"),
         ("Activa la cámara", "camera"),
         ("Navega al mall más cercano", "map"),
@@ -72,4 +70,4 @@ def test_should_run_orchestrator_strict_forced() -> None:
 
 
 def test_should_run_orchestrator_explicit_signal() -> None:
-    assert should_run_orchestrator("lee mi gmail", active_module=None, forced_module=None) is True
+    assert should_run_orchestrator("consulta mis finanzas", active_module=None, forced_module=None) is True

@@ -1,7 +1,6 @@
 import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
-const CALENDAR_EVENT_TIMEOUT_MS = 90_000;
 const RETRYABLE_STATUSES = new Set([502, 503, 504]);
 
 function normalizeEventDate(raw: string): string {
@@ -113,30 +112,4 @@ export async function fetchHudReminders(): Promise<{
       error: e instanceof Error ? e.message : "No se pudieron cargar recordatorios.",
     };
   }
-}
-
-export async function createHudCalendarEvent(payload: {
-  title: string;
-  date: string;
-  time: string;
-  reminder_minutes?: number;
-}): Promise<{ ok: boolean; error?: string }> {
-  return postHudJson(
-    "hud/calendar/event",
-    {
-      title: payload.title.trim(),
-      date: normalizeEventDate(payload.date),
-      time: normalizeEventTime(payload.time),
-      reminder_minutes: payload.reminder_minutes,
-    },
-    CALENDAR_EVENT_TIMEOUT_MS,
-  );
-}
-
-export async function sendHudGmail(payload: {
-  to: string;
-  subject: string;
-  body: string;
-}): Promise<{ ok: boolean; error?: string }> {
-  return postHudJson("hud/gmail/send", payload, 60_000);
 }

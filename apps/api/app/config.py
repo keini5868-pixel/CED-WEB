@@ -82,13 +82,6 @@ class Settings(BaseSettings):
 
     google_api_key: str = ""
     google_maps_api_key: str = ""
-    google_calendar_client_id: str = ""
-    google_calendar_client_secret: str = ""
-    """OAuth Google de Supabase Auth — si difiere del client de Railway, refresh dual."""
-    google_supabase_oauth_client_id: str = ""
-    google_supabase_oauth_client_secret: str = ""
-    google_calendar_redirect_uri: str = ""
-    google_gmail_redirect_uri: str = ""
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     gemini_voice_model: str = "gemini-2.5-flash"
     gemini_image_model: str = "gemini-2.5-flash-image"
@@ -147,7 +140,7 @@ class Settings(BaseSettings):
     # Prueba aislada de voz: gemini_standalone = Retell → Gemini directo, sin orquestador.
     # En production se IGNORA salvo voice_standalone_allow_prod=true (deja la voz sin tools).
     voice_test_mode: str = ""
-    # Módulos orquestador habilitados en modo standalone (csv): environment, calendar, finance
+    # Módulos orquestador habilitados en modo standalone (csv): environment, finance
     voice_standalone_modules: str = ""
     # Solo para staging deliberado. Si false (default), gemini_standalone no aplica en production.
     voice_standalone_allow_prod: bool = False
@@ -205,64 +198,14 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
-    def resolve_google_supabase_oauth_aliases(self) -> Settings:
-        if not self.google_supabase_oauth_client_id.strip():
-            for alt in ("GOOGLE_SUPABASE_OAUTH_CLIENT_ID", "SUPABASE_GOOGLE_CLIENT_ID"):
-                val = os.environ.get(alt, "").strip()
-                if val:
-                    self.google_supabase_oauth_client_id = val
-                    break
-        if not self.google_supabase_oauth_client_secret.strip():
-            for alt in (
-                "GOOGLE_SUPABASE_OAUTH_CLIENT_SECRET",
-                "SUPABASE_GOOGLE_CLIENT_SECRET",
-            ):
-                val = os.environ.get(alt, "").strip()
-                if val:
-                    self.google_supabase_oauth_client_secret = val
-                    break
-        return self
-
-    @staticmethod
-    def _normalize_google_oauth_redirect(uri: str, api_base: str, callback_path: str) -> str:
-        """Callbacks OAuth viven en la API — corrige URIs apuntando al frontend (404)."""
-        from urllib.parse import urlparse
-
-        custom = (uri or "").strip()
-        if not api_base:
-            return custom
-        api_host = urlparse(
-            api_base if "://" in api_base else f"https://{api_base}"
-        ).netloc.lower()
-        if not custom:
-            return f"{api_base.rstrip('/')}{callback_path}"
-        parsed = urlparse(custom)
-        redirect_host = parsed.netloc.lower()
-        if redirect_host and api_host and redirect_host != api_host and "/auth/google/" in custom:
-            return f"{api_base.rstrip('/')}{callback_path}"
-        return custom
-
-    @model_validator(mode="after")
     def resolve_public_urls(self) -> Settings:
-        """Railway: API_PUBLIC_URL y redirect URIs OAuth desde RAILWAY_PUBLIC_DOMAIN."""
+        """Railway: API_PUBLIC_URL desde RAILWAY_PUBLIC_DOMAIN."""
         railway = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "").strip()
         if railway:
             railway_url = f"https://{railway.rstrip('/')}"
             api = self.api_public_url.strip().rstrip("/")
             if not api or "localhost" in api or api.startswith("http://127.0.0.1"):
                 self.api_public_url = railway_url
-
-        api_base = self.api_public_url.strip().rstrip("/")
-        self.google_calendar_redirect_uri = self._normalize_google_oauth_redirect(
-            self.google_calendar_redirect_uri,
-            api_base,
-            "/auth/google/calendar/callback",
-        )
-        self.google_gmail_redirect_uri = self._normalize_google_oauth_redirect(
-            self.google_gmail_redirect_uri,
-            api_base,
-            "/auth/google/gmail/callback",
-        )
 
         web_override = os.environ.get("CED_WEB_PUBLIC_URL", "").strip().rstrip("/")
         if web_override:

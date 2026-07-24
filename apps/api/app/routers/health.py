@@ -21,7 +21,6 @@ from app.services.integrations import (
     check_supabase_auth,
     check_supabase_auth_api_key,
 )
-from app.services.google_oauth import google_oauth_diagnostics
 from app.services.process_identity import PROCESS_BOOT_ID
 from app.domain.plans import (
     CED_ELITE,
@@ -421,7 +420,6 @@ def auth_diagnostics(_request: Request) -> dict:
         "has_supabase_url": bool(url),
         "has_service_role_key": bool(settings.supabase_service_role_key.strip()),
         "oauth_token_storage_ready": bool(settings.supabase_service_role_key.strip()),
-        "google_oauth": google_oauth_diagnostics(),
         "has_anon_key": bool(settings.supabase_anon_key.strip()),
         "has_jwt_secret": bool(settings.supabase_jwt_secret.strip()),
         "supabase_api_key_valid": supabase_auth.get("ok"),

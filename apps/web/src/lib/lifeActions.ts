@@ -1,8 +1,8 @@
 "use client";
 
-import { connectGoogleViaSupabase } from "@/lib/api/google";
+"use client";
 
-export type LifeModuleId = "weather" | "calendar" | "events" | "gmail";
+export type LifeModuleId = "weather" | "events";
 
 export type LifeActionDetail = {
   /** Prompt opcional — si está vacío, solo abre el chat para escribir. */
@@ -30,18 +30,4 @@ export function dispatchLifeChatPrompt(prompt?: string, module?: LifeModuleId) {
 /** @deprecated Usar dispatchLifeChatPrompt — mantenido por compatibilidad interna. */
 export function dispatchLifeVoicePrompt(prompt: string) {
   dispatchLifeChatPrompt(prompt);
-}
-
-export async function connectGoogleCalendarFromLife() {
-  const { error } = await connectGoogleViaSupabase("calendar");
-  if (error) {
-    window.alert(error);
-  }
-}
-
-export async function connectGoogleGmailFromLife() {
-  const { error } = await connectGoogleViaSupabase("gmail");
-  if (error) {
-    window.alert(error);
-  }
 }

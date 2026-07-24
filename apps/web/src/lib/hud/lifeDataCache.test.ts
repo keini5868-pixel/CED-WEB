@@ -14,19 +14,6 @@ function emptySnap(): Snap {
     place: "Charlotte NC",
     updated_at: new Date().toISOString(),
     weather: { title: "CLIMA", lines: ["Charlotte NC"] },
-    calendar: {
-      title: "CALENDARIO",
-      connected: false,
-      events: [],
-      hint: "x",
-    },
-    gmail: {
-      title: "GMAIL",
-      connected: false,
-      unread_count: 0,
-      messages: [],
-      hint: "x",
-    },
     air_quality: { title: "CALIDAD DEL AIRE", lines: ["No disponible."] },
     pollen: { title: "POLEN", lines: ["No disponible."] },
   };
@@ -38,12 +25,6 @@ function richSnap(): Snap {
     ...base,
     weather: { title: "CLIMA", lines: ["22°C · Soleado · Charlotte, NC"] },
     air_quality: { title: "CALIDAD DEL AIRE", lines: ["Buena · AQI 42"] },
-    gmail: {
-      ...base.gmail,
-      connected: true,
-      messages: ["De: Ana — Reunión"],
-      unread_count: 1,
-    },
   };
 }
 
@@ -78,7 +59,7 @@ describe("lifeDataCache", () => {
     writeLifeCache(richSnap());
     const cached = readLifeCache();
     expect(cached?.weather.lines[0]).toContain("22°C");
-    expect(cached?.gmail.connected).toBe(true);
+    expect(cached?.air_quality.lines[0]).toContain("AQI 42");
   });
 
   it("ignores empty fallback writes", () => {

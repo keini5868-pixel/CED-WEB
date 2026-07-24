@@ -50,8 +50,6 @@ export const RECHARGE_QUICK_AMOUNTS_USD = [10, 20, 40, 50, 100] as const;
 /** Capacidades incluidas en todos los planes (sin costo variable de uso). */
 export const PLAN_INCLUDED_ALWAYS = [
   "YouTube",
-  "Calendario Google",
-  "Gmail",
   "Memoria conversacional",
 ] as const;
 
@@ -93,8 +91,6 @@ export function quoteRecharge(amountUsd: number): RechargeQuote {
 
 const COMMON_FREE_TOOLS = [
   "YouTube",
-  "Calendario Google",
-  "Gmail",
   "Memoria conversacional",
 ] as const;
 

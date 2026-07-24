@@ -61,8 +61,6 @@ MODULE_PRIORITY: tuple[str, ...] = (
     "image_gen",
     "social",
     "prospection",
-    "gmail",
-    "calendar",
     "stripe",
     "finance",
     "weather",
@@ -82,8 +80,6 @@ MODULE_LABELS: dict[str, str] = {
     "image_gen": "generar/crear una imagen",
     "social": "publicar en redes sociales (Instagram/Facebook)",
     "prospection": "prospección / búsqueda de prospectos",
-    "gmail": "leer o enviar correos (Gmail)",
-    "calendar": "calendario y eventos (agenda, citas)",
     "stripe": "suscripción y pagos (plan, facturación)",
     "finance": "finanzas personales (gastos, ingresos, ahorro, pagos)",
     "weather": "clima / pronóstico del tiempo",
@@ -153,27 +149,6 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bmodo\s+prospecci[óo]n\b",
         r"\breporte\s+de\s+prospecci[óo]n\b",
         r"\bbuscar?\s+prospectos?\b",
-    ),
-    "gmail": (
-        r"\bleer\s+mis\s+correos\b",
-        r"\bl[ée]e(?:me)?\s+(?:los\s+)?gmail\b",
-        r"\bl[ée]e(?:me)?\s+(?:el\s+|mi\s+)?(?:[úu]ltim[oa]s?\s+)?(?:correo|email|gmail|mensaje)\b",
-        r"\b(?:me\s+puedes|puedes|pod[eí]as)\s+(?:leer|revisar|decir|contar).*(?:correo|email|gmail)\b",
-        r"\b(?:[úu]ltim[oa]s?|reciente|nuev[oa])\s+(?:correo|email|gmail|mensaje)\b",
-        r"\b(?:correo|email|gmail|mensaje)\s+(?:[úu]ltim[oa]|reciente|nuev[oa]|m[aá]s\s+reciente)\b",
-        r"\bl[ée]e(?:me)?\s+el\s+correo\s+de\b",
-        r"\bl[ée]e(?:me)?\s+(?:el\s+|mi\s+|los\s+|mis\s+)?(?:correos?|emails?|gmail)\b",
-        r"\benv[íi]a(?:me)?\s+(?:un\s+)?(?:correo|email)\b",
-        r"\brev[íi]sa\s+(?:mi\s+)?(?:correo|gmail|bandeja)\b",
-        r"\bcorreos?\s+(?:importantes?|nuevos?|sin\s+leer)\b",
-    ),
-    "calendar": (
-        r"\bqu[ée]\s+tengo\s+(?:hoy|ma[ñn]ana|esta\s+semana|programado|agendado)\b",
-        r"\bag[ée]nda(?:me|r)?\b",
-        r"\bprograma(?:me|r)?\s+(?:una\s+)?(?:cita|reuni[óo]n|evento)\b",
-        r"\bmi\s+calendario\b",
-        r"\bqu[ée]\s+eventos\s+tengo\b",
-        r"\bqu[ée]\s+hay\s+en\s+(?:mi\s+)?(?:agenda|calendario)\b",
     ),
     "stripe": (
         r"\bmi\s+suscripci[óo]n\b",
@@ -284,12 +259,6 @@ SOFT_ANCHORS: dict[str, tuple[str, ...]] = {
     "air_quality": (
         r"\baire\s+(?:hoy|ahora|contaminado)\b",
     ),
-    "gmail": (
-        r"\b(?:correo|email|gmail|bandeja)\b",
-    ),
-    "calendar": (
-        r"\b(?:evento|cita|reuni[óo]n|agenda)\b",
-    ),
     "social": (
         r"\bredes\s+sociales\b",
         r"\b(?:instagram|facebook)\b",
@@ -377,17 +346,13 @@ def _llm_classify_intent(text: str, module: str) -> bool:
 
 def _legacy_confirms_action(text: str, module: str) -> bool:
     """Respaldo determinista cuando el clasificador LLM no está disponible."""
-    from app.modules.calendar_module import is_calendar_intent
     from app.modules.environment_module import is_environment_intent
     from app.modules.finance_module import is_finance_intent
-    from app.modules.gmail_module import is_gmail_intent
     from app.services.youtube_voice_intent import is_youtube_intent
 
     checks: dict[str, Callable[[str], bool]] = {
-        "gmail": is_gmail_intent,
         "youtube": is_youtube_intent,
         "finance": is_finance_intent,
-        "calendar": is_calendar_intent,
         "environment": is_environment_intent,
         "weather": is_environment_intent,
         "pollen": is_environment_intent,

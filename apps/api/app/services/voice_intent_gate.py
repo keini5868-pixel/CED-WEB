@@ -100,30 +100,6 @@ _MODULE_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
-        "calendar",
-        re.compile(
-            r"\b("
-            r"calendario|agenda(?:r|me)?|cita(?:s)?|evento(?:s)?|"
-            r"reuni[oó]n|"
-            r"qu[eé]\s+tengo\s+(?:ma[nñ]ana|hoy|esta\s+semana)|"
-            r"programa(?:r|me)\s+(?:una\s+)?(?:cita|reuni[oó]n)"
-            r")\b",
-            re.I,
-        ),
-    ),
-    (
-        "gmail",
-        re.compile(
-            r"\b("
-            r"gmail|correo(?:s)?|email(?:s)?|bandeja|"
-            r"l[eé]e(?:me)?\s+(?:el\s+|los\s+|mis\s+)?(?:correo|email|gmail)|"
-            r"env[ií]a(?:r|me)?\s+(?:un\s+)?(?:correo|email)|"
-            r"ultimo\s+gmail|último\s+correo"
-            r")\b",
-            re.I,
-        ),
-    ),
-    (
         "finance",
         re.compile(
             r"\b("

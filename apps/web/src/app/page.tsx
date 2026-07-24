@@ -12,11 +12,11 @@ import {
 export const metadata: Metadata = {
   title: "CED — Castillo de la Evolución Digital",
   description:
-    "CED es un asistente virtual inteligente que ayuda a gestionar tareas de negocio y personales con voz, texto e imágenes: correo, calendario, documentos, mapas y más.",
+    "CED es un asistente virtual inteligente que ayuda a gestionar tareas de negocio y personales con voz, texto e imágenes: documentos, mapas y más.",
   openGraph: {
     title: "CED — Castillo de la Evolución Digital",
     description:
-      "Asistente virtual con voz en vivo, chat, calendario, correo, generación de imágenes y PDF, y herramientas de negocio.",
+      "Asistente virtual con voz en vivo, chat, generación de imágenes y PDF, y herramientas de negocio.",
     url: "https://ced-castillo.com",
     siteName: "CED",
     type: "website",
@@ -95,9 +95,8 @@ export default function HomePage() {
           <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-cyan-100/85 sm:text-base">
             CED es un asistente virtual inteligente que te ayuda a gestionar
             tareas de negocio y personales mediante voz, texto e imágenes.
-            Puedes chatear o hablar con CED, conectar Gmail y Google Calendar,
-            generar imágenes y documentos PDF, usar mapas y GPS, y publicar en
-            redes cuando tú lo autorices.
+            Puedes chatear o hablar con CED, generar imágenes y documentos PDF,
+            usar mapas y GPS, y publicar en redes cuando tú lo autorices.
           </p>
           <p className="mt-3 text-xs text-cyan-500">
             Página pública — {TRIAL_DAYS} días gratis al registrarte.

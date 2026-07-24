@@ -24,8 +24,8 @@ Reglas de tools (schemas definen nombre/params — no inventes tools):
 - Tools lentas (clima, PDF, imagen, búsqueda, cámara, avanzado): invoca la tool YA.
   NO digas antes «ok, creo el PDF», «voy a consultar» ni «deme un momento» —
   el filler de la tool habla al empezar; luego espera el resultado.
-- Escritura (Gmail/calendario/finanzas/Meta): prepare → «sí» en voz → confirm_*. NUNCA prepare+confirm en el mismo turno. Un «sí» basta si hay borrador. Tras confirm OK: di el mensaje y EN EL MISMO TURNO transition_to_general_assistant.
-- Lecturas: clima→get_environment; hechos/noticias→search_web; Gmail→read_gmail (si nombra un correo tras listado, léelo YA sin preguntar «¿cuerpo completo?»); finanzas→read_finances; calendario→list_calendar_events.
+- Escritura (finanzas/Meta): prepare → «sí» en voz → confirm_*. NUNCA prepare+confirm en el mismo turno. Un «sí» basta si hay borrador. Tras confirm OK: di el mensaje y EN EL MISMO TURNO transition_to_general_assistant.
+- Lecturas: clima→get_environment; hechos/noticias→search_web; finanzas→read_finances.
 - Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar).
 - YouTube: play/pause/resume/close. Siempre reproduce de inmediato (nunca pidas confirmación antes de reproducir). NUNCA confirmes play sin éxito real de la tool. SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla — sin ofrecer más ayuda. Esta regla NO aplica al resto.
 - Imagen/PDF: generate_image / generar_pdf. NUNCA digas que la imagen o el PDF están listos sin éxito de la tool.
@@ -50,7 +50,7 @@ Estado de confirmación de registro financiero — hay un borrador pendiente.
 - Si corrige datos → finance_cancel_write, transition_to_general_assistant, finance_prepare_write con datos nuevos.
 - read_finances solo si pide consultar finanzas (cancela el registro pendiente).
 - Tras finance_confirm_write EXITOSO: di el mensaje de la tool y EN EL MISMO TURNO llama transition_to_general_assistant.
-- Si el usuario pide otra cosa (clima, Gmail, redes) → transition_to_general_assistant de inmediato.
+- Si el usuario pide otra cosa (clima, redes) → transition_to_general_assistant de inmediato.
 """.strip()
 
 ADVANCED_MODE_STATE_PROMPT = """
@@ -61,30 +61,11 @@ Estado modo avanzado (Claude) — investigación profunda activa.
 - Generar imagen → generate_image (sin salir del modo). Di el resultado tal cual — NUNCA confirmes sin éxito.
 - Generar PDF → generar_pdf (sin salir del modo). Di el resultado tal cual — NUNCA confirmes sin éxito.
 - Si dice «modo normal», «sal del modo avanzado» o «desactiva modo avanzado» → deactivate_advanced_mode y transition_to_general_assistant.
-- NO llames Gmail, cámara ni escritura de finanzas aquí — indica que debe salir al modo normal primero.
+- NO llames cámara ni escritura de finanzas aquí — indica que debe salir al modo normal primero.
 - NO salgas del modo avanzado tras responder una sola consulta.
 """.strip()
 
-CALENDAR_CONFIRM_STATE_PROMPT = """
-Estado de confirmación de cita — hay un borrador de calendario pendiente.
-- Si dice sí, dale, adelante o confirma → calendar_confirm_write de inmediato (incluso solo «sí»).
-- Si dice no/cancela → calendar_cancel_write y transition_to_general_assistant.
-- list_calendar_events solo si pide consultar (cancela el borrador pendiente).
-- Tras calendar_confirm_write EXITOSO: di el mensaje de la tool y EN EL MISMO TURNO llama transition_to_general_assistant.
-- Si el usuario pide otra cosa (finanzas, clima, Gmail) → transition_to_general_assistant de inmediato.
-""".strip()
-
 STATE_GENERAL_ASSISTANT = "general_assistant"
-STATE_CALENDAR_CONFIRM_PENDING = "calendar_confirm_pending"
-GMAIL_CONFIRM_STATE_PROMPT = """
-Estado de confirmación de correo — hay un borrador pendiente de envío.
-- Si dice sí, envíalo, dale o confirma → gmail_confirm_send (incluso solo «sí»).
-- Si dice no/cancela → gmail_cancel_send y transition_to_general_assistant.
-- Tras gmail_confirm_send EXITOSO: di el mensaje de la tool y EN EL MISMO TURNO llama transition_to_general_assistant.
-- Si el usuario pide otra cosa (finanzas, clima, redes) → transition_to_general_assistant de inmediato.
-""".strip()
-
-STATE_GMAIL_CONFIRM_PENDING = "gmail_confirm_pending"
 STATE_PUBLISH_CONFIRM_PENDING = "publish_confirm_pending"
 PUBLISH_CONFIRM_STATE_PROMPT = """
 Estado de confirmación de publicación — hay un borrador FB/IG pendiente.
@@ -92,7 +73,7 @@ Estado de confirmación de publicación — hay un borrador FB/IG pendiente.
 - Si dice no/cancela → meta_cancel_publish y transition_to_general_assistant.
 - Tras meta_confirm_publish EXITOSO (publicado): di el mensaje de la tool y EN EL MISMO TURNO,
   OBLIGATORIO, llama transition_to_general_assistant. Sin esa transición la sesión se queda bloqueada.
-- Si el usuario pide finanzas, clima, Gmail, calendario u otra cosa → transition_to_general_assistant YA
+- Si el usuario pide finanzas, clima u otra cosa → transition_to_general_assistant YA
   (o usa la tool de lectura disponible aquí) — NUNCA quedes en silencio.
 """.strip()
 
@@ -120,7 +101,7 @@ RETELL_NATIVE_PILOT_PROMPT = (
     "- Ingenio ligero cuando se presta — UNA chispa, no un monólogo.\n\n"
     "PROHIBIDO en este modo:\n"
     "- Volverte charlatán o forzar humor en cada turno.\n"
-    "- Cambiar el tono en tareas serias (correo, pagos, publicaciones, navegación): ahí claridad primero.\n"
+    "- Cambiar el tono en tareas serias (pagos, publicaciones, navegación): ahí claridad primero.\n"
     "- Hablar por iniciativa mientras suena YouTube — el silencio de música sigue intacto.\n"
     "- Adulación excesiva o melodrama."
 )
@@ -128,23 +109,6 @@ RETELL_NATIVE_PILOT_PROMPT = (
 GET_ENVIRONMENT_DESCRIPTION = (
     "Clima, temperatura, pronóstico, aire o polen. Solo si lo pide en tiempo real."
 )
-LIST_CALENDAR_DESCRIPTION = (
-    "Lee citas/eventos de Google Calendar. Para agendar: calendar_prepare_write."
-)
-CALENDAR_PREPARE_DESCRIPTION = (
-    "Borrador de cita/recordatorio (qué, día, hora). NO agenda — pide confirmación."
-)
-CALENDAR_CONFIRM_DESCRIPTION = (
-    "Agenda el borrador tras «sí/dale». Un «sí» basta si hay borrador."
-)
-CALENDAR_CANCEL_DESCRIPTION = "Cancela el borrador de cita sin agendar."
-
-READ_GMAIL_DESCRIPTION = (
-    "Lee Gmail (bandeja/categoría/remitente, cuerpo completo). Enviar: gmail_prepare_send."
-)
-GMAIL_PREPARE_DESCRIPTION = "Borrador de correo (para/asunto/cuerpo). NO envía — pide confirmación."
-GMAIL_CONFIRM_DESCRIPTION = "Envía el borrador tras «sí/envíalo». Un «sí» basta."
-GMAIL_CANCEL_DESCRIPTION = "Cancela el borrador de correo sin enviar."
 
 META_PREPARE_DESCRIPTION = (
     "Borrador FB/IG (plataforma + texto). NO publica. IG necesita imagen (HUD/cámara/generada). "
@@ -231,104 +195,6 @@ GET_ENVIRONMENT_PARAMETERS: dict[str, Any] = {
         },
     },
     "required": ["query"],
-}
-
-LIST_CALENDAR_PARAMETERS: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "query": {
-            "type": "string",
-            "description": (
-                "Petición del usuario sobre su calendario "
-                "(ej. 'qué tengo hoy', 'eventos de mañana', 'esta semana')."
-            ),
-        },
-    },
-    "required": ["query"],
-}
-
-CALENDAR_PREPARE_PARAMETERS: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "query": {
-            "type": "string",
-            "description": (
-                "Frase del usuario tal cual, sin convertir la hora tú mismo "
-                "(ej. 'agéndame reunión con Ana mañana a las 3 pm', 'llamar a mi papá a las 5 de la tarde')."
-            ),
-        },
-    },
-    "required": ["query"],
-}
-
-CALENDAR_CONFIRM_PARAMETERS: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "draft_id": {
-            "type": "string",
-            "description": "ID del borrador de calendar_prepare_write (opcional si hay uno activo).",
-        },
-    },
-}
-
-CALENDAR_CANCEL_PARAMETERS: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "draft_id": {
-            "type": "string",
-            "description": "ID del borrador a cancelar (opcional si hay uno activo).",
-        },
-    },
-}
-
-READ_GMAIL_PARAMETERS: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "query": {
-            "type": "string",
-            "description": (
-                "Petición de lectura de correo tal cual "
-                "(ej. 'léeme mis correos', 'correos importantes', 'léeme el correo de Juan')."
-            ),
-        },
-    },
-    "required": ["query"],
-}
-
-GMAIL_PREPARE_PARAMETERS: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "to": {"type": "string", "description": "Correo destinatario."},
-        "subject": {"type": "string", "description": "Asunto del correo."},
-        "body": {"type": "string", "description": "Cuerpo del mensaje."},
-        "query": {
-            "type": "string",
-            "description": (
-                "Frase completa del usuario si no se separaron to/subject/body "
-                "(ej. 'envía un correo a ana@x.com asunto Reunión diciendo confirmo')."
-            ),
-        },
-    },
-}
-
-GMAIL_CONFIRM_PARAMETERS: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "draft_id": {
-            "type": "string",
-            "description": "ID del borrador de gmail_prepare_send (opcional).",
-        },
-    },
-}
-
-GMAIL_CANCEL_PARAMETERS: dict[str, Any] = {
-    "type": "object",
-    "properties": {
-        "draft_id": {
-            "type": "string",
-            "description": "ID del borrador a cancelar (opcional).",
-        },
-    },
 }
 
 META_PREPARE_PARAMETERS: dict[str, Any] = {
@@ -628,92 +494,12 @@ def build_get_environment_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
-def build_list_calendar_events_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
-        api_public_url=api_public_url,
-        name="list_calendar_events",
-        description=LIST_CALENDAR_DESCRIPTION,
-        parameters=LIST_CALENDAR_PARAMETERS,
-        filler="Un momento, revisando su calendario, señor.",
-        timeout_ms=18_000,
-    )
 
 
-def build_calendar_prepare_write_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
-        api_public_url=api_public_url,
-        name="calendar_prepare_write",
-        description=CALENDAR_PREPARE_DESCRIPTION,
-        parameters=CALENDAR_PREPARE_PARAMETERS,
-        filler="Un momento, preparando la cita, señor.",
-        timeout_ms=12_000,
-    )
 
 
-def build_calendar_confirm_write_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
-        api_public_url=api_public_url,
-        name="calendar_confirm_write",
-        description=CALENDAR_CONFIRM_DESCRIPTION,
-        parameters=CALENDAR_CONFIRM_PARAMETERS,
-        filler="Agendando en su calendario, señor.",
-        timeout_ms=20_000,
-    )
 
 
-def build_calendar_cancel_write_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
-        api_public_url=api_public_url,
-        name="calendar_cancel_write",
-        description=CALENDAR_CANCEL_DESCRIPTION,
-        parameters=CALENDAR_CANCEL_PARAMETERS,
-        filler="Un momento, señor.",
-        timeout_ms=8_000,
-    )
-
-
-def build_read_gmail_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
-        api_public_url=api_public_url,
-        name="read_gmail",
-        description=READ_GMAIL_DESCRIPTION,
-        parameters=READ_GMAIL_PARAMETERS,
-        filler="Un momento, revisando su correo, señor.",
-        timeout_ms=24_000,
-    )
-
-
-def build_gmail_prepare_send_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
-        api_public_url=api_public_url,
-        name="gmail_prepare_send",
-        description=GMAIL_PREPARE_DESCRIPTION,
-        parameters=GMAIL_PREPARE_PARAMETERS,
-        filler="Un momento, preparando el correo, señor.",
-        timeout_ms=12_000,
-    )
-
-
-def build_gmail_confirm_send_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
-        api_public_url=api_public_url,
-        name="gmail_confirm_send",
-        description=GMAIL_CONFIRM_DESCRIPTION,
-        parameters=GMAIL_CONFIRM_PARAMETERS,
-        filler="Enviando el correo, señor.",
-        timeout_ms=20_000,
-    )
-
-
-def build_gmail_cancel_send_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
-        api_public_url=api_public_url,
-        name="gmail_cancel_send",
-        description=GMAIL_CANCEL_DESCRIPTION,
-        parameters=GMAIL_CANCEL_PARAMETERS,
-        filler="Un momento, señor.",
-        timeout_ms=8_000,
-    )
 
 
 def build_search_web_tool(*, api_public_url: str) -> dict[str, Any]:
@@ -1075,14 +861,6 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
     """Retell States — tools restringidas por estado (general_tools vacío)."""
     general_tools: list[dict[str, Any]] = [
         build_get_environment_tool(api_public_url=api_public_url),
-        build_list_calendar_events_tool(api_public_url=api_public_url),
-        build_calendar_prepare_write_tool(api_public_url=api_public_url),
-        build_calendar_confirm_write_tool(api_public_url=api_public_url),
-        build_calendar_cancel_write_tool(api_public_url=api_public_url),
-        build_read_gmail_tool(api_public_url=api_public_url),
-        build_gmail_prepare_send_tool(api_public_url=api_public_url),
-        build_gmail_confirm_send_tool(api_public_url=api_public_url),
-        build_gmail_cancel_send_tool(api_public_url=api_public_url),
         build_search_web_tool(api_public_url=api_public_url),
         build_play_youtube_video_tool(api_public_url=api_public_url),
         build_pause_youtube_video_tool(api_public_url=api_public_url),
@@ -1155,22 +933,9 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     ),
                 },
                 {
-                    "destination_state_name": STATE_GMAIL_CONFIRM_PENDING,
-                    "description": (
-                        "Transición cuando gmail_prepare_send devuelve awaiting_confirmation."
-                    ),
-                },
-                {
                     "destination_state_name": STATE_PUBLISH_CONFIRM_PENDING,
                     "description": (
                         "Transición cuando meta_prepare_publish devuelve awaiting_confirmation."
-                    ),
-                },
-                {
-                    "destination_state_name": STATE_CALENDAR_CONFIRM_PENDING,
-                    "description": (
-                        "Transición cuando calendar_prepare_write devuelve awaiting_confirmation: "
-                        "hay borrador de cita listo y debe pedirse confirmación al usuario."
                     ),
                 },
                 {
@@ -1196,27 +961,7 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "destination_state_name": STATE_GENERAL_ASSISTANT,
                     "description": (
                         "OBLIGATORIO tras finance_confirm_write / finance_cancel_write exitoso. "
-                        "También si el usuario pide clima, Gmail, redes u otro tema no financiero."
-                    ),
-                },
-            ],
-        },
-        {
-            "name": STATE_GMAIL_CONFIRM_PENDING,
-            "state_prompt": GMAIL_CONFIRM_STATE_PROMPT,
-            "tools": [
-                build_read_gmail_tool(api_public_url=api_public_url),
-                build_gmail_confirm_send_tool(api_public_url=api_public_url),
-                build_gmail_cancel_send_tool(api_public_url=api_public_url),
-                build_get_environment_tool(api_public_url=api_public_url),
-                build_read_finances_tool(api_public_url=api_public_url),
-            ],
-            "edges": [
-                {
-                    "destination_state_name": STATE_GENERAL_ASSISTANT,
-                    "description": (
-                        "OBLIGATORIO tras gmail_confirm_send / gmail_cancel_send exitoso. "
-                        "También si pide finanzas, clima, redes u otro tema."
+                        "También si el usuario pide clima, redes u otro tema no financiero."
                     ),
                 },
             ],
@@ -1229,12 +974,10 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                 build_meta_confirm_publish_tool(api_public_url=api_public_url),
                 build_meta_cancel_publish_tool(api_public_url=api_public_url),
                 # Escape hatch: si Retell no transiciona tras publicar, el usuario
-                # no debe quedar en silencio al pedir finanzas/clima/Gmail.
+                # no debe quedar en silencio al pedir finanzas/clima.
                 build_get_environment_tool(api_public_url=api_public_url),
                 build_read_finances_tool(api_public_url=api_public_url),
-                build_read_gmail_tool(api_public_url=api_public_url),
-                build_list_calendar_events_tool(api_public_url=api_public_url),
-                build_search_web_tool(api_public_url=api_public_url),
+                                build_search_web_tool(api_public_url=api_public_url),
             ],
             "edges": [
                 {
@@ -1242,28 +985,8 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
                     "description": (
                         "OBLIGATORIO en el mismo turno tras meta_confirm_publish exitoso "
                         "(status published) o meta_cancel_publish. "
-                        "También si el usuario pide finanzas, clima, Gmail, calendario "
+                        "También si el usuario pide finanzas, clima "
                         "o cualquier tema que no sea confirmar/cancelar la publicación."
-                    ),
-                },
-            ],
-        },
-        {
-            "name": STATE_CALENDAR_CONFIRM_PENDING,
-            "state_prompt": CALENDAR_CONFIRM_STATE_PROMPT,
-            "tools": [
-                build_list_calendar_events_tool(api_public_url=api_public_url),
-                build_calendar_confirm_write_tool(api_public_url=api_public_url),
-                build_calendar_cancel_write_tool(api_public_url=api_public_url),
-                build_get_environment_tool(api_public_url=api_public_url),
-                build_read_finances_tool(api_public_url=api_public_url),
-            ],
-            "edges": [
-                {
-                    "destination_state_name": STATE_GENERAL_ASSISTANT,
-                    "description": (
-                        "OBLIGATORIO tras calendar_confirm_write / calendar_cancel_write exitoso. "
-                        "También si pide finanzas, clima, Gmail u otro tema."
                     ),
                 },
             ],
@@ -1466,14 +1189,6 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "tool_invocations": len(tools),
         "calls_tracked": len(calls),
         "get_environment": _stats("get_environment"),
-        "list_calendar_events": _stats("list_calendar_events"),
-        "calendar_prepare_write": _stats("calendar_prepare_write"),
-        "calendar_confirm_write": _stats("calendar_confirm_write"),
-        "calendar_cancel_write": _stats("calendar_cancel_write"),
-        "read_gmail": _stats("read_gmail"),
-        "gmail_prepare_send": _stats("gmail_prepare_send"),
-        "gmail_confirm_send": _stats("gmail_confirm_send"),
-        "gmail_cancel_send": _stats("gmail_cancel_send"),
         "search_web": _stats("search_web"),
         "play_youtube_video": _stats("play_youtube_video"),
         "pause_youtube_video": _stats("pause_youtube_video"),
@@ -1646,42 +1361,6 @@ async def execute_get_environment_tool(
     )
 
 
-async def execute_list_calendar_events_tool(
-    *,
-    user_id: str,
-    payload: dict[str, Any],
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    from app.modules.calendar_module import handle_calendar_read_sync
-
-    return await _execute_native_read_tool(
-        tool_name="list_calendar_events",
-        user_id=user_id,
-        payload=payload,
-        args=args,
-        handler=handle_calendar_read_sync,
-        empty_query_message="Señor, ¿qué día o periodo de su calendario desea consultar?",
-        failure_prefix="No pude consultar su calendario",
-    )
-
-
-async def execute_read_gmail_tool(
-    *,
-    user_id: str,
-    payload: dict[str, Any],
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    from app.modules.gmail_module import handle_gmail_read_sync
-
-    return await _execute_native_read_tool(
-        tool_name="read_gmail",
-        user_id=user_id,
-        payload=payload,
-        args=args,
-        handler=handle_gmail_read_sync,
-        empty_query_message="Señor, ¿qué correos desea que revise?",
-        failure_prefix="No pude consultar su correo",
-    )
 
 
 async def execute_read_finances_tool(
@@ -1773,17 +1452,7 @@ async def _execute_native_finance_action_tool(
         ok = bool(action.get("ok"))
     except Exception:  # noqa: BLE001
         logger.exception("[NATIVE-PILOT] %s failed user=%s", tool_name, user_id[:8])
-        if tool_name.startswith("calendar_"):
-            spoken = (
-                "Señor, falló la operación de calendario. "
-                "El evento no quedó agendado. Intente de nuevo o diga «cancela»."
-            )
-        elif tool_name.startswith("gmail_"):
-            spoken = (
-                "Señor, falló la operación de Gmail. "
-                "El correo no se envió. Intente de nuevo o diga «cancela»."
-            )
-        elif tool_name.startswith("meta_"):
+        if tool_name.startswith("meta_"):
             spoken = (
                 "Señor, falló la operación de publicación. "
                 "No se publicó. Intente de nuevo o diga «cancela»."
@@ -2190,158 +1859,17 @@ async def execute_deactivate_advanced_mode_tool(
 
 
 
-def _run_calendar_prepare(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    from app.services.calendar_write_flow import prepare_calendar_write
-
-    query = resolve_tool_query(payload, args)
-    return prepare_calendar_write(user_id, call_id=call_id, query=query)
-
-
-def _run_calendar_confirm(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    from app.services.calendar_write_flow import confirm_calendar_write
-
-    return confirm_calendar_write(
-        user_id,
-        call_id=call_id,
-        payload=payload,
-        draft_id=str(args.get("draft_id") or ""),
-    )
-
-
-def _run_calendar_cancel(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    from app.services.calendar_write_flow import cancel_calendar_write
-
-    return cancel_calendar_write(
-        user_id,
-        draft_id=str(args.get("draft_id") or ""),
-        reason="user_cancel",
-    )
-
-
-async def execute_calendar_prepare_write_tool(
-    *,
-    user_id: str,
-    payload: dict[str, Any],
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    return await _execute_native_finance_action_tool(
-        tool_name="calendar_prepare_write",
-        user_id=user_id,
-        payload=payload,
-        args=args,
-        handler=_run_calendar_prepare,
-    )
-
-
-async def execute_calendar_confirm_write_tool(
-    *,
-    user_id: str,
-    payload: dict[str, Any],
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    return await _execute_native_finance_action_tool(
-        tool_name="calendar_confirm_write",
-        user_id=user_id,
-        payload=payload,
-        args=args,
-        handler=_run_calendar_confirm,
-    )
-
-
-async def execute_calendar_cancel_write_tool(
-    *,
-    user_id: str,
-    payload: dict[str, Any],
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    return await _execute_native_finance_action_tool(
-        tool_name="calendar_cancel_write",
-        user_id=user_id,
-        payload=payload,
-        args=args,
-        handler=_run_calendar_cancel,
-    )
 
 
 
-def _run_gmail_prepare(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    from app.services.gmail_send_flow import prepare_gmail_send
-
-    query = resolve_tool_query(payload, args)
-    return prepare_gmail_send(
-        user_id,
-        call_id=call_id,
-        to=str(args.get("to") or ""),
-        subject=str(args.get("subject") or ""),
-        body=str(args.get("body") or ""),
-        query=query,
-    )
 
 
-def _run_gmail_confirm(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    from app.services.gmail_send_flow import confirm_gmail_send
-
-    return confirm_gmail_send(
-        user_id,
-        call_id=call_id,
-        payload=payload,
-        draft_id=str(args.get("draft_id") or ""),
-    )
 
 
-def _run_gmail_cancel(user_id: str, *, call_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    from app.services.gmail_send_flow import cancel_gmail_send
-
-    return cancel_gmail_send(
-        user_id,
-        draft_id=str(args.get("draft_id") or ""),
-        reason="user_cancel",
-    )
 
 
-async def execute_gmail_prepare_send_tool(
-    *,
-    user_id: str,
-    payload: dict[str, Any],
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    return await _execute_native_finance_action_tool(
-        tool_name="gmail_prepare_send",
-        user_id=user_id,
-        payload=payload,
-        args=args,
-        handler=_run_gmail_prepare,
-    )
 
 
-async def execute_gmail_confirm_send_tool(
-    *,
-    user_id: str,
-    payload: dict[str, Any],
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    return await _execute_native_finance_action_tool(
-        tool_name="gmail_confirm_send",
-        user_id=user_id,
-        payload=payload,
-        args=args,
-        handler=_run_gmail_confirm,
-    )
-
-
-async def execute_gmail_cancel_send_tool(
-    *,
-    user_id: str,
-    payload: dict[str, Any],
-    args: dict[str, Any],
-) -> dict[str, Any]:
-    return await _execute_native_finance_action_tool(
-        tool_name="gmail_cancel_send",
-        user_id=user_id,
-        payload=payload,
-        args=args,
-        handler=_run_gmail_cancel,
-    )
 
 
 async def execute_search_web_tool(
@@ -2351,9 +1879,7 @@ async def execute_search_web_tool(
     args: dict[str, Any],
 ) -> dict[str, Any]:
     """Búsqueda web general — reutiliza voice_tool_executor.search_web."""
-    from app.services.calendar_write_flow import maybe_clear_calendar_pending_on_topic_change
     from app.services.finance_write_flow import maybe_clear_finance_pending_on_topic_change
-    from app.services.gmail_send_flow import maybe_clear_gmail_pending_on_topic_change
     from app.services.voice_tool_executor import execute_voice_tool
 
     started = time.perf_counter()
@@ -2363,8 +1889,6 @@ async def execute_search_web_tool(
 
     if user_id:
         maybe_clear_finance_pending_on_topic_change(user_id, "search_web")
-        maybe_clear_calendar_pending_on_topic_change(user_id, "search_web")
-        maybe_clear_gmail_pending_on_topic_change(user_id, "search_web")
 
     if not user_id:
         latency_ms = int((time.perf_counter() - started) * 1000)

@@ -16,17 +16,10 @@ _MODULE_CONTEXT_RULES = (
 
 def requires_sync_module_handler(text: str) -> bool:
     """Acciones que deben ejecutarse de forma determinista (escrituras)."""
-    from app.modules.calendar_module import is_calendar_intent
     from app.modules.finance_module import is_finance_intent, is_finance_write_intent
     from app.services.hud_reminders import is_reminder_intent
 
     if is_reminder_intent(text) and re.search(r"recu[eé]rdame", text, re.I):
-        return True
-    if is_calendar_intent(text) and re.search(
-        r"ag[eé]ndame|agendar|programa(?:r|me)|recu[eé]rdame",
-        text,
-        re.I,
-    ):
         return True
     if is_finance_intent(text) and is_finance_write_intent(text):
         return True
@@ -38,16 +31,14 @@ def fetch_module_stream_context(
     text: str,
 ) -> tuple[str | None, dict[str, Any] | None]:
     """Obtiene contexto del módulo LIFE/finanzas para inyectar en el system prompt."""
-    from app.modules.calendar_module import handle_calendar_query_sync, is_calendar_intent
     from app.modules.finance_module import handle_finance_query_sync, is_finance_intent
-    from app.modules.gmail_module import handle_gmail_query_sync, is_gmail_intent
     from app.services.chat_intents import is_creative_artifact_intent
     from app.services.cognitive_intents import is_news_intent, is_weather_intent
     from app.services.hud_reminders import handle_reminder_query_sync, is_reminder_intent
 
     if requires_sync_module_handler(text):
         return None, None
-    # No inyectar clima/calendario/gmail cuando el usuario pide imagen o PDF
+    # No inyectar clima cuando el usuario pide imagen o PDF
     # (palabras trampa en el texto citado no son consultas reales al módulo).
     if is_creative_artifact_intent(text):
         return None, None
@@ -59,22 +50,6 @@ def fetch_module_stream_context(
                 return (
                     f"Contexto recordatorios/eventos:\n{spoken}\n\n{_MODULE_CONTEXT_RULES}",
                     {"intent": "reminder_list", "source": "module_context"},
-                )
-
-        if is_calendar_intent(text):
-            spoken = str(handle_calendar_query_sync(user_id, text).get("spoken") or "").strip()
-            if spoken:
-                return (
-                    f"Contexto calendario:\n{spoken}\n\n{_MODULE_CONTEXT_RULES}",
-                    {"intent": "calendar", "source": "module_context"},
-                )
-
-        if is_gmail_intent(text):
-            spoken = str(handle_gmail_query_sync(user_id, text).get("spoken") or "").strip()
-            if spoken:
-                return (
-                    f"Contexto Gmail:\n{spoken}\n\n{_MODULE_CONTEXT_RULES}",
-                    {"intent": "gmail", "source": "module_context"},
                 )
 
         if is_finance_intent(text):

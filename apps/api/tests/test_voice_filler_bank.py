@@ -16,9 +16,9 @@ def test_filler_rotation_avoids_immediate_repeat() -> None:
 def test_module_filler_category() -> None:
     call_id = "call-filler-mod"
     reset_filler_rotation(call_id)
-    phrase = pick_voice_filler("module", call_id=call_id, module="gmail")
+    phrase = pick_voice_filler("module", call_id=call_id, module="finance")
     assert "señor" in phrase.lower()
-    assert "correo" in phrase.lower() or "gmail" in phrase.lower() or "bandeja" in phrase.lower()
+    assert any(k in phrase.lower() for k in ("finanz", "movimiento", "balance", "registro"))
 
 
 def test_web_search_filler_pool() -> None:
@@ -38,8 +38,8 @@ def test_ten_conversation_filler_categories_distinct() -> None:
         ("general", None),
         ("general", None),
         ("web_search", None),
-        ("module", "gmail"),
-        ("module", "calendar"),
+        ("module", "finance"),
+        ("module", "map"),
         ("module", "finance"),
         ("module", "map"),
         ("module", "camera"),

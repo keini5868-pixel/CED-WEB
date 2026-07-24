@@ -32,7 +32,7 @@ def test_build_get_environment_tool_has_static_filler():
 def test_phase_a_general_assistant_token_floor_under_retell_threshold():
     """Fase A: piso sin historial debe quedar bajo el surcharge Retell (~4k) y ~3.8k objetivo."""
     est = estimate_general_assistant_token_floor()
-    assert est["tool_count"] == 41
+    assert est["tool_count"] == 34
     assert est["floor_tokens_no_history"] < 4000
     assert est["floor_tokens_no_history"] <= 3800
     assert est["under_threshold"] is True
@@ -41,16 +41,8 @@ def test_phase_a_general_assistant_token_floor_under_retell_threshold():
 def test_build_native_pilot_tools_includes_read_and_finance_write():
     tools = build_native_pilot_tools(api_public_url="https://api.example.com")
     names = {t["name"] for t in tools}
-    assert names == {
+    required = {
         "get_environment",
-        "list_calendar_events",
-        "calendar_prepare_write",
-        "calendar_confirm_write",
-        "calendar_cancel_write",
-        "read_gmail",
-        "gmail_prepare_send",
-        "gmail_confirm_send",
-        "gmail_cancel_send",
         "search_web",
         "play_youtube_video",
         "pause_youtube_video",
@@ -84,6 +76,11 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "consult_advanced",
         "deactivate_advanced_mode",
     }
+    assert required <= names
+    assert not any(
+        n.startswith(("gmail_", "calendar_")) or n in {"read_gmail", "list_calendar_events"}
+        for n in names
+    )
 
 
 def test_camera_tools_have_fillers_and_timeouts():
@@ -202,10 +199,6 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "finance_confirm_write" in general_tools
     assert "finance_cancel_write" in general_tools
     assert "read_finances" in general_tools
-    assert "read_gmail" in general_tools
-    assert "gmail_prepare_send" in general_tools
-    assert "gmail_confirm_send" in general_tools
-    assert "gmail_cancel_send" in general_tools
     assert "search_web" in general_tools
     assert "meta_prepare_publish" in general_tools
     assert "meta_confirm_publish" in general_tools
@@ -232,24 +225,12 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "get_environment" in confirm_tools
     assert "finance_prepare_write" not in confirm_tools
     assert "activate_camera" not in confirm_tools
-    assert "gmail_prepare_send" not in confirm_tools
 
     from app.services.retell_native_pilot import (
         PUBLISH_CONFIRM_STATE_PROMPT,
         STATE_ADVANCED_MODE_ACTIVE,
-        STATE_GMAIL_CONFIRM_PENDING,
         STATE_PUBLISH_CONFIRM_PENDING,
     )
-
-    gmail_tools = {t["name"] for t in by_name[STATE_GMAIL_CONFIRM_PENDING]["tools"]}
-    assert gmail_tools == {
-        "read_gmail",
-        "gmail_confirm_send",
-        "gmail_cancel_send",
-        "get_environment",
-        "read_finances",
-    }
-    assert "gmail_prepare_send" not in gmail_tools
 
     publish_tools = {t["name"] for t in by_name[STATE_PUBLISH_CONFIRM_PENDING]["tools"]}
     assert publish_tools == {
@@ -258,8 +239,6 @@ def test_build_native_pilot_states_restrict_confirm_tools():
         "meta_cancel_publish",
         "get_environment",
         "read_finances",
-        "read_gmail",
-        "list_calendar_events",
         "search_web",
     }
     assert "meta_prepare_publish" not in publish_tools
@@ -275,10 +254,8 @@ def test_build_native_pilot_states_restrict_confirm_tools():
         "generate_image",
         "generar_pdf",
     }
-    assert "read_gmail" not in advanced_tools
     assert "activate_camera" not in advanced_tools
     assert "finance_prepare_write" not in advanced_tools
-    assert "gmail_prepare_send" not in advanced_tools
     assert "search_web" not in advanced_tools
     assert "meta_prepare_publish" not in advanced_tools
 
@@ -592,190 +569,14 @@ def test_record_tool_metric_rolling_window():
     assert snap["get_environment"]["avg_latency_ms"] is not None
 
 
-def test_calendar_read_sync_rejects_create():
-    from app.modules.calendar_module import handle_calendar_read_sync
-
-    result = handle_calendar_read_sync("user-1", "agéndame cita mañana a las 3")
-    spoken = result["spoken"].lower()
-    assert "confirmación" in spoken or "agéndame" in spoken
-    assert "sí" in spoken
 
 
-def test_calendar_api_call_refreshes_on_401():
-    from app.modules.calendar_module import _calendar_api_call, _handle_calendar_query
-
-    calls = {"n": 0}
-
-    def _fn(access: str) -> str:
-        calls["n"] += 1
-        if calls["n"] == 1:
-            raise httpx.HTTPStatusError(
-                "unauthorized",
-                request=httpx.Request("GET", "https://google.example/events"),
-                response=httpx.Response(401),
-            )
-        assert access == "fresh-token"
-        return "ok"
-
-    with patch(
-        "app.modules.calendar_module.get_valid_access_token",
-        return_value="stale-token",
-    ):
-        with patch(
-            "app.modules.calendar_module.force_refresh_access_token",
-            return_value="fresh-token",
-        ):
-            assert _calendar_api_call("user-1", _fn) == "ok"
-            assert calls["n"] == 2
 
 
-def test_resolve_calendar_windows_hoy_y_manana():
-    from app.modules.calendar_module import _resolve_calendar_windows
-
-    windows = _resolve_calendar_windows("¿qué tengo hoy o eventos de mañana?")
-    labels = [label for _, _, label in windows]
-    assert labels == ["hoy", "mañana"]
 
 
-def test_handle_calendar_query_hoy_y_manana_with_events():
-    from app.modules.calendar_module import _handle_calendar_query
-
-    with patch(
-        "app.modules.calendar_module._calendar_api_call",
-        side_effect=lambda _uid, fn: fn("token"),
-    ):
-        with patch(
-            "app.modules.calendar_module.list_events",
-            side_effect=[["Hoy 9:00 AM — Standup"], ["Mañana 2:00 PM — Doctor"]],
-        ):
-            spoken = _handle_calendar_query("user-1", "¿qué tengo hoy o eventos de mañana?")
-    assert "Standup" in spoken
-    assert "Doctor" in spoken
-    assert "hoy" in spoken.lower()
-    assert "mañana" in spoken.lower()
 
 
-def test_gmail_read_sync_redirects_voice_send_to_confirm_flow():
-    from app.modules.gmail_module import handle_gmail_read_sync
-
-    result = handle_gmail_read_sync("user-1", "envía un email a juan@test.com")
-    spoken = result["spoken"].lower()
-    assert "confirmación" in spoken or "confirme" in spoken
-    assert "sí" in spoken
-    assert "formulario" not in spoken
-
-
-def test_gmail_read_sync_returns_full_body_via_helper():
-    from app.modules.gmail_module import GMAIL_VOICE_BODY_LIMIT, _message_content_for_voice
-    from app.services.google_gmail_api import MessageBodyResult
-
-    long_body = "A" * 2000
-    with patch(
-        "app.modules.gmail_module.fetch_message_body_detail",
-        return_value=MessageBodyResult(text=long_body, source="plain", ok=True),
-    ):
-        content, ok, _source, _mime = _message_content_for_voice("token", {"id": "msg-1", "subject": "Hola"})
-    assert ok is True
-    assert len(content) == GMAIL_VOICE_BODY_LIMIT
-
-
-def test_gmail_read_sync_leeme_el_de_sender():
-    from app.modules.gmail_module import handle_gmail_read_sync
-
-    with patch("app.modules.gmail_module._gmail_api_call") as call:
-        call.side_effect = lambda _uid, fn: fn("token")
-        with patch("app.modules.gmail_module.list_messages") as list_msgs:
-            list_msgs.return_value = [
-                {
-                    "id": "m1",
-                    "from_name": "Jun Medina",
-                    "subject": "Work Schedule for Monday",
-                    "from": "jun@x.com",
-                    "snippet": "Work Schedule for Monday",
-                }
-            ]
-            with patch("app.modules.gmail_module.fetch_message_body_detail") as fetch_body:
-                from app.services.google_gmail_api import MessageBodyResult
-
-                fetch_body.return_value = MessageBodyResult(
-                    text="Shift starts 8:00 AM. Break at 12:00.",
-                    source="html",
-                    ok=True,
-                )
-                out = handle_gmail_read_sync("user-1", "léeme el de Jun Medina")
-    assert "Shift starts 8:00 AM" in out["spoken"]
-    assert "Señor, de Jun Medina" in out["spoken"]
-    assert "INSTRUCCIÓN" not in out["spoken"]
-    assert "CUERPO_LITERAL" not in out["spoken"]
-
-
-def test_gmail_body_followup_uses_last_read_cache():
-    from app.modules.gmail_module import handle_gmail_read_sync
-    from app.services import voice_client_session as vcs
-    from app.services.google_gmail_api import MessageBodyResult
-
-    vcs.set_gmail_last_read(
-        "user-1",
-        {
-            "id": "cached-msg",
-            "from_name": "Jun Medina",
-            "subject": "Work Schedule",
-            "snippet": "snippet",
-        },
-    )
-    with patch("app.modules.gmail_module._gmail_api_call", side_effect=lambda _uid, fn: fn("token")):
-        with patch(
-            "app.modules.gmail_module.fetch_message_body_detail",
-            return_value=MessageBodyResult(
-                text="Full schedule: 8am standup, 2pm review.",
-                source="plain",
-                ok=True,
-            ),
-        ):
-            out = handle_gmail_read_sync("user-1", "léeme el contenido del correo")
-    assert "8am standup" in out["spoken"]
-    vcs.set_gmail_last_read("user-1", None)
-
-
-def test_gmail_snippet_only_reports_unavailable_not_subject():
-    from app.modules.gmail_module import _message_content_for_voice
-    from app.services.google_gmail_api import MessageBodyResult
-
-    with patch(
-        "app.modules.gmail_module.fetch_message_body_detail",
-        return_value=MessageBodyResult(
-            text="Work Schedule for Monday, July 13th, 2026",
-            source="snippet",
-            ok=False,
-            snippet="Work Schedule for Monday, July 13th, 2026",
-        ),
-    ):
-        content, ok, source, _mime = _message_content_for_voice(
-            "token",
-            {
-                "id": "m1",
-                "subject": "Work Schedule for Monday, July 13th, 2026",
-                "snippet": "Work Schedule for Monday, July 13th, 2026",
-            },
-        )
-    assert ok is False
-    assert source == "snippet"
-    assert "No pude obtener el cuerpo completo" in content
-
-
-def test_gmail_literal_format_three_distinct_bodies():
-    from app.modules.gmail_module import format_gmail_literal_voice
-
-    samples = [
-        ("Ana", "Factura", "Total a pagar: 120 USD antes del viernes."),
-        ("Carlos", "Reunión", "Nos vemos a las 3pm en la oficina central."),
-        ("Jun Medina", "Horario lunes", "El turno empieza a las 8:00, no a las 9."),
-    ]
-    for from_name, subject, body in samples:
-        out = format_gmail_literal_voice(from_name=from_name, subject=subject, body=body)
-        assert body in out
-        assert "Señor, de" in out
-        assert "CUERPO_LITERAL" not in out
 
 
 def test_finance_read_sync_redirects_write_to_prepare_flow():

@@ -33,9 +33,6 @@ from app.services.retell_native_pilot import (
     execute_activate_advanced_mode_tool,
     execute_activate_camera_tool,
     execute_analyze_camera_frame_tool,
-    execute_calendar_cancel_write_tool,
-    execute_calendar_confirm_write_tool,
-    execute_calendar_prepare_write_tool,
     execute_consult_advanced_tool,
     execute_deactivate_advanced_mode_tool,
     execute_deactivate_camera_tool,
@@ -43,9 +40,6 @@ from app.services.retell_native_pilot import (
     execute_finance_confirm_write_tool,
     execute_finance_prepare_write_tool,
     execute_get_environment_tool,
-    execute_gmail_cancel_send_tool,
-    execute_gmail_confirm_send_tool,
-    execute_gmail_prepare_send_tool,
     execute_check_meta_networks_tool,
     execute_meta_cancel_publish_tool,
     execute_meta_confirm_publish_tool,
@@ -66,17 +60,13 @@ from app.services.retell_native_pilot import (
     execute_start_drive_navigation_tool,
     execute_stop_drive_navigation_tool,
     execute_navigation_status_tool,
-    execute_list_calendar_events_tool,
     execute_read_finances_tool,
-    execute_read_gmail_tool,
     execute_search_visible_product_tool,
     execute_search_web_tool,
     get_call_pilot_metrics,
     get_pilot_metrics_snapshot,
 )
 from app.services.finance_write_flow import clear_finance_pending_for_call
-from app.services.calendar_write_flow import clear_calendar_pending_for_call
-from app.services.gmail_send_flow import clear_gmail_pending_for_call
 from app.services.meta_publish_flow import clear_meta_pending_for_call
 from app.services.voice_client_session import clear_advanced_mode_for_call
 from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
@@ -327,96 +317,12 @@ async def retell_get_environment_tool(request: Request) -> JSONResponse:
     return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
-@router.post("/tools/list_calendar_events")
-async def retell_list_calendar_events_tool(request: Request) -> JSONResponse:
-    """Custom function list_calendar_events — solo lectura, piloto nativo."""
-    payload = await _verify_retell_request(request)
-    args = payload.get("args") or {}
-    user_id = _extract_user_id(payload)
-    result = await execute_list_calendar_events_tool(user_id=user_id, payload=payload, args=args)
-    return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
-@router.post("/tools/calendar_prepare_write")
-async def retell_calendar_prepare_write_tool(request: Request) -> JSONResponse:
-    """Prepara borrador de cita — no agenda (piloto nativo)."""
-    payload = await _verify_retell_request(request)
-    args = payload.get("args") or {}
-    user_id = _extract_user_id(payload)
-    result = await execute_calendar_prepare_write_tool(
-        user_id=user_id, payload=payload, args=args
-    )
-    return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
-@router.post("/tools/calendar_confirm_write")
-async def retell_calendar_confirm_write_tool(request: Request) -> JSONResponse:
-    """Agenda cita tras confirmación verificada en transcript."""
-    payload = await _verify_retell_request(request)
-    args = payload.get("args") or {}
-    user_id = _extract_user_id(payload)
-    result = await execute_calendar_confirm_write_tool(
-        user_id=user_id, payload=payload, args=args
-    )
-    return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
-@router.post("/tools/calendar_cancel_write")
-async def retell_calendar_cancel_write_tool(request: Request) -> JSONResponse:
-    """Cancela borrador de cita pendiente."""
-    payload = await _verify_retell_request(request)
-    args = payload.get("args") or {}
-    user_id = _extract_user_id(payload)
-    result = await execute_calendar_cancel_write_tool(
-        user_id=user_id, payload=payload, args=args
-    )
-    return JSONResponse(status_code=200, content={"result": result["result"]})
-
-
-@router.post("/tools/read_gmail")
-async def retell_read_gmail_tool(request: Request) -> JSONResponse:
-    """Custom function read_gmail — piloto nativo."""
-    payload = await _verify_retell_request(request)
-    args = payload.get("args") or {}
-    user_id = _extract_user_id(payload)
-    result = await execute_read_gmail_tool(user_id=user_id, payload=payload, args=args)
-    return JSONResponse(status_code=200, content={"result": result["result"]})
-
-
-@router.post("/tools/gmail_prepare_send")
-async def retell_gmail_prepare_send_tool(request: Request) -> JSONResponse:
-    """Prepara borrador de correo — no envía (piloto nativo)."""
-    payload = await _verify_retell_request(request)
-    args = payload.get("args") or {}
-    user_id = _extract_user_id(payload)
-    result = await execute_gmail_prepare_send_tool(
-        user_id=user_id, payload=payload, args=args
-    )
-    return JSONResponse(status_code=200, content={"result": result["result"]})
-
-
-@router.post("/tools/gmail_confirm_send")
-async def retell_gmail_confirm_send_tool(request: Request) -> JSONResponse:
-    """Envía correo tras confirmación verificada en transcript."""
-    payload = await _verify_retell_request(request)
-    args = payload.get("args") or {}
-    user_id = _extract_user_id(payload)
-    result = await execute_gmail_confirm_send_tool(
-        user_id=user_id, payload=payload, args=args
-    )
-    return JSONResponse(status_code=200, content={"result": result["result"]})
-
-
-@router.post("/tools/gmail_cancel_send")
-async def retell_gmail_cancel_send_tool(request: Request) -> JSONResponse:
-    """Cancela borrador de correo pendiente."""
-    payload = await _verify_retell_request(request)
-    args = payload.get("args") or {}
-    user_id = _extract_user_id(payload)
-    result = await execute_gmail_cancel_send_tool(
-        user_id=user_id, payload=payload, args=args
-    )
-    return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
 @router.post("/tools/search_web")
@@ -807,77 +713,6 @@ async def retell_native_pilot_bootstrap(
     }
 
 
-@router.post("/native-pilot/gmail-send-probe")
-async def retell_native_pilot_gmail_send_probe(
-    request: Request,
-    x_bootstrap_secret: str | None = Header(default=None, alias="X-Bootstrap-Secret"),
-) -> dict[str, Any]:
-    """Diagnóstico+envío real de prueba — requiere X-Bootstrap-Secret. No usa voz."""
-    _verify_bootstrap_secret(x_bootstrap_secret)
-    body = await request.json()
-    user_id = str(body.get("user_id") or "").strip()
-    to_addr = str(body.get("to") or "").strip()
-    subject = str(body.get("subject") or "CED probe").strip()
-    text = str(body.get("body") or "Prueba real CED gmail-send-probe.").strip()
-    if not user_id or not to_addr:
-        raise HTTPException(status_code=400, detail="user_id y to son obligatorios")
-
-    from app.services.google_gmail_api import send_message
-    from app.services.google_oauth import (
-        get_valid_access_token,
-        inspect_access_token,
-        token_has_gmail_send_scope,
-    )
-
-    try:
-        access = await asyncio.to_thread(get_valid_access_token, "gmail", user_id)
-    except ValueError as exc:
-        return {
-            "ok": False,
-            "stage": "token",
-            "error": str(exc),
-            "hint": "Reconecte Gmail vía OAuth directo (CFG → Conectar Gmail).",
-        }
-
-    info = await asyncio.to_thread(inspect_access_token, access)
-    scope = str(info.get("scope") or "")
-    can_send = token_has_gmail_send_scope(access)
-    if not can_send:
-        return {
-            "ok": False,
-            "stage": "scope",
-            "error": "missing_send_scope",
-            "scope": scope,
-            "hint": "Token sin gmail.send — reconectar Gmail aceptando envío.",
-        }
-
-    try:
-        result = await asyncio.to_thread(
-            send_message,
-            access,
-            to=to_addr,
-            subject=subject,
-            body=text,
-        )
-    except httpx.HTTPStatusError as exc:
-        return {
-            "ok": False,
-            "stage": "send",
-            "http_status": exc.response.status_code,
-            "error_body": (exc.response.text or "")[:500],
-            "scope": scope,
-        }
-    except Exception as exc:  # noqa: BLE001
-        return {"ok": False, "stage": "send", "error": str(exc)[:300], "scope": scope}
-
-    return {
-        "ok": True,
-        "stage": "sent",
-        "message_id": result.get("id"),
-        "to": to_addr,
-        "scope_has_send": can_send,
-    }
-
 
 @router.get("/native-pilot/status")
 async def retell_native_pilot_status(
@@ -972,8 +807,6 @@ async def retell_webhook(request: Request) -> dict[str, Any]:
         uid = resolve_call_user(str(call_id), payload)
         if uid:
             clear_finance_pending_for_call(uid, str(call_id))
-            clear_calendar_pending_for_call(uid, str(call_id))
-            clear_gmail_pending_for_call(uid, str(call_id))
             clear_meta_pending_for_call(uid, str(call_id))
             clear_advanced_mode_for_call(uid, str(call_id))
         try:

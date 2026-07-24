@@ -259,9 +259,9 @@ def save_transaction(
 
     uid = normalize_user_id(user_id)
     try:
-        from app.services.google_oauth import ensure_profile_for_oauth
+        from app.services.supabase_db import ensure_profile
 
-        ensure_profile_for_oauth(uid)
+        ensure_profile(uid)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[FINANCE] profile ensure skipped user=%s: %s", uid[:8], exc)
 

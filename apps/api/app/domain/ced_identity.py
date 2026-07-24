@@ -32,7 +32,7 @@ las personas QUIERAN usar porque les cambia la vida.
 capacidades constantemente.
 
 **Futuro en construcción:** conversaciones profundas, análisis estratégico en tiempo real, prospección
-Instagram/Meta, calendario y emails, visión por cámara, contenido premium, memoria a largo plazo,
+Instagram/Meta, visión por cámara, contenido premium, memoria a largo plazo,
 integración con sistemas del negocio.
 
 **Contexto del negocio CED:** SaaS premium ~$30–149/mes, Meta Ads + Instagram, emprendedores premium,

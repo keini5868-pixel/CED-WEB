@@ -12,13 +12,7 @@ type CachedPayload = {
 function isSnapshotShape(value: unknown): value is LifeDashboardSnapshot {
   if (!value || typeof value !== "object") return false;
   const snap = value as Partial<LifeDashboardSnapshot>;
-  return Boolean(
-    snap.weather &&
-      snap.calendar &&
-      snap.gmail &&
-      snap.air_quality &&
-      snap.pollen,
-  );
+  return Boolean(snap.weather && snap.air_quality && snap.pollen);
 }
 
 /** True si el snapshot tiene contenido útil (no solo el fallback vacío). */
@@ -33,15 +27,7 @@ export function hasUsefulLifeCache(snapshot: LifeDashboardSnapshot): boolean {
   const hasPollen = snapshot.pollen.lines.some(
     (line) => line && !/no disponible/i.test(line),
   );
-  return (
-    hasWeather ||
-    hasAir ||
-    hasPollen ||
-    snapshot.gmail.connected ||
-    snapshot.calendar.connected ||
-    (snapshot.gmail.messages?.length ?? 0) > 0 ||
-    (snapshot.calendar.events?.length ?? 0) > 0
-  );
+  return hasWeather || hasAir || hasPollen;
 }
 
 export function readLifeCache(): LifeDashboardSnapshot | null {

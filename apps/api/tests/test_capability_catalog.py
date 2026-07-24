@@ -29,7 +29,6 @@ def test_capability_list_is_catalog_not_publish_or_pdf():
     reply = try_capability_catalog_reply(CAPABILITY_LIST_MSG)
     assert reply is not None
     assert "WhatsApp" not in reply
-    assert "Gmail" in reply
     assert "YouTube" in reply
     assert "Publicación en Facebook" in reply or "Facebook" in reply
 

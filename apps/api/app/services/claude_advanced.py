@@ -151,9 +151,7 @@ def _needs_advanced_tools(text: str, history_rows: list[dict[str, Any]]) -> bool
         return True
     if resolve_pdf_request(text, history_rows):
         return True
-    from app.modules.calendar_module import is_calendar_intent
     from app.modules.environment_module import is_environment_intent
-    from app.modules.gmail_module import is_gmail_intent
     from app.services.cognitive_intents import (
         is_conversation_recall_intent,
         is_meta_publish_intent,
@@ -162,8 +160,6 @@ def _needs_advanced_tools(text: str, history_rows: list[dict[str, Any]]) -> bool
     from app.services.hud_reminders import is_reminder_intent
 
     if is_meta_publish_intent(text):
-        return True
-    if is_gmail_intent(text) or is_calendar_intent(text):
         return True
     if is_reminder_intent(text) or is_environment_intent(text):
         return True

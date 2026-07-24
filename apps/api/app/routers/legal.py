@@ -74,8 +74,6 @@ PRIVACY_BODY = """
     <p>Dependiendo de las funciones que actives, CED puede acceder a:</p>
     <ul>
       <li>Datos de cuenta: nombre, correo electronico, y credenciales de autenticacion (a traves de Google OAuth).</li>
-      <li>Gmail: con tu permiso explicito, CED puede leer y enviar correos electronicos en tu nombre, unicamente cuando tu se lo solicitas.</li>
-      <li>Google Calendar: con tu permiso, CED puede leer y crear eventos en tu calendario.</li>
       <li>Camara y microfono: CED puede acceder a tu camara y microfono en tiempo real cuando actives el modo de voz o vision, para poder escucharte y ver lo que le muestras.</li>
       <li>Imagenes que subas: las imagenes que subas para analisis, edicion o generacion de variaciones.</li>
       <li>Ubicacion: cuando uses el Modo Conducir (mapa y GPS), CED accede a tu ubicacion en tiempo real para brindarte navegacion.</li>
@@ -87,7 +85,7 @@ PRIVACY_BODY = """
     <h2>3. Como usamos tu informacion</h2>
     <p>Usamos la informacion recopilada exclusivamente para:</p>
     <ul>
-      <li>Ejecutar las acciones que tu le solicitas a CED (enviar un correo, guardar un evento, generar una imagen, publicar en redes, etc.)</li>
+      <li>Ejecutar las acciones que tu le solicitas a CED (crear un recordatorio, generar una imagen, publicar en redes, etc.)</li>
       <li>Mejorar la precision y utilidad del asistente.</li>
       <li>Procesar pagos y gestionar tu suscripcion.</li>
       <li>Brindarte soporte cuando lo solicites.</li>
@@ -97,7 +95,7 @@ PRIVACY_BODY = """
     <h2>4. Con quien compartimos informacion</h2>
     <p>CED utiliza los siguientes servicios de terceros para funcionar, cada uno con sus propias politicas de privacidad:</p>
     <ul>
-      <li>Google (Gmail, Calendar, OAuth): para las integraciones que tu autorices.</li>
+      <li>Google (OAuth de inicio de sesion): para autenticar tu cuenta cuando eliges entrar con Google.</li>
       <li>Meta (Facebook, Instagram): para publicaciones que tu autorices.</li>
       <li>Stripe: para procesamiento de pagos.</li>
       <li>Proveedores de inteligencia artificial (incluyendo modelos de lenguaje y generacion de voz/imagen) utilizados para procesar tus solicitudes.</li>
@@ -137,7 +135,7 @@ TERMS_BODY = """
     <p>Al crear una cuenta o usar CED, aceptas estos Terminos de Servicio. Si no estas de acuerdo, no debes usar el servicio.</p>
 
     <h2>2. Descripcion del servicio</h2>
-    <p>CED es un asistente virtual que ofrece, entre otras funciones: asistencia por voz y texto, integracion con Gmail y Google Calendar, analisis y generacion de imagenes, generacion de documentos PDF, publicacion en redes sociales conectadas, navegacion con mapa y GPS, y modulos adicionales de analisis de negocio.</p>
+    <p>CED es un asistente virtual que ofrece, entre otras funciones: asistencia por voz y texto, analisis y generacion de imagenes, generacion de documentos PDF, publicacion en redes sociales conectadas, navegacion con mapa y GPS, y modulos adicionales de analisis de negocio.</p>
 
     <h2>3. Cuentas de usuario</h2>
     <ul>
@@ -160,7 +158,7 @@ TERMS_BODY = """
     <ul>
       <li>Utilizar el servicio para actividades ilegales, fraudulentas o daninas.</li>
       <li>Intentar vulnerar la seguridad del sistema o acceder a cuentas ajenas.</li>
-      <li>Usar las integraciones de redes sociales, Gmail o Calendar para enviar spam, contenido enganoso o no autorizado.</li>
+      <li>Usar las integraciones de redes sociales para enviar spam, contenido enganoso o no autorizado.</li>
       <li>Usar el servicio para generar contenido que infrinja derechos de autor, difame, acose o incite violencia.</li>
       <li>Realizar ingenieria inversa o intentar extraer el codigo fuente del sistema.</li>
     </ul>

@@ -8,8 +8,6 @@ import re
 from typing import Any, Callable
 
 from app.modules.environment_module import is_environment_intent
-from app.modules.calendar_module import is_calendar_intent
-from app.modules.gmail_module import is_gmail_followup_pick, is_gmail_intent
 from app.modules.base_module import BaseModule
 from app.modules.module_registry import MODULE_ACKS, MODULE_ORDER, MODULE_OVERLAYS, build_module
 from app.services.module_detector import detect_intent as _detect_intent_v2
@@ -59,17 +57,6 @@ _MEMORY_PATTERNS = (
 )
 
 DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
-    "calendar": (
-        r"\b(?:qu[eé]|que)\s+tengo\s+ma[nñ]ana\b",
-        r"\b(?:ag[eé]ndame|agendar|programa(?:r|me))\s+(?:una\s+)?cita\b",
-        r"\b(?:qu[eé]|que)\s+eventos\s+tengo\b",
-        r"\b(?:mi\s+)?calendario\b",
-    ),
-    "gmail": (
-        r"\b(?:emails?|correos?|gmail)\b.*\bimportant",
-        r"\bl[eé]eme\s+(?:el\s+)?(?:email|correo)\b",
-        r"\benv[ií]a\s+(?:un\s+)?(?:email|correo)\b",
-    ),
     "environment": (
         r"\b(clima|temperatura|calor|fr[ií]o)\b",
         r"\b(va a llover|lluvia|nublado|despejado)\b",
@@ -142,7 +129,7 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
 _orchestrators: dict[str, "CedOrchestrator"] = {}
 
 _EPHEMERAL_MODULES = frozenset(
-    {"calendar", "gmail", "environment", "web_search", "image_gen", "pdf", "publish", "finance"}
+    {"environment", "web_search", "image_gen", "pdf", "publish", "finance"}
 )
 
 # Detección v2 para intención FRESCA (sin módulo activo). Reversible por flag.
@@ -163,8 +150,6 @@ MINI_AGENT_MODULES: tuple[str, ...] = (
     "image_gen",
     "pdf",
     "map",
-    "calendar",
-    "gmail",
     "finance",
     "youtube",
 )
@@ -179,8 +164,6 @@ DETECTOR_TO_REGISTRY: dict[str, str | None] = {
     "image_gen": "image_gen",
     "social": "publish",
     "prospection": "prospection",
-    "gmail": "gmail",
-    "calendar": "calendar",
     "finance": "finance",
     "weather": "environment",
     "pollen": "environment",
@@ -280,10 +263,6 @@ def is_module_command(
         return is_youtube_intent(text)
     if module == "web_search":
         return resolve_web_search_request(text, transcript) is not None
-    if module == "calendar":
-        return is_calendar_intent(text)
-    if module == "gmail":
-        return is_gmail_intent(text) or is_gmail_followup_pick(text, user_id)
     if module == "environment":
         from app.modules.environment_module import (
             is_environment_action_request,
@@ -325,9 +304,6 @@ def detect_module(
     t = text.lower()
     if active_module and _is_pure_ack(text):
         return active_module
-
-    if user_id and is_gmail_followup_pick(text, user_id):
-        return "gmail"
 
     if is_meta_publish_intent(text) or resolve_meta_publish_request(text, transcript):
         return "publish"
@@ -371,8 +347,6 @@ def detect_module(
             return "youtube"
 
     if active_module in (
-        "calendar",
-        "gmail",
         "environment",
         "web_search",
         "image_gen",
@@ -386,12 +360,6 @@ def detect_module(
         if detected and detected != active_module:
             return detected
         return active_module
-
-    if is_calendar_intent(text):
-        return "calendar"
-
-    if is_gmail_intent(text):
-        return "gmail"
 
     # Antes del mapa: "busca X en youtube" no debe caer en búsqueda de lugares.
     from app.services.youtube_voice_intent import resolve_youtube_play_request
@@ -612,8 +580,6 @@ class CedOrchestrator:
         return result
 
     async def _release_ephemeral_module(self, user_id: str) -> None:
-        if self.active_module == "gmail" and vcs.is_gmail_awaiting_pick(user_id):
-            return
         if self.active_module in _EPHEMERAL_MODULES:
             await self.deactivate_current(user_id=user_id)
 

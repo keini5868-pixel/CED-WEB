@@ -35,14 +35,6 @@ export default function PrivacyPage() {
             autenticacion (a traves de Google OAuth).
           </li>
           <li>
-            Gmail: con tu permiso explicito, CED puede leer y enviar correos
-            electronicos en tu nombre, unicamente cuando tu se lo solicitas.
-          </li>
-          <li>
-            Google Calendar: con tu permiso, CED puede leer y crear eventos en
-            tu calendario.
-          </li>
-          <li>
             Camara y microfono: CED puede acceder a tu camara y microfono en
             tiempo real cuando actives el modo de voz o vision, para poder
             escucharte y ver lo que le muestras.
@@ -76,8 +68,8 @@ export default function PrivacyPage() {
         <p>Usamos la informacion recopilada exclusivamente para:</p>
         <ul>
           <li>
-            Ejecutar las acciones que tu le solicitas a CED (enviar un correo,
-            guardar un evento, generar una imagen, publicar en redes, etc.)
+            Ejecutar las acciones que tu le solicitas a CED (crear un
+            recordatorio, generar una imagen, publicar en redes, etc.)
           </li>
           <li>Mejorar la precision y utilidad del asistente.</li>
           <li>Procesar pagos y gestionar tu suscripcion.</li>
@@ -97,8 +89,8 @@ export default function PrivacyPage() {
         </p>
         <ul>
           <li>
-            Google (Gmail, Calendar, OAuth): para las integraciones que tu
-            autorices.
+            Google (OAuth de inicio de sesion): para autenticar tu cuenta cuando
+            eliges entrar con Google.
           </li>
           <li>
             Meta (Facebook, Instagram): para publicaciones que tu autorices.

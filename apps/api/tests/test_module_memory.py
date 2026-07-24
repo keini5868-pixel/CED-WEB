@@ -15,8 +15,6 @@ from app.services.module_memory import (
 
 def test_registry_covers_expected_modules():
     assert "finance" in MEMORY_LOADERS
-    assert "calendar" in MEMORY_LOADERS
-    assert "gmail" in MEMORY_LOADERS
     assert "memory" in MEMORY_LOADERS
     assert MODULES_WITH_MEMORY <= frozenset(MEMORY_LOADERS.keys())
 
@@ -38,28 +36,6 @@ def test_load_finance_memory_mocked():
     assert "balance positivo" in block
 
 
-def test_load_gmail_not_connected():
-    with patch(
-        "app.services.google_oauth.get_connection_status",
-        return_value={"connected": False},
-    ):
-        block = load_module_memory("gmail", "user-1")
-    assert block is not None
-    assert "no conectado" in block.lower()
-
-
-def test_load_calendar_connected_with_events():
-    with patch(
-        "app.services.google_calendar_api.get_calendar_events",
-        return_value={
-            "connected": True,
-            "today_events": [{"display": "Reunión 10:00"}],
-            "week_events": [],
-        },
-    ):
-        block = load_module_memory("calendar", "user-1")
-    assert block is not None
-    assert "Reunión 10:00" in block
 
 
 def test_load_unknown_module_returns_none():

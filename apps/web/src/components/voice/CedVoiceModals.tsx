@@ -18,7 +18,6 @@ import {
   isJarvisPreset,
 } from "@/lib/voice/voicePresets";
 import { fetchUserAddress, updateUserAddress } from "@/lib/api/profile";
-import { ConnectGoogleServicesPanel } from "@/components/voice/ConnectGoogleServices";
 import { clearEphemeralTokenCache } from "@/lib/voice/ephemeralTokenCache";
 import type { UserGender } from "@/lib/voice/addressPreferenceIntent";
 import { isRetellVoice } from "@/lib/voice/voiceProvider";
@@ -162,8 +161,6 @@ export function CedSettingsModal({
             </div>
           </button>
         </div>
-
-        <ConnectGoogleServicesPanel />
 
         {retellMode ? (
           <div className="rounded border border-amber-500/30 bg-amber-950/20 px-3 py-3 text-xs text-amber-100/90">

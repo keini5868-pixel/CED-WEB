@@ -44,8 +44,6 @@ _TOOL_FALLBACK: dict[str, str] = {
     "play_youtube_video": "No pude buscar el video en YouTube, señor. ¿Repito?",
     "generar_pdf": "No pude preparar el PDF, señor. ¿Lo intento de nuevo?",
     "generate_image": "No pude generar la imagen, señor. ¿Lo intento de nuevo?",
-    "leer_gmail": "No pude leer su correo, señor. ¿Lo intento de nuevo?",
-    "enviar_gmail": "No pude enviar el correo, señor. ¿Lo intento de nuevo?",
     "publicar_instagram": "No pude publicar en Instagram, señor.",
     "publicar_facebook": "No pude publicar en Facebook, señor.",
     "registrar_movimiento_financiero": "No pude anotar el movimiento, señor. ¿Lo repite?",

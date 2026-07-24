@@ -77,8 +77,9 @@ def format_reminders_spoken(user_id: str) -> str:
 
 
 def handle_reminder_create_sync(user_id: str, text: str) -> dict[str, str]:
-    from app.modules.calendar_module import (
-        ZoneInfo,
+    from zoneinfo import ZoneInfo
+
+    from app.services.reminder_nl_parse import (
         _extract_title,
         _parse_target_day,
         _parse_time,

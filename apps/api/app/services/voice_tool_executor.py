@@ -1138,44 +1138,6 @@ async def _execute_voice_tool_body(
             payload["summary"] = summary
             return payload
 
-        if name in ("leer_gmail", "enviar_gmail"):
-            from app.modules.gmail_module import handle_gmail_query_sync
-
-            if name == "leer_gmail":
-                query = str(
-                    params.get("consulta")
-                    or params.get("query")
-                    or params.get("_user_request")
-                    or ""
-                ).strip()
-                if not query:
-                    query = "léeme mis correos"
-            else:
-                dest = str(
-                    params.get("destinatario") or params.get("to") or ""
-                ).strip()
-                msg = str(params.get("mensaje") or params.get("body") or "").strip()
-                if not dest or not msg:
-                    return _spoken_err(
-                        "Señor, indique a quién enviar el correo y el mensaje.",
-                        error="gmail_missing_fields",
-                    )
-                query = f"envía un email a {dest} diciendo {msg}"
-            try:
-                result = await asyncio.wait_for(
-                    asyncio.to_thread(handle_gmail_query_sync, user_id, query),
-                    timeout=18.0,
-                )
-            except asyncio.TimeoutError:
-                return _spoken_err(
-                    "Señor, Gmail tardó demasiado. ¿Lo intento de nuevo?",
-                    error="gmail_timeout",
-                )
-            spoken = str(result.get("spoken") or "").strip()
-            if spoken:
-                return _spoken_ok(spoken)
-            return _spoken_err("No pude acceder a Gmail, señor.", error="gmail_failed")
-
         if name == "leer_comentarios_redes":
             platform = str(params.get("platform") or "both")
             result = await asyncio.to_thread(

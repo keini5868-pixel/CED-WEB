@@ -403,56 +403,8 @@ def upsert_meta_connection(user_id: str, data: dict[str, Any]) -> dict[str, Any]
     return (result.data or [row])[0]
 
 
-def get_calendar_tokens(user_id: str) -> dict[str, Any] | None:
-    try:
-        from app.services.user_id_utils import normalize_user_id
-
-        uid = normalize_user_id(user_id)
-        client = _client()
-        result = (
-            client.table("calendar_tokens")
-            .select("access_token, refresh_token, expires_at, connected_at")
-            .eq("user_id", uid)
-            .limit(1)
-            .execute()
-        )
-        rows = result.data or []
-        return rows[0] if rows else None
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[DB] get_calendar_tokens failed user=%s err=%s", str(user_id)[:8], exc)
-        return None
 
 
-def upsert_calendar_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    from app.services.supabase_client import save_calendar_tokens
-
-    return save_calendar_tokens(user_id, data)
-
-
-def get_gmail_tokens(user_id: str) -> dict[str, Any] | None:
-    try:
-        from app.services.user_id_utils import normalize_user_id
-
-        uid = normalize_user_id(user_id)
-        client = _client()
-        result = (
-            client.table("gmail_tokens")
-            .select("access_token, refresh_token, expires_at, connected_at")
-            .eq("user_id", uid)
-            .limit(1)
-            .execute()
-        )
-        rows = result.data or []
-        return rows[0] if rows else None
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[DB] get_gmail_tokens failed user=%s err=%s", str(user_id)[:8], exc)
-        return None
-
-
-def upsert_gmail_tokens(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
-    from app.services.supabase_client import save_gmail_tokens
-
-    return save_gmail_tokens(user_id, data)
 
 
 def list_hud_reminders(user_id: str, *, limit: int = 20) -> list[dict[str, Any]]:
@@ -514,6 +466,39 @@ def list_leads_today(user_id: str, limit: int = 5) -> list[dict[str, Any]]:
 
 def count_leads_today(user_id: str) -> int:
     return len(list_leads_today(user_id, limit=100))
+
+
+
+def ensure_profile(user_id: str) -> None:
+    """Garantiza fila en profiles antes de inserts dependientes."""
+    from app.services.user_id_utils import normalize_user_id
+
+    uid = normalize_user_id(user_id)
+    existing = get_profile(uid)
+    if existing:
+        return
+    logger.info("[DB] creating profile user_id=%s", uid)
+    try:
+        client = _client()
+        auth_res = client.auth.admin.get_user_by_id(uid)
+        user = auth_res.user if hasattr(auth_res, "user") else auth_res
+        email = getattr(user, "email", None) or ""
+        meta = getattr(user, "user_metadata", None) or {}
+        full_name = meta.get("full_name", "") if isinstance(meta, dict) else ""
+        client.table("profiles").upsert(
+            {
+                "id": uid,
+                "email": email,
+                "full_name": full_name or "",
+                "role": "client",
+            },
+            on_conflict="id",
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.error("[DB] profile ensure failed user=%s: %s", uid[:8], exc)
+        raise ValueError("No se pudo crear perfil.") from exc
+    if not get_profile(uid):
+        raise ValueError("Perfil ausente tras ensure.")
 
 
 def get_profile(user_id: str) -> dict[str, Any] | None:

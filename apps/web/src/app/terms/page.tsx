@@ -27,10 +27,10 @@ export default function TermsPage() {
         <h2>2. Descripcion del servicio</h2>
         <p>
           CED es un asistente virtual que ofrece, entre otras funciones:
-          asistencia por voz y texto, integracion con Gmail y Google Calendar,
-          analisis y generacion de imagenes, generacion de documentos PDF,
-          publicacion en redes sociales conectadas, navegacion con mapa y GPS, y
-          modulos adicionales de analisis de negocio.
+          asistencia por voz y texto, analisis y generacion de imagenes,
+          generacion de documentos PDF, publicacion en redes sociales
+          conectadas, navegacion con mapa y GPS, y modulos adicionales de
+          analisis de negocio.
         </p>
       </section>
 
@@ -85,8 +85,8 @@ export default function TermsPage() {
             ajenas.
           </li>
           <li>
-            Usar las integraciones de redes sociales, Gmail o Calendar para
-            enviar spam, contenido enganoso o no autorizado.
+            Usar las integraciones de redes sociales para enviar spam, contenido
+            enganoso o no autorizado.
           </li>
           <li>
             Usar el servicio para generar contenido que infrinja derechos de

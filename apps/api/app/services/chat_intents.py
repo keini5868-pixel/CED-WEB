@@ -187,7 +187,7 @@ def is_creative_artifact_intent(text: str) -> bool:
     Evita colisiones del tipo: «genera una imagen con la frase 'el tiempo va a
     pasar'» (disparaba clima por «tiempo»), o «hazme un PDF que diga … cita /
     correo …» (calendario/Gmail). Usar en chat y voz antes de enrutar a
-    environment/calendar/gmail/finance.
+    environment/finance.
     """
     t = (text or "").strip()
     if len(t) < 8:

@@ -1,4 +1,4 @@
-"""HUD Life dashboard — clima, calendario, gmail, aire y polen."""
+"""HUD Life dashboard — clima, aire y polen."""
 
 from __future__ import annotations
 
@@ -97,82 +97,6 @@ def _safe_web_lines(
     return [fallback]
 
 
-def check_calendar_token(user_id: str) -> bool:
-    from app.services.google_oauth import get_connection_status
-
-    return bool(get_connection_status("calendar", user_id).get("connected"))
-
-
-def check_gmail_token(user_id: str) -> bool:
-    from app.services.google_oauth import get_connection_status
-
-    return bool(get_connection_status("gmail", user_id).get("connected"))
-
-
-def _calendar_section(user_id: str) -> dict[str, Any]:
-    from app.services.google_calendar_api import get_calendar_events
-
-    snapshot = get_calendar_events(user_id)
-    connected = bool(snapshot.get("connected"))
-    section: dict[str, Any] = {
-        "connected": connected,
-        "events": [],
-        "today_events": [],
-        "week_events": [],
-        "hint": "" if connected else "Conectar Calendar en CFG ⚙️",
-    }
-    if not connected:
-        return section
-
-    today_events = snapshot.get("today_events") or []
-    week_events = snapshot.get("week_events") or []
-    all_events = snapshot.get("events") or []
-
-    section["today_events"] = [
-        e.get("display", e.get("title", "")) if isinstance(e, dict) else str(e)
-        for e in today_events
-    ]
-    section["week_events"] = [
-        e.get("display", e.get("title", "")) if isinstance(e, dict) else str(e)
-        for e in week_events
-    ]
-    section["events"] = [
-        e.get("display", e.get("title", "")) if isinstance(e, dict) else str(e)
-        for e in all_events
-    ]
-    if snapshot.get("error"):
-        section["error"] = str(snapshot["error"])[:200]
-    return section
-
-
-def _gmail_section(user_id: str) -> dict[str, Any]:
-    from app.services.google_gmail_api import get_gmail_emails
-
-    primary = get_gmail_emails(user_id, "primary")
-    connected = bool(primary.get("connected"))
-    section: dict[str, Any] = {
-        "connected": connected,
-        "unread_count": primary.get("count", 0),
-        "messages": [],
-        "category": "primary",
-        "items": primary.get("messages") or [],
-        "hint": "" if connected else "Conectar Gmail en CFG ⚙️",
-    }
-    if not connected:
-        return section
-
-    items = primary.get("messages") or []
-    section["messages"] = [
-        f"{m.get('from', '?')} — {m.get('subject', '(sin asunto)')}"
-        for m in items[:3]
-    ]
-    if not items:
-        section["messages"] = ["Bandeja Principal al día — sin correos recientes."]
-    if primary.get("error"):
-        section["error"] = str(primary["error"])[:200]
-    return section
-
-
 def _fetch_web_sections(place: str) -> tuple[list[str], list[str], list[str]]:
     tasks: dict[str, tuple[str, str, str]] = {
         "weather": (
@@ -259,81 +183,15 @@ def _weather_snapshot(user_id: str) -> tuple[str, list[str], list[str], list[str
     )
 
 
-def _section_with_timeout(
-    fn: Any,
-    *,
-    timeout: float = 5.0,
-    label: str,
-) -> dict[str, Any] | Any:
-    """Ejecuta sección LIFE con timeout — nunca bloquea el dashboard."""
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(fn)
-        try:
-            return future.result(timeout=timeout)
-        except Exception:  # noqa: BLE001
-            logger.warning("[LIFE] section timeout/fail label=%s", label, exc_info=True)
-            return None
-
-
-def build_life_connections(user_id: str) -> dict[str, Any]:
-    """Solo Calendar + Gmail — respuesta rápida sin búsquedas web."""
-    calendar = _section_with_timeout(
-        lambda: _calendar_section(user_id),
-        timeout=5.0,
-        label="calendar",
-    ) or {
-        "connected": False,
-        "events": [],
-        "hint": "Calendar no disponible ahora.",
-    }
-    gmail = _section_with_timeout(
-        lambda: _gmail_section(user_id),
-        timeout=5.0,
-        label="gmail",
-    ) or {
-        "connected": False,
-        "unread_count": 0,
-        "messages": [],
-        "hint": "Gmail no disponible ahora.",
-    }
-    return {
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-        "calendar": {"title": "CALENDARIO", **calendar},
-        "gmail": {"title": "GMAIL", **gmail},
-    }
-
-
 def build_life_dashboard(user_id: str) -> dict[str, Any]:
     """Snapshot LIFE inmediato — clima desde cache (sin bloquear event loop)."""
     place, weather_lines, air_lines, pollen_lines, weather_loading = _weather_snapshot(user_id)
-
-    calendar = _section_with_timeout(
-        lambda: _calendar_section(user_id),
-        timeout=5.0,
-        label="calendar",
-    ) or {
-        "connected": False,
-        "events": [],
-        "hint": "Conectar Calendar en CFG ⚙️",
-    }
-    gmail = _section_with_timeout(
-        lambda: _gmail_section(user_id),
-        timeout=5.0,
-        label="gmail",
-    ) or {
-        "connected": False,
-        "unread_count": 0,
-        "messages": [],
-        "hint": "Conectar Gmail en CFG ⚙️",
-    }
 
     payload = {
         "date_label": _date_label(),
         "place": place,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "weather": {"title": "CLIMA", "lines": weather_lines},
-        "calendar": {"title": "CALENDARIO", **calendar},
-        "gmail": {"title": "GMAIL", **gmail},
         "air_quality": {"title": "CALIDAD DEL AIRE", "lines": air_lines},
         "pollen": {"title": "POLEN", "lines": pollen_lines},
     }
@@ -344,25 +202,13 @@ def build_life_dashboard(user_id: str) -> dict[str, Any]:
 
 def build_life_dashboard_fallback(user_id: str = "") -> dict[str, Any]:
     """Respuesta mínima útil cuando el handler falla por completo."""
-    calendar = _calendar_section(user_id) if user_id else {
-        "connected": False,
-        "events": [],
-        "hint": "Conectar Calendar en CFG ⚙️",
-    }
-    gmail = _gmail_section(user_id) if user_id else {
-        "connected": False,
-        "unread_count": 0,
-        "messages": [],
-        "hint": "Conectar Gmail en CFG ⚙️",
-    }
+    _ = user_id
     return {
         "date_label": _date_label(),
         "place": _DEFAULT_PLACE,
         "updated_at": datetime.now(timezone.utc).isoformat(),
         "partial": True,
         "weather": {"title": "CLIMA", "lines": ["Buscando clima…"]},
-        "calendar": {"title": "CALENDARIO", **calendar},
-        "gmail": {"title": "GMAIL", **gmail},
         "air_quality": {"title": "CALIDAD DEL AIRE", "lines": ["No disponible."]},
         "pollen": {"title": "POLEN", "lines": ["No disponible."]},
     }

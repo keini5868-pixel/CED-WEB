@@ -2646,7 +2646,7 @@ def send_message(
             route_meta={"intent": "memory_recall", "source": "direct"},
         )
 
-    # Imagen/PDF ANTES de clima/calendario/gmail/finanzas: palabras trampa dentro
+    # Imagen/PDF ANTES de clima/finanzas: palabras trampa dentro
     # del texto citado («tiempo», «cita», «correo») no deben secuestrar el pedido.
     detail = resolve_pdf_detail_for_turn(text, history)
     if detail == "ask" or (
@@ -2730,9 +2730,7 @@ def send_message(
         handle_reminder_query_sync,
         is_reminder_intent,
     )
-    from app.modules.calendar_module import handle_calendar_query_sync, is_calendar_intent
     from app.modules.finance_module import handle_finance_query_sync, is_finance_intent
-    from app.modules.gmail_module import handle_gmail_query_sync, is_gmail_intent
 
     if not creative and is_reminder_intent(text) and re.search(r"recu[eé]rdame", text, re.I):
         reminder_result = handle_reminder_create_sync(user_id, text)
@@ -2746,20 +2744,6 @@ def send_message(
         return _finish(
             _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
             route_meta={"intent": "reminder_list", "source": "direct"},
-        )
-
-    if not creative and is_calendar_intent(text):
-        calendar_result = handle_calendar_query_sync(user_id, text)
-        return _finish(
-            _finalize_chat_reply(str(calendar_result.get("spoken") or "")),
-            route_meta={"intent": "calendar", "source": "direct"},
-        )
-
-    if not creative and is_gmail_intent(text):
-        gmail_result = handle_gmail_query_sync(user_id, text)
-        return _finish(
-            _finalize_chat_reply(str(gmail_result.get("spoken") or "")),
-            route_meta={"intent": "gmail", "source": "direct"},
         )
 
     if not creative and is_finance_intent(text):

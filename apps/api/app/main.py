@@ -30,7 +30,6 @@ from app.routers import (
     legal,
     media,
     memory,
-    google_auth,
     advanced_chat,
     finance_chat,
     meta,
@@ -61,8 +60,7 @@ async def lifespan(_app: FastAPI):
     settings = reload_settings()
     configure_logging(settings)
     logger.info(
-        "Google tokens: client_id=%s service_role=%s web_public=%s api_public=%s (Supabase Auth provider_token)",
-        "OK" if settings.google_calendar_client_id.strip() else "MISSING",
+        "Boot: service_role=%s web_public=%s api_public=%s",
         "OK" if settings.supabase_service_role_key.strip() else "MISSING",
         settings.web_public_url.strip() or "MISSING",
         settings.api_public_url.strip() or "MISSING",
@@ -146,8 +144,6 @@ def create_app() -> FastAPI:
     application.include_router(hud.router)
     application.include_router(panels.router)
     application.include_router(meta.router)
-    application.include_router(google_auth.router)
-    application.include_router(google_auth.callback_router)
     application.include_router(media.router)
     application.include_router(retell.router)
     application.include_router(retell_custom_llm.router)

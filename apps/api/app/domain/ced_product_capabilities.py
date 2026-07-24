@@ -37,15 +37,13 @@ CED_CAPABILITY_CATALOG_BODY = """1. Chat de texto conversacional
 7. Generación de imágenes con IA
 8. Generación y descarga de PDF
 9. Búsqueda web en tiempo real
-10. Gmail — leer y enviar correo (cuenta conectada)
-11. Google Calendar — consultar y agendar citas
-12. Finanzas personales — consultar y registrar movimientos
-13. Cámara y visión — describir o buscar lo visible
-14. Mapa y navegación / modo conducir
-15. YouTube — buscar y reproducir en el panel
-16. Clima y ambiente (temperatura, aire, etc.)
-17. Memoria de conversación y contexto de sesión
-18. Modo Creador (solo administración del sistema, cuando aplica)"""
+10. Finanzas personales — consultar y registrar movimientos
+11. Cámara y visión — describir o buscar lo visible
+12. Mapa y navegación / modo conducir
+13. YouTube — buscar y reproducir en el panel
+14. Clima y ambiente (temperatura, aire, etc.)
+15. Memoria de conversación y contexto de sesión
+16. Modo Creador (solo administración del sistema, cuando aplica)"""
 
 CED_CAPABILITY_CATALOG_REPLY = f"""Aquí tiene las habilidades y herramientas reales del sistema CED, señor:
 

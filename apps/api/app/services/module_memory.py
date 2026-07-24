@@ -22,8 +22,6 @@ ModuleMemoryLoader = Callable[[str], str | None]
 MODULES_WITH_MEMORY: frozenset[str] = frozenset(
     {
         "finance",
-        "calendar",
-        "gmail",
         "memory",
         "stripe",
     }
@@ -56,63 +54,6 @@ def _load_finance_memory(user_id: str) -> str | None:
     except Exception:  # noqa: BLE001
         pass
     return "\n".join(lines)
-
-
-def _load_calendar_memory(user_id: str) -> str | None:
-    from app.services.google_calendar_api import get_calendar_events
-
-    try:
-        data = get_calendar_events(user_id)
-    except Exception:  # noqa: BLE001
-        logger.warning("[MODULE_MEM] calendar load failed user=%s", user_id[:8])
-        return None
-
-    if not data.get("connected"):
-        return (
-            "# MEMORIA CALENDARIO\n"
-            "Google Calendar no conectado. Indica al usuario que conecte Calendar "
-            "desde el panel de conexiones antes de consultar eventos."
-        )
-
-    today = data.get("today_events") or []
-    upcoming = data.get("week_events") or []
-    if not today and not upcoming:
-        return "# MEMORIA CALENDARIO\nSin eventos programados hoy ni en los próximos días."
-
-    lines = ["# MEMORIA CALENDARIO (eventos reales)"]
-    if today:
-        lines.append("## Hoy")
-        for ev in today[:6]:
-            lines.append(f"- {ev.get('display') or ev.get('summary') or 'Evento'}")
-    if upcoming:
-        lines.append("## Próximos")
-        for ev in upcoming[:6]:
-            lines.append(f"- {ev.get('display') or ev.get('summary') or 'Evento'}")
-    return "\n".join(lines)
-
-
-def _load_gmail_memory(user_id: str) -> str | None:
-    from app.services.google_oauth import get_connection_status
-
-    try:
-        status = get_connection_status("gmail", user_id)
-    except Exception:  # noqa: BLE001
-        logger.warning("[MODULE_MEM] gmail status failed user=%s", user_id[:8])
-        return None
-
-    if not status.get("connected"):
-        return (
-            "# MEMORIA GMAIL\n"
-            "Gmail no conectado. Indica al usuario que conecte Gmail desde el panel "
-            "de conexiones antes de leer o enviar correos."
-        )
-    scopes = status.get("scopes") or []
-    scope_hint = ", ".join(str(s) for s in scopes[:3]) if scopes else "lectura"
-    return (
-        "# MEMORIA GMAIL\n"
-        f"Cuenta Gmail conectada ({scope_hint}). "
-        "Puede leer bandeja y enviar correos con confirmación explícita."
-    )
 
 
 def _load_conversation_memory(user_id: str) -> str | None:
@@ -161,8 +102,6 @@ def _load_stripe_memory(user_id: str) -> str | None:
 
 MEMORY_LOADERS: dict[str, ModuleMemoryLoader] = {
     "finance": _load_finance_memory,
-    "calendar": _load_calendar_memory,
-    "gmail": _load_gmail_memory,
     "memory": _load_conversation_memory,
     "stripe": _load_stripe_memory,
 }

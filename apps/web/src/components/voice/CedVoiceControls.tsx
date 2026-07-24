@@ -174,25 +174,11 @@ export function CedVoiceControls(props: CedVoiceControlsProps) {
         onClick={() => props.onQuickPopup?.("weather")}
       />
       <EmojiControlBtn
-        active={props.quickPopup === "calendar"}
-        label="Calendario"
-        emoji="📅"
-        short="CAL"
-        onClick={() => props.onQuickPopup?.("calendar")}
-      />
-      <EmojiControlBtn
         active={props.quickPopup === "events"}
         label="Eventos y recordatorios"
         emoji="🔔"
         short="EVENTOS"
         onClick={() => props.onQuickPopup?.("events")}
-      />
-      <EmojiControlBtn
-        active={props.quickPopup === "gmail"}
-        label="Gmail"
-        emoji="📧"
-        short="GMAIL"
-        onClick={() => props.onQuickPopup?.("gmail")}
       />
       <EmojiControlBtn
         label="Modo avanzado Claude"

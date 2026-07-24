@@ -18,7 +18,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "CED — Castillo de la Evolución Digital",
   description:
-    "CED es un asistente virtual inteligente que ayuda a gestionar tareas de negocio y personales con voz, texto e imágenes, e integraciones opcionales con Google (inicio de sesión, Gmail y Calendar) solo con tu permiso.",
+    "CED es un asistente virtual inteligente que ayuda a gestionar tareas de negocio y personales con voz, texto e imágenes, e inicio de sesión opcional con Google solo con tu permiso.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

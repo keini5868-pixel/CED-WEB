@@ -54,7 +54,7 @@ def test_send_advanced_message_capability_list_does_not_create_pdf():
     assert out.get("pdf") in (None, {})
     assert "Listo. PDF" not in (out.get("response") or "")
     assert "WhatsApp" not in (out.get("response") or "")
-    assert "Gmail" in out["response"] or "1." in out["response"]
+    assert "1." in (out.get("response") or "")
     mock_claude.assert_not_called()
     mock_pdf.assert_not_called()
     mock_store.assert_not_called()
