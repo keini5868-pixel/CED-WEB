@@ -84,15 +84,12 @@ export default function HomePage() {
 
       <section className="relative z-10 mx-auto max-w-6xl px-4 py-12 sm:px-6">
         <div className="text-center">
-          <div className="mx-auto mb-6 flex h-28 w-28 items-center justify-center rounded-full border-2 border-cyan-400/60 ced-glow sm:h-36 sm:w-36">
+          <h1 className="mx-auto mb-6 flex h-28 w-28 items-center justify-center rounded-full border-2 border-cyan-400/60 ced-glow sm:h-36 sm:w-36">
             <span className="font-[family-name:var(--font-orbitron)] text-3xl font-bold text-cyan-300 sm:text-4xl">
               CED
             </span>
-          </div>
-          <h1 className="font-[family-name:var(--font-orbitron)] text-3xl font-bold tracking-[0.14em] text-cyan-200 sm:text-4xl md:text-5xl">
-            CED
           </h1>
-          <p className="mt-2 font-[family-name:var(--font-orbitron)] text-sm tracking-[0.2em] text-cyan-400/90 sm:text-base">
+          <p className="font-[family-name:var(--font-orbitron)] text-sm tracking-[0.2em] text-cyan-400/90 sm:text-base">
             Castillo de la Evolución Digital
           </p>
           <p className="mx-auto mt-5 max-w-2xl text-sm leading-relaxed text-cyan-100/85 sm:text-base">
@@ -103,8 +100,7 @@ export default function HomePage() {
             redes cuando tú lo autorices.
           </p>
           <p className="mt-3 text-xs text-cyan-500">
-            Página pública — no necesitas iniciar sesión para conocer CED.{" "}
-            {TRIAL_DAYS} días gratis al registrarte.
+            Página pública — {TRIAL_DAYS} días gratis al registrarte.
           </p>
         </div>
       </section>
