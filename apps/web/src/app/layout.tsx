@@ -41,7 +41,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`${orbitron.variable} ${inter.variable}`}>
+    <html lang="es" className={`scroll-smooth ${orbitron.variable} ${inter.variable}`}>
       <body className="antialiased">
         <ClientShell>{children}</ClientShell>
       </body>

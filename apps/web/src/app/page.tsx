@@ -99,7 +99,36 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section className="relative z-10 mx-auto max-w-6xl px-4 pb-16 sm:px-6">
+      <section
+        aria-label="Acciones principales"
+        className="relative z-10 mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-10"
+      >
+        <div className="mx-auto flex w-full max-w-md flex-col items-stretch gap-3 sm:max-w-none sm:flex-row sm:items-center sm:justify-center sm:gap-5">
+          <Link
+            href="/signup"
+            className="inline-flex items-center justify-center gap-2 rounded border-2 border-cyan-400 bg-cyan-400/15 px-8 py-3.5 text-center font-[family-name:var(--font-orbitron)] text-sm font-bold tracking-wider text-cyan-200 transition hover:bg-cyan-400/30 hover:text-white sm:min-w-[220px]"
+          >
+            <span aria-hidden className="text-base leading-none">
+              🚀
+            </span>
+            Empezar gratis
+          </Link>
+          <a
+            href="#planes"
+            className="inline-flex items-center justify-center gap-2 rounded border border-cyan-500/55 bg-transparent px-8 py-3.5 text-center text-sm tracking-wide text-cyan-300/90 transition hover:border-cyan-400 hover:bg-cyan-400/5 hover:text-cyan-200 sm:min-w-[220px]"
+          >
+            <span aria-hidden className="text-base leading-none">
+              📋
+            </span>
+            Ver detalles de planes
+          </a>
+        </div>
+      </section>
+
+      <section
+        id="planes"
+        className="relative z-10 mx-auto max-w-6xl scroll-mt-24 px-4 pb-16 sm:px-6"
+      >
         <h2 className="mb-6 text-center font-[family-name:var(--font-orbitron)] text-sm tracking-[0.2em] text-cyan-400">
           Planes
         </h2>
@@ -157,21 +186,6 @@ export default function HomePage() {
               </div>
             );
           })}
-        </div>
-
-        <div className="mt-10 flex flex-wrap justify-center gap-4">
-          <Link
-            href="/signup"
-            className="rounded border-2 border-cyan-400 bg-cyan-400/10 px-8 py-3 font-[family-name:var(--font-orbitron)] text-sm font-bold tracking-wider text-cyan-300 transition hover:bg-cyan-400/25"
-          >
-            EMPEZAR GRATIS
-          </Link>
-          <Link
-            href="/pricing"
-            className="rounded border border-cyan-600 px-8 py-3 text-sm text-cyan-400/90 hover:border-cyan-400"
-          >
-            VER DETALLE DE PLANES
-          </Link>
         </div>
 
         <p className="mt-8 text-center text-[11px] text-cyan-700">
