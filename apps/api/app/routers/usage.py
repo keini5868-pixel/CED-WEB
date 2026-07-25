@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException
@@ -14,6 +15,8 @@ from app.services.voice_usage import (
     ACCESS_DENIED_MESSAGES,
     voice_access_state_async,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/usage", tags=["usage"])
 
@@ -79,11 +82,23 @@ async def session_start(user_id: str = Depends(require_user_id)) -> dict:
         "conversation_id": None,
     }
 
+    conversation_id = None
     try:
         conv = await run_sync(supabase_db.create_conversation, user_id)
-        conversation_id = conv.get("id")
+        conversation_id = conv.get("id") if conv else None
         _active_sessions[session_id]["conversation_id"] = conversation_id
-    except RuntimeError:
+        if not conversation_id:
+            logger.error(
+                "[USAGE] session_start sin conversation_id user=%s",
+                user_id[:8],
+            )
+    except Exception as exc:  # noqa: BLE001
+        # La voz puede seguir, pero el historial no se guardará sin cid.
+        logger.exception(
+            "[USAGE] create_conversation falló user=%s: %s",
+            user_id[:8],
+            exc,
+        )
         conversation_id = None
 
     return {

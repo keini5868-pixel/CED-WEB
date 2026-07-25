@@ -34,8 +34,16 @@ def list_conversations(
             q=q,
         )
         return {"conversations": items}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).exception(
+            "[CONV] list_conversations fallo user=%s", user_id[:8]
+        )
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo cargar el historial.",
+        ) from exc
 
 
 @router.post("")
@@ -46,8 +54,11 @@ def start_conversation(
     try:
         conv = supabase_db.create_conversation(user_id, title=title)
         return {"conversation": conv}
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
 
 
 @router.get("/{conversation_id}/messages")

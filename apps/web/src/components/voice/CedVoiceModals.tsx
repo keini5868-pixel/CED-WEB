@@ -431,7 +431,9 @@ export function CedHistoryPanel({
 
   useEffect(() => {
     if (!open) return;
-    void listConversations().then(setItems);
+    void listConversations()
+      .then(setItems)
+      .catch(() => setItems([]));
     void listSessionPdfs().then(setPdfs);
   }, [open]);
 

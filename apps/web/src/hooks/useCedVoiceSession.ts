@@ -335,16 +335,26 @@ export function useCedVoiceSession(
   const persistMessage = useCallback(
     async (role: "user" | "model", text: string) => {
       const cid = conversationRef.current;
-      if (!cid || !text.trim()) return;
+      if (!text.trim()) return;
+      if (!cid) {
+        console.warn(
+          "[CED] historial: sin conversation_id — mensaje no guardado",
+          role,
+        );
+        return;
+      }
       try {
-        await appendConversationMessage(
+        const result = await appendConversationMessage(
           cid,
           role,
           text,
           usageSessionRef.current ?? undefined,
         );
-      } catch {
-        /* ignore */
+        if (!result.saved) {
+          console.warn("[CED] historial: append no guardó", role, cid);
+        }
+      } catch (err) {
+        console.warn("[CED] historial: append falló", err);
       }
     },
     [],
@@ -1189,6 +1199,11 @@ export function useCedVoiceSession(
       ]);
       usageSessionRef.current = voiceSession.session_id;
       conversationRef.current = voiceSession.conversation_id;
+      if (!voiceSession.conversation_id) {
+        console.warn(
+          "[CED] session/start sin conversation_id — el historial no se guardará en esta sesión",
+        );
+      }
       onUsageRefresh?.();
 
       if (isRetellVoice()) {

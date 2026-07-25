@@ -1,17 +1,4 @@
-import { apiUrl } from "@/lib/env";
-import { createClient } from "@/lib/supabase/client";
-
-async function authHeaders(): Promise<HeadersInit> {
-  const supabase = createClient();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session?.access_token) throw new Error("Sin sesión");
-  return {
-    Authorization: `Bearer ${session.access_token}`,
-    "Content-Type": "application/json",
-  };
-}
+import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 
 export type ConversationRow = {
   id: string;
@@ -36,6 +23,15 @@ export type ListConversationsOptions = {
   q?: string;
 };
 
+export class ConversationsApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ConversationsApiError";
+    this.status = status;
+  }
+}
+
 export async function listConversations(
   options: ListConversationsOptions = {},
 ): Promise<ConversationRow[]> {
@@ -44,21 +40,33 @@ export async function listConversations(
   if (options.channel) params.set("channel", options.channel);
   if (options.q?.trim()) params.set("q", options.q.trim());
   const qs = params.toString();
-  const res = await fetch(`${apiUrl()}/v1/conversations${qs ? `?${qs}` : ""}`, {
-    headers: await authHeaders(),
-  });
-  if (!res.ok) return [];
-  const data = await res.json();
+  const res = await proxyFetchAuthed(
+    `conversations${qs ? `?${qs}` : ""}`,
+  );
+  if (!res.ok) {
+    const raw = await res.json().catch(() => ({} as { detail?: string }));
+    const detail =
+      typeof raw.detail === "string"
+        ? raw.detail
+        : `No se pudo cargar el historial (HTTP ${res.status})`;
+    throw new ConversationsApiError(detail, res.status);
+  }
+  const data = (await res.json()) as { conversations?: ConversationRow[] };
   return data.conversations ?? [];
 }
 
 export async function getConversationMessages(
   conversationId: string,
 ): Promise<{ messages: ConversationMessage[]; conversation: ConversationRow }> {
-  const res = await fetch(`${apiUrl()}/v1/conversations/${conversationId}/messages`, {
-    headers: await authHeaders(),
-  });
-  if (!res.ok) throw new Error("No se pudo cargar la conversación.");
+  const res = await proxyFetchAuthed(
+    `conversations/${encodeURIComponent(conversationId)}/messages`,
+  );
+  if (!res.ok) {
+    throw new ConversationsApiError(
+      "No se pudo cargar la conversación.",
+      res.status,
+    );
+  }
   return res.json();
 }
 
@@ -67,10 +75,10 @@ export async function appendConversationMessage(
   role: "user" | "model" | "system",
   content: string,
   sessionId?: string,
-): Promise<void> {
-  await fetch(`${apiUrl()}/v1/conversations/messages`, {
+): Promise<{ ok: boolean; saved: boolean }> {
+  const res = await proxyFetchAuthed("conversations/messages", {
     method: "POST",
-    headers: await authHeaders(),
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       conversation_id: conversationId,
       role,
@@ -79,4 +87,12 @@ export async function appendConversationMessage(
       channel: "voice",
     }),
   });
+  if (!res.ok) {
+    return { ok: false, saved: false };
+  }
+  const data = (await res.json().catch(() => ({}))) as {
+    ok?: boolean;
+    saved?: boolean;
+  };
+  return { ok: data.ok !== false, saved: data.saved !== false };
 }

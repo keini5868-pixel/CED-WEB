@@ -18,6 +18,7 @@ type ChannelFilter = "" | "voice" | "text";
 export function HistorialConversaciones() {
   const [items, setItems] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState<ChannelFilter>("");
   const [selected, setSelected] = useState<ConversationRow | null>(null);
@@ -26,6 +27,7 @@ export function HistorialConversaciones() {
 
   const loadList = useCallback(async () => {
     setLoading(true);
+    setListError(null);
     try {
       const rows = await listConversations({
         limit: 50,
@@ -33,6 +35,13 @@ export function HistorialConversaciones() {
         q: search.trim() || undefined,
       });
       setItems(rows);
+    } catch (e) {
+      setItems([]);
+      setListError(
+        e instanceof Error
+          ? e.message
+          : "No se pudo cargar el historial.",
+      );
     } finally {
       setLoading(false);
     }
@@ -101,9 +110,21 @@ export function HistorialConversaciones() {
 
       {loading ? (
         <p className="ced-hud-text-muted text-sm">Cargando…</p>
+      ) : listError ? (
+        <div className="rounded border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
+          <p>{listError}</p>
+          <button
+            type="button"
+            onClick={() => void loadList()}
+            className="mt-3 text-xs text-cyan-400 underline hover:text-cyan-200"
+          >
+            Reintentar
+          </button>
+        </div>
       ) : items.length === 0 ? (
         <p className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-4 text-sm">
-          No hay conversaciones guardadas aún.
+          No hay conversaciones guardadas aún. Las sesiones de voz y chat
+          nuevas deberían aparecer aquí al cerrar o durante el uso.
         </p>
       ) : (
         <ul className="space-y-2">

@@ -112,14 +112,29 @@ def create_conversation(
     *,
     channel: str = "voice",
 ) -> dict[str, Any]:
+    from app.services.user_id_utils import normalize_user_id
+
+    uid = normalize_user_id(user_id)
+    # FK voice_conversations.user_id → profiles.id — sin perfil el insert falla
+    # y la voz seguía sin conversation_id (historial vacío).
+    ensure_profile(uid)
     client = _client()
     row = {
-        "user_id": user_id,
+        "user_id": uid,
         "title": title,
         "channel": channel,
     }
     result = client.table("voice_conversations").insert(row).execute()
-    return (result.data or [{}])[0]
+    conv = (result.data or [None])[0]
+    if not conv or not conv.get("id"):
+        logger.error(
+            "[CONV] create_conversation sin id user=%s channel=%s data=%s",
+            uid[:8],
+            channel,
+            result.data,
+        )
+        raise RuntimeError("No se pudo crear la conversación (sin id).")
+    return conv
 
 
 def get_conversation(conversation_id: str, user_id: str) -> dict[str, Any] | None:
