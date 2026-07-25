@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
+from app.services.module_usage import log_module_usage_async
 from app.services.viability_pilot.gate import (
     require_viability_module_enabled,
     viability_module_enabled,
@@ -107,4 +108,13 @@ async def viability_analyze(
             status_code=400,
             detail=report.get("message") or "Falta descripción del producto/servicio.",
         )
+    await log_module_usage_async(
+        user_id=user_id,
+        module="viability",
+        channel="http",
+        metadata={
+            "has_image": bool(image),
+            "region": (body.region or "").strip() or None,
+        },
+    )
     return report

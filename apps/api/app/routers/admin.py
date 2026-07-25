@@ -167,3 +167,43 @@ def admin_llama_list_models(_admin_id: str = Depends(require_super_admin)) -> di
         return {"ok": True, "models": [m.get("name") for m in data.get("models") or []]}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:300]}
+
+
+@router.get("/module-usage/summary")
+def admin_module_usage_summary(
+    _admin_id: str = Depends(require_super_admin),
+    since: str | None = Query(
+        default=None,
+        description="ISO datetime UTC inclusive (ej. 2026-07-01T00:00:00Z)",
+    ),
+    until: str | None = Query(
+        default=None,
+        description="ISO datetime UTC exclusive",
+    ),
+) -> dict:
+    """Resumen de metering VIABLE / Tendencias / Oportunidades."""
+    from datetime import datetime
+
+    from app.services.module_usage import summarize_module_usage
+
+    def _parse(raw: str | None) -> datetime | None:
+        if not raw or not raw.strip():
+            return None
+        text = raw.strip().replace("Z", "+00:00")
+        try:
+            return datetime.fromisoformat(text)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Fecha inválida: {raw}",
+            ) from exc
+
+    try:
+        return summarize_module_usage(since=_parse(since), until=_parse(until))
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail="No se pudo leer module_usage.",
+        ) from exc

@@ -8,6 +8,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.deps.auth import require_user_id
+from app.services.module_usage import log_module_usage_async
 from app.services.opportunities_pilot.gate import (
     opportunities_module_enabled,
     require_opportunities_module_enabled,
@@ -73,4 +74,10 @@ async def opportunity_detail(
             detail=report.get("message")
             or "Oportunidad no disponible en el catálogo.",
         )
+    await log_module_usage_async(
+        user_id=user_id,
+        module="opportunities",
+        channel="http",
+        metadata={"opportunity_id": opportunity_id.strip()[:80]},
+    )
     return report

@@ -94,6 +94,18 @@ async def execute_analyze_product_viability_tool(
         )
         spoken = format_report_for_voice(report)
         ok = bool(report.get("ok"))
+        if ok and user_id:
+            try:
+                from app.services.module_usage import log_module_usage
+
+                log_module_usage(
+                    user_id=user_id,
+                    module="viability",
+                    channel="voice",
+                    metadata={"region": region},
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("[VIABILITY-PILOT] metering failed")
     except Exception:  # noqa: BLE001
         logger.exception(
             "[VIABILITY-PILOT] voice tool failed user=%s",
