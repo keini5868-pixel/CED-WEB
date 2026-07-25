@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 import httpx
 
 from app.config import get_settings
-from app.deps.auth import require_user_id
+from app.deps.auth import require_super_admin, require_user_id
 from app.services.retell_agent_cache import (
     get_last_bootstrap_error,
     get_last_bootstrap_info,
@@ -967,8 +967,11 @@ async def retell_ideogram_probe(
 
 
 @router.get("/bootstrap-now")
-async def retell_bootstrap_now(voice_id: str | None = None) -> dict[str, Any]:
-    """Ejecuta bootstrap Retell sin auth — devuelve agent_id o error exacto."""
+async def retell_bootstrap_now(
+    voice_id: str | None = None,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Bootstrap Retell — solo super admin."""
     settings = get_settings()
     if not settings.retell_api_key.strip():
         return {"ok": False, "error": "RETELL_API_KEY vacía en Railway"}
@@ -1006,8 +1009,11 @@ def _json_safe(value: Any) -> Any:
 
 
 @router.get("/call-debug/{call_id}")
-async def retell_call_debug(call_id: str) -> dict[str, Any]:
-    """Estado de una llamada Retell (transcript, desconexión) — diagnóstico."""
+async def retell_call_debug(
+    call_id: str,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Estado de una llamada Retell — solo super admin (transcript/recording)."""
     client = get_retell_client()
     if not client:
         return {"ok": False, "error": "RETELL_API_KEY no configurada"}
@@ -1037,8 +1043,10 @@ async def retell_call_debug(call_id: str) -> dict[str, Any]:
 
 
 @router.get("/diagnostics")
-async def retell_diagnostics() -> dict[str, Any]:
-    """Diagnóstico voz: agente Retell, voces disponibles, Gemini ping."""
+async def retell_diagnostics(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Diagnóstico voz — solo super admin."""
     settings = get_settings()
     out: dict[str, Any] = {
         "ok": True,
@@ -1134,8 +1142,10 @@ async def retell_diagnostics() -> dict[str, Any]:
 
 
 @router.get("/jarvis-voice")
-async def retell_jarvis_voice_setup() -> dict[str, Any]:
-    """Intenta registrar el clon Jarvis y devuelve error detallado si falla."""
+async def retell_jarvis_voice_setup(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Registrar clon Jarvis — solo super admin."""
     settings = get_settings()
     client = get_retell_client()
     if not client:
@@ -1205,8 +1215,12 @@ async def retell_jarvis_voice_setup() -> dict[str, Any]:
 
 
 @router.get("/voice-raw-debug")
-async def retell_voice_raw_debug() -> dict[str, Any]:
-    """Diagnóstico de solo lectura — NUNCA modifica agente ni voces.
+async def retell_voice_raw_debug(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Diagnóstico de solo lectura — solo super admin.
+
+    NUNCA modifica agente ni voces.
 
     Vuelca los objetos crudos que devuelve la API de Retell para las voces
     custom_voice_* candidatas y para el voice_id actualmente asignado a los
@@ -1291,45 +1305,21 @@ async def retell_warmup() -> dict[str, Any]:
 
 @router.get("/status")
 async def retell_public_status() -> dict[str, Any]:
-    """Estado Retell sin auth — reintenta bootstrap si falta agente."""
+    """Estado Retell mínimo sin auth (sin IDs internos ni URLs de LLM)."""
     settings = get_settings()
-    info = get_last_bootstrap_info() or {}
     agent_id = get_retell_agent_id()
-    bootstrap_error: str | None = None
-    resolved_voice_id = info.get("voice_id") or settings.retell_voice_id.strip() or None
-    if resolved_voice_id and str(resolved_voice_id).startswith("agent_"):
-        resolved_voice_id = None
-
-    if not agent_id and settings.voice_provider == "retell":
-        try:
-            result = await asyncio.to_thread(bootstrap_retell_if_needed)
-            if result:
-                agent_id = result.get("agent_id") or get_retell_agent_id()
-                info = result
-            else:
-                bootstrap_error = "bootstrap_retell_if_needed returned None — revise logs Railway"
-        except Exception as exc:  # noqa: BLE001
-            bootstrap_error = str(exc)
-            logger.exception("[RETELL] status bootstrap retry failed")
-
     return {
         "ok": True,
         "voice_provider": settings.voice_provider,
         "agent_configured": bool(agent_id),
-        "agent_id": agent_id or None,
-        "voice_id": resolved_voice_id or "11labs-George",
-        "llm_websocket_url": info.get("llm_websocket_url"),
-        "brain": settings.gemini_voice_model,
-        "has_retell_api_key": bool(settings.retell_api_key.strip()),
-        "has_google_api_key": bool(settings.google_api_key.strip()),
-        "api_public_url": settings.api_public_url,
-        "bootstrap_error": get_last_bootstrap_error() or bootstrap_error,
     }
 
 
 @router.post("/admin/bootstrap")
-async def retell_bootstrap_agent(user_id: str = Depends(require_user_id)) -> dict[str, Any]:
-    """Bootstrap manual del agente (admin/dev). Requiere usuario autenticado."""
+async def retell_bootstrap_agent(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Bootstrap manual del agente — solo super admin."""
     settings = get_settings()
     if not settings.retell_api_key.strip():
         raise HTTPException(status_code=503, detail="RETELL_API_KEY no configurada.")

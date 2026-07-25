@@ -233,13 +233,20 @@ class Settings(BaseSettings):
         web = self.web_public_url.strip().rstrip("/")
         if web and web not in origins:
             origins.append(web)
-        for extra in (
+        # Orígenes de deploy legítimos. Localhost solo fuera de production.
+        extras = (
+            "https://ced-castillo.com",
+            "https://www.ced-castillo.com",
             "https://ced-web-production.up.railway.app",
             "https://cedweb-production.up.railway.app",
-            "https://app.castillodigital.com",
-            "http://localhost:3000",
-            "http://localhost:3001",
-        ):
+        )
+        if not self.is_production():
+            extras = extras + (
+                "http://localhost:3000",
+                "http://localhost:3001",
+                "https://app.castillodigital.com",
+            )
+        for extra in extras:
             if extra not in origins:
                 origins.append(extra)
         return origins

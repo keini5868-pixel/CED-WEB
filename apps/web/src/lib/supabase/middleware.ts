@@ -103,5 +103,15 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
+  // Rutas /dev/* no deben ser públicas en producción.
+  if (
+    pathname.startsWith("/dev") &&
+    process.env.NODE_ENV === "production"
+  ) {
+    const redirectUrl = request.nextUrl.clone();
+    redirectUrl.pathname = "/";
+    return NextResponse.redirect(redirectUrl);
+  }
+
   return supabaseResponse;
 }

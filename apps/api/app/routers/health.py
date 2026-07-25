@@ -42,9 +42,8 @@ router = APIRouter(tags=["health"])
 @router.get("/health")
 @limiter.exempt
 def health(_request: Request) -> dict[str, str]:
-    """Liveness probe — sin dependencias externas (Railway)."""
+    """Liveness probe — en producción solo campos mínimos (sin inventario de claves)."""
     from app.services.llama_service import (
-        llama_combined_health_diagnostics,
         llama_health_diagnostics,
         llama_model,
         llama_voice_health_diagnostics,
@@ -59,10 +58,13 @@ def health(_request: Request) -> dict[str, str]:
         "env": settings.app_env,
         "build": BUILD_VERSION,
         "timestamp": BUILD_TIMESTAMP,
-        "llm_provider": settings.llm_provider,
-        "pid": str(os.getpid()),
-        "boot_id": PROCESS_BOOT_ID,
     }
+    if settings.is_production():
+        return payload
+
+    payload["llm_provider"] = settings.llm_provider
+    payload["pid"] = str(os.getpid())
+    payload["boot_id"] = PROCESS_BOOT_ID
     from app.services.voice_test_mode import (
         is_gemini_standalone_voice_test,
         voice_standalone_modules,
@@ -74,7 +76,6 @@ def health(_request: Request) -> dict[str, str]:
         payload["voice_test_mode_active"] = (
             "true" if is_gemini_standalone_voice_test() else "false"
         )
-        # Si el env pide standalone pero production lo ignora, dejarlo visible.
         if (
             voice_test_mode() == "gemini_standalone"
             and not is_gemini_standalone_voice_test()
@@ -130,8 +131,11 @@ def health(_request: Request) -> dict[str, str]:
 
 @router.get("/health/llama")
 @limiter.exempt
-def health_llama(_request: Request) -> dict:
-    """Diagnóstico Llama/Ollama — URL probada, latencia, modelos y error."""
+def health_llama(
+    _request: Request,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Diagnóstico Llama/Ollama — solo super admin."""
     from app.services.llama_service import llama_combined_health_diagnostics, use_llama
 
     settings = get_settings()
@@ -143,7 +147,10 @@ def health_llama(_request: Request) -> dict:
 
 @router.get("/health/llama/voice-probe")
 @limiter.exempt
-def health_llama_voice_probe(_request: Request) -> dict:
+def health_llama_voice_probe(
+    _request: Request,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
     """Diagnóstico crudo — prueba mínima de inferencia 3B y devuelve body de error Ollama."""
     import httpx
 
@@ -193,8 +200,11 @@ def health_llama_voice_probe(_request: Request) -> dict:
 
 @router.get("/health/llama/inference-probe")
 @limiter.exempt
-def health_llama_inference_probe(_request: Request) -> dict:
-    """Diagnóstico inferencia Ollama — /api/ps, 3B y 13B (solo lectura)."""
+def health_llama_inference_probe(
+    _request: Request,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Diagnóstico inferencia Ollama — solo super admin."""
     import time
 
     import httpx
@@ -305,8 +315,9 @@ def health_llama_inference_probe(_request: Request) -> dict:
 def health_llama_voice_smoke(
     _request: Request,
     phrase: str = Query(default="me siento un poco triste hoy"),
+    _admin_id: str = Depends(require_super_admin),
 ) -> dict:
-    """Smoke test — Llama 3B con prompt casual mínimo (diagnóstico prod)."""
+    """Smoke test Llama — solo super admin."""
     import time
 
     from app.services.llama_service import call_llama_voice_generate, use_llama
@@ -364,8 +375,11 @@ def health_llama_voice_smoke(
 
 @router.get("/health/voice-prompt")
 @limiter.exempt
-def health_voice_prompt(_request: Request) -> dict:
-    """Confirma que el system prompt CED activo está cargado (sin exponer el texto)."""
+def health_voice_prompt(
+    _request: Request,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Confirma system prompt CED — solo super admin."""
     settings = get_settings()
     from app.services.gemini_voice_llm import _voice_model
 
@@ -402,21 +416,21 @@ def ready(_request: Request) -> dict[str, str]:
 
 @router.get("/v1/auth/diagnostics")
 @limiter.exempt
-def auth_diagnostics(_request: Request) -> dict:
-    """Diagnóstico público de config Supabase (sin secretos)."""
+def auth_diagnostics(
+    _request: Request,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Diagnóstico de config Supabase/OpenAI — solo super admin (sin valores de secretos)."""
     settings = get_settings()
     supabase_auth = check_supabase_auth_api_key()
     url = settings.supabase_url.strip()
     project_ref = (
         url.replace("https://", "").split(".")[0] if url else None
     )
-    expected_ref = "foscutjtuscqrduugklm"
     openai_env_names = sorted(k for k in os.environ if "OPENAI" in k.upper())
     raw_openai = os.environ.get("OPENAI_API_KEY", "")
     return {
-        "expected_supabase_project": expected_ref,
         "configured_project_ref": project_ref,
-        "project_match": project_ref == expected_ref,
         "has_supabase_url": bool(url),
         "has_service_role_key": bool(settings.supabase_service_role_key.strip()),
         "oauth_token_storage_ready": bool(settings.supabase_service_role_key.strip()),
@@ -432,32 +446,23 @@ def auth_diagnostics(_request: Request) -> dict:
         "openai_env_var_names": openai_env_names,
         "openai_env_has_raw_key": bool(raw_openai.strip()),
         "openai_key_looks_valid": openai_api_key_looks_valid(settings.openai_api_key),
-        "openai_key_prefix": (
-            settings.openai_api_key.strip()[:7] + "…"
-            if settings.openai_api_key.strip().startswith("sk-")
-            else None
-        ),
         "hint": (
             "Si has_openai_api_key=false: en Railway servicio CED-WEB agrega "
-            "OPENAI_API_KEY=sk-proj-... (sin comillas) y Redeploy. "
-            "Revisa openai_env_var_names por typos (ej. OPENAI_KEY)."
+            "OPENAI_API_KEY (sin comillas) y Redeploy. "
+            "Revisa openai_env_var_names por typos."
         ),
     }
 
 
 @router.get("/v1/meta")
 def meta() -> dict:
-    """Metadatos públicos — producto único + recargas flexibles."""
+    """Metadatos públicos de producto — sin diagnóstico interno ni márgenes."""
     settings = get_settings()
-    supabase_auth = check_supabase_auth_api_key()
     return {
         "app": "ced-web",
         "product": "CED",
         "phase": 7,
         "web_url": settings.web_public_url,
-        "supabase_project_ref": supabase_auth.get("project_ref"),
-        "supabase_auth_api_ok": supabase_auth.get("ok"),
-        "supabase_auth_error": supabase_auth.get("error"),
         "trial_days": TRIAL_DAYS,
         "usage_warning_percent": USAGE_WARNING_PERCENT,
         "plans": public_plans_catalog(),
@@ -475,15 +480,12 @@ def meta() -> dict:
         },
         "recharge": {
             "model": "flexible_amount",
-            "margin_keini_percent": 40,
-            "client_usage_share_percent": 60,
             "min_usd": RECHARGE_MIN_USD,
             "max_usd": RECHARGE_MAX_USD,
             "quick_amounts_usd": list(RECHARGE_QUICK_AMOUNTS_USD),
             "balance_never_expires": True,
-            "openai_voice_cost_per_hour_usd": 12.0,
             "example_quotes": {
-                str(amount): quote_recharge(amount)
+                str(amount): _public_recharge_quote(amount)
                 for amount in RECHARGE_QUICK_AMOUNTS_USD
             },
         },
@@ -517,7 +519,24 @@ def integrations_status(
     }
 
 
+def _public_recharge_quote(amount_usd: float) -> dict:
+    """Cotización pública sin márgenes internos ni costos unitarios."""
+    q = quote_recharge(amount_usd)
+    return {
+        "amount_paid_usd": q["amount_paid_usd"],
+        "client_balance_usd": q["client_balance_usd"],
+        "estimated_extra_hours": q["estimated_extra_hours"],
+        "estimated_voice_minutes": q["estimated_voice_minutes"],
+        "estimated_images_std": q["estimated_images_std"],
+        "estimated_images_hd": q["estimated_images_hd"],
+        "estimated_web_searches": q["estimated_web_searches"],
+        "estimated_pdfs": q["estimated_pdfs"],
+        "estimated_images_text": q["estimated_images_text"],
+        "never_expires": q["never_expires"],
+    }
+
+
 @router.get("/v1/recharge/quote")
 def recharge_quote(amount_usd: float = Query(..., ge=5, le=500)) -> dict:
     """Cotización en vivo para monto personalizado de recarga."""
-    return quote_recharge(amount_usd)
+    return _public_recharge_quote(amount_usd)

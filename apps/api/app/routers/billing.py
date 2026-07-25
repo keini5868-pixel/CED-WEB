@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.deps.auth import require_user_id
+from app.deps.auth import require_super_admin, require_user_id
 from app.config import get_settings
 from app.domain.plans import (
     RECHARGE_MAX_USD,
@@ -57,8 +57,10 @@ def list_plans() -> dict:
 
 
 @router.get("/readiness")
-def billing_readiness() -> dict:
-    """Estado Stripe + precios configurados — diagnóstico de cobros."""
+def billing_readiness(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Estado Stripe + precios — solo super admin."""
     settings = get_settings()
     stripe_status = check_stripe()
     supa = check_supabase()

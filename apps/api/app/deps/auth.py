@@ -162,19 +162,9 @@ async def require_auth_user(
             detail="Auth no configurado en API (falta SUPABASE_JWT_SECRET o SERVICE_ROLE)",
         )
 
-    project_ref = (
-        settings.supabase_url.strip()
-        .replace("https://", "")
-        .split(".")[0]
-        or "?"
-    )
     raise HTTPException(
         status_code=401,
-        detail=(
-            f"Sesión inválida. La API usa Supabase '{project_ref}' — "
-            "debe ser foscutjtuscqrduugklm. Revisa SUPABASE_URL, "
-            "SUPABASE_SERVICE_ROLE_KEY, SUPABASE_JWT_SECRET en Railway (CED-WEB)."
-        ),
+        detail="Sesión inválida o expirada. Vuelve a iniciar sesión.",
     )
 
 
