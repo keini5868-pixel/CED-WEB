@@ -4,12 +4,13 @@ function normalizeAdminEmail(value: string): string {
   return value.trim().replace(/^["']+|["']+$/g, "").toLowerCase();
 }
 
-/** Emails con acceso al panel admin (servidor). */
+/** Emails con acceso al panel admin — solo servidor (nunca NEXT_PUBLIC_). */
 export function getSuperAdminEmails(): string[] {
-  const raw =
-    process.env.SUPER_ADMIN_EMAILS ||
-    process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAILS ||
-    "";
+  // En el navegador no leemos allowlist: evita filtrarla al bundle/cliente.
+  if (typeof window !== "undefined") {
+    return [];
+  }
+  const raw = process.env.SUPER_ADMIN_EMAILS || "";
   return raw
     .split(",")
     .map(normalizeAdminEmail)
