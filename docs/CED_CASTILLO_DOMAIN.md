@@ -41,12 +41,39 @@ Para no perder la API pública:
    - WEB: `NEXT_PUBLIC_API_URL=https://api.ced-castillo.com` (o la URL Railway API si aún no usas el subdominio)
    - WEB: `CED_API_URL` / proxy si aplica
 
-### C) Google / Supabase
+### C) Google / Supabase Auth (cierre al 100%)
 
 - Google Cloud OAuth: Authorized domains → `ced-castillo.com`
 - Consent screen / homepage URL → `https://ced-castillo.com`
 - Privacy / Terms → `https://ced-castillo.com/privacy` y `/terms`
-- Supabase Auth: Site URL + Redirect URLs con `https://ced-castillo.com/**`
+
+**Supabase → Authentication → URL Configuration**
+
+| Campo | Valor |
+|-------|--------|
+| Site URL | `https://ced-castillo.com` |
+| Redirect URLs | `https://ced-castillo.com/**` |
+| | `https://ced-castillo.com/auth/callback` |
+| | `https://ced-castillo.com/reset-password` |
+| | `https://cedweb-production.up.railway.app/**` |
+
+No usar `app.castillodigital.com` (DNS muerto).
+
+**Supabase → Authentication → SMTP (Resend — obligatorio en prod)**
+
+El SMTP gratis de Supabase limita ~2 emails/hora (recovery/signup). Configurar:
+
+| Campo | Valor |
+|-------|--------|
+| Host | `smtp.resend.com` |
+| Port | `465` |
+| User | `resend` |
+| Pass | API key `re_...` (también en Railway `RESEND_API_KEY`) |
+| Sender | `CED <noreply@ced-castillo.com>` |
+
+Luego **Authentication → Rate Limits** → subir envío de emails (ej. 100/h).
+
+Verificar dominio en Resend (DKIM/SPF) para `ced-castillo.com`.
 
 ## Verificación
 

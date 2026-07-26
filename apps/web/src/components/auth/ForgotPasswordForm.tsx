@@ -9,6 +9,11 @@ import { RESET_PASSWORD_PATH } from "@/lib/auth/paths";
 import { createClient } from "@/lib/supabase/client";
 import { appUrl, isSupabaseConfigured } from "@/lib/env";
 
+/** Callback canónico — debe estar en Supabase Redirect URLs. */
+function recoveryRedirectTo(): string {
+  return `${appUrl()}/auth/callback?next=${encodeURIComponent(RESET_PASSWORD_PATH)}`;
+}
+
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -28,7 +33,7 @@ export function ForgotPasswordForm() {
     const { error: authError } = await supabase.auth.resetPasswordForEmail(
       email.trim(),
       {
-        redirectTo: `${appUrl()}${RESET_PASSWORD_PATH}`,
+        redirectTo: recoveryRedirectTo(),
       },
     );
     setLoading(false);
@@ -48,7 +53,7 @@ export function ForgotPasswordForm() {
       return;
     }
     setMessage(
-      "Si el email existe, recibirás un enlace para restablecer tu contraseña. El enlace debe abrir ced-castillo.com (no castillodigital.com).",
+      "Si el email existe, recibirás un enlace para restablecer tu contraseña en ced-castillo.com.",
     );
   }
 

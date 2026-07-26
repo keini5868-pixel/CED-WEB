@@ -5,6 +5,7 @@ import { isSuperAdmin } from "@/lib/auth/roles";
 import {
   ADMIN_PATH,
   DASHBOARD_PATH,
+  RESET_PASSWORD_PATH,
   PUBLIC_AUTH_PREFIXES,
   PROTECTED_PREFIXES,
   sanitizeAuthNext,
@@ -20,11 +21,53 @@ function matchesPrefix(pathname: string, prefixes: readonly string[]) {
   return prefixes.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+/**
+ * Si Supabase Site URL acepta el redirect pero la allowlist no incluye el path
+ * (p.ej. /auth/callback), el código PKCE aterriza en `/`. Reenviamos al
+ * callback con el destino correcto (recovery → reset-password).
+ */
+function redirectAuthCodeIfNeeded(request: NextRequest): NextResponse | null {
+  const pathname = request.nextUrl.pathname;
+  if (pathname.startsWith("/auth/callback") || pathname.startsWith("/api/")) {
+    return null;
+  }
+  const code = request.nextUrl.searchParams.get("code");
+  if (!code) return null;
+
+  const authType = (request.nextUrl.searchParams.get("type") || "").toLowerCase();
+  const nextParam = request.nextUrl.searchParams.get("next");
+  let next = sanitizeAuthNext(nextParam, DASHBOARD_PATH);
+  if (
+    authType === "recovery" ||
+    authType === "invite" ||
+    pathname.startsWith(RESET_PASSWORD_PATH)
+  ) {
+    next = RESET_PASSWORD_PATH;
+  }
+
+  // /reset-password?code=… lo maneja ResetPasswordForm
+  if (pathname.startsWith(RESET_PASSWORD_PATH)) {
+    return null;
+  }
+
+  const target = request.nextUrl.clone();
+  target.pathname = "/auth/callback";
+  target.search = "";
+  target.searchParams.set("code", code);
+  target.searchParams.set("next", next);
+  return NextResponse.redirect(target);
+}
+
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   // Railway healthcheck — nunca bloquear por Supabase
   if (pathname === "/health" || pathname === "/api/ced/health") {
     return NextResponse.next({ request });
+  }
+
+  const authCodeRedirect = redirectAuthCodeIfNeeded(request);
+  if (authCodeRedirect) {
+    return authCodeRedirect;
   }
 
   let supabaseResponse = NextResponse.next({ request });

@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     super_admin_emails: str = "keini@castillodigital.com"
 
     resend_api_key: str = ""
-    email_from: str = "CED <noreply@castillodigital.com>"
+    email_from: str = "CED <noreply@ced-castillo.com>"
 
     founding_slots_max: int = 50
 

@@ -25,7 +25,7 @@ def send_welcome_email(
     if not api_key:
         return False, "RESEND_API_KEY no configurada"
 
-    from_addr = settings.email_from.strip() or "CED <noreply@castillodigital.com>"
+    from_addr = settings.email_from.strip() or "CED <noreply@ced-castillo.com>"
     subject = f"Bienvenido al Castillo Digital, {name.split()[0] if name else 'Usuario'}"
 
     html = f"""

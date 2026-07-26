@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 
 import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
-import { DASHBOARD_PATH } from "@/lib/auth/paths";
+import { DASHBOARD_PATH, FORGOT_PASSWORD_PATH } from "@/lib/auth/paths";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/env";
 
@@ -17,22 +17,37 @@ export function ResetPasswordForm() {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [ready, setReady] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!isSupabaseConfigured() || !code) {
-      setReady(!code);
+    if (!isSupabaseConfigured()) {
+      setError("Supabase no configurado.");
+      setReady(false);
+      setChecking(false);
       return;
     }
     const supabase = createClient();
-    supabase.auth.exchangeCodeForSession(code).then(({ error: authError }) => {
-      if (authError) {
-        setError(authError.message);
-        setReady(false);
-        return;
-      }
-      setReady(true);
+    setChecking(true);
+
+    if (code) {
+      void supabase.auth.exchangeCodeForSession(code).then(({ error: authError }) => {
+        if (authError) {
+          setError(authError.message);
+          setReady(false);
+        } else {
+          setReady(true);
+        }
+        setChecking(false);
+      });
+      return;
+    }
+
+    // Tras /auth/callback?next=/reset-password la sesión ya existe (sin code).
+    void supabase.auth.getSession().then(({ data }) => {
+      setReady(Boolean(data.session));
+      setChecking(false);
     });
   }, [code]);
 
@@ -59,24 +74,25 @@ export function ResetPasswordForm() {
     router.refresh();
   }
 
-  if (!code) {
+  if (checking) {
     return (
-      <AuthCard title="ENLACE INVÁLIDO" subtitle="Solicita uno nuevo">
-        <p className="text-center text-xs text-cyan-600">
-          Abre el enlace desde el email de recuperación o pide otro en{" "}
-          <Link href="/forgot-password" className="text-cyan-400 underline">
-            recuperar contraseña
-          </Link>
-          .
-        </p>
+      <AuthCard title="VERIFICANDO" subtitle="Un momento…">
+        <p className="text-center text-xs text-cyan-600">Validando enlace…</p>
       </AuthCard>
     );
   }
 
-  if (!ready && !error) {
+  if (!ready) {
     return (
-      <AuthCard title="VERIFICANDO" subtitle="Un momento…">
-        <p className="text-center text-xs text-cyan-600">Validando enlace…</p>
+      <AuthCard title="ENLACE INVÁLIDO" subtitle="Solicita uno nuevo">
+        <p className="text-center text-xs text-cyan-600">
+          Abre el enlace desde el email de recuperación o pide otro en{" "}
+          <Link href={FORGOT_PASSWORD_PATH} className="text-cyan-400 underline">
+            recuperar contraseña
+          </Link>
+          .
+        </p>
+        {error ? <p className="mt-3 text-center text-xs text-red-400">{error}</p> : null}
       </AuthCard>
     );
   }
@@ -105,7 +121,7 @@ export function ResetPasswordForm() {
           minLength={8}
         />
         {error ? <p className="text-xs text-red-400">{error}</p> : null}
-        <CedButton type="submit" fullWidth disabled={loading || !ready}>
+        <CedButton type="submit" fullWidth disabled={loading}>
           {loading ? "GUARDANDO…" : "ACTUALIZAR"}
         </CedButton>
       </form>

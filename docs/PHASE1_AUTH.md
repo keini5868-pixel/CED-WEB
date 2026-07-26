@@ -2,7 +2,9 @@
 
 Preparación sin credenciales activas. Al recibir las claves, conecta en `apps/web/.env.local`.
 
-## Producción Railway (usar AHORA — castillodigital.com requiere DNS)
+## Producción (dominio canónico: ced-castillo.com)
+
+> `app.castillodigital.com` está muerto (NXDOMAIN). Usar solo `https://ced-castillo.com`.
 
 **Servicio WEB (`cedweb-production`):**
 ```env
