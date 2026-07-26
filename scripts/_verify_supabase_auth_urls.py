@@ -84,9 +84,9 @@ def main() -> int:
     print("path_redirect_accepted", accepted)
     if not accepted:
         print(
-            "NOTE: Redirect allowlist aún no acepta /auth/callback — "
-            "añádelo en Supabase → Authentication → URL Configuration. "
-            "Mientras tanto Site URL canónico + middleware reenvían ?code=."
+            "NOTE: Redirect allowlist still rejects /auth/callback — "
+            "add it in Supabase Authentication > URL Configuration. "
+            "Site URL canonical + middleware still forward ?code=."
         )
 
     print("RESEND_API_KEY", "SET" if rail.get("RESEND_API_KEY") else "MISSING")
