@@ -169,6 +169,15 @@ def continue_free_basic(
     return {"ok": True, "plan_id": "free_basic"}
 
 
+@router.post("/admin/reconcile-stale-access")
+def admin_reconcile_stale_access(
+    dry_run: bool = False,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Downgrade trials vencidos y lista past_due (acceso gated en runtime)."""
+    return supabase_db.reconcile_stale_access(dry_run=dry_run)
+
+
 async def _stripe_webhook_handler(request: Request) -> dict:
     payload = await request.body()
     sig = request.headers.get("stripe-signature")

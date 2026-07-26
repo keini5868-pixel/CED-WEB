@@ -25,10 +25,16 @@ def effective_plan_limits(user_id: str) -> tuple[PlanLimits, str, bool]:
     if not allowed and reason == "trial_expired":
         return get_plan_limits(PlanId.FREE_BASIC.value), "trial_expired", False
 
+    if allowed and reason in ("free_basic", "past_due"):
+        return get_plan_limits(PlanId.FREE_BASIC.value), reason, False
+
     if allowed and reason == "trial":
         return get_plan_limits(PlanId.ELITE.value), "trial", True
 
     sub = supabase_db.get_subscription(user_id) or {}
+    if str(sub.get("status") or "") == "past_due":
+        return get_plan_limits(PlanId.FREE_BASIC.value), "past_due", False
+
     plan_id = normalize_plan_id(sub.get("plan_id"))
     return get_plan_limits(plan_id), reason or ("ok" if allowed else "denied"), False
 
@@ -99,6 +105,11 @@ def require_meta_social(user_id: str) -> None:
         raise HTTPException(
             status_code=403,
             detail="Tu prueba terminó. Elige un plan de pago para publicar en redes.",
+        )
+    if reason == "past_due":
+        raise HTTPException(
+            status_code=403,
+            detail="Hay un pago pendiente. Actualiza tu método de pago para publicar en redes.",
         )
     if not limits.meta_social_enabled:
         raise HTTPException(

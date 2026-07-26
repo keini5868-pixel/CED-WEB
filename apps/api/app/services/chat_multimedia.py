@@ -95,10 +95,16 @@ def _effective_plan_key(user_id: str) -> str:
         return "founding"
 
     allowed, reason, _ = get_user_access(user_id)
+    if not allowed and reason == "trial_expired":
+        return "free_basic"
+    if allowed and reason in ("free_basic", "past_due"):
+        return "free_basic"
     if allowed and reason == "trial":
         return "elite"
 
     sub = supabase_db.get_subscription(user_id) or {}
+    if str(sub.get("status") or "") == "past_due":
+        return "free_basic"
     return normalize_plan_id(sub.get("plan_id"))
 
 

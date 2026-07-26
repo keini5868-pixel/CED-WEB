@@ -86,24 +86,24 @@ class RegisterCallBody(BaseModel):
 
 async def _voice_access_or_raise(user_id: str) -> None:
     balance = await voice_access_state_async(user_id)
-    if balance.get("access_denied"):
-        msg = balance.get("access_message") or "Acceso no disponible."
-        detail = ACCESS_DENIED_MESSAGES.get(msg, msg)
+    msg = balance.get("access_message") or ""
+    if balance.get("access_denied") or msg == "trial_expired":
+        detail = ACCESS_DENIED_MESSAGES.get(msg, msg or "Acceso no disponible.")
         raise HTTPException(status_code=403, detail=detail)
-    if balance.get("plan_minutes_daily", 0) <= 0 and balance.get("access_message") == "free_basic":
-        raise HTTPException(
-            status_code=403,
-            detail="La voz no está incluida en el plan Básico gratis. Mejora tu plan o recarga.",
-        )
     if balance.get("blocked"):
         if balance.get("quota_exhausted"):
             raise HTTPException(
                 status_code=402,
                 detail="Has alcanzado tu límite diario de voz. Recarga desde $10 o adquiere un plan. El chat sigue disponible.",
             )
+        if msg == "past_due":
+            raise HTTPException(
+                status_code=402,
+                detail=ACCESS_DENIED_MESSAGES["past_due"],
+            )
         raise HTTPException(
             status_code=402,
-            detail="Tu plan no incluye minutos de voz hoy. Mejora tu plan o recarga saldo.",
+            detail="La voz no está incluida sin plan activo o saldo. Mejora tu plan o recarga desde $10.",
         )
 
 

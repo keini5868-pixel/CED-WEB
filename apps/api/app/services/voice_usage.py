@@ -16,6 +16,11 @@ ACCESS_DENIED_MESSAGES = {
         "Tu prueba de 7 días de voz terminó. Adquiere un plan o recarga desde $10. "
         "El chat de texto sigue disponible en plan Básico gratis."
     ),
+    "past_due": (
+        "Hay un pago pendiente en tu suscripción. Las funciones de plan están "
+        "pausadas hasta que se resuelva el cobro. Puedes recargar saldo o actualizar "
+        "el método de pago en Planes."
+    ),
     "Sin suscripción activa": "No tienes suscripción activa. Elige un plan en Planes.",
     "Suscripción inactiva": "Tu suscripción no está activa. Renueva en Planes o contacta soporte.",
     "Cuenta pausada por administrador": "Tu cuenta está pausada. Contacta al administrador.",
@@ -76,29 +81,38 @@ def voice_access_state(user_id: str) -> dict:
             )
             recharge_balance = 0.0
         bonus_minutes = recharge_balance_to_bonus_minutes(recharge_balance)
-        # free_basic / sin plan: monedero puede desbloquear voz
-        free_basic = (not allowed and access_msg == "free_basic") or plan_id == "free_basic"
+        # free_basic / past_due: sin minutos de plan; monedero puede desbloquear voz
+        restricted_plan = access_msg in ("free_basic", "past_due") or plan_id == "free_basic"
         wallet_unlocks = bonus_minutes > 0
-        effective_allowed = allowed or (free_basic and wallet_unlocks)
-        total_available = (
-            (plan_minutes + bonus_minutes) if effective_allowed else 0.0
-        )
 
-        access_denied = not allowed and access_msg not in ("free_basic", "trial")
+        if not allowed and access_msg == "trial_expired":
+            effective_allowed = False
+            total_available = 0.0
+        elif restricted_plan:
+            effective_allowed = wallet_unlocks
+            total_available = bonus_minutes if wallet_unlocks else 0.0
+        elif allowed and access_msg in ("ok", "trial"):
+            effective_allowed = True
+            total_available = float(plan_minutes) + bonus_minutes
+        else:
+            effective_allowed = False
+            total_available = 0.0
+
+        access_denied = not allowed and access_msg not in ("free_basic", "trial", "past_due")
         quota_exhausted = (
             effective_allowed and total_available > 0 and used >= total_available
         )
 
-        if access_denied:
-            voice_blocked = False
-        elif free_basic and not wallet_unlocks and plan_minutes <= 0:
+        if access_denied or (not allowed and access_msg == "trial_expired"):
+            voice_blocked = True
+        elif restricted_plan and not wallet_unlocks:
             voice_blocked = True
         elif effective_allowed and total_available <= 0:
             voice_blocked = True
         else:
             voice_blocked = quota_exhausted
 
-        needs_recharge = bool(voice_blocked) and not access_denied
+        needs_recharge = bool(voice_blocked) and access_msg != "trial_expired"
         pct = (used / plan_minutes * 100) if plan_minutes else (
             100.0 if voice_blocked and used > 0 else 0.0
         )

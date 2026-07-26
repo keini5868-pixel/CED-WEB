@@ -803,7 +803,10 @@ def downgrade_to_free_basic(user_id: str) -> None:
 
 
 def expire_trial_if_needed(user_id: str) -> bool:
-    """Retorna True si el trial ya expiró (sin auto-downgrade)."""
+    """Si el trial venció y no hay Stripe activo, baja a free_basic.
+
+    Retorna True cuando el trial ya no es válido (tras downgrade o ya expirado).
+    """
     sub = get_subscription(user_id)
     if not sub or str(sub.get("status")) != "trialing":
         return False
@@ -814,7 +817,84 @@ def expire_trial_if_needed(user_id: str) -> bool:
         end = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
     except ValueError:
         return False
-    return end <= datetime.now(timezone.utc)
+    if end > datetime.now(timezone.utc):
+        return False
+    # Suscripción Stripe real: deja que los webhooks manejen el estado.
+    if str(sub.get("stripe_subscription_id") or "").strip():
+        return True
+    logger.info(
+        "[DB] auto-downgrade trial vencido user=%s plan_was=%s",
+        user_id[:8],
+        sub.get("plan_id"),
+    )
+    downgrade_to_free_basic(user_id)
+    return True
+
+
+def reconcile_stale_access(*, dry_run: bool = False) -> dict[str, Any]:
+    """Downgrade trials vencidos y reporta past_due (acceso ya gated en código)."""
+    from app.domain.plans import PlanId
+
+    now = datetime.now(timezone.utc)
+    expired_trials: list[str] = []
+    past_due: list[str] = []
+    errors: list[str] = []
+    try:
+        client = _client()
+        result = (
+            client.table("subscriptions")
+            .select(
+                "user_id,plan_id,status,trial_ends_at,stripe_subscription_id"
+            )
+            .execute()
+        )
+        rows = result.data or []
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[DB] reconcile_stale_access list failed")
+        return {"ok": False, "error": str(exc)}
+
+    for row in rows:
+        uid = str(row.get("user_id") or "")
+        if not uid:
+            continue
+        st = str(row.get("status") or "")
+        if st == "past_due":
+            past_due.append(uid)
+            continue
+        if st != "trialing":
+            continue
+        if str(row.get("stripe_subscription_id") or "").strip():
+            continue
+        trial_end = row.get("trial_ends_at")
+        if not trial_end:
+            continue
+        try:
+            end = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if end > now:
+            continue
+        expired_trials.append(uid)
+        if not dry_run:
+            try:
+                downgrade_to_free_basic(uid)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{uid[:8]}:{exc}")
+
+    return {
+        "ok": not errors,
+        "dry_run": dry_run,
+        "expired_trials_downgraded": len(expired_trials),
+        "expired_trial_user_ids": expired_trials,
+        "past_due_count": len(past_due),
+        "past_due_user_ids": past_due,
+        "note": (
+            "past_due conserva stripe_subscription_id; "
+            "get_user_access aplica límites free_basic hasta cobro OK"
+        ),
+        "target_plan": PlanId.FREE_BASIC.value,
+        "errors": errors,
+    }
 
 
 def credit_recharge_balance(

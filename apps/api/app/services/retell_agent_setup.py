@@ -13,16 +13,19 @@ from app.services.retell_client import get_retell_client
 logger = logging.getLogger(__name__)
 
 DEFAULT_VOICE_ID = "11labs-Brian"
+# Clon Cartesia prod (cedgggg) — nunca usar agent_id como RETELL_VOICE_ID
+CED_JARVIS_CUSTOM_VOICE_ID = "custom_voice_8b067b589132b1ae5a05e2e4b0"
 JARVIS_CLONED_ELEVENLABS_ID = "UKhFmKblQwXqi7vvaALt"
 JARVIS_RETELL_VOICE_NAME = "CED Jarvis"
 
 JARVIS_VOICE_HINTS = (
-    "british", "butler", "george", "brian", "daniel", "jarvis", "formal", "deep",
-    "adrian", "callum",
+    "cedgggg", "jarvis", "british", "butler", "george", "brian", "daniel",
+    "formal", "deep", "adrian", "callum",
 )
 
-# Jarvis: voces masculinas británicas ElevenLabs vía Retell (11labs-*)
+# Orden: clon Cartesia prod primero; nunca voces femeninas genéricas
 PREFERRED_RETELL_VOICES = (
+    CED_JARVIS_CUSTOM_VOICE_ID,
     "11labs-Brian",
     "11labs-Callum",
     "11labs-Daniel",
@@ -63,6 +66,20 @@ def search_jarvis_voices(client: Any, *, query: str = "") -> list[dict[str, str]
     return matches
 
 
+def _prefer_ced_jarvis_custom(client: Any) -> str | None:
+    """Prioriza el clon cedgggg (Cartesia) si está en la biblioteca Retell."""
+    if find_voice_by_id(client, CED_JARVIS_CUSTOM_VOICE_ID):
+        return CED_JARVIS_CUSTOM_VOICE_ID
+    for voice in _list_retell_voices(client):
+        vid = _voice_field(voice, "voice_id")
+        name = _voice_field(voice, "voice_name").strip().lower()
+        if vid.startswith("custom_voice_") and (
+            "cedgggg" in name or name == "jarvis" or "ced jarvis" in name
+        ):
+            return vid
+    return None
+
+
 def resolve_configured_retell_voice_id(client: Any, configured: str) -> str:
     """RETELL_VOICE_ID → voice_id válido en Retell (mapea ElevenLabs o busca Jarvis)."""
     cleaned = _normalize_voice_id(configured)
@@ -71,9 +88,15 @@ def resolve_configured_retell_voice_id(client: Any, configured: str) -> str:
 
     if cleaned.startswith("agent_"):
         logger.warning(
-            "[RETELL] RETELL_VOICE_ID=%s parece agent_id — resolviendo voz automática",
-            cleaned[:20],
+            "[RETELL] RETELL_VOICE_ID=%s parece agent_id — usando voz del agente o cedgggg",
+            cleaned[:28],
         )
+        agent_voice = _retrieve_agent_voice_id(client, cleaned)
+        if agent_voice and agent_voice.startswith("custom_voice_"):
+            return agent_voice
+        preferred = _prefer_ced_jarvis_custom(client)
+        if preferred:
+            return preferred
         return resolve_retell_voice_id_from_api(client)
 
     if cleaned.startswith(("custom_voice_", "11labs-", "openai-", "retell-", "cartesia-", "minimax-")):
@@ -85,10 +108,13 @@ def resolve_configured_retell_voice_id(client: Any, configured: str) -> str:
         return mapped
 
     for entry in search_jarvis_voices(client, query=cleaned):
-        if "jarvis" in entry["voice_name"].lower():
+        if "jarvis" in entry["voice_name"].lower() or "cedgggg" in entry["voice_name"].lower():
             logger.info("[RETELL] voz Jarvis en biblioteca: %s", entry["voice_id"])
             return entry["voice_id"]
 
+    preferred = _prefer_ced_jarvis_custom(client)
+    if preferred:
+        return preferred
     return cleaned
 
 
@@ -244,12 +270,20 @@ def resolve_retell_voice_id_from_api(client: Any) -> str:
 
 def resolve_retell_voice_id(client: Any | None = None) -> str:
     settings = get_settings()
-    configured = settings.retell_voice_id.strip()
-    if configured:
+    configured = _normalize_voice_id(settings.retell_voice_id)
+    if configured and client is not None:
+        return resolve_configured_retell_voice_id(client, configured)
+    if configured and not configured.startswith("agent_"):
         return configured
+    if configured.startswith("agent_"):
+        logger.warning(
+            "[RETELL] RETELL_VOICE_ID es agent_id sin client — fallback %s",
+            CED_JARVIS_CUSTOM_VOICE_ID,
+        )
+        return CED_JARVIS_CUSTOM_VOICE_ID
     if client is not None:
         return resolve_retell_voice_id_from_api(client)
-    return DEFAULT_VOICE_ID
+    return CED_JARVIS_CUSTOM_VOICE_ID
 
 
 def _pick_elevenlabs_voice_for_retell(api_key: str) -> str | None:
@@ -403,26 +437,30 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
 
     if override:
         voice_id = override
-    elif configured and configured.startswith(("cartesia-", "11labs-", "openai-", "retell-", "custom_voice_", "minimax-")):
+    elif configured:
         voice_id = resolve_configured_retell_voice_id(client, configured)
         logger.info("[RETELL] voz desde RETELL_VOICE_ID: %s", voice_id)
     elif agent_id:
         dashboard_voice = _retrieve_agent_voice_id(client, agent_id)
         if dashboard_voice and dashboard_voice.startswith("custom_voice_"):
             voice_id = dashboard_voice
-        elif configured:
-            voice_id = resolve_configured_retell_voice_id(client, configured)
         else:
-            jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
-            voice_id = jarvis or resolve_retell_voice_id_from_api(client)
-    elif configured:
-        voice_id = resolve_configured_retell_voice_id(client, configured)
+            preferred = _prefer_ced_jarvis_custom(client)
+            jarvis, jarvis_error = (None, None)
+            if not preferred:
+                jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
+            voice_id = preferred or jarvis or resolve_retell_voice_id_from_api(client)
     else:
-        jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
-        if jarvis:
-            voice_id = jarvis
-        else:
-            voice_id = resolve_retell_voice_id_from_api(client)
+        preferred = _prefer_ced_jarvis_custom(client)
+        jarvis, jarvis_error = (None, None)
+        if not preferred:
+            jarvis, jarvis_error = ensure_jarvis_voice_in_retell(client)
+        voice_id = preferred or jarvis or resolve_retell_voice_id_from_api(client)
+
+    # Nunca publicar agent_id como voice_id (Retell cae a voz default / incorrecta)
+    if voice_id.startswith("agent_"):
+        logger.error("[RETELL] voice_id inválido (agent_*) — forzando clon cedgggg")
+        voice_id = _prefer_ced_jarvis_custom(client) or CED_JARVIS_CUSTOM_VOICE_ID
 
     webhook = f"{settings.api_public_url.rstrip('/')}/v1/retell/webhook"
     llm_ws = custom_llm_websocket_url()
@@ -477,7 +515,11 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
             "voice_id": voice_id,
             "llm_websocket_url": llm_ws,
             "brain": settings.openai_model_retell_llm,
-            "tts_provider": "cartesia" if voice_id.startswith("cartesia-") else "retell",
+            "tts_provider": (
+                "cartesia"
+                if voice_id.startswith("cartesia-") or voice_id.startswith("custom_voice_")
+                else "retell"
+            ),
             "responsiveness": agent_payload["responsiveness"],
             "interruption_sensitivity": agent_payload["interruption_sensitivity"],
         }
@@ -491,13 +533,16 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         created = client.agent.create(**agent_payload)
     except Exception as exc:
         if "not found from voice" in str(exc).lower():
-            if configured:
+            if configured and not configured.startswith("agent_"):
                 raise RuntimeError(
                     f"RETELL_VOICE_ID={configured!r} no es válido en Retell. "
                     "Use el voice_id que asignó Retell al agregar la voz. "
                     f"Detalle: {exc}"
                 ) from exc
-            voice_id = resolve_retell_voice_id_from_api(client)
+            voice_id = (
+                _prefer_ced_jarvis_custom(client)
+                or resolve_retell_voice_id_from_api(client)
+            )
             agent_payload["voice_id"] = voice_id
             created = client.agent.create(**agent_payload)
         else:
@@ -509,7 +554,11 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "voice_id": voice_id,
         "llm_websocket_url": llm_ws,
         "brain": settings.openai_model_retell_llm,
-        "tts_provider": "cartesia" if voice_id.startswith("cartesia-") else "retell",
+        "tts_provider": (
+            "cartesia"
+            if voice_id.startswith("cartesia-") or voice_id.startswith("custom_voice_")
+            else "retell"
+        ),
     }
 
 

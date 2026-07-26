@@ -104,8 +104,38 @@ def test_active_paid_plan_returns_new_daily_minutes():
         patch("app.services.supabase_db.get_subscription", return_value=sub),
         patch("app.services.supabase_db.expire_trial_if_needed", return_value=False),
         patch("app.deps.auth.is_super_admin", return_value=False),
+        patch("app.services.supabase_db.get_usage_limit_minutes", return_value=12),
     ):
         allowed, reason, minutes = get_user_access("user-pro-active")
     assert allowed is True
     assert reason == "ok"
     assert minutes == 12
+
+
+def test_past_due_loses_paid_voice_minutes():
+    sub = {"plan_id": PlanId.ELITE.value, "status": "past_due"}
+    with (
+        patch("app.services.supabase_db.get_profile", side_effect=_mock_profile),
+        patch("app.services.supabase_db.get_subscription", return_value=sub),
+        patch("app.services.supabase_db.expire_trial_if_needed", return_value=False),
+        patch("app.deps.auth.is_super_admin", return_value=False),
+    ):
+        allowed, reason, minutes = get_user_access("user-past-due")
+    assert allowed is True
+    assert reason == "past_due"
+    assert minutes == 0
+
+
+def test_effective_plan_limits_past_due_is_free_basic():
+    from app.deps.plan_access import effective_plan_limits
+
+    with (
+        patch("app.deps.plan_access.get_user_access", return_value=(True, "past_due", 0)),
+        patch("app.deps.plan_access.is_super_admin", return_value=False),
+        patch("app.services.supabase_db.get_profile", side_effect=_mock_profile),
+    ):
+        limits, reason, trial = effective_plan_limits("user-past-due")
+    assert reason == "past_due"
+    assert trial is False
+    assert limits.voice_enabled is False
+    assert limits.meta_social_enabled is False

@@ -55,23 +55,23 @@ async def usage_balance(user_id: str = Depends(require_user_id)) -> dict:
 async def session_start(user_id: str = Depends(require_user_id)) -> dict:
     balance = await voice_access_state_async(user_id)
     access_msg = balance.get("access_message") or ""
-    if balance.get("access_denied"):
+    if balance.get("access_denied") or access_msg == "trial_expired":
         detail = ACCESS_DENIED_MESSAGES.get(access_msg, access_msg or "Acceso no disponible.")
         raise HTTPException(status_code=403, detail=detail)
-    if access_msg == "free_basic" and balance["plan_minutes_daily"] <= 0:
-        raise HTTPException(
-            status_code=402,
-            detail="La voz no está incluida en el plan Básico gratis. Mejora tu plan o recarga.",
-        )
     if balance["blocked"]:
         if balance.get("quota_exhausted"):
             raise HTTPException(
                 status_code=402,
                 detail="Has alcanzado tu límite diario de voz. Recarga desde $10 o adquiere un plan. El chat sigue disponible.",
             )
+        if access_msg == "past_due":
+            raise HTTPException(
+                status_code=402,
+                detail=ACCESS_DENIED_MESSAGES["past_due"],
+            )
         raise HTTPException(
             status_code=402,
-            detail="Tu plan no incluye minutos de voz hoy. Mejora tu plan o recarga saldo.",
+            detail="La voz no está incluida sin plan activo o saldo. Mejora tu plan o recarga desde $10.",
         )
 
     session_id = str(uuid4())

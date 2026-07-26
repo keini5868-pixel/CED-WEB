@@ -408,6 +408,8 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
     st = str(sub.get("status") or "")
 
     if st == "trialing":
+        # expire_trial_if_needed ya debió bajar a free_basic; si sigue trialing
+        # (p.ej. mock o carrera), bloquear voz y funciones de pago.
         trial_end = sub.get("trial_ends_at")
         if trial_end:
             try:
@@ -418,6 +420,10 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
             except ValueError:
                 pass
         return False, "trial_expired", 0
+
+    # Pago fallido: chat básico sí; sin minutos/plan de pago hasta cobro OK.
+    if st == "past_due":
+        return True, "past_due", 0
 
     if st in ("expired", "cancelled", "canceled"):
         return True, "free_basic", 0
@@ -436,13 +442,13 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
         except ValueError:
             pass
 
-    if st in ("active", "past_due", "trialing"):
+    if st in ("active", "trialing"):
         minutes = supabase_db.get_usage_limit_minutes(user_id)
         if minutes <= 0:
             minutes = plan_minutes_daily(plan_id)
         if not limits.voice_enabled:
             return True, "free_basic", 0
-        if minutes <= 0 and st in ("active", "past_due"):
+        if minutes <= 0 and st == "active":
             minutes = plan_minutes_daily(plan_id)
         return True, "ok", minutes
 
