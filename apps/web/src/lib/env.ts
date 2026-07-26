@@ -3,8 +3,12 @@
 /** API Railway producción — dominio con guion (servicio CED API). */
 export const PRODUCTION_API_URL = "https://ced-web-production.up.railway.app";
 
-/** Web Railway producción — URL pública del frontend (OAuth redirect). */
-export const PRODUCTION_WEB_URL = "https://cedweb-production.up.railway.app";
+/** Dominio canónico del frontend (OAuth redirect / Site URL). */
+export const PRODUCTION_WEB_URL = "https://ced-castillo.com";
+
+/** URL Railway del servicio web (fallback interno). */
+export const PRODUCTION_WEB_RAILWAY_URL =
+  "https://cedweb-production.up.railway.app";
 
 /** Corrige typos habituales (cedweb / ced-api → ced-web-production). */
 export function normalizeApiUrl(raw: string): string {
@@ -30,9 +34,12 @@ export function normalizeAppUrl(raw: string): string {
   ) {
     return PRODUCTION_WEB_URL;
   }
+  // Prefer canonical domain even if Railway URL is baked into build env.
   if (
     url.includes("cedweb-production.up.railway.app") ||
-    url.includes("ced-web-production.up.railway.app")
+    url.includes("ced-web-production.up.railway.app") ||
+    url.includes("app.castillodigital.com") ||
+    url.includes("castillodigital.com")
   ) {
     return PRODUCTION_WEB_URL;
   }
@@ -47,19 +54,26 @@ export function isSupabaseConfigured(): boolean {
 
 /** URL pública del frontend — OAuth y callbacks de Supabase. */
 export function appUrl(): string {
+  // Prefer the browser origin so OAuth PKCE cookies stay on the same host
+  // the user opened (ced-castillo.com vs Railway URL baked at build time).
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname;
+    if (
+      host &&
+      host !== "0.0.0.0" &&
+      host !== "127.0.0.1" &&
+      host !== "localhost"
+    ) {
+      return `${window.location.protocol}//${window.location.host}`;
+    }
+  }
+
   const fromEnv = normalizeAppUrl(
     process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
       process.env.NEXT_PUBLIC_APP_URL?.trim() ||
       "",
   );
   if (fromEnv) return fromEnv;
-
-  if (typeof window !== "undefined") {
-    const host = window.location.hostname;
-    if (host && host !== "0.0.0.0" && host !== "127.0.0.1") {
-      return `${window.location.protocol}//${window.location.host}`;
-    }
-  }
 
   return "http://localhost:3000";
 }

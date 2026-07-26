@@ -51,7 +51,17 @@ export function LoginForm() {
         );
         return;
       }
-      setError(authError.message);
+      const msg = authError.message || "";
+      if (
+        msg.toLowerCase().includes("invalid login credentials") ||
+        msg.toLowerCase().includes("invalid_credentials")
+      ) {
+        setError(
+          "Credenciales incorrectas. Si te registraste con Google, usa el botón de Google. Si olvidaste la contraseña, restablécela abajo.",
+        );
+        return;
+      }
+      setError(msg);
       return;
     }
     if (data.user && !data.user.email_confirmed_at) {
