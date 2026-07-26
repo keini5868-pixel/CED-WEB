@@ -1,6 +1,7 @@
 /** Rutas canónicas de auth y app (Fase 1). */
 
 export const DASHBOARD_PATH = "/dashboard";
+export const ACCOUNT_PATH = "/dashboard/account";
 export const DRIVE_PATH = "/drive";
 export const ADMIN_PATH = "/admin";
 export const LOGIN_PATH = "/login";

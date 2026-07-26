@@ -33,11 +33,22 @@ export function ForgotPasswordForm() {
     );
     setLoading(false);
     if (authError) {
+      const msg = authError.message.toLowerCase();
+      if (
+        msg.includes("rate limit") ||
+        msg.includes("over_email_send_rate_limit") ||
+        ("status" in authError && authError.status === 429)
+      ) {
+        setError(
+          "Límite de correos de Supabase alcanzado (muy bajo sin SMTP propio: ~2/hora). Espera ~1 hora e inténtalo de nuevo, o inicia sesión si ya tienes acceso y cambia la contraseña en Cuenta.",
+        );
+        return;
+      }
       setError(authError.message);
       return;
     }
     setMessage(
-      "Si el email existe, recibirás un enlace para restablecer tu contraseña.",
+      "Si el email existe, recibirás un enlace para restablecer tu contraseña. El enlace debe abrir ced-castillo.com (no castillodigital.com).",
     );
   }
 

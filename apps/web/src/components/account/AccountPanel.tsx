@@ -1,0 +1,29 @@
+"use client";
+
+import { ChangePasswordForm } from "@/components/account/ChangePasswordForm";
+
+export function AccountPanel() {
+  return (
+    <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
+      <div>
+        <h1 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wide text-cyan-200 sm:text-xl">
+          Cuenta
+        </h1>
+        <p className="mt-1 text-sm text-cyan-100/70">
+          Ajustes de acceso. El cambio de contraseña no envía correo ni depende
+          de recuperación por email.
+        </p>
+      </div>
+
+      <section className="rounded border border-cyan-500/25 bg-black/40 p-4">
+        <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
+          CAMBIAR CONTRASEÑA
+        </h2>
+        <p className="mt-1 mb-4 text-xs text-cyan-100/60">
+          Escribe tu contraseña actual y la nueva (mínimo 8 caracteres).
+        </p>
+        <ChangePasswordForm />
+      </section>
+    </div>
+  );
+}
