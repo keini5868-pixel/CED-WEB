@@ -1,8 +1,11 @@
 import { type NextRequest } from "next/server";
 
+import { redirectToCanonicalHost } from "@/lib/canonical-host";
 import { updateSession } from "@/lib/supabase/middleware";
 
 export async function middleware(request: NextRequest) {
+  const canonical = redirectToCanonicalHost(request);
+  if (canonical) return canonical;
   return updateSession(request);
 }
 

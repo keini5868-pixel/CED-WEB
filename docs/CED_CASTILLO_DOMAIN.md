@@ -12,6 +12,39 @@
 1. `https://ced-castillo.com/` → UI pública de CED (sin login).
 2. Google OAuth brand: nombre **CED** + explicación clara de qué hace la app en la home.
 3. `https://ced-castillo.com/privacy` y `/terms` siguen OK (páginas Next del web).
+4. **Canónico único:** cualquier `http://`, `www.` o legacy → **301** a `https://ced-castillo.com`.
+
+## Redirect canónico (www / http)
+
+El middleware Next (`apps/web/src/lib/canonical-host.ts`) hace **301** a
+`https://ced-castillo.com` cuando recibe:
+
+- `https://www.ced-castillo.com/...`
+- `http://ced-castillo.com/...` (Railway ya fuerza HTTPS en apex; el middleware refuerza)
+- hosts legacy `*.castillodigital.com`
+
+Para que `www` funcione (hoy no resolvía DNS), el dominio
+`www.ced-castillo.com` está añadido al servicio **WEB** en Railway. En tu DNS
+añade:
+
+| Tipo | Nombre / host | Valor |
+|------|----------------|--------|
+| CNAME | `www` | `8rnqkzoa.up.railway.app` |
+| TXT | `_railway-verify.www` | `railway-verify=bd591cd6af731c15f5f2bde95f2c23bc81a86e5fa48a77a95f8af4c51c6c8053` |
+
+(Si Railway regenera el target CNAME, usa el valor actual de
+`railway domain status www.ced-castillo.com -s "@ced/web"`.)
+
+Tras propagar DNS (~minutos):
+
+```bash
+curl -sI http://www.ced-castillo.com/ | head
+curl -sI https://www.ced-castillo.com/ | head
+# Esperado: HTTP/1.1 301  Location: https://ced-castillo.com/
+```
+
+En Google Search Console: dominio preferido / “Change of address” hacia
+`https://ced-castillo.com` (sin www) para acelerar la reindexación.
 
 ## Pasos en Railway (manual — requiere acceso al proyecto)
 
