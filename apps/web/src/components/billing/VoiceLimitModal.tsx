@@ -96,7 +96,7 @@ export function VoiceLimitModal({
               </button>
               {!isPaidPlanLimit && (
                 <Link
-                  href="/pricing"
+                  href="/dashboard/plans"
                   onClick={onClose}
                   className="block w-full rounded-lg border border-purple-500/50 bg-purple-500/10 py-3 text-center font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-purple-200 transition hover:bg-purple-500/20"
                 >

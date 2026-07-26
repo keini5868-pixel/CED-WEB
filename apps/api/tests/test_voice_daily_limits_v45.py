@@ -1,13 +1,8 @@
-"""Tests — límites diarios de voz v45 (Starter 8 / Pro 18 / Élite 30 / Founding 40)
+"""Tests — límites diarios de voz (Starter 5 / Pro 12 / Élite 20 / Founding 30)
 y blindaje trial (5 min/día, 7 días) vs. Básico permanente post-trial (0 min).
 
-Contexto real: antes de este cambio los límites eran 15/30/60/90 y el trial no
-tenía un tope diario propio explícito. El usuario pidió confirmar de forma
-explícita (con pruebas) que:
-  1. Los 4 planes pagados usan los nuevos números.
-  2. El plan Básico permanente (post-trial) SIEMPRE tiene 0 minutos de voz.
-  3. El trial de 7 días da 5 min/día (se renueva cada día vía usage_logs por
-     fecha) y al día 8 cae a 0 automáticamente.
+Calibrados a margen mínimo $10/mes (COGS provider peor caso). El trial de 7
+días da 5 min/día y al día 8 la voz queda en 0 (chat de texto sigue).
 """
 
 from __future__ import annotations
@@ -20,10 +15,10 @@ from app.services.admin_users import get_user_access
 
 
 def test_paid_plan_daily_voice_limits_match_new_numbers():
-    assert get_plan_limits(PlanId.STARTER.value).voice_minutes_per_day == 8
-    assert get_plan_limits(PlanId.PRO.value).voice_minutes_per_day == 18
-    assert get_plan_limits(PlanId.ELITE.value).voice_minutes_per_day == 30
-    assert get_plan_limits(PlanId.FOUNDING.value).voice_minutes_per_day == 40
+    assert get_plan_limits(PlanId.STARTER.value).voice_minutes_per_day == 5
+    assert get_plan_limits(PlanId.PRO.value).voice_minutes_per_day == 12
+    assert get_plan_limits(PlanId.ELITE.value).voice_minutes_per_day == 20
+    assert get_plan_limits(PlanId.FOUNDING.value).voice_minutes_per_day == 30
 
 
 def test_free_basic_permanent_never_has_voice():
@@ -113,4 +108,4 @@ def test_active_paid_plan_returns_new_daily_minutes():
         allowed, reason, minutes = get_user_access("user-pro-active")
     assert allowed is True
     assert reason == "ok"
-    assert minutes == 18
+    assert minutes == 12

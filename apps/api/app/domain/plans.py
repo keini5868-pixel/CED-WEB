@@ -57,8 +57,18 @@ RESOURCE_UNIT_COSTS_USD: dict[str, float] = {
     "maps_route": MAPS_ROUTE_COST_USD,
 }
 
-# Minutos diarios Founding (cap margen)
-FOUNDING_VOICE_CAP_MINUTES = 40
+# Minutos diarios Founding (cap margen — peor caso provider ≤ precio − $10)
+FOUNDING_VOICE_CAP_MINUTES = 30
+
+# COGS provider (peor caso) para planificar margen mínimo $10 sin subir precio.
+# Voz: Retell+Cartesia+LLM proxy; imágenes Gemini std / HD; Ideogram Turbo; Tavily.
+PROVIDER_COGS_VOICE_PER_MIN_USD = 0.06
+PROVIDER_COGS_IMAGE_STD_USD = 0.01
+PROVIDER_COGS_IMAGE_HD_USD = 0.02
+PROVIDER_COGS_IMAGE_TEXT_USD = 0.03
+PROVIDER_COGS_WEB_SEARCH_USD = 0.008
+MARGIN_BILLING_DAYS_PER_MONTH = 30
+MIN_PLAN_MARGIN_USD = 10.0
 
 PLAN_PRICES_USD: dict[str, int] = {
     PlanId.STARTER.value: 30,
@@ -121,11 +131,14 @@ class PlanLimits:
         return self.ai_images_hd_per_day
 
 
+# Límites calibrados a margen mínimo $10/mes (peor caso provider, 30 días).
+# Starter $30: COGS≈$15 → margen≈$15. Pro/Élite/Founding recortados si
+# voz+imágenes a tope diario rompían el piso de $10.
 PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.STARTER.value: PlanLimits(
-        voice_minutes_per_day=8,
-        web_searches_per_day=30,
-        ai_images_standard_per_day=20,
+        voice_minutes_per_day=5,
+        web_searches_per_day=15,
+        ai_images_standard_per_day=5,
         ai_images_hd_per_day=0,
         voice_enabled=True,
         camera_enabled=False,
@@ -133,46 +146,46 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         prospection_enabled=False,
         pdf_reports=False,
         claude_messages_per_day=-1,
-        ai_images_text_per_day=2,
+        ai_images_text_per_day=1,
     ),
     PlanId.PRO.value: PlanLimits(
-        voice_minutes_per_day=18,
+        voice_minutes_per_day=12,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=45,
-        ai_images_hd_per_day=5,
+        ai_images_standard_per_day=18,
+        ai_images_hd_per_day=3,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
         prospection_enabled=False,
         pdf_reports=True,
         claude_messages_per_day=-1,
-        ai_images_text_per_day=5,
+        ai_images_text_per_day=3,
     ),
     PlanId.ELITE.value: PlanLimits(
-        voice_minutes_per_day=30,
+        voice_minutes_per_day=20,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=95,
-        ai_images_hd_per_day=15,
+        ai_images_standard_per_day=35,
+        ai_images_hd_per_day=8,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
         prospection_enabled=True,
         pdf_reports=True,
         claude_messages_per_day=-1,
-        ai_images_text_per_day=10,
+        ai_images_text_per_day=5,
     ),
     PlanId.FOUNDING.value: PlanLimits(
         voice_minutes_per_day=FOUNDING_VOICE_CAP_MINUTES,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=145,
-        ai_images_hd_per_day=25,
+        ai_images_standard_per_day=50,
+        ai_images_hd_per_day=12,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
         prospection_enabled=True,
         pdf_reports=True,
         claude_messages_per_day=-1,
-        ai_images_text_per_day=15,
+        ai_images_text_per_day=8,
     ),
     # Básico permanente (post-trial): SIN voz, siempre. Blindado a propósito —
     # el trial de 7 días ya dio 5 min/día vía TRIAL_VOICE_MINUTES_PER_DAY
@@ -277,6 +290,52 @@ def quote_recharge(amount_usd: float) -> dict[str, float | bool | int]:
 
 def unit_cost_usd(resource: str) -> float:
     return float(RESOURCE_UNIT_COSTS_USD.get(resource) or 0.0)
+
+
+def estimate_plan_monthly_provider_cogs_usd(
+    plan_id: str,
+    *,
+    include_web_searches: bool = True,
+    web_search_cap_if_unlimited: int = 40,
+) -> float:
+    """COGS provider mensual si el usuario agota el cupo diario todos los días.
+
+    web_searches=-1 (ilimitado) se modela con ``web_search_cap_if_unlimited``
+    usos/día para poder acotar margen; la feature de producto sigue ilimitada.
+    """
+    limits = get_plan_limits(plan_id)
+    days = MARGIN_BILLING_DAYS_PER_MONTH
+    voice = max(0, limits.voice_minutes_per_day) * days * PROVIDER_COGS_VOICE_PER_MIN_USD
+    img_std = (
+        max(0, limits.ai_images_standard_per_day) * days * PROVIDER_COGS_IMAGE_STD_USD
+    )
+    img_hd = max(0, limits.ai_images_hd_per_day) * days * PROVIDER_COGS_IMAGE_HD_USD
+    img_text = (
+        max(0, limits.ai_images_text_per_day) * days * PROVIDER_COGS_IMAGE_TEXT_USD
+    )
+    web = 0.0
+    if include_web_searches:
+        web_day = limits.web_searches_per_day
+        if web_day < 0:
+            web_day = web_search_cap_if_unlimited
+        web = max(0, web_day) * days * PROVIDER_COGS_WEB_SEARCH_USD
+    return round(voice + img_std + img_hd + img_text + web, 2)
+
+
+def estimate_plan_monthly_margin_usd(
+    plan_id: str,
+    *,
+    include_web_searches: bool = True,
+    web_search_cap_if_unlimited: int = 40,
+) -> float:
+    pid = normalize_plan_id(plan_id)
+    price = float(PLAN_PRICES_USD.get(pid) or 0)
+    cogs = estimate_plan_monthly_provider_cogs_usd(
+        pid,
+        include_web_searches=include_web_searches,
+        web_search_cap_if_unlimited=web_search_cap_if_unlimited,
+    )
+    return round(price - cogs, 2)
 
 
 def public_plans_catalog() -> list[dict]:

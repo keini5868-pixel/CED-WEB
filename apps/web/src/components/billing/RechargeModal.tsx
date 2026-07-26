@@ -153,7 +153,7 @@ export function RechargeModal({
             Mañana espero
           </button>
           <Link
-            href="/pricing"
+            href="/dashboard/plans"
             className="rounded border border-cyan-400/50 px-4 py-2 text-xs text-cyan-300"
           >
             Ver planes
@@ -226,11 +226,18 @@ export function TrialExpiredModal({ open, onClose }: TrialExpiredModalProps) {
             </button>
           ))}
         </div>
+        <Link
+          href="/dashboard/plans"
+          onClick={onClose}
+          className="mt-3 block w-full rounded border border-cyan-500/40 py-2 text-center text-xs text-cyan-300 hover:bg-cyan-500/10"
+        >
+          Ver todos los planes y recargas →
+        </Link>
         <button
           type="button"
           disabled={busy !== null}
           onClick={() => void freeBasic()}
-          className="mt-4 w-full rounded border border-cyan-700/50 py-2 text-xs text-cyan-500"
+          className="mt-3 w-full rounded border border-cyan-700/50 py-2 text-xs text-cyan-500"
         >
           Continuar con plan Básico gratis
         </button>

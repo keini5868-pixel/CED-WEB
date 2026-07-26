@@ -2,7 +2,7 @@
 
 Diseño aprobado (Keini, 2026-07-20):
 - Tier 4.0 Turbo ($0.03 real / $0.06 monedero) como default.
-- Cuotas diarias: Starter 2, Pro 5, Élite 10, Founding 15, Básico gratis 0 (excluido
+- Cuotas diarias: Starter 1, Pro 3, Élite 5, Founding 8, Básico gratis 0 (excluido
   por completo, sin fallback de monedero para este recurso específico).
 - Router ESTRICTO: solo dispara con comillas explícitas o "que diga/ponga X" en el
   pedido ACTUAL — nunca por palabras genéricas de marketing ni por historial (ese es
@@ -23,10 +23,10 @@ from app.services.copy_quality import prompt_requires_ideogram_text
 
 
 def test_ideogram_daily_quotas_match_approved_design():
-    assert get_plan_limits(PlanId.STARTER.value).ai_images_text_per_day == 2
-    assert get_plan_limits(PlanId.PRO.value).ai_images_text_per_day == 5
-    assert get_plan_limits(PlanId.ELITE.value).ai_images_text_per_day == 10
-    assert get_plan_limits(PlanId.FOUNDING.value).ai_images_text_per_day == 15
+    assert get_plan_limits(PlanId.STARTER.value).ai_images_text_per_day == 1
+    assert get_plan_limits(PlanId.PRO.value).ai_images_text_per_day == 3
+    assert get_plan_limits(PlanId.ELITE.value).ai_images_text_per_day == 5
+    assert get_plan_limits(PlanId.FOUNDING.value).ai_images_text_per_day == 8
 
 
 def test_free_basic_fully_excluded_from_ideogram_quota():
@@ -37,10 +37,9 @@ def test_image_text_wallet_cost_is_006_with_003_real_margin():
     assert unit_cost_usd("image_text") == 0.06
 
 
-def test_paid_plan_image_std_hd_caps_unchanged_by_ideogram_addition():
-    # Verifica que agregar ai_images_text_per_day no movió los topes existentes.
-    assert get_plan_limits(PlanId.PRO.value).ai_images_standard_per_day == 45
-    assert get_plan_limits(PlanId.PRO.value).ai_images_hd_per_day == 5
+def test_paid_plan_image_std_hd_caps_match_margin_calibrated_limits():
+    assert get_plan_limits(PlanId.PRO.value).ai_images_standard_per_day == 18
+    assert get_plan_limits(PlanId.PRO.value).ai_images_hd_per_day == 3
 
 
 # ---------------------------------------------------------------------------

@@ -41,6 +41,12 @@ export function HudShell({ children, email, isSuperAdmin }: HudShellProps) {
           >
             <DriveModeLink compact />
             <Link
+              href="/dashboard/plans"
+              className="rounded px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-600 hover:bg-cyan-400/5 hover:text-cyan-300 sm:px-2.5 sm:text-[10px]"
+            >
+              Planes
+            </Link>
+            <Link
               href="/historial"
               className="rounded px-2 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-cyan-600 hover:bg-cyan-400/5 hover:text-cyan-300 sm:px-2.5 sm:text-[10px]"
             >

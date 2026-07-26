@@ -16,8 +16,8 @@ ACCESS_DENIED_MESSAGES = {
         "Tu prueba de 7 días de voz terminó. Adquiere un plan o recarga desde $10. "
         "El chat de texto sigue disponible en plan Básico gratis."
     ),
-    "Sin suscripción activa": "No tienes suscripción activa. Elige un plan en Precios.",
-    "Suscripción inactiva": "Tu suscripción no está activa. Renueva en Precios o contacta soporte.",
+    "Sin suscripción activa": "No tienes suscripción activa. Elige un plan en Planes.",
+    "Suscripción inactiva": "Tu suscripción no está activa. Renueva en Planes o contacta soporte.",
     "Cuenta pausada por administrador": "Tu cuenta está pausada. Contacta al administrador.",
 }
 

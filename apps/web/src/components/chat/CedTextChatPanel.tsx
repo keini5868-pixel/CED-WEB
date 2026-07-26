@@ -892,11 +892,11 @@ export function CedTextChatPanel({
 
         {status?.trial_expired && (
           <p className="shrink-0 border-b border-amber-900/40 px-4 py-2 text-[10px] text-amber-400">
-            Tu prueba terminó.{" "}
-            <a href="/pricing" className="underline">
-              Elige un plan
+            Tu prueba de voz terminó. El chat sigue disponible.{" "}
+            <a href="/dashboard/plans" className="underline">
+              Ver planes / recargar
             </a>{" "}
-            para seguir chateando.
+            para volver a usar el asistente de voz.
           </p>
         )}
 

@@ -122,7 +122,7 @@ export function HudUsageBar() {
             </button>
             {voiceLimit !== "daily_limit" && (
               <Link
-                href="/pricing"
+                href="/dashboard/plans"
                 className="rounded border border-purple-400/60 bg-purple-500/10 px-3 py-2 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-purple-200 hover:bg-purple-500/20"
               >
                 ADQUIRIR UN PLAN
@@ -162,7 +162,7 @@ export function HudUsageBar() {
               RECARGAR DESDE $10 →
             </button>
             <Link
-              href="/pricing"
+              href="/dashboard/plans"
               className="font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-300 underline hover:text-cyan-200"
             >
               VER PLANES →
@@ -174,7 +174,7 @@ export function HudUsageBar() {
       {balance.plan === 0 && !critical && loaded && (
         <p className="ced-hud-text-muted mt-2 text-xs">
           Sin minutos de voz en tu plan ·{" "}
-          <Link href="/pricing" className="text-cyan-400 underline">
+          <Link href="/dashboard/plans" className="text-cyan-400 underline">
             Adquirir plan
           </Link>{" "}
           o{" "}

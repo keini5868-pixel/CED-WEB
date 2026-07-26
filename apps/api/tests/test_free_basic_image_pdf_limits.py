@@ -36,13 +36,11 @@ def test_paid_plans_pdf_still_unlimited_no_regression():
         assert limits.pdf_reports_per_day == -1, f"{plan_id} debería seguir ilimitado"
 
 
-def test_paid_plans_image_caps_unchanged():
-    # Starter=20/0, Pro=45/5, Elite=95/15, Founding=145/25 — no deben moverse
-    # por el cambio de Básico.
-    assert get_plan_limits(PlanId.STARTER.value).ai_images_standard_per_day == 20
-    assert get_plan_limits(PlanId.PRO.value).ai_images_standard_per_day == 45
-    assert get_plan_limits(PlanId.ELITE.value).ai_images_standard_per_day == 95
-    assert get_plan_limits(PlanId.FOUNDING.value).ai_images_standard_per_day == 145
+def test_paid_plans_image_caps_match_margin_calibrated_limits():
+    assert get_plan_limits(PlanId.STARTER.value).ai_images_standard_per_day == 5
+    assert get_plan_limits(PlanId.PRO.value).ai_images_standard_per_day == 18
+    assert get_plan_limits(PlanId.ELITE.value).ai_images_standard_per_day == 35
+    assert get_plan_limits(PlanId.FOUNDING.value).ai_images_standard_per_day == 50
 
 
 def test_pdf_included_today_true_when_under_cap():
