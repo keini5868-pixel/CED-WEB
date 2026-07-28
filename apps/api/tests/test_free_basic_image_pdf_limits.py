@@ -37,10 +37,10 @@ def test_paid_plans_pdf_still_unlimited_no_regression():
 
 
 def test_paid_plans_image_caps_match_margin_calibrated_limits():
-    assert get_plan_limits(PlanId.STARTER.value).ai_images_standard_per_day == 5
-    assert get_plan_limits(PlanId.PRO.value).ai_images_standard_per_day == 18
-    assert get_plan_limits(PlanId.ELITE.value).ai_images_standard_per_day == 35
-    assert get_plan_limits(PlanId.FOUNDING.value).ai_images_standard_per_day == 50
+    assert get_plan_limits(PlanId.STARTER.value).ai_images_standard_per_day == 3
+    assert get_plan_limits(PlanId.PRO.value).ai_images_standard_per_day == 6
+    assert get_plan_limits(PlanId.ELITE.value).ai_images_standard_per_day == 14
+    assert get_plan_limits(PlanId.FOUNDING.value).ai_images_standard_per_day == 24
 
 
 def test_pdf_included_today_true_when_under_cap():

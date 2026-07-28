@@ -406,11 +406,19 @@ _HALLUCINATED_KW_PROMPT = re.compile(
 _FALSE_SUCCESS_MARKERS = (
     "aquí está tu",
     "aqui esta tu",
+    "aquí tienes",
+    "aqui tienes",
+    "te presento",
+    "he generado",
+    "ya generé",
+    "ya genere",
     "here is your",
     "here's your",
     "here is the",
     "listo, señor",
     "listo senor",
+    "imagen lista",
+    "foto lista",
 )
 _VISUAL_NOUNS = (
     "imagen",
@@ -423,11 +431,32 @@ _VISUAL_NOUNS = (
     "image",
     "photo",
     "flyer",
+    "banner",
+    "diseño",
+    "diseno",
+    "ilustración",
+    "ilustracion",
+)
+
+# LLM pegó el prompt / brief como si fuera el resultado (sin llamar la tool).
+_PROMPT_DUMP_MARKERS = (
+    "prompt:",
+    "descripción visual",
+    "descripcion visual",
+    "brief visual",
+    "genera una imagen de alta calidad",
+    "instrucciones actuales",
+    '{"prompt"',
+    "{'prompt'",
 )
 
 
 def looks_like_hallucinated_generate_image(text: str) -> bool:
-    return bool(_HALLUCINATED_GENERATE_IMAGE.search(text or ""))
+    t = text or ""
+    if _HALLUCINATED_GENERATE_IMAGE.search(t):
+        return True
+    low = t.lower()
+    return any(marker in low for marker in _PROMPT_DUMP_MARKERS)
 
 
 def extract_hallucinated_generate_image_prompt(text: str) -> str | None:
@@ -457,6 +486,35 @@ def strip_hallucinated_generate_image_text(text: str) -> str:
     cleaned = re.sub(r"generate_image\s*\([^)]*\)", "", cleaned, flags=re.I | re.S)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
+
+
+def reply_dumps_prompt_instead_of_image(reply: str, user_text: str) -> bool:
+    """True si la respuesta es esencialmente el pedido/prompt visual sin adjunto.
+
+    Compara contra el sujeto visual (sin «genera una imagen de…»), porque el LLM
+    suele devolver solo la descripción y no los verbos de pedido.
+    """
+    from app.services.gemini_images import strip_image_generation_instruction
+
+    r = re.sub(r"\s+", " ", (reply or "").strip().lower())
+    subject = strip_image_generation_instruction(user_text or "")
+    u = re.sub(r"\s+", " ", subject.strip().lower()) or re.sub(
+        r"\s+", " ", (user_text or "").strip().lower()
+    )
+    if len(r) < 40 or len(u) < 12:
+        return False
+    if re.search(r"https?://|/api/ced/media/", reply or "", re.I):
+        return False
+    u_tokens = {tok for tok in re.findall(r"[a-záéíóúñ0-9]{4,}", u) if tok}
+    if not u_tokens:
+        return False
+    overlap = sum(1 for tok in u_tokens if tok in r) / len(u_tokens)
+    # ≥0.65: prompt dump típico; ≥0.85 con respuesta corta ≈ eco del brief.
+    if overlap >= 0.65:
+        return True
+    if overlap >= 0.5 and len(r) <= max(80, int(len(u) * 1.6)):
+        return True
+    return False
 
 
 def reply_promises_image_without_attachment(text: str) -> bool:
@@ -493,17 +551,25 @@ def salvage_image_turn(
     wants_image = should_take_direct_image_path(user_text, history)
     hallucinated = looks_like_hallucinated_generate_image(reply)
     false_success = reply_promises_image_without_attachment(reply)
+    prompt_dump = wants_image and reply_dumps_prompt_instead_of_image(reply, user_text)
     wait_filler = wants_image and reply_is_image_wait_filler(reply)
-    if not wants_image and not hallucinated and not false_success and not wait_filler:
+    if (
+        not wants_image
+        and not hallucinated
+        and not false_success
+        and not wait_filler
+        and not prompt_dump
+    ):
         return reply, image_attachment
 
     logger.warning(
-        "[CHAT:IMG-GEN] salvage turn user=%s wants=%s halluc=%s false_ok=%s wait=%s",
+        "[CHAT:IMG-GEN] salvage turn user=%s wants=%s halluc=%s false_ok=%s wait=%s dump=%s",
         user_id[:8],
         wants_image,
         hallucinated,
         false_success,
         wait_filler,
+        prompt_dump,
     )
     gen = run_chat_image_generation(
         user_id,
@@ -514,7 +580,7 @@ def salvage_image_turn(
     )
     if gen.get("ok") and gen.get("url"):
         clean = strip_hallucinated_generate_image_text(reply)
-        if not clean or false_success or hallucinated or wait_filler:
+        if not clean or false_success or hallucinated or wait_filler or prompt_dump:
             clean = str(gen.get("reply") or "Listo. Aquí está tu imagen generada.")
         attachment = {
             "url": str(gen["url"]),
@@ -526,6 +592,6 @@ def salvage_image_turn(
 
     err = str(gen.get("error") or gen.get("reply") or "No pude generar la imagen.")
     clean = strip_hallucinated_generate_image_text(reply)
-    if clean and not hallucinated and not false_success and not wait_filler:
+    if clean and not hallucinated and not false_success and not wait_filler and not prompt_dump:
         return f"{clean}\n\n{err}", None
     return err, None

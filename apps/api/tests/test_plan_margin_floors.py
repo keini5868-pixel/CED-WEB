@@ -15,7 +15,7 @@ def test_starter_limits_for_ten_dollar_margin():
     limits = get_plan_limits(PlanId.STARTER.value)
     assert limits.voice_minutes_per_day == 5
     assert limits.web_searches_per_day == 15
-    assert limits.ai_images_standard_per_day == 5
+    assert limits.ai_images_standard_per_day == 3
     assert limits.ai_images_text_per_day == 1
 
 
@@ -34,6 +34,6 @@ def test_paid_plans_guarantee_min_margin_with_bounded_web():
 
 
 def test_starter_margin_explicit_math():
-    # 5*30*0.06 + 15*30*0.008 + 5*30*0.01 + 1*30*0.03 = 9 + 3.6 + 1.5 + 0.9 = 15
-    assert estimate_plan_monthly_provider_cogs_usd(PlanId.STARTER.value) == 15.0
-    assert estimate_plan_monthly_margin_usd(PlanId.STARTER.value) == 15.0
+    # 5*30*0.06 + 15*30*0.008 + 3*30*0.067 + 1*30*0.03 = 9 + 3.6 + 6.03 + 0.9 = 19.53
+    assert estimate_plan_monthly_provider_cogs_usd(PlanId.STARTER.value) == 19.53
+    assert estimate_plan_monthly_margin_usd(PlanId.STARTER.value) == 10.47

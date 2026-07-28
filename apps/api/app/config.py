@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     google_maps_api_key: str = ""
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     gemini_voice_model: str = "gemini-2.5-flash"
-    gemini_image_model: str = "gemini-2.5-flash-image"
+    gemini_image_model: str = "gemini-3.1-flash-image"
 
     # Ideogram 4.0 — opción alternativa para imágenes con texto legible (aprobado
     # Keini 2026-07). NO reemplaza a Gemini; solo se usa cuando el pedido exige texto

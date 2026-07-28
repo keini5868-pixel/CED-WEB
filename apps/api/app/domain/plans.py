@@ -26,8 +26,8 @@ USAGE_WARNING_PERCENT = 80
 
 # Costo unitario de recarga (monedero multi-recurso) — aprobado Keini 2026-07
 VOICE_COST_PER_MIN_USD = 0.10
-IMAGE_STD_COST_USD = 0.02
-IMAGE_HD_COST_USD = 0.04
+IMAGE_STD_COST_USD = 0.10
+IMAGE_HD_COST_USD = 0.16
 # Ideogram 4.0 Turbo ($0.03 costo real) — texto legible en imagen (aprobado Keini 2026-07)
 IMAGE_TEXT_COST_USD = 0.06
 WEB_SEARCH_COST_USD = 0.01
@@ -63,8 +63,8 @@ FOUNDING_VOICE_CAP_MINUTES = 30
 # COGS provider (peor caso) para planificar margen mínimo $10 sin subir precio.
 # Voz: Retell+Cartesia+LLM proxy; imágenes Gemini std / HD; Ideogram Turbo; Tavily.
 PROVIDER_COGS_VOICE_PER_MIN_USD = 0.06
-PROVIDER_COGS_IMAGE_STD_USD = 0.01
-PROVIDER_COGS_IMAGE_HD_USD = 0.02
+PROVIDER_COGS_IMAGE_STD_USD = 0.067  # Nano Banana 2 @ ~1K
+PROVIDER_COGS_IMAGE_HD_USD = 0.101  # Nano Banana 2 @ ~2K
 PROVIDER_COGS_IMAGE_TEXT_USD = 0.03
 PROVIDER_COGS_WEB_SEARCH_USD = 0.008
 MARGIN_BILLING_DAYS_PER_MONTH = 30
@@ -132,13 +132,13 @@ class PlanLimits:
 
 
 # Límites calibrados a margen mínimo $10/mes (peor caso provider, 30 días).
-# Starter $30: COGS≈$15 → margen≈$15. Pro/Élite/Founding recortados si
-# voz+imágenes a tope diario rompían el piso de $10.
+# Nano Banana 2 (gemini-3.1-flash-image): ~$0.067 std / ~$0.101 HD — cupos
+# diarios recortados vs. el accounting antiguo ($0.01/$0.02) para no romper margen.
 PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.STARTER.value: PlanLimits(
         voice_minutes_per_day=5,
         web_searches_per_day=15,
-        ai_images_standard_per_day=5,
+        ai_images_standard_per_day=3,
         ai_images_hd_per_day=0,
         voice_enabled=True,
         camera_enabled=False,
@@ -151,8 +151,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.PRO.value: PlanLimits(
         voice_minutes_per_day=12,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=18,
-        ai_images_hd_per_day=3,
+        ai_images_standard_per_day=6,
+        ai_images_hd_per_day=1,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
@@ -164,8 +164,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.ELITE.value: PlanLimits(
         voice_minutes_per_day=20,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=35,
-        ai_images_hd_per_day=8,
+        ai_images_standard_per_day=14,
+        ai_images_hd_per_day=3,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
@@ -177,8 +177,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     PlanId.FOUNDING.value: PlanLimits(
         voice_minutes_per_day=FOUNDING_VOICE_CAP_MINUTES,
         web_searches_per_day=-1,
-        ai_images_standard_per_day=50,
-        ai_images_hd_per_day=12,
+        ai_images_standard_per_day=24,
+        ai_images_hd_per_day=6,
         voice_enabled=True,
         camera_enabled=True,
         meta_social_enabled=True,
@@ -193,8 +193,8 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
     # suscripción cae a este plan y voice_enabled=False corta la voz a 0 sin
     # excepción, para que nadie use voz gratis indefinidamente sin pagar.
     # Imágenes y PDF SÍ quedan gratis de forma permanente (muestra continua de
-    # capacidades CED, aprobado Keini 2026-07) con tope diario bajo — costo
-    # real por unidad ($0.02 imagen, $0.05 PDF) es marginal incluso a escala.
+    # capacidades CED, aprobado Keini 2026-07) con tope diario bajo — COGS
+    # real Nano Banana 2 (~$0.067/img) sigue acotado a 2/día.
     PlanId.FREE_BASIC.value: PlanLimits(
         voice_minutes_per_day=0,
         web_searches_per_day=0,

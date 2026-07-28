@@ -15,15 +15,21 @@ from app.services import supabase_db
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_GEMINI_IMAGE_MODELS = ("gemini-2.5-flash-image",)
+DEFAULT_GEMINI_IMAGE_MODELS = (
+    "gemini-3.1-flash-image",  # Nano Banana 2 (calidad Studio actual)
+    "gemini-2.5-flash-image",  # Nano Banana original — fallback
+)
 DEPRECATED_GEMINI_IMAGE_MODELS = frozenset(
     {
         "gemini-2.0-flash-preview-image-generation",
         "gemini-2.5-flash-image-preview",
     }
 )
-GEMINI_STD_COST_USD = 0.01
-GEMINI_HD_COST_USD = 0.02
+# COGS API pagada Google (1K / ~2K) — no es el free tier de AI Studio.
+# Fuente: ai.google.dev/gemini-api/docs/pricing (Gemini 3.1 Flash Image).
+GEMINI_STD_COST_USD = 0.067
+GEMINI_HD_COST_USD = 0.101
+NANO_BANANA_MODEL_LABEL = "nano-banana-2"
 
 _SOCIAL_AD_CONTEXT = re.compile(
     r"\b(facebook|instagram|meta|anuncio|ads|publicidad|redes|post|flyer|banner)\b",
@@ -313,14 +319,23 @@ def _prepare_reference_gemini_prompt(prompt: str, mode: str) -> str:
     return augment_image_prompt(base, "")
 
 
-def _generate_content_config(*, quality: str, temperature: float) -> Any:
+def _generate_content_config(
+    *,
+    quality: str,
+    temperature: float,
+    modalities: list[str] | None = None,
+) -> Any:
     from google.genai import types
 
+    mods = modalities or ["IMAGE"]
     image_config = None
     if hasattr(types, "ImageConfig"):
-        image_config = types.ImageConfig(aspect_ratio="1:1")
+        try:
+            image_config = types.ImageConfig(aspect_ratio="1:1")
+        except TypeError:
+            image_config = None
     return types.GenerateContentConfig(
-        response_modalities=["TEXT", "IMAGE"],
+        response_modalities=mods,
         temperature=temperature,
         **({"image_config": image_config} if image_config else {}),
     )
@@ -376,54 +391,69 @@ def generate_image_gemini(
 
     for model in _image_models():
         for attempt, variant in enumerate(prompt_variants):
-            try:
-                response = client.models.generate_content(
-                    model=model,
-                    contents=variant[:4000],
-                    config=_generate_content_config(
-                        quality=quality,
-                        temperature=0.85 if attempt else 0.9,
-                    ),
-                )
-                payload = _extract_image_payload(response)
-                if payload:
-                    raw, mime = payload
-                    logger.info(
-                        "[GEMINI:IMAGE] ok model=%s attempt=%s bytes=%s",
+            # IMAGE-only evita respuestas de solo texto (alucinación de prompt).
+            for modalities in (["IMAGE"], ["TEXT", "IMAGE"]):
+                try:
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=variant[:4000],
+                        config=_generate_content_config(
+                            quality=quality,
+                            temperature=0.85 if attempt else 0.9,
+                            modalities=modalities,
+                        ),
+                    )
+                    payload = _extract_image_payload(response)
+                    if payload:
+                        raw, mime = payload
+                        # Rechazar "imágenes" que son texto en PNG vacío / demasiado chicas
+                        if len(raw) < 2_000:
+                            last_error = "Gemini devolvió un payload de imagen inválido"
+                            continue
+                        logger.info(
+                            "[GEMINI:IMAGE] ok model=%s attempt=%s mods=%s bytes=%s",
+                            model,
+                            attempt,
+                            "+".join(modalities),
+                            len(raw),
+                        )
+                        return {
+                            "ok": True,
+                            "raw_bytes": raw,
+                            "mime_type": mime,
+                            "model": model,
+                            "quality": quality,
+                            "provider": "gemini",
+                            "engine": NANO_BANANA_MODEL_LABEL,
+                            "estimated_cost_usd": (
+                                GEMINI_HD_COST_USD if quality == "hd" else GEMINI_STD_COST_USD
+                            ),
+                        }
+                    text_part = _extract_text_from_response(response)
+                    if text_part:
+                        # Nunca devolver el texto del modelo como si fuera la imagen.
+                        last_error = (
+                            "El modelo respondió con texto en vez de imagen. "
+                            f"Detalle: {text_part[:120]}"
+                        )
+                    else:
+                        last_error = f"Gemini ({model}) no devolvió imagen usable"
+                    logger.warning(
+                        "[GEMINI:IMAGE] empty model=%s attempt=%s mods=%s text=%s",
                         model,
                         attempt,
-                        len(raw),
+                        "+".join(modalities),
+                        (text_part or "")[:120],
                     )
-                    return {
-                        "ok": True,
-                        "raw_bytes": raw,
-                        "mime_type": mime,
-                        "model": model,
-                        "quality": quality,
-                        "provider": "gemini",
-                        "estimated_cost_usd": (
-                            GEMINI_HD_COST_USD if quality == "hd" else GEMINI_STD_COST_USD
-                        ),
-                    }
-                text_part = _extract_text_from_response(response)
-                if text_part:
-                    last_error = text_part[:200]
-                else:
-                    last_error = f"Gemini ({model}) no devolvió imagen usable"
-                logger.warning(
-                    "[GEMINI:IMAGE] empty model=%s attempt=%s text=%s",
-                    model,
-                    attempt,
-                    (text_part or "")[:120],
-                )
-            except Exception as exc:  # noqa: BLE001
-                last_error = str(exc)[:200]
-                logger.warning(
-                    "[GEMINI:IMAGE] model=%s attempt=%s error: %s",
-                    model,
-                    attempt,
-                    last_error,
-                )
+                except Exception as exc:  # noqa: BLE001
+                    last_error = str(exc)[:200]
+                    logger.warning(
+                        "[GEMINI:IMAGE] model=%s attempt=%s mods=%s error: %s",
+                        model,
+                        attempt,
+                        "+".join(modalities),
+                        last_error,
+                    )
 
     hint = (
         " Intente un pedido más concreto, por ejemplo: "
@@ -490,41 +520,73 @@ def generate_image_with_reference_gemini(
     last_error = "No pude generar la imagen con referencia en Gemini."
 
     for model in _image_models():
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=[
-                    types.Content(
-                        role="user",
-                        parts=[
-                            types.Part.from_bytes(data=reference_image, mime_type=mime),
-                            types.Part.from_text(text=enriched[:3800]),
-                        ],
-                    )
-                ],
-                config=_generate_content_config(quality=quality, temperature=temp),
-            )
-            payload = _extract_image_payload(response)
-            if payload:
-                raw, out_mime = payload
-                logger.info("[GEMINI:REF-IMG] ok model=%s mode=%s bytes=%s", model, mode, len(raw))
-                return {
-                    "ok": True,
-                    "raw_bytes": raw,
-                    "mime_type": out_mime,
-                    "model": model,
-                    "quality": quality,
-                    "style_mode": mode,
-                    "provider": "gemini",
-                    "estimated_cost_usd": (
-                        GEMINI_HD_COST_USD if quality == "hd" else GEMINI_STD_COST_USD
+        for modalities in (["IMAGE"], ["TEXT", "IMAGE"]):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=[
+                        types.Content(
+                            role="user",
+                            parts=[
+                                types.Part.from_bytes(data=reference_image, mime_type=mime),
+                                types.Part.from_text(text=enriched[:3800]),
+                            ],
+                        )
+                    ],
+                    config=_generate_content_config(
+                        quality=quality,
+                        temperature=temp,
+                        modalities=modalities,
                     ),
-                }
-            last_error = f"Gemini ({model}) no devolvió imagen con referencia"
-            logger.warning("[GEMINI:REF-IMG] empty model=%s mode=%s", model, mode)
-        except Exception as exc:  # noqa: BLE001
-            last_error = str(exc)[:200]
-            logger.warning("[GEMINI:REF-IMG] model=%s error: %s", model, last_error)
+                )
+                payload = _extract_image_payload(response)
+                if payload:
+                    raw, out_mime = payload
+                    if len(raw) < 2_000:
+                        last_error = "Gemini devolvió un payload de imagen inválido"
+                        continue
+                    logger.info(
+                        "[GEMINI:REF-IMG] ok model=%s mode=%s mods=%s bytes=%s",
+                        model,
+                        mode,
+                        "+".join(modalities),
+                        len(raw),
+                    )
+                    return {
+                        "ok": True,
+                        "raw_bytes": raw,
+                        "mime_type": out_mime,
+                        "model": model,
+                        "quality": quality,
+                        "style_mode": mode,
+                        "provider": "gemini",
+                        "engine": NANO_BANANA_MODEL_LABEL,
+                        "estimated_cost_usd": (
+                            GEMINI_HD_COST_USD if quality == "hd" else GEMINI_STD_COST_USD
+                        ),
+                    }
+                text_part = _extract_text_from_response(response)
+                if text_part:
+                    last_error = (
+                        "El modelo respondió con texto en vez de imagen. "
+                        f"{text_part[:120]}"
+                    )
+                else:
+                    last_error = f"Gemini ({model}) no devolvió imagen con referencia"
+                logger.warning(
+                    "[GEMINI:REF-IMG] empty model=%s mode=%s mods=%s",
+                    model,
+                    mode,
+                    "+".join(modalities),
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_error = str(exc)[:200]
+                logger.warning(
+                    "[GEMINI:REF-IMG] model=%s mods=%s error: %s",
+                    model,
+                    "+".join(modalities),
+                    last_error,
+                )
 
     return {"ok": False, "error": _friendly_image_error(last_error), "code": "gemini_error"}
 
@@ -542,7 +604,7 @@ def _finalize_generated_image(
         return {"ok": False, "error": "No se generó una imagen usable", "code": "gemini_error"}
 
     mime = str(result.get("mime_type") or "image/png")
-    model = str(result.get("model") or "gemini-2.5-flash-image")
+    model = str(result.get("model") or "gemini-3.1-flash-image")
     provider = str(result.get("provider") or "gemini")
     picked = str(result.get("quality") or "standard")
 

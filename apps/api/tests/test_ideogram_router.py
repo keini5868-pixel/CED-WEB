@@ -38,8 +38,8 @@ def test_image_text_wallet_cost_is_006_with_003_real_margin():
 
 
 def test_paid_plan_image_std_hd_caps_match_margin_calibrated_limits():
-    assert get_plan_limits(PlanId.PRO.value).ai_images_standard_per_day == 18
-    assert get_plan_limits(PlanId.PRO.value).ai_images_hd_per_day == 3
+    assert get_plan_limits(PlanId.PRO.value).ai_images_standard_per_day == 6
+    assert get_plan_limits(PlanId.PRO.value).ai_images_hd_per_day == 1
 
 
 # ---------------------------------------------------------------------------

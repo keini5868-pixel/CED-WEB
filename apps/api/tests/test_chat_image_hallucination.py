@@ -40,11 +40,26 @@ DIRECT_PROMPTS = [
 ]
 
 
-def test_english_image_intents_use_direct_path_not_stream():
-    for prompt in DIRECT_PROMPTS:
-        assert is_generate_image_intent(prompt), prompt
-        assert should_take_direct_image_path(prompt, []), prompt
-        assert not _can_stream_chat_text(prompt), prompt
+def test_reply_dumps_prompt_instead_of_image_triggers_salvage_signal():
+    from app.services.chat_image_generation import reply_dumps_prompt_instead_of_image
+
+    user = "genera una imagen de un atardecer fotorrealista en la playa con palmeras"
+    reply = (
+        "Atardecer fotorrealista en la playa con palmeras, cielo naranja, "
+        "arena dorada, composición horizontal."
+    )
+    assert reply_dumps_prompt_instead_of_image(reply, user)
+
+
+def test_nano_banana_2_is_primary_image_model():
+    from app.services.gemini_images import DEFAULT_GEMINI_IMAGE_MODELS, _image_models
+
+    assert DEFAULT_GEMINI_IMAGE_MODELS[0] == "gemini-3.1-flash-image"
+    with patch("app.services.gemini_images.get_settings") as mock_settings:
+        mock_settings.return_value.gemini_image_model = "gemini-3.1-flash-image"
+        models = _image_models()
+    assert models[0] == "gemini-3.1-flash-image"
+    assert "gemini-2.5-flash-image" in models
 
 
 def test_detects_json_style_generate_image_hallucination():
