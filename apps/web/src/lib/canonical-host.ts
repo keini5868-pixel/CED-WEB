@@ -11,14 +11,11 @@ const CANONICAL_HOST = "ced-castillo.com";
 export function redirectToCanonicalHost(
   request: NextRequest,
 ): NextResponse | null {
-  const forwardedHost = (
+  const rawHost =
     request.headers.get("x-forwarded-host") ||
     request.headers.get("host") ||
-    ""
-  )
-    .split(",")[0]
-    .trim()
-    .toLowerCase();
+    "";
+  const forwardedHost = (rawHost.split(",")[0] ?? rawHost).trim().toLowerCase();
 
   // Quitar puerto interno (Railway a veces expone :8080)
   const host = forwardedHost.replace(/:\d+$/, "");
@@ -26,12 +23,11 @@ export function redirectToCanonicalHost(
     return null;
   }
 
-  const forwardedProto = (
+  const rawProto =
     request.headers.get("x-forwarded-proto") ||
     request.nextUrl.protocol.replace(":", "") ||
-    "https"
-  )
-    .split(",")[0]
+    "https";
+  const forwardedProto = (rawProto.split(",")[0] ?? rawProto)
     .trim()
     .toLowerCase();
 
