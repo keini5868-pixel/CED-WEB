@@ -329,8 +329,7 @@ def run_chat_image_generation(
         style_ctx = history_ctx
         if ref_payload:
             style_hint = (
-                "Conserva el estilo visual futurista de la imagen de referencia "
-                "(holograma, HUD, paleta cian/azul, composición similar)."
+                "Conserva el estilo visual y la composición de la imagen de referencia."
             )
             style_ctx = f"{style_ctx}\n{style_hint}".strip() if style_ctx else style_hint
         img_result = generate_image(

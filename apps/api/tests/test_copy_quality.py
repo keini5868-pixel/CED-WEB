@@ -119,6 +119,7 @@ def test_allcaps_image_request_does_not_become_textos_exactos():
     assert "me generas" not in tech
     assert "hola" not in tech
     assert "alcon" in tech or "alcón" in tech
+    assert "sistema ced" not in tech
 
 
 def test_history_capability_bullets_not_painted_on_new_scene():
@@ -144,6 +145,8 @@ def test_history_capability_bullets_not_painted_on_new_scene():
     assert "mentor en ventas" not in tech
     assert "textos exactos" not in tech
     assert "sin texto" in tech
+    # Pedido menciona CED → branding permitido; no debe borrar el águila.
+    assert "alcon" in tech or "alcón" in tech
 
 
 def test_explicit_detalles_escritos_still_uses_context_bullets():
@@ -154,6 +157,55 @@ def test_explicit_detalles_escritos_still_uses_context_bullets():
     orch = orchestrate_image_generation_brief(msg, context=hist)
     assert orch["wants_literal_text"] is True
     assert any("asistente" in ln.lower() for ln in orch["overlay_lines"])
+    # Sin mención de CED en el pedido: no forzar infografía de marca.
+    assert "sistema ced" not in orch["technical_prompt"].lower()
+
+
+def test_generic_prompts_never_inject_ced_branding():
+    """Cualquier escena genérica debe expandirse fielmente, sin marca CED."""
+    from app.services.copy_quality import orchestrate_image_generation_brief
+
+    samples = [
+        "generame una imagen de un águila volando sobre un cielo lluvioso",
+        "un atardecer en la playa",
+        "un gato dormido en un sofá",
+        "genera un perro",
+        "hazme una foto de una montaña nevada",
+        "crea una imagen de un auto rojo clásico",
+        "genera un atardecer",
+    ]
+    for prompt in samples:
+        orch = orchestrate_image_generation_brief(prompt, context="")
+        tech = orch["technical_prompt"].lower()
+        assert "sistema ced" not in tech, prompt
+        assert "infografía premium del sistema ced" not in tech, prompt
+        assert "hud holog" not in tech, prompt
+        assert "sin texto" in tech
+        # Debe conservar algo del sujeto (no sustituir por briefing vacío de marca).
+        assert len(orch["visual_brief"]) >= 8, prompt
+
+
+def test_explicit_ced_request_keeps_brand_context():
+    from app.services.copy_quality import orchestrate_image_generation_brief
+
+    orch = orchestrate_image_generation_brief(
+        "generame una imagen del sistema CED estilo futurista",
+        context="",
+    )
+    tech = orch["technical_prompt"].lower()
+    assert "ced" in tech
+    assert "futurista" in tech or "cian" in tech or "hud" in tech
+
+
+def test_detalles_escritos_with_ced_context_allows_brand():
+    from app.services.copy_quality import orchestrate_image_generation_brief
+
+    orch = orchestrate_image_generation_brief(
+        "generame una imagen con estos detalles escritos del sistema CED",
+        context="- **Asistente de IA conversacional**\n- **Memoria contextual**",
+    )
+    assert orch["wants_literal_text"] is True
+    assert "ced" in orch["technical_prompt"].lower()
 
 
 def test_build_image_headline_from_any_context():

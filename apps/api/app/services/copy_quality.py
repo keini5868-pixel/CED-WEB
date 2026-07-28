@@ -539,19 +539,72 @@ def summarize_overlay_labels_for_image(
     return out
 
 
+_CED_BRAND_REQUEST = re.compile(
+    r"(?is)\b(?:"
+    r"sistema\s+ced\b|"
+    r"\bced\b|"
+    r"castillo\s+de\s+la\s+evoluci[oó]n|"
+    r"marca\s+ced|"
+    r"logo\s+(?:de\s+)?ced|"
+    r"branding\s+ced|"
+    r"infograf[ií]a\s+(?:del\s+)?(?:sistema\s+)?ced"
+    r")\b"
+)
+
+
+def user_requests_ced_branding(text: str) -> bool:
+    """True solo si el pedido menciona CED / la marca de forma explícita."""
+    return bool(_CED_BRAND_REQUEST.search(text or ""))
+
+
+def _faithful_visual_expansion(visual: str, *, has_reference: bool = False) -> str:
+    """Expande el sujeto del usuario sin inyectar marca CED ni estilo de producto."""
+    subject = (visual or "").strip(" ,.;")
+    if has_reference:
+        if subject:
+            return (
+                f"{subject}. Conserva el estilo y la composición de la imagen de referencia; "
+                "alta calidad, iluminación coherente, resultado profesional."
+            )
+        return (
+            "Variación fiel de la imagen de referencia según el pedido del usuario; "
+            "alta calidad, sin cambiar el tema a otra marca o producto."
+        )
+    if subject:
+        return (
+            f"{subject}. Alta calidad, composición clara, buena iluminación, "
+            "detalle nítido, resultado profesional fiel al sujeto pedido."
+        )
+    return (
+        "Imagen de alta calidad fiel al pedido del usuario, composición clara, "
+        "buena iluminación, sin añadir marcas, logos ni temas ajenos."
+    )
+
+
+def _ced_branded_visual(*, has_reference: bool = False) -> str:
+    """Brief de marca CED — solo cuando el usuario lo pidió explícitamente."""
+    if has_reference:
+        return (
+            "Variación de la imagen de referencia con identidad CED "
+            "(futurista, HUD holográfico, paleta cian/azul); tipografía clara si aplica."
+        )
+    return (
+        "Infografía premium del sistema CED, estilo futurista, HUD holográfico, "
+        "paleta cian y azul oscuro, tipografía grande y legible"
+    )
+
+
 def orchestrate_image_generation_brief(
     user_text: str,
     *,
     context: str = "",
     has_reference: bool = False,
 ) -> dict[str, Any]:
-    """Orquestador: separa escena visual vs tipografía; nunca filtra instrucciones.
+    """Orquestador: expansión fiel al pedido; marca CED solo si el usuario la pide.
 
-    Devuelve:
-      visual_brief: descripción de escena sin meta-comandos
-      overlay_lines: etiquetas cortas a pintar (máx. 5)
-      wants_literal_text: si debe preferirse Ideogram / TEXTOS EXACTOS
-      technical_prompt: brief listo para el modelo de imagen
+    Por defecto NO inyecta branding/sistema CED. Solo aplica identidad CED cuando
+    el mensaje menciona CED / Castillo de la Evolución / logo CED de forma explícita,
+    o cuando pide «detalles escritos» y el contexto trae contenido de marca CED.
     """
     raw = (user_text or "").strip()
     from app.services.gemini_images import (
@@ -573,21 +626,39 @@ def orchestrate_image_generation_brief(
     # Logo / marca pedida en escena NO implica TEXTOS EXACTOS del historial.
     logo_only = bool(re.search(r"(?i)\blogo\b", raw) and not wants_text)
 
-    if (
-        not visual
-        or len(visual) < 24
-        or re.search(r"(?i)^estos?\s+detalles\b", visual)
+    wants_ced = user_requests_ced_branding(raw) or (
+        bool(overlays) and user_requests_ced_branding(context or "")
+    )
+    details_only = bool(
+        re.search(r"(?i)^estos?\s+detalles\b", visual)
         or re.search(r"(?i)\bdetalles\s+resumidos\s+escritos\b", visual)
-    ):
-        visual = (
-            "Infografía premium del sistema CED, estilo futurista, HUD holográfico, "
-            "paleta cian y azul oscuro, tipografía grande y legible"
-        )
-        if has_reference:
+        or re.search(r"(?i)^estas?\s+caracter[ií]sticas\b", visual)
+    )
+
+    if details_only:
+        # Pedido del tipo «con estos detalles» sin sujeto visual propio.
+        if wants_ced:
+            visual = _ced_branded_visual(has_reference=has_reference)
+        elif overlays:
             visual = (
-                "Variación de la imagen de referencia, mismo estilo futurista; "
-                "reemplaza sujetos según el pedido; tipografía clara"
+                "Composición visual clara y profesional que ilustra los puntos indicados; "
+                "fondo limpio, jerarquía visual legible, sin marcas ajenas al pedido."
             )
+        else:
+            visual = _faithful_visual_expansion("", has_reference=has_reference)
+    elif not visual:
+        visual = (
+            _ced_branded_visual(has_reference=has_reference)
+            if wants_ced
+            else _faithful_visual_expansion("", has_reference=has_reference)
+        )
+    elif wants_ced and not re.search(r"(?i)\bced\b|castillo\s+de\s+la\s+evoluci", visual):
+        # Usuario pidió CED pero el strip dejó poco; reforzar identidad sin borrar el sujeto.
+        visual = f"{visual}. Identidad visual CED, estilo futurista, paleta cian/azul."
+    else:
+        # Sujeto presente (aunque sea corto: «un perro», «un atardecer»): expansión fiel.
+        # NUNCA sustituir por branding CED.
+        visual = _faithful_visual_expansion(visual, has_reference=has_reference)
 
     parts = [visual]
     if has_reference:

@@ -51,11 +51,12 @@ _IMAGE_INSTRUCTION_PREFIX = re.compile(
     r"\s+(?:una?\s+)?"
     r"(?:"
     r"(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|creativo|arte|gr[aá]fico|banner|flyer|portada)"
-    r"(?:\s+(?:de|con|para|que\s+)?(?:estas?\s+caracter[ií]sticas\s*)?)?"
+    # Solo consumir «de/con estas características», nunca el «de» de «del águila».
+    r"(?:\s+(?:de|con|para)\s+estas?\s+caracter[ií]sticas)?"
+    r"(?:\s+(?:de|con|para|que)\s+)?"
     # «genera un halcón…» / «crea un robot…» sin decir «imagen».
     r"|(?:un|una|el|la)\s+"
     r")"
-    r"\s*"
     r")+",
     re.I,
 )
