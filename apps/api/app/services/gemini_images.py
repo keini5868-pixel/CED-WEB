@@ -41,14 +41,20 @@ _PRODUCT_CONTEXT = re.compile(
 )
 _IMAGE_INSTRUCTION_PREFIX = re.compile(
     r"^(?:"
+    # «OK AHORA», «POR FAVOR», etc. delante del verbo.
+    r"(?:ok(?:ay)?\s+|ahora\s+|por\s+favor\s+|please\s+|entonces\s+)*"
     r"(?:me\s+)?(?:puedes\s+|podr[ií]as\s+)?"
     r"(?:gener(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|cre(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|"
     r"haz(?:me|nos|lo|la|es|emos|er|go)?|hacer(?:me|lo)?|"
     r"dise[nñ]a(?:r|me|mos|s|is|n|do)?|dibuja(?:r|me|mos|s)?|pinta(?:r|me|mos|s)?"
     r")"
     r"\s+(?:una?\s+)?"
+    r"(?:"
     r"(?:imagen|foto|picture|ilustraci[oó]n|dise[nñ]o|creativo|arte|gr[aá]fico|banner|flyer|portada)"
     r"(?:\s+(?:de|con|para|que\s+)?(?:estas?\s+caracter[ií]sticas\s*)?)?"
+    # «genera un halcón…» / «crea un robot…» sin decir «imagen».
+    r"|(?:un|una|el|la)\s+"
+    r")"
     r"\s*"
     r")+",
     re.I,

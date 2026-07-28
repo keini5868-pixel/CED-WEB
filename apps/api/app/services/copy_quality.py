@@ -385,11 +385,39 @@ def image_prompt_needs_verbatim_text(prompt: str, context: str = "") -> bool:
 _INSTRUCTIONAL_OVERLAY = re.compile(
     r"(?is)\b(?:"
     r"escena\s+pedida|tomando\s+en\s+cuenta|la\s+imagen\s+que\s+sea|"
-    r"es\s+algo\s+as[ií]|genera(?:r|me)?\s+(?:una?\s+)?imagen|"
-    r"haz(?:me)?\s+(?:una?\s+)?imagen|debe(?:n)?\s+ir\s+escrit|"
+    r"es\s+algo\s+as[ií]|"
+    r"(?:me\s+)?genera(?:r|me|mos|s|is|n|d)?\s+(?:una?\s+)?"
+    r"(?:imagen|foto|ilustraci[oó]n|dise[nñ]o|creativo|banner|flyer)|"
+    r"(?:ok\s+|ahora\s+)*(?:me\s+)?genera(?:r|me|s)?\b|"
+    r"haz(?:me)?\s+(?:una?\s+)?(?:imagen|foto)|"
+    r"crea(?:r|me|s)?\s+(?:una?\s+)?(?:imagen|foto)|"
+    r"debe(?:n)?\s+ir\s+escrit|"
     r"instrucci[oó]n(?:es)?\s+actuales|referencia\s+visual|\bprompt\b"
     r")\b"
 )
+
+# Solo mezclar historial en overlays cuando el turno actual lo pide.
+_CONTEXT_OVERLAY_OPT_IN = re.compile(
+    r"(?is)\b(?:"
+    r"estos?\s+detalles|"
+    r"detalles?\s+(?:resumidos\s+)?escritos?|"
+    r"(?:con|usa|usando|incluye|incluyendo)\s+(?:estos?\s+)?(?:textos?|titulares?|etiquetas?)|"
+    r"mant[eé]n(?:me|gas|ga|iendo)?\s+(?:l[ao]s?\s+)?textos?|"
+    r"conserv(?:a|ando)\s+(?:l[ao]s?\s+)?textos?|"
+    r"las?\s+caracter[ií]sticas|"
+    r"que\s+diga|que\s+ponga|con\s+el\s+t[ií]tulo"
+    r")\b"
+)
+
+
+def _prompt_allows_context_overlays(prompt: str) -> bool:
+    """True solo si el pedido actual pide tipografía del historial/lista previa."""
+    t = (prompt or "").strip()
+    if not t:
+        return False
+    if prompt_requires_ideogram_text(t):
+        return True
+    return bool(_CONTEXT_OVERLAY_OPT_IN.search(t))
 
 
 def _looks_like_prompt_instruction(text: str) -> bool:
@@ -401,15 +429,23 @@ def _looks_like_prompt_instruction(text: str) -> bool:
     # Pedidos largos en prosa no son etiquetas de UI.
     if len(t) > 64 and not re.search(r"[:\-•]", t):
         return True
+    # Saludos / filler del chat que a veces se colaban vía ALL-CAPS + historial.
+    if re.fullmatch(r"(?i)hola|buenas|ok|vale|listo|gracias|se[nñ]or", t):
+        return True
     return False
 
 
 def extract_bullet_labels(text: str, *, max_lines: int = 5) -> list[str]:
-    """Extrae viñetas («- Título», «• Título», «- **Título** — desc») o ALL-CAPS."""
+    """Extrae viñetas («- Título», «• Título», «- **Título** — desc»).
+
+    NO cosecha frases en MAYÚSCULAS del pedido («ME GENERAS UNA IMAGEN…»): eso
+    convertía el prompt entero en TEXTOS EXACTOS y Gemini lo pintaba en la foto.
+    """
     lines: list[str] = []
+    source = text or ""
     for match in re.finditer(
         r"(?m)^\s*(?:[\-\*•]|\d+[.)])\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$",
-        text or "",
+        source,
     ):
         raw = match.group(1).strip()
         # «**Título** — descripción» o «Título — descripción»
@@ -427,38 +463,32 @@ def extract_bullet_labels(text: str, *, max_lines: int = 5) -> list[str]:
             lines.append(label)
         if len(lines) >= max_lines:
             return lines
-    # Etiquetas en mayúsculas separadas por coma / salto (UI tipo CED)
-    for match in re.finditer(
-        r"\b([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9\s/\(\)]{2,48})\b",
-        text or "",
-    ):
-        label = sanitize_label(re.sub(r"\s+", " ", match.group(1).strip()))
-        if len(label) < 6 or _looks_like_prompt_instruction(label):
-            continue
-        if label not in lines:
-            lines.append(label)
-        if len(lines) >= max_lines:
-            break
     return lines[:max_lines]
 
 
 def collect_image_overlay_lines(prompt: str, context: str = "") -> list[str]:
-    """Reúne textos literales desde prompt + contexto (cualquier dominio).
+    """Reúne textos literales a pintar — desde el pedido actual; historial solo con opt-in.
 
-    Nunca convierte instrucciones del usuario («la imagen que sea así…») en tipografía
-    a pintar — solo líneas de contenido (títulos, viñetas, comillas).
+    Nunca convierte instrucciones del usuario («ME GENERAS UNA IMAGEN…») ni viñetas
+    de turnos anteriores (capacidades CED) en tipografía, salvo que el usuario pida
+    explícitamente detalles/textos escritos.
     """
-    lines = extract_structured_lines(context)
+    use_context = _prompt_allows_context_overlays(prompt)
+    ctx = (context or "") if use_context else ""
+    blob = f"{prompt}\n{ctx}".strip() if ctx else (prompt or "")
+
+    lines: list[str] = []
+    if use_context and ctx:
+        lines = extract_structured_lines(ctx)
+        if not lines:
+            lines = overlay_lines_from_strings(extract_structured_lines(ctx, max_lines=8))
     if not lines:
         lines = extract_structured_lines(prompt)
     if not lines:
-        lines = overlay_lines_from_strings(extract_structured_lines(context, max_lines=8))
+        lines = extract_quoted_phrases(blob)
     if not lines:
-        quotes = extract_quoted_phrases(f"{prompt}\n{context}")
-        lines = quotes
-    if not lines:
-        lines = extract_bullet_labels(f"{prompt}\n{context}")
-    spoken = extract_spoken_overlay_labels(f"{prompt}\n{context}")
+        lines = extract_bullet_labels(blob)
+    spoken = extract_spoken_overlay_labels(blob)
     for label in spoken:
         if label not in lines:
             lines.append(label)
@@ -537,8 +567,11 @@ def orchestrate_image_generation_brief(
     if len(visual) > 280:
         visual = visual[:279].rsplit(" ", 1)[0].strip()
 
+    explicit_text = prompt_requires_ideogram_text(raw)
     overlays = collect_image_overlay_lines(raw, context)
-    wants_text = bool(overlays) or prompt_requires_ideogram_text(raw)
+    wants_text = bool(overlays) or explicit_text
+    # Logo / marca pedida en escena NO implica TEXTOS EXACTOS del historial.
+    logo_only = bool(re.search(r"(?i)\blogo\b", raw) and not wants_text)
 
     if (
         not visual
@@ -566,10 +599,24 @@ def orchestrate_image_generation_brief(
             "Tipografía grande, alto contraste, máximo 5 etiquetas cortas; "
             "PROHIBIDO pintar el pedido del usuario o instrucciones del sistema."
         )
-    elif not wants_text:
+    elif wants_text:
+        # Tipografía pedida sin líneas concretas (p.ej. mantener textos de referencia).
+        parts.append(_CREATIVE_NO_LEAK)
         parts.append(
-            "Sin texto, tipografía, subtítulos, marcas de agua ni etiquetas en la imagen."
+            "Incluye tipografía legible en español si aplica; "
+            "PROHIBIDO pintar el pedido del usuario, saludos del chat o listas de capacidades."
         )
+    else:
+        # Escena pura (modo avanzado + chat): nunca pintar el prompt ni saludos.
+        parts.append(
+            "Sin texto, tipografía, subtítulos, marcas de agua, etiquetas, "
+            "viñetas ni frases del pedido del usuario en la imagen."
+        )
+        if logo_only:
+            parts.append(
+                "Si se pide logo de marca, intégralo como marca gráfica pequeña; "
+                "no escribas el pedido ni listas de capacidades."
+            )
 
     return {
         "visual_brief": visual,
