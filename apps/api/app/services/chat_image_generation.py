@@ -230,13 +230,15 @@ def run_chat_image_generation(
         resolve_reference_image_bytes,
     )
 
-    from app.services.copy_quality import prompt_requires_ideogram_text
+    from app.services.copy_quality import (
+        collect_image_overlay_lines,
+        format_verbatim_image_copy,
+        prompt_requires_ideogram_text,
+    )
 
     user_text = (text or "").strip()
     effective = effective_user_prompt(user_text, history)
-    # Señal ESTRICTA (comillas explícitas o "que diga/ponga X") tomada solo del pedido
-    # ACTUAL del usuario — decide si intentar Ideogram (texto legible) antes de Gemini.
-    # Ideogram no aplica a ediciones sobre imagen de referencia (ver ref_payload abajo).
+    # Señal ESTRICTA: comillas, "que diga/ponga", "mantener los textos" → Ideogram.
     wants_literal_text = prompt_requires_ideogram_text(user_text)
     enriched_context = build_enriched_generation_context(
         user_text,
@@ -273,13 +275,67 @@ def run_chat_image_generation(
             success_reply = "Listo, señor. Aquí está su creativo publicitario."
         model_prompt = effective
 
+    overlay_lines = collect_image_overlay_lines(user_text, enriched_context or "")
+    if wants_literal_text and ref_payload and len(overlay_lines) < 2:
+        try:
+            from app.services.vision_search import extract_image_overlay_labels
+
+            for label in extract_image_overlay_labels(ref_payload[0], mime=ref_payload[1]):
+                if label not in overlay_lines:
+                    overlay_lines.append(label)
+            overlay_lines = overlay_lines[:8]
+        except Exception:  # noqa: BLE001
+            logger.warning("[CHAT:IMG-GEN] OCR referencia falló user=%s", user_id[:8])
+
+    if overlay_lines:
+        verbatim = format_verbatim_image_copy(overlay_lines)
+        if verbatim and verbatim not in model_prompt:
+            model_prompt = f"{model_prompt}\n\n{verbatim}"[:3800]
+        wants_literal_text = True
+
     img_result: dict[str, Any]
 
-    if ref_payload:
+    if wants_literal_text:
+        # Tipografía legible: Ideogram primero (Gemini+referencia suele omitir textos).
+        logger.info(
+            "[CHAT:IMG-GEN] literal-text path (Ideogram) user=%s labels=%s ref=%s",
+            user_id[:8],
+            len(overlay_lines),
+            bool(ref_payload),
+        )
+        style_ctx = enriched_context or _recent_chat_context(history or [])
+        if ref_payload:
+            style_ctx = (
+                f"{style_ctx}\n"
+                "Conserva el estilo visual futurista de la imagen de referencia "
+                "(holograma, HUD, paleta cian/azul, composición similar)."
+            ).strip()
+        img_result = generate_image(
+            user_id=user_id,
+            plan_id=plan_id,
+            prompt=model_prompt,
+            quality="auto",
+            context=style_ctx,
+            display_label=display_label or None,
+            prefer_ideogram=True,
+        )
+        if (not img_result.get("ok") or not img_result.get("url")) and ref_payload:
+            logger.warning(
+                "[CHAT:IMG-GEN] Ideogram falló; Gemini+referencia user=%s",
+                user_id[:8],
+            )
+            img_result = generate_image_with_reference(
+                user_id=user_id,
+                prompt=model_prompt,
+                reference_image=ref_payload[0],
+                content_type=ref_payload[1],
+                style_mode=style_mode if creation else "edit",
+                quality="auto",
+            )
+    elif ref_payload:
         ref_bytes, ref_mime = ref_payload
         ref_prompt = model_prompt
         if not creation:
-            # Pedido visual + hechos de visión/historial — sin wrappers «Instrucciones…».
             bits = [effective]
             if enriched_context:
                 bits.append(enriched_context[:2000])
@@ -298,8 +354,6 @@ def run_chat_image_generation(
             style_mode=style_mode if creation else "edit",
             quality="auto",
         )
-        # Aislamiento: si el path de referencia falla y el pedido NO era edit/variación
-        # explícito, reintentar como generación plana para no tumbar el chat.
         if (not img_result.get("ok") or not img_result.get("url")) and not wants_image_reference_edit(
             user_text
         ):
@@ -315,7 +369,7 @@ def run_chat_image_generation(
                 quality="auto",
                 context=enriched_context or _recent_chat_context(history or []),
                 display_label=display_label or None,
-                prefer_ideogram=wants_literal_text,
+                prefer_ideogram=False,
             )
             ref_payload = None
     elif creation:
@@ -327,7 +381,7 @@ def run_chat_image_generation(
             quality="auto",
             context=enriched_context,
             display_label=display_label,
-            prefer_ideogram=wants_literal_text,
+            prefer_ideogram=False,
         )
     else:
         logger.info("[CHAT:IMG-GEN] plain generate user=%s", user_id[:8])
@@ -338,7 +392,7 @@ def run_chat_image_generation(
             quality="auto",
             context=enriched_context or _recent_chat_context(history or []),
             display_label=display_label or None,
-            prefer_ideogram=wants_literal_text,
+            prefer_ideogram=False,
         )
 
     if not img_result.get("ok") or not img_result.get("url"):

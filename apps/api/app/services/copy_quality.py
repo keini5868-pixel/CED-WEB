@@ -271,7 +271,13 @@ _IDEOGRAM_EXPLICIT_TEXT_REQUEST = re.compile(
     r"(?:escritos?|el\s+texto|los\s+textos?|en\s+la\s+imagen|las?\s+etiquetas?)|"
     r"escrito(?:s)?\s+en\s+la\s+imagen|texto(?:s)?\s+en\s+la\s+imagen|"
     r"etiquetas?\s+(?:con\s+texto|escritas?|legibles?)|"
-    r"tipograf[ií]a\s+legible|con\s+los\s+textos?\s+(?:en|de)\s+la\s+imagen"
+    r"tipograf[ií]a\s+legible|con\s+los\s+textos?\s+(?:en|de)\s+la\s+imagen|"
+    r"manten(?:iendo|er|me|gas|ga|gamos)?\s+(?:l[ao]s?\s+)?textos?|"
+    r"mant[eé]n(?:me|iendo|gas|ga)?\s+(?:l[ao]s?\s+)?textos?|"
+    r"conserv(?:a|ando|ar|e)\s+(?:l[ao]s?\s+)?textos?|"
+    r"con\s+(?:l[ao]s?\s+)?mismos?\s+textos?|"
+    r"sin\s+quitar\s+(?:l[ao]s?\s+)?textos?|"
+    r"quiero\s+que\s+mantengas\s+(?:l[ao]s?\s+)?textos?"
     r")\b",
     re.I,
 )
@@ -285,8 +291,8 @@ def prompt_requires_ideogram_text(prompt: str) -> bool:
     por diseño (dispara con palabras genéricas de marketing como "beneficios", "evento"
     o "servicio" para añadir instrucciones de texto a Gemini, donde un falso positivo
     solo agrega una frase al prompt). Aquí un falso positivo significa gastar dinero
-    real en una llamada a Ideogram sin necesidad, así que solo dos señales fuertes:
-    comillas explícitas o un pedido en lenguaje natural de "que diga/ponga X".
+    real en una llamada a Ideogram sin necesidad, así que solo señales fuertes:
+    comillas, "que diga/ponga X", "mantener los textos", tipografía legible pedida.
 
     Solo mira el pedido ACTUAL del usuario (nunca el historial/contexto de chat) para
     no heredar comillas o títulos de turnos anteriores no relacionados con este pedido.
@@ -297,6 +303,71 @@ def prompt_requires_ideogram_text(prompt: str) -> bool:
     if extract_quoted_phrases(t):
         return True
     return bool(_IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t))
+
+
+def extract_spoken_overlay_labels(text: str, *, max_lines: int = 6) -> list[str]:
+    """Extrae etiquetas UI dichas en prosa («creador es X», «asistente virtual», etc.)."""
+    t = (text or "").strip()
+    if not t:
+        return []
+    lines: list[str] = []
+
+    def _add(label: str) -> None:
+        clean = sanitize_label(label)
+        if not clean or _looks_like_prompt_instruction(clean):
+            return
+        if clean not in lines:
+            lines.append(clean)
+
+    for match in re.finditer(
+        r"(?is)\bcreador(?:\s+es|\s*:)\s*"
+        r"([A-Za-zÁÉÍÓÚáéíóúÑñ][\wÁÉÍÓÚáéíóúÑñ]*(?:\s+[A-Za-zÁÉÍÓÚáéíóúÑñ][\wÁÉÍÓÚáéíóúÑñ]*){0,4})",
+        t,
+    ):
+        name = match.group(1).strip().rstrip(".,;")
+        # Cortar si se coló prosa («que este sistema…»).
+        name = re.split(r"\s+que\s+", name, maxsplit=1, flags=re.I)[0].strip()
+        if 3 <= len(name) <= 48:
+            _add(f"Creador: {name}")
+    for match in re.finditer(
+        r"(?is)\b(?:que\s+es|donde\s+dice\s+que\s+es|dice\s+que\s+es)\s+"
+        r"(?:un[oa]?\s+)?(asistente\s+virtual)\b",
+        t,
+    ):
+        _add(match.group(1))
+    if re.search(r"(?is)\basistente\s+virtual\b", t):
+        _add("Asistente Virtual")
+    if re.search(
+        r"(?is)\bgener(?:a|aci[oó]n|ar)\s+(?:de\s+)?im[aá]genes?\s+(?:y\s+)?pdfs?\b",
+        t,
+    ):
+        _add("Generación de imágenes y PDF")
+    if re.search(
+        r"(?is)\b(?:c[aá]mara|vision|visi[oó]n).{0,40}\ban[aá]lisis\b|"
+        r"\bsistema\s+avanzado\s+con\b|"
+        r"\bcon\s+(?:clavo\s+)?c[aá]mara\b",
+        t,
+    ):
+        _add("Sistema avanzado con cámara, visión y análisis")
+    if re.search(r"(?is)\bmemoria\s+persistente\b", t):
+        _add("Memoria persistente")
+    if re.search(r"(?is)\ban[aá]lisis\s+financiero\b", t):
+        _add("Análisis financiero")
+    if re.search(r"(?is)\bmonitoreo\s+de\s+redes\s+sociales\b", t):
+        _add("Monitoreo de redes sociales")
+    if re.search(r"(?is)\bventas\s+y\s+marketing\b", t):
+        _add("Ventas y marketing digital")
+
+    # Viñetas / checklist del propio mensaje del asistente («- ✅ Asistente Virtual»)
+    for match in re.finditer(
+        r"(?m)^\s*(?:[\-\*•]|\d+[.)]|✅)\s*(?:\*\*)?(.{4,60}?)(?:\*\*)?\s*$",
+        t,
+    ):
+        raw = re.sub(r"[✅\*]+", "", match.group(1)).strip()
+        if raw:
+            _add(raw)
+
+    return lines[:max_lines]
 
 
 def image_prompt_needs_verbatim_text(prompt: str, context: str = "") -> bool:
@@ -379,6 +450,10 @@ def collect_image_overlay_lines(prompt: str, context: str = "") -> list[str]:
         lines = quotes
     if not lines:
         lines = extract_bullet_labels(f"{prompt}\n{context}")
+    spoken = extract_spoken_overlay_labels(f"{prompt}\n{context}")
+    for label in spoken:
+        if label not in lines:
+            lines.append(label)
     cleaned = [ln for ln in lines if ln and not _looks_like_prompt_instruction(ln)]
     if cleaned:
         return cleaned[:5]

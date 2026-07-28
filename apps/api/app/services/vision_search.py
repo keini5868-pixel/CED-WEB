@@ -122,6 +122,38 @@ def _gemini_vision(image_bytes: bytes, prompt: str, *, max_tokens: int = 512) ->
         return ""
 
 
+def extract_image_overlay_labels(
+    image_bytes: bytes,
+    *,
+    mime: str = "image/jpeg",
+    max_labels: int = 8,
+) -> list[str]:
+    """OCR ligero: lista tipografía legible de una imagen de referencia."""
+    if not image_bytes:
+        return []
+    prompt = (
+        "Lista SOLO el texto legible que aparece en la imagen (títulos, etiquetas, "
+        "créditos). Una línea por etiqueta, sin numerar, sin comillas, sin explicar. "
+        "Máximo 8 líneas. Si no hay texto legible, responde exactamente: NINGUNO."
+    )
+    # Reusar _gemini_vision (asume jpeg); convertir mime si hace falta vía bytes crudos.
+    raw = _gemini_vision(image_bytes, prompt, max_tokens=400)
+    if not raw or raw.strip().upper().startswith("NINGUNO"):
+        return []
+    from app.services.copy_quality import sanitize_label
+
+    labels: list[str] = []
+    for line in raw.splitlines():
+        clean = sanitize_label(re.sub(r"^[\-\*\d.)\s]+", "", line).strip())
+        if len(clean) < 3 or clean.upper() == "NINGUNO":
+            continue
+        if clean not in labels:
+            labels.append(clean)
+        if len(labels) >= max_labels:
+            break
+    return labels
+
+
 def _openai_vision_fallback(image_bytes: bytes, prompt: str, *, max_tokens: int = 512) -> str:
     settings = get_settings()
     api_key = settings.openai_api_key.strip()

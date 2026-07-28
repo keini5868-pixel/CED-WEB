@@ -63,10 +63,31 @@ def test_strict_detector_true_for_con_el_texto_phrase():
     assert prompt_requires_ideogram_text("un letrero con el texto Bienvenidos") is True
 
 
+def test_strict_detector_true_for_mantengas_los_textos():
+    assert prompt_requires_ideogram_text(
+        "quiero que mantengas los textos de la otra imagen"
+    ) is True
+
+
 def test_strict_detector_true_for_detalles_escritos():
     assert prompt_requires_ideogram_text(
         "hazme la imagen tomando en cuenta que deben ir los detalles escritos"
     ) is True
+
+
+def test_spoken_labels_from_prose_request():
+    from app.services.copy_quality import extract_spoken_overlay_labels
+
+    labels = extract_spoken_overlay_labels(
+        "donde dice que es un asistente virtual que el creador es Gaming Kevin Castillo "
+        "que este sistema sirve para generar imágenes pdfs tiene un sistema avanzado "
+        "con cámara y visión con análisis"
+    )
+    joined = " | ".join(labels).lower()
+    assert "asistente virtual" in joined
+    assert "gaming kevin castillo" in joined
+    assert "generación de imágenes" in joined or "pdf" in joined
+    assert "cámara" in joined or "visión" in joined
 
 
 def test_strict_detector_true_for_texto_en_la_imagen():

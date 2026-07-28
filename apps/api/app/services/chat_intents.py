@@ -233,7 +233,12 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"con\s+(?:otro|un)\s+(?:fondo|estilo)|as[ií]\s+pero|en\s+vez\s+de|"
     r"cambia(?:le)?\s+(?:el|la|los|las)|quita(?:le)?\s+(?:el|la|los|las)|"
     r"agrega(?:le)?\s+(?:el|la|los|las|un|una)|"
-    r"ahora\s+(?:con|sin)|pero\s+(?:con|sin)"
+    r"ahora\s+(?:con|sin)|pero\s+(?:con|sin)|"
+    r"mant[eé]n(?:me|iendo|gas|ga)?\s+(?:l[ao]s?\s+)?textos?|"
+    r"conserv(?:a|ando)\s+(?:l[ao]s?\s+)?textos?|"
+    r"quiero\s+que\s+mantengas|"
+    r"con\s+(?:l[ao]s?\s+)?textos?|"
+    r"integr(?:a|ados?)\s+(?:l[ao]s?\s+)?textos?"
     r")\b",
     re.I,
 )
@@ -291,7 +296,9 @@ def history_has_active_image_thread(history: list[dict[str, str]] | None) -> boo
 def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None = None) -> str | None:
     """Detecta pedidos cortos de imagen que continúan un tema visual reciente."""
     t = (text or "").strip()
-    if not t or is_generate_image_intent(t) or len(t) > 120 or len(t) < 6:
+    # Revisiones de tipografía pueden ser más largas («mantén textos: A, B, C…»).
+    max_len = 500 if re.search(r"(?i)\btextos?\b", t) else 120
+    if not t or is_generate_image_intent(t) or len(t) > max_len or len(t) < 6:
         return None
     if is_casual_chat_interrupt(t):
         return None
