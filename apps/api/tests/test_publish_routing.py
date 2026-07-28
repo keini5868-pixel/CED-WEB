@@ -48,11 +48,49 @@ def test_generate_image_with_instagram_in_list_is_not_publish():
     msg = (
         "generame una imagen con estos detalles resumidos escritos\n"
         "- Asistente de IA conversacional\n"
-        "- publicar_facebook / publicar_instagram — publica contenido\n"
+        "- publicar_facebook / publicar_instagram — publica contenido directo "
+        "en tus redes (si conectadas).\n"
         "- Memoria contextual\n"
+        "- Consultor de marketing digital — Meta Ads, Instagram, funnels\n"
     )
     assert not is_social_publish_intent(msg)
     assert blocks_publish_intent(msg)
+
+
+def test_full_ced_capability_paste_generates_image_not_instagram():
+    """Regresión: lista completa CED con «publica… Instagram» no abre publish."""
+    from app.services.chat_intents import is_explicit_publish_to_social, is_generate_image_intent
+    from app.services.chat_image_generation import should_take_direct_image_path
+    from app.services.text_publish_flow import handle_publish_flow_turn
+
+    msg = (
+        "generame una imagen con estos detalles resumidos escritos Características "
+        "del Sistema CED\n\n"
+        "## Funcionalidades Técnicas\n"
+        "- **publicar_facebook / publicar_instagram** — publica contenido directo "
+        "en tus redes (si conectadas).\n"
+        "- **Consultor de marketing digital** — Meta Ads, Instagram, funnels.\n"
+    )
+    assert is_generate_image_intent(msg)
+    assert not is_explicit_publish_to_social(msg)
+    assert not is_social_publish_intent(msg)
+    assert should_take_direct_image_path(msg, None)
+    assert (
+        handle_publish_flow_turn(
+            "user-test",
+            "conv-test",
+            msg,
+            history=[],
+            run_tool=lambda *a, **k: "",
+            suggest_caption=lambda *a, **k: "",
+        )
+        is None
+    )
+
+
+def test_real_publica_en_instagram_still_works():
+    assert is_social_publish_intent("publica esto en instagram")
+    assert is_social_publish_intent("perfecto publica esto en facebook")
 
 
 def test_orchestrate_summarizes_long_markdown_to_short_labels():

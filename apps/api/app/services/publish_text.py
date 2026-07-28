@@ -611,11 +611,13 @@ def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
         is_generate_image_intent,
     )
 
+    # Generar/variar imagen SIEMPRE gana a publish (listas con «Instagram» no cuentan).
+    if is_generate_image_intent(t):
+        return False
+
     # «publica en Facebook» gana; «generame una imagen… Instagram…» NO.
     if is_explicit_publish_to_social(t):
         return True
-    if is_generate_image_intent(t):
-        return False
     if is_attachment_image_edit_request(t):
         return False
 

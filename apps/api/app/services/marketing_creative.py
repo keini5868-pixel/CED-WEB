@@ -257,15 +257,16 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
         return False
     if is_pdf_intent(t) or mentions_pdf(t):
         return False
-    # Solo «publica en Instagram» real bloquea creación; no «Publicación» en listas.
+    # Generar imagen primero — listas con «publica… Instagram» no bloquean creación.
+    if is_generate_image_intent(t):
+        return True
+    # Solo «publica en Instagram» real bloquea creación.
     if is_explicit_publish_to_social(t):
         return False
     if is_publish_platform_reply(t):
         return False
     if is_publish_help_request(t):
         return False
-    if is_generate_image_intent(t):
-        return True
     if is_marketing_creative_intent(t):
         return True
     if parse_followup_image_prompt(t, history):

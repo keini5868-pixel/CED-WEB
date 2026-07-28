@@ -123,6 +123,21 @@ _REAL_PUBLISH_VERB = re.compile(
     r"\b(?:publica(?:r|me|lo|mos|is|dan)?|postea(?:r|me|lo)?)\b",
     re.I,
 )
+# Solo comandos reales de publicar — no «publica contenido» dentro de una lista de features.
+_EXPLICIT_PUBLISH_COMMAND = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"\b(?:publica(?:r|me|lo)?|postea(?:r|me|lo)?)\s+"
+    r"(?:esto|esta|esa|la\s+imagen|la\s+foto)?\s*"
+    r"(?:en\s+)?(?:facebook|instagram|face\b|fb\b|ig\b)\b"
+    r"|"
+    r"\b(?:publica(?:r|me|lo)?|postea(?:r|me|lo)?)\s+en\s+"
+    r"(?:facebook|instagram|face\b|fb\b|ig\b)\b"
+    r"|"
+    r"^\s*(?:perfecto[,.]?\s+|ok[,.]?\s+|dale[,.]?\s+)?"
+    r"(?:publica|postea|sube)\b.{0,80}\b(?:facebook|instagram|face\b|fb\b|ig\b)\b"
+    r")"
+)
 
 
 def user_requests_prior_reference(text: str) -> bool:
@@ -140,11 +155,21 @@ def wants_image_reference_edit(text: str) -> bool:
 
 
 def is_explicit_publish_to_social(text: str) -> bool:
-    """True solo ante «publica en Facebook/Instagram» real — no «que diga publicaciones»."""
+    """True solo ante «publica en Facebook/Instagram» real.
+
+    No dispara por viñetas tipo «publicar_instagram — publica contenido en redes»
+    dentro de un brief de imagen o lista de capacidades.
+    """
     t = (text or "").strip()
     if not t:
         return False
-    return bool(_REAL_PUBLISH_VERB.search(t) and _REAL_PUBLISH_PLATFORM.search(t))
+    if not _EXPLICIT_PUBLISH_COMMAND.search(t):
+        return False
+    # Si el mensaje es generar imagen, el comando de publicar debe ir al inicio.
+    if is_generate_image_intent(t):
+        head = t[:160]
+        return bool(_EXPLICIT_PUBLISH_COMMAND.search(head))
+    return True
 
 
 def is_attachment_image_edit_request(text: str) -> bool:
