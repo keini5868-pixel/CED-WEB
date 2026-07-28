@@ -27,7 +27,8 @@ def test_strip_image_generation_instruction():
     ) == "el producto y sus beneficios"
 
 
-def test_prepare_image_prompt_uses_conversation_for_specs():
+def test_prepare_image_prompt_does_not_merge_chat_history():
+    """Path directo: el historial ya no se mezcla (evita robot+mapa, etc.)."""
     context = (
         "el basics de fitline es un producto. Fitline Basics es un complemento en polvo "
         "para sistema inmunológico, vitaminas C y E, selenio."
@@ -36,12 +37,11 @@ def test_prepare_image_prompt_uses_conversation_for_specs():
         "el producto y sus expecificaciones y veneficios",
         context,
     )
-    assert "Ortografía española" in prepared or "ortografía" in prepared.lower()
-    assert "basics" in prepared.lower() or "fitline" in prepared.lower()
-    assert "me generas una imagen" not in prepared.lower()
-    assert "el producto y sus" not in prepared.lower()
-    assert "Instrucciones actuales" not in prepared
-    assert "según este pedido" not in prepared.lower()
+    low = prepared.lower()
+    assert "producto" in low
+    assert "fitline" not in low
+    assert "textos exactos" not in low
+    assert "instrucciones actuales" not in low
 
 
 def test_prepare_image_prompt_strips_meta_wrappers_that_leak_into_pixels():
@@ -55,7 +55,7 @@ def test_prepare_image_prompt_strips_meta_wrappers_that_leak_into_pixels():
     assert "goku" in low
     assert "instrucciones actuales del usuario" not in low
     assert "según este pedido" not in low
-    assert "genera una imagen de alta calidad" not in low
+    assert "fitline" not in low
 
 
 def test_build_image_generation_prompts_are_visual_only():
@@ -165,7 +165,8 @@ def test_casual_chat_interrupt_blocks_followup_even_with_image_thread():
     )
 
 
-def test_prepare_image_prompt_resolves_esa_informacion():
+def test_prepare_image_prompt_leaves_vague_refs_without_history_injection():
+    """Sin historial inyectado: el pedido vago se manda tal cual (el usuario debe ser concreto)."""
     context = (
         "FitLine Basics: fibra, probióticos, vitaminas C y E. "
         "Beneficios: intestinal, inmunológico, antioxidante."
@@ -174,8 +175,10 @@ def test_prepare_image_prompt_resolves_esa_informacion():
         "esa informacion del los beneficios y productos",
         context,
     )
-    assert "basics" in prepared.lower() or "fitline" in prepared.lower()
-    assert "esa informacion" not in prepared.lower()
+    low = prepared.lower()
+    assert "fitline" not in low
+    assert "esa informacion" in low or "beneficios" in low
+    assert "textos exactos" not in low
 
 
 def test_format_image_generation_error_avoids_duplicate_prefix():

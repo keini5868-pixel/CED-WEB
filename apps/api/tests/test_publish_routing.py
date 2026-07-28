@@ -93,7 +93,7 @@ def test_real_publica_en_instagram_still_works():
     assert is_social_publish_intent("perfecto publica esto en facebook")
 
 
-def test_orchestrate_summarizes_long_markdown_to_short_labels():
+def test_orchestrate_direct_path_keeps_written_details_natural():
     from app.services.copy_quality import orchestrate_image_generation_brief
 
     msg = (
@@ -105,7 +105,10 @@ def test_orchestrate_summarizes_long_markdown_to_short_labels():
     )
     brief = orchestrate_image_generation_brief(msg)
     assert brief["wants_literal_text"] is True
-    assert len(brief["overlay_lines"]) >= 2
-    assert all(len(x) <= 40 for x in brief["overlay_lines"])
-    assert "generame" not in brief["technical_prompt"].lower()
-    assert "TEXTOS EXACTOS" in brief["technical_prompt"]
+    tech = brief["technical_prompt"].lower()
+    assert "asistente" in tech
+    assert "mentor" in tech
+    assert "generame" not in tech
+    assert "textos exactos" not in tech
+    assert "include the requested labels" in tech
+    assert "sistema ced" not in tech or "infografía premium" not in tech

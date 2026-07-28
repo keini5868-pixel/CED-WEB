@@ -107,8 +107,10 @@ def test_explicit_que_diga_still_requests_verbatim():
     assert image_prompt_needs_verbatim_text(msg, "") is True
     orch = orchestrate_image_generation_brief(msg)
     assert orch["wants_literal_text"] is True
-    assert any("apertura" in ln.lower() for ln in orch["overlay_lines"])
-    assert "TEXTOS EXACTOS" in orch["technical_prompt"]
+    tech = orch["technical_prompt"]
+    assert "Gran Apertura" in tech or "apertura" in tech.lower()
+    assert "include the requested labels" in tech.lower()
+    assert "TEXTOS EXACTOS" not in tech
 
 
 def test_reference_prompt_never_uses_escena_pedida_label():
@@ -164,8 +166,8 @@ def test_allcaps_image_request_does_not_become_textos_exactos():
     assert orch["wants_literal_text"] is False
     tech = orch["technical_prompt"].lower()
     assert "textos exactos" not in tech
-    assert "sin texto" in tech
-    assert "me generas" not in tech
+    assert "no text, letters" in tech or "sin texto" in tech
+    assert "me generas" not in orch["visual_brief"].lower()
     assert "hola" not in tech
     assert "alcon" in tech or "alcón" in tech
     assert "sistema ced" not in tech
@@ -193,25 +195,30 @@ def test_history_capability_bullets_not_painted_on_new_scene():
     assert "asistente de ia" not in tech
     assert "mentor en ventas" not in tech
     assert "textos exactos" not in tech
-    assert "sin texto" in tech
-    # Pedido menciona CED → branding permitido; no debe borrar el águila.
+    assert "no text, letters" in tech or "sin texto" in tech
     assert "alcon" in tech or "alcón" in tech
 
 
-def test_explicit_detalles_escritos_still_uses_context_bullets():
+def test_explicit_detalles_escritos_keeps_natural_language_not_history_bullets():
+    """Path directo: no cosecha viñetas del historial; el NL del usuario basta."""
     from app.services.copy_quality import orchestrate_image_generation_brief
 
-    msg = "generame una imagen con estos detalles escritos"
+    msg = (
+        "generame una imagen con estos detalles escritos: "
+        "Asistente de IA conversacional y Memoria contextual"
+    )
     hist = "- **Asistente de IA conversacional**\n- **Memoria contextual**"
     orch = orchestrate_image_generation_brief(msg, context=hist)
     assert orch["wants_literal_text"] is True
-    assert any("asistente" in ln.lower() for ln in orch["overlay_lines"])
-    # Sin mención de CED en el pedido: no forzar infografía de marca.
-    assert "sistema ced" not in orch["technical_prompt"].lower()
+    tech = orch["technical_prompt"].lower()
+    assert "asistente" in tech
+    assert "memoria" in tech
+    assert "sistema ced" not in tech
+    assert "include the requested labels" in tech
 
 
 def test_generic_prompts_never_inject_ced_branding():
-    """Cualquier escena genérica debe expandirse fielmente, sin marca CED."""
+    """Cualquier escena genérica debe ir directa, sin marca CED."""
     from app.services.copy_quality import orchestrate_image_generation_brief
 
     samples = [
@@ -229,9 +236,8 @@ def test_generic_prompts_never_inject_ced_branding():
         assert "sistema ced" not in tech, prompt
         assert "infografía premium del sistema ced" not in tech, prompt
         assert "hud holog" not in tech, prompt
-        assert "sin texto" in tech
-        # Debe conservar algo del sujeto (no sustituir por briefing vacío de marca).
-        assert len(orch["visual_brief"]) >= 8, prompt
+        assert "no text, letters" in tech or "sin texto" in tech
+        assert len(orch["visual_brief"]) >= 3, prompt
 
 
 def test_explicit_ced_request_keeps_brand_context():

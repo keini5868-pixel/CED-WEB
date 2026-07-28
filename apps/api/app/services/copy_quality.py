@@ -283,7 +283,7 @@ _IDEOGRAM_EXPLICIT_TEXT_REQUEST = re.compile(
     r"\b(?:"
     r"que\s+diga[n]?|que\s+ponga[n]?|con\s+el\s+texto|con\s+la\s+frase|"
     r"con\s+las?\s+palabras?|el\s+texto\s+debe\s+decir|letras?\s+que\s+diga[n]?|"
-    r"detalles?\s+escritos?|textos?\s+(?:exactos?|literales?|visibles?|legibles?)|"
+    r"detalles?\s+(?:resumidos\s+)?escritos?|textos?\s+(?:exactos?|literales?|visibles?|legibles?)|"
     r"(?:deben|debe|tienen|tiene|tienen\s+que|tiene\s+que)\s+"
     r"(?:ir|aparecer|estar|llevar|incluir)\s+"
     r"(?:escritos?|el\s+texto|los\s+textos?|en\s+la\s+imagen|las?\s+etiquetas?)|"
@@ -295,7 +295,12 @@ _IDEOGRAM_EXPLICIT_TEXT_REQUEST = re.compile(
     r"conserv(?:a|ando|ar|e)\s+(?:l[ao]s?\s+)?textos?|"
     r"con\s+(?:l[ao]s?\s+)?mismos?\s+textos?|"
     r"sin\s+quitar\s+(?:l[ao]s?\s+)?textos?|"
-    r"quiero\s+que\s+mantengas\s+(?:l[ao]s?\s+)?textos?"
+    r"quiero\s+que\s+mantengas\s+(?:l[ao]s?\s+)?textos?|"
+    # «EN TEXTO» / «donde pongas las características…»
+    r"\ben\s+texto\b|\bcon\s+texto\b|"
+    r"donde\s+pongas?|"
+    r"pon(?:le|ga|gan|me)?\s+las?\s+(?:siguientes\s+)?"
+    r"(?:caracter[ií]sticas|etiquetas|textos?|nombres?)"
     r")\b",
     re.I,
 )
@@ -624,108 +629,83 @@ def _ced_branded_visual(*, has_reference: bool = False) -> str:
     )
 
 
+def build_direct_image_prompt(
+    user_text: str,
+    *,
+    has_reference: bool = False,
+    context: str = "",
+) -> dict[str, Any]:
+    """Adaptador mínimo: pedido del usuario en lenguaje natural → modelo de imagen.
+
+    Alineado con la guía de Google para Gemini Flash Image / Nano Banana: el modelo
+    entiende mejor la descripción directa. Sin reescritura de escena, sin historial
+    (el contexto mezclaba temas de turnos previos) y sin «TEXTOS EXACTOS» inventados
+    a partir del brief.
+    """
+    _ = context  # historial ignorado a propósito
+    from app.services.gemini_images import (
+        strip_image_generation_instruction,
+        strip_image_prompt_meta,
+    )
+
+    raw = (user_text or "").strip()
+    cleaned = re.sub(
+        r"(?is)^(ok(?:ay)?|vale|listo|perfecto|bueno|bien)[\s,.:\-]+",
+        "",
+        raw,
+    ).strip()
+    scene = strip_image_prompt_meta(strip_image_generation_instruction(cleaned)).strip()
+    if not scene:
+        scene = cleaned or raw
+
+    wants_text = bool(
+        prompt_requires_ideogram_text(raw)
+        or extract_quoted_phrases(raw)
+    )
+    wants_ced = user_requests_ced_branding(raw)
+
+    parts: list[str] = [scene]
+    if has_reference:
+        parts.append("Use the attached image only as style/composition reference.")
+    if wants_ced:
+        parts.append(
+            "Style with CED brand identity when relevant (futuristic cyan/blue HUD)."
+        )
+    if wants_text:
+        # El usuario ya dijo qué poner («EN TEXTO», «que diga…»). Solo anti-fuga de comando.
+        parts.append(
+            "Include the requested labels as clear legible on-image text. "
+            "Do NOT write meta commands such as 'genera una imagen', 'okay ahora', "
+            "or system instructions onto the image."
+        )
+    else:
+        parts.append(
+            "No text, letters, titles, captions, subtitles, or watermarks anywhere "
+            "in the image."
+        )
+
+    prompt = " ".join(p for p in parts if p).strip()[:3800]
+    return {
+        "visual_brief": scene,
+        "overlay_lines": [],
+        "wants_literal_text": wants_text,
+        "technical_prompt": prompt,
+        "prompt": prompt,
+    }
+
+
 def orchestrate_image_generation_brief(
     user_text: str,
     *,
     context: str = "",
     has_reference: bool = False,
 ) -> dict[str, Any]:
-    """Orquestador: expansión fiel al pedido; marca CED solo si el usuario la pide.
-
-    Por defecto NO inyecta branding/sistema CED. Solo aplica identidad CED cuando
-    el mensaje menciona CED / Castillo de la Evolución / logo CED de forma explícita,
-    o cuando pide «detalles escritos» y el contexto trae contenido de marca CED.
-    """
-    raw = (user_text or "").strip()
-    from app.services.gemini_images import (
-        strip_image_generation_instruction,
-        strip_image_prompt_meta,
+    """Compat: delega al adaptador directo (sin orquestación pesada)."""
+    return build_direct_image_prompt(
+        user_text,
+        has_reference=has_reference,
+        context=context,
     )
-
-    visual = strip_image_prompt_meta(strip_image_generation_instruction(raw))
-    # Quitar bloques markdown enormes del brief visual; las etiquetas van aparte.
-    visual = re.sub(r"(?m)^#{1,3}\s+.*$", " ", visual)
-    visual = re.sub(r"(?m)^\s*[-*•]\s+\*\*.*$", " ", visual)
-    visual = re.sub(r"\s+", " ", visual).strip(" ,.;")
-    if len(visual) > 280:
-        visual = visual[:279].rsplit(" ", 1)[0].strip()
-
-    explicit_text = prompt_requires_ideogram_text(raw)
-    overlays = collect_image_overlay_lines(raw, context)
-    wants_text = bool(overlays) or explicit_text
-    # Logo / marca pedida en escena NO implica TEXTOS EXACTOS del historial.
-    logo_only = bool(re.search(r"(?i)\blogo\b", raw) and not wants_text)
-
-    wants_ced = user_requests_ced_branding(raw) or (
-        bool(overlays) and user_requests_ced_branding(context or "")
-    )
-    details_only = bool(
-        re.search(r"(?i)^estos?\s+detalles\b", visual)
-        or re.search(r"(?i)\bdetalles\s+resumidos\s+escritos\b", visual)
-        or re.search(r"(?i)^estas?\s+caracter[ií]sticas\b", visual)
-    )
-
-    if details_only:
-        # Pedido del tipo «con estos detalles» sin sujeto visual propio.
-        if wants_ced:
-            visual = _ced_branded_visual(has_reference=has_reference)
-        elif overlays:
-            visual = (
-                "Composición visual clara y profesional que ilustra los puntos indicados; "
-                "fondo limpio, jerarquía visual legible, sin marcas ajenas al pedido."
-            )
-        else:
-            visual = _faithful_visual_expansion("", has_reference=has_reference)
-    elif not visual:
-        visual = (
-            _ced_branded_visual(has_reference=has_reference)
-            if wants_ced
-            else _faithful_visual_expansion("", has_reference=has_reference)
-        )
-    elif wants_ced and not re.search(r"(?i)\bced\b|castillo\s+de\s+la\s+evoluci", visual):
-        # Usuario pidió CED pero el strip dejó poco; reforzar identidad sin borrar el sujeto.
-        visual = f"{visual}. Identidad visual CED, estilo futurista, paleta cian/azul."
-    else:
-        # Sujeto presente (aunque sea corto: «un perro», «un atardecer»): expansión fiel.
-        # NUNCA sustituir por branding CED.
-        visual = _faithful_visual_expansion(visual, has_reference=has_reference)
-
-    parts = [visual]
-    if has_reference:
-        parts.append("Usa la imagen adjunta solo como referencia de estilo/composición.")
-    if overlays:
-        parts.append(format_verbatim_image_copy(overlays))
-        parts.append(_CREATIVE_NO_LEAK)
-        parts.append(
-            "Tipografía grande, alto contraste, máximo 5 etiquetas cortas; "
-            "PROHIBIDO pintar el pedido del usuario o instrucciones del sistema."
-        )
-    elif wants_text:
-        # Tipografía pedida sin líneas concretas (p.ej. mantener textos de referencia).
-        parts.append(_CREATIVE_NO_LEAK)
-        parts.append(
-            "Incluye tipografía legible en español si aplica; "
-            "PROHIBIDO pintar el pedido del usuario, saludos del chat o listas de capacidades."
-        )
-    else:
-        # Escena pura: anti-texto duro (EN+ES). Nunca mencionar el pedido como caption.
-        parts.append(_HARD_NO_TEXT_RULE)
-        parts.append(
-            "Sin texto, tipografía, subtítulos, marcas de agua, etiquetas, "
-            "viñetas ni frases del pedido del usuario en la imagen."
-        )
-        if logo_only:
-            parts.append(
-                "If a brand logo is requested, integrate it as a small graphic mark only; "
-                "do not write the user request or capability lists."
-            )
-
-    return {
-        "visual_brief": visual,
-        "overlay_lines": overlays,
-        "wants_literal_text": wants_text,
-        "technical_prompt": " ".join(p for p in parts if p).strip()[:3800],
-    }
 
 
 def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None) -> str:

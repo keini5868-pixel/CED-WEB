@@ -42,24 +42,25 @@ def teardown_function(_fn):
     clear_session_image(USER, CONV)
 
 
-def test_prepare_image_prompt_skips_history_when_textos_exactos():
+def test_prepare_image_prompt_skips_history_when_direct():
     brief = (
-        'Infografía CED futurista. TEXTOS EXACTOS EN ESPAÑOL: - "Asistente Virtual" '
-        '- "Mentor en ventas"'
+        "mapa holográfico con etiquetas. Include the requested labels as clear "
+        "legible on-image text."
     )
     bloated = "características " + ("detalle irrelevante del chat. " * 80)
     prepared = prepare_image_prompt(brief, bloated)
-    assert "TEXTOS EXACTOS" in prepared
     assert "detalle irrelevante del chat" not in prepared
+    assert "Include the requested labels" in prepared
 
 
-def test_capability_paste_orchestrates_short_brief():
+def test_capability_paste_direct_brief_stays_short():
     orch = orchestrate_image_generation_brief(CAPABILITY_PASTE)
     tech = str(orch.get("technical_prompt") or "")
     assert tech
     assert len(tech) < 3800
     assert orch.get("wants_literal_text") is True
-    assert len(orch.get("overlay_lines") or []) >= 1
+    assert "sistema" in tech.lower() or "asistente" in tech.lower()
+    assert "textos exactos" not in tech.lower()
 
 
 @patch("app.services.gemini_images.generate_image")
@@ -87,8 +88,8 @@ def test_capability_paste_does_not_send_bloated_context(mock_gen: MagicMock):
     ctx = str(mock_gen.call_args.kwargs.get("context") or "")
     assert len(ctx) < 400
     prompt = str(mock_gen.call_args.kwargs.get("prompt") or "")
-    assert "TEXTOS EXACTOS" in prompt or mock_gen.call_args.kwargs.get("prefer_ideogram")
-
+    assert "xxxx" not in prompt
+    assert mock_gen.call_args.kwargs.get("prefer_ideogram") is True or "caracter" in prompt.lower()
 
 def test_generate_image_intent_uses_sse_not_blocking_gate():
     """Regresión: imagen debe entrar al stream (keepalives), no al gate bloqueante."""

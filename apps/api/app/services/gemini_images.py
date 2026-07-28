@@ -175,41 +175,30 @@ def _resolve_vague_subject(topic: str, context: str) -> str:
 
 
 def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
-    """Convierte el pedido del usuario + contexto en un brief visual para Gemini.
+    """Adaptador mínimo hacia Gemini/Nano Banana — lenguaje natural del usuario.
 
-    Devuelve SOLO descripción visual (+ reglas anti-fuga / textos literales si aplica).
-    Nunca incluye wrappers tipo «Instrucciones actuales…» o «Genera una imagen según…».
+    No reinyecta historial (`context` ignorado): mezclar turnos previos causaba
+    escenas híbridas (p.ej. robot + mapa). Marketing/creativos ya traen su brief.
     """
-    from app.services.copy_quality import augment_image_prompt, normalize_spanish
+    from app.services.copy_quality import build_direct_image_prompt
 
-    topic = strip_image_prompt_meta(strip_image_generation_instruction(user_prompt))
-    ctx_raw = strip_image_prompt_meta(context or "")
-    topic = _resolve_vague_subject(topic, ctx_raw)
-    merged = topic
-    # Brief ya orquestado (tipografía O escena sin texto): no reinyectar historial.
-    already_orchestrated = (
-        "TEXTOS EXACTOS" in topic
-        or "Ortografía española" in topic
-        or "CRITICAL: photorealistic" in topic
-        or "CRITICAL: scene only" in topic
-        or "Photorealistic scene depicting:" in topic
-        or bool(re.search(r"(?i)\bsin\s+texto\b", topic))
+    topic = (user_prompt or "").strip()
+    if not topic:
+        return ""
+    # Briefs ya armados (marketing, direct, tipografía explícita): pasar tal cual.
+    passthrough_markers = (
+        "TEXTOS EXACTOS",
+        "Include the requested labels",
+        "No text, letters",
+        "CRITICAL:",
+        "Photorealistic scene",
+        "CREATIVO_PROMPT",
+        "Style with CED brand",
     )
-    if (
-        ctx_raw
-        and not already_orchestrated
-        and (
-            len(topic) < 120
-            or _VAGUE_PRODUCT_REF.search(topic)
-            or (_SPECS_BENEFITS.search(topic) and len(ctx_raw) > 80)
-        )
-    ):
-        # Hechos visuales del historial — sin etiquetas meta que el modelo pinte.
-        facts = ctx_raw[:900].strip()
-        if facts and facts.lower() not in merged.lower():
-            merged = f"{topic}. {facts}"
-    merged = normalize_spanish(merged)[:4000]
-    return augment_image_prompt(merged, "" if already_orchestrated else ctx_raw)
+    if any(m in topic for m in passthrough_markers):
+        return topic[:4000]
+    _ = context
+    return build_direct_image_prompt(topic, context="")["prompt"]
 
 
 def enrich_image_prompt_from_context(prompt: str, context: str = "") -> str:
@@ -377,10 +366,15 @@ def generate_image_gemini(
         return {"ok": False, "error": "Prompt vacío"}
     if not api_key:
         return {"ok": False, "error": "GOOGLE_API_KEY no configurada", "code": "config_error"}
-    # No contradecir TEXTOS EXACTOS con «Sin texto…» (fuga / tipografía pedida).
-    wants_overlay = "TEXTOS EXACTOS" in topic or "Ortografía española" in topic
+    # Tipografía pedida: TEXTOS EXACTOS o pedido directo «EN TEXTO» / labels.
+    wants_overlay = (
+        "TEXTOS EXACTOS" in topic
+        or "Ortografía española" in topic
+        or "Include the requested labels" in topic
+    )
     if not wants_overlay and _NO_META_TEXT_ON_IMAGE[:24] not in topic:
-        topic = f"{topic} {_NO_META_TEXT_ON_IMAGE}"
+        if "No text, letters" not in topic:
+            topic = f"{topic} {_NO_META_TEXT_ON_IMAGE}"
 
     use_fast = bool(fast or wants_overlay)
     http_timeout_ms = 75_000 if use_fast else 120_000
@@ -830,6 +824,8 @@ def generate_image(
         or "TEXTOS EXACTOS" in topic
         or "CRITICAL:" in topic
         or "Photorealistic scene" in topic
+        or "Include the requested labels" in topic
+        or "No text, letters" in topic
     )
     gemini_result = generate_image_gemini(
         prompt=topic,

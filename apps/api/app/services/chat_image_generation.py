@@ -234,21 +234,15 @@ def run_chat_image_generation(
     )
 
     from app.services.copy_quality import (
-        orchestrate_image_generation_brief,
+        build_direct_image_prompt,
         prompt_requires_ideogram_text,
         summarize_overlay_labels_for_image,
     )
 
     user_text = (text or "").strip()
     effective = effective_user_prompt(user_text, history)
-    # Señal ESTRICTA: comillas, "que diga/ponga", "mantener los textos" → Ideogram.
+    # Señal ESTRICTA: comillas, "que diga/ponga", "EN TEXTO" → Ideogram preferido.
     wants_literal_text = prompt_requires_ideogram_text(user_text)
-    enriched_context = build_enriched_generation_context(
-        user_text,
-        history,
-        user_id=user_id,
-        conversation_id=conversation_id,
-    )
     use_reference = allow_reference and should_use_reference_generation(
         user_text,
         history,
@@ -278,16 +272,17 @@ def run_chat_image_generation(
             success_reply = "Listo, señor. Aquí está su creativo publicitario."
         model_prompt = effective
 
-    # Orquestador: brief técnico + tipografía corta (sin filtrar instrucciones).
-    orchestrated = orchestrate_image_generation_brief(
+    # Path directo (Google / Nano Banana): lenguaje natural, sin orquestador pesado
+    # ni historial — el historial mezclaba temas (robot + mapa, etc.).
+    direct = build_direct_image_prompt(
         user_text,
-        context=enriched_context or "",
         has_reference=bool(ref_payload),
+        context="",
     )
-    overlay_lines = list(orchestrated.get("overlay_lines") or [])
-    if orchestrated.get("wants_literal_text"):
+    overlay_lines: list[str] = []
+    if direct.get("wants_literal_text"):
         wants_literal_text = True
-    if wants_literal_text and ref_payload and len(overlay_lines) < 2:
+    if wants_literal_text and ref_payload:
         try:
             from app.services.vision_search import extract_image_overlay_labels
 
@@ -298,37 +293,31 @@ def run_chat_image_generation(
         except Exception:  # noqa: BLE001
             logger.warning("[CHAT:IMG-GEN] OCR referencia falló user=%s", user_id[:8])
 
-    tech = str(orchestrated.get("technical_prompt") or "").strip()
+    tech = str(direct.get("prompt") or "").strip()
     if tech and not creation:
         model_prompt = tech
-    elif overlay_lines and tech:
-        # Creativo marketing: conservar brief + overlays orquestados.
-        model_prompt = tech[:3800]
-    if overlay_lines:
-        wants_literal_text = True
+    if overlay_lines and wants_literal_text:
+        # Referencia con «mantener textos»: añadir etiquetas OCR sin reescribir la escena.
+        labels = "; ".join(overlay_lines[:5])
+        model_prompt = (
+            f"{model_prompt} Keep these visible labels legible: {labels}."
+        )[:3800]
 
     img_result: dict[str, Any]
-
-    # Brief orquestado (con o sin tipografía): no reinyectar historial.
-    orchestrated_ready = bool(tech)
-    history_ctx = "" if orchestrated_ready else (
-        enriched_context or _recent_chat_context(history or [])
-    )
+    # Nunca reinyectar historial como context (fuga de temas / tipografía basura).
+    history_ctx = ""
 
     if wants_literal_text:
-        # Tipografía legible: Ideogram primero (Gemini+referencia suele omitir textos).
+        # Tipografía legible: Ideogram primero (Gemini suele fallar letras).
         logger.info(
             "[CHAT:IMG-GEN] literal-text path (Ideogram) user=%s labels=%s ref=%s",
             user_id[:8],
             len(overlay_lines),
             bool(ref_payload),
         )
-        style_ctx = history_ctx
+        style_ctx = ""
         if ref_payload:
-            style_hint = (
-                "Conserva el estilo visual y la composición de la imagen de referencia."
-            )
-            style_ctx = f"{style_ctx}\n{style_hint}".strip() if style_ctx else style_hint
+            style_ctx = "Conserva el estilo visual y la composición de la imagen de referencia."
         img_result = generate_image(
             user_id=user_id,
             plan_id=plan_id,
@@ -354,11 +343,6 @@ def run_chat_image_generation(
     elif ref_payload:
         ref_bytes, ref_mime = ref_payload
         ref_prompt = model_prompt
-        if not creation and not orchestrated_ready:
-            bits = [effective]
-            if enriched_context:
-                bits.append(enriched_context[:2000])
-            ref_prompt = "\n\n".join(b for b in bits if b).strip()
         logger.info(
             "[CHAT:IMG-GEN] reference path user=%s bytes=%s conv=%s",
             user_id[:8],
@@ -447,7 +431,7 @@ def run_chat_image_generation(
         reply = with_image_text_disclaimer(
             str(success_reply),
             user_text or model_prompt,
-            enriched_context or "",
+            "",
         )
         if img_result.get("ideogram_declined_reason") == "basic_excluded":
             reply = (
