@@ -155,12 +155,15 @@ def should_take_direct_image_path(
     anterior de 500 chars desviaba a Claude/texto y terminaba en stall silencioso.
     """
     t = (text or "").strip()
-    if not t or is_casual_chat_interrupt(t) or is_pdf_intent(t):
+    if not t or is_pdf_intent(t):
         return False
     if len(t) > DIRECT_IMAGE_MAX_CHARS:
         return False
+    # Intent de imagen gana a «cambio de tema» / small-talk (listas con «clima», etc.).
     if is_generate_image_intent(t):
         return True
+    if is_casual_chat_interrupt(t):
+        return False
     if parse_followup_image_prompt(t, history):
         return True
     if is_image_creation_request(t, history):
@@ -231,9 +234,9 @@ def run_chat_image_generation(
     )
 
     from app.services.copy_quality import (
-        collect_image_overlay_lines,
-        format_verbatim_image_copy,
+        orchestrate_image_generation_brief,
         prompt_requires_ideogram_text,
+        summarize_overlay_labels_for_image,
     )
 
     user_text = (text or "").strip()
@@ -275,7 +278,15 @@ def run_chat_image_generation(
             success_reply = "Listo, señor. Aquí está su creativo publicitario."
         model_prompt = effective
 
-    overlay_lines = collect_image_overlay_lines(user_text, enriched_context or "")
+    # Orquestador: brief técnico + tipografía corta (sin filtrar instrucciones).
+    orchestrated = orchestrate_image_generation_brief(
+        user_text,
+        context=enriched_context or "",
+        has_reference=bool(ref_payload),
+    )
+    overlay_lines = list(orchestrated.get("overlay_lines") or [])
+    if orchestrated.get("wants_literal_text"):
+        wants_literal_text = True
     if wants_literal_text and ref_payload and len(overlay_lines) < 2:
         try:
             from app.services.vision_search import extract_image_overlay_labels
@@ -283,14 +294,17 @@ def run_chat_image_generation(
             for label in extract_image_overlay_labels(ref_payload[0], mime=ref_payload[1]):
                 if label not in overlay_lines:
                     overlay_lines.append(label)
-            overlay_lines = overlay_lines[:8]
+            overlay_lines = summarize_overlay_labels_for_image(overlay_lines, max_labels=5)
         except Exception:  # noqa: BLE001
             logger.warning("[CHAT:IMG-GEN] OCR referencia falló user=%s", user_id[:8])
 
+    tech = str(orchestrated.get("technical_prompt") or "").strip()
+    if tech and not creation:
+        model_prompt = tech
+    elif overlay_lines and tech:
+        # Creativo marketing: conservar brief + overlays orquestados.
+        model_prompt = tech[:3800]
     if overlay_lines:
-        verbatim = format_verbatim_image_copy(overlay_lines)
-        if verbatim and verbatim not in model_prompt:
-            model_prompt = f"{model_prompt}\n\n{verbatim}"[:3800]
         wants_literal_text = True
 
     img_result: dict[str, Any]

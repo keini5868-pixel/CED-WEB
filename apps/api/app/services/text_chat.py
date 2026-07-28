@@ -1174,14 +1174,27 @@ def _build_chat_system(
         from app.services.publish_image_context import has_publishable_image
 
         if has_publishable_image(user_id, conversation_id):
-            parts.append(
-                "IMAGEN DISPONIBLE EN ESTA CONVERSACIÓN:\n"
-                "El usuario ya subió una imagen al chat. Está lista para publicar en "
-                "Instagram o Facebook.\n"
-                "Al invocar publicar_instagram o publicar_facebook usa "
-                "use_last_uploaded_image=true.\n"
-                "PROHIBIDO pedir URL de imagen al usuario."
-            )
+            # Solo orientar a publicar si el usuario YA pidió publicar — no en
+            # cada turno tras una imagen (provoca alucinaciones «Publicaré en IG»).
+            from app.services.publish_text import is_social_publish_intent
+
+            if is_social_publish_intent(user_text):
+                parts.append(
+                    "IMAGEN DISPONIBLE EN ESTA CONVERSACIÓN:\n"
+                    "El usuario ya tiene una imagen lista para publicar en "
+                    "Instagram o Facebook.\n"
+                    "Al invocar publicar_instagram o publicar_facebook usa "
+                    "use_last_uploaded_image=true.\n"
+                    "PROHIBIDO pedir URL de imagen al usuario."
+                )
+            else:
+                parts.append(
+                    "HAY UNA IMAGEN RECIENTE EN ESTA CONVERSACIÓN.\n"
+                    "Si el usuario pide GENERAR u OTRA imagen, genera una nueva "
+                    "(generate_image / generate_image_with_reference).\n"
+                    "NO asumas que quiere publicar en redes salvo que lo pida "
+                    "explícitamente («publica en Instagram/Facebook»)."
+                )
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)

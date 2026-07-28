@@ -252,6 +252,19 @@ def handle_publish_flow_turn(
         flow = None
 
     # Pedido de publicar SIN imagen → esperar adjunto (no inventar éxito).
+    # Generar/variar imagen NUNCA entra al flujo de Meta (salvo «publica en IG» real).
+    from app.services.chat_intents import (
+        is_explicit_publish_to_social,
+        is_generate_image_intent,
+    )
+    from app.services.marketing_creative import is_image_creation_request
+
+    if (
+        (is_generate_image_intent(text) or is_image_creation_request(text, history))
+        and not is_explicit_publish_to_social(text)
+    ):
+        return None
+
     if not flow and is_social_publish_intent(text) and not has_publishable_image(user_id, conversation_id):
         return start_publish_flow_awaiting_image(
             user_id,

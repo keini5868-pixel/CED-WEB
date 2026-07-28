@@ -145,7 +145,15 @@ _INSTRUCTION_TO_CED_PATTERNS = (
         re.I,
     ),
     re.compile(r"\b(dime|dime\s+tu|dime\s+tus)\b", re.I),
-    re.compile(r"^(crea|genera|escribe|redacta|inventa)\s+(un|una|el|la|los|las)\b", re.I),
+    re.compile(
+        r"^(crea|genera|generame|gener[aá]me|cr[eé]ame|escribe|redacta|inventa)\s+"
+        r"(un|una|el|la|los|las)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:generame|gener[aá]me|cr[eé]ame|hazme)\s+(?:una?\s+)?(?:imagen|foto|flyer)\b",
+        re.I,
+    ),
 )
 
 PUBLISH_CONFIRMATION_RULES = """
@@ -359,11 +367,16 @@ def extract_caption_from_history(
     platform: str = "instagram",
 ) -> str:
     """Recupera el caption acordado desde turnos previos del chat."""
+    from app.services.chat_intents import is_generate_image_intent
+
     for row in reversed(history or []):
         if str(row.get("role") or "") != "user":
             continue
         text = str(row.get("content") or "").strip()
         if not text or is_deictic_caption_reference(text):
+            continue
+        # Nunca usar un pedido de generar imagen como caption de Instagram.
+        if is_generate_image_intent(text):
             continue
         cap = extract_user_caption_for_publish(text)
         if cap:
@@ -506,7 +519,12 @@ def extract_publish_body(user_text: str, platform: str = "facebook") -> str:
 
 
 def is_explicit_social_publish_request(text: str, *, with_image: bool = False) -> bool:
-    """Publicar en red social — distinto de generar creativo o flyer."""
+    """Publicar en red social — distinto de generar creativo o flyer.
+
+    NO usa ``_PUBLISH_STEM`` (``Publicación``, ``publicaciones``): esas palabras
+    aparecen en listas de capacidades / tipografía a pintar y no significan
+    «publica esto ahora en Instagram».
+    """
     t = (text or "").strip()
     if not t:
         return False
@@ -514,14 +532,29 @@ def is_explicit_social_publish_request(text: str, *, with_image: bool = False) -
 
     if is_capability_catalog_request(t):
         return False
-    has_verb = bool(_PUBLISH_VERB.search(t) or _PUBLISH_STEM.search(t))
-    has_platform = bool(_SOCIAL_PLATFORM.search(t) or is_publish_platform_reply(t))
+
+    # Pedido de CREAR imagen gana salvo «publica en Instagram» real.
+    from app.services.chat_intents import (
+        is_explicit_publish_to_social,
+        is_generate_image_intent,
+    )
+
+    if is_generate_image_intent(t) and not is_explicit_publish_to_social(t):
+        return False
+
+    has_verb = bool(_PUBLISH_VERB.search(t))
+    has_platform = bool(
+        re.search(r"\b(?:facebook|instagram|face\b|fb\b|ig\b)\b", t, re.I)
+        or is_publish_platform_reply(t)
+    )
     has_image_ref = bool(re.search(r"\b(imagen|foto|esto|esta)\b", t, re.I))
+    # Verbo real de publicar + (plataforma o imagen).
     if has_verb and (has_platform or has_image_ref):
         return True
     if with_image and has_platform and has_verb:
         return True
-    if with_image and has_platform:
+    # Con imagen adjunta: plataforma sola puede bastar («en Instagram»).
+    if with_image and has_platform and len(t) <= 80:
         return True
     if with_image and has_verb and has_image_ref:
         return True
@@ -575,11 +608,14 @@ def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     from app.services.chat_intents import (
         is_attachment_image_edit_request,
         is_explicit_publish_to_social,
+        is_generate_image_intent,
     )
 
-    # «publica en Facebook» gana; «pon un cuadro que diga publicaciones en redes» NO.
+    # «publica en Facebook» gana; «generame una imagen… Instagram…» NO.
     if is_explicit_publish_to_social(t):
         return True
+    if is_generate_image_intent(t):
+        return False
     if is_attachment_image_edit_request(t):
         return False
 

@@ -241,9 +241,13 @@ def is_attachment_creative_request(
 
 def is_image_creation_request(text: str, history: list[dict[str, str]] | None = None) -> bool:
     """True si el usuario pide generar/editar un creativo, no publicar."""
-    from app.services.chat_intents import is_pdf_intent, mentions_pdf
+    from app.services.chat_intents import (
+        is_explicit_publish_to_social,
+        is_generate_image_intent,
+        is_pdf_intent,
+        mentions_pdf,
+    )
     from app.services.publish_text import (
-        is_explicit_social_publish_request,
         is_publish_help_request,
         is_publish_platform_reply,
     )
@@ -253,7 +257,8 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
         return False
     if is_pdf_intent(t) or mentions_pdf(t):
         return False
-    if is_explicit_social_publish_request(t, with_image=True):
+    # Solo «publica en Instagram» real bloquea creación; no «Publicación» en listas.
+    if is_explicit_publish_to_social(t):
         return False
     if is_publish_platform_reply(t):
         return False
@@ -272,13 +277,13 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
 
 def blocks_publish_intent(text: str, history: list[dict[str, str]] | None = None) -> bool:
     """Evita confundir «flyer/creativo» con flujo de publicación Meta."""
+    from app.services.chat_intents import is_explicit_publish_to_social
     from app.services.publish_text import (
-        is_explicit_social_publish_request,
         is_publish_help_request,
         is_publish_platform_reply,
     )
 
-    if is_explicit_social_publish_request(text, with_image=True):
+    if is_explicit_publish_to_social(text):
         return False
     if is_publish_platform_reply(text):
         return False

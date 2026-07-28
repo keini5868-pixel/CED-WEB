@@ -42,3 +42,32 @@ def test_subject_not_con_estas_caracteristicas():
     subject = extract_product_subject(blob)
     assert "fitline" in subject.lower()
     assert "caracter" not in subject.lower()
+
+
+def test_generate_image_with_instagram_in_list_is_not_publish():
+    msg = (
+        "generame una imagen con estos detalles resumidos escritos\n"
+        "- Asistente de IA conversacional\n"
+        "- publicar_facebook / publicar_instagram — publica contenido\n"
+        "- Memoria contextual\n"
+    )
+    assert not is_social_publish_intent(msg)
+    assert blocks_publish_intent(msg)
+
+
+def test_orchestrate_summarizes_long_markdown_to_short_labels():
+    from app.services.copy_quality import orchestrate_image_generation_brief
+
+    msg = (
+        "generame una imagen con estos detalles resumidos escritos\n"
+        "## Núcleo\n"
+        "- **Asistente de IA conversacional** — responde en español\n"
+        "- **Mentor en ventas** — estrategia comercial\n"
+        "- **Consultor de marketing digital** — Meta Ads\n"
+    )
+    brief = orchestrate_image_generation_brief(msg)
+    assert brief["wants_literal_text"] is True
+    assert len(brief["overlay_lines"]) >= 2
+    assert all(len(x) <= 40 for x in brief["overlay_lines"])
+    assert "generame" not in brief["technical_prompt"].lower()
+    assert "TEXTOS EXACTOS" in brief["technical_prompt"]

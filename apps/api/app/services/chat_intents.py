@@ -156,11 +156,17 @@ def is_attachment_image_edit_request(text: str) -> bool:
         return False
     if wants_image_reference_edit(t):
         return True
-    # «hazme una imagen…» + deíctico / cambio visual sobre la adjunto.
+    # «hazme una imagen…» + deíctico / cambio visual sobre el adjunto.
+    # NO usar `\btexto\b` solo: dispara en «Chat de texto» / listas de capacidades.
     if is_generate_image_intent(t) and (
         re.search(r"\b(?:esta|esa|la)\s+(?:imagen|foto|flyer)\b", t, re.I)
         or re.search(r"\b(?:misma|mismo|as[ií]|igual)\b", t, re.I)
-        or re.search(r"\b(?:pon|agrega|cambia|que\s+diga|lobo|cuadro|texto)\b", t, re.I)
+        or re.search(
+            r"\b(?:pon|agrega|cambia|que\s+diga|lobo|cuadro|"
+            r"(?:con\s+el\s+)?texto\s+(?:que|de|en)|agrega(?:r)?\s+texto)\b",
+            t,
+            re.I,
+        )
     ):
         return True
     return False

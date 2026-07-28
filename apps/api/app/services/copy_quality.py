@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from typing import Any
 
 # Correcciones frecuentes (usuario, voz, transcripción o modelos de imagen).
 _TYPO_MAP: dict[str, str] = {
@@ -404,13 +405,20 @@ def _looks_like_prompt_instruction(text: str) -> bool:
 
 
 def extract_bullet_labels(text: str, *, max_lines: int = 5) -> list[str]:
-    """Extrae viñetas («- Título», «• Título») o etiquetas ALL-CAPS cortas."""
+    """Extrae viñetas («- Título», «• Título», «- **Título** — desc») o ALL-CAPS."""
     lines: list[str] = []
     for match in re.finditer(
-        r"(?m)^\s*(?:[\-\*•]|\d+[.)])\s+(.{4,80})\s*$",
+        r"(?m)^\s*(?:[\-\*•]|\d+[.)])\s+(?:\*\*)?(.+?)(?:\*\*)?\s*$",
         text or "",
     ):
-        label = sanitize_label(match.group(1).strip().rstrip(".;,"))
+        raw = match.group(1).strip()
+        # «**Título** — descripción» o «Título — descripción»
+        raw = re.sub(r"\*+", "", raw).strip()
+        if "—" in raw:
+            raw = raw.split("—", 1)[0].strip()
+        elif " - " in raw and len(raw) > 40:
+            raw = raw.split(" - ", 1)[0].strip()
+        label = sanitize_label(raw.rstrip(".;,"))
         if not label or _looks_like_prompt_instruction(label):
             continue
         if label.lower() in _SKIP_LINE_TITLES:
@@ -456,9 +464,119 @@ def collect_image_overlay_lines(prompt: str, context: str = "") -> list[str]:
             lines.append(label)
     cleaned = [ln for ln in lines if ln and not _looks_like_prompt_instruction(ln)]
     if cleaned:
-        return cleaned[:5]
+        return summarize_overlay_labels_for_image(cleaned, max_labels=5)
     # Sin líneas de contenido reales: no inventar tipografía a partir del pedido.
     return []
+
+
+def summarize_overlay_labels_for_image(
+    lines: list[str],
+    *,
+    max_labels: int = 5,
+    max_chars: int = 36,
+) -> list[str]:
+    """Acorta etiquetas para tipografía legible (no párrafos enteros)."""
+    out: list[str] = []
+    for raw in lines:
+        label = sanitize_label(raw)
+        # Markdown «**Título** — descripción» → solo el título.
+        label = re.sub(r"\*+", "", label).strip()
+        if "—" in label:
+            label = label.split("—", 1)[0].strip()
+        elif " - " in label and len(label) > max_chars:
+            label = label.split(" - ", 1)[0].strip()
+        if ":" in label and len(label) > max_chars:
+            left, _, right = label.partition(":")
+            label = left.strip() if len(left.strip()) >= 4 else label
+            _ = right
+        label = re.sub(r"\s+", " ", label).strip(" .;,")
+        if len(label) > max_chars:
+            label = label[: max_chars - 1].rsplit(" ", 1)[0].strip()
+        if len(label) < 3 or _looks_like_prompt_instruction(label):
+            continue
+        # Evitar nombres de tools / API en el HUD.
+        if re.search(
+            r"(?i)\b(?:search_web|generate_image|save_memory|recall_memory|"
+            r"activar_prospeccion|publicar_facebook|publicar_instagram|"
+            r"analyze_camera|generar_pdf)\b",
+            label,
+        ):
+            continue
+        if label not in out:
+            out.append(label)
+        if len(out) >= max_labels:
+            break
+    return out
+
+
+def orchestrate_image_generation_brief(
+    user_text: str,
+    *,
+    context: str = "",
+    has_reference: bool = False,
+) -> dict[str, Any]:
+    """Orquestador: separa escena visual vs tipografía; nunca filtra instrucciones.
+
+    Devuelve:
+      visual_brief: descripción de escena sin meta-comandos
+      overlay_lines: etiquetas cortas a pintar (máx. 5)
+      wants_literal_text: si debe preferirse Ideogram / TEXTOS EXACTOS
+      technical_prompt: brief listo para el modelo de imagen
+    """
+    raw = (user_text or "").strip()
+    from app.services.gemini_images import (
+        strip_image_generation_instruction,
+        strip_image_prompt_meta,
+    )
+
+    visual = strip_image_prompt_meta(strip_image_generation_instruction(raw))
+    # Quitar bloques markdown enormes del brief visual; las etiquetas van aparte.
+    visual = re.sub(r"(?m)^#{1,3}\s+.*$", " ", visual)
+    visual = re.sub(r"(?m)^\s*[-*•]\s+\*\*.*$", " ", visual)
+    visual = re.sub(r"\s+", " ", visual).strip(" ,.;")
+    if len(visual) > 280:
+        visual = visual[:279].rsplit(" ", 1)[0].strip()
+
+    overlays = collect_image_overlay_lines(raw, context)
+    wants_text = bool(overlays) or prompt_requires_ideogram_text(raw)
+
+    if (
+        not visual
+        or len(visual) < 24
+        or re.search(r"(?i)^estos?\s+detalles\b", visual)
+        or re.search(r"(?i)\bdetalles\s+resumidos\s+escritos\b", visual)
+    ):
+        visual = (
+            "Infografía premium del sistema CED, estilo futurista, HUD holográfico, "
+            "paleta cian y azul oscuro, tipografía grande y legible"
+        )
+        if has_reference:
+            visual = (
+                "Variación de la imagen de referencia, mismo estilo futurista; "
+                "reemplaza sujetos según el pedido; tipografía clara"
+            )
+
+    parts = [visual]
+    if has_reference:
+        parts.append("Usa la imagen adjunta solo como referencia de estilo/composición.")
+    if overlays:
+        parts.append(format_verbatim_image_copy(overlays))
+        parts.append(_CREATIVE_NO_LEAK)
+        parts.append(
+            "Tipografía grande, alto contraste, máximo 5 etiquetas cortas; "
+            "PROHIBIDO pintar el pedido del usuario o instrucciones del sistema."
+        )
+    elif not wants_text:
+        parts.append(
+            "Sin texto, tipografía, subtítulos, marcas de agua ni etiquetas en la imagen."
+        )
+
+    return {
+        "visual_brief": visual,
+        "overlay_lines": overlays,
+        "wants_literal_text": wants_text,
+        "technical_prompt": " ".join(p for p in parts if p).strip()[:3800],
+    }
 
 
 def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None) -> str:
