@@ -188,6 +188,22 @@ async function forward(request: NextRequest, pathSegments: string[]) {
     );
   }
 
+  // SSE: reenviar el body sin bufferizar (keepalives de imagen / chat).
+  if (contentType.includes("text/event-stream") && upstream.body) {
+    return mergeAuthCookies(
+      new NextResponse(upstream.body, {
+        status: upstream.status,
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+          "X-Accel-Buffering": "no",
+        },
+      }),
+      authResponse,
+    );
+  }
+
   const responseBody = await upstream.text();
   return mergeAuthCookies(
     new NextResponse(responseBody, {

@@ -625,7 +625,7 @@ export function CedTextChatPanel({
           ? "La generación de imagen tardó demasiado. Intenta de nuevo."
           : "La respuesta tardó demasiado. Intenta de nuevo.",
       );
-    }, 200_000);
+    }, 280_000);
 
     const userMsg: ChatMessage = {
       role: "user",
@@ -786,7 +786,7 @@ export function CedTextChatPanel({
               ...target,
               content: missingImage
                 ? reply && !looksLikeImageWaitFiller(reply)
-                  ? reply.includes("No pude")
+                  ? /no pude|tard[oó] demasiado|no se (?:pudo|adjunt)/i.test(reply)
                     ? reply
                     : `${reply}\n\nNo se adjuntó la imagen. Intenta de nuevo en unos segundos.`
                   : "No pude generar la imagen a tiempo, señor. Intenta de nuevo en unos segundos."

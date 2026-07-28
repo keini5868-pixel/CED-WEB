@@ -61,7 +61,10 @@ def test_can_stream_allows_life_module_queries():
     assert _can_stream_chat_text("qué tengo mañana en el calendario") is True
     assert _can_stream_chat_text("qué recordatorios tengo") is True
     assert _can_stream_chat_text("cómo está el clima hoy") is True
-    assert _can_stream_chat_text("agéndame una cita mañana a las 3pm") is False
+    # Agenda por voz/texto fluye por SSE (módulo LIFE); escritura ya no fuerza blocking.
+    assert _can_stream_chat_text("agéndame una cita mañana a las 3pm") is True
+    assert _can_stream_chat_text("generame una imagen de un atardecer") is True
+    assert _can_stream_chat_text("créame un PDF del resumen") is False
 
 
 def test_route_message_defer_skips_kb_search():

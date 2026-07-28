@@ -190,7 +190,10 @@ def _iter_blocking_with_keepalives(
     `while not fut.done()` pattern dropped instant PDF clarify replies and
     the stream fell through to "inconveniente técnico" with result=None.
     """
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+    # wait=False: si el caller abandona el iterador, no bloquear el worker SSE
+    # esperando Ideogram/Gemini (mismo bug que chat normal «a tiempo»).
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         fut = pool.submit(fn)
         while True:
             try:
@@ -198,6 +201,8 @@ def _iter_blocking_with_keepalives(
                 return
             except concurrent.futures.TimeoutError:
                 yield ("ping", None)
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
 
 def _stream_fallback_reply(

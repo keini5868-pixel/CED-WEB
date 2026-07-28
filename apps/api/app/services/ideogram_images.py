@@ -28,7 +28,8 @@ IDEOGRAM_PROVIDER_COST_USD: dict[str, float] = {
 }
 IDEOGRAM_TURBO_COST_USD = IDEOGRAM_PROVIDER_COST_USD["TURBO"]
 IDEOGRAM_WALLET_COST_USD = 0.06
-_TIMEOUT_SEC = 45.0
+# Corto a propósito: si Ideogram se cuelga, Gemini (fast) debe ganar el turno SSE.
+_TIMEOUT_SEC = 28.0
 
 
 def _friendly_ideogram_error(raw: str) -> str:

@@ -69,6 +69,8 @@ export async function POST(request: NextRequest) {
       },
       body,
       cache: "no-store",
+      // Imagen/Ideogram+Gemini: alinear con maxDuration y hard backend ~210s.
+      signal: AbortSignal.timeout(300_000),
     });
   } catch {
     return NextResponse.json(

@@ -101,6 +101,11 @@ CHAT_SIMPLE_MAX_TOKENS = 1400
 CHAT_DELIVERABLE_MAX_TOKENS = 3200
 CHAT_TOOLS_MAX_TOKENS = 1600
 DIRECT_IMAGE_MAX_CHARS = 8000
+# Stream imagen: keepalives + deadline. Nunca shutdown(wait=True) tras timeout —
+# eso bloqueaba el SSE y el cliente mostraba «No pude generar la imagen a tiempo».
+IMAGE_STREAM_DEADLINE_SEC = 210.0
+IMAGE_STREAM_KEEPALIVE_SEC = 5.0
+BLOCKING_STREAM_DEADLINE_SEC = 210.0
 
 _VIRAL_KEYWORDS = re.compile(
     r"\b(instagram|tiktok|reels?|viral|horario|publicar|contenido|linkedin|facebook|"
@@ -3085,8 +3090,11 @@ def _can_stream_chat_text(
         return True
     if is_conversation_recall_intent(text):
         return False
-    if is_generate_image_intent(text) or is_pdf_intent(text):
+    # Imagen: permitir SSE (status keepalives + path directo). PDF sigue bloqueante.
+    if is_pdf_intent(text):
         return False
+    if is_generate_image_intent(text):
+        return True
     if is_web_research_intent(text):
         return False
     if is_environment_intent(text):
@@ -3168,18 +3176,19 @@ def _iter_blocking_send(
     result: dict[str, Any] | None = None
     error_reply: str | None = None
     started = time.perf_counter()
-    with ThreadPoolExecutor(max_workers=1) as pool:
+    pool = ThreadPoolExecutor(max_workers=1)
+    try:
         future = pool.submit(
             send_message, user_id, content=text, conversation_id=conversation_id
         )
         while True:
-            if time.perf_counter() - started > 180.0:
+            if time.perf_counter() - started > BLOCKING_STREAM_DEADLINE_SEC:
                 error_reply = (
                     "La operación tardó demasiado. Intenta de nuevo en unos segundos."
                 )
                 break
             try:
-                result = future.result(timeout=10.0)
+                result = future.result(timeout=IMAGE_STREAM_KEEPALIVE_SEC)
                 break
             except _FutureTimeout:
                 if should_take_direct_image_path(text, None):
@@ -3196,6 +3205,8 @@ def _iter_blocking_send(
                     "No pude completar esa acción. Intenta de nuevo en un momento."
                 )
                 break
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
 
     if error_reply is not None or result is None:
         reply = error_reply or "No pude completar esa acción."
@@ -3354,10 +3365,12 @@ def iter_send_message_stream(
         image_error: str | None = None
         from concurrent.futures import TimeoutError as _FutureTimeout
 
-        with ThreadPoolExecutor(max_workers=1) as pool:
+        # wait=False: si vence el deadline, seguir emitiendo done/error sin
+        # esperar a Ideogram/Gemini (shutdown(wait=True) mataba los keepalives).
+        pool = ThreadPoolExecutor(max_workers=1)
+        try:
             future = pool.submit(_run_image_job)
-            # Keepalives: sin bytes el cliente aborta (~45–90s) y la UI queda muda.
-            hard_deadline = time.perf_counter() + 180.0
+            hard_deadline = time.perf_counter() + IMAGE_STREAM_DEADLINE_SEC
             while True:
                 if time.perf_counter() > hard_deadline:
                     image_error = (
@@ -3366,7 +3379,7 @@ def iter_send_message_stream(
                     )
                     break
                 try:
-                    gen = future.result(timeout=8.0)
+                    gen = future.result(timeout=IMAGE_STREAM_KEEPALIVE_SEC)
                     break
                 except _FutureTimeout:
                     yield _sse_event("status", {"text": status})
@@ -3377,6 +3390,8 @@ def iter_send_message_stream(
                     )
                     image_error = "No pude generar la imagen. Intenta de nuevo."
                     break
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
 
         if image_error is not None or gen is None:
             reply = image_error or "No pude generar la imagen."

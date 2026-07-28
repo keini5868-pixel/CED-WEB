@@ -266,6 +266,8 @@ export async function sendChatMessageStream(
     const parsed = JSON.parse(dataLine) as Record<string, unknown>;
     if (eventName === "status") {
       const statusText = String(parsed.text ?? "").trim();
+      // Keepalives SSE deben resetear el stall aunque el chunk sea solo status.
+      armStallWatchdog();
       if (statusText) onStatus?.(statusText);
       return;
     }

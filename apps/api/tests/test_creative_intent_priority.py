@@ -159,10 +159,10 @@ def test_advanced_direct_image_with_tiempo_trap() -> None:
     mock_gen.assert_called_once()
 
 
-def test_can_stream_forces_blocking_for_image_but_weather_no_longer_wins() -> None:
-    """Stream sigue yendo a blocking para imagen; weather intent ya no es True."""
+def test_can_stream_allows_image_sse_and_weather_no_longer_wins() -> None:
+    """Imagen usa SSE con keepalives (path directo); weather no debe robar el intent."""
     from app.services.text_chat import _can_stream_chat_text
 
     text = "Genera una imagen con la frase 'inevitablemente el tiempo va a pasar'"
     assert is_weather_intent(text) is False
-    assert _can_stream_chat_text(text) is False  # blocking → send_message (ya prioriza imagen)
+    assert _can_stream_chat_text(text) is True

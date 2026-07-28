@@ -309,6 +309,15 @@ def run_chat_image_generation(
 
     img_result: dict[str, Any]
 
+    # Brief orquestado ya trae escena + TEXTOS EXACTOS: no reinyectar historial
+    # (provoca prompts enormes, Ideogram lento y timeout del stream).
+    orchestrated_ready = bool(tech) and (
+        "TEXTOS EXACTOS" in model_prompt or bool(overlay_lines) or bool(creation)
+    )
+    history_ctx = "" if orchestrated_ready else (
+        enriched_context or _recent_chat_context(history or [])
+    )
+
     if wants_literal_text:
         # Tipografía legible: Ideogram primero (Gemini+referencia suele omitir textos).
         logger.info(
@@ -317,13 +326,13 @@ def run_chat_image_generation(
             len(overlay_lines),
             bool(ref_payload),
         )
-        style_ctx = enriched_context or _recent_chat_context(history or [])
+        style_ctx = history_ctx
         if ref_payload:
-            style_ctx = (
-                f"{style_ctx}\n"
+            style_hint = (
                 "Conserva el estilo visual futurista de la imagen de referencia "
                 "(holograma, HUD, paleta cian/azul, composición similar)."
-            ).strip()
+            )
+            style_ctx = f"{style_ctx}\n{style_hint}".strip() if style_ctx else style_hint
         img_result = generate_image(
             user_id=user_id,
             plan_id=plan_id,
@@ -349,7 +358,7 @@ def run_chat_image_generation(
     elif ref_payload:
         ref_bytes, ref_mime = ref_payload
         ref_prompt = model_prompt
-        if not creation:
+        if not creation and not orchestrated_ready:
             bits = [effective]
             if enriched_context:
                 bits.append(enriched_context[:2000])
@@ -381,7 +390,7 @@ def run_chat_image_generation(
                 plan_id=plan_id,
                 prompt=model_prompt,
                 quality="auto",
-                context=enriched_context or _recent_chat_context(history or []),
+                context=history_ctx,
                 display_label=display_label or None,
                 prefer_ideogram=False,
             )
@@ -393,7 +402,7 @@ def run_chat_image_generation(
             plan_id=plan_id,
             prompt=model_prompt,
             quality="auto",
-            context=enriched_context,
+            context=history_ctx,
             display_label=display_label,
             prefer_ideogram=False,
         )
@@ -404,7 +413,7 @@ def run_chat_image_generation(
             plan_id=plan_id,
             prompt=model_prompt,
             quality="auto",
-            context=enriched_context or _recent_chat_context(history or []),
+            context=history_ctx,
             display_label=display_label or None,
             prefer_ideogram=False,
         )
