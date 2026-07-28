@@ -256,6 +256,8 @@ def handle_publish_flow_turn(
     from app.services.marketing_creative import is_image_creation_request
 
     if is_generate_image_intent(text) or is_image_creation_request(text, history):
+        if flow:
+            clear_publish_flow(user_id, conversation_id)
         return None
 
     if not flow and is_social_publish_intent(text) and not has_publishable_image(user_id, conversation_id):
