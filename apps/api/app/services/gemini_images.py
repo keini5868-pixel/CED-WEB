@@ -285,26 +285,16 @@ def _extract_image_payload(response: Any) -> tuple[bytes, str] | None:
 
 
 def _reference_prompt(user_prompt: str, style_mode: str) -> str:
-    topic = strip_image_prompt_meta(
+    """Brief visual para edición con referencia.
+
+    Solo el pedido del usuario (sin etiquetas «Escena pedida:» ni frases meta).
+    El estilo lo aporta la imagen adjunta; anti-texto / TEXTOS EXACTOS lo decide
+    ``augment_image_prompt``.
+    """
+    _ = style_mode
+    return strip_image_prompt_meta(
         strip_image_generation_instruction(user_prompt or "")
     ) or "nueva versión de la imagen de referencia"
-    anti = _NO_META_TEXT_ON_IMAGE
-    if style_mode == "inspired":
-        return (
-            f"Misma esencia visual (estilo, paleta, composición) que la imagen adjunta. "
-            f"Escena pedida: {topic}. {anti}"
-        )
-    if style_mode == "variation":
-        return (
-            f"Variación de la imagen adjunta. Cambios pedidos: {topic}. "
-            f"Conserva estilo y tonos clave. {anti}"
-        )
-    if style_mode == "edit":
-        return (
-            f"Edición de la imagen adjunta: {topic}. "
-            f"Mantén intacto lo no pedido. {anti}"
-        )
-    return f"{topic}. {anti}"
 
 
 def _prepare_reference_gemini_prompt(prompt: str, mode: str) -> str:
@@ -316,7 +306,7 @@ def _prepare_reference_gemini_prompt(prompt: str, mode: str) -> str:
     if p.startswith(CREATIVO_PROMPT_MARKER):
         return p[:3800]
     base = _reference_prompt(p, mode)
-    return augment_image_prompt(base, "")
+    return augment_image_prompt(base, "")[:3800]
 
 
 def _generate_content_config(
@@ -361,7 +351,9 @@ def generate_image_gemini(
         return {"ok": False, "error": "Prompt vacío"}
     if not api_key:
         return {"ok": False, "error": "GOOGLE_API_KEY no configurada", "code": "config_error"}
-    if _NO_META_TEXT_ON_IMAGE[:40] not in topic:
+    # No contradecir TEXTOS EXACTOS con «Sin texto…» (fuga / tipografía pedida).
+    wants_overlay = "TEXTOS EXACTOS" in topic or "Ortografía española" in topic
+    if not wants_overlay and _NO_META_TEXT_ON_IMAGE[:40] not in topic:
         topic = f"{topic} {_NO_META_TEXT_ON_IMAGE}"
 
     client = genai.Client(api_key=api_key)

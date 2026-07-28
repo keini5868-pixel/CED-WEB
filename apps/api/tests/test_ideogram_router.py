@@ -63,6 +63,18 @@ def test_strict_detector_true_for_con_el_texto_phrase():
     assert prompt_requires_ideogram_text("un letrero con el texto Bienvenidos") is True
 
 
+def test_strict_detector_true_for_detalles_escritos():
+    assert prompt_requires_ideogram_text(
+        "hazme la imagen tomando en cuenta que deben ir los detalles escritos"
+    ) is True
+
+
+def test_strict_detector_true_for_texto_en_la_imagen():
+    assert prompt_requires_ideogram_text(
+        "genera una versión con los textos en la imagen legibles"
+    ) is True
+
+
 def test_strict_detector_false_for_generic_marketing_words():
     # Estas palabras SÍ disparan `image_prompt_needs_verbatim_text` (amplio, para
     # decorar el prompt de Gemini) pero NO deben disparar el router de costo pagado.

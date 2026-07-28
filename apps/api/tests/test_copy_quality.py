@@ -62,6 +62,41 @@ def test_augment_image_prompt_plain_scene_has_no_instruction_words():
     assert "sin texto" in low
 
 
+def test_reference_prompt_never_uses_escena_pedida_label():
+    from app.services.gemini_images import _prepare_reference_gemini_prompt, _reference_prompt
+    from app.services.image_reference_generator import build_reference_prompt
+
+    raw = (
+        "la imagen que sea así tomando en cuenta que en la imagen deben ir "
+        "los detalles escritos: GENERACIÓN DE IMÁGENES Y PDF, ANÁLISIS DE VISIÓN"
+    )
+    for mode in ("inspired", "variation", "edit"):
+        brief = _reference_prompt(raw, mode)
+        prepared = _prepare_reference_gemini_prompt(raw, mode)
+        built = build_reference_prompt(raw, mode)
+        for blob in (brief, prepared, built):
+            # Etiqueta meta que se pintaba en píxeles — no como mención en anti-fuga.
+            assert "escena pedida:" not in blob.lower(), blob
+            assert "cambios pedidos:" not in blob.lower(), blob
+            assert "la imagen que sea así" not in blob.lower(), blob
+    assert "TEXTOS EXACTOS" in prepared or "tipografía" in prepared.lower()
+    assert "generación de imágenes" in prepared.lower() or "visión" in prepared.lower()
+
+
+def test_collect_overlay_skips_instructional_prose():
+    from app.services.copy_quality import collect_image_overlay_lines
+
+    assert collect_image_overlay_lines(
+        "la imagen que sea así tomando en cuenta los detalles escritos",
+        "",
+    ) == []
+    lines = collect_image_overlay_lines(
+        "Incluye:\n- Generación de imágenes y PDF\n- Análisis de visión (cámara)",
+        "",
+    )
+    assert any("generación" in ln.lower() or "imágenes" in ln.lower() for ln in lines)
+
+
 def test_build_image_headline_from_any_context():
     headline = build_image_headline(
         "Tour por Charlotte: historia y arquitectura moderna.",
@@ -82,7 +117,8 @@ def test_format_creative_image_copy_uses_short_titles_only():
     assert "FitLine Basics" in block
     assert "Salud intestinal" in block
     assert "Contribuye a mantener" not in block
-    assert "PROHIBIDO escribir" in block
+    assert "PROHIBIDO" in block
+    assert "renderizar" in block.lower() or "escribir" in block.lower()
 
 
 def test_marketing_brief_universal_user_prompt_no_leakage():

@@ -40,32 +40,10 @@ _EXT_BY_MIME = {
 
 def build_reference_prompt(user_prompt: str, style_mode: str) -> str:
     """Enriquece el prompt según el modo de referencia — solo escena visual, sin wrappers meta."""
-    from app.services.gemini_images import (
-        _NO_META_TEXT_ON_IMAGE,
-        strip_image_generation_instruction,
-        strip_image_prompt_meta,
-    )
+    from app.services.copy_quality import augment_image_prompt
+    from app.services.gemini_images import _reference_prompt
 
-    topic = strip_image_prompt_meta(
-        strip_image_generation_instruction(user_prompt or "")
-    ) or "nueva versión de la imagen de referencia"
-    anti = _NO_META_TEXT_ON_IMAGE
-    if style_mode == "inspired":
-        return (
-            f"Misma esencia visual (estilo, paleta, composición) que la imagen de referencia. "
-            f"Escena pedida: {topic}. {anti}"
-        )
-    if style_mode == "variation":
-        return (
-            f"Variación de la imagen de referencia. Cambios: {topic}. "
-            f"Conserva estilo y tonos clave. {anti}"
-        )
-    if style_mode == "edit":
-        return (
-            f"Edición de la imagen de referencia: {topic}. "
-            f"Mantén intacto lo no pedido. {anti}"
-        )
-    return f"{topic}. {anti}"
+    return augment_image_prompt(_reference_prompt(user_prompt, style_mode), "")[:4000]
 
 
 def _image_hash(image_bytes: bytes) -> str:

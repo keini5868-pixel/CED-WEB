@@ -264,7 +264,14 @@ build_flyer_headline = build_image_headline  # compat
 _IDEOGRAM_EXPLICIT_TEXT_REQUEST = re.compile(
     r"\b(?:"
     r"que\s+diga[n]?|que\s+ponga[n]?|con\s+el\s+texto|con\s+la\s+frase|"
-    r"con\s+las?\s+palabras?|el\s+texto\s+debe\s+decir|letras?\s+que\s+diga[n]?"
+    r"con\s+las?\s+palabras?|el\s+texto\s+debe\s+decir|letras?\s+que\s+diga[n]?|"
+    r"detalles?\s+escritos?|textos?\s+(?:exactos?|literales?|visibles?|legibles?)|"
+    r"(?:deben|debe|tienen|tiene|tienen\s+que|tiene\s+que)\s+"
+    r"(?:ir|aparecer|estar|llevar|incluir)\s+"
+    r"(?:escritos?|el\s+texto|los\s+textos?|en\s+la\s+imagen|las?\s+etiquetas?)|"
+    r"escrito(?:s)?\s+en\s+la\s+imagen|texto(?:s)?\s+en\s+la\s+imagen|"
+    r"etiquetas?\s+(?:con\s+texto|escritas?|legibles?)|"
+    r"tipograf[ií]a\s+legible|con\s+los\s+textos?\s+(?:en|de)\s+la\s+imagen"
     r")\b",
     re.I,
 )
@@ -303,8 +310,65 @@ def image_prompt_needs_verbatim_text(prompt: str, context: str = "") -> bool:
     return False
 
 
+_INSTRUCTIONAL_OVERLAY = re.compile(
+    r"(?is)\b(?:"
+    r"escena\s+pedida|tomando\s+en\s+cuenta|la\s+imagen\s+que\s+sea|"
+    r"es\s+algo\s+as[ií]|genera(?:r|me)?\s+(?:una?\s+)?imagen|"
+    r"haz(?:me)?\s+(?:una?\s+)?imagen|debe(?:n)?\s+ir\s+escrit|"
+    r"instrucci[oó]n(?:es)?\s+actuales|referencia\s+visual|\bprompt\b"
+    r")\b"
+)
+
+
+def _looks_like_prompt_instruction(text: str) -> bool:
+    t = (text or "").strip()
+    if len(t) < 4:
+        return True
+    if _INSTRUCTIONAL_OVERLAY.search(t):
+        return True
+    # Pedidos largos en prosa no son etiquetas de UI.
+    if len(t) > 64 and not re.search(r"[:\-•]", t):
+        return True
+    return False
+
+
+def extract_bullet_labels(text: str, *, max_lines: int = 5) -> list[str]:
+    """Extrae viñetas («- Título», «• Título») o etiquetas ALL-CAPS cortas."""
+    lines: list[str] = []
+    for match in re.finditer(
+        r"(?m)^\s*(?:[\-\*•]|\d+[.)])\s+(.{4,80})\s*$",
+        text or "",
+    ):
+        label = sanitize_label(match.group(1).strip().rstrip(".;,"))
+        if not label or _looks_like_prompt_instruction(label):
+            continue
+        if label.lower() in _SKIP_LINE_TITLES:
+            continue
+        if label not in lines:
+            lines.append(label)
+        if len(lines) >= max_lines:
+            return lines
+    # Etiquetas en mayúsculas separadas por coma / salto (UI tipo CED)
+    for match in re.finditer(
+        r"\b([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9\s/\(\)]{2,48})\b",
+        text or "",
+    ):
+        label = sanitize_label(re.sub(r"\s+", " ", match.group(1).strip()))
+        if len(label) < 6 or _looks_like_prompt_instruction(label):
+            continue
+        if label not in lines:
+            lines.append(label)
+        if len(lines) >= max_lines:
+            break
+    return lines[:max_lines]
+
+
 def collect_image_overlay_lines(prompt: str, context: str = "") -> list[str]:
-    """Reúne textos literales desde prompt + contexto (cualquier dominio)."""
+    """Reúne textos literales desde prompt + contexto (cualquier dominio).
+
+    Nunca convierte instrucciones del usuario («la imagen que sea así…») en tipografía
+    a pintar — solo líneas de contenido (títulos, viñetas, comillas).
+    """
     lines = extract_structured_lines(context)
     if not lines:
         lines = extract_structured_lines(prompt)
@@ -313,15 +377,13 @@ def collect_image_overlay_lines(prompt: str, context: str = "") -> list[str]:
     if not lines:
         quotes = extract_quoted_phrases(f"{prompt}\n{context}")
         lines = quotes
-    if not lines and image_prompt_needs_verbatim_text(prompt, context):
-        structured = extract_structured_lines(f"{prompt}\n{context}")
-        if structured:
-            lines = overlay_lines_from_strings(structured)
-        else:
-            short = normalize_spanish(_first_phrase(prompt, max_chars=72))
-            if short and len(short) >= 12:
-                lines = [short]
-    return lines[:5]
+    if not lines:
+        lines = extract_bullet_labels(f"{prompt}\n{context}")
+    cleaned = [ln for ln in lines if ln and not _looks_like_prompt_instruction(ln)]
+    if cleaned:
+        return cleaned[:5]
+    # Sin líneas de contenido reales: no inventar tipografía a partir del pedido.
+    return []
 
 
 def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None) -> str:
@@ -343,9 +405,9 @@ def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None)
 
 
 _CREATIVE_NO_LEAK = (
-    "PROHIBIDO escribir en la imagen instrucciones del prompt, metadatos, typos del usuario "
-    "ni palabras como: genera, imagen, características, referencia, instrucción, prompt, "
-    "usuario, obligatorias, pedido."
+    "PROHIBIDO renderizar como tipografía meta-instrucciones del brief, pedidos del "
+    "usuario, metadatos o frases de control del sistema. Solo tipografía de contenido "
+    "(títulos/etiquetas de producto o UI)."
 )
 
 _PROMPT_META_LEAK = re.compile(
@@ -354,7 +416,10 @@ _PROMPT_META_LEAK = re.compile(
     r"instrucciones\s+adicionales\s+del\s+usuario(?:\s*\([^)]*\))?|"
     r"contexto\s+reciente\s+del\s+chat|"
     r"an[aá]lisis\s+previo\s+de\s+la\s+imagen[^\n:]*|"
-    r"genera\s+una\s+imagen\s+de\s+alta\s+calidad\s+seg[uú]n\s+este\s+pedido"
+    r"genera\s+una\s+imagen\s+de\s+alta\s+calidad\s+seg[uú]n\s+este\s+pedido|"
+    r"escena\s+pedida|"
+    r"cambios?\s+pedidos?|"
+    r"edici[oó]n\s+de\s+la\s+imagen(?:\s+(?:adjunta|de\s+referencia))?"
     r")\s*:?\s*"
 )
 
@@ -369,6 +434,20 @@ def strip_prompt_meta_for_image(text: str) -> str:
         prev = t
         t = _PROMPT_META_LEAK.sub(" ", t)
         t = re.sub(r"\bReferencia:\s*", " ", t, flags=re.I)
+        # Frases de control del usuario que Nano Banana pinta literalmente.
+        # No consumir el contenido útil después de «detalles escritos: …».
+        t = re.sub(
+            r"(?is)\b(?:la\s+imagen\s+que\s+sea\s+as[ií]|es\s+algo\s+as[ií])\b[,.]?\s*",
+            " ",
+            t,
+        )
+        t = re.sub(
+            r"(?is)\btomando\s+en\s+cuenta\s+que\s+(?:en\s+la\s+imagen\s+)?"
+            r"(?:deben|debe|tienen|tiene)\s+(?:ir|aparecer|estar)\s+"
+            r"(?:los\s+)?detalles?\s+escritos?\s*:?\s*",
+            " ",
+            t,
+        )
         t = re.sub(r"[ \t]{2,}", " ", t)
         t = re.sub(r"\n{3,}", "\n\n", t).strip(" \n,.;:")
     return t
@@ -429,6 +508,14 @@ def augment_image_prompt(prompt: str, context: str = "") -> str:
                 "Prefiere tipografía grande y clara; máximo una frase corta (≤12 palabras) "
                 "si el texto es largo. Mejor poco texto correcto que un párrafo ilegible."
             )
+        # Pedido de tipografía sin líneas concretas: conservar/mejorar textos de la
+        # referencia; NUNCA pintar el pedido del usuario como tipografía.
+        return (
+            f"{base} {_ORTHOGRAPHY_RULE} {_CREATIVE_NO_LEAK} "
+            "Incluye tipografía legible en español. Si hay imagen de referencia con "
+            "etiquetas o títulos, reprodúcelos con ortografía correcta. "
+            "No escribas en la imagen el pedido del usuario ni frases meta."
+        )
 
     # Escena pura: NO mencionar «instrucciones/usuario/pedido» (el modelo las pinta).
     # NO hablar de «texto visible» si no pedimos tipografía.
@@ -439,7 +526,7 @@ def augment_image_prompt(prompt: str, context: str = "") -> str:
 
 IMAGE_EMBEDDED_TEXT_DISCLAIMER = (
     "Señor, aviso: el texto dentro de imágenes generadas por IA (modelo actual: "
-    "Gemini 2.5 Flash Image) suele no salir perfectamente legible. "
+    "Nano Banana 2 / Gemini 3.1 Flash Image) suele no salir perfectamente legible. "
     "Aquí está el resultado:"
 )
 
