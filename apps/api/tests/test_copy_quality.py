@@ -59,7 +59,56 @@ def test_augment_image_prompt_plain_scene_has_no_instruction_words():
     assert "según este pedido" not in low
     assert "usuario" not in low
     assert "obligatorias" not in low
-    assert "sin texto" in low
+    assert "textos exactos" not in low
+    assert "zero letters" in low or "sin texto" in low or "critical:" in low
+
+
+def test_scene_prompt_never_becomes_textos_exactos_via_sin_texto():
+    """Regresión: «Sin texto» activaba _IMAGE_TEXT_HINT por la palabra «texto»
+    y usaba el brief como titular → Nano Banana pintaba el pedido en la foto."""
+    from app.services.copy_quality import (
+        augment_image_prompt,
+        image_prompt_needs_verbatim_text,
+        orchestrate_image_generation_brief,
+    )
+    from app.services.gemini_images import prepare_image_prompt
+
+    samples = [
+        "generame una imagen de un hombre recostado de un arbol en un atardecer",
+        "un aguila volando sobre un cielo lluvioso",
+        "un gato dormido en un sofa",
+        "un atardecer en la playa",
+        "un perro corriendo en el parque",
+    ]
+    for raw in samples:
+        orch = orchestrate_image_generation_brief(raw)
+        assert orch["wants_literal_text"] is False, raw
+        assert orch["overlay_lines"] == [], raw
+        tech = orch["technical_prompt"]
+        assert "TEXTOS EXACTOS" not in tech, raw
+        assert image_prompt_needs_verbatim_text(tech, "") is False, raw
+        prepared = prepare_image_prompt(tech, "")
+        low = prepared.lower()
+        assert "textos exactos" not in low, prepared
+        assert "ortografía española" not in low, prepared
+        # No debe citar el pedido como línea a pintar.
+        assert '- "' not in prepared and "- «" not in prepared, prepared
+        aug = augment_image_prompt(tech, "")
+        assert "TEXTOS EXACTOS" not in aug, aug
+
+
+def test_explicit_que_diga_still_requests_verbatim():
+    from app.services.copy_quality import (
+        image_prompt_needs_verbatim_text,
+        orchestrate_image_generation_brief,
+    )
+
+    msg = 'generame un banner que diga "Gran Apertura"'
+    assert image_prompt_needs_verbatim_text(msg, "") is True
+    orch = orchestrate_image_generation_brief(msg)
+    assert orch["wants_literal_text"] is True
+    assert any("apertura" in ln.lower() for ln in orch["overlay_lines"])
+    assert "TEXTOS EXACTOS" in orch["technical_prompt"]
 
 
 def test_reference_prompt_never_uses_escena_pedida_label():

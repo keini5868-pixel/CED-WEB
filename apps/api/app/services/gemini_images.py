@@ -71,7 +71,8 @@ _SPECS_BENEFITS = re.compile(
     re.I,
 )
 _NO_META_TEXT_ON_IMAGE = (
-    "Sin texto, tipografía, subtítulos, marcas de agua ni etiquetas en la imagen."
+    "CRITICAL: scene only — zero letters, words, titles, captions, watermarks, "
+    "or typography of any kind. Do not write the brief onto the image."
 )
 
 
@@ -185,9 +186,15 @@ def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
     ctx_raw = strip_image_prompt_meta(context or "")
     topic = _resolve_vague_subject(topic, ctx_raw)
     merged = topic
-    # Brief ya orquestado (TEXTOS EXACTOS / tipografía): no reinyectar historial —
-    # «características» + chat largo hinchaba el prompt y disparaba timeouts.
-    already_orchestrated = "TEXTOS EXACTOS" in topic or "Ortografía española" in topic
+    # Brief ya orquestado (tipografía O escena sin texto): no reinyectar historial.
+    already_orchestrated = (
+        "TEXTOS EXACTOS" in topic
+        or "Ortografía española" in topic
+        or "CRITICAL: photorealistic" in topic
+        or "CRITICAL: scene only" in topic
+        or "Photorealistic scene depicting:" in topic
+        or bool(re.search(r"(?i)\bsin\s+texto\b", topic))
+    )
     if (
         ctx_raw
         and not already_orchestrated
@@ -372,7 +379,7 @@ def generate_image_gemini(
         return {"ok": False, "error": "GOOGLE_API_KEY no configurada", "code": "config_error"}
     # No contradecir TEXTOS EXACTOS con «Sin texto…» (fuga / tipografía pedida).
     wants_overlay = "TEXTOS EXACTOS" in topic or "Ortografía española" in topic
-    if not wants_overlay and _NO_META_TEXT_ON_IMAGE[:40] not in topic:
+    if not wants_overlay and _NO_META_TEXT_ON_IMAGE[:24] not in topic:
         topic = f"{topic} {_NO_META_TEXT_ON_IMAGE}"
 
     use_fast = bool(fast or wants_overlay)
@@ -395,7 +402,8 @@ def generate_image_gemini(
         models = models[:1]
     else:
         visual_core = re.split(
-            r"(?:Ortografía española|TEXTOS EXACTOS|Minimiza texto|No dibujes texto)",
+            r"(?:Ortografía española|TEXTOS EXACTOS|Minimiza texto|No dibujes texto|"
+            r"CRITICAL:|Photorealistic scene|Sin texto)",
             topic,
             maxsplit=1,
         )[0].strip(" .")
@@ -406,10 +414,15 @@ def generate_image_gemini(
     # `context` se ignora aquí a propósito: prepare_image_prompt ya incorporó hechos limpios.
     _ = context
 
+    # Escena sin tipografía: solo IMAGE. TEXT+IMAGE a veces «ayuda» escribiendo el brief
+    # como caption dentro de los píxeles.
+    modality_attempts: tuple[list[str], ...] = (
+        (["IMAGE"], ["TEXT", "IMAGE"]) if wants_overlay else (["IMAGE"],)
+    )
+
     for model in models:
         for attempt, variant in enumerate(prompt_variants):
-            # IMAGE-only evita respuestas de solo texto (alucinación de prompt).
-            for modalities in (["IMAGE"], ["TEXT", "IMAGE"]):
+            for modalities in modality_attempts:
                 try:
                     response = client.models.generate_content(
                         model=model,
@@ -811,8 +824,13 @@ def generate_image(
                 "code": "needs_recharge",
             }
 
-    # Tras Ideogram (o brief con tipografía), path corto: no quemar el deadline SSE.
-    gemini_fast = bool(prefer_ideogram) or "TEXTOS EXACTOS" in topic
+    # Tras Ideogram (o brief tipografía/escena orquestada), path corto.
+    gemini_fast = (
+        bool(prefer_ideogram)
+        or "TEXTOS EXACTOS" in topic
+        or "CRITICAL:" in topic
+        or "Photorealistic scene" in topic
+    )
     gemini_result = generate_image_gemini(
         prompt=topic,
         quality=picked,

@@ -66,18 +66,35 @@ _SKIP_LINE_TITLES = frozenset(
     },
 )
 _IMAGE_TEXT_HINT = re.compile(
-    r"\b("
-    r"texto|escrito|frase|t[ií]tulo|caption|flyer|banner|letras|nombre|"
+    r"(?i)\b(?:"
+    # Señales POSITIVAS de tipografía pedida (nunca «sin texto»).
+    r"con\s+texto|texto\s+(?:que\s+diga|visible|legible|escrito)|"
+    r"que\s+diga|que\s+ponga|escrito\s+en\s+la\s+imagen|"
+    r"t[ií]tulo|caption|flyer|banner|letras|nombre\s+del\s+producto|"
     r"quote|cita|eslogan|headline|subtitulo|subt[ií]tulo|"
     r"beneficios|veneficios|ventajas|puntos?\s+clave|especificaciones|caracter[ií]sticas|"
     r"agenda|horarios?|m[oó]dulos?|programa|invitaci[oó]n|promoci[oó]n|"
-    r"publicidad|anuncio|post|vender|vendiendo|evento|curso|taller|servicio"
-    r")\b",
-    re.I,
+    r"publicidad|anuncio|post\s+para|vender|vendiendo|evento|curso|taller|servicio"
+    r")\b"
+)
+_SCENE_FORBIDS_TEXT = re.compile(
+    r"(?i)\b(?:"
+    r"sin\s+texto|"
+    r"no\s+(?:dibujes|renderices|incluyas|pongas)\s+texto|"
+    r"without\s+text|no\s+text(?:\s|,|\.|$)|"
+    r"no\s+letters|no\s+typography|"
+    r"ninguna\s+letra|ninguna\s+palabra|ni\s+tipograf"
+    r")\b"
 )
 _ORTHOGRAPHY_RULE = (
     "Ortografía española impecable en todo texto visible. "
     "Sin anglicismos innecesarios ni palabras inventadas."
+)
+_HARD_NO_TEXT_RULE = (
+    "CRITICAL: photorealistic or illustrated SCENE ONLY. "
+    "Zero letters, words, titles, captions, subtitles, watermarks, logos as text, "
+    "UI labels, or typography of any kind. Do NOT write the brief or the user's "
+    "request onto the image."
 )
 
 
@@ -372,12 +389,23 @@ def extract_spoken_overlay_labels(text: str, *, max_lines: int = 6) -> list[str]
 
 
 def image_prompt_needs_verbatim_text(prompt: str, context: str = "") -> bool:
-    blob = f"{prompt} {context}"
-    if _IMAGE_TEXT_HINT.search(blob):
+    """True solo si el usuario pidió tipografía visible — nunca por «Sin texto…»."""
+    prompt_s = (prompt or "").strip()
+    ctx_s = (context or "").strip()
+    blob = f"{prompt_s} {ctx_s}"
+    if "TEXTOS EXACTOS" in blob:
+        return True
+    # Brief de escena pura: la palabra «texto» en «Sin texto» NO debe activar tipografía.
+    if _SCENE_FORBIDS_TEXT.search(prompt_s) and "TEXTOS EXACTOS" not in prompt_s:
+        if not extract_quoted_phrases(prompt_s) and not prompt_requires_ideogram_text(prompt_s):
+            return False
+    if extract_quoted_phrases(blob):
+        return True
+    if prompt_requires_ideogram_text(prompt_s):
         return True
     if _TITLE_DESC_LINE.search(blob):
         return True
-    if extract_quoted_phrases(blob):
+    if _IMAGE_TEXT_HINT.search(blob):
         return True
     return False
 
@@ -558,26 +586,28 @@ def user_requests_ced_branding(text: str) -> bool:
 
 
 def _faithful_visual_expansion(visual: str, *, has_reference: bool = False) -> str:
-    """Expande el sujeto del usuario sin inyectar marca CED ni estilo de producto."""
+    """Expande el sujeto del usuario como escena — sin tipografía ni marca CED."""
     subject = (visual or "").strip(" ,.;")
     if has_reference:
         if subject:
             return (
-                f"{subject}. Conserva el estilo y la composición de la imagen de referencia; "
-                "alta calidad, iluminación coherente, resultado profesional."
+                f"Photographic edit of the reference image: {subject}. "
+                "Keep style and composition; high quality, coherent lighting. "
+                f"{_HARD_NO_TEXT_RULE}"
             )
         return (
-            "Variación fiel de la imagen de referencia según el pedido del usuario; "
-            "alta calidad, sin cambiar el tema a otra marca o producto."
+            "Faithful variation of the reference image per the user request; "
+            f"high quality, do not change the subject to another brand. {_HARD_NO_TEXT_RULE}"
         )
     if subject:
         return (
-            f"{subject}. Alta calidad, composición clara, buena iluminación, "
-            "detalle nítido, resultado profesional fiel al sujeto pedido."
+            f"Photorealistic scene depicting: {subject}. "
+            "Clear composition, natural lighting, sharp detail, professional result "
+            f"faithful to that subject only. {_HARD_NO_TEXT_RULE}"
         )
     return (
-        "Imagen de alta calidad fiel al pedido del usuario, composición clara, "
-        "buena iluminación, sin añadir marcas, logos ni temas ajenos."
+        "High-quality image faithful to the user's requested subject, clear composition, "
+        f"good lighting, no unrelated brands or themes. {_HARD_NO_TEXT_RULE}"
     )
 
 
@@ -678,15 +708,16 @@ def orchestrate_image_generation_brief(
             "PROHIBIDO pintar el pedido del usuario, saludos del chat o listas de capacidades."
         )
     else:
-        # Escena pura (modo avanzado + chat): nunca pintar el prompt ni saludos.
+        # Escena pura: anti-texto duro (EN+ES). Nunca mencionar el pedido como caption.
+        parts.append(_HARD_NO_TEXT_RULE)
         parts.append(
             "Sin texto, tipografía, subtítulos, marcas de agua, etiquetas, "
             "viñetas ni frases del pedido del usuario en la imagen."
         )
         if logo_only:
             parts.append(
-                "Si se pide logo de marca, intégralo como marca gráfica pequeña; "
-                "no escribas el pedido ni listas de capacidades."
+                "If a brand logo is requested, integrate it as a small graphic mark only; "
+                "do not write the user request or capability lists."
             )
 
     return {
@@ -801,15 +832,29 @@ def augment_image_prompt(prompt: str, context: str = "") -> str:
     if not base:
         return base
     ctx = strip_prompt_meta_for_image(context or "")
+
+    # Escena ya marcada «sin texto» / orquestada: NUNCA añadir TEXTOS EXACTOS ni
+    # usar el brief como titular (bug: pintaba «un hombre recostado…» en la foto).
+    if "TEXTOS EXACTOS" not in base and (
+        _SCENE_FORBIDS_TEXT.search(base) or _HARD_NO_TEXT_RULE[:40] in base
+    ):
+        if not prompt_requires_ideogram_text(base) and not extract_quoted_phrases(base):
+            if _HARD_NO_TEXT_RULE[:40] not in base:
+                return f"{base.rstrip('. ')}. {_HARD_NO_TEXT_RULE}"
+            return base
+
     if "TEXTOS EXACTOS" in base:
         if _ORTHOGRAPHY_RULE.split(".")[0] not in base:
             return f"{base} {_ORTHOGRAPHY_RULE} {_CREATIVE_NO_LEAK}"
-        if "PROHIBIDO escribir" not in base:
+        if "PROHIBIDO escribir" not in base and "PROHIBIDO renderizar" not in base:
             return f"{base} {_CREATIVE_NO_LEAK}"
         return base
 
     overlay = collect_image_overlay_lines(base, ctx)
-    headline = build_image_headline(ctx, overlay[0] if overlay else base[:60])
+    # Solo titular desde overlays reales — NUNCA base[:60] (era el prompt pintado).
+    headline = ""
+    if overlay:
+        headline = build_image_headline(ctx, overlay[0])
 
     if overlay or image_prompt_needs_verbatim_text(base, ctx):
         verbatim = format_verbatim_image_copy(overlay, headline=headline or None)
@@ -828,12 +873,8 @@ def augment_image_prompt(prompt: str, context: str = "") -> str:
             "No escribas en la imagen el pedido del usuario ni frases meta."
         )
 
-    # Escena pura: NO mencionar «instrucciones/usuario/pedido» (el modelo las pinta).
-    # NO hablar de «texto visible» si no pedimos tipografía.
-    return (
-        f"{base}. "
-        "Sin texto, tipografía, subtítulos, marcas de agua ni etiquetas en la imagen."
-    )
+    # Escena pura: anti-texto duro; no mencionar «pedido/usuario» (el modelo lo pinta).
+    return f"{base.rstrip('. ')}. {_HARD_NO_TEXT_RULE}"
 
 IMAGE_EMBEDDED_TEXT_DISCLAIMER = (
     "Señor, aviso: el texto dentro de imágenes generadas por IA (modelo actual: "

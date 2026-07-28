@@ -309,11 +309,8 @@ def run_chat_image_generation(
 
     img_result: dict[str, Any]
 
-    # Brief orquestado ya trae escena + TEXTOS EXACTOS: no reinyectar historial
-    # (provoca prompts enormes, Ideogram lento y timeout del stream).
-    orchestrated_ready = bool(tech) and (
-        "TEXTOS EXACTOS" in model_prompt or bool(overlay_lines) or bool(creation)
-    )
+    # Brief orquestado (con o sin tipografía): no reinyectar historial.
+    orchestrated_ready = bool(tech)
     history_ctx = "" if orchestrated_ready else (
         enriched_context or _recent_chat_context(history or [])
     )
