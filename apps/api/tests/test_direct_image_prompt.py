@@ -70,3 +70,14 @@ def test_prepare_image_prompt_no_longer_merges_chat_history():
     assert "fitline" not in low
     assert "robot" not in low
     assert "textos exactos" not in low
+
+
+def test_chat_image_generation_wires_direct_adapter():
+    """Chat/avanzado/voz: run_chat_image_generation usa build_direct_image_prompt."""
+    import inspect
+
+    from app.services import chat_image_generation as cig
+
+    src = inspect.getsource(cig.run_chat_image_generation)
+    assert "build_direct_image_prompt" in src
+    assert 'context=""' in src or "context=\"\"" in src

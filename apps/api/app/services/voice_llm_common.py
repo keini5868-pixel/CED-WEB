@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_OVERLAY
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
 from app.services.deliverable_replies import VOICE_DELIVERABLE_OVERLAY, is_deliverable_request, is_strategy_consultation_topic
@@ -341,8 +343,12 @@ def truncate_messages(messages: list[dict], *, max_turns: int = MAX_HISTORY_TURN
     return messages[-max_turns:]
 
 
+def normalize_voice_delivery_text(text: str) -> str:
+    return " ".join((text or "").split()).strip()
+
+
 def dedupe_voice_reply(text: str) -> str:
-    """Elimina bloques idénticos consecutivos en respuestas de voz."""
+    """Elimina bloques/frases idénticos consecutivos en respuestas de voz."""
     cleaned = (text or "").strip()
     if not cleaned:
         return cleaned
@@ -353,11 +359,33 @@ def dedupe_voice_reply(text: str) -> str:
             if part != deduped[-1]:
                 deduped.append(part)
         cleaned = "\n\n".join(deduped)
+
+    # "mi nombre es CED, mi nombre es CED, mi nombre es CED"
+    comma_parts = [p.strip() for p in re.split(r"\s*,\s*", cleaned) if p.strip()]
+    if len(comma_parts) >= 2:
+        collapsed: list[str] = [comma_parts[0]]
+        for part in comma_parts[1:]:
+            prev_n = collapsed[-1].lower().rstrip(".!?;:")
+            part_n = part.lower().rstrip(".!?;:")
+            if part_n != prev_n:
+                collapsed.append(part)
+        if len(collapsed) < len(comma_parts):
+            cleaned = ", ".join(collapsed)
+
+    # Frase corta repetida sin coma: "mi nombre es CED mi nombre es CED"
+    m = re.match(
+        r"^(?P<a>.{8,120}?)\s+(?P=a)(?:\s+(?P=a))*[.!?]*$",
+        cleaned,
+        flags=re.I | re.DOTALL,
+    )
+    if m:
+        cleaned = m.group("a").strip()
+
     half = len(cleaned) // 2
-    if half > 120:
-        first = cleaned[:half].strip()
-        second = cleaned[half:].strip()
-        if first == second:
+    if half > 15:
+        first = cleaned[:half].strip().rstrip(",.;:")
+        second = cleaned[half:].strip().lstrip(",.;: ").strip()
+        if first and first.lower() == second.lower():
             return first
     return cleaned
 
@@ -367,14 +395,32 @@ def voice_repeats_last_assistant(new_text: str, history: list[dict]) -> bool:
     candidate = (new_text or "").strip()
     if not candidate:
         return False
+    cand_n = re.sub(
+        r"[^\w\s]",
+        "",
+        normalize_voice_delivery_text(candidate).lower(),
+        flags=re.UNICODE,
+    ).strip()
     for msg in reversed(history):
         if msg.get("role") != "assistant":
             continue
         prev = str(msg.get("content") or "").strip()
-        if not prev or len(prev) < 80:
+        if not prev:
             return False
-        if candidate == prev:
+        prev_n = re.sub(
+            r"[^\w\s]",
+            "",
+            normalize_voice_delivery_text(prev).lower(),
+            flags=re.UNICODE,
+        ).strip()
+        if cand_n == prev_n:
             return True
+        # Frases cortas de identidad / eco: antes se ignoraban si len < 80.
+        if len(cand_n) >= 10 and len(prev_n) >= 10:
+            if cand_n in prev_n or prev_n in cand_n:
+                return True
+        if len(prev) < 80 and len(candidate) < 80:
+            return False
         if len(candidate) > 100 and candidate in prev:
             return True
         if len(prev) > 100 and prev in candidate:
@@ -383,8 +429,28 @@ def voice_repeats_last_assistant(new_text: str, history: list[dict]) -> bool:
     return False
 
 
-def normalize_voice_delivery_text(text: str) -> str:
-    return " ".join((text or "").split()).strip()
+def is_stt_echo_of_assistant(user_text: str, last_spoken: str) -> bool:
+    """True si el STT parece eco del último audio del asistente (bucle de identidad)."""
+    user = normalize_voice_delivery_text(user_text).lower()
+    spoken = normalize_voice_delivery_text(last_spoken).lower()
+    if not user or not spoken:
+        return False
+    user_n = re.sub(r"[^\w\s]", "", user, flags=re.UNICODE).strip()
+    spoken_n = re.sub(r"[^\w\s]", "", spoken, flags=re.UNICODE).strip()
+    if not user_n or not spoken_n:
+        return False
+    if user_n == spoken_n:
+        return True
+    if len(user_n) >= 12 and (user_n in spoken_n or spoken_n in user_n):
+        return True
+    # Overlap alto en frases cortas ("mi nombre es ced" vs "correcto señor mi nombre es ced")
+    u_tokens = [t for t in user_n.split() if len(t) > 2]
+    s_tokens = set(t for t in spoken_n.split() if len(t) > 2)
+    if len(u_tokens) >= 3 and len(s_tokens) >= 3:
+        overlap = sum(1 for t in u_tokens if t in s_tokens)
+        if overlap / len(u_tokens) >= 0.85 and len(user_n) <= len(spoken_n) + 12:
+            return True
+    return False
 
 
 def is_duplicate_voice_delivery(previous: str, candidate: str, *, prefix_len: int = 55) -> bool:
@@ -402,4 +468,10 @@ def is_duplicate_voice_delivery(previous: str, candidate: str, *, prefix_len: in
         return True
     if len(cand) > 80 and len(prev) > 80 and prev[:80] == cand[:80]:
         return True
+    # Frases cortas de identidad: "Mi nombre es CED." vs "Mi nombre es CED"
+    if len(cand) < 80 and len(prev) < 80:
+        prev_n = re.sub(r"[^\w\s]", "", prev, flags=re.UNICODE).strip()
+        cand_n = re.sub(r"[^\w\s]", "", cand, flags=re.UNICODE).strip()
+        if prev_n and cand_n and (prev_n == cand_n or prev_n in cand_n or cand_n in prev_n):
+            return True
     return False

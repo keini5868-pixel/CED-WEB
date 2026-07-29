@@ -36,6 +36,11 @@ def test_dedupe_voice_reply_removes_duplicate_halves():
     assert dedupe_voice_reply(text) == "Bloque A."
 
 
+def test_dedupe_voice_reply_collapses_identity_stutter():
+    stutter = "mi nombre es CED, mi nombre es CED, mi nombre es CED"
+    assert dedupe_voice_reply(stutter).lower().count("mi nombre es ced") == 1
+
+
 def test_voice_repeats_last_assistant():
     repeated = (
         "Para crear un prompt completo para Dooble Studio necesito confirmar algunos detalles: "
@@ -43,3 +48,9 @@ def test_voice_repeats_last_assistant():
     )
     history = [{"role": "assistant", "content": repeated}]
     assert voice_repeats_last_assistant(repeated, history)
+
+
+def test_voice_repeats_short_identity_line():
+    history = [{"role": "assistant", "content": "Mi nombre es CED."}]
+    assert voice_repeats_last_assistant("Mi nombre es CED.", history)
+    assert voice_repeats_last_assistant("Correcto, mi nombre es CED", history)

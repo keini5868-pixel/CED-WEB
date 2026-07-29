@@ -31,6 +31,7 @@ from app.services.voice_llm_common import (
     delivery_text,
     log_voice_delivery,
     needs_empathy_reformulation,
+    normalize_voice_delivery_text,
     prompt_sha_prefix,
     transcript_to_openai_messages,
     truncate_messages,
@@ -509,6 +510,15 @@ class OpenAIVoiceLlm:
                     "_user_request": last_user
                     or str(args.get("titulo") or args.get("title") or "").strip(),
                 }
+            if name in ("generate_image", "generate_image_with_reference"):
+                # No dejar que el modelo reformule el pedido visual: el adaptador
+                # mínimo necesita el utterance del usuario (misma lógica que chat).
+                last_user = user_text.strip() or (user_texts[-1] if user_texts else "")
+                args = {
+                    **args,
+                    "_user_request": last_user
+                    or str(args.get("prompt") or "").strip(),
+                }
             call_id = str(tc.get("id") or "")
             logger.info(
                 "[RETELL-OPENAI] tool=%s args=%s user=%s",
@@ -709,8 +719,17 @@ class OpenAIVoiceLlm:
                         str((tc.get("function") or {}).get("name") or "") for tc in tool_calls
                     ]
                     only_pdf = all(n == "generar_pdf" for n in tool_names)
-                    if only_pdf:
-                        logger.info("[RETELL-OPENAI] generar_pdf direct spoken")
+                    only_image = bool(tool_names) and all(
+                        n in ("generate_image", "generate_image_with_reference")
+                        for n in tool_names
+                    )
+                    # PDF/imagen: usar spoken del tool. El follow-up LLM suele
+                    # inventar ofertas de publicar / captions no pedidas.
+                    if only_pdf or only_image:
+                        logger.info(
+                            "[RETELL-OPENAI] %s direct spoken (skip follow-up)",
+                            "image" if only_image else "generar_pdf",
+                        )
                         break
 
                     follow_data = await self._chat_completion(
@@ -781,18 +800,22 @@ class OpenAIVoiceLlm:
                         "[RETELL-OPENAI] duplicate assistant reply — regenerating user=%s",
                         (self.user_id or "?")[:8],
                     )
-                    regen = await self.generate_natural_reply(
-                        messages=working_messages,
-                        user_text=user_text,
-                        overlay=(
-                            "NO repitas tu mensaje anterior. Responde de forma nueva y útil. "
-                            "Si pidió un prompt para una herramienta de IA, entrégalo completo ya."
-                        ),
-                        path="duplicate_reply_regen",
-                        max_tokens=max_tokens,
-                    )
-                    if regen:
-                        final_text = regen
+                    # Frases cortas de identidad: regenerar suele repetir "Mi nombre es CED".
+                    if len(normalize_voice_delivery_text(final_text)) < 80:
+                        final_text = "Correcto, señor."
+                    else:
+                        regen = await self.generate_natural_reply(
+                            messages=working_messages,
+                            user_text=user_text,
+                            overlay=(
+                                "NO repitas tu mensaje anterior. Responde de forma nueva y útil. "
+                                "Si pidió un prompt para una herramienta de IA, entrégalo completo ya."
+                            ),
+                            path="duplicate_reply_regen",
+                            max_tokens=max_tokens,
+                        )
+                        if regen:
+                            final_text = regen
                 break
         except asyncio.TimeoutError:
             delay = await self.generate_natural_reply(

@@ -52,6 +52,7 @@ from app.services.voice_llm_common import (
     FALLBACK_REPLY,
     WEB_SEARCH_VOICE_FALLBACK,
     is_duplicate_voice_delivery,
+    is_stt_echo_of_assistant,
     normalize_voice_delivery_text,
 )
 from app.services.ced_orchestrator import (
@@ -65,7 +66,8 @@ from app.services.voice_tool_executor import (
     SEARCH_WEB_TIMEOUT_SEC,
     execute_voice_tool,
 )
-from app.services.voice_tool_async import execute_deferred_tool_batch
+from app.services.voice_tool_async import IMAGE_TOOL_TIMEOUT_SEC, execute_deferred_tool_batch
+from app.services.chat_intents import is_generate_image_intent, is_pdf_intent
 from app.services.voice_spoken import (
     chunk_ends_with_punctuation,
     compose_voice_tool_delivery,
@@ -732,6 +734,19 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
             await ack_empty_response(response_id=response_id, reason="duplicate_user_key")
             return
+        # Eco STT del propio TTS (ej. "mi nombre es CED" tras decirlo) → bucle.
+        if (
+            last_delivered_voice_content
+            and not pending_web
+            and is_stt_echo_of_assistant(user_text, last_delivered_voice_content)
+        ):
+            logger.info(
+                "[RETELL-GEMINI] skip stt echo of assistant call=%s user=%s",
+                call_id,
+                user_text[:80],
+            )
+            await ack_empty_response(response_id=response_id, reason="stt_echo_self")
+            return
         if (
             pending_web
             and user_key
@@ -1159,6 +1174,56 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 return
 
             from app.services.system_clock import try_instant_datetime_reply
+
+            # Fast-path imagen: utterance crudo → adaptador mínimo (misma pipeline que chat).
+            # Evita que el LLM de voz reformule/mezcle el pedido antes de Nano Banana.
+            if (
+                uid
+                and is_generate_image_intent(user_text)
+                and not is_pdf_intent(user_text)
+            ):
+                await fire_latency_filler("module", module="image_gen")
+                try:
+                    tool_result = await asyncio.wait_for(
+                        execute_voice_tool(
+                            "generate_image",
+                            uid,
+                            {
+                                "prompt": user_text,
+                                "_user_request": user_text,
+                                "call_id": call_id,
+                            },
+                        ),
+                        timeout=IMAGE_TOOL_TIMEOUT_SEC + 5.0,
+                    )
+                    spoken = str(tool_result.get("spoken") or "").strip()
+                    if spoken and await deliver_voice(spoken):
+                        logger.info(
+                            "[RETELL-GEMINI] fast-path generate_image call=%s text=%s",
+                            call_id,
+                            user_text[:80],
+                        )
+                        return
+                    if spoken:
+                        await anti_silence_if_unanswered(reason="image_fast_path_undelivered")
+                        return
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[RETELL-GEMINI] fast-path generate_image timeout call=%s",
+                        call_id,
+                    )
+                    if await deliver_voice(
+                        "La generación de imagen tardó demasiado, señor. "
+                        "¿Desea que lo intente de nuevo?"
+                    ):
+                        return
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "[RETELL-GEMINI] fast-path generate_image failed call=%s",
+                        call_id,
+                    )
+                await anti_silence_if_unanswered(reason="image_fast_path_failed")
+                return
 
             conversational_turn = is_casual_voice_turn(user_text, transcript)
 

@@ -55,6 +55,64 @@ def test_voice_generate_image_uses_shared_pipeline_and_pushes_event():
     assert pushed[0]["image_url"] == "https://cdn.example.com/cafe.png"
 
 
+def test_voice_generate_image_prefers_raw_user_request_over_llm_rewrite():
+    """Voz: el utterance crudo gana al prompt reformulado por el LLM conversacional."""
+    raw = (
+        "generame una imagen de un mapa holográfico digital donde pongas "
+        "sistema avanzado análisis profundo EN TEXTO"
+    )
+    rewritten = (
+        "Crea una infografía premium del sistema CED con robot corriendo "
+        "y tipografía corporativa moderna"
+    )
+
+    with (
+        patch(
+            "app.services.chat_image_generation.run_chat_image_generation",
+            return_value={
+                "ok": True,
+                "url": "https://cdn.example.com/map.png",
+                "caption": "Mapa",
+                "reply": "Listo",
+            },
+        ) as mock_gen,
+        patch("app.services.voice_tool_executor.voice_access_state", return_value={"plan_id": "elite"}),
+        patch("app.services.voice_tool_executor.vcs.push_tool_event"),
+    ):
+        result = asyncio.run(
+            execute_voice_tool(
+                "generate_image",
+                "user-voice-img-raw",
+                {
+                    "prompt": rewritten,
+                    "_user_request": raw,
+                    "call_id": "call-raw",
+                },
+            )
+        )
+
+    assert result["ok"] is True
+    assert mock_gen.call_args.args[2] == raw
+    assert "sistema CED" not in mock_gen.call_args.args[2]
+    assert "robot" not in mock_gen.call_args.args[2]
+
+
+def test_three_modes_share_run_chat_image_generation_entry():
+    """Chat, avanzado y voz convergén en la misma pipeline de imagen."""
+    import inspect
+
+    from app.services import chat_image_generation as cig
+    from app.services.advanced_mode import service as adv
+    from app.services import voice_tool_executor as vte
+
+    assert callable(cig.run_chat_image_generation)
+    src_adv = adv._try_direct_image.__code__.co_names
+    assert "run_chat_image_generation" in src_adv
+    src = inspect.getsource(vte._execute_voice_tool_body)
+    assert "run_chat_image_generation" in src
+    assert "_user_request" in src
+
+
 def test_voice_generate_image_no_event_on_failure():
     pushed: list[dict] = []
 

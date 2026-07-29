@@ -30,13 +30,22 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "generate_image",
         "description": (
             "OBLIGATORIO para crear imágenes con IA desde cero. "
+            "Pasa en `prompt` las palabras EXACTAS del usuario (su pedido visual), "
+            "sin reformular, sin resumir y sin mezclar turnos anteriores. "
             "Flujo: 'Un momento, Señor.' → EJECUTA tool → 'Imagen generada, Señor.' "
             "PROHIBIDO decir 'voy a generar' sin invocar. Tras generar: confirmación formal con Señor/Señora."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "prompt": {"type": "string", "description": "Descripción detallada de la imagen."},
+                "prompt": {
+                    "type": "string",
+                    "description": (
+                        "Pedido visual del usuario TAL CUAL lo dijo "
+                        "(ej. 'generame un mapa holográfico con X EN TEXTO'). "
+                        "No lo reescribas ni agregues branding no pedido."
+                    ),
+                },
                 "quality": {"type": "string", "enum": ["auto", "standard", "hd"]},
             },
             "required": ["prompt"],

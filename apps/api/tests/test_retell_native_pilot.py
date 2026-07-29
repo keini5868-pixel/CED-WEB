@@ -312,9 +312,42 @@ def test_execute_generate_image_delegates_to_voice_executor():
             mock_exec.assert_awaited_once()
             assert mock_exec.await_args.args[0] == "generate_image"
             assert mock_exec.await_args.args[2]["prompt"] == "un café al atardecer"
+            assert mock_exec.await_args.args[2]["_user_request"] == "un café al atardecer"
             assert out["ok"] is True
             assert "pantalla" in out["result"].lower()
             return out
+
+    asyncio.run(run())
+
+
+def test_execute_generate_image_prefers_transcript_utterance_as_user_request():
+    """Native Retell: utterance del transcript como _user_request (no solo prompt LLM)."""
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_generate_image_tool
+
+    raw = "generame una imagen de un águila sobre el mar"
+    rewritten = "Infografía CED con branding corporativo y tipografía"
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={"ok": True, "spoken": "Imagen generada, señor.", "url": "https://x/y.png"},
+        ) as mock_exec:
+            await execute_generate_image_tool(
+                user_id="u-img-2",
+                payload={
+                    "call": {
+                        "call_id": "c2",
+                        "transcript_object": [{"role": "user", "content": raw}],
+                    },
+                },
+                args={"prompt": rewritten},
+            )
+            passed = mock_exec.await_args.args[2]
+            assert passed["prompt"] == raw
+            assert passed["_user_request"] == raw
 
     asyncio.run(run())
 

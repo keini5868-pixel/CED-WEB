@@ -680,8 +680,21 @@ async def _execute_voice_tool_body(
 
         if name == "generate_image":
             from app.services.chat_image_generation import run_chat_image_generation
+            from app.services.chat_intents import is_generate_image_intent
 
-            prompt = str(params.get("prompt") or "").strip()
+            # Preferir la frase original del usuario (voz LLM a menudo reformula
+            # `prompt` y mezcla historial). El adaptador mínimo trabaja sobre el NL crudo.
+            raw_user = str(
+                params.get("_user_request")
+                or params.get("user_text")
+                or params.get("utterance")
+                or ""
+            ).strip()
+            llm_prompt = str(params.get("prompt") or "").strip()
+            if raw_user and is_generate_image_intent(raw_user):
+                prompt = raw_user
+            else:
+                prompt = llm_prompt or raw_user
             if not prompt:
                 return _spoken_err(
                     "Indique qué imagen desea generar, señor.",
@@ -694,8 +707,13 @@ async def _execute_voice_tool_body(
                 or params.get("call_id")
                 or ""
             ).strip() or None
-            logger.info("[VOICE:IMAGE] start user=%s prompt=%s", user_id[:8], prompt[:80])
-            # Misma pipeline que chat; voz v1 sin referencia visual.
+            logger.info(
+                "[VOICE:IMAGE] start user=%s prompt=%s raw=%s",
+                user_id[:8],
+                prompt[:80],
+                bool(raw_user and prompt == raw_user),
+            )
+            # Misma pipeline que chat/avanzado (build_direct_image_prompt).
             result = await asyncio.to_thread(
                 run_chat_image_generation,
                 user_id,

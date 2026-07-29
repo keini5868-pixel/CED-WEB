@@ -2259,7 +2259,11 @@ async def execute_close_youtube_player_tool(*, user_id: str, payload: dict[str, 
 
 
 async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    prompt = str(args.get("prompt") or "").strip() or resolve_tool_query(payload, args)
+    query = resolve_tool_query(payload, args)
+    # Preferir utterance crudo del payload cuando el modelo reformula `prompt`.
+    prompt = query.strip() if query else str(args.get("prompt") or "").strip()
+    if not prompt:
+        prompt = str(args.get("prompt") or "").strip()
     quality = str(args.get("quality") or "auto").strip() or "auto"
     call_id = _extract_call_id(payload)
     return await _execute_native_voice_alias_tool(
@@ -2267,7 +2271,12 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
         voice_tool_name="generate_image",
         user_id=user_id,
         payload=payload,
-        args={"prompt": prompt, "quality": quality, "call_id": call_id},
+        args={
+            "prompt": prompt,
+            "quality": quality,
+            "call_id": call_id,
+            "_user_request": query or prompt,
+        },
     )
 
 

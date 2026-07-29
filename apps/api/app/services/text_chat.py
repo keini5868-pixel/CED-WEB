@@ -411,7 +411,10 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
 - Palabras clave de generación: "genera una imagen", "créame un diseño", "hazme un logo", "necesito una imagen", "diseña un creativo", "imagen de…", "crea una foto".
 - Si el pedido de imagen es vago, pide MÁS DETALLES UNA VEZ (estilo, uso). Si es claro, genera directamente.
-- Tras generar una imagen, preséntala y pregunta si quiere ajustes.
+- Tras generar una imagen, preséntala (y opcionalmente pregunta si quiere ajustes visuales).
+- PROHIBIDO ofrecer publicar en Instagram/Facebook, proponer copy/caption o sugerir redes
+  de forma proactiva tras generar una imagen. Solo si el usuario lo pide explícitamente
+  («publica esto», «hazme una propuesta para postear», «quiero subirla a Instagram»).
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
 {CHAT_DELIVERABLE_RULES}
@@ -503,7 +506,9 @@ Si el usuario insiste en que aparezca texto largo en la imagen, ofrécele altern
 
 PROHIBIDO (chatbot genérico): no digas "sin internet en tiempo real" ni "no puedo conectar tus cuentas" — CED tiene búsqueda, Meta OAuth y tools. No recomiendes Buffer/Hootsuite como única opción si ya tiene redes conectadas.
 
-Cuando prepares contenido para redes, entrégalo listo y ofrece publicarlo con CED si aplica."""
+Cuando el usuario pida EXPLÍCITAMENTE contenido para redes o publicar, entrégalo listo
+y ofrece publicarlo con CED. NUNCA propongas publicar ni generes copy de redes por iniciativa
+propia solo porque acabas de generar o analizar una imagen."""
 
 # Versión reducida de CHAT_SYSTEM_BASE para el pipeline de streaming casual
 # (Llama + su fallback Claude/Gemini en iter_unified_llm_stream). Esa ruta
@@ -2600,8 +2605,9 @@ def send_message(
             }:
                 analyze_prompt = (
                     "Describe brevemente qué se ve en esta imagen. "
-                    "Si el usuario no pidió nada más, pregunta si desea "
-                    "analizarla con más detalle, editarla/variarla, o publicarla."
+                    "Si el usuario no pidió nada más, pregunta solo si desea "
+                    "analizarla con más detalle o editarla/variarla. "
+                    "NO ofrezcas publicarla en redes."
                 )
             reply = analyze_chat_image(
                 user_id,
