@@ -404,17 +404,23 @@ IMPORTANTE — prompts para otras herramientas de IA:
 - Si pidió el prompt, entrégalo de inmediato — no sustituyas por una descripción de lo que incluiría.
 
 IMPORTANTE — capacidades REALES de esta plataforma:
+- Si el usuario pide «qué puedes hacer» / lista de habilidades: usa SOLO el catálogo factual
+  de capacidades CED (regla de sistema inyectada). PROHIBIDO inventar módulos inexistentes.
 - CED puede publicar en Facebook e Instagram cuando el usuario conectó Meta (dashboard → Conectar Redes).
 - Usa las herramientas publicar_facebook / publicar_instagram cuando el usuario pida publicar y confirme el texto.
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
 - Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
 - Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
+- También puedes variar/editar a partir de una imagen de referencia cuando lo pidan.
 - Palabras clave de generación: "genera una imagen", "créame un diseño", "hazme un logo", "necesito una imagen", "diseña un creativo", "imagen de…", "crea una foto".
 - Si el pedido de imagen es vago, pide MÁS DETALLES UNA VEZ (estilo, uso). Si es claro, genera directamente.
 - Tras generar una imagen, preséntala (y opcionalmente pregunta si quiere ajustes visuales).
 - PROHIBIDO ofrecer publicar en Instagram/Facebook, proponer copy/caption o sugerir redes
   de forma proactiva tras generar una imagen. Solo si el usuario lo pide explícitamente
   («publica esto», «hazme una propuesta para postear», «quiero subirla a Instagram»).
+- Finanzas personales, clima/ambiente, recordatorios HUD, modo avanzado, guiones/copy y mentor de ventas
+  también son capacidades reales — actívalas solo cuando el usuario las pida.
+- Cámara, mapa/navegación y YouTube viven principalmente en el asistente de voz / HUD.
 - NUNCA escribas URLs /v1/pdf/download en tu respuesta. Di que el PDF está listo; la app muestra el botón Descargar automáticamente.
 
 {CHAT_DELIVERABLE_RULES}
@@ -492,17 +498,12 @@ Cuando necesites usar generate_image, generar_pdf, o cualquier otra herramienta:
 5. NUNCA finjas que ejecutaste una acción que no ocurrió.
 6. NUNCA digas 'la imagen está en camino', 'procesándose', o 'aparecerá en breve' a menos que realmente hayas invocado la herramienta exitosamente.
 
-PROMPTS DE IMAGEN LARGOS:
-Si el usuario te da un brief largo (>500 caracteres) para una imagen con mucho texto narrativo, ANTES de invocar generate_image, resume internamente los elementos VISUALES clave:
-- Sujeto principal
-- Estilo (digital art, fotorrealista, cartoon, etc.)
-- Colores predominantes
-- Composición / ambiente
-- Elementos visuales adicionales
-
-NO incluyas en el prompt el texto que el usuario pide que aparezca DENTRO de la imagen, a menos que sea muy corto (1-3 palabras). Los modelos de imagen no son buenos renderizando texto largo.
-
-Si el usuario insiste en que aparezca texto largo en la imagen, ofrécele alternativas: 'El texto largo no se renderiza bien en imágenes. ¿Quieres que genere la imagen sin texto y te entrego el texto aparte para que lo agregues con un editor?'
+PROMPTS DE IMAGEN (SIN REESCRITURA):
+Cuando invoques generate_image, el campo `prompt` DEBE ser el pedido del usuario TAL CUAL
+(o casi intacto: puedes quitar solo «generame una imagen» / «okay»).
+PROHIBIDO resumir, reinterpretar, inventar branding CED, mezclar historial o «mejorar» la escena.
+El backend ya adapta el prompt mínimo hacia Nano Banana / Gemini Flash Image.
+Si el usuario pide texto largo DENTRO de la imagen («que diga», «EN TEXTO»), pásalo completo en `prompt`.
 
 PROHIBIDO (chatbot genérico): no digas "sin internet en tiempo real" ni "no puedo conectar tus cuentas" — CED tiene búsqueda, Meta OAuth y tools. No recomiendes Buffer/Hootsuite como única opción si ya tiene redes conectadas.
 
@@ -1535,6 +1536,7 @@ def _run_chat_tool(
             )
         if name == "generate_image":
             from app.services.chat_image_generation import run_chat_image_generation
+            from app.services.chat_intents import is_generate_image_intent
 
             plan_id = None
             try:
@@ -1542,7 +1544,14 @@ def _run_chat_tool(
                 plan_id = sub.get("plan_id") if sub else None
             except Exception:  # noqa: BLE001
                 pass
-            prompt = str(tool_input.get("prompt") or "").strip()
+            llm_prompt = str(tool_input.get("prompt") or "").strip()
+            user_texts = user_texts_from_messages(chat_messages or [])
+            raw_user = (user_texts[-1] if user_texts else "").strip()
+            # Preferir utterance del usuario: el LLM a menudo resume/reescribe el brief.
+            if raw_user and is_generate_image_intent(raw_user):
+                prompt = raw_user
+            else:
+                prompt = llm_prompt or raw_user
             prior_rows: list[dict[str, str]] = []
             if chat_messages:
                 prior_rows = [
@@ -1551,6 +1560,11 @@ def _run_chat_tool(
                     if isinstance(m, dict)
                 ]
             quality = str(tool_input.get("quality") or "auto")
+            logger.info(
+                "[CHAT:IMG-TOOL] prompt_source=%s user=%s",
+                "raw_user" if prompt == raw_user and raw_user else "llm",
+                user_id[:8],
+            )
             gen = run_chat_image_generation(
                 user_id,
                 conversation_id,

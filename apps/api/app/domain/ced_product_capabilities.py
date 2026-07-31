@@ -1,4 +1,4 @@
-"""Catálogo factual de capacidades de producto CED (chat / modo avanzado).
+"""Catálogo factual de capacidades de producto CED (chat / modo avanzado / voz).
 
 Fuente de verdad para cuando el usuario pide «qué puedes hacer» o una lista
 numerada de habilidades. NO inventar módulos (p. ej. WhatsApp) que no existan.
@@ -28,22 +28,45 @@ _ENUM_OR_LIST_HINT = re.compile(
 )
 
 # Lista numerada — solo capacidades reales del producto.
-CED_CAPABILITY_CATALOG_BODY = """1. Chat de texto conversacional
-2. Modo avanzado (Claude) — análisis profundo de negocio, marketing y estrategia
-3. Asistente de voz (piloto nativo Retell / Jarvis)
-4. Publicación en Facebook e Instagram (Meta, con confirmación)
+CED_CAPABILITY_CATALOG_BODY = """1. Chat de texto conversacional — consejo, estrategia, creativos y acompañamiento
+2. Modo avanzado (Claude) — análisis profundo de negocio, marketing e investigación
+3. Asistente de voz (piloto nativo Retell / Jarvis) — manos libres con las herramientas clave
+4. Publicación en Facebook e Instagram (Meta, con confirmación previa del texto)
 5. Prospección — detección de leads en comentarios de redes
 6. Lectura de comentarios en Facebook/Instagram
-7. Generación de imágenes con IA
-8. Generación y descarga de PDF
-9. Búsqueda web en tiempo real
-10. Finanzas personales — consultar y registrar movimientos
-11. Cámara y visión — describir o buscar lo visible
-12. Mapa y navegación / modo conducir
-13. YouTube — buscar y reproducir en el panel
-14. Clima y ambiente (temperatura, aire, etc.)
-15. Memoria de conversación y contexto de sesión
-16. Modo Creador (solo administración del sistema, cuando aplica)"""
+7. Generación de imágenes con IA (incluye creativos y texto legible en la imagen cuando lo pida)
+8. Variaciones de imagen con referencia — mismo estilo, editar o variar a partir de una foto
+9. Generación y descarga de PDF
+10. Búsqueda web en tiempo real — noticias, precios, datos actuales
+11. Finanzas personales — consultar resumen y registrar movimientos (con confirmación)
+12. Cámara y visión — describir o buscar lo visible (principalmente en voz / panel HUD)
+13. Mapa y navegación / modo conducir (principalmente en voz / panel HUD)
+14. YouTube — buscar, reproducir, pausar o cerrar en el panel (principalmente en voz)
+15. Clima y ambiente — temperatura, pronóstico, calidad del aire y polen
+16. Memoria cognitiva — guardar y recuperar preferencias, leads y contexto de sesión
+17. Recordatorios en el panel HUD («recuérdame…» / pendientes)
+18. Análisis de viabilidad de producto o servicio (solo si lo pide explícitamente)
+19. Tendencias de industria (módulo de tendencias, cuando esté activo)
+20. Guiones, copy y calendarios de contenido — entregables listos para usar
+21. Mentor de ventas y Meta — cierre, objeciones, funnels y creativos (consejo; no es Ads Manager)
+22. Modo Creador — administración del sistema (solo cuando aplica / rol autorizado)
+
+Notas honestas:
+- Cámara, mapa/navegación y YouTube viven sobre todo en el asistente de voz y el HUD.
+- Publicar en redes requiere Meta conectado en el dashboard.
+- No integra mensajería de terceros ni Google Calendar/email; sí calendarios de contenido y recordatorios HUD."""
+
+# Resumen oral corto — voz / piloto Retell (máx. 5 puntos por turno; ofrecer ampliar).
+CED_CAPABILITY_ORAL_SUMMARY = """
+Si preguntan qué puedes hacer / habilidades / herramientas del sistema:
+enumera en español capacidades REALES (máx. 4-5 puntos por turno; ofrece ampliar). Menciona a Keini Castillo.
+Incluye, en turnos sucesivos si hace falta: chat y consejo; modo avanzado Claude; voz Jarvis;
+Meta (publicar FB/IG con confirmación, comentarios, prospección); imágenes + variaciones + PDF;
+búsqueda web; finanzas; cámara/visión; mapa/navegación; YouTube; clima/ambiente; memoria;
+recordatorios HUD; viabilidad de producto; tendencias; guiones/copy; mentor de ventas.
+PROHIBIDO inventar mensajería de terceros (tipo chat externo), Ads Manager, email o Google Calendar.
+Tras generar imagen: NO ofrezcas publicar salvo que lo pidan.
+""".strip()
 
 CED_CAPABILITY_CATALOG_REPLY = f"""Aquí tiene las habilidades y herramientas reales del sistema CED, señor:
 
@@ -55,8 +78,9 @@ CED_CAPABILITY_CATALOG_SYSTEM_RULE = f"""
 LISTA DE CAPACIDADES DE CED (OBLIGATORIO):
 Si el usuario pide una lista de habilidades, herramientas, capacidades o «qué puede hacer CED»:
 - Responde SOLO con capacidades REALES del producto (usa esta lista o un subconjunto fiel).
-- PROHIBIDO inventar módulos que no existan (p. ej. WhatsApp, soporte multiusuario genérico inventado, etc.).
+- PROHIBIDO inventar módulos que no existan (p. ej. mensajería de terceros, Ads Manager, soporte multiusuario genérico inventado, etc.).
 - NO dispares publicación en redes, PDF ni imagen solo porque el usuario las mencione como ejemplo en la lista.
+- Si detalla un canal: sé honesto (cámara/mapa/YouTube = principalmente voz/HUD).
 
 Capacidades reales:
 {CED_CAPABILITY_CATALOG_BODY}

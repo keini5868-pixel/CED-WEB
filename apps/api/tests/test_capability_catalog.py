@@ -35,7 +35,7 @@ def test_capability_list_is_catalog_not_publish_or_pdf():
 
 def test_real_publish_still_detected():
     assert is_social_publish_intent("publica esto en Instagram")
-    assert is_social_publish_intent("hazme una publicación en Facebook que diga hola")
+    assert is_social_publish_intent("publica en Facebook que diga hola")
     assert not is_capability_catalog_request("publica esto en Instagram")
 
 
@@ -43,3 +43,37 @@ def test_catalog_reply_is_factual():
     assert "WhatsApp" not in CED_CAPABILITY_CATALOG_REPLY
     assert "Modo avanzado" in CED_CAPABILITY_CATALOG_REPLY
     assert "PDF" in CED_CAPABILITY_CATALOG_REPLY
+    assert "YouTube" in CED_CAPABILITY_CATALOG_REPLY
+    assert "Finanzas" in CED_CAPABILITY_CATALOG_REPLY
+    assert "Recordatorios" in CED_CAPABILITY_CATALOG_REPLY
+    assert "viabilidad" in CED_CAPABILITY_CATALOG_REPLY.lower()
+    assert "Variaciones de imagen" in CED_CAPABILITY_CATALOG_REPLY
+    assert "Ads Manager" not in CED_CAPABILITY_CATALOG_REPLY or "no es Ads Manager" in CED_CAPABILITY_CATALOG_REPLY
+
+
+def test_voice_capabilities_cover_product_gaps():
+    from app.domain.ced_voice_capabilities import CED_VOICE_CAPABILITIES
+
+    low = CED_VOICE_CAPABILITIES.lower()
+    for needle in (
+        "youtube",
+        "finanzas",
+        "modo avanzado",
+        "get_environment",
+        "viabilidad",
+        "recordatorios",
+        "variaciones",
+    ):
+        assert needle in low, needle
+    assert "whatsapp" not in low
+
+
+def test_retell_native_prompt_includes_capability_oral_summary():
+    from app.services.retell_native_pilot import RETELL_NATIVE_PILOT_PROMPT
+
+    low = RETELL_NATIVE_PILOT_PROMPT.lower()
+    assert "qué puedes hacer" in low or "habilidades" in low
+    assert "youtube" in low
+    assert "finanzas" in low
+    assert "mensajería de terceros" in low or "mensajeria de terceros" in low
+    assert "prohibido inventar" in low

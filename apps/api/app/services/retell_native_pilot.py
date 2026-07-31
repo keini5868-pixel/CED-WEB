@@ -10,6 +10,8 @@ from typing import Any
 
 import httpx
 
+from app.domain.ced_product_capabilities import CED_CAPABILITY_ORAL_SUMMARY
+
 logger = logging.getLogger(__name__)
 
 STAGING_AGENT_NAME = "CED Jarvis Native Pilot"
@@ -85,10 +87,15 @@ Eres CED, asistente de voz del Castillo Evolución Digital. Trato SIEMPRE mascul
 Charla casual: responde ya en 1-2 oraciones, sin tools. Acciones/datos: usa la tool correcta.
 PROHIBIDO inventar que ya ejecutaste una acción sin resultado exitoso de tool; si falla, dilo tal cual.
 PROHIBIDO frases de espera vacías («un momento», «voy a buscar») sin invocar la tool.
+PROHIBIDO inventar mensajería de terceros, Ads Manager, email o Google Calendar.
 """.strip()
 
+NATIVE_PILOT_CAPABILITIES_PROMPT = CED_CAPABILITY_ORAL_SUMMARY
+
 RETELL_NATIVE_PILOT_PROMPT = (
-    f"{NATIVE_PILOT_IDENTITY}\n\n{READ_TOOLS_PROMPT}\n\n"
+    f"{NATIVE_PILOT_IDENTITY}\n\n"
+    f"{NATIVE_PILOT_CAPABILITIES_PROMPT}\n\n"
+    f"{READ_TOOLS_PROMPT}\n\n"
     "# CONTEXTO DE SESIÓN\n"
     "creator_mode={{creator_mode}}\n\n"
     "# MODO CREADOR — SOLO SI creator_mode=true\n"
@@ -2259,11 +2266,20 @@ async def execute_close_youtube_player_tool(*, user_id: str, payload: dict[str, 
 
 
 async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    from app.services.chat_intents import is_generate_image_intent
+
+    # Preferir utterance crudo (transcript / _user_request) sobre prompt reformulado por Retell LLM.
+    raw = str(args.get("_user_request") or args.get("user_text") or "").strip()
     query = resolve_tool_query(payload, args)
-    # Preferir utterance crudo del payload cuando el modelo reformula `prompt`.
-    prompt = query.strip() if query else str(args.get("prompt") or "").strip()
+    llm_prompt = str(args.get("prompt") or "").strip()
+    if raw and is_generate_image_intent(raw):
+        prompt = raw
+    elif query and is_generate_image_intent(query):
+        prompt = query
+    else:
+        prompt = query or llm_prompt
     if not prompt:
-        prompt = str(args.get("prompt") or "").strip()
+        prompt = llm_prompt
     quality = str(args.get("quality") or "auto").strip() or "auto"
     call_id = _extract_call_id(payload)
     return await _execute_native_voice_alias_tool(
@@ -2275,7 +2291,7 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
             "prompt": prompt,
             "quality": quality,
             "call_id": call_id,
-            "_user_request": query or prompt,
+            "_user_request": raw or query or prompt,
         },
     )
 

@@ -264,7 +264,8 @@ def run_chat_image_generation(
         display_label = creation["display_label"]
         success_reply = creation.get("reply") or "Listo. Aquí está su creativo."
         style_mode = creation.get("style_mode") or "edit"
-        model_prompt = _merge_creative_user_request(creation["internal_prompt"], user_text)
+        # Solo metadata de creativo; el prompt al modelo sale del adaptador directo abajo.
+        model_prompt = effective
     else:
         chat_context = _recent_chat_context(history or [])
         if is_marketing_creative_intent(user_text):
@@ -274,6 +275,7 @@ def run_chat_image_generation(
 
     # Path directo (Google / Nano Banana): lenguaje natural, sin orquestador pesado
     # ni historial — el historial mezclaba temas (robot + mapa, etc.).
+    # SIEMPRE gana sobre internal_prompt de creativos (evita reescritura Claude/marketing).
     direct = build_direct_image_prompt(
         user_text,
         has_reference=bool(ref_payload),
@@ -294,7 +296,7 @@ def run_chat_image_generation(
             logger.warning("[CHAT:IMG-GEN] OCR referencia falló user=%s", user_id[:8])
 
     tech = str(direct.get("prompt") or "").strip()
-    if tech and not creation:
+    if tech:
         model_prompt = tech
     if overlay_lines and wants_literal_text:
         # Referencia con «mantener textos»: añadir etiquetas OCR sin reescribir la escena.
@@ -302,6 +304,14 @@ def run_chat_image_generation(
         model_prompt = (
             f"{model_prompt} Keep these visible labels legible: {labels}."
         )[:3800]
+
+    logger.info(
+        "[CHAT:IMG-GEN] direct_adapter user=%s scene=%s wants_text=%s creation=%s",
+        user_id[:8],
+        str(direct.get("visual_brief") or "")[:100],
+        wants_literal_text,
+        bool(creation),
+    )
 
     img_result: dict[str, Any]
     # Nunca reinyectar historial como context (fuga de temas / tipografía basura).
