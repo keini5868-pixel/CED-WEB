@@ -19,8 +19,8 @@ USD_PER_TOKEN = 0.01
 TOKENS_PER_SECOND = 1
 MIN_BILLABLE_SECONDS = 30
 
-# Soft cap anti-quema
-VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY = 2
+# Soft cap anti-quema (piloto: 10 para iterar; producción bajará a 2)
+VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY = 10
 
 # COGS planificación (stack económico)
 PROVIDER_COGS_PER_SECOND_USD = 0.0070

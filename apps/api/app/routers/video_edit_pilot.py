@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
@@ -22,6 +22,8 @@ router = APIRouter(
     tags=["video-edit-pilot"],
     dependencies=[Depends(require_video_edit_pilot)],
 )
+
+_MAX_UPLOAD_BYTES = 120 * 1024 * 1024  # 120 MB piloto
 
 
 class QuoteBody(BaseModel):
@@ -61,10 +63,62 @@ def video_edit_quote(
 
 
 @router.post("/render")
-def video_edit_render(
+async def video_edit_render(
+    user_id: str = Depends(require_user_id),
+    duration_sec: float = Form(...),
+    script: str = Form(""),
+    auto_transcribe: str = Form("false"),
+    video: UploadFile | None = File(None),
+) -> dict:
+    """Multipart: video (opcional pero requerido para live) + script + duration_sec."""
+    auto_flag = str(auto_transcribe or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    video_bytes: bytes | None = None
+    filename = "source.mp4"
+    content_type = "video/mp4"
+    if video is not None and video.filename:
+        raw = await video.read()
+        if len(raw) > _MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail="Video demasiado grande (máx. 120 MB en piloto).",
+            )
+        if raw:
+            video_bytes = raw
+            filename = video.filename or filename
+            content_type = video.content_type or content_type
+
+    result = video_edit_service.plan_and_render(
+        user_id,
+        duration_sec=duration_sec,
+        script=script,
+        source_asset=f"upload://{filename}",
+        auto_transcribe=auto_flag,
+        video_bytes=video_bytes,
+        video_filename=filename,
+        video_content_type=content_type,
+    )
+    if not result.get("ok"):
+        code = result.get("code") or "render_failed"
+        status = 402 if code == "insufficient_tokens" else 400
+        if code == "daily_soft_cap":
+            status = 429
+        if code == "render_failed":
+            status = 502
+        raise HTTPException(status_code=status, detail=result)
+    return result
+
+
+@router.post("/render-json")
+def video_edit_render_json(
     body: RenderBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
+    """Compat dry-run sin archivo (tests / clientes JSON)."""
     result = video_edit_service.plan_and_render(
         user_id,
         duration_sec=body.duration_sec,

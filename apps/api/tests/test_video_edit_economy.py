@@ -59,9 +59,31 @@ def test_debit_and_soft_cap():
     out = debit_tokens(uid, 30, reason="render", duration_sec=30)
     assert out["ok"] is True
     assert out["balance_tokens"] == 70
-    record_render_attempt(uid)
-    record_render_attempt(uid)
+    from app.domain.video_edit_economy import VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY
+
+    for _ in range(VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY):
+        record_render_attempt(uid)
     assert soft_cap_remaining(uid) == 0
+
+
+def test_shotstack_edit_json_from_timeline():
+    from app.services.video_edit_pilot.shotstack import timeline_to_shotstack_edit
+
+    tl = build_edit_timeline(
+        duration_sec=30,
+        script="A.\n\nDespués B.\n\nCierre.",
+        source_asset="upload://x.mp4",
+        veo_enabled=False,
+    )
+    edit = timeline_to_shotstack_edit(
+        source_url="https://example.com/v.mp4",
+        timeline=tl,
+        duration_sec=30,
+    )
+    assert edit["output"]["format"] == "mp4"
+    clips = edit["timeline"]["tracks"][0]["clips"]
+    assert len(clips) >= 1
+    assert clips[0]["asset"]["src"] == "https://example.com/v.mp4"
 
 
 def test_sonilo_cues_are_text_mode_max_5():

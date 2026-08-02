@@ -24,9 +24,21 @@ Kill-switch: sin env API o sin header → 404. Sin query/env web → no aparece 
 
 ## Stack
 
-- Shotstack (edit/render) — PAYG en piloto
-- Sonilo **Text → SFX** (3–5 cues), no Video→SFX
+- Shotstack Edit + Ingest (upload firmado → render → URL MP4)
+- `SHOTSTACK_API_KEY` + `SHOTSTACK_ENV=stage|v1`
+- Sonilo Text→SFX (planificado en timeline; render SFX en fase siguiente)
 - Veo 3.1 Lite solo si hay hard-cut + flag + cupo
+
+## Soft cap piloto
+
+10 renders/día (subido para validación; bajar a 2 en producción).
+
+## Flujo live
+
+1. Cliente envía `multipart/form-data` con `video` + `script` + `duration_sec`
+2. API descuenta tokens
+3. Sube a Shotstack Ingest, construye Edit JSON (cortes por escenas + fades)
+4. Poll render → `result_url` en el panel
 
 ## Migración
 

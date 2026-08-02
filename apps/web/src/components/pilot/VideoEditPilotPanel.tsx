@@ -43,6 +43,7 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [timelinePreview, setTimelinePreview] = useState<string | null>(null);
+  const [resultUrl, setResultUrl] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const bal = await fetchVideoEditBalance();
@@ -71,6 +72,7 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
     setError(null);
     setMessage(null);
     setTimelinePreview(null);
+    setResultUrl(null);
     setFile(f);
     if (!f) {
       setDurationSec(0);
@@ -90,11 +92,12 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
     setError(null);
     setMessage(null);
     setTimelinePreview(null);
+    setResultUrl(null);
     try {
       const result = await renderVideoEdit({
         duration_sec: durationSec || 30,
         script,
-        source_asset: file ? `upload://${file.name}` : "upload://pending",
+        file,
       });
       if (!result.ok) {
         setError(
@@ -109,6 +112,9 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
         result.message ||
           `Listo. Cobrado ${result.tokens_charged ?? "?"} tokens.`,
       );
+      if (result.result_url) {
+        setResultUrl(result.result_url);
+      }
       if (result.timeline) {
         setTimelinePreview(JSON.stringify(result.timeline, null, 2));
       }
@@ -149,7 +155,7 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
         <p className="text-sm text-slate-400">
           Sube tu video + guion. Cobramos por segundos reales:{" "}
           <span className="text-slate-200">1 segundo = 1 token</span>, mínimo 30
-          s. Soft cap: 2 renders/día.
+          s. Soft cap: {balance?.soft_cap_per_day ?? 10} renders/día.
         </p>
       </header>
 
@@ -166,7 +172,7 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
           </div>
           <div className="text-right text-xs text-slate-500">
             Renders hoy: {balance?.renders_today ?? 0}/
-            {balance?.soft_cap_per_day ?? 2}
+            {balance?.soft_cap_per_day ?? 10}
             <br />
             Restantes: {balance?.soft_cap_remaining ?? "—"}
           </div>
@@ -244,10 +250,31 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
           {message}
         </p>
       ) : null}
+      {resultUrl ? (
+        <section className="space-y-2 rounded-xl border border-cyan-500/30 bg-black/40 px-3 py-3">
+          <p className="text-xs font-medium uppercase tracking-wide text-cyan-300/90">
+            Video editado
+          </p>
+          {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+          <video
+            src={resultUrl}
+            controls
+            className="max-h-80 w-full rounded-lg bg-black object-contain"
+          />
+          <a
+            href={resultUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-block text-sm text-cyan-300 underline hover:text-cyan-200"
+          >
+            Abrir / descargar MP4
+          </a>
+        </section>
+      ) : null}
       {timelinePreview ? (
         <details className="rounded-xl border border-white/10 bg-black/40 px-3 py-2">
           <summary className="cursor-pointer text-xs text-slate-400">
-            Timeline técnica (piloto / dry-run)
+            Timeline técnica
           </summary>
           <pre className="mt-2 max-h-64 overflow-auto text-[11px] leading-relaxed text-slate-400">
             {timelinePreview}

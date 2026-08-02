@@ -4,11 +4,18 @@ import {
   VIDEO_EDIT_PILOT_HEADER_VALUE,
 } from "@/lib/pilot/videoEditModule";
 
-function pilotHeaders(extra?: Record<string, string>): Record<string, string> {
+function pilotJsonHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     "Content-Type": "application/json",
     [VIDEO_EDIT_PILOT_HEADER]: VIDEO_EDIT_PILOT_HEADER_VALUE,
     ...(extra || {}),
+  };
+}
+
+function pilotMultipartHeaders(): Record<string, string> {
+  // No Content-Type — el browser fija multipart boundary
+  return {
+    [VIDEO_EDIT_PILOT_HEADER]: VIDEO_EDIT_PILOT_HEADER_VALUE,
   };
 }
 
@@ -48,70 +55,16 @@ export type VideoEditRenderResult = {
   message?: string;
   error?: string;
   code?: string;
+  result_url?: string;
   soft_cap_remaining?: number;
   quote?: VideoEditQuote;
   detail?: unknown;
 };
 
-export async function fetchVideoEditStatus(): Promise<{
-  enabled: boolean;
-  mode?: string;
-  economy?: Record<string, unknown>;
-  providers?: Record<string, unknown>;
-} | null> {
-  try {
-    const res = await proxyFetchAuthed("video-edit-pilot/status", {
-      headers: pilotHeaders(),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as { enabled: boolean };
-  } catch {
-    return null;
-  }
-}
-
-export async function fetchVideoEditBalance(): Promise<VideoEditBalance | null> {
-  try {
-    const res = await proxyFetchAuthed("video-edit-pilot/balance", {
-      headers: pilotHeaders(),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as VideoEditBalance;
-  } catch {
-    return null;
-  }
-}
-
-export async function quoteVideoEdit(
-  durationSec: number,
-): Promise<VideoEditQuote | null> {
-  try {
-    const res = await proxyFetchAuthed("video-edit-pilot/quote", {
-      method: "POST",
-      headers: pilotHeaders(),
-      body: JSON.stringify({ duration_sec: durationSec }),
-    });
-    if (!res.ok) return null;
-    return (await res.json()) as VideoEditQuote;
-  } catch {
-    return null;
-  }
-}
-
-export async function renderVideoEdit(body: {
-  duration_sec: number;
-  script: string;
-  source_asset?: string;
-  auto_transcribe?: boolean;
-}): Promise<VideoEditRenderResult> {
-  const res = await proxyFetchAuthed("video-edit-pilot/render", {
-    method: "POST",
-    headers: pilotHeaders(),
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json().catch(() => ({}))) as VideoEditRenderResult & {
-    detail?: VideoEditRenderResult | string;
-  };
+function parseRenderResponse(
+  res: Response,
+  data: VideoEditRenderResult & { detail?: VideoEditRenderResult | string },
+): VideoEditRenderResult {
   if (!res.ok) {
     const detail = data.detail;
     if (detail && typeof detail === "object") {
@@ -123,10 +76,8 @@ export async function renderVideoEdit(body: {
         tokens_charged: err.tokens_charged,
         balance_tokens: err.balance_tokens,
         timeline: err.timeline,
-        message:
-          err.message ||
-          err.error ||
-          "No se pudo procesar el video.",
+        result_url: err.result_url,
+        message: err.message || err.error || "No se pudo procesar el video.",
         error: err.error,
         code: err.code,
         soft_cap_remaining: err.soft_cap_remaining,
@@ -142,12 +93,81 @@ export async function renderVideoEdit(body: {
   return data;
 }
 
+export async function fetchVideoEditStatus(): Promise<{
+  enabled: boolean;
+  mode?: string;
+  economy?: Record<string, unknown>;
+  providers?: Record<string, unknown>;
+} | null> {
+  try {
+    const res = await proxyFetchAuthed("video-edit-pilot/status", {
+      headers: pilotJsonHeaders(),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as { enabled: boolean };
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchVideoEditBalance(): Promise<VideoEditBalance | null> {
+  try {
+    const res = await proxyFetchAuthed("video-edit-pilot/balance", {
+      headers: pilotJsonHeaders(),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as VideoEditBalance;
+  } catch {
+    return null;
+  }
+}
+
+export async function quoteVideoEdit(
+  durationSec: number,
+): Promise<VideoEditQuote | null> {
+  try {
+    const res = await proxyFetchAuthed("video-edit-pilot/quote", {
+      method: "POST",
+      headers: pilotJsonHeaders(),
+      body: JSON.stringify({ duration_sec: durationSec }),
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as VideoEditQuote;
+  } catch {
+    return null;
+  }
+}
+
+export async function renderVideoEdit(body: {
+  duration_sec: number;
+  script: string;
+  file?: File | null;
+  auto_transcribe?: boolean;
+}): Promise<VideoEditRenderResult> {
+  const form = new FormData();
+  form.append("duration_sec", String(body.duration_sec));
+  form.append("script", body.script || "");
+  form.append("auto_transcribe", body.auto_transcribe ? "true" : "false");
+  if (body.file) {
+    form.append("video", body.file, body.file.name);
+  }
+  const res = await proxyFetchAuthed("video-edit-pilot/render", {
+    method: "POST",
+    headers: pilotMultipartHeaders(),
+    body: form,
+  });
+  const data = (await res.json().catch(() => ({}))) as VideoEditRenderResult & {
+    detail?: VideoEditRenderResult | string;
+  };
+  return parseRenderResponse(res, data);
+}
+
 export async function checkoutVideoEditPack(
   amountUsd: number,
 ): Promise<{ url?: string; error?: string }> {
   const res = await proxyFetchAuthed("video-edit-pilot/checkout", {
     method: "POST",
-    headers: pilotHeaders(),
+    headers: pilotJsonHeaders(),
     body: JSON.stringify({ amount_usd: amountUsd }),
   });
   const data = (await res.json().catch(() => ({}))) as {

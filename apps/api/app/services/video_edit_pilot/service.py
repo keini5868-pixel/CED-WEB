@@ -1,4 +1,4 @@
-"""Orquestación Video Edit piloto — quote, debit tokens, timeline, dry-run render."""
+"""Orquestación Video Edit piloto — tokens + Shotstack live / dry-run."""
 
 from __future__ import annotations
 
@@ -13,8 +13,13 @@ from app.domain.video_edit_economy import (
     tokens_for_duration_seconds,
     video_edit_pack_catalog,
 )
+from app.services.video_edit_pilot.shotstack import (
+    render_video_from_bytes,
+    shotstack_configured,
+)
 from app.services.video_edit_pilot.timeline import build_edit_timeline
 from app.services.video_edit_pilot.tokens import (
+    credit_tokens,
     debit_tokens,
     get_token_balance,
     record_render_attempt,
@@ -27,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 def pilot_status() -> dict[str, Any]:
     settings = get_settings()
-    shotstack = bool(getattr(settings, "shotstack_api_key", "") or "")
+    shotstack = shotstack_configured()
     sonilo = bool(getattr(settings, "sonilo_api_key", "") or "")
     veo = bool(getattr(settings, "video_edit_veo_enabled", False))
     return {
@@ -38,6 +43,7 @@ def pilot_status() -> dict[str, Any]:
             "shotstack_configured": shotstack,
             "sonilo_configured": sonilo,
             "veo_enabled": veo,
+            "shotstack_env": (getattr(settings, "shotstack_env", None) or "stage"),
         },
         "economy": {
             "tokens_per_usd": 100,
@@ -46,7 +52,7 @@ def pilot_status() -> dict[str, Any]:
             "soft_cap_renders_per_day": VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY,
             "packs": video_edit_pack_catalog(),
         },
-        "mode": "dry_run" if not shotstack else "live_ready",
+        "mode": "live_ready" if shotstack else "dry_run",
     }
 
 
@@ -76,14 +82,17 @@ def plan_and_render(
     script: str,
     source_asset: str = "upload://pending",
     auto_transcribe: bool = False,
+    video_bytes: bytes | None = None,
+    video_filename: str = "source.mp4",
+    video_content_type: str = "video/mp4",
 ) -> dict[str, Any]:
     """
-    Flujo v1 piloto:
+    Flujo piloto:
     1) Soft cap diario
-    2) Quote tokens (mín. 30s)
-    3) Debit
-    4) Timeline (Shotstack JSON + Sonilo cues + Veo gate)
-    5) Dry-run si no hay SHOTSTACK_API_KEY (devuelve timeline lista)
+    2) Quote + debit tokens
+    3) Timeline (cortes / fades / cues Sonilo planificados)
+    4) Si hay SHOTSTACK_API_KEY + video_bytes → render live
+       Si no → dry_run (timeline) sin reembolso (ya cobrado en dry-run previo)
     """
     duration_sec = max(0.1, float(duration_sec))
     script = (script or "").strip()
@@ -156,26 +165,75 @@ def plan_and_render(
         }
 
     record_render_attempt(user_id)
-    shotstack_key = (getattr(settings, "shotstack_api_key", "") or "").strip()
-    status = "dry_run" if not shotstack_key else "queued"
-    result_url = None
-    error = None
+    result_url: str | None = None
+    error: str | None = None
+    status = "dry_run"
+    render_meta: dict[str, Any] = {}
 
-    if shotstack_key:
-        # Live render se cablea cuando la key esté en Railway; v1 no bloquea el piloto.
+    can_live = shotstack_configured() and bool(video_bytes)
+    if can_live:
+        try:
+            live = render_video_from_bytes(
+                video_bytes or b"",
+                filename=video_filename or "source.mp4",
+                content_type=video_content_type or "video/mp4",
+                timeline=timeline,
+                duration_sec=duration_sec,
+            )
+            result_url = str(live.get("result_url") or "")
+            status = "done"
+            render_meta = {
+                "render_id": live.get("render_id"),
+                "source_id": live.get("source_id"),
+                "edit": live.get("edit"),
+            }
+            timeline = {
+                **timeline,
+                "source": {"asset": live.get("source_url") or source_asset},
+            }
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[VIDEO_EDIT] shotstack live failed job=%s", job_id[:8])
+            error = str(exc)[:400]
+            status = "failed"
+            # Reembolso si el render live falla tras debitar
+            credit_tokens(
+                user_id,
+                tokens,
+                reason="render_refund",
+                metadata={"job_id": job_id, "error": error},
+            )
+            debit["balance_tokens"] = get_token_balance(user_id)
+    elif shotstack_configured() and not video_bytes:
         status = "dry_run"
         error = None
-        logger.info(
-            "[VIDEO_EDIT] shotstack key present — live render deferred job=%s",
-            job_id[:8],
+        message_hint = (
+            "Shotstack configurado, pero falta el archivo de video en la petición "
+            "(sube el MP4 de nuevo). Timeline lista; tokens descontados."
+        )
+    else:
+        message_hint = (
+            "Timeline lista (dry-run). Configure SHOTSTACK_API_KEY para render en vivo. "
+            "Tokens ya descontados."
+        )
+
+    if status == "done":
+        message_hint = (
+            "Video editado listo. Tokens descontados. "
+            "Revise el enlace de descarga abajo."
+        )
+    elif status == "failed":
+        message_hint = (
+            f"Render falló; tokens reembolsados. Detalle: {error or 'error'}"
         )
 
     row = {
         "id": job_id,
         "user_id": user_id,
-        "status": status,
+        "status": status if status in {
+            "queued", "planning", "rendering", "done", "failed", "dry_run"
+        } else "failed",
         "duration_sec": duration_sec,
-        "tokens_charged": tokens,
+        "tokens_charged": 0 if status == "failed" else tokens,
         "script": script[:8000],
         "timeline": timeline,
         "result_url": result_url,
@@ -184,6 +242,7 @@ def plan_and_render(
             "sonilo_cues": len((timeline.get("sonilo") or {}).get("cues") or []),
             "veo": timeline.get("veo"),
             "dry_run": status == "dry_run",
+            **render_meta,
         },
     }
     try:
@@ -193,20 +252,18 @@ def plan_and_render(
     except Exception:  # noqa: BLE001
         logger.debug("[VIDEO_EDIT] job persist skipped")
 
+    ok = status in {"done", "dry_run"}
     return {
-        "ok": True,
+        "ok": ok,
         "job_id": job_id,
         "status": status,
-        "tokens_charged": tokens,
+        "tokens_charged": 0 if status == "failed" else tokens,
         "balance_tokens": debit.get("balance_tokens"),
         "quote": quote,
         "timeline": timeline,
         "result_url": result_url,
-        "message": (
-            "Timeline lista (dry-run). Configure SHOTSTACK_API_KEY y SONILO_API_KEY "
-            "para render en vivo. Tokens ya descontados."
-            if status == "dry_run"
-            else "Render encolado."
-        ),
+        "message": message_hint,
+        "error": error,
         "soft_cap_remaining": soft_cap_remaining(user_id),
+        "code": None if ok else "render_failed",
     }
