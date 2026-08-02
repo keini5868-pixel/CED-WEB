@@ -97,7 +97,11 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
         source_asset: file ? `upload://${file.name}` : "upload://pending",
       });
       if (!result.ok) {
-        setError(result.message || "No se pudo editar el video.");
+        setError(
+          result.message ||
+            result.error ||
+            "No se pudo editar el video.",
+        );
         await refresh();
         return;
       }
