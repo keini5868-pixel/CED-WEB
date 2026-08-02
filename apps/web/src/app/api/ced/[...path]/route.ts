@@ -98,6 +98,7 @@ function isLongRunningChatPath(path: string): boolean {
     normalized.includes("viability-pilot/analyze") ||
     normalized.includes("trends-pilot/analyze") ||
     normalized.includes("opportunities-pilot/opportunities") ||
+    normalized.includes("video-edit-pilot/render") ||
     normalized.includes("images/generate-with-reference") ||
     normalized.includes("images/generate") ||
     normalized.includes("vision/") ||
@@ -129,6 +130,10 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   const ephemeralKey = request.headers.get("x-openai-ephemeral-key");
   if (ephemeralKey) {
     headers["X-OpenAI-Ephemeral-Key"] = ephemeralKey;
+  }
+  const videoEditPilot = request.headers.get("x-ced-video-edit-pilot");
+  if (videoEditPilot) {
+    headers["X-CED-Video-Edit-Pilot"] = videoEditPilot;
   }
   let body: BodyInit | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {

@@ -1,8 +1,9 @@
-import { Briefcase, Target, TrendingUp } from "lucide-react";
+import { Briefcase, Clapperboard, Target, TrendingUp } from "lucide-react";
 
 import { isOpportunitiesModuleEnabled } from "@/lib/pilot/opportunitiesModule";
 import { isTrendsModuleEnabled } from "@/lib/pilot/trendsModule";
 import { isViabilityModuleEnabled } from "@/lib/pilot/viabilityModule";
+import { isVideoEditModulePilot } from "@/lib/pilot/videoEditModule";
 import type { CedModuleRegistration } from "@/modules/types";
 
 /**
@@ -44,6 +45,18 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     load: () =>
       import("@/components/pilot/OpportunitiesPilotPanel").then((m) => ({
         default: m.OpportunitiesModuleContent,
+      })),
+  },
+  {
+    id: "video-edit",
+    name: "Edición de video",
+    short: "VIDEO",
+    icon: Clapperboard,
+    stage: "pilot",
+    isEnabled: isVideoEditModulePilot,
+    load: () =>
+      import("@/components/pilot/VideoEditPilotPanel").then((m) => ({
+        default: m.VideoEditModuleContent,
       })),
   },
 ];

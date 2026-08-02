@@ -1195,3 +1195,141 @@ def insert_generated_image(
         }
     ).execute()
 
+
+def get_video_edit_token_balance(user_id: str) -> int | None:
+    """None = tabla/DB no disponible (usar fallback memoria)."""
+    try:
+        client = _client()
+        result = (
+            client.table("video_edit_token_balances")
+            .select("tokens")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            return 0
+        return int(rows[0].get("tokens") or 0)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def credit_video_edit_tokens(
+    user_id: str,
+    tokens: int,
+    *,
+    reason: str = "purchase",
+    metadata: dict | None = None,
+) -> int | None:
+    try:
+        client = _client()
+        now = datetime.now(timezone.utc).isoformat()
+        current = get_video_edit_token_balance(user_id)
+        if current is None:
+            return None
+        new_bal = int(current) + max(0, int(tokens))
+        client.table("video_edit_token_balances").upsert(
+            {"user_id": user_id, "tokens": new_bal, "updated_at": now},
+            on_conflict="user_id",
+        ).execute()
+        client.table("video_edit_token_ledger").insert(
+            {
+                "user_id": user_id,
+                "delta_tokens": max(0, int(tokens)),
+                "reason": reason,
+                "metadata": metadata or {},
+            }
+        ).execute()
+        return new_bal
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] credit_video_edit_tokens failed")
+        return None
+
+
+def debit_video_edit_tokens(
+    user_id: str,
+    tokens: int,
+    *,
+    reason: str = "render",
+    duration_sec: int | None = None,
+    job_id: str | None = None,
+    metadata: dict | None = None,
+) -> dict | None:
+    try:
+        client = _client()
+        now = datetime.now(timezone.utc).isoformat()
+        current = get_video_edit_token_balance(user_id)
+        if current is None:
+            return None
+        need = max(0, int(tokens))
+        if current < need:
+            return {
+                "ok": False,
+                "charged_tokens": 0,
+                "balance_tokens": current,
+                "code": "insufficient_tokens",
+                "error": (
+                    f"Saldo insuficiente: necesita {need} tokens "
+                    f"y tiene {current}. Compre un pack de video."
+                ),
+            }
+        new_bal = current - need
+        client.table("video_edit_token_balances").upsert(
+            {"user_id": user_id, "tokens": new_bal, "updated_at": now},
+            on_conflict="user_id",
+        ).execute()
+        client.table("video_edit_token_ledger").insert(
+            {
+                "user_id": user_id,
+                "delta_tokens": -need,
+                "reason": reason,
+                "duration_sec": duration_sec,
+                "job_id": job_id,
+                "metadata": metadata or {},
+            }
+        ).execute()
+        return {"ok": True, "charged_tokens": need, "balance_tokens": new_bal}
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] debit_video_edit_tokens failed")
+        return None
+
+
+def count_video_edit_jobs_today(user_id: str) -> int | None:
+    try:
+        client = _client()
+        start = datetime.now(timezone.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        ).isoformat()
+        result = (
+            client.table("video_edit_jobs")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .gte("created_at", start)
+            .execute()
+        )
+        if result.count is not None:
+            return int(result.count)
+        return len(result.data or [])
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def insert_video_edit_job(row: dict) -> dict | None:
+    try:
+        client = _client()
+        result = client.table("video_edit_jobs").insert(row).execute()
+        rows = result.data or []
+        return rows[0] if rows else row
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] insert_video_edit_job failed")
+        return None
+
+
+def update_video_edit_job(job_id: str, patch: dict) -> None:
+    try:
+        client = _client()
+        patch = {**patch, "updated_at": datetime.now(timezone.utc).isoformat()}
+        client.table("video_edit_jobs").update(patch).eq("id", job_id).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] update_video_edit_job failed")

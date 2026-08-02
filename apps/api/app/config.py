@@ -179,6 +179,17 @@ class Settings(BaseSettings):
     pocket_option_expiry_seconds: int = 60
     pocket_option_strategy_bos_enabled: bool = True
     pocket_option_strategy_alt_enabled: bool = False
+    # Video Edit módulo piloto — DEFAULT OFF. URL ?videoEditModule=pilot + header.
+    video_edit_module_pilot: bool = False
+    shotstack_api_key: str = ""
+    shotstack_env: str = "stage"  # stage | v1
+    sonilo_api_key: str = ""
+    # Veo Lite — OFF por defecto incluso dentro del piloto
+    video_edit_veo_enabled: bool = False
+    # Stripe packs tokens video ($10/$20/$50) — opcionales; fallback price_data
+    stripe_price_video_edit_10: str = ""
+    stripe_price_video_edit_20: str = ""
+    stripe_price_video_edit_50: str = ""
 
 
     @model_validator(mode="after")

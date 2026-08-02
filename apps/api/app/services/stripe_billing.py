@@ -21,6 +21,7 @@ from app.domain.plans import (
     plan_minutes_daily,
     quote_recharge,
 )
+from app.domain.video_edit_economy import quote_video_edit_pack
 from app.services import supabase_db
 
 logger = logging.getLogger(__name__)
@@ -113,6 +114,88 @@ def create_subscription_checkout(user_id: str, email: str, plan_id: str) -> dict
     if not session.url:
         raise ValueError("Stripe no devolvió URL de checkout.")
     return {"url": session.url, "session_id": session.id}
+
+
+def price_id_for_video_edit_pack(
+    amount_usd: float, settings: Settings | None = None
+) -> str | None:
+    s = settings or get_settings()
+    key = int(round(float(amount_usd)))
+    mapping = {
+        10: s.stripe_price_video_edit_10.strip(),
+        20: s.stripe_price_video_edit_20.strip(),
+        50: s.stripe_price_video_edit_50.strip(),
+    }
+    pid = mapping.get(key) or ""
+    return pid or None
+
+
+def create_video_edit_token_checkout(
+    user_id: str, email: str, amount_usd: float
+) -> dict[str, str]:
+    """Pack de tokens Video Edit — crédito 1:1 ($1 = 100 tokens)."""
+    settings = get_settings()
+    if not _stripe_enabled(settings):
+        raise ValueError("Stripe no configurado (STRIPE_SECRET_KEY).")
+
+    quote = quote_video_edit_pack(amount_usd)
+    paid = float(quote["amount_paid_usd"])
+    tokens = int(quote["tokens"])
+    _configure_stripe(settings)
+    web = settings.web_public_url.rstrip("/")
+    sub = supabase_db.get_subscription(user_id) or {}
+    customer_id = sub.get("stripe_customer_id")
+
+    price_id = price_id_for_video_edit_pack(paid, settings)
+    if price_id:
+        line_items = [{"price": price_id, "quantity": 1}]
+    else:
+        line_items = [
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": int(round(paid * 100)),
+                    "product_data": {
+                        "name": f"CED Video Edit — {tokens} tokens",
+                        "description": (
+                            f"{tokens} tokens de edición de video "
+                            f"(1 token = 1 segundo; mín. 30s por render)"
+                        ),
+                    },
+                },
+                "quantity": 1,
+            }
+        ]
+
+    params: dict[str, Any] = {
+        "mode": "payment",
+        "line_items": line_items,
+        "success_url": (
+            f"{web}/dashboard?billing=video_edit_success"
+            f"&amount={paid:.0f}&tokens={tokens}&videoEditModule=pilot"
+        ),
+        "cancel_url": f"{web}/dashboard?billing=video_edit_cancelled&videoEditModule=pilot",
+        "client_reference_id": user_id,
+        "metadata": {
+            "user_id": user_id,
+            "checkout_type": "video_edit_tokens",
+            "amount_paid_usd": str(paid),
+            "tokens": str(tokens),
+        },
+    }
+    if customer_id:
+        params["customer"] = customer_id
+    elif email:
+        params["customer_email"] = email
+
+    session = stripe.checkout.Session.create(**params)
+    if not session.url:
+        raise ValueError("Stripe no devolvió URL de checkout.")
+    return {
+        "url": session.url,
+        "session_id": session.id,
+        "quote": quote,
+    }
 
 
 def create_recharge_checkout(user_id: str, email: str, amount_usd: float) -> dict[str, str]:
@@ -247,6 +330,36 @@ def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
             margin_keini_usd=float(q["margin_keini_usd"]),
             stripe_payment_intent_id=session.get("payment_intent"),
             stripe_event_id=event_id,
+        )
+        if customer_id:
+            supabase_db.update_subscription_stripe_customer(user_id, str(customer_id))
+        return
+
+    if checkout_type == "video_edit_tokens" and user_id:
+        paid = float(metadata.get("amount_paid_usd") or 0)
+        if paid <= 0 and session.get("amount_total"):
+            paid = float(session["amount_total"]) / 100.0
+        q = quote_video_edit_pack(paid)
+        from app.services.video_edit_pilot.tokens import credit_from_pack_usd
+
+        credit_from_pack_usd(
+            user_id,
+            float(q["amount_paid_usd"]),
+            metadata={
+                "stripe_payment_intent_id": session.get("payment_intent"),
+                "stripe_event_id": event_id,
+                "checkout_session": session.get("id"),
+            },
+        )
+        supabase_db.record_transaction(
+            user_id=user_id,
+            tx_type="video_edit_tokens",
+            amount_usd=float(q["amount_paid_usd"]),
+            stripe_event_id=event_id,
+            metadata={
+                "tokens": q["tokens"],
+                "checkout_session": session.get("id"),
+            },
         )
         if customer_id:
             supabase_db.update_subscription_stripe_customer(user_id, str(customer_id))

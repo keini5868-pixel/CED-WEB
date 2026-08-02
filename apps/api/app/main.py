@@ -49,6 +49,7 @@ from app.routers import (
     trends_pilot,
     opportunities_pilot,
     pocket_option,
+    video_edit_pilot,
 )
 
 logger = logging.getLogger("ced.api")
@@ -185,6 +186,7 @@ def create_app() -> FastAPI:
     application.include_router(trends_pilot.router)
     application.include_router(opportunities_pilot.router)
     application.include_router(pocket_option.router)
+    application.include_router(video_edit_pilot.router)
     if settings.support_chat_enabled:
         application.include_router(support.router)
 
