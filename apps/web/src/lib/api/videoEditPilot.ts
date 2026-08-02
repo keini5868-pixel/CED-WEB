@@ -113,7 +113,19 @@ export async function renderVideoEdit(body: {
   if (!res.ok) {
     const detail = data.detail;
     if (detail && typeof detail === "object") {
-      return { ok: false, ...detail };
+      const err = detail as VideoEditRenderResult;
+      return {
+        ok: false,
+        job_id: err.job_id,
+        status: err.status,
+        tokens_charged: err.tokens_charged,
+        balance_tokens: err.balance_tokens,
+        timeline: err.timeline,
+        message: err.message || "No se pudo procesar el video.",
+        soft_cap_remaining: err.soft_cap_remaining,
+        quote: err.quote,
+        detail: err.detail,
+      };
     }
     return {
       ok: false,
