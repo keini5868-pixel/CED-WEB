@@ -46,6 +46,8 @@ export type VideoEditRenderResult = {
   balance_tokens?: number;
   timeline?: Record<string, unknown>;
   message?: string;
+  error?: string;
+  code?: string;
   soft_cap_remaining?: number;
   quote?: VideoEditQuote;
   detail?: unknown;
@@ -121,7 +123,12 @@ export async function renderVideoEdit(body: {
         tokens_charged: err.tokens_charged,
         balance_tokens: err.balance_tokens,
         timeline: err.timeline,
-        message: err.message || "No se pudo procesar el video.",
+        message:
+          err.message ||
+          err.error ||
+          "No se pudo procesar el video.",
+        error: err.error,
+        code: err.code,
         soft_cap_remaining: err.soft_cap_remaining,
         quote: err.quote,
         detail: err.detail,
