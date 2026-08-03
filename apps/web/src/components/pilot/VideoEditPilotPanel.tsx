@@ -330,9 +330,19 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
               value={script}
               onChange={(e) => setScript(e.target.value)}
               rows={4}
-              placeholder='Ej: "PON ESCENAS DE SUSPENSO" o guion por escenas con saltos de línea.'
+              placeholder={`0-8s: descripción
+TRANSICIÓN: corte rápido
+SONIDO: whoosh
+
+8-18s: siguiente escena
+TRANSICIÓN: corte seco
+SONIDO: click`}
               className="w-full resize-y rounded-xl border border-white/10 bg-black/40 px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-cyan-500/40 focus:outline-none"
             />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Use rangos de tiempo (0-8s). El zoom de Shotstack se evita a
+              propósito: recorta cara/cuerpo. Preferimos corte/fade + fit contain.
+            </p>
           </label>
 
           <button

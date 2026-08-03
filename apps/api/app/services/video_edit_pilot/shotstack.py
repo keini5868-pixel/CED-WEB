@@ -96,6 +96,12 @@ def put_bytes_to_signed_url(
 
 def wait_source_ready(source_id: str) -> str:
     """Poll ingest source until ready; return public source URL."""
+    meta = wait_source_meta(source_id)
+    return meta["source_url"]
+
+
+def wait_source_meta(source_id: str) -> dict[str, Any]:
+    """Poll ingest until ready; return url + dimensions."""
     deadline = time.monotonic() + _INGEST_MAX_WAIT
     last_status = ""
     with httpx.Client(timeout=30.0) as client:
@@ -111,7 +117,22 @@ def wait_source_ready(source_id: str) -> str:
                 src = str(attrs.get("source") or "").strip()
                 if not src:
                     raise RuntimeError("Shotstack source ready sin URL")
-                return src
+                width = attrs.get("width")
+                height = attrs.get("height")
+                try:
+                    width_i = int(width) if width is not None else None
+                except (TypeError, ValueError):
+                    width_i = None
+                try:
+                    height_i = int(height) if height is not None else None
+                except (TypeError, ValueError):
+                    height_i = None
+                return {
+                    "source_url": src,
+                    "width": width_i,
+                    "height": height_i,
+                    "duration": attrs.get("duration"),
+                }
             if last_status == "failed":
                 raise RuntimeError("Shotstack ingest falló al procesar el video")
             time.sleep(_POLL_INTERVAL)
@@ -141,21 +162,28 @@ def timeline_to_shotstack_edit(
     timeline: dict[str, Any],
     duration_sec: float,
 ) -> dict[str, Any]:
-    """Convierte timeline CED → JSON Edit API (cortes + fades + filtros)."""
+    """Convierte timeline CED → Edit API.
+
+    fit=contain evita recortar caras/cuerpos (default Shotstack es crop).
+    Zoom se omite: el zoom de Shotstack recorta el encuadre.
+    """
+    from app.services.video_edit_pilot.timeline import aspect_from_dimensions
+
     scenes = list(timeline.get("scenes") or [])
-    transitions = {
-        float(t.get("at") or 0): t
-        for t in (timeline.get("transitions") or [])
-        if isinstance(t, dict)
-    }
+    fit = str((timeline.get("output") or {}).get("fit") or "contain")
+    if fit not in {"contain", "cover", "crop", "none"}:
+        fit = "contain"
     clips: list[dict[str, Any]] = []
     cursor = 0.0
     if not scenes:
         clips.append(
             {
-                "asset": {"type": "video", "src": source_url, "trim": 0},
+                "asset": {"type": "video", "src": source_url, "trim": 0, "volume": 1},
                 "start": 0,
                 "length": max(0.5, float(duration_sec)),
+                "fit": fit,
+                "scale": 1,
+                "position": "center",
             }
         )
     else:
@@ -168,47 +196,37 @@ def timeline_to_shotstack_edit(
                     "type": "video",
                     "src": source_url,
                     "trim": round(start_src, 3),
+                    "volume": 1,
                 },
                 "start": round(cursor, 3),
                 "length": round(length, 3),
+                "fit": fit,
+                "scale": 1,
+                "position": "center",
             }
             filt = str(scene.get("filter") or "").strip()
             if filt in {"boost", "contrast", "darken", "greyscale", "lighten", "muted"}:
                 clip["filter"] = filt
-            effect = str(scene.get("effect") or "").strip()
-            # Shotstack motion effects
-            if effect in {
-                "zoomIn",
-                "zoomOut",
-                "zoomInSlow",
-                "zoomOutSlow",
-                "slideLeft",
-                "slideRight",
-            }:
-                clip["effect"] = effect
-            edge = transitions.get(round(end_src, 2)) or transitions.get(end_src)
-            # También por índice: en style pacing "at" es end del source, no del timeline out
-            if not edge and i < len(scenes) - 1:
+            t_out = str(scene.get("transition_out") or "")
+            if not t_out:
                 for t in timeline.get("transitions") or []:
-                    if isinstance(t, dict) and abs(float(t.get("at") or 0) - end_src) < 0.05:
-                        edge = t
+                    if not isinstance(t, dict):
+                        continue
+                    if abs(float(t.get("at") or 0) - end_src) < 0.08:
+                        t_out = str(t.get("type") or "fade")
                         break
             if i < len(scenes) - 1:
-                ttype = str((edge or {}).get("type") or "fade")
-                if ttype == "cut":
-                    pass  # hard cut, sin transición
+                if t_out == "cut":
+                    pass
                 else:
                     clip["transition"] = {"out": "fade"}
             clips.append(clip)
             cursor += length
 
     tracks: list[dict[str, Any]] = [{"clips": clips}]
-
-    # Título corto arriba (se nota la edición) si hay mood/style
     title = timeline.get("title") or {}
     if title.get("enabled") and title.get("text"):
         label = str(title.get("text") or "").strip()[:40]
-        mood = str(title.get("mood") or "")
         tracks.append(
             {
                 "clips": [
@@ -220,31 +238,31 @@ def timeline_to_shotstack_edit(
                             "color": "#ffffff",
                             "size": "small",
                             "background": "#000000",
-                            "position": "top",
+                            "position": "bottom",
                         },
                         "start": 0,
-                        "length": min(2.5, max(1.2, float(duration_sec) * 0.08)),
+                        "length": min(2.0, max(1.0, float(duration_sec) * 0.06)),
                         "transition": {"in": "fade", "out": "fade"},
                     }
                 ]
             }
         )
-        _ = mood
 
     output = timeline.get("output") or {}
-    aspect = str(output.get("aspect") or "16:9")
+    src = timeline.get("source") or {}
+    aspect = str(output.get("aspect") or "").strip()
+    if aspect not in {"16:9", "9:16", "1:1", "4:5"}:
+        aspect = aspect_from_dimensions(src.get("width"), src.get("height"))
     return {
-        "timeline": {
-            "background": "#000000",
-            "tracks": tracks,
-        },
+        "timeline": {"background": "#000000", "tracks": tracks},
         "output": {
             "format": "mp4",
             "resolution": "hd",
-            "aspectRatio": aspect if aspect in {"16:9", "9:16", "1:1", "4:5"} else "16:9",
+            "aspectRatio": aspect,
             "fps": 30,
         },
     }
+
 
 
 def submit_render(edit_payload: dict[str, Any]) -> str:
@@ -327,23 +345,54 @@ def render_video_from_source(
     timeline: dict[str, Any],
     duration_sec: float,
 ) -> dict[str, Any]:
-    """Ingest ya subido (browser/API) → wait ready si hace falta → edit → URL."""
+    """Ingest ya subido → wait ready → edit con aspect/fit seguros → URL."""
+    from app.services.video_edit_pilot.timeline import aspect_from_dimensions
+
     if not shotstack_configured():
         raise RuntimeError("SHOTSTACK_API_KEY no configurada")
+    width = (timeline.get("source") or {}).get("width")
+    height = (timeline.get("source") or {}).get("height")
     url = (source_url or "").strip()
     if not url:
-        url = wait_source_ready(source_id)
+        meta = wait_source_meta(source_id)
+        url = meta["source_url"]
+        width = meta.get("width") or width
+        height = meta.get("height") or height
+    try:
+        width_i = int(width) if width is not None else None
+    except (TypeError, ValueError):
+        width_i = None
+    try:
+        height_i = int(height) if height is not None else None
+    except (TypeError, ValueError):
+        height_i = None
+    aspect = aspect_from_dimensions(width_i, height_i)
+    patched = {
+        **timeline,
+        "output": {
+            **(timeline.get("output") or {}),
+            "aspect": aspect,
+            "fit": "contain",
+        },
+        "source": {
+            **(timeline.get("source") or {}),
+            "width": width_i,
+            "height": height_i,
+        },
+        "title": {"enabled": False, "text": "", "mood": None},
+    }
     edit = timeline_to_shotstack_edit(
         source_url=url,
-        timeline=timeline,
+        timeline=patched,
         duration_sec=duration_sec,
     )
     render_id = submit_render(edit)
     result_url = wait_render_done(render_id)
     logger.info(
-        "[SHOTSTACK] done render=%s source=%s url=%s",
+        "[SHOTSTACK] done render=%s source=%s aspect=%s url=%s",
         render_id[:12],
         source_id[:12],
+        aspect,
         result_url[:80],
     )
     return {
@@ -353,4 +402,5 @@ def render_video_from_source(
         "source_url": url,
         "result_url": result_url,
         "edit": edit,
+        "aspect": aspect,
     }
