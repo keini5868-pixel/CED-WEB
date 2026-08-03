@@ -138,6 +138,7 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   let body: BodyInit | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
     if (requestContentType?.includes("multipart/form-data")) {
+      // Reenviar bytes crudos preservando boundary (no re-serializar FormData)
       body = await request.arrayBuffer();
     } else {
       body = await request.text();
@@ -145,7 +146,11 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   }
 
   let upstream: Response;
-  const timeoutMs = isLongRunningChatPath(path) ? 300_000 : 60_000;
+  const timeoutMs =
+    isLongRunningChatPath(path) ||
+    path.toLowerCase().includes("video-edit-pilot/render")
+      ? 300_000
+      : 60_000;
   try {
     upstream = await fetch(target, {
       method: request.method,

@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@ced/types", "@ced/ui"],
   experimental: {
     optimizePackageImports: ["lucide-react"],
+    serverActions: {
+      bodySizeLimit: "120mb",
+    },
   },
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];

@@ -236,8 +236,11 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500/90 px-4 py-2.5 text-sm font-medium text-black hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          Generar edición
+          {busy ? "Subiendo y renderizando…" : "Generar edición"}
         </button>
+        <p className="text-[11px] text-slate-500">
+          Si cambió de pestaña, vuelva a elegir el MP4 antes de generar.
+        </p>
       </section>
 
       {error ? (

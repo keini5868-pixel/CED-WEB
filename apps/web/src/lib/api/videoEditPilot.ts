@@ -1,4 +1,5 @@
-import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
+import { authHeaders } from "@/lib/api/auth";
+import { proxyFetch } from "@/lib/api/ced-proxy";
 import {
   VIDEO_EDIT_PILOT_HEADER,
   VIDEO_EDIT_PILOT_HEADER_VALUE,
@@ -9,13 +10,6 @@ function pilotJsonHeaders(extra?: Record<string, string>): Record<string, string
     "Content-Type": "application/json",
     [VIDEO_EDIT_PILOT_HEADER]: VIDEO_EDIT_PILOT_HEADER_VALUE,
     ...(extra || {}),
-  };
-}
-
-function pilotMultipartHeaders(): Record<string, string> {
-  // No Content-Type — el browser fija multipart boundary
-  return {
-    [VIDEO_EDIT_PILOT_HEADER]: VIDEO_EDIT_PILOT_HEADER_VALUE,
   };
 }
 
@@ -100,8 +94,8 @@ export async function fetchVideoEditStatus(): Promise<{
   providers?: Record<string, unknown>;
 } | null> {
   try {
-    const res = await proxyFetchAuthed("video-edit-pilot/status", {
-      headers: pilotJsonHeaders(),
+    const res = await proxyFetch("video-edit-pilot/status", {
+      headers: await _authedJsonHeaders(),
     });
     if (!res.ok) return null;
     return (await res.json()) as { enabled: boolean };
@@ -112,8 +106,8 @@ export async function fetchVideoEditStatus(): Promise<{
 
 export async function fetchVideoEditBalance(): Promise<VideoEditBalance | null> {
   try {
-    const res = await proxyFetchAuthed("video-edit-pilot/balance", {
-      headers: pilotJsonHeaders(),
+    const res = await proxyFetch("video-edit-pilot/balance", {
+      headers: await _authedJsonHeaders(),
     });
     if (!res.ok) return null;
     return (await res.json()) as VideoEditBalance;
@@ -126,9 +120,9 @@ export async function quoteVideoEdit(
   durationSec: number,
 ): Promise<VideoEditQuote | null> {
   try {
-    const res = await proxyFetchAuthed("video-edit-pilot/quote", {
+    const res = await proxyFetch("video-edit-pilot/quote", {
       method: "POST",
-      headers: pilotJsonHeaders(),
+      headers: await _authedJsonHeaders(),
       body: JSON.stringify({ duration_sec: durationSec }),
     });
     if (!res.ok) return null;
@@ -138,22 +132,46 @@ export async function quoteVideoEdit(
   }
 }
 
+async function _authedJsonHeaders(): Promise<Record<string, string>> {
+  const auth = await authHeaders(true).catch(() => ({} as Record<string, string>));
+  return {
+    ...(auth as Record<string, string>),
+    ...pilotJsonHeaders(),
+  };
+}
+
 export async function renderVideoEdit(body: {
   duration_sec: number;
   script: string;
   file?: File | null;
   auto_transcribe?: boolean;
 }): Promise<VideoEditRenderResult> {
+  if (!body.file || body.file.size <= 0) {
+    return {
+      ok: false,
+      code: "missing_video",
+      message: "Seleccione de nuevo el archivo de video antes de generar.",
+    };
+  }
   const form = new FormData();
+  // Video primero: si hay límites de body, no perder el archivo al final
+  form.append("video", body.file, body.file.name || "source.mp4");
   form.append("duration_sec", String(body.duration_sec));
   form.append("script", body.script || "");
   form.append("auto_transcribe", body.auto_transcribe ? "true" : "false");
-  if (body.file) {
-    form.append("video", body.file, body.file.name);
-  }
-  const res = await proxyFetchAuthed("video-edit-pilot/render", {
+
+  const auth = await authHeaders(false).catch(() => ({} as Record<string, string>));
+  const headers: Record<string, string> = {
+    ...(auth as Record<string, string>),
+    [VIDEO_EDIT_PILOT_HEADER]: VIDEO_EDIT_PILOT_HEADER_VALUE,
+  };
+  // Crítico: nunca forzar Content-Type con FormData (rompe el boundary)
+  delete headers["Content-Type"];
+  delete headers["content-type"];
+
+  const res = await proxyFetch("video-edit-pilot/render", {
     method: "POST",
-    headers: pilotMultipartHeaders(),
+    headers,
     body: form,
   });
   const data = (await res.json().catch(() => ({}))) as VideoEditRenderResult & {
@@ -165,9 +183,9 @@ export async function renderVideoEdit(body: {
 export async function checkoutVideoEditPack(
   amountUsd: number,
 ): Promise<{ url?: string; error?: string }> {
-  const res = await proxyFetchAuthed("video-edit-pilot/checkout", {
+  const res = await proxyFetch("video-edit-pilot/checkout", {
     method: "POST",
-    headers: pilotJsonHeaders(),
+    headers: await _authedJsonHeaders(),
     body: JSON.stringify({ amount_usd: amountUsd }),
   });
   const data = (await res.json().catch(() => ({}))) as {

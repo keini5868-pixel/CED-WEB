@@ -80,7 +80,7 @@ async def video_edit_render(
     video_bytes: bytes | None = None
     filename = "source.mp4"
     content_type = "video/mp4"
-    if video is not None and video.filename:
+    if video is not None:
         raw = await video.read()
         if len(raw) > _MAX_UPLOAD_BYTES:
             raise HTTPException(
@@ -89,8 +89,14 @@ async def video_edit_render(
             )
         if raw:
             video_bytes = raw
-            filename = video.filename or filename
+            filename = (video.filename or "").strip() or filename
             content_type = video.content_type or content_type
+        else:
+            logger.warning(
+                "[VIDEO_EDIT] upload vacío filename=%s content_type=%s",
+                video.filename,
+                video.content_type,
+            )
 
     result = video_edit_service.plan_and_render(
         user_id,
