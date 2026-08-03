@@ -184,12 +184,13 @@ export async function renderVideoEdit(body: {
       message: "Seleccione de nuevo el archivo de video antes de generar.",
     };
   }
+  const durationSec = Math.max(0.1, Number(body.duration_sec) || 30);
   const form = new FormData();
-  // Video primero: si hay límites de body, no perder el archivo al final
-  form.append("video", body.file, body.file.name || "source.mp4");
-  form.append("duration_sec", String(body.duration_sec));
+  // Metadatos ANTES del video: si el body se trunca, FastAPI aún ve duration_sec/script
+  form.append("duration_sec", String(durationSec));
   form.append("script", body.script || "");
   form.append("auto_transcribe", body.auto_transcribe ? "true" : "false");
+  form.append("video", body.file, body.file.name || "source.mp4");
 
   const auth = await authHeaders(false).catch(() => ({} as Record<string, string>));
   const headers: Record<string, string> = {
@@ -200,7 +201,11 @@ export async function renderVideoEdit(body: {
   delete headers["Content-Type"];
   delete headers["content-type"];
 
-  const res = await proxyFetch("video-edit-pilot/render", {
+  // duration_sec también en query por si el multipart pierde campos Form
+  const qs = new URLSearchParams({
+    duration_sec: String(durationSec),
+  });
+  const res = await proxyFetch(`video-edit-pilot/render?${qs.toString()}`, {
     method: "POST",
     headers,
     body: form,

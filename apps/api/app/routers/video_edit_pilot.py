@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
@@ -65,16 +65,27 @@ def video_edit_quote(
 @router.post("/render")
 async def video_edit_render(
     user_id: str = Depends(require_user_id),
-    duration_sec: float = Form(...),
+    duration_sec: float | None = Form(None),
     script: str = Form(""),
     auto_transcribe: str = Form("false"),
     video: UploadFile | None = File(None),
+    duration_sec_q: float | None = Query(None, alias="duration_sec"),
 ) -> dict:
     """Multipart: video (opcional pero requerido para live) + script + duration_sec.
 
     Live Shotstack corre en background; responda con status=rendering y haga
     polling en GET /jobs/{job_id}.
+
+    duration_sec puede venir en Form o en query (fallback si el multipart se trunca).
     """
+    resolved_duration = duration_sec if duration_sec is not None else duration_sec_q
+    if resolved_duration is None or float(resolved_duration) <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="duration_sec es obligatorio (Form o query).",
+        )
+    resolved_duration = float(resolved_duration)
+
     auto_flag = str(auto_transcribe or "").strip().lower() in {
         "1",
         "true",
@@ -104,7 +115,7 @@ async def video_edit_render(
 
     result = video_edit_service.plan_and_render(
         user_id,
-        duration_sec=duration_sec,
+        duration_sec=resolved_duration,
         script=script,
         source_asset=f"upload://{filename}",
         auto_transcribe=auto_flag,
