@@ -6,10 +6,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   checkoutVideoEditPack,
   fetchVideoEditBalance,
+  loadPendingVideoEditJob,
+  pollVideoEditJob,
   quoteVideoEdit,
   renderVideoEdit,
+  savePendingVideoEditJob,
   type VideoEditBalance,
   type VideoEditQuote,
+  type VideoEditRenderResult,
 } from "@/lib/api/videoEditPilot";
 import type { ModulePanelProps } from "@/modules/types";
 
@@ -45,6 +49,7 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
   const [timelinePreview, setTimelinePreview] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
   const [editSummary, setEditSummary] = useState<string | null>(null);
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const resultRef = useRef<HTMLElement | null>(null);
 
@@ -53,9 +58,76 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
     setBalance(bal);
   }, []);
 
+  const applyResult = useCallback((result: VideoEditRenderResult) => {
+    setMessage(
+      result.message ||
+        `Listo. Cobrado ${result.tokens_charged ?? "?"} tokens.`,
+    );
+    if (result.result_url) {
+      setResultUrl(result.result_url);
+    }
+    if (result.timeline) {
+      const tl = result.timeline as {
+        scenes?: unknown[];
+        style_mood?: string;
+      };
+      const n = Array.isArray(tl.scenes) ? tl.scenes.length : 0;
+      const mood = tl.style_mood || "estilo";
+      setEditSummary(
+        n > 1
+          ? `Edición aplicada: ${n} cortes (${mood}). Marca SHOTSTACK = entorno stage (normal).`
+          : "Render listo. Tip: usa palabras como “suspenso” o “acción” para cortes visibles.",
+      );
+      setTimelinePreview(JSON.stringify(result.timeline, null, 2));
+    }
+  }, []);
+
+  const resumeJob = useCallback(
+    async (jobId: string) => {
+      setBusy(true);
+      setError(null);
+      setPendingJobId(jobId);
+      setMessage("Retomando render en curso… puede tardar varios minutos.");
+      try {
+        const result = await pollVideoEditJob(jobId, undefined, {
+          onTick: (r) => {
+            if (r.message) setMessage(r.message);
+          },
+        });
+        if (result.code === "still_rendering") {
+          setPendingJobId(result.job_id || jobId);
+          setError(result.message || "Sigue renderizando.");
+          setMessage(null);
+          return;
+        }
+        if (!result.ok) {
+          setPendingJobId(null);
+          setError(
+            result.message || result.error || "No se pudo editar el video.",
+          );
+          await refresh();
+          return;
+        }
+        setPendingJobId(null);
+        applyResult(result);
+        await refresh();
+      } catch {
+        setError("Error de red al consultar el render.");
+      } finally {
+        setBusy(false);
+      }
+    },
+    [applyResult, refresh],
+  );
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    const pending = loadPendingVideoEditJob();
+    if (pending) {
+      setPendingJobId(pending);
+      void resumeJob(pending);
+    }
+  }, [refresh, resumeJob]);
 
   useEffect(() => {
     if (durationSec <= 0) {
@@ -109,6 +181,14 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
         script,
         file,
       });
+      if (result.code === "still_rendering" && result.job_id) {
+        setPendingJobId(result.job_id);
+        savePendingVideoEditJob(result.job_id);
+        setError(result.message || "Sigue renderizando.");
+        setMessage(null);
+        await refresh();
+        return;
+      }
       if (!result.ok) {
         setError(
           result.message ||
@@ -118,28 +198,8 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
         await refresh();
         return;
       }
-      setMessage(
-        result.message ||
-          `Listo. Cobrado ${result.tokens_charged ?? "?"} tokens.`,
-      );
-      if (result.result_url) {
-        setResultUrl(result.result_url);
-      }
-      if (result.timeline) {
-        const tl = result.timeline as {
-          scenes?: unknown[];
-          style_mood?: string;
-          title?: { text?: string };
-        };
-        const n = Array.isArray(tl.scenes) ? tl.scenes.length : 0;
-        const mood = tl.style_mood || "estilo";
-        setEditSummary(
-          n > 1
-            ? `Edición aplicada: ${n} cortes (${mood}). Marca SHOTSTACK = entorno stage (normal).`
-            : "Render listo. Tip: usa palabras como “suspenso” o “acción” para cortes visibles.",
-        );
-        setTimelinePreview(JSON.stringify(result.timeline, null, 2));
-      }
+      setPendingJobId(null);
+      applyResult(result);
       await refresh();
     } catch {
       setError("Error de red al procesar el video.");
@@ -282,11 +342,20 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
             className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500/90 px-4 py-2.5 text-sm font-medium text-black hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {busy ? "Subiendo a Shotstack…" : "Generar edición"}
+            {busy ? "Esperando Shotstack…" : "Generar edición"}
           </button>
+          {pendingJobId && !busy ? (
+            <button
+              type="button"
+              onClick={() => void resumeJob(pendingJobId)}
+              className="ml-2 inline-flex items-center justify-center gap-2 rounded-xl border border-amber-400/50 bg-amber-500/15 px-4 py-2.5 text-sm font-medium text-amber-100 hover:bg-amber-500/25"
+            >
+              Seguir esperando
+            </button>
+          ) : null}
           <p className="text-[11px] text-slate-500">
-            El video se sube directo a Shotstack. El render puede tardar 1–3
-            minutos. Desplázate hacia abajo para ver el resultado.
+            El render puede tardar varios minutos con varios cortes. Si aparece
+            “sigue en curso”, use Seguir esperando — no genere otra vez.
           </p>
         </section>
 

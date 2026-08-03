@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "video-edit-ui-style-v7"
+BUILD_VERSION = "video-edit-poll-resume-v8"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

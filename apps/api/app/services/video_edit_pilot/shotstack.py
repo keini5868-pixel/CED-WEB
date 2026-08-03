@@ -13,9 +13,9 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 _UPLOAD_TIMEOUT = 180.0
-_POLL_INTERVAL = 2.5
-_INGEST_MAX_WAIT = 120.0
-_RENDER_MAX_WAIT = 180.0
+_POLL_INTERVAL = 3.0
+_INGEST_MAX_WAIT = 180.0
+_RENDER_MAX_WAIT = 480.0
 
 
 def _env() -> str:

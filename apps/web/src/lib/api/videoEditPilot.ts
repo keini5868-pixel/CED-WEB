@@ -249,6 +249,9 @@ export async function renderVideoEdit(body: {
     detail?: unknown;
   };
   const started = parseRenderResponse(renderRes, data);
+  if (started.job_id && started.status === "rendering") {
+    savePendingVideoEditJob(started.job_id);
+  }
   if (!started.ok || started.status !== "rendering" || !started.job_id) {
     return started;
   }
@@ -273,17 +276,51 @@ export async function fetchVideoEditJob(
   return data;
 }
 
-async function pollVideoEditJob(
+const PENDING_JOB_KEY = "ced.videoEdit.pendingJobId";
+
+export function savePendingVideoEditJob(jobId: string | null): void {
+  try {
+    if (!jobId) {
+      sessionStorage.removeItem(PENDING_JOB_KEY);
+      return;
+    }
+    sessionStorage.setItem(PENDING_JOB_KEY, jobId);
+  } catch {
+    /* private mode */
+  }
+}
+
+export function loadPendingVideoEditJob(): string | null {
+  try {
+    return sessionStorage.getItem(PENDING_JOB_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/** Poll hasta done/failed. Por defecto ~12 min (edits con varios clips tardan más). */
+export async function pollVideoEditJob(
   jobId: string,
-  initial: VideoEditRenderResult,
+  initial?: VideoEditRenderResult,
+  opts?: { timeoutMs?: number; intervalMs?: number; onTick?: (r: VideoEditRenderResult) => void },
 ): Promise<VideoEditRenderResult> {
-  const deadline = Date.now() + 280_000;
-  let last = initial;
+  const timeoutMs = opts?.timeoutMs ?? 720_000;
+  const intervalMs = opts?.intervalMs ?? 3000;
+  const deadline = Date.now() + timeoutMs;
+  let last: VideoEditRenderResult = initial || {
+    ok: true,
+    job_id: jobId,
+    status: "rendering",
+    message: "Render en curso…",
+  };
+  savePendingVideoEditJob(jobId);
   while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 2500));
+    await new Promise((r) => setTimeout(r, intervalMs));
     last = await fetchVideoEditJob(jobId);
+    opts?.onTick?.(last);
     const status = String(last.status || "");
     if (status === "done" || status === "failed" || status === "dry_run") {
+      savePendingVideoEditJob(null);
       if (status === "failed") {
         return {
           ...last,
@@ -299,11 +336,12 @@ async function pollVideoEditJob(
   }
   return {
     ok: false,
+    code: "still_rendering",
     job_id: jobId,
     status: last.status || "rendering",
     message:
-      "El render sigue en curso pero el tiempo de espera del cliente se agotó. "
-      + "Vuelva a abrir el módulo en unos minutos o reintente.",
+      "El render sigue en curso (puede tardar varios minutos con varios cortes). "
+      + "Pulse «Seguir esperando» — no genere de nuevo o se cobrará otra vez.",
   };
 }
 
