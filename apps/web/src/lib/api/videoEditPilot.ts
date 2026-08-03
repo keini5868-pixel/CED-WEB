@@ -55,13 +55,44 @@ export type VideoEditRenderResult = {
   detail?: unknown;
 };
 
+function formatApiDetail(detail: unknown): string {
+  if (detail == null) return "No se pudo procesar el video.";
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (typeof item === "string") return item;
+        if (item && typeof item === "object") {
+          const row = item as { msg?: string; message?: string; loc?: unknown[] };
+          const where = Array.isArray(row.loc) ? row.loc.join(".") : "";
+          const msg = row.msg || row.message || JSON.stringify(item);
+          return where ? `${where}: ${msg}` : msg;
+        }
+        return String(item);
+      })
+      .join(" · ");
+  }
+  if (typeof detail === "object") {
+    const err = detail as VideoEditRenderResult & { detail?: unknown };
+    const msg = err.message || err.error;
+    if (msg) return String(msg);
+    if (err.detail != null) return formatApiDetail(err.detail);
+    try {
+      return JSON.stringify(detail).slice(0, 400);
+    } catch {
+      return "No se pudo procesar el video.";
+    }
+  }
+  return String(detail);
+}
+
 function parseRenderResponse(
   res: Response,
-  data: VideoEditRenderResult & { detail?: VideoEditRenderResult | string },
+  data: VideoEditRenderResult & { detail?: unknown },
 ): VideoEditRenderResult {
   if (!res.ok) {
     const detail = data.detail;
-    if (detail && typeof detail === "object") {
+    if (detail && typeof detail === "object" && !Array.isArray(detail)) {
       const err = detail as VideoEditRenderResult;
       return {
         ok: false,
@@ -71,7 +102,7 @@ function parseRenderResponse(
         balance_tokens: err.balance_tokens,
         timeline: err.timeline,
         result_url: err.result_url,
-        message: err.message || err.error || "No se pudo procesar el video.",
+        message: formatApiDetail(detail),
         error: err.error,
         code: err.code,
         soft_cap_remaining: err.soft_cap_remaining,
@@ -81,7 +112,7 @@ function parseRenderResponse(
     }
     return {
       ok: false,
-      message: typeof detail === "string" ? detail : "No se pudo procesar el video.",
+      message: `HTTP ${res.status}: ${formatApiDetail(detail)}`,
     };
   }
   return data;
@@ -177,7 +208,63 @@ export async function renderVideoEdit(body: {
   const data = (await res.json().catch(() => ({}))) as VideoEditRenderResult & {
     detail?: VideoEditRenderResult | string;
   };
-  return parseRenderResponse(res, data);
+  const started = parseRenderResponse(res, data);
+  if (!started.ok || started.status !== "rendering" || !started.job_id) {
+    return started;
+  }
+  return pollVideoEditJob(started.job_id, started);
+}
+
+export async function fetchVideoEditJob(
+  jobId: string,
+): Promise<VideoEditRenderResult> {
+  const res = await proxyFetch(`video-edit-pilot/jobs/${encodeURIComponent(jobId)}`, {
+    headers: await _authedJsonHeaders(),
+  });
+  const data = (await res.json().catch(() => ({}))) as VideoEditRenderResult & {
+    detail?: unknown;
+  };
+  if (!res.ok) {
+    return {
+      ok: false,
+      message: formatApiDetail(data.detail) || `HTTP ${res.status}`,
+    };
+  }
+  return data;
+}
+
+async function pollVideoEditJob(
+  jobId: string,
+  initial: VideoEditRenderResult,
+): Promise<VideoEditRenderResult> {
+  const deadline = Date.now() + 280_000;
+  let last = initial;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 2500));
+    last = await fetchVideoEditJob(jobId);
+    const status = String(last.status || "");
+    if (status === "done" || status === "failed" || status === "dry_run") {
+      if (status === "failed") {
+        return {
+          ...last,
+          ok: false,
+          message:
+            last.message ||
+            last.error ||
+            "Render falló. Tokens reembolsados si correspondía.",
+        };
+      }
+      return { ...last, ok: true };
+    }
+  }
+  return {
+    ok: false,
+    job_id: jobId,
+    status: last.status || "rendering",
+    message:
+      "El render sigue en curso pero el tiempo de espera del cliente se agotó. "
+      + "Vuelva a abrir el módulo en unos minutos o reintente.",
+  };
 }
 
 export async function checkoutVideoEditPack(
@@ -193,7 +280,7 @@ export async function checkoutVideoEditPack(
     detail?: string;
   };
   if (!res.ok) {
-    return { error: data.detail || "No se pudo iniciar el pago." };
+    return { error: typeof data.detail === "string" ? data.detail : "No se pudo iniciar el pago." };
   }
   return { url: data.url };
 }

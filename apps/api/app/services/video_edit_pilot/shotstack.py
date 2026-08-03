@@ -50,18 +50,23 @@ def _edit_base() -> str:
 def request_upload_url(*, filename: str = "source.mp4") -> dict[str, str]:
     """POST /upload → signed URL + source id."""
     with httpx.Client(timeout=30.0) as client:
-        res = client.post(
-            f"{_ingest_base()}/upload",
-            headers={**_headers(), "Content-Type": "application/json"},
-            json={"filename": filename},
-        )
-        res.raise_for_status()
+        # Body vacío es el path documentado; filename ayuda a tipos no-binarios.
+        headers = {**_headers()}
+        kwargs: dict[str, Any] = {"headers": headers}
+        if filename and filename.lower() not in {"source.mp4", "video.mp4", "upload.mp4"}:
+            headers["Content-Type"] = "application/json"
+            kwargs["json"] = {"filename": filename}
+        res = client.post(f"{_ingest_base()}/upload", **kwargs)
+        if res.status_code >= 400:
+            raise RuntimeError(
+                f"Shotstack upload URL HTTP {res.status_code}: {res.text[:300]}"
+            )
         data = res.json().get("data") or {}
         attrs = data.get("attributes") or {}
         source_id = str(attrs.get("id") or data.get("id") or "").strip()
         url = str(attrs.get("url") or "").strip()
         if not source_id or not url:
-            raise RuntimeError("Shotstack upload: respuesta sin id/url")
+            raise RuntimeError(f"Shotstack upload: respuesta sin id/url: {res.text[:300]}")
         return {"source_id": source_id, "upload_url": url}
 
 
@@ -71,11 +76,17 @@ def put_bytes_to_signed_url(
     *,
     content_type: str = "video/mp4",
 ) -> None:
+    # No enviar headers extra en PUT firmado (S3 SignatureDoesNotMatch).
+    # Content-Type solo si hace falta (texto/SRT); video se detecta solo.
+    headers: dict[str, str] = {}
+    ct = (content_type or "").strip().lower()
+    if ct and not ct.startswith("video/") and ct not in {"application/octet-stream", ""}:
+        headers["Content-Type"] = content_type
     with httpx.Client(timeout=_UPLOAD_TIMEOUT) as client:
         res = client.put(
             upload_url,
             content=content,
-            headers={"Content-Type": content_type},
+            headers=headers if headers else {},
         )
         if res.status_code >= 400:
             raise RuntimeError(

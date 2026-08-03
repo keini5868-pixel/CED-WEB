@@ -70,7 +70,11 @@ async def video_edit_render(
     auto_transcribe: str = Form("false"),
     video: UploadFile | None = File(None),
 ) -> dict:
-    """Multipart: video (opcional pero requerido para live) + script + duration_sec."""
+    """Multipart: video (opcional pero requerido para live) + script + duration_sec.
+
+    Live Shotstack corre en background; responda con status=rendering y haga
+    polling en GET /jobs/{job_id}.
+    """
     auto_flag = str(auto_transcribe or "").strip().lower() in {
         "1",
         "true",
@@ -117,6 +121,18 @@ async def video_edit_render(
             status = 502
         raise HTTPException(status_code=status, detail=result)
     return result
+
+
+@router.get("/jobs/{job_id}")
+def video_edit_job_status(
+    job_id: str,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    """Polling del render async (rendering → done | failed)."""
+    payload = video_edit_service.get_job_payload(user_id, job_id)
+    if not payload:
+        raise HTTPException(status_code=404, detail="Job no encontrado.")
+    return payload
 
 
 @router.post("/render-json")

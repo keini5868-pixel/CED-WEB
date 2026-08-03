@@ -1,11 +1,9 @@
 """Orquestación Video Edit piloto — tokens + Shotstack live / dry-run."""
-
 from __future__ import annotations
-
 import logging
+import threading
 from typing import Any
 from uuid import uuid4
-
 from app.config import get_settings
 from app.domain.video_edit_economy import (
     VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY,
@@ -26,9 +24,22 @@ from app.services.video_edit_pilot.tokens import (
     renders_today,
     soft_cap_remaining,
 )
-
 logger = logging.getLogger(__name__)
+# Cache en memoria para polling rápido (Railway multi-instancia: DB es fuente de verdad)
+_job_cache: dict[str, dict[str, Any]] = {}
+_job_cache_lock = threading.Lock()
 
+def _cache_put(job_id: str, payload: dict[str, Any]) -> None:
+    with _job_cache_lock:
+        _job_cache[job_id] = payload
+
+def _cache_get(job_id: str) -> dict[str, Any] | None:
+    with _job_cache_lock:
+        row = _job_cache.get(job_id)
+        return dict(row) if row else None
+
+def _strip_user(payload: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in payload.items() if k != "user_id"}
 
 def pilot_status() -> dict[str, Any]:
     settings = get_settings()
@@ -55,7 +66,6 @@ def pilot_status() -> dict[str, Any]:
         "mode": "live_ready" if shotstack else "dry_run",
     }
 
-
 def get_balance_payload(user_id: str) -> dict[str, Any]:
     bal = get_token_balance(user_id)
     used = renders_today(user_id)
@@ -69,11 +79,190 @@ def get_balance_payload(user_id: str) -> dict[str, Any]:
         "packs": video_edit_pack_catalog(),
     }
 
-
 def quote_job(duration_sec: float) -> dict[str, Any]:
     q = quote_render(duration_sec)
     return {"ok": True, **q}
 
+def _persist_job(row: dict[str, Any]) -> None:
+    try:
+        from app.services import supabase_db
+        supabase_db.insert_video_edit_job(row)
+    except Exception:  # noqa: BLE001
+        logger.debug("[VIDEO_EDIT] job persist skipped")
+
+def _update_job(job_id: str, patch: dict[str, Any]) -> None:
+    try:
+        from app.services import supabase_db
+        supabase_db.update_video_edit_job(job_id, patch)
+    except Exception:  # noqa: BLE001
+        logger.debug("[VIDEO_EDIT] job update skipped")
+
+def _public_job_payload(
+    *,
+    job_id: str,
+    user_id: str,
+    status: str,
+    tokens: int,
+    balance_tokens: int | None,
+    quote: dict[str, Any],
+    timeline: dict[str, Any],
+    result_url: str | None,
+    message: str,
+    error: str | None = None,
+) -> dict[str, Any]:
+    ok = status in {"done", "dry_run", "rendering"}
+    payload = {
+        "ok": ok,
+        "job_id": job_id,
+        "user_id": user_id,
+        "status": status,
+        "tokens_charged": 0 if status == "failed" else tokens,
+        "balance_tokens": balance_tokens,
+        "quote": quote,
+        "timeline": timeline,
+        "result_url": result_url,
+        "message": message,
+        "error": error,
+        "soft_cap_remaining": soft_cap_remaining(user_id),
+        "code": None if ok else "render_failed",
+    }
+    _cache_put(job_id, payload)
+    return payload
+
+def _run_shotstack_background(
+    *,
+    job_id: str,
+    user_id: str,
+    tokens: int,
+    quote: dict[str, Any],
+    timeline: dict[str, Any],
+    video_bytes: bytes,
+    video_filename: str,
+    video_content_type: str,
+    duration_sec: float,
+    source_asset: str,
+) -> None:
+    try:
+        live = render_video_from_bytes(
+            video_bytes,
+            filename=video_filename or "source.mp4",
+            content_type=video_content_type or "video/mp4",
+            timeline=timeline,
+            duration_sec=duration_sec,
+        )
+        result_url = str(live.get("result_url") or "")
+        updated_timeline = {
+            **timeline,
+            "source": {"asset": live.get("source_url") or source_asset},
+        }
+        bal = get_token_balance(user_id)
+        _public_job_payload(
+            job_id=job_id,
+            user_id=user_id,
+            status="done",
+            tokens=tokens,
+            balance_tokens=bal,
+            quote=quote,
+            timeline=updated_timeline,
+            result_url=result_url,
+            message=(
+                "Video editado listo. Tokens descontados. "
+                "Revise el enlace de descarga abajo."
+            ),
+        )
+        _update_job(
+            job_id,
+            {
+                "status": "done",
+                "result_url": result_url,
+                "timeline": updated_timeline,
+                "error": None,
+                "tokens_charged": tokens,
+                "metadata": {
+                    "sonilo_cues": len(
+                        (updated_timeline.get("sonilo") or {}).get("cues") or []
+                    ),
+                    "veo": updated_timeline.get("veo"),
+                    "dry_run": False,
+                    "render_id": live.get("render_id"),
+                    "source_id": live.get("source_id"),
+                    "edit": live.get("edit"),
+                },
+            },
+        )
+        logger.info("[VIDEO_EDIT] async done job=%s", job_id[:8])
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[VIDEO_EDIT] shotstack live failed job=%s", job_id[:8])
+        error = str(exc)[:400]
+        credit_tokens(
+            user_id,
+            tokens,
+            reason="render_refund",
+            metadata={"job_id": job_id, "error": error},
+        )
+        bal = get_token_balance(user_id)
+        _public_job_payload(
+            job_id=job_id,
+            user_id=user_id,
+            status="failed",
+            tokens=tokens,
+            balance_tokens=bal,
+            quote=quote,
+            timeline=timeline,
+            result_url=None,
+            message=f"Render falló; tokens reembolsados. Detalle: {error}",
+            error=error,
+        )
+        _update_job(
+            job_id,
+            {
+                "status": "failed",
+                "error": error,
+                "tokens_charged": 0,
+                "result_url": None,
+            },
+        )
+
+def get_job_payload(user_id: str, job_id: str) -> dict[str, Any] | None:
+    cached = _cache_get(job_id)
+    if cached and cached.get("user_id") == user_id:
+        return _strip_user(cached)
+    try:
+        from app.services import supabase_db
+        row = supabase_db.get_video_edit_job(job_id, user_id)
+    except Exception:  # noqa: BLE001
+        row = None
+    if not row:
+        return None
+    status = str(row.get("status") or "")
+    ok = status in {"done", "dry_run", "rendering"}
+    payload = {
+        "ok": ok,
+        "job_id": job_id,
+        "status": status,
+        "tokens_charged": row.get("tokens_charged"),
+        "balance_tokens": get_token_balance(user_id),
+        "timeline": row.get("timeline"),
+        "result_url": row.get("result_url"),
+        "message": (
+            "Video editado listo."
+            if status == "done"
+            else (
+                "Render en curso en Shotstack…"
+                if status == "rendering"
+                else (
+                    f"Render falló; tokens reembolsados. Detalle: {row.get('error') or 'error'}"
+                    if status == "failed"
+                    else "Timeline lista (dry-run)."
+                )
+            )
+        ),
+        "error": row.get("error"),
+        "soft_cap_remaining": soft_cap_remaining(user_id),
+        "code": None if ok else "render_failed",
+    }
+    _cache_put(job_id, {**payload, "user_id": user_id})
+    return payload
 
 def plan_and_render(
     user_id: str,
@@ -91,12 +280,11 @@ def plan_and_render(
     1) Soft cap diario
     2) Quote + debit tokens
     3) Timeline (cortes / fades / cues Sonilo planificados)
-    4) Si hay SHOTSTACK_API_KEY + video_bytes → render live
-       Si no → dry_run (timeline) sin reembolso (ya cobrado en dry-run previo)
+    4) Si hay SHOTSTACK_API_KEY + video_bytes → render async (polling)
+       Si no → dry_run (timeline)
     """
     duration_sec = max(0.1, float(duration_sec))
     script = (script or "").strip()
-
     if renders_today(user_id) >= VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY:
         return {
             "ok": False,
@@ -108,19 +296,16 @@ def plan_and_render(
             "balance_tokens": get_token_balance(user_id),
             "soft_cap_remaining": 0,
         }
-
     if not script and not auto_transcribe:
         return {
             "ok": False,
             "code": "script_required",
             "error": "Pegue el guion o active transcripción automática (próximamente).",
         }
-
     if not script and auto_transcribe:
         script = (
             "[Transcripción automática pendiente — use guion manual en v1 piloto]"
         )
-
     tokens = tokens_for_duration_seconds(duration_sec)
     quote = quote_render(duration_sec)
     bal = get_token_balance(user_id)
@@ -136,7 +321,6 @@ def plan_and_render(
             "balance_tokens": bal,
             "packs": video_edit_pack_catalog(),
         }
-
     job_id = str(uuid4())
     settings = get_settings()
     veo_enabled = bool(getattr(settings, "video_edit_veo_enabled", False))
@@ -146,7 +330,6 @@ def plan_and_render(
         source_asset=source_asset,
         veo_enabled=veo_enabled,
     )
-
     debit = debit_tokens(
         user_id,
         tokens,
@@ -163,107 +346,102 @@ def plan_and_render(
             "balance_tokens": debit.get("balance_tokens", bal),
             "quote": quote,
         }
-
     record_render_attempt(user_id)
-    result_url: str | None = None
-    error: str | None = None
-    status = "dry_run"
-    render_meta: dict[str, Any] = {}
-
     can_live = shotstack_configured() and bool(video_bytes)
     if can_live:
-        try:
-            live = render_video_from_bytes(
-                video_bytes or b"",
-                filename=video_filename or "source.mp4",
-                content_type=video_content_type or "video/mp4",
-                timeline=timeline,
-                duration_sec=duration_sec,
-            )
-            result_url = str(live.get("result_url") or "")
-            status = "done"
-            render_meta = {
-                "render_id": live.get("render_id"),
-                "source_id": live.get("source_id"),
-                "edit": live.get("edit"),
-            }
-            timeline = {
-                **timeline,
-                "source": {"asset": live.get("source_url") or source_asset},
-            }
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("[VIDEO_EDIT] shotstack live failed job=%s", job_id[:8])
-            error = str(exc)[:400]
-            status = "failed"
-            # Reembolso si el render live falla tras debitar
-            credit_tokens(
-                user_id,
-                tokens,
-                reason="render_refund",
-                metadata={"job_id": job_id, "error": error},
-            )
-            debit["balance_tokens"] = get_token_balance(user_id)
-    elif shotstack_configured() and not video_bytes:
+        row = {
+            "id": job_id,
+            "user_id": user_id,
+            "status": "rendering",
+            "duration_sec": duration_sec,
+            "tokens_charged": tokens,
+            "script": script[:8000],
+            "timeline": timeline,
+            "result_url": None,
+            "error": None,
+            "metadata": {
+                "sonilo_cues": len((timeline.get("sonilo") or {}).get("cues") or []),
+                "veo": timeline.get("veo"),
+                "dry_run": False,
+                "async": True,
+            },
+        }
+        _persist_job(row)
+        payload = _public_job_payload(
+            job_id=job_id,
+            user_id=user_id,
+            status="rendering",
+            tokens=tokens,
+            balance_tokens=debit.get("balance_tokens"),
+            quote=quote,
+            timeline=timeline,
+            result_url=None,
+            message=(
+                "Video recibido. Render en Shotstack en curso "
+                "(puede tardar 1–3 min). No cierre esta pestaña."
+            ),
+        )
+        thread = threading.Thread(
+            target=_run_shotstack_background,
+            kwargs={
+                "job_id": job_id,
+                "user_id": user_id,
+                "tokens": tokens,
+                "quote": quote,
+                "timeline": timeline,
+                "video_bytes": video_bytes or b"",
+                "video_filename": video_filename or "source.mp4",
+                "video_content_type": video_content_type or "video/mp4",
+                "duration_sec": duration_sec,
+                "source_asset": source_asset,
+            },
+            daemon=True,
+            name=f"video-edit-{job_id[:8]}",
+        )
+        thread.start()
+        return _strip_user(payload)
+    if shotstack_configured() and not video_bytes:
         status = "dry_run"
-        error = None
         message_hint = (
             "Shotstack configurado, pero falta el archivo de video en la petición "
             "(sube el MP4 de nuevo). Timeline lista; tokens descontados."
         )
+        error = None
     else:
+        status = "dry_run"
         message_hint = (
             "Timeline lista (dry-run). Configure SHOTSTACK_API_KEY para render en vivo. "
             "Tokens ya descontados."
         )
-
-    if status == "done":
-        message_hint = (
-            "Video editado listo. Tokens descontados. "
-            "Revise el enlace de descarga abajo."
-        )
-    elif status == "failed":
-        message_hint = (
-            f"Render falló; tokens reembolsados. Detalle: {error or 'error'}"
-        )
-
+        error = None
     row = {
         "id": job_id,
         "user_id": user_id,
-        "status": status if status in {
-            "queued", "planning", "rendering", "done", "failed", "dry_run"
-        } else "failed",
+        "status": status,
         "duration_sec": duration_sec,
-        "tokens_charged": 0 if status == "failed" else tokens,
+        "tokens_charged": tokens,
         "script": script[:8000],
         "timeline": timeline,
-        "result_url": result_url,
+        "result_url": None,
         "error": error,
         "metadata": {
             "sonilo_cues": len((timeline.get("sonilo") or {}).get("cues") or []),
             "veo": timeline.get("veo"),
-            "dry_run": status == "dry_run",
-            **render_meta,
+            "dry_run": True,
         },
     }
-    try:
-        from app.services import supabase_db
-
-        supabase_db.insert_video_edit_job(row)
-    except Exception:  # noqa: BLE001
-        logger.debug("[VIDEO_EDIT] job persist skipped")
-
-    ok = status in {"done", "dry_run"}
-    return {
-        "ok": ok,
-        "job_id": job_id,
-        "status": status,
-        "tokens_charged": 0 if status == "failed" else tokens,
-        "balance_tokens": debit.get("balance_tokens"),
-        "quote": quote,
-        "timeline": timeline,
-        "result_url": result_url,
-        "message": message_hint,
-        "error": error,
-        "soft_cap_remaining": soft_cap_remaining(user_id),
-        "code": None if ok else "render_failed",
-    }
+    _persist_job(row)
+    return _strip_user(
+        _public_job_payload(
+            job_id=job_id,
+            user_id=user_id,
+            status=status,
+            tokens=tokens,
+            balance_tokens=debit.get("balance_tokens"),
+            quote=quote,
+            timeline=timeline,
+            result_url=None,
+            message=message_hint,
+            error=error,
+        )
+    )

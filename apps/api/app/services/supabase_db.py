@@ -1333,3 +1333,17 @@ def update_video_edit_job(job_id: str, patch: dict) -> None:
         client.table("video_edit_jobs").update(patch).eq("id", job_id).execute()
     except Exception:  # noqa: BLE001
         logger.exception("[DB] update_video_edit_job failed")
+
+
+def get_video_edit_job(job_id: str, user_id: str | None = None) -> dict | None:
+    try:
+        client = _client()
+        query = client.table("video_edit_jobs").select("*").eq("id", job_id)
+        if user_id:
+            query = query.eq("user_id", user_id)
+        result = query.limit(1).execute()
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] get_video_edit_job failed")
+        return None
