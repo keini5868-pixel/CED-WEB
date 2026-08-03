@@ -141,7 +141,7 @@ def timeline_to_shotstack_edit(
     timeline: dict[str, Any],
     duration_sec: float,
 ) -> dict[str, Any]:
-    """Convierte timeline CED → JSON Edit API (cortes + fades)."""
+    """Convierte timeline CED → JSON Edit API (cortes + fades + filtros)."""
     scenes = list(timeline.get("scenes") or [])
     transitions = {
         float(t.get("at") or 0): t
@@ -172,29 +172,76 @@ def timeline_to_shotstack_edit(
                 "start": round(cursor, 3),
                 "length": round(length, 3),
             }
-            # Transición out si hay fade/veo en el borde
+            filt = str(scene.get("filter") or "").strip()
+            if filt in {"boost", "contrast", "darken", "greyscale", "lighten", "muted"}:
+                clip["filter"] = filt
+            effect = str(scene.get("effect") or "").strip()
+            # Shotstack motion effects
+            if effect in {
+                "zoomIn",
+                "zoomOut",
+                "zoomInSlow",
+                "zoomOutSlow",
+                "slideLeft",
+                "slideRight",
+            }:
+                clip["effect"] = effect
             edge = transitions.get(round(end_src, 2)) or transitions.get(end_src)
-            if edge and i < len(scenes) - 1:
-                ttype = str(edge.get("type") or "fade")
-                if ttype != "veo_lite":
-                    clip["transition"] = {"out": "fade"}
+            # También por índice: en style pacing "at" es end del source, no del timeline out
+            if not edge and i < len(scenes) - 1:
+                for t in timeline.get("transitions") or []:
+                    if isinstance(t, dict) and abs(float(t.get("at") or 0) - end_src) < 0.05:
+                        edge = t
+                        break
+            if i < len(scenes) - 1:
+                ttype = str((edge or {}).get("type") or "fade")
+                if ttype == "cut":
+                    pass  # hard cut, sin transición
                 else:
-                    # Veo aún no genera clip; usamos fade como fallback seguro
                     clip["transition"] = {"out": "fade"}
             clips.append(clip)
             cursor += length
 
+    tracks: list[dict[str, Any]] = [{"clips": clips}]
+
+    # Título corto arriba (se nota la edición) si hay mood/style
+    title = timeline.get("title") or {}
+    if title.get("enabled") and title.get("text"):
+        label = str(title.get("text") or "").strip()[:40]
+        mood = str(title.get("mood") or "")
+        tracks.append(
+            {
+                "clips": [
+                    {
+                        "asset": {
+                            "type": "title",
+                            "text": label.upper(),
+                            "style": "minimal",
+                            "color": "#ffffff",
+                            "size": "small",
+                            "background": "#000000",
+                            "position": "top",
+                        },
+                        "start": 0,
+                        "length": min(2.5, max(1.2, float(duration_sec) * 0.08)),
+                        "transition": {"in": "fade", "out": "fade"},
+                    }
+                ]
+            }
+        )
+        _ = mood
+
     output = timeline.get("output") or {}
-    aspect = str(output.get("aspect") or "9:16")
+    aspect = str(output.get("aspect") or "16:9")
     return {
         "timeline": {
             "background": "#000000",
-            "tracks": [{"clips": clips}],
+            "tracks": tracks,
         },
         "output": {
             "format": "mp4",
             "resolution": "hd",
-            "aspectRatio": aspect if aspect in {"16:9", "9:16", "1:1", "4:5"} else "9:16",
+            "aspectRatio": aspect if aspect in {"16:9", "9:16", "1:1", "4:5"} else "16:9",
             "fps": 30,
         },
     }
