@@ -265,8 +265,29 @@ def render_video_from_bytes(
     uploaded = upload_video_bytes(
         content, filename=filename, content_type=content_type or "video/mp4"
     )
-    edit = timeline_to_shotstack_edit(
+    return render_video_from_source(
+        source_id=uploaded["source_id"],
         source_url=uploaded["source_url"],
+        timeline=timeline,
+        duration_sec=duration_sec,
+    )
+
+
+def render_video_from_source(
+    *,
+    source_id: str,
+    source_url: str | None = None,
+    timeline: dict[str, Any],
+    duration_sec: float,
+) -> dict[str, Any]:
+    """Ingest ya subido (browser/API) → wait ready si hace falta → edit → URL."""
+    if not shotstack_configured():
+        raise RuntimeError("SHOTSTACK_API_KEY no configurada")
+    url = (source_url or "").strip()
+    if not url:
+        url = wait_source_ready(source_id)
+    edit = timeline_to_shotstack_edit(
+        source_url=url,
         timeline=timeline,
         duration_sec=duration_sec,
     )
@@ -275,14 +296,14 @@ def render_video_from_bytes(
     logger.info(
         "[SHOTSTACK] done render=%s source=%s url=%s",
         render_id[:12],
-        uploaded["source_id"][:12],
+        source_id[:12],
         result_url[:80],
     )
     return {
         "ok": True,
         "render_id": render_id,
-        "source_id": uploaded["source_id"],
-        "source_url": uploaded["source_url"],
+        "source_id": source_id,
+        "source_url": url,
         "result_url": result_url,
         "edit": edit,
     }

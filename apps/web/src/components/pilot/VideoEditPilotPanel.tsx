@@ -236,11 +236,11 @@ export function VideoEditModuleContent(_props: ModulePanelProps) {
           className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-500/90 px-4 py-2.5 text-sm font-medium text-black hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {busy ? "Procesando en Shotstack…" : "Generar edición"}
+          {busy ? "Subiendo a Shotstack…" : "Generar edición"}
         </button>
         <p className="text-[11px] text-slate-500">
-          Si cambió de pestaña, vuelva a elegir el MP4 antes de generar. El render
-          en vivo puede tardar 1–3 minutos.
+          El video se sube directo a Shotstack (no pasa por el proxy web). El
+          render puede tardar 1–3 minutos.
         </p>
       </section>
 

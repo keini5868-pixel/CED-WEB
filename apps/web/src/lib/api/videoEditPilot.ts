@@ -185,35 +185,70 @@ export async function renderVideoEdit(body: {
     };
   }
   const durationSec = Math.max(0.1, Number(body.duration_sec) || 30);
-  const form = new FormData();
-  // Metadatos ANTES del video: si el body se trunca, FastAPI aún ve duration_sec/script
-  form.append("duration_sec", String(durationSec));
-  form.append("script", body.script || "");
-  form.append("auto_transcribe", body.auto_transcribe ? "true" : "false");
-  form.append("video", body.file, body.file.name || "source.mp4");
+  const filename = body.file.name || "source.mp4";
 
-  const auth = await authHeaders(false).catch(() => ({} as Record<string, string>));
-  const headers: Record<string, string> = {
-    ...(auth as Record<string, string>),
-    [VIDEO_EDIT_PILOT_HEADER]: VIDEO_EDIT_PILOT_HEADER_VALUE,
-  };
-  // Crítico: nunca forzar Content-Type con FormData (rompe el boundary)
-  delete headers["Content-Type"];
-  delete headers["content-type"];
-
-  // duration_sec también en query por si el multipart pierde campos Form
-  const qs = new URLSearchParams({
-    duration_sec: String(durationSec),
-  });
-  const res = await proxyFetch(`video-edit-pilot/render?${qs.toString()}`, {
+  // 1) URL firmada Shotstack (JSON pequeño vía BFF — el MP4 NO pasa por Next)
+  const ingestRes = await proxyFetch("video-edit-pilot/ingest-upload", {
     method: "POST",
-    headers,
-    body: form,
+    headers: await _authedJsonHeaders(),
+    body: JSON.stringify({ filename }),
   });
-  const data = (await res.json().catch(() => ({}))) as VideoEditRenderResult & {
-    detail?: VideoEditRenderResult | string;
+  const ingest = (await ingestRes.json().catch(() => ({}))) as {
+    ok?: boolean;
+    source_id?: string;
+    upload_url?: string;
+    detail?: unknown;
+    error?: string;
   };
-  const started = parseRenderResponse(res, data);
+  if (!ingestRes.ok || !ingest.upload_url || !ingest.source_id) {
+    return {
+      ok: false,
+      message:
+        formatApiDetail(ingest.detail) ||
+        ingest.error ||
+        "No se pudo obtener URL de subida a Shotstack.",
+    };
+  }
+
+  // 2) PUT directo del browser → S3 de Shotstack (sin BFF)
+  try {
+    const putRes = await fetch(ingest.upload_url, {
+      method: "PUT",
+      body: body.file,
+      // Sin Content-Type forzado: la firma S3 suele no incluirlo
+    });
+    if (!putRes.ok) {
+      const hint = await putRes.text().catch(() => "");
+      return {
+        ok: false,
+        message: `Fallo al subir el video a Shotstack (HTTP ${putRes.status}). ${hint.slice(0, 180)}`,
+      };
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      message:
+        err instanceof Error
+          ? `No se pudo subir el video: ${err.message}`
+          : "No se pudo subir el video a Shotstack (CORS/red).",
+    };
+  }
+
+  // 3) Arrancar render async con source_id (JSON vía BFF)
+  const renderRes = await proxyFetch("video-edit-pilot/render-from-source", {
+    method: "POST",
+    headers: await _authedJsonHeaders(),
+    body: JSON.stringify({
+      source_id: ingest.source_id,
+      duration_sec: durationSec,
+      script: body.script || "",
+      auto_transcribe: Boolean(body.auto_transcribe),
+    }),
+  });
+  const data = (await renderRes.json().catch(() => ({}))) as VideoEditRenderResult & {
+    detail?: unknown;
+  };
+  const started = parseRenderResponse(renderRes, data);
   if (!started.ok || started.status !== "rendering" || !started.job_id) {
     return started;
   }

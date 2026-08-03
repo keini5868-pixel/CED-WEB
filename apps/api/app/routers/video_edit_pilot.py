@@ -41,6 +41,29 @@ class CheckoutBody(BaseModel):
     amount_usd: float = Field(..., description="10 | 20 | 50")
 
 
+class IngestUploadBody(BaseModel):
+    filename: str = Field(default="source.mp4", max_length=255)
+
+
+class RenderFromSourceBody(BaseModel):
+    source_id: str = Field(..., min_length=4, max_length=120)
+    duration_sec: float = Field(..., gt=0, le=600)
+    script: str = Field(default="", max_length=20000)
+    auto_transcribe: bool = False
+
+
+def _raise_render_error(result: dict) -> None:
+    code = result.get("code") or "render_failed"
+    status = 402 if code == "insufficient_tokens" else 400
+    if code == "daily_soft_cap":
+        status = 429
+    if code == "missing_video":
+        status = 400
+    if code == "render_failed":
+        status = 502
+    raise HTTPException(status_code=status, detail=result)
+
+
 @router.get("/status")
 def video_edit_status() -> dict:
     if not video_edit_module_pilot_enabled():
@@ -62,6 +85,41 @@ def video_edit_quote(
     return video_edit_service.quote_job(body.duration_sec)
 
 
+@router.post("/ingest-upload")
+def video_edit_ingest_upload(
+    body: IngestUploadBody,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    """URL firmada Shotstack para que el navegador suba el MP4 (evita BFF Next)."""
+    _ = user_id
+    out = video_edit_service.create_browser_upload(filename=body.filename or "source.mp4")
+    if not out.get("ok"):
+        raise HTTPException(
+            status_code=503,
+            detail=out.get("error") or "Shotstack no disponible.",
+        )
+    return out
+
+
+@router.post("/render-from-source")
+def video_edit_render_from_source(
+    body: RenderFromSourceBody,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    """Render live tras upload directo del browser a Shotstack."""
+    result = video_edit_service.plan_and_render(
+        user_id,
+        duration_sec=body.duration_sec,
+        script=body.script,
+        source_asset=f"shotstack://{body.source_id}",
+        auto_transcribe=body.auto_transcribe,
+        source_id=body.source_id,
+    )
+    if not result.get("ok"):
+        _raise_render_error(result)
+    return result
+
+
 @router.post("/render")
 async def video_edit_render(
     user_id: str = Depends(require_user_id),
@@ -71,13 +129,7 @@ async def video_edit_render(
     video: UploadFile | None = File(None),
     duration_sec_q: float | None = Query(None, alias="duration_sec"),
 ) -> dict:
-    """Multipart: video (opcional pero requerido para live) + script + duration_sec.
-
-    Live Shotstack corre en background; responda con status=rendering y haga
-    polling en GET /jobs/{job_id}.
-
-    duration_sec puede venir en Form o en query (fallback si el multipart se trunca).
-    """
+    """Multipart legacy (puede fallar via BFF Next). Preferir ingest-upload + render-from-source."""
     resolved_duration = duration_sec if duration_sec is not None else duration_sec_q
     if resolved_duration is None or float(resolved_duration) <= 0:
         raise HTTPException(
@@ -124,13 +176,7 @@ async def video_edit_render(
         video_content_type=content_type,
     )
     if not result.get("ok"):
-        code = result.get("code") or "render_failed"
-        status = 402 if code == "insufficient_tokens" else 400
-        if code == "daily_soft_cap":
-            status = 429
-        if code == "render_failed":
-            status = 502
-        raise HTTPException(status_code=status, detail=result)
+        _raise_render_error(result)
     return result
 
 
@@ -158,13 +204,10 @@ def video_edit_render_json(
         script=body.script,
         source_asset=body.source_asset,
         auto_transcribe=body.auto_transcribe,
+        allow_dry_run=True,
     )
     if not result.get("ok"):
-        code = result.get("code") or "render_failed"
-        status = 402 if code == "insufficient_tokens" else 400
-        if code == "daily_soft_cap":
-            status = 429
-        raise HTTPException(status_code=status, detail=result)
+        _raise_render_error(result)
     return result
 
 

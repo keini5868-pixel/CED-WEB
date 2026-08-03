@@ -1,9 +1,12 @@
-"""Orquestación Video Edit piloto — tokens + Shotstack live / dry-run."""
+"""Orquestacion Video Edit piloto — tokens + Shotstack live / dry-run."""
+
 from __future__ import annotations
+
 import logging
 import threading
 from typing import Any
 from uuid import uuid4
+
 from app.config import get_settings
 from app.domain.video_edit_economy import (
     VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY,
@@ -13,6 +16,8 @@ from app.domain.video_edit_economy import (
 )
 from app.services.video_edit_pilot.shotstack import (
     render_video_from_bytes,
+    render_video_from_source,
+    request_upload_url,
     shotstack_configured,
 )
 from app.services.video_edit_pilot.timeline import build_edit_timeline
@@ -24,22 +29,27 @@ from app.services.video_edit_pilot.tokens import (
     renders_today,
     soft_cap_remaining,
 )
+
 logger = logging.getLogger(__name__)
-# Cache en memoria para polling rápido (Railway multi-instancia: DB es fuente de verdad)
+
 _job_cache: dict[str, dict[str, Any]] = {}
 _job_cache_lock = threading.Lock()
+
 
 def _cache_put(job_id: str, payload: dict[str, Any]) -> None:
     with _job_cache_lock:
         _job_cache[job_id] = payload
+
 
 def _cache_get(job_id: str) -> dict[str, Any] | None:
     with _job_cache_lock:
         row = _job_cache.get(job_id)
         return dict(row) if row else None
 
+
 def _strip_user(payload: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in payload.items() if k != "user_id"}
+
 
 def pilot_status() -> dict[str, Any]:
     settings = get_settings()
@@ -66,6 +76,7 @@ def pilot_status() -> dict[str, Any]:
         "mode": "live_ready" if shotstack else "dry_run",
     }
 
+
 def get_balance_payload(user_id: str) -> dict[str, Any]:
     bal = get_token_balance(user_id)
     used = renders_today(user_id)
@@ -79,23 +90,40 @@ def get_balance_payload(user_id: str) -> dict[str, Any]:
         "packs": video_edit_pack_catalog(),
     }
 
+
 def quote_job(duration_sec: float) -> dict[str, Any]:
     q = quote_render(duration_sec)
     return {"ok": True, **q}
 
+
+def create_browser_upload(*, filename: str = "source.mp4") -> dict[str, Any]:
+    if not shotstack_configured():
+        return {"ok": False, "error": "SHOTSTACK_API_KEY no configurada"}
+    meta = request_upload_url(filename=filename or "source.mp4")
+    return {
+        "ok": True,
+        "source_id": meta["source_id"],
+        "upload_url": meta["upload_url"],
+    }
+
+
 def _persist_job(row: dict[str, Any]) -> None:
     try:
         from app.services import supabase_db
+
         supabase_db.insert_video_edit_job(row)
     except Exception:  # noqa: BLE001
         logger.debug("[VIDEO_EDIT] job persist skipped")
 
+
 def _update_job(job_id: str, patch: dict[str, Any]) -> None:
     try:
         from app.services import supabase_db
+
         supabase_db.update_video_edit_job(job_id, patch)
     except Exception:  # noqa: BLE001
         logger.debug("[VIDEO_EDIT] job update skipped")
+
 
 def _public_job_payload(
     *,
@@ -129,6 +157,7 @@ def _public_job_payload(
     _cache_put(job_id, payload)
     return payload
 
+
 def _run_shotstack_background(
     *,
     job_id: str,
@@ -136,20 +165,28 @@ def _run_shotstack_background(
     tokens: int,
     quote: dict[str, Any],
     timeline: dict[str, Any],
-    video_bytes: bytes,
-    video_filename: str,
-    video_content_type: str,
     duration_sec: float,
     source_asset: str,
+    video_bytes: bytes | None = None,
+    video_filename: str = "source.mp4",
+    video_content_type: str = "video/mp4",
+    source_id: str | None = None,
 ) -> None:
     try:
-        live = render_video_from_bytes(
-            video_bytes,
-            filename=video_filename or "source.mp4",
-            content_type=video_content_type or "video/mp4",
-            timeline=timeline,
-            duration_sec=duration_sec,
-        )
+        if source_id:
+            live = render_video_from_source(
+                source_id=source_id,
+                timeline=timeline,
+                duration_sec=duration_sec,
+            )
+        else:
+            live = render_video_from_bytes(
+                video_bytes or b"",
+                filename=video_filename or "source.mp4",
+                content_type=video_content_type or "video/mp4",
+                timeline=timeline,
+                duration_sec=duration_sec,
+            )
         result_url = str(live.get("result_url") or "")
         updated_timeline = {
             **timeline,
@@ -210,7 +247,7 @@ def _run_shotstack_background(
             quote=quote,
             timeline=timeline,
             result_url=None,
-            message=f"Render falló; tokens reembolsados. Detalle: {error}",
+            message=f"Render fallo; tokens reembolsados. Detalle: {error}",
             error=error,
         )
         _update_job(
@@ -223,17 +260,21 @@ def _run_shotstack_background(
             },
         )
 
+
 def get_job_payload(user_id: str, job_id: str) -> dict[str, Any] | None:
     cached = _cache_get(job_id)
     if cached and cached.get("user_id") == user_id:
         return _strip_user(cached)
+
     try:
         from app.services import supabase_db
+
         row = supabase_db.get_video_edit_job(job_id, user_id)
     except Exception:  # noqa: BLE001
         row = None
     if not row:
         return None
+
     status = str(row.get("status") or "")
     ok = status in {"done", "dry_run", "rendering"}
     payload = {
@@ -248,10 +289,10 @@ def get_job_payload(user_id: str, job_id: str) -> dict[str, Any] | None:
             "Video editado listo."
             if status == "done"
             else (
-                "Render en curso en Shotstack…"
+                "Render en curso en Shotstack..."
                 if status == "rendering"
                 else (
-                    f"Render falló; tokens reembolsados. Detalle: {row.get('error') or 'error'}"
+                    f"Render fallo; tokens reembolsados. Detalle: {row.get('error') or 'error'}"
                     if status == "failed"
                     else "Timeline lista (dry-run)."
                 )
@@ -264,6 +305,7 @@ def get_job_payload(user_id: str, job_id: str) -> dict[str, Any] | None:
     _cache_put(job_id, {**payload, "user_id": user_id})
     return payload
 
+
 def plan_and_render(
     user_id: str,
     *,
@@ -274,38 +316,61 @@ def plan_and_render(
     video_bytes: bytes | None = None,
     video_filename: str = "source.mp4",
     video_content_type: str = "video/mp4",
+    source_id: str | None = None,
+    allow_dry_run: bool = False,
 ) -> dict[str, Any]:
     """
     Flujo piloto:
     1) Soft cap diario
     2) Quote + debit tokens
-    3) Timeline (cortes / fades / cues Sonilo planificados)
-    4) Si hay SHOTSTACK_API_KEY + video_bytes → render async (polling)
-       Si no → dry_run (timeline)
+    3) Timeline
+    4) Live async si hay video_bytes o source_id (browser upload)
+       Dry-run solo si allow_dry_run=True o Shotstack no configurado
     """
     duration_sec = max(0.1, float(duration_sec))
     script = (script or "").strip()
+    source_id = (source_id or "").strip() or None
+
     if renders_today(user_id) >= VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY:
         return {
             "ok": False,
             "code": "daily_soft_cap",
             "error": (
-                f"Límite de {VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY} renders/día alcanzado. "
-                "Vuelva mañana o contacte soporte si necesita más."
+                f"Limite de {VIDEO_EDIT_SOFT_CAP_RENDERS_PER_DAY} renders/dia alcanzado. "
+                "Vuelva manana o contacte soporte si necesita mas."
             ),
             "balance_tokens": get_token_balance(user_id),
             "soft_cap_remaining": 0,
         }
+
     if not script and not auto_transcribe:
         return {
             "ok": False,
             "code": "script_required",
-            "error": "Pegue el guion o active transcripción automática (próximamente).",
+            "error": "Pegue el guion o active transcripcion automatica (proximamente).",
         }
+
     if not script and auto_transcribe:
         script = (
-            "[Transcripción automática pendiente — use guion manual en v1 piloto]"
+            "[Transcripcion automatica pendiente — use guion manual en v1 piloto]"
         )
+
+    # Con Shotstack live: exigir fuente ANTES de cobrar
+    if (
+        shotstack_configured()
+        and not video_bytes
+        and not source_id
+        and not allow_dry_run
+    ):
+        return {
+            "ok": False,
+            "code": "missing_video",
+            "error": (
+                "Falta el archivo de video. Vuelva a seleccionarlo e intente de nuevo."
+            ),
+            "balance_tokens": get_token_balance(user_id),
+        }
+
     tokens = tokens_for_duration_seconds(duration_sec)
     quote = quote_render(duration_sec)
     bal = get_token_balance(user_id)
@@ -321,6 +386,7 @@ def plan_and_render(
             "balance_tokens": bal,
             "packs": video_edit_pack_catalog(),
         }
+
     job_id = str(uuid4())
     settings = get_settings()
     veo_enabled = bool(getattr(settings, "video_edit_veo_enabled", False))
@@ -330,6 +396,7 @@ def plan_and_render(
         source_asset=source_asset,
         veo_enabled=veo_enabled,
     )
+
     debit = debit_tokens(
         user_id,
         tokens,
@@ -346,8 +413,10 @@ def plan_and_render(
             "balance_tokens": debit.get("balance_tokens", bal),
             "quote": quote,
         }
+
     record_render_attempt(user_id)
-    can_live = shotstack_configured() and bool(video_bytes)
+    can_live = shotstack_configured() and (bool(video_bytes) or bool(source_id))
+
     if can_live:
         row = {
             "id": job_id,
@@ -364,6 +433,7 @@ def plan_and_render(
                 "veo": timeline.get("veo"),
                 "dry_run": False,
                 "async": True,
+                "source_id": source_id,
             },
         }
         _persist_job(row)
@@ -378,7 +448,7 @@ def plan_and_render(
             result_url=None,
             message=(
                 "Video recibido. Render en Shotstack en curso "
-                "(puede tardar 1–3 min). No cierre esta pestaña."
+                "(puede tardar 1-3 min). No cierre esta pestana."
             ),
         )
         thread = threading.Thread(
@@ -389,9 +459,10 @@ def plan_and_render(
                 "tokens": tokens,
                 "quote": quote,
                 "timeline": timeline,
-                "video_bytes": video_bytes or b"",
+                "video_bytes": video_bytes,
                 "video_filename": video_filename or "source.mp4",
                 "video_content_type": video_content_type or "video/mp4",
+                "source_id": source_id,
                 "duration_sec": duration_sec,
                 "source_asset": source_asset,
             },
@@ -400,20 +471,12 @@ def plan_and_render(
         )
         thread.start()
         return _strip_user(payload)
-    if shotstack_configured() and not video_bytes:
-        status = "dry_run"
-        message_hint = (
-            "Shotstack configurado, pero falta el archivo de video en la petición "
-            "(sube el MP4 de nuevo). Timeline lista; tokens descontados."
-        )
-        error = None
-    else:
-        status = "dry_run"
-        message_hint = (
-            "Timeline lista (dry-run). Configure SHOTSTACK_API_KEY para render en vivo. "
-            "Tokens ya descontados."
-        )
-        error = None
+
+    status = "dry_run"
+    message_hint = (
+        "Timeline lista (dry-run). Configure SHOTSTACK_API_KEY para render en vivo. "
+        "Tokens ya descontados."
+    )
     row = {
         "id": job_id,
         "user_id": user_id,
@@ -423,7 +486,7 @@ def plan_and_render(
         "script": script[:8000],
         "timeline": timeline,
         "result_url": None,
-        "error": error,
+        "error": None,
         "metadata": {
             "sonilo_cues": len((timeline.get("sonilo") or {}).get("cues") or []),
             "veo": timeline.get("veo"),
@@ -442,6 +505,6 @@ def plan_and_render(
             timeline=timeline,
             result_url=None,
             message=message_hint,
-            error=error,
+            error=None,
         )
     )
