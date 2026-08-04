@@ -20,6 +20,7 @@ from app.services.video_edit_pilot.shotstack import (
     request_upload_url,
     shotstack_configured,
 )
+from app.services.video_edit_pilot.sonilo import sonilo_configured
 from app.services.video_edit_pilot.timeline import build_edit_timeline
 from app.services.video_edit_pilot.tokens import (
     credit_tokens,
@@ -54,7 +55,7 @@ def _strip_user(payload: dict[str, Any]) -> dict[str, Any]:
 def pilot_status() -> dict[str, Any]:
     settings = get_settings()
     shotstack = shotstack_configured()
-    sonilo = bool(getattr(settings, "sonilo_api_key", "") or "")
+    sonilo = sonilo_configured()
     veo = bool(getattr(settings, "video_edit_veo_enabled", False))
     return {
         "ok": True,
@@ -74,6 +75,18 @@ def pilot_status() -> dict[str, Any]:
             "packs": video_edit_pack_catalog(),
         },
         "mode": "live_ready" if shotstack else "dry_run",
+        "notes": {
+            "sonilo": (
+                "Text→SFX activo en render"
+                if sonilo
+                else "SONILO_API_KEY no cargada en este servicio (cues solo planificados)"
+            ),
+            "shotstack": (
+                "Edit API live"
+                if shotstack
+                else "Sin SHOTSTACK_API_KEY — dry-run"
+            ),
+        },
     }
 
 
@@ -204,7 +217,12 @@ def _run_shotstack_background(
             result_url=result_url,
             message=(
                 "Video editado listo. Tokens descontados. "
-                "Revise el enlace de descarga abajo."
+                + (
+                    f"SFX Sonilo: {((live.get('sonilo') or {}).get('ok') or 0)} clips. "
+                    if (live.get("sonilo") or {}).get("attempted")
+                    else "Sin SFX (SONILO_API_KEY ausente o falló). "
+                )
+                + "Revise el enlace de descarga abajo."
             ),
         )
         _update_job(
@@ -219,11 +237,16 @@ def _run_shotstack_background(
                     "sonilo_cues": len(
                         (updated_timeline.get("sonilo") or {}).get("cues") or []
                     ),
+                    "sonilo_render": live.get("sonilo"),
                     "veo": updated_timeline.get("veo"),
                     "dry_run": False,
                     "render_id": live.get("render_id"),
                     "source_id": live.get("source_id"),
-                    "edit": live.get("edit"),
+                    "aspect": live.get("aspect"),
+                    "edit_tracks": len(
+                        ((live.get("edit") or {}).get("timeline") or {}).get("tracks")
+                        or []
+                    ),
                 },
             },
         )

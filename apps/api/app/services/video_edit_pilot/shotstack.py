@@ -161,11 +161,13 @@ def timeline_to_shotstack_edit(
     source_url: str,
     timeline: dict[str, Any],
     duration_sec: float,
+    audio_clips: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Convierte timeline CED → Edit API.
 
-    fit=contain evita recortar caras/cuerpos (default Shotstack es crop).
-    Zoom se omite: el zoom de Shotstack recorta el encuadre.
+    - fit=contain evita recortar caras/cuerpos
+    - Cortes duros insertan flash negro corto (se nota la edición)
+    - audio_clips: SFX Sonilo (u otros) en track aparte
     """
     from app.services.video_edit_pilot.timeline import aspect_from_dimensions
 
@@ -174,39 +176,37 @@ def timeline_to_shotstack_edit(
     if fit not in {"contain", "cover", "crop", "none"}:
         fit = "contain"
     clips: list[dict[str, Any]] = []
+    flash_clips: list[dict[str, Any]] = []
     cursor = 0.0
+    flash_len = 0.12
+
+    def _video_clip(start_src: float, length: float, start_out: float) -> dict[str, Any]:
+        return {
+            "asset": {
+                "type": "video",
+                "src": source_url,
+                "trim": round(start_src, 3),
+                "volume": 0.9,
+            },
+            "start": round(start_out, 3),
+            "length": round(length, 3),
+            "fit": fit,
+            "scale": 1,
+            "position": "center",
+        }
+
     if not scenes:
-        clips.append(
-            {
-                "asset": {"type": "video", "src": source_url, "trim": 0, "volume": 1},
-                "start": 0,
-                "length": max(0.5, float(duration_sec)),
-                "fit": fit,
-                "scale": 1,
-                "position": "center",
-            }
-        )
+        clips.append(_video_clip(0.0, max(0.5, float(duration_sec)), 0.0))
     else:
         for i, scene in enumerate(scenes):
             start_src = float(scene.get("start") or 0)
             end_src = float(scene.get("end") or start_src)
             length = max(0.2, end_src - start_src)
-            clip: dict[str, Any] = {
-                "asset": {
-                    "type": "video",
-                    "src": source_url,
-                    "trim": round(start_src, 3),
-                    "volume": 1,
-                },
-                "start": round(cursor, 3),
-                "length": round(length, 3),
-                "fit": fit,
-                "scale": 1,
-                "position": "center",
-            }
+            clip = _video_clip(start_src, length, cursor)
             filt = str(scene.get("filter") or "").strip()
             if filt in {"boost", "contrast", "darken", "greyscale", "lighten", "muted"}:
                 clip["filter"] = filt
+
             t_out = str(scene.get("transition_out") or "")
             if not t_out:
                 for t in timeline.get("transitions") or []:
@@ -215,15 +215,46 @@ def timeline_to_shotstack_edit(
                     if abs(float(t.get("at") or 0) - end_src) < 0.08:
                         t_out = str(t.get("type") or "fade")
                         break
-            if i < len(scenes) - 1:
+            is_last = i >= len(scenes) - 1
+            if not is_last:
                 if t_out == "cut":
-                    pass
+                    # Flash negro breve = corte visible en guiones lineales 0-8→8-18
+                    edge = round(cursor + length, 3)
+                    flash_clips.append(
+                        {
+                            "asset": {
+                                "type": "title",
+                                "text": " ",
+                                "style": "minimal",
+                                "color": "#000000",
+                                "background": "#000000",
+                                "position": "center",
+                                "size": "x-large",
+                            },
+                            "start": edge,
+                            "length": flash_len,
+                            "fit": "cover",
+                            "position": "center",
+                            "scale": 1,
+                        }
+                    )
+                    cursor = edge + flash_len
                 else:
-                    clip["transition"] = {"out": "fade"}
+                    clip["transition"] = {"out": "fadeSlow"}
+                    cursor += length
+            else:
+                cursor += length
             clips.append(clip)
-            cursor += length
 
     tracks: list[dict[str, Any]] = [{"clips": clips}]
+    if flash_clips:
+        tracks.append({"clips": flash_clips})
+
+    # SFX Sonilo / audio externo
+    sfx = [c for c in (audio_clips or []) if isinstance(c, dict) and c.get("asset")]
+    if sfx:
+        tracks.append({"clips": sfx})
+
     title = timeline.get("title") or {}
     if title.get("enabled") and title.get("text"):
         label = str(title.get("text") or "").strip()[:40]
@@ -381,18 +412,56 @@ def render_video_from_source(
         },
         "title": {"enabled": False, "text": "", "mood": None},
     }
+
+    # Sonilo Text→SFX → track de audio (si falla, seguimos sin SFX pero logueamos)
+    audio_clips: list[dict[str, Any]] = []
+    sonilo_meta: dict[str, Any] = {"attempted": False, "ok": 0, "failed": 0}
+    try:
+        from app.services.video_edit_pilot.sonilo import (
+            resolve_cues_to_audio_clips,
+            sonilo_configured,
+        )
+
+        cues = list((patched.get("sonilo") or {}).get("cues") or [])
+        if sonilo_configured() and cues:
+            sonilo_meta["attempted"] = True
+            audio_clips = resolve_cues_to_audio_clips(cues, max_cues=4)
+            sonilo_meta["ok"] = len(audio_clips)
+            sonilo_meta["failed"] = max(0, min(4, len(cues)) - len(audio_clips))
+            logger.info(
+                "[VIDEO_EDIT] sonilo sfx ok=%s failed=%s cues=%s",
+                sonilo_meta["ok"],
+                sonilo_meta["failed"],
+                len(cues),
+            )
+        elif cues and not sonilo_configured():
+            logger.warning(
+                "[VIDEO_EDIT] %s cues planificados pero SONILO_API_KEY ausente",
+                len(cues),
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[VIDEO_EDIT] sonilo stage skipped: %s", exc)
+
     edit = timeline_to_shotstack_edit(
         source_url=url,
         timeline=patched,
         duration_sec=duration_sec,
+        audio_clips=audio_clips,
+    )
+    logger.info(
+        "[SHOTSTACK] submit edit tracks=%s video_clips=%s audio_clips=%s",
+        len((edit.get("timeline") or {}).get("tracks") or []),
+        len((((edit.get("timeline") or {}).get("tracks") or [{}])[0].get("clips") or [])),
+        len(audio_clips),
     )
     render_id = submit_render(edit)
     result_url = wait_render_done(render_id)
     logger.info(
-        "[SHOTSTACK] done render=%s source=%s aspect=%s url=%s",
+        "[SHOTSTACK] done render=%s source=%s aspect=%s sonilo=%s url=%s",
         render_id[:12],
         source_id[:12],
         aspect,
+        sonilo_meta,
         result_url[:80],
     )
     return {
@@ -403,4 +472,5 @@ def render_video_from_source(
         "result_url": result_url,
         "edit": edit,
         "aspect": aspect,
+        "sonilo": sonilo_meta,
     }

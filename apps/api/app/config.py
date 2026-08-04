@@ -193,6 +193,18 @@ class Settings(BaseSettings):
 
 
     @model_validator(mode="after")
+    def resolve_sonilo_key_aliases(self) -> Settings:
+        if (self.sonilo_api_key or "").strip():
+            self.sonilo_api_key = self.sonilo_api_key.strip()
+            return self
+        for alt in ("SONILO_API_KEY", "SONILO_KEY", "SONILO_TOKEN", "SONILO_SECRET"):
+            val = (os.environ.get(alt) or "").strip()
+            if val:
+                self.sonilo_api_key = val
+                break
+        return self
+
+    @model_validator(mode="after")
     def resolve_openai_key_aliases(self) -> Settings:
         self.openai_api_key = sanitize_openai_api_key(self.openai_api_key)
         if self.openai_api_key:
