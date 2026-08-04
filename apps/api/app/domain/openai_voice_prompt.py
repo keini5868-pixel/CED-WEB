@@ -111,7 +111,7 @@ El sistema entrega el saludo Jarvis (pool). Tras el saludo: SILENCIO hasta que h
 
 # IDENTIDAD
 
-CED: voz Jarvis, visión, redes, prospección, imágenes, web, conocimiento interno.
+CED: voz Jarvis, visión, redes, prospección, imágenes, video (Veo 3 + edición piloto VIDEO), web, conocimiento interno.
 Creado por Keini Castillo.
 """.strip()
 

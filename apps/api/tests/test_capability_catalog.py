@@ -48,6 +48,8 @@ def test_catalog_reply_is_factual():
     assert "Recordatorios" in CED_CAPABILITY_CATALOG_REPLY
     assert "viabilidad" in CED_CAPABILITY_CATALOG_REPLY.lower()
     assert "Variaciones de imagen" in CED_CAPABILITY_CATALOG_REPLY
+    assert "Veo 3" in CED_CAPABILITY_CATALOG_REPLY or "veo 3" in CED_CAPABILITY_CATALOG_REPLY.lower()
+    assert "VIDEO" in CED_CAPABILITY_CATALOG_REPLY or "Video" in CED_CAPABILITY_CATALOG_REPLY
     assert "Ads Manager" not in CED_CAPABILITY_CATALOG_REPLY or "no es Ads Manager" in CED_CAPABILITY_CATALOG_REPLY
 
 
@@ -63,6 +65,9 @@ def test_voice_capabilities_cover_product_gaps():
         "viabilidad",
         "recordatorios",
         "variaciones",
+        "veo 3",
+        "video",
+        "edición",
     ):
         assert needle in low, needle
     assert "whatsapp" not in low
