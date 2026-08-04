@@ -1275,20 +1275,39 @@ def debit_video_edit_tokens(
                 ),
             }
         new_bal = current - need
-        client.table("video_edit_token_balances").upsert(
-            {"user_id": user_id, "tokens": new_bal, "updated_at": now},
-            on_conflict="user_id",
-        ).execute()
-        client.table("video_edit_token_ledger").insert(
-            {
-                "user_id": user_id,
-                "delta_tokens": -need,
-                "reason": reason,
-                "duration_sec": duration_sec,
-                "job_id": job_id,
-                "metadata": metadata or {},
-            }
-        ).execute()
+        # Update (no upsert): la fila ya debe existir si hay saldo
+        upd = (
+            client.table("video_edit_token_balances")
+            .update({"tokens": new_bal, "updated_at": now})
+            .eq("user_id", user_id)
+            .execute()
+        )
+        if not (upd.data or []):
+            # Fila ausente: crear con saldo restante
+            client.table("video_edit_token_balances").upsert(
+                {"user_id": user_id, "tokens": new_bal, "updated_at": now},
+                on_conflict="user_id",
+            ).execute()
+        # Ledger no debe tumbar el cobro si falla (p.ej. metadata rara)
+        try:
+            safe_meta = metadata or {}
+            if not isinstance(safe_meta, dict):
+                safe_meta = {"raw": str(safe_meta)[:500]}
+            client.table("video_edit_token_ledger").insert(
+                {
+                    "user_id": user_id,
+                    "delta_tokens": -need,
+                    "reason": (reason or "render")[:80],
+                    "duration_sec": duration_sec,
+                    "job_id": str(job_id) if job_id else None,
+                    "metadata": safe_meta,
+                }
+            ).execute()
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "[DB] video_edit ledger insert failed after balance update user=%s",
+                user_id[:8],
+            )
         return {"ok": True, "charged_tokens": need, "balance_tokens": new_bal}
     except Exception:  # noqa: BLE001
         logger.exception("[DB] debit_video_edit_tokens failed")

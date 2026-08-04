@@ -31,6 +31,8 @@ def get_token_balance(user_id: str) -> int:
 
         bal = supabase_db.get_video_edit_token_balance(user_id)
         if bal is not None:
+            with _lock:
+                _mem_balances[user_id] = int(bal)
             return int(bal)
     except Exception as exc:  # noqa: BLE001
         logger.debug("[VIDEO_EDIT] balance db miss: %s", exc)
@@ -58,6 +60,8 @@ def credit_tokens(
             metadata=metadata or {},
         )
         if new_bal is not None:
+            with _lock:
+                _mem_balances[user_id] = int(new_bal)
             return int(new_bal)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[VIDEO_EDIT] credit db fail: %s", exc)
@@ -91,8 +95,16 @@ def debit_tokens(
     if tokens <= 0:
         return {"ok": True, "charged_tokens": 0, "balance_tokens": get_token_balance(user_id)}
 
+    db_available = False
     try:
         from app.services import supabase_db
+
+        # Probar lectura DB antes de cobrar (evita fallback memoria=0 con saldo real)
+        peek = supabase_db.get_video_edit_token_balance(user_id)
+        if peek is not None:
+            db_available = True
+            with _lock:
+                _mem_balances[user_id] = int(peek)
 
         result = supabase_db.debit_video_edit_tokens(
             user_id,
@@ -103,9 +115,43 @@ def debit_tokens(
             metadata=metadata or {},
         )
         if result is not None:
+            if result.get("ok") and result.get("balance_tokens") is not None:
+                with _lock:
+                    _mem_balances[user_id] = int(result["balance_tokens"])
             return result
+
+        if db_available:
+            bal = int(peek or 0)
+            logger.error(
+                "[VIDEO_EDIT] debit DB returned None user=%s need=%s bal=%s",
+                user_id[:8],
+                tokens,
+                bal,
+            )
+            return {
+                "ok": False,
+                "charged_tokens": 0,
+                "balance_tokens": bal,
+                "code": "debit_failed",
+                "error": (
+                    f"No se pudo descontar tokens (saldo real: {bal}). "
+                    "Reintente en unos segundos."
+                ),
+            }
     except Exception as exc:  # noqa: BLE001
         logger.warning("[VIDEO_EDIT] debit db fail: %s", exc)
+        if db_available:
+            bal = get_token_balance(user_id)
+            return {
+                "ok": False,
+                "charged_tokens": 0,
+                "balance_tokens": bal,
+                "code": "debit_failed",
+                "error": (
+                    f"Error al descontar tokens (saldo: {bal}). Reintente. "
+                    f"Detalle: {str(exc)[:120]}"
+                ),
+            }
 
     with _lock:
         cur = int(_mem_balances.get(user_id, 0))
