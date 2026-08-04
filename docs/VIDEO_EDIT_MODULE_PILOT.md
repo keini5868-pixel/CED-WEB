@@ -26,7 +26,7 @@ Kill-switch: sin env API o sin header → 404. Sin query/env web → no aparece 
 
 - Shotstack Edit + Ingest (upload firmado → render → URL MP4)
 - `SHOTSTACK_API_KEY` + `SHOTSTACK_ENV=stage|v1`
-- Sonilo Text→SFX (planificado en timeline; render SFX en fase siguiente)
+- `SONILO_API_KEY` — Text→SFX real en el render (si falta, solo cues planificados + cortes visuales)
 - Veo 3.1 Lite solo si hay hard-cut + flag + cupo
 
 ## Soft cap piloto
