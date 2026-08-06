@@ -413,9 +413,17 @@ def render_video_from_source(
         "title": {"enabled": False, "text": "", "mood": None},
     }
 
-    # Sonilo Text→SFX → track de audio (si falla, seguimos sin SFX pero logueamos)
+    # Sonilo → track de audio (si falla, seguimos sin SFX pero con error visible)
     audio_clips: list[dict[str, Any]] = []
-    sonilo_meta: dict[str, Any] = {"attempted": False, "ok": 0, "failed": 0}
+    sonilo_meta: dict[str, Any] = {
+        "attempted": False,
+        "ok": 0,
+        "failed": 0,
+        "errors": [],
+        "error": None,
+        "message": None,
+        "mode": None,
+    }
     try:
         from app.services.video_edit_pilot.sonilo import (
             resolve_cues_to_audio_clips,
@@ -423,24 +431,67 @@ def render_video_from_source(
         )
 
         cues = list((patched.get("sonilo") or {}).get("cues") or [])
-        if sonilo_configured() and cues:
-            sonilo_meta["attempted"] = True
-            audio_clips = resolve_cues_to_audio_clips(cues, max_cues=4)
-            sonilo_meta["ok"] = len(audio_clips)
-            sonilo_meta["failed"] = max(0, min(4, len(cues)) - len(audio_clips))
-            logger.info(
-                "[VIDEO_EDIT] sonilo sfx ok=%s failed=%s cues=%s",
-                sonilo_meta["ok"],
-                sonilo_meta["failed"],
-                len(cues),
+        if not sonilo_configured():
+            if cues:
+                sonilo_meta["message"] = (
+                    f"{len(cues)} cues planificados pero SONILO_API_KEY ausente"
+                )
+                logger.warning("[VIDEO_EDIT] %s", sonilo_meta["message"])
+        else:
+            script_bits = [
+                str(s.get("text") or "")
+                for s in (patched.get("scenes") or [])
+                if isinstance(s, dict) and s.get("text")
+            ]
+            resolved = resolve_cues_to_audio_clips(
+                cues,
+                max_cues=4,
+                video_url=url,
+                script_hint=" ".join(script_bits)[:500],
             )
-        elif cues and not sonilo_configured():
-            logger.warning(
-                "[VIDEO_EDIT] %s cues planificados pero SONILO_API_KEY ausente",
-                len(cues),
-            )
+            raw_clips = list(resolved.get("clips") or [])
+            # length None (video-to-sfx) → cubrir duración del video
+            for clip in raw_clips:
+                if not isinstance(clip, dict):
+                    continue
+                if clip.get("length") is None:
+                    clip["length"] = round(max(0.5, float(duration_sec)), 3)
+                # Strip helpers no-Shotstack
+                clip.pop("sonilo_mode", None)
+                clip.pop("task_id", None)
+                audio_clips.append(clip)
+            sonilo_meta = {
+                "attempted": bool(resolved.get("attempted")),
+                "ok": int(resolved.get("ok") or 0),
+                "failed": int(resolved.get("failed") or 0),
+                "errors": list(resolved.get("errors") or [])[:8],
+                "error": resolved.get("error"),
+                "message": resolved.get("message"),
+                "mode": resolved.get("mode"),
+            }
+            if sonilo_meta["ok"] == 0:
+                logger.error(
+                    "[VIDEO_EDIT] sonilo 0 clips | mode=%s | %s | errors=%s",
+                    sonilo_meta.get("mode"),
+                    sonilo_meta.get("message"),
+                    sonilo_meta.get("errors"),
+                )
+            else:
+                logger.info(
+                    "[VIDEO_EDIT] sonilo sfx ok=%s failed=%s mode=%s cues=%s",
+                    sonilo_meta["ok"],
+                    sonilo_meta["failed"],
+                    sonilo_meta.get("mode"),
+                    len(cues),
+                )
     except Exception as exc:  # noqa: BLE001
         logger.exception("[VIDEO_EDIT] sonilo stage skipped: %s", exc)
+        sonilo_meta["message"] = f"Sonilo stage exception: {exc}"[:300]
+        sonilo_meta["error"] = {
+            "ok": False,
+            "code": "exception",
+            "message": str(exc)[:300],
+        }
 
     edit = timeline_to_shotstack_edit(
         source_url=url,

@@ -57,6 +57,38 @@ def pilot_status() -> dict[str, Any]:
     shotstack = shotstack_configured()
     sonilo = sonilo_configured()
     veo = bool(getattr(settings, "video_edit_veo_enabled", False))
+    sonilo_health: dict[str, Any] = {"configured": sonilo}
+    if sonilo:
+        try:
+            from app.services.video_edit_pilot.sonilo import account_health
+
+            sonilo_health = account_health()
+        except Exception as exc:  # noqa: BLE001
+            sonilo_health = {
+                "configured": True,
+                "ok": False,
+                "code": "health_exception",
+                "message": str(exc)[:200],
+            }
+    trial = (sonilo_health.get("trial") or {}) if isinstance(sonilo_health, dict) else {}
+    text_left = int(trial.get("text_to_sfx_remaining") or 0)
+    video_left = int(trial.get("video_to_sfx_remaining") or 0)
+    sonilo_note = (
+        "Text→SFX / Video→SFX activo en render"
+        if sonilo
+        else "SONILO_API_KEY no cargada en este servicio (cues solo planificados)"
+    )
+    if sonilo and sonilo_health.get("ok") is False:
+        sonilo_note = (
+            f"Sonilo configurado pero cuenta con error: "
+            f"{sonilo_health.get('code')}: {sonilo_health.get('message')}"
+        )
+    elif sonilo and text_left <= 0 and video_left <= 0:
+        sonilo_note = (
+            "Sonilo trial agotado (text-to-sfx y/o video-to-sfx). "
+            "Agregue método de pago en https://platform.sonilo.com/dashboard/billing "
+            "o el render seguirá en 0 clips SFX."
+        )
     return {
         "ok": True,
         "pilot": True,
@@ -66,6 +98,7 @@ def pilot_status() -> dict[str, Any]:
             "sonilo_configured": sonilo,
             "veo_enabled": veo,
             "shotstack_env": (getattr(settings, "shotstack_env", None) or "stage"),
+            "sonilo": sonilo_health,
         },
         "economy": {
             "tokens_per_usd": 100,
@@ -76,11 +109,7 @@ def pilot_status() -> dict[str, Any]:
         },
         "mode": "live_ready" if shotstack else "dry_run",
         "notes": {
-            "sonilo": (
-                "Text→SFX activo en render"
-                if sonilo
-                else "SONILO_API_KEY no cargada en este servicio (cues solo planificados)"
-            ),
+            "sonilo": sonilo_note,
             "shotstack": (
                 "Edit API live"
                 if shotstack
@@ -150,6 +179,7 @@ def _public_job_payload(
     result_url: str | None,
     message: str,
     error: str | None = None,
+    sonilo: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ok = status in {"done", "dry_run", "rendering"}
     payload = {
@@ -164,11 +194,26 @@ def _public_job_payload(
         "result_url": result_url,
         "message": message,
         "error": error,
+        "sonilo": sonilo,
         "soft_cap_remaining": soft_cap_remaining(user_id),
         "code": None if ok else "render_failed",
     }
     _cache_put(job_id, payload)
     return payload
+
+
+def _sonilo_user_message(sonilo: dict[str, Any] | None) -> str:
+    s = sonilo or {}
+    if not s.get("attempted"):
+        return "Sin SFX (SONILO_API_KEY ausente o sin cues)."
+    ok = int(s.get("ok") or 0)
+    if ok > 0:
+        mode = s.get("mode") or "sfx"
+        return f"SFX Sonilo: {ok} clip(s) via {mode}."
+    err = s.get("error") or {}
+    code = err.get("code") or "unknown"
+    msg = err.get("message") or s.get("message") or "sin detalle"
+    return f"SFX Sonilo: 0 clips — {code}: {msg}"
 
 
 def _run_shotstack_background(
@@ -205,6 +250,7 @@ def _run_shotstack_background(
             **timeline,
             "source": {"asset": live.get("source_url") or source_asset},
         }
+        sonilo_info = live.get("sonilo") if isinstance(live.get("sonilo"), dict) else {}
         bal = get_token_balance(user_id)
         _public_job_payload(
             job_id=job_id,
@@ -215,14 +261,11 @@ def _run_shotstack_background(
             quote=quote,
             timeline=updated_timeline,
             result_url=result_url,
+            sonilo=sonilo_info,
             message=(
                 "Video editado listo. Tokens descontados. "
-                + (
-                    f"SFX Sonilo: {((live.get('sonilo') or {}).get('ok') or 0)} clips. "
-                    if (live.get("sonilo") or {}).get("attempted")
-                    else "Sin SFX (SONILO_API_KEY ausente o falló). "
-                )
-                + "Revise el enlace de descarga abajo."
+                + _sonilo_user_message(sonilo_info)
+                + " Revise el enlace de descarga abajo."
             ),
         )
         _update_job(
@@ -237,7 +280,7 @@ def _run_shotstack_background(
                     "sonilo_cues": len(
                         (updated_timeline.get("sonilo") or {}).get("cues") or []
                     ),
-                    "sonilo_render": live.get("sonilo"),
+                    "sonilo_render": sonilo_info,
                     "veo": updated_timeline.get("veo"),
                     "dry_run": False,
                     "render_id": live.get("render_id"),
@@ -250,7 +293,12 @@ def _run_shotstack_background(
                 },
             },
         )
-        logger.info("[VIDEO_EDIT] async done job=%s", job_id[:8])
+        logger.info(
+            "[VIDEO_EDIT] async done job=%s sonilo_ok=%s sonilo_msg=%s",
+            job_id[:8],
+            (sonilo_info or {}).get("ok"),
+            (sonilo_info or {}).get("message") or _sonilo_user_message(sonilo_info),
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("[VIDEO_EDIT] shotstack live failed job=%s", job_id[:8])
         error = str(exc)[:400]
@@ -300,6 +348,21 @@ def get_job_payload(user_id: str, job_id: str) -> dict[str, Any] | None:
 
     status = str(row.get("status") or "")
     ok = status in {"done", "dry_run", "rendering"}
+    meta = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    sonilo_info = meta.get("sonilo_render") if isinstance(meta, dict) else None
+    if status == "done":
+        message = (
+            "Video editado listo. "
+            + _sonilo_user_message(sonilo_info if isinstance(sonilo_info, dict) else None)
+        )
+    elif status == "rendering":
+        message = "Render en curso en Shotstack..."
+    elif status == "failed":
+        message = (
+            f"Render fallo; tokens reembolsados. Detalle: {row.get('error') or 'error'}"
+        )
+    else:
+        message = "Timeline lista (dry-run)."
     payload = {
         "ok": ok,
         "job_id": job_id,
@@ -308,20 +371,9 @@ def get_job_payload(user_id: str, job_id: str) -> dict[str, Any] | None:
         "balance_tokens": get_token_balance(user_id),
         "timeline": row.get("timeline"),
         "result_url": row.get("result_url"),
-        "message": (
-            "Video editado listo."
-            if status == "done"
-            else (
-                "Render en curso en Shotstack..."
-                if status == "rendering"
-                else (
-                    f"Render fallo; tokens reembolsados. Detalle: {row.get('error') or 'error'}"
-                    if status == "failed"
-                    else "Timeline lista (dry-run)."
-                )
-            )
-        ),
+        "message": message,
         "error": row.get("error"),
+        "sonilo": sonilo_info,
         "soft_cap_remaining": soft_cap_remaining(user_id),
         "code": None if ok else "render_failed",
     }
