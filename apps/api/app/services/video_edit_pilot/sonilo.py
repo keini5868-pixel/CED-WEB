@@ -463,13 +463,7 @@ def resolve_cues_to_audio_clips(
 
     attempted = bool(video_url) or bool(cues)
     ok = len(clips)
-    failed = max(0, (1 if video_url else 0) + min(max_cues, len(cues or [])) - ok)
-    # Recalcular failed de forma más honesta
-    if video_url and any(e.get("mode") == "video_to_sfx" for e in errors) and not any(
-        c.get("sonilo_mode") == "video_to_sfx" for c in clips
-    ):
-        failed = max(failed, 1)
-    failed = max(failed, len(errors))
+    failed = len(errors)
 
     primary_error = fatal or (errors[0] if errors else None)
     summary_msg = None
