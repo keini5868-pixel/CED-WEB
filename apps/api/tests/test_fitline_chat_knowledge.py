@@ -26,12 +26,25 @@ def test_wants_fitline_rejects_generic_basics():
 
 
 def test_format_includes_curated_products_not_invented():
+    format_fitline_knowledge_for_prompt.cache_clear()
     block = format_fitline_knowledge_for_prompt()
     assert "Activize" in block or "Activise" in block
     assert "Restorate" in block
     assert "Basics" in block
-    assert "NO inventes" in block or "no inventes" in block.lower()
+    assert "NTC" in block or "Nutrient Transport" in block
+    assert "Schengen" in block or "Luxemburgo" in block
+    assert "TÜV" in block or "TUV" in block.upper() or "Tüv" in block
+    assert "Partner Area" in block or "no invent" in block.lower()
+    assert "Prospección" in block or "prospección" in block.lower()
+    assert "NO inventes" in block or "no inventes" in block.lower() or "NO invent" in block
     assert "módulo Oportunidades" in block
+
+
+def test_compensation_rule_no_invent_percentages():
+    format_fitline_knowledge_for_prompt.cache_clear()
+    block = format_fitline_knowledge_for_prompt()
+    assert "Income Plan" in block or "Partner Area" in block
+    assert "NO invent" in block or "no invent" in block.lower()
 
 
 def test_append_only_when_triggered():

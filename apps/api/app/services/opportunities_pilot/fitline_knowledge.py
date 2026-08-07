@@ -46,24 +46,32 @@ _BASICS = re.compile(r"\bbasics\b", re.I)
 
 _PROMPT_RULES = (
     "Usa SOLO estos datos validados del módulo Oportunidades. "
-    "NO inventes productos, precios, comisiones, claims de salud ni cifras. "
+    "NO inventes productos, precios de entrada, comisiones, % del Income Plan, "
+    "claims de salud ni cifras. "
+    "Precios de inscripción y plan de compensación: Partner Area / materiales del "
+    "patrocinador — si no están aquí, dilo y remite al enlace de afiliación / mentor; "
+    "NO completes huecos con blogs o rumores. "
     "Si el dato no está aquí, dilo con honestidad y remite a fuentes oficiales "
     "(fitline.com / pm-international.com / Partner Area). "
     "NO preguntes qué es un producto o marca que ya aparece en este contexto: "
     "aplícalo directamente al pedido del usuario "
-    "(ideas de venta, copy, prompts, conceptos creativos, estrategia, etc.). "
-    "Si pide CONTENIDO / IDEA / COPY / PROMPT / GUION de texto sobre FitLine o "
-    "un producto de este catálogo: ENTREGA el texto completo YA, usando este "
-    "conocimiento. NO generes imagen. NO digas «no tengo info» si el producto "
-    "está aquí. NO abras con preguntas básicas (qué es, para qué sirve, a quién "
-    "va dirigido) — ya lo sabes por este bloque."
+    "(ideas de venta, copy, prompts, prospección, conceptos creativos, estrategia). "
+    "Si pide CONTENIDO / IDEA / COPY / PROMPT / GUION / PROSPECCIÓN de texto sobre "
+    "FitLine o un producto de este catálogo: ENTREGA el texto completo YA, usando "
+    "hechos de empresa/productos/ciencia de este bloque + playbook de marketing CED "
+    "(hooks específicos, PAS/AIDA/BAB internamente, terminología correcta). "
+    "NO generes imagen. NO digas «no tengo info» si el producto o hecho está aquí. "
+    "NO abras con preguntas básicas (qué es, para qué sirve) — ya lo sabes."
 )
 
 _FITLINE_CONTENT_DELIVERY_RULES = (
     "ENTREGA FITLINE/PM (texto): responde con contenido útil y listo para usar "
-    "(idea, copy, prompt delimitado con ---, guion o caption). "
+    "(idea, copy, prompt delimitado con ---, guion, caption o secuencia de "
+    "prospección). Combina hechos verificables de esta ficha (NTC, productos, "
+    "credenciales, escala) con criterio de marketing CED. "
     "Sé concreto y accionable; no te quedes en 1 frase genérica. "
-    "NO invoques generate_image. NO preguntes datos del producto que ya están arriba."
+    "NO invoques generate_image. NO preguntes datos del producto que ya están arriba. "
+    "NO inventes comisiones ni precios de entrada."
 )
 
 
@@ -94,8 +102,8 @@ def _section_title(key: str) -> str:
     return key.replace("_", " ").title()
 
 
-@lru_cache(maxsize=1)
-def format_fitline_knowledge_for_prompt(*, max_chars: int = 14_000) -> str:
+@lru_cache(maxsize=4)
+def format_fitline_knowledge_for_prompt(*, max_chars: int = 16_000) -> str:
     """Aplana secciones curadas del plugin FitLine para el system prompt."""
     plugin = get_plugin(OPPORTUNITY_ID)
     if not plugin:
@@ -121,7 +129,6 @@ def format_fitline_knowledge_for_prompt(*, max_chars: int = 14_000) -> str:
             continue
         parts.append(f"### {section_title}\n{body}")
 
-    # Cualquier sección curada no listada en SECTION_ORDER
     known = {k for k, _ in SECTION_ORDER}
     for key, row in sections.items():
         if key in known or not isinstance(row, dict):
@@ -143,11 +150,20 @@ def append_fitline_knowledge_if_needed(system: str, user_text: str) -> str:
     block = format_fitline_knowledge_for_prompt()
     if not block:
         return system
+    from app.domain.ced_sales_marketing_playbook import (
+        append_sales_marketing_playbook_if_needed,
+    )
     from app.services.chat_intents import is_text_ideation_request
 
     base = (system or "").rstrip()
     out = f"{base}\n\n{block}" if base else block
-    if is_text_ideation_request(user_text):
+    # Prospección / copy FitLine también lleva el playbook de marketing.
+    out = append_sales_marketing_playbook_if_needed(out, user_text)
+    if is_text_ideation_request(user_text) or re.search(
+        r"\bprospecci[oó]n|prospectar|contenido|campa[nñ]a\b",
+        user_text or "",
+        re.I,
+    ):
         out = f"{out.rstrip()}\n\n{_FITLINE_CONTENT_DELIVERY_RULES}"
     return out
 

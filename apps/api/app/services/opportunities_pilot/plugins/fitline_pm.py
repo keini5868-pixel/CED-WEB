@@ -3,6 +3,10 @@
 Tono UI (excepto Limitaciones/riesgos): red de franquicias, equipo de crecimiento,
 socios de negocio, ingresos residuales. Sin "MLM"/"afiliados"/"multinivel" en copy
 visible de secciones soft.
+
+Datos duros de empresa: sitio oficial, Direct Selling News / DSA y fuentes
+verificables. Precios de entrada y % del Income Plan: Partner Area / materiales
+del patrocinador — NO inventar desde web de terceros.
 """
 
 from __future__ import annotations
@@ -13,7 +17,6 @@ from app.config import get_settings
 
 OPPORTUNITY_ID = "fitline_pm"
 
-# Soft-tone curated body (all sections except risks). Risks are honest.
 _CURATED_AS_OF = "2026-08-07"
 
 
@@ -54,258 +57,316 @@ def fitline_pm_plugin() -> dict[str, Any]:
                     "url": "https://www.pm-international.com/gb/en-us/about",
                 },
                 {
-                    "title": "FitLine Shop EE.UU. (catálogo oficial)",
-                    "url": "https://www.fitline.com/us/en-us/products",
+                    "title": "PM-International (sitio corporativo)",
+                    "url": "https://www.pm-international.com/",
                 },
                 {
-                    "title": "Portal oficial de registro PM (pmebusiness)",
-                    "url": "https://www.pmebusiness.com/",
+                    "title": "FitLine Shop EE.UU. (catálogo oficial)",
+                    "url": "https://www.fitline.com/us/en-us/products",
                 },
                 {
                     "title": "FitLine (marca de productos)",
                     "url": "https://www.fitline.com/",
                 },
                 {
-                    "title": "PM-International (sitio corporativo)",
-                    "url": "https://www.pm-international.com/",
+                    "title": "Portal oficial de registro PM (pmebusiness)",
+                    "url": "https://www.pmebusiness.com/",
+                },
+                {
+                    "title": "Direct Selling News — Global 100 (ranking venta directa)",
+                    "url": "https://www.directsellingnews.com/",
                 },
             ],
             "sections": {
                 "what_is": {
                     "attribution": "curated",
                     "body": (
-                        "PM-International AG es la empresa detrás de FitLine, una línea de "
-                        "nutrición, fitness y belleza. Quienes activan su negocio pueden "
+                        "PM International (PM-International AG) es la empresa detrás de "
+                        "FitLine: nutrición, fitness y belleza con tecnología NTC "
+                        "(Nutrient Transport Concept). Quienes activan su negocio pueden "
                         "comercializar productos FitLine y construir un equipo de "
                         "crecimiento (red de franquicias) con posibilidad de ingresos "
                         "residuales, además de la venta de producto a clientes finales.\n\n"
-                        "Es un negocio familiar económicamente independiente; según su "
-                        "página oficial About, figura entre las Top 100 empresas de "
-                        "distribución a nivel mundial (puesto 6º citado en esa ficha).\n\n"
-                        "CED es la herramienta de estrategia y desarrollo de habilidades "
-                        "para hacer crecer este negocio (análisis de viabilidad, "
-                        "tendencias y apoyo operativo)."
+                        "Escala publicada (fuentes corporativas / Direct Selling News, "
+                        "as_of 2026): sede en Schengen (Luxemburgo); presencia en más de "
+                        "40–45 países; 1.000+ empleados; ranking #6 en el Top 100 Global "
+                        "de venta directa; ingresos reportados ~$3.22 mil millones (2025); "
+                        "hito de más de mil millones de productos FitLine vendidos "
+                        "(anunciado en 2026).\n\n"
+                        "CED es la herramienta de estrategia, copy y prospección para "
+                        "hacer crecer este negocio — no sustituye el Partner Area ni el "
+                        "Income Plan oficial."
                     ),
                 },
                 "company_history": {
                     "attribution": "curated",
                     "body": (
-                        "Historia y presencia (fuentes: sitio oficial About de "
-                        "PM-International, consultado 2026-08-07):\n\n"
-                        "• Fundación: 1993, como PM Cosmetics GmbH; fundador y CEO: "
-                        "Rolf Sorg.\n"
-                        "• 1995: primer suplemento FitLine (Q10).\n"
-                        "• Años posteriores: expansión a Asia, centros logísticos "
-                        "(p. ej. Suiza / Speyer, Alemania), apertura de headquarters "
-                        "en Luxemburgo y Asia-Pacífico.\n"
-                        "• Sede internacional: Luxemburgo; sedes regionales en Europa "
-                        "(Alemania), Asia-Pacífico (Singapur) y Américas (Florida, EE.UU.).\n"
-                        "• Presencia: más de 40 países, con más de 45 filiales / socios "
-                        "de distribución (cifras publicadas en About).\n"
-                        "• Hitos citados por la empresa: reconocimiento Top 100 "
-                        "innovación (Alemania), 1.000 millones USD en ventas anuales "
-                        "(2019 en la línea de tiempo oficial), partner de nutrición "
-                        "deportiva de ATP Tour (2024 en esa línea de tiempo).\n\n"
-                        "Años en el mercado: desde 1993 (~33 años a 2026).\n\n"
-                        "Los números de ventas, ranking y filiales pueden actualizarse: "
-                        "verifique siempre la página About vigente."
+                        "Historia y presencia (fuentes verificables: sitio oficial "
+                        "PM-International / About, Direct Selling News; curado "
+                        f"{_CURATED_AS_OF}):\n\n"
+                        "• Fundación: 1993 en Speyer, Alemania, por Rolf Sorg "
+                        "(co-fundadora Vicki Sorg; hoy también vinculada a labor "
+                        "filantrópica de la empresa).\n"
+                        "• Marca FitLine: línea principal de nutrición / bienestar "
+                        "(primeros productos a mediados de los 90).\n"
+                        "• Sede internacional actual: Schengen, Luxemburgo "
+                        "(desde 2015). Sedes / operaciones regionales también en "
+                        "Europa (Alemania), Asia-Pacífico y Américas.\n"
+                        "• Presencia: más de 40–45 países; más de 1.000 empleados "
+                        "(cifras corporativas publicadas).\n"
+                        "• Escala 2025–2026 (publicada / anunciada): ingresos "
+                        "~$3.22 mil millones (2025); ranking #6 Top 100 Direct "
+                        "Selling News Global; más de mil millones de productos "
+                        "FitLine vendidos a nivel mundial (hito 2026).\n"
+                        "• Años en el mercado: desde 1993 (~33 años a 2026).\n\n"
+                        "Los números de ventas, ranking y filiales se actualizan: "
+                        "verifique siempre About / comunicados oficiales vigentes. "
+                        "NO invente cifras no listadas aquí."
+                    ),
+                },
+                "science_credibility": {
+                    "attribution": "curated",
+                    "body": (
+                        "Ciencia, legalidad y respaldo deportivo (fuentes oficiales / "
+                        "verificables; curado "
+                        f"{_CURATED_AS_OF}):\n\n"
+                        "• Tecnología NTC (Nutrient Transport Concept): concepto "
+                        "central FitLine — entrega de nutrientes cuándo y dónde el "
+                        "cuerpo los necesita, a nivel celular (claim de marca; no "
+                        "inventar claims médicos).\n"
+                        "• Más de 70 patentes; colaboración citada con la Universidad "
+                        "de Trier y ELAB Analytic GmbH para control de calidad.\n"
+                        "• Verificación de calidad: cada producto puede verificarse "
+                        "escaneando un código QR con resultados de análisis "
+                        "independientes (diferenciador que la empresa destaca frente "
+                        "a competidores).\n"
+                        "• Legalidad del plan de marketing: la corte de apelaciones "
+                        "alemana en Frankfurt confirmó la legalidad del plan de PM "
+                        "en 2011.\n"
+                        "• Venta directa justa: certificación TÜV Hessen desde 2013 "
+                        "(verificada anualmente según materiales corporativos).\n"
+                        "• Deporte: más de 1.000 atletas de alto rendimiento en 85+ "
+                        "disciplinas y 40+ países; proveedor oficial de varias "
+                        "federaciones nacionales (p. ej. esquí alemán/austríaco/"
+                        "polaco, hockey sobre hielo alemán, ciclismo alemán, "
+                        "atletismo alemán — según listados corporativos).\n\n"
+                        "Al crear copy o prospección: use estos hechos con tono "
+                        "creíble (4 C's). No invente estudios clínicos ni "
+                        "certificaciones no listadas."
                     ),
                 },
                 "products": {
                     "attribution": "curated",
                     "body": (
-                        "Catálogo FitLine (precios de lista tienda oficial EE.UU. "
-                        "fitline.com/us, consultada 2026-08-07). Los precios varían "
-                        "por país, impuestos y promociones; confirme en la tienda de "
-                        "su mercado.\n\n"
-                        "Optimal supply\n"
-                        "• Optimal-Set (PowerCocktail + Restorate Citrus/Exotic): "
-                        "$146.00\n"
-                        "• Optimal-Set (Activize + Basics + Restorate Citrus/Exotic): "
-                        "$146.00\n"
-                        "• PowerCocktail: $119.48\n"
-                        "• Activize Oxyplus: $41.20\n"
-                        "• Activize Peach Ice-Tea: $41.20 (edición limitada)\n"
-                        "• Restorate Citrus / Exotic: $29.90 c/u\n"
-                        "• Basics: $78.28\n"
-                        "• Generation 50+: $112.50\n"
-                        "• PowerCocktail Junior: $43.30\n"
-                        "• Set Restorate + Activize Oxyplus: $67.00\n"
-                        "• Optimal-Set 50+ (PowerCocktail + Restorate + Generation 50+): "
-                        "$256.00\n"
-                        "• TopShape Starterset (TopShape + PowerCocktail + Restorate): "
-                        "$252.04\n"
-                        "• TopShape Optimal-Set (+ TopShape + 2× ProShape): $330.20\n\n"
-                        "Fitness\n"
-                        "• Munogen: $72.60\n"
-                        "• ProShape Amino: $70.50\n"
-                        "• Whey: $64.90\n"
-                        "• Fitness-Drink: $55.10\n\n"
-                        "Specialty\n"
-                        "• Women+: $65.50 · Men+: $74.35\n"
-                        "• microSolve⁺ Heart Duo: $83.25 · Omega 3: $43.50 · "
-                        "Lutein: $42.25 · Q10 Plus: $53.60\n"
-                        "• Antioxy: $53.60 · Joint-Health: $79.85 · D-Drink: $42.25\n"
-                        "• C-Balance: $46.90 · IB⁵: $34.10 · Herbaslim Tea: $16.48\n\n"
-                        "Weight management\n"
-                        "• TopShape: $108.60\n"
-                        "• ProShape All-in-1 Chocolate / Bourbon Vanilla: $47.99 c/u\n"
-                        "• Herbaslim Tea: $16.48\n\n"
-                        "Beauty (selección)\n"
-                        "• Beauty: $61.20 · Activize Serum: $56.65 · 4ever: $73.65\n"
-                        "• Ultimate Young: $97.85 · Ultimate Young 4ever: $162.75\n"
-                        "• Tonic / Cleansing Lotion: $31.45 c/u · Eye Cream: $56.55\n"
-                        "• Cell Lotion: $35.55 · Dental+: $6.68\n"
-                        "• Men Face Cream: $33.90 · Q10 Oxy Repair Hands: $13.90\n"
-                        "• Young Care (foam/cream/peeling/set): desde $19.90\n"
-                        "• Hydrating-Shot Mask: $60.30 · med microSolve Hair+: $46.35\n"
-                        "• Triple Lift Set: $145.00 (limitado)\n\n"
-                        "Hay FanShop y promociones adicionales en la tienda oficial. "
-                        "CED no inventa SKUs ni precios fuera de fuentes oficiales."
+                        "Productos clave FitLine (función — fuentes: fitline.com / "
+                        "materiales de marca; NO invente SKUs ni claims de salud "
+                        "no confirmados):\n\n"
+                        "• FitLine Optimal Set — producto insignia; nutrición diaria "
+                        "integral (combinaciones que suelen incluir PowerCocktail + "
+                        "Restorate, o Activize + Basics + Restorate, según mercado).\n"
+                        "• FitLine PowerCocktail — vitaminas y minerales orientados "
+                        "a energía / aporte diario.\n"
+                        "• FitLine Activize (Activize Oxyplus; typo frecuente "
+                        "«Activise») — energía natural; muy usado en contenido de "
+                        "venta.\n"
+                        "• FitLine Restorate — recuperación y balance mineral "
+                        "(variantes Citrus / Exotic, etc.).\n"
+                        "• FitLine Basics — fibra y probióticos.\n"
+                        "• Tecnología transversal: NTC (ver sección Ciencia).\n\n"
+                        "Otras líneas del catálogo oficial (existen en tienda; "
+                        "descríbalas solo si el usuario pregunta o si aparecen en "
+                        "lista de precios de su mercado): Generation 50+, Munogen, "
+                        "ProShape, TopShape, microSolve, Women+/Men+, belleza "
+                        "(Ultimate Young, etc.).\n\n"
+                        "Precios de lista (referencia tienda oficial EE.UU. "
+                        "fitline.com/us, snapshot previo — VARÍAN por país, impuestos "
+                        "y promo; confirme en la tienda de su mercado):\n"
+                        "• Optimal-Set (variantes): ~$146.00\n"
+                        "• PowerCocktail: ~$119.48 · Activize Oxyplus: ~$41.20\n"
+                        "• Restorate Citrus/Exotic: ~$29.90 · Basics: ~$78.28\n"
+                        "• Generation 50+: ~$112.50 · otros SKUs en tienda oficial.\n\n"
+                        "CED no inventa productos ni precios fuera de fuentes "
+                        "oficiales o del material que el patrocinador comparta."
                     ),
                 },
                 "how_it_works": {
                     "attribution": "curated",
                     "body": (
                         "El modelo combina:\n"
-                        "• Venta de productos FitLine a clientes finales (tienda propia "
-                        "del socio / Customer Direct Program de PM).\n"
-                        "• Construcción de un equipo de crecimiento / socios de negocio "
-                        "en una red de franquicias.\n"
+                        "• Venta de productos FitLine a clientes finales (tienda del "
+                        "socio / Customer Direct Program de PM).\n"
+                        "• Construcción de un equipo de crecimiento / socios de "
+                        "negocio en una red de franquicias.\n"
                         "• Ingresos residuales ligados al volumen de producto y al "
                         "desarrollo del equipo, según el PM Income Plan oficial "
-                        "(documentos del Partner Area).\n\n"
-                        "Según las reglas oficiales de contrato: la remuneración está "
+                        "(Partner Area — detalle numérico NO se inventa desde la web).\n\n"
+                        "Según reglas oficiales de contrato: la remuneración está "
                         "ligada a la venta de productos FitLine; no se remunera el "
                         "mero acto de invitar personas sin ventas de producto.\n\n"
-                        "CED acompaña con estrategia: no sustituye la información oficial "
-                        "de PM International ni garantiza resultados."
+                        "Terminología obligatoria en todo copy/asesoría: red de "
+                        "franquicias / venta directa; equipo de crecimiento; "
+                        "patrocinador/mentor; socios de negocio. NUNCA: MLM, "
+                        "multinivel, downline, reclutar, afiliados, pirámide.\n\n"
+                        "CED acompaña con estrategia y prospección; no sustituye "
+                        "información oficial de PM ni garantiza resultados."
                     ),
                 },
                 "requirements": {
                     "attribution": "curated",
                     "body": (
-                        "Planes de inscripción / activación (portal oficial de registro "
-                        "pmebusiness.com; precios de ejemplo EE.UU. y zona € — "
-                        "consultados 2026-08; varían por país):\n\n"
-                        "1) Starter Kit (kit de negocio)\n"
-                        "   • EE.UU.: ~$26.80 (bolsa demo, botella, 2 vasos, cuchara).\n"
-                        "   • Zona € (ej. NL): ~€19,85 (Business Set + botella, vasos, "
-                        "cuchara).\n\n"
-                        "2) Teampartner Start (entrada con autoship)\n"
-                        "   • EE.UU.: ~$105.12/mes — 1 Optimal-Set "
-                        "(PowerCocktail+Restorate o Activize+Basics+Restorate); "
-                        "descuento autoship ~10%; a menudo bonus Activize Oxyplus.\n"
-                        "   • Zona €: ~€86,96/mes — 3× Optimal-Set en ciclo "
-                        "(variantes PowerCocktail/Activize+Basics + Restorate).\n\n"
-                        "3) Manager Quickstart (arranque acelerado — paquete manager)\n"
-                        "   • EE.UU.: ~$596.00 — 6× Optimal-Set + autoship al mes "
-                        "siguiente; bonuses frecuentes (p. ej. Activize Serum + Oxyplus).\n"
-                        "   • Zona €: ~€478,00 — 6× Optimal-Set (mismas variantes).\n\n"
-                        "4) Variantes Generation 50+\n"
-                        "   • EE.UU. autoship Optimal-Set 50+: ~$195.12/mes.\n"
-                        "   • EE.UU. Manager 50+ (6×): ~$1,075.00.\n"
-                        "   • Zona € Manager 50+ (6×): ~€875,00.\n\n"
-                        "5) Startup 25 (perfil joven / entrada con Activize)\n"
-                        "   • EE.UU.: ~$61.80 (Activize Set con descuento publicado).\n"
-                        "   • Zona €: ~€51,20.\n\n"
-                        "También suelen ofrecerse add-ons one-time al registrarse "
-                        "(p. ej. Activize Serum en promoción).\n\n"
-                        "Requisitos generales: registro vía patrocinador, aceptación de "
-                        "Distributor Rules / Income Plan del Partner Area, y políticas "
-                        "locales (edad, residencia, uso de marca).\n\n"
-                        "Confirme precios y disponibilidad en su enlace de activación. "
-                        "CED no inventa cifras de inscripción."
+                        "Planes de inscripción / activación — IMPORTANTE:\n"
+                        "Los precios exactos de entrada y la estructura completa "
+                        "actualizada del plan de compensación 2026 VARÍAN por "
+                        "país/región y viven en el back-office oficial "
+                        "(Partner Area) y en el enlace del patrocinador. "
+                        "NO están fiables si se inventan desde blogs o terceros.\n\n"
+                        "Regla CED:\n"
+                        "1) Use primero el enlace de patrocinio de este módulo y "
+                        "cualquier material que el patrocinador comparta en CED.\n"
+                        "2) Si no hay cifra verificable en este contexto, diga que "
+                        "debe confirmarse en el portal / con el mentor — NO invente.\n"
+                        "3) Nombres frecuentes de paquetes de entrada (orientativos; "
+                        "confirme en su enlace): Starter Kit / Business Set; "
+                        "Teampartner Start (autoship); Manager Quickstart; "
+                        "variantes Generation 50+; Startup 25.\n\n"
+                        "Snapshots históricos de portal (solo referencia — pueden "
+                        "estar desactualizados):\n"
+                        "• Starter Kit EE.UU. ~$26–30; zona € ~€20 (demo set).\n"
+                        "• Teampartner / autoship Optimal-Set: orden de ~$100/mes "
+                        "EE.UU. o equivalente € según mercado.\n"
+                        "• Manager Quickstart (varios Optimal-Set): orden de "
+                        "centenas de USD/EUR según país.\n\n"
+                        "Requisitos generales: registro vía patrocinador, "
+                        "Distributor Rules / Income Plan del Partner Area, "
+                        "políticas locales (edad, residencia, marca).\n\n"
+                        "Confirme SIEMPRE en su enlace de activación. CED no inventa "
+                        "cifras de inscripción."
                     ),
                 },
                 "income_potential": {
                     "attribution": "curated",
                     "body": (
-                        "Plan de compensación (marco oficial; detalle numérico en el "
-                        "PM Income Plan del Partner Area — no inventamos % ni umbrales "
-                        "sin documento vigente públicamente verificable):\n\n"
-                        "Cómo se gana (según reglas / Income Plan oficiales):\n"
-                        "• Margen / Retail Income: diferencia entre precio de socio "
-                        "y precio de venta al cliente.\n"
+                        "Plan de compensación — fuente de verdad: PM Income Plan "
+                        "del Partner Area + materiales del patrocinador. "
+                        "Detalle de % , umbrales de puntos y requisitos de rango "
+                        "NO está completo en fuentes públicas confiables; "
+                        "CED NO inventa tablas de comisión ni promesas de ingreso.\n\n"
+                        "Cómo se gana (marco oficial, sin cifras inventadas):\n"
+                        "• Margen / Retail Income: diferencia precio socio vs. "
+                        "cliente.\n"
                         "• Bonificaciones por volumen de clientes referidos "
-                        "(Customer Direct) y por actividad del equipo de crecimiento, "
-                        "cuando se cumplen criterios del plan.\n"
+                        "(Customer Direct) y por actividad del equipo de "
+                        "crecimiento, según criterios del plan.\n"
                         "• Ingresos residuales (royalties / overrides) ligados al "
-                        "volumen de producto en líneas de socios desarrollados — "
-                        "el plan vigente describe generaciones y condiciones.\n"
-                        "• Bonos de liderazgo / management y pools, según rango "
-                        "alcanzado.\n"
+                        "volumen de producto en líneas de socios desarrollados.\n"
+                        "• Bonos de liderazgo / management y pools, según rango.\n"
                         "• Incentivos de estilo de vida en rangos altos (p. ej. "
-                        "programa de auto, plan de pensión), si el Income Plan de "
-                        "su país los incluye.\n\n"
-                        "Avance de niveles (nombres frecuentes en materiales PM; "
-                        "requisitos exactos de puntos/volumen solo en Income Plan):\n"
-                        "Team Partner → Manager → Sales Manager → Marketing Manager → "
-                        "International Marketing Manager → Vice President → "
-                        "Executive Vice President → President's Team (y rangos "
-                        "superiores según plan local).\n\n"
-                        "Pago: liquidación mensual; las reglas publicadas indican "
-                        "pago a más tardar el día 20 del mes siguiente (con umbral "
-                        "mínimo de transferencia).\n\n"
-                        "El potencial depende de ventas reales y desarrollo de equipo. "
-                        "CED no publica montos de comisión ni promesas de ingreso "
-                        "sin fuente verificable de esta sesión."
+                        "auto, pensión) SOLO si el Income Plan de su país los "
+                        "incluye.\n\n"
+                        "Avance de niveles (nombres frecuentes; requisitos exactos "
+                        "solo en Income Plan): Team Partner → Manager → Sales "
+                        "Manager → Marketing Manager → International Marketing "
+                        "Manager → Vice President → Executive Vice President → "
+                        "President's Team (y superiores según plan local).\n\n"
+                        "Pago: liquidación mensual según reglas publicadas "
+                        "(umbrales de transferencia aplican).\n\n"
+                        "Si el usuario pregunta por % o montos concretos y no hay "
+                        "documento del patrocinador en contexto: diga con claridad "
+                        "que debe revisarlo en Partner Area / con su mentor — "
+                        "ofrezca en cambio estrategia de prospección y venta de "
+                        "producto basada en hechos de empresa/productos de esta ficha."
+                    ),
+                },
+                "prospecting": {
+                    "attribution": "curated",
+                    "body": (
+                        "Prospección eficiente en redes (PM/FitLine + expertise "
+                        "CED de marketing/ventas):\n\n"
+                        "Aplique el playbook interno CED (AIDA/PAS/BAB/FAB, hooks "
+                        "específicos, Meta Ads 3 niveles, Reels 45–60 s) SIN "
+                        "nombrar frameworks al usuario salvo que pregunte.\n\n"
+                        "Ángulos con hechos verificables (no genéricos):\n"
+                        "• Dolor concreto + producto (PAS): energía post-trabajo → "
+                        "Activize; recuperación → Restorate; rutina diaria → "
+                        "Optimal Set / Basics.\n"
+                        "• Credibilidad (4 C's): NTC + QR/ELAB, 70+ patentes, "
+                        "TÜV Hessen, legalidad 2011, atletas/federaciones, "
+                        "escala #6 / $3.22B — sin sonar a exageración.\n"
+                        "• BAB: antes (cansancio, inconsistencia) → después "
+                        "(rutina FitLine) → puente (probar Optimal Set / "
+                        "Activize).\n"
+                        "• Embudo: contenido frío (dolor/hook 1–3 s) vs. caliente "
+                        "(testimonio, transformación, invitación a conversar / "
+                        "enlace de patrocinio).\n"
+                        "• Meta Ads: objetivo Leads o Tráfico alineado al CTA; "
+                        "3–5 creativos por conjunto; renovar cada 3–4 semanas.\n"
+                        "• Terminología: siempre red de franquicias / equipo de "
+                        "crecimiento / socios de negocio / patrocinador.\n\n"
+                        "Entregables típicos que CED debe producir YA: hooks, "
+                        "copy de Reel, captions, prompts, secuencias de DM, "
+                        "outline de campaña — usando productos y hechos de esta "
+                        "ficha, sin preguntar qué es FitLine ni inventar comisiones."
                     ),
                 },
                 "getting_started": {
                     "attribution": "curated",
                     "body": (
                         "Pasos sugeridos para activar su negocio:\n"
-                        "1. Revisar productos FitLine en la tienda oficial de su país "
-                        "y el modelo de ingresos residuales en materiales oficiales.\n"
-                        "2. Elegir paquete de entrada (Starter / Teampartner / Manager "
-                        "Quickstart / 50+ / Startup 25) según presupuesto y ritmo.\n"
-                        "3. Usar el enlace de patrocinio (sección Afiliación) para "
-                        "registrarse — el CTA prioriza el paquete manager.\n"
-                        "4. Completar mentoría y desarrollo empresarial con el equipo "
-                        "asociado a ese enlace.\n"
-                        "5. Usar CED (Viabilidad, Tendencias, Oportunidades) como "
-                        "herramienta de estrategia y habilidades para crecer.\n"
-                        "6. Cumplir políticas de marca, publicidad e Income Plan de "
-                        "PM International."
+                        "1. Revisar productos FitLine en la tienda oficial de su "
+                        "país y credenciales (NTC, calidad QR, deporte) para su "
+                        "narrativa.\n"
+                        "2. Confirmar paquete de entrada e Income Plan con el "
+                        "enlace de patrocinio / Partner Area (no con blogs).\n"
+                        "3. Registrarse vía el CTA de Afiliación de este módulo.\n"
+                        "4. Completar mentoría con el equipo del patrocinador.\n"
+                        "5. Usar CED para copy, prospección, Viabilidad y "
+                        "Tendencias — con terminología correcta.\n"
+                        "6. Cumplir políticas de marca, publicidad e Income Plan "
+                        "de PM International."
                     ),
                 },
                 "affiliation": {
                     "attribution": "curated",
                     "body": (
-                        "Quienes se registren a través del enlace personal de patrocinio "
-                        "de este módulo obtienen acceso a mentoría directa y "
-                        "acompañamiento estratégico de un equipo especializado "
-                        "(programa de mentoría y desarrollo empresarial).\n\n"
-                        "CED es la herramienta de estrategia y desarrollo de habilidades "
-                        "para hacer crecer este negocio una vez activado.\n\n"
-                        "Use el botón «Activar su negocio (paquete manager)» para abrir "
-                        "el enlace de registro. Si el enlace aún no está configurado en "
-                        "el servidor, aparecerá un aviso en esta ficha."
+                        "Quienes se registren a través del enlace personal de "
+                        "patrocinio de este módulo obtienen acceso a mentoría "
+                        "directa y acompañamiento estratégico de un equipo "
+                        "especializado (programa de mentoría y desarrollo "
+                        "empresarial).\n\n"
+                        "Ese mismo canal es la fuente preferida para precios de "
+                        "entrada y detalle del plan de compensación vigentes en "
+                        "su país — CED prioriza esa información sobre rumores "
+                        "de internet.\n\n"
+                        "CED es la herramienta de estrategia, copy y prospección "
+                        "para hacer crecer el negocio una vez activado.\n\n"
+                        "Use el botón «Activar su negocio (paquete manager)» "
+                        "para abrir el enlace de registro. Si el enlace aún no "
+                        "está configurado en el servidor, aparecerá un aviso en "
+                        "esta ficha."
                     ),
                 },
                 "risks": {
                     "attribution": "curated",
                     "body": (
-                        "Limitaciones y riesgos (información explícita del modelo real):\n"
-                        "• Se trata de un modelo de venta directa con estructura de "
-                        "comisiones por red: los ingresos suelen depender tanto de "
-                        "ventas personales como del volumen generado por la red.\n"
+                        "Limitaciones y riesgos (información explícita del modelo "
+                        "real):\n"
+                        "• Modelo de venta directa con estructura de comisiones "
+                        "por red: los ingresos suelen depender de ventas personales "
+                        "y del volumen del equipo de crecimiento.\n"
                         "• El ingreso no está garantizado. Muchas personas obtienen "
-                        "resultados bajos o nulos si no hay ventas consistentes ni "
+                        "resultados bajos o nulos sin ventas consistentes ni "
                         "desarrollo de red.\n"
                         "• Puede haber costo de paquete de inicio / inventario / "
-                        "autoship; evalúe si encaja con su presupuesto antes de "
-                        "activar el negocio.\n"
+                        "autoship; evalúe presupuesto antes de activar.\n"
                         "• Precios de producto y paquetes cambian por país y fecha; "
                         "no use cifras de esta ficha como cotización vinculante.\n"
-                        "• El detalle de porcentajes y requisitos de rango está en el "
-                        "Income Plan del Partner Area; CED no inventa tablas de "
-                        "comisión.\n"
-                        "• Está sujeto a regulaciones locales sobre venta directa y "
-                        "publicidad de ingresos; no haga afirmaciones engañosas.\n"
-                        "• CED no es un patrocinador oficial de PM International ni "
-                        "garantiza aceptación, rangos o comisiones."
+                        "• El detalle de porcentajes y requisitos de rango está en "
+                        "el Income Plan del Partner Area; CED no inventa tablas "
+                        "de comisión ni las «completa» con fuentes no oficiales.\n"
+                        "• Regulaciones locales sobre venta directa y publicidad "
+                        "de ingresos; no haga afirmaciones engañosas.\n"
+                        "• CED no es un patrocinador oficial de PM International "
+                        "ni garantiza aceptación, rangos o comisiones."
                     ),
                 },
             },
