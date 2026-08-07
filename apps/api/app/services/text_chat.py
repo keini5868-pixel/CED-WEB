@@ -2917,12 +2917,16 @@ def send_message(
 
 
 def _sse_event(name: str, payload: dict[str, Any]) -> str:
-    return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    from app.services.sse_util import sse_event
+
+    return sse_event(name, payload)
 
 
 def _sse_flush() -> str:
     """Comentario SSE para forzar flush en proxies (Railway / Next.js)."""
-    return ": flush\n\n"
+    from app.services.sse_util import sse_flush
+
+    return sse_flush()
 
 
 def _invalidate_stream_usage_cache(user_id: str) -> None:

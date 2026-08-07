@@ -4,7 +4,9 @@ import {
   COTIDIAN_STREAM_STALL_MS,
 } from "@/lib/api/cotidian-stream";
 import { proxyFetchAuthed, streamAuthHeaders } from "@/lib/api/ced-proxy";
+import { coerceDisplayText, formatApiDetail } from "@/lib/display-text";
 import { parseApiJson } from "@/lib/api/http";
+import { appendStreamChunk } from "@/lib/stream-chunk";
 
 export type FinanceChatMessage = {
   role: "user" | "assistant";
@@ -114,8 +116,10 @@ export async function sendFinanceChatMessageStream(
   if (!res.ok) {
     clearStall();
     clearTimeout(hardTimeout);
-    const data = await parseApiJson<{ detail?: string }>(res);
-    throw new Error(data.detail || "No se pudo procesar sus finanzas.");
+    const data = await parseApiJson<{ detail?: unknown }>(res);
+    throw new Error(
+      formatApiDetail(data.detail, "No se pudo procesar sus finanzas."),
+    );
   }
 
   if (!res.body) {
@@ -144,22 +148,22 @@ export async function sendFinanceChatMessageStream(
     if (!dataLine) return;
     const parsed = JSON.parse(dataLine) as Record<string, unknown>;
     if (eventName === "status") {
-      const statusText = String(parsed.text ?? "");
+      const statusText = coerceDisplayText(parsed.text).trim();
       if (statusText) onStatus?.(statusText);
       return;
     }
     if (eventName === "token") {
-      const text = String(parsed.text ?? "");
+      const text = coerceDisplayText(parsed.text);
       if (text) {
-        streamedText += text;
+        streamedText = appendStreamChunk(streamedText, text);
         onToken(text);
       }
       return;
     }
     if (eventName === "done") {
       finalPayload = {
-        response: String(parsed.response ?? ""),
-        model: String(parsed.model ?? FINANCE_FALLBACK_MODEL),
+        response: coerceDisplayText(parsed.response),
+        model: coerceDisplayText(parsed.model) || FINANCE_FALLBACK_MODEL,
         pdf: (parsed.pdf as ChatPdfAttachment | undefined) ?? null,
       };
     }
@@ -236,13 +240,15 @@ export async function sendFinanceChatMessage(
     }),
     signal: AbortSignal.timeout(FINANCE_TIMEOUT_MS),
   });
-  const data = await parseApiJson<FinanceChatResult & { detail?: string }>(res);
+  const data = await parseApiJson<FinanceChatResult & { detail?: unknown }>(res);
   if (!res.ok) {
-    throw new Error(data.detail || "No se pudo procesar sus finanzas.");
+    throw new Error(
+      formatApiDetail(data.detail, "No se pudo procesar sus finanzas."),
+    );
   }
   return {
-    response: data.response ?? "",
-    model: data.model ?? FINANCE_FALLBACK_MODEL,
+    response: coerceDisplayText(data.response),
+    model: coerceDisplayText(data.model) || FINANCE_FALLBACK_MODEL,
     pdf: data.pdf ?? null,
   };
 }

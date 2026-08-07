@@ -4,6 +4,7 @@ import { Send, Wallet, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { appendStreamChunk } from "@/lib/stream-chunk";
+import { coerceDisplayText } from "@/lib/display-text";
 import type { ChatPdfAttachment } from "@/lib/api/chat";
 import {
   FINANCE_DEFAULT_WELCOME,
@@ -19,8 +20,8 @@ type FinanceChatPanelProps = {
   onClose: () => void;
 };
 
-function stripPdfLinks(content: string): string {
-  return content
+function stripPdfLinks(content: unknown): string {
+  return coerceDisplayText(content)
     .replace(/\[([^\]]*)\]\([^)]*\/pdf\/download\/[a-f0-9]+[^)]*\)/gi, "")
     .replace(/https?:\/\/[^\s)]+(?:\/v1\/pdf|\/api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
     .replace(/\/(?:v1\/pdf|api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
@@ -269,7 +270,9 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
         >
           {messages.map((msg, i) => {
             const displayContent =
-              msg.role === "assistant" ? stripPdfLinks(msg.content) : msg.content;
+              msg.role === "assistant"
+                ? stripPdfLinks(msg.content)
+                : coerceDisplayText(msg.content);
             const isActiveStreamBubble =
               streaming && streamTargetIndexRef.current === i;
             if (

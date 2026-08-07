@@ -1,6 +1,8 @@
 import type { ChatImageAttachment, ChatPdfAttachment } from "@/lib/api/chat";
 import { proxyFetchAuthed, streamAuthHeaders } from "@/lib/api/ced-proxy";
+import { coerceDisplayText, formatApiDetail } from "@/lib/display-text";
 import { parseApiJson } from "@/lib/api/http";
+import { appendStreamChunk } from "@/lib/stream-chunk";
 export type AdvancedChatMessage = {
   role: "user" | "assistant";
   content: string;
@@ -122,8 +124,10 @@ export async function sendAdvancedChatMessageStream(
   if (!res.ok) {
     clearStall();
     clearTimeout(hardTimeout);
-    const data = await parseApiJson<{ detail?: string }>(res);
-    throw new Error(data.detail || "No se pudo obtener respuesta de Claude.");
+    const data = await parseApiJson<{ detail?: unknown }>(res);
+    throw new Error(
+      formatApiDetail(data.detail, "No se pudo obtener respuesta de Claude."),
+    );
   }
 
   if (!res.body) {
@@ -152,22 +156,22 @@ export async function sendAdvancedChatMessageStream(
     if (!dataLine) return;
     const parsed = JSON.parse(dataLine) as Record<string, unknown>;
     if (eventName === "status") {
-      const statusText = String(parsed.text ?? "");
+      const statusText = coerceDisplayText(parsed.text).trim();
       if (statusText) onStatus?.(statusText);
       return;
     }
     if (eventName === "token") {
-      const text = String(parsed.text ?? "");
+      const text = coerceDisplayText(parsed.text);
       if (text) {
-        streamedText += text;
+        streamedText = appendStreamChunk(streamedText, text);
         onToken(text);
       }
       return;
     }
     if (eventName === "done") {
       finalPayload = {
-        response: String(parsed.response ?? ""),
-        model: String(parsed.model ?? "claude-sonnet-4-6"),
+        response: coerceDisplayText(parsed.response),
+        model: coerceDisplayText(parsed.model) || "claude-sonnet-4-6",
         pdf: (parsed.pdf as ChatPdfAttachment | undefined) ?? null,
         image: (parsed.image as ChatImageAttachment | undefined) ?? null,
       };
@@ -260,13 +264,15 @@ export async function sendAdvancedChatMessage(
     }),
     signal: AbortSignal.timeout(ADVANCED_TIMEOUT_MS),
   });
-  const data = await parseApiJson<AdvancedChatResult & { detail?: string }>(res);
+  const data = await parseApiJson<AdvancedChatResult & { detail?: unknown }>(res);
   if (!res.ok) {
-    throw new Error(data.detail || "No se pudo obtener respuesta de Claude.");
+    throw new Error(
+      formatApiDetail(data.detail, "No se pudo obtener respuesta de Claude."),
+    );
   }
   return {
-    response: data.response ?? "",
-    model: data.model ?? "claude-sonnet-4-6",
+    response: coerceDisplayText(data.response),
+    model: coerceDisplayText(data.model) || "claude-sonnet-4-6",
     pdf: data.pdf ?? null,
     image: data.image ?? null,
   };
@@ -297,13 +303,18 @@ export async function sendAdvancedChatMessageWithImage(
     body: formData,
     signal: AbortSignal.timeout(ADVANCED_TIMEOUT_MS),
   });
-  const data = await parseApiJson<AdvancedChatResult & { detail?: string }>(res);
+  const data = await parseApiJson<AdvancedChatResult & { detail?: unknown }>(res);
   if (!res.ok) {
-    throw new Error(data.detail || "No se pudo procesar la imagen en modo avanzado.");
+    throw new Error(
+      formatApiDetail(
+        data.detail,
+        "No se pudo procesar la imagen en modo avanzado.",
+      ),
+    );
   }
   return {
-    response: data.response ?? "",
-    model: data.model ?? "claude-sonnet-4-6",
+    response: coerceDisplayText(data.response),
+    model: coerceDisplayText(data.model) || "claude-sonnet-4-6",
     pdf: data.pdf ?? null,
     image: data.image ?? null,
   };

@@ -13,6 +13,7 @@ import {
 import { MicButton } from "@/components/chat/MicButton";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { appendStreamChunk } from "@/lib/stream-chunk";
+import { coerceDisplayText } from "@/lib/display-text";
 import type { ChatImageAttachment, ChatPdfAttachment } from "@/lib/api/chat";
 import {
   ADVANCED_DEFAULT_WELCOME,
@@ -33,8 +34,8 @@ type AdvancedChatPanelProps = {
   onClose: () => void;
 };
 
-function stripPdfLinks(content: string): string {
-  return content
+function stripPdfLinks(content: unknown): string {
+  return coerceDisplayText(content)
     .replace(/\[([^\]]*)\]\([^)]*\/pdf\/download\/[a-f0-9]+[^)]*\)/gi, "")
     .replace(/https?:\/\/[^\s)]+(?:\/v1\/pdf|\/api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
     .replace(/\/(?:v1\/pdf|api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
@@ -445,7 +446,9 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         >
           {messages.map((msg, i) => {
             const displayContent =
-              msg.role === "assistant" ? stripPdfLinks(msg.content) : msg.content;
+              msg.role === "assistant"
+                ? stripPdfLinks(msg.content)
+                : coerceDisplayText(msg.content);
             const userImagePreview = msg.user_image_preview ?? null;
             const isActiveStreamBubble =
               streaming && streamTargetIndexRef.current === i;

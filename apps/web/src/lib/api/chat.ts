@@ -4,6 +4,7 @@ import {
   COTIDIAN_STREAM_STALL_MS,
 } from "@/lib/api/cotidian-stream";
 import { appendStreamChunk } from "@/lib/stream-chunk";
+import { coerceDisplayText, formatApiDetail } from "@/lib/display-text";
 import { parseApiJson } from "@/lib/api/http";
 
 const CHAT_TIMEOUT_MS = COTIDIAN_CHAT_TIMEOUT_MS;
@@ -171,11 +172,11 @@ async function sendChatMessageBlocking(
     detail?: string;
   }>(res);
   if (!res.ok) {
-    throw new Error(data.detail || "No se pudo enviar el mensaje.");
+    throw new Error(formatApiDetail(data.detail, "No se pudo enviar el mensaje."));
   }
   return {
-    conversation_id: data.conversation_id!,
-    reply: data.reply!,
+    conversation_id: coerceDisplayText(data.conversation_id),
+    reply: coerceDisplayText(data.reply),
     usage: data.usage!,
     pdf: data.pdf ?? null,
     image: data.image ?? null,
@@ -236,8 +237,10 @@ export async function sendChatMessageStream(
 
   if (!res.ok) {
     if (stallTimer) clearTimeout(stallTimer);
-    const data = await parseApiJson<{ detail?: string }>(res);
-    throw new Error(data.detail || "No se pudo enviar el mensaje.");
+    const data = await parseApiJson<{ detail?: unknown }>(res);
+    throw new Error(
+      formatApiDetail(data.detail, "No se pudo enviar el mensaje."),
+    );
   }
 
   if (!res.body) {
@@ -265,14 +268,14 @@ export async function sendChatMessageStream(
     if (!dataLine) return;
     const parsed = JSON.parse(dataLine) as Record<string, unknown>;
     if (eventName === "status") {
-      const statusText = String(parsed.text ?? "").trim();
+      const statusText = coerceDisplayText(parsed.text).trim();
       // Keepalives SSE deben resetear el stall aunque el chunk sea solo status.
       armStallWatchdog();
       if (statusText) onStatus?.(statusText);
       return;
     }
     if (eventName === "token") {
-      const text = String(parsed.text ?? "");
+      const text = coerceDisplayText(parsed.text);
       if (text) {
         streamedText = appendStreamChunk(streamedText, text);
         onToken(text);
@@ -281,8 +284,8 @@ export async function sendChatMessageStream(
     }
     if (eventName === "done") {
       finalPayload = {
-        conversation_id: String(parsed.conversation_id ?? ""),
-        reply: String(parsed.reply ?? ""),
+        conversation_id: coerceDisplayText(parsed.conversation_id),
+        reply: coerceDisplayText(parsed.reply),
         usage: parsed.usage as ChatStatus,
         pdf: (parsed.pdf as ChatPdfAttachment | undefined) ?? null,
         image: (parsed.image as ChatImageAttachment | undefined) ?? null,
@@ -372,9 +375,9 @@ export async function transcribeChatAudio(audioBlob: Blob): Promise<string> {
     method: "POST",
     body: formData,
   });
-  const data = await parseApiJson<{ text?: string; detail?: string }>(res);
+  const data = await parseApiJson<{ text?: string; detail?: unknown }>(res);
   if (!res.ok) {
-    throw new Error(data.detail || "Error transcribiendo audio.");
+    throw new Error(formatApiDetail(data.detail, "Error transcribiendo audio."));
   }
-  return (data.text || "").trim();
+  return coerceDisplayText(data.text).trim();
 }

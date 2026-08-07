@@ -370,11 +370,15 @@ def _conversation_id(user_id: str, explicit: str | None) -> str:
 
 
 def _sse_event(name: str, payload: dict[str, Any]) -> str:
-    return f"event: {name}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    from app.services.sse_util import sse_event
+
+    return sse_event(name, payload)
 
 
 def _sse_flush() -> str:
-    return ": flush\n\n"
+    from app.services.sse_util import sse_flush
+
+    return sse_flush()
 
 
 def _advanced_dup_lookup(user_id: str, text: str) -> dict[str, Any] | None:

@@ -27,6 +27,7 @@ import {
 } from "@/lib/api/chat";
 import { startRechargeCheckout } from "@/lib/api/billing";
 import { appendStreamChunk } from "@/lib/stream-chunk";
+import { coerceDisplayText } from "@/lib/display-text";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
@@ -53,8 +54,8 @@ function formatTime(iso?: string) {
   return new Date(iso).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 }
 
-function stripPdfLinks(content: string): string {
-  return content
+function stripPdfLinks(content: unknown): string {
+  return coerceDisplayText(content)
     .replace(/\[([^\]]*)\]\([^)]*\/pdf\/download\/[a-f0-9]+[^)]*\)/gi, "")
     .replace(/https?:\/\/[^\s)]+(?:\/v1\/pdf|\/api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
     .replace(/\/(?:v1\/pdf|api\/ced\/pdf)\/download\/[a-f0-9]+/gi, "")
@@ -916,7 +917,9 @@ export function CedTextChatPanel({
             const imageAttachment = msg.image ?? null;
             const rechargeNeeded = msg.recharge_needed ?? null;
             const userImagePreview = msg.user_image_preview ?? null;
-            const displayContent = isUser ? msg.content : stripPdfLinks(msg.content);
+            const displayContent = isUser
+              ? coerceDisplayText(msg.content)
+              : stripPdfLinks(msg.content);
             return (
               <div
                 key={`${msg.role}-${i}`}

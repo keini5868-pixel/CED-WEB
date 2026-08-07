@@ -1,9 +1,15 @@
+import { coerceDisplayText } from "@/lib/display-text";
+
 /**
  * Agrega un chunk SSE al texto visible — tolera deltas o buffers acumulados.
+ * Coerce a string para nunca acumular "[object Object]".
  */
-export function appendStreamChunk(current: string, chunk: string): string {
-  const prev = current || "";
-  const incoming = chunk || "";
+export function appendStreamChunk(
+  current: unknown,
+  chunk: unknown,
+): string {
+  const prev = coerceDisplayText(current);
+  const incoming = coerceDisplayText(chunk);
   if (!incoming) return prev;
   if (!prev) return incoming;
   if (incoming.startsWith(prev)) {

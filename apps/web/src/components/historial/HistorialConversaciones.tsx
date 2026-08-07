@@ -12,6 +12,7 @@ import {
   type ConversationRow,
 } from "@/lib/api/conversations";
 import { collapseStreamingMessages } from "@/lib/voice/collapseStreamingMessages";
+import { coerceDisplayText } from "@/lib/display-text";
 
 type ChannelFilter = "" | "voice" | "text";
 
@@ -186,7 +187,9 @@ export function HistorialConversaciones() {
                       ? new Date(m.created_at).toLocaleString("es-MX")
                       : ""}
                   </p>
-                  <p className="whitespace-pre-wrap text-cyan-100">{m.content}</p>
+                  <p className="whitespace-pre-wrap text-cyan-100">
+                    {coerceDisplayText(m.content)}
+                  </p>
                 </li>
               );
             })}
