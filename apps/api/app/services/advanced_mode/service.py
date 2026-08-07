@@ -108,18 +108,25 @@ def _conversation_id(user_id: str, explicit: str | None) -> str:
     return explicit or f"advanced-{user_id}"
 
 
-def _stream_system_with_clock(user_id: str | None = None) -> str:
+def _stream_system_with_clock(
+    user_id: str | None = None,
+    user_text: str = "",
+) -> str:
     from app.domain.ced_identity import creator_partnership_overlay_for_user
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        append_fitline_knowledge_if_needed,
+    )
 
     partnership = creator_partnership_overlay_for_user(user_id) if user_id else ""
     partnership_block = f"\n\n{partnership}" if partnership else ""
-    return (
+    base = (
         ADVANCED_STREAM_SYSTEM
         + partnership_block
         + f"\n\n{clock_context_block()}"
         + "\nPROHIBIDO escribir tool_code, print(), search_web() ni pseudo-código. "
         "Responde en español natural o deja que el backend use herramientas."
     )
+    return append_fitline_knowledge_if_needed(base, user_text)
 
 
 def _sse_event(name: str, payload: dict[str, Any]) -> str:
@@ -338,11 +345,15 @@ def send_advanced_message(
 
     try:
         from app.domain.ced_identity import creator_partnership_overlay_for_user
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            append_fitline_knowledge_if_needed,
+        )
 
         partnership = creator_partnership_overlay_for_user(user_id)
         system_prompt = ADVANCED_SYSTEM_PROMPT
         if partnership:
             system_prompt = f"{ADVANCED_SYSTEM_PROMPT}\n\n{partnership}"
+        system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,
             api_key=anthropic_key,
@@ -407,6 +418,9 @@ def send_advanced_message_with_pdf(
 
     try:
         from app.domain.ced_identity import creator_partnership_overlay_for_user
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            append_fitline_knowledge_if_needed,
+        )
 
         partnership = creator_partnership_overlay_for_user(user_id)
         system_prompt = (
@@ -417,6 +431,7 @@ def send_advanced_message_with_pdf(
         )
         if partnership:
             system_prompt = f"{system_prompt}\n\n{partnership}"
+        system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,
             api_key=anthropic_key,
@@ -667,7 +682,7 @@ def iter_advanced_message_stream(
 
     stream_messages = [*history_for_stream(history), {"role": "user", "content": text}]
     max_tokens = stream_max_tokens(text)
-    stream_system = _stream_system_with_clock(user_id)
+    stream_system = _stream_system_with_clock(user_id, user_text=text)
 
     accumulated: list[str] = []
     stream_buf = ""

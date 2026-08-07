@@ -44,6 +44,19 @@ def fetch_module_stream_context(
         return None, None
 
     try:
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            format_fitline_knowledge_for_prompt,
+            wants_fitline_knowledge,
+        )
+
+        if wants_fitline_knowledge(text):
+            fitline = format_fitline_knowledge_for_prompt()
+            if fitline:
+                return (
+                    f"{fitline}\n\n{_MODULE_CONTEXT_RULES}",
+                    {"intent": "fitline_opportunity", "source": "opportunities_curated"},
+                )
+
         if is_reminder_intent(text):
             spoken = str(handle_reminder_query_sync(user_id, text).get("spoken") or "").strip()
             if spoken:
