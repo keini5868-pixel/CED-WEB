@@ -39,38 +39,45 @@ _EXPLICIT_IMAGE_CREATE = re.compile(
     re.I,
 )
 
-# Entregable pedido = idea/concepto/copy/texto (NO archivo de imagen).
+# Entregable pedido = idea/concepto/copy/prompt/texto (NO archivo de imagen).
+_TEXT_DELIVERABLE = (
+    r"(?:idea|ideas|concepto|conceptos|copy|copies|guion(?:es)?|gui[oó]n(?:es)?|"
+    r"texto|textos|descripci[oó]n(?:es)?|caption|eslogan|slogan|"
+    r"titular(?:es)?|headline|hook|gancho|prompt|prompts|script|scripts|"
+    r"contenido|contenidos|pitch|gancho\s+de\s+venta)"
+)
+
 _TEXT_IDEATION = re.compile(
     r"(?is)"
     r"(?:"
-    # dame/sugiere/necesito + idea|concepto|copy|guion|descripción…
+    # dame/sugiere/necesito + idea|concepto|copy|prompt|guion|descripción…
     r"\b(?:dame|danos|necesito|quiero|propon(?:me|e|ga)?|sugi[eé]r\w*|recomiend\w*|"
     r"ay[uú]dame\s+(?:con|a)|escribe(?:me)?|redact\w*|piensa(?:me)?|"
     r"busca(?:me)?|pide(?:me)?)\s+"
     r"(?:(?:una?|unas?|algunas?|varios?|el|la|los|las|mi|tu)\s+)?"
-    r"(?:idea|ideas|concepto|conceptos|copy|copies|guion(?:es)?|gui[oó]n(?:es)?|"
-    r"texto|textos|descripci[oó]n(?:es)?|caption|eslogan|slogan|"
-    r"titular(?:es)?|headline|hook|gancho)\b"
+    rf"{_TEXT_DELIVERABLE}\b"
     r"|"
-    # genera/crea/haz + idea|concepto|copy (objeto ≠ imagen)
+    # genera/crea/haz + idea|concepto|copy|prompt (objeto ≠ imagen)
     r"\b(?:gener(?:a|ar|ame|áme)|cre(?:a|ar|ame|áme)|cr[eé]ame|gener[aá]me|"
     r"haz(?:me)?|dise[nñ]a(?:r|me)?)\s+"
     r"(?:(?:una?|unas?|el|la)\s+)?"
-    r"(?:idea|ideas|concepto|conceptos|copy|guion|gui[oó]n|texto|"
-    r"descripci[oó]n|caption|eslogan|slogan)\b"
+    rf"{_TEXT_DELIVERABLE}\b"
     r"|"
-    # «idea/concepto de imagen|creativo|flyer» = pide el concepto, no el PNG
-    r"\b(?:idea|ideas|concepto|conceptos)\s+(?:de|para)\s+"
+    # «idea/concepto de imagen|creativo|flyer|contenido» = concepto, no PNG
+    r"\b(?:idea|ideas|concepto|conceptos|prompt|prompts)\s+(?:de|para)\s+"
     r"(?:(?:una?|un|el|la|los|las|mi|tu)\s+)?"
     r"(?:imagen|foto|picture|dise[nñ]o|arte|gr[aá]fico|creativo|logo|banner|"
     r"flyer|portada|image|photo|drawing|copy|post|contenido|campa[nñ]a|"
-    r"anuncio|reel|video|publicaci[oó]n)\b"
+    r"anuncio|reel|video|publicaci[oó]n|vender|venta|promoci[oó]n)\b"
     r"|"
     r"\bconcepto\s+creativo\b"
     r"|"
-    r"\bqu[eé]\s+(?:idea|concepto|copy)\b"
+    r"\bqu[eé]\s+(?:idea|concepto|copy|prompt)\b"
     r"|"
-    r"\bideas?\s+(?:de|para)\s+copy\b"
+    r"\bideas?\s+(?:de|para)\s+(?:copy|contenido|prompt)\b"
+    r"|"
+    r"\b(?:prompt|prompts)\s+(?:para|de)\s+(?:vender|venta|promocion\w*|midjourney|"
+    r"chatgpt|gemini|otra\s+ia|ia|ai)\b"
     r"|"
     r"\bcopy\s+(?:del|de\s+el|para\s+(?:el|la|mi|un))\s+"
     r"(?:creativo|flyer|banner|post|anuncio)\b"
@@ -80,7 +87,7 @@ _TEXT_IDEATION = re.compile(
 _CREATE_IDEA_OBJECT = re.compile(
     rf"\b{_CREATE_VERBS}\s+(?:una?\s+|unas?\s+|el\s+|la\s+)?"
     rf"(?:idea|ideas|concepto|conceptos|copy|texto|guion|gui[oó]n|"
-    rf"descripci[oó]n|caption)\b",
+    rf"descripci[oó]n|caption|prompt|prompts|contenido|script)\b",
     re.I,
 )
 

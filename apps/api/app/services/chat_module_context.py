@@ -13,6 +13,14 @@ _MODULE_CONTEXT_RULES = (
     "Usa SOLO los datos del contexto del módulo; no inventes información."
 )
 
+_FITLINE_MODULE_CONTEXT_RULES = (
+    "Responde en español latinoamericano, natural y accionable. "
+    "Usa SOLO los datos FitLine/PM del contexto (módulo Oportunidades); "
+    "no inventes productos, precios ni claims. "
+    "Si el usuario pide idea, copy, prompt o contenido de texto: entrégalo "
+    "completo y útil YA — no preguntes qué es el producto ni generes imagen."
+)
+
 
 def requires_sync_module_handler(text: str) -> bool:
     """Acciones que deben ejecutarse de forma determinista (escrituras)."""
@@ -53,7 +61,7 @@ def fetch_module_stream_context(
             fitline = format_fitline_knowledge_for_prompt()
             if fitline:
                 return (
-                    f"{fitline}\n\n{_MODULE_CONTEXT_RULES}",
+                    f"{fitline}\n\n{_FITLINE_MODULE_CONTEXT_RULES}",
                     {"intent": "fitline_opportunity", "source": "opportunities_curated"},
                 )
 

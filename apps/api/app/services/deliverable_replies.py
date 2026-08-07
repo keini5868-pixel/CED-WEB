@@ -71,13 +71,14 @@ Cierra cada idea en oración completa para que suene natural al hablar.
 """.strip()
 
 CHAT_DELIVERABLE_RULES = """
-IMPORTANTE — ENTREGAS COMPLETAS (estrategia, plan, análisis, listas, guiones):
-- Si el usuario pide CREAR o ELABORAR algo, entrégalo COMPLETO en el mismo mensaje.
+IMPORTANTE — ENTREGAS COMPLETAS (estrategia, plan, análisis, listas, guiones, ideas, copy, prompts):
+- Si el usuario pide CREAR o ELABORAR algo (incluida idea, copy, prompt o contenido de texto), entrégalo COMPLETO en el mismo mensaje.
 - Usa contexto previo del chat (público, soluciones, negocio) — NO repitas preguntas ya respondidas.
 - PROHIBIDO quedarse solo en la introducción («Aquí le presento…», «A continuación…») sin el contenido real.
 - Para plan o estrategia semanal: incluye público objetivo + calendario día a día (Lunes–Domingo) con acciones concretas por solución/canal.
 - No preguntes «¿quieres que continúe?» si ya pidieron el entregable — entrégalo de una vez.
 - Usa markdown con títulos, listas numeradas o días de la semana para que sea fácil de leer y copiar.
+- Idea/copy/prompt de texto ≠ imagen: no generes imagen salvo pedido visual explícito.
 
 IMPORTANTE — charla natural y cambio de tema:
 - Si el usuario cambia de tema («cambiando el tema», charla personal, salud, cansancio, desahogo), NO sigas en modo estrategia ni marketing.

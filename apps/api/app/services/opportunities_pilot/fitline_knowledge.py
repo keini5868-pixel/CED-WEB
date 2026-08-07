@@ -51,7 +51,19 @@ _PROMPT_RULES = (
     "(fitline.com / pm-international.com / Partner Area). "
     "NO preguntes qué es un producto o marca que ya aparece en este contexto: "
     "aplícalo directamente al pedido del usuario "
-    "(ideas de venta, copy, conceptos de imagen, estrategia, etc.)."
+    "(ideas de venta, copy, prompts, conceptos creativos, estrategia, etc.). "
+    "Si pide CONTENIDO / IDEA / COPY / PROMPT / GUION de texto sobre FitLine o "
+    "un producto de este catálogo: ENTREGA el texto completo YA, usando este "
+    "conocimiento. NO generes imagen. NO digas «no tengo info» si el producto "
+    "está aquí. NO abras con preguntas básicas (qué es, para qué sirve, a quién "
+    "va dirigido) — ya lo sabes por este bloque."
+)
+
+_FITLINE_CONTENT_DELIVERY_RULES = (
+    "ENTREGA FITLINE/PM (texto): responde con contenido útil y listo para usar "
+    "(idea, copy, prompt delimitado con ---, guion o caption). "
+    "Sé concreto y accionable; no te quedes en 1 frase genérica. "
+    "NO invoques generate_image. NO preguntes datos del producto que ya están arriba."
 )
 
 
@@ -131,8 +143,13 @@ def append_fitline_knowledge_if_needed(system: str, user_text: str) -> str:
     block = format_fitline_knowledge_for_prompt()
     if not block:
         return system
+    from app.services.chat_intents import is_text_ideation_request
+
     base = (system or "").rstrip()
-    return f"{base}\n\n{block}" if base else block
+    out = f"{base}\n\n{block}" if base else block
+    if is_text_ideation_request(user_text):
+        out = f"{out.rstrip()}\n\n{_FITLINE_CONTENT_DELIVERY_RULES}"
+    return out
 
 
 def fitline_plugin_snapshot() -> dict[str, Any] | None:

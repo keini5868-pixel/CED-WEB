@@ -32,6 +32,10 @@ _IDEA_ONLY = [
     "dame el concepto de la imagen",
     "qué idea de imagen me recomiendas",
     "crea un concepto visual",
+    "hazme un prompt para vender Activise",
+    "dame una idea de contenido sobre Restorate",
+    "necesito un prompt para Midjourney de FitLine",
+    "escribe un prompt para ChatGPT sobre el producto",
 ]
 
 

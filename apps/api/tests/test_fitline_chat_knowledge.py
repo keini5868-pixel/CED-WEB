@@ -48,6 +48,7 @@ def test_chat_light_system_includes_fitline_for_activise():
     assert "NO inventes" in system or "no inventes" in system.lower()
     # No debe incentivar preguntar qué es el producto
     assert "Oportunidades" in system
+    assert "ENTREGA el texto" in system or "ENTREGA FITLINE" in system
 
 
 def test_module_stream_context_returns_fitline_block():
@@ -58,3 +59,18 @@ def test_module_stream_context_returns_fitline_block():
     assert ctx
     assert "Activize" in ctx or "Restorate" in ctx
     assert meta and meta.get("intent") == "fitline_opportunity"
+    assert "no preguntes qué es el producto" in ctx.lower() or "NO preguntes" in ctx
+
+
+def test_prompt_for_activise_is_text_not_image_and_gets_fitline():
+    from app.services.chat_intents import (
+        is_generate_image_intent,
+        is_text_ideation_request,
+    )
+
+    msg = "hazme un prompt para vender Activise"
+    assert is_text_ideation_request(msg) is True
+    assert is_generate_image_intent(msg) is False
+    system = _build_chat_system_light("user-test", msg)
+    assert "Oportunidades" in system
+    assert "NO generes imagen" in system or "no generes imagen" in system.lower()
