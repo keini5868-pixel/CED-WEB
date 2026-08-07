@@ -161,6 +161,13 @@ def build_base_voice_system(
         )
 
         base = append_sales_marketing_playbook_if_needed(base, query)
+    # FitLine/PM: mismo conocimiento Oportunidades que chat (productos, hechos, prospección).
+    if query:
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            append_fitline_knowledge_if_needed,
+        )
+
+        base = append_fitline_knowledge_if_needed(base, query)
     if query and is_deliverable_request(query):
         base = f"{base}\n\n{VOICE_DELIVERABLE_OVERLAY}"
     elif query and is_advisory_voice_query(query):
