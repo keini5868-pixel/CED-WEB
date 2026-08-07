@@ -24,6 +24,8 @@ def test_marketing_expertise_block():
     assert "criterio" in CED_MARKETING_EXPERTISE.lower()
     assert "ENTREGA" in CED_MARKETING_EXPERTISE
     assert "texto ≠ imagen" in CED_MARKETING_EXPERTISE or "texto" in CED_MARKETING_EXPERTISE.lower()
+    assert "MLM" in CED_MARKETING_EXPERTISE
+    assert "red de franquicias" in CED_MARKETING_EXPERTISE.lower()
 
 
 def test_chat_prompts_include_expertise():

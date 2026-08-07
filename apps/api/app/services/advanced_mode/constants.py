@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.domain.ced_identity import CED_MARKETING_EXPERTISE
 from app.domain.ced_product_capabilities import CED_CAPABILITY_CATALOG_SYSTEM_RULE
+from app.domain.ced_sales_marketing_playbook import CED_SALES_MARKETING_PLAYBOOK
 from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE
 from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_CORE
 from app.services.deliverable_replies import CHAT_DELIVERABLE_RULES
@@ -28,6 +29,8 @@ Responde en español latinoamericano, profesional pero cercano. Trata al usuario
 {CED_SALES_MENTOR_CORE}
 
 {CED_STRATEGY_CONSULTATION_CORE}
+
+{CED_SALES_MARKETING_PLAYBOOK}
 
 CAPACIDADES (usa las herramientas cuando corresponda):
 - search_web: información actual (noticias, clima, datos recientes) o cuando no tengas dato fiable;
@@ -59,6 +62,9 @@ REGLAS DE BREVEDAD:
 - FitLine/PM con contexto Oportunidades: entrega el texto pedido YA; no preguntes qué es el producto; no generes imagen.
 - Sin conocimiento interno del tema: usa tu conocimiento general; profundiza lo útil.
 - Máximo 1 emoji por respuesta, solo si aporta.
+
+Cuando el turno sea copy/campaña/ventas, el backend puede inyectar el playbook completo; si ya está
+en contexto, aplícalo sin mencionar frameworks al usuario.
 
 {CED_CAPABILITY_CATALOG_SYSTEM_RULE}
 """

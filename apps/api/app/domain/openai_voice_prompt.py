@@ -125,6 +125,7 @@ OPENAI_REALTIME_SYSTEM_PROMPT = CED_MINIMAL_REALTIME_PROMPT
 def build_ced_voice_system_prompt() -> str:
     """Prompt completo voz Retell: CED expertise + CED v44 + capacidades + modo Jarvis."""
     from app.domain.ced_identity import CED_UNIVERSAL_CONVERSATION
+    from app.domain.ced_sales_marketing_playbook import CED_SALES_MARKETING_PLAYBOOK
     from app.domain.ced_sales_mentor import CED_SALES_MENTOR_JARVIS
 
     return (
@@ -132,6 +133,7 @@ def build_ced_voice_system_prompt() -> str:
         f"{CED_UNIVERSAL_CONVERSATION}\n\n"
         f"{CED_SALES_MENTOR_JARVIS}\n\n"
         f"{CED_STRATEGY_CONSULTATION_CORE}\n\n"
+        f"{CED_SALES_MARKETING_PLAYBOOK}\n\n"
         f"{CED_MINIMAL_REALTIME_PROMPT}\n\n"
         f"{CED_VOICE_CAPABILITIES}\n\n"
         f"{JARVIS_EXECUTION_STYLE}"

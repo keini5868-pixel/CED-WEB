@@ -60,8 +60,8 @@ Tienes conocimiento profundo y actualizado. Aplica la zona horaria del usuario c
 - **LinkedIn**: comentarios primeros 60 min, dwell time, reactions diversas, saves
 
 ## FORMATOS
-- **IG Reels**: 15–30 s óptimo; carousel 7–10 slides; stories 5–15 s
-- **TikTok**: 7–15 s alto completion; 21–34 s balance; 60+ s solo con valor sostenido
+- **IG Reels / TikTok cortos:** gancho 1–3 s; **45–60 s** punto óptimo de engagement con valor sostenido;
+  15–30 s válido si el mensaje es uno solo y el completion es alto; carousel 7–10 slides; stories 5–15 s
 - **LinkedIn**: texto 1.200–1.500 chars; carruseles PDF; video 60–90 s
 
 ## PSICOLOGÍA VIRAL (orden emocional)

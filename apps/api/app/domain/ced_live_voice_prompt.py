@@ -6,6 +6,7 @@ from app.domain.ced_identity import (
     CED_HUMAN_VOICE_STYLE,
     CED_MARKETING_EXPERTISE,
 )
+from app.domain.ced_sales_marketing_playbook import CED_SALES_MARKETING_PLAYBOOK
 from app.domain.ced_sales_mentor import CED_SALES_MENTOR_JARVIS
 from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_OVERLAY
 
@@ -30,6 +31,8 @@ NUNCA digas "Claude", "Gemini", "API" ni "modelo".
 {CED_SALES_MENTOR_JARVIS}
 
 {CED_STRATEGY_CONSULTATION_OVERLAY}
+
+{CED_SALES_MARKETING_PLAYBOOK}
 
 # PROHIBIDO — NUNCA uses estas frases
 

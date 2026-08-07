@@ -113,6 +113,9 @@ def _stream_system_with_clock(
     user_text: str = "",
 ) -> str:
     from app.domain.ced_identity import creator_partnership_overlay_for_user
+    from app.domain.ced_sales_marketing_playbook import (
+        append_sales_marketing_playbook_if_needed,
+    )
     from app.services.opportunities_pilot.fitline_knowledge import (
         append_fitline_knowledge_if_needed,
     )
@@ -126,6 +129,7 @@ def _stream_system_with_clock(
         + "\nPROHIBIDO escribir tool_code, print(), search_web() ni pseudo-código. "
         "Responde en español natural o deja que el backend use herramientas."
     )
+    base = append_sales_marketing_playbook_if_needed(base, user_text)
     return append_fitline_knowledge_if_needed(base, user_text)
 
 
@@ -345,6 +349,9 @@ def send_advanced_message(
 
     try:
         from app.domain.ced_identity import creator_partnership_overlay_for_user
+        from app.domain.ced_sales_marketing_playbook import (
+            append_sales_marketing_playbook_if_needed,
+        )
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
         )
@@ -353,6 +360,7 @@ def send_advanced_message(
         system_prompt = ADVANCED_SYSTEM_PROMPT
         if partnership:
             system_prompt = f"{ADVANCED_SYSTEM_PROMPT}\n\n{partnership}"
+        system_prompt = append_sales_marketing_playbook_if_needed(system_prompt, text)
         system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,
@@ -420,6 +428,9 @@ def send_advanced_message_with_pdf(
 
     try:
         from app.domain.ced_identity import creator_partnership_overlay_for_user
+        from app.domain.ced_sales_marketing_playbook import (
+            append_sales_marketing_playbook_if_needed,
+        )
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
         )
@@ -433,6 +444,7 @@ def send_advanced_message_with_pdf(
         )
         if partnership:
             system_prompt = f"{system_prompt}\n\n{partnership}"
+        system_prompt = append_sales_marketing_playbook_if_needed(system_prompt, text)
         system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,

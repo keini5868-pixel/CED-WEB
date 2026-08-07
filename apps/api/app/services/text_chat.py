@@ -1239,6 +1239,9 @@ def _build_chat_system(
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
+    from app.domain.ced_sales_marketing_playbook import (
+        append_sales_marketing_playbook_if_needed,
+    )
     from app.services.opportunities_pilot.fitline_knowledge import (
         append_fitline_knowledge_if_needed,
     )
@@ -1246,7 +1249,8 @@ def _build_chat_system(
     extras = build_chat_system_extras(user_id, route)
     if extras:
         parts.append(extras)
-    return append_fitline_knowledge_if_needed("\n\n".join(parts), user_text)
+    system = append_sales_marketing_playbook_if_needed("\n\n".join(parts), user_text)
+    return append_fitline_knowledge_if_needed(system, user_text)
 
 
 def _build_chat_system_light(user_id: str, user_text: str) -> str:
@@ -1254,6 +1258,9 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
     y sin instrucciones de tools (esta ruta nunca las necesita, ver
     _can_stream_chat_text) para minimizar el prompt_eval de Llama."""
     from app.domain.ced_identity import creator_partnership_overlay_for_user
+    from app.domain.ced_sales_marketing_playbook import (
+        append_sales_marketing_playbook_if_needed,
+    )
     from app.services.opportunities_pilot.fitline_knowledge import (
         append_fitline_knowledge_if_needed,
     )
@@ -1266,7 +1273,8 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
-    return append_fitline_knowledge_if_needed("\n\n".join(parts), user_text)
+    system = append_sales_marketing_playbook_if_needed("\n\n".join(parts), user_text)
+    return append_fitline_knowledge_if_needed(system, user_text)
 
 
 def _chat_system_for_user(user_id: str) -> str:
