@@ -93,6 +93,7 @@ export async function sendChatMessage(
   onToken?: (chunk: string) => void,
   imageMode?: string | null,
   onStatus?: (text: string) => void,
+  pdf?: File | null,
 ): Promise<{
   conversation_id: string;
   reply: string;
@@ -101,6 +102,16 @@ export async function sendChatMessage(
   image?: ChatImageAttachment | null;
   recharge_needed?: ChatRechargeNeeded | null;
 }> {
+  if (pdf) {
+    return sendChatMessageBlocking(
+      content,
+      conversationId,
+      null,
+      voicePublish,
+      imageMode,
+      pdf,
+    );
+  }
   if (image) {
     return sendChatMessageBlocking(
       content,
@@ -124,6 +135,7 @@ async function sendChatMessageBlocking(
   image?: File | null,
   voicePublish?: boolean,
   imageMode?: string | null,
+  pdf?: File | null,
 ): Promise<{
   conversation_id: string;
   reply: string;
@@ -134,7 +146,18 @@ async function sendChatMessageBlocking(
 }> {
   let res: Response;
 
-  if (image) {
+  if (pdf) {
+    const formData = new FormData();
+    formData.append("content", content);
+    if (conversationId) {
+      formData.append("conversation_id", conversationId);
+    }
+    formData.append("pdf", pdf, pdf.name || "documento.pdf");
+    res = await proxyFetch("chat/send-with-pdf", {
+      method: "POST",
+      body: formData,
+    });
+  } else if (image) {
     const formData = new FormData();
     formData.append("content", content);
     if (conversationId) {

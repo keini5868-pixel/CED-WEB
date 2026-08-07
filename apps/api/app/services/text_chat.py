@@ -2310,12 +2310,35 @@ def send_message(
     image_bytes: bytes | None = None,
     image_media_type: str | None = None,
     image_mode: str | None = None,
+    pdf_bytes: bytes | None = None,
+    pdf_filename: str | None = None,
 ) -> dict[str, Any]:
     text = content.strip()
     mode = (image_mode or "").strip().lower()
-    if not text and not image_bytes:
+    inbound_pdf = None
+    if pdf_bytes:
+        from app.services.pdf_ingest import (
+            PdfIngestError,
+            extract_pdf_text,
+            format_pdf_for_llm,
+            user_display_for_pdf,
+        )
+
+        try:
+            inbound_pdf = extract_pdf_text(pdf_bytes, filename=pdf_filename)
+        except PdfIngestError as exc:
+            raise TextChatError(str(exc), http_status=exc.http_status) from exc
+        if not text:
+            text = (
+                "Analiza este documento PDF: resume lo importante, "
+                "destaca puntos clave y responde con claridad."
+            )
+
+    if not text and not image_bytes and not inbound_pdf:
         raise TextChatError("Mensaje vacío.")
-    if text and len(text) > 8000:
+    if text and len(text) > 8000 and not inbound_pdf:
+        raise TextChatError("Mensaje demasiado largo.")
+    if content.strip() and len(content.strip()) > 8000:
         raise TextChatError("Mensaje demasiado largo.")
 
     status = chat_status(user_id)
@@ -2361,7 +2384,9 @@ def send_message(
         if not conv or conv.get("channel") != "text":
             raise TextChatError("Conversación no encontrada.")
     else:
-        title_source = text or "Imagen adjunta"
+        title_source = text or (
+            f"PDF: {inbound_pdf.filename}" if inbound_pdf else "Imagen adjunta"
+        )
         title = title_source[:48] + ("…" if len(title_source) > 48 else "")
         conv = supabase_db.create_conversation(user_id, title=title, channel="text")
         conversation_id = str(conv["id"])
@@ -2369,7 +2394,10 @@ def send_message(
     history = supabase_db.get_conversation_messages(
         conversation_id, user_id, limit=CHAT_HISTORY_LIMIT,
     )
-    user_display = text or "📷 Imagen adjunta"
+    if inbound_pdf:
+        user_display = user_display_for_pdf(inbound_pdf.filename, content.strip())
+    else:
+        user_display = text or "📷 Imagen adjunta"
     supabase_db.append_message(
         conversation_id,
         user_id,
@@ -2448,6 +2476,65 @@ def send_message(
         return _finish(
             _finalize_chat_reply(catalog_reply),
             route_meta={"intent": "capability_catalog", "source": "direct"},
+        )
+
+    # PDF entrante: ir directo al LLM con el texto extraído (sin intents de imagen/LIFE).
+    if inbound_pdf:
+        user_caption = content.strip() or text
+        llm_text = format_pdf_for_llm(inbound_pdf, user_caption)
+        route = route_message(
+            user_id,
+            user_caption,
+            channel="text",
+            defer_enrichment=True,
+        )
+        messages = _anthropic_messages(history)
+        messages.append({"role": "user", "content": llm_text})
+        try:
+            system = _build_chat_system(
+                user_id, user_caption, route, conversation_id
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[CHAT] fallo armando system prompt (pdf) — usando base")
+            system = _chat_system_for_user(user_id)
+        system = (
+            f"{system}\n\n"
+            "El usuario adjuntó un DOCUMENTO PDF. Usa el texto del documento "
+            "como fuente principal. Cita páginas o secciones cuando ayude. "
+            "No inventes contenido que no esté en el documento."
+        )
+        try:
+            reply, pdf_attachment, image_attachment = _complete_chat_resilient(
+                user_id,
+                user_text=llm_text,
+                anthropic_key=anthropic_key,
+                google_key=google_key,
+                gemini_model=gemini_model,
+                system=system,
+                messages=messages,
+                conversation_id=conversation_id,
+            )
+        except TextChatError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[CHAT] pdf ingest reply failed: %s", exc)
+            raise TextChatError(
+                "No pude analizar el PDF. Intenta de nuevo en un momento.",
+                http_status=503,
+            ) from exc
+        reply = _ensure_chat_reply_quality(reply, user_text=user_caption)
+        reply = _finalize_chat_reply(reply)
+        return _finish(
+            reply,
+            route_meta={
+                "intent": "pdf_ingest",
+                "source": "attachment",
+                "filename": inbound_pdf.filename,
+                "page_count": inbound_pdf.page_count,
+                "truncated": inbound_pdf.truncated,
+            },
+            pdf=pdf_attachment,
+            image=image_attachment,
         )
 
     publish_reply = handle_publish_flow_turn(

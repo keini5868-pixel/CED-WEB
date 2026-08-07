@@ -92,7 +92,9 @@ function isLongRunningChatPath(path: string): boolean {
   const normalized = path.toLowerCase();
   return (
     normalized.includes("chat/send-with-image") ||
+    normalized.includes("chat/send-with-pdf") ||
     normalized.includes("chat/send/stream") ||
+    normalized.includes("pdf/ingest") ||
     normalized.includes("advanced/chat") ||
     normalized.includes("finance/chat") ||
     normalized.includes("viability-pilot/analyze") ||

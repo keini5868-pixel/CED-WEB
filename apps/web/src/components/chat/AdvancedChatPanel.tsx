@@ -4,6 +4,8 @@ import { Brain, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
+import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
+import { PdfUploadButton } from "@/components/chat/PdfUploadButton";
 import {
   ImageActionBar,
   imageActionHint,
@@ -21,6 +23,7 @@ import {
   sendAdvancedChatMessage,
   sendAdvancedChatMessageStream,
   sendAdvancedChatMessageWithImage,
+  sendAdvancedChatMessageWithPdf,
   ADVANCED_TIMEOUT_MS,
   type AdvancedChatMessage,
   type AdvancedImageMode,
@@ -160,6 +163,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     file: File;
     preview: string;
   } | null>(null);
+  const [attachedPdf, setAttachedPdf] = useState<File | null>(null);
   const [imageMode, setImageMode] = useState<ImageActionMode>("analyze");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -214,17 +218,19 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
   const submit = useCallback(async () => {
     const text = input.trim();
-    if ((!text && !attachedImage) || configured === false) return;
+    if ((!text && !attachedImage && !attachedPdf) || configured === false) return;
     if (submitInFlightRef.current) return;
     submitInFlightRef.current = true;
     setError(null);
 
     const imageFile = attachedImage?.file ?? null;
     const imagePreview = attachedImage?.preview ?? null;
+    const pdfFile = attachedPdf;
     const currentMode = imageMode;
 
     setInput("");
     setAttachedImage(null);
+    setAttachedPdf(null);
     setImageMode("analyze");
     setBusy(true);
 
@@ -238,7 +244,11 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
     const userMsg: AdvancedChatMessage = {
       role: "user",
-      content: text || "📷 Imagen adjunta",
+      content: pdfFile
+        ? text
+          ? `📄 PDF: ${pdfFile.name}\n${text}`
+          : `📄 PDF: ${pdfFile.name}`
+        : text || "📷 Imagen adjunta",
       created_at: new Date().toISOString(),
       user_image_preview: imagePreview,
     };
@@ -262,10 +272,17 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     const expectsImageGen =
       Boolean(imageFile && (currentMode === "edit" || currentMode === "variation" || currentMode === "inspired")) ||
       (!imageFile &&
+        !pdfFile &&
         /\b(genera|crear?|haz(?:me)?|dise[nñ]a)\w*.{0,60}\b(imagen|foto|flyer|creativo|banner)\b/i.test(
           text,
         ));
-    setStatusHint(expectsImageGen ? "Generando imagen con IA…" : null);
+    setStatusHint(
+      pdfFile
+        ? "Leyendo PDF…"
+        : expectsImageGen
+          ? "Generando imagen con IA…"
+          : null,
+    );
 
     const applyResult = (result: {
       response: string;
@@ -322,7 +339,15 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     };
 
     try {
-      if (imageFile) {
+      if (pdfFile) {
+        setStatusHint("Leyendo PDF…");
+        const result = await sendAdvancedChatMessageWithPdf(
+          text,
+          historyBefore,
+          pdfFile,
+        );
+        applyResult(result);
+      } else if (imageFile) {
         const mode = currentMode as AdvancedImageMode;
         setStatusHint(
           mode === "publish"
@@ -352,8 +377,8 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         applyResult(result);
       }
     } catch (streamErr) {
-      // Con imagen: no degradar a chat de texto sin adjunto (falsa “continuación”).
-      if (!receivedTokens && !imageFile) {
+      // Con imagen/PDF: no degradar a chat de texto sin adjunto.
+      if (!receivedTokens && !imageFile && !pdfFile) {
         try {
           setStatusHint("Reintentando sin streaming…");
           const fallback = await sendAdvancedChatMessage(text, historyBefore);
@@ -405,7 +430,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       submitInFlightRef.current = false;
       textareaRef.current?.focus();
     }
-  }, [configured, input, attachedImage, imageMode]);
+  }, [configured, input, attachedImage, attachedPdf, imageMode]);
 
   if (!open) return null;
 
@@ -496,6 +521,12 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         ) : null}
 
         <footer className="relative z-10 shrink-0 border-t border-violet-500/20 bg-[#08060f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+          {attachedPdf ? (
+            <PdfAttachmentBar
+              filename={attachedPdf.name}
+              onRemove={() => setAttachedPdf(null)}
+            />
+          ) : null}
           {attachedImage ? (
             <ImageActionBar
               preview={attachedImage.preview}
@@ -520,16 +551,29 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
               }}
               rows={3}
               placeholder={
-                attachedImage
-                  ? imageActionPlaceholder(imageMode)
-                  : "Análisis, PDF, imágenes o dictado por voz…"
+                attachedPdf
+                  ? "Pregunta sobre el PDF o envía para analizarlo…"
+                  : attachedImage
+                    ? imageActionPlaceholder(imageMode)
+                    : "Análisis, PDF, imágenes o dictado por voz…"
               }
               disabled={configured === false}
               className="min-h-[56px] max-h-40 flex-1 resize-y rounded border border-violet-900/50 bg-black/60 px-3 py-2 text-base text-violet-50 placeholder:text-violet-700 focus:border-violet-500/50 focus:outline-none disabled:opacity-50 sm:text-[12px]"
             />
+            <PdfUploadButton
+              onPdfSelected={(file) => {
+                setAttachedPdf(file);
+                setAttachedImage(null);
+                setImageMode("analyze");
+              }}
+              disabled={busy || configured === false || !!attachedImage || !!attachedPdf}
+            />
             <ImageUploadButton
-              onImageSelected={(file, preview) => setAttachedImage({ file, preview })}
-              disabled={busy || configured === false || !!attachedImage}
+              onImageSelected={(file, preview) => {
+                setAttachedImage({ file, preview });
+                setAttachedPdf(null);
+              }}
+              disabled={busy || configured === false || !!attachedImage || !!attachedPdf}
             />
             <MicButton
               getBaseText={() => input}
@@ -540,7 +584,9 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
               type="button"
               onClick={() => void submit()}
               disabled={
-                busy || (!input.trim() && !attachedImage) || configured === false
+                busy ||
+                (!input.trim() && !attachedImage && !attachedPdf) ||
+                configured === false
               }
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-violet-500/40 bg-violet-950/50 text-violet-200 transition hover:bg-violet-900/50 disabled:opacity-40"
               aria-label="Analizar"
@@ -550,9 +596,11 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
             </button>
           </div>
           <p className="mt-1 text-center text-[9px] text-violet-500/70">
-            {attachedImage
-              ? imageActionHint(imageMode)
-              : "PDF · Imágenes · 🎤 dictado · Enter"}
+            {attachedPdf
+              ? "PDF listo — envía para que CED lo lea"
+              : attachedImage
+                ? imageActionHint(imageMode)
+                : "📄 PDF · 📷 Imágenes · 🎤 dictado · Enter"}
           </p>
         </footer>
       </div>

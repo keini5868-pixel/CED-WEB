@@ -6,6 +6,8 @@ import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
+import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
+import { PdfUploadButton } from "@/components/chat/PdfUploadButton";
 import {
   ImageActionBar,
   imageActionHint,
@@ -342,6 +344,7 @@ export function CedTextChatPanel({
     file: File;
     preview: string;
   } | null>(null);
+  const [attachedPdf, setAttachedPdf] = useState<File | null>(null);
   const [imageMode, setImageMode] = useState<ImageActionMode>("analyze");
   const [isDictating, setIsDictating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -586,14 +589,16 @@ export function CedTextChatPanel({
 
   const submit = async () => {
     const text = input.trim();
-    if ((!text && !attachedImage) || busy) return;
+    if ((!text && !attachedImage && !attachedPdf) || busy) return;
     keepInputFocusRef.current = true;
     setError(null);
     const imageFile = attachedImage?.file ?? null;
     const imagePreview = attachedImage?.preview ?? null;
+    const pdfFile = attachedPdf;
     const currentMode = imageMode;
     setInput("");
     setAttachedImage(null);
+    setAttachedPdf(null);
     setImageMode("analyze");
     setBusy(true);
     setTyping(true);
@@ -612,7 +617,9 @@ export function CedTextChatPanel({
         currentMode === "inspired" ||
         currentMode === "edit");
 
-    if (expectsImage) {
+    if (pdfFile) {
+      setStatusHint("Leyendo PDF…");
+    } else if (expectsImage) {
       setStatusHint("Generando imagen con IA…");
     }
 
@@ -622,15 +629,21 @@ export function CedTextChatPanel({
       setStatusHint(null);
       streamTargetIndexRef.current = null;
       setError(
-        expectsImage
-          ? "La generación de imagen tardó demasiado. Intenta de nuevo."
-          : "La respuesta tardó demasiado. Intenta de nuevo.",
+        pdfFile
+          ? "La lectura del PDF tardó demasiado. Intenta de nuevo."
+          : expectsImage
+            ? "La generación de imagen tardó demasiado. Intenta de nuevo."
+            : "La respuesta tardó demasiado. Intenta de nuevo.",
       );
     }, 280_000);
 
     const userMsg: ChatMessage = {
       role: "user",
-      content: outboundText || "📷 Imagen adjunta",
+      content: pdfFile
+        ? outboundText
+          ? `📄 PDF: ${pdfFile.name}\n${outboundText}`
+          : `📄 PDF: ${pdfFile.name}`
+        : outboundText || "📷 Imagen adjunta",
       user_image_preview: imagePreview,
     };
 
@@ -693,7 +706,7 @@ export function CedTextChatPanel({
         return;
       }
 
-      if (!imageFile) {
+      if (!imageFile && !pdfFile) {
         setMessages((prev) => {
           const next = dedupeChatMessages([
             ...prev,
@@ -708,7 +721,9 @@ export function CedTextChatPanel({
       } else {
         setMessages((prev) => dedupeChatMessages([...prev, userMsg]));
         streamTargetIndexRef.current = null;
-        if (
+        if (pdfFile) {
+          setStatusHint("Leyendo PDF…");
+        } else if (
           currentMode === "edit" ||
           currentMode === "variation" ||
           currentMode === "inspired" ||
@@ -741,12 +756,13 @@ export function CedTextChatPanel({
         conversationId,
         imageFile,
         voicePublishActive || Boolean(onVoiceImageAttached),
-        !imageFile ? applyStreamChunk : undefined,
+        !imageFile && !pdfFile ? applyStreamChunk : undefined,
         imageFile ? currentMode : null,
         applyStatus,
+        pdfFile,
       );
       setConversationId(result.conversation_id);
-      if (imageFile) {
+      if (imageFile || pdfFile) {
         const reply = result.reply || "";
         const claimsCreativeSuccess =
           /listo[^.]*aqu[ií]\s+est[aá]\s+su\s+creativo/i.test(reply) &&
@@ -968,6 +984,12 @@ export function CedTextChatPanel({
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
         <footer className="relative z-10 shrink-0 border-t border-cyan-500/20 bg-[#060a0f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+          {attachedPdf ? (
+            <PdfAttachmentBar
+              filename={attachedPdf.name}
+              onRemove={() => setAttachedPdf(null)}
+            />
+          ) : null}
           {attachedImage ? (
             <ImageActionBar
               preview={attachedImage.preview}
@@ -1012,11 +1034,13 @@ export function CedTextChatPanel({
               placeholder={
                 isDictating
                   ? "Escuchando… habla ahora"
-                  : attachedImage
-                    ? imageActionPlaceholder(imageMode)
-                    : busy
-                      ? "CED responde… escribe el siguiente mensaje aquí"
-                      : "Escribe a CED o usa el micrófono…"
+                  : attachedPdf
+                    ? "Pregunta sobre el PDF o envía para analizarlo…"
+                    : attachedImage
+                      ? imageActionPlaceholder(imageMode)
+                      : busy
+                        ? "CED responde… escribe el siguiente mensaje aquí"
+                        : "Escribe a CED o usa el micrófono…"
               }
               disabled={Boolean(status?.blocked)}
               className={`box-border min-h-[48px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-lg border bg-black/60 px-3 py-2.5 text-base leading-snug text-white caret-cyan-300 placeholder:text-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 disabled:opacity-50 sm:text-sm ${
@@ -1028,16 +1052,25 @@ export function CedTextChatPanel({
               }`}
               style={{ WebkitAppearance: "none" }}
             />
+            <PdfUploadButton
+              onPdfSelected={(file) => {
+                setAttachedPdf(file);
+                setAttachedImage(null);
+                setImageMode("analyze");
+              }}
+              disabled={busy || status?.blocked || !!attachedImage || !!attachedPdf}
+            />
             <ImageUploadButton
               onImageSelected={(file, preview) => {
                 setAttachedImage({ file, preview });
+                setAttachedPdf(null);
                 setImageMode((prev) =>
                   prev === "analyze" && recentMessagesAwaitPublish(messages)
                     ? "publish"
                     : prev,
                 );
               }}
-              disabled={busy || status?.blocked || !!attachedImage}
+              disabled={busy || status?.blocked || !!attachedImage || !!attachedPdf}
             />
             <MicButton
               getBaseText={() => input}
@@ -1047,7 +1080,11 @@ export function CedTextChatPanel({
             />
             <button
               type="button"
-              disabled={busy || (!input.trim() && !attachedImage) || status?.blocked}
+              disabled={
+                busy ||
+                (!input.trim() && !attachedImage && !attachedPdf) ||
+                status?.blocked
+              }
               onPointerDown={(e) => {
                 e.preventDefault();
                 keepInputFocusRef.current = true;
@@ -1062,9 +1099,11 @@ export function CedTextChatPanel({
           <p className="mt-1.5 break-words text-left text-[9px] leading-snug text-cyan-700">
             {isDictating
               ? "🎤 Dictando en vivo… clic en el mic para detener"
-              : attachedImage
-                ? imageActionHint(imageMode)
-                : 'Enter envía · 📷 adjuntar · 🎤 dictar · "genera una imagen de…"'}
+              : attachedPdf
+                ? "PDF listo — envía para que CED lo lea y responda"
+                : attachedImage
+                  ? imageActionHint(imageMode)
+                  : 'Enter envía · 📄 PDF · 📷 imagen · 🎤 dictar · "genera una imagen de…"'}
           </p>
         </footer>
       </div>

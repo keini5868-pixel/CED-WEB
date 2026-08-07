@@ -191,6 +191,44 @@ async def post_chat_message_with_image(
         ) from exc
 
 
+@router.post("/send-with-pdf")
+async def post_chat_message_with_pdf(
+    content: str = Form(default=""),
+    conversation_id: str | None = Form(default=None),
+    pdf: UploadFile = File(...),
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    from app.services.pdf_ingest import MAX_PDF_BYTES, PdfIngestError
+
+    try:
+        pdf_bytes = await pdf.read()
+        if len(pdf_bytes) > MAX_PDF_BYTES:
+            raise TextChatError(
+                f"PDF demasiado grande. Máximo {MAX_PDF_BYTES // (1024 * 1024)} MB.",
+                http_status=400,
+            )
+        text = content.strip()
+        result = await asyncio.to_thread(
+            send_message,
+            user_id,
+            content=text,
+            conversation_id=conversation_id,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=pdf.filename or "documento.pdf",
+        )
+        return result
+    except TextChatError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except PdfIngestError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[CHAT] send-with-pdf error")
+        raise HTTPException(
+            status_code=503,
+            detail="Error procesando mensaje con PDF.",
+        ) from exc
+
+
 @router.post("/transcribe")
 async def post_transcribe_audio(
     audio: UploadFile = File(...),

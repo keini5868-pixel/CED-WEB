@@ -1,16 +1,17 @@
-"""PDF — generar, listar y descargar reportes CED."""
+"""PDF — generar, listar, descargar e ingest (lectura entrante)."""
 
 from __future__ import annotations
 
 import re
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
 from app.deps.plan_access import charge_pdf_from_wallet_if_needed, require_pdf_reports
+from app.services.pdf_ingest import PdfIngestError, extract_pdf_text
 from app.services.pdf_report import get_pdf, list_pdfs_for_user, store_pdf_with_timeout
 
 router = APIRouter(prefix="/v1/pdf", tags=["pdf"])
@@ -93,3 +94,30 @@ async def get_pdf_download(
             "Cache-Control": "private, no-store",
         },
     )
+
+
+@router.post("/ingest")
+async def post_ingest_pdf(
+    pdf: UploadFile = File(...),
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    """Lee un PDF entrante y devuelve texto extraído (sin generar reporte)."""
+    _ = user_id
+    try:
+        data = await pdf.read()
+        extracted = extract_pdf_text(data, filename=pdf.filename)
+    except PdfIngestError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=503,
+            detail="No pude leer ese PDF. Intenta de nuevo.",
+        ) from exc
+    return {
+        "ok": True,
+        "filename": extracted.filename,
+        "page_count": extracted.page_count,
+        "char_count": extracted.char_count,
+        "truncated": extracted.truncated,
+        "text": extracted.text,
+    }

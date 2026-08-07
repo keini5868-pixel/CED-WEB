@@ -374,6 +374,68 @@ def send_advanced_message(
     )
 
 
+def send_advanced_message_with_pdf(
+    user_id: str,
+    *,
+    message: str,
+    history: list[dict[str, Any]],
+    pdf_bytes: bytes,
+    pdf_filename: str | None = None,
+    conversation_id: str | None = None,
+) -> dict[str, Any]:
+    from app.services.pdf_ingest import (
+        PdfIngestError,
+        extract_pdf_text,
+        format_pdf_for_llm,
+    )
+
+    try:
+        extracted = extract_pdf_text(pdf_bytes, filename=pdf_filename)
+    except PdfIngestError as exc:
+        raise ValueError(str(exc)) from exc
+
+    text = (message or "").strip() or (
+        "Analiza este documento PDF: resume lo importante, "
+        "destaca puntos clave y responde con claridad."
+    )
+    llm_text = format_pdf_for_llm(extracted, text)
+    conv_id = _conversation_id(user_id, conversation_id)
+    history_rows = history_as_chat_rows(history)
+    anthropic_key = require_anthropic_api_key()
+    anthropic_messages = _anthropic_messages(history_rows)
+    anthropic_messages.append({"role": "user", "content": llm_text})
+
+    try:
+        from app.domain.ced_identity import creator_partnership_overlay_for_user
+
+        partnership = creator_partnership_overlay_for_user(user_id)
+        system_prompt = (
+            f"{ADVANCED_SYSTEM_PROMPT}\n\n"
+            "El usuario adjuntó un DOCUMENTO PDF. Usa el texto del documento "
+            "como fuente principal. Cita páginas o secciones cuando ayude. "
+            "No inventes contenido que no esté en el documento."
+        )
+        if partnership:
+            system_prompt = f"{system_prompt}\n\n{partnership}"
+        reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
+            user_id,
+            api_key=anthropic_key,
+            system=system_prompt,
+            messages=anthropic_messages,
+            conversation_id=conv_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[ADV-MODE] pdf ingest failed: %s", exc)
+        raise
+
+    return _finish_payload(
+        response=_finalize_chat_reply(reply),
+        model=ADVANCED_MODEL_LABEL,
+        pdf=pdf_attachment,
+        image=image_attachment,
+    )
+
+
 def send_advanced_message_with_image(
     user_id: str,
     *,

@@ -10,6 +10,7 @@ from app.services.advanced_mode.service import (
     iter_advanced_message_stream,
     send_advanced_message,
     send_advanced_message_with_image,
+    send_advanced_message_with_pdf,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "iter_advanced_message_stream",
     "send_advanced_message",
     "send_advanced_message_with_image",
+    "send_advanced_message_with_pdf",
 ]

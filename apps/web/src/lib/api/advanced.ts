@@ -298,7 +298,33 @@ export async function sendAdvancedChatMessageWithImage(
   );
   formData.append("image", image, image.name || "attachment.jpg");
 
-  const res = await proxyFetchAuthed("advanced/chat/with-image", {
+  return {
+    response: coerceDisplayText(data.response),
+    model: coerceDisplayText(data.model) || "claude-sonnet-4-6",
+    pdf: data.pdf ?? null,
+    image: data.image ?? null,
+  };
+}
+
+/** Mensaje con PDF adjunta — extracto de texto + análisis Claude. */
+export async function sendAdvancedChatMessageWithPdf(
+  message: string,
+  history: AdvancedChatMessage[],
+  pdf: File,
+): Promise<AdvancedChatResult> {
+  const formData = new FormData();
+  formData.append("content", message);
+  formData.append(
+    "history_json",
+    JSON.stringify(
+      history
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({ role: m.role, content: m.content })),
+    ),
+  );
+  formData.append("pdf", pdf, pdf.name || "documento.pdf");
+
+  const res = await proxyFetchAuthed("advanced/chat/with-pdf", {
     method: "POST",
     body: formData,
     signal: AbortSignal.timeout(ADVANCED_TIMEOUT_MS),
@@ -306,10 +332,7 @@ export async function sendAdvancedChatMessageWithImage(
   const data = await parseApiJson<AdvancedChatResult & { detail?: unknown }>(res);
   if (!res.ok) {
     throw new Error(
-      formatApiDetail(
-        data.detail,
-        "No se pudo procesar la imagen en modo avanzado.",
-      ),
+      formatApiDetail(data.detail, "No se pudo procesar el PDF en modo avanzado."),
     );
   }
   return {

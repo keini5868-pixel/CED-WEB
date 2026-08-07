@@ -17,6 +17,7 @@ from app.services.advanced_mode import (
     iter_advanced_message_stream,
     send_advanced_message,
     send_advanced_message_with_image,
+    send_advanced_message_with_pdf,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,6 +117,60 @@ async def advanced_chat_with_image(
         raise HTTPException(
             status_code=502,
             detail="Error procesando imagen en modo avanzado.",
+        ) from exc
+
+
+@router.post("/chat/with-pdf")
+async def advanced_chat_with_pdf(
+    content: str = Form(default=""),
+    conversation_id: str | None = Form(default=None),
+    history_json: str = Form(default="[]"),
+    pdf: UploadFile = File(...),
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    from app.services.pdf_ingest import MAX_PDF_BYTES, PdfIngestError
+
+    try:
+        pdf_bytes = await pdf.read()
+        if len(pdf_bytes) > MAX_PDF_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"PDF demasiado grande. Máximo {MAX_PDF_BYTES // (1024 * 1024)} MB.",
+            )
+        text = content.strip()
+        try:
+            import json
+
+            history_raw = json.loads(history_json or "[]")
+            history = history_raw if isinstance(history_raw, list) else []
+        except json.JSONDecodeError:
+            history = []
+        return await asyncio.to_thread(
+            send_advanced_message_with_pdf,
+            user_id,
+            message=text,
+            history=history,
+            pdf_bytes=pdf_bytes,
+            pdf_filename=pdf.filename or "documento.pdf",
+            conversation_id=conversation_id,
+        )
+    except HTTPException:
+        raise
+    except PdfIngestError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=str(exc)) from exc
+    except ValueError as exc:
+        code = str(exc)
+        if code == "missing_anthropic_api_key":
+            raise HTTPException(
+                status_code=503,
+                detail="Modo avanzado requiere ANTHROPIC_API_KEY.",
+            ) from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[ADV-MODE] with-pdf failed user=%s", user_id[:8])
+        raise HTTPException(
+            status_code=502,
+            detail="Error procesando PDF en modo avanzado.",
         ) from exc
 
 
