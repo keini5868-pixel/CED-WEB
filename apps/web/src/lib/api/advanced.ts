@@ -298,6 +298,20 @@ export async function sendAdvancedChatMessageWithImage(
   );
   formData.append("image", image, image.name || "attachment.jpg");
 
+  const res = await proxyFetchAuthed("advanced/chat/with-image", {
+    method: "POST",
+    body: formData,
+    signal: AbortSignal.timeout(ADVANCED_TIMEOUT_MS),
+  });
+  const data = await parseApiJson<AdvancedChatResult & { detail?: unknown }>(res);
+  if (!res.ok) {
+    throw new Error(
+      formatApiDetail(
+        data.detail,
+        "No se pudo procesar la imagen en modo avanzado.",
+      ),
+    );
+  }
   return {
     response: coerceDisplayText(data.response),
     model: coerceDisplayText(data.model) || "claude-sonnet-4-6",
