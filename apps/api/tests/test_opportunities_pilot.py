@@ -95,17 +95,26 @@ def test_enriched_fitline_has_official_facts() -> None:
     plugin = fitline_pm_plugin()
     sections = (plugin.get("curated") or {}).get("sections") or {}
     history = (sections.get("company_history") or {}).get("body") or ""
+    science = (sections.get("science_credibility") or {}).get("body") or ""
     products = (sections.get("products") or {}).get("body") or ""
     req = (sections.get("requirements") or {}).get("body") or ""
     income = (sections.get("income_potential") or {}).get("body") or ""
+    prospect = (sections.get("prospecting") or {}).get("body") or ""
     assert "1993" in history
-    assert "Luxemburgo" in history or "Luxembourg" in history
+    assert "Speyer" in history or "Alemania" in history
+    assert "Schengen" in history or "Luxemburgo" in history
     assert "40" in history
+    assert "3.22" in history or "mil millones" in history
+    assert "NTC" in science or "Nutrient Transport" in science
+    assert "TÜV" in science or "TUV" in science.upper()
     assert "PowerCocktail" in products and "$119.48" in products
+    assert "Activize" in products and "Restorate" in products
     assert "Manager Quickstart" in req and "$596" in req
     assert "Teampartner Start" in req
+    assert "Partner Area" in req or "NO invent" in req
     assert "Income Plan" in income
     assert "Team Partner" in income
+    assert "PAS" in prospect or "hook" in prospect.lower()
     sources = (plugin.get("curated") or {}).get("sources") or []
     urls = " ".join(str(s.get("url") or "") for s in sources)
     assert "pm-international.com" in urls
