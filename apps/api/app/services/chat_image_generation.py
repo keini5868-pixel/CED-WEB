@@ -159,6 +159,10 @@ def should_take_direct_image_path(
         return False
     if len(t) > DIRECT_IMAGE_MAX_CHARS:
         return False
+    from app.services.chat_intents import is_text_ideation_request
+
+    if is_text_ideation_request(t):
+        return False
     # Intent de imagen gana a «cambio de tema» / small-talk (listas con «clima», etc.).
     if is_generate_image_intent(t):
         return True

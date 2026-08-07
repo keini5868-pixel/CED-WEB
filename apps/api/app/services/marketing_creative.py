@@ -169,6 +169,11 @@ def is_marketing_creative_intent(text: str) -> bool:
     t = normalize_creative_request_text(text)
     if not t:
         return False
+    from app.services.chat_intents import is_text_ideation_request
+
+    # «dame una idea de creativo» ≠ generar el creativo.
+    if is_text_ideation_request(t):
+        return False
     if _MARKETING_CREATIVE.search(t):
         return True
     if is_generate_image_intent(t) and _STRUCTURED_CONTENT.search(t):
@@ -256,6 +261,10 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
     if not t:
         return False
     if is_pdf_intent(t) or mentions_pdf(t):
+        return False
+    from app.services.chat_intents import is_text_ideation_request
+
+    if is_text_ideation_request(t):
         return False
     # Generar imagen primero — listas con «publica… Instagram» no bloquean creación.
     if is_generate_image_intent(t):
