@@ -18,8 +18,10 @@ from app.services.cognitive_memory import save_memory
 
 logger = logging.getLogger(__name__)
 
-MAX_CONTENT = 8000
-MAX_CONTEXT_CHARS = 8000
+from app.domain.chat_limits import CHAT_MESSAGE_MAX_CHARS
+
+MAX_CONTENT = CHAT_MESSAGE_MAX_CHARS
+MAX_CONTEXT_CHARS = CHAT_MESSAGE_MAX_CHARS
 CONTEXT_CACHE_TTL_SEC = 90
 _ROLE_MAP = {"model": "assistant", "assistant": "assistant", "user": "user", "system": "system"}
 _context_cache: dict[str, tuple[float, str]] = {}

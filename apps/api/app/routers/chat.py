@@ -7,9 +7,10 @@ import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.deps.auth import require_user_id
+from app.domain.chat_limits import CHAT_MESSAGE_MAX_CHARS, CHAT_MESSAGE_TOO_LONG_ES
 from app.services import supabase_db
 from app.services.chat_multimedia import transcribe_audio
 from app.services.text_chat import (
@@ -28,8 +29,15 @@ MAX_IMAGE_BYTES = 5 * 1024 * 1024
 
 
 class SendChatBody(BaseModel):
-    content: str = Field(min_length=1, max_length=8000)
+    content: str = Field(min_length=1)
     conversation_id: str | None = None
+
+    @field_validator("content")
+    @classmethod
+    def _content_length(cls, v: str) -> str:
+        if len(v) > CHAT_MESSAGE_MAX_CHARS:
+            raise ValueError(CHAT_MESSAGE_TOO_LONG_ES)
+        return v
 
 
 @router.get("/status")
@@ -198,13 +206,14 @@ async def post_chat_message_with_pdf(
     pdf: UploadFile = File(...),
     user_id: str = Depends(require_user_id),
 ) -> dict:
-    from app.services.pdf_ingest import MAX_PDF_BYTES, PdfIngestError
+    """Adjunta PDF o Word (.docx); el nombre del form sigue siendo `pdf` por compatibilidad."""
+    from app.services.pdf_ingest import MAX_DOCUMENT_BYTES, PdfIngestError
 
     try:
         pdf_bytes = await pdf.read()
-        if len(pdf_bytes) > MAX_PDF_BYTES:
+        if len(pdf_bytes) > MAX_DOCUMENT_BYTES:
             raise TextChatError(
-                f"PDF demasiado grande. Máximo {MAX_PDF_BYTES // (1024 * 1024)} MB.",
+                f"Documento demasiado grande. Máximo {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB.",
                 http_status=400,
             )
         text = content.strip()
@@ -225,7 +234,7 @@ async def post_chat_message_with_pdf(
         logger.exception("[CHAT] send-with-pdf error")
         raise HTTPException(
             status_code=503,
-            detail="Error procesando mensaje con PDF.",
+            detail="Error procesando el documento adjunto.",
         ) from exc
 
 

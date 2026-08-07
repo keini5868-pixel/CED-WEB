@@ -18,8 +18,8 @@ export function PdfAttachmentBar({ filename, onRemove }: PdfAttachmentBarProps) 
         type="button"
         onClick={onRemove}
         className="shrink-0 rounded p-1 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-200"
-        aria-label="Quitar PDF"
-        title="Quitar PDF"
+        aria-label="Quitar documento"
+        title="Quitar documento"
       >
         <X className="h-4 w-4" />
       </button>

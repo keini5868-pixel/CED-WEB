@@ -396,17 +396,19 @@ def send_advanced_message_with_pdf(
 ) -> dict[str, Any]:
     from app.services.pdf_ingest import (
         PdfIngestError,
-        extract_pdf_text,
+        extract_document_text,
         format_pdf_for_llm,
     )
 
     try:
-        extracted = extract_pdf_text(pdf_bytes, filename=pdf_filename)
+        extracted = extract_document_text(pdf_bytes, filename=pdf_filename)
     except PdfIngestError as exc:
         raise ValueError(str(exc)) from exc
 
+    kind = (extracted.kind or "pdf").lower()
+    label = "Word (.docx)" if kind == "docx" else "PDF"
     text = (message or "").strip() or (
-        "Analiza este documento PDF: resume lo importante, "
+        f"Analiza este documento {label}: resume lo importante, "
         "destaca puntos clave y responde con claridad."
     )
     llm_text = format_pdf_for_llm(extracted, text)
@@ -425,7 +427,7 @@ def send_advanced_message_with_pdf(
         partnership = creator_partnership_overlay_for_user(user_id)
         system_prompt = (
             f"{ADVANCED_SYSTEM_PROMPT}\n\n"
-            "El usuario adjuntó un DOCUMENTO PDF. Usa el texto del documento "
+            f"El usuario adjuntó un DOCUMENTO {label}. Usa el texto del documento "
             "como fuente principal. Cita páginas o secciones cuando ayude. "
             "No inventes contenido que no esté en el documento."
         )

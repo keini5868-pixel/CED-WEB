@@ -2326,27 +2326,32 @@ def send_message(
     if pdf_bytes:
         from app.services.pdf_ingest import (
             PdfIngestError,
-            extract_pdf_text,
+            extract_document_text,
             format_pdf_for_llm,
             user_display_for_pdf,
         )
 
         try:
-            inbound_pdf = extract_pdf_text(pdf_bytes, filename=pdf_filename)
+            inbound_pdf = extract_document_text(pdf_bytes, filename=pdf_filename)
         except PdfIngestError as exc:
             raise TextChatError(str(exc), http_status=exc.http_status) from exc
         if not text:
+            kind = (inbound_pdf.kind or "pdf").lower()
+            label = "Word (.docx)" if kind == "docx" else "PDF"
             text = (
-                "Analiza este documento PDF: resume lo importante, "
+                f"Analiza este documento {label}: resume lo importante, "
                 "destaca puntos clave y responde con claridad."
             )
 
     if not text and not image_bytes and not inbound_pdf:
         raise TextChatError("Mensaje vacío.")
-    if text and len(text) > 8000 and not inbound_pdf:
-        raise TextChatError("Mensaje demasiado largo.")
-    if content.strip() and len(content.strip()) > 8000:
-        raise TextChatError("Mensaje demasiado largo.")
+    if not inbound_pdf:
+        from app.domain.chat_limits import CHAT_MESSAGE_TOO_LONG_ES, CHAT_MESSAGE_MAX_CHARS
+
+        if text and len(text) > CHAT_MESSAGE_MAX_CHARS:
+            raise TextChatError(CHAT_MESSAGE_TOO_LONG_ES, http_status=400)
+        if content.strip() and len(content.strip()) > CHAT_MESSAGE_MAX_CHARS:
+            raise TextChatError(CHAT_MESSAGE_TOO_LONG_ES, http_status=400)
 
     status = chat_status(user_id)
     if status["blocked"]:
@@ -3360,11 +3365,13 @@ def iter_send_message_stream(
     def _perf(step: str) -> None:
         logger.info("[PERF] chat/stream %s: %.2fs", step, time.perf_counter() - t0)
 
+    from app.domain.chat_limits import CHAT_MESSAGE_MAX_CHARS, CHAT_MESSAGE_TOO_LONG_ES
+
     text = content.strip()
     if not text:
         raise TextChatError("Mensaje vacío.")
-    if len(text) > 8000:
-        raise TextChatError("Mensaje demasiado largo.")
+    if len(text) > CHAT_MESSAGE_MAX_CHARS:
+        raise TextChatError(CHAT_MESSAGE_TOO_LONG_ES, http_status=400)
 
     if not _can_stream_chat_text(
         text, user_id=user_id, conversation_id=conversation_id

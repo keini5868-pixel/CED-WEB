@@ -15,9 +15,13 @@ describe("coerceDisplayText", () => {
 
   it("extracts FastAPI validation detail arrays", () => {
     const out = coerceDisplayText([
-      { type: "string_too_long", loc: ["body", "content"], msg: "ensure this value has at most 8000 characters" },
+      {
+        type: "value_error",
+        loc: ["body", "content"],
+        msg: "Tu texto es demasiado largo (máximo 50000 caracteres). Súbelo como archivo PDF o Word (.docx) con el botón de documento.",
+      },
     ]);
-    expect(out).toContain("8000");
+    expect(out).toContain("demasiado largo");
     expect(out).not.toContain("[object Object]");
   });
 

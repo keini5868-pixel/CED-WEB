@@ -30,6 +30,7 @@ import {
 import { startRechargeCheckout } from "@/lib/api/billing";
 import { appendStreamChunk } from "@/lib/stream-chunk";
 import { coerceDisplayText } from "@/lib/display-text";
+import { assertChatMessageLength } from "@/lib/chat-limits";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
@@ -590,6 +591,15 @@ export function CedTextChatPanel({
   const submit = async () => {
     const text = input.trim();
     if ((!text && !attachedImage && !attachedPdf) || busy) return;
+
+    if (!attachedPdf && !attachedImage) {
+      const tooLong = assertChatMessageLength(text);
+      if (tooLong) {
+        setError(tooLong);
+        return;
+      }
+    }
+
     keepInputFocusRef.current = true;
     setError(null);
     const imageFile = attachedImage?.file ?? null;
@@ -618,7 +628,7 @@ export function CedTextChatPanel({
         currentMode === "edit");
 
     if (pdfFile) {
-      setStatusHint("Leyendo PDF…");
+      setStatusHint("Leyendo documento…");
     } else if (expectsImage) {
       setStatusHint("Generando imagen con IA…");
     }
@@ -641,8 +651,8 @@ export function CedTextChatPanel({
       role: "user",
       content: pdfFile
         ? outboundText
-          ? `📄 PDF: ${pdfFile.name}\n${outboundText}`
-          : `📄 PDF: ${pdfFile.name}`
+          ? `📄 ${pdfFile.name.toLowerCase().endsWith(".docx") ? "Word" : "PDF"}: ${pdfFile.name}\n${outboundText}`
+          : `📄 ${pdfFile.name.toLowerCase().endsWith(".docx") ? "Word" : "PDF"}: ${pdfFile.name}`
         : outboundText || "📷 Imagen adjunta",
       user_image_preview: imagePreview,
     };
@@ -722,7 +732,7 @@ export function CedTextChatPanel({
         setMessages((prev) => dedupeChatMessages([...prev, userMsg]));
         streamTargetIndexRef.current = null;
         if (pdfFile) {
-          setStatusHint("Leyendo PDF…");
+          setStatusHint("Leyendo documento…");
         } else if (
           currentMode === "edit" ||
           currentMode === "variation" ||
@@ -1103,7 +1113,7 @@ export function CedTextChatPanel({
                 ? "PDF listo — envía para que CED lo lea y responda"
                 : attachedImage
                   ? imageActionHint(imageMode)
-                  : 'Enter envía · 📄 PDF · 📷 imagen · 🎤 dictar · "genera una imagen de…"'}
+                  : 'Enter envía · 📄 PDF/Word · 📷 imagen · 🎤 dictar · "genera una imagen de…"'}
           </p>
         </footer>
       </div>

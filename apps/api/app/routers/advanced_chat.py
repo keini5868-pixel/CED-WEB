@@ -7,9 +7,10 @@ import logging
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.deps.auth import require_user_id
+from app.domain.chat_limits import CHAT_MESSAGE_MAX_CHARS, CHAT_MESSAGE_TOO_LONG_ES
 from app.services.advanced_mode import (
     ADVANCED_DEEP_MODEL_LABEL,
     ADVANCED_STREAM_MODEL_LABEL,
@@ -33,10 +34,17 @@ class AdvancedChatTurn(BaseModel):
 
 
 class AdvancedChatRequest(BaseModel):
-    message: str = Field(min_length=1, max_length=8000)
+    message: str = Field(min_length=1)
     history: list[AdvancedChatTurn] = Field(default_factory=list)
     conversation_id: str | None = None
     client_request_id: str | None = Field(default=None, max_length=80)
+
+    @field_validator("message")
+    @classmethod
+    def _message_length(cls, v: str) -> str:
+        if len(v) > CHAT_MESSAGE_MAX_CHARS:
+            raise ValueError(CHAT_MESSAGE_TOO_LONG_ES)
+        return v
 
 
 @router.post("/chat")
@@ -128,14 +136,17 @@ async def advanced_chat_with_pdf(
     pdf: UploadFile = File(...),
     user_id: str = Depends(require_user_id),
 ) -> dict:
-    from app.services.pdf_ingest import MAX_PDF_BYTES, PdfIngestError
+    from app.services.pdf_ingest import MAX_DOCUMENT_BYTES, PdfIngestError
 
     try:
         pdf_bytes = await pdf.read()
-        if len(pdf_bytes) > MAX_PDF_BYTES:
+        if len(pdf_bytes) > MAX_DOCUMENT_BYTES:
             raise HTTPException(
                 status_code=400,
-                detail=f"PDF demasiado grande. Máximo {MAX_PDF_BYTES // (1024 * 1024)} MB.",
+                detail=(
+                    f"Documento demasiado grande. "
+                    f"Máximo {MAX_DOCUMENT_BYTES // (1024 * 1024)} MB."
+                ),
             )
         text = content.strip()
         try:
@@ -170,7 +181,7 @@ async def advanced_chat_with_pdf(
         logger.exception("[ADV-MODE] with-pdf failed user=%s", user_id[:8])
         raise HTTPException(
             status_code=502,
-            detail="Error procesando PDF en modo avanzado.",
+            detail="Error procesando el documento en modo avanzado.",
         ) from exc
 
 

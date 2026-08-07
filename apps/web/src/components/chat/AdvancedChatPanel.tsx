@@ -16,6 +16,7 @@ import { MicButton } from "@/components/chat/MicButton";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { appendStreamChunk } from "@/lib/stream-chunk";
 import { coerceDisplayText } from "@/lib/display-text";
+import { assertChatMessageLength } from "@/lib/chat-limits";
 import type { ChatImageAttachment, ChatPdfAttachment } from "@/lib/api/chat";
 import {
   ADVANCED_DEFAULT_WELCOME,
@@ -220,6 +221,15 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     const text = input.trim();
     if ((!text && !attachedImage && !attachedPdf) || configured === false) return;
     if (submitInFlightRef.current) return;
+
+    if (!attachedPdf && !attachedImage) {
+      const tooLong = assertChatMessageLength(text);
+      if (tooLong) {
+        setError(tooLong);
+        return;
+      }
+    }
+
     submitInFlightRef.current = true;
     setError(null);
 
@@ -246,8 +256,8 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       role: "user",
       content: pdfFile
         ? text
-          ? `📄 PDF: ${pdfFile.name}\n${text}`
-          : `📄 PDF: ${pdfFile.name}`
+          ? `📄 ${pdfFile.name.toLowerCase().endsWith(".docx") ? "Word" : "PDF"}: ${pdfFile.name}\n${text}`
+          : `📄 ${pdfFile.name.toLowerCase().endsWith(".docx") ? "Word" : "PDF"}: ${pdfFile.name}`
         : text || "📷 Imagen adjunta",
       created_at: new Date().toISOString(),
       user_image_preview: imagePreview,
@@ -278,7 +288,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
         ));
     setStatusHint(
       pdfFile
-        ? "Leyendo PDF…"
+        ? "Leyendo documento…"
         : expectsImageGen
           ? "Generando imagen con IA…"
           : null,
@@ -340,7 +350,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
     try {
       if (pdfFile) {
-        setStatusHint("Leyendo PDF…");
+          setStatusHint("Leyendo documento…");
         const result = await sendAdvancedChatMessageWithPdf(
           text,
           historyBefore,
