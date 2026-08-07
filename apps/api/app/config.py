@@ -70,7 +70,7 @@ class Settings(BaseSettings):
     openai_model_chat_lite: str = "gpt-4o-mini"
     openai_model_voice: str = "gpt-realtime"
     openai_model_retell_llm: str = "gpt-4.1-mini-2025-04-14"
-    openai_model_image: str = "gpt-image-1"
+    openai_model_image: str = "gpt-image-1.5"
     openai_default_voice: str = "cedar"
     cost_tracking_enabled: bool = True
     cost_alert_threshold_usd: float = 200.0
@@ -86,10 +86,9 @@ class Settings(BaseSettings):
     gemini_voice_model: str = "gemini-2.5-flash"
     gemini_image_model: str = "gemini-3.1-flash-image"
 
-    # Ideogram 4.0 — opción alternativa para imágenes con texto legible (aprobado
-    # Keini 2026-07). NO reemplaza a Gemini; solo se usa cuando el pedido exige texto
-    # literal explícito y el plan/monedero del usuario lo permite (ver copy_quality.
-    # prompt_requires_ideogram_text y gemini_images._maybe_generate_with_ideogram).
+    # Ideogram 4.0 — fallback tipográfico si GPT Image no está o falla. El motor
+    # preferido para texto literal es GPT Image (OPENAI_API_KEY + openai_model_image).
+    # Se activa solo con prompt_requires_precise_text (ver copy_quality + gemini_images).
     ideogram_api_key: str = ""
     ideogram_rendering_speed: str = "TURBO"
     ideogram_resolution: str = "2048x2048"

@@ -300,25 +300,21 @@ _IDEOGRAM_EXPLICIT_TEXT_REQUEST = re.compile(
     r"\ben\s+texto\b|\bcon\s+texto\b|"
     r"donde\s+pongas?|"
     r"pon(?:le|ga|gan|me)?\s+las?\s+(?:siguientes\s+)?"
-    r"(?:caracter[ií]sticas|etiquetas|textos?|nombres?)"
+    r"(?:caracter[ií]sticas|etiquetas|textos?|nombres?)|"
+    # Letreros / carteles / nombres visibles (señal fuerte + verbo de texto)
+    r"(?:letrero|cartel|r[oó]tulo|placa|banner)\s+"
+    r"(?:con|que\s+(?:diga|ponga|muestre|aparezca)|donde\s+diga)|"
+    r"con\s+el\s+nombre\s+(?:de\s+)?"
     r")\b",
     re.I,
 )
 
 
-def prompt_requires_ideogram_text(prompt: str) -> bool:
-    """Señal ESTRICTA de texto literal a renderizar — para enrutar hacia un proveedor
-    de pago (Ideogram), NO para decorar el prompt de Gemini.
+def prompt_requires_precise_text(prompt: str) -> bool:
+    """Señal ESTRICTA: el pedido pide tipografía/texto literal en la imagen.
 
-    A propósito NO reutiliza `image_prompt_needs_verbatim_text`: esa función es amplia
-    por diseño (dispara con palabras genéricas de marketing como "beneficios", "evento"
-    o "servicio" para añadir instrucciones de texto a Gemini, donde un falso positivo
-    solo agrega una frase al prompt). Aquí un falso positivo significa gastar dinero
-    real en una llamada a Ideogram sin necesidad, así que solo señales fuertes:
-    comillas, "que diga/ponga X", "mantener los textos", tipografía legible pedida.
-
-    Solo mira el pedido ACTUAL del usuario (nunca el historial/contexto de chat) para
-    no heredar comillas o títulos de turnos anteriores no relacionados con este pedido.
+    Enruta a GPT Image (y fallback Ideogram), NO a Nano Banana genérico.
+    Solo mira el pedido ACTUAL (nunca historial) para no gastar de más.
     """
     t = (prompt or "").strip()
     if not t:
@@ -326,6 +322,11 @@ def prompt_requires_ideogram_text(prompt: str) -> bool:
     if extract_quoted_phrases(t):
         return True
     return bool(_IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t))
+
+
+def prompt_requires_ideogram_text(prompt: str) -> bool:
+    """Alias histórico — mismo detector que `prompt_requires_precise_text`."""
+    return prompt_requires_precise_text(prompt)
 
 
 def extract_spoken_overlay_labels(text: str, *, max_lines: int = 6) -> list[str]:

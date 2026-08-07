@@ -241,7 +241,7 @@ def run_chat_image_generation(
 
     user_text = (text or "").strip()
     effective = effective_user_prompt(user_text, history)
-    # Señal ESTRICTA: comillas, "que diga/ponga", "EN TEXTO" → Ideogram preferido.
+    # Señal ESTRICTA: comillas, "que diga/ponga", "EN TEXTO" → GPT Image / Ideogram.
     wants_literal_text = prompt_requires_ideogram_text(user_text)
     use_reference = allow_reference and should_use_reference_generation(
         user_text,
@@ -318,9 +318,9 @@ def run_chat_image_generation(
     history_ctx = ""
 
     if wants_literal_text:
-        # Tipografía legible: Ideogram primero (Gemini suele fallar letras).
+        # Tipografía legible: GPT Image primero (Ideogram fallback dentro del router).
         logger.info(
-            "[CHAT:IMG-GEN] literal-text path (Ideogram) user=%s labels=%s ref=%s",
+            "[CHAT:IMG-GEN] literal-text path (GPT Image/Ideogram) user=%s labels=%s ref=%s",
             user_id[:8],
             len(overlay_lines),
             bool(ref_payload),
@@ -339,7 +339,7 @@ def run_chat_image_generation(
         )
         if (not img_result.get("ok") or not img_result.get("url")) and ref_payload:
             logger.warning(
-                "[CHAT:IMG-GEN] Ideogram falló; Gemini+referencia user=%s",
+                "[CHAT:IMG-GEN] motor tipográfico falló; Gemini+referencia user=%s",
                 user_id[:8],
             )
             img_result = generate_image_with_reference(
@@ -432,8 +432,7 @@ def run_chat_image_generation(
     caption = str(img_result.get("caption") or display_label or "Imagen generada")
 
     if img_result.get("ideogram_used"):
-        # Ideogram ya renderiza texto legible — el aviso de "texto puede salir mal"
-        # (pensado para Gemini) no aplica y solo generaría desconfianza injustificada.
+        # GPT Image / Ideogram ya renderizan tipografía — sin aviso de Gemini.
         reply = str(success_reply)
     else:
         from app.services.copy_quality import with_image_text_disclaimer
@@ -446,7 +445,7 @@ def run_chat_image_generation(
         if img_result.get("ideogram_declined_reason") == "basic_excluded":
             reply = (
                 f"{reply}\n\nCon un plan de pago (desde Starter) puedo usar un motor "
-                "especializado en texto (Ideogram) para que se vea más legible, señor."
+                "especializado en texto (GPT Image) para que se vea más legible, señor."
             )
 
     return {

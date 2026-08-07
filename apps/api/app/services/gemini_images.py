@@ -636,7 +636,8 @@ def _finalize_generated_image(
 
     public_url = store_publish_image_for_client(user_id, bytes(raw), mime)
     cost = float(result.get("estimated_cost_usd") or GEMINI_STD_COST_USD)
-    db_quality = "text" if provider == "ideogram" else picked
+    provider_l = provider.lower()
+    db_quality = "text" if provider_l in ("ideogram", "gpt_image") else picked
     try:
         supabase_db.insert_generated_image(
             user_id=user_id,
@@ -650,18 +651,56 @@ def _finalize_generated_image(
         logger.warning("[IMAGE] log insert failed provider=%s", provider)
 
     caption = (display_label or "").strip() or "Imagen generada"
+    literal_engine = provider_l in ("ideogram", "gpt_image")
     return {
         "ok": True,
         "url": public_url,
         "caption": caption,
         "prompt": caption,
-        "quality": picked,
+        "quality": picked if not literal_engine else "text",
         "model": model,
         "provider": provider,
         "estimated_cost_usd": cost,
-        "ideogram_used": provider == "ideogram",
-        "ideogram_declined_reason": None if provider == "ideogram" else ideogram_declined_reason,
+        # Compat: ideogram_used=True también para GPT Image (salta disclaimer Gemini).
+        "ideogram_used": literal_engine,
+        "literal_text_engine": provider if literal_engine else None,
+        "ideogram_declined_reason": None if literal_engine else ideogram_declined_reason,
     }
+
+
+def _charge_text_image_if_needed(
+    *,
+    user_id: str,
+    within_quota: bool,
+    admin_bypass: bool,
+    provider: str,
+    result: dict[str, Any],
+) -> None:
+    if within_quota or admin_bypass:
+        logger.info(
+            "[IMAGE:ROUTER] %s within free quota user=%s cost≈%.4f admin_bypass=%s",
+            provider,
+            user_id[:8],
+            float(result.get("provider_request_cost_usd") or result.get("estimated_cost_usd") or 0),
+            admin_bypass,
+        )
+        return
+    from app.services.wallet import try_spend
+
+    spend = try_spend(user_id, "image_text", units=1.0)
+    if not spend.get("ok"):
+        logger.warning(
+            "[IMAGE:ROUTER] %s entregada pero débito de monedero falló user=%s",
+            provider,
+            user_id[:8],
+        )
+    else:
+        logger.info(
+            "[IMAGE:ROUTER] %s wallet charge user=%s charged_usd=%.4f",
+            provider,
+            user_id[:8],
+            float(spend.get("charged_usd") or 0),
+        )
 
 
 def _maybe_generate_with_ideogram(
@@ -672,11 +711,10 @@ def _maybe_generate_with_ideogram(
     text_used: int,
     text_cap: int,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Intenta Ideogram si el pedido lo exige y el plan/monedero lo permite.
+    """Motor tipografía: GPT Image primero, Ideogram fallback, luego Gemini.
 
-    Retorna (resultado_ok_o_None, motivo_de_no_uso). Nunca lanza — cualquier falla
-    (config, red, safety, cupo/saldo insuficiente) devuelve (None, motivo) para que el
-    llamador degrade a Gemini sin exponer el error al usuario.
+    ``prefer_ideogram`` = pedido con texto literal (nombre histórico del flag).
+    Retorna (resultado_ok_o_None, motivo_de_no_uso). Nunca lanza.
     """
     if not prefer_ideogram:
         return None, None
@@ -684,7 +722,9 @@ def _maybe_generate_with_ideogram(
         return None, "basic_excluded"
 
     settings = get_settings()
-    if not settings.ideogram_api_key.strip():
+    openai_key = settings.openai_api_key.strip()
+    ideogram_key = settings.ideogram_api_key.strip()
+    if not openai_key and not ideogram_key:
         return None, "not_configured"
 
     within_quota = text_used < text_cap
@@ -695,6 +735,30 @@ def _maybe_generate_with_ideogram(
 
         if not can_afford(user_id, "image_text", units=1.0):
             return None, "no_quota_no_balance"
+
+    # 1) GPT Image — mejor precisión de texto / instrucciones complejas.
+    if openai_key:
+        from app.services.gpt_images import generate_image_gpt
+
+        gpt_result = generate_image_gpt(prompt=topic, quality="medium")
+        if gpt_result.get("ok"):
+            _charge_text_image_if_needed(
+                user_id=user_id,
+                within_quota=within_quota,
+                admin_bypass=admin_bypass,
+                provider="gpt_image",
+                result=gpt_result,
+            )
+            return gpt_result, None
+        logger.info(
+            "[IMAGE:ROUTER] gpt_image failed, trying Ideogram/Gemini user=%s error=%s",
+            user_id[:8],
+            str(gpt_result.get("error"))[:120],
+        )
+
+    # 2) Ideogram — fallback tipográfico si GPT Image no está o falló.
+    if not ideogram_key:
+        return None, "gpt_image_failed" if openai_key else "not_configured"
 
     from app.services.ideogram_images import generate_image_ideogram
 
@@ -707,33 +771,13 @@ def _maybe_generate_with_ideogram(
         )
         return None, "ideogram_failed"
 
-    if not within_quota and not admin_bypass:
-        from app.services.wallet import try_spend
-
-        # Siempre 1 unidad ($0.06) — una imagen visible al usuario, nunca N variantes.
-        spend = try_spend(user_id, "image_text", units=1.0)
-        if not spend.get("ok"):
-            logger.warning(
-                "[IMAGE:ROUTER] ideogram entregada pero débito de monedero falló user=%s",
-                user_id[:8],
-            )
-        else:
-            logger.info(
-                "[IMAGE:ROUTER] ideogram wallet charge user=%s charged_usd=%.4f "
-                "num_returned=%s",
-                user_id[:8],
-                float(spend.get("charged_usd") or 0),
-                result.get("num_images_returned"),
-            )
-    else:
-        logger.info(
-            "[IMAGE:ROUTER] ideogram within free quota user=%s num_returned=%s "
-            "provider_request_cost=%.4f admin_bypass=%s",
-            user_id[:8],
-            result.get("num_images_returned"),
-            float(result.get("provider_request_cost_usd") or result.get("estimated_cost_usd") or 0),
-            admin_bypass,
-        )
+    _charge_text_image_if_needed(
+        user_id=user_id,
+        within_quota=within_quota,
+        admin_bypass=admin_bypass,
+        provider="ideogram",
+        result=result,
+    )
     return result, None
 
 
@@ -747,8 +791,7 @@ def generate_image(
     display_label: str | None = None,
     prefer_ideogram: bool = False,
 ) -> dict[str, Any]:
-    """Genera imagen — Ideogram si el pedido exige texto legible y el plan lo permite;
-    en cualquier otro caso (o si Ideogram falla), Gemini como siempre."""
+    """Genera imagen — GPT Image/Ideogram si hay texto literal; si no, Nano Banana 2."""
     settings = get_settings()
     google_key = settings.google_api_key.strip()
     topic = prepare_image_prompt(prompt, context)

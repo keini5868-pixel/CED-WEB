@@ -51,8 +51,12 @@ def test_strict_detector_true_for_explicit_quotes():
     assert prompt_requires_ideogram_text('Hazme un banner que diga "Gran Apertura"') is True
 
 
-def test_strict_detector_true_for_que_diga_phrase():
-    assert prompt_requires_ideogram_text("cartel que diga que hoy hay descuentos") is True
+def test_strict_detector_true_for_letrero_con_nombre():
+    assert prompt_requires_ideogram_text("un letrero con el nombre de la tienda") is True
+
+
+def test_strict_detector_true_for_cartel_que_diga():
+    assert prompt_requires_ideogram_text("haz un cartel que diga Abierto") is True
 
 
 def test_strict_detector_true_for_que_ponga_phrase():
@@ -174,7 +178,12 @@ def _router_mocks(*, limits, day_counts=(0, 0, 0), ideogram_result=None, gemini_
         patch("app.services.supabase_db.insert_generated_image"),
         patch(
             "app.services.gemini_images.get_settings",
-            return_value=MagicMock(google_api_key="g-key", ideogram_api_key="ik-key"),
+            return_value=MagicMock(
+                google_api_key="g-key",
+                ideogram_api_key="ik-key",
+                openai_api_key="",  # tests Ideogram path; GPT Image se cubre aparte
+                openai_model_image="gpt-image-1.5",
+            ),
         ),
     )
 

@@ -94,7 +94,7 @@ def test_soft_upsell_shown_when_free_basic_excluded_from_ideogram(mock_gen: Magi
 
     assert result["ok"] is True
     assert "plan de pago" in result["reply"].lower()
-    assert "ideogram" in result["reply"].lower()
+    assert "gpt image" in result["reply"].lower()
 
 
 @patch("app.services.gemini_images.generate_image")
