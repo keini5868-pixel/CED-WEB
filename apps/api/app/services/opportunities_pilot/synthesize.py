@@ -6,9 +6,11 @@ from typing import Any
 
 SECTION_ORDER = (
     ("what_is", "Qué es"),
+    ("company_history", "Historia y presencia"),
+    ("products", "Catálogo FitLine (precios)"),
     ("how_it_works", "Cómo funciona"),
-    ("requirements", "Requisitos"),
-    ("income_potential", "Potencial de ingreso"),
+    ("requirements", "Planes de inscripción"),
+    ("income_potential", "Plan de compensación"),
     ("getting_started", "Pasos para empezar"),
     ("affiliation", "Afiliación"),
     ("risks", "Limitaciones / riesgos"),

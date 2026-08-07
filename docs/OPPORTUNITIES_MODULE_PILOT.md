@@ -21,9 +21,10 @@ Viability, Tendencias and Oportunidades are production modules (kill-switches de
 | Data | Hybrid curated + search |
 | Scope v1 | List + reading card only |
 | Coming soon | Not shown — only FitLine/PMI |
-| Soft tone | No MLM/afiliados wording in sections 1–6 |
+| Soft tone | No MLM/afiliados wording in soft sections |
 | Risks | Honest language (venta directa, comisiones por red, no garantizado) |
 | Afiliación CTA | «Activar su negocio (paquete manager)» |
+| FitLine ficha | Historia, catálogo con precios (tienda oficial), planes de inscripción (pmebusiness), marco Income Plan |
 
 ### How to test
 

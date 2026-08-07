@@ -86,7 +86,31 @@ def test_detail_includes_affiliation_and_cta() -> None:
     ids = [s["id"] for s in detail["sections"]]
     assert "affiliation" in ids
     assert "risks" in ids
+    assert "company_history" in ids
+    assert "products" in ids
     assert detail["sponsorship"]["cta_label"] == "Activar su negocio (paquete manager)"
+
+
+def test_enriched_fitline_has_official_facts() -> None:
+    plugin = fitline_pm_plugin()
+    sections = (plugin.get("curated") or {}).get("sections") or {}
+    history = (sections.get("company_history") or {}).get("body") or ""
+    products = (sections.get("products") or {}).get("body") or ""
+    req = (sections.get("requirements") or {}).get("body") or ""
+    income = (sections.get("income_potential") or {}).get("body") or ""
+    assert "1993" in history
+    assert "Luxemburgo" in history or "Luxembourg" in history
+    assert "40" in history
+    assert "PowerCocktail" in products and "$119.48" in products
+    assert "Manager Quickstart" in req and "$596" in req
+    assert "Teampartner Start" in req
+    assert "Income Plan" in income
+    assert "Team Partner" in income
+    sources = (plugin.get("curated") or {}).get("sources") or []
+    urls = " ".join(str(s.get("url") or "") for s in sources)
+    assert "pm-international.com" in urls
+    assert "fitline.com" in urls
+    assert "pmebusiness.com" in urls
 
 
 def test_what_is_embeds_youtube() -> None:
