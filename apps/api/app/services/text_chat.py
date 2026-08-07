@@ -32,6 +32,7 @@ from app.domain.ced_identity import (
     CED_CORE_IDENTITY,
     CED_CREATOR_IDENTITY,
     CED_HUMAN_VOICE_STYLE,
+    CED_MARKETING_EXPERTISE,
     CED_UNIVERSAL_CONVERSATION,
 )
 from app.domain.ced_memory_prompt import CED_MEMORY_USAGE_RULES
@@ -371,6 +372,8 @@ ORTOGRAFÍA: escribe siempre en español correcto (tildes, sin anglicismos innec
 
 {CED_CORE_IDENTITY}
 
+{CED_MARKETING_EXPERTISE}
+
 {CED_CREATOR_IDENTITY}
 
 {CED_HUMAN_VOICE_STYLE}
@@ -545,6 +548,8 @@ Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude,
 ORTOGRAFÍA: escribe siempre en español correcto (tildes, sin anglicismos innecesarios, sin typos).
 
 {CED_CORE_IDENTITY}
+
+{CED_MARKETING_EXPERTISE}
 
 {CED_CREATOR_IDENTITY}
 
