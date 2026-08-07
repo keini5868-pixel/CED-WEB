@@ -156,6 +156,11 @@ def build_base_voice_system(
     query = (user_text or "").strip()
     if query and is_strategy_consultation_topic(query):
         base = f"{base}\n\n{CED_STRATEGY_CONSULTATION_OVERLAY}"
+        from app.domain.ced_sales_marketing_playbook import (
+            append_sales_marketing_playbook_if_needed,
+        )
+
+        base = append_sales_marketing_playbook_if_needed(base, query)
     if query and is_deliverable_request(query):
         base = f"{base}\n\n{VOICE_DELIVERABLE_OVERLAY}"
     elif query and is_advisory_voice_query(query):
