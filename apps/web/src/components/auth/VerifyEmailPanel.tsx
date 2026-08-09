@@ -7,8 +7,7 @@ import { useState } from "react";
 import { CedButton } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { LOGIN_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
-import { createClient } from "@/lib/supabase/client";
-import { isSupabaseConfigured } from "@/lib/env";
+import { apiUrl, isSupabaseConfigured } from "@/lib/env";
 
 export function VerifyEmailPanel() {
   const searchParams = useSearchParams();
@@ -25,17 +24,32 @@ export function VerifyEmailPanel() {
     }
     setLoading(true);
     setError(null);
-    const supabase = createClient();
-    const { error: authError } = await supabase.auth.resend({
-      type: "signup",
-      email: email.trim(),
-    });
-    setLoading(false);
-    if (authError) {
-      setError(authError.message);
-      return;
+    setMessage(null);
+    try {
+      const res = await fetch(`${apiUrl()}/v1/auth/resend-verification`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), next }),
+      });
+      let data: { detail?: string; message?: string } | null = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      if (!res.ok) {
+        setError(
+          (typeof data?.detail === "string" && data.detail) ||
+            "No se pudo reenviar el correo. Intenta de nuevo.",
+        );
+        return;
+      }
+      setMessage(data?.message || "Email de verificación reenviado.");
+    } catch {
+      setError("No se pudo conectar con el servidor.");
+    } finally {
+      setLoading(false);
     }
-    setMessage("Email de verificación reenviado.");
   }
 
   return (

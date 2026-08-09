@@ -8,8 +8,24 @@ import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { AuthDivider, GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 import { LOGIN_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
-import { createClient } from "@/lib/supabase/client";
-import { appUrl, isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
+import { apiUrl, isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
+
+function registerErrorMessage(status: number, detail: unknown): string {
+  const text =
+    typeof detail === "string"
+      ? detail
+      : detail && typeof detail === "object" && "detail" in detail
+        ? String((detail as { detail: unknown }).detail)
+        : "";
+  if (text) return text;
+  if (status === 503) {
+    return "El servicio de correo no está disponible. Intenta más tarde o contacta soporte.";
+  }
+  if (status === 409) {
+    return "Ya existe una cuenta con este correo. Inicia sesión o usa otro correo.";
+  }
+  return "No se pudo crear la cuenta. Intenta de nuevo.";
+}
 
 export function RegisterForm() {
   const router = useRouter();
@@ -23,7 +39,6 @@ export function RegisterForm() {
 
   const configured = isSupabaseConfigured();
   const loginHref = `${LOGIN_PATH}?next=${encodeURIComponent(next)}`;
-  const callbackNext = encodeURIComponent(next);
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -33,43 +48,41 @@ export function RegisterForm() {
     }
     setLoading(true);
     setError(null);
-    const supabase = createClient();
-    const { data, error: authError } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: {
-        data: { full_name: fullName.trim() },
-        emailRedirectTo: `${appUrl()}/auth/callback?next=${callbackNext}`,
-      },
-    });
-    setLoading(false);
-    if (authError) {
-      setError(authError.message);
-      return;
-    }
-    // Supabase no devuelve error si el correo ya existe y está confirmado
-    // (anti-enumeración): responde un usuario "obfuscado" con `identities`
-    // vacío y sin sesión — idéntico en apariencia a un registro nuevo
-    // pendiente de confirmar. Sin esta comprobación, quien reutiliza un
-    // correo de una cuenta vieja (p. ej. una ya degradada a plan Básico
-    // gratis tras un trial expirado) termina en "revisa tu correo" sin
-    // enterarse de que en realidad sigue en su cuenta antigua — nunca
-    // obtiene el trial nuevo de 5 min/día de voz que sí le corresponde a
-    // una cuenta realmente nueva.
-    if (data.user && data.user.identities?.length === 0) {
-      setError(
-        "Ya existe una cuenta con este correo. Inicia sesión en su lugar, o usa otro correo para crear una cuenta nueva.",
-      );
-      return;
-    }
-    if (data.user && !data.session) {
+    try {
+      // Registro manual vía API CED + Resend (evita el SMTP roto de Supabase Auth).
+      // Google OAuth NO pasa por aquí — sigue en GoogleAuthButton sin cambios.
+      const res = await fetch(`${apiUrl()}/v1/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: email.trim(),
+          password,
+          full_name: fullName.trim(),
+          next,
+        }),
+      });
+      let data: unknown = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
+      }
+      if (!res.ok) {
+        const detail =
+          data && typeof data === "object" && "detail" in data
+            ? (data as { detail: unknown }).detail
+            : data;
+        setError(registerErrorMessage(res.status, detail));
+        return;
+      }
       router.push(
-        `/verify-email?email=${encodeURIComponent(email.trim())}&next=${callbackNext}`,
+        `/verify-email?email=${encodeURIComponent(email.trim())}&next=${encodeURIComponent(next)}`,
       );
-      return;
+    } catch {
+      setError("No se pudo conectar con el servidor. Intenta de nuevo.");
+    } finally {
+      setLoading(false);
     }
-    router.push(next);
-    router.refresh();
   }
 
   const payingFlow = next.startsWith("/pricing");

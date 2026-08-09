@@ -38,6 +38,7 @@ from app.routers import (
     pdf,
     profile,
     prospection,
+    public_auth,
     retell,
     retell_custom_llm,
     support,
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
     application.include_router(health.router)
     application.include_router(legal.router)
     application.include_router(diagnostic.router)
+    application.include_router(public_auth.router)
     application.include_router(admin.router)
     application.include_router(hud.router)
     application.include_router(panels.router)
