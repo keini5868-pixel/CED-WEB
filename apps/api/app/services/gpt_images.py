@@ -19,6 +19,7 @@ from app.config import get_settings
 logger = logging.getLogger(__name__)
 
 IMAGE_GENERATIONS_API = "https://api.openai.com/v1/images/generations"
+IMAGE_EDITS_API = "https://api.openai.com/v1/images/edits"
 
 # COGS aproximado OpenAI (1024×1024 medium) — gpt-image-1.5.
 GPT_IMAGE_MEDIUM_COST_USD = 0.034
@@ -170,4 +171,137 @@ def generate_image_gpt(
         "provider": "gpt_image",
         "estimated_cost_usd": cost,
         "provider_request_cost_usd": cost,
+    }
+
+
+def edit_image_gpt(
+    *,
+    prompt: str,
+    image_bytes: bytes,
+    content_type: str = "image/png",
+    quality: str = "medium",
+) -> dict[str, Any]:
+    """Edita UNA imagen existente con GPT Image (/v1/images/edits).
+
+    Caso clave: conservar sujeto/fondo y agregar tipografía persuasiva legible.
+    """
+    settings = get_settings()
+    api_key = settings.openai_api_key.strip()
+    model = (settings.openai_model_image or "gpt-image-1.5").strip() or "gpt-image-1.5"
+    topic = (prompt or "").strip()
+    if not topic:
+        return {"ok": False, "error": "Prompt vacío", "code": "empty_prompt"}
+    if not api_key:
+        return {
+            "ok": False,
+            "error": "OPENAI_API_KEY no configurada",
+            "code": "config_error",
+        }
+    if not image_bytes or len(image_bytes) < 512:
+        return {
+            "ok": False,
+            "error": "Imagen de referencia inválida",
+            "code": "invalid_image",
+        }
+
+    q = "high" if (quality or "").strip().lower() in ("hd", "high") else "medium"
+    cost = GPT_IMAGE_HIGH_COST_USD if q == "high" else GPT_IMAGE_MEDIUM_COST_USD
+    mime = (content_type or "image/png").split(";")[0].strip().lower()
+    if mime not in ("image/png", "image/jpeg", "image/jpg", "image/webp"):
+        mime = "image/png"
+    ext = "jpg" if mime in ("image/jpeg", "image/jpg") else ("webp" if mime == "image/webp" else "png")
+    filename = f"reference.{ext}"
+
+    data = {
+        "model": model,
+        "prompt": topic[:4000],
+        "size": "1024x1024",
+        "quality": q,
+        "n": "1",
+        "input_fidelity": "high",
+    }
+    files = {"image": (filename, image_bytes, mime)}
+
+    try:
+        with httpx.Client(timeout=_TIMEOUT_SEC) as client:
+            res = client.post(
+                IMAGE_EDITS_API,
+                headers={"Authorization": f"Bearer {api_key}"},
+                data=data,
+                files=files,
+            )
+    except httpx.TimeoutException:
+        logger.warning("[GPT-IMAGE:EDIT] timeout model=%s", model)
+        return {
+            "ok": False,
+            "error": "GPT Image edit no respondió a tiempo.",
+            "code": "gpt_image_timeout",
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[GPT-IMAGE:EDIT] request error: %s", exc)
+        return {
+            "ok": False,
+            "error": "No pude contactar GPT Image (edit).",
+            "code": "gpt_image_error",
+        }
+
+    if res.status_code >= 400:
+        detail = _parse_openai_error(res)
+        logger.error("[GPT-IMAGE:EDIT] %s model=%s %s", res.status_code, model, detail)
+        return {
+            "ok": False,
+            "error": detail or "Error de GPT Image edit.",
+            "code": "gpt_image_http",
+        }
+
+    try:
+        body = res.json()
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "error": f"Respuesta inválida de GPT Image edit: {exc}",
+            "code": "gpt_image_parse",
+        }
+
+    b64 = _extract_b64(body)
+    if not b64:
+        return {
+            "ok": False,
+            "error": "GPT Image edit no devolvió imagen.",
+            "code": "gpt_image_empty",
+        }
+
+    try:
+        raw = base64.b64decode(b64)
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "error": f"No pude decodificar la imagen editada: {exc}",
+            "code": "gpt_image_decode",
+        }
+
+    if len(raw) < 512:
+        return {
+            "ok": False,
+            "error": "Imagen GPT edit demasiado pequeña.",
+            "code": "gpt_image_empty",
+        }
+
+    logger.info(
+        "[GPT-IMAGE:EDIT] ok model=%s quality=%s bytes=%s cost≈%.3f",
+        model,
+        q,
+        len(raw),
+        cost,
+    )
+    return {
+        "ok": True,
+        "raw_bytes": raw,
+        "mime_type": "image/png",
+        "model": model,
+        "quality": "text",
+        "provider": "gpt_image_edit",
+        "estimated_cost_usd": cost,
+        "provider_request_cost_usd": cost,
+        "used_reference": True,
     }

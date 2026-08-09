@@ -296,6 +296,15 @@ _IDEOGRAM_EXPLICIT_TEXT_REQUEST = re.compile(
     r"con\s+(?:l[ao]s?\s+)?mismos?\s+textos?|"
     r"sin\s+quitar\s+(?:l[ao]s?\s+)?textos?|"
     r"quiero\s+que\s+mantengas\s+(?:l[ao]s?\s+)?textos?|"
+    # Agregar / poner texto sobre imagen ya existente (caso reportado)
+    r"agr[eé]ga(?:r|le|me|nos)?\s+(?:un\s+|el\s+)?texto|"
+    r"a[nñ]ade(?:r|le|me|nos)?\s+(?:un\s+|el\s+)?texto|"
+    r"pon(?:le|me|ga|gan)?\s+(?:un\s+|el\s+)?texto|"
+    r"suma(?:r|le|me)?\s+(?:un\s+|el\s+)?texto|"
+    r"incluye(?:r|le|me)?\s+(?:un\s+|el\s+)?texto|"
+    r"texto\s+(?:que\s+)?(?:resalte|destaque|muestre|hable\s+de)|"
+    r"resalt(?:a|e|ar)\s+(?:el\s+)?(?:dolor|cansancio|problema)|"
+    r"dolor\s*[→\-–]+\s*soluci[oó]n|dolor\s+y\s+(?:la\s+)?soluci[oó]n|"
     # «EN TEXTO» / «donde pongas las características…»
     r"\ben\s+texto\b|\bcon\s+texto\b|"
     r"donde\s+pongas?|"
@@ -707,6 +716,94 @@ def orchestrate_image_generation_brief(
         has_reference=has_reference,
         context=context,
     )
+
+
+def compose_persuasive_overlay_lines(user_text: str, *, max_lines: int = 2) -> list[str]:
+    """Redacta 1–2 líneas cortas (PAS / dolor→solución) cuando el usuario pide texto
+    persuasivo sin comillas literales.
+
+    No inventa claims de producto; usa el dolor/solución que el usuario ya nombró.
+    """
+    t = (user_text or "").strip()
+    if not t:
+        return []
+
+    quoted = [normalize_spanish(q) for q in extract_quoted_phrases(t) if q.strip()]
+    if quoted:
+        return quoted[:max_lines]
+
+    low = t.lower()
+    pain = ""
+    if re.search(r"\bcansancio\b", low):
+        pain = "¿Cansancio diario otra vez?"
+    elif re.search(r"\bfatiga\b", low):
+        pain = "¿Fatiga que no se va?"
+    elif re.search(r"\bagotad[oa]\b", low):
+        pain = "¿Agotada sin explicación?"
+    elif re.search(r"\bdolor\b", low):
+        pain = "Ese dolor no tiene por qué mandar."
+    elif re.search(r"\bestr[eé]s\b", low):
+        pain = "¿Estrés que te frena cada día?"
+    elif re.search(r"\bproblema\b", low):
+        pain = "Hay un problema real aquí."
+
+    wants_solution = bool(
+        re.search(r"\bsoluci[oó]n(?:es)?\b|\bbeneficio|\bresultado|\bsalida\b", low)
+    )
+    solution = ""
+    if wants_solution:
+        if "cansancio" in low or "fatiga" in low or "agotad" in low:
+            solution = "Hay una solución más simple."
+        elif "dolor" in low:
+            solution = "La solución empieza hoy."
+        else:
+            solution = "Y sí: hay una solución."
+
+    lines: list[str] = []
+    if pain:
+        lines.append(pain)
+    if solution and solution not in lines:
+        lines.append(solution)
+    if not lines and prompt_requires_precise_text(t):
+        # Pedido genérico de texto persuasivo sin keyword clara.
+        lines = ["Hay un problema real aquí.", "Y también hay una solución."]
+    return [normalize_spanish(x) for x in lines[:max_lines] if x]
+
+
+def build_reference_text_edit_prompt(
+    user_text: str,
+    *,
+    overlay_lines: list[str] | None = None,
+) -> str:
+    """Prompt para editar imagen existente: conservar sujeto + tipografía PAS."""
+    lines = list(overlay_lines or [])
+    if not lines:
+        lines = compose_persuasive_overlay_lines(user_text)
+    verbatim = format_verbatim_image_copy(lines) if lines else ""
+    parts = [
+        "Edit the attached photo. Keep the SAME person, face, clothing, pose, "
+        "lighting and background. Do NOT replace the subject with a different person "
+        "or a different gesture unless the user explicitly asked for that.",
+        "Add clear, legible Spanish on-image typography for a marketing ad "
+        "(pain → solution / PAS). Short lines only. High contrast. No watermarks.",
+        f"User request: {strip_image_generation_instruction_safe(user_text)}",
+    ]
+    if verbatim:
+        parts.append(verbatim)
+    else:
+        parts.append(
+            "Include the persuasive text the user asked for as visible labels on the image."
+        )
+    return " ".join(p for p in parts if p).strip()[:3800]
+
+
+def strip_image_generation_instruction_safe(text: str) -> str:
+    try:
+        from app.services.gemini_images import strip_image_generation_instruction
+
+        return strip_image_generation_instruction(text or "") or (text or "").strip()
+    except Exception:  # noqa: BLE001
+        return (text or "").strip()
 
 
 def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None) -> str:

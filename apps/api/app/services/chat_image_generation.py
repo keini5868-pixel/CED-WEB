@@ -160,9 +160,15 @@ def should_take_direct_image_path(
     if len(t) > DIRECT_IMAGE_MAX_CHARS:
         return False
     from app.services.chat_intents import is_text_ideation_request
+    from app.services.copy_quality import prompt_requires_ideogram_text
 
     if is_text_ideation_request(t):
         return False
+    # «Agrégale texto…» sobre imagen del hilo — path visual aunque no diga «genera imagen».
+    if prompt_requires_ideogram_text(t) and (
+        wants_image_reference_edit(t) or user_requests_prior_reference(t)
+    ):
+        return True
     # Intent de imagen gana a «cambio de tema» / small-talk (listas con «clima», etc.).
     if is_generate_image_intent(t):
         return True
@@ -239,13 +245,15 @@ def run_chat_image_generation(
 
     from app.services.copy_quality import (
         build_direct_image_prompt,
+        build_reference_text_edit_prompt,
+        compose_persuasive_overlay_lines,
         prompt_requires_ideogram_text,
         summarize_overlay_labels_for_image,
     )
 
     user_text = (text or "").strip()
     effective = effective_user_prompt(user_text, history)
-    # Señal ESTRICTA: comillas, "que diga/ponga", "EN TEXTO" → GPT Image / Ideogram.
+    # Señal ESTRICTA: comillas, "que diga/ponga", "agrégale texto" → GPT Image / Ideogram.
     wants_literal_text = prompt_requires_ideogram_text(user_text)
     use_reference = allow_reference and should_use_reference_generation(
         user_text,
@@ -288,7 +296,15 @@ def run_chat_image_generation(
     overlay_lines: list[str] = []
     if direct.get("wants_literal_text"):
         wants_literal_text = True
-    if wants_literal_text and ref_payload:
+    # Texto persuasivo (dolor→solución) cuando piden agregar copy sin comillas.
+    strategy_lines = (
+        compose_persuasive_overlay_lines(user_text) if wants_literal_text else []
+    )
+    if strategy_lines:
+        for line in strategy_lines:
+            if line not in overlay_lines:
+                overlay_lines.append(line)
+    if wants_literal_text and ref_payload and not strategy_lines:
         try:
             from app.services.vision_search import extract_image_overlay_labels
 
@@ -302,19 +318,26 @@ def run_chat_image_generation(
     tech = str(direct.get("prompt") or "").strip()
     if tech:
         model_prompt = tech
-    if overlay_lines and wants_literal_text:
-        # Referencia con «mantener textos»: añadir etiquetas OCR sin reescribir la escena.
+    if wants_literal_text and ref_payload:
+        # Edición tipográfica: conservar foto + texto PAS (no regenerar de cero).
+        model_prompt = build_reference_text_edit_prompt(
+            user_text,
+            overlay_lines=overlay_lines or strategy_lines,
+        )
+    elif overlay_lines and wants_literal_text:
         labels = "; ".join(overlay_lines[:5])
         model_prompt = (
             f"{model_prompt} Keep these visible labels legible: {labels}."
         )[:3800]
 
     logger.info(
-        "[CHAT:IMG-GEN] direct_adapter user=%s scene=%s wants_text=%s creation=%s",
+        "[CHAT:IMG-GEN] direct_adapter user=%s scene=%s wants_text=%s creation=%s ref=%s overlays=%s",
         user_id[:8],
         str(direct.get("visual_brief") or "")[:100],
         wants_literal_text,
         bool(creation),
+        bool(ref_payload),
+        len(overlay_lines),
     )
 
     img_result: dict[str, Any]
@@ -322,24 +345,23 @@ def run_chat_image_generation(
     history_ctx = ""
 
     if wants_literal_text:
-        # Tipografía legible: GPT Image primero (Ideogram fallback dentro del router).
+        # Tipografía: GPT Image edits si hay referencia; si no, generations.
         logger.info(
             "[CHAT:IMG-GEN] literal-text path (GPT Image/Ideogram) user=%s labels=%s ref=%s",
             user_id[:8],
             len(overlay_lines),
             bool(ref_payload),
         )
-        style_ctx = ""
-        if ref_payload:
-            style_ctx = "Conserva el estilo visual y la composición de la imagen de referencia."
         img_result = generate_image(
             user_id=user_id,
             plan_id=plan_id,
             prompt=model_prompt,
             quality="auto",
-            context=style_ctx,
+            context="",
             display_label=display_label or None,
             prefer_ideogram=True,
+            reference_image=ref_payload[0] if ref_payload else None,
+            reference_mime=ref_payload[1] if ref_payload else None,
         )
         if (not img_result.get("ok") or not img_result.get("url")) and ref_payload:
             logger.warning(

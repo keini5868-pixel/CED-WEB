@@ -637,7 +637,10 @@ def _finalize_generated_image(
     public_url = store_publish_image_for_client(user_id, bytes(raw), mime)
     cost = float(result.get("estimated_cost_usd") or GEMINI_STD_COST_USD)
     provider_l = provider.lower()
-    db_quality = "text" if provider_l in ("ideogram", "gpt_image") else picked
+    literal_engine = provider_l in ("ideogram", "gpt_image", "gpt_image_edit") or provider_l.startswith(
+        "gpt_image"
+    )
+    db_quality = "text" if literal_engine else picked
     try:
         supabase_db.insert_generated_image(
             user_id=user_id,
@@ -651,7 +654,6 @@ def _finalize_generated_image(
         logger.warning("[IMAGE] log insert failed provider=%s", provider)
 
     caption = (display_label or "").strip() or "Imagen generada"
-    literal_engine = provider_l in ("ideogram", "gpt_image")
     return {
         "ok": True,
         "url": public_url,
@@ -665,6 +667,7 @@ def _finalize_generated_image(
         "ideogram_used": literal_engine,
         "literal_text_engine": provider if literal_engine else None,
         "ideogram_declined_reason": None if literal_engine else ideogram_declined_reason,
+        "used_reference": bool(result.get("used_reference")),
     }
 
 
@@ -710,10 +713,13 @@ def _maybe_generate_with_ideogram(
     topic: str,
     text_used: int,
     text_cap: int,
+    reference_image: bytes | None = None,
+    reference_mime: str | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Motor tipografía: GPT Image primero, Ideogram fallback, luego Gemini.
+    """Motor tipografía: GPT Image (edit si hay ref) → Ideogram → Gemini.
 
     ``prefer_ideogram`` = pedido con texto literal (nombre histórico del flag).
+    Con ``reference_image`` usa /v1/images/edits para conservar la foto y agregar texto.
     Retorna (resultado_ok_o_None, motivo_de_no_uso). Nunca lanza.
     """
     if not prefer_ideogram:
@@ -736,22 +742,34 @@ def _maybe_generate_with_ideogram(
         if not can_afford(user_id, "image_text", units=1.0):
             return None, "no_quota_no_balance"
 
-    # 1) GPT Image — mejor precisión de texto / instrucciones complejas.
+    # 1) GPT Image — edición con referencia si hay bytes; si no, generación.
     if openai_key:
-        from app.services.gpt_images import generate_image_gpt
+        from app.services.gpt_images import edit_image_gpt, generate_image_gpt
 
-        gpt_result = generate_image_gpt(prompt=topic, quality="medium")
+        gpt_result: dict[str, Any]
+        if reference_image:
+            gpt_result = edit_image_gpt(
+                prompt=topic,
+                image_bytes=reference_image,
+                content_type=reference_mime or "image/png",
+                quality="medium",
+            )
+            provider_name = "gpt_image_edit"
+        else:
+            gpt_result = generate_image_gpt(prompt=topic, quality="medium")
+            provider_name = "gpt_image"
         if gpt_result.get("ok"):
             _charge_text_image_if_needed(
                 user_id=user_id,
                 within_quota=within_quota,
                 admin_bypass=admin_bypass,
-                provider="gpt_image",
+                provider=provider_name,
                 result=gpt_result,
             )
             return gpt_result, None
         logger.info(
-            "[IMAGE:ROUTER] gpt_image failed, trying Ideogram/Gemini user=%s error=%s",
+            "[IMAGE:ROUTER] %s failed, trying Ideogram/Gemini user=%s error=%s",
+            provider_name,
             user_id[:8],
             str(gpt_result.get("error"))[:120],
         )
@@ -790,14 +808,21 @@ def generate_image(
     context: str = "",
     display_label: str | None = None,
     prefer_ideogram: bool = False,
+    reference_image: bytes | None = None,
+    reference_mime: str | None = None,
 ) -> dict[str, Any]:
-    """Genera imagen — GPT Image/Ideogram si hay texto literal; si no, Nano Banana 2."""
+    """Genera imagen — GPT Image/Ideogram si hay texto literal; si no, Nano Banana 2.
+
+    Con ``prefer_ideogram`` + ``reference_image`` edita la foto existente (GPT edits).
+    """
     settings = get_settings()
     google_key = settings.google_api_key.strip()
     topic = prepare_image_prompt(prompt, context)
     if not topic:
         return {"ok": False, "error": "Prompt vacío"}
-    if not google_key:
+    # Tipografía vía OpenAI no exige Gemini; Gemini sí para Nano Banana fallback.
+    openai_key = settings.openai_api_key.strip()
+    if not google_key and not (prefer_ideogram and openai_key):
         return {
             "ok": False,
             "error": "Configura GOOGLE_API_KEY en Railway para generar imágenes.",
@@ -818,6 +843,8 @@ def generate_image(
         topic=topic,
         text_used=text_used,
         text_cap=limits.ai_images_text_per_day,
+        reference_image=reference_image,
+        reference_mime=reference_mime,
     )
     if ideogram_result is not None:
         return _finalize_generated_image(

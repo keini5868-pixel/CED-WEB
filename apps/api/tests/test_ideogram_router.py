@@ -100,6 +100,33 @@ def test_strict_detector_true_for_texto_en_la_imagen():
     ) is True
 
 
+def test_strict_detector_true_for_agregale_texto_dolor_solucion():
+    assert prompt_requires_ideogram_text(
+        "agrégale texto que resalte el cansancio, y una solución"
+    ) is True
+
+
+def test_compose_persuasive_overlay_pain_solution():
+    from app.services.copy_quality import (
+        build_reference_text_edit_prompt,
+        compose_persuasive_overlay_lines,
+    )
+
+    lines = compose_persuasive_overlay_lines(
+        "agrégale texto que resalte el cansancio, y una solución"
+    )
+    assert len(lines) >= 2
+    joined = " ".join(lines).lower()
+    assert "cansancio" in joined
+    assert "soluci" in joined
+    prompt = build_reference_text_edit_prompt(
+        "agrégale texto que resalte el cansancio, y una solución",
+        overlay_lines=lines,
+    )
+    assert "TEXTOS EXACTOS" in prompt
+    assert "Keep the SAME person" in prompt or "SAME person" in prompt
+
+
 def test_strict_detector_false_for_generic_marketing_words():
     # Estas palabras SÍ disparan `image_prompt_needs_verbatim_text` (amplio, para
     # decorar el prompt de Gemini) pero NO deben disparar el router de costo pagado.
