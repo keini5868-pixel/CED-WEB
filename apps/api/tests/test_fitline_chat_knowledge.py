@@ -21,6 +21,9 @@ def test_wants_fitline_on_brand_and_products():
     assert wants_fitline_knowledge("precio de Restorate")
     assert wants_fitline_knowledge("FitLine Basics beneficios")
     assert wants_fitline_knowledge("PowerCocktail vs Activize")
+    assert wants_fitline_knowledge("quién fundó PM International Rolf Sorg")
+    assert wants_fitline_knowledge("qué es el NTC de FitLine")
+    assert wants_fitline_knowledge("Optimal Set beneficios")
 
 
 def test_wants_fitline_rejects_generic_basics():
@@ -34,11 +37,19 @@ def test_format_includes_curated_products_not_invented():
     assert "Activize" in block or "Activise" in block
     assert "Restorate" in block
     assert "Basics" in block
+    assert "Optimal Set" in block or "Optimal-Set" in block
     assert "NTC" in block or "Nutrient Transport" in block
+    assert "Rolf Sorg" in block
+    assert "Speyer" in block
     assert "Schengen" in block or "Luxemburgo" in block
+    assert "3.22" in block or "3,22" in block
+    assert "Frankfurt" in block or "2011" in block
     assert "TÜV" in block or "TUV" in block.upper() or "Tüv" in block
+    assert "QR" in block
     assert "Partner Area" in block or "no invent" in block.lower()
+    assert "compensación 2026" in block.lower() or "income plan" in block.lower()
     assert "Prospección" in block or "prospección" in block.lower()
+    assert "Investigando" in block or "investigando" in block.lower()
     assert "NO inventes" in block or "no inventes" in block.lower() or "NO invent" in block
     assert "módulo Oportunidades" in block
 

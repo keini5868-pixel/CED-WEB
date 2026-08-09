@@ -13,13 +13,14 @@ from app.services.opportunities_pilot.catalog import get_plugin
 from app.services.opportunities_pilot.plugins.fitline_pm import OPPORTUNITY_ID
 from app.services.opportunities_pilot.synthesize import SECTION_ORDER
 
-# Marcas / empresa
+# Marcas / empresa / fundadores / sede
 _BRAND = re.compile(
     r"\b(?:"
     r"fit\s*-?\s*line|fitline|"
     r"pm[\s\-]?international|pm\s*international|"
     r"pme\s*business|pmebusiness|"
-    r"pm[\s\-]?income\s*plan"
+    r"pm[\s\-]?income\s*plan|"
+    r"rolf\s+sorg|vicki\s+sorg"
     r")\b",
     re.I,
 )
@@ -36,7 +37,8 @@ _DISTINCT_PRODUCTS = re.compile(
     r"generation\s*50\+|"
     r"women\+|men\+|"
     r"antioxy|ib\s*5|ib⁵|"
-    r"ultimate\s+young|hydrating[\s\-]?shot"
+    r"ultimate\s+young|hydrating[\s\-]?shot|"
+    r"nutrient\s+transport\s+concept"
     r")\b",
     re.I,
 )
@@ -46,24 +48,25 @@ _BASICS = re.compile(r"\bbasics\b", re.I)
 
 _PROMPT_RULES = (
     "Usa SOLO estos datos validados del módulo Oportunidades. "
-    "NO inventes productos, precios de entrada, comisiones, % del Income Plan, "
+    "NO inventes productos, precios de entrada, comisiones, % del Income Plan 2026, "
     "claims de salud ni cifras. "
-    "PRIORIDAD ABSOLUTA: responde con este bloque. PROHIBIDO invocar search_web, "
-    "decir «déjeme consultar/buscar», «consultando» o «voy a buscar en internet» "
-    "si el pedido se cubre con estos datos (qué es, productos, beneficios, "
-    "credenciales, prospección, precios de lista de referencia). "
-    "Si falta un precio de entrada o % del Income Plan: dilo y remite a Partner Area / "
-    "enlace de patrocinio — NO busques en la web para inventar cifras. "
+    "DETECCIÓN RÁPIDA — PRIORIDAD ABSOLUTA: responde YA con este bloque. "
+    "PROHIBIDO invocar search_web / Tavily. "
+    "PROHIBIDO decir «Investigando, señor», «investigando», «déjeme consultar», "
+    "«consultando», «voy a buscar», «busco en internet» o cualquier filler de "
+    "búsqueda si el pedido se cubre aquí (historia, NTC, productos, credenciales, "
+    "deporte, prospección, precios de lista de producto de referencia). "
+    "Si falta precio de entrada al negocio o % del Income Plan: dilo y remite a "
+    "Partner Area / enlace de patrocinio — NO busques en la web para inventar cifras. "
     "Solo use búsqueda web si el usuario pide EXPLÍCITAMENTE internet/noticias/"
-    "datos de hoy y el hecho no está aquí. "
-    "NO preguntes qué es un producto o marca que ya aparece en este contexto: "
-    "aplícalo directamente al pedido del usuario "
-    "(ideas de venta, copy, prompts, prospección, conceptos creativos, estrategia). "
+    "datos de hoy Y el hecho concreto no está en este bloque. "
+    "NO preguntes qué es un producto o marca que ya aparece aquí: aplícalo YA "
+    "(ideas de venta, copy, prompts, prospección, estrategia). "
     "Si pide CONTENIDO / IDEA / COPY / PROMPT / GUION / PROSPECCIÓN de texto sobre "
     "FitLine o un producto de este catálogo: ENTREGA el texto completo YA, usando "
-    "hechos de empresa/productos/ciencia de este bloque + playbook de marketing CED "
+    "hechos de este bloque + playbook de marketing CED "
     "(hooks específicos, PAS/AIDA/BAB internamente, terminología correcta). "
-    "NO generes imagen. NO digas «no tengo info» si el producto o hecho está aquí. "
+    "NO generes imagen. NO digas «no tengo info» si el hecho está aquí. "
     "NO abras con preguntas básicas (qué es, para qué sirve) — ya lo sabes."
 )
 
@@ -91,6 +94,13 @@ def wants_fitline_knowledge(text: str) -> bool:
         return True
     if _BASICS.search(t) and re.search(
         r"\b(?:fitline|fit\s*line|suplemento|nutrici[oó]n|franquicia)\b",
+        t,
+        re.I,
+    ):
+        return True
+    # NTC / Schengen / Speyer solo con contexto de marca, nutrición o venta directa.
+    if re.search(r"\b(?:ntc|schengen|speyer)\b", t, re.I) and re.search(
+        r"\b(?:fitline|fit\s*line|pm|nutri|suplement|franquicia|sorg)\b",
         t,
         re.I,
     ):

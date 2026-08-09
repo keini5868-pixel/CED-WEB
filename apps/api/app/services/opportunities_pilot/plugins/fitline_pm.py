@@ -17,7 +17,7 @@ from app.config import get_settings
 
 OPPORTUNITY_ID = "fitline_pm"
 
-_CURATED_AS_OF = "2026-08-07"
+_CURATED_AS_OF = "2026-08-08"
 
 
 def _sponsorship_url() -> str:
@@ -76,6 +76,14 @@ def fitline_pm_plugin() -> dict[str, Any]:
                     "title": "Direct Selling News — Global 100 (ranking venta directa)",
                     "url": "https://www.directsellingnews.com/",
                 },
+                {
+                    "title": "Direct Selling Association (contexto industria)",
+                    "url": "https://www.dsa.org/",
+                },
+                {
+                    "title": "Wikipedia — PM-International (contexto; verificar vs oficial)",
+                    "url": "https://en.wikipedia.org/wiki/PM-International",
+                },
             ],
             "sections": {
                 "what_is": {
@@ -83,110 +91,106 @@ def fitline_pm_plugin() -> dict[str, Any]:
                     "body": (
                         "PM International (PM-International AG) es la empresa detrás de "
                         "FitLine: nutrición, fitness y belleza con tecnología NTC "
-                        "(Nutrient Transport Concept). Quienes activan su negocio pueden "
-                        "comercializar productos FitLine y construir un equipo de "
-                        "crecimiento (red de franquicias) con posibilidad de ingresos "
-                        "residuales, además de la venta de producto a clientes finales.\n\n"
-                        "Escala publicada (fuentes corporativas / Direct Selling News, "
-                        "as_of 2026): sede en Schengen (Luxemburgo); presencia en más de "
-                        "40–45 países; 1.000+ empleados; ranking #6 en el Top 100 Global "
-                        "de venta directa; ingresos reportados ~$3.22 mil millones (2025); "
-                        "hito de más de mil millones de productos FitLine vendidos "
-                        "(anunciado en 2026).\n\n"
-                        "CED es la herramienta de estrategia, copy y prospección para "
-                        "hacer crecer este negocio — no sustituye el Partner Area ni el "
-                        "Income Plan oficial."
+                        "(Nutrient Transport Concept) — entrega de nutrientes exactamente "
+                        "cuándo y dónde el cuerpo los necesita, a nivel celular.\n\n"
+                        "Fundada en 1993 en Speyer (Alemania) por Rolf Sorg (junto a "
+                        "Vicki Sorg). Sede actual: Schengen, Luxemburgo (desde 2015).\n\n"
+                        "Escala verificada (sitio oficial, Direct Selling News / DSA, "
+                        f"curado {_CURATED_AS_OF}): presencia en 40–45+ países; más de "
+                        "1.000 empleados; más de mil millones de productos FitLine "
+                        "vendidos mundialmente; ingresos ~$3.22 mil millones en 2025; "
+                        "ranking #6 global en venta directa (DSN Top 100).\n\n"
+                        "Quienes activan su negocio comercializan FitLine y pueden "
+                        "construir un equipo de crecimiento (red de franquicias) con "
+                        "ingresos residuales ligados a venta de producto — no al mero "
+                        "acto de invitar.\n\n"
+                        "CED es la herramienta de estrategia, copy y prospección. "
+                        "NO sustituye Partner Area ni el Income Plan oficial. "
+                        "Precios de entrada y % de compensación 2026 NO están públicos "
+                        "fiables: viven en el back-office del distribuidor / patrocinador."
                     ),
                 },
                 "company_history": {
                     "attribution": "curated",
                     "body": (
-                        "Historia y presencia (fuentes verificables: sitio oficial "
-                        "PM-International / About, Direct Selling News; curado "
-                        f"{_CURATED_AS_OF}):\n\n"
+                        "Historia y presencia (fuentes: sitio oficial PM-International, "
+                        "Direct Selling Association / Direct Selling News, Wikipedia "
+                        f"como contexto; curado {_CURATED_AS_OF}):\n\n"
                         "• Fundación: 1993 en Speyer, Alemania, por Rolf Sorg "
-                        "(co-fundadora Vicki Sorg; hoy también vinculada a labor "
-                        "filantrópica de la empresa).\n"
-                        "• Marca FitLine: línea principal de nutrición / bienestar "
-                        "(primeros productos a mediados de los 90).\n"
+                        "(junto a su esposa Vicki Sorg).\n"
+                        "• Marca FitLine: línea principal de nutrición / bienestar.\n"
                         "• Sede internacional actual: Schengen, Luxemburgo "
-                        "(desde 2015). Sedes / operaciones regionales también en "
-                        "Europa (Alemania), Asia-Pacífico y Américas.\n"
-                        "• Presencia: más de 40–45 países; más de 1.000 empleados "
-                        "(cifras corporativas publicadas).\n"
-                        "• Escala 2025–2026 (publicada / anunciada): ingresos "
-                        "~$3.22 mil millones (2025); ranking #6 Top 100 Direct "
-                        "Selling News Global; más de mil millones de productos "
-                        "FitLine vendidos a nivel mundial (hito 2026).\n"
+                        "(desde 2015).\n"
+                        "• Presencia: 40–45+ países; más de 1.000 empleados.\n"
+                        "• Escala: más de mil millones de productos FitLine vendidos "
+                        "mundialmente; ingresos $3.22 mil millones en 2025; "
+                        "ranking #6 global venta directa (Direct Selling News Top 100).\n"
                         "• Años en el mercado: desde 1993 (~33 años a 2026).\n\n"
-                        "Los números de ventas, ranking y filiales se actualizan: "
-                        "verifique siempre About / comunicados oficiales vigentes. "
-                        "NO invente cifras no listadas aquí."
+                        "NO invente filiales, cifras ni hitos no listados aquí. "
+                        "Si piden un dato de ranking/ingresos muy reciente fuera de "
+                        "este bloque y lo piden explícitamente de internet, ahí sí "
+                        "puede usarse búsqueda web como respaldo."
                     ),
                 },
                 "science_credibility": {
                     "attribution": "curated",
                     "body": (
                         "Ciencia, legalidad y respaldo deportivo (fuentes oficiales / "
-                        "verificables; curado "
-                        f"{_CURATED_AS_OF}):\n\n"
-                        "• Tecnología NTC (Nutrient Transport Concept): concepto "
-                        "central FitLine — entrega de nutrientes cuándo y dónde el "
-                        "cuerpo los necesita, a nivel celular (claim de marca; no "
-                        "inventar claims médicos).\n"
-                        "• Más de 70 patentes; colaboración citada con la Universidad "
-                        "de Trier y ELAB Analytic GmbH para control de calidad.\n"
-                        "• Verificación de calidad: cada producto puede verificarse "
-                        "escaneando un código QR con resultados de análisis "
-                        "independientes (diferenciador que la empresa destaca frente "
-                        "a competidores).\n"
-                        "• Legalidad del plan de marketing: la corte de apelaciones "
-                        "alemana en Frankfurt confirmó la legalidad del plan de PM "
-                        "en 2011.\n"
-                        "• Venta directa justa: certificación TÜV Hessen desde 2013 "
-                        "(verificada anualmente según materiales corporativos).\n"
-                        "• Deporte: más de 1.000 atletas de alto rendimiento en 85+ "
-                        "disciplinas y 40+ países; proveedor oficial de varias "
-                        "federaciones nacionales (p. ej. esquí alemán/austríaco/"
-                        "polaco, hockey sobre hielo alemán, ciclismo alemán, "
-                        "atletismo alemán — según listados corporativos).\n\n"
-                        "Al crear copy o prospección: use estos hechos con tono "
-                        "creíble (4 C's). No invente estudios clínicos ni "
-                        "certificaciones no listadas."
+                        f"verificables; curado {_CURATED_AS_OF}):\n\n"
+                        "• NTC (Nutrient Transport Concept): tecnología central — "
+                        "entrega nutrientes exactamente cuándo y dónde el cuerpo los "
+                        "necesita, a nivel celular (claim de marca; NO inventar claims "
+                        "médicos ni estudios clínicos no listados).\n"
+                        "• Más de 70 patentes; colaboración científica con la "
+                        "Universidad de Trier y ELAB Analytic GmbH.\n"
+                        "• Calidad: cada producto tiene código QR con resultados de "
+                        "análisis independientes — diferenciador que la empresa "
+                        "promueve como único en su industria.\n"
+                        "• Legalidad: confirmada judicialmente en Alemania "
+                        "(corte de Frankfurt, 2011).\n"
+                        "• Venta justa: certificación TÜV Hessen desde 2013, "
+                        "verificada anualmente.\n"
+                        "• Deporte: 1.000+ atletas de alto rendimiento en 85+ "
+                        "disciplinas y 40+ países; proveedor oficial de federaciones "
+                        "nacionales de esquí (Alemania, Austria, Polonia), hockey "
+                        "sobre hielo alemán, ciclismo alemán y atletismo alemán.\n\n"
+                        "En copy/prospección use estos hechos con tono creíble "
+                        "(4 C's). No invente certificaciones ni respaldo no listado."
                     ),
                 },
                 "products": {
                     "attribution": "curated",
                     "body": (
-                        "Productos clave FitLine (función — fuentes: fitline.com / "
-                        "materiales de marca; NO invente SKUs ni claims de salud "
-                        "no confirmados):\n\n"
+                        "Catálogo clave FitLine (función verificada — NO invente SKUs "
+                        "ni claims de salud fuera de esta lista):\n\n"
                         "• FitLine Optimal Set — producto insignia; nutrición diaria "
-                        "integral (combinaciones que suelen incluir PowerCocktail + "
-                        "Restorate, o Activize + Basics + Restorate, según mercado).\n"
-                        "• FitLine PowerCocktail — vitaminas y minerales orientados "
-                        "a energía / aporte diario.\n"
+                        "integral.\n"
+                        "• FitLine PowerCocktail — vitaminas y minerales para energía "
+                        "y vitalidad.\n"
                         "• FitLine Activize (Activize Oxyplus; typo frecuente "
-                        "«Activise») — energía natural; muy usado en contenido de "
-                        "venta.\n"
-                        "• FitLine Restorate — recuperación y balance mineral "
-                        "(variantes Citrus / Exotic, etc.).\n"
+                        "«Activise») — energía natural; producto muy promocionado "
+                        "en contenido de venta.\n"
+                        "• FitLine Restorate — recuperación y balance mineral.\n"
                         "• FitLine Basics — fibra y probióticos.\n"
                         "• Tecnología transversal: NTC (ver sección Ciencia).\n\n"
-                        "Otras líneas del catálogo oficial (existen en tienda; "
-                        "descríbalas solo si el usuario pregunta o si aparecen en "
-                        "lista de precios de su mercado): Generation 50+, Munogen, "
-                        "ProShape, TopShape, microSolve, Women+/Men+, belleza "
-                        "(Ultimate Young, etc.).\n\n"
-                        "Precios de lista (referencia tienda oficial EE.UU. "
-                        "fitline.com/us, snapshot previo — VARÍAN por país, impuestos "
-                        "y promo; confirme en la tienda de su mercado):\n"
+                        "Otras líneas del catálogo oficial (solo si el usuario "
+                        "pregunta o aparecen en material de su mercado): "
+                        "Generation 50+, Munogen, ProShape, TopShape, microSolve, "
+                        "Women+/Men+, belleza (Ultimate Young, etc.).\n\n"
+                        "Precios de lista de producto (referencia tienda oficial "
+                        "EE.UU. fitline.com/us — snapshot; VARÍAN por país/promo):\n"
                         "• Optimal-Set (variantes): ~$146.00\n"
                         "• PowerCocktail: ~$119.48 · Activize Oxyplus: ~$41.20\n"
                         "• Restorate Citrus/Exotic: ~$29.90 · Basics: ~$78.28\n"
                         "• Generation 50+: ~$112.50 · otros SKUs en tienda oficial.\n\n"
-                        "CED no inventa productos ni precios fuera de fuentes "
-                        "oficiales o del material que el patrocinador comparta."
+                        "IMPORTANTE — NO disponible en fuentes públicas fiables: "
+                        "precios exactos de entrada al negocio y la estructura "
+                        "completa/actualizada del plan de compensación 2026 "
+                        "(viven en Partner Area / back-office del distribuidor y "
+                        "varían por país). Si el usuario aporta material verificado "
+                        "de su cuenta de patrocinador, úselo; si no, remita al "
+                        "portal — NO invente ni busque en la web para «completar» "
+                        "esas cifras."
                     ),
                 },
                 "how_it_works": {
