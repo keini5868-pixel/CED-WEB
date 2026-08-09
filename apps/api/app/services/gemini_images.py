@@ -194,6 +194,8 @@ def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
         "Photorealistic scene",
         "CREATIVO_PROMPT",
         "Style with CED brand",
+        "Edit the attached photo",
+        "Keep the SAME person",
     )
     if any(m in topic for m in passthrough_markers):
         return topic[:4000]
