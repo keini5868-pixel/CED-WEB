@@ -194,8 +194,10 @@ def build_base_voice_system(
                     "REGLA CRÍTICA: Ese bloque es SOLO contexto interno del sistema. "
                     "NUNCA lo leas ni lo repitas al usuario. No digas 'Conocimiento interno CED' "
                     "ni líneas con etiquetas [Marketing digital]. Usa la información en lenguaje natural.\n"
-                    "Si el KB no alcanza, usa search_web u otras herramientas sin decir que no tienes información. "
+                    "Si el KB no alcanza Y NO es FitLine/PM cubierto por Oportunidades, "
+                    "usa search_web u otras herramientas sin decir que no tienes información. "
                     "Responde directo como experto interno cuando el contexto lo permita.\n"
+                    "FitLine/PM/productos PM: NUNCA search_web ni «investigando» si hay bloque Oportunidades.\n"
                     "El sistema Retell dice automáticamente «Un momento, señor» al ejecutar herramientas. "
                     "NO repitas ese filler: procede directamente con la herramienta."
                 )

@@ -48,11 +48,14 @@ _PROMPT_RULES = (
     "Usa SOLO estos datos validados del módulo Oportunidades. "
     "NO inventes productos, precios de entrada, comisiones, % del Income Plan, "
     "claims de salud ni cifras. "
-    "Precios de inscripción y plan de compensación: Partner Area / materiales del "
-    "patrocinador — si no están aquí, dilo y remite al enlace de afiliación / mentor; "
-    "NO completes huecos con blogs o rumores. "
-    "Si el dato no está aquí, dilo con honestidad y remite a fuentes oficiales "
-    "(fitline.com / pm-international.com / Partner Area). "
+    "PRIORIDAD ABSOLUTA: responde con este bloque. PROHIBIDO invocar search_web, "
+    "decir «déjeme consultar/buscar», «consultando» o «voy a buscar en internet» "
+    "si el pedido se cubre con estos datos (qué es, productos, beneficios, "
+    "credenciales, prospección, precios de lista de referencia). "
+    "Si falta un precio de entrada o % del Income Plan: dilo y remite a Partner Area / "
+    "enlace de patrocinio — NO busques en la web para inventar cifras. "
+    "Solo use búsqueda web si el usuario pide EXPLÍCITAMENTE internet/noticias/"
+    "datos de hoy y el hecho no está aquí. "
     "NO preguntes qué es un producto o marca que ya aparece en este contexto: "
     "aplícalo directamente al pedido del usuario "
     "(ideas de venta, copy, prompts, prospección, conceptos creativos, estrategia). "
@@ -93,6 +96,42 @@ def wants_fitline_knowledge(text: str) -> bool:
     ):
         return True
     return False
+
+
+# Solo override explícito: internet/noticias/datos de hoy — no «precio de Restorate».
+_EXPLICIT_LIVE_WEB = re.compile(
+    r"(?is)\b(?:"
+    r"busca(?:r|me)?\s+(?:en\s+)?(?:internet|la\s+web|google)|"
+    r"investiga(?:r|me)?\s+(?:en\s+)?(?:internet|la\s+web)|"
+    r"en\s+(?:internet|google|la\s+web)\b|"
+    r"noticias?\b|"
+    r"(?:precio|cuesta|cotiza|vale).{0,48}\b(?:hoy|actual|ahora)\b|"
+    r"\b(?:hoy|ahora|actual)\b.{0,48}\b(?:precio|cuesta|cotiza)\b|"
+    r"informaci[oó]n\s+actualizada|datos\s+actuales|titulares|última\s+hora"
+    r")"
+)
+
+
+def fitline_explicit_live_web_override(text: str) -> bool:
+    """True solo si el usuario pide web/noticias/datos de hoy de forma explícita."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    try:
+        from app.services.cognitive_intents import is_news_intent, is_weather_intent
+
+        if is_news_intent(t) or is_weather_intent(t):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return bool(_EXPLICIT_LIVE_WEB.search(t))
+
+
+def prefers_fitline_over_web(text: str) -> bool:
+    """FitLine/PM: usar Oportunidades primero; web solo con override explícito."""
+    if not wants_fitline_knowledge(text):
+        return False
+    return not fitline_explicit_live_web_override(text)
 
 
 def _section_title(key: str) -> str:

@@ -24,6 +24,10 @@ KB_CONFIDENCE_THRESHOLD = 0.70
 
 
 def _prefers_web_search(query: str) -> bool:
+    from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
+    if prefers_fitline_over_web(query):
+        return False
     if requires_live_web(query):
         return True
     return is_web_research_intent(query) and not is_internal_knowledge_query(query)

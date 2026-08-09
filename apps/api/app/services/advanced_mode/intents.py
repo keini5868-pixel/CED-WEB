@@ -41,5 +41,12 @@ def needs_advanced_full_pipeline(text: str, history_rows: list[dict[str, Any]]) 
     if detail in ("brief", "full", "ask"):
         return True
     if _EXPLICIT_WEB.search(text.strip()):
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            prefers_fitline_over_web,
+        )
+
+        # FitLine/PM: conocimiento Oportunidades primero — no forzar search_web.
+        if prefers_fitline_over_web(text):
+            return False
         return True
     return False

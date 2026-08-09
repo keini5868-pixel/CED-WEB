@@ -28,6 +28,9 @@ Reglas de tools (schemas definen nombre/params — no inventes tools):
   el filler de la tool habla al empezar; luego espera el resultado.
 - Escritura (finanzas/Meta): prepare → «sí» en voz → confirm_*. NUNCA prepare+confirm en el mismo turno. Un «sí» basta si hay borrador. Tras confirm OK: di el mensaje y EN EL MISMO TURNO transition_to_general_assistant.
 - Lecturas: clima→get_environment; hechos/noticias→search_web; finanzas→read_finances.
+- FitLine / PM International / Activize / Restorate / PowerCocktail / Basics u otros
+  productos PM: responde YA con conocimiento Oportunidades del system prompt.
+  PROHIBIDO search_web y PROHIBIDO decir «investigando» / «consultando internet».
 - Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar).
 - YouTube: play/pause/resume/close. Siempre reproduce de inmediato (nunca pidas confirmación antes de reproducir). NUNCA confirmes play sin éxito real de la tool. SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla — sin ofrecer más ayuda. Esta regla NO aplica al resto.
 - Imagen/PDF: generate_image / generar_pdf. NUNCA digas que la imagen o el PDF están listos sin éxito de la tool.
@@ -39,7 +42,7 @@ GENERAL_ASSISTANT_STATE_PROMPT = """
 Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya (también aquí).
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
-- Clima→get_environment. Noticias/hechos→search_web. YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
+- Clima→get_environment. Noticias/hechos→search_web. FitLine/PM/productos PM→SIN search_web (Oportunidades). YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
 - Imagen/PDF: generate_image / generar_pdf — NUNCA confirmes sin éxito.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
@@ -138,8 +141,11 @@ STOP_DRIVE_NAVIGATION_DESCRIPTION = "Detiene la navegación."
 NAVIGATION_STATUS_DESCRIPTION = "Estado/ETA de la navegación."
 
 SEARCH_WEB_DESCRIPTION = (
-    "Noticias/hechos/datos actuales. NO clima (get_environment) ni objeto en cámara "
-    "(search_visible_product)."
+    "Noticias/hechos/datos actuales de internet. "
+    "PROHIBIDO para FitLine, PM International, Activize/Activise, Restorate, "
+    "PowerCocktail, Basics u otros productos PM: esas preguntas usan el conocimiento "
+    "Oportunidades del system prompt — responde directo SIN search_web. "
+    "NO clima (get_environment) ni objeto en cámara (search_visible_product)."
 )
 
 PLAY_YOUTUBE_DESCRIPTION = (
@@ -1932,6 +1938,25 @@ async def execute_search_web_tool(
             user_id,
             {"query": query, "kind": kind},
         )
+        # FitLine/PM: no inventar fallo de búsqueda — el agente debe usar Oportunidades.
+        if result.get("redirect_fitline"):
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            record_tool_metric(
+                call_id=call_id,
+                tool_name="search_web",
+                latency_ms=latency_ms,
+                ok=True,
+                query=query,
+            )
+            return {
+                "result": (
+                    "No use internet. Responda YA con el conocimiento Oportunidades "
+                    "FitLine/PM del system prompt. No diga que investigó ni consultó la web."
+                ),
+                "latency_ms": latency_ms,
+                "ok": True,
+                "redirect_fitline": True,
+            }
         spoken = str(result.get("spoken") or "").strip()
         ok = bool(result.get("ok", True)) and bool(spoken) and not _spoken_indicates_failure(
             spoken

@@ -5,10 +5,13 @@ from __future__ import annotations
 from app.services.chat_module_context import fetch_module_stream_context
 from app.services.opportunities_pilot.fitline_knowledge import (
     append_fitline_knowledge_if_needed,
+    fitline_explicit_live_web_override,
     format_fitline_knowledge_for_prompt,
+    prefers_fitline_over_web,
     wants_fitline_knowledge,
 )
-from app.services.text_chat import _build_chat_system_light
+from app.services.retell_custom_llm import resolve_web_search_request
+from app.services.text_chat import _build_chat_system_light, _can_stream_chat_text
 
 
 def test_wants_fitline_on_brand_and_products():
@@ -87,3 +90,35 @@ def test_prompt_for_activise_is_text_not_image_and_gets_fitline():
     system = _build_chat_system_light("user-test", msg)
     assert "Oportunidades" in system
     assert "NO generes imagen" in system or "no generes imagen" in system.lower()
+
+
+def test_prefers_fitline_over_web_for_product_questions():
+    assert prefers_fitline_over_web("precio de Restorate") is True
+    assert prefers_fitline_over_web("qué es Activize") is True
+    assert prefers_fitline_over_web("beneficios de FitLine Basics") is True
+    assert fitline_explicit_live_web_override("precio de Restorate") is False
+    # Override explícito: internet / precio de hoy
+    assert prefers_fitline_over_web("busca FitLine en internet") is False
+    assert prefers_fitline_over_web("precio actual de Restorate hoy") is False
+    assert fitline_explicit_live_web_override("busca FitLine en google") is True
+
+
+def test_voice_resolve_web_search_skips_fitline_internal():
+    assert resolve_web_search_request("precio de Restorate", []) is None
+    assert resolve_web_search_request("qué es Activize", []) is None
+    # Con override sí puede ir a web
+    req = resolve_web_search_request("busca FitLine en internet", [])
+    assert req is not None
+    assert "FitLine" in req["query"] or "fitline" in req["query"].lower()
+
+
+def test_chat_can_stream_fitline_price_without_blocking_for_web():
+    assert _can_stream_chat_text("precio de Restorate") is True
+
+
+def test_advanced_pipeline_not_forced_for_fitline_investiga():
+    from app.services.advanced_mode.intents import needs_advanced_full_pipeline
+
+    # «investiga» genérico + FitLine → Oportunidades, no forzar search_web
+    assert needs_advanced_full_pipeline("investiga qué es FitLine", []) is False
+    assert needs_advanced_full_pipeline("busca noticias de hoy", []) is True

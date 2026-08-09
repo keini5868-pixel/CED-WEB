@@ -184,6 +184,10 @@ def _is_fragment_continuation(last: str, prev: str) -> bool:
 
 
 def _needs_internet_lookup(text: str) -> bool:
+    from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
+    if prefers_fitline_over_web(text):
+        return False
     if is_internal_knowledge_query(text) or is_personal_vent_intent(text):
         return False
     if is_weather_intent(text) or is_news_intent(text):

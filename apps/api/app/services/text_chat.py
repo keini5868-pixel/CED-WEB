@@ -990,6 +990,10 @@ def _ensure_chat_reply_quality(
 
     if not user_text or not reply:
         return reply
+    from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
+    if prefers_fitline_over_web(user_text):
+        return reply
     if not (requires_live_web(user_text) or is_web_research_intent(user_text)):
         return reply
     if not is_unwanted_voice_reply(reply, user_text=user_text):
@@ -2948,10 +2952,13 @@ def send_message(
         )
 
     if route.intent == "web_search" and route.speakable:
-        return _finish(
-            _finalize_chat_reply(route.speakable),
-            route_meta=route.to_dict(),
-        )
+        from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
+        if not prefers_fitline_over_web(text):
+            return _finish(
+                _finalize_chat_reply(route.speakable),
+                route_meta=route.to_dict(),
+            )
 
     messages = _anthropic_messages(history)
     messages.append({"role": "user", "content": text})
@@ -3256,11 +3263,13 @@ def _can_stream_chat_text(
         return False
     if is_generate_image_intent(text):
         return True
-    if is_web_research_intent(text):
+    from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
+    if is_web_research_intent(text) and not prefers_fitline_over_web(text):
         return False
     if is_environment_intent(text):
         return False
-    if requires_live_web(text):
+    if requires_live_web(text) and not prefers_fitline_over_web(text):
         return False
     if _needs_chat_tools(text) and not (is_weather_intent(text) or is_news_intent(text)):
         return False

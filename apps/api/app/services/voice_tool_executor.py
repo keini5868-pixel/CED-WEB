@@ -586,6 +586,23 @@ async def _execute_voice_tool_body(
         if name == "search_web":
             query = str(params.get("query") or "").strip()
             kind = str(params.get("kind") or "general")
+            from app.services.opportunities_pilot.fitline_knowledge import (
+                prefers_fitline_over_web,
+            )
+
+            # FitLine/PM: no gastar saldo ni Tavily; el LLM usa Oportunidades.
+            if prefers_fitline_over_web(query):
+                return {
+                    "ok": True,
+                    "status": "success",
+                    "redirect_fitline": True,
+                    "spoken": "",
+                    "source": "fitline_opportunities",
+                    "message": (
+                        "Use el conocimiento Oportunidades FitLine/PM del system prompt. "
+                        "No diga que consultó internet."
+                    ),
+                }
             from app.services.web_search_quota import gate_web_search
 
             gated = gate_web_search(user_id)

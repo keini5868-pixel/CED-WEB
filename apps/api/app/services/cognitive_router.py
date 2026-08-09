@@ -142,9 +142,16 @@ def route_message(
     hit = hits[0] if hits else None
     mem_ctx = _memory_context(user_id, raw)
 
-    prefers_web = requires_live_web(raw) or (
-        is_web_research_intent(raw) and not is_internal_knowledge_query(raw)
-    ) or analysis.primary == CognitiveIntent.WEB_SEARCH
+    from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
+    prefers_web = (
+        not prefers_fitline_over_web(raw)
+        and (
+            requires_live_web(raw)
+            or (is_web_research_intent(raw) and not is_internal_knowledge_query(raw))
+            or analysis.primary == CognitiveIntent.WEB_SEARCH
+        )
+    )
 
     if hit and should_use_internal_brain(raw, hit) and not prefers_web:
         ctx = format_hits_for_prompt(hits)

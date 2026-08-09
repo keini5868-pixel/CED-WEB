@@ -421,6 +421,19 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
 
     volatile = is_volatile_query(raw)
 
+    from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
+    if prefers_fitline_over_web(raw):
+        return IntentAnalysis(
+            primary=CognitiveIntent.INTERNAL_KNOWLEDGE,
+            web_kind="general",
+            needs_web=False,
+            needs_advanced=False,
+            needs_advanced_confirm=False,
+            has_advanced_confirm=False,
+            is_volatile=False,
+        )
+
     prefers_web = requires_live_web(raw) or (
         is_web_research_intent(raw) and not is_internal_knowledge_query(raw)
     )

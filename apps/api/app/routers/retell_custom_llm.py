@@ -712,6 +712,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
         user_key = _normalize_user_key(user_text)
         pending_web = None if is_gemini_standalone_voice_test() else resolve_web_search_request(user_text, transcript)
+        if pending_web:
+            from app.services.opportunities_pilot.fitline_knowledge import (
+                prefers_fitline_over_web,
+            )
+
+            if prefers_fitline_over_web(user_text):
+                logger.info(
+                    "[RETELL-ORCH] FitLine/PM preempts web resolve call=%s",
+                    call_id,
+                )
+                pending_web = None
         strict_module_early = None
         if not is_gemini_standalone_voice_test():
             # Un ancla estricta de módulo (ej. "resumen de mis finanzas", "hazme un pdf")
@@ -1349,43 +1360,70 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 kind = str(pending_web.get("kind") or "general")
                 query = str(pending_web.get("query") or user_text).strip()
                 if query:
-                    await fire_latency_filler("web_search")
-                    try:
-                        tool_result = await asyncio.wait_for(
-                            execute_voice_tool(
-                                "search_web",
-                                uid,
-                                {"query": query, "kind": kind},
-                            ),
-                            timeout=SEARCH_WEB_TIMEOUT_SEC + 2.0,
-                        )
-                        spoken = str(tool_result.get("spoken") or "").strip()
-                        if tool_result.get("status") == "success" and spoken:
-                            web_content = format_web_delivery(kind, spoken)
-                        else:
-                            web_content = WEB_SEARCH_VOICE_FALLBACK
-                    except asyncio.TimeoutError:
-                        logger.warning(
-                            "[RETELL-GEMINI] fast-path search_web timeout call=%s query=%s",
-                            call_id,
-                            query[:80],
-                        )
-                        web_content = WEB_SEARCH_VOICE_FALLBACK
-                    except Exception:  # noqa: BLE001
-                        logger.exception(
-                            "[RETELL-GEMINI] fast-path search_web failed call=%s",
-                            call_id,
-                        )
-                        web_content = WEB_SEARCH_VOICE_FALLBACK
-                    if await deliver_voice(web_content):
+                    from app.services.opportunities_pilot.fitline_knowledge import (
+                        prefers_fitline_over_web,
+                    )
+
+                    # FitLine/PM: no filler ni Tavily — deja que el LLM use Oportunidades.
+                    if prefers_fitline_over_web(query) or prefers_fitline_over_web(user_text):
+                        pending_web = None
                         logger.info(
-                            "[RETELL-GEMINI] fast-path web search call=%s kind=%s",
+                            "[RETELL-ORCH] FitLine/PM cancela web fast-path call=%s",
                             call_id,
-                            kind,
                         )
-                        return
-                    await anti_silence_if_unanswered(reason="web_fast_path_failed")
-                    return
+                    else:
+                        await fire_latency_filler("web_search")
+                        try:
+                            tool_result = await asyncio.wait_for(
+                                execute_voice_tool(
+                                    "search_web",
+                                    uid,
+                                    {"query": query, "kind": kind},
+                                ),
+                                timeout=SEARCH_WEB_TIMEOUT_SEC + 2.0,
+                            )
+                            if tool_result.get("redirect_fitline"):
+                                pending_web = None
+                                logger.info(
+                                    "[RETELL-ORCH] search_web redirect FitLine call=%s",
+                                    call_id,
+                                )
+                            else:
+                                spoken = str(tool_result.get("spoken") or "").strip()
+                                if tool_result.get("status") == "success" and spoken:
+                                    web_content = format_web_delivery(kind, spoken)
+                                else:
+                                    web_content = WEB_SEARCH_VOICE_FALLBACK
+                                if await deliver_voice(web_content):
+                                    logger.info(
+                                        "[RETELL-GEMINI] fast-path web search call=%s kind=%s",
+                                        call_id,
+                                        kind,
+                                    )
+                                    return
+                                await anti_silence_if_unanswered(reason="web_fast_path_failed")
+                                return
+                        except asyncio.TimeoutError:
+                            logger.warning(
+                                "[RETELL-GEMINI] fast-path search_web timeout call=%s query=%s",
+                                call_id,
+                                query[:80],
+                            )
+                            web_content = WEB_SEARCH_VOICE_FALLBACK
+                            if await deliver_voice(web_content):
+                                return
+                            await anti_silence_if_unanswered(reason="web_fast_path_failed")
+                            return
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "[RETELL-GEMINI] fast-path search_web failed call=%s",
+                                call_id,
+                            )
+                            web_content = WEB_SEARCH_VOICE_FALLBACK
+                            if await deliver_voice(web_content):
+                                return
+                            await anti_silence_if_unanswered(reason="web_fast_path_failed")
+                            return
 
             if uid and is_camera_deactivation_intent(user_text):
                 if not turn_already_handled(call_id, scheduled_rid):

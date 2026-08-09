@@ -501,6 +501,15 @@ class GeminiVoiceLlm:
 
     @staticmethod
     def _search_web_tool_payload(tool_result: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+        if tool_result.get("redirect_fitline"):
+            spoken = str(tool_result.get("spoken") or "").strip()
+            return spoken, {
+                "status": "success",
+                "redirect_fitline": True,
+                "spoken": spoken,
+                "source": "fitline_opportunities",
+                "message": str(tool_result.get("message") or ""),
+            }
         if tool_result.get("fallback") or tool_result.get("status") == "timeout":
             spoken = str(
                 tool_result.get("spoken") or WEB_SEARCH_VOICE_FALLBACK
@@ -1129,10 +1138,15 @@ class GeminiVoiceLlm:
             )
             return
 
+        from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
         needs_external_data = (
-            requires_live_web(user_text)
-            or is_web_research_intent(user_text)
-            or _needs_internet_lookup(user_text)
+            not prefers_fitline_over_web(user_text)
+            and (
+                requires_live_web(user_text)
+                or is_web_research_intent(user_text)
+                or _needs_internet_lookup(user_text)
+            )
         )
         internal_hit = best_internal_answer(user_text)
         use_internal = (
@@ -1194,9 +1208,11 @@ class GeminiVoiceLlm:
         )
 
         system = self._build_draft_system(user_text)
+        # FitLine/PM: sin tools — evita search_web + filler «Investigando, señor».
+        fitline_internal = prefers_fitline_over_web(user_text)
         config = types.GenerateContentConfig(
             system_instruction=system,
-            tools=[self.tools],
+            tools=None if fitline_internal else [self.tools],
             temperature=0.4,
             max_output_tokens=max_tokens,
         )
@@ -1261,6 +1277,16 @@ class GeminiVoiceLlm:
             for fc in function_calls:
                 name = str(fc.name or "")
                 args = _function_call_args(fc)
+                # FitLine/PM: ignorar search_web (no filler «Investigando»).
+                if name == "search_web" and (
+                    prefers_fitline_over_web(user_text)
+                    or prefers_fitline_over_web(str(args.get("query") or ""))
+                ):
+                    logger.info(
+                        "[RETELL-GEMINI] skip search_web FitLine/PM user=%s",
+                        (self.user_id or "?")[:8],
+                    )
+                    continue
                 logger.info(
                     "[RETELL-GEMINI] tool defer=%s args=%s user=%s",
                     name,
@@ -1280,26 +1306,64 @@ class GeminiVoiceLlm:
                     )
                 deferred_calls.append(DeferredToolCall(name=name, args=tool_args))
 
-            self._deferred_batch = DeferredToolBatch(
-                calls=deferred_calls,
-                user_text=user_text,
-                model_parts=model_parts,
-                last_content=last,
-                on_web_fallback=lambda: setattr(self, "_web_search_fallback", True),
-            )
-            ack = combined_tool_acknowledgment([c.name for c in deferred_calls])
-            logger.info(
-                "[RETELL-GEMINI] tool ack immediate user=%s ack=%s",
-                (self.user_id or "?")[:8],
-                ack[:60],
-            )
-            yield ResponseResponse(
-                response_id=request.response_id,
-                content=_delivery_text(ack),
-                content_complete=False,
-                end_call=False,
-            )
-            return
+            if not deferred_calls:
+                # Solo había search_web FitLine — responder con conocimiento interno.
+                text_only = _delivery_text(_extract_text(response))
+                if not text_only or text_only == FALLBACK_REPLY:
+                    text_only = await self.generate_natural_reply(
+                        contents=[*self._history, last],
+                        user_text=user_text,
+                        overlay=(
+                            "Responde YA con el conocimiento Oportunidades FitLine/PM "
+                            "del system prompt. PROHIBIDO decir investigando o buscar internet."
+                        ),
+                        path="fitline_no_web",
+                        timeout_sec=timeout_sec,
+                        max_tokens=max_tokens,
+                        with_tools=False,
+                    )
+                if text_only:
+                    self._history = _truncate_contents(
+                        [
+                            *self._history,
+                            last,
+                            types.Content(
+                                role="model",
+                                parts=[types.Part(text=text_only)],
+                            ),
+                        ],
+                        max_turns=MAX_HISTORY_TURNS,
+                    )
+                    yield ResponseResponse(
+                        response_id=request.response_id,
+                        content=_delivery_text(text_only),
+                        content_complete=True,
+                        end_call=False,
+                    )
+                    return
+                # si sigue vacío, cae al path normal de texto más abajo
+
+            if deferred_calls:
+                self._deferred_batch = DeferredToolBatch(
+                    calls=deferred_calls,
+                    user_text=user_text,
+                    model_parts=model_parts,
+                    last_content=last,
+                    on_web_fallback=lambda: setattr(self, "_web_search_fallback", True),
+                )
+                ack = combined_tool_acknowledgment([c.name for c in deferred_calls])
+                logger.info(
+                    "[RETELL-GEMINI] tool ack immediate user=%s ack=%s",
+                    (self.user_id or "?")[:8],
+                    ack[:60],
+                )
+                yield ResponseResponse(
+                    response_id=request.response_id,
+                    content=_delivery_text(ack),
+                    content_complete=False,
+                    end_call=False,
+                )
+                return
 
         text_response = _delivery_text(_extract_text(response))
         if text_response:
