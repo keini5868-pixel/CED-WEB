@@ -345,7 +345,13 @@ def send_advanced_message(
         return image_result
 
     anthropic_messages = _anthropic_messages(history_rows)
-    anthropic_messages.append({"role": "user", "content": text})
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        with_fitline_user_prefix,
+    )
+
+    anthropic_messages.append(
+        {"role": "user", "content": with_fitline_user_prefix(text)}
+    )
 
     try:
         from app.domain.ced_identity import creator_partnership_overlay_for_user
@@ -694,7 +700,14 @@ def iter_advanced_message_stream(
         yield from _yield_done_cached(user_id, text, result)
         return
 
-    stream_messages = [*history_for_stream(history), {"role": "user", "content": text}]
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        with_fitline_user_prefix,
+    )
+
+    stream_messages = [
+        *history_for_stream(history),
+        {"role": "user", "content": with_fitline_user_prefix(text)},
+    ]
     max_tokens = stream_max_tokens(text)
     stream_system = _stream_system_with_clock(user_id, user_text=text)
 

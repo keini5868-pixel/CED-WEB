@@ -2961,7 +2961,11 @@ def send_message(
             )
 
     messages = _anthropic_messages(history)
-    messages.append({"role": "user", "content": text})
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        with_fitline_user_prefix,
+    )
+
+    messages.append({"role": "user", "content": with_fitline_user_prefix(text)})
     try:
         system = _build_chat_system(user_id, text, route, conversation_id)
     except Exception:  # noqa: BLE001
@@ -3705,7 +3709,11 @@ def iter_send_message_stream(
         return
 
     messages = _anthropic_messages(history)
-    messages.append({"role": "user", "content": text})
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        with_fitline_user_prefix,
+    )
+
+    messages.append({"role": "user", "content": with_fitline_user_prefix(text)})
     try:
         system = _build_chat_system_light(user_id, text)
     except Exception:  # noqa: BLE001

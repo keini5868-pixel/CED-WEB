@@ -46,6 +46,9 @@ def test_format_includes_curated_products_not_invented():
     assert "Frankfurt" in block or "2011" in block
     assert "TÜV" in block or "TUV" in block.upper() or "Tüv" in block
     assert "QR" in block
+    assert "Nutrient Transport Concept" in block
+    assert "NO «Nutrient Timing»" in block or "NO \"Nutrient Timing\"" in block
+    assert "HECHOS OBLIGATORIOS" in block
     assert "Partner Area" in block or "no invent" in block.lower()
     assert "compensación 2026" in block.lower() or "income plan" in block.lower()
     assert "Prospección" in block or "prospección" in block.lower()
@@ -133,3 +136,15 @@ def test_advanced_pipeline_not_forced_for_fitline_investiga():
     # «investiga» genérico + FitLine → Oportunidades, no forzar search_web
     assert needs_advanced_full_pipeline("investiga qué es FitLine", []) is False
     assert needs_advanced_full_pipeline("busca noticias de hoy", []) is True
+
+
+def test_fitline_user_prefix_anchors_facts():
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        with_fitline_user_prefix,
+    )
+
+    out = with_fitline_user_prefix("qué es FitLine")
+    assert out.startswith("[CED-OPORTUNIDADES")
+    assert "Nutrient Transport" in out
+    assert "1993" in out
+    assert with_fitline_user_prefix("hola") == "hola"

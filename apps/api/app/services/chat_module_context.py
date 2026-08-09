@@ -16,7 +16,10 @@ _MODULE_CONTEXT_RULES = (
 _FITLINE_MODULE_CONTEXT_RULES = (
     "Responde en español latinoamericano, natural y accionable. "
     "Usa SOLO los datos FitLine/PM del contexto (módulo Oportunidades); "
-    "no inventes productos, precios ni claims. "
+    "no inventes productos, precios, años de fundación ni claims. "
+    "NTC = Nutrient Transport Concept (nunca «Timing»). "
+    "Fundación 1993 Speyer / Rolf Sorg; sede Schengen desde 2015. "
+    "PROHIBIDO decir investigando o buscar en internet. "
     "Si el usuario pide idea, copy, prompt o contenido de texto: entrégalo "
     "completo y útil YA — no preguntes qué es el producto ni generes imagen."
 )

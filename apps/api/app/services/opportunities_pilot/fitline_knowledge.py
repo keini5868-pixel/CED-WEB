@@ -80,6 +80,45 @@ _FITLINE_CONTENT_DELIVERY_RULES = (
     "NO inventes comisiones ni precios de entrada."
 )
 
+# Tarjeta corta al inicio del bloque — los LLM suelen ignorar el final del system.
+_FACT_CARD = (
+    "HECHOS OBLIGATORIOS FITLINE/PM (NO contradiga ni «corrija» estos datos):\n"
+    "• Fundación: 1993 en Speyer, Alemania, por Rolf Sorg (junto a Vicki Sorg).\n"
+    "• Sede actual: Schengen, Luxemburgo (desde 2015).\n"
+    "• Escala: 40–45+ países; 1.000+ empleados; $3.22 mil millones (2025); "
+    "#6 venta directa (DSN Top 100); 1.000+ millones de productos FitLine vendidos.\n"
+    "• NTC = Nutrient Transport Concept (NO «Nutrient Timing»). "
+    "Nutrientes cuándo y dónde el cuerpo los necesita, a nivel celular.\n"
+    "• Credenciales: 70+ patentes; Univ. Trier + ELAB; QR de análisis por producto; "
+    "legalidad Frankfurt 2011; TÜV Hessen desde 2013; 1.000+ atletas / 85+ disciplinas.\n"
+    "• Productos clave: Optimal Set (insignia), PowerCocktail, Activize (energía), "
+    "Restorate (minerales/recuperación), Basics (fibra/probióticos).\n"
+    "• NO invente años de fundación, expansión de NTC, ni productos estrella "
+    "fuera de esta lista. Precios de entrada / Income Plan 2026 → Partner Area."
+)
+
+_USER_TURN_PREFIX = (
+    "[CED-OPORTUNIDADES FitLine/PM] Use SOLO el conocimiento Oportunidades del "
+    "system (tarjeta de hechos + secciones). "
+    "NTC = Nutrient Transport Concept. Fundación 1993 Speyer / Rolf Sorg. "
+    "Sede Schengen desde 2015. PROHIBIDO decir investigando o buscar en internet. "
+    "NO invente productos ni fechas.\n\n"
+)
+
+
+def fitline_user_turn_prefix(user_text: str) -> str:
+    """Prefijo duro en el mensaje del usuario para anclar hechos en chat/voz."""
+    if not prefers_fitline_over_web(user_text):
+        return ""
+    return _USER_TURN_PREFIX
+
+
+def with_fitline_user_prefix(user_text: str) -> str:
+    prefix = fitline_user_turn_prefix(user_text)
+    if not prefix:
+        return user_text
+    return f"{prefix}{user_text}"
+
 
 def wants_fitline_knowledge(text: str) -> bool:
     """True si el mensaje habla de PM/FitLine o productos curados del catálogo."""
@@ -166,6 +205,7 @@ def format_fitline_knowledge_for_prompt(*, max_chars: int = 16_000) -> str:
     title = str(plugin.get("title") or "PM International / FitLine")
     parts: list[str] = [
         f"CONOCIMIENTO CURADO — {title} (módulo Oportunidades, as_of={as_of}).",
+        _FACT_CARD,
         _PROMPT_RULES,
     ]
 
