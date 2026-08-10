@@ -59,6 +59,9 @@ def test_format_includes_curated_products_not_invented():
     assert "Investigando" in block or "investigando" in block.lower()
     assert "NO inventes" in block or "no inventes" in block.lower() or "NO invent" in block
     assert "módulo Oportunidades" in block
+    assert "VENDEDOR" in block or "FRANQUICIADOR" in block
+    assert "CIERRE ESTRATÉGICO" in block or "cierre" in block.lower()
+    assert "search_web" in block.lower() or "Tavily" in block or "PROHIBIDO" in block
 
 
 def test_wants_fitline_expanded_catalog_skus():
@@ -202,13 +205,24 @@ def test_advanced_pipeline_not_forced_for_fitline_investiga():
     assert needs_advanced_full_pipeline("busca noticias de hoy", []) is True
 
 
-def test_fitline_user_prefix_anchors_facts():
+def test_fitline_sales_closer_is_internal_only():
     from app.services.opportunities_pilot.fitline_knowledge import (
-        with_fitline_user_prefix,
+        fitline_sales_closer_overlay,
     )
 
-    out = with_fitline_user_prefix("qué es FitLine")
-    assert out.startswith("[CED-OPORTUNIDADES")
-    assert "Nutrient Transport" in out
-    assert "1993" in out
-    assert with_fitline_user_prefix("hola") == "hola"
+    overlay = fitline_sales_closer_overlay()
+    assert "VENDEDOR" in overlay or "FRANQUICIADOR" in overlay
+    assert "SOLO ESTE TEMA" in overlay or "ÚNICAMENTE" in overlay
+    assert "search_web" in overlay.lower() or "Tavily" in overlay
+    assert "PROHIBIDO" in overlay
+    # Compacto: no debe ser un novelón de costo
+    assert len(overlay) < 3500
+
+
+def test_voice_system_includes_sales_closer_for_fitline():
+    from app.services.voice_llm_common import build_base_voice_system
+
+    format_fitline_knowledge_for_prompt.cache_clear()
+    system = build_base_voice_system("user-test", "qué es FitLine")
+    assert "FRANQUICIADOR" in system or "VENDEDOR" in system
+    assert "CIERRE" in system.upper() or "cierre" in system.lower()
