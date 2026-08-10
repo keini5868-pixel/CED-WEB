@@ -8,8 +8,10 @@ alwaysApply: true
 Cuando el usuario pregunta sobre FitLine, PM International o sus productos:
 
 1. **Priorizar siempre** el conocimiento interno del módulo Oportunidades (`fitline_knowledge` / plugin `fitline_pm`). No buscar en la web primero.
-2. **Evitar** fillers tipo «déjame consultar» / «consultando» que disparan Tavily y fallan sin saldo.
+2. **Evitar** fillers tipo «déjame consultar» / «consultando» / «Investigando, señor» que disparan Tavily.
 3. **Solo** recurrir a búsqueda web (Tavily) si la pregunta no está cubierta internamente (muy específica, actualizada, o el usuario pide explícitamente internet/noticias/datos de hoy).
 4. Aplica en los **3 modos**: voz, chat y avanzado.
+5. **NO inventar** precios de entrada al negocio ni plan de compensación actualizado — Partner Area / material del patrocinador.
+6. Hechos curados incluyen: historia 1993/Speyer→Schengen, NTC, GMP, Cologne List®, alianzas ATP/deporte, PM We Care, catálogo Optimal Set/PowerCocktail/Activize/Restorate/Basics.
 
 Helpers: `prefers_fitline_over_web`, `fitline_explicit_live_web_override` en `apps/api/app/services/opportunities_pilot/fitline_knowledge.py`.

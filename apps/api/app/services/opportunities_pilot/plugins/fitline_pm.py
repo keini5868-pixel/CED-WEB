@@ -17,7 +17,7 @@ from app.config import get_settings
 
 OPPORTUNITY_ID = "fitline_pm"
 
-_CURATED_AS_OF = "2026-08-08"
+_CURATED_AS_OF = "2026-08-10"
 
 
 def _sponsorship_url() -> str:
@@ -135,27 +135,52 @@ def fitline_pm_plugin() -> dict[str, Any]:
                 "science_credibility": {
                     "attribution": "curated",
                     "body": (
-                        "Ciencia, legalidad y respaldo deportivo (fuentes oficiales / "
-                        f"verificables; curado {_CURATED_AS_OF}):\n\n"
+                        "Ciencia, calidad, anti-dopaje, legalidad y deporte "
+                        f"(fuentes oficiales / verificables; curado {_CURATED_AS_OF}):\n\n"
+                        "TECNOLOGÍA Y CALIDAD\n"
                         "• NTC (Nutrient Transport Concept): tecnología central — "
                         "entrega nutrientes exactamente cuándo y dónde el cuerpo los "
                         "necesita, a nivel celular (claim de marca; NO inventar claims "
                         "médicos ni estudios clínicos no listados).\n"
                         "• Más de 70 patentes; colaboración científica con la "
                         "Universidad de Trier y ELAB Analytic GmbH.\n"
-                        "• Calidad: cada producto tiene código QR con resultados de "
-                        "análisis independientes — diferenciador que la empresa "
+                        "• Cada producto tiene código QR con resultados de análisis "
+                        "independientes verificables — diferenciador que la empresa "
                         "promueve como único en su industria.\n"
-                        "• Legalidad: confirmada judicialmente en Alemania "
+                        "• Manufactura en Alemania bajo GMP (Buenas Prácticas de "
+                        "Manufactura).\n\n"
+                        "CERTIFICACIÓN ANTI-DOPAJE — Cologne List®\n"
+                        "• Todos los productos FitLine certificados en la Cologne "
+                        "List® desde hace ~20 años.\n"
+                        "• PM International fue socio fundador de esta iniciativa.\n"
+                        "• Cero casos positivos de dopaje registrados en su historial "
+                        "de análisis (según comunicación de la empresa).\n\n"
+                        "LEGALIDAD Y VENTA JUSTA\n"
+                        "• Legalidad confirmada judicialmente en Alemania "
                         "(corte de Frankfurt, 2011).\n"
-                        "• Venta justa: certificación TÜV Hessen desde 2013, "
-                        "verificada anualmente.\n"
-                        "• Deporte: 1.000+ atletas de alto rendimiento en 85+ "
-                        "disciplinas y 40+ países; proveedor oficial de federaciones "
-                        "nacionales de esquí (Alemania, Austria, Polonia), hockey "
-                        "sobre hielo alemán, ciclismo alemán y atletismo alemán.\n\n"
+                        "• Certificación de venta justa TÜV Hessen desde 2013, "
+                        "verificada anualmente.\n\n"
+                        "ALIANZAS DEPORTIVAS\n"
+                        "• Socio oficial del ATP Tour, Swiss Sports Aid, Comité "
+                        "Paralímpico de Corea, y federaciones nacionales de esquí "
+                        "(Alemania, Austria, Polonia), hockey sobre hielo alemán, "
+                        "ciclismo alemán y atletismo alemán.\n"
+                        "• Más de 1.000 atletas de alto rendimiento en 85+ "
+                        "disciplinas y 40+ países confían en FitLine.\n\n"
                         "En copy/prospección use estos hechos con tono creíble "
                         "(4 C's). No invente certificaciones ni respaldo no listado."
+                    ),
+                },
+                "social_responsibility": {
+                    "attribution": "curated",
+                    "body": (
+                        "Responsabilidad social — Fundación «PM We Care» "
+                        f"(curado {_CURATED_AS_OF}):\n\n"
+                        "• Más de $3 millones donados.\n"
+                        "• Más de 800 apadrinamientos de niños.\n\n"
+                        "Use este ángulo en copy de marca/credibilidad cuando "
+                        "aporte al mensaje; no invente montos ni programas "
+                        "adicionales no listados aquí."
                     ),
                 },
                 "products": {
@@ -295,9 +320,10 @@ def fitline_pm_plugin() -> dict[str, Any]:
                         "• Dolor concreto + producto (PAS): energía post-trabajo → "
                         "Activize; recuperación → Restorate; rutina diaria → "
                         "Optimal Set / Basics.\n"
-                        "• Credibilidad (4 C's): NTC + QR/ELAB, 70+ patentes, "
-                        "TÜV Hessen, legalidad 2011, atletas/federaciones, "
-                        "escala #6 / $3.22B — sin sonar a exageración.\n"
+                        "• Credibilidad (4 C's): NTC + QR/ELAB, 70+ patentes, GMP "
+                        "Alemania, Cologne List® (anti-dopaje, socio fundador), "
+                        "TÜV Hessen, legalidad 2011, ATP/federaciones/atletas, "
+                        "PM We Care, escala #6 / $3.22B — sin sonar a exageración.\n"
                         "• BAB: antes (cansancio, inconsistencia) → después "
                         "(rutina FitLine) → puente (probar Optimal Set / "
                         "Activize).\n"

@@ -13,14 +13,16 @@ from app.services.opportunities_pilot.catalog import get_plugin
 from app.services.opportunities_pilot.plugins.fitline_pm import OPPORTUNITY_ID
 from app.services.opportunities_pilot.synthesize import SECTION_ORDER
 
-# Marcas / empresa / fundadores / sede
+# Marcas / empresa / fundadores / sede / credenciales distintivas
 _BRAND = re.compile(
     r"\b(?:"
     r"fit\s*-?\s*line|fitline|"
     r"pm[\s\-]?international|pm\s*international|"
     r"pme\s*business|pmebusiness|"
     r"pm[\s\-]?income\s*plan|"
-    r"rolf\s+sorg|vicki\s+sorg"
+    r"rolf\s+sorg|vicki\s+sorg|"
+    r"pm\s*we\s*care|cologne\s*list|lista\s*(?:de\s*)?colonia|"
+    r"nutrient\s+transport\s+concept"
     r")\b",
     re.I,
 )
@@ -37,8 +39,7 @@ _DISTINCT_PRODUCTS = re.compile(
     r"generation\s*50\+|"
     r"women\+|men\+|"
     r"antioxy|ib\s*5|ib⁵|"
-    r"ultimate\s+young|hydrating[\s\-]?shot|"
-    r"nutrient\s+transport\s+concept"
+    r"ultimate\s+young|hydrating[\s\-]?shot"
     r")\b",
     re.I,
 )
@@ -89,12 +90,19 @@ _FACT_CARD = (
     "#6 venta directa (DSN Top 100); 1.000+ millones de productos FitLine vendidos.\n"
     "• NTC = Nutrient Transport Concept (NO «Nutrient Timing»). "
     "Nutrientes cuándo y dónde el cuerpo los necesita, a nivel celular.\n"
-    "• Credenciales: 70+ patentes; Univ. Trier + ELAB; QR de análisis por producto; "
-    "legalidad Frankfurt 2011; TÜV Hessen desde 2013; 1.000+ atletas / 85+ disciplinas.\n"
+    "• Calidad: 70+ patentes; Univ. Trier + ELAB; QR de análisis independientes; "
+    "manufactura en Alemania bajo GMP.\n"
+    "• Anti-dopaje: Cologne List® (~20 años; PM socio fundador); 0 casos positivos "
+    "en historial de análisis.\n"
+    "• Legalidad: Frankfurt 2011; TÜV Hessen desde 2013 (anual).\n"
+    "• Deporte: ATP Tour, Swiss Sports Aid, Comité Paralímpico Corea; federaciones "
+    "esquí DE/AT/PL, hockey/ciclismo/atletismo DE; 1.000+ atletas / 85+ disciplinas.\n"
+    "• Social: Fundación PM We Care — $3M+ donados; 800+ apadrinamientos de niños.\n"
     "• Productos clave: Optimal Set (insignia), PowerCocktail, Activize (energía), "
     "Restorate (minerales/recuperación), Basics (fibra/probióticos).\n"
     "• NO invente años de fundación, expansión de NTC, ni productos estrella "
-    "fuera de esta lista. Precios de entrada / Income Plan 2026 → Partner Area."
+    "fuera de esta lista. Precios de entrada / Income Plan actualizado → Partner Area "
+    "/ material del patrocinador (NO inventar ni buscar en web para completar)."
 )
 
 _USER_TURN_PREFIX = (
@@ -137,9 +145,15 @@ def wants_fitline_knowledge(text: str) -> bool:
         re.I,
     ):
         return True
-    # NTC / Schengen / Speyer solo con contexto de marca, nutrición o venta directa.
-    if re.search(r"\b(?:ntc|schengen|speyer)\b", t, re.I) and re.search(
-        r"\b(?:fitline|fit\s*line|pm|nutri|suplement|franquicia|sorg)\b",
+    # NTC / Schengen / Speyer / Cologne / dopaje / GMP / We Care con contexto.
+    if re.search(
+        r"\b(?:ntc|schengen|speyer|cologne|dopaje|anti[\s\-]?dopaje|gmp|"
+        r"we\s*care|atp\s*tour)\b",
+        t,
+        re.I,
+    ) and re.search(
+        r"\b(?:fitline|fit\s*line|pm|nutri|suplement|franquicia|sorg|"
+        r"cologne|dopaje|atleta|paral[ií]mpic)\b",
         t,
         re.I,
     ):

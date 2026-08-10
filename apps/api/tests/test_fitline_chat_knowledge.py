@@ -46,6 +46,10 @@ def test_format_includes_curated_products_not_invented():
     assert "Frankfurt" in block or "2011" in block
     assert "TÜV" in block or "TUV" in block.upper() or "Tüv" in block
     assert "QR" in block
+    assert "GMP" in block
+    assert "Cologne" in block or "cologne" in block.lower()
+    assert "ATP" in block
+    assert "We Care" in block or "WeCare" in block
     assert "Nutrient Transport Concept" in block
     assert "NO «Nutrient Timing»" in block or "NO \"Nutrient Timing\"" in block
     assert "HECHOS OBLIGATORIOS" in block
@@ -55,6 +59,34 @@ def test_format_includes_curated_products_not_invented():
     assert "Investigando" in block or "investigando" in block.lower()
     assert "NO inventes" in block or "no inventes" in block.lower() or "NO invent" in block
     assert "módulo Oportunidades" in block
+
+
+def test_wants_fitline_cologne_and_we_care():
+    assert wants_fitline_knowledge("qué es la Cologne List de FitLine")
+    assert wants_fitline_knowledge("PM We Care donaciones")
+    assert prefers_fitline_over_web("Cologne List anti-dopaje FitLine") is True
+    assert prefers_fitline_over_web("alianzas ATP Tour FitLine") is True
+
+
+def test_all_three_modes_get_same_curated_block():
+    """Voz, chat light y bloque format comparten los mismos hechos curados."""
+    format_fitline_knowledge_for_prompt.cache_clear()
+    block = format_fitline_knowledge_for_prompt()
+    from app.services.text_chat import _build_chat_system_light
+    from app.services.voice_llm_common import build_base_voice_system
+
+    q = "cuéntame la historia de PM International y el NTC"
+    chat = _build_chat_system_light("user-test", q)
+    voice = build_base_voice_system("user-test", q)
+    for hay in (block, chat, voice):
+        assert "1993" in hay
+        assert "Schengen" in hay or "Luxemburgo" in hay
+        assert "Cologne" in hay or "cologne" in hay.lower()
+        assert "GMP" in hay
+        assert "We Care" in hay
+        assert "Optimal Set" in hay or "Optimal-Set" in hay
+        assert "Partner Area" in hay or "no invent" in hay.lower()
+        assert "Investigando" in hay or "investigando" in hay.lower()
 
 
 def test_compensation_rule_no_invent_percentages():

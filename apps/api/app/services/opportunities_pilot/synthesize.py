@@ -7,7 +7,8 @@ from typing import Any
 SECTION_ORDER = (
     ("what_is", "Qué es"),
     ("company_history", "Historia y presencia"),
-    ("science_credibility", "Ciencia, legalidad y deporte"),
+    ("science_credibility", "Ciencia, calidad, anti-dopaje y deporte"),
+    ("social_responsibility", "Responsabilidad social"),
     ("products", "Catálogo FitLine (productos clave)"),
     ("how_it_works", "Cómo funciona"),
     ("requirements", "Planes de inscripción"),
