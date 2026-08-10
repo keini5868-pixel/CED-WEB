@@ -28,19 +28,51 @@ _BRAND = re.compile(
 )
 
 # Productos / SKUs distintivos (incluye typo Activise ↔ Activize)
+# Evitar nombres genéricos solos (endurance, whey, protein, omega 3, lutein).
+# Nota: SKUs con «+» (Generation 50+, Women+) no usan \\b final — falla tras «+».
 _DISTINCT_PRODUCTS = re.compile(
+    r"(?:"
     r"\b(?:"
+    # Nutrición base
     r"activize|activise|oxyplus|"
     r"restorate|"
     r"power\s*-?\s*cocktail|powercocktail|"
-    r"munogen|proshape|topshape|"
-    r"microsolve|herbaslim|"
     r"optimal[\s\-]?set|"
+    # Deporte / fitness (nombres compuestos)
+    r"protein\s*max|"
+    r"proshape|"
+    r"fitness[\s\-]?drink|"
+    r"powermeal(?:\s*bar)?|"
+    r"joint[\s\-]?health|"
+    # Control de peso
+    r"get\s*in\s*shape|"
+    r"proshape\s*all[\s\-]?in[\s\-]?1|"
+    r"proshape\s*2[\s\-]?go|"
+    # Especiales
+    r"zellschutz|antioxy|"
+    r"munogen|"
+    r"basen\s*plus|"
+    r"d[\s\-]?drink|"
+    r"herbaslim|"
+    r"activize\s*power\s*drink|"
+    r"feel\s*good\s*yoghurt|feel\s*good\s*yogurt|"
+    r"microsolve|heart\s*duo|heartduo|"
+    r"q10\s*plus|"
+    r"isoflavona|isoflavone|"
+    # Otras líneas frecuentes
+    r"topshape|"
+    r"ultimate\s+young|hydrating[\s\-]?shot"
+    r")\b|"
     r"generation\s*50\+|"
     r"women\+|men\+|"
-    r"antioxy|ib\s*5|ib⁵|"
-    r"ultimate\s+young|hydrating[\s\-]?shot"
-    r")\b",
+    r"\bib\s*5\b|ib⁵"
+    r")",
+    re.I,
+)
+
+# Genéricos: solo con marca FitLine/PM cerca
+_AMBIGUOUS_SKUS = re.compile(
+    r"\b(?:endurance|whey|fruit\s*bar|protein(?!\s*max)|lutein|omega\s*3)\b",
     re.I,
 )
 
@@ -98,11 +130,18 @@ _FACT_CARD = (
     "• Deporte: ATP Tour, Swiss Sports Aid, Comité Paralímpico Corea; federaciones "
     "esquí DE/AT/PL, hockey/ciclismo/atletismo DE; 1.000+ atletas / 85+ disciplinas.\n"
     "• Social: Fundación PM We Care — $3M+ donados; 800+ apadrinamientos de niños.\n"
-    "• Productos clave: Optimal Set (insignia), PowerCocktail, Activize (energía), "
-    "Restorate (minerales/recuperación), Basics (fibra/probióticos).\n"
-    "• NO invente años de fundación, expansión de NTC, ni productos estrella "
-    "fuera de esta lista. Precios de entrada / Income Plan actualizado → Partner Area "
-    "/ material del patrocinador (NO inventar ni buscar en web para completar)."
+    "• Catálogo (ampliado): Nutrición base — Optimal-Set, PowerCocktail "
+    "(+ Junior), Restorate, Generation 50+, Activize Oxyplus, Basics; "
+    "Deporte — Endurance, Protein/Protein Max, ProShape Amino, Whey, "
+    "Fitness-Drink, PowerMeal Bar, Joint-Health Set; "
+    "Peso — Get in Shape, ProShape All-in-1 / 2 Go; "
+    "Especiales — Zellschutz/Antioxy, IB5, Munogen, Basen Plus, D-Drink, "
+    "Herbaslim Tea, Fruit Bar, Activize Power Drink, Feel Good Yoghurt, "
+    "microSolve (HeartDuo, Omega 3, Q10 Plus, Lutein, Isoflavona). "
+    "Belleza y más peso: confirmar en Partner Area / tienda local.\n"
+    "• NO invente SKUs ni claims fuera de esta lista. Precios de entrada / "
+    "Income Plan actualizado → Partner Area / material del patrocinador "
+    "(NO inventar ni buscar en web para completar)."
 )
 
 _USER_TURN_PREFIX = (
@@ -136,6 +175,11 @@ def wants_fitline_knowledge(text: str) -> bool:
     if _BRAND.search(t):
         return True
     if _DISTINCT_PRODUCTS.search(t):
+        return True
+    if _AMBIGUOUS_SKUS.search(t) and (
+        _BRAND.search(t)
+        or re.search(r"\b(?:fitline|fit\s*line|pm\s*international|suplemento)\b", t, re.I)
+    ):
         return True
     if _BASICS.search(t) and (_BRAND.search(t) or _DISTINCT_PRODUCTS.search(t)):
         return True

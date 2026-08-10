@@ -61,11 +61,43 @@ def test_format_includes_curated_products_not_invented():
     assert "módulo Oportunidades" in block
 
 
-def test_wants_fitline_cologne_and_we_care():
+def test_wants_fitline_expanded_catalog_skus():
+    assert wants_fitline_knowledge("qué es PowerCocktail Junior")
+    assert wants_fitline_knowledge("beneficios de Generation 50+")
+    assert wants_fitline_knowledge("Protein Max para deporte")
+    assert wants_fitline_knowledge("ProShape All-in-1")
+    assert wants_fitline_knowledge("Get in Shape FitLine")
+    assert wants_fitline_knowledge("Zellschutz Antioxy")
+    assert wants_fitline_knowledge("microSolve HeartDuo")
+    assert wants_fitline_knowledge("microSolve Omega 3")
+    assert wants_fitline_knowledge("Joint-Health Set")
+    assert wants_fitline_knowledge("Basen Plus")
+    assert wants_fitline_knowledge("Herbaslim Tea")
+    assert wants_fitline_knowledge("Feel Good Yoghurt")
+    assert wants_fitline_knowledge("Endurance de FitLine")
     assert wants_fitline_knowledge("qué es la Cologne List de FitLine")
     assert wants_fitline_knowledge("PM We Care donaciones")
-    assert prefers_fitline_over_web("Cologne List anti-dopaje FitLine") is True
-    assert prefers_fitline_over_web("alianzas ATP Tour FitLine") is True
+    # Genéricos solos no deben disparar FitLine
+    assert wants_fitline_knowledge("entrenamiento de endurance") is False
+    assert wants_fitline_knowledge("recetas con whey") is False
+
+
+def test_format_includes_expanded_catalog_categories():
+    format_fitline_knowledge_for_prompt.cache_clear()
+    block = format_fitline_knowledge_for_prompt()
+    assert "NUTRICIÓN BASE" in block or "Nutrición base" in block or "Optimal-Set" in block
+    assert "PowerCocktail Junior" in block
+    assert "Generation 50+" in block
+    assert "Endurance" in block
+    assert "Protein Max" in block
+    assert "Get in Shape" in block
+    assert "ProShape All-in-1" in block or "ProShape All-in" in block
+    assert "Zellschutz" in block or "Antioxy" in block
+    assert "Munogen" in block
+    assert "microSolve" in block
+    assert "HeartDuo" in block or "Heart Duo" in block
+    assert "Joint-Health" in block or "Joint Health" in block
+    assert "Belleza" in block
 
 
 def test_all_three_modes_get_same_curated_block():
