@@ -25,45 +25,32 @@ export type ResetMyDailyUsageResult = {
 
 
 export type AdminUserRow = {
-
   id: string;
-
   email: string;
-
   full_name: string | null;
-
   phone: string | null;
-
   role: string;
-
   access_type: string;
-
   plan: string | null;
-
+  plan_label?: string | null;
+  is_trial?: boolean;
+  is_paid?: boolean;
+  subscription_status?: string | null;
   status: string;
-
   expires_at: string | null;
-
+  trial_ends_at?: string | null;
+  period_expires_at?: string | null;
   minutes_daily: number;
-
   created_at: string;
-
   is_founding_member: boolean;
-
 };
 
-
-
 export type AdminUsersListResult = {
-
   users: AdminUserRow[];
-
   total: number;
-
   active_count: number;
-
   expiring_count: number;
-
+  trial_count?: number;
 };
 
 

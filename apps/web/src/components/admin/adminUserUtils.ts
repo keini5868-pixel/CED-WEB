@@ -40,18 +40,22 @@ export const DURATION_OPTIONS: { label: string; value: number | "indefinite" }[]
   ];
 
 export const ACCESS_TYPE_LABELS: Record<string, string> = {
-  paid: "Cliente PAGO",
-  beta: "Beta GRATIS",
-  founding_gift: "Founding REGALO",
+  paid: "Cliente pago",
+  beta: "Beta gratis",
+  founding_gift: "Founding regalo",
   coadmin: "Co-admin",
   admin: "Admin",
+  trial: "Trial 7 días",
+  free_basic: "Básico gratis",
 };
 
 export const STATUS_LABELS: Record<string, string> = {
   active: "Activo",
+  trial: "En trial",
   expiring: "Expira pronto",
   expired: "Expirado",
   paused: "Pausado",
   cancelled: "Cancelado",
+  past_due: "Pago pendiente",
   sin_plan: "Sin plan",
 };

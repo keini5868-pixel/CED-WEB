@@ -276,9 +276,24 @@ def _user_status(sub: dict[str, Any] | None) -> str:
     if sub.get("paused_at"):
         return "paused"
     st = str(sub.get("status") or "")
-    if st in ("expired", "cancelled"):
-        return st
-    exp = sub.get("expires_at")
+    if st == "trialing":
+        trial_end = sub.get("trial_ends_at") or sub.get("expires_at")
+        if trial_end:
+            try:
+                end_dt = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
+                now = datetime.now(timezone.utc)
+                if end_dt <= now:
+                    return "expired"
+                if end_dt <= now + timedelta(days=2):
+                    return "expiring"
+            except ValueError:
+                pass
+        return "trial"
+    if st in ("expired", "cancelled", "canceled"):
+        return "expired" if st == "expired" else "cancelled"
+    exp = sub.get("expires_at") or (
+        sub.get("trial_ends_at") if st == "trialing" else None
+    )
     if exp:
         try:
             exp_dt = datetime.fromisoformat(str(exp).replace("Z", "+00:00"))
@@ -288,7 +303,68 @@ def _user_status(sub: dict[str, Any] | None) -> str:
                 return "expiring"
         except ValueError:
             pass
-    return "active"
+    if st == "past_due":
+        return "past_due"
+    if st == "active":
+        return "active"
+    return st or "active"
+
+
+def _plan_display(sub: dict[str, Any] | None) -> dict[str, Any]:
+    """Etiquetas claras: trial vs plan pagado vs básico — sin mutar datos."""
+    from app.domain.plans import TRIAL_VOICE_MINUTES_PER_DAY
+
+    if not sub:
+        return {
+            "plan": None,
+            "plan_label": "Sin plan",
+            "is_trial": False,
+            "is_paid": False,
+            "subscription_status": None,
+            "trial_ends_at": None,
+            "expires_at": None,
+            "display_expires_at": None,
+            "voice_minutes_daily": 0,
+        }
+
+    raw_plan = sub.get("plan_id")
+    plan_id = normalize_plan_id(raw_plan)
+    st = str(sub.get("status") or "")
+    trial_ends = sub.get("trial_ends_at")
+    expires_at = sub.get("expires_at")
+    stripe_sub = (sub.get("stripe_subscription_id") or "").strip()
+    is_trial = st == "trialing"
+    is_paid = bool(stripe_sub) and st in ("active", "past_due", "trialing")
+    base_label = PLAN_LABELS.get(plan_id, plan_id or "—")
+
+    if is_trial:
+        plan_label = f"Trial · {base_label}"
+        display_expires = trial_ends or expires_at
+        voice_minutes = TRIAL_VOICE_MINUTES_PER_DAY
+    elif plan_id == PlanId.FREE_BASIC.value:
+        plan_label = PLAN_LABELS[PlanId.FREE_BASIC.value]
+        display_expires = expires_at
+        voice_minutes = 0
+    elif is_paid or st == "active":
+        plan_label = base_label
+        display_expires = expires_at
+        voice_minutes = plan_minutes_daily(plan_id)
+    else:
+        plan_label = base_label
+        display_expires = expires_at or trial_ends
+        voice_minutes = plan_minutes_daily(plan_id) if st == "active" else 0
+
+    return {
+        "plan": plan_id,
+        "plan_label": plan_label,
+        "is_trial": is_trial,
+        "is_paid": bool(stripe_sub) and st in ("active", "past_due"),
+        "subscription_status": st or None,
+        "trial_ends_at": trial_ends,
+        "expires_at": expires_at,
+        "display_expires_at": display_expires,
+        "voice_minutes_daily": voice_minutes,
+    }
 
 
 def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
@@ -309,7 +385,10 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
         client.table("profiles")
         .select(
             "id, email, full_name, phone, role, is_founding_member, created_at, "
-            "subscriptions!subscriptions_user_id_fkey(plan_id, access_type, status, expires_at, paused_at), "
+            "subscriptions!subscriptions_user_id_fkey("
+            "plan_id, access_type, status, expires_at, trial_ends_at, paused_at, "
+            "stripe_subscription_id"
+            "), "
             "usage_limits(minutes_daily)"
         )
         .order("created_at", desc=True)
@@ -322,7 +401,7 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
     result = query.execute()
     rows = result.data or []
     users: list[dict[str, Any]] = []
-    active = expiring = 0
+    active = expiring = trial_count = 0
 
     for row in rows:
         subs = row.get("subscriptions") or []
@@ -330,10 +409,15 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
         limits = row.get("usage_limits") or []
         lim = limits[0] if isinstance(limits, list) and limits else limits if isinstance(limits, dict) else None
         status = _user_status(sub)
+        plan_info = _plan_display(sub if isinstance(sub, dict) else None)
+
         if status == "active":
             active += 1
         elif status == "expiring":
             expiring += 1
+            active += 1
+        elif status == "trial":
+            trial_count += 1
             active += 1
 
         access = (sub or {}).get("access_type") or "paid"
@@ -341,6 +425,16 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
             access = "admin"
         elif row.get("role") == "coadmin":
             access = "coadmin"
+        elif plan_info["is_trial"]:
+            access = "trial"
+        elif plan_info["plan"] == PlanId.FREE_BASIC.value and not plan_info["is_paid"]:
+            access = "free_basic"
+
+        # Minutos: trial siempre 5; si no, usage_limits o cuota del plan.
+        if plan_info["is_trial"]:
+            minutes = plan_info["voice_minutes_daily"]
+        else:
+            minutes = (lim or {}).get("minutes_daily") or plan_info["voice_minutes_daily"]
 
         users.append(
             {
@@ -350,10 +444,16 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
                 "phone": row.get("phone"),
                 "role": row.get("role"),
                 "access_type": access,
-                "plan": (sub or {}).get("plan_id"),
+                "plan": plan_info["plan"],
+                "plan_label": plan_info["plan_label"],
+                "is_trial": plan_info["is_trial"],
+                "is_paid": plan_info["is_paid"],
+                "subscription_status": plan_info["subscription_status"],
                 "status": status,
-                "expires_at": (sub or {}).get("expires_at"),
-                "minutes_daily": (lim or {}).get("minutes_daily") or plan_minutes_daily((sub or {}).get("plan_id")),
+                "expires_at": plan_info["display_expires_at"],
+                "trial_ends_at": plan_info["trial_ends_at"],
+                "period_expires_at": plan_info["expires_at"],
+                "minutes_daily": minutes,
                 "created_at": row.get("created_at"),
                 "is_founding_member": row.get("is_founding_member"),
             }
@@ -364,6 +464,7 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
         "total": len(users),
         "active_count": active,
         "expiring_count": expiring,
+        "trial_count": trial_count,
     }
     if not search.strip():
         _ADMIN_USERS_CACHE = {"key": cache_key, "data": payload}

@@ -169,7 +169,8 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\bgast[ée]\s+\d",
         r"\b(?:recib[íi]|gan[ée]|cobr[ée]|me\s+pagaron)\s+\d",
         r"\bregistra(?:r|me)?\s+(?:un\s+)?(?:gasto|ingreso)\b",
-        r"\bgu[áa]rdame\s+que\b",
+        # «guárdame que…» solo con ancla financiera (evita secuestrar análisis).
+        r"\bgu[áa]rdame\s+que\b.{0,80}?\b(?:gast|pagu|recib|ingres|finanzas|d[oó]lar|\$|\d)",
         # Frases explícitas "... en finanzas ..." (guardar/anotar/registrar).
         r"\b(?:gu[áa]rdame|an[óo]tame|anota(?:me)?|reg[íi]strame|registra|ap[úu]ntame|apunta)\s+en\s+finanzas\b",
         r"\ben\s+finanzas\s+que\b",

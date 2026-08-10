@@ -45,17 +45,21 @@ _AMOUNT_RE = re.compile(
 )
 
 # Consultas / análisis (no registran).
+# Evitar anclas sueltas («cómo voy», «balance», «explica») que secuestran
+# análisis de texto o chat normal hacia el módulo LIFE/finanzas.
 _QUERY_PATTERNS: tuple[str, ...] = (
     r"\bqu[ée]\s+tengo\s+en\s+finanzas\b",
     r"\bdame\s+un\s+reporte\b.*\bfinanzas\b",
     r"\bfinanzas\b.*\bdame\s+un\s+reporte\b",
-    r"\bc[óo]mo\s+voy\b",
+    r"\bc[óo]mo\s+voy\s+(?:este\s+mes|con\s+mis\s+(?:gastos?|finanzas|ingresos?))\b",
+    r"\bc[óo]mo\s+voy\b.*\b(?:finanzas|gastos?|ingresos?|dinero)\b",
     r"\bc[óo]mo\s+van\s+mis\s+finanzas\b",
     r"\bmis\s+finanzas\b",
     r"\bresumen\s+financiero\b",
-    r"\bbalance\b",
+    r"\b(?:mi\s+)?balance\s+(?:financ(?:iero)?|del?\s+mes|de\s+cuenta|de\s+gastos?)\b",
+    r"\bbalance\b.*\b(?:finanzas|gastos?|ingresos?|cuenta)\b",
     r"\bcu[áa]nto\s+(?:he\s+)?gast[ée]\b",
-    r"\bcu[áa]nto\s+(?:he\s+)?llev[oa]\b",
+    r"\bcu[áa]nto\s+(?:he\s+)?llev[oa]\b.*\b(?:gast|ingres|finanzas|dinero)\b",
     r"\bcu[áa]nto\s+(?:he\s+)?ingres[ée]\b",
     r"\bgastos?\s+del?\s+(?:mes|d[íi]a|semana|a[ñn]o)\b",
     r"\bmis\s+gastos\b",
@@ -70,11 +74,41 @@ _ADVICE_PATTERNS: tuple[str, ...] = (
     r"\bayud[aá]me\s+a\s+ahorrar\b",
     r"\bconsejo\s+financiero\b",
     r"\bplan\s+financiero\b",
-    r"\bpresupuesto\b",
+    r"\bpresupuesto\s+(?:mensual|familiar|personal|de\s+gastos?)\b",
 )
 
 _FINANCE_CONTEXT = re.compile(
-    r"(finanzas|dinero|plata|gast|ingres|ahorr|presupuesto|balance|deuda|financ)", re.I
+    r"\b(?:finanzas|dinero|plata|gastos?|ingresos?|ahorro|ahorros|deuda|deudas|financ(?:iero|iera|ieras)?)\b",
+    re.I,
+)
+
+# Pedido de análisis/explicación de texto arbitrario — NO es finanzas salvo
+# que pidan registrar/guardar en el módulo explícitamente.
+_ANALYSIS_REQUEST = re.compile(
+    r"(?:"
+    r"\b(?:analiza(?:r)?|an[aá]lisis|interpreta(?:r)?)\b|"
+    r"\b(?:resume|resumen|res[uú]meme)\s+(?:este|esta|el|la|lo|me|del?|un)\b|"
+    r"\bexplica(?:r)?\s+(?:este|esta|el|la|lo|estos|estas|me)\b|"
+    r"\bexplica(?:r)?\s+(?:el\s+)?(?:texto|mensaje|p[aá]rrafo|documento|contenido|tono|argumento)\b|"
+    r"\bdesglose\s+(?:del?\s+)?(?:texto|mensaje|argumento|contenido)\b|"
+    r"\bqu[eé]\s+(?:significa|quiere\s+decir)\b"
+    r")",
+    re.I,
+)
+_EXPLICIT_FINANCE_SAVE = re.compile(
+    r"\b(?:"
+    r"en\s+finanzas|"
+    r"reg[ií]stra(?:lo|me|r)?|"
+    r"an[oó]ta(?:lo|me)?|"
+    r"gu[aá]rda(?:lo|me)?\s+(?:en\s+finanzas|(?:el\s+)?(?:gasto|ingreso|pago))|"
+    r"gu[aá]rdame\s+que\s+(?:gast|pagu|recib|ingres)"
+    r")\b",
+    re.I,
+)
+_PERSONAL_FINANCE_NOUN = re.compile(
+    r"\b(?:mis\s+finanzas|mis\s+gastos|mis\s+ingresos|en\s+finanzas|"
+    r"resumen\s+financiero|an[aá]lisis\s+(?:de\s+)?(?:mis\s+)?finanzas)\b",
+    re.I,
 )
 
 # Pagos pendientes / programados (compromisos a futuro, no gastos ya hechos).
@@ -136,10 +170,23 @@ def _detect_period(text: str) -> str:
     return "mes"
 
 
+def is_non_finance_text_analysis(text: str) -> bool:
+    """True si pide analizar/explicar un texto y NO registrar en finanzas."""
+    t = (text or "").strip()
+    if not t or not _ANALYSIS_REQUEST.search(t):
+        return False
+    if _EXPLICIT_FINANCE_SAVE.search(t) or _PERSONAL_FINANCE_NOUN.search(t):
+        return False
+    return True
+
+
 def is_finance_write_intent(text: str) -> bool:
     """True si el texto declara un movimiento con monto (registrar)."""
     t = (text or "").strip()
     if len(t) < 6:
+        return False
+    # «Analiza este texto: ayer gasté 50…» no debe registrar el gasto citado.
+    if is_non_finance_text_analysis(t):
         return False
     has_verb = bool(_INGRESO_RE.search(t) or _GASTO_RE.search(t))
     if not has_verb:
@@ -150,6 +197,8 @@ def is_finance_write_intent(text: str) -> bool:
 def is_finance_query_intent(text: str) -> bool:
     t = (text or "").strip().lower()
     if len(t) < 5:
+        return False
+    if is_non_finance_text_analysis(t):
         return False
     if any(re.search(p, t) for p in _QUERY_PATTERNS):
         return True
@@ -192,13 +241,29 @@ def is_finance_breakdown_intent(text: str) -> bool:
     t = (text or "").strip().lower()
     if len(t) < 5:
         return False
-    if re.search(r"\b(desglose|detall|desglosar|explica|explicar)\b", t):
-        return True
-    if re.search(r"\bde\s+qu[eé]\b", t) and re.search(
-        r"\d|gastos?|incluye|son|es", t
+    if is_non_finance_text_analysis(t):
+        return False
+    # Exige ancla financiera: no basta «explica» / «desglose» sueltos.
+    if re.search(
+        r"\b(?:desglose|desglosar|desglosa)\b.*\b(?:gasto|gastos|ingreso|ingresos|finanzas|categor)",
+        t,
+    ) or re.search(
+        r"\b(?:gasto|gastos|ingreso|ingresos|finanzas)\b.*\b(?:desglose|desglosar|desglosa|explica)",
+        t,
     ):
         return True
-    if re.search(r"\bqu[eé]\s+(son|es|incluye)\b", t) and re.search(r"\d", t):
+    if re.search(
+        r"\b(?:explica|explicar|detalle|detallar)\b.*\b(?:gasto|gastos|ingreso|ingresos|finanzas|cifra|categor)",
+        t,
+    ):
+        return True
+    if re.search(r"\b\d[\d.,]*\s+de\s+qu[eé]\b", t):
+        return True
+    if re.search(r"\bde\s+qu[eé]\b", t) and re.search(r"\b(?:gastos?|ingresos?|\d)", t):
+        return True
+    if re.search(r"\bqu[eé]\s+(?:son|es|incluye)\b", t) and re.search(
+        r"\b(?:gastos?|ingresos?|\d)", t
+    ):
         return True
     return False
 
@@ -259,6 +324,9 @@ def is_finance_intent(text: str) -> bool:
     from app.services.chat_intents import is_creative_artifact_intent
 
     if is_creative_artifact_intent(text):
+        return False
+    # Análisis de texto largo / «explica este mensaje» ≠ módulo finanzas.
+    if is_non_finance_text_analysis(text):
         return False
     return (
         is_finance_register_intent(text)

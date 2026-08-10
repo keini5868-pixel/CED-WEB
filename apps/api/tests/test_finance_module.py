@@ -29,15 +29,40 @@ def test_write_intent_needs_amount():
 
 def test_query_intent():
     assert is_finance_query_intent("cómo voy este mes")
+    assert is_finance_query_intent("cómo voy con mis finanzas")
     assert is_finance_query_intent("cuánto gasté esta semana")
     assert is_finance_query_intent("ayúdame a hacer un plan de ahorro")
     assert is_finance_query_intent("mis finanzas")
+    assert not is_finance_query_intent("cómo voy con este proyecto")
+    assert not is_finance_query_intent("necesito balance entre trabajo y vida")
+
+
+def test_text_analysis_not_finance_intent():
+    """Regresión: análisis de texto no debe cruzarse con LIFE/finanzas."""
+    from app.modules.finance_module import is_finance_breakdown_intent
+
+    long_analysis = (
+        "Analiza este texto y explícamelo: Ayer gasté 50 dólares en materiales "
+        "y recibí 800 de un cliente. Quiero entender el tono y la estructura."
+    )
+    assert not is_finance_intent(long_analysis)
+    assert not is_finance_write_intent(long_analysis)
+    assert not is_finance_breakdown_intent("explica el tono de este mensaje")
+    assert not is_finance_breakdown_intent("desglose del argumento del párrafo")
+    assert not is_finance_intent(
+        "Resume este reporte y dime las ideas principales: el balance del equipo "
+        "y el presupuesto de tiempo para el sprint."
+    )
+    # Sí es finanzas cuando lo piden explícito:
+    assert is_finance_breakdown_intent("dame el desglose de mis gastos")
+    assert is_finance_write_intent("gasté 50 dólares en materiales hoy")
 
 
 def test_non_finance_not_intent():
     assert not is_finance_intent("qué tengo mañana en el calendario")
     assert not is_finance_intent("hola cómo estás")
     assert not is_finance_write_intent("recuérdame comprar pan")
+    assert not is_finance_intent("explica este documento largo por favor")
 
 
 def test_parse_expense_with_category():
