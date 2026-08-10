@@ -168,6 +168,18 @@ def build_base_voice_system(
         )
 
         base = append_fitline_knowledge_if_needed(base, query)
+    # Modo Guía FitLine: mentor paso a paso (voz corta).
+    if uid and query:
+        try:
+            from app.services.opportunities_pilot.fitline_guide_mode import (
+                append_fitline_guide_if_needed,
+            )
+
+            base = append_fitline_guide_if_needed(
+                base, uid, query, channel="voice"
+            )
+        except Exception:  # noqa: BLE001
+            pass
     if query and is_deliverable_request(query):
         base = f"{base}\n\n{VOICE_DELIVERABLE_OVERLAY}"
     elif query and is_advisory_voice_query(query):

@@ -12,6 +12,7 @@ Cuando el usuario pregunta sobre FitLine, PM International o sus productos:
 3. **Solo** recurrir a búsqueda web (Tavily) si la pregunta no está cubierta internamente (muy específica, actualizada, o el usuario pide explícitamente internet/noticias/datos de hoy).
 4. Aplica en los **3 modos**: voz, chat y avanzado.
 5. **NO inventar** precios de entrada al negocio ni plan de compensación actualizado — Partner Area / material del patrocinador.
-6. Hechos curados incluyen: historia 1993/Speyer→Schengen, NTC, GMP, Cologne List®, alianzas ATP/deporte, PM We Care, catálogo Optimal Set/PowerCocktail/Activize/Restorate/Basics.
+6. Hechos curados incluyen: historia 1993/Speyer→Schengen, NTC, GMP, Cologne List®, alianzas ATP/deporte, PM We Care, catálogo ampliado.
+7. **Modo Guía** (`fitline_guide_mode`): si dice «modo guía», «desde cero», «soy nuevo guíame» → mentor pedagógico paso a paso (empresa/productos → cómo se gana → cómo empezar), un bloque a la vez, confirmación antes de avanzar; voz más corta.
 
-Helpers: `prefers_fitline_over_web`, `fitline_explicit_live_web_override` en `apps/api/app/services/opportunities_pilot/fitline_knowledge.py`.
+Helpers: `prefers_fitline_over_web`, `append_fitline_guide_if_needed` en `apps/api/app/services/opportunities_pilot/`.

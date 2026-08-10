@@ -55,17 +55,31 @@ def fetch_module_stream_context(
         return None, None
 
     try:
+        from app.services.opportunities_pilot.fitline_guide_mode import (
+            wants_fitline_guide_context,
+        )
         from app.services.opportunities_pilot.fitline_knowledge import (
             format_fitline_knowledge_for_prompt,
             wants_fitline_knowledge,
         )
 
-        if wants_fitline_knowledge(text):
+        if wants_fitline_knowledge(text) or wants_fitline_guide_context(user_id, text):
             fitline = format_fitline_knowledge_for_prompt()
             if fitline:
+                extra = ""
+                if wants_fitline_guide_context(user_id, text):
+                    extra = (
+                        "\nMODO GUÍA activo: enseña el bloque del overlay del system "
+                        "(un paso a la vez); confirma antes de avanzar.\n"
+                    )
                 return (
-                    f"{fitline}\n\n{_FITLINE_MODULE_CONTEXT_RULES}",
-                    {"intent": "fitline_opportunity", "source": "opportunities_curated"},
+                    f"{fitline}\n\n{_FITLINE_MODULE_CONTEXT_RULES}{extra}",
+                    {
+                        "intent": "fitline_guide"
+                        if wants_fitline_guide_context(user_id, text)
+                        else "fitline_opportunity",
+                        "source": "opportunities_curated",
+                    },
                 )
 
         if is_reminder_intent(text):

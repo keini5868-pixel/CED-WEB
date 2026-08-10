@@ -1254,7 +1254,12 @@ def _build_chat_system(
     if extras:
         parts.append(extras)
     system = append_sales_marketing_playbook_if_needed("\n\n".join(parts), user_text)
-    return append_fitline_knowledge_if_needed(system, user_text)
+    system = append_fitline_knowledge_if_needed(system, user_text)
+    from app.services.opportunities_pilot.fitline_guide_mode import (
+        append_fitline_guide_if_needed,
+    )
+
+    return append_fitline_guide_if_needed(system, user_id, user_text, channel="chat")
 
 
 def _build_chat_system_light(user_id: str, user_text: str) -> str:
@@ -1268,6 +1273,9 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
     from app.services.opportunities_pilot.fitline_knowledge import (
         append_fitline_knowledge_if_needed,
     )
+    from app.services.opportunities_pilot.fitline_guide_mode import (
+        append_fitline_guide_if_needed,
+    )
     from app.services.system_clock import clock_context_block
 
     parts = [CHAT_SYSTEM_LIGHT_BASE, clock_context_block()]
@@ -1278,7 +1286,8 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
     system = append_sales_marketing_playbook_if_needed("\n\n".join(parts), user_text)
-    return append_fitline_knowledge_if_needed(system, user_text)
+    system = append_fitline_knowledge_if_needed(system, user_text)
+    return append_fitline_guide_if_needed(system, user_id, user_text, channel="chat")
 
 
 def _chat_system_for_user(user_id: str) -> str:

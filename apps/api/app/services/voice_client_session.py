@@ -49,6 +49,9 @@ def _fresh_session() -> dict[str, Any]:
         "advanced_last_topic": "",
         "advanced_turn_count": 0,
         "youtube_pending_confirm": None,
+        "fitline_guide_active": False,
+        "fitline_guide_step": 0,
+        "fitline_guide_reexplain": False,
     }
 
 
@@ -166,7 +169,49 @@ def get_active_mode_prompt(user_id: str) -> str:
             "El usuario está en modo prospección comercial.\n"
             "Responde con foco en leads, segmentación y seguimiento."
         )
+    if mode == "fitline_guide" or is_fitline_guide_active(user_id):
+        step = int(get_fitline_guide_step(user_id))
+        return (
+            "# MODO ACTIVO: GUÍA FITLINE/PM\n"
+            f"Paso curricular índice={step}. "
+            "Explica un bloque a la vez, lenguaje simple, confirma antes de avanzar. "
+            "Detalle completo en el overlay MODO GUÍA del system."
+        )
     return ""
+
+
+def set_fitline_guide(
+    user_id: str,
+    *,
+    active: bool,
+    step_index: int = 0,
+    reexplain: bool = False,
+) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["fitline_guide_active"] = bool(active)
+        session["fitline_guide_step"] = max(0, int(step_index))
+        session["fitline_guide_reexplain"] = bool(reexplain) if active else False
+        if active:
+            session["active_mode"] = "fitline_guide"
+        elif session.get("active_mode") == "fitline_guide":
+            session["active_mode"] = None
+        session["updated_at"] = _now()
+
+
+def is_fitline_guide_active(user_id: str) -> bool:
+    return bool(_get(user_id).get("fitline_guide_active"))
+
+
+def get_fitline_guide_step(user_id: str) -> int:
+    try:
+        return int(_get(user_id).get("fitline_guide_step") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def clear_fitline_guide(user_id: str) -> None:
+    set_fitline_guide(user_id, active=False, step_index=0, reexplain=False)
 
 
 def is_camera_active(user_id: str, *, max_age_sec: float = 45.0) -> bool:
@@ -779,4 +824,5 @@ def clear_advanced_mode_for_call(user_id: str, call_id: str = "") -> None:
     if not user_id.strip():
         return
     set_advanced_mode_active(user_id, False)
+    clear_fitline_guide(user_id)
 

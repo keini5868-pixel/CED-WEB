@@ -130,7 +130,14 @@ def _stream_system_with_clock(
         "Responde en español natural o deja que el backend use herramientas."
     )
     base = append_sales_marketing_playbook_if_needed(base, user_text)
-    return append_fitline_knowledge_if_needed(base, user_text)
+    base = append_fitline_knowledge_if_needed(base, user_text)
+    from app.services.opportunities_pilot.fitline_guide_mode import (
+        append_fitline_guide_if_needed,
+    )
+
+    return append_fitline_guide_if_needed(
+        base, user_id or "", user_text, channel="advanced"
+    )
 
 
 def _sse_event(name: str, payload: dict[str, Any]) -> str:
@@ -361,6 +368,9 @@ def send_advanced_message(
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
         )
+        from app.services.opportunities_pilot.fitline_guide_mode import (
+            append_fitline_guide_if_needed,
+        )
 
         partnership = creator_partnership_overlay_for_user(user_id)
         system_prompt = ADVANCED_SYSTEM_PROMPT
@@ -368,6 +378,9 @@ def send_advanced_message(
             system_prompt = f"{ADVANCED_SYSTEM_PROMPT}\n\n{partnership}"
         system_prompt = append_sales_marketing_playbook_if_needed(system_prompt, text)
         system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
+        system_prompt = append_fitline_guide_if_needed(
+            system_prompt, user_id, text, channel="advanced"
+        )
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,
             api_key=anthropic_key,
@@ -440,6 +453,9 @@ def send_advanced_message_with_pdf(
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
         )
+        from app.services.opportunities_pilot.fitline_guide_mode import (
+            append_fitline_guide_if_needed,
+        )
 
         partnership = creator_partnership_overlay_for_user(user_id)
         system_prompt = (
@@ -452,6 +468,9 @@ def send_advanced_message_with_pdf(
             system_prompt = f"{system_prompt}\n\n{partnership}"
         system_prompt = append_sales_marketing_playbook_if_needed(system_prompt, text)
         system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
+        system_prompt = append_fitline_guide_if_needed(
+            system_prompt, user_id, text, channel="advanced"
+        )
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,
             api_key=anthropic_key,
