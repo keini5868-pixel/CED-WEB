@@ -183,7 +183,7 @@ async def register_retell_call(
             status_code=409,
             detail=(
                 "Tu plan FitLine / CED Cierre usa voz conversacional CED "
-                "(sin Jarvis). Recarga la página e inicia de nuevo."
+                "(sin Jarvis)."
             ),
         )
 
@@ -258,7 +258,7 @@ async def register_retell_native_pilot_call(
             status_code=409,
             detail=(
                 "Tu plan FitLine / CED Cierre usa voz conversacional CED "
-                "(sin Jarvis). Recarga la página e inicia de nuevo."
+                "(sin Jarvis)."
             ),
         )
 

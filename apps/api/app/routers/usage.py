@@ -106,6 +106,9 @@ async def session_start(user_id: str = Depends(require_user_id)) -> dict:
         "conversation_id": conversation_id,
         "used_minutes_today": balance["used_minutes_today"],
         "plan_minutes_daily": balance["plan_minutes_daily"],
+        "plan_id": balance.get("plan_id"),
+        "voice_stack": balance.get("voice_stack"),
+        "voice_transport": balance.get("voice_transport"),
     }
 
 

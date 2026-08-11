@@ -57,6 +57,9 @@ export async function fetchUsageBalanceDetailed(): Promise<UsageBalanceResult> {
 export async function startVoiceSession(): Promise<{
   session_id: string;
   conversation_id: string | null;
+  plan_id?: string | null;
+  voice_stack?: string | null;
+  voice_transport?: string | null;
 }> {
   const res = await proxyFetch("usage/session/start", { method: "POST" });
   if (!res.ok) {

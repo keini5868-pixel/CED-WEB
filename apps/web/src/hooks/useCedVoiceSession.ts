@@ -1233,9 +1233,25 @@ export function useCedVoiceSession(
           "[CED] session/start sin conversation_id — el historial no se guardará en esta sesión",
         );
       }
+      // Fuente de verdad del plan/transporte (balance a veces llega tarde).
+      if (
+        voiceSession.plan_id ||
+        voiceSession.voice_stack ||
+        voiceSession.voice_transport
+      ) {
+        voiceRouteRef.current = {
+          planId: voiceSession.plan_id ?? voiceRouteRef.current?.planId,
+          voiceStack:
+            voiceSession.voice_stack ?? voiceRouteRef.current?.voiceStack,
+          voiceTransport:
+            voiceSession.voice_transport ??
+            voiceRouteRef.current?.voiceTransport,
+        };
+      }
       onUsageRefresh?.();
 
-      if (useRetell()) {
+      let startRetell = useRetell();
+      if (startRetell) {
         isRetellSessionRef.current = true;
         setVoiceSessionActive(true);
         setStatusLabel("Iniciando llamada…");
@@ -1244,12 +1260,33 @@ export function useCedVoiceSession(
           : await registerRetellCall();
         if (isStale()) return;
         if (!registration.ok) {
-          setErrorMessage(registration.error || "No pude iniciar voz Retell.");
-          setOrbState("error");
-          await stopSession();
-          return;
+          const err = registration.error || "No pude iniciar voz Retell.";
+          const forceCedVoice =
+            /CED Cierre|sin Jarvis|FitLine|conversacional CED|recarga la página/i.test(
+              err,
+            );
+          if (forceCedVoice) {
+            console.warn(
+              "[CED] Retell bloqueado para Cierre/FitLine — cambiando a voz CED",
+              err,
+            );
+            voiceRouteRef.current = {
+              planId: voiceSession.plan_id || "cierre",
+              voiceStack: "gemini",
+              voiceTransport: "openai",
+            };
+            isRetellSessionRef.current = false;
+            startRetell = false;
+            setStatusLabel("Conectando voz CED…");
+          } else {
+            setErrorMessage(err);
+            setOrbState("error");
+            await stopSession();
+            return;
+          }
         }
 
+        if (startRetell) {
         const retell = new CedRetellClient();
         retellClientRef.current = retell;
         retell.setCallbacks({
@@ -1434,6 +1471,24 @@ export function useCedVoiceSession(
         setOrbState("listening");
         setStatusLabel(ORB_STATE_LABELS.listening);
         return;
+        } // startRetell && registration.ok
+      }
+
+      // Voz CED (OpenAI) — FitLine/Cierre o fallback tras bloqueo Jarvis
+      isRetellSessionRef.current = false;
+      setVoiceSessionActive(true);
+      if (!micStreamRef.current) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            sampleRate: { ideal: 24000 },
+            echoCancellation: { ideal: true },
+            noiseSuppression: { ideal: true },
+            autoGainControl: { ideal: true },
+          },
+        });
+        micStreamRef.current = stream;
+        setMicStream(stream);
       }
 
       const client = new CedLiveClient();
