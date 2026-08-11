@@ -69,7 +69,9 @@ class Settings(BaseSettings):
     openai_project_id: str = ""
     openai_model_chat: str = "gpt-4o"
     openai_model_chat_lite: str = "gpt-4o-mini"
-    openai_model_voice: str = "gpt-realtime"
+    # Solo modelos Realtime. Si en Railway queda un chat model (p.ej. gpt-4.1-mini),
+    # openai_realtime.py lo ignora y usa gpt-realtime-mini.
+    openai_model_voice: str = "gpt-realtime-mini"
     openai_model_retell_llm: str = "gpt-4.1-mini-2025-04-14"
     openai_model_image: str = "gpt-image-1.5"
     openai_default_voice: str = "cedar"

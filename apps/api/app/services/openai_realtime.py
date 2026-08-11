@@ -26,23 +26,49 @@ OPENAI_CLIENT_SECRETS_URL = "https://api.openai.com/v1/realtime/client_secrets"
 OPENAI_REALTIME_CALLS_URL = "https://api.openai.com/v1/realtime/calls"
 
 DEFAULT_REALTIME_MODEL = "gpt-realtime"
+# FitLine/Cierre: mini es más barato y válido en Realtime (no usar gpt-4.1-mini chat).
+DEFAULT_FITLINE_REALTIME_MODEL = "gpt-realtime-mini"
 FALLBACK_MODELS = (
-    "gpt-realtime",
     "gpt-realtime-mini",
+    "gpt-realtime",
     "gpt-4o-mini-realtime-preview-2024-12-17",
     "gpt-4o-realtime-preview-2024-12-17",
 )
 
 EXPIRES_AFTER = {"anchor": "created_at", "seconds": 600}
 
+_REALTIME_ALIASES = {
+    "gpt-4o-mini-realtime-preview": "gpt-4o-mini-realtime-preview-2024-12-17",
+    "gpt-4o-realtime-preview": "gpt-4o-realtime-preview-2024-12-17",
+}
 
-def _resolve_model(settings_model: str) -> str:
-    model = (settings_model or DEFAULT_REALTIME_MODEL).strip()
-    aliases = {
-        "gpt-4o-mini-realtime-preview": "gpt-4o-mini-realtime-preview-2024-12-17",
-        "gpt-4o-realtime-preview": "gpt-4o-realtime-preview-2024-12-17",
-    }
-    return aliases.get(model, model)
+
+def _is_realtime_model(model: str) -> bool:
+    """Chat models (gpt-4.1-mini, gpt-4o, …) no sirven en /v1/realtime/*."""
+    m = (model or "").strip().lower()
+    if not m:
+        return False
+    if "realtime" in m:
+        return True
+    # Alias corto oficial OpenAI
+    return m in {"gpt-realtime", "gpt-realtime-mini"}
+
+
+def _resolve_model(settings_model: str, *, prefer_mini: bool = False) -> str:
+    raw = (settings_model or "").strip()
+    model = _REALTIME_ALIASES.get(raw, raw)
+    if not _is_realtime_model(model):
+        fallback = DEFAULT_FITLINE_REALTIME_MODEL if prefer_mini else DEFAULT_REALTIME_MODEL
+        if raw:
+            logger.warning(
+                "[OPENAI] OPENAI_MODEL_VOICE=%r no es Realtime — usando %s",
+                raw,
+                fallback,
+            )
+        return fallback
+    if prefer_mini and model == DEFAULT_REALTIME_MODEL:
+        return DEFAULT_FITLINE_REALTIME_MODEL
+    return model
 
 
 def _models_to_try(primary: str) -> list[str]:
@@ -50,10 +76,11 @@ def _models_to_try(primary: str) -> list[str]:
     seen: set[str] = set()
     out: list[str] = []
     for m in ordered:
-        if m and m not in seen:
-            seen.add(m)
-            out.append(m)
-    return out
+        resolved = _REALTIME_ALIASES.get(m, m)
+        if resolved and resolved not in seen and _is_realtime_model(resolved):
+            seen.add(resolved)
+            out.append(resolved)
+    return out or [DEFAULT_FITLINE_REALTIME_MODEL]
 
 
 def _audio_input(turn_detection: dict[str, Any], *, language: str = "es") -> dict[str, Any]:
@@ -185,7 +212,9 @@ def create_realtime_session(
         }
 
     voice = normalize_openai_voice(voice_name)
-    model = _resolve_model(settings.openai_model_voice)
+    profile = (voice_profile or "jarvis").strip().lower()
+    prefer_mini = profile in ("fitline", "standard")
+    model = _resolve_model(settings.openai_model_voice, prefer_mini=prefer_mini)
     project_id = getattr(settings, "openai_project_id", "") or ""
 
     instructions = build_realtime_instructions(
@@ -194,7 +223,7 @@ def create_realtime_session(
         voice_warmth=voice_warmth,
         voice_energy=voice_energy,
         response_speed=response_speed or "balanced",
-        voice_profile=voice_profile or "jarvis",
+        voice_profile=profile or "jarvis",
     )
     lang = language or "es"
     _temperature, preferred_turn = profile_for_response_speed(response_speed)
