@@ -213,7 +213,8 @@ def create_realtime_session(
 
     voice = normalize_openai_voice(voice_name)
     profile = (voice_profile or "jarvis").strip().lower()
-    prefer_mini = profile in ("fitline", "standard")
+    # FitLine: gpt-realtime (no mini) para acercar profundidad a Jarvis/gpt-4.1-mini.
+    prefer_mini = profile == "standard"
     model = _resolve_model(settings.openai_model_voice, prefer_mini=prefer_mini)
     project_id = getattr(settings, "openai_project_id", "") or ""
 
@@ -224,6 +225,7 @@ def create_realtime_session(
         voice_energy=voice_energy,
         response_speed=response_speed or "balanced",
         voice_profile=profile or "jarvis",
+        user_id=user_id,
     )
     lang = language or "es"
     _temperature, preferred_turn = profile_for_response_speed(response_speed)

@@ -240,5 +240,9 @@ def test_realtime_fitline_prompt_has_knowledge_not_jarvis():
     assert "FITLINE" in text.upper() or "FitLine" in text
     assert "ANTI-FUGA" in text or "NUNCA leas" in text
     assert "VENDER SIN PARECER" in text or "ASESOR COMERCIAL" in text
+    assert "PROFUNDIDAD" in text or "PARIDAD" in text
     assert "Jarvis" not in text or "NO eres Jarvis" in text
     assert "NTC" in text or "Nutrient Transport" in text
+    # Misma ficha que Retell (no truncar agresivo).
+    assert "HECHOS OBLIGATORIOS" in text
+    assert len(text) > 4000

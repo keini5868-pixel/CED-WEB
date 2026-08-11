@@ -170,6 +170,59 @@ _CHECK_QUESTION_VOICE = (
 )
 
 
+def is_fitline_admin_user(user_id: str) -> bool:
+    """Admins / coadmins: mentor experto sin forzar modo guía pedagógico."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return False
+    try:
+        from app.deps.auth import is_super_admin
+        from app.services import supabase_db
+
+        profile = supabase_db.get_profile(uid) or {}
+        role = str(profile.get("role") or "").strip().lower()
+        if role in ("super_admin", "coadmin", "admin"):
+            return True
+        return is_super_admin(profile.get("email"), profile.get("role"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def is_fitline_new_partner_audience(user_id: str) -> bool:
+    """Socio/usuario nuevo (no admin): pedagogía por defecto."""
+    return bool((user_id or "").strip()) and not is_fitline_admin_user(user_id)
+
+
+def user_plan_is_fitline_focus(user_id: str) -> bool:
+    uid = (user_id or "").strip()
+    if not uid:
+        return False
+    try:
+        from app.domain.plans import plan_is_pm_fitline_focus
+        from app.services import supabase_db
+
+        sub = supabase_db.get_subscription(uid) or {}
+        return plan_is_pm_fitline_focus(sub.get("plan_id"))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def should_auto_start_fitline_guide(user_id: str, user_text: str) -> bool:
+    """Auto-guía para socios nuevos en plan Cierre/FitLine (funnel pedagógico).
+
+    En otros planes solo arranca con frases explícitas de «modo guía» /
+    «desde cero» (manejadas aparte en prepare_fitline_guide_turn).
+    """
+    uid = (user_id or "").strip()
+    if not uid or is_fitline_admin_user(uid):
+        return False
+    if vcs.is_fitline_guide_opt_out(uid):
+        return False
+    if is_guide_deactivate_phrase(user_text):
+        return False
+    return user_plan_is_fitline_focus(uid)
+
+
 def is_guide_activate_phrase(text: str) -> bool:
     return bool(_ACTIVATE_RE.search((text or "").strip()))
 
@@ -199,6 +252,7 @@ def get_guide_step(index: int) -> dict[str, str]:
 
 
 def activate_fitline_guide(user_id: str) -> dict[str, Any]:
+    vcs.set_fitline_guide_opt_out(user_id, False)
     vcs.set_fitline_guide(user_id, active=True, step_index=0, reexplain=False)
     logger.info("[GUIDE] activated user=%s", (user_id or "")[:8])
     return {
@@ -212,6 +266,7 @@ def activate_fitline_guide(user_id: str) -> dict[str, Any]:
 def deactivate_fitline_guide(user_id: str) -> dict[str, Any]:
     was = vcs.is_fitline_guide_active(user_id)
     vcs.set_fitline_guide(user_id, active=False, step_index=0, reexplain=False)
+    vcs.set_fitline_guide_opt_out(user_id, True)
     logger.info("[GUIDE] deactivated user=%s was=%s", (user_id or "")[:8], was)
     return {"ok": True, "status": "guide_inactive", "was_active": was}
 
@@ -244,9 +299,20 @@ def prepare_fitline_guide_turn(
             "step_index": 0,
             "step": GUIDE_STEPS[0],
             "reexplain": False,
+            "auto": False,
         }
 
     if not vcs.is_fitline_guide_active(uid):
+        if should_auto_start_fitline_guide(uid, text):
+            activate_fitline_guide(uid)
+            return {
+                "active": True,
+                "just_activated": True,
+                "step_index": 0,
+                "step": GUIDE_STEPS[0],
+                "reexplain": False,
+                "auto": True,
+            }
         return {"active": False}
 
     step_index = vcs.get_fitline_guide_step(uid)
@@ -309,11 +375,18 @@ def format_guide_overlay(
         else
         "Si pregunta algo puntual del bloque actual, aclara y luego vuelve a ofrecer avanzar."
     )
+    auto_line = ""
+    if state.get("just_activated") and state.get("auto"):
+        auto_line = (
+            "- Este socio es nuevo (no admin): el modo guía arrancó SOLO. "
+            "Empieza con el bloque intro de forma cálida y pedagógica.\n"
+        )
     return (
         "# MODO GUÍA FITLINE/PM — MENTOR PEDAGÓGICO (ACTIVO)\n"
         f"Paso {step_index + 1}/{total}: {step.get('title')}\n"
         f"CONTENIDO A ENSEÑAR EN ESTE TURNO (usa SOLO esto + hechos Oportunidades):\n{teach}\n\n"
         "REGLAS DE RITMO:\n"
+        f"{auto_line}"
         f"- {pace}\n"
         "- Un concepto a la vez. NO satures con % de comisión, precios de entrada "
         "ni catálogo completo.\n"
@@ -366,9 +439,9 @@ def append_fitline_guide_if_needed(
 
 
 def wants_fitline_guide_context(user_id: str, user_text: str) -> bool:
-    """True si hay que tratar el turno como modo guía (activo o activación)."""
+    """True si hay que tratar el turno como modo guía (activo, activación o auto)."""
     if is_guide_activate_phrase(user_text):
         return True
     if (user_id or "").strip() and vcs.is_fitline_guide_active(user_id):
         return True
-    return False
+    return should_auto_start_fitline_guide(user_id, user_text)

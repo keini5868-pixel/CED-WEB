@@ -334,9 +334,14 @@ def format_fitline_knowledge_for_prompt(*, max_chars: int = 16_000) -> str:
     return text
 
 
-def append_fitline_knowledge_if_needed(system: str, user_text: str) -> str:
+def append_fitline_knowledge_if_needed(
+    system: str,
+    user_text: str,
+    *,
+    force: bool = False,
+) -> str:
     """Añade el bloque FitLine al system prompt cuando el turno lo requiere."""
-    if not wants_fitline_knowledge(user_text):
+    if not force and not wants_fitline_knowledge(user_text):
         return system
     block = format_fitline_knowledge_for_prompt()
     if not block:
@@ -347,9 +352,12 @@ def append_fitline_knowledge_if_needed(system: str, user_text: str) -> str:
     from app.services.chat_intents import is_text_ideation_request
 
     base = (system or "").rstrip()
-    out = f"{base}\n\n{block}" if base else block
+    if "HECHOS OBLIGATORIOS FITLINE" in base or "CONOCIMIENTO CURADO — PM International" in base:
+        out = base
+    else:
+        out = f"{base}\n\n{block}" if base else block
     # Prospección / copy FitLine también lleva el playbook de marketing.
-    out = append_sales_marketing_playbook_if_needed(out, user_text)
+    out = append_sales_marketing_playbook_if_needed(out, user_text or "fitline")
     if is_text_ideation_request(user_text) or re.search(
         r"\bprospecci[oó]n|prospectar|contenido|campa[nñ]a\b",
         user_text or "",

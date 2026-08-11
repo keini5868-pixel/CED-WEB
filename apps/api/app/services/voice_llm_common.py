@@ -162,21 +162,39 @@ def build_base_voice_system(
 
         base = append_sales_marketing_playbook_if_needed(base, query)
     # FitLine/PM: mismo conocimiento Oportunidades que chat (productos, hechos, prospección).
-    if query:
+    # Plan Cierre / foco PM: ficha completa siempre (paridad Retell Jarvis ↔ Realtime).
+    force_fitline = False
+    if uid:
+        try:
+            from app.services.opportunities_pilot.fitline_guide_mode import (
+                user_plan_is_fitline_focus,
+            )
+
+            force_fitline = user_plan_is_fitline_focus(uid)
+        except Exception:  # noqa: BLE001
+            force_fitline = False
+    if query or force_fitline:
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
         )
 
-        base = append_fitline_knowledge_if_needed(base, query)
-    # Modo Guía FitLine: mentor paso a paso (voz corta).
-    if uid and query:
+        base = append_fitline_knowledge_if_needed(
+            base,
+            query or "FitLine PM International",
+            force=force_fitline,
+        )
+    # Modo Guía FitLine: mentor paso a paso (voz corta). Auto para socios nuevos.
+    if uid and (query or force_fitline):
         try:
             from app.services.opportunities_pilot.fitline_guide_mode import (
                 append_fitline_guide_if_needed,
             )
 
             base = append_fitline_guide_if_needed(
-                base, uid, query, channel="voice"
+                base,
+                uid,
+                query or "modo guía fitline",
+                channel="voice",
             )
         except Exception:  # noqa: BLE001
             pass

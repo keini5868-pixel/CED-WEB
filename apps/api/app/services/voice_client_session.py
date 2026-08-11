@@ -52,6 +52,7 @@ def _fresh_session() -> dict[str, Any]:
         "fitline_guide_active": False,
         "fitline_guide_step": 0,
         "fitline_guide_reexplain": False,
+        "fitline_guide_opt_out": False,
     }
 
 
@@ -212,6 +213,17 @@ def get_fitline_guide_step(user_id: str) -> int:
 
 def clear_fitline_guide(user_id: str) -> None:
     set_fitline_guide(user_id, active=False, step_index=0, reexplain=False)
+
+
+def set_fitline_guide_opt_out(user_id: str, opted_out: bool) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["fitline_guide_opt_out"] = bool(opted_out)
+        session["updated_at"] = _now()
+
+
+def is_fitline_guide_opt_out(user_id: str) -> bool:
+    return bool(_get(user_id).get("fitline_guide_opt_out"))
 
 
 def is_camera_active(user_id: str, *, max_age_sec: float = 45.0) -> bool:

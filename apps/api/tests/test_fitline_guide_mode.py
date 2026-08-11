@@ -22,6 +22,44 @@ USER = "guide-test-user-001"
 
 def setup_function() -> None:
     vcs.clear_fitline_guide(USER)
+    vcs.set_fitline_guide_opt_out(USER, False)
+
+
+def test_auto_guide_for_cierre_non_admin(monkeypatch):
+    from app.services.opportunities_pilot import fitline_guide_mode as gm
+
+    monkeypatch.setattr(gm, "is_fitline_admin_user", lambda _uid: False)
+    monkeypatch.setattr(gm, "user_plan_is_fitline_focus", lambda _uid: True)
+    vcs.clear_fitline_guide(USER)
+    vcs.set_fitline_guide_opt_out(USER, False)
+
+    st = prepare_fitline_guide_turn(USER, "hola qué es FitLine", channel="voice")
+    assert st.get("active") is True
+    assert st.get("just_activated") is True
+    assert st.get("auto") is True
+
+
+def test_admin_skips_auto_guide(monkeypatch):
+    from app.services.opportunities_pilot import fitline_guide_mode as gm
+
+    monkeypatch.setattr(gm, "is_fitline_admin_user", lambda _uid: True)
+    monkeypatch.setattr(gm, "user_plan_is_fitline_focus", lambda _uid: True)
+    vcs.clear_fitline_guide(USER)
+
+    st = prepare_fitline_guide_turn(USER, "hola qué es FitLine", channel="voice")
+    assert st.get("active") is False
+
+
+def test_opt_out_blocks_auto_reentry(monkeypatch):
+    from app.services.opportunities_pilot import fitline_guide_mode as gm
+
+    monkeypatch.setattr(gm, "is_fitline_admin_user", lambda _uid: False)
+    monkeypatch.setattr(gm, "user_plan_is_fitline_focus", lambda _uid: True)
+    prepare_fitline_guide_turn(USER, "hola", channel="voice")
+    prepare_fitline_guide_turn(USER, "salir del modo guía", channel="voice")
+    st = prepare_fitline_guide_turn(USER, "qué es Activize", channel="voice")
+    assert st.get("active") is False
+    assert vcs.is_fitline_guide_opt_out(USER) is True
 
 
 def test_activate_phrases():

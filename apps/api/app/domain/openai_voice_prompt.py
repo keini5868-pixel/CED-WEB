@@ -183,21 +183,41 @@ def build_realtime_instructions(
     voice_energy: int = 50,
     response_speed: str = "balanced",
     voice_profile: str = "jarvis",
+    user_id: str = "",
 ) -> str:
     del voice_pace, voice_warmth, voice_energy, response_speed, language
     profile = (voice_profile or "jarvis").strip().lower()
     if profile == "fitline":
+        from app.services.opportunities_pilot.fitline_guide_mode import (
+            append_fitline_guide_if_needed,
+            is_fitline_admin_user,
+        )
         from app.services.opportunities_pilot.fitline_knowledge import (
             format_fitline_knowledge_for_prompt,
         )
 
-        knowledge = format_fitline_knowledge_for_prompt(max_chars=12_000)
-        return (
+        # Misma profundidad que Retell/Jarvis (ficha completa + closer).
+        knowledge = format_fitline_knowledge_for_prompt(max_chars=16_000)
+        admin = is_fitline_admin_user(user_id) if user_id else False
+        audience = (
+            "AUDIENCIA: administrador / mentor experto — respuestas densas, "
+            "persuasión sutil en momentos clave, sin ritmo de modo guía forzado.\n"
+            if admin
+            else
+            "AUDIENCIA: socio nuevo — prioriza pedagogía (modo guía si está activo), "
+            "un concepto a la vez, confirma entendimiento antes de avanzar.\n"
+        )
+        prompt = (
             "# CED — ASESOR VOZ FITLINE / PM INTERNATIONAL (Realtime)\n"
             "Eres CED, asesor comercial de FitLine / PM International dentro del Castillo "
             "de la Evolución Digital. Creado por Keini Castillo.\n"
             "NO eres Jarvis. NO uses estilo mayordomo británico ni «señor» forzado.\n"
-            "Habla español latinoamericano, cálido, claro y profesional.\n\n"
+            "Habla español latinoamericano, cálido, claro y profesional.\n"
+            f"{audience}\n"
+            "# PROFUNDIDAD (PARIDAD CON JARVIS/RETELL)\n"
+            "Usa el conocimiento curado completo abajo con el mismo nivel de detalle "
+            "que el mentor Jarvis: hechos, NTC, productos, credenciales, escala. "
+            "No des respuestas vagas si el dato está en la ficha.\n\n"
             "# SALUDO\n"
             "El cliente YA escuchó el saludo de recepción del sistema. "
             "PROHIBIDO volver a saludar o presentarte de nuevo.\n"
@@ -213,4 +233,12 @@ def build_realtime_instructions(
             "Otras acciones CED (redes, cámara, imagen) solo si las pide con claridad.\n\n"
             f"{knowledge}\n"
         ).strip()
+        if user_id and not admin:
+            prompt = append_fitline_guide_if_needed(
+                prompt,
+                user_id,
+                "modo guía fitline socio nuevo",
+                channel="voice",
+            )
+        return prompt
     return build_ced_voice_system_prompt()
