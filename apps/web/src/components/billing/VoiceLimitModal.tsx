@@ -122,7 +122,7 @@ export function VoiceLimitModal({
               reason === "no_voice") && (
               <div className="mt-4 space-y-2 border-t border-cyan-500/20 pt-4">
                 <p className="text-[10px] uppercase tracking-wider text-cyan-600">
-                  Planes desde $30/mes
+                  Planes desde $22/mes
                 </p>
                 {PUBLIC_PLANS.filter((p) => p.id !== "free_basic")
                   .slice(0, 2)

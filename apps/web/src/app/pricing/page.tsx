@@ -133,7 +133,9 @@ function PricingContent() {
               className={`rounded border p-6 ${
                 plan.id === "founding"
                   ? "border-amber-400/50 bg-amber-400/5"
-                  : plan.id === "free_basic"
+                  : plan.id === "cierre"
+                    ? "border-emerald-500/40 bg-emerald-500/5"
+                    : plan.id === "free_basic"
                     ? "border-cyan-500/20 bg-black/30"
                     : "border-cyan-500/30 bg-black/40"
               }`}
@@ -154,6 +156,11 @@ function PricingContent() {
               {plan.id === "founding" && (
                 <p className="mt-1 text-xs text-amber-400">
                   Cupos {FOUNDING_MEMBER_MAX_SLOTS} · precio bloqueado por 6 meses
+                </p>
+              )}
+              {plan.id === "cierre" && (
+                <p className="mt-1 text-xs text-emerald-400/90">
+                  Voz Jarvis · cerrador PM / FitLine
                 </p>
               )}
               {plan.id === "free_basic" && (

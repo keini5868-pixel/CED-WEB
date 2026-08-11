@@ -63,14 +63,14 @@ RESOURCE_UNIT_COSTS_USD: dict[str, float] = {
     "maps_route": MAPS_ROUTE_COST_USD,
 }
 
-# Minutos diarios Founding (cap margen — peor caso provider ≤ precio − $10)
-FOUNDING_VOICE_CAP_MINUTES = 30
+# Minutos diarios Founding (cap margen — Retell+Gemini ≤ precio − $10).
+FOUNDING_VOICE_CAP_MINUTES = 18
 
-# COGS provider (peor caso) para planificar margen mínimo $10 sin subir precio.
-# Voz: Retell+Cartesia+LLM proxy; imágenes Gemini std / HD; Ideogram Turbo; Tavily.
-PROVIDER_COGS_VOICE_PER_MIN_USD = 0.06
-# CED Cierre usa voz económica (Gemini Live–style), no Retell/Jarvis.
-PROVIDER_COGS_VOICE_CIERRE_PER_MIN_USD = 0.03
+# COGS provider para planificar margen mínimo $10 (cupo agotado 30 días).
+# Voz: Retell + Cartesia Jarvis + Gemini 2.5 Flash (con context cache FitLine).
+PROVIDER_COGS_VOICE_PER_MIN_USD = 0.081
+# Legacy alias (stack Gemini Live retirado — todos los planes usan Retell).
+PROVIDER_COGS_VOICE_CIERRE_PER_MIN_USD = PROVIDER_COGS_VOICE_PER_MIN_USD
 PROVIDER_COGS_IMAGE_STD_USD = 0.067  # Nano Banana 2 @ ~1K
 PROVIDER_COGS_IMAGE_HD_USD = 0.101  # Nano Banana 2 @ ~2K
 # Ideogram Turbo ~$0.03; GPT Image 1.5 medium ~$0.034 — usamos el techo para margen.
@@ -78,14 +78,14 @@ PROVIDER_COGS_IMAGE_TEXT_USD = 0.034
 PROVIDER_COGS_WEB_SEARCH_USD = 0.008
 MARGIN_BILLING_DAYS_PER_MONTH = 30
 MIN_PLAN_MARGIN_USD = 10.0
-# Cierre ($20) acepta margen ~$5–8 por diseño (voz barata + foco PM).
+# PM International ($22, solo voz): margen ~$7 a 180 min/mes — piso propio.
 MIN_PLAN_MARGIN_CIERRE_USD = 5.0
-# Cupo interno ~400 min/mes ≈ 13 min/día (no se muestra en copy público).
-CIERRE_VOICE_MINUTES_PER_DAY = 13
+# Cupo interno PM: 180 min/mes ≈ 6 min/día (tope económico ~200–220; no en copy público).
+CIERRE_VOICE_MINUTES_PER_DAY = 6
 CIERRE_VOICE_MINUTES_PER_MONTH = CIERRE_VOICE_MINUTES_PER_DAY * MARGIN_BILLING_DAYS_PER_MONTH
 
 PLAN_PRICES_USD: dict[str, int] = {
-    PlanId.CIERRE.value: 20,
+    PlanId.CIERRE.value: 22,
     PlanId.STARTER.value: 30,
     PlanId.PRO.value: 59,
     PlanId.ELITE.value: 99,
@@ -97,6 +97,7 @@ PLAN_PRICES_USD: dict[str, int] = {
 
 STRIPE_CHECKOUT_PLANS = frozenset(
     {
+        PlanId.CIERRE.value,
         PlanId.STARTER.value,
         PlanId.PRO.value,
         PlanId.ELITE.value,
@@ -151,12 +152,12 @@ class PlanLimits:
         return self.ai_images_hd_per_day
 
 
-# Límites calibrados a margen mínimo $10/mes (peor caso provider, 30 días).
-# Nano Banana 2 (gemini-3.1-flash-image): ~$0.067 std / ~$0.101 HD — cupos
-# diarios recortados vs. el accounting antiguo ($0.01/$0.02) para no romper margen.
+# Límites calibrados a margen mínimo $10/mes (cupo agotado, 30 días) con
+# Retell Jarvis @ $0.081/min + Nano Banana 2. Cupos de voz alineados a uso
+# realista de mercado (no power-user diario), no al peor caso histórico.
 PLAN_LIMITS: dict[str, PlanLimits] = {
-    # CED Cierre — experto PM/FitLine, voz económica (~400 min/mes internos).
-    # Cupos lean: margen ~$7 con COGS voz Gemini ($0.03/min), sin Retell.
+    # CED PM International — solo Jarvis + conocimiento PM/FitLine (~180 min/mes).
+    # Sin imágenes/PDF en cupo; margen propio (~$7) bajo MIN_PLAN_MARGIN_CIERRE.
     PlanId.CIERRE.value: PlanLimits(
         voice_minutes_per_day=CIERRE_VOICE_MINUTES_PER_DAY,
         web_searches_per_day=5,
@@ -166,14 +167,14 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         camera_enabled=False,
         meta_social_enabled=True,
         prospection_enabled=True,
-        pdf_reports=True,
+        pdf_reports=False,
         claude_messages_per_day=40,
         ai_images_text_per_day=0,
     ),
     PlanId.STARTER.value: PlanLimits(
-        voice_minutes_per_day=5,
+        voice_minutes_per_day=4,  # ~120 min/mes (uso típico mercado)
         web_searches_per_day=15,
-        ai_images_standard_per_day=3,
+        ai_images_standard_per_day=2,
         ai_images_hd_per_day=0,
         voice_enabled=True,
         camera_enabled=False,
@@ -184,7 +185,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         ai_images_text_per_day=1,
     ),
     PlanId.PRO.value: PlanLimits(
-        voice_minutes_per_day=12,
+        voice_minutes_per_day=7,  # ~210 min/mes
         web_searches_per_day=-1,
         ai_images_standard_per_day=6,
         ai_images_hd_per_day=1,
@@ -197,7 +198,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         ai_images_text_per_day=3,
     ),
     PlanId.ELITE.value: PlanLimits(
-        voice_minutes_per_day=20,
+        voice_minutes_per_day=12,  # ~360 min/mes
         web_searches_per_day=-1,
         ai_images_standard_per_day=14,
         ai_images_hd_per_day=3,
@@ -210,7 +211,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         ai_images_text_per_day=5,
     ),
     PlanId.FOUNDING.value: PlanLimits(
-        voice_minutes_per_day=FOUNDING_VOICE_CAP_MINUTES,
+        voice_minutes_per_day=FOUNDING_VOICE_CAP_MINUTES,  # ~540 min/mes
         web_searches_per_day=-1,
         ai_images_standard_per_day=24,
         ai_images_hd_per_day=6,
@@ -250,7 +251,7 @@ PLAN_LIMITS[PlanId.ELITE_FOUNDING.value] = PLAN_LIMITS[PlanId.FOUNDING.value]
 PLAN_LIMITS[PlanId.ELITE_REGULAR.value] = PLAN_LIMITS[PlanId.ELITE.value]
 
 PLAN_LABELS: dict[str, str] = {
-    PlanId.CIERRE.value: "CED Cierre",
+    PlanId.CIERRE.value: "CED PM International",
     PlanId.STARTER.value: "CED Starter",
     PlanId.PRO.value: "CED Pro",
     PlanId.ELITE.value: "CED Élite",
@@ -379,11 +380,7 @@ def estimate_plan_monthly_provider_cogs_usd(
     pid = normalize_plan_id(plan_id)
     limits = get_plan_limits(pid)
     days = MARGIN_BILLING_DAYS_PER_MONTH
-    voice_cogs = (
-        PROVIDER_COGS_VOICE_CIERRE_PER_MIN_USD
-        if plan_uses_gemini_voice_stack(pid)
-        else PROVIDER_COGS_VOICE_PER_MIN_USD
-    )
+    voice_cogs = PROVIDER_COGS_VOICE_PER_MIN_USD
     voice = max(0, limits.voice_minutes_per_day) * days * voice_cogs
     img_std = (
         max(0, limits.ai_images_standard_per_day) * days * PROVIDER_COGS_IMAGE_STD_USD
@@ -433,7 +430,8 @@ def public_plans_catalog() -> list[dict]:
                 "id": pid.value,
                 "label": PLAN_LABELS[pid.value],
                 "price_usd": PLAN_PRICES_USD[pid.value],
-                "minutes_per_day": limits.voice_minutes_per_day,
+                # minutes_per_day omitido a propósito: cupo interno (kill-switch),
+                # no se expone en catálogo / UI pública.
                 "web_searches_per_day": limits.web_searches_per_day,
                 "ai_images_standard_per_day": limits.ai_images_standard_per_day,
                 "ai_images_hd_per_day": limits.ai_images_hd_per_day,

@@ -113,11 +113,11 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
               <p className="mt-1 text-[11px] text-amber-400">
                 Cupos {FOUNDING_MEMBER_MAX_SLOTS} · precio bloqueado 6 meses
               </p>
-            ) : (
+            ) : plan.id === "cierre" ? (
               <p className="mt-1 text-[11px] text-cyan-500">
-                {plan.minutesPerDay} min voz / día
+                Voz Jarvis · foco PM International
               </p>
-            )}
+            ) : null}
             <ul className="mt-3 space-y-1 text-xs text-cyan-100/75">
               {plan.highlights.slice(0, compact ? 4 : 8).map((h) => (
                 <li key={h}>· {h}</li>

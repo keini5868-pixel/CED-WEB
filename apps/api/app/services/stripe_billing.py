@@ -11,6 +11,7 @@ import stripe
 from app.config import Settings, get_settings
 from app.domain.plans import (
     FOUNDING_MEMBER_MAX_SLOTS,
+    PLAN_LABELS,
     PLAN_PRICES_USD,
     RECHARGE_CLIENT_SHARE,
     RECHARGE_QUICK_AMOUNTS_USD,
@@ -68,10 +69,10 @@ def ensure_stripe_plan_price(plan_id: str, settings: Settings | None = None) -> 
 
     _configure_stripe(s)
     amount = int(PLAN_PRICES_USD[PlanId.CIERRE.value]) * 100
-    label = "CED Cierre"
+    label = PLAN_LABELS.get(PlanId.CIERRE.value, "CED PM International")
     description = (
-        "Experto en ventas PM International / FitLine. "
-        "Guía paso a paso para socios nuevos y cierre estratégico."
+        "Cerrador de clientes PM International / FitLine con voz Jarvis. "
+        "Conocimiento de producto, objeciones y cierre estratégico."
     )
 
     for product in stripe.Product.list(limit=100, active=True).auto_paging_iter():

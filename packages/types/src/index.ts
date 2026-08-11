@@ -100,9 +100,9 @@ const COMMON_FREE_TOOLS = [
 
 /**
  * Progresión acumulativa — cada plan incluye todo lo del anterior + lo nuevo.
- * Regla: NUNCA poner cantidades numéricas aquí (minutos, cantidad de imágenes,
- * límites, etc.). Solo nombres de capacidad. Los límites reales viven en
- * `apps/api/app/domain/plans.py`, sin exponerse en la página pública.
+ * Regla: NUNCA poner cantidades de minutos de voz aquí. Los cupos de voz
+ * viven solo en `apps/api/app/domain/plans.py` (kill-switch interno) y NO
+ * se muestran en home, /pricing ni tarjetas de planes.
  *
  * Regla: cada `highlights` lista TODAS las herramientas del plan de forma
  * explícita y completa (acumulativo) — NUNCA usar un atajo tipo "Todo
@@ -121,7 +121,6 @@ export const PUBLIC_PLANS = [
     id: "free_basic" as const,
     label: "CED Básico",
     priceUsd: 0,
-    minutesPerDay: 0,
     highlights: [
       "Creación de imágenes",
       "Creación de PDF",
@@ -130,14 +129,26 @@ export const PUBLIC_PLANS = [
     ],
   },
   {
+    id: "cierre" as const,
+    label: "CED PM International",
+    priceUsd: 22,
+    highlights: [
+      "Cerrador de clientes PM International / FitLine",
+      "Asistente de voz Jarvis",
+      "Conocimiento de productos y objeciones",
+      "Prospección y redes sociales",
+      "Búsquedas web",
+      "Chat de texto",
+    ],
+  },
+  {
     id: "starter" as const,
     label: "CED Starter",
     priceUsd: 30,
-    minutesPerDay: 5,
     highlights: [
-      "Asistente de voz CED (5 min/día)",
+      "Asistente de voz CED",
       "Búsquedas web (15/día)",
-      "Creación de imágenes (5/día)",
+      "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
       "Chat de texto",
     ],
@@ -146,13 +157,12 @@ export const PUBLIC_PLANS = [
     id: "pro" as const,
     label: "CED Pro",
     priceUsd: 59,
-    minutesPerDay: 12,
     highlights: [
       "Cámara por voz (análisis de imagen)",
       "Búsquedas web ilimitadas",
       "Creación de PDF",
       "Publicación en redes sociales (Facebook / Instagram)",
-      "Asistente de voz CED (12 min/día)",
+      "Asistente de voz CED",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
       "Chat de texto",
@@ -162,7 +172,6 @@ export const PUBLIC_PLANS = [
     id: "elite" as const,
     label: "CED Élite",
     priceUsd: 99,
-    minutesPerDay: 20,
     highlights: [
       "Modo avanzado (análisis profundo con Claude)",
       "Modo de prospección",
@@ -171,7 +180,7 @@ export const PUBLIC_PLANS = [
       "Cámara por voz (análisis de imagen)",
       "Búsquedas web ilimitadas",
       "Creación de PDF",
-      "Asistente de voz CED (20 min/día)",
+      "Asistente de voz CED",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
       "Chat de texto",
@@ -181,7 +190,6 @@ export const PUBLIC_PLANS = [
     id: "founding" as const,
     label: "CED Founding",
     priceUsd: 149,
-    minutesPerDay: 30,
     highlights: [
       "Precio bloqueado por 6 meses",
       "Cupos limitados",
@@ -192,7 +200,7 @@ export const PUBLIC_PLANS = [
       "Cámara por voz (análisis de imagen)",
       "Búsquedas web ilimitadas",
       "Creación de PDF",
-      "Asistente de voz CED (30 min/día)",
+      "Asistente de voz CED",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
       "Chat de texto",

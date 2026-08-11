@@ -1,8 +1,8 @@
-"""Tests — límites diarios de voz (Starter 5 / Pro 12 / Élite 20 / Founding 30)
+"""Tests — límites diarios de voz (Starter 4 / Pro 7 / Élite 12 / Founding 18)
 y blindaje trial (5 min/día, 7 días) vs. Básico permanente post-trial (0 min).
 
-Calibrados a margen mínimo $10/mes (COGS provider peor caso). El trial de 7
-días da 5 min/día y al día 8 la voz queda en 0 (chat de texto sigue).
+Calibrados a margen mínimo $10/mes (Retell+Gemini $0.081/min + imágenes).
+El trial de 7 días da 5 min/día y al día 8 la voz queda en 0 (chat de texto sigue).
 """
 
 from __future__ import annotations
@@ -15,10 +15,11 @@ from app.services.admin_users import get_user_access
 
 
 def test_paid_plan_daily_voice_limits_match_new_numbers():
-    assert get_plan_limits(PlanId.STARTER.value).voice_minutes_per_day == 5
-    assert get_plan_limits(PlanId.PRO.value).voice_minutes_per_day == 12
-    assert get_plan_limits(PlanId.ELITE.value).voice_minutes_per_day == 20
-    assert get_plan_limits(PlanId.FOUNDING.value).voice_minutes_per_day == 30
+    assert get_plan_limits(PlanId.STARTER.value).voice_minutes_per_day == 4
+    assert get_plan_limits(PlanId.PRO.value).voice_minutes_per_day == 7
+    assert get_plan_limits(PlanId.ELITE.value).voice_minutes_per_day == 12
+    assert get_plan_limits(PlanId.FOUNDING.value).voice_minutes_per_day == 18
+    assert get_plan_limits(PlanId.CIERRE.value).voice_minutes_per_day == 6
 
 
 def test_free_basic_permanent_never_has_voice():
@@ -104,12 +105,12 @@ def test_active_paid_plan_returns_new_daily_minutes():
         patch("app.services.supabase_db.get_subscription", return_value=sub),
         patch("app.services.supabase_db.expire_trial_if_needed", return_value=False),
         patch("app.deps.auth.is_super_admin", return_value=False),
-        patch("app.services.supabase_db.get_usage_limit_minutes", return_value=12),
+        patch("app.services.supabase_db.get_usage_limit_minutes", return_value=7),
     ):
         allowed, reason, minutes = get_user_access("user-pro-active")
     assert allowed is True
     assert reason == "ok"
-    assert minutes == 12
+    assert minutes == 7
 
 
 def test_past_due_loses_paid_voice_minutes():
