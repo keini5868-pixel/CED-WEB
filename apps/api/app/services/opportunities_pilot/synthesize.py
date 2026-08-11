@@ -32,8 +32,12 @@ def build_opportunity_detail(
     updates = search_updates or {}
     meta = search_meta or {}
     data_gaps: list[str] = []
+    curated_only = bool(meta.get("curated_only")) or meta.get("live_search") is False
 
-    if meta.get("missing_key"):
+    if curated_only:
+        # Servir ficha fija: no reportar “faltó Tavily” en cada apertura.
+        pass
+    elif meta.get("missing_key"):
         data_gaps.append(
             "La búsqueda web no está configurada (falta TAVILY_API_KEY). "
             "La ficha muestra solo el contenido base curado."
@@ -49,7 +53,7 @@ def build_opportunity_detail(
             "No inventamos comisiones ni requisitos."
         )
 
-    if not updates.get("compensation"):
+    if not curated_only and not updates.get("compensation"):
         data_gaps.append(
             "Sin cifras de compensación/ingresos atribuibles en la búsqueda "
             "de esta sesión. No se publican montos inventados."

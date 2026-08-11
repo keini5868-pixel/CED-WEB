@@ -129,6 +129,7 @@ function DetailView({
   const [sponsorDraft, setSponsorDraft] = useState("");
   const [sponsorBusy, setSponsorBusy] = useState(false);
   const [sponsorMsg, setSponsorMsg] = useState<string | null>(null);
+  const [editingLink, setEditingLink] = useState(false);
   const [plan, setPlan] = useState<FitlineActionPlan | null>(
     detail.action_plan ?? null,
   );
@@ -149,6 +150,7 @@ function DetailView({
 
   const activeUrl = sponsorInfo?.url || sponsor?.url || "";
   const configured = Boolean(sponsorInfo?.configured ?? sponsor?.configured);
+  const usingOwn = sponsorInfo?.source === "user" || Boolean(sponsorInfo?.has_own);
 
   const saveOwnLink = async () => {
     setSponsorBusy(true);
@@ -156,9 +158,10 @@ function DetailView({
     try {
       const saved = await saveFitlineSponsor(sponsorDraft.trim());
       setSponsorInfo(saved);
+      setEditingLink(false);
       setSponsorMsg(
         saved.has_own
-          ? "Tu enlace de patrocinio quedó guardado."
+          ? "Tu enlace de patrocinio quedó guardado. CED lo usará para atraer a tus socios."
           : "Se restauró el enlace por defecto de CED.",
       );
     } catch (e) {
@@ -245,85 +248,123 @@ function DetailView({
           Activar franquicia
         </h3>
         {configured && activeUrl ? (
-          <a
-            href={activeUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500"
-          >
-            {sponsorInfo?.cta_label ||
-              sponsor?.cta_label ||
-              "Activar su franquicia (paquete manager)"}
-            <ExternalLink className="h-4 w-4" />
-          </a>
+          <div className="space-y-2">
+            <a
+              href={activeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500"
+            >
+              {sponsorInfo?.cta_label ||
+                sponsor?.cta_label ||
+                "Activar su franquicia (paquete manager)"}
+              <ExternalLink className="h-4 w-4" />
+            </a>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="min-w-0 flex-1 truncate text-[11px] text-slate-500" title={activeUrl}>
+                {activeUrl}
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingLink(true);
+                  setSponsorDraft(usingOwn ? activeUrl : "");
+                  setSponsorMsg(null);
+                }}
+                className="shrink-0 rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[12px] font-medium text-cyan-200 hover:bg-cyan-500/20"
+              >
+                Editar enlace
+              </button>
+            </div>
+          </div>
         ) : (
           <p className="text-sm leading-relaxed text-amber-100/90">
             El enlace de patrocinio aún no está configurado. Cuando esté listo,
             aparecerá aquí el botón para activar tu franquicia.
           </p>
         )}
-        {sponsorInfo?.source === "user" ? (
+        {usingOwn ? (
           <p className="mt-2 text-[11px] text-emerald-300/90">
             Estás usando tu propio enlace de patrocinio.
           </p>
         ) : sponsorInfo?.has_default ? (
           <p className="mt-2 text-[11px] text-slate-500">
-            Enlace por defecto de CED. Cuando te inscribas, puedes poner el tuyo abajo.
+            Enlace por defecto de CED. Cuando actives tu franquicia, pulsa{" "}
+            <span className="text-slate-300">Editar enlace</span> y pega el tuyo
+            para atraer a tus propios socios.
           </p>
         ) : null}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-black/20 px-4 py-3.5">
-        <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-300">
-          Mi enlace de patrocinio
-        </h3>
-        <p className="mb-3 text-[12px] leading-relaxed text-slate-500">
-          Si ya activaste tu franquicia, pega aquí tu enlace. CED lo usará cuando
-          invites a nuevas personas desde Oportunidades.
-        </p>
-        <input
-          type="url"
-          value={sponsorDraft}
-          onChange={(e) => setSponsorDraft(e.target.value)}
-          placeholder="https://…"
-          className="mb-2 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"
-        />
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={sponsorBusy}
-            onClick={() => void saveOwnLink()}
-            className="rounded-lg bg-cyan-700/80 px-3 py-1.5 text-sm text-white hover:bg-cyan-600 disabled:opacity-50"
-          >
-            {sponsorBusy ? "Guardando…" : "Guardar mi enlace"}
-          </button>
-          <button
-            type="button"
-            disabled={sponsorBusy}
-            onClick={() => {
-              setSponsorDraft("");
-              void (async () => {
-                setSponsorBusy(true);
-                try {
-                  const saved = await saveFitlineSponsor("");
-                  setSponsorInfo(saved);
-                  setSponsorMsg("Se restauró el enlace por defecto.");
-                } catch (e) {
-                  setSponsorMsg(e instanceof Error ? e.message : "Error");
-                } finally {
-                  setSponsorBusy(false);
-                }
-              })();
-            }}
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-50"
-          >
-            Usar enlace CED
-          </button>
-        </div>
-        {sponsorMsg ? (
-          <p className="mt-2 text-[12px] text-cyan-300/90">{sponsorMsg}</p>
-        ) : null}
-      </section>
+      {editingLink ? (
+        <section className="rounded-xl border border-white/10 bg-black/20 px-4 py-3.5">
+          <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-slate-300">
+            Editar enlace de patrocinio
+          </h3>
+          <p className="mb-3 text-[12px] leading-relaxed text-slate-500">
+            Por defecto se muestra el enlace de CED. Si ya te inscribiste con ese
+            enlace, pega aquí el tuyo: CED lo usará cuando invites a nuevas
+            personas desde Oportunidades.
+          </p>
+          <input
+            type="url"
+            value={sponsorDraft}
+            onChange={(e) => setSponsorDraft(e.target.value)}
+            placeholder="https://…"
+            className="mb-2 w-full rounded-lg border border-white/10 bg-black/40 px-3 py-2 text-sm text-slate-200 outline-none focus:border-cyan-500/50"
+            autoFocus
+          />
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={sponsorBusy}
+              onClick={() => void saveOwnLink()}
+              className="rounded-lg bg-cyan-700/80 px-3 py-1.5 text-sm text-white hover:bg-cyan-600 disabled:opacity-50"
+            >
+              {sponsorBusy ? "Guardando…" : "Guardar mi enlace"}
+            </button>
+            <button
+              type="button"
+              disabled={sponsorBusy}
+              onClick={() => {
+                setSponsorDraft("");
+                void (async () => {
+                  setSponsorBusy(true);
+                  try {
+                    const saved = await saveFitlineSponsor("");
+                    setSponsorInfo(saved);
+                    setEditingLink(false);
+                    setSponsorMsg("Se restauró el enlace por defecto de CED.");
+                  } catch (e) {
+                    setSponsorMsg(e instanceof Error ? e.message : "Error");
+                  } finally {
+                    setSponsorBusy(false);
+                  }
+                })();
+              }}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-slate-300 hover:bg-white/5 disabled:opacity-50"
+            >
+              Usar enlace CED
+            </button>
+            <button
+              type="button"
+              disabled={sponsorBusy}
+              onClick={() => {
+                setEditingLink(false);
+                setSponsorMsg(null);
+              }}
+              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200"
+            >
+              Cancelar
+            </button>
+          </div>
+          {sponsorMsg ? (
+            <p className="mt-2 text-[12px] text-cyan-300/90">{sponsorMsg}</p>
+          ) : null}
+        </section>
+      ) : sponsorMsg ? (
+        <p className="text-[12px] text-cyan-300/90">{sponsorMsg}</p>
+      ) : null}
 
       {(detail.data_gaps || []).length > 0 ? (
         <section className="rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5">

@@ -14,6 +14,7 @@ from slowapi.errors import RateLimitExceeded
 from app.build_info import BUILD_TIMESTAMP, BUILD_VERSION
 from app.config import get_settings
 from app.logging_setup import configure_logging
+from app.middleware.preview_persona import PreviewPersonaMiddleware
 from app.middleware.request_logging import RequestLoggingMiddleware
 from app.middleware.security import SecurityHeadersMiddleware
 from app.rate_limit import limiter
@@ -159,6 +160,7 @@ def create_app() -> FastAPI:
     )
     application.add_middleware(SecurityHeadersMiddleware, settings=settings)
     application.add_middleware(RequestLoggingMiddleware)
+    application.add_middleware(PreviewPersonaMiddleware)
 
     if settings.rate_limit_enabled:
         # Sin límite global: SlowAPIMiddleware rompe el upgrade WebSocket de Retell LLM.

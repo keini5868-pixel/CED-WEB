@@ -137,6 +137,10 @@ async function forward(request: NextRequest, pathSegments: string[]) {
   if (videoEditPilot) {
     headers["X-CED-Video-Edit-Pilot"] = videoEditPilot;
   }
+  const previewAs = request.headers.get("x-ced-preview-as");
+  if (previewAs) {
+    headers["X-CED-Preview-As"] = previewAs;
+  }
   let body: BodyInit | undefined;
   if (request.method !== "GET" && request.method !== "HEAD") {
     if (requestContentType?.includes("multipart/form-data")) {

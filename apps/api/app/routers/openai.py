@@ -59,7 +59,10 @@ async def realtime_session(
 
     balance = await voice_access_state_async(user_id)
     plan_id = str(balance.get("plan_id") or "")
-    fitline_stack = plan_uses_gemini_voice_stack(plan_id)
+    from app.services.preview_persona import is_cierre_partner_preview
+
+    preview_cierre = is_cierre_partner_preview(user_id)
+    fitline_stack = plan_uses_gemini_voice_stack(plan_id) or preview_cierre
     settings = get_settings()
     # FitLine/Cierre siempre puede usar este transporte (sin Jarvis).
     # El resto solo si VOICE_PROVIDER=openai.

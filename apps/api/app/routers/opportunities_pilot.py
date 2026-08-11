@@ -63,6 +63,8 @@ def opportunities_status(user_id: str = Depends(require_user_id)) -> dict:
         "production": True,
         "enabled": opportunities_module_enabled(),
         "tavily": bool(settings.tavily_api_key.strip()),
+        "live_search": bool(settings.opportunities_live_search),
+        "curated_only": not bool(settings.opportunities_live_search),
         "sponsor_url_configured": bool(sponsor.get("configured")),
         "sponsor": sponsor,
         "has_action_plan": bool(plan),

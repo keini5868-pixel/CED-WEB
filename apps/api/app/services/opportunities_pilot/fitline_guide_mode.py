@@ -171,10 +171,20 @@ _CHECK_QUESTION_VOICE = (
 
 
 def is_fitline_admin_user(user_id: str) -> bool:
-    """Admins / coadmins: mentor experto sin forzar modo guía pedagógico."""
+    """Admins / coadmins: mentor experto sin forzar modo guía pedagógico.
+
+    En preview socio Cierre ($20) el admin se trata como usuario nuevo.
+    """
     uid = (user_id or "").strip()
     if not uid:
         return False
+    try:
+        from app.services.preview_persona import is_cierre_partner_preview
+
+        if is_cierre_partner_preview(uid):
+            return False
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from app.deps.auth import is_super_admin
         from app.services import supabase_db
@@ -197,6 +207,13 @@ def user_plan_is_fitline_focus(user_id: str) -> bool:
     uid = (user_id or "").strip()
     if not uid:
         return False
+    try:
+        from app.services.preview_persona import is_cierre_partner_preview
+
+        if is_cierre_partner_preview(uid):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from app.domain.plans import plan_is_pm_fitline_focus
         from app.services import supabase_db

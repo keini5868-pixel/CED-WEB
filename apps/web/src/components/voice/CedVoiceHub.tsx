@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
@@ -16,6 +16,11 @@ import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
 import { useUsageBalance } from "@/hooks/useUsageBalance";
+import {
+  cierrePreviewVoiceRoute,
+  getPreviewPersona,
+  isCierrePartnerPreview,
+} from "@/lib/preview/cierrePartnerPreview";
 import {
   VoiceLimitModal,
   voiceLimitReasonFromBalance,
@@ -69,6 +74,34 @@ export function CedVoiceHub() {
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial, setActiveModule } =
     useHudFeed();
+  const [previewTick, setPreviewTick] = useState(0);
+
+  useEffect(() => {
+    const sync = () => {
+      getPreviewPersona();
+      setPreviewTick((n) => n + 1);
+    };
+    sync();
+    window.addEventListener("ced-preview-persona", sync);
+    return () => window.removeEventListener("ced-preview-persona", sync);
+  }, []);
+
+  const voiceRoute = useMemo(() => {
+    void previewTick;
+    if (isCierrePartnerPreview()) {
+      return cierrePreviewVoiceRoute();
+    }
+    return {
+      planId: balance.planId,
+      voiceStack: balance.voiceStack,
+      voiceTransport: balance.voiceTransport,
+    };
+  }, [
+    previewTick,
+    balance.planId,
+    balance.voiceStack,
+    balance.voiceTransport,
+  ]);
 
   useEffect(() => {
     const onModuleActive = (ev: Event) => {
@@ -97,12 +130,12 @@ export function CedVoiceHub() {
   }, [setActiveModule]);
 
   useEffect(() => {
-    if (balance.planId === "cierre" || balance.voiceStack === "gemini") {
+    if (voiceRoute.planId === "cierre" || voiceRoute.voiceStack === "gemini") {
       prefetchEphemeralToken("cedar", { voiceProfile: "fitline" });
     } else {
       prefetchEphemeralToken();
     }
-  }, [balance.planId, balance.voiceStack]);
+  }, [voiceRoute.planId, voiceRoute.voiceStack]);
 
   useEffect(() => {
     const onToolResult = (ev: Event) => {
@@ -141,11 +174,7 @@ export function CedVoiceHub() {
       setChatOpen(false);
       setChatSeedImage(null);
     },
-  }, {
-    planId: balance.planId,
-    voiceStack: balance.voiceStack,
-    voiceTransport: balance.voiceTransport,
-  });
+  }, voiceRoute);
 
   useEffect(() => {
     if (!voice.micOn) return;

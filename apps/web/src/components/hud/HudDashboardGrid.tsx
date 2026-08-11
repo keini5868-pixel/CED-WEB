@@ -11,6 +11,7 @@ import { HudCollapsible } from "@/components/hud/HudCollapsible";
 import { MetaOAuthCallbackBanner } from "@/components/hud/ConnectNetworksButton";
 import { TrialExpiredBanner } from "@/components/billing/TrialExpiredBanner";
 import { BillingFeedback } from "@/components/billing/BillingFeedback";
+import { CierrePartnerPreviewBanner } from "@/components/preview/CierrePartnerPreviewBanner";
 import { HudDronesPanel } from "@/components/hud/HudDronesPanel";
 import {
   HudGlobalPanel,
@@ -45,6 +46,7 @@ export function HudDashboardGrid() {
               <BillingFeedback />
               <MetaOAuthCallbackBanner />
               <TrialExpiredBanner />
+              <CierrePartnerPreviewBanner />
             </Suspense>
           </div>
           <div className="col-span-4">
@@ -105,6 +107,7 @@ export function HudDashboardGrid() {
             <BillingFeedback />
             <MetaOAuthCallbackBanner />
             <TrialExpiredBanner />
+            <CierrePartnerPreviewBanner />
           </Suspense>
           <DriveModeLink />
           {isLg === false ? <CedVoiceHub /> : null}

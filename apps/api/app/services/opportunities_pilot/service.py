@@ -43,10 +43,39 @@ def get_opportunity_detail(
             "production": True,
         }
 
-    anchors = [str(a) for a in (plugin.get("search_anchors") or []) if str(a).strip()]
-    queries = build_opportunity_queries(anchors)
-    sources, search_meta = run_opportunity_searches(queries)
-    updates = extract_search_updates(sources)
+    from app.config import get_settings
+
+    live_search = bool(get_settings().opportunities_live_search)
+    sources: list[dict[str, Any]] = []
+    search_meta: dict[str, Any] = {
+        "queries_run": 0,
+        "result_rows": 0,
+        "errors": [],
+        "rate_limited": False,
+        "missing_key": False,
+        "sources": 0,
+        "live_search": live_search,
+        "curated_only": not live_search,
+    }
+    updates: dict[str, list[dict[str, str]]] = {}
+    queries: list[dict[str, str]] = []
+
+    if live_search:
+        anchors = [
+            str(a) for a in (plugin.get("search_anchors") or []) if str(a).strip()
+        ]
+        queries = build_opportunity_queries(anchors)
+        sources, search_meta = run_opportunity_searches(queries)
+        search_meta["live_search"] = True
+        search_meta["curated_only"] = False
+        updates = extract_search_updates(sources)
+    else:
+        # Ficha fija curada — sin Tavily / sin LLM por apertura.
+        logger.info(
+            "[OPPS] curated-only detail id=%s (OPPORTUNITIES_LIVE_SEARCH=false)",
+            plugin.get("id"),
+        )
+
     detail = build_opportunity_detail(
         plugin,
         search_updates=updates,
@@ -65,10 +94,11 @@ def get_opportunity_detail(
         except Exception:  # noqa: BLE001
             detail["action_plan"] = None
     logger.info(
-        "[OPPS-PILOT] detail id=%s sources=%s gaps=%s sponsor=%s",
+        "[OPPS-PILOT] detail id=%s sources=%s gaps=%s sponsor=%s curated_only=%s",
         plugin.get("id"),
         len(sources),
         len(detail.get("data_gaps") or []),
         bool((plugin.get("sponsorship") or {}).get("configured")),
+        not live_search,
     )
     return detail

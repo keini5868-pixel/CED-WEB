@@ -587,9 +587,13 @@ async def _execute_voice_tool_body(
         from app.domain.plans import plan_uses_gemini_voice_stack
         from app.services import supabase_db
         from app.services.openai_voice_tools import FITLINE_CIERRE_TOOL_NAMES
+        from app.services.preview_persona import is_cierre_partner_preview
 
         sub = supabase_db.get_subscription(user_id) or {}
-        if plan_uses_gemini_voice_stack(sub.get("plan_id")) and name not in FITLINE_CIERRE_TOOL_NAMES:
+        cierre_mode = plan_uses_gemini_voice_stack(sub.get("plan_id")) or is_cierre_partner_preview(
+            user_id
+        )
+        if cierre_mode and name not in FITLINE_CIERRE_TOOL_NAMES:
             return _spoken_ok(
                 "En CED Cierre usamos el conocimiento interno de FitLine. "
                 "Puedo explicarte productos, negocio y armar el plan de tu franquicia "

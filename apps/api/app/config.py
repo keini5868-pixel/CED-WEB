@@ -172,6 +172,9 @@ class Settings(BaseSettings):
     opportunities_module_enabled: bool = True
     # Enlace personal FitLine / paquete manager (sección Afiliación)
     opportunities_fitline_sponsor_url: str = ""
+    # Live Tavily en cada apertura de ficha OPPS — OFF por defecto (cero gasto).
+    # OPPORTUNITIES_LIVE_SEARCH=true solo para refrescos admin puntuales.
+    opportunities_live_search: bool = False
     # Pocket Option demo (solo admin). DEFAULT OFF. Nunca en planes/landing.
     pocket_option_module_enabled: bool = False
     pocket_option_ssid: str = ""
