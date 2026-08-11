@@ -98,6 +98,15 @@ async def lifespan(_app: FastAPI):
 
             bootstrap_retell_if_needed()
 
+    try:
+        from app.services.stripe_billing import ensure_stripe_plan_price
+
+        if settings.stripe_secret_key.strip():
+            price_id = ensure_stripe_plan_price("cierre", settings)
+            logger.info("Stripe CED Cierre listo price_id=%s", price_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("No se pudo asegurar producto Stripe CED Cierre al arranque")
+
     po_stop = None
     try:
         from app.services.pocket_option.worker import (
