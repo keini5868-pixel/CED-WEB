@@ -53,6 +53,8 @@ def _fresh_session() -> dict[str, Any]:
         "fitline_guide_step": 0,
         "fitline_guide_reexplain": False,
         "fitline_guide_opt_out": False,
+        "fitline_question_count": 0,
+        "fitline_closer_offered": False,
     }
 
 

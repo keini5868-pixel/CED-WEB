@@ -63,6 +63,16 @@ def get_engagement(user_id: str) -> dict[str, Any]:
     uid = (user_id or "").strip()
     if not uid:
         return {"question_count": 0, "closer_offered": False}
+    # Memoria de proceso (fallback si la migración aún no corre en Supabase).
+    try:
+        from app.services import voice_client_session as vcs
+
+        sess = vcs._get(uid)
+        mem_count = int(sess.get("fitline_question_count") or 0)
+        mem_offered = bool(sess.get("fitline_closer_offered"))
+    except Exception:  # noqa: BLE001
+        mem_count, mem_offered = 0, False
+
     try:
         from app.services import supabase_db
 
@@ -76,21 +86,34 @@ def get_engagement(user_id: str) -> dict[str, Any]:
         )
         rows = result.data or []
         if not rows:
-            return {"question_count": 0, "closer_offered": False}
+            return {"question_count": mem_count, "closer_offered": mem_offered}
         row = rows[0]
         return {
-            "question_count": int(row.get("question_count") or 0),
-            "closer_offered": bool(row.get("closer_offered")),
+            "question_count": max(mem_count, int(row.get("question_count") or 0)),
+            "closer_offered": mem_offered or bool(row.get("closer_offered")),
         }
     except Exception:  # noqa: BLE001
-        logger.exception("[FITLINE-CLOSE] get_engagement failed")
-        return {"question_count": 0, "closer_offered": False}
+        logger.warning("[FITLINE-CLOSE] get_engagement DB unavailable — using session")
+        return {"question_count": mem_count, "closer_offered": mem_offered}
 
 
 def _upsert_engagement(
     user_id: str, *, question_count: int, closer_offered: bool
 ) -> None:
     from datetime import datetime, timezone
+
+    # Siempre espejo en sesión de voz (funciona aunque falte la tabla).
+    # Patrón: _get() fuera del lock; actualizar dentro (Lock no es reentrante).
+    try:
+        from app.services import voice_client_session as vcs
+
+        sess = vcs._get(user_id)
+        with vcs._lock:
+            sess["fitline_question_count"] = max(0, int(question_count))
+            sess["fitline_closer_offered"] = bool(closer_offered)
+            sess["updated_at"] = vcs._now()
+    except Exception:  # noqa: BLE001
+        pass
 
     from app.services import supabase_db
 
@@ -105,7 +128,7 @@ def _upsert_engagement(
             on_conflict="user_id",
         ).execute()
     except Exception:  # noqa: BLE001
-        logger.exception("[FITLINE-CLOSE] upsert failed")
+        logger.warning("[FITLINE-CLOSE] upsert DB skipped — session fallback active")
 
 
 def register_fitline_user_turn(user_id: str | None, user_text: str) -> dict[str, Any]:

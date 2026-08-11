@@ -188,7 +188,18 @@ def build_base_voice_system(
             query or "FitLine PM International",
             force=force_fitline,
         )
-        if uid and query:
+    # Cierre + foro: siempre en turnos FitLine, también cuando la ficha va por
+    # Context Cache (omit_fitline_knowledge=True) — si no, voz Retell no dispara.
+    if uid and query and (force_fitline or query):
+        try:
+            from app.services.opportunities_pilot.fitline_knowledge import (
+                wants_fitline_knowledge,
+            )
+
+            fitline_turn = force_fitline or wants_fitline_knowledge(query)
+        except Exception:  # noqa: BLE001
+            fitline_turn = force_fitline
+        if fitline_turn:
             try:
                 from app.services.opportunities_pilot.fitline_close_trigger import (
                     append_fitline_close_trigger_if_needed,
