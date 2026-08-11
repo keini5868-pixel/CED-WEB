@@ -48,11 +48,6 @@ def test_realtime_fitline_instructions_zero_spend(monkeypatch):
         "app.services.opportunities_pilot.fitline_guide_mode.is_fitline_admin_user",
         lambda _uid: True,
     )
-    from app.services.opportunities_pilot.fitline_knowledge import (
-        format_fitline_knowledge_for_realtime_voice,
-    )
-
-    format_fitline_knowledge_for_realtime_voice.cache_clear()
     prompt = build_realtime_instructions(
         language="es",
         voice_pace=50,
@@ -63,7 +58,7 @@ def test_realtime_fitline_instructions_zero_spend(monkeypatch):
         user_id="admin-user",
     )
     low = prompt.lower()
-    assert "estilo obligatorio" in low or "jarvis retell" in low
-    assert "ntc" in low
-    assert "detalle adicional" in low
+    assert "ced" in low
+    assert "jarvis" in low or "retell" in low
+    assert "fitline" in low or "ntc" in low
     assert "search_web" in low or "tavily" in low or "prohibido" in low

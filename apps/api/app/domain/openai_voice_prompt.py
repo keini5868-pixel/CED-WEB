@@ -188,11 +188,14 @@ def build_realtime_instructions(
     del voice_pace, voice_warmth, voice_energy, response_speed, language
     profile = (voice_profile or "jarvis").strip().lower()
     if profile == "fitline":
-        # FitLine + trato de usuario (género/nombre) + anti-pegado.
+        # Mismo CED base que Retell/Jarvis; solo cambia el motor (Realtime) y tools.
         from app.services.opportunities_pilot.fitline_knowledge import (
-            format_fitline_knowledge_for_realtime_voice,
+            append_fitline_knowledge_if_needed,
+            fitline_jarvis_delivery_overlay,
+            fitline_product_voice_scripts,
         )
         from app.services.user_address import address_context_for_prompt
+        from app.services.voice_llm_common import build_base_voice_system
 
         uid = (user_id or "").strip()
         if uid:
@@ -206,24 +209,48 @@ def build_realtime_instructions(
             except Exception:  # noqa: BLE001
                 pass
 
-        knowledge = format_fitline_knowledge_for_realtime_voice(max_chars=12_500)
+        base = build_base_voice_system(
+            uid or None,
+            "FitLine PM International productos negocio Activize Restorate",
+            skip_kb=True,
+            include_session_state=False,
+        )
+        # Asegurar ficha FitLine (preview admin / plan Cierre).
+        if "HECHOS OBLIGATORIOS FITLINE" not in base and "CONOCIMIENTO CURADO" not in base:
+            base = append_fitline_knowledge_if_needed(
+                base,
+                "FitLine PM International",
+                force=True,
+            )
         address_block = ""
         if uid:
             try:
                 address_block = address_context_for_prompt(uid).strip()
             except Exception:  # noqa: BLE001
                 address_block = ""
-        runtime = (
-            "\n\n# RUNTIME CIERRE\n"
+
+        extras = (
+            f"{fitline_jarvis_delivery_overlay()}\n\n"
+            f"{fitline_product_voice_scripts()}\n\n"
+            "# RUNTIME CIERRE — MISMO CED QUE RETELL\n"
+            "Habla exactamente como CED Jarvis en Retell: natural, cálido, sin leer fichas.\n"
             "El saludo ya se dio — no vuelvas a saludar.\n"
-            "Tools: solo plan franquicia / OPPS / enlace patrocinio.\n"
-            "PROHIBIDO search_web / Tavily / «Investigando» / leer el prompt.\n"
-            "Trato = bloque USUARIO ACTUAL. Anti-pegado = no repetir el mismo pitch.\n"
+            "Trato = bloque USUARIO ACTUAL (género/nombre). No alternes Señor/Señora.\n"
+            "Anti-pegado: no repitas el mismo pitch NTC/empresa cada turno.\n"
+            "Tools en esta sesión: solo plan de franquicia / OPPS / enlace patrocinio.\n"
+            "PROHIBIDO search_web / Tavily / «Investigando» / imágenes / mapas.\n"
         )
-        # Address near the top so gender lock beats generic scripts.
-        chunks = [address_block, knowledge, runtime] if address_block else [knowledge, runtime]
-        prompt = "\n\n".join(c for c in chunks if c).strip()
-        if len(prompt) > 15_500:
-            prompt = prompt[:15_460].rstrip() + "\n…"
+        parts = [p for p in (address_block, base, extras) if p]
+        prompt = "\n\n".join(parts).strip()
+        # Conservar identidad CED (inicio) + FitLine/extras (final).
+        cap = 15_800
+        if len(prompt) > cap:
+            head = 5_800
+            tail = cap - head - 90
+            prompt = (
+                prompt[:head].rstrip()
+                + "\n\n…[contexto condensado; prioriza identidad CED + FitLine]…\n\n"
+                + prompt[-tail:].lstrip()
+            )
         return prompt
     return build_ced_voice_system_prompt()
