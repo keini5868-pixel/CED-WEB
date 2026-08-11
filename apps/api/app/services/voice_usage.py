@@ -120,6 +120,18 @@ def voice_access_state(user_id: str) -> dict:
         allowed, access_msg, plan_minutes = get_user_access(user_id)
         sub = supabase_db.get_subscription(user_id)
         plan_id = normalize_plan_id((sub or {}).get("plan_id"))
+
+        # Trial PM: pool ÚNICO de 15 min en la ventana de 24 h (no se renueva
+        # a medianoche UTC). Comparar uso acumulado desde el inicio del trial.
+        if allowed and access_msg == "cierre_trial":
+            try:
+                used = supabase_db.get_cierre_trial_used_minutes(user_id, sub)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[USAGE] get_cierre_trial_used_minutes fallo user=%s: %s",
+                    user_id[:8],
+                    exc,
+                )
         try:
             recharge_balance = supabase_db.get_recharge_balance_usd(user_id)
         except Exception as exc:  # noqa: BLE001

@@ -53,6 +53,65 @@ def get_usage_minutes_today(user_id: str) -> float:
     return float(sum(float(r.get("minutes_consumed") or 0) for r in rows))
 
 
+def get_usage_minutes_since(user_id: str, since: datetime) -> float:
+    """Suma minutos de voz desde ``since`` (ventana de trial PM, no cupo diario).
+
+    Usa ``usage_date`` >= día UTC de inicio y, si hay ``created_at``, filtra
+    filas creadas antes de ``since`` el primer día.
+    """
+    if since.tzinfo is None:
+        since = since.replace(tzinfo=timezone.utc)
+    client = _client()
+    since_date = since.astimezone(timezone.utc).date().isoformat()
+    result = (
+        client.table("usage_logs")
+        .select("minutes_consumed, usage_date, created_at")
+        .eq("user_id", user_id)
+        .gte("usage_date", since_date)
+        .execute()
+    )
+    total = 0.0
+    for row in result.data or []:
+        usage_date = str(row.get("usage_date") or "")
+        created_raw = row.get("created_at")
+        if usage_date == since_date and created_raw:
+            try:
+                created = datetime.fromisoformat(str(created_raw).replace("Z", "+00:00"))
+                if created < since:
+                    continue
+            except ValueError:
+                pass
+        total += float(row.get("minutes_consumed") or 0)
+    return float(total)
+
+
+def cierre_trial_window_start(sub: dict | None) -> datetime | None:
+    """Inicio de la ventana de 24 h del trial PM (derivado de trial_ends_at)."""
+    if not sub:
+        return None
+    from app.domain.plans import CIERRE_TRIAL_HOURS
+
+    trial_end = sub.get("trial_ends_at")
+    if not trial_end:
+        return None
+    try:
+        ends = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if ends.tzinfo is None:
+        ends = ends.replace(tzinfo=timezone.utc)
+    return ends - timedelta(hours=CIERRE_TRIAL_HOURS)
+
+
+def get_cierre_trial_used_minutes(user_id: str, sub: dict | None = None) -> float:
+    """Minutos consumidos en el pool único del trial PM (no se renueva diario)."""
+    row = sub if sub is not None else get_subscription(user_id)
+    start = cierre_trial_window_start(row)
+    if not start:
+        return get_usage_minutes_today(user_id)
+    return get_usage_minutes_since(user_id, start)
+
+
 def reset_usage_minutes_today(user_id: str) -> float:
     """Elimina el uso de voz de hoy. Devuelve minutos que tenía antes."""
     before = get_usage_minutes_today(user_id)
@@ -803,9 +862,11 @@ def downgrade_to_free_basic(user_id: str) -> None:
 
 
 def apply_cierre_fitline_trial(user_id: str) -> dict[str, Any]:
-    """Convierte al trial FitLine: plan cierre, 15 min de voz, 24 h, luego pagar.
+    """Convierte al trial FitLine: plan cierre, pool único de 15 min en 24 h.
 
-    Solo aplica a cuentas sin Stripe activo. Idempotente si ya está en ese trial.
+    Los 15 min NO se renuevan a medianoche: al agotarlos o al vencer las 24 h
+    (lo que ocurra primero) el usuario debe pagar. Solo aplica a cuentas sin
+    Stripe activo. Idempotente si ya está en ese trial.
     """
     from app.domain.plans import (
         CIERRE_TRIAL_HOURS,

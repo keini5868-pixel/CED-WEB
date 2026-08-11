@@ -88,7 +88,7 @@ def test_detail_includes_affiliation_and_cta() -> None:
     assert "risks" in ids
     assert "company_history" in ids
     assert "products" in ids
-    assert detail["sponsorship"]["cta_label"] == "Activar su negocio (paquete manager)"
+    assert detail["sponsorship"]["cta_label"] == "Activar su franquicia (paquete manager)"
 
 
 def test_enriched_fitline_has_official_facts() -> None:
@@ -104,7 +104,11 @@ def test_enriched_fitline_has_official_facts() -> None:
     assert "Speyer" in history or "Alemania" in history
     assert "Schengen" in history or "Luxemburgo" in history
     assert "40" in history
-    assert "3.22" in history or "mil millones" in history
+    assert "4 mil millones" in history or "$4" in history or "mil millones" in history
+    assert "Sarasota" in history or "Manatee" in history or "América" in history
+    americas = (sections.get("americas_expansion") or {}).get("body") or ""
+    assert "22 millones" in americas or "$22" in americas
+    assert "PM Labs" in americas or "Made in USA" in americas
     assert "NTC" in science or "Nutrient Transport" in science
     assert "TÜV" in science or "TUV" in science.upper()
     assert "PowerCocktail" in products and "$119.48" in products

@@ -42,7 +42,8 @@ def test_format_includes_curated_products_not_invented():
     assert "Rolf Sorg" in block
     assert "Speyer" in block
     assert "Schengen" in block or "Luxemburgo" in block
-    assert "3.22" in block or "3,22" in block
+    assert "4" in block and ("mil millones" in block or "billion" in block.lower())
+    assert "Sarasota" in block or "Manatee" in block or "América" in block or "America" in block
     assert "Frankfurt" in block or "2011" in block
     assert "TÜV" in block or "TUV" in block.upper() or "Tüv" in block
     assert "QR" in block
@@ -216,8 +217,9 @@ def test_fitline_sales_closer_is_internal_only():
     assert "search_web" in overlay.lower() or "Tavily" in overlay
     assert "PROHIBIDO" in overlay
     assert "sin retener" in overlay.lower() or "información real" in overlay.lower()
-    # Compacto: no debe ser un novelón de costo
-    assert len(overlay) < 4000
+    # Compacto: persuasión operativa, no novelón
+    assert len(overlay) < 5500
+    assert "expansión" in overlay.lower() or "América" in overlay or "America" in overlay
 
 
 def test_voice_system_includes_sales_closer_for_fitline():

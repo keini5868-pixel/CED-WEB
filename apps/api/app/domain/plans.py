@@ -23,8 +23,9 @@ TRIAL_DAYS = 7
 # Voz durante los 7 días de prueba — se renueva cada día (usage_logs es por
 # fecha). Al día 8 el usuario cae a free_basic (voice_enabled=False, 0 min).
 TRIAL_VOICE_MINUTES_PER_DAY = 5
-# Funnel FitLine / CED PM International: 15 min de voz en una sola ventana de 24 h,
-# luego debe pagar (no es el trial de 7 días).
+# Funnel FitLine / CED PM International: pool ÚNICO de 15 min de voz dentro de
+# las primeras 24 h desde el registro — NO se renueva a medianoche. Al agotar
+# los 15 min O al vencer las 24 h (lo que ocurra primero) → free_basic.
 CIERRE_TRIAL_HOURS = 24
 CIERRE_TRIAL_VOICE_MINUTES = 15
 CIERRE_TRIAL_OFFER = "cierre"

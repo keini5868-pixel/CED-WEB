@@ -248,8 +248,8 @@ def register_with_email(
         )
         out["message"] = (
             "Te enviamos un enlace de verificación. "
-            "Al confirmar tendrás 15 min de voz por 24 horas "
-            "(FitLine / CED PM International)."
+            "Al confirmar tendrás 15 min de voz en las primeras 24 horas "
+            "(no se renuevan; FitLine / CED PM International)."
         )
     return out
 
