@@ -284,9 +284,17 @@ export class CedLiveClient {
         low,
       );
     if (!rogue && !/^hola[,]?\s*(señor|señora|senor|senora)/i.test(low)) return false;
+    // Solo antes del primer turno real del usuario — después "¿en qué puedo ayudar?"
+    // es lenguaje normal de FitLine/CED y no debe cancelar la respuesta.
     if (this.awaitingFirstUserSpeech || !this.heardUserSinceGreeting) return true;
     if (/^hola,?\s*(señor|señora|senor|senora).*en qu[eé] puedo ayudarle/i.test(low)) return true;
-    return rogue;
+    if (
+      /^(buenas tardes|buen d[ií]a|buenos d[ií]as|muy buenas)\b/i.test(low) &&
+      trimmed.length < 90
+    ) {
+      return true;
+    }
+    return false;
   }
 
   isRogueModelOutput(text: string): boolean {
@@ -312,7 +320,7 @@ export class CedLiveClient {
     }
     if (/^(muchas|muchísimas)?\s*gracias/i.test(low) && t.length < 50) return false;
     if (
-      /\b(publicar|clima|comentario|comentarios|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|publica|hora|tiempo|ced)\b/i.test(
+      /\b(publicar|clima|comentario|comentarios|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|publica|hora|tiempo|ced|fitline|fit\s*line|cierre|venta|ventas|cliente|prospecto)\b/i.test(
         low,
       ) ||
       /\b(activar|modo)\s+prospecci/i.test(low)
@@ -324,15 +332,19 @@ export class CedLiveClient {
     if (/^(qué|que|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|quién|quien|por qué|porque|ahora)\b/i.test(low)) {
       return true;
     }
-    if (/\b(estás|estas|estoy|bien|dime|oye|escucha|habla|necesito|quiero)\b/i.test(low) && t.length >= 8) {
+    if (/\b(estás|estas|estoy|bien|dime|oye|escucha|habla|necesito|quiero|expl[ií]ca|hablar|empezar|empezamos)\b/i.test(low) && t.length >= 6) {
       return true;
     }
     if (
-      t.length >= 22 &&
+      t.length >= 16 &&
       /\b(por favor|necesito|quiero|dime|déjame|dejame|muéstrame|muestrame|explícame|explicame|lee|leer|publica|genera|cuéntame|cuentame)\b/i.test(
         low,
       )
     ) {
+      return true;
+    }
+    // Frase corta con verbo de pedido — típico tras saludo FitLine.
+    if (t.length >= 10 && /\b(necesito|quiero|puedes|podr[ií]as|ayuda|ayúdame|ayudame)\b/i.test(low)) {
       return true;
     }
     return false;
@@ -418,6 +430,8 @@ export class CedLiveClient {
     this.userMicLive = true;
     this.serverConversationMode = true;
     this.waitingForFirstUserInput = true;
+    // Crítico: no dejar grace/post-lock activos — cancelaban el primer turno del usuario.
+    this.greetingGraceUntil = 0;
     this.postGreetingLockUntil = 0;
     this.blockAutoResponsesUntil = 0;
     this.applyTurnDetection("manual");
@@ -432,14 +446,25 @@ export class CedLiveClient {
       this.flushInputAudioBuffer();
       return;
     }
-    if (Date.now() - this.greetingCompletedAt < 2500) return;
+    // Evitar eco inmediato del saludo (~1s basta; 2.5s + unmute 2.8s dejaba sordo el turno).
+    if (Date.now() - this.greetingCompletedAt < 900) return;
     this.waitingForFirstUserInput = false;
+    this.greetingGraceUntil = 0;
+    this.blockAutoResponsesUntil = 0;
     cedRealtimeLog("turn_detection.auto_after_first_user", {
       transcript: transcript.slice(0, 60),
     });
     this.applyTurnDetection("auto");
     if (!this.responseInProgress && this.userMicLive) {
-      this.send({ type: "response.create" });
+      this.userResponseArmed = true;
+      this.intentionalResponse = true;
+      this.intentionalResponseActive = true;
+      this.lastResponseCreateAt = Date.now();
+      this.userTurnResponded = true;
+      this.send({
+        type: "response.create",
+        response: { max_output_tokens: 320 },
+      });
     }
   }
 
@@ -597,7 +622,9 @@ export class CedLiveClient {
   }
 
   private triggerUserResponse(): void {
-    if (this.serverConversationMode) return;
+    // En modo servidor: el primer turno lo arma onFirstUserTranscript; si ya pasó,
+    // aún así pedimos respuesta (create_response a veces no dispara en WebRTC).
+    if (this.serverConversationMode && this.waitingForFirstUserInput) return;
     const utterance = this.lastMeaningfulUserUtterance;
     if (!this.isMeaningfulUserSpeech(utterance)) return;
     if (isCasualSocialGreeting(utterance)) return;
@@ -1349,7 +1376,8 @@ export class CedLiveClient {
         await this.speakExactPhrase(phrase, 300);
         this.flushInputAudioBuffer();
         this.endSingleSpeechSlot();
-        this.greetingGraceUntil = Date.now() + 15_000;
+        // Ventana corta solo para eco del propio saludo; enableListeningAfterGreeting la limpia.
+        this.greetingGraceUntil = Date.now() + 2_000;
         this.greetingComplete = true;
         this.greetingCompletedAt = Date.now();
         this.awaitingFirstUserSpeech = true;
