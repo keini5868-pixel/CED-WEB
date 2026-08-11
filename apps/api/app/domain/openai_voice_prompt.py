@@ -188,10 +188,11 @@ def build_realtime_instructions(
     del voice_pace, voice_warmth, voice_energy, response_speed, language
     profile = (voice_profile or "jarvis").strip().lower()
     if profile == "fitline":
-        # FitLine PRIMERO (paridad Jarvis Retell). Identidad corta al final.
+        # FitLine + trato de usuario (género/nombre) + anti-pegado.
         from app.services.opportunities_pilot.fitline_knowledge import (
             format_fitline_knowledge_for_realtime_voice,
         )
+        from app.services.user_address import address_context_for_prompt
 
         uid = (user_id or "").strip()
         if uid:
@@ -205,15 +206,23 @@ def build_realtime_instructions(
             except Exception:  # noqa: BLE001
                 pass
 
-        knowledge = format_fitline_knowledge_for_realtime_voice(max_chars=13_500)
+        knowledge = format_fitline_knowledge_for_realtime_voice(max_chars=12_500)
+        address_block = ""
+        if uid:
+            try:
+                address_block = address_context_for_prompt(uid).strip()
+            except Exception:  # noqa: BLE001
+                address_block = ""
         runtime = (
             "\n\n# RUNTIME CIERRE\n"
             "El saludo ya se dio — no vuelvas a saludar.\n"
             "Tools: solo plan franquicia / OPPS / enlace patrocinio.\n"
             "PROHIBIDO search_web / Tavily / «Investigando» / leer el prompt.\n"
-            "Toda la conversación FitLine/PM = estilo ESTILO OBLIGATORIO = JARVIS RETELL.\n"
+            "Trato = bloque USUARIO ACTUAL. Anti-pegado = no repetir el mismo pitch.\n"
         )
-        prompt = f"{knowledge}{runtime}".strip()
+        # Address near the top so gender lock beats generic scripts.
+        chunks = [address_block, knowledge, runtime] if address_block else [knowledge, runtime]
+        prompt = "\n\n".join(c for c in chunks if c).strip()
         if len(prompt) > 15_500:
             prompt = prompt[:15_460].rstrip() + "\n…"
         return prompt

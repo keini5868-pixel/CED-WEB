@@ -52,9 +52,17 @@ def _is_valid_stored_honorific(raw: str) -> bool:
 
 def _sanitize_honorific(raw: str, gender: str) -> str:
     h = _normalize_honorific(raw)
+    g_default = _gender_default_honorific(gender)
+    # Género registrado manda sobre un título Señor/Señora contradictorio.
+    if g_default and h in ("Señor", "Señora", "Don", "Doña"):
+        if gender == "male" and h in ("Señora", "Doña"):
+            return "Señor"
+        if gender == "female" and h in ("Señor", "Don"):
+            return "Señora"
     if h and _is_valid_stored_honorific(h):
+        # Nombre propio u otro título pedido por el usuario.
         return h
-    return _gender_default_honorific(gender) or "Señor"
+    return g_default or "Señor"
 
 
 def _first_name(full_name: str) -> str:
