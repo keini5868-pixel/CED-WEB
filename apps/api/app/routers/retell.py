@@ -175,10 +175,11 @@ async def register_retell_call(
 
     from app.domain.plans import plan_uses_gemini_voice_stack
     from app.services import supabase_db
+    from app.services.preview_persona import is_cierre_partner_preview
 
     sub = await asyncio.to_thread(supabase_db.get_subscription, user_id)
     plan_id = (sub or {}).get("plan_id")
-    if plan_uses_gemini_voice_stack(plan_id):
+    if plan_uses_gemini_voice_stack(plan_id) or is_cierre_partner_preview(user_id):
         raise HTTPException(
             status_code=409,
             detail=(
@@ -250,10 +251,11 @@ async def register_retell_native_pilot_call(
 
     from app.domain.plans import plan_uses_gemini_voice_stack
     from app.services import supabase_db
+    from app.services.preview_persona import is_cierre_partner_preview
 
     sub = await asyncio.to_thread(supabase_db.get_subscription, user_id)
     plan_id = (sub or {}).get("plan_id")
-    if plan_uses_gemini_voice_stack(plan_id):
+    if plan_uses_gemini_voice_stack(plan_id) or is_cierre_partner_preview(user_id):
         raise HTTPException(
             status_code=409,
             detail=(

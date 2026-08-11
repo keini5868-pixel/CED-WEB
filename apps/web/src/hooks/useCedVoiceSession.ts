@@ -69,6 +69,10 @@ import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
 import { registerRetellCall, registerRetellNativePilotCall, warmupRetellVoiceApi } from "@/lib/api/retell";
 import { CedRetellClient } from "@/lib/voice/retell/ced-retell-client";
 import { isRetellNativePilot, isRetellVoice } from "@/lib/voice/voiceProvider";
+import {
+  cierrePreviewVoiceRoute,
+  isCierrePartnerPreview,
+} from "@/lib/preview/cierrePartnerPreview";
 import { isBenignRealtimeError } from "@/lib/voice/realtimeErrors";
 import { normalizeVoiceName } from "@/lib/voice/openaiVoices";
 import {
@@ -1237,6 +1241,11 @@ export function useCedVoiceSession(
           : ORB_STATE_LABELS.processing,
       );
 
+      // Preview socio Cierre: forzar stack OpenAI antes de decidir Retell.
+      if (isCierrePartnerPreview()) {
+        voiceRouteRef.current = cierrePreviewVoiceRoute();
+      }
+
       const [voiceSession] = await Promise.all([
         startVoiceSession(),
         retellActive() ? warmupRetellVoiceApi() : Promise.resolve(),
@@ -1249,10 +1258,12 @@ export function useCedVoiceSession(
         );
       }
       // Fuente de verdad del plan/transporte (balance a veces llega tarde).
+      // En preview Cierre NO sobrescribir con el plan real del admin (Retell).
       if (
-        voiceSession.plan_id ||
-        voiceSession.voice_stack ||
-        voiceSession.voice_transport
+        !isCierrePartnerPreview() &&
+        (voiceSession.plan_id ||
+          voiceSession.voice_stack ||
+          voiceSession.voice_transport)
       ) {
         voiceRouteRef.current = {
           planId: voiceSession.plan_id ?? voiceRouteRef.current?.planId,
@@ -1262,10 +1273,16 @@ export function useCedVoiceSession(
             voiceSession.voice_transport ??
             voiceRouteRef.current?.voiceTransport,
         };
+      } else if (isCierrePartnerPreview()) {
+        voiceRouteRef.current = cierrePreviewVoiceRoute();
       }
       onUsageRefresh?.();
 
       let startRetell = retellActive();
+      if (isCierrePartnerPreview()) {
+        startRetell = false;
+        isRetellSessionRef.current = false;
+      }
       if (startRetell) {
         isRetellSessionRef.current = true;
         setVoiceSessionActive(true);

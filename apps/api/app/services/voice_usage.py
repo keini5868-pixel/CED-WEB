@@ -139,8 +139,24 @@ def voice_access_state(user_id: str) -> dict:
             100.0 if voice_blocked and used > 0 else 0.0
         )
 
+        # Preview admin → socio Cierre: stack OpenAI (sin Retell/Jarvis).
+        preview_as = ""
+        effective_plan = plan_id
+        try:
+            from app.services.preview_persona import (
+                effective_plan_id_for_voice,
+                get_preview_as,
+                is_cierre_partner_preview,
+            )
+
+            if is_cierre_partner_preview(user_id):
+                preview_as = get_preview_as()
+                effective_plan = effective_plan_id_for_voice(user_id, plan_id)
+        except Exception:  # noqa: BLE001
+            pass
+
         return {
-            "plan_id": plan_id,
+            "plan_id": effective_plan if preview_as else plan_id,
             "subscription_status": (sub or {}).get("status"),
             "trial_ends_at": (sub or {}).get("trial_ends_at"),
             "is_founding_member": bool((sub or {}).get("price_locked_for_life")),
@@ -168,9 +184,10 @@ def voice_access_state(user_id: str) -> dict:
             "has_stripe_customer": bool((sub or {}).get("stripe_customer_id")),
             "degraded": False,
             "voice_stack": (
-                "gemini" if plan_uses_gemini_voice_stack(plan_id) else "retell"
+                "gemini" if plan_uses_gemini_voice_stack(effective_plan) else "retell"
             ),
-            "voice_transport": plan_voice_transport(plan_id),
+            "voice_transport": plan_voice_transport(effective_plan),
+            "preview_as": preview_as or None,
         }
     except Exception as exc:  # noqa: BLE001 — nunca 500 por telemetría
         logger.warning(
