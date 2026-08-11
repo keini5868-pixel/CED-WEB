@@ -143,6 +143,8 @@ def build_base_voice_system(
     kb_hits: list | None = None,
     skip_kb: bool = False,
     include_session_state: bool = False,
+    omit_static_core: bool = False,
+    omit_fitline_knowledge: bool = False,
 ) -> str:
     """Prompt base ligero — identidad CED + overlays del turno + reloj.
 
@@ -150,12 +152,15 @@ def build_base_voice_system(
     Esa memoria se carga on-demand vía ``module_memory`` al activar un módulo
     (Fase 3). ``include_session_state`` añade estado de cámara/imágenes/modo
     activo solo cuando el caller lo pide explícitamente.
+
+    omit_static_core / omit_fitline_knowledge: el caller usa Context Caching de
+    Google para esos bloques (fitline_gemini_cache).
     """
-    base = _cached_base_voice_prompt()
+    base = "" if omit_static_core else _cached_base_voice_prompt()
     uid = (user_id or "").strip()
     query = (user_text or "").strip()
     if query and is_strategy_consultation_topic(query):
-        base = f"{base}\n\n{CED_STRATEGY_CONSULTATION_OVERLAY}"
+        base = f"{base}\n\n{CED_STRATEGY_CONSULTATION_OVERLAY}" if base else CED_STRATEGY_CONSULTATION_OVERLAY
         from app.domain.ced_sales_marketing_playbook import (
             append_sales_marketing_playbook_if_needed,
         )
@@ -173,7 +178,7 @@ def build_base_voice_system(
             force_fitline = user_plan_is_fitline_focus(uid)
         except Exception:  # noqa: BLE001
             force_fitline = False
-    if query or force_fitline:
+    if not omit_fitline_knowledge and (query or force_fitline):
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
         )
@@ -338,6 +343,8 @@ def build_voice_system(
     kb_hits: list | None = None,
     skip_kb: bool = False,
     lightweight: bool = False,
+    omit_static_core: bool = False,
+    omit_fitline_knowledge: bool = False,
 ) -> str:
     """Prompt de voz en producción — delega en base ligera + memoria legacy.
 
@@ -349,6 +356,8 @@ def build_voice_system(
         kb_hits=kb_hits,
         skip_kb=skip_kb,
         include_session_state=not lightweight,
+        omit_static_core=omit_static_core,
+        omit_fitline_knowledge=omit_fitline_knowledge,
     )
     uid = (user_id or "").strip()
     if uid:

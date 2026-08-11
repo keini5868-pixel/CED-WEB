@@ -79,6 +79,14 @@ TOOL_TIMEOUT_SEC = 45.0
 SEARCH_WEB_TOOL_TIMEOUT_SEC = 12.0
 PDF_TOOL_TIMEOUT_SEC = 90.0
 
+_FITLINE_CACHE_TURN_HINT = (
+    "# CONOCIMIENTO FITLINE/PM (context cache)\n"
+    "La identidad CED Jarvis y la ficha curada de PM International / FitLine "
+    "están en el contexto cacheado. Úsalas con prioridad cuando el usuario "
+    "pregunte por productos, negocio, precios o prospección FitLine. "
+    "No digas que usas un cache ni cites etiquetas internas."
+)
+
 WEB_SEARCH_FALLBACK_OVERLAY = (
     "[Contexto: search_web devolvió status=timeout con fallback=True. "
     "Responde con conocimiento integrado y el disclaimer obligatorio de REGLA 3. "
@@ -441,6 +449,67 @@ class GeminiVoiceLlm:
             system = f"{system}\n\n{WEB_SEARCH_FALLBACK_OVERLAY}"
         return system
 
+    def _resolve_fitline_cache_and_system(
+        self,
+        user_text: str,
+        *,
+        extra_overlay: str = "",
+    ) -> tuple[str, str | None]:
+        """System prompt + optional Google cached_content name for FitLine turns."""
+        from app.services.opportunities_pilot.fitline_gemini_cache import (
+            ensure_fitline_cached_content,
+            fitline_knowledge_needed,
+        )
+
+        cache_name: str | None = None
+        use_cache = fitline_knowledge_needed(self.user_id, user_text)
+        if use_cache:
+            try:
+                cache_name = ensure_fitline_cached_content(self.client, self.model)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[RETELL-GEMINI] fitline cache resolve failed: %s", exc)
+                cache_name = None
+
+        if cache_name:
+            system = build_voice_system(
+                self.user_id,
+                user_text,
+                omit_static_core=True,
+                omit_fitline_knowledge=True,
+            )
+            system = f"{_FITLINE_CACHE_TURN_HINT}\n\n{system}".strip() if system else _FITLINE_CACHE_TURN_HINT
+        else:
+            system = build_voice_system(self.user_id, user_text)
+
+        if getattr(self, "_module_overlay", ""):
+            system = f"{system}\n\n{self._module_overlay}"
+        if self._web_search_fallback:
+            self._web_search_fallback = False
+            system = f"{system}\n\n{WEB_SEARCH_FALLBACK_OVERLAY}"
+        if extra_overlay:
+            system = f"{system}\n\n{extra_overlay}"
+        return system, cache_name
+
+    def _generate_content_config(
+        self,
+        *,
+        system: str,
+        cache_name: str | None = None,
+        tools: Any = None,
+        temperature: float = 0.4,
+        max_output_tokens: int = 320,
+    ) -> types.GenerateContentConfig:
+        kwargs: dict[str, Any] = {
+            "system_instruction": system,
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+        }
+        if tools is not None:
+            kwargs["tools"] = tools
+        if cache_name:
+            kwargs["cached_content"] = cache_name
+        return types.GenerateContentConfig(**kwargs)
+
     async def _ensure_complete_voice_reply(
         self,
         text: str,
@@ -656,9 +725,13 @@ class GeminiVoiceLlm:
         temperature: float = 0.65,
         with_tools: bool = False,
     ) -> str | None:
-        system = f"{build_voice_system(self.user_id, user_text)}\n\n{overlay}"
-        config = types.GenerateContentConfig(
-            system_instruction=system,
+        system, cache_name = self._resolve_fitline_cache_and_system(
+            user_text,
+            extra_overlay=overlay,
+        )
+        config = self._generate_content_config(
+            system=system,
+            cache_name=cache_name,
             tools=[self.tools] if with_tools else None,
             temperature=temperature,
             max_output_tokens=max_tokens,
@@ -1169,12 +1242,16 @@ class GeminiVoiceLlm:
             and is_internal_knowledge_query(user_text)
         )
         if use_internal:
-            internal_config = types.GenerateContentConfig(
-                system_instruction=(
-                    f"{build_voice_system(self.user_id, user_text)}\n\n"
+            system_i, cache_i = self._resolve_fitline_cache_and_system(
+                user_text,
+                extra_overlay=(
                     "Responde SOLO con conocimiento interno CED. "
                     "PROHIBIDO invocar search_web o decir que buscas en internet."
                 ),
+            )
+            internal_config = self._generate_content_config(
+                system=system_i,
+                cache_name=cache_i,
                 temperature=0.4,
                 max_output_tokens=max_tokens,
             )
@@ -1220,11 +1297,12 @@ class GeminiVoiceLlm:
             len(self._history),
         )
 
-        system = self._build_draft_system(user_text)
+        system, cache_name = self._resolve_fitline_cache_and_system(user_text)
         # FitLine/PM: sin tools — evita search_web + filler «Investigando, señor».
         fitline_internal = prefers_fitline_over_web(user_text)
-        config = types.GenerateContentConfig(
-            system_instruction=system,
+        config = self._generate_content_config(
+            system=system,
+            cache_name=cache_name,
             tools=None if fitline_internal else [self.tools],
             temperature=0.4,
             max_output_tokens=max_tokens,

@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     gemini_live_model: str = "gemini-2.5-flash-native-audio-preview-12-2025"
     gemini_voice_model: str = "gemini-2.5-flash"
     gemini_image_model: str = "gemini-3.1-flash-image"
+    # Context Caching explícito (Google) para base Jarvis + ficha FitLine/PM.
+    # Baja input de ~$0.30/1M a ~$0.03/1M en esos tokens. Fallback inline si falla.
+    fitline_gemini_context_cache: bool = True
+    fitline_gemini_context_cache_ttl_sec: int = 3600
 
     # Ideogram 4.0 — fallback tipográfico si GPT Image no está o falla. El motor
     # preferido para texto literal es GPT Image (OPENAI_API_KEY + openai_model_image).
