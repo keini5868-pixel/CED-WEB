@@ -13,6 +13,7 @@ import {
   sendFinanceChatMessageStream,
   type FinanceChatMessage,
 } from "@/lib/api/finance";
+import { fetchFitlineActionPlan } from "@/lib/api/opportunitiesPilot";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 
 type FinanceChatPanelProps = {
@@ -70,6 +71,10 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
   const [statusHint, setStatusHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [configured, setConfigured] = useState<boolean | null>(null);
+  const [actionPlan, setActionPlan] = useState<{
+    title?: string;
+    content?: { goals?: string[]; steps?: string[]; notes?: string };
+  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
@@ -105,6 +110,22 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
         setError(status.finance_db_error);
       }
     });
+    void fetchFitlineActionPlan()
+      .then((res) => {
+        if (cancelled) return;
+        const plan = res?.plan;
+        if (plan && typeof plan === "object") {
+          setActionPlan(plan as {
+            title?: string;
+            content?: { goals?: string[]; steps?: string[]; notes?: string };
+          });
+        } else {
+          setActionPlan(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setActionPlan(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -262,6 +283,25 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
             Finanzas no disponible. Configura GOOGLE_API_KEY o ANTHROPIC_API_KEY
             en el servicio API de Railway.
           </p>
+        ) : null}
+
+        {actionPlan ? (
+          <div className="mx-4 mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+              Plan de acción guardado
+            </p>
+            <p className="mt-0.5 text-xs text-emerald-100">
+              {actionPlan.title || "Plan de crecimiento"}
+            </p>
+            {Array.isArray(actionPlan.content?.goals) &&
+            actionPlan.content.goals.length > 0 ? (
+              <ul className="mt-1 list-inside list-disc text-[11px] text-emerald-200/80">
+                {actionPlan.content.goals.slice(0, 4).map((g) => (
+                  <li key={g}>{g}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         ) : null}
 
         <div

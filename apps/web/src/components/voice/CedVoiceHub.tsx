@@ -86,6 +86,17 @@ export function CedVoiceHub() {
     return () => window.removeEventListener("ced-preview-persona", sync);
   }, []);
 
+  useEffect(() => {
+    const onOpen = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ module?: string }>).detail;
+      if ((detail?.module || "").trim() === "finance") {
+        setFinanceOpen(true);
+      }
+    };
+    window.addEventListener("ced-open-module", onOpen);
+    return () => window.removeEventListener("ced-open-module", onOpen);
+  }, []);
+
   const voiceRoute = useMemo(() => {
     void previewTick;
     if (isCierrePartnerPreview()) {

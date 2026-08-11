@@ -187,3 +187,46 @@ export async function adminSendSupportMessage(
 ): Promise<SupportMessage | null> {
   return sendSupportMessage(conversationId, content, attachments);
 }
+
+export type InsightQuestion = {
+  id: string;
+  user_id?: string | null;
+  question: string;
+  channel?: string;
+  tags?: string[];
+  priority?: string;
+  status?: string;
+  assistant_preview?: string | null;
+  created_at?: string;
+};
+
+export async function fetchAdminInsights(opts?: {
+  status?: string;
+  tag?: string;
+  limit?: number;
+}): Promise<InsightQuestion[]> {
+  const params = new URLSearchParams();
+  params.set("status", opts?.status || "new");
+  if (opts?.tag) params.set("tag", opts.tag);
+  if (opts?.limit) params.set("limit", String(opts.limit));
+  const res = await proxyFetch(`support/admin/insights?${params.toString()}`);
+  if (!res.ok) return [];
+  const data = await parseApiJson<{ items?: InsightQuestion[] }>(res);
+  return data.items ?? [];
+}
+
+export async function adminUpdateInsightStatus(
+  id: string,
+  status: "new" | "reviewed" | "archived",
+): Promise<void> {
+  const res = await proxyFetch(`support/admin/insights/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+  if (!res.ok) {
+    const data = await parseApiJson<{ detail?: string }>(res);
+    throw new Error(data.detail || "No se pudo actualizar");
+  }
+}
+

@@ -228,3 +228,40 @@ async def admin_unread_count(_admin_id: str = Depends(require_super_admin)) -> d
 async def user_unread_count(user: dict[str, Any] = Depends(_auth_context)) -> dict[str, Any]:
     count = await run_sync(svc.count_unread_for_user, user["id"])
     return {"ok": True, "count": count}
+
+
+class InsightStatusBody(BaseModel):
+    status: str = Field(description="new | reviewed | archived")
+
+
+@router.get("/admin/insights")
+async def admin_list_insights(
+    status: str = "new",
+    tag: str | None = None,
+    limit: int = 50,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    from app.services.insight_questions import list_insight_questions
+
+    rows = await run_sync(
+        list_insight_questions,
+        status=status,
+        limit=limit,
+        tag=tag,
+    )
+    return {"ok": True, "items": rows}
+
+
+@router.patch("/admin/insights/{question_id}")
+async def admin_update_insight(
+    question_id: str,
+    body: InsightStatusBody,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    from app.services.insight_questions import update_insight_status
+
+    result = await run_sync(update_insight_status, question_id, body.status)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error") or "update_failed")
+    return result
+

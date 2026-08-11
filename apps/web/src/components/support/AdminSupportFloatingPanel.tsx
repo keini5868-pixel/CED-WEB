@@ -2,17 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Headphones, X } from "lucide-react";
+import { Headphones, MessageSquareWarning, X } from "lucide-react";
 
 import { AdminSupportInbox } from "@/components/admin/AdminSupportInbox";
+import { AdminInsightForum } from "@/components/support/AdminInsightForum";
 
 type Props = {
   onClose: () => void;
   onUnreadChange: (count: number) => void;
 };
 
+type Tab = "inbox" | "insights";
+
 export function AdminSupportFloatingPanel({ onClose, onUnreadChange }: Props) {
   const [mounted, setMounted] = useState(false);
+  const [tab, setTab] = useState<Tab>("inbox");
 
   useEffect(() => {
     setMounted(true);
@@ -30,7 +34,7 @@ export function AdminSupportFloatingPanel({ onClose, onUnreadChange }: Props) {
               Soporte — Admin
             </p>
             <p className="text-[10px] text-amber-500/80">
-              Conversaciones de usuarios
+              Inbox y foro de dudas auto-capturadas
             </p>
           </div>
         </div>
@@ -43,8 +47,38 @@ export function AdminSupportFloatingPanel({ onClose, onUnreadChange }: Props) {
           <X size={18} />
         </button>
       </header>
+      <div className="flex shrink-0 gap-1 border-b border-amber-500/15 px-2 py-1.5">
+        <button
+          type="button"
+          onClick={() => setTab("inbox")}
+          className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${
+            tab === "inbox"
+              ? "bg-amber-500/20 text-amber-100"
+              : "text-amber-500/70 hover:bg-amber-500/10"
+          }`}
+        >
+          <Headphones className="h-3 w-3" />
+          Inbox
+        </button>
+        <button
+          type="button"
+          onClick={() => setTab("insights")}
+          className={`flex items-center gap-1.5 rounded px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider ${
+            tab === "insights"
+              ? "bg-amber-500/20 text-amber-100"
+              : "text-amber-500/70 hover:bg-amber-500/10"
+          }`}
+        >
+          <MessageSquareWarning className="h-3 w-3" />
+          Foro dudas
+        </button>
+      </div>
       <div className="min-h-0 flex-1">
-        <AdminSupportInbox compact onUnreadCountChange={onUnreadChange} />
+        {tab === "inbox" ? (
+          <AdminSupportInbox compact onUnreadCountChange={onUnreadChange} />
+        ) : (
+          <AdminInsightForum compact />
+        )}
       </div>
     </div>,
     document.body,

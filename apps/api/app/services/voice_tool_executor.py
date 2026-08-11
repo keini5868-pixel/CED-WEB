@@ -1203,12 +1203,13 @@ async def _execute_voice_tool_body(
             vcs.push_client_action(
                 user_id,
                 "open_module",
-                {"module": "opportunities", "opportunity_id": "fitline_pm"},
+                {"module": "finance"},
             )
             spoken = (
-                "Listo: guardé el plan de crecimiento de tu franquicia. "
-                "Ábrelo en Oportunidades, sección OPPS, y al final encontrarás el "
-                "enlace para activar o compartir tu franquicia."
+                "Listo: guardé tu plan de acción. "
+                "Queda en el módulo de Finanzas para que lo revisemos juntos "
+                "cuando quieras y trabajemos enfocados en eso. "
+                "También puedes ver el enlace de franquicia en Oportunidades."
             )
             payload = _spoken_ok(spoken)
             payload["plan"] = saved.get("plan")

@@ -1255,6 +1255,20 @@ def _build_chat_system(
         parts.append(extras)
     system = append_sales_marketing_playbook_if_needed("\n\n".join(parts), user_text)
     system = append_fitline_knowledge_if_needed(system, user_text)
+    try:
+        from app.services.opportunities_pilot.fitline_close_trigger import (
+            append_fitline_close_trigger_if_needed,
+        )
+
+        system = append_fitline_close_trigger_if_needed(system, user_id, user_text)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.services.insight_questions import capture_insight_question
+
+        capture_insight_question(user_id, user_text, channel="chat")
+    except Exception:  # noqa: BLE001
+        pass
     from app.services.opportunities_pilot.fitline_guide_mode import (
         append_fitline_guide_if_needed,
     )
@@ -1287,6 +1301,20 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
         parts.append(CED_MEMORY_USAGE_RULES)
     system = append_sales_marketing_playbook_if_needed("\n\n".join(parts), user_text)
     system = append_fitline_knowledge_if_needed(system, user_text)
+    try:
+        from app.services.opportunities_pilot.fitline_close_trigger import (
+            append_fitline_close_trigger_if_needed,
+        )
+
+        system = append_fitline_close_trigger_if_needed(system, user_id, user_text)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.services.insight_questions import capture_insight_question
+
+        capture_insight_question(user_id, user_text, channel="chat")
+    except Exception:  # noqa: BLE001
+        pass
     return append_fitline_guide_if_needed(system, user_id, user_text, channel="chat")
 
 
