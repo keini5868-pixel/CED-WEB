@@ -237,11 +237,12 @@ def test_realtime_fitline_prompt_has_knowledge_not_jarvis():
 
     format_fitline_knowledge_for_realtime_voice.cache_clear()
     text = build_realtime_instructions(voice_profile="fitline")
-    assert "Restorate" in text
-    assert "calcio" in text.lower()
-    assert "GUIONES DE PRODUCTO" in text
-    assert "CED JARVIS" in text or "Jarvis" in text
-    assert text.index("GUIONES DE PRODUCTO") < text.index("CED JARVIS")
+    assert "ESTILO OBLIGATORIO = JARVIS RETELL" in text
+    assert "NTC" in text
+    assert "detalle adicional" in text.lower()
+    assert "Wikipedia" in text or "wikipedia" in text.lower() or "PROHIBIDO" in text
+    assert "PowerCocktail" in text or "Activize" in text
+    assert text.index("ESTILO OBLIGATORIO") < text.index("HECHOS OBLIGATORIOS")
     assert len(text) > 4000
     assert len(text) <= 16000
 

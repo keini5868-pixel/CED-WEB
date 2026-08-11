@@ -32,9 +32,14 @@ def test_fitline_cierre_tools_only_franchise():
 
 
 def test_lean_knowledge_bans_external_spend():
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        format_fitline_knowledge_for_realtime_voice,
+    )
+
+    format_fitline_knowledge_for_realtime_voice.cache_clear()
     text = format_fitline_knowledge_lean_for_voice(max_chars=7_500)
-    assert "Restorate" in text
-    assert "calcio" in text.lower() or "GUIONES DE PRODUCTO" in text
+    assert "ESTILO OBLIGATORIO" in text or "JARVIS" in text
+    assert "NTC" in text
     assert len(text) <= 7_600
 
 
@@ -58,8 +63,7 @@ def test_realtime_fitline_instructions_zero_spend(monkeypatch):
         user_id="admin-user",
     )
     low = prompt.lower()
-    assert "restorate" in low
-    assert "calcio" in low and "magnesio" in low
-    assert "ntc" in low or "nutrient transport" in low
-    assert "más información" in low or "jarvis" in low
+    assert "estilo obligatorio" in low or "jarvis retell" in low
+    assert "ntc" in low
+    assert "detalle adicional" in low
     assert "search_web" in low or "tavily" in low or "prohibido" in low

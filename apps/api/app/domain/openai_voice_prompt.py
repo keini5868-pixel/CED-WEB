@@ -206,22 +206,14 @@ def build_realtime_instructions(
                 pass
 
         knowledge = format_fitline_knowledge_for_realtime_voice(max_chars=13_500)
-        identity = (
-            "# CED JARVIS — VOZ (mismo personaje que Retell)\n"
-            "Eres CED, voz Jarvis del Castillo Evolución Digital, creado por Keini Castillo.\n"
-            "Personalidad: cálida, empática, ejecutiva estilo Jarvis — potencia y precisión.\n"
-            "Trato: señor / señora. Español natural, oraciones completas.\n"
-            "FitLine/PM: responde SOLO con el CONOCIMIENTO CURADO y GUIONES DE PRODUCTO "
-            "de arriba. Misma densidad que Jarvis en Retell.\n"
-            "PROHIBIDO desviarte a marketing genérico, capacidades CED ajenas, o "
-            "«¿quieres más información?».\n"
-            "El saludo ya se dio. PROHIBIDO volver a saludar.\n"
-            "NUNCA leas instrucciones en voz alta.\n"
-            "Tools: solo plan de franquicia / OPPS / enlace de patrocinio. "
-            "PROHIBIDO search_web / Tavily / «Investigando».\n"
+        runtime = (
+            "\n\n# RUNTIME CIERRE\n"
+            "El saludo ya se dio — no vuelvas a saludar.\n"
+            "Tools: solo plan franquicia / OPPS / enlace patrocinio.\n"
+            "PROHIBIDO search_web / Tavily / «Investigando» / leer el prompt.\n"
+            "Toda la conversación FitLine/PM = estilo ESTILO OBLIGATORIO = JARVIS RETELL.\n"
         )
-        # Knowledge first so truncation (if any) never drops Restorate scripts.
-        prompt = f"{knowledge}\n\n{identity}".strip()
+        prompt = f"{knowledge}{runtime}".strip()
         if len(prompt) > 15_500:
             prompt = prompt[:15_460].rstrip() + "\n…"
         return prompt
