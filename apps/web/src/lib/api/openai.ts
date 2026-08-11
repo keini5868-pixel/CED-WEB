@@ -1,5 +1,5 @@
 import { parseApiJson } from "@/lib/api/http";
-import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
+import { proxyFetch, proxyFetchAuthed } from "@/lib/api/ced-proxy";
 import type { UserAddressContext } from "@/lib/api/profile";
 import type { VoiceSessionPreferences } from "@ced/types";
 
