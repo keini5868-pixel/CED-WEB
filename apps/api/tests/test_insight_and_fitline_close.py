@@ -67,4 +67,6 @@ def test_closer_injects_after_three_questions():
     assert "CIERRE ESTRATÉGICO" in s3
     assert "Finanzas" in s3 or "plan de acción" in s3.lower()
     assert mark.called
-    assert "proyección" in _FITLINE_CLOSE_AFTER_QUESTIONS.lower() or "futuro" in _FITLINE_CLOSE_AFTER_QUESTIONS.lower()
+    assert "90 días" in _FITLINE_CLOSE_AFTER_QUESTIONS
+    assert "dinero" in _FITLINE_CLOSE_AFTER_QUESTIONS.lower()
+    assert "Finanzas" in _FITLINE_CLOSE_AFTER_QUESTIONS

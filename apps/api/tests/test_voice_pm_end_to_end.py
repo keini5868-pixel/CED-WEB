@@ -96,7 +96,8 @@ def test_voice_system_with_cache_omit_still_gets_close_trigger():
     assert "CIERRE ESTRATÉGICO" not in s2
     assert "CIERRE ESTRATÉGICO" in s3
     assert "Finanzas" in s3 or "plan de acción" in s3.lower()
-    assert "futuro" in s3.lower() or "proyección" in s3.lower()
+    assert "90 días" in s3 or "90 dias" in s3.lower()
+    assert "dinero" in s3.lower()
 
 
 def test_voice_prefers_internal_knowledge_over_web():

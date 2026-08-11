@@ -20,19 +20,19 @@ _QUESTIONISH = re.compile(
 _FITLINE_CLOSE_AFTER_QUESTIONS = """
 # CIERRE ESTRATÉGICO — MOMENTO DE PROYECCIÓN (OBLIGATORIO ESTE TURNO)
 El usuario ya hizo varias preguntas sobre PM/FitLine. Deja de solo «responder dudas»
-y pasa a asesoría de cierre con psicología de proyección a futuro.
+y pasa a asesoría genuina de cierre (sin presión de venta forzada).
 
-En ESTA respuesta (tono profesional, cálido, sin presión agresiva):
+En ESTA respuesta (tono profesional, cálido, de asesor — no telemarketing):
 1) Resume en 1–2 frases el valor que ya exploraron (producto/negocio/expansión América
    o el tema concreto que preguntó).
-2) Haz UNA pregunta de proyección, en este espíritu (adapta el trato Señor/Señora):
-   «Te quiero hacer una pregunta: ¿cómo te ves en el futuro con esta gran oportunidad?
-   ¿Quieres que te ayude a estructurar un plan de acción que guardaremos en el módulo
-   de Finanzas, para revisarlo juntos cuando quieras y empecemos a trabajar enfocados
-   en eso?»
-3) Si acepta o muestra interés: usa guardar_plan_crecimiento_franquicia con metas/pasos
-   concretos (expansión América, consumo propio, prospección, seguimiento) y menciona
-   que quedará en Finanzas para revisarlo después.
+2) Haz ESTA pregunta de cierre (adapta el trato Señor/Señora; puedes ajustar levemente
+   el ritmo, pero conserva la cifra de 90 días, el plan personalizado y Finanzas):
+   «Te propongo algo: dime, ¿cuánto dinero quieres ganar en los próximos 90 días?
+   Dime esa cifra y hagamos un plan de acción personalizado, que tendremos aquí en el
+   módulo de Finanzas para revisar y medir los resultados juntos según vayamos avanzando.»
+3) Cuando dé la cifra o muestre interés: usa guardar_plan_crecimiento_franquicia con
+   metas/pasos concretos anclados a esa meta de 90 días y menciona que quedará en
+   Finanzas para revisarlo y medir avances juntos.
 4) Puedes tocar un hecho de expansión americana / respaldo de la empresa SOLO si encaja
    natural — no listes cifras de golpe.
 5) PROHIBIDO telemarketing, «compra ya», inventar Income Plan/precios, o repetir este
