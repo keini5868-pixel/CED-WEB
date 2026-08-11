@@ -331,6 +331,14 @@ export class CedLiveClient {
     ) {
       return true;
     }
+    // Inglés espontáneo o muletillas — cortar (paridad Retell ES).
+    if (
+      /\b(hi there|what'?s on your mind|how can i help|how may i help|good (morning|afternoon|evening)[!.,]?\s*(how can|what)|sure[,!]?\s*sure|claro,?\s*claro)\b/i.test(
+        low,
+      )
+    ) {
+      return true;
+    }
     // Saludo temático incorrecto (import/mercadería) — nunca al conectar.
     if (
       (this.awaitingFirstUserSpeech || !this.heardUserSinceGreeting) &&
@@ -803,7 +811,9 @@ export class CedLiveClient {
     if (now - this.lastResponseCreateAt < 700) return;
     this.postGreetingLockUntil = 0;
     this.turnCooldownUntil = now + 2500;
-    void this.safeResponseCreate({ max_output_tokens: 320 });
+    void this.safeResponseCreate({
+      max_output_tokens: this.voiceProfile === "fitline" ? 1400 : 900,
+    });
   }
 
   private triggerUserResponse(): void {

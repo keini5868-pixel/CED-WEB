@@ -2,6 +2,7 @@
 
 from app.services.voice_llm_common import (
     dedupe_voice_reply,
+    strip_embedded_prior_assistant,
     voice_generation_limits,
     voice_repeats_last_assistant,
 )
@@ -54,3 +55,21 @@ def test_voice_repeats_short_identity_line():
     history = [{"role": "assistant", "content": "Mi nombre es CED."}]
     assert voice_repeats_last_assistant("Mi nombre es CED.", history)
     assert voice_repeats_last_assistant("Correcto, mi nombre es CED", history)
+
+
+def test_strip_embedded_prior_assistant_removes_leading_block():
+    prior = (
+        "Activize es la bebida de FitLine con NTC para energía celular y enfoque. "
+        "Se toma por la mañana y forma parte del Optimal-Set con Restorate y Basics. "
+        "En prospección, úsalo para hablar de vitalidad sin inventar comisiones."
+    )
+    new_topic = (
+        "Restorate aporta minerales alcalinos y se toma por la noche. "
+        "Es clave en el Optimal-Set junto a Activize para recuperación."
+    )
+    history = [{"role": "assistant", "content": prior}]
+    combined = f"{prior} {new_topic}"
+    stripped = strip_embedded_prior_assistant(combined, history)
+    assert "Restorate aporta minerales" in stripped
+    assert not stripped.startswith("Activize es la bebida")
+

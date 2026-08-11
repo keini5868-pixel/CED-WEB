@@ -147,6 +147,8 @@ Contexto de la conversación:
 INSTRUCCIONES:
 - Entrega el documento que el usuario pidió (consejos, resumen, guía, listado, análisis, etc.).
 - PROHIBIDO devolver solo el título o repetir la petición del usuario.
+- Si el borrador/contexto habla de OTRO tema distinto a la petición actual, IGNÓRALO y redacta solo lo pedido ahora.
+- PROHIBIDO pegar la respuesta anterior completa del chat; escribe contenido nuevo y completo sobre el tema pedido.
 - Si piden consejos de "El Alquimista", escribe consejos reales inspirados en la obra de Paulo Coelho (Leyenda Personal, señales, miedo, viaje, tesoro, etc.).
 - Usa secciones numeradas o viñetas cuando ayude.
 {length_rules}
@@ -215,8 +217,8 @@ def compose_pdf_body(
         context_snippets=context_snippets,
         detail_level=level,
     )
-    max_tokens = 4096 if level == "full" else 700
-    # brief: menos tokens → compose más rápido en voz (~5–8s vs 10–15s).
+    max_tokens = 4096 if level == "full" else 1800
+    # brief: suficiente para no cortar a mitad si hubo eco residual del borrador.
     compose_timeout = PDF_COMPOSE_TIMEOUT_SEC if level == "full" else min(PDF_COMPOSE_TIMEOUT_SEC, 12.0)
     def _call_gemini() -> str:
         from google import genai
@@ -415,17 +417,39 @@ def store_pdf(
         raw_body,
         fallback_texts=fallback_texts,
     )
-    context = [*(fallback_texts or [])]
-    if req and req not in context:
+    # No duplicar el mismo borrador en draft + context (eco del turno anterior).
+    context: list[str] = []
+    for snippet in fallback_texts or []:
+        s = (snippet or "").strip()
+        if not s:
+            continue
+        if raw_body and s == raw_body:
+            continue
+        if resolved and s == resolved:
+            continue
+        context.append(s)
+    if req and req not in context and req != raw_body and req != resolved:
         context.append(req)
+
+    # Si el usuario pidió un tema nuevo corto, no alimentar compose con el
+    # monólogo anterior completo como "borrador".
+    draft_for_compose = raw_body or resolved
+    if (
+        req
+        and draft_for_compose
+        and len(req) < 120
+        and len(draft_for_compose) > 200
+        and req.lower() not in draft_for_compose[:180].lower()
+    ):
+        draft_for_compose = req
 
     composed_ok = False
     if pdf_content_needs_composition(safe_title, resolved, user_request=req):
         composed = compose_pdf_body(
             title=safe_title,
             user_request=req,
-            draft_content=raw_body or resolved,
-            context_snippets=context,
+            draft_content=draft_for_compose,
+            context_snippets=context[:4],
             detail_level=level,
         )
         if composed:

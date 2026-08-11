@@ -58,10 +58,13 @@ from app.services.voice_llm_common import (
     SESSION_MAX_MINUTES,
     WEB_SEARCH_VOICE_FALLBACK,
     build_voice_system,
+    dedupe_voice_reply,
     log_voice_delivery,
     needs_empathy_reformulation,
     prompt_sha_prefix,
+    strip_embedded_prior_assistant,
     voice_generation_limits,
+    voice_repeats_last_assistant,
 )
 
 logger = logging.getLogger(__name__)
@@ -1434,6 +1437,38 @@ class GeminiVoiceLlm:
             max_tokens=max_tokens,
             path="draft_main",
         )
+
+        hist_dicts: list[dict[str, str]] = []
+        for row in self._history:
+            role = "assistant" if row.role == "model" else str(row.role or "user")
+            chunks: list[str] = []
+            for part in row.parts or []:
+                if getattr(part, "text", None):
+                    chunks.append(str(part.text))
+            body = " ".join(chunks).strip()
+            if body:
+                hist_dicts.append({"role": role, "content": body})
+        text_response = strip_embedded_prior_assistant(text_response, hist_dicts)
+        text_response = dedupe_voice_reply(text_response)
+        if voice_repeats_last_assistant(text_response, hist_dicts):
+            logger.warning(
+                "[RETELL-GEMINI] duplicate assistant reply stripped/regen user=%s",
+                (self.user_id or "?")[:8],
+            )
+            regen = await self.generate_natural_reply(
+                contents=[*self._history, last],
+                user_text=user_text,
+                overlay=(
+                    "NO repitas tu mensaje anterior. Responde SOLO al turno actual, "
+                    "completo y en español. Si es otro producto, no copies el bloque previo."
+                ),
+                path="duplicate_reply_regen",
+                max_tokens=max_tokens,
+            )
+            if regen:
+                text_response = strip_embedded_prior_assistant(
+                    dedupe_voice_reply(regen), hist_dicts
+                )
 
         self._history = _truncate_contents(
             [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])],

@@ -5,29 +5,35 @@ import {
 } from "./ced-brief-messages";
 
 describe("cedReceptionGreetingPhrase", () => {
-  it("fitline usa saludo estándar CED, no temático", () => {
+  it("fitline usa saludo estilo Retell Jarvis en español", () => {
     const phrase = cedReceptionGreetingPhrase("fitline", {
       honorific: "Señor",
       gender: "male",
     });
-    expect(phrase).toBe("Sí, Señor, ¿en qué lo puedo ayudar el día de hoy?");
-    expect(phrase.toLowerCase()).not.toMatch(/mercader|importar|producto/);
+    expect(phrase.toLowerCase()).toMatch(/señor|ced|servicio|ayudarle|comenzamos|necesita/);
+    expect(phrase.toLowerCase()).not.toMatch(/mercader|importar|hi there|what's on your mind/);
+    expect(phrase).not.toMatch(/Claro,\s*claro/i);
   });
 
   it("fitline respeta Señora", () => {
-    expect(
-      cedReceptionGreetingPhrase("fitline", {
-        honorific: "Señora",
-        gender: "female",
-      }),
-    ).toBe("Sí, Señora, ¿en qué lo puedo ayudar el día de hoy?");
+    const phrase = cedReceptionGreetingPhrase("fitline", {
+      honorific: "Señora",
+      gender: "female",
+    });
+    expect(phrase).toMatch(/Señora/);
+    expect(phrase).not.toMatch(/\bSeñor\b/);
   });
 
-  it("ignora greetingPhraseJarvis temático en fitline", () => {
+  it("ignora greetingPhraseJarvis temático o en inglés en fitline", () => {
     const phrase = cedReceptionGreetingPhrase("fitline", {
       honorific: "Señor",
-      greetingPhraseJarvis: "¿Qué producto de mercadería necesitas importar?",
+      greetingPhraseJarvis: "Hi there! What's on your mind today?",
     });
-    expect(phrase).toBe(cedStandardReceptionGreeting("Señor"));
+    expect(phrase.toLowerCase()).not.toMatch(/hi there|what's on your mind/);
+    expect(phrase).toMatch(/Señor|CED|servicio|ayudarle/i);
+  });
+
+  it("cedStandardReceptionGreeting es español formal", () => {
+    expect(cedStandardReceptionGreeting("Señor")).toMatch(/A su servicio/);
   });
 });

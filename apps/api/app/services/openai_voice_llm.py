@@ -33,6 +33,7 @@ from app.services.voice_llm_common import (
     needs_empathy_reformulation,
     normalize_voice_delivery_text,
     prompt_sha_prefix,
+    strip_embedded_prior_assistant,
     transcript_to_openai_messages,
     truncate_messages,
     voice_generation_limits,
@@ -816,6 +817,7 @@ class OpenAIVoiceLlm:
                         )
                         if regen:
                             final_text = regen
+                final_text = strip_embedded_prior_assistant(final_text, self._history)
                 break
         except asyncio.TimeoutError:
             delay = await self.generate_natural_reply(

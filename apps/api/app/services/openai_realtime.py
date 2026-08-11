@@ -269,8 +269,8 @@ def create_realtime_session(
 
     session_tools = fitline_cierre_realtime_tools() if is_fitline else OPENAI_REALTIME_TOOLS
     # Respuestas densas tipo Retell (Restorate, NTC, negocio).
-    max_out = 2800 if is_fitline else None
-    instr_cap = 16000 if is_fitline else 12000
+    max_out = 3200 if is_fitline else None
+    instr_cap = 22000 if is_fitline else 12000
 
     # CRÍTICO: intentar TODAS las sesiones con tools antes de fallback sin tools.
     # Antes, un fallo en tools:* hacía caer en full:* sin herramientas → CED hablaba pero no ejecutaba.

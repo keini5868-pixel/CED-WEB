@@ -38,13 +38,32 @@ export function cedResolveHonorific(
   return "Señor";
 }
 
-/** Saludo estándar CED — sin tema de producto/importación (PM/Cierre incluido). */
+/** Pool alineado a Retell Jarvis (`voice_greetings.JARVIS_GREETING_POOL`) — Cierre usa el mismo. */
+const RETELL_JARVIS_GREETING_POOL = [
+  "A su servicio, Señor. CED completamente operativo. ¿En qué puedo ayudarle hoy?",
+  "Buenos días, Señor. CED en línea. ¿Por dónde comenzamos hoy?",
+  "A sus órdenes, Señor. Todos los sistemas operativos. ¿Qué necesita?",
+  "Sistema CED en línea, Señor. Listo para asistirle. ¿En qué puedo ayudarle?",
+  "Hola, Señor. CED activado y a su disposición. ¿Qué construimos hoy?",
+] as const;
+
+/** Saludo estándar CED — fallback corto. */
 export function cedStandardReceptionGreeting(title: string): string {
   const t = title.trim() || "Señor";
   if (t === "Señor" || t === "Señora" || t === "Don" || t === "Doña") {
-    return `Sí, ${t}, ¿en qué lo puedo ayudar el día de hoy?`;
+    return `A su servicio, ${t}. ¿En qué puedo ayudarle hoy?`;
   }
-  return `Sí, ${t}. ¿En qué lo puedo ayudar el día de hoy?`;
+  return `Hola, ${t}. ¿En qué puedo ayudarle hoy?`;
+}
+
+function applyHonorificToJarvisGreeting(phrase: string, title: string): string {
+  if (title === "Señora" || title === "Doña") {
+    return phrase.replace(/Señor/g, title);
+  }
+  if (title !== "Señor" && title !== "Don") {
+    return `Hola, ${title}. ¿En qué puedo ayudarle hoy?`;
+  }
+  return phrase;
 }
 
 export function cedReceptionGreetingPhrase(
@@ -52,9 +71,24 @@ export function cedReceptionGreetingPhrase(
   address?: CedGreetingAddress,
 ): string {
   const title = cedResolveHonorific(address);
-  // FitLine/Cierre (voz económica): mismo saludo estándar — no pool temático.
+  // FitLine/Cierre: mismo estilo de apertura que Retell Jarvis (solo cambia el motor).
   if (voiceProfile === "fitline") {
-    return cedStandardReceptionGreeting(title);
+    if (address?.greetingPhraseJarvis?.trim()) {
+      const g = address.greetingPhraseJarvis.trim();
+      // Ignorar saludos temáticos / inglés / muletillas.
+      if (
+        !/mercader|importar|hi there|what'?s on your mind|claro,?\s*claro/i.test(g)
+      ) {
+        return g;
+      }
+    }
+    const idx =
+      Math.floor(Math.random() * RETELL_JARVIS_GREETING_POOL.length) %
+      RETELL_JARVIS_GREETING_POOL.length;
+    const pick =
+      RETELL_JARVIS_GREETING_POOL[idx] ??
+      "A su servicio, Señor. CED completamente operativo. ¿En qué puedo ayudarle hoy?";
+    return applyHonorificToJarvisGreeting(pick, title);
   }
   if (voiceProfile !== "jarvis") {
     return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";

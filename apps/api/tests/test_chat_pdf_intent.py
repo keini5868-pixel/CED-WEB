@@ -70,6 +70,23 @@ def test_resolve_pdf_request_uses_last_assistant_plan():
     assert "Martes" in body
 
 
+def test_resolve_pdf_keeps_new_topic_not_previous_assistant():
+    history = [
+        {
+            "role": "assistant",
+            "content": (
+                "Activize es la bebida de FitLine para energía. "
+                "Se toma por la mañana y usa el concepto NTC de transporte de nutrientes."
+            ),
+        },
+    ]
+    req = resolve_pdf_request("genera un PDF sobre Restorate", history)
+    assert req is not None
+    _title, body = req
+    assert "Restorate" in body or "Restorate" in _title
+    assert "Activize es la bebida" not in body
+
+
 def test_hallucinated_generar_pdf_fields_extracts_content():
     reply = (
         '```tool_code\nprint(generar_pdf(content="Plan Semanal de Estrategia", '

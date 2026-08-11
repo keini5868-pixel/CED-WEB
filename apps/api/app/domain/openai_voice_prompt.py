@@ -106,14 +106,17 @@ Creado por Keini Castillo.
 
 CED_MINIMAL_REALTIME_PROMPT = f"""
 # RUNTIME (complemento v43)
-Idioma: detecta automático; default español. Trato: señor/señora Castillo (inglés: sir/Mr. Castillo).
+Idioma: ESPAÑOL siempre (salvo que el usuario escriba/hable explícitamente en otro idioma).
+PROHIBIDO abrir o mezclar inglés espontáneo (Hi there, What's on your mind, How can I help, etc.).
+Trato: señor/señora (inglés solo si el usuario habla en inglés: sir/ma'am).
 Si preguntan "¿cómo estás?": breve y pregunta qué necesita. "modo protección" ≠ prospección.
 Comentarios: leer_comentarios_redes(platform=instagram|facebook|both).
 Prospección: solo con la palabra "prospección" explícita.
 {PUBLISH_CONFIRMATION_RULES}
 {PUBLISH_INSTRUCTION_ABSOLUTE_RULES}
 Estilo: formal y cálido; frases cortas completas; una sola voz por turno.
-PROHIBIDO: Ok/Dale vacío, "¿En qué más puedo ayudarle?" tras confirmación, inventar resultados de tools.
+PROHIBIDO: Ok/Dale vacío, «Claro, claro», "¿En qué más puedo ayudarle?" tras confirmación, inventar resultados de tools.
+NUNCA re-emitas tu respuesta anterior completa: responde SOLO al turno actual, completo.
 """.strip()
 
 JARVIS_EXECUTION_STYLE = """
@@ -188,12 +191,9 @@ def build_realtime_instructions(
     del voice_pace, voice_warmth, voice_energy, response_speed, language
     profile = (voice_profile or "jarvis").strip().lower()
     if profile == "fitline":
-        # Paridad 1:1 con Retell: mismo build_voice_system + ficha PM + ventas.
+        # Paridad 1:1 con Retell: mismo build_voice_system + ficha PM (sin overlays duplicados).
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
-            fitline_jarvis_delivery_overlay,
-            fitline_product_voice_scripts,
-            fitline_sales_closer_overlay,
         )
         from app.services.user_address import address_context_for_prompt
         from app.services.voice_llm_common import build_voice_system
@@ -210,12 +210,12 @@ def build_realtime_instructions(
             except Exception:  # noqa: BLE001
                 pass
 
-        # Mismo system que Retell (identidad CED + ventas + FitLine force).
+        # Mismo system que Retell Custom LLM (identidad + ventas + memoria).
         base = build_voice_system(
             uid or None,
             "FitLine PM International productos negocio Activize Restorate NTC franquicia",
             skip_kb=True,
-            lightweight=True,
+            lightweight=False,
         )
         if "HECHOS OBLIGATORIOS FITLINE" not in base and "CONOCIMIENTO CURADO" not in base:
             base = append_fitline_knowledge_if_needed(
@@ -230,30 +230,26 @@ def build_realtime_instructions(
             except Exception:  # noqa: BLE001
                 address_block = ""
 
-        pm_pack = (
-            f"{fitline_sales_closer_overlay()}\n\n"
-            f"{fitline_product_voice_scripts()}\n\n"
-            f"{fitline_jarvis_delivery_overlay()}"
-        )
+        # Único delta vs Retell: motor de audio + tools restringidos (sin gastar Tavily/imágenes).
         runtime = (
-            "\n\n# RUNTIME CIERRE (único delta vs Retell)\n"
-            "Motor: OpenAI Realtime. Personalidad y conocimiento = CED Retell.\n"
-            "NO repetir nombre/Señor/Señora en cada turno — conversación natural.\n"
+            "\n\n# RUNTIME CIERRE (paridad Retell — solo cambia el motor de audio)\n"
+            "Personalidad, conocimiento PM y estilo = CED Jarvis Retell.\n"
+            "Idioma: ESPAÑOL siempre. PROHIBIDO inglés espontáneo "
+            "(Hi there / What's on your mind / How can I help).\n"
+            "PROHIBIDO muletillas: «Claro, claro», «Sure», saludos genéricos.\n"
+            "El saludo Jarvis ya se emitió. SILENCIO hasta contenido concreto del usuario.\n"
+            "NUNCA re-emitas tu respuesta anterior. Si pregunta otro producto/tema, "
+            "responde SOLO lo nuevo y completo — no copies el bloque previo.\n"
             "Tools: solo plan franquicia / OPPS / enlace patrocinio.\n"
             "PROHIBIDO search_web / Tavily / «Investigando» / imágenes / mapas.\n"
-            "El saludo estándar ya se dio (Sí, Señor/Señora…). "
-            "SILENCIO TOTAL hasta que el usuario diga algo concreto "
-            "(producto, franquicia, plan, pregunta de negocio). "
-            "PROHIBIDO re-saludar, preguntar cómo está, inventar meta/plan, "
-            "o cuestionario de franquicia/clientes sin que el usuario lo pida.\n"
         )
-        parts = [p for p in (address_block, base, pm_pack, runtime) if p]
+        parts = [p for p in (address_block, base, runtime) if p]
         prompt = "\n\n".join(parts).strip()
-        cap = 16_000
+        # Cap alto: priorizar identidad CED al inicio y RUNTIME+FitLine al final.
+        cap = 22_000
         if len(prompt) > cap:
-            # Identidad CED al inicio; PM/ventas/scripts al final.
-            head = 5_500
-            tail = cap - head - 90
+            head = 7_000
+            tail = cap - head - 80
             prompt = (
                 prompt[:head].rstrip()
                 + "\n\n…[CED+PM condensado]…\n\n"

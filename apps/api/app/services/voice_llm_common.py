@@ -434,6 +434,79 @@ def dedupe_voice_reply(text: str) -> str:
     return cleaned
 
 
+def _normalize_for_repeat_compare(text: str) -> str:
+    return re.sub(
+        r"[^\w\s]",
+        "",
+        normalize_voice_delivery_text(text).lower(),
+        flags=re.UNICODE,
+    ).strip()
+
+
+def last_assistant_content(history: list[dict] | None, *, min_len: int = 80) -> str:
+    """Último turno assistant/model con texto útil."""
+    for msg in reversed(history or []):
+        role = str(msg.get("role") or "").lower()
+        if role not in ("assistant", "model"):
+            continue
+        prev = str(msg.get("content") or "").strip()
+        if len(prev) >= min_len:
+            return prev
+    return ""
+
+
+def strip_embedded_prior_assistant(
+    new_text: str,
+    history: list[dict] | None,
+) -> str:
+    """Quita el bloque del turno anterior si el modelo lo re-emite antes de lo nuevo.
+
+    Causa típica: respuesta Activize completa + inicio de Restorate → se corta
+    lo nuevo por límite de tokens.
+    """
+    text = (new_text or "").strip()
+    prev = last_assistant_content(history, min_len=80)
+    if not text or not prev:
+        return text
+    if text == prev:
+        return text
+
+    # Prefijo literal del mensaje anterior.
+    if text.startswith(prev):
+        rest = text[len(prev) :].lstrip(" \n\r\t.,;:—-")
+        if len(rest) >= 24:
+            return rest
+
+    prev_n = _normalize_for_repeat_compare(prev)
+    text_n = _normalize_for_repeat_compare(text)
+    if len(prev_n) < 80 or len(text_n) <= len(prev_n) + 20:
+        return text
+
+    # El texto nuevo empieza con ~el mensaje anterior (normalizado).
+    if text_n.startswith(prev_n[: min(400, len(prev_n))]):
+        # Recortar por longitud aproximada del bloque previo en el original.
+        cut = min(len(text), max(len(prev), int(len(text) * (len(prev_n) / max(len(text_n), 1)))))
+        # Buscar frontera de frase tras el solapamiento.
+        probe = text[cut : cut + 120] if cut < len(text) else ""
+        for sep in (". ", "? ", "! ", "\n"):
+            idx = text.find(sep, max(0, cut - 40))
+            if idx != -1 and idx < cut + 80:
+                rest = text[idx + len(sep) :].strip()
+                if len(rest) >= 24:
+                    return rest
+        rest = text[cut:].lstrip(" \n\r\t.,;:—-")
+        if len(rest) >= 24:
+            return rest
+
+    # Contención: prev completo embebido cerca del inicio.
+    if prev in text and text.index(prev) < 40:
+        rest = text[text.index(prev) + len(prev) :].lstrip(" \n\r\t.,;:—-")
+        if len(rest) >= 24:
+            return rest
+
+    return text
+
+
 def voice_repeats_last_assistant(new_text: str, history: list[dict]) -> bool:
     """True si la respuesta repite casi literalmente el último turno del asistente."""
     candidate = (new_text or "").strip()

@@ -167,12 +167,39 @@ _PDF_PATTERNS = (
 
 _PDF_THIS_REF = re.compile(
     r"\b("
-    r"esto|lo|la\s+informaci[oó]n|esa\s+informaci[oó]n|con\s+eso|"
+    r"esto|eso|lo|la\s+informaci[oó]n|esa\s+informaci[oó]n|con\s+eso|"
     r"lo\s+anterior|el\s+plan|la\s+estrategia|ese\s+plan|el\s+documento|"
     r"aqu[ií]\s+(?:presentado|mostrado)"
     r")\b",
     re.I,
 )
+
+_PDF_NAMED_TOPIC = re.compile(
+    r"\b(?:sobre|acerca\s+de|de(?:l)?|con)\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9][\wÁÉÍÓÚÜÑáéíóúüñ\- ]{1,60})",
+    re.I,
+)
+
+
+def _pdf_has_named_topic(user_text: str, content: str) -> bool:
+    """True si el usuario nombró un tema concreto (no solo «esto/eso»)."""
+    t = (user_text or "").strip()
+    c = (content or "").strip()
+
+    def _is_anaphora_label(label: str) -> bool:
+        s = (label or "").strip()
+        if not s:
+            return True
+        if _PDF_THIS_REF.search(s):
+            return True
+        return bool(re.fullmatch(r"(?:esto|eso|lo|la)", s, re.I))
+
+    if c and len(c) >= 3 and not _is_anaphora_label(c):
+        return True
+    m = _PDF_NAMED_TOPIC.search(t)
+    if m and not _is_anaphora_label(m.group(1)):
+        return True
+    return False
+
 
 _PRIOR_REFERENCE = re.compile(
     r"\b("
@@ -618,15 +645,20 @@ def resolve_pdf_request(
         if len(body) >= 80:
             content = body
 
-    if len(content) < 200 and _PDF_THIS_REF.search(t):
+    if len(content) < 200 and _PDF_THIS_REF.search(t) and not _pdf_has_named_topic(t, content):
         previous = _last_assistant_text(history, min_len=80)
         if previous:
             content = previous
 
-    if not content or len(content) < 40:
+    # Solo anáfora vacía ("esto/eso en PDF") — NUNCA sustituir un tema corto
+    # ("PDF sobre Restorate") por la respuesta anterior (p. ej. Activize).
+    if (not content or len(content.strip()) < 8) and _PDF_THIS_REF.search(t):
         for previous in _assistant_texts_for_pdf(history, min_len=80):
             content = previous
             break
+    elif not content or len(content.strip()) < 8:
+        # Sin anáfora: dejar vacío para que compose redacte desde la petición/título.
+        content = content.strip() if content else ""
 
     if title == "Documento CED" or len(title) < 8:
         title = infer_pdf_title(t, content)
