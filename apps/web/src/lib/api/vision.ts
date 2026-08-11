@@ -1,4 +1,4 @@
-import { cedApiPath, proxyFetchAuthed } from "@/lib/api/ced-proxy";
+import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 
 export type VisionSearchResult =
   | { ok: true; summary: string; query?: string; subject?: string }

@@ -20,7 +20,8 @@ export type VoiceRouteInput = {
  * Todos los planes → Retell Jarvis (stack OpenAI Realtime / Cierre $20 retirado).
  * Solo fuerza openai si NEXT_PUBLIC_VOICE_PROVIDER=openai.
  */
-export function resolveVoiceProvider(_route?: VoiceRouteInput | null): VoiceProvider {
+export function resolveVoiceProvider(route?: VoiceRouteInput | null): VoiceProvider {
+  void route;
   return getEnvVoiceProvider();
 }
 

@@ -1279,7 +1279,7 @@ export function useCedVoiceSession(
       }
       onUsageRefresh?.();
 
-      let startRetell = retellActive();
+      const startRetell = retellActive();
       if (startRetell) {
         isRetellSessionRef.current = true;
         setVoiceSessionActive(true);

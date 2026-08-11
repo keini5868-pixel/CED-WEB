@@ -124,12 +124,8 @@ export function VoiceLimitModal({
                 <p className="text-[10px] uppercase tracking-wider text-cyan-600">
                   Planes desde $30/mes
                 </p>
-                {PUBLIC_PLANS.filter((p) =>
-                  reason === "cierre_trial_limit" || reason === "cierre_trial_expired"
-                    ? p.id === "cierre"
-                    : p.id !== "free_basic",
-                )
-                  .slice(0, reason.startsWith("cierre_") ? 1 : 2)
+                {PUBLIC_PLANS.filter((p) => p.id !== "free_basic")
+                  .slice(0, 2)
                   .map((p) => (
                   <button
                     key={p.id}
