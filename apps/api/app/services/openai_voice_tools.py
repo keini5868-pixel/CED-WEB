@@ -722,6 +722,50 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
 ]
 
 
+# CED Cierre / FitLine: solo tools de franquicia (Supabase). Cero Tavily/imagen/maps/YouTube.
+FITLINE_CIERRE_TOOL_NAMES = frozenset(
+    {
+        "guardar_plan_crecimiento_franquicia",
+        "consultar_plan_crecimiento_franquicia",
+        "abrir_oportunidades_fitline",
+        "actualizar_enlace_patrocinio_fitline",
+    }
+)
+
+# Tools que generan gasto de proveedor — bloqueadas en plan Cierre.
+CIERRE_BLOCKED_COSTLY_TOOLS = frozenset(
+    {
+        "search_web",
+        "generate_image",
+        "generate_image_with_reference",
+        "play_youtube_video",
+        "pause_youtube_video",
+        "resume_youtube_video",
+        "close_youtube_video",
+        "consultar_sistema_avanzado",
+        "fetch_voice_brief",
+        "analyze_camera_frame",
+        "request_camera_activation",
+        "buscar_direccion",
+        "iniciar_navegacion",
+        "activar_modo_conducir",
+        "search_nearby_places",
+        "start_navigation",
+        "stop_navigation",
+        "navigation_status",
+        "estado_navegacion",
+    }
+)
+
+
+def fitline_cierre_realtime_tools() -> list[dict[str, Any]]:
+    return [
+        t
+        for t in OPENAI_REALTIME_TOOLS
+        if str(t.get("name") or "") in FITLINE_CIERRE_TOOL_NAMES
+    ]
+
+
 def build_openai_chat_tools() -> list[dict[str, Any]]:
     """Convierte esquemas Realtime al formato Chat Completions de OpenAI."""
     out: list[dict[str, Any]] = []

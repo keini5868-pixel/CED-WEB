@@ -582,6 +582,22 @@ async def _execute_voice_tool_body(
     user_id: str,
     params: dict[str, Any],
 ) -> dict[str, Any]:
+    # CED Cierre: bloquear tools con gasto de proveedor (Tavily/imagen/maps/YouTube…).
+    try:
+        from app.domain.plans import plan_uses_gemini_voice_stack
+        from app.services import supabase_db
+        from app.services.openai_voice_tools import FITLINE_CIERRE_TOOL_NAMES
+
+        sub = supabase_db.get_subscription(user_id) or {}
+        if plan_uses_gemini_voice_stack(sub.get("plan_id")) and name not in FITLINE_CIERRE_TOOL_NAMES:
+            return _spoken_ok(
+                "En CED Cierre usamos el conocimiento interno de FitLine. "
+                "Puedo explicarte productos, negocio y armar el plan de tu franquicia "
+                "sin buscar en internet."
+            )
+    except Exception:  # noqa: BLE001
+        pass
+
     try:
         if name == "search_web":
             query = str(params.get("query") or "").strip()

@@ -18,7 +18,10 @@ from app.services.openai_voice_config import (
     normalize_openai_voice,
     profile_for_response_speed,
 )
-from app.services.openai_voice_tools import OPENAI_REALTIME_TOOLS
+from app.services.openai_voice_tools import (
+    OPENAI_REALTIME_TOOLS,
+    fitline_cierre_realtime_tools,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,11 @@ FALLBACK_MODELS = (
     "gpt-realtime",
     "gpt-4o-mini-realtime-preview-2024-12-17",
     "gpt-4o-realtime-preview-2024-12-17",
+)
+# Cierre: solo mini (nunca gpt-realtime full ni previews caros).
+FITLINE_FALLBACK_MODELS = (
+    "gpt-realtime-mini",
+    "gpt-4o-mini-realtime-preview-2024-12-17",
 )
 
 EXPIRES_AFTER = {"anchor": "created_at", "seconds": 600}
@@ -71,13 +79,16 @@ def _resolve_model(settings_model: str, *, prefer_mini: bool = False) -> str:
     return model
 
 
-def _models_to_try(primary: str) -> list[str]:
-    ordered = [primary, *FALLBACK_MODELS]
+def _models_to_try(primary: str, *, mini_only: bool = False) -> list[str]:
+    fallbacks = FITLINE_FALLBACK_MODELS if mini_only else FALLBACK_MODELS
+    ordered = [primary, *fallbacks]
     seen: set[str] = set()
     out: list[str] = []
     for m in ordered:
         resolved = _REALTIME_ALIASES.get(m, m)
         if resolved and resolved not in seen and _is_realtime_model(resolved):
+            if mini_only and "mini" not in resolved.lower():
+                continue
             seen.add(resolved)
             out.append(resolved)
     return out or [DEFAULT_FITLINE_REALTIME_MODEL]
@@ -102,11 +113,14 @@ def _build_session_payload(
     with_tools: bool,
     turn_detection: dict[str, Any],
     language: str = "es",
+    tools: list[dict[str, Any]] | None = None,
+    max_output_tokens: int | None = None,
+    instructions_cap: int = 12000,
 ) -> dict[str, Any]:
     session: dict[str, Any] = {
         "type": "realtime",
         "model": model,
-        "instructions": instructions[:12000],
+        "instructions": instructions[:instructions_cap],
         "output_modalities": ["audio"],
         "audio": {
             "input": _audio_input(turn_detection, language=language),
@@ -114,10 +128,10 @@ def _build_session_payload(
                 "voice": voice,
             },
         },
-        "max_output_tokens": REALTIME_MAX_OUTPUT_TOKENS,
+        "max_output_tokens": max_output_tokens or REALTIME_MAX_OUTPUT_TOKENS,
     }
     if with_tools:
-        session["tools"] = OPENAI_REALTIME_TOOLS
+        session["tools"] = list(tools) if tools is not None else OPENAI_REALTIME_TOOLS
         session["tool_choice"] = "auto"
     return {"expires_after": EXPIRES_AFTER, "session": session}
 
@@ -213,9 +227,12 @@ def create_realtime_session(
 
     voice = normalize_openai_voice(voice_name)
     profile = (voice_profile or "jarvis").strip().lower()
-    # FitLine: gpt-realtime (no mini) para acercar profundidad a Jarvis/gpt-4.1-mini.
-    prefer_mini = profile == "standard"
+    # CED Cierre / FitLine: SIEMPRE mini + tools lean (cero gasto Tavily/imagen/maps).
+    is_fitline = profile == "fitline"
+    prefer_mini = is_fitline or profile == "standard"
     model = _resolve_model(settings.openai_model_voice, prefer_mini=prefer_mini)
+    if is_fitline:
+        model = DEFAULT_FITLINE_REALTIME_MODEL
     project_id = getattr(settings, "openai_project_id", "") or ""
 
     instructions = build_realtime_instructions(
@@ -230,16 +247,29 @@ def create_realtime_session(
     lang = language or "es"
     _temperature, preferred_turn = profile_for_response_speed(response_speed)
     address: dict[str, Any] = {}
-    try:
-        from app.services.cognitive_router import build_voice_system_extras
-        from app.services.user_address import resolve_user_address
+    # FitLine: no inyectar extras cognitivos (ahorro de tokens / sin side-effects).
+    if not is_fitline:
+        try:
+            from app.services.cognitive_router import build_voice_system_extras
+            from app.services.user_address import resolve_user_address
 
-        extras = build_voice_system_extras(user_id)
-        if extras:
-            instructions = f"{instructions}\n\n{extras}"
-        address = resolve_user_address(user_id)
-    except Exception:  # noqa: BLE001
-        pass
+            extras = build_voice_system_extras(user_id)
+            if extras:
+                instructions = f"{instructions}\n\n{extras}"
+            address = resolve_user_address(user_id)
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        try:
+            from app.services.user_address import resolve_user_address
+
+            address = resolve_user_address(user_id)
+        except Exception:  # noqa: BLE001
+            pass
+
+    session_tools = fitline_cierre_realtime_tools() if is_fitline else OPENAI_REALTIME_TOOLS
+    max_out = 700 if is_fitline else None
+    instr_cap = 9000 if is_fitline else 12000
 
     # CRÍTICO: intentar TODAS las sesiones con tools antes de fallback sin tools.
     # Antes, un fallo en tools:* hacía caer en full:* sin herramientas → CED hablaba pero no ejecutaba.
@@ -249,7 +279,12 @@ def create_realtime_session(
         ("server_vad_default", REALTIME_TURN_DETECTION),
         ("semantic_fallback", REALTIME_TURN_DETECTION_FALLBACK),
     )
-    for m in _models_to_try(model):
+    models_ordered = (
+        _models_to_try(DEFAULT_FITLINE_REALTIME_MODEL, mini_only=True)
+        if is_fitline
+        else _models_to_try(model)
+    )
+    for m in models_ordered:
         for td_label, td in turn_options:
             tool_attempts.append(
                 (
@@ -261,6 +296,9 @@ def create_realtime_session(
                         with_tools=True,
                         turn_detection=td,
                         language=lang,
+                        tools=session_tools,
+                        max_output_tokens=max_out,
+                        instructions_cap=instr_cap,
                     ),
                 )
             )

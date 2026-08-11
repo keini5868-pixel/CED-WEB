@@ -343,6 +343,48 @@ def format_fitline_knowledge_for_prompt(*, max_chars: int = 16_000) -> str:
     return text
 
 
+@lru_cache(maxsize=2)
+def format_fitline_knowledge_lean_for_voice(*, max_chars: int = 7_500) -> str:
+    """Versión compacta para CED Cierre Realtime — hechos + closer, menos tokens."""
+    plugin = get_plugin(OPPORTUNITY_ID)
+    if not plugin:
+        return format_fitline_knowledge_for_prompt(max_chars=max_chars)
+    curated = plugin.get("curated") or {}
+    sections = curated.get("sections") or {}
+    as_of = str(curated.get("as_of") or "").strip() or "curado"
+    title = str(plugin.get("title") or "PM International / FitLine")
+    lean_keys = (
+        "what_is",
+        "products",
+        "business_model",
+        "how_to_start",
+        "objections",
+        "credentials",
+    )
+    parts: list[str] = [
+        f"CONOCIMIENTO INTERNO CED — {title} (Oportunidades, as_of={as_of}).",
+        "COSTO CERO DE HERRAMIENTAS EXTERNAS: responde SOLO con este bloque. "
+        "PROHIBIDO search_web, Tavily, imágenes, YouTube, mapas o «investigando».",
+        _FACT_CARD,
+        _FITLINE_SALES_CLOSER,
+    ]
+    if isinstance(sections, dict):
+        for key in lean_keys:
+            row = sections.get(key)
+            if not isinstance(row, dict):
+                continue
+            body = str(row.get("body") or "").strip()
+            if not body:
+                continue
+            if len(body) > 900:
+                body = body[:880].rstrip() + "…"
+            parts.append(f"### {_section_title(key)}\n{body}")
+    text = "\n\n".join(parts).strip()
+    if len(text) > max_chars:
+        text = text[: max_chars - 40].rstrip() + "\n\n…[contexto FitLine lean]"
+    return text
+
+
 def append_fitline_knowledge_if_needed(
     system: str,
     user_text: str,
