@@ -1,5 +1,6 @@
 /** Instrucciones de voz CED — una sola utterance, sin prefijos duplicados. */
 
+import type { VoiceProfileId } from "@ced/types";
 import type { UserAddressContext } from "@/lib/api/profile";
 
 type CedGreetingAddress = Partial<
@@ -39,7 +40,7 @@ export function cedResolveHonorific(
 
 /** Saludo fijo — Señor/Señora + en qué puedo ayudarle hoy. */
 export function cedReceptionGreetingPhrase(
-  voiceProfile: "standard" | "jarvis" = "jarvis",
+  voiceProfile: VoiceProfileId = "jarvis",
   address?: CedGreetingAddress,
 ): string {
   if (voiceProfile !== "jarvis") {
@@ -55,7 +56,7 @@ export function cedReceptionGreetingPhrase(
 
 /** @deprecated Usar cedReceptionGreetingPhrase */
 export function cedGreetingPhrase(
-  voiceProfile: "standard" | "jarvis" = "jarvis",
+  voiceProfile: VoiceProfileId = "jarvis",
   address?: CedGreetingAddress,
 ): string {
   return cedReceptionGreetingPhrase(voiceProfile, address);
@@ -83,7 +84,7 @@ export function cedIdlePresencePhrase(
 
 /** @deprecated Usar cedGreetingBriefTurn + cedReceptionGreetingPhrase */
 export function cedGreetingTurn(
-  voiceProfile: "standard" | "jarvis" = "jarvis",
+  voiceProfile: VoiceProfileId = "jarvis",
   address?: CedGreetingAddress,
 ): string {
   return cedGreetingBriefTurn(cedReceptionGreetingPhrase(voiceProfile, address));

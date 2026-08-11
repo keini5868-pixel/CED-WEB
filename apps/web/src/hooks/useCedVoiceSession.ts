@@ -1286,7 +1286,7 @@ export function useCedVoiceSession(
           }
         }
 
-        if (startRetell) {
+        if (startRetell && registration.ok) {
         const retell = new CedRetellClient();
         retellClientRef.current = retell;
         retell.setCallbacks({
