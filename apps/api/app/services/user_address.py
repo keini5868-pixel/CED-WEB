@@ -196,11 +196,11 @@ def address_context_for_prompt(user_id: str) -> str:
         gender_note = "Género registrado: neutral (usa nombre sin título salvo preferencia explícita)."
 
     return (
-        "# USUARIO ACTUAL — TRATAMIENTO (OBLIGATORIO)\n"
+        "# USUARIO ACTUAL — TRATAMIENTO\n"
         f"- Nombre completo: {full or '(sin registrar)'}\n"
         f"- Nombre corto: {first or display}\n"
         f"- Tratamiento preferido: {honorific or display}\n"
-        f"- Dirígete SIEMPRE como: **{display}**\n"
+        f"- Si usas vocativo, el correcto es: **{display}**\n"
         + (f"- {gender_note}\n" if gender_note else "")
         + "- Saludo de recepción YA emitido por el sistema (NO repetir): "
         + f"\"Hola, {honorific or 'Señor'}. ¿En qué puedo ayudarle hoy?\"\n"
@@ -210,8 +210,12 @@ def address_context_for_prompt(user_id: str) -> str:
         + "- PROHIBIDO: '¿Cómo te gustaría que te llame?', '¿Prefieres tu nombre o un título?'.\n"
         + "- Si solo escuchas 'bien', 'gracias' o ruido/TV sin una petición clara: SILENCIO TOTAL — NO digas 'Entendido' ni respondas.\n"
         + "\n"
-        + "Reglas de tratamiento:\n"
-        + "- Usa el tratamiento indicado durante la conversación.\n"
+        + "Reglas de tratamiento (conversación natural):\n"
+        + "- NO abras cada respuesta con el nombre ni con Señor/Señora.\n"
+        + "- El saludo ya usó el trato. Después: habla normal, sin vocativo en cada turno.\n"
+        + "- Puedes usar Señor/Señora/nombre como máximo 1 vez cada varios turnos si aporta calor; "
+        "el resto del tiempo responde directo al contenido.\n"
+        + "- PROHIBIDO inventar género: si es masculino nunca Señora; si es femenino nunca Señor.\n"
         + "- Si el usuario pide cambiar cómo lo llamas "
         "(\"llámame señor\", \"dime señora\", \"trátame de jefe\", \"llámame Keini\"): "
         "invoca save_memory con key \"tratamiento\" y el valor exacto que pidió; confirma en una frase.\n"

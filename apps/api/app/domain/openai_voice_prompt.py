@@ -188,13 +188,15 @@ def build_realtime_instructions(
     del voice_pace, voice_warmth, voice_energy, response_speed, language
     profile = (voice_profile or "jarvis").strip().lower()
     if profile == "fitline":
-        # Mismo CED base que Retell/Jarvis; solo cambia el motor (Realtime) y tools.
+        # Paridad 1:1 con Retell: mismo build_voice_system + ficha PM + ventas.
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
             fitline_jarvis_delivery_overlay,
+            fitline_product_voice_scripts,
+            fitline_sales_closer_overlay,
         )
         from app.services.user_address import address_context_for_prompt
-        from app.services.voice_llm_common import build_base_voice_system
+        from app.services.voice_llm_common import build_voice_system
 
         uid = (user_id or "").strip()
         if uid:
@@ -208,13 +210,13 @@ def build_realtime_instructions(
             except Exception:  # noqa: BLE001
                 pass
 
-        base = build_base_voice_system(
+        # Mismo system que Retell (identidad CED + ventas + FitLine force).
+        base = build_voice_system(
             uid or None,
-            "FitLine PM International productos negocio Activize Restorate",
+            "FitLine PM International productos negocio Activize Restorate NTC franquicia",
             skip_kb=True,
-            include_session_state=False,
+            lightweight=True,
         )
-        # Asegurar ficha FitLine (preview admin / plan Cierre).
         if "HECHOS OBLIGATORIOS FITLINE" not in base and "CONOCIMIENTO CURADO" not in base:
             base = append_fitline_knowledge_if_needed(
                 base,
@@ -228,28 +230,29 @@ def build_realtime_instructions(
             except Exception:  # noqa: BLE001
                 address_block = ""
 
-        extras = (
-            f"{fitline_jarvis_delivery_overlay()}\n\n"
-            "# RUNTIME CIERRE — MISMO CED QUE RETELL\n"
-            "Habla exactamente como CED Jarvis en Retell: natural, cálido, sin leer fichas.\n"
-            "El saludo ya se dio — no vuelvas a saludar.\n"
-            "Trato = bloque USUARIO ACTUAL (género/nombre). No alternes Señor/Señora.\n"
-            "Anti-pegado: no repitas el mismo pitch NTC/empresa cada turno; "
-            "responde solo a lo nuevo que pidió.\n"
-            "Si el usuario habla de un producto, ve directo al producto sin re-presentar PM.\n"
-            "Tools en esta sesión: solo plan de franquicia / OPPS / enlace patrocinio.\n"
-            "PROHIBIDO search_web / Tavily / «Investigando» / imágenes / mapas.\n"
+        pm_pack = (
+            f"{fitline_sales_closer_overlay()}\n\n"
+            f"{fitline_product_voice_scripts()}\n\n"
+            f"{fitline_jarvis_delivery_overlay()}"
         )
-        parts = [p for p in (address_block, base, extras) if p]
+        runtime = (
+            "\n\n# RUNTIME CIERRE (único delta vs Retell)\n"
+            "Motor: OpenAI Realtime. Personalidad y conocimiento = CED Retell.\n"
+            "NO repetir nombre/Señor/Señora en cada turno — conversación natural.\n"
+            "Tools: solo plan franquicia / OPPS / enlace patrocinio.\n"
+            "PROHIBIDO search_web / Tavily / «Investigando» / imágenes / mapas.\n"
+            "El saludo ya se dio.\n"
+        )
+        parts = [p for p in (address_block, base, pm_pack, runtime) if p]
         prompt = "\n\n".join(parts).strip()
-        # Más corto = menos latencia / menos loops en Realtime mini.
-        cap = 14_000
+        cap = 16_000
         if len(prompt) > cap:
-            head = 5_200
+            # Identidad CED al inicio; PM/ventas/scripts al final.
+            head = 5_500
             tail = cap - head - 90
             prompt = (
                 prompt[:head].rstrip()
-                + "\n\n…[contexto condensado; identidad CED + FitLine]…\n\n"
+                + "\n\n…[CED+PM condensado]…\n\n"
                 + prompt[-tail:].lstrip()
             )
         return prompt

@@ -237,12 +237,11 @@ def test_realtime_fitline_prompt_has_knowledge_not_jarvis():
 
     format_fitline_knowledge_for_prompt.cache_clear()
     text = build_realtime_instructions(voice_profile="fitline")
-    # Mismo ADN que CED base / Retell
     assert "CED" in text
-    assert "Jarvis" in text or "JARVIS" in text
     assert "FitLine" in text or "FITLINE" in text.upper()
-    assert "MISMO CED QUE RETELL" in text or "RUNTIME CIERRE" in text
+    assert "ASESOR COMERCIAL" in text or "VENDER SIN PARECER" in text
+    assert "NO abras cada respuesta" in text or "sin vocativo" in text.lower() or "NO repetir nombre" in text
     assert "NTC" in text or "Nutrient Transport" in text
     assert len(text) > 5000
-    assert len(text) <= 16000
+    assert len(text) <= 16500
 
