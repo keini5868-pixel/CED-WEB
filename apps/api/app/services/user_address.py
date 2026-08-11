@@ -126,10 +126,14 @@ def _greeting_phrase(
 ) -> str:
     h = _normalize_honorific(honorific) or _gender_default_honorific(gender)
     if jarvis:
-        if h in ("Señor", "Señora", "Don", "Doña"):
-            return f"A su servicio, {h}. ¿En qué puedo ayudarle hoy?"
-        name = (display_name or first_name or "Usuario").strip()
-        return f"Hola, {name}. ¿En qué puedo ayudarle hoy?"
+        if h in ("Señor", "Don"):
+            return "Hola, señor. ¿Cómo está? ¿En qué lo puedo ayudar?"
+        if h in ("Señora", "Doña"):
+            return "Hola, señora. ¿Cómo está? ¿En qué la puedo ayudar?"
+        name = (display_name or first_name or "").strip()
+        if name:
+            return f"Hola, {name}. ¿Cómo está? ¿En qué lo puedo ayudar?"
+        return "Hola, ¿cómo estás? ¿En qué te puedo ayudar?"
     return f"Hola {first_name or display_name or 'Usuario'}. ¿En qué trabajamos?"
 
 
@@ -202,12 +206,11 @@ def address_context_for_prompt(user_id: str) -> str:
         f"- Tratamiento preferido: {honorific or display}\n"
         f"- Si usas vocativo, el correcto es: **{display}**\n"
         + (f"- {gender_note}\n" if gender_note else "")
-        + "- Saludo de recepción YA emitido por el sistema (NO repetir): "
-        + f"\"A su servicio, {honorific or 'Señor'}. ¿En qué puedo ayudarle hoy?\"\n"
-        + "- PROHIBIDO saludar al conectar, decir '¿cómo está?' o buenos días/tardes/noches.\n"
-        + "- PROHIBIDO abrir con preguntas de mercadería, importación o catálogo genérico.\n"
+        + "- Saludo de recepción YA emitido (NO repetir, NO inventar nombres): "
+        + f"\"Hola, {honorific or 'señor'}. ¿Cómo está? ¿En qué lo puedo ayudar?\"\n"
+        + "- PROHIBIDO saludar de nuevo, decir 'Mire, [nombre]', inventar nombres, o monólogos de apertura.\n"
         + "- PROHIBIDO inglés espontáneo (Hi there, What's on your mind) o «Claro, claro».\n"
-        + "- NUNCA re-emitas tu respuesta anterior completa; solo el turno actual.\n"
+        + "- UNA sola respuesta por turno. NUNCA generes dos versiones apiladas ni re-emitas la anterior.\n"
         + "- Si el usuario solo dice hola, ¿cómo estás? o charla casual: SILENCIO o una frase muy breve — "
         "PROHIBIDO preguntar cómo llamarlo si ya tienes tratamiento registrado.\n"
         + "- PROHIBIDO: '¿Cómo te gustaría que te llame?', '¿Prefieres tu nombre o un título?'.\n"

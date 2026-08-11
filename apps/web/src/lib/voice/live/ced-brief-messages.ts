@@ -38,32 +38,21 @@ export function cedResolveHonorific(
   return "Señor";
 }
 
-/** Pool alineado a Retell Jarvis (`voice_greetings.JARVIS_GREETING_POOL`) — Cierre usa el mismo. */
-const RETELL_JARVIS_GREETING_POOL = [
-  "A su servicio, Señor. CED completamente operativo. ¿En qué puedo ayudarle hoy?",
-  "Buenos días, Señor. CED en línea. ¿Por dónde comenzamos hoy?",
-  "A sus órdenes, Señor. Todos los sistemas operativos. ¿Qué necesita?",
-  "Sistema CED en línea, Señor. Listo para asistirle. ¿En qué puedo ayudarle?",
-  "Hola, Señor. CED activado y a su disposición. ¿Qué construimos hoy?",
-] as const;
-
-/** Saludo estándar CED — fallback corto. */
-export function cedStandardReceptionGreeting(title: string): string {
-  const t = title.trim() || "Señor";
-  if (t === "Señor" || t === "Señora" || t === "Don" || t === "Doña") {
-    return `A su servicio, ${t}. ¿En qué puedo ayudarle hoy?`;
+/** Saludo corto CED — una sola frase; género si se conoce. */
+export function cedShortReceptionGreeting(title: string): string {
+  const t = (title || "").trim();
+  if (t === "Señor" || t === "Don") {
+    return "Hola, señor. ¿Cómo está? ¿En qué lo puedo ayudar?";
   }
-  return `Hola, ${t}. ¿En qué puedo ayudarle hoy?`;
+  if (t === "Señora" || t === "Doña") {
+    return "Hola, señora. ¿Cómo está? ¿En qué la puedo ayudar?";
+  }
+  return "Hola, ¿cómo estás? ¿En qué te puedo ayudar?";
 }
 
-function applyHonorificToJarvisGreeting(phrase: string, title: string): string {
-  if (title === "Señora" || title === "Doña") {
-    return phrase.replace(/Señor/g, title);
-  }
-  if (title !== "Señor" && title !== "Don") {
-    return `Hola, ${title}. ¿En qué puedo ayudarle hoy?`;
-  }
-  return phrase;
+/** @deprecated alias — usar cedShortReceptionGreeting */
+export function cedStandardReceptionGreeting(title: string): string {
+  return cedShortReceptionGreeting(title);
 }
 
 export function cedReceptionGreetingPhrase(
@@ -71,33 +60,14 @@ export function cedReceptionGreetingPhrase(
   address?: CedGreetingAddress,
 ): string {
   const title = cedResolveHonorific(address);
-  // FitLine/Cierre: mismo estilo de apertura que Retell Jarvis (solo cambia el motor).
+  // FitLine/Cierre y recepción OpenAI: saludo corto único (sin pool largo).
   if (voiceProfile === "fitline") {
-    if (address?.greetingPhraseJarvis?.trim()) {
-      const g = address.greetingPhraseJarvis.trim();
-      // Ignorar saludos temáticos / inglés / muletillas.
-      if (
-        !/mercader|importar|hi there|what'?s on your mind|claro,?\s*claro/i.test(g)
-      ) {
-        return g;
-      }
-    }
-    const idx =
-      Math.floor(Math.random() * RETELL_JARVIS_GREETING_POOL.length) %
-      RETELL_JARVIS_GREETING_POOL.length;
-    const pick =
-      RETELL_JARVIS_GREETING_POOL[idx] ??
-      "A su servicio, Señor. CED completamente operativo. ¿En qué puedo ayudarle hoy?";
-    return applyHonorificToJarvisGreeting(pick, title);
+    return cedShortReceptionGreeting(title);
   }
   if (voiceProfile !== "jarvis") {
-    return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
+    return address?.greetingPhraseStandard || cedShortReceptionGreeting(title);
   }
-  if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
-    return `A su servicio, ${title}.`;
-  }
-  const name = title || "Usuario";
-  return `Hola, ${name}. ¿En qué puedo ayudarle hoy?`;
+  return cedShortReceptionGreeting(title);
 }
 
 /** @deprecated Usar cedReceptionGreetingPhrase */

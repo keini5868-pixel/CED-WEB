@@ -73,3 +73,17 @@ def test_strip_embedded_prior_assistant_removes_leading_block():
     assert "Restorate aporta minerales" in stripped
     assert not stripped.startswith("Activize es la bebida")
 
+
+def test_collapse_stacked_response_variants_keeps_one():
+    from app.services.voice_llm_common import collapse_stacked_response_variants
+
+    stacked = (
+        "<<<Activize da energía por la mañana con NTC.>>> "
+        "Mire, Leroy, Activize es ideal para empezar el día con foco y vitalidad celular."
+    )
+    out = collapse_stacked_response_variants(stacked)
+    assert "<<<" not in out and ">>>" not in out
+    # Debe quedar una sola versión (sin marcas TTS).
+    assert "Activize" in out
+    assert len(out) < len(stacked)
+

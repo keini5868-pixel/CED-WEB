@@ -491,11 +491,21 @@ class GeminiVoiceLlm:
                     if incomplete_deliverable:
                         merged = _delivery_text(merge_deliverable_continuation(cleaned, continuation))
                     else:
-                        merged = _delivery_text(
-                            f"{cleaned.rstrip('.')} {continuation.lstrip()}".strip()
-                        )
-                    if merged and chunk_ends_with_punctuation(merged):
-                        cleaned = merged
+                        # Preferir remate corto; si la continuación es otra versión completa, no apilar.
+                        cont = continuation.strip()
+                        if len(cont) > max(120, int(len(cleaned) * 0.7)) and re.match(
+                            r"^(?:mire|claro|perfecto|bueno|hola)\b",
+                            cont.lower(),
+                        ):
+                            merged = _delivery_text(cont)
+                        else:
+                            merged = _delivery_text(
+                                f"{cleaned.rstrip('.')} {cont.lstrip()}".strip()
+                            )
+                    if merged:
+                        from app.services.voice_llm_common import collapse_stacked_response_variants
+
+                        cleaned = collapse_stacked_response_variants(merged)
             except (asyncio.TimeoutError, Exception):  # noqa: BLE001
                 logger.warning("[RETELL-GEMINI] truncation completion failed path=%s", path)
         if not chunk_ends_with_punctuation(cleaned):

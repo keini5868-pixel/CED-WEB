@@ -1,39 +1,32 @@
 import { describe, expect, it } from "vitest";
 import {
   cedReceptionGreetingPhrase,
-  cedStandardReceptionGreeting,
+  cedShortReceptionGreeting,
 } from "./ced-brief-messages";
 
 describe("cedReceptionGreetingPhrase", () => {
-  it("fitline usa saludo estilo Retell Jarvis en español", () => {
+  it("fitline usa saludo corto en español", () => {
     const phrase = cedReceptionGreetingPhrase("fitline", {
       honorific: "Señor",
       gender: "male",
     });
-    expect(phrase.toLowerCase()).toMatch(/señor|ced|servicio|ayudarle|comenzamos|necesita/);
-    expect(phrase.toLowerCase()).not.toMatch(/mercader|importar|hi there|what's on your mind/);
-    expect(phrase).not.toMatch(/Claro,\s*claro/i);
+    expect(phrase).toBe(cedShortReceptionGreeting("Señor"));
+    expect(phrase.length).toBeLessThan(80);
+    expect(phrase.toLowerCase()).not.toMatch(/mercader|importar|hi there|leroy|operativo|protocolos/);
   });
 
   it("fitline respeta Señora", () => {
-    const phrase = cedReceptionGreetingPhrase("fitline", {
-      honorific: "Señora",
-      gender: "female",
-    });
-    expect(phrase).toMatch(/Señora/);
-    expect(phrase).not.toMatch(/\bSeñor\b/);
+    expect(
+      cedReceptionGreetingPhrase("fitline", {
+        honorific: "Señora",
+        gender: "female",
+      }),
+    ).toBe("Hola, señora. ¿Cómo está? ¿En qué la puedo ayudar?");
   });
 
-  it("ignora greetingPhraseJarvis temático o en inglés en fitline", () => {
-    const phrase = cedReceptionGreetingPhrase("fitline", {
-      honorific: "Señor",
-      greetingPhraseJarvis: "Hi there! What's on your mind today?",
-    });
-    expect(phrase.toLowerCase()).not.toMatch(/hi there|what's on your mind/);
-    expect(phrase).toMatch(/Señor|CED|servicio|ayudarle/i);
-  });
-
-  it("cedStandardReceptionGreeting es español formal", () => {
-    expect(cedStandardReceptionGreeting("Señor")).toMatch(/A su servicio/);
+  it("sin género usa saludo tú", () => {
+    expect(cedShortReceptionGreeting("")).toBe(
+      "Hola, ¿cómo estás? ¿En qué te puedo ayudar?",
+    );
   });
 });

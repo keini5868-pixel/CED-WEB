@@ -173,9 +173,10 @@ def sanitize_pdf_delivery_text(text: str) -> str:
 
 def finalize_voice_delivery_text(text: str) -> str:
     """Una sola respuesta hablable: sin filler duplicado y con cierre de oración."""
-    from app.services.voice_llm_common import dedupe_voice_reply
+    from app.services.voice_llm_common import collapse_stacked_response_variants, dedupe_voice_reply
 
     raw = " ".join((text or "").split()).strip()
+    raw = collapse_stacked_response_variants(raw)
     raw = dedupe_voice_reply(raw)
     raw = sanitize_pdf_delivery_text(raw)
     raw = re.sub(r"\*\*([^*]+)\*\*", r"\1", raw)

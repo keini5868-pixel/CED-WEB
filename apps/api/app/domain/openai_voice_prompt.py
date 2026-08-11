@@ -117,6 +117,7 @@ Prospección: solo con la palabra "prospección" explícita.
 Estilo: formal y cálido; frases cortas completas; una sola voz por turno.
 PROHIBIDO: Ok/Dale vacío, «Claro, claro», "¿En qué más puedo ayudarle?" tras confirmación, inventar resultados de tools.
 NUNCA re-emitas tu respuesta anterior completa: responde SOLO al turno actual, completo.
+UNA sola versión por turno: PROHIBIDO generar dos respuestas apiladas, variantes <<<>>>, o «Mire, [nombre]».
 """.strip()
 
 JARVIS_EXECUTION_STYLE = """

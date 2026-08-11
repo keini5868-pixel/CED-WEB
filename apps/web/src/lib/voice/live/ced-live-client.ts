@@ -221,6 +221,8 @@ export class CedLiveClient {
   private exactPhraseLeak = false;
   /** Frase que speakExactPhrase debe leer (para detectar paráfrasis). */
   private exactPhraseExpected = "";
+  /** Ya hubo audio usable en el intento actual — no reintentar (evita apilar). */
+  private exactPhraseHadUsableAudio = false;
   /** Tras primer turno: activar server create_response al terminar esta respuesta. */
   private pendingEnableAutoAfterResponse = false;
 
@@ -306,7 +308,7 @@ export class CedLiveClient {
   private isPromptInstructionLeak(text: string): boolean {
     const low = text.toLowerCase();
     return (
-      /puedo repetir|exactamente como me lo dic|di exactamente|palabra por palabra|entre <<<|modo lectura|text-to-speech|estas instrucciones|el texto siguiente|lee en voz alta una sola vez|\[ced_greeting\]|\[ced_brief\]/i.test(
+      /puedo repetir|exactamente como me lo dic|di exactamente|palabra por palabra|entre <<<|<<<|>>>|modo lectura|text-to-speech|estas instrucciones|el texto siguiente|lee en voz alta una sola vez|\[ced_greeting\]|\[ced_brief\]|\bfrase\s*:/i.test(
         low,
       ) ||
       (/s[ií],?\s*claro/.test(low) && /repetir|exactamente|instrucci/i.test(low))
@@ -338,6 +340,23 @@ export class CedLiveClient {
       )
     ) {
       return true;
+    }
+    // Nombre inventado / saludo largo tipo «Mire, Leroy…» (no «Mire, señor»).
+    if (/\bmire[,.]?\s+(?!se[nñ]or|se[nñ]ora|usted|don|do[nñ]a)([a-záéíóúñ]{3,})/i.test(low)) {
+      const known = (
+        this.userAddress?.firstName ||
+        this.userAddress?.displayName ||
+        ""
+      )
+        .trim()
+        .toLowerCase();
+      const m = low.match(
+        /\bmire[,.]?\s+(?!se[nñ]or|se[nñ]ora|usted|don|do[nñ]a)([a-záéíóúñ]+)/i,
+      );
+      const said = (m?.[1] || "").toLowerCase();
+      if (said && (!known || !known.includes(said))) {
+        return true;
+      }
     }
     // Saludo temático incorrecto (import/mercadería) — nunca al conectar.
     if (
@@ -1347,13 +1366,21 @@ export class CedLiveClient {
     if (isResponseAudioTranscriptDelta(type)) {
       const delta = String(msg.delta ?? "");
       this.modelTranscriptAcc += delta;
+      if (
+        this.outboundLocked &&
+        this.exactPhraseExpected &&
+        this.modelTranscriptAcc.trim().length >= 12 &&
+        this.spokenMatchesExactPhrase(this.exactPhraseExpected, this.modelTranscriptAcc)
+      ) {
+        this.exactPhraseHadUsableAudio = true;
+      }
       const leak = this.isPromptInstructionLeak(this.modelTranscriptAcc);
       const exactMismatch =
         this.outboundLocked &&
         this.exactPhraseExpected.length >= 10 &&
         this.modelTranscriptAcc.trim().length >= 28 &&
         !this.spokenMatchesExactPhrase(this.exactPhraseExpected, this.modelTranscriptAcc) &&
-        /mercader|importar|cat[aá]logo|producto de mercader|necesitas importar|qu[eé] producto/i.test(
+        /mercader|importar|cat[aá]logo|producto de mercader|necesitas importar|qu[eé] producto|<<<|>>>|\bmire[,.]?\s+\w+/i.test(
           this.modelTranscriptAcc,
         );
       if (
@@ -1647,12 +1674,18 @@ export class CedLiveClient {
         this.beginSingleSpeechSlot();
         cedRealtimeLog("greeting.create", { phrase });
         this.exactPhraseLeak = false;
-        await this.speakExactPhrase(phrase, 220);
-        if (this.exactPhraseLeak && !this.sendBlocked) {
+        this.exactPhraseHadUsableAudio = false;
+        await this.speakExactPhrase(phrase, 80);
+        // Solo reintentar si el 1er intento falló SIN audio usable — nunca apilar 2 versiones.
+        if (
+          this.exactPhraseLeak &&
+          !this.exactPhraseHadUsableAudio &&
+          !this.sendBlocked
+        ) {
           cedRealtimeLog("greeting.retry_after_leak", { phrase });
           this.exactPhraseLeak = false;
-          await this.sleep(400);
-          await this.speakExactPhrase(phrase, 180);
+          await this.sleep(350);
+          await this.speakExactPhrase(phrase, 64);
         }
         this.flushInputAudioBuffer();
         this.endSingleSpeechSlot();
@@ -1672,7 +1705,7 @@ export class CedLiveClient {
   }
 
   /** Una sola frase exacta — fuera del historial de conversación. */
-  private async speakExactPhrase(phrase: string, maxOutputTokens = 120): Promise<void> {
+  private async speakExactPhrase(phrase: string, maxOutputTokens = 80): Promise<void> {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
     const line = phrase.trim();
     if (!line) return;
@@ -1680,12 +1713,13 @@ export class CedLiveClient {
     this.setServerAutoResponse(false);
     this.beginSingleSpeechSlot();
     this.exactPhraseLeak = false;
+    this.exactPhraseHadUsableAudio = false;
     this.exactPhraseExpected = line;
+    this.modelTranscriptAcc = "";
     try {
       this.intentionalResponse = true;
       this.intentionalResponseActive = true;
-      // Instrucciones anti-meta: gpt-realtime-mini a menudo contestaba
-      // «sí, claro, puedo repetir exactamente…» en vez de leer la frase.
+      // Sin <<<>>>: el mini las leía en voz alta y apilaba variantes.
       this.send({
         type: "response.create",
         response: {
@@ -1693,30 +1727,35 @@ export class CedLiveClient {
           max_output_tokens: maxOutputTokens,
           tool_choice: "none",
           instructions: [
-            "Modo lectura en voz alta (TTS). No eres un asistente conversando.",
-            "Tu ÚNICA salida de audio debe ser exactamente la frase entre <<< >>> abajo.",
-            "PROHIBIDO: sí, claro, puedo, exactamente, como me lo dices, instrucciones,",
-            "texto, repetir, entendido, por supuesto, o cualquier comentario meta.",
-            "PROHIBIDO parafrasear, traducir, saludar extra o añadir palabras.",
-            "PROHIBIDO inventar preguntas de mercadería, importación o productos.",
-            "Si dudas, lee solo lo que está entre <<< >>>.",
-            `<<<${line}>>>`,
+            "Eres un lector TTS. Emite UNA sola frase de audio.",
+            "Di palabra por palabra SOLO esta línea (sin comillas, sin prefijos, sin nombres inventados):",
+            line,
+            "PROHIBIDO: añadir texto, saludar extra, Claroclaro, Mire Nombre, inglés, o una segunda versión.",
+            "Si ya dijiste la línea, DETENTE. No generes otra variante.",
           ].join("\n"),
         },
       });
-      const idleMs = Math.min(55_000, 12_000 + maxOutputTokens * 45);
-      const audioMs = Math.min(50_000, 8_000 + maxOutputTokens * 42);
+      const idleMs = Math.min(25_000, 8_000 + maxOutputTokens * 40);
+      const audioMs = Math.min(22_000, 6_000 + maxOutputTokens * 36);
       await this.waitForResponseIdle(idleMs);
       await this.waitForModelAudioDone(audioMs);
-      await this.sleep(600);
+      await this.sleep(400);
       const spoken = this.modelTranscriptAcc.trim() || this.lastCompletedModelUtterance;
-      if (spoken && !this.spokenMatchesExactPhrase(line, spoken)) {
+      if (spoken && /<<<|>>>|\bmire[,.]?\s+\w+/i.test(spoken)) {
+        this.exactPhraseLeak = true;
+        this.triggerBargeIn();
+      } else if (spoken && !this.spokenMatchesExactPhrase(line, spoken)) {
         cedRealtimeLog("exact_phrase.mismatch", {
           expected: line.slice(0, 80),
           spoken: spoken.slice(0, 80),
         });
-        this.exactPhraseLeak = true;
-        this.triggerBargeIn();
+        // Si ya hubo audio usable, no marcar leak (reintento apilaría otra versión).
+        if (!this.exactPhraseHadUsableAudio) {
+          this.exactPhraseLeak = true;
+          this.triggerBargeIn();
+        }
+      } else if (spoken && this.spokenMatchesExactPhrase(line, spoken)) {
+        this.exactPhraseHadUsableAudio = true;
       }
       this.flushInputAudioBuffer();
     } finally {

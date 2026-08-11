@@ -39,28 +39,15 @@ def get_user_local_hour(user_id: str | None) -> int:
         return datetime.now().hour
 
 
-CONTINUITY_GREETING = (
-    "De regreso, señor. ¿Continuamos donde dejamos… o iniciamos misión nueva?"
-)
+CONTINUITY_GREETING = "Hola de nuevo. ¿En qué lo puedo ayudar?"
 
-# 8 saludos aprobados — puntuación optimizada para pausas Cartesia
+# Saludos cortos — una sola frase (sin monólogos ni nombres inventados).
 JARVIS_GREETING_POOL: tuple[str, ...] = (
-    "Hola, señor. Activando protocolos… para lo que necesite. "
-    "CED completamente operativo, y a su disposición.",
-    "Buenos días, señor. CED en línea. Sistema completo a su disposición — "
-    "voz, visión, redes, prospección, análisis y más. ¿Por dónde comenzamos hoy?",
-    "A sus órdenes, señor. Todos los sistemas operativos, y listos. "
-    "Estoy aquí para ayudarle a generar, ejecutar y conquistar. ¿Qué necesita?",
-    "Sistema CED en línea, señor. Inteligencia central activada. "
-    "Listo para asistirle — desde análisis, hasta ejecución completa.",
-    "A su servicio, señor. CED completamente operativo — voz Jarvis, visión inteligente, "
-    "redes, conocimiento interno, y conexión con el mundo. Cuénteme qué construimos hoy.",
-    "Bienvenido, señor. CED activado, y listo para acción. "
-    "Cámara, redes, búsquedas, publicaciones — todo a su servicio. Indíqueme.",
-    "Hola, señor. Activando todas mis capacidades para usted. "
-    "Voz, visión, prospección, conocimiento — listos para lo que decida. Cuente conmigo.",
-    "Señor… CED reportándose al comando central. Sistemas verificados, al cien por ciento. "
-    "Dígame qué misión emprendemos hoy.",
+    "Hola, señor. ¿Cómo está? ¿En qué lo puedo ayudar?",
+    "Hola, señor. ¿En qué lo puedo ayudar?",
+    "Buenos días, señor. ¿En qué lo puedo ayudar?",
+    "Buenas tardes, señor. ¿En qué lo puedo ayudar?",
+    "Hola. ¿Cómo está? ¿En qué lo puedo ayudar?",
 )
 
 _TIME_PREFIXES = (

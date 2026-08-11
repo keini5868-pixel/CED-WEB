@@ -146,7 +146,11 @@ def is_incomplete_deliverable(reply: str, user_text: str) -> bool:
 
 
 def merge_deliverable_continuation(original: str, continuation: str) -> str:
-    """Une respuesta truncada con continuación (chat o voz)."""
+    """Une respuesta truncada con continuación (chat o voz).
+
+    Si la continuación es una versión alternativa completa (no un remate),
+    se queda SOLO con una — nunca apila dos respuestas.
+    """
     base = (original or "").strip()
     extra = (continuation or "").strip()
     if not extra:
@@ -155,4 +159,20 @@ def merge_deliverable_continuation(original: str, continuation: str) -> str:
         return extra
     if is_intro_only_deliverable(base):
         return extra
+
+    # Continuación que reinicia el discurso = variante apilada → quedarse con una.
+    extra_l = extra.lower()
+    if re.match(
+        r"^(?:mire|claro|perfecto|bueno|hola|bien|entendido|por supuesto)\b",
+        extra_l,
+    ) and len(extra) >= max(80, int(len(base) * 0.45)):
+        return extra if len(extra) >= len(base) * 0.6 else base
+
+    from app.services.voice_llm_common import _normalize_for_repeat_compare
+
+    a = _normalize_for_repeat_compare(base[:160])
+    b = _normalize_for_repeat_compare(extra[:160])
+    if a and b and (a[:36] == b[:36] or a in b or b in a):
+        return extra if len(extra) >= len(base) else base
+
     return f"{base.rstrip()}\n\n{extra}".strip()

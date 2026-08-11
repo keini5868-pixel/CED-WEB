@@ -393,7 +393,7 @@ def normalize_voice_delivery_text(text: str) -> str:
 
 def dedupe_voice_reply(text: str) -> str:
     """Elimina bloques/frases idénticos consecutivos en respuestas de voz."""
-    cleaned = (text or "").strip()
+    cleaned = collapse_stacked_response_variants((text or "").strip())
     if not cleaned:
         return cleaned
     parts = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
@@ -432,6 +432,60 @@ def dedupe_voice_reply(text: str) -> str:
         if first and first.lower() == second.lower():
             return first
     return cleaned
+
+
+def collapse_stacked_response_variants(text: str) -> str:
+    """Si el modelo apiló 2 versiones de la misma respuesta, conserva una sola.
+
+    Casos: delimitadores <<<>>>, reinicios «Mire,…», o dos bloques casi iguales.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return raw
+
+    # Quitar marcas de TTS / instrucciones filtradas.
+    raw = re.sub(r"<{2,}|}>{2,}", " ", raw)
+    raw = re.sub(r"\bFRASE\s*:\s*", " ", raw, flags=re.I)
+    raw = re.sub(r"\bFIN\b\.?", " ", raw)
+    raw = re.sub(r"\s+", " ", raw).strip()
+
+    # Partir por reinicios típicos de «segunda versión».
+    splitters = re.split(
+        r"(?=(?:\bMire[,.]?\s+[A-ZÁÉÍÓÚÑ])|(?:\bClaro[,.]?\s+(?:señor|señora|mire))|(?:\bPerfecto[,.]?\s+(?:señor|señora)))",
+        raw,
+        flags=re.I,
+    )
+    chunks = [c.strip(" \n\r\t-—") for c in splitters if c and len(c.strip()) >= 24]
+    if len(chunks) >= 2:
+        # Quedarse con el bloque más completo (suele ser el último o el más largo).
+        best = max(chunks, key=lambda c: (c.rstrip().endswith((".", "!", "?")), len(c)))
+        # Si el primero es claramente un saludo/relleno corto y el segundo es la respuesta…
+        if len(chunks[0]) < 120 and len(chunks[-1]) > len(chunks[0]) * 1.4:
+            best = chunks[-1]
+        raw = best
+
+    # Dos mitades casi iguales (variante A + variante B del mismo largo).
+    if len(raw) >= 160:
+        mid = len(raw) // 2
+        # Buscar frontera cerca del medio.
+        window = raw[mid - 40 : mid + 40]
+        cut = None
+        for sep in (". ", "? ", "! ", "\n"):
+            i = window.find(sep)
+            if i != -1:
+                cut = mid - 40 + i + len(sep)
+                break
+        if cut and 40 < cut < len(raw) - 40:
+            a = raw[:cut].strip()
+            b = raw[cut:].strip()
+            if len(a) >= 60 and len(b) >= 60:
+                a_n = _normalize_for_repeat_compare(a[:180])
+                b_n = _normalize_for_repeat_compare(b[:180])
+                # Misma apertura ≈ dos versiones apiladas.
+                if a_n and b_n and (a_n[:40] == b_n[:40] or a_n in b_n or b_n in a_n):
+                    raw = b if len(b) >= len(a) else a
+
+    return raw.strip()
 
 
 def _normalize_for_repeat_compare(text: str) -> str:

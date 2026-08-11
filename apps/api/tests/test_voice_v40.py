@@ -22,11 +22,15 @@ def test_voice_prompt_v43():
     assert diag["includes_advanced_explicit_only"] is False
 
 
-def test_greeting_pool_has_eight():
-    assert len(JARVIS_GREETING_POOL) == 8
+def test_greeting_pool_is_short():
+    assert 3 <= len(JARVIS_GREETING_POOL) <= 8
+    for g in JARVIS_GREETING_POOL:
+        assert len(g) < 100
+        assert "protocolos" not in g.lower()
+        assert "misión" not in g.lower()
     g = pick_jarvis_greeting(None)
     assert g
-    assert "señor" in g.lower()
+    assert "ayudar" in g.lower() or "señor" in g.lower()
 
 
 def test_knowledge_route_level2_for_opinion():
