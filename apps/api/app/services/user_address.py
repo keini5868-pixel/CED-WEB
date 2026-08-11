@@ -127,9 +127,9 @@ def _greeting_phrase(
     h = _normalize_honorific(honorific) or _gender_default_honorific(gender)
     if jarvis:
         if h in ("Señor", "Señora", "Don", "Doña"):
-            return f"Hola, {h}. ¿En qué puedo ayudarle hoy?"
+            return f"Sí, {h}, ¿en qué lo puedo ayudar el día de hoy?"
         name = (display_name or first_name or "Usuario").strip()
-        return f"Hola, {name}. ¿En qué puedo ayudarle hoy?"
+        return f"Sí, {name}. ¿En qué lo puedo ayudar el día de hoy?"
     return f"Hola {first_name or display_name or 'Usuario'}. ¿En qué trabajamos?"
 
 
@@ -203,8 +203,9 @@ def address_context_for_prompt(user_id: str) -> str:
         f"- Si usas vocativo, el correcto es: **{display}**\n"
         + (f"- {gender_note}\n" if gender_note else "")
         + "- Saludo de recepción YA emitido por el sistema (NO repetir): "
-        + f"\"Hola, {honorific or 'Señor'}. ¿En qué puedo ayudarle hoy?\"\n"
+        + f"\"Sí, {honorific or 'Señor'}, ¿en qué lo puedo ayudar el día de hoy?\"\n"
         + "- PROHIBIDO saludar al conectar, decir '¿cómo está?' o buenos días/tardes/noches.\n"
+        + "- PROHIBIDO abrir con preguntas de mercadería, importación o catálogo genérico.\n"
         + "- Si el usuario solo dice hola, ¿cómo estás? o charla casual: SILENCIO o una frase muy breve — "
         "PROHIBIDO preguntar cómo llamarlo si ya tienes tratamiento registrado.\n"
         + "- PROHIBIDO: '¿Cómo te gustaría que te llame?', '¿Prefieres tu nombre o un título?'.\n"

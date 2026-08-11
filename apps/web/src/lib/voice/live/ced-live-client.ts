@@ -214,8 +214,13 @@ export class CedLiveClient {
   private waitingForFirstUserInput = false;
   private lastGreetingPhrase = "";
   private greetingCompletedAt = 0;
+  /** Última utterance del modelo (para filtrar eco del propio audio). */
+  private lastCompletedModelUtterance = "";
+  private lastModelSpeechAt = 0;
   /** speakExactPhrase cancelado por fuga de instrucciones. */
   private exactPhraseLeak = false;
+  /** Frase que speakExactPhrase debe leer (para detectar paráfrasis). */
+  private exactPhraseExpected = "";
   /** Tras primer turno: activar server create_response al terminar esta respuesta. */
   private pendingEnableAutoAfterResponse = false;
 
@@ -289,6 +294,15 @@ export class CedLiveClient {
     if (/^[\s.,]*(me enc|encantado|encantada)\b/i.test(trimmed)) return true;
     if (
       /c[oó]mo te gustar[ií]a|prefieres que use|tratamiento formal|en lo que necesites|qu[eé] prefieres/i.test(
+        low,
+      )
+    ) {
+      return true;
+    }
+    // Saludo temático incorrecto (import/mercadería) — nunca al conectar.
+    if (
+      (this.awaitingFirstUserSpeech || !this.heardUserSinceGreeting) &&
+      /mercader[ií]a|necesitas importar|quiere[sn]? importar|qu[eé] producto.*(import|comprar|necesitas)|producto de mercader|cat[aá]logo gen[eé]rico/i.test(
         low,
       )
     ) {
@@ -390,15 +404,69 @@ export class CedLiveClient {
     return false;
   }
 
+  private normalizeEchoText(text: string): string {
+    return text
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  /** Eco del audio de CED captado por el mic (durante o justo después de hablar). */
+  private isEchoOfOwnSpeech(transcript: string): boolean {
+    const t = this.normalizeEchoText(transcript);
+    if (t.length < 6) return false;
+    const recent =
+      this.responseInProgress || Date.now() - this.lastModelSpeechAt < 4_500;
+    if (!recent && !this.awaitingFirstUserSpeech) return false;
+    const sources = [
+      this.modelTranscriptAcc,
+      this.lastCompletedModelUtterance,
+      this.lastGreetingPhrase,
+    ];
+    for (const src of sources) {
+      const m = this.normalizeEchoText(src);
+      if (m.length < 8) continue;
+      if (m.includes(t) || t.includes(m.slice(0, Math.min(48, m.length)))) {
+        return true;
+      }
+      const tWords = t.split(" ").filter((w) => w.length > 3);
+      const mSet = new Set(m.split(" ").filter((w) => w.length > 3));
+      if (tWords.length >= 2) {
+        const hits = tWords.filter((w) => mSet.has(w)).length;
+        if (hits / tWords.length >= 0.55) return true;
+      }
+    }
+    return false;
+  }
+
   private isLikelyAmbientOrEcho(transcript: string): boolean {
     if (this.isLikelyBackgroundNoise(transcript)) return true;
     if (this.isLikelyGreetingEcho(transcript)) return true;
     if (this.isEchoOfCedGreeting(transcript)) return true;
+    if (this.isEchoOfOwnSpeech(transcript)) return true;
     const low = transcript.toLowerCase();
     return (
       (low.includes("buenos días") || low.includes("buenos dias")) &&
       (low.includes("ced") || low.includes("asistir"))
     ) || low.includes("listo para asistir") || low.includes("aquí ced");
+  }
+
+  /** ¿El audio leído se parece a la frase exacta pedida? */
+  private spokenMatchesExactPhrase(expected: string, spoken: string): boolean {
+    const e = this.normalizeEchoText(expected);
+    const s = this.normalizeEchoText(spoken);
+    if (!s || s.length < 4) return true; // sin transcript: no forzar reintento
+    if (e.length >= 10 && (s.includes(e.slice(0, 18)) || e.includes(s.slice(0, 18)))) {
+      return true;
+    }
+    const eWords = e.split(" ").filter((w) => w.length > 2);
+    const sSet = new Set(s.split(" ").filter((w) => w.length > 2));
+    if (eWords.length < 3) return s.includes(eWords[0] ?? "");
+    const hits = eWords.filter((w) => sSet.has(w)).length;
+    return hits / eWords.length >= 0.45;
   }
 
   private beginSingleSpeechSlot(): void {
@@ -584,7 +652,10 @@ export class CedLiveClient {
     if (
       /\ba\s+su\s+servicio\b/i.test(low) ||
       /\boperativo\b.*\bservicio\b/i.test(low) ||
-      /\bservicio\b.*\bse[nñ]or\b/i.test(low)
+      /\bservicio\b.*\bse[nñ]or\b/i.test(low) ||
+      /\bs[ií],?\s*(se[nñ]or|se[nñ]ora|don|do[nñ]a)\b/i.test(low) ||
+      /\ben\s+qu[eé]\s+lo\s+puedo\s+ayudar\b/i.test(low) ||
+      /\bel\s+d[ií]a\s+de\s+hoy\b/i.test(low)
     ) {
       return true;
     }
@@ -594,7 +665,9 @@ export class CedLiveClient {
         low.includes("senor") ||
         low.includes("señora") ||
         low.includes("en qué puedo ayudarle") ||
-        low.includes("en que puedo ayudarle"))
+        low.includes("en que puedo ayudarle") ||
+        low.includes("en qué lo puedo ayudar") ||
+        low.includes("en que lo puedo ayudar"))
     );
   }
 
@@ -786,7 +859,11 @@ export class CedLiveClient {
             prefix_padding_ms: CedLiveClient.SERVER_VAD.prefix_padding_ms,
             silence_duration_ms: CedLiveClient.SERVER_VAD.silence_duration_ms,
             create_response: mode === "auto",
-            interrupt_response: CedLiveClient.SERVER_VAD.interrupt_response,
+            // FitLine (voz económica): eco del altavoz no debe cortar a CED.
+            interrupt_response:
+              this.voiceProfile === "fitline"
+                ? false
+                : CedLiveClient.SERVER_VAD.interrupt_response,
           };
     this.send({
       type: "session.update",
@@ -825,6 +902,11 @@ export class CedLiveClient {
     this.singleSpeechSlot = "closed";
     this.lastMeaningfulUserUtterance = "";
     this.advancedBriefInFlight = false;
+    this.lastGreetingPhrase = "";
+    this.lastCompletedModelUtterance = "";
+    this.lastModelSpeechAt = 0;
+    this.exactPhraseExpected = "";
+    this.greetingCompletedAt = 0;
     this.userTurnResponded = false;
     this.lastArmedTranscript = "";
     this.turnCooldownUntil = 0;
@@ -1206,11 +1288,26 @@ export class CedLiveClient {
       const delta = String(msg.delta ?? "");
       this.modelTranscriptAcc += delta;
       const leak = this.isPromptInstructionLeak(this.modelTranscriptAcc);
-      if (leak || (!this.outboundLocked && this.isRogueModelGreeting(this.modelTranscriptAcc))) {
-        cedRealtimeLog(leak ? "response.prompt_leak" : "response.rogue_greeting", {
-          text: this.modelTranscriptAcc.slice(0, 100),
-        });
-        if (leak && this.outboundLocked) this.exactPhraseLeak = true;
+      const exactMismatch =
+        this.outboundLocked &&
+        this.exactPhraseExpected.length >= 10 &&
+        this.modelTranscriptAcc.trim().length >= 28 &&
+        !this.spokenMatchesExactPhrase(this.exactPhraseExpected, this.modelTranscriptAcc) &&
+        /mercader|importar|cat[aá]logo|producto de mercader|necesitas importar|qu[eé] producto/i.test(
+          this.modelTranscriptAcc,
+        );
+      if (
+        leak ||
+        exactMismatch ||
+        (!this.outboundLocked && this.isRogueModelGreeting(this.modelTranscriptAcc))
+      ) {
+        cedRealtimeLog(
+          leak ? "response.prompt_leak" : exactMismatch ? "response.exact_mismatch" : "response.rogue_greeting",
+          {
+            text: this.modelTranscriptAcc.slice(0, 100),
+          },
+        );
+        if ((leak || exactMismatch) && this.outboundLocked) this.exactPhraseLeak = true;
         this.triggerBargeIn();
         this.modelTranscriptAcc = "";
         this.userResponseArmed = false;
@@ -1234,9 +1331,16 @@ export class CedLiveClient {
 
       if (this.isLikelyBackgroundNoise(transcript) || this.isLikelyAmbientOrEcho(transcript)) {
         cedRealtimeLog("transcript.noise", { transcript: transcript.slice(0, 80) });
-        if (this.responseInProgress) {
-          this.triggerBargeIn();
-        }
+        // NUNCA barge-in por eco/ruido: eso cortaba la propia voz de CED.
+        this.flushInputAudioBuffer();
+        return;
+      }
+
+      // Con respuesta en curso, STT residual ≈ eco (mic suele estar muteado).
+      if (this.responseInProgress) {
+        cedRealtimeLog("transcript.ignored_during_response", {
+          transcript: transcript.slice(0, 80),
+        });
         this.flushInputAudioBuffer();
         return;
       }
@@ -1245,7 +1349,7 @@ export class CedLiveClient {
       this.userTranscriptAcc = transcript;
 
       if (this.isMeaningfulUserSpeech(transcript)) {
-        if (this.isEchoOfCedGreeting(transcript)) {
+        if (this.isEchoOfCedGreeting(transcript) || this.isEchoOfOwnSpeech(transcript)) {
           cedRealtimeLog("transcript.greeting_echo_ignored", { transcript: transcript.slice(0, 80) });
           this.flushInputAudioBuffer();
           return;
@@ -1340,6 +1444,8 @@ export class CedLiveClient {
       }
       if (this.modelTranscriptAcc.trim()) {
         const modelText = this.modelTranscriptAcc.trim();
+        this.lastCompletedModelUtterance = modelText;
+        this.lastModelSpeechAt = Date.now();
         if (!this.isRogueModelGreeting(modelText)) {
           handlers.onTranscript?.(modelText, "model");
         } else {
@@ -1501,6 +1607,7 @@ export class CedLiveClient {
     this.setServerAutoResponse(false);
     this.beginSingleSpeechSlot();
     this.exactPhraseLeak = false;
+    this.exactPhraseExpected = line;
     try {
       this.intentionalResponse = true;
       this.intentionalResponseActive = true;
@@ -1518,6 +1625,7 @@ export class CedLiveClient {
             "PROHIBIDO: sí, claro, puedo, exactamente, como me lo dices, instrucciones,",
             "texto, repetir, entendido, por supuesto, o cualquier comentario meta.",
             "PROHIBIDO parafrasear, traducir, saludar extra o añadir palabras.",
+            "PROHIBIDO inventar preguntas de mercadería, importación o productos.",
             "Si dudas, lee solo lo que está entre <<< >>>.",
             `<<<${line}>>>`,
           ].join("\n"),
@@ -1528,9 +1636,19 @@ export class CedLiveClient {
       await this.waitForResponseIdle(idleMs);
       await this.waitForModelAudioDone(audioMs);
       await this.sleep(600);
+      const spoken = this.modelTranscriptAcc.trim() || this.lastCompletedModelUtterance;
+      if (spoken && !this.spokenMatchesExactPhrase(line, spoken)) {
+        cedRealtimeLog("exact_phrase.mismatch", {
+          expected: line.slice(0, 80),
+          spoken: spoken.slice(0, 80),
+        });
+        this.exactPhraseLeak = true;
+        this.triggerBargeIn();
+      }
       this.flushInputAudioBuffer();
     } finally {
       this.outboundLocked = false;
+      this.exactPhraseExpected = "";
       this.intentionalResponse = false;
       this.intentionalResponseActive = false;
       this.endSingleSpeechSlot();

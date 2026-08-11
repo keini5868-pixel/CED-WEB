@@ -38,42 +38,27 @@ export function cedResolveHonorific(
   return "Señor";
 }
 
-/** Saludo fijo — Señor/Señora + en qué puedo ayudarle hoy. */
-const FITLINE_JARVIS_GREETING_POOL = [
-  "A su servicio, Señor. ¿En qué puedo ayudarle hoy?",
-  "Buenos días, Señor. CED en línea. ¿Por dónde comenzamos hoy?",
-  "Sistema CED en línea, Señor. Listo para asistirle. ¿Qué necesita?",
-  "A sus órdenes, Señor. Estoy aquí para ayudarle. ¿Qué necesita?",
-] as const;
+/** Saludo estándar CED — sin tema de producto/importación (PM/Cierre incluido). */
+export function cedStandardReceptionGreeting(title: string): string {
+  const t = title.trim() || "Señor";
+  if (t === "Señor" || t === "Señora" || t === "Don" || t === "Doña") {
+    return `Sí, ${t}, ¿en qué lo puedo ayudar el día de hoy?`;
+  }
+  return `Sí, ${t}. ¿En qué lo puedo ayudar el día de hoy?`;
+}
 
 export function cedReceptionGreetingPhrase(
   voiceProfile: VoiceProfileId = "jarvis",
   address?: CedGreetingAddress,
 ): string {
+  const title = cedResolveHonorific(address);
+  // FitLine/Cierre (voz económica): mismo saludo estándar — no pool temático.
   if (voiceProfile === "fitline") {
-    // Paridad Retell: mismo estilo Jarvis; solo cambia el motor de voz.
-    if (address?.greetingPhraseJarvis?.trim()) {
-      return address.greetingPhraseJarvis.trim();
-    }
-    const title = cedResolveHonorific(address);
-    const idx =
-      Math.floor(Math.random() * FITLINE_JARVIS_GREETING_POOL.length) %
-      FITLINE_JARVIS_GREETING_POOL.length;
-    const pick =
-      FITLINE_JARVIS_GREETING_POOL[idx] ??
-      "A su servicio, Señor. ¿En qué puedo ayudarle hoy?";
-    if (title === "Señora" || title === "Doña") {
-      return pick.replace(/Señor/g, title);
-    }
-    if (title !== "Señor" && title !== "Don") {
-      return `Hola, ${title}. ¿En qué puedo ayudarle hoy?`;
-    }
-    return pick;
+    return cedStandardReceptionGreeting(title);
   }
   if (voiceProfile !== "jarvis") {
     return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
   }
-  const title = cedResolveHonorific(address);
   if (title === "Señor" || title === "Señora" || title === "Don" || title === "Doña") {
     return `A su servicio, ${title}.`;
   }

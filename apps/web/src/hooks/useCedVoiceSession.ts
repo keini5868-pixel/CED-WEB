@@ -148,7 +148,8 @@ const MAX_WS_RECONNECT = 3;
 /** Si el turno no cierra, liberar mic/UI (WebRTC). */
 const TURN_STUCK_MS = 22000;
 const PROCESSING_STUCK_MS = 12000;
-const MIC_UNMUTE_AFTER_SPEECH_MS = 2200;
+/** Pausa post-TTS antes de reabrir mic — evita eco residual (crítico en voz económica FitLine). */
+const MIC_UNMUTE_AFTER_SPEECH_MS = 2800;
 const MIC_UNMUTE_AFTER_GREETING_MS = 4500;
 /** Tras saludo sin respuesta del usuario — una sola frase de presencia. */
 const IDLE_PRESENCE_MS = 50_000;
