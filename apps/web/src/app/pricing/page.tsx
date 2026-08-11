@@ -133,9 +133,11 @@ function PricingContent() {
               className={`rounded border p-6 ${
                 plan.id === "founding"
                   ? "border-amber-400/50 bg-amber-400/5"
-                  : plan.id === "free_basic"
-                    ? "border-cyan-500/20 bg-black/30"
-                    : "border-cyan-500/30 bg-black/40"
+                  : plan.id === "cierre"
+                    ? "border-emerald-500/40 bg-emerald-500/5"
+                    : plan.id === "free_basic"
+                      ? "border-cyan-500/20 bg-black/30"
+                      : "border-cyan-500/30 bg-black/40"
               }`}
             >
               <h3 className="font-[family-name:var(--font-orbitron)] text-lg text-white">

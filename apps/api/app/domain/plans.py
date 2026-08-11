@@ -7,6 +7,7 @@ from enum import StrEnum
 
 
 class PlanId(StrEnum):
+    CIERRE = "cierre"
     STARTER = "starter"
     PRO = "pro"
     ELITE = "elite"
@@ -63,6 +64,8 @@ FOUNDING_VOICE_CAP_MINUTES = 30
 # COGS provider (peor caso) para planificar margen mínimo $10 sin subir precio.
 # Voz: Retell+Cartesia+LLM proxy; imágenes Gemini std / HD; Ideogram Turbo; Tavily.
 PROVIDER_COGS_VOICE_PER_MIN_USD = 0.06
+# CED Cierre usa voz económica (Gemini Live–style), no Retell/Jarvis.
+PROVIDER_COGS_VOICE_CIERRE_PER_MIN_USD = 0.03
 PROVIDER_COGS_IMAGE_STD_USD = 0.067  # Nano Banana 2 @ ~1K
 PROVIDER_COGS_IMAGE_HD_USD = 0.101  # Nano Banana 2 @ ~2K
 # Ideogram Turbo ~$0.03; GPT Image 1.5 medium ~$0.034 — usamos el techo para margen.
@@ -70,8 +73,14 @@ PROVIDER_COGS_IMAGE_TEXT_USD = 0.034
 PROVIDER_COGS_WEB_SEARCH_USD = 0.008
 MARGIN_BILLING_DAYS_PER_MONTH = 30
 MIN_PLAN_MARGIN_USD = 10.0
+# Cierre ($20) acepta margen ~$5–8 por diseño (voz barata + foco PM).
+MIN_PLAN_MARGIN_CIERRE_USD = 5.0
+# Cupo interno ~400 min/mes ≈ 13 min/día (no se muestra en copy público).
+CIERRE_VOICE_MINUTES_PER_DAY = 13
+CIERRE_VOICE_MINUTES_PER_MONTH = CIERRE_VOICE_MINUTES_PER_DAY * MARGIN_BILLING_DAYS_PER_MONTH
 
 PLAN_PRICES_USD: dict[str, int] = {
+    PlanId.CIERRE.value: 20,
     PlanId.STARTER.value: 30,
     PlanId.PRO.value: 59,
     PlanId.ELITE.value: 99,
@@ -83,12 +92,18 @@ PLAN_PRICES_USD: dict[str, int] = {
 
 STRIPE_CHECKOUT_PLANS = frozenset(
     {
+        PlanId.CIERRE.value,
         PlanId.STARTER.value,
         PlanId.PRO.value,
         PlanId.ELITE.value,
         PlanId.FOUNDING.value,
     }
 )
+
+# Planes con stack de voz económico (sin Retell/Jarvis).
+PLAN_VOICE_STACK_GEMINI = frozenset({PlanId.CIERRE.value})
+# Foco comercial PM International / FitLine.
+PLAN_PM_FITLINE_FOCUS = frozenset({PlanId.CIERRE.value})
 
 
 @dataclass(frozen=True)
@@ -136,6 +151,21 @@ class PlanLimits:
 # Nano Banana 2 (gemini-3.1-flash-image): ~$0.067 std / ~$0.101 HD — cupos
 # diarios recortados vs. el accounting antiguo ($0.01/$0.02) para no romper margen.
 PLAN_LIMITS: dict[str, PlanLimits] = {
+    # CED Cierre — experto PM/FitLine, voz económica (~400 min/mes internos).
+    # Cupos lean: margen ~$7 con COGS voz Gemini ($0.03/min), sin Retell.
+    PlanId.CIERRE.value: PlanLimits(
+        voice_minutes_per_day=CIERRE_VOICE_MINUTES_PER_DAY,
+        web_searches_per_day=5,
+        ai_images_standard_per_day=0,
+        ai_images_hd_per_day=0,
+        voice_enabled=True,
+        camera_enabled=False,
+        meta_social_enabled=True,
+        prospection_enabled=True,
+        pdf_reports=True,
+        claude_messages_per_day=40,
+        ai_images_text_per_day=0,
+    ),
     PlanId.STARTER.value: PlanLimits(
         voice_minutes_per_day=5,
         web_searches_per_day=15,
@@ -216,6 +246,7 @@ PLAN_LIMITS[PlanId.ELITE_FOUNDING.value] = PLAN_LIMITS[PlanId.FOUNDING.value]
 PLAN_LIMITS[PlanId.ELITE_REGULAR.value] = PLAN_LIMITS[PlanId.ELITE.value]
 
 PLAN_LABELS: dict[str, str] = {
+    PlanId.CIERRE.value: "CED Cierre",
     PlanId.STARTER.value: "CED Starter",
     PlanId.PRO.value: "CED Pro",
     PlanId.ELITE.value: "CED Élite",
@@ -243,6 +274,15 @@ def get_plan_limits(plan_id: str | None) -> PlanLimits:
 
 def plan_minutes_daily(plan_id: str | None) -> int:
     return get_plan_limits(plan_id).voice_minutes_per_day
+
+
+def plan_uses_gemini_voice_stack(plan_id: str | None) -> bool:
+    """True si el plan usa voz económica (sin Retell/Jarvis)."""
+    return normalize_plan_id(plan_id) in PLAN_VOICE_STACK_GEMINI
+
+
+def plan_is_pm_fitline_focus(plan_id: str | None) -> bool:
+    return normalize_plan_id(plan_id) in PLAN_PM_FITLINE_FOCUS
 
 
 # Alias legacy
@@ -304,9 +344,15 @@ def estimate_plan_monthly_provider_cogs_usd(
     web_searches=-1 (ilimitado) se modela con ``web_search_cap_if_unlimited``
     usos/día para poder acotar margen; la feature de producto sigue ilimitada.
     """
-    limits = get_plan_limits(plan_id)
+    pid = normalize_plan_id(plan_id)
+    limits = get_plan_limits(pid)
     days = MARGIN_BILLING_DAYS_PER_MONTH
-    voice = max(0, limits.voice_minutes_per_day) * days * PROVIDER_COGS_VOICE_PER_MIN_USD
+    voice_cogs = (
+        PROVIDER_COGS_VOICE_CIERRE_PER_MIN_USD
+        if plan_uses_gemini_voice_stack(pid)
+        else PROVIDER_COGS_VOICE_PER_MIN_USD
+    )
+    voice = max(0, limits.voice_minutes_per_day) * days * voice_cogs
     img_std = (
         max(0, limits.ai_images_standard_per_day) * days * PROVIDER_COGS_IMAGE_STD_USD
     )
@@ -340,7 +386,13 @@ def estimate_plan_monthly_margin_usd(
 
 
 def public_plans_catalog() -> list[dict]:
-    order = (PlanId.STARTER, PlanId.PRO, PlanId.ELITE, PlanId.FOUNDING)
+    order = (
+        PlanId.CIERRE,
+        PlanId.STARTER,
+        PlanId.PRO,
+        PlanId.ELITE,
+        PlanId.FOUNDING,
+    )
     out: list[dict] = []
     for pid in order:
         limits = PLAN_LIMITS[pid.value]
@@ -358,6 +410,10 @@ def public_plans_catalog() -> list[dict]:
                 "camera_enabled": limits.camera_enabled,
                 "meta_social_enabled": limits.meta_social_enabled,
                 "prospection_enabled": limits.prospection_enabled,
+                "pm_fitline_focus": plan_is_pm_fitline_focus(pid.value),
+                "voice_stack": (
+                    "gemini" if plan_uses_gemini_voice_stack(pid.value) else "retell"
+                ),
             }
         )
     return out

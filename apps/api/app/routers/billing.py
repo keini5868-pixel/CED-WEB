@@ -22,6 +22,7 @@ from app.services.stripe_billing import (
     create_portal_session,
     create_recharge_checkout,
     create_subscription_checkout,
+    ensure_stripe_plan_price,
     founding_slots_available,
     handle_stripe_event,
     recharge_catalog,
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/v1/billing", tags=["billing"])
 
 
 class SubscriptionCheckoutBody(BaseModel):
-    plan_id: str = Field(..., description="starter | pro | elite | founding")
+    plan_id: str = Field(..., description="cierre | starter | pro | elite | founding")
 
 
 class RechargeCheckoutBody(BaseModel):
@@ -65,6 +66,7 @@ def billing_readiness(
     stripe_status = check_stripe()
     supa = check_supabase()
     price_vars = {
+        "cierre": bool(settings.stripe_price_cierre.strip()),
         "starter": bool(settings.stripe_price_starter.strip()),
         "pro": bool(settings.stripe_price_pro.strip()),
         "elite": bool(settings.stripe_price_elite.strip()),
@@ -107,6 +109,28 @@ def billing_readiness(
                 "Redeploy API + Web y verificar livemode: true en /v1/billing/readiness",
             ],
         },
+    }
+
+
+@router.post("/ensure-cierre-product")
+def ensure_cierre_product(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Crea o reutiliza Product+Price Stripe de CED Cierre ($20/mes)."""
+    try:
+        price_id = ensure_stripe_plan_price("cierre")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[BILLING] ensure cierre product failed")
+        raise HTTPException(
+            status_code=503, detail="No se pudo crear el producto en Stripe."
+        ) from exc
+    return {
+        "ok": True,
+        "plan_id": "cierre",
+        "price_id": price_id,
+        "hint": "Copia price_id a Railway STRIPE_PRICE_CIERRE (opcional si ya se auto-crea).",
     }
 
 

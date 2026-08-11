@@ -97,7 +97,9 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
             className={`rounded border p-4 ${
               plan.id === "founding"
                 ? "border-amber-400/40 bg-amber-400/5"
-                : "border-cyan-500/30 bg-black/40"
+                : plan.id === "cierre"
+                  ? "border-emerald-500/40 bg-emerald-500/5"
+                  : "border-cyan-500/30 bg-black/40"
             }`}
           >
             <div className="flex items-baseline justify-between gap-2">
@@ -114,9 +116,15 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
                 Cupos {FOUNDING_MEMBER_MAX_SLOTS} · precio bloqueado 6 meses
               </p>
             ) : null}
-            <p className="mt-1 text-[11px] text-cyan-500">
-              {plan.minutesPerDay} min voz / día
-            </p>
+            {plan.id === "cierre" ? (
+              <p className="mt-1 text-[11px] text-emerald-400/90">
+                Foco PM International / FitLine · voz incluida
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px] text-cyan-500">
+                {plan.minutesPerDay} min voz / día
+              </p>
+            )}
             <ul className="mt-3 space-y-1 text-xs text-cyan-100/75">
               {plan.highlights.slice(0, compact ? 4 : 8).map((h) => (
                 <li key={h}>· {h}</li>

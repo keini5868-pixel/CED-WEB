@@ -1,5 +1,6 @@
 /** Planes de suscripción CED */
 export type SubscriptionPlanId =
+  | "cierre"
   | "starter"
   | "pro"
   | "elite"
@@ -24,9 +25,10 @@ export const FOUNDING_MEMBER_MAX_SLOTS = 50;
 export const TRIAL_DAYS = 7;
 
 export const PLAN_PRICES_USD: Record<
-  "starter" | "pro" | "elite" | "founding",
+  "cierre" | "starter" | "pro" | "elite" | "founding",
   number
 > = {
+  cierre: 20,
   starter: 30,
   pro: 59,
   elite: 99,
@@ -121,6 +123,22 @@ export const PUBLIC_PLANS = [
     highlights: [
       "Creación de imágenes",
       "Creación de PDF",
+      ...COMMON_FREE_TOOLS,
+      "Chat de texto",
+    ],
+  },
+  {
+    id: "cierre" as const,
+    label: "CED Cierre",
+    priceUsd: 20,
+    minutesPerDay: 13,
+    highlights: [
+      "Experto en ventas PM International / FitLine",
+      "Conocimiento interno del negocio y productos",
+      "Guía paso a paso para socios nuevos",
+      "Enfoque vendedor/franquiciador con cierre estratégico",
+      "Voz conversacional CED",
+      "Apoyo de prospección y copy alineado a FitLine",
       ...COMMON_FREE_TOOLS,
       "Chat de texto",
     ],

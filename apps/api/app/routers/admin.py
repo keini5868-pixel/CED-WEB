@@ -30,7 +30,7 @@ class CreateUserBody(BaseModel):
     email: EmailStr
     phone: str | None = Field(default=None, max_length=32)
     access_type: Literal["paid", "beta", "founding_gift", "coadmin"] = "beta"
-    plan: Literal["starter", "pro", "elite", "founding", "elite_founding", "elite_regular"] = "elite"
+    plan: Literal["cierre", "starter", "pro", "elite", "founding", "elite_founding", "elite_regular"] = "elite"
     duration_days: int | Literal["indefinite"] = 30
     minutes_daily: int = Field(default=120, ge=0, le=9999)
     initial_balance: float = Field(default=0, ge=0, le=10000)

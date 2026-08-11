@@ -49,6 +49,7 @@ class Settings(BaseSettings):
 
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
+    stripe_price_cierre: str = ""
     stripe_price_starter: str = ""
     stripe_price_pro: str = ""
     stripe_price_elite: str = ""

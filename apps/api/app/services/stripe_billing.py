@@ -43,6 +43,7 @@ def price_id_for_plan(plan_id: str, settings: Settings | None = None) -> str | N
     s = settings or get_settings()
     pid = normalize_plan_id(plan_id)
     mapping = {
+        PlanId.CIERRE.value: s.stripe_price_cierre.strip(),
         PlanId.STARTER.value: s.stripe_price_starter.strip(),
         PlanId.PRO.value: s.stripe_price_pro.strip(),
         PlanId.ELITE.value: s.stripe_price_elite.strip(),
@@ -51,6 +52,71 @@ def price_id_for_plan(plan_id: str, settings: Settings | None = None) -> str | N
         ),
     }
     return mapping.get(pid) or None
+
+
+def ensure_stripe_plan_price(plan_id: str, settings: Settings | None = None) -> str:
+    """Devuelve price_id; si falta env para CED Cierre, crea Product+Price en Stripe."""
+    s = settings or get_settings()
+    pid = normalize_plan_id(plan_id)
+    existing = price_id_for_plan(pid, s)
+    if existing:
+        return existing
+    if pid != PlanId.CIERRE.value:
+        raise ValueError(f"Price ID Stripe no configurado para plan {pid}.")
+    if not _stripe_enabled(s):
+        raise ValueError("Stripe no configurado (STRIPE_SECRET_KEY).")
+
+    _configure_stripe(s)
+    amount = int(PLAN_PRICES_USD[PlanId.CIERRE.value]) * 100
+    label = "CED Cierre"
+    description = (
+        "Experto en ventas PM International / FitLine. "
+        "Guía paso a paso para socios nuevos y cierre estratégico."
+    )
+
+    for product in stripe.Product.list(limit=100, active=True).auto_paging_iter():
+        meta = product.metadata or {}
+        if meta.get("ced_plan_id") != PlanId.CIERRE.value:
+            continue
+        for price in stripe.Price.list(product=product.id, active=True, limit=20):
+            recurring = getattr(price, "recurring", None)
+            if (
+                recurring
+                and getattr(recurring, "interval", None) == "month"
+                and int(price.unit_amount or 0) == amount
+            ):
+                logger.info(
+                    "stripe cierre price reused product=%s price=%s",
+                    product.id,
+                    price.id,
+                )
+                return str(price.id)
+        price = stripe.Price.create(
+            product=product.id,
+            unit_amount=amount,
+            currency="usd",
+            recurring={"interval": "month"},
+            metadata={"ced_plan_id": PlanId.CIERRE.value},
+            nickname=label,
+        )
+        logger.info("stripe cierre price created on existing product=%s price=%s", product.id, price.id)
+        return str(price.id)
+
+    product = stripe.Product.create(
+        name=label,
+        description=description,
+        metadata={"ced_plan_id": PlanId.CIERRE.value},
+    )
+    price = stripe.Price.create(
+        product=product.id,
+        unit_amount=amount,
+        currency="usd",
+        recurring={"interval": "month"},
+        metadata={"ced_plan_id": PlanId.CIERRE.value},
+        nickname=label,
+    )
+    logger.info("stripe cierre product+price created product=%s price=%s", product.id, price.id)
+    return str(price.id)
 
 
 def price_id_for_recharge(amount_usd: float, settings: Settings | None = None) -> str | None:
@@ -87,9 +153,10 @@ def create_subscription_checkout(user_id: str, email: str, plan_id: str) -> dict
         if used >= cap:
             raise ValueError("Cupos Founding agotados.")
 
-    price_id = price_id_for_plan(pid, settings)
-    if not price_id:
-        raise ValueError(f"Price ID Stripe no configurado para plan {pid}.")
+    try:
+        price_id = ensure_stripe_plan_price(pid, settings)
+    except ValueError as exc:
+        raise ValueError(str(exc)) from exc
 
     _configure_stripe(settings)
     web = settings.web_public_url.rstrip("/")

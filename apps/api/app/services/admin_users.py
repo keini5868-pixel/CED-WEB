@@ -107,6 +107,7 @@ def create_manual_user(
     if access_type not in ACCESS_TYPES:
         raise AdminUserError("Tipo de acceso inválido.")
     valid_plans = {
+        PlanId.CIERRE.value,
         PlanId.STARTER.value,
         PlanId.PRO.value,
         PlanId.ELITE.value,
