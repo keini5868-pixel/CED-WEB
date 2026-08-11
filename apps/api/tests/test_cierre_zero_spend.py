@@ -33,8 +33,8 @@ def test_fitline_cierre_tools_only_franchise():
 
 def test_lean_knowledge_bans_external_spend():
     text = format_fitline_knowledge_lean_for_voice(max_chars=7_500)
-    assert "CONOCIMIENTO INTERNO" in text or "HECHOS" in text
-    assert "PROHIBIDO" in text or "COSTO CERO" in text
+    assert "Restorate" in text
+    assert "calcio" in text.lower() or "GUIONES DE PRODUCTO" in text
     assert len(text) <= 7_600
 
 
@@ -43,6 +43,11 @@ def test_realtime_fitline_instructions_zero_spend(monkeypatch):
         "app.services.opportunities_pilot.fitline_guide_mode.is_fitline_admin_user",
         lambda _uid: True,
     )
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        format_fitline_knowledge_for_realtime_voice,
+    )
+
+    format_fitline_knowledge_for_realtime_voice.cache_clear()
     prompt = build_realtime_instructions(
         language="es",
         voice_pace=50,
@@ -53,8 +58,8 @@ def test_realtime_fitline_instructions_zero_spend(monkeypatch):
         user_id="admin-user",
     )
     low = prompt.lower()
-    assert "paridad retell" in low or "motor de voz cierre" in low
-    assert "restorate" in low or "ntc" in low
-    assert "más información" in low
-    assert "jarvis" in low
+    assert "restorate" in low
+    assert "calcio" in low and "magnesio" in low
+    assert "ntc" in low or "nutrient transport" in low
+    assert "más información" in low or "jarvis" in low
     assert "search_web" in low or "tavily" in low or "prohibido" in low

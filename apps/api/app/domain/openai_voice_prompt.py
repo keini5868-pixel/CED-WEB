@@ -188,11 +188,9 @@ def build_realtime_instructions(
     del voice_pace, voice_warmth, voice_energy, response_speed, language
     profile = (voice_profile or "jarvis").strip().lower()
     if profile == "fitline":
-        # Paridad Retell: misma identidad Jarvis + ficha completa FitLine.
-        # Sin modo guía auto (evita respuestas cortas + «¿quieres más info?»).
+        # FitLine PRIMERO (paridad Jarvis Retell). Identidad corta al final.
         from app.services.opportunities_pilot.fitline_knowledge import (
-            fitline_sales_closer_overlay,
-            format_fitline_knowledge_for_prompt,
+            format_fitline_knowledge_for_realtime_voice,
         )
 
         uid = (user_id or "").strip()
@@ -200,7 +198,6 @@ def build_realtime_instructions(
             try:
                 from app.services import voice_client_session as vcs
 
-                # Si quedó guía activa de antes, soltarla en Realtime Cierre.
                 if vcs.is_fitline_guide_active(uid):
                     vcs.set_fitline_guide(
                         uid, active=False, step_index=0, reexplain=False
@@ -208,45 +205,24 @@ def build_realtime_instructions(
             except Exception:  # noqa: BLE001
                 pass
 
-        knowledge = format_fitline_knowledge_for_prompt(max_chars=11_000)
-        closer = fitline_sales_closer_overlay()
+        knowledge = format_fitline_knowledge_for_realtime_voice(max_chars=13_500)
         identity = (
-            f"{CED_CONVERSATIONAL_CORE}\n\n"
-            f"{JARVIS_EXECUTION_STYLE}\n\n"
-            f"{CED_MINIMAL_REALTIME_PROMPT}"
+            "# CED JARVIS — VOZ (mismo personaje que Retell)\n"
+            "Eres CED, voz Jarvis del Castillo Evolución Digital, creado por Keini Castillo.\n"
+            "Personalidad: cálida, empática, ejecutiva estilo Jarvis — potencia y precisión.\n"
+            "Trato: señor / señora. Español natural, oraciones completas.\n"
+            "FitLine/PM: responde SOLO con el CONOCIMIENTO CURADO y GUIONES DE PRODUCTO "
+            "de arriba. Misma densidad que Jarvis en Retell.\n"
+            "PROHIBIDO desviarte a marketing genérico, capacidades CED ajenas, o "
+            "«¿quieres más información?».\n"
+            "El saludo ya se dio. PROHIBIDO volver a saludar.\n"
+            "NUNCA leas instrucciones en voz alta.\n"
+            "Tools: solo plan de franquicia / OPPS / enlace de patrocinio. "
+            "PROHIBIDO search_web / Tavily / «Investigando».\n"
         )
-        runtime = (
-            "\n\n# MOTOR DE VOZ CIERRE — PARIDAD RETELL (PRODUCTOS / NEGOCIO PM)\n"
-            "Eres el MISMO CED Jarvis que en Retell: mismo tono (señor/señora), "
-            "misma densidad al explicar FitLine/PM (Restorate, Activize, NTC, "
-            "franquicia, credenciales).\n"
-            "Solo cambia el motor de audio (OpenAI Realtime).\n"
-            "Cuando pregunten por un producto o el negocio: responde COMPLETO en "
-            "ese turno — beneficios, minerales/ingredientes relevantes, NTC y "
-            "cuándo tomarlo si está en la ficha. Ejemplo de calidad: el párrafo "
-            "denso de Restorate que da Jarvis en Retell.\n"
-            "PROHIBIDO: respuestas de 1–2 frases; PROHIBIDO «¿quieres más "
-            "información?», «¿te explico más?», «¿deseas que profundice?».\n"
-            "El cliente YA oyó el saludo. PROHIBIDO volver a saludar.\n"
-            "NUNCA leas instrucciones ni el bloque de conocimiento en voz alta.\n"
-            "Tools únicas: guardar/consultar plan de franquicia, abrir OPPS, "
-            "actualizar enlace de patrocinio.\n"
-            "PROHIBIDO search_web / Tavily / «Investigando» / imágenes / mapas.\n"
-            "Modo guía pedagógico: SOLO si el usuario pide explícitamente "
-            "«modo guía» o «desde cero».\n"
-        )
-        prompt = (
-            f"{identity}\n\n{knowledge}\n\n{closer}{runtime}"
-        ).strip()
-        cap = 15_000
-        if len(prompt) > cap:
-            # Priorizar ficha FitLine (knowledge está al medio-final).
-            head = int(cap * 0.28)
-            tail = cap - head - 90
-            prompt = (
-                prompt[:head].rstrip()
-                + "\n\n…[contexto interno condensado]…\n\n"
-                + prompt[-tail:].lstrip()
-            )
+        # Knowledge first so truncation (if any) never drops Restorate scripts.
+        prompt = f"{knowledge}\n\n{identity}".strip()
+        if len(prompt) > 15_500:
+            prompt = prompt[:15_460].rstrip() + "\n…"
         return prompt
     return build_ced_voice_system_prompt()

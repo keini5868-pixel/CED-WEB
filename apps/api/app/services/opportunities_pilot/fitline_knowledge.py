@@ -168,9 +168,53 @@ fuera de FitLine/PM.
 """.strip()
 
 
+# Guiones de voz densos (paridad Jarvis Retell) — el catálogo corto no alcanza para mini.
+_PRODUCT_VOICE_SCRIPTS = """
+# GUIONES DE PRODUCTO / NEGOCIO (VOZ — LEER Y HABLAR CON ESTA DENSIDAD)
+Cuando pregunten por un producto o el negocio, usa ESTE nivel de detalle (como Jarvis Retell).
+No inventes claims médicos ni % de comisión. Si falta un dato de precio: Partner Area.
+
+## Restorate (typos: restore, restorate, Figline→FitLine)
+El Restorate de FitLine es el aliado para la recuperación y el descanso. Es una bebida
+rica en minerales de alta calidad — calcio, magnesio, hierro, potasio, zinc, selenio,
+cobre, manganeso y cromo — además de vitamina D. Su función principal es ayudar al cuerpo
+a regenerarse después del esfuerzo físico o mental, promoviendo un equilibrio mineral
+óptimo y un descanso más profundo. Gracias al NTC (Concepto de Transporte de Nutrientes),
+los nutrientes llegan cuando y donde se necesitan a nivel celular, con absorción superior.
+Se recomienda tomarlo por la noche / al final del día para despertar con mejor recuperación.
+Variantes frecuentes: Citrus y Exotic. Combina bien con PowerCocktail y el Optimal-Set.
+
+## Activize Oxyplus (typo: Activise)
+Activize Oxyplus es el producto de energía natural FitLine, muy usado en prospección.
+Aporta vitalidad para el día; se apoya en NTC. Suele ir en rutinas con Basics y Restorate.
+
+## PowerCocktail
+PowerCocktail aporta vitaminas y minerales orientados a energía y vitalidad diaria.
+Parte habitual del Optimal-Set junto con Restorate.
+
+## Optimal-Set
+Producto insignia: nutrición diaria integral. Combos frecuentes:
+PowerCocktail + Restorate; o Activize + Basics + Restorate (según mercado).
+
+## NTC (Nutrient Transport Concept — NO «Nutrient Timing»)
+Tecnología FitLine: nutrientes cuándo y dónde el cuerpo los necesita, a nivel celular.
+Úsalo al explicar cualquier producto; es el diferenciador científico de la marca.
+
+## Negocio PM / red de franquicias
+PM International (1993, Rolf Sorg; sede Schengen) opera FitLine en 40–45+ países.
+Modelo: consumo propio + construir equipo/franquicia con patrocinador. Credenciales:
+Cologne List®, GMP Alemania, escala multimillonaria. No inventes Income Plan ni precios
+de entrada; dirige a Partner Area / enlace de patrocinio en Oportunidades.
+""".strip()
+
+
 def fitline_sales_closer_overlay() -> str:
     """Overlay persuasivo fijo (interno). Sin costo de tools."""
     return _FITLINE_SALES_CLOSER
+
+
+def fitline_product_voice_scripts() -> str:
+    return _PRODUCT_VOICE_SCRIPTS
 
 # Tarjeta corta al inicio del bloque — los LLM suelen ignorar el final del system.
 _FACT_CARD = (
@@ -323,6 +367,7 @@ def format_fitline_knowledge_for_prompt(*, max_chars: int = 16_000) -> str:
     parts: list[str] = [
         f"CONOCIMIENTO CURADO — {title} (módulo Oportunidades, as_of={as_of}).",
         _FACT_CARD,
+        _PRODUCT_VOICE_SCRIPTS,
         _PROMPT_RULES,
         _FITLINE_SALES_CLOSER,
     ]
@@ -351,45 +396,57 @@ def format_fitline_knowledge_for_prompt(*, max_chars: int = 16_000) -> str:
 
 
 @lru_cache(maxsize=2)
-def format_fitline_knowledge_lean_for_voice(*, max_chars: int = 7_500) -> str:
-    """Versión compacta para CED Cierre Realtime — hechos + closer, menos tokens."""
+def format_fitline_knowledge_for_realtime_voice(*, max_chars: int = 13_500) -> str:
+    """Ficha FitLine priorizada para Realtime — guiones de producto primero (paridad Jarvis)."""
     plugin = get_plugin(OPPORTUNITY_ID)
-    if not plugin:
-        return format_fitline_knowledge_for_prompt(max_chars=max_chars)
-    curated = plugin.get("curated") or {}
-    sections = curated.get("sections") or {}
-    as_of = str(curated.get("as_of") or "").strip() or "curado"
-    title = str(plugin.get("title") or "PM International / FitLine")
-    lean_keys = (
-        "what_is",
+    as_of = "curado"
+    title = "PM International / FitLine"
+    sections: dict = {}
+    if plugin:
+        curated = plugin.get("curated") or {}
+        as_of = str(curated.get("as_of") or "").strip() or as_of
+        title = str(plugin.get("title") or title)
+        raw = curated.get("sections") or {}
+        if isinstance(raw, dict):
+            sections = raw
+
+    priority_keys = (
         "products",
+        "what_is",
+        "science_credibility",
+        "how_it_works",
         "business_model",
-        "how_to_start",
+        "requirements",
+        "getting_started",
         "objections",
         "credentials",
     )
     parts: list[str] = [
-        f"CONOCIMIENTO INTERNO CED — {title} (Oportunidades, as_of={as_of}).",
-        "COSTO CERO DE HERRAMIENTAS EXTERNAS: responde SOLO con este bloque. "
-        "PROHIBIDO search_web, Tavily, imágenes, YouTube, mapas o «investigando».",
+        f"CONOCIMIENTO CURADO — {title} (Oportunidades, as_of={as_of}).",
+        _PRODUCT_VOICE_SCRIPTS,
         _FACT_CARD,
         _FITLINE_SALES_CLOSER,
     ]
-    if isinstance(sections, dict):
-        for key in lean_keys:
-            row = sections.get(key)
-            if not isinstance(row, dict):
-                continue
-            body = str(row.get("body") or "").strip()
-            if not body:
-                continue
-            if len(body) > 900:
-                body = body[:880].rstrip() + "…"
-            parts.append(f"### {_section_title(key)}\n{body}")
+    for key in priority_keys:
+        row = sections.get(key)
+        if not isinstance(row, dict):
+            continue
+        body = str(row.get("body") or "").strip()
+        if not body:
+            continue
+        if len(body) > 1_400:
+            body = body[:1_380].rstrip() + "…"
+        parts.append(f"### {_section_title(key)}\n{body}")
+
     text = "\n\n".join(parts).strip()
     if len(text) > max_chars:
-        text = text[: max_chars - 40].rstrip() + "\n\n…[contexto FitLine lean]"
+        text = text[: max_chars - 40].rstrip() + "\n\n…[contexto FitLine voz]"
     return text
+
+
+def format_fitline_knowledge_lean_for_voice(*, max_chars: int = 7_500) -> str:
+    """Alias: misma ficha priorizada (guiones de producto) para voz Cierre."""
+    return format_fitline_knowledge_for_realtime_voice(max_chars=max_chars)
 
 
 def append_fitline_knowledge_if_needed(

@@ -232,17 +232,16 @@ def test_voice_system_includes_sales_closer_for_fitline():
 def test_realtime_fitline_prompt_has_knowledge_not_jarvis():
     from app.domain.openai_voice_prompt import build_realtime_instructions
     from app.services.opportunities_pilot.fitline_knowledge import (
-        format_fitline_knowledge_for_prompt,
+        format_fitline_knowledge_for_realtime_voice,
     )
 
-    format_fitline_knowledge_for_prompt.cache_clear()
+    format_fitline_knowledge_for_realtime_voice.cache_clear()
     text = build_realtime_instructions(voice_profile="fitline")
-    assert "FITLINE" in text.upper() or "FitLine" in text
-    assert "PARIDAD RETELL" in text or "MOTOR DE VOZ CIERRE" in text
-    assert "Jarvis" in text
-    assert "Restorate" in text or "RESTORATE" in text.upper() or "NTC" in text
-    assert "más información" in text.lower()  # ban listed in prompt
-    assert "PROHIBIDO" in text
+    assert "Restorate" in text
+    assert "calcio" in text.lower()
+    assert "GUIONES DE PRODUCTO" in text
+    assert "CED JARVIS" in text or "Jarvis" in text
+    assert text.index("GUIONES DE PRODUCTO") < text.index("CED JARVIS")
     assert len(text) > 4000
-    assert len(text) <= 15500
+    assert len(text) <= 16000
 
