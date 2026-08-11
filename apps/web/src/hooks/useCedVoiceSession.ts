@@ -2257,7 +2257,7 @@ export function useCedVoiceSession(
             client.enableListeningAfterGreeting();
             client.setMicTrackEnabled(true);
             enableListeningUi(true);
-          }, 900);
+          }, 1600);
         },
         onTranscriptUpdate: (text, role) => {
           if (isStale() || role !== "user") return;
@@ -2282,6 +2282,18 @@ export function useCedVoiceSession(
           const trimmed = text.trim();
           if (!trimmed) return;
           if (role === "model" && client.isRogueModelOutput(trimmed)) {
+            return;
+          }
+          // Eco del saludo / filler no debe aparecer como «Usted» en el chat.
+          if (
+            role === "user" &&
+            (client.isGreetingInProgress() ||
+              greetingPendingRef.current ||
+              /^(hola|buenos d[ií]as|buenas tardes).{0,80}(ayudar|c[oó]mo est)/i.test(
+                trimmed,
+              ) ||
+              /^(gracias|ok|vale|claro)[\s.!¡?]*$/i.test(trimmed))
+          ) {
             return;
           }
           callbacks?.onTranscript?.(trimmed, role);

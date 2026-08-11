@@ -725,46 +725,61 @@ export class CedLiveClient {
 
   private isLikelyGreetingEcho(transcript: string): boolean {
     if (!this.awaitingFirstUserSpeech && this.heardUserSinceGreeting) return false;
-    const low = transcript.toLowerCase();
+    const low = this.normalizeSpeechTokens(transcript);
+    if (!low) return true;
     if (
-      /\ba\s+su\s+servicio\b/i.test(low) ||
-      /\boperativo\b.*\bservicio\b/i.test(low) ||
-      /\bservicio\b.*\bse[nñ]or\b/i.test(low) ||
-      /\bs[ií],?\s*(se[nñ]or|se[nñ]ora|don|do[nñ]a)\b/i.test(low) ||
-      /\ben\s+qu[eé]\s+lo\s+puedo\s+ayudar\b/i.test(low) ||
-      /\bel\s+d[ií]a\s+de\s+hoy\b/i.test(low)
+      /\ba\s+su\s+servicio\b/.test(low) ||
+      /\boperativo\b.*\bservicio\b/.test(low) ||
+      /\bservicio\b.*\bse[nñ]or/.test(low) ||
+      /\bsi,?\s*(senor|senora|don|dona)\b/.test(low) ||
+      /\ben\s+que\s+(lo|la|te)\s+puedo\s+ayudar\b/.test(low) ||
+      /\ben\s+que\s+puedo\s+ayudarle\b/.test(low) ||
+      /\bcomo\s+est[aá]s?\b/.test(low) ||
+      /\bel\s+dia\s+de\s+hoy\b/.test(low)
     ) {
       return true;
     }
+    if (this.lastGreetingPhrase) {
+      const gl = this.normalizeSpeechTokens(this.lastGreetingPhrase);
+      if (gl.length >= 8 && low.length >= 6) {
+        if (gl.includes(low) || low.includes(gl.slice(0, Math.min(24, gl.length)))) {
+          return true;
+        }
+        const gWords = gl.split(" ").filter((w) => w.length > 2);
+        const lSet = new Set(low.split(" ").filter((w) => w.length > 2));
+        if (gWords.length >= 3) {
+          const hits = gWords.filter((w) => lSet.has(w)).length;
+          if (hits / gWords.length >= 0.5) return true;
+        }
+      }
+    }
     return (
       low.includes("hola") &&
-      (low.includes("señor") ||
-        low.includes("senor") ||
-        low.includes("señora") ||
-        low.includes("en qué puedo ayudarle") ||
-        low.includes("en que puedo ayudarle") ||
-        low.includes("en qué lo puedo ayudar") ||
-        low.includes("en que lo puedo ayudar"))
+      (low.includes("senor") ||
+        low.includes("senora") ||
+        low.includes("ayudar") ||
+        low.includes("como esta") ||
+        low.includes("como estas"))
     );
   }
 
   /** Eco del saludo de CED captado por el micrófono — no es el usuario. */
   private isEchoOfCedGreeting(transcript: string): boolean {
-    if (!this.awaitingFirstUserSpeech && !this.waitingForFirstUserInput) return false;
+    // Ventana post-saludo ampliada: el eco puede llegar tras unmute.
+    const postGreetingMs = Date.now() - this.greetingCompletedAt;
+    const inPostGreetingWindow =
+      this.awaitingFirstUserSpeech ||
+      this.waitingForFirstUserInput ||
+      (this.greetingComplete && postGreetingMs >= 0 && postGreetingMs < 8_000);
+    if (!inPostGreetingWindow) return false;
     if (this.isLikelyGreetingEcho(transcript)) return true;
-    const low = transcript.toLowerCase().replace(/[.,!?]/g, " ").trim();
+    const low = this.normalizeSpeechTokens(transcript);
     if (
       /\boperativo\b/.test(low) ||
       /\ba\s+la\s+espera\b/.test(low) ||
-      (/\bservicio\b/.test(low) && /\bse[nñ]or\b/.test(low))
+      (/\bservicio\b/.test(low) && /\bsenor/.test(low))
     ) {
       return true;
-    }
-    if (this.lastGreetingPhrase) {
-      const gl = this.lastGreetingPhrase.toLowerCase();
-      if (gl.length >= 10 && low.length >= 8 && (low.includes("servicio") || gl.includes(low.slice(0, 10)))) {
-        return true;
-      }
     }
     return false;
   }
@@ -1416,18 +1431,47 @@ export class CedLiveClient {
       const transcript = String(msg.transcript ?? "").trim();
       if (!transcript || /^<noise>$/i.test(transcript)) return;
 
-      if (this.isLikelyBackgroundNoise(transcript) || this.isLikelyAmbientOrEcho(transcript)) {
+      // Filtrar eco/ruido ANTES de UI/chat — si no, el saludo aparece como «Usted».
+      if (
+        this.isLikelyBackgroundNoise(transcript) ||
+        this.isLikelyAmbientOrEcho(transcript) ||
+        this.isEchoOfCedGreeting(transcript) ||
+        this.isEchoOfOwnSpeech(transcript) ||
+        this.isSocialFillerSpeech(transcript)
+      ) {
         cedRealtimeLog("transcript.noise", { transcript: transcript.slice(0, 80) });
-        // NUNCA barge-in por eco/ruido: eso cortaba la propia voz de CED.
+        this.userTranscriptAcc = "";
         this.flushInputAudioBuffer();
         return;
       }
 
       // Con respuesta en curso, STT residual ≈ eco (mic suele estar muteado).
-      if (this.responseInProgress) {
+      if (this.responseInProgress || this.outboundLocked || this.greetingInFlight) {
         cedRealtimeLog("transcript.ignored_during_response", {
           transcript: transcript.slice(0, 80),
         });
+        this.userTranscriptAcc = "";
+        this.flushInputAudioBuffer();
+        return;
+      }
+
+      // Tras saludo: hola/cómo estás NO desbloquean ni van al chat.
+      const casualPhrase = this.phraseForCasualSocial(transcript);
+      if (
+        casualPhrase &&
+        this.greetingComplete &&
+        (this.waitingForFirstUserInput || this.awaitingFirstUserSpeech)
+      ) {
+        cedRealtimeLog("transcript.casual_ignored_awaiting_real", {
+          transcript: transcript.slice(0, 60),
+        });
+        this.userTranscriptAcc = "";
+        this.flushInputAudioBuffer();
+        return;
+      }
+
+      if (!this.isMeaningfulUserSpeech(transcript)) {
+        this.userTranscriptAcc = "";
         this.flushInputAudioBuffer();
         return;
       }
@@ -1435,48 +1479,27 @@ export class CedLiveClient {
       handlers.onTranscriptUpdate?.(transcript, "user");
       this.userTranscriptAcc = transcript;
 
-      if (this.isMeaningfulUserSpeech(transcript)) {
-        if (this.isEchoOfCedGreeting(transcript) || this.isEchoOfOwnSpeech(transcript)) {
-          cedRealtimeLog("transcript.greeting_echo_ignored", { transcript: transcript.slice(0, 80) });
-          this.flushInputAudioBuffer();
-          return;
-        }
-        // Tras saludo: hola/cómo estás NO desbloquean auto ni generan otra frase
-        // (eco → “Buenos días” → más eco → monólogo de franquicia).
-        const casualPhrase = this.phraseForCasualSocial(transcript);
-        if (
-          casualPhrase &&
-          this.greetingComplete &&
-          (this.waitingForFirstUserInput || this.awaitingFirstUserSpeech)
-        ) {
-          cedRealtimeLog("transcript.casual_ignored_awaiting_real", {
-            transcript: transcript.slice(0, 60),
-          });
-          this.flushInputAudioBuffer();
-          return;
-        }
-        this.markUserSpeechHeard(transcript);
-        if (casualPhrase && this.greetingComplete) {
-          void this.handleCasualSocialTurn(casualPhrase);
-          return;
-        }
-        const firstTurn = this.onFirstUserTranscript(transcript);
-        const intent = parseCameraIntent(transcript);
-        if (intent === "deactivate" && this.userMicLive) {
-          handlers.onCameraIntent?.(intent);
-        } else if (intent === "activate" && this.userMicLive) {
-          handlers.onCameraIntent?.(intent);
-        }
-        // Un solo create por turno — firstTurn ya armó; no resetear userTurnResponded.
-        if (
-          this.greetingComplete &&
-          !this.outboundLocked &&
-          this.userMicLive &&
-          !this.responseInProgress &&
-          (firstTurn || !this.userTurnResponded)
-        ) {
-          this.triggerUserResponse();
-        }
+      this.markUserSpeechHeard(transcript);
+      if (casualPhrase && this.greetingComplete) {
+        void this.handleCasualSocialTurn(casualPhrase);
+        return;
+      }
+      const firstTurn = this.onFirstUserTranscript(transcript);
+      const intent = parseCameraIntent(transcript);
+      if (intent === "deactivate" && this.userMicLive) {
+        handlers.onCameraIntent?.(intent);
+      } else if (intent === "activate" && this.userMicLive) {
+        handlers.onCameraIntent?.(intent);
+      }
+      // Un solo create por turno — firstTurn ya armó; no resetear userTurnResponded.
+      if (
+        this.greetingComplete &&
+        !this.outboundLocked &&
+        this.userMicLive &&
+        !this.responseInProgress &&
+        (firstTurn || !this.userTurnResponded)
+      ) {
+        this.triggerUserResponse();
       }
       return;
     }
@@ -1555,7 +1578,14 @@ export class CedLiveClient {
       }
       if (this.userTranscriptAcc.trim()) {
         const userText = this.userTranscriptAcc.trim();
-        if (!this.isLikelyBackgroundNoise(userText) && !this.isLikelyAmbientOrEcho(userText)) {
+        if (
+          !this.isLikelyBackgroundNoise(userText) &&
+          !this.isLikelyAmbientOrEcho(userText) &&
+          !this.isEchoOfCedGreeting(userText) &&
+          !this.isEchoOfOwnSpeech(userText) &&
+          !this.isSocialFillerSpeech(userText) &&
+          this.isMeaningfulUserSpeech(userText)
+        ) {
           handlers.onTranscript?.(userText, "user");
         }
         this.userTranscriptAcc = "";
