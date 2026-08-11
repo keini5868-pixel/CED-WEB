@@ -192,7 +192,6 @@ def build_realtime_instructions(
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
             fitline_jarvis_delivery_overlay,
-            fitline_product_voice_scripts,
         )
         from app.services.user_address import address_context_for_prompt
         from app.services.voice_llm_common import build_base_voice_system
@@ -231,25 +230,26 @@ def build_realtime_instructions(
 
         extras = (
             f"{fitline_jarvis_delivery_overlay()}\n\n"
-            f"{fitline_product_voice_scripts()}\n\n"
             "# RUNTIME CIERRE — MISMO CED QUE RETELL\n"
             "Habla exactamente como CED Jarvis en Retell: natural, cálido, sin leer fichas.\n"
             "El saludo ya se dio — no vuelvas a saludar.\n"
             "Trato = bloque USUARIO ACTUAL (género/nombre). No alternes Señor/Señora.\n"
-            "Anti-pegado: no repitas el mismo pitch NTC/empresa cada turno.\n"
+            "Anti-pegado: no repitas el mismo pitch NTC/empresa cada turno; "
+            "responde solo a lo nuevo que pidió.\n"
+            "Si el usuario habla de un producto, ve directo al producto sin re-presentar PM.\n"
             "Tools en esta sesión: solo plan de franquicia / OPPS / enlace patrocinio.\n"
             "PROHIBIDO search_web / Tavily / «Investigando» / imágenes / mapas.\n"
         )
         parts = [p for p in (address_block, base, extras) if p]
         prompt = "\n\n".join(parts).strip()
-        # Conservar identidad CED (inicio) + FitLine/extras (final).
-        cap = 15_800
+        # Más corto = menos latencia / menos loops en Realtime mini.
+        cap = 14_000
         if len(prompt) > cap:
-            head = 5_800
+            head = 5_200
             tail = cap - head - 90
             prompt = (
                 prompt[:head].rstrip()
-                + "\n\n…[contexto condensado; prioriza identidad CED + FitLine]…\n\n"
+                + "\n\n…[contexto condensado; identidad CED + FitLine]…\n\n"
                 + prompt[-tail:].lstrip()
             )
         return prompt

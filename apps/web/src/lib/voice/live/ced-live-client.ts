@@ -338,8 +338,16 @@ export class CedLiveClient {
       return false;
     }
     if (/^(muchas|muchísimas)?\s*gracias/i.test(low) && t.length < 50) return false;
+    // FitLine / PM — productos y negocio (Cierre $20): no filtrar como ruido.
     if (
-      /\b(publicar|clima|comentario|comentarios|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|publica|hora|tiempo|ced|fitline|fit\s*line|cierre|venta|ventas|cliente|prospecto)\b/i.test(
+      /\b(pm[\s\-]?international|p\.?\s*m\.?\s*i|fitline|fit\s*line|restorate|restore|activize|activise|activis|power\s*cocktail|powercocktail|optimal[\s\-]?set|ntc|franquicia|patrocinio|cologne|nutriente|minerales|oxipl[uú]s|oxyplus)\b/i.test(
+        low,
+      )
+    ) {
+      return true;
+    }
+    if (
+      /\b(publicar|clima|comentario|comentarios|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|publica|hora|tiempo|ced|fitline|fit\s*line|cierre|venta|ventas|cliente|prospecto|producto|empresa|negocio)\b/i.test(
         low,
       ) ||
       /\b(activar|modo)\s+prospecci/i.test(low)
@@ -348,10 +356,19 @@ export class CedLiveClient {
     }
     if (parseCameraIntent(t)) return true;
     if (/\?/.test(t)) return true;
-    if (/^(qué|que|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|quién|quien|por qué|porque|ahora)\b/i.test(low)) {
+    if (
+      /^(qué|que|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|quién|quien|por qué|porque|ahora|h[aá]blame|h[aá]bleme)\b/i.test(
+        low,
+      )
+    ) {
       return true;
     }
-    if (/\b(estás|estas|estoy|bien|dime|oye|escucha|habla|necesito|quiero|expl[ií]ca|hablar|empezar|empezamos)\b/i.test(low) && t.length >= 6) {
+    if (
+      /\b(estás|estas|estoy|bien|dime|oye|escucha|habla|h[aá]blame|h[aá]bleme|necesito|quiero|expl[ií]ca|hablar|empezar|empezamos|saber|cuéntame|cuentame|cuéntame|sobre)\b/i.test(
+        low,
+      ) &&
+      t.length >= 6
+    ) {
       return true;
     }
     if (
@@ -364,6 +381,10 @@ export class CedLiveClient {
     }
     // Frase corta con verbo de pedido — típico tras saludo FitLine.
     if (t.length >= 10 && /\b(necesito|quiero|puedes|podr[ií]as|ayuda|ayúdame|ayudame)\b/i.test(low)) {
+      return true;
+    }
+    // Perfil FitLine: cualquier frase razonable cuenta (evita “pegado” sin respuesta).
+    if (this.voiceProfile === "fitline" && t.length >= 8 && !/^(eh|em|mm+|ah|oh)[\s.!]*$/i.test(t)) {
       return true;
     }
     return false;
@@ -1274,6 +1295,11 @@ export class CedLiveClient {
     if (type === "response.cancelled") {
       this.activeResponseId = null;
       this.responseInProgress = false;
+      this.intentionalResponse = false;
+      this.intentionalResponseActive = false;
+      this.userResponseArmed = false;
+      // Permitir reintento inmediato — si no, queda “pegado” tras un cancel.
+      this.userTurnResponded = false;
       this.flushInputAudioBuffer();
       handlers.onInterrupted?.();
       return;
