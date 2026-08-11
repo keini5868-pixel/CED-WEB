@@ -23,6 +23,11 @@ TRIAL_DAYS = 7
 # Voz durante los 7 días de prueba — se renueva cada día (usage_logs es por
 # fecha). Al día 8 el usuario cae a free_basic (voice_enabled=False, 0 min).
 TRIAL_VOICE_MINUTES_PER_DAY = 5
+# Funnel FitLine / CED Cierre: 20 min de voz en una sola ventana de 24 h,
+# luego debe pagar (no es el trial de 7 días).
+CIERRE_TRIAL_HOURS = 24
+CIERRE_TRIAL_VOICE_MINUTES = 20
+CIERRE_TRIAL_OFFER = "cierre"
 USAGE_WARNING_PERCENT = 80
 
 # Costo unitario de recarga (monedero multi-recurso) — aprobado Keini 2026-07
@@ -283,6 +288,21 @@ def plan_uses_gemini_voice_stack(plan_id: str | None) -> bool:
 
 def plan_is_pm_fitline_focus(plan_id: str | None) -> bool:
     return normalize_plan_id(plan_id) in PLAN_PM_FITLINE_FOCUS
+
+
+def is_cierre_fitline_trial(sub: dict | None) -> bool:
+    """Trial corto FitLine: plan cierre + status trialing (ventana 24 h)."""
+    if not sub:
+        return False
+    if str(sub.get("status") or "") != "trialing":
+        return False
+    return normalize_plan_id(sub.get("plan_id")) == PlanId.CIERRE.value
+
+
+def trial_voice_minutes_for_subscription(sub: dict | None) -> int:
+    if is_cierre_fitline_trial(sub):
+        return CIERRE_TRIAL_VOICE_MINUTES
+    return TRIAL_VOICE_MINUTES_PER_DAY
 
 
 # Alias legacy

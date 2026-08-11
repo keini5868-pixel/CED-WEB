@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -800,6 +800,87 @@ def downgrade_to_free_basic(user_id: str) -> None:
         ).execute()
     except Exception:  # noqa: BLE001
         logger.exception("[DB] downgrade_to_free_basic failed")
+
+
+def apply_cierre_fitline_trial(user_id: str) -> dict[str, Any]:
+    """Convierte al trial FitLine: plan cierre, 20 min de voz, 24 h, luego pagar.
+
+    Solo aplica a cuentas sin Stripe activo. Idempotente si ya está en ese trial.
+    """
+    from app.domain.plans import (
+        CIERRE_TRIAL_HOURS,
+        CIERRE_TRIAL_VOICE_MINUTES,
+        PlanId,
+        normalize_plan_id,
+    )
+
+    sub = get_subscription(user_id)
+    if sub and str(sub.get("stripe_subscription_id") or "").strip():
+        return {"ok": False, "reason": "already_paid"}
+
+    if (
+        sub
+        and str(sub.get("status") or "") == "trialing"
+        and normalize_plan_id(sub.get("plan_id")) == PlanId.CIERRE.value
+    ):
+        return {
+            "ok": True,
+            "already": True,
+            "plan_id": PlanId.CIERRE.value,
+            "trial_ends_at": sub.get("trial_ends_at"),
+            "minutes_daily": CIERRE_TRIAL_VOICE_MINUTES,
+        }
+
+    # No regenerar si ya es plan pagado activo (sin ser trial).
+    if sub and str(sub.get("status") or "") == "active" and str(
+        sub.get("stripe_subscription_id") or ""
+    ).strip():
+        return {"ok": False, "reason": "already_paid"}
+
+    now = datetime.now(timezone.utc)
+    ends = now + timedelta(hours=CIERRE_TRIAL_HOURS)
+    ends_iso = ends.isoformat()
+    now_iso = now.isoformat()
+    try:
+        client = _client()
+        client.table("subscriptions").upsert(
+            {
+                "user_id": user_id,
+                "plan_id": PlanId.CIERRE.value,
+                "status": "trialing",
+                "access_type": "paid",
+                "trial_ends_at": ends_iso,
+                "stripe_subscription_id": None,
+                "updated_at": now_iso,
+            },
+            on_conflict="user_id",
+        ).execute()
+        client.table("usage_limits").upsert(
+            {
+                "user_id": user_id,
+                "minutes_daily": CIERRE_TRIAL_VOICE_MINUTES,
+                "updated_at": now_iso,
+            },
+            on_conflict="user_id",
+        ).execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[DB] apply_cierre_fitline_trial failed")
+        return {"ok": False, "reason": "db_error", "error": str(exc)}
+
+    logger.info(
+        "[DB] cierre fitline trial user=%s ends=%s min=%s",
+        user_id[:8],
+        ends_iso,
+        CIERRE_TRIAL_VOICE_MINUTES,
+    )
+    return {
+        "ok": True,
+        "already": False,
+        "plan_id": PlanId.CIERRE.value,
+        "trial_ends_at": ends_iso,
+        "minutes_daily": CIERRE_TRIAL_VOICE_MINUTES,
+        "hours": CIERRE_TRIAL_HOURS,
+    }
 
 
 def expire_trial_if_needed(user_id: str) -> bool:

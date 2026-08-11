@@ -10,6 +10,8 @@ import { PUBLIC_PLANS } from "@ced/types";
 export type VoiceLimitReason =
   | "daily_limit"
   | "trial_daily_limit"
+  | "cierre_trial_limit"
+  | "cierre_trial_expired"
   | "trial_expired"
   | "no_voice"
   | "subscription";
@@ -43,22 +45,30 @@ export function VoiceLimitModal({
       ? "Límite diario de voz alcanzado"
       : reason === "trial_daily_limit"
         ? "Agotaste tu voz de hoy (prueba gratis)"
-        : reason === "trial_expired"
-          ? "Tu prueba de voz terminó"
-          : reason === "no_voice"
-            ? "Voz no incluida en tu plan"
-            : "Suscripción requerida para voz";
+        : reason === "cierre_trial_limit"
+          ? "Agotaste tus 20 minutos FitLine"
+          : reason === "cierre_trial_expired"
+            ? "Tu prueba FitLine de 24 h terminó"
+            : reason === "trial_expired"
+              ? "Tu prueba de voz terminó"
+              : reason === "no_voice"
+                ? "Voz no incluida en tu plan"
+                : "Suscripción requerida para voz";
 
   const body =
     reason === "daily_limit"
       ? "Has alcanzado el límite de tu plan. Recarga desde $10: el crédito es proporcional (voz, imágenes, búsquedas, PDF…) y no expira. El chat de texto sigue disponible."
       : reason === "trial_daily_limit"
         ? "Usaste tus 5 minutos de voz de hoy (prueba gratuita de 7 días). Se renuevan mañana, o ahora mismo puedes suscribirte a un plan para tener más minutos cada día, o recargar desde $10 para seguir usando la voz hoy sin suscribirte."
-        : reason === "trial_expired"
-          ? "Los 7 días de prueba de voz finalizaron. Adquiere un plan o recarga desde $10. El chat de texto sigue gratis en plan Básico."
-          : reason === "no_voice"
-            ? "Tu plan no incluye voz incluida. Recarga desde $10 para activar el asistente con crédito proporcional, o elige un plan. El chat de texto sigue disponible."
-            : "Renueva tu suscripción para reactivar el asistente de voz. El chat de texto sigue disponible.";
+        : reason === "cierre_trial_limit"
+          ? "Usaste tus 20 minutos de la prueba FitLine (24 horas). Para seguir con voz, suscríbete a CED Cierre ($20/mes) o recarga desde $10."
+          : reason === "cierre_trial_expired"
+            ? "Tu prueba FitLine de 24 horas terminó. Suscríbete a CED Cierre ($20/mes) para seguir cerrando con voz, o recarga desde $10."
+            : reason === "trial_expired"
+              ? "Los 7 días de prueba de voz finalizaron. Adquiere un plan o recarga desde $10. El chat de texto sigue gratis en plan Básico."
+              : reason === "no_voice"
+                ? "Tu plan no incluye voz incluida. Recarga desde $10 para activar el asistente con crédito proporcional, o elige un plan. El chat de texto sigue disponible."
+                : "Renueva tu suscripción para reactivar el asistente de voz. El chat de texto sigue disponible.";
 
   const subscribe = async (planId: string) => {
     setBusy(planId);
@@ -106,14 +116,22 @@ export function VoiceLimitModal({
             </div>
 
             {(reason === "trial_daily_limit" ||
+              reason === "cierre_trial_limit" ||
+              reason === "cierre_trial_expired" ||
               reason === "trial_expired" ||
               reason === "no_voice") && (
               <div className="mt-4 space-y-2 border-t border-cyan-500/20 pt-4">
                 <p className="text-[10px] uppercase tracking-wider text-cyan-600">
-                  Planes desde $30/mes
+                  {reason === "cierre_trial_limit" || reason === "cierre_trial_expired"
+                    ? "CED Cierre · $20/mes"
+                    : "Planes desde $20/mes"}
                 </p>
-                {PUBLIC_PLANS.filter((p) => p.id !== "free_basic")
-                  .slice(0, 2)
+                {PUBLIC_PLANS.filter((p) =>
+                  reason === "cierre_trial_limit" || reason === "cierre_trial_expired"
+                    ? p.id === "cierre"
+                    : p.id !== "free_basic",
+                )
+                  .slice(0, reason.startsWith("cierre_") ? 1 : 2)
                   .map((p) => (
                   <button
                     key={p.id}
@@ -163,6 +181,9 @@ export function voiceLimitReasonFromBalance(balance: {
   authFailed?: boolean;
 }): VoiceLimitReason | null {
   if (balance.authFailed) return null;
+  if (balance.accessDenied && balance.accessMessage === "cierre_trial_expired") {
+    return "cierre_trial_expired";
+  }
   if (balance.accessDenied && balance.accessMessage === "trial_expired") {
     return "trial_expired";
   }
@@ -171,6 +192,7 @@ export function voiceLimitReasonFromBalance(balance: {
     return "no_voice";
   }
   if (balance.blocked) {
+    if (balance.accessMessage === "cierre_trial") return "cierre_trial_limit";
     // Prueba de 7 días (5 min/día): todavía no paga nada recurrente, así que
     // el aviso debe ofrecer suscribirse Y recargar. Un plan pagado que llega
     // a su cupo diario ya está suscrito — solo necesita la opción de recarga.

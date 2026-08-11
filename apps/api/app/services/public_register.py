@@ -160,6 +160,7 @@ def register_with_email(
     password: str,
     full_name: str = "",
     next_path: str | None = "/",
+    offer: str | None = None,
 ) -> dict[str, Any]:
     if not resend_configured():
         raise PublicRegisterError(
@@ -208,17 +209,46 @@ def register_with_email(
             code="email_send_failed",
         )
 
+    offer_n = (offer or "").strip().lower()
+    cierre_trial: dict[str, Any] | None = None
+    if offer_n in ("cierre", "fitline") and user_id:
+        import time
+
+        from app.services import supabase_db
+
+        # El trigger handle_new_user puede tardar un instante en crear la fila.
+        for _ in range(5):
+            time.sleep(0.4)
+            cierre_trial = supabase_db.apply_cierre_fitline_trial(user_id)
+            if cierre_trial.get("ok"):
+                break
+        logger.info(
+            "[REGISTER] cierre fitline trial user=%s result=%s",
+            user_id[:8],
+            (cierre_trial or {}).get("reason") or (cierre_trial or {}).get("ok"),
+        )
+
     logger.info(
-        "[REGISTER] ok email=%s user=%s via=resend",
+        "[REGISTER] ok email=%s user=%s via=resend offer=%s",
         email_n,
         (user_id or "?")[:8],
+        offer_n or "-",
     )
-    return {
+    out: dict[str, Any] = {
         "ok": True,
         "email": email_n,
         "needs_verification": True,
         "message": "Te enviamos un enlace de verificación. Revisa tu correo.",
     }
+    if cierre_trial and cierre_trial.get("ok"):
+        out["offer"] = "cierre"
+        out["trial_hours"] = cierre_trial.get("hours", 24)
+        out["trial_voice_minutes"] = cierre_trial.get("minutes_daily", 20)
+        out["message"] = (
+            "Te enviamos un enlace de verificación. "
+            "Al confirmar tendrás 20 min de voz por 24 horas (FitLine / CED Cierre)."
+        )
+    return out
 
 
 def resend_verification_email(

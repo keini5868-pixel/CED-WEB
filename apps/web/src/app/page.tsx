@@ -181,14 +181,24 @@ export default function HomePage() {
                   ))}
                 </ul>
                 <Link
-                  href={`/pricing?plan=${plan.id}`}
+                  href={
+                    plan.id === "cierre"
+                      ? "/signup?offer=cierre"
+                      : `/pricing?plan=${plan.id}`
+                  }
                   className={`mt-5 block rounded border py-2.5 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider transition ${
                     isFounding
                       ? "border-amber-400/70 text-amber-200 hover:bg-amber-400/10"
-                      : "border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10"
+                      : plan.id === "cierre"
+                        ? "border-emerald-400/70 text-emerald-200 hover:bg-emerald-400/10"
+                        : "border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10"
                   }`}
                 >
-                  {isFounding ? "RESERVAR CUPO" : "SUSCRIBIRME"}
+                  {isFounding
+                    ? "RESERVAR CUPO"
+                    : plan.id === "cierre"
+                      ? "PROBAR 24 H GRATIS"
+                      : "SUSCRIBIRME"}
                 </Link>
               </div>
             );

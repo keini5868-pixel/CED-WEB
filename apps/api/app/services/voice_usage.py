@@ -16,6 +16,10 @@ ACCESS_DENIED_MESSAGES = {
         "Tu prueba de 7 días de voz terminó. Adquiere un plan o recarga desde $10. "
         "El chat de texto sigue disponible en plan Básico gratis."
     ),
+    "cierre_trial_expired": (
+        "Tu prueba FitLine de 24 horas terminó. Suscríbete a CED Cierre ($20/mes) "
+        "o recarga desde $10. El chat de texto sigue disponible."
+    ),
     "past_due": (
         "Hay un pago pendiente en tu suscripción. Las funciones de plan están "
         "pausadas hasta que se resuelva el cobro. Puedes recargar saldo o actualizar "

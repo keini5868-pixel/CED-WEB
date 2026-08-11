@@ -313,7 +313,10 @@ def _user_status(sub: dict[str, Any] | None) -> str:
 
 def _plan_display(sub: dict[str, Any] | None) -> dict[str, Any]:
     """Etiquetas claras: trial vs plan pagado vs básico — sin mutar datos."""
-    from app.domain.plans import TRIAL_VOICE_MINUTES_PER_DAY
+    from app.domain.plans import (
+        is_cierre_fitline_trial,
+        trial_voice_minutes_for_subscription,
+    )
 
     if not sub:
         return {
@@ -339,9 +342,12 @@ def _plan_display(sub: dict[str, Any] | None) -> dict[str, Any]:
     base_label = PLAN_LABELS.get(plan_id, plan_id or "—")
 
     if is_trial:
-        plan_label = f"Trial · {base_label}"
+        if is_cierre_fitline_trial(sub):
+            plan_label = f"Prueba FitLine 24h · {base_label}"
+        else:
+            plan_label = f"Trial · {base_label}"
         display_expires = trial_ends or expires_at
-        voice_minutes = TRIAL_VOICE_MINUTES_PER_DAY
+        voice_minutes = trial_voice_minutes_for_subscription(sub)
     elif plan_id == PlanId.FREE_BASIC.value:
         plan_label = PLAN_LABELS[PlanId.FREE_BASIC.value]
         display_expires = expires_at
@@ -431,7 +437,7 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
         elif plan_info["plan"] == PlanId.FREE_BASIC.value and not plan_info["is_paid"]:
             access = "free_basic"
 
-        # Minutos: trial siempre 5; si no, usage_limits o cuota del plan.
+        # Minutos: trial siempre TRIAL_VOICE_MINUTES_PER_DAY; si no, usage_limits o cuota del plan.
         if plan_info["is_trial"]:
             minutes = plan_info["voice_minutes_daily"]
         else:
@@ -480,8 +486,10 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
         TRIAL_VOICE_MINUTES_PER_DAY,
         PlanId,
         get_plan_limits,
+        is_cierre_fitline_trial,
         normalize_plan_id,
         plan_minutes_daily,
+        trial_voice_minutes_for_subscription,
     )
 
     profile = supabase_db.get_profile(user_id)
@@ -513,15 +521,20 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
         # expire_trial_if_needed ya debió bajar a free_basic; si sigue trialing
         # (p.ej. mock o carrera), bloquear voz y funciones de pago.
         trial_end = sub.get("trial_ends_at")
+        cierre = is_cierre_fitline_trial(sub)
         if trial_end:
             try:
                 exp_dt = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
                 if exp_dt > datetime.now(timezone.utc):
-                    return True, "trial", TRIAL_VOICE_MINUTES_PER_DAY
-                return False, "trial_expired", 0
+                    return (
+                        True,
+                        "cierre_trial" if cierre else "trial",
+                        trial_voice_minutes_for_subscription(sub),
+                    )
+                return False, ("cierre_trial_expired" if cierre else "trial_expired"), 0
             except ValueError:
                 pass
-        return False, "trial_expired", 0
+        return False, ("cierre_trial_expired" if cierre else "trial_expired"), 0
 
     # Pago fallido: chat básico sí; sin minutos/plan de pago hasta cobro OK.
     if st == "past_due":

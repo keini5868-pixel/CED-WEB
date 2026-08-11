@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
 import { sanitizeAuthNext } from "@/lib/auth/paths";
-import { isSupabaseConfigured } from "@/lib/env";
+import { apiUrl, isSupabaseConfigured } from "@/lib/env";
 
 type CookieToSet = {
   name: string;
@@ -18,6 +18,17 @@ function absoluteRedirect(request: NextRequest, path: string): string {
   }
   const { origin } = new URL(request.url);
   return `${origin}${path}`;
+}
+
+function stripOfferParam(path: string): string {
+  try {
+    const u = new URL(path, "https://ced.local");
+    u.searchParams.delete("offer");
+    const q = u.searchParams.toString();
+    return `${u.pathname}${q ? `?${q}` : ""}${u.hash}`;
+  } catch {
+    return path;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -47,8 +58,14 @@ export async function GET(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
-  // Las cookies de sesión deben ir en la respuesta de redirect (Next.js 15 + Supabase SSR).
-  const response = NextResponse.redirect(absoluteRedirect(request, next));
+  let offer = "";
+  try {
+    offer = new URL(next, "https://ced.local").searchParams.get("offer")?.toLowerCase() || "";
+  } catch {
+    offer = "";
+  }
+  const cleanNext = stripOfferParam(next);
+  const response = NextResponse.redirect(absoluteRedirect(request, cleanNext));
 
   const supabase = createServerClient(url, key, {
     cookies: {
@@ -67,6 +84,27 @@ export async function GET(request: NextRequest) {
   if (error) {
     console.error("[AUTH:callback] exchangeCodeForSession failed:", error.message);
     return NextResponse.redirect(absoluteRedirect(request, "/login?error=auth_callback"));
+  }
+
+  if (offer === "cierre" || offer === "fitline") {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      if (token) {
+        await fetch(`${apiUrl()}/v1/auth/apply-offer`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ offer: "cierre" }),
+        });
+      }
+    } catch (exc) {
+      console.error("[AUTH:callback] apply-offer failed:", exc);
+    }
   }
 
   return response;
