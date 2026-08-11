@@ -56,10 +56,12 @@ export function cedReceptionGreetingPhrase(
       return address.greetingPhraseJarvis.trim();
     }
     const title = cedResolveHonorific(address);
+    const idx =
+      Math.floor(Math.random() * FITLINE_JARVIS_GREETING_POOL.length) %
+      FITLINE_JARVIS_GREETING_POOL.length;
     const pick =
-      FITLINE_JARVIS_GREETING_POOL[
-        Math.floor(Math.random() * FITLINE_JARVIS_GREETING_POOL.length)
-      ];
+      FITLINE_JARVIS_GREETING_POOL[idx] ??
+      "A su servicio, Señor. ¿En qué puedo ayudarle hoy?";
     if (title === "Señora" || title === "Doña") {
       return pick.replace(/Señor/g, title);
     }
