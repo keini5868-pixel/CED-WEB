@@ -4,5 +4,5 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-BUILD_VERSION = "preview-cierre-force-openai-voice-v1"
+BUILD_VERSION = "cierre-retell-parity-openai-voice-v1"
 BUILD_TIMESTAMP = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

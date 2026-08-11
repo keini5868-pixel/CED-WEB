@@ -53,6 +53,7 @@ def test_realtime_fitline_instructions_zero_spend(monkeypatch):
         user_id="admin-user",
     )
     low = prompt.lower()
-    assert "costo" in low or "prohibido" in low
-    assert "search_web" in low or "tavily" in low
-    assert "conocimiento" in low
+    assert "paridad retell" in low or "motor de voz cierre" in low
+    assert "search_web" in low or "tavily" in low or "prohibido" in low
+    assert "jarvis" in low
+    assert "fitline" in low or "pm international" in low

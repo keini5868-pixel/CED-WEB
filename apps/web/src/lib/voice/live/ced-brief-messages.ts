@@ -39,15 +39,34 @@ export function cedResolveHonorific(
 }
 
 /** Saludo fijo — Señor/Señora + en qué puedo ayudarle hoy. */
+const FITLINE_JARVIS_GREETING_POOL = [
+  "A su servicio, Señor. ¿En qué puedo ayudarle hoy?",
+  "Buenos días, Señor. CED en línea. ¿Por dónde comenzamos hoy?",
+  "Sistema CED en línea, Señor. Listo para asistirle. ¿Qué necesita?",
+  "A sus órdenes, Señor. Estoy aquí para ayudarle. ¿Qué necesita?",
+] as const;
+
 export function cedReceptionGreetingPhrase(
   voiceProfile: VoiceProfileId = "jarvis",
   address?: CedGreetingAddress,
 ): string {
   if (voiceProfile === "fitline") {
-    return (
-      address?.greetingPhraseStandard ||
-      "Hola. Soy CED, tu asesor de FitLine y PM International. ¿En qué te ayudo hoy?"
-    );
+    // Paridad Retell: mismo estilo Jarvis; solo cambia el motor de voz.
+    if (address?.greetingPhraseJarvis?.trim()) {
+      return address.greetingPhraseJarvis.trim();
+    }
+    const title = cedResolveHonorific(address);
+    const pick =
+      FITLINE_JARVIS_GREETING_POOL[
+        Math.floor(Math.random() * FITLINE_JARVIS_GREETING_POOL.length)
+      ];
+    if (title === "Señora" || title === "Doña") {
+      return pick.replace(/Señor/g, title);
+    }
+    if (title !== "Señor" && title !== "Don") {
+      return `Hola, ${title}. ¿En qué puedo ayudarle hoy?`;
+    }
+    return pick;
   }
   if (voiceProfile !== "jarvis") {
     return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
