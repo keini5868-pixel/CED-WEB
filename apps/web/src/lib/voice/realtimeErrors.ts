@@ -5,6 +5,9 @@ export function isBenignRealtimeError(message: string): boolean {
     normalized.includes("no active response") ||
     normalized.includes("cancellation failed") ||
     normalized.includes("response_cancel_not_active") ||
-    normalized.includes("response cancel")
+    normalized.includes("response cancel") ||
+    normalized.includes("active response in progress") ||
+    normalized.includes("already has an active response") ||
+    normalized.includes("wait until the response is finished")
   );
 }

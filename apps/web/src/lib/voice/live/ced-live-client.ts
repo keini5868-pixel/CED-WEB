@@ -216,6 +216,8 @@ export class CedLiveClient {
   private greetingCompletedAt = 0;
   /** speakExactPhrase cancelado por fuga de instrucciones. */
   private exactPhraseLeak = false;
+  /** Tras primer turno: activar server create_response al terminar esta respuesta. */
+  private pendingEnableAutoAfterResponse = false;
 
   private static SERVER_VAD = {
     threshold: 0.5,
@@ -455,34 +457,64 @@ export class CedLiveClient {
   }
 
   /** Activa create_response tras primera intervención real del usuario. */
-  private onFirstUserTranscript(transcript: string): void {
-    if (!this.waitingForFirstUserInput) return;
-    if (!this.isMeaningfulUserSpeech(transcript)) return;
+  private onFirstUserTranscript(transcript: string): boolean {
+    if (!this.waitingForFirstUserInput) return false;
+    if (!this.isMeaningfulUserSpeech(transcript)) return false;
     if (this.isEchoOfCedGreeting(transcript)) {
       cedRealtimeLog("transcript.greeting_echo_ignored", { transcript: transcript.slice(0, 80) });
       this.flushInputAudioBuffer();
-      return;
+      return false;
     }
     // Evitar eco inmediato del saludo (~1s basta; 2.5s + unmute 2.8s dejaba sordo el turno).
-    if (Date.now() - this.greetingCompletedAt < 900) return;
+    if (Date.now() - this.greetingCompletedAt < 900) return false;
     this.waitingForFirstUserInput = false;
     this.greetingGraceUntil = 0;
     this.blockAutoResponsesUntil = 0;
-    cedRealtimeLog("turn_detection.auto_after_first_user", {
+    // Mantener VAD manual en ESTE turno — auto create_response del server
+    // chocaba con nuestro response.create → "active response in progress".
+    this.pendingEnableAutoAfterResponse = true;
+    this.applyTurnDetection("manual");
+    cedRealtimeLog("turn_detection.first_user_armed", {
       transcript: transcript.slice(0, 60),
     });
-    this.applyTurnDetection("auto");
-    if (!this.responseInProgress && this.userMicLive) {
-      this.userResponseArmed = true;
-      this.intentionalResponse = true;
-      this.intentionalResponseActive = true;
-      this.lastResponseCreateAt = Date.now();
-      this.userTurnResponded = true;
-      this.send({
-        type: "response.create",
-        response: { max_output_tokens: 320 },
+    return true;
+  }
+
+  /** Un solo response.create — cancela/espera si ya hay uno en curso. */
+  private async safeResponseCreate(
+    payload?: Record<string, unknown>,
+  ): Promise<boolean> {
+    if (!this.dc || this.dc.readyState !== "open" || this.sendBlocked) return false;
+    if (this.responseInProgress || this.activeResponseId) {
+      cedRealtimeLog("response.create.wait_or_cancel", {
+        active: this.activeResponseId,
       });
+      this.triggerBargeIn();
+      await this.waitForResponseIdle(1500);
     }
+    if (this.responseInProgress) {
+      cedRealtimeLog("response.create.skipped_busy", {});
+      return false;
+    }
+    const now = Date.now();
+    if (now - this.lastResponseCreateAt < 700) {
+      cedRealtimeLog("response.create.skipped_debounce", {});
+      return false;
+    }
+    this.lastResponseCreateAt = now;
+    this.responseInProgress = true;
+    this.userTurnResponded = true;
+    this.userResponseArmed = true;
+    this.intentionalResponse = true;
+    this.intentionalResponseActive = true;
+    cedRealtimeLog("response.create.safe", {
+      utterance: this.lastMeaningfulUserUtterance.slice(0, 60),
+    });
+    this.send({
+      type: "response.create",
+      ...(payload ? { response: payload } : {}),
+    });
+    return true;
   }
 
   /** Pausa — corta voz y deja de escuchar. */
@@ -585,7 +617,8 @@ export class CedLiveClient {
   private async handleCasualSocialTurn(phrase: string): Promise<void> {
     if (this.waitingForFirstUserInput) {
       this.waitingForFirstUserInput = false;
-      this.applyTurnDetection("auto");
+      this.pendingEnableAutoAfterResponse = true;
+      this.applyTurnDetection("manual");
     }
     if (this.responseInProgress) {
       this.triggerBargeIn();
@@ -623,19 +656,10 @@ export class CedLiveClient {
     if (now < this.greetingGraceUntil) return;
     if (!this.heardUserSinceGreeting || !this.lastMeaningfulUserUtterance) return;
     if (this.userTurnResponded && now - this.lastResponseCreateAt < 2500) return;
-    if (now - this.lastResponseCreateAt < 600) return;
+    if (now - this.lastResponseCreateAt < 700) return;
     this.postGreetingLockUntil = 0;
-    this.lastResponseCreateAt = now;
-    this.userTurnResponded = true;
     this.turnCooldownUntil = now + 2500;
-    this.userResponseArmed = true;
-    this.intentionalResponse = true;
-    this.intentionalResponseActive = true;
-    cedRealtimeLog("response.create.single", { utterance: this.lastMeaningfulUserUtterance.slice(0, 60) });
-    this.send({
-      type: "response.create",
-      response: { max_output_tokens: 320 },
-    });
+    void this.safeResponseCreate({ max_output_tokens: 320 });
   }
 
   private triggerUserResponse(): void {
@@ -789,6 +813,7 @@ export class CedLiveClient {
     this.postGreetingLockUntil = 0;
     this.serverConversationMode = false;
     this.waitingForFirstUserInput = false;
+    this.pendingEnableAutoAfterResponse = false;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -1210,16 +1235,21 @@ export class CedLiveClient {
           void this.handleCasualSocialTurn(casualPhrase);
           return;
         }
-        this.onFirstUserTranscript(transcript);
-        this.userTurnResponded = false;
-        this.lastArmedTranscript = "";
+        const firstTurn = this.onFirstUserTranscript(transcript);
         const intent = parseCameraIntent(transcript);
         if (intent === "deactivate" && this.userMicLive) {
           handlers.onCameraIntent?.(intent);
         } else if (intent === "activate" && this.userMicLive) {
           handlers.onCameraIntent?.(intent);
         }
-        if (this.greetingComplete && !this.outboundLocked && this.userMicLive) {
+        // Un solo create por turno — firstTurn ya armó; no resetear userTurnResponded.
+        if (
+          this.greetingComplete &&
+          !this.outboundLocked &&
+          this.userMicLive &&
+          !this.responseInProgress &&
+          (firstTurn || !this.userTurnResponded)
+        ) {
           this.triggerUserResponse();
         }
       }
@@ -1277,6 +1307,11 @@ export class CedLiveClient {
       this.advancedBriefInFlight = false;
       this.userTurnScheduled = false;
       this.userResponseArmed = false;
+      if (this.pendingEnableAutoAfterResponse && this.serverConversationMode) {
+        this.pendingEnableAutoAfterResponse = false;
+        this.applyTurnDetection("auto");
+        cedRealtimeLog("turn_detection.auto_after_response_done", {});
+      }
       if (this.modelTranscriptAcc.trim()) {
         const modelText = this.modelTranscriptAcc.trim();
         if (!this.isRogueModelGreeting(modelText)) {
@@ -1317,10 +1352,24 @@ export class CedLiveClient {
     }
 
     if (type === "error") {
-      const err = msg.error as { message?: string } | undefined;
+      const err = msg.error as { message?: string; code?: string } | undefined;
       const message = err?.message ?? "Realtime error";
       if (isBenignRealtimeError(message)) {
         cedVoiceLog(5, "OpenAI benign error ignored", { message });
+        // Si el server rechazó un create duplicado, no dejar el cliente trabado.
+        if (
+          /active response in progress|already has an active response|wait until the response is finished/i.test(
+            message,
+          )
+        ) {
+          // Mantener responseInProgress=true hasta response.done real; solo limpiar flags de armado.
+          this.userResponseArmed = false;
+          this.intentionalResponse = false;
+          this.intentionalResponseActive = false;
+        } else if (/no active response|cancellation failed|response_cancel/i.test(message)) {
+          this.activeResponseId = null;
+          this.responseInProgress = false;
+        }
         return;
       }
       voiceTelemetry.setWsState("error", message);
