@@ -24,6 +24,9 @@ export type UsageBalanceState = {
   hasStripeCustomer: boolean;
   /** true cuando el último fetch de balance falló (401/red) — no bloquear voz por esto */
   authFailed: boolean;
+  planId: string | null;
+  voiceStack: string | null;
+  voiceTransport: string | null;
 };
 
 type UsageBalanceValue = {
@@ -42,6 +45,9 @@ const EMPTY_BALANCE: UsageBalanceState = {
   subscriptionStatus: null,
   hasStripeCustomer: false,
   authFailed: false,
+  planId: null,
+  voiceStack: null,
+  voiceTransport: null,
 };
 
 const UsageBalanceContext = createContext<UsageBalanceValue | null>(null);
@@ -72,6 +78,9 @@ function useUsageBalancePoll(
         access_denied?: boolean;
         access_message?: string | null;
         subscription_status?: string | null;
+        plan_id?: string | null;
+        voice_stack?: string | null;
+        voice_transport?: string | null;
       };
       const plan = data.planMinutesDaily ?? data.plan_minutes_daily ?? 0;
       const used = data.usedMinutesToday ?? data.used_minutes_today ?? 0;
@@ -89,6 +98,9 @@ function useUsageBalancePoll(
           (data as { has_stripe_customer?: boolean }).has_stripe_customer,
         ),
         authFailed: false,
+        planId: data.plan_id ?? data.planId ?? null,
+        voiceStack: data.voice_stack ?? data.voiceStack ?? null,
+        voiceTransport: data.voice_transport ?? data.voiceTransport ?? null,
       };
       setBalance(next);
       setLoaded(true);

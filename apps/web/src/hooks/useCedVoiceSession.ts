@@ -232,7 +232,36 @@ const INITIAL_HEARD: VoiceHeardIndicator = {
 export function useCedVoiceSession(
   onUsageRefresh?: () => void,
   callbacks?: CedVoiceSessionCallbacks,
+  voiceRoute?: {
+    planId?: string | null;
+    voiceStack?: string | null;
+    voiceTransport?: string | null;
+  },
 ) {
+  const voiceRouteRef = useRef(voiceRoute);
+  voiceRouteRef.current = voiceRoute;
+  const useRetell = () => isRetellVoice(voiceRouteRef.current);
+
+  const isFitlineStack = () => {
+    const r = voiceRouteRef.current;
+    return (
+      (r?.planId || '').toLowerCase() === 'cierre' ||
+      (r?.voiceStack || '').toLowerCase() === 'gemini'
+    );
+  };
+  const liveConnectOpts = () => {
+    const fitline = isFitlineStack();
+    return {
+      voiceName: fitline ? 'cedar' : prefsRef.current.voiceName,
+      language: prefsRef.current.language,
+      responseSpeed: prefsRef.current.responseSpeed,
+      voicePace: prefsRef.current.voicePace,
+      voiceWarmth: prefsRef.current.voiceWarmth,
+      voiceEnergy: prefsRef.current.voiceEnergy,
+      voiceProfile: fitline ? ('fitline' as const) : prefsRef.current.voiceProfile,
+    };
+  };
+
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [statusLabel, setStatusLabel] = useState(ORB_STATE_LABELS.idle);
   const [micOn, setMicOn] = useState(false);
@@ -379,7 +408,7 @@ export function useCedVoiceSession(
   );
 
   useEffect(() => {
-    if (!isRetellVoice()) return;
+    if (!useRetell()) return;
     void warmupRetellVoiceApi();
   }, []);
 
@@ -786,13 +815,13 @@ export function useCedVoiceSession(
   const [retellInputLevel, setRetellInputLevel] = useState(0);
   const inputLevelFromMic = useAudioAnalyser(
     micStream,
-    micOn && !paused && !isRetellVoice(),
+    micOn && !paused && !useRetell(),
   );
   const inputLevelRef = useRef(0);
   useEffect(() => {
-    inputLevelRef.current = isRetellVoice() ? retellInputLevel : inputLevelFromMic;
+    inputLevelRef.current = useRetell() ? retellInputLevel : inputLevelFromMic;
   }, [retellInputLevel, inputLevelFromMic]);
-  const inputLevel = isRetellVoice() ? retellInputLevel : inputLevelFromMic;
+  const inputLevel = useRetell() ? retellInputLevel : inputLevelFromMic;
   const audioLevel =
     orbState === "listening"
       ? inputLevel
@@ -926,7 +955,7 @@ export function useCedVoiceSession(
     if (sessionMediaPreauthRef.current) {
       return sessionMediaPreauthRef.current;
     }
-    if (!navigator.mediaDevices?.getUserMedia || isRetellVoice()) {
+    if (!navigator.mediaDevices?.getUserMedia || useRetell()) {
       return Promise.resolve();
     }
 
@@ -1168,7 +1197,7 @@ export function useCedVoiceSession(
     try {
       await preauth;
 
-      if (!isRetellVoice() && !micStreamRef.current) {
+      if (!useRetell() && !micStreamRef.current) {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
@@ -1186,7 +1215,7 @@ export function useCedVoiceSession(
       saveMicPreference(true);
 
       setStatusLabel(
-        isRetellVoice()
+        useRetell()
           ? isRetellNativePilot()
             ? "Piloto nativo — conectando…"
             : "Conectando con CED…"
@@ -1195,7 +1224,7 @@ export function useCedVoiceSession(
 
       const [voiceSession] = await Promise.all([
         startVoiceSession(),
-        isRetellVoice() ? warmupRetellVoiceApi() : Promise.resolve(),
+        useRetell() ? warmupRetellVoiceApi() : Promise.resolve(),
       ]);
       usageSessionRef.current = voiceSession.session_id;
       conversationRef.current = voiceSession.conversation_id;
@@ -1206,7 +1235,7 @@ export function useCedVoiceSession(
       }
       onUsageRefresh?.();
 
-      if (isRetellVoice()) {
+      if (useRetell()) {
         isRetellSessionRef.current = true;
         setVoiceSessionActive(true);
         setStatusLabel("Iniciando llamada…");
@@ -2792,13 +2821,7 @@ export function useCedVoiceSession(
               const stream = micStreamRef.current;
               if (!stream) return;
               const ok = await client.connect(h, {
-                voiceName: prefsRef.current.voiceName,
-                language: prefsRef.current.language,
-                responseSpeed: prefsRef.current.responseSpeed,
-                voicePace: prefsRef.current.voicePace,
-                voiceWarmth: prefsRef.current.voiceWarmth,
-                voiceEnergy: prefsRef.current.voiceEnergy,
-                voiceProfile: prefsRef.current.voiceProfile,
+                ...liveConnectOpts(),
                 micStream: stream,
               });
               if (ok) {
@@ -2827,13 +2850,7 @@ export function useCedVoiceSession(
         return;
       }
       const ok = await client.connect(handlers, {
-        voiceName: prefsRef.current.voiceName,
-        language: prefsRef.current.language,
-        responseSpeed: prefsRef.current.responseSpeed,
-        voicePace: prefsRef.current.voicePace,
-        voiceWarmth: prefsRef.current.voiceWarmth,
-        voiceEnergy: prefsRef.current.voiceEnergy,
-        voiceProfile: prefsRef.current.voiceProfile,
+        ...liveConnectOpts(),
         micStream: stream,
       });
 
@@ -3039,13 +3056,8 @@ export function useCedVoiceSession(
       if (!stream) return;
 
       const ok = await clientRef.current.connect(handlersRef.current, {
-        voiceName: normalized,
-        language: prefsRef.current.language,
-        responseSpeed: prefsRef.current.responseSpeed,
-        voicePace: prefsRef.current.voicePace,
-        voiceWarmth: prefsRef.current.voiceWarmth,
-        voiceEnergy: prefsRef.current.voiceEnergy,
-        voiceProfile: prefsRef.current.voiceProfile,
+        ...liveConnectOpts(),
+        voiceName: isFitlineStack() ? "cedar" : normalized,
         micStream: stream,
       });
 

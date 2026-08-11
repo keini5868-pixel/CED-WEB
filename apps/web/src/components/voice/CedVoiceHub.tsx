@@ -97,8 +97,12 @@ export function CedVoiceHub() {
   }, [setActiveModule]);
 
   useEffect(() => {
-    prefetchEphemeralToken();
-  }, []);
+    if (balance.planId === "cierre" || balance.voiceStack === "gemini") {
+      prefetchEphemeralToken("cedar", { voiceProfile: "fitline" });
+    } else {
+      prefetchEphemeralToken();
+    }
+  }, [balance.planId, balance.voiceStack]);
 
   useEffect(() => {
     const onToolResult = (ev: Event) => {
@@ -137,6 +141,10 @@ export function CedVoiceHub() {
       setChatOpen(false);
       setChatSeedImage(null);
     },
+  }, {
+    planId: balance.planId,
+    voiceStack: balance.voiceStack,
+    voiceTransport: balance.voiceTransport,
   });
 
   useEffect(() => {

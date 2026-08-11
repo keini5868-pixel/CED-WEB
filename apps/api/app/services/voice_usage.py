@@ -4,7 +4,13 @@ from __future__ import annotations
 
 import logging
 
-from app.domain.plans import USAGE_WARNING_PERCENT, normalize_plan_id, recharge_balance_to_bonus_minutes
+from app.domain.plans import (
+    USAGE_WARNING_PERCENT,
+    normalize_plan_id,
+    plan_uses_gemini_voice_stack,
+    plan_voice_transport,
+    recharge_balance_to_bonus_minutes,
+)
 from app.services.async_sync import run_sync
 from app.services import supabase_db
 from app.services.admin_users import get_user_access
@@ -56,6 +62,8 @@ def degraded_voice_access_state(*, reason: str = "telemetry_unavailable") -> dic
         "has_stripe_customer": False,
         "degraded": True,
         "degraded_reason": (reason or "telemetry_unavailable")[:240],
+        "voice_stack": "retell",
+        "voice_transport": "retell",
     }
 
 
@@ -89,25 +97,32 @@ def voice_access_state(user_id: str) -> dict:
         restricted_plan = access_msg in ("free_basic", "past_due") or plan_id == "free_basic"
         wallet_unlocks = bonus_minutes > 0
 
-        if not allowed and access_msg == "trial_expired":
+        if not allowed and access_msg in ("trial_expired", "cierre_trial_expired"):
             effective_allowed = False
             total_available = 0.0
         elif restricted_plan:
             effective_allowed = wallet_unlocks
             total_available = bonus_minutes if wallet_unlocks else 0.0
-        elif allowed and access_msg in ("ok", "trial"):
+        elif allowed and access_msg in ("ok", "trial", "cierre_trial"):
             effective_allowed = True
             total_available = float(plan_minutes) + bonus_minutes
         else:
             effective_allowed = False
             total_available = 0.0
 
-        access_denied = not allowed and access_msg not in ("free_basic", "trial", "past_due")
+        access_denied = not allowed and access_msg not in (
+            "free_basic",
+            "trial",
+            "cierre_trial",
+            "past_due",
+        )
         quota_exhausted = (
             effective_allowed and total_available > 0 and used >= total_available
         )
 
-        if access_denied or (not allowed and access_msg == "trial_expired"):
+        if access_denied or (
+            not allowed and access_msg in ("trial_expired", "cierre_trial_expired")
+        ):
             voice_blocked = True
         elif restricted_plan and not wallet_unlocks:
             voice_blocked = True
@@ -116,7 +131,10 @@ def voice_access_state(user_id: str) -> dict:
         else:
             voice_blocked = quota_exhausted
 
-        needs_recharge = bool(voice_blocked) and access_msg != "trial_expired"
+        needs_recharge = bool(voice_blocked) and access_msg not in (
+            "trial_expired",
+            "cierre_trial_expired",
+        )
         pct = (used / plan_minutes * 100) if plan_minutes else (
             100.0 if voice_blocked and used > 0 else 0.0
         )
@@ -138,13 +156,21 @@ def voice_access_state(user_id: str) -> dict:
             "needs_recharge": needs_recharge,
             "access_denied": access_denied,
             "access_message": access_msg
-            if (not allowed or access_msg in ("free_basic", "trial"))
+            if (
+                not allowed
+                or access_msg
+                in ("free_basic", "trial", "cierre_trial", "cierre_trial_expired")
+            )
             else None,
             "usage_percent": round(pct, 1),
             "timezone": "America/Mexico_City",
             "allowed": effective_allowed,
             "has_stripe_customer": bool((sub or {}).get("stripe_customer_id")),
             "degraded": False,
+            "voice_stack": (
+                "gemini" if plan_uses_gemini_voice_stack(plan_id) else "retell"
+            ),
+            "voice_transport": plan_voice_transport(plan_id),
         }
     except Exception as exc:  # noqa: BLE001 — nunca 500 por telemetría
         logger.warning(

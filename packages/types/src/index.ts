@@ -23,6 +23,8 @@ export interface PlanFeatures {
 
 export const FOUNDING_MEMBER_MAX_SLOTS = 50;
 export const TRIAL_DAYS = 7;
+/** Minutos de voz/día durante el trial (mismo cupo diario que los planes). */
+export const TRIAL_VOICE_MINUTES_PER_DAY = 20;
 
 export const PLAN_PRICES_USD: Record<
   "cierre" | "starter" | "pro" | "elite" | "founding",
@@ -236,7 +238,7 @@ export type VoicePaletteId = "cyan" | "gold" | "matrix" | "iron";
 
 export type GeminiVoiceId = string;
 
-export type VoiceProfileId = "standard" | "jarvis";
+export type VoiceProfileId = "standard" | "jarvis" | "fitline";
 
 export interface VoiceSessionPreferences {
   language: "es" | "en" | "pt";
@@ -292,4 +294,8 @@ export interface UsageBalance {
   trialEndsAt?: string | null;
   isFoundingMember: boolean;
   priceLockedForLife: boolean;
+  /** gemini = FitLine/Cierre (sin Jarvis); retell = premium Jarvis */
+  voiceStack?: "gemini" | "retell" | string;
+  /** openai | retell — transporte real de audio */
+  voiceTransport?: "openai" | "retell" | string;
 }

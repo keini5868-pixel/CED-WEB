@@ -184,5 +184,18 @@ def build_realtime_instructions(
     response_speed: str = "balanced",
     voice_profile: str = "jarvis",
 ) -> str:
-    del voice_pace, voice_warmth, voice_energy, response_speed, voice_profile, language
-    return build_ced_voice_system_prompt()
+    del voice_pace, voice_warmth, voice_energy, response_speed, language
+    base = build_ced_voice_system_prompt()
+    profile = (voice_profile or "jarvis").strip().lower()
+    if profile == "fitline":
+        return (
+            f"{base}\n\n"
+            "# PERFIL FITLINE / CED CIERRE\n"
+            "Eres el experto de ventas PM International / FitLine de CED.\n"
+            "NO te presentes como Jarvis ni uses estilo Jarvis de ciencia ficción.\n"
+            "Habla como un asesor comercial profesional, claro y persuasivo.\n"
+            "Prioriza guía paso a paso para socios nuevos, cierre estratégico y "
+            "conocimiento de productos FitLine. Voz masculina profesional, sin muletillas "
+            "de majordomo británico.\n"
+        )
+    return base

@@ -286,6 +286,13 @@ def plan_uses_gemini_voice_stack(plan_id: str | None) -> bool:
     return normalize_plan_id(plan_id) in PLAN_VOICE_STACK_GEMINI
 
 
+def plan_voice_transport(plan_id: str | None) -> str:
+    """Transporte de audio: ``openai`` (FitLine/Cierre) o ``retell`` (Jarvis premium)."""
+    if plan_uses_gemini_voice_stack(plan_id):
+        return "openai"
+    return "retell"
+
+
 def plan_is_pm_fitline_focus(plan_id: str | None) -> bool:
     return normalize_plan_id(plan_id) in PLAN_PM_FITLINE_FOCUS
 
@@ -434,6 +441,7 @@ def public_plans_catalog() -> list[dict]:
                 "voice_stack": (
                     "gemini" if plan_uses_gemini_voice_stack(pid.value) else "retell"
                 ),
+                "voice_transport": plan_voice_transport(pid.value),
             }
         )
     return out

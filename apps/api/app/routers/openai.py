@@ -55,13 +55,20 @@ async def realtime_session(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     """Sesión efímera OpenAI Realtime — verifica límites duros antes de conectar."""
-    if get_settings().voice_provider != "openai":
+    from app.domain.plans import plan_uses_gemini_voice_stack
+
+    balance = await voice_access_state_async(user_id)
+    plan_id = str(balance.get("plan_id") or "")
+    fitline_stack = plan_uses_gemini_voice_stack(plan_id)
+    settings = get_settings()
+    # FitLine/Cierre siempre puede usar este transporte (sin Jarvis).
+    # El resto solo si VOICE_PROVIDER=openai.
+    if settings.voice_provider != "openai" and not fitline_stack:
         return {
             "ok": False,
             "error": "OpenAI Realtime deshabilitado. Voz activa vía Retell.",
             "code": "legacy_disabled",
         }
-    balance = await voice_access_state_async(user_id)
     if balance.get("access_denied"):
         return {"ok": False, "error": "Acceso de voz no disponible. Elige un plan en Precios."}
     if balance.get("blocked"):
@@ -87,9 +94,14 @@ async def realtime_session(
     pace = max(0, min(100, int(body.voice_pace if body and body.voice_pace is not None else 38)))
     warmth = max(0, min(100, int(body.voice_warmth if body and body.voice_warmth is not None else 42)))
     energy = max(0, min(100, int(body.voice_energy if body and body.voice_energy is not None else 38)))
-    profile = (body.voice_profile if body and body.voice_profile else "jarvis").strip().lower()
-    if profile not in ("standard", "jarvis"):
-        profile = "jarvis"
+    if fitline_stack:
+        # Sin branding Jarvis — voz masculina profesional para FitLine/Cierre.
+        profile = "fitline"
+        voice = voice or "cedar"
+    else:
+        profile = (body.voice_profile if body and body.voice_profile else "jarvis").strip().lower()
+        if profile not in ("standard", "jarvis", "fitline"):
+            profile = "jarvis"
     result = await asyncio.to_thread(
         create_realtime_session,
         user_id=user_id,
@@ -105,6 +117,8 @@ async def realtime_session(
         result["userId"] = user_id
         result["usagePercent"] = balance.get("usage_percent", 0)
         result["warningLevel"] = _warning_level(balance.get("usage_percent", 0))
+        result["voiceStack"] = balance.get("voice_stack")
+        result["voiceTransport"] = balance.get("voice_transport")
     return result
 
 
@@ -112,13 +126,21 @@ async def realtime_session(
 async def realtime_calls(
     request: Request,
     x_openai_ephemeral_key: str = Header(..., alias="X-OpenAI-Ephemeral-Key"),
-    _user_id: str = Depends(require_user_id),
+    user_id: str = Depends(require_user_id),
 ):
     """Negocia WebRTC SDP con OpenAI usando token efímero (proxy anti-CORS)."""
-    if get_settings().voice_provider != "openai":
+    from app.domain.plans import plan_uses_gemini_voice_stack
+
+    balance = await voice_access_state_async(user_id)
+    fitline_stack = plan_uses_gemini_voice_stack(str(balance.get("plan_id") or ""))
+    if get_settings().voice_provider != "openai" and not fitline_stack:
         return JSONResponse(
             status_code=503,
-            content={"ok": False, "error": "OpenAI Realtime deshabilitado.", "code": "legacy_disabled"},
+            content={
+                "ok": False,
+                "error": "OpenAI Realtime deshabilitado.",
+                "code": "legacy_disabled",
+            },
         )
     sdp_offer = (await request.body()).decode("utf-8", errors="replace")
     result = negotiate_realtime_call(client_secret=x_openai_ephemeral_key, sdp_offer=sdp_offer)
