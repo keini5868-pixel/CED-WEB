@@ -242,7 +242,10 @@ def build_realtime_instructions(
             "Tools: solo plan franquicia / OPPS / enlace patrocinio.\n"
             "PROHIBIDO search_web / Tavily / «Investigando» / imágenes / mapas.\n"
             "El saludo estándar ya se dio (Sí, Señor/Señora…). "
-            "PROHIBIDO re-saludar o preguntar por mercadería/importación al inicio.\n"
+            "SILENCIO TOTAL hasta que el usuario diga algo concreto "
+            "(producto, franquicia, plan, pregunta de negocio). "
+            "PROHIBIDO re-saludar, preguntar cómo está, inventar meta/plan, "
+            "o cuestionario de franquicia/clientes sin que el usuario lo pida.\n"
         )
         parts = [p for p in (address_block, base, pm_pack, runtime) if p]
         prompt = "\n\n".join(parts).strip()

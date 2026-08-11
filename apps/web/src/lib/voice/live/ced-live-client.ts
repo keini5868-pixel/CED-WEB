@@ -239,34 +239,66 @@ export class CedLiveClient {
     );
   }
 
+  /** Quita ¡¿ y puntuación para filtrar «¡Gracias!» / eco TV. */
+  private normalizeSpeechTokens(text: string): string {
+    return text
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[¡¿]/g, "")
+      .replace(/[.,!?;:…"""«»]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   /** Frases fantasma que Whisper inventa con silencio/eco — no son el usuario. */
   private isWhisperHallucination(text: string): boolean {
-    const t = text.trim().toLowerCase();
+    const t = this.normalizeSpeechTokens(text);
     if (!t) return true;
     if (t.length <= 3) return true;
     return (
       /amara\.org|subt[ií]tulos realizados|subtitles by|thanks for watching|thank you for watching|for more information|visit www\.|copyright|\bwww\./i.test(
         t,
       ) ||
-      /^you[\s.!]*$/i.test(t) ||
-      /^thank you[\s.!]*$/i.test(t) ||
+      /^you$/i.test(t) ||
+      /^thank you$/i.test(t) ||
       /^\s*\(?music\)?\s*$/i.test(t)
     );
   }
 
+  /** Gracias / ok / hola sueltos — no abren conversación ni plan de franquicia. */
+  private isSocialFillerSpeech(transcript: string): boolean {
+    const t = this.normalizeSpeechTokens(transcript);
+    if (!t) return true;
+    if (/^(muchas|muchisimas|mil)?\s*gracias(\s+(señor|senor|señora|senora))?$/.test(t)) {
+      return true;
+    }
+    if (/^(thanks|thank you|ty|ok|okay|vale|dale|listo|perfecto|claro|bueno|de acuerdo|entendido)(\s+(señor|senor|señora|senora))?$/.test(t)) {
+      return true;
+    }
+    if (/^(hola|hey|buenas|saludos|buen dia|buenos dias|buenas tardes|buenas noches)(\s+(señor|senor|señora|senora|ced))?$/.test(t)) {
+      return true;
+    }
+    if (/^(hola\s+)?(como estas|que tal|como te va|todo bien)(\s+(señor|senor|señora|senora))?$/.test(t)) {
+      return true;
+    }
+    return false;
+  }
+
   private isLikelyBackgroundNoise(transcript: string): boolean {
-    const t = transcript.trim().toLowerCase();
-    if (!t || /^<noise>$/i.test(t)) return true;
-    if (this.isWhisperHallucination(t)) return true;
-    if (/^(muchas|muchísimas|mil)?\s*gracias[\s.!]*$/i.test(t)) return true;
-    if (/^(gracias[\s.!]*)+$/i.test(t)) return true;
-    if (/^entendido[\s,]*señor[\s.!]*$/i.test(t)) return true;
-    if (/^(chau|chao|adi[oó]s|bye|goodbye|nos vemos|hasta luego)[\s.!]*$/i.test(t)) return true;
-    if (/^(un besito|besito|un abrazo|te quiero|mi amor|gracias)[\s.!]*$/i.test(t)) return true;
+    const raw = transcript.trim().toLowerCase();
+    if (!raw || /^<noise>$/i.test(raw)) return true;
+    if (this.isWhisperHallucination(raw)) return true;
+    if (this.isSocialFillerSpeech(raw)) return true;
+    const t = this.normalizeSpeechTokens(raw);
+    if (/^entendido\s*señor$/.test(t)) return true;
+    if (/^(chau|chao|adios|bye|goodbye|nos vemos|hasta luego)$/.test(t)) return true;
+    if (/^(un besito|besito|un abrazo|te quiero|mi amor)$/.test(t)) return true;
     return (
       /gracias por ver|por ver el video|hasta la pr[oó]xima|nos vemos en|pr[oó]ximo video|suscr[ií]bete|suscr[ií]bete al canal|dale like|deja tu like|thanks for watching|see you in the next|don't forget to subscribe|subscribe to|much[ií]simas gracias|activar la c[aá]mara|voy a activar|c[aá]mara activa|amara\.org|subt[ií]tulos|subtitulos|realizados por|comunidad de amara|realizada por la comunidad/i.test(
-        t,
-      ) || (t.length < 12 && /^(gracias|thanks|ok|sí|si|entendido|chau|chao|!|\.)+$/i.test(t))
+        raw,
+      )
     );
   }
 
@@ -308,6 +340,16 @@ export class CedLiveClient {
     ) {
       return true;
     }
+    // Cuestionario de plan/franquicia o re-saludo sin que el usuario haya hablado.
+    if (this.awaitingFirstUserSpeech || !this.heardUserSinceGreeting) {
+      if (
+        /principal meta|detalle.*incluir.*plan|aspecto espec[ií]fico.*franquicia|aumentar clientes|p[uú]blico objetivo|en qu[eé] te gustar[ií]a|c[oó]mo est[aá]s|cu[eé]ntame.*ayud|qu[eé] te gustar[ií]a que te ayude|clar[oa],?\s+por favor dime|crecimiento de la franquicia/i.test(
+          low,
+        )
+      ) {
+        return true;
+      }
+    }
     if (/activando.*prosp|activando ahora|entendido.*activando|modo prosp|prospecci[oó]n activada|queda registrado,\s*s[ií]/i.test(low)) {
       if (this.awaitingFirstUserSpeech || !this.heardUserSinceGreeting) return true;
       if (!userExplicitlyRequestedProspection(this.lastMeaningfulUserUtterance)) return true;
@@ -347,11 +389,12 @@ export class CedLiveClient {
   private isMeaningfulUserSpeech(transcript: string): boolean {
     const t = transcript.trim();
     if (!t || this.isLikelyAmbientOrEcho(t)) return false;
-    const low = t.toLowerCase();
-    if (/^(ahora\s+s[ií]|s[ií]|ok|vale|dale|perfecto|claro|bueno|listo|de acuerdo)[\s.!?,]*$/i.test(t)) {
+    if (this.isSocialFillerSpeech(t) || this.isLikelyBackgroundNoise(t)) return false;
+    const low = this.normalizeSpeechTokens(t);
+    if (/^(ahora\s+si|si|ok|vale|dale|perfecto|claro|bueno|listo|de acuerdo)$/.test(low)) {
       return false;
     }
-    if (/^(muchas|muchísimas)?\s*gracias/i.test(low) && t.length < 50) return false;
+    if (/^(muchas|muchisimas)?\s*gracias/.test(low) && low.length < 50) return false;
     // FitLine / PM — productos y negocio (Cierre $20): no filtrar como ruido.
     if (
       /\b(pm[\s\-]?international|p\.?\s*m\.?\s*i|fitline|fit\s*line|restorate|restore|activize|activise|activis|power\s*cocktail|powercocktail|optimal[\s\-]?set|ntc|franquicia|patrocinio|cologne|nutriente|minerales|oxipl[uú]s|oxyplus)\b/i.test(
@@ -361,7 +404,7 @@ export class CedLiveClient {
       return true;
     }
     if (
-      /\b(publicar|clima|comentario|comentarios|facebook|instagram|guion|guión|pdf|imagen|cámara|camara|busca|ayuda|publica|hora|tiempo|ced|fitline|fit\s*line|cierre|venta|ventas|cliente|prospecto|producto|empresa|negocio)\b/i.test(
+      /\b(publicar|clima|comentario|comentarios|facebook|instagram|guion|guion|pdf|imagen|camara|busca|ayuda|publica|hora|tiempo|ced|fitline|fit\s*line|cierre|venta|ventas|cliente|prospecto|producto|empresa|negocio)\b/i.test(
         low,
       ) ||
       /\b(activar|modo)\s+prospecci/i.test(low)
@@ -369,36 +412,43 @@ export class CedLiveClient {
       return true;
     }
     if (parseCameraIntent(t)) return true;
-    if (/\?/.test(t)) return true;
+    if (/\?/.test(t) && t.length >= 12) return true;
     if (
-      /^(qué|que|cómo|como|dónde|donde|cuándo|cuando|cuánto|cuanto|quién|quien|por qué|porque|ahora|h[aá]blame|h[aá]bleme)\b/i.test(
+      /^(que|como|donde|cuando|cuanto|quien|por que|porque|ahora|hablame|hableme)\b/i.test(
         low,
-      )
+      ) &&
+      t.length >= 12
     ) {
       return true;
     }
     if (
-      /\b(estás|estas|estoy|bien|dime|oye|escucha|habla|h[aá]blame|h[aá]bleme|necesito|quiero|expl[ií]ca|hablar|empezar|empezamos|saber|cuéntame|cuentame|cuéntame|sobre)\b/i.test(
+      /\b(necesito|quiero|explicame|explicame|hablar|empezar|empezamos|saber|sobre)\b/i.test(
         low,
       ) &&
-      t.length >= 6
+      t.length >= 12
     ) {
       return true;
     }
     if (
       t.length >= 16 &&
-      /\b(por favor|necesito|quiero|dime|déjame|dejame|muéstrame|muestrame|explícame|explicame|lee|leer|publica|genera|cuéntame|cuentame)\b/i.test(
+      /\b(por favor|necesito|quiero|dime|dejame|muestrame|explicame|lee|leer|publica|genera|cuentame)\b/i.test(
         low,
       )
     ) {
       return true;
     }
     // Frase corta con verbo de pedido — típico tras saludo FitLine.
-    if (t.length >= 10 && /\b(necesito|quiero|puedes|podr[ií]as|ayuda|ayúdame|ayudame)\b/i.test(low)) {
+    if (t.length >= 10 && /\b(necesito|quiero|puedes|podrias|ayuda|ayudame)\b/i.test(low)) {
       return true;
     }
-    // Perfil FitLine: cualquier frase razonable cuenta (evita “pegado” sin respuesta).
-    if (this.voiceProfile === "fitline" && t.length >= 8 && !/^(eh|em|mm+|ah|oh)[\s.!]*$/i.test(t)) {
+    // FitLine: exigir contenido real — NO cualquier eco/alucinación de 8 letras.
+    if (
+      this.voiceProfile === "fitline" &&
+      t.length >= 18 &&
+      /\b(plan|meta|cliente|ingreso|producto|restorate|activize|fitline|franquicia|negocio|pm|vender|venta|equipo|patrocin)\b/i.test(
+        low,
+      )
+    ) {
       return true;
     }
     return false;
@@ -1354,8 +1404,21 @@ export class CedLiveClient {
           this.flushInputAudioBuffer();
           return;
         }
-        this.markUserSpeechHeard(transcript);
+        // Tras saludo: hola/cómo estás NO desbloquean auto ni generan otra frase
+        // (eco → “Buenos días” → más eco → monólogo de franquicia).
         const casualPhrase = this.phraseForCasualSocial(transcript);
+        if (
+          casualPhrase &&
+          this.greetingComplete &&
+          (this.waitingForFirstUserInput || this.awaitingFirstUserSpeech)
+        ) {
+          cedRealtimeLog("transcript.casual_ignored_awaiting_real", {
+            transcript: transcript.slice(0, 60),
+          });
+          this.flushInputAudioBuffer();
+          return;
+        }
+        this.markUserSpeechHeard(transcript);
         if (casualPhrase && this.greetingComplete) {
           void this.handleCasualSocialTurn(casualPhrase);
           return;
