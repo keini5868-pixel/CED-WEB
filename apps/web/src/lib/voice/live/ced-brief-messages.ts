@@ -43,6 +43,12 @@ export function cedReceptionGreetingPhrase(
   voiceProfile: VoiceProfileId = "jarvis",
   address?: CedGreetingAddress,
 ): string {
+  if (voiceProfile === "fitline") {
+    return (
+      address?.greetingPhraseStandard ||
+      "Hola. Soy CED, tu asesor de FitLine y PM International. ¿En qué te ayudo hoy?"
+    );
+  }
   if (voiceProfile !== "jarvis") {
     return address?.greetingPhraseStandard || "Hola. ¿En qué trabajamos?";
   }

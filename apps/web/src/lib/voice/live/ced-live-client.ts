@@ -214,6 +214,8 @@ export class CedLiveClient {
   private waitingForFirstUserInput = false;
   private lastGreetingPhrase = "";
   private greetingCompletedAt = 0;
+  /** speakExactPhrase cancelado por fuga de instrucciones. */
+  private exactPhraseLeak = false;
 
   private static SERVER_VAD = {
     threshold: 0.5,
@@ -261,11 +263,26 @@ export class CedLiveClient {
     );
   }
 
+  /** Eco del system/response prompt — cancelar de inmediato. */
+  private isPromptInstructionLeak(text: string): boolean {
+    const low = text.toLowerCase();
+    return (
+      /puedo repetir|exactamente como me lo dic|di exactamente|palabra por palabra|entre <<<|modo lectura|text-to-speech|estas instrucciones|el texto siguiente|lee en voz alta una sola vez|\[ced_greeting\]|\[ced_brief\]/i.test(
+        low,
+      ) ||
+      (/s[ií],?\s*claro/.test(low) && /repetir|exactamente|instrucci/i.test(low))
+    );
+  }
+
   /** Segundo saludo del modelo o muletilla — cortar de inmediato. */
   private isRogueModelGreeting(text: string): boolean {
     const trimmed = text.trim();
     if (!trimmed || /^[,.\s…]{1,8}$/.test(trimmed)) return true;
-    if (this.outboundLocked) return false;
+    if (this.outboundLocked) {
+      // Durante speakExactPhrase aún cancelamos fugas de prompt.
+      return this.isPromptInstructionLeak(trimmed);
+    }
+    if (this.isPromptInstructionLeak(trimmed)) return true;
     const low = text.toLowerCase();
     if (/^[\s.,]*(me enc|encantado|encantada)\b/i.test(trimmed)) return true;
     if (
@@ -1142,10 +1159,12 @@ export class CedLiveClient {
     if (isResponseAudioTranscriptDelta(type)) {
       const delta = String(msg.delta ?? "");
       this.modelTranscriptAcc += delta;
-      if (!this.outboundLocked && this.isRogueModelGreeting(this.modelTranscriptAcc)) {
-        cedRealtimeLog("response.rogue_greeting", {
+      const leak = this.isPromptInstructionLeak(this.modelTranscriptAcc);
+      if (leak || (!this.outboundLocked && this.isRogueModelGreeting(this.modelTranscriptAcc))) {
+        cedRealtimeLog(leak ? "response.prompt_leak" : "response.rogue_greeting", {
           text: this.modelTranscriptAcc.slice(0, 100),
         });
+        if (leak && this.outboundLocked) this.exactPhraseLeak = true;
         this.triggerBargeIn();
         this.modelTranscriptAcc = "";
         this.userResponseArmed = false;
@@ -1373,7 +1392,14 @@ export class CedLiveClient {
         this.postGreetingLockUntil = 0;
         this.beginSingleSpeechSlot();
         cedRealtimeLog("greeting.create", { phrase });
-        await this.speakExactPhrase(phrase, 300);
+        this.exactPhraseLeak = false;
+        await this.speakExactPhrase(phrase, 220);
+        if (this.exactPhraseLeak && !this.sendBlocked) {
+          cedRealtimeLog("greeting.retry_after_leak", { phrase });
+          this.exactPhraseLeak = false;
+          await this.sleep(400);
+          await this.speakExactPhrase(phrase, 180);
+        }
         this.flushInputAudioBuffer();
         this.endSingleSpeechSlot();
         // Ventana corta solo para eco del propio saludo; enableListeningAfterGreeting la limpia.
@@ -1394,21 +1420,32 @@ export class CedLiveClient {
   /** Una sola frase exacta — fuera del historial de conversación. */
   private async speakExactPhrase(phrase: string, maxOutputTokens = 120): Promise<void> {
     if (!this.dc || !this.sessionReady || this.sendBlocked) return;
+    const line = phrase.trim();
+    if (!line) return;
     this.outboundLocked = true;
     this.setServerAutoResponse(false);
     this.beginSingleSpeechSlot();
+    this.exactPhraseLeak = false;
     try {
       this.intentionalResponse = true;
       this.intentionalResponseActive = true;
+      // Instrucciones anti-meta: gpt-realtime-mini a menudo contestaba
+      // «sí, claro, puedo repetir exactamente…» en vez de leer la frase.
       this.send({
         type: "response.create",
         response: {
           conversation: "none",
           max_output_tokens: maxOutputTokens,
           tool_choice: "none",
-          instructions:
-            `Di EXACTAMENTE este texto en español, de corrido, palabra por palabra, sin omitir nada al final: ` +
-            `"${phrase.trim()}"`,
+          instructions: [
+            "Modo lectura en voz alta (TTS). No eres un asistente conversando.",
+            "Tu ÚNICA salida de audio debe ser exactamente la frase entre <<< >>> abajo.",
+            "PROHIBIDO: sí, claro, puedo, exactamente, como me lo dices, instrucciones,",
+            "texto, repetir, entendido, por supuesto, o cualquier comentario meta.",
+            "PROHIBIDO parafrasear, traducir, saludar extra o añadir palabras.",
+            "Si dudas, lee solo lo que está entre <<< >>>.",
+            `<<<${line}>>>`,
+          ].join("\n"),
         },
       });
       const idleMs = Math.min(55_000, 12_000 + maxOutputTokens * 45);

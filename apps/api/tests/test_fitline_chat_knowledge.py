@@ -59,7 +59,7 @@ def test_format_includes_curated_products_not_invented():
     assert "Investigando" in block or "investigando" in block.lower()
     assert "NO inventes" in block or "no inventes" in block.lower() or "NO invent" in block
     assert "módulo Oportunidades" in block
-    assert "VENDEDOR" in block or "FRANQUICIADOR" in block
+    assert "ASESOR COMERCIAL" in block or "VENDER SIN PARECER" in block
     assert "CIERRE ESTRATÉGICO" in block or "cierre" in block.lower()
     assert "search_web" in block.lower() or "Tavily" in block or "PROHIBIDO" in block
 
@@ -211,12 +211,13 @@ def test_fitline_sales_closer_is_internal_only():
     )
 
     overlay = fitline_sales_closer_overlay()
-    assert "VENDEDOR" in overlay or "FRANQUICIADOR" in overlay
+    assert "ASESOR COMERCIAL" in overlay or "VENDER SIN PARECER" in overlay
     assert "SOLO ESTE TEMA" in overlay or "ÚNICAMENTE" in overlay
     assert "search_web" in overlay.lower() or "Tavily" in overlay
     assert "PROHIBIDO" in overlay
+    assert "sin retener" in overlay.lower() or "información real" in overlay.lower()
     # Compacto: no debe ser un novelón de costo
-    assert len(overlay) < 3500
+    assert len(overlay) < 4000
 
 
 def test_voice_system_includes_sales_closer_for_fitline():
@@ -224,5 +225,20 @@ def test_voice_system_includes_sales_closer_for_fitline():
 
     format_fitline_knowledge_for_prompt.cache_clear()
     system = build_base_voice_system("user-test", "qué es FitLine")
-    assert "FRANQUICIADOR" in system or "VENDEDOR" in system
+    assert "ASESOR COMERCIAL" in system or "VENDER SIN PARECER" in system
     assert "CIERRE" in system.upper() or "cierre" in system.lower()
+
+
+def test_realtime_fitline_prompt_has_knowledge_not_jarvis():
+    from app.domain.openai_voice_prompt import build_realtime_instructions
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        format_fitline_knowledge_for_prompt,
+    )
+
+    format_fitline_knowledge_for_prompt.cache_clear()
+    text = build_realtime_instructions(voice_profile="fitline")
+    assert "FITLINE" in text.upper() or "FitLine" in text
+    assert "ANTI-FUGA" in text or "NUNCA leas" in text
+    assert "VENDER SIN PARECER" in text or "ASESOR COMERCIAL" in text
+    assert "Jarvis" not in text or "NO eres Jarvis" in text
+    assert "NTC" in text or "Nutrient Transport" in text
