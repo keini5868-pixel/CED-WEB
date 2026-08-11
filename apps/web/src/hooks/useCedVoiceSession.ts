@@ -560,6 +560,21 @@ export function useCedVoiceSession(
         await ackVoiceClientAction(action.id);
         return;
       }
+      if (action.action === "open_module") {
+        const moduleId = String(action.payload.module || "").trim();
+        if (moduleId) {
+          window.dispatchEvent(
+            new CustomEvent("ced-open-module", {
+              detail: {
+                module: moduleId,
+                opportunity_id: action.payload.opportunity_id,
+              },
+            }),
+          );
+        }
+        await ackVoiceClientAction(action.id);
+        return;
+      }
       if (action.action !== "camera_capture") return;
 
       const requestId = Number(action.payload.request_id || 0);

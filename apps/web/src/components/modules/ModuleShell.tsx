@@ -61,6 +61,17 @@ export function ModuleShell() {
   }, []);
 
   useEffect(() => {
+    const onOpen = (ev: Event) => {
+      const detail = (ev as CustomEvent<{ module?: string }>).detail;
+      const mod = detail?.module?.trim();
+      if (!mod) return;
+      if (getModuleById(mod)) openModule(mod);
+    };
+    window.addEventListener("ced-open-module", onOpen);
+    return () => window.removeEventListener("ced-open-module", onOpen);
+  }, [openModule]);
+
+  useEffect(() => {
     if (!activeId) return;
     let cancelled = false;
     const mod = getModuleById(activeId);

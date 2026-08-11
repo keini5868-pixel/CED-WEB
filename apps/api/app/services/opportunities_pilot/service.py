@@ -25,8 +25,12 @@ def list_opportunity_catalog() -> dict[str, Any]:
     }
 
 
-def get_opportunity_detail(opportunity_id: str) -> dict[str, Any]:
-    plugin = get_plugin(opportunity_id)
+def get_opportunity_detail(
+    opportunity_id: str,
+    *,
+    user_id: str | None = None,
+) -> dict[str, Any]:
+    plugin = get_plugin(opportunity_id, user_id=user_id)
     if not plugin:
         return {
             "ok": False,
@@ -50,6 +54,16 @@ def get_opportunity_detail(opportunity_id: str) -> dict[str, Any]:
         sources=sources,
     )
     detail["queries"] = queries
+    if user_id:
+        try:
+            from app.services.opportunities_pilot.fitline_action_plans import (
+                get_active_plan,
+            )
+
+            plan = get_active_plan(user_id)
+            detail["action_plan"] = plan
+        except Exception:  # noqa: BLE001
+            detail["action_plan"] = None
     logger.info(
         "[OPPS-PILOT] detail id=%s sources=%s gaps=%s sponsor=%s",
         plugin.get("id"),

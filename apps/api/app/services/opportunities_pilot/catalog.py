@@ -24,11 +24,12 @@ def list_plugins() -> list[dict[str, Any]]:
     return out
 
 
-def get_plugin(opportunity_id: str) -> dict[str, Any] | None:
-    factory = _PLUGINS.get((opportunity_id or "").strip())
+def get_plugin(opportunity_id: str, user_id: str | None = None) -> dict[str, Any] | None:
+    oid = (opportunity_id or "").strip()
+    factory = _PLUGINS.get(oid)
     if not factory:
         return None
-    plugin = factory()
+    plugin = factory(user_id=user_id) if oid == OPPORTUNITY_ID else factory()  # type: ignore[call-arg]
     if plugin.get("status") != "available":
         return None
     return plugin

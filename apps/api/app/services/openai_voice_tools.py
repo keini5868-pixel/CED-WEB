@@ -644,6 +644,81 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "name": "guardar_plan_crecimiento_franquicia",
+        "description": (
+            "Guarda o actualiza el plan de acción de crecimiento de la FRANQUICIA "
+            "FitLine/PM del usuario (metas y pasos). Usar cuando acepten armar el plan, "
+            "pidan guardar el plan, o confirmen metas/pasos. "
+            "Terminología: siempre «franquicia». Tras guardar, invita a OPPS."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "titulo": {
+                    "type": "string",
+                    "description": "Título corto del plan",
+                },
+                "metas": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Metas concretas (ej. 10 clientes este mes)",
+                },
+                "pasos": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Pasos accionables ordenados",
+                },
+                "notas": {
+                    "type": "string",
+                    "description": "Notas adicionales",
+                },
+                "horizonte": {
+                    "type": "string",
+                    "description": "Ej. 30 días, 90 días",
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "name": "consultar_plan_crecimiento_franquicia",
+        "description": (
+            "Lee el plan de crecimiento de franquicia guardado del usuario. "
+            "Usar cuando pregunten por su plan, metas o pasos guardados."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
+        "name": "abrir_oportunidades_fitline",
+        "description": (
+            "Abre el módulo Oportunidades (OPPS) en FitLine para ver el enlace de "
+            "inscripción/patrocinio y el plan. Usar cuando el usuario acepte ir a OPPS "
+            "o pida el enlace para activar su franquicia."
+        ),
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "type": "function",
+        "name": "actualizar_enlace_patrocinio_fitline",
+        "description": (
+            "Guarda el enlace de patrocinio propio del usuario en su cuenta CED. "
+            "Usar cuando diga que ya se inscribió y quiere poner SU enlace para "
+            "invitar a otros. Si pide borrar/quitar, pasa url vacía."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {
+                    "type": "string",
+                    "description": "URL completa de patrocinio, o vacío para volver al default",
+                },
+            },
+            "required": ["url"],
+        },
+    },
 ]
 
 

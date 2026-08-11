@@ -38,7 +38,10 @@ export type OpportunityDetail = {
     url?: string;
     cta_label?: string;
     configured?: boolean;
+    source?: string;
+    has_own?: boolean;
   };
+  action_plan?: FitlineActionPlan | null;
   sections?: OpportunitySection[];
   sources?: {
     curated?: Array<{ title?: string; url?: string }>;
@@ -49,6 +52,31 @@ export type OpportunityDetail = {
   production?: boolean;
 };
 
+export type FitlineActionPlan = {
+  id?: string;
+  title?: string;
+  status?: string;
+  content?: {
+    goals?: string[];
+    steps?: string[];
+    notes?: string;
+    horizon?: string;
+    franchise_focus?: string;
+  };
+  updated_at?: string;
+};
+
+export type FitlineSponsorInfo = {
+  ok?: boolean;
+  url?: string;
+  configured?: boolean;
+  source?: string;
+  has_own?: boolean;
+  has_default?: boolean;
+  cta_label?: string;
+  saved_url?: string;
+};
+
 function jsonHeaders(): Record<string, string> {
   return { "Content-Type": "application/json" };
 }
@@ -56,6 +84,8 @@ function jsonHeaders(): Record<string, string> {
 export async function fetchOpportunitiesPilotStatus(): Promise<{
   enabled: boolean;
   sponsor_url_configured?: boolean;
+  sponsor?: FitlineSponsorInfo;
+  has_action_plan?: boolean;
 } | null> {
   try {
     const res = await proxyFetchAuthed("opportunities-pilot/status", {
@@ -65,10 +95,60 @@ export async function fetchOpportunitiesPilotStatus(): Promise<{
     return (await res.json()) as {
       enabled: boolean;
       sponsor_url_configured?: boolean;
+      sponsor?: FitlineSponsorInfo;
+      has_action_plan?: boolean;
     };
   } catch {
     return null;
   }
+}
+
+export async function fetchFitlineSponsor(): Promise<FitlineSponsorInfo> {
+  const res = await proxyFetchAuthed("opportunities-pilot/sponsor", {
+    headers: jsonHeaders(),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  return (await res.json()) as FitlineSponsorInfo;
+}
+
+export async function saveFitlineSponsor(url: string): Promise<FitlineSponsorInfo> {
+  const res = await proxyFetchAuthed("opportunities-pilot/sponsor", {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify({ url }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || `Error ${res.status}`);
+  }
+  return (await res.json()) as FitlineSponsorInfo;
+}
+
+export async function fetchFitlineActionPlan(): Promise<{
+  plan: FitlineActionPlan | null;
+}> {
+  const res = await proxyFetchAuthed("opportunities-pilot/action-plan", {
+    headers: jsonHeaders(),
+  });
+  if (!res.ok) throw new Error(`Error ${res.status}`);
+  const data = (await res.json()) as { plan?: FitlineActionPlan | null };
+  return { plan: data.plan ?? null };
+}
+
+export async function saveFitlineActionPlan(body: {
+  title?: string;
+  content?: FitlineActionPlan["content"];
+}): Promise<{ plan: FitlineActionPlan }> {
+  const res = await proxyFetchAuthed("opportunities-pilot/action-plan", {
+    method: "PUT",
+    headers: jsonHeaders(),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || `Error ${res.status}`);
+  }
+  return (await res.json()) as { plan: FitlineActionPlan };
 }
 
 export async function fetchOpportunitiesCatalog(): Promise<OpportunitySummary[]> {

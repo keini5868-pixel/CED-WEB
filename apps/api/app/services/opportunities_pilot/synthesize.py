@@ -122,8 +122,10 @@ def build_opportunity_detail(
         "sponsorship": {
             "url": sponsorship.get("url") or "",
             "cta_label": sponsorship.get("cta_label")
-            or "Activar su negocio (paquete manager)",
+            or "Activar su franquicia (paquete manager)",
             "configured": bool(sponsorship.get("configured")),
+            "source": sponsorship.get("source") or "none",
+            "has_own": bool(sponsorship.get("has_own")),
         },
         "sections": sections_out,
         "sources": {

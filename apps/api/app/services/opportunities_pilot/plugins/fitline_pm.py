@@ -13,19 +13,22 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.config import get_settings
-
 OPPORTUNITY_ID = "fitline_pm"
 
 _CURATED_AS_OF = "2026-08-10-catalog"
 
 
-def _sponsorship_url() -> str:
-    return (get_settings().opportunities_fitline_sponsor_url or "").strip()
+def _sponsorship_url(user_id: str | None = None) -> str:
+    from app.services.opportunities_pilot.fitline_sponsor import resolve_sponsor_url
+
+    return str(resolve_sponsor_url(user_id).get("url") or "")
 
 
-def fitline_pm_plugin() -> dict[str, Any]:
-    sponsor = _sponsorship_url()
+def fitline_pm_plugin(user_id: str | None = None) -> dict[str, Any]:
+    from app.services.opportunities_pilot.fitline_sponsor import resolve_sponsor_url
+
+    sponsor_info = resolve_sponsor_url(user_id)
+    sponsor = str(sponsor_info.get("url") or "")
     return {
         "id": OPPORTUNITY_ID,
         "title": "PM International / FitLine",
@@ -46,8 +49,11 @@ def fitline_pm_plugin() -> dict[str, Any]:
         },
         "sponsorship": {
             "url": sponsor,
-            "cta_label": "Activar su negocio (paquete manager)",
+            "cta_label": sponsor_info.get("cta_label")
+            or "Activar su franquicia (paquete manager)",
             "configured": bool(sponsor),
+            "source": sponsor_info.get("source") or "none",
+            "has_own": bool(sponsor_info.get("has_own")),
         },
         "curated": {
             "as_of": _CURATED_AS_OF,

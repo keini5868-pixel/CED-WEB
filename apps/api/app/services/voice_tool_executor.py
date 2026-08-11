@@ -1148,6 +1148,114 @@ async def _execute_voice_tool_body(
                 f"{saved.get('currency', 'USD')}{cat_txt}."
             )
 
+        if name == "guardar_plan_crecimiento_franquicia":
+            from app.services.opportunities_pilot.fitline_action_plans import (
+                build_plan_content_from_voice,
+                format_plan_spoken,
+                upsert_active_plan,
+            )
+
+            metas = params.get("metas") or params.get("goals") or []
+            pasos = params.get("pasos") or params.get("steps") or []
+            if isinstance(metas, str):
+                metas = [metas]
+            if isinstance(pasos, str):
+                pasos = [pasos]
+            content = build_plan_content_from_voice(
+                metas=list(metas) if isinstance(metas, list) else [],
+                pasos=list(pasos) if isinstance(pasos, list) else [],
+                notas=str(params.get("notas") or params.get("notes") or "") or None,
+                horizonte=str(params.get("horizonte") or params.get("horizon") or "") or None,
+            )
+            titulo = str(params.get("titulo") or params.get("title") or "").strip() or None
+            saved = await asyncio.to_thread(
+                upsert_active_plan,
+                user_id,
+                title=titulo,
+                content=content,
+                merge_content=True,
+            )
+            if not saved.get("ok"):
+                return _spoken_err(
+                    "No pude guardar el plan de tu franquicia ahora. Reintenta en un momento.",
+                    error=str(saved.get("error") or "plan_save_failed"),
+                )
+            vcs.push_client_action(
+                user_id,
+                "open_module",
+                {"module": "opportunities", "opportunity_id": "fitline_pm"},
+            )
+            spoken = (
+                "Listo: guardé el plan de crecimiento de tu franquicia. "
+                "Ábrelo en Oportunidades, sección OPPS, y al final encontrarás el "
+                "enlace para activar o compartir tu franquicia."
+            )
+            payload = _spoken_ok(spoken)
+            payload["plan"] = saved.get("plan")
+            payload["client_action"] = "open_module"
+            return payload
+
+        if name == "consultar_plan_crecimiento_franquicia":
+            from app.services.opportunities_pilot.fitline_action_plans import (
+                format_plan_spoken,
+                get_active_plan,
+            )
+
+            plan = await asyncio.to_thread(get_active_plan, user_id)
+            payload = _spoken_ok(format_plan_spoken(plan))
+            payload["plan"] = plan
+            return payload
+
+        if name == "abrir_oportunidades_fitline":
+            from app.services.opportunities_pilot.fitline_sponsor import resolve_sponsor_url
+
+            sponsor = resolve_sponsor_url(user_id)
+            vcs.push_client_action(
+                user_id,
+                "open_module",
+                {"module": "opportunities", "opportunity_id": "fitline_pm"},
+            )
+            if sponsor.get("configured"):
+                spoken = (
+                    "Te abro Oportunidades. Ahí está FitLine y el enlace para "
+                    "activar tu franquicia. Si ya te inscribiste, puedes poner "
+                    "tu propio enlace de patrocinio en esa misma sección."
+                )
+            else:
+                spoken = (
+                    "Te abro Oportunidades con la ficha FitLine. "
+                    "El enlace de patrocinio aún no está configurado en el sistema."
+                )
+            payload = _spoken_ok(spoken)
+            payload["client_action"] = "open_module"
+            payload["sponsor"] = sponsor
+            return payload
+
+        if name == "actualizar_enlace_patrocinio_fitline":
+            from app.services.opportunities_pilot.fitline_sponsor import (
+                update_user_sponsor_url,
+            )
+
+            url = str(params.get("url") or "").strip()
+            result = await asyncio.to_thread(update_user_sponsor_url, user_id, url)
+            if not result.get("ok"):
+                return _spoken_err(
+                    "No pude guardar tu enlace de patrocinio. Verifica que sea una URL válida.",
+                    error=str(result.get("error") or "sponsor_save_failed"),
+                )
+            if result.get("has_own"):
+                spoken = (
+                    "Listo: guardé tu enlace de patrocinio. "
+                    "Cuando invites a nuevas personas desde CED, se usará el tuyo."
+                )
+            else:
+                spoken = (
+                    "Quité tu enlace personal. Volverá a usarse el enlace por defecto de CED."
+                )
+            payload = _spoken_ok(spoken)
+            payload["sponsor"] = result
+            return payload
+
         if name == "consultar_pagos_pendientes":
             from app.services.finance_ledger import (
                 format_pending_spoken,
