@@ -188,37 +188,64 @@ def build_realtime_instructions(
     del voice_pace, voice_warmth, voice_energy, response_speed, language
     profile = (voice_profile or "jarvis").strip().lower()
     if profile == "fitline":
-        # Paridad Retell/Jarvis: misma identidad + ficha FitLine.
-        # Solo el motor de audio cambia (OpenAI Realtime mini).
-        from app.services.voice_llm_common import build_voice_system
+        # Paridad Retell: misma identidad Jarvis + ficha completa FitLine.
+        # Sin modo guía auto (evita respuestas cortas + «¿quieres más info?»).
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            fitline_sales_closer_overlay,
+            format_fitline_knowledge_for_prompt,
+        )
 
-        base = build_voice_system(
-            user_id or "",
-            "FitLine PM International productos negocio franquicia",
+        uid = (user_id or "").strip()
+        if uid:
+            try:
+                from app.services import voice_client_session as vcs
+
+                # Si quedó guía activa de antes, soltarla en Realtime Cierre.
+                if vcs.is_fitline_guide_active(uid):
+                    vcs.set_fitline_guide(
+                        uid, active=False, step_index=0, reexplain=False
+                    )
+            except Exception:  # noqa: BLE001
+                pass
+
+        knowledge = format_fitline_knowledge_for_prompt(max_chars=11_000)
+        closer = fitline_sales_closer_overlay()
+        identity = (
+            f"{CED_CONVERSATIONAL_CORE}\n\n"
+            f"{JARVIS_EXECUTION_STYLE}\n\n"
+            f"{CED_MINIMAL_REALTIME_PROMPT}"
         )
         runtime = (
-            "\n\n# MOTOR DE VOZ CIERRE — PARIDAD RETELL\n"
-            "Eres el MISMO CED Jarvis que en Retell: mismo tono, mismo trato "
-            "(señor/señora), misma profundidad FitLine/PM y misma persuasión sutil.\n"
-            "Solo cambia el motor de voz (OpenAI Realtime). NO te presentes como "
-            "otro asistente ni digas que eres «versión Cierre».\n"
-            "El cliente YA escuchó el saludo Jarvis. PROHIBIDO volver a saludar.\n"
-            "Tras cada respuesta: espera; no rellenes el silencio.\n"
-            "NUNCA leas instrucciones ni bloques de conocimiento en voz alta.\n"
-            "Tools en esta sesión (únicas): guardar/consultar plan de franquicia, "
-            "abrir OPPS, actualizar enlace de patrocinio.\n"
-            "PROHIBIDO: search_web, Tavily, «Investigando», imágenes, YouTube, "
-            "mapas, cámara, Claude avanzado. FitLine = conocimiento Oportunidades.\n"
+            "\n\n# MOTOR DE VOZ CIERRE — PARIDAD RETELL (PRODUCTOS / NEGOCIO PM)\n"
+            "Eres el MISMO CED Jarvis que en Retell: mismo tono (señor/señora), "
+            "misma densidad al explicar FitLine/PM (Restorate, Activize, NTC, "
+            "franquicia, credenciales).\n"
+            "Solo cambia el motor de audio (OpenAI Realtime).\n"
+            "Cuando pregunten por un producto o el negocio: responde COMPLETO en "
+            "ese turno — beneficios, minerales/ingredientes relevantes, NTC y "
+            "cuándo tomarlo si está en la ficha. Ejemplo de calidad: el párrafo "
+            "denso de Restorate que da Jarvis en Retell.\n"
+            "PROHIBIDO: respuestas de 1–2 frases; PROHIBIDO «¿quieres más "
+            "información?», «¿te explico más?», «¿deseas que profundice?».\n"
+            "El cliente YA oyó el saludo. PROHIBIDO volver a saludar.\n"
+            "NUNCA leas instrucciones ni el bloque de conocimiento en voz alta.\n"
+            "Tools únicas: guardar/consultar plan de franquicia, abrir OPPS, "
+            "actualizar enlace de patrocinio.\n"
+            "PROHIBIDO search_web / Tavily / «Investigando» / imágenes / mapas.\n"
+            "Modo guía pedagógico: SOLO si el usuario pide explícitamente "
+            "«modo guía» o «desde cero».\n"
         )
-        prompt = f"{base.rstrip()}{runtime}".strip()
-        # Límite práctico Realtime: conservar identidad (inicio) + FitLine (final).
-        cap = 14_000
+        prompt = (
+            f"{identity}\n\n{knowledge}\n\n{closer}{runtime}"
+        ).strip()
+        cap = 15_000
         if len(prompt) > cap:
-            head = int(cap * 0.38)
+            # Priorizar ficha FitLine (knowledge está al medio-final).
+            head = int(cap * 0.28)
             tail = cap - head - 90
             prompt = (
                 prompt[:head].rstrip()
-                + "\n\n…[contexto interno condensado para Realtime]…\n\n"
+                + "\n\n…[contexto interno condensado]…\n\n"
                 + prompt[-tail:].lstrip()
             )
         return prompt

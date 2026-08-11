@@ -239,10 +239,10 @@ def test_realtime_fitline_prompt_has_knowledge_not_jarvis():
     text = build_realtime_instructions(voice_profile="fitline")
     assert "FITLINE" in text.upper() or "FitLine" in text
     assert "PARIDAD RETELL" in text or "MOTOR DE VOZ CIERRE" in text
-    assert "Jarvis" in text  # misma identidad que Retell
-    assert "search_web" in text.lower() or "Tavily" in text or "PROHIBIDO" in text
-    assert "NTC" in text or "Nutrient Transport" in text or "FitLine" in text
-    assert "HECHOS OBLIGATORIOS" in text or "CONOCIMIENTO CURADO" in text or "FitLine" in text
+    assert "Jarvis" in text
+    assert "Restorate" in text or "RESTORATE" in text.upper() or "NTC" in text
+    assert "más información" in text.lower()  # ban listed in prompt
+    assert "PROHIBIDO" in text
     assert len(text) > 4000
-    assert len(text) <= 14500
+    assert len(text) <= 15500
 

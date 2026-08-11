@@ -224,12 +224,20 @@ def user_plan_is_fitline_focus(user_id: str) -> bool:
         return False
 
 
-def should_auto_start_fitline_guide(user_id: str, user_text: str) -> bool:
-    """Auto-guía para socios nuevos en plan Cierre/FitLine (funnel pedagógico).
+def should_auto_start_fitline_guide(
+    user_id: str,
+    user_text: str,
+    *,
+    channel: str = "chat",
+) -> bool:
+    """Auto-guía pedagógica — chat sí; voz no (paridad Retell en productos/negocio).
 
-    En otros planes solo arranca con frases explícitas de «modo guía» /
-    «desde cero» (manejadas aparte en prepare_fitline_guide_turn).
+    En voz Cierre/Realtime el socio debe oír la misma densidad Jarvis que Retell
+    al preguntar por Restorate/NTC/negocio. Modo guía solo con frase explícita
+    («modo guía», «desde cero», etc.).
     """
+    if (channel or "chat").strip().lower() == "voice":
+        return False
     uid = (user_id or "").strip()
     if not uid or is_fitline_admin_user(uid):
         return False
@@ -320,7 +328,7 @@ def prepare_fitline_guide_turn(
         }
 
     if not vcs.is_fitline_guide_active(uid):
-        if should_auto_start_fitline_guide(uid, text):
+        if should_auto_start_fitline_guide(uid, text, channel=channel):
             activate_fitline_guide(uid)
             return {
                 "active": True,
@@ -461,4 +469,4 @@ def wants_fitline_guide_context(user_id: str, user_text: str) -> bool:
         return True
     if (user_id or "").strip() and vcs.is_fitline_guide_active(user_id):
         return True
-    return should_auto_start_fitline_guide(user_id, user_text)
+    return should_auto_start_fitline_guide(user_id, user_text, channel="chat")

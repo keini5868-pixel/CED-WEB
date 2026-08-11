@@ -33,7 +33,12 @@ def test_auto_guide_for_cierre_non_admin(monkeypatch):
     vcs.clear_fitline_guide(USER)
     vcs.set_fitline_guide_opt_out(USER, False)
 
-    st = prepare_fitline_guide_turn(USER, "hola qué es FitLine", channel="voice")
+    # Voz: sin auto-guía (paridad Retell en productos).
+    st_voice = prepare_fitline_guide_turn(USER, "hola qué es FitLine", channel="voice")
+    assert st_voice.get("active") is not True
+
+    # Chat: sí auto-guía para socio nuevo Cierre.
+    st = prepare_fitline_guide_turn(USER, "hola qué es FitLine", channel="chat")
     assert st.get("active") is True
     assert st.get("just_activated") is True
     assert st.get("auto") is True
