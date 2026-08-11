@@ -5,6 +5,7 @@ import { BibleVerseTicker } from "@/components/hud/BibleVerseTicker";
 import { ConnectNetworksButton } from "@/components/hud/ConnectNetworksButton";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { DriveModeLink } from "@/components/navigation/DriveModeLink";
+import { CierrePartnerPreviewToggle } from "@/components/preview/CierrePartnerPreviewBanner";
 
 interface HudShellProps {
   children: React.ReactNode;
@@ -59,6 +60,7 @@ export function HudShell({ children, email, isSuperAdmin }: HudShellProps) {
               Historial
             </Link>
             <AdminPanelButton visible={isSuperAdmin} />
+            <CierrePartnerPreviewToggle visible={isSuperAdmin} />
             <ConnectNetworksButton />
             {email ? (
               <span className="ced-hud-text-body hidden max-w-[180px] truncate text-xs lg:inline">
