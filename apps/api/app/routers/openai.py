@@ -23,6 +23,49 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/v1/openai", tags=["openai"])
 
 
+def _allow_openai_realtime(
+    user_id: str,
+    balance: dict,
+    *,
+    voice_profile: str | None = None,
+) -> bool:
+    """Abre Realtime para Cierre/FitLine aunque VOICE_PROVIDER=retell.
+
+    Casos:
+    - Plan Cierre (o transporte/stack ya marcado openai/gemini)
+    - Preview admin «socio Cierre»
+    - Admin pidiendo voice_profile=fitline (UI PM / preview a veces sin ContextVar)
+    """
+    settings = get_settings()
+    if settings.voice_provider == "openai":
+        return True
+
+    from app.domain.plans import plan_uses_gemini_voice_stack
+    from app.services.preview_persona import (
+        is_cierre_partner_preview,
+        user_may_use_preview,
+    )
+
+    plan_id = str(balance.get("plan_id") or "")
+    if plan_uses_gemini_voice_stack(plan_id):
+        return True
+    if str(balance.get("voice_transport") or "").strip().lower() == "openai":
+        return True
+    if str(balance.get("voice_stack") or "").strip().lower() == "gemini":
+        return True
+    if is_cierre_partner_preview(user_id):
+        return True
+
+    profile = (voice_profile or "").strip().lower()
+    if profile == "fitline" and user_may_use_preview(user_id):
+        logger.info(
+            "[REALTIME] allow fitline profile for admin user=%s",
+            (user_id or "")[:8],
+        )
+        return True
+    return False
+
+
 class RealtimeSessionBody(BaseModel):
     voice_name: str | None = Field(default=None, alias="voiceName")
     language: str | None = Field(default="es")
@@ -55,18 +98,13 @@ async def realtime_session(
     user_id: str = Depends(require_user_id),
 ) -> dict:
     """Sesión efímera OpenAI Realtime — verifica límites duros antes de conectar."""
-    from app.domain.plans import plan_uses_gemini_voice_stack
-
     balance = await voice_access_state_async(user_id)
-    plan_id = str(balance.get("plan_id") or "")
-    from app.services.preview_persona import is_cierre_partner_preview
-
-    preview_cierre = is_cierre_partner_preview(user_id)
-    fitline_stack = plan_uses_gemini_voice_stack(plan_id) or preview_cierre
-    settings = get_settings()
+    requested_profile = (
+        (body.voice_profile if body and body.voice_profile else "") or ""
+    ).strip().lower()
     # FitLine/Cierre siempre puede usar este transporte (sin Jarvis).
     # El resto solo si VOICE_PROVIDER=openai.
-    if settings.voice_provider != "openai" and not fitline_stack:
+    if not _allow_openai_realtime(user_id, balance, voice_profile=requested_profile):
         return {
             "ok": False,
             "error": "OpenAI Realtime deshabilitado. Voz activa vía Retell.",
@@ -97,12 +135,24 @@ async def realtime_session(
     pace = max(0, min(100, int(body.voice_pace if body and body.voice_pace is not None else 38)))
     warmth = max(0, min(100, int(body.voice_warmth if body and body.voice_warmth is not None else 42)))
     energy = max(0, min(100, int(body.voice_energy if body and body.voice_energy is not None else 38)))
-    if fitline_stack:
+    fitline_mode = (
+        requested_profile == "fitline"
+        or plan_uses_gemini_voice_stack_safe(balance)
+        or str(balance.get("voice_stack") or "").lower() == "gemini"
+    )
+    try:
+        from app.services.preview_persona import is_cierre_partner_preview
+
+        if is_cierre_partner_preview(user_id):
+            fitline_mode = True
+    except Exception:  # noqa: BLE001
+        pass
+    if fitline_mode:
         # Sin branding Jarvis — voz masculina profesional para FitLine/Cierre.
         profile = "fitline"
         voice = voice or "cedar"
     else:
-        profile = (body.voice_profile if body and body.voice_profile else "jarvis").strip().lower()
+        profile = requested_profile or "jarvis"
         if profile not in ("standard", "jarvis", "fitline"):
             profile = "jarvis"
     result = await asyncio.to_thread(
@@ -125,6 +175,12 @@ async def realtime_session(
     return result
 
 
+def plan_uses_gemini_voice_stack_safe(balance: dict) -> bool:
+    from app.domain.plans import plan_uses_gemini_voice_stack
+
+    return plan_uses_gemini_voice_stack(str(balance.get("plan_id") or ""))
+
+
 @router.post("/realtime/calls", response_model=None)
 async def realtime_calls(
     request: Request,
@@ -132,11 +188,8 @@ async def realtime_calls(
     user_id: str = Depends(require_user_id),
 ):
     """Negocia WebRTC SDP con OpenAI usando token efímero (proxy anti-CORS)."""
-    from app.domain.plans import plan_uses_gemini_voice_stack
-
     balance = await voice_access_state_async(user_id)
-    fitline_stack = plan_uses_gemini_voice_stack(str(balance.get("plan_id") or ""))
-    if get_settings().voice_provider != "openai" and not fitline_stack:
+    if not _allow_openai_realtime(user_id, balance, voice_profile="fitline"):
         return JSONResponse(
             status_code=503,
             content={
@@ -150,7 +203,6 @@ async def realtime_calls(
     if not result.get("ok"):
         return JSONResponse(status_code=400, content=result)
     return PlainTextResponse(content=str(result["sdpAnswer"]), media_type="application/sdp")
-
 
 def _warning_level(pct: float) -> str | None:
     if pct >= 100:

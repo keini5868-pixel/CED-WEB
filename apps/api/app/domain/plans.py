@@ -264,12 +264,18 @@ PLAN_LABELS: dict[str, str] = {
 
 def normalize_plan_id(plan_id: str | None) -> str:
     pid = (plan_id or PlanId.FREE_BASIC.value).strip()
+    low = pid.lower().replace(" ", "_").replace("-", "_")
+    # Alias frecuentes (Stripe metadata / labels).
+    if low in ("cierre", "ced_cierre", "fitline", "pm_cierre", "pm_international"):
+        return PlanId.CIERRE.value
     if pid == PlanId.ELITE_FOUNDING.value:
         return PlanId.FOUNDING.value
     if pid == PlanId.ELITE_REGULAR.value:
         return PlanId.ELITE.value
     if pid in PLAN_LIMITS:
         return pid
+    if low in PLAN_LIMITS:
+        return low
     return PlanId.FREE_BASIC.value
 
 

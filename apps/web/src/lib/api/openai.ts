@@ -1,5 +1,5 @@
 import { parseApiJson } from "@/lib/api/http";
-import { proxyFetch } from "@/lib/api/ced-proxy";
+import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 import type { UserAddressContext } from "@/lib/api/profile";
 import type { VoiceSessionPreferences } from "@ced/types";
 
@@ -32,7 +32,7 @@ export async function negotiateRealtimeCall(
 ): Promise<RealtimeCallResponse> {
   let response: Response;
   try {
-    response = await proxyFetch("openai/realtime/calls", {
+    response = await proxyFetchAuthed("openai/realtime/calls", {
       method: "POST",
       headers: {
         "Content-Type": "application/sdp",
@@ -83,7 +83,7 @@ export async function fetchRealtimeSession(
   if (options?.voiceEnergy !== undefined) body.voiceEnergy = options.voiceEnergy;
   if (options?.voiceProfile) body.voiceProfile = options.voiceProfile;
   try {
-    response = await proxyFetch("openai/realtime/session", {
+    response = await proxyFetchAuthed("openai/realtime/session", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(Object.keys(body).length ? body : {}),
