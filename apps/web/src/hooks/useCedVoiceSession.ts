@@ -240,7 +240,7 @@ export function useCedVoiceSession(
 ) {
   const voiceRouteRef = useRef(voiceRoute);
   voiceRouteRef.current = voiceRoute;
-  const useRetell = () => isRetellVoice(voiceRouteRef.current);
+  const retellActive = () => isRetellVoice(voiceRouteRef.current);
 
   const isFitlineStack = () => {
     const r = voiceRouteRef.current;
@@ -408,7 +408,7 @@ export function useCedVoiceSession(
   );
 
   useEffect(() => {
-    if (!useRetell()) return;
+    if (!retellActive()) return;
     void warmupRetellVoiceApi();
   }, []);
 
@@ -815,13 +815,13 @@ export function useCedVoiceSession(
   const [retellInputLevel, setRetellInputLevel] = useState(0);
   const inputLevelFromMic = useAudioAnalyser(
     micStream,
-    micOn && !paused && !useRetell(),
+    micOn && !paused && !retellActive(),
   );
   const inputLevelRef = useRef(0);
   useEffect(() => {
-    inputLevelRef.current = useRetell() ? retellInputLevel : inputLevelFromMic;
+    inputLevelRef.current = retellActive() ? retellInputLevel : inputLevelFromMic;
   }, [retellInputLevel, inputLevelFromMic]);
-  const inputLevel = useRetell() ? retellInputLevel : inputLevelFromMic;
+  const inputLevel = retellActive() ? retellInputLevel : inputLevelFromMic;
   const audioLevel =
     orbState === "listening"
       ? inputLevel
@@ -955,7 +955,7 @@ export function useCedVoiceSession(
     if (sessionMediaPreauthRef.current) {
       return sessionMediaPreauthRef.current;
     }
-    if (!navigator.mediaDevices?.getUserMedia || useRetell()) {
+    if (!navigator.mediaDevices?.getUserMedia || retellActive()) {
       return Promise.resolve();
     }
 
@@ -1197,7 +1197,7 @@ export function useCedVoiceSession(
     try {
       await preauth;
 
-      if (!useRetell() && !micStreamRef.current) {
+      if (!retellActive() && !micStreamRef.current) {
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             channelCount: 1,
@@ -1215,7 +1215,7 @@ export function useCedVoiceSession(
       saveMicPreference(true);
 
       setStatusLabel(
-        useRetell()
+        retellActive()
           ? isRetellNativePilot()
             ? "Piloto nativo — conectando…"
             : "Conectando con CED…"
@@ -1224,7 +1224,7 @@ export function useCedVoiceSession(
 
       const [voiceSession] = await Promise.all([
         startVoiceSession(),
-        useRetell() ? warmupRetellVoiceApi() : Promise.resolve(),
+        retellActive() ? warmupRetellVoiceApi() : Promise.resolve(),
       ]);
       usageSessionRef.current = voiceSession.session_id;
       conversationRef.current = voiceSession.conversation_id;
@@ -1250,7 +1250,7 @@ export function useCedVoiceSession(
       }
       onUsageRefresh?.();
 
-      let startRetell = useRetell();
+      let startRetell = retellActive();
       if (startRetell) {
         isRetellSessionRef.current = true;
         setVoiceSessionActive(true);
