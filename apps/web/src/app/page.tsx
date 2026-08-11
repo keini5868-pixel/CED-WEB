@@ -27,12 +27,6 @@ const PLAN_STYLES: Record<
   string,
   { border: string; glow: string; badge?: string; badgeClass?: string }
 > = {
-  cierre: {
-    border: "border-emerald-500/40",
-    glow: "hover:border-emerald-400/65 hover:shadow-[0_0_24px_rgba(16,185,129,0.12)]",
-    badge: "PM / FITLINE",
-    badgeClass: "bg-emerald-500/20 text-emerald-300",
-  },
   starter: {
     border: "border-cyan-500/35",
     glow: "hover:border-cyan-400/60",
@@ -138,7 +132,7 @@ export default function HomePage() {
         <h2 className="mb-6 text-center font-[family-name:var(--font-orbitron)] text-sm tracking-[0.2em] text-cyan-400">
           Planes
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {PUBLIC_PLANS.filter((p) => p.id !== "free_basic").map((plan) => {
             const style = PLAN_STYLES[plan.id] ?? PLAN_STYLES.starter!;
             const isFounding = plan.id === "founding";
@@ -157,7 +151,6 @@ export default function HomePage() {
                   </span>
                 )}
                 <p className="font-[family-name:var(--font-orbitron)] text-[10px] tracking-[0.2em] text-cyan-500">
-                  {plan.id === "cierre" && "🎯 CIERRE"}
                   {plan.id === "starter" && "🥉 STARTER"}
                   {plan.id === "pro" && "🥈 PRO"}
                   {plan.id === "elite" && "🥇 ÉLITE"}
@@ -181,24 +174,14 @@ export default function HomePage() {
                   ))}
                 </ul>
                 <Link
-                  href={
-                    plan.id === "cierre"
-                      ? "/signup?offer=cierre"
-                      : `/pricing?plan=${plan.id}`
-                  }
+                  href={`/pricing?plan=${plan.id}`}
                   className={`mt-5 block rounded border py-2.5 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider transition ${
                     isFounding
                       ? "border-amber-400/70 text-amber-200 hover:bg-amber-400/10"
-                      : plan.id === "cierre"
-                        ? "border-emerald-400/70 text-emerald-200 hover:bg-emerald-400/10"
-                        : "border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10"
+                      : "border-cyan-400/60 text-cyan-300 hover:bg-cyan-400/10"
                   }`}
                 >
-                  {isFounding
-                    ? "RESERVAR CUPO"
-                    : plan.id === "cierre"
-                      ? "PROBAR 24 H GRATIS"
-                      : "SUSCRIBIRME"}
+                  {isFounding ? "RESERVAR CUPO" : "SUSCRIBIRME"}
                 </Link>
               </div>
             );

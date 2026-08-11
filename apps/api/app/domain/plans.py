@@ -97,7 +97,6 @@ PLAN_PRICES_USD: dict[str, int] = {
 
 STRIPE_CHECKOUT_PLANS = frozenset(
     {
-        PlanId.CIERRE.value,
         PlanId.STARTER.value,
         PlanId.PRO.value,
         PlanId.ELITE.value,
@@ -105,9 +104,9 @@ STRIPE_CHECKOUT_PLANS = frozenset(
     }
 )
 
-# Planes con stack de voz económico (sin Retell/Jarvis).
-PLAN_VOICE_STACK_GEMINI = frozenset({PlanId.CIERRE.value})
-# Foco comercial PM International / FitLine.
+# Vacío: stack OpenAI Realtime / Cierre $20 retirado — todos usan Retell.
+PLAN_VOICE_STACK_GEMINI = frozenset()
+# Foco comercial PM International / FitLine (conocimiento en Retell vía append_fitline).
 PLAN_PM_FITLINE_FOCUS = frozenset({PlanId.CIERRE.value})
 
 
@@ -288,14 +287,14 @@ def plan_minutes_daily(plan_id: str | None) -> int:
 
 
 def plan_uses_gemini_voice_stack(plan_id: str | None) -> bool:
-    """True si el plan usa voz económica (sin Retell/Jarvis)."""
-    return normalize_plan_id(plan_id) in PLAN_VOICE_STACK_GEMINI
+    """Deprecated: voz económica Cierre desactivada — todos usan Retell Jarvis."""
+    del plan_id
+    return False
 
 
 def plan_voice_transport(plan_id: str | None) -> str:
-    """Transporte de audio: ``openai`` (FitLine/Cierre) o ``retell`` (Jarvis premium)."""
-    if plan_uses_gemini_voice_stack(plan_id):
-        return "openai"
+    """Transporte de audio: siempre Retell Jarvis (plan $20/OpenAI Realtime retirado)."""
+    del plan_id
     return "retell"
 
 

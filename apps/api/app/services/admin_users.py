@@ -481,7 +481,7 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
 
 def get_user_access(user_id: str) -> tuple[bool, str, int]:
     """Acceso activo + minutos diarios del plan."""
-    from app.deps.auth import is_super_admin
+    from app.deps.auth import is_staff_admin
     from app.domain.plans import (
         TRIAL_VOICE_MINUTES_PER_DAY,
         PlanId,
@@ -495,15 +495,9 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
     profile = supabase_db.get_profile(user_id)
     email = (profile or {}).get("email")
     role = (profile or {}).get("role")
-    if is_super_admin(email, role if role == "super_admin" else None):
-        minutes = supabase_db.get_usage_limit_minutes(user_id)
-        if minutes <= 0:
-            sub = supabase_db.get_subscription(user_id)
-            plan_id = normalize_plan_id((sub or {}).get("plan_id")) if sub else PlanId.ELITE.value
-            minutes = plan_minutes_daily(plan_id)
-            if minutes <= 0:
-                minutes = 120
-        return True, "ok", minutes
+    # Admin / coadmin / super_admin: sin límite práctico de minutos (no corta la llamada).
+    if is_staff_admin(email, role if isinstance(role, str) else None):
+        return True, "ok", 99_999
 
     supabase_db.expire_trial_if_needed(user_id)
     sub = supabase_db.get_subscription(user_id)

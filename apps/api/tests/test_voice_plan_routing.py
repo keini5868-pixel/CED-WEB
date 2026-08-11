@@ -1,4 +1,4 @@
-"""Ruteo de voz: cierre/FitLine → openai (sin Jarvis); premium → retell."""
+"""Ruteo de voz: todos los planes → Retell Jarvis (stack Cierre/OpenAI retirado)."""
 
 from __future__ import annotations
 
@@ -9,9 +9,9 @@ from app.domain.plans import (
 )
 
 
-def test_cierre_uses_gemini_stack_and_openai_transport():
-    assert plan_uses_gemini_voice_stack(PlanId.CIERRE.value) is True
-    assert plan_voice_transport(PlanId.CIERRE.value) == "openai"
+def test_cierre_uses_retell_like_premium():
+    assert plan_uses_gemini_voice_stack(PlanId.CIERRE.value) is False
+    assert plan_voice_transport(PlanId.CIERRE.value) == "retell"
 
 
 def test_premium_plans_use_retell_jarvis():

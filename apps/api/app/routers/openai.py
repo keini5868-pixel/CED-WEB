@@ -29,41 +29,9 @@ def _allow_openai_realtime(
     *,
     voice_profile: str | None = None,
 ) -> bool:
-    """Abre Realtime para Cierre/FitLine aunque VOICE_PROVIDER=retell.
-
-    Casos:
-    - Plan Cierre (o transporte/stack ya marcado openai/gemini)
-    - Preview admin «socio Cierre»
-    - Admin pidiendo voice_profile=fitline (UI PM / preview a veces sin ContextVar)
-    """
-    settings = get_settings()
-    if settings.voice_provider == "openai":
-        return True
-
-    from app.domain.plans import plan_uses_gemini_voice_stack
-    from app.services.preview_persona import (
-        is_cierre_partner_preview,
-        user_may_use_preview,
-    )
-
-    plan_id = str(balance.get("plan_id") or "")
-    if plan_uses_gemini_voice_stack(plan_id):
-        return True
-    if str(balance.get("voice_transport") or "").strip().lower() == "openai":
-        return True
-    if str(balance.get("voice_stack") or "").strip().lower() == "gemini":
-        return True
-    if is_cierre_partner_preview(user_id):
-        return True
-
-    profile = (voice_profile or "").strip().lower()
-    if profile == "fitline" and user_may_use_preview(user_id):
-        logger.info(
-            "[REALTIME] allow fitline profile for admin user=%s",
-            (user_id or "")[:8],
-        )
-        return True
-    return False
+    """Solo si VOICE_PROVIDER=openai global. Stack Cierre/FitLine Realtime retirado."""
+    del user_id, balance, voice_profile
+    return get_settings().voice_provider == "openai"
 
 
 class RealtimeSessionBody(BaseModel):

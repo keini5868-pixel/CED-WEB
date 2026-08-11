@@ -31,8 +31,6 @@ export function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = sanitizeAuthNext(searchParams.get("next"));
-  const offerRaw = (searchParams.get("offer") || "").trim().toLowerCase();
-  const fitlineOffer = offerRaw === "cierre" || offerRaw === "fitline";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -40,12 +38,8 @@ export function RegisterForm() {
   const [loading, setLoading] = useState(false);
 
   const configured = isSupabaseConfigured();
-  const googleNext = fitlineOffer
-    ? `/dashboard?offer=cierre`
-    : next;
-  const loginHref = `${LOGIN_PATH}?next=${encodeURIComponent(googleNext)}${
-    fitlineOffer ? "&offer=cierre" : ""
-  }`;
+  const googleNext = next;
+  const loginHref = `${LOGIN_PATH}?next=${encodeURIComponent(googleNext)}`;
 
   async function handleRegister(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +60,6 @@ export function RegisterForm() {
           password,
           full_name: fullName.trim(),
           next: googleNext,
-          ...(fitlineOffer ? { offer: "cierre" } : {}),
         }),
       });
       let data: unknown = null;
@@ -99,22 +92,14 @@ export function RegisterForm() {
     <AuthCard
       title="REGISTRO"
       subtitle={
-        fitlineOffer
-          ? "Prueba FitLine · 20 min de voz · 24 horas · luego CED Cierre $20/mes"
-          : payingFlow
-            ? "Crea tu cuenta y continúa al pago"
-            : "7 días gratis · sin tarjeta"
+        payingFlow
+          ? "Crea tu cuenta y continúa al pago"
+          : "7 días gratis · sin tarjeta"
       }
     >
       {!configured ? (
         <p className="mb-4 rounded border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200">
           Esperando credenciales Supabase en <code>.env.local</code>
-        </p>
-      ) : null}
-      {fitlineOffer ? (
-        <p className="mb-4 rounded border border-emerald-500/35 bg-emerald-500/10 p-3 text-xs text-emerald-200">
-          Entrada FitLine: al verificar tu email tienes <strong>20 minutos de voz</strong>{" "}
-          durante <strong>24 horas</strong>. Después debes suscribirte a CED Cierre ($20/mes).
         </p>
       ) : null}
       {payingFlow ? (
@@ -152,22 +137,16 @@ export function RegisterForm() {
         <CedButton type="submit" fullWidth disabled={loading}>
           {loading
             ? "CREANDO…"
-            : fitlineOffer
-              ? "CREAR CUENTA · PRUEBA 24H"
-              : payingFlow
-                ? "CREAR CUENTA Y PAGAR"
-                : "CREAR CUENTA"}
+            : payingFlow
+              ? "CREAR CUENTA Y PAGAR"
+              : "CREAR CUENTA"}
         </CedButton>
       </form>
       {isGoogleAuthEnabled() ? (
         <>
           <AuthDivider />
           <GoogleAuthButton
-            label={
-              fitlineOffer
-                ? "Continuar con Google · FitLine 24h"
-                : "Registrarse con Google"
-            }
+            label="Registrarse con Google"
             next={googleNext}
             disabled={loading || !configured}
             onError={setError}

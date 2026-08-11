@@ -97,9 +97,7 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
             className={`rounded border p-4 ${
               plan.id === "founding"
                 ? "border-amber-400/40 bg-amber-400/5"
-                : plan.id === "cierre"
-                  ? "border-emerald-500/40 bg-emerald-500/5"
-                  : "border-cyan-500/30 bg-black/40"
+                : "border-cyan-500/30 bg-black/40"
             }`}
           >
             <div className="flex items-baseline justify-between gap-2">
@@ -114,11 +112,6 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
             {plan.id === "founding" ? (
               <p className="mt-1 text-[11px] text-amber-400">
                 Cupos {FOUNDING_MEMBER_MAX_SLOTS} · precio bloqueado 6 meses
-              </p>
-            ) : null}
-            {plan.id === "cierre" ? (
-              <p className="mt-1 text-[11px] text-emerald-400/90">
-                Foco PM International / FitLine · voz incluida
               </p>
             ) : (
               <p className="mt-1 text-[11px] text-cyan-500">

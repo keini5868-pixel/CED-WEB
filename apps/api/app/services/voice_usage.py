@@ -70,6 +70,43 @@ def degraded_voice_access_state(*, reason: str = "telemetry_unavailable") -> dic
 def voice_access_state(user_id: str) -> dict:
     """Estado unificado de cupo voz — usado por balance, start y tick."""
     try:
+        from app.deps.auth import is_staff_admin
+
+        profile_early = supabase_db.get_profile(user_id) or {}
+        if is_staff_admin(
+            profile_early.get("email"),
+            profile_early.get("role") if isinstance(profile_early.get("role"), str) else None,
+        ):
+            sub = supabase_db.get_subscription(user_id)
+            plan_id = normalize_plan_id((sub or {}).get("plan_id"))
+            return {
+                "plan_id": plan_id,
+                "subscription_status": (sub or {}).get("status"),
+                "trial_ends_at": (sub or {}).get("trial_ends_at"),
+                "is_founding_member": bool((sub or {}).get("price_locked_for_life")),
+                "price_locked_for_life": bool((sub or {}).get("price_locked_for_life")),
+                "plan_minutes_daily": 99_999,
+                "used_minutes_today": 0.0,
+                "recharge_balance_usd": 0.0,
+                "bonus_minutes_from_balance": 0.0,
+                "total_available_minutes": 99_999.0,
+                "warning_at_percent": USAGE_WARNING_PERCENT,
+                "blocked": False,
+                "quota_exhausted": False,
+                "needs_recharge": False,
+                "access_denied": False,
+                "access_message": None,
+                "usage_percent": 0.0,
+                "timezone": "America/Mexico_City",
+                "allowed": True,
+                "has_stripe_customer": bool((sub or {}).get("stripe_customer_id")),
+                "degraded": False,
+                "voice_stack": "retell",
+                "voice_transport": "retell",
+                "preview_as": None,
+                "staff_unlimited": True,
+            }
+
         try:
             used = supabase_db.get_usage_minutes_today(user_id)
         except Exception as exc:  # noqa: BLE001 — best-effort telemetría

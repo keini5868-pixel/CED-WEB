@@ -1,8 +1,5 @@
 export type VoiceProvider = "retell" | "openai";
 
-/** Planes FitLine / Cierre — sin Jarvis (Retell). */
-const GEMINI_STACK_PLANS = new Set(["cierre"]);
-
 export function getEnvVoiceProvider(): VoiceProvider {
   const raw = (process.env.NEXT_PUBLIC_VOICE_PROVIDER || "retell").trim().toLowerCase();
   return raw === "openai" ? "openai" : "retell";
@@ -20,20 +17,10 @@ export type VoiceRouteInput = {
 };
 
 /**
- * FitLine/Cierre → openai (voz conversacional CED, sin Jarvis).
- * Planes premium CED → retell (Jarvis), salvo que el env fuerce openai global.
+ * Todos los planes → Retell Jarvis (stack OpenAI Realtime / Cierre $20 retirado).
+ * Solo fuerza openai si NEXT_PUBLIC_VOICE_PROVIDER=openai.
  */
-export function resolveVoiceProvider(route?: VoiceRouteInput | null): VoiceProvider {
-  const plan = (route?.planId || "").trim().toLowerCase();
-  const stack = (route?.voiceStack || "").trim().toLowerCase();
-  const transport = (route?.voiceTransport || "").trim().toLowerCase();
-  if (
-    transport === "openai" ||
-    stack === "gemini" ||
-    GEMINI_STACK_PLANS.has(plan)
-  ) {
-    return "openai";
-  }
+export function resolveVoiceProvider(_route?: VoiceRouteInput | null): VoiceProvider {
   return getEnvVoiceProvider();
 }
 

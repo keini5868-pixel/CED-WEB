@@ -61,9 +61,9 @@ export function VoiceLimitModal({
       : reason === "trial_daily_limit"
         ? "Usaste tus 5 minutos de voz de hoy (prueba gratuita de 7 días). Se renuevan mañana, o ahora mismo puedes suscribirte a un plan para tener más minutos cada día, o recargar desde $10 para seguir usando la voz hoy sin suscribirte."
         : reason === "cierre_trial_limit"
-          ? "Usaste tus 20 minutos de la prueba FitLine (24 horas). Para seguir con voz, suscríbete a CED Cierre ($20/mes) o recarga desde $10."
+          ? "Usaste los minutos de tu prueba. Para seguir con voz, elige un plan o recarga desde $10."
           : reason === "cierre_trial_expired"
-            ? "Tu prueba FitLine de 24 horas terminó. Suscríbete a CED Cierre ($20/mes) para seguir cerrando con voz, o recarga desde $10."
+            ? "Tu prueba terminó. Suscríbete a un plan para seguir con voz, o recarga desde $10."
             : reason === "trial_expired"
               ? "Los 7 días de prueba de voz finalizaron. Adquiere un plan o recarga desde $10. El chat de texto sigue gratis en plan Básico."
               : reason === "no_voice"
@@ -122,9 +122,7 @@ export function VoiceLimitModal({
               reason === "no_voice") && (
               <div className="mt-4 space-y-2 border-t border-cyan-500/20 pt-4">
                 <p className="text-[10px] uppercase tracking-wider text-cyan-600">
-                  {reason === "cierre_trial_limit" || reason === "cierre_trial_expired"
-                    ? "CED Cierre · $20/mes"
-                    : "Planes desde $20/mes"}
+                  Planes desde $30/mes
                 </p>
                 {PUBLIC_PLANS.filter((p) =>
                   reason === "cierre_trial_limit" || reason === "cierre_trial_expired"

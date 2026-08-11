@@ -1,17 +1,25 @@
-"""Gate OpenAI Realtime para plan Cierre / preview admin."""
+"""Gate OpenAI Realtime — solo si VOICE_PROVIDER=openai (stack Cierre retirado)."""
 
 from app.routers.openai import _allow_openai_realtime
 
 
-def test_allow_realtime_for_cierre_plan():
-    assert _allow_openai_realtime(
+def test_deny_realtime_for_cierre_when_retell_provider(monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.openai.get_settings",
+        lambda: type("S", (), {"voice_provider": "retell"})(),
+    )
+    assert not _allow_openai_realtime(
         "user-1",
         {"plan_id": "cierre", "voice_stack": "gemini", "voice_transport": "openai"},
     )
 
 
-def test_allow_realtime_for_voice_transport_flag():
-    assert _allow_openai_realtime(
+def test_deny_realtime_for_voice_transport_flag(monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.openai.get_settings",
+        lambda: type("S", (), {"voice_provider": "retell"})(),
+    )
+    assert not _allow_openai_realtime(
         "user-1",
         {"plan_id": "elite", "voice_transport": "openai"},
     )
@@ -19,12 +27,8 @@ def test_allow_realtime_for_voice_transport_flag():
 
 def test_deny_realtime_for_elite_without_preview(monkeypatch):
     monkeypatch.setattr(
-        "app.services.preview_persona.is_cierre_partner_preview",
-        lambda _uid: False,
-    )
-    monkeypatch.setattr(
-        "app.services.preview_persona.user_may_use_preview",
-        lambda _uid: False,
+        "app.routers.openai.get_settings",
+        lambda: type("S", (), {"voice_provider": "retell"})(),
     )
     assert not _allow_openai_realtime(
         "user-1",
@@ -33,19 +37,26 @@ def test_deny_realtime_for_elite_without_preview(monkeypatch):
     )
 
 
-def test_allow_realtime_admin_fitline_profile(monkeypatch):
+def test_deny_realtime_admin_fitline_profile(monkeypatch):
     monkeypatch.setattr(
-        "app.services.preview_persona.is_cierre_partner_preview",
-        lambda _uid: False,
+        "app.routers.openai.get_settings",
+        lambda: type("S", (), {"voice_provider": "retell"})(),
     )
-    monkeypatch.setattr(
-        "app.services.preview_persona.user_may_use_preview",
-        lambda _uid: True,
-    )
-    assert _allow_openai_realtime(
+    assert not _allow_openai_realtime(
         "admin-1",
         {"plan_id": "elite", "voice_stack": "retell", "voice_transport": "retell"},
         voice_profile="fitline",
+    )
+
+
+def test_allow_when_global_openai_provider(monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.openai.get_settings",
+        lambda: type("S", (), {"voice_provider": "openai"})(),
+    )
+    assert _allow_openai_realtime(
+        "user-1",
+        {"plan_id": "elite", "voice_transport": "retell"},
     )
 
 

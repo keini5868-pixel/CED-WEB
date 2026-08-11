@@ -173,21 +173,6 @@ async def register_retell_call(
     if settings.voice_provider != "retell":
         raise HTTPException(status_code=503, detail="Proveedor de voz Retell no activo.")
 
-    from app.domain.plans import plan_uses_gemini_voice_stack
-    from app.services import supabase_db
-    from app.services.preview_persona import is_cierre_partner_preview
-
-    sub = await asyncio.to_thread(supabase_db.get_subscription, user_id)
-    plan_id = (sub or {}).get("plan_id")
-    if plan_uses_gemini_voice_stack(plan_id) or is_cierre_partner_preview(user_id):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Tu plan FitLine / CED Cierre usa voz conversacional CED "
-                "(sin Jarvis)."
-            ),
-        )
-
     client = get_retell_client()
     if not client:
         raise HTTPException(status_code=503, detail="RETELL_API_KEY no configurada.")
@@ -248,21 +233,6 @@ async def register_retell_native_pilot_call(
     settings = get_settings()
     if settings.voice_provider != "retell":
         raise HTTPException(status_code=503, detail="Proveedor de voz Retell no activo.")
-
-    from app.domain.plans import plan_uses_gemini_voice_stack
-    from app.services import supabase_db
-    from app.services.preview_persona import is_cierre_partner_preview
-
-    sub = await asyncio.to_thread(supabase_db.get_subscription, user_id)
-    plan_id = (sub or {}).get("plan_id")
-    if plan_uses_gemini_voice_stack(plan_id) or is_cierre_partner_preview(user_id):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Tu plan FitLine / CED Cierre usa voz conversacional CED "
-                "(sin Jarvis)."
-            ),
-        )
 
     client = get_retell_client()
     if not client:

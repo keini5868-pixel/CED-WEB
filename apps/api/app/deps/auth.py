@@ -135,6 +135,14 @@ def is_super_admin(email: str | None, metadata_role: str | None = None) -> bool:
     return normalized in allowed
 
 
+def is_staff_admin(email: str | None, metadata_role: str | None = None) -> bool:
+    """super_admin / admin / coadmin — sin cupo de voz ni corte de llamada."""
+    role = (metadata_role or "").strip().lower()
+    if role in ("super_admin", "admin", "coadmin"):
+        return True
+    return is_super_admin(email, metadata_role)
+
+
 async def require_auth_user(
     authorization: str | None = Header(default=None),
 ) -> dict[str, Any]:

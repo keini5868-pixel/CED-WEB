@@ -73,9 +73,10 @@ export function cierrePreviewVoiceRoute(): {
   voiceStack: string;
   voiceTransport: string;
 } {
+  /** Preview PM usa Retell Jarvis (voz económica OpenAI retirada). */
   return {
     planId: "cierre",
-    voiceStack: "gemini",
-    voiceTransport: "openai",
+    voiceStack: "retell",
+    voiceTransport: "retell",
   };
 }

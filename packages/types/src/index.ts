@@ -130,22 +130,6 @@ export const PUBLIC_PLANS = [
     ],
   },
   {
-    id: "cierre" as const,
-    label: "CED Cierre",
-    priceUsd: 20,
-    minutesPerDay: 13,
-    highlights: [
-      "Experto en ventas PM International / FitLine",
-      "Conocimiento interno del negocio y productos",
-      "Guía paso a paso para socios nuevos",
-      "Enfoque vendedor/franquiciador con cierre estratégico",
-      "Voz conversacional CED",
-      "Apoyo de prospección y copy alineado a FitLine",
-      ...COMMON_FREE_TOOLS,
-      "Chat de texto",
-    ],
-  },
-  {
     id: "starter" as const,
     label: "CED Starter",
     priceUsd: 30,

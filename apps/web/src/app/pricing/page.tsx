@@ -133,11 +133,9 @@ function PricingContent() {
               className={`rounded border p-6 ${
                 plan.id === "founding"
                   ? "border-amber-400/50 bg-amber-400/5"
-                  : plan.id === "cierre"
-                    ? "border-emerald-500/40 bg-emerald-500/5"
-                    : plan.id === "free_basic"
-                      ? "border-cyan-500/20 bg-black/30"
-                      : "border-cyan-500/30 bg-black/40"
+                  : plan.id === "free_basic"
+                    ? "border-cyan-500/20 bg-black/30"
+                    : "border-cyan-500/30 bg-black/40"
               }`}
             >
               <h3 className="font-[family-name:var(--font-orbitron)] text-lg text-white">
@@ -158,11 +156,6 @@ function PricingContent() {
                   Cupos {FOUNDING_MEMBER_MAX_SLOTS} · precio bloqueado por 6 meses
                 </p>
               )}
-              {plan.id === "cierre" && (
-                <p className="mt-1 text-xs text-emerald-400/90">
-                  Prueba FitLine: 20 min de voz · 24 horas · luego $20/mes
-                </p>
-              )}
               {plan.id === "free_basic" && (
                 <p className="mt-1 text-xs text-cyan-500">Acceso por tiempo limitado</p>
               )}
@@ -178,23 +171,6 @@ function PricingContent() {
                 >
                   EMPEZAR GRATIS
                 </Link>
-              ) : plan.id === "cierre" ? (
-                <div className="mt-6 space-y-2">
-                  <Link
-                    href="/signup?offer=cierre"
-                    className="block w-full rounded border border-emerald-400/70 py-3 text-center font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-emerald-200 hover:bg-emerald-400/10"
-                  >
-                    PROBAR 24 H GRATIS
-                  </Link>
-                  <button
-                    type="button"
-                    disabled={busy !== null}
-                    onClick={() => void subscribe(plan.id)}
-                    className="w-full rounded border border-cyan-500/40 py-2.5 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-cyan-400 hover:bg-cyan-400/5 disabled:opacity-50"
-                  >
-                    {busy === plan.id ? "REDIRIGIENDO…" : "O SUSCRIBIRME YA · $20/MES"}
-                  </button>
-                </div>
               ) : (
                 <button
                   type="button"
