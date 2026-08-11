@@ -59,7 +59,7 @@ export function CierrePartnerPreviewToggle({
         type="button"
         onClick={exit}
         className="rounded border-2 border-amber-400 bg-amber-500/20 px-2.5 py-1.5 font-[family-name:var(--font-orbitron)] text-[9px] font-bold tracking-wider text-amber-100 hover:bg-amber-500/30 sm:px-3 sm:text-[10px]"
-        title="Salir del modo socio Cierre $20"
+        title="Salir del modo socio PM International $22"
       >
         SALIR PRUEBA PM
       </button>
@@ -71,7 +71,7 @@ export function CierrePartnerPreviewToggle({
       type="button"
       onClick={enter}
       className="rounded border-2 border-emerald-400/80 bg-emerald-500/15 px-2.5 py-1.5 font-[family-name:var(--font-orbitron)] text-[9px] font-bold tracking-wider text-emerald-100 hover:bg-emerald-500/25 sm:px-3 sm:text-[10px]"
-      title="Ver CED como socio nuevo del plan Cierre $20 (PM International / FitLine)"
+      title="Ver CED como socio nuevo del plan PM International $22 (FitLine)"
     >
       PROBAR SOCIO PM
     </button>
@@ -103,7 +103,7 @@ export function CierrePartnerPreviewBanner({
     <div className="mx-auto mb-2 flex max-w-3xl flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] text-amber-100">
       <span>
         Modo prueba activo: experiencia de <strong>socio nuevo</strong> plan{" "}
-        <strong>Cierre $20</strong> (FitLine / PM International).
+        <strong>PM International $22</strong> (FitLine).
       </span>
       <button
         type="button"

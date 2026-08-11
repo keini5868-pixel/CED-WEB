@@ -1,4 +1,4 @@
-"""Preview persona — admin simula socio nuevo plan Cierre ($20 FitLine).
+"""Preview persona — admin simula socio nuevo plan CED PM International ($22 FitLine).
 
 Header: X-CED-Preview-As: cierre
 Solo se honra si el usuario es admin/coadmin/super_admin.

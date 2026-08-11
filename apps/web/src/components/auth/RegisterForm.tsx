@@ -27,10 +27,28 @@ function registerErrorMessage(status: number, detail: unknown): string {
   return "No se pudo crear la cuenta. Intenta de nuevo.";
 }
 
+function resolvePmOffer(
+  offerParam: string,
+  nextPath: string,
+): "cierre" | "" {
+  const direct = offerParam.trim().toLowerCase();
+  if (direct === "cierre" || direct === "fitline") return "cierre";
+  try {
+    const fromNext =
+      new URL(nextPath, "https://ced.local").searchParams.get("offer")?.toLowerCase() ||
+      "";
+    if (fromNext === "cierre" || fromNext === "fitline") return "cierre";
+  } catch {
+    /* ignore */
+  }
+  return "";
+}
+
 export function RegisterForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = sanitizeAuthNext(searchParams.get("next"));
+  const offer = resolvePmOffer(searchParams.get("offer") || "", next);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -38,7 +56,10 @@ export function RegisterForm() {
   const [loading, setLoading] = useState(false);
 
   const configured = isSupabaseConfigured();
-  const googleNext = next;
+  const googleNext =
+    offer && !next.includes("offer=")
+      ? `${next}${next.includes("?") ? "&" : "?"}offer=${offer}`
+      : next;
   const loginHref = `${LOGIN_PATH}?next=${encodeURIComponent(googleNext)}`;
 
   async function handleRegister(e: React.FormEvent) {
@@ -60,6 +81,7 @@ export function RegisterForm() {
           password,
           full_name: fullName.trim(),
           next: googleNext,
+          ...(offer ? { offer } : {}),
         }),
       });
       let data: unknown = null;
@@ -77,7 +99,7 @@ export function RegisterForm() {
         return;
       }
       router.push(
-        `/verify-email?email=${encodeURIComponent(email.trim())}&next=${encodeURIComponent(next)}`,
+        `/verify-email?email=${encodeURIComponent(email.trim())}&next=${encodeURIComponent(googleNext)}`,
       );
     } catch {
       setError("No se pudo conectar con el servidor. Intenta de nuevo.");
@@ -87,6 +109,7 @@ export function RegisterForm() {
   }
 
   const payingFlow = next.startsWith("/pricing");
+  const pmOfferFlow = offer === "cierre";
 
   return (
     <AuthCard
@@ -94,7 +117,9 @@ export function RegisterForm() {
       subtitle={
         payingFlow
           ? "Crea tu cuenta y continúa al pago"
-          : "7 días gratis · sin tarjeta"
+          : pmOfferFlow
+            ? "Prueba FitLine · 15 min de voz · 24 horas"
+            : "7 días gratis · sin tarjeta"
       }
     >
       {!configured ? (
@@ -105,6 +130,12 @@ export function RegisterForm() {
       {payingFlow ? (
         <p className="mb-4 rounded border border-cyan-500/30 bg-cyan-500/5 p-3 text-xs text-cyan-300">
           Después de crear la cuenta te llevamos a Stripe para registrar tu tarjeta.
+        </p>
+      ) : null}
+      {pmOfferFlow && !payingFlow ? (
+        <p className="mb-4 rounded border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-200">
+          Al verificar tu correo activas CED PM International: voz Jarvis con
+          conocimiento FitLine durante 24 horas. Luego puedes suscribirte a $22/mes.
         </p>
       ) : null}
       <form onSubmit={handleRegister} className="space-y-4">

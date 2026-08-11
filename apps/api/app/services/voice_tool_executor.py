@@ -584,18 +584,18 @@ async def _execute_voice_tool_body(
 ) -> dict[str, Any]:
     # CED Cierre: bloquear tools con gasto de proveedor (Tavily/imagen/maps/YouTube…).
     try:
-        from app.domain.plans import plan_uses_gemini_voice_stack
+        from app.domain.plans import plan_is_pm_fitline_focus
         from app.services import supabase_db
         from app.services.openai_voice_tools import FITLINE_CIERRE_TOOL_NAMES
         from app.services.preview_persona import is_cierre_partner_preview
 
         sub = supabase_db.get_subscription(user_id) or {}
-        cierre_mode = plan_uses_gemini_voice_stack(sub.get("plan_id")) or is_cierre_partner_preview(
+        cierre_mode = plan_is_pm_fitline_focus(sub.get("plan_id")) or is_cierre_partner_preview(
             user_id
         )
         if cierre_mode and name not in FITLINE_CIERRE_TOOL_NAMES:
             return _spoken_ok(
-                "En CED Cierre usamos el conocimiento interno de FitLine. "
+                "En CED PM International usamos el conocimiento interno de FitLine. "
                 "Puedo explicarte productos, negocio y armar el plan de tu franquicia "
                 "sin buscar en internet."
             )

@@ -803,7 +803,7 @@ def downgrade_to_free_basic(user_id: str) -> None:
 
 
 def apply_cierre_fitline_trial(user_id: str) -> dict[str, Any]:
-    """Convierte al trial FitLine: plan cierre, 20 min de voz, 24 h, luego pagar.
+    """Convierte al trial FitLine: plan cierre, 15 min de voz, 24 h, luego pagar.
 
     Solo aplica a cuentas sin Stripe activo. Idempotente si ya está en ese trial.
     """

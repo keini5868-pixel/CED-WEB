@@ -23,14 +23,17 @@ export interface PlanFeatures {
 
 export const FOUNDING_MEMBER_MAX_SLOTS = 50;
 export const TRIAL_DAYS = 7;
-/** Minutos de voz/día durante el trial (mismo cupo diario que los planes). */
-export const TRIAL_VOICE_MINUTES_PER_DAY = 20;
+/** Minutos de voz/día durante el trial general de 7 días (API: 5). */
+export const TRIAL_VOICE_MINUTES_PER_DAY = 5;
+/** Trial corto PM/FitLine: minutos en ventana de 24 h (API: CIERRE_TRIAL_VOICE_MINUTES). */
+export const CIERRE_TRIAL_VOICE_MINUTES = 15;
+export const CIERRE_TRIAL_HOURS = 24;
 
 export const PLAN_PRICES_USD: Record<
   "cierre" | "starter" | "pro" | "elite" | "founding",
   number
 > = {
-  cierre: 20,
+  cierre: 22,
   starter: 30,
   pro: 59,
   elite: 99,

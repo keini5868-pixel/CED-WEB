@@ -1,4 +1,4 @@
-"""Trial FitLine / CED Cierre: 20 min en 24 h, luego pagar."""
+"""Trial FitLine / CED PM International: 15 min en 24 h, luego pagar."""
 
 from __future__ import annotations
 
@@ -23,12 +23,13 @@ def test_cierre_trial_minutes_helper():
     sub = {"plan_id": "cierre", "status": "trialing"}
     assert is_cierre_fitline_trial(sub) is True
     assert trial_voice_minutes_for_subscription(sub) == CIERRE_TRIAL_VOICE_MINUTES
+    assert CIERRE_TRIAL_VOICE_MINUTES == 15
     assert trial_voice_minutes_for_subscription(
         {"plan_id": "elite", "status": "trialing"}
     ) == TRIAL_VOICE_MINUTES_PER_DAY
 
 
-def test_cierre_fitline_trial_gets_20_minutes():
+def test_cierre_fitline_trial_gets_15_minutes():
     trial_end = (datetime.now(timezone.utc) + timedelta(hours=12)).isoformat()
     sub = {
         "plan_id": PlanId.CIERRE.value,
@@ -44,7 +45,7 @@ def test_cierre_fitline_trial_gets_20_minutes():
         allowed, reason, minutes = get_user_access("user-cierre-trial")
     assert allowed is True
     assert reason == "cierre_trial"
-    assert minutes == 20
+    assert minutes == 15
 
 
 def test_cierre_fitline_trial_expires_after_24h():

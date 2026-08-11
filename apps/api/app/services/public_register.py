@@ -243,10 +243,13 @@ def register_with_email(
     if cierre_trial and cierre_trial.get("ok"):
         out["offer"] = "cierre"
         out["trial_hours"] = cierre_trial.get("hours", 24)
-        out["trial_voice_minutes"] = cierre_trial.get("minutes_daily", 20)
+        out["trial_voice_minutes"] = cierre_trial.get(
+            "minutes_daily", 15
+        )
         out["message"] = (
             "Te enviamos un enlace de verificación. "
-            "Al confirmar tendrás 20 min de voz por 24 horas (FitLine / CED Cierre)."
+            "Al confirmar tendrás 15 min de voz por 24 horas "
+            "(FitLine / CED PM International)."
         )
     return out
 

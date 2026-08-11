@@ -46,7 +46,7 @@ export function VoiceLimitModal({
       : reason === "trial_daily_limit"
         ? "Agotaste tu voz de hoy (prueba gratis)"
         : reason === "cierre_trial_limit"
-          ? "Agotaste tus 20 minutos FitLine"
+          ? "Agotaste tu prueba FitLine de voz"
           : reason === "cierre_trial_expired"
             ? "Tu prueba FitLine de 24 h terminó"
             : reason === "trial_expired"

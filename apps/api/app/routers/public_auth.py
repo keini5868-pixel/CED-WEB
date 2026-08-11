@@ -21,7 +21,7 @@ class RegisterBody(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(default="", max_length=120)
     next: str = Field(default="/", max_length=500)
-    # Funnel FitLine / CED Cierre: offer=cierre → 20 min voz / 24 h, luego pagar.
+    # Funnel FitLine / CED PM: offer=cierre → 15 min voz / 24 h, luego pagar.
     offer: str = Field(default="", max_length=32)
 
 
