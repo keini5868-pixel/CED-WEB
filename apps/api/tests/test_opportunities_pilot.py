@@ -101,7 +101,7 @@ def test_enriched_fitline_has_official_facts() -> None:
     income = (sections.get("income_potential") or {}).get("body") or ""
     prospect = (sections.get("prospecting") or {}).get("body") or ""
     assert "1993" in history
-    assert "Speyer" in history or "Alemania" in history
+    assert "Speyer" in history or "Limburgerhof" in history or "Alemania" in history
     assert "Schengen" in history or "Luxemburgo" in history
     assert "40" in history
     assert "4 mil millones" in history or "$4" in history or "mil millones" in history
@@ -109,8 +109,15 @@ def test_enriched_fitline_has_official_facts() -> None:
     americas = (sections.get("americas_expansion") or {}).get("body") or ""
     assert "22 millones" in americas or "$22" in americas
     assert "PM Labs" in americas or "Made in USA" in americas
+    assert "2019" in americas and "2021" in americas and "2023" in americas
+    assert "50.000" in americas or "50,000" in americas
+    assert "100" in americas and "500" in americas
+    assert "11.69" in americas
+    assert "socio/manager" in americas or "red de franquicias" in americas
     assert "NTC" in science or "Nutrient Transport" in science
-    assert "TÜV" in science or "TUV" in science.upper()
+    assert "ATP" in science
+    assert "Cologne" in science or "cologne" in science.lower()
+    assert "TÜV" in science or "TUV" in science.upper() or "Frankfurt" in science
     assert "PowerCocktail" in products and "$119.48" in products
     assert "Activize" in products and "Restorate" in products
     assert "Manager Quickstart" in req and "$596" in req
