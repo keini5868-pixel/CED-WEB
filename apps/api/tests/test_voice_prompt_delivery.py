@@ -87,3 +87,27 @@ def test_collapse_stacked_response_variants_keeps_one():
     assert "Activize" in out
     assert len(out) < len(stacked)
 
+
+def test_collapse_repeated_paragraph_waste():
+    from app.services.voice_llm_common import (
+        collapse_stacked_response_variants,
+        prefer_single_voice_variant,
+    )
+
+    para = (
+        "FitLine usa el NTC para llevar nutrientes a nivel celular con respaldo "
+        "de más de tres décadas en el mercado global de bienestar."
+    )
+    stacked = f"{para}\n\n{para}"
+    out = collapse_stacked_response_variants(stacked)
+    assert out.count("Nutrient") + out.lower().count("ntc") >= 1
+    assert out.count("tres décadas") == 1 or out.count("nivel celular") == 1
+
+    primary = "Mire, Activize da energía por la mañana con NTC y enfoque celular."
+    rewrite = (
+        "Mire, Activize da energía por la mañana con NTC y enfoque celular. "
+        "Además conviene tomarlo al despertar."
+    )
+    single = prefer_single_voice_variant(primary, rewrite)
+    assert single.count("Activize da energía") == 1
+

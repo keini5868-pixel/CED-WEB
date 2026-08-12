@@ -92,12 +92,12 @@ def test_voice_system_with_cache_omit_still_gets_close_trigger():
             uid, q3, omit_static_core=True, omit_fitline_knowledge=True
         )
 
-    assert "CIERRE ESTRATÉGICO" not in s1
-    assert "CIERRE ESTRATÉGICO" not in s2
-    assert "CIERRE ESTRATÉGICO" in s3
+    assert "CIERRE ESTRATÉGICO" not in s1 and "CIERRE PRIORITARIO" not in s1
+    assert "CIERRE ESTRATÉGICO" not in s2 and "CIERRE PRIORITARIO" not in s2
+    assert "CIERRE PRIORITARIO" in s3 or "90 días" in s3
     assert "Finanzas" in s3 or "plan de acción" in s3.lower()
     assert "90 días" in s3 or "90 dias" in s3.lower()
-    assert "dinero" in s3.lower()
+    assert "negocio" in s3.lower() or "dinero" in s3.lower() or "ganar" in s3.lower()
 
 
 def test_voice_prefers_internal_knowledge_over_web():

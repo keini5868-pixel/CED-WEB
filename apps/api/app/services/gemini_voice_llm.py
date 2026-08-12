@@ -560,17 +560,11 @@ class GeminiVoiceLlm:
                     if incomplete_deliverable:
                         merged = _delivery_text(merge_deliverable_continuation(cleaned, continuation))
                     else:
-                        # Preferir remate corto; si la continuación es otra versión completa, no apilar.
-                        cont = continuation.strip()
-                        if len(cont) > max(120, int(len(cleaned) * 0.7)) and re.match(
-                            r"^(?:mire|claro|perfecto|bueno|hola)\b",
-                            cont.lower(),
-                        ):
-                            merged = _delivery_text(cont)
-                        else:
-                            merged = _delivery_text(
-                                f"{cleaned.rstrip('.')} {cont.lstrip()}".strip()
-                            )
+                        from app.services.voice_llm_common import prefer_single_voice_variant
+
+                        merged = _delivery_text(
+                            prefer_single_voice_variant(cleaned, continuation)
+                        )
                     if merged:
                         from app.services.voice_llm_common import collapse_stacked_response_variants
 
@@ -1557,6 +1551,10 @@ class GeminiVoiceLlm:
                 text_response = strip_embedded_prior_assistant(
                     dedupe_voice_reply(regen), hist_dicts
                 )
+
+        from app.services.voice_spoken import finalize_voice_delivery_text
+
+        text_response = finalize_voice_delivery_text(text_response)
 
         self._history = _truncate_contents(
             [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])],

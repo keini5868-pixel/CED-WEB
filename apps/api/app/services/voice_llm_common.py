@@ -472,7 +472,7 @@ def dedupe_voice_reply(text: str) -> str:
 def collapse_stacked_response_variants(text: str) -> str:
     """Si el modelo apiló 2 versiones de la misma respuesta, conserva una sola.
 
-    Casos: delimitadores <<<>>>, reinicios «Mire,…», o dos bloques casi iguales.
+    Casos: delimitadores <<<>>>, reinicios «Mire,…», o dos bloques/párrafos casi iguales.
     """
     raw = (text or "").strip()
     if not raw:
@@ -482,7 +482,29 @@ def collapse_stacked_response_variants(text: str) -> str:
     raw = re.sub(r"<{2,}|}>{2,}", " ", raw)
     raw = re.sub(r"\bFRASE\s*:\s*", " ", raw, flags=re.I)
     raw = re.sub(r"\bFIN\b\.?", " ", raw)
-    raw = re.sub(r"\s+", " ", raw).strip()
+    raw = re.sub(r"[ \t]+", " ", raw).strip()
+
+    # Párrafos duplicados (mismo bloque emitido 2 veces — gasto de texto sin audio útil).
+    paras = [p.strip() for p in re.split(r"\n{2,}", raw) if p.strip()]
+    if len(paras) >= 2:
+        kept: list[str] = []
+        seen_norm: list[str] = []
+        for p in paras:
+            pn = _normalize_for_repeat_compare(p)
+            if len(pn) < 40:
+                kept.append(p)
+                continue
+            dup = False
+            for prev in seen_norm:
+                if pn == prev or (len(pn) > 60 and (pn[:80] == prev[:80] or pn in prev or prev in pn)):
+                    dup = True
+                    break
+            if dup:
+                continue
+            kept.append(p)
+            seen_norm.append(pn)
+        if kept:
+            raw = "\n\n".join(kept) if "\n\n" in (text or "") else " ".join(kept)
 
     # Partir por reinicios típicos de «segunda versión».
     splitters = re.split(
@@ -520,7 +542,48 @@ def collapse_stacked_response_variants(text: str) -> str:
                 if a_n and b_n and (a_n[:40] == b_n[:40] or a_n in b_n or b_n in a_n):
                     raw = b if len(b) >= len(a) else a
 
+    # Oraciones consecutivas casi idénticas.
+    sentences = re.split(r"(?<=[.!?…])\s+", raw)
+    if len(sentences) >= 2:
+        out_s: list[str] = []
+        for s in sentences:
+            sn = _normalize_for_repeat_compare(s)
+            if (
+                out_s
+                and len(sn) >= 50
+                and _normalize_for_repeat_compare(out_s[-1])[:70] == sn[:70]
+            ):
+                continue
+            out_s.append(s)
+        raw = " ".join(out_s).strip()
+
     return raw.strip()
+
+
+def prefer_single_voice_variant(primary: str, secondary: str) -> str:
+    """Al completar un turno truncado: no apilar dos versiones completas."""
+    a = (primary or "").strip()
+    b = (secondary or "").strip()
+    if not b:
+        return a
+    if not a:
+        return b
+    a_n = _normalize_for_repeat_compare(a)
+    b_n = _normalize_for_repeat_compare(b)
+    if not a_n or not b_n:
+        return f"{a.rstrip('.')} {b.lstrip()}".strip()
+    # Continuación = reescritura completa → quedarse con una.
+    if b_n.startswith(a_n[: min(80, len(a_n))]) or a_n.startswith(b_n[: min(80, len(b_n))]):
+        return b if len(b) >= len(a) else a
+    if a_n[:50] == b_n[:50] and abs(len(a) - len(b)) < max(80, len(a) * 0.35):
+        return b if len(b) >= len(a) else a
+    # Continuación corta de remate.
+    if len(b) < max(100, int(len(a) * 0.55)):
+        return f"{a.rstrip('.')} {b.lstrip()}".strip()
+    # Continuación parece otro monólogo → preferir la más completa.
+    if re.match(r"^(?:mire|claro|perfecto|bueno|hola)\b", b.lower()):
+        return b if len(b) >= len(a) * 0.8 else a
+    return collapse_stacked_response_variants(f"{a.rstrip('.')} {b.lstrip()}".strip())
 
 
 def _normalize_for_repeat_compare(text: str) -> str:
