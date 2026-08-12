@@ -115,7 +115,7 @@ _ACTIVATE_RE = re.compile(
     r"gu[ií]a(?:me)?\s+desde\s+cero|"
     r"ens[eé][nñ]a(?:me)?\s+(?:el\s+negocio\s+)?desde\s+cero|"
     r"soy\s+nuev[oa]\b.{0,40}\b(?:gu[ií]a|expl[ií]ca|ense[nñ]a)|"
-    r"soy\s+nuev[oa]\b.{0,40}\b(?:fitline|pm\s*international|al\s+negocio)|"
+    r"soy\s+nuev[oa]\b.{0,40}\b(?:fitline|pm\s*international|pm\s*internacional|al\s+negocio)|"
     r"no\s+s[eé]\s+nada\b.{0,40}\b(?:fitline|pm|negocio)|"
     r"empiezo\s+de\s+cero\b.{0,40}\b(?:fitline|pm|negocio)?"
     r")",

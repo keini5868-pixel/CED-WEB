@@ -27,7 +27,8 @@ _BUSINESS = re.compile(
     r"(?is)\b(?:"
     r"negocio|franquicia|venta|vender|cliente|prospecto|comisi[oó]n|"
     r"ingreso|ganar|dinero|precio|costo|inversi[oó]n|patrocin|"
-    r"equipo|plan|fitline|fit\s*line|pm\s*international|oportunidad|"
+    r"equipo|plan|fitline|fit\s*line|pm\s*international|pm\s*internacional|"
+    r"oportunidad|"
     r"objeci[oó]n|inscri|"
     r"producto|suplemento|ntc"
     r")\b",

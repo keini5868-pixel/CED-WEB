@@ -26,6 +26,32 @@ def test_wants_fitline_on_brand_and_products():
     assert wants_fitline_knowledge("Optimal Set beneficios")
 
 
+def test_wants_fitline_spanish_pm_and_bare_pm():
+    """Regresión: PM Internacional / «cómo empiezo en PM» ≠ project management."""
+    assert wants_fitline_knowledge("PM Internacional")
+    assert wants_fitline_knowledge("me refiero a PM Internacional")
+    assert wants_fitline_knowledge("Como comienzo en pm")
+    assert wants_fitline_knowledge("cómo empiezo en PM")
+    assert wants_fitline_knowledge("háblame de PM Internacional")
+    assert wants_fitline_knowledge("qué es PM")
+    assert prefers_fitline_over_web("Como comienzo en pm") is True
+    assert prefers_fitline_over_web("PM Internacional") is True
+
+    chat = _build_chat_system_light("u-pm-es", "Como comienzo en pm")
+    assert "CONOCIMIENTO CURADO — PM International" in chat or "HECHOS OBLIGATORIOS FITLINE" in chat
+    assert "FitLine" in chat
+    assert "DESAMBIGUACIÓN" in chat or "PM-International" in chat
+    assert "PROHIBIDO interpretar PM como Project Management" in chat
+
+def test_wants_fitline_rejects_other_pm_meanings():
+    assert wants_fitline_knowledge("explícame project management") is False
+    assert wants_fitline_knowledge("gestión de proyectos con scrum") is False
+    assert wants_fitline_knowledge("comercio internacional y exportaciones") is False
+    assert wants_fitline_knowledge("reunión a las 3 pm") is False
+    assert wants_fitline_knowledge("explícame the basics of marketing") is False
+    assert wants_fitline_knowledge("hola cómo estás") is False
+
+
 def test_wants_fitline_rejects_generic_basics():
     assert wants_fitline_knowledge("explícame the basics of marketing") is False
     assert wants_fitline_knowledge("hola cómo estás") is False

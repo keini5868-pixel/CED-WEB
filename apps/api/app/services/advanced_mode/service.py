@@ -131,6 +131,21 @@ def _stream_system_with_clock(
     )
     base = append_sales_marketing_playbook_if_needed(base, user_text)
     base = append_fitline_knowledge_if_needed(base, user_text)
+    if user_id and user_text:
+        try:
+            from app.services.opportunities_pilot.fitline_close_trigger import (
+                append_fitline_close_trigger_if_needed,
+            )
+
+            base = append_fitline_close_trigger_if_needed(base, user_id, user_text)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.services.insight_questions import capture_insight_question
+
+            capture_insight_question(user_id, user_text, channel="advanced")
+        except Exception:  # noqa: BLE001
+            pass
     from app.services.opportunities_pilot.fitline_guide_mode import (
         append_fitline_guide_if_needed,
     )
@@ -378,6 +393,16 @@ def send_advanced_message(
             system_prompt = f"{ADVANCED_SYSTEM_PROMPT}\n\n{partnership}"
         system_prompt = append_sales_marketing_playbook_if_needed(system_prompt, text)
         system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
+        try:
+            from app.services.opportunities_pilot.fitline_close_trigger import (
+                append_fitline_close_trigger_if_needed,
+            )
+
+            system_prompt = append_fitline_close_trigger_if_needed(
+                system_prompt, user_id, text
+            )
+        except Exception:  # noqa: BLE001
+            pass
         system_prompt = append_fitline_guide_if_needed(
             system_prompt, user_id, text, channel="advanced"
         )
@@ -468,6 +493,16 @@ def send_advanced_message_with_pdf(
             system_prompt = f"{system_prompt}\n\n{partnership}"
         system_prompt = append_sales_marketing_playbook_if_needed(system_prompt, text)
         system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
+        try:
+            from app.services.opportunities_pilot.fitline_close_trigger import (
+                append_fitline_close_trigger_if_needed,
+            )
+
+            system_prompt = append_fitline_close_trigger_if_needed(
+                system_prompt, user_id, text
+            )
+        except Exception:  # noqa: BLE001
+            pass
         system_prompt = append_fitline_guide_if_needed(
             system_prompt, user_id, text, channel="advanced"
         )

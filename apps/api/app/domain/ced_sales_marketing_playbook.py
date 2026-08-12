@@ -71,7 +71,7 @@ _PLAYBOOK_TRIGGERS = re.compile(
     r"estrategia|marketing|publicidad|creativo|lead|leads|"
     r"landing|p[aá]gina\s+de\s+venta|oferta|cta|"
     r"testimonio|transformaci[oó]n|beneficio|"
-    r"franquicia|fitline|activiz|restorate|pm\s*international"
+    r"franquicia|fitline|activiz|restorate|pm\s*international|pm\s*internacional"
     r")\b"
 )
 

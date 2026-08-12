@@ -14,10 +14,12 @@ from app.services.opportunities_pilot.plugins.fitline_pm import OPPORTUNITY_ID
 from app.services.opportunities_pilot.synthesize import SECTION_ORDER
 
 # Marcas / empresa / fundadores / sede / credenciales distintivas
+# Incluye ES «PM Internacional» e EN «PM International» (antes solo EN → bug crítico).
 _BRAND = re.compile(
     r"\b(?:"
     r"fit\s*-?\s*line|fitline|"
-    r"pm[\s\-]?international|pm\s*international|"
+    r"pm[\s\-]?international(?:\s+ag)?|"
+    r"pm[\s\-]?internacional(?:\s+ag)?|"
     r"pme\s*business|pmebusiness|"
     r"pm[\s\-]?income\s*plan|"
     r"rolf\s+sorg|vicki\s+sorg|"
@@ -25,6 +27,26 @@ _BRAND = re.compile(
     r"nutrient\s+transport\s+concept"
     r")\b",
     re.I,
+)
+
+# «PM» / «p.m.» como hora (3 pm) — no es la empresa.
+_CLOCK_PM = re.compile(
+    r"(?i)(?:\d{1,2}|medias?|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|"
+    r"diez|once|doce)\s*p\.?\s*m\.?\b|\bp\.m\.\b",
+)
+
+# Otros significados de PM / «internacional» que NO son FitLine.
+_PM_OTHER_MEANING = re.compile(
+    r"(?is)\b(?:"
+    r"project\s*management|gesti[oó]n\s+de\s+proyectos|"
+    r"\bpmp\b|scrum\b|waterfall|"
+    r"comercio\s+internacional|"
+    r"(?:importaci[oó]n|exportaci[oó]n|log[ií]stica)"
+    r"(?:\s+(?:internacional|global|mundial))?|"
+    r"particulate\s*matter|materia\s+particulada|"
+    r"prime\s*minister|primer\s+ministro|"
+    r"private\s*message|mensaje\s+privado"
+    r")\b",
 )
 
 # Productos / SKUs distintivos (incluye typo Activise ↔ Activize)
@@ -80,6 +102,14 @@ _AMBIGUOUS_SKUS = re.compile(
 _BASICS = re.compile(r"\bbasics\b", re.I)
 
 _PROMPT_RULES = (
+    "DESAMBIGUACIÓN OBLIGATORIA — «PM» EN CED: "
+    "«PM», «PM Internacional» y «PM International» = PM-International AG, "
+    "la empresa alemana detrás de FitLine (nutrición / bienestar / franquicia). "
+    "PROHIBIDO interpretar PM como Project Management, gestión de proyectos, "
+    "comercio internacional, import/export, logística, primer ministro u otros "
+    "significados de las siglas — salvo que el usuario diga EXPLÍCITAMENTE "
+    "«project management» / «gestión de proyectos» / «comercio internacional» "
+    "sin hablar de FitLine. "
     "Usa SOLO estos datos validados del módulo Oportunidades. "
     "NO inventes productos, precios de entrada, comisiones, % del Income Plan 2026, "
     "claims de salud ni cifras. "
@@ -310,8 +340,9 @@ _FACT_CARD = (
 )
 
 _USER_TURN_PREFIX = (
-    "[CED-OPORTUNIDADES FitLine/PM] Use SOLO el conocimiento Oportunidades del "
-    "system (tarjeta de hechos + secciones). "
+    "[CED-OPORTUNIDADES FitLine/PM] «PM»/«PM Internacional» = PM-International AG "
+    "(FitLine), NO project management ni comercio internacional. "
+    "Use SOLO el conocimiento Oportunidades del system (tarjeta de hechos + secciones). "
     "NTC = Nutrient Transport Concept. Fundación 1993 Speyer / Rolf Sorg. "
     "Sede Schengen desde 2015. PROHIBIDO decir investigando o buscar en internet. "
     "NO invente productos ni fechas.\n\n"
@@ -332,18 +363,56 @@ def with_fitline_user_prefix(user_text: str) -> str:
     return f"{prefix}{user_text}"
 
 
+def _pm_means_other_topic(text: str) -> bool:
+    """True si el turno apunta a otro significado de PM / «internacional»."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _CLOCK_PM.search(t) and not _BRAND.search(t) and not _DISTINCT_PRODUCTS.search(t):
+        return True
+    if not _PM_OTHER_MEANING.search(t):
+        return False
+    # Si ya nombra la empresa/marca FitLine, gana FitLine.
+    if _BRAND.search(t) or _DISTINCT_PRODUCTS.search(t):
+        return False
+    if re.search(r"(?i)\bfit\s*-?\s*line\b|\bfitline\b", t):
+        return False
+    return True
+
+
+def _bare_pm_means_fitline(text: str) -> bool:
+    """«PM» suelto en CED = PM International, salvo hora u otro significado claro."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if not re.search(r"(?i)\bpm\b", t):
+        return False
+    if _pm_means_other_topic(t):
+        return False
+    return True
+
+
 def wants_fitline_knowledge(text: str) -> bool:
     """True si el mensaje habla de PM/FitLine o productos curados del catálogo."""
     t = (text or "").strip()
     if not t:
         return False
+    if _pm_means_other_topic(t):
+        return False
     if _BRAND.search(t):
+        return True
+    # «PM» / «como comienzo en pm» → empresa (CED es cerrador FitLine).
+    if _bare_pm_means_fitline(t):
         return True
     if _DISTINCT_PRODUCTS.search(t):
         return True
     if _AMBIGUOUS_SKUS.search(t) and (
         _BRAND.search(t)
-        or re.search(r"\b(?:fitline|fit\s*line|pm\s*international|suplemento)\b", t, re.I)
+        or re.search(
+            r"\b(?:fitline|fit\s*line|pm\s*internationa?l|suplemento)\b",
+            t,
+            re.I,
+        )
     ):
         return True
     if _BASICS.search(t) and (_BRAND.search(t) or _DISTINCT_PRODUCTS.search(t)):

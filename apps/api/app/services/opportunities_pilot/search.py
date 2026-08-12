@@ -39,7 +39,7 @@ _PM_ACRONYM_NOISE = re.compile(
 
 _ENTITY_OK = re.compile(
     r"(?:"
-    r"pm[\s\-]?international|fitline|fit\s*line|"
+    r"pm[\s\-]?international|pm[\s\-]?internacional|fitline|fit\s*line|"
     r"pm\-international\.com|fitline\.com"
     r")",
     re.I,
