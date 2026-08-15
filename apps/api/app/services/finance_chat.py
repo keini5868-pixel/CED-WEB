@@ -332,6 +332,13 @@ def send_finance_message(
     if not text:
         raise ValueError("Mensaje vacío.")
 
+    try:
+        from app.services.referrals import note_activity
+
+        note_activity(user_id, "finance")
+    except Exception:  # noqa: BLE001
+        pass
+
     greeting = _greeting_reply(text) or try_instant_datetime_reply(text, history=history)
     if greeting:
         return _finish_payload(response=greeting, model=_stream_model_label())

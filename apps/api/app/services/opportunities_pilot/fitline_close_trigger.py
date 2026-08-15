@@ -292,6 +292,13 @@ def register_fitline_user_turn(user_id: str | None, user_text: str) -> dict[str,
         questions_since_defer=since if keep else 0,
         soft_reoffer_done=soft_done,
     )
+    try:
+        from app.services.referrals import note_activity
+
+        note_activity(uid, "chat_sales")
+        note_activity(uid, "voice_pm")
+    except Exception:  # noqa: BLE001
+        pass
     return {
         "question_count": count,
         "closer_offered": offered,

@@ -84,4 +84,11 @@ def update_user_sponsor_url(user_id: str, url: str | None) -> dict[str, Any]:
         logger.exception("[SPONSOR] update failed user=%s", uid[:8])
         return {"ok": False, "error": "save_failed", "detail": str(exc)[:160]}
     resolved = resolve_sponsor_url(uid)
+    if value:
+        try:
+            from app.services.referrals import note_activity
+
+            note_activity(uid, "sponsor")
+        except Exception:  # noqa: BLE001
+            pass
     return {"ok": True, **resolved, "saved_url": value or ""}

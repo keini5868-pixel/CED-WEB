@@ -133,6 +133,12 @@ def _stream_system_with_clock(
     base = append_fitline_knowledge_if_needed(base, user_text)
     if user_id and user_text:
         try:
+            from app.services.referrals import note_sales_chat_if_relevant
+
+            note_sales_chat_if_relevant(user_id, user_text)
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             from app.services.opportunities_pilot.fitline_close_trigger import (
                 append_fitline_close_trigger_if_needed,
             )
@@ -327,6 +333,13 @@ def send_advanced_message(
     text = message.strip()
     if not text:
         raise ValueError("Mensaje vacío.")
+
+    try:
+        from app.services.referrals import note_sales_chat_if_relevant
+
+        note_sales_chat_if_relevant(user_id, text)
+    except Exception:  # noqa: BLE001
+        pass
 
     instant = _instant_greeting_reply(text) or try_instant_datetime_reply(
         text, history=history

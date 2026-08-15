@@ -1,6 +1,7 @@
 "use client";
 
 import { ChangePasswordForm } from "@/components/account/ChangePasswordForm";
+import { ReferralIdCard } from "@/components/referrals/ReferralIdCard";
 
 export function AccountPanel() {
   return (
@@ -14,6 +15,8 @@ export function AccountPanel() {
           de recuperación por email.
         </p>
       </div>
+
+      <ReferralIdCard />
 
       <section className="rounded border border-cyan-500/25 bg-black/40 p-4">
         <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">

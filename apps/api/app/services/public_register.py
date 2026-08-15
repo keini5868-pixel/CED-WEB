@@ -161,6 +161,7 @@ def register_with_email(
     full_name: str = "",
     next_path: str | None = "/",
     offer: str | None = None,
+    ref: str | None = None,
 ) -> dict[str, Any]:
     if not resend_configured():
         raise PublicRegisterError(
@@ -231,6 +232,27 @@ def register_with_email(
             offer_n or "-",
             (voice_trial or {}).get("reason") or (voice_trial or {}).get("ok"),
         )
+
+        ref_n = (ref or "").strip()
+        if ref_n:
+            from app.services.referrals import claim_referral
+
+            claimed: dict[str, Any] | None = None
+            for _ in range(3):
+                claimed = claim_referral(user_id, ref_n)
+                if claimed.get("ok") or claimed.get("reason") in (
+                    "unknown_code",
+                    "self",
+                    "invalid",
+                ):
+                    break
+                time.sleep(0.3)
+            logger.info(
+                "[REGISTER] referral user=%s ref=%s result=%s",
+                user_id[:8],
+                ref_n[:16],
+                (claimed or {}).get("reason") or (claimed or {}).get("ok"),
+            )
 
     logger.info(
         "[REGISTER] ok email=%s user=%s via=resend offer=%s",

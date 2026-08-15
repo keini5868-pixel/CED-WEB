@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { AuthDivider, GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
-import { SIGNUP_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
+import { SIGNUP_PATH, appendAuthQueryParam, readAuthQueryParam, sanitizeAuthNext } from "@/lib/auth/paths";
 import { createClient } from "@/lib/supabase/client";
 import { isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
 
@@ -15,6 +15,14 @@ export function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const next = sanitizeAuthNext(searchParams.get("next"));
+  const ref = (
+    searchParams.get("ref") ||
+    readAuthQueryParam(next, "ref") ||
+    ""
+  )
+    .trim()
+    .toUpperCase();
+  const googleNext = appendAuthQueryParam(next, "ref", ref);
   const urlError = searchParams.get("error");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -118,7 +126,7 @@ export function LoginForm() {
           <AuthDivider />
           <GoogleAuthButton
             label="Iniciar sesión con Google"
-            next={next}
+            next={googleNext}
             disabled={loading || !configured}
             onError={setError}
           />
@@ -127,7 +135,7 @@ export function LoginForm() {
       <p className="mt-6 text-center text-xs text-cyan-600">
         ¿Sin cuenta?{" "}
         <Link
-          href={`${SIGNUP_PATH}?next=${encodeURIComponent(next)}`}
+          href={`${SIGNUP_PATH}?next=${encodeURIComponent(googleNext)}`}
           className="text-cyan-400 hover:underline"
         >
           {next.startsWith("/pricing") ? "Crear cuenta y pagar" : "Registro — 15 min de voz al hablar"}

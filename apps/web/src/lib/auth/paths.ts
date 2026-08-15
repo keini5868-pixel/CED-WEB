@@ -2,6 +2,7 @@
 
 export const DASHBOARD_PATH = "/dashboard";
 export const ACCOUNT_PATH = "/dashboard/account";
+export const TEAM_PATH = "/dashboard/mi-equipo";
 export const DRIVE_PATH = "/drive";
 export const ADMIN_PATH = "/admin";
 export const LOGIN_PATH = "/login";
@@ -31,4 +32,41 @@ export function sanitizeAuthNext(
   const trimmed = next.trim();
   if (!trimmed.startsWith("/") || trimmed.startsWith("//")) return fallback;
   return trimmed;
+}
+
+/** Añade ?key=value a una ruta interna si aún no está. */
+export function appendAuthQueryParam(
+  path: string,
+  key: string,
+  value: string | null | undefined,
+): string {
+  const v = (value || "").trim();
+  if (!v) return path;
+  try {
+    const u = new URL(path, "https://ced.local");
+    if (!u.searchParams.get(key)) u.searchParams.set(key, v);
+    const q = u.searchParams.toString();
+    return `${u.pathname}${q ? `?${q}` : ""}${u.hash}`;
+  } catch {
+    return path;
+  }
+}
+
+export function readAuthQueryParam(path: string, key: string): string {
+  try {
+    return new URL(path, "https://ced.local").searchParams.get(key)?.trim() || "";
+  } catch {
+    return "";
+  }
+}
+
+export function stripAuthQueryParams(path: string, keys: readonly string[]): string {
+  try {
+    const u = new URL(path, "https://ced.local");
+    for (const k of keys) u.searchParams.delete(k);
+    const q = u.searchParams.toString();
+    return `${u.pathname}${q ? `?${q}` : ""}${u.hash}`;
+  } catch {
+    return path;
+  }
 }

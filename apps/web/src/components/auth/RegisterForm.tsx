@@ -7,7 +7,7 @@ import { useState } from "react";
 import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { AuthDivider, GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
-import { LOGIN_PATH, sanitizeAuthNext } from "@/lib/auth/paths";
+import { LOGIN_PATH, appendAuthQueryParam, readAuthQueryParam, sanitizeAuthNext } from "@/lib/auth/paths";
 import { apiUrl, isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
 
 function registerErrorMessage(status: number, detail: unknown): string {
@@ -49,6 +49,13 @@ export function RegisterForm() {
   const searchParams = useSearchParams();
   const next = sanitizeAuthNext(searchParams.get("next"));
   const offer = resolvePmOffer(searchParams.get("offer") || "", next);
+  const ref = (
+    searchParams.get("ref") ||
+    readAuthQueryParam(next, "ref") ||
+    ""
+  )
+    .trim()
+    .toUpperCase();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -56,10 +63,11 @@ export function RegisterForm() {
   const [loading, setLoading] = useState(false);
 
   const configured = isSupabaseConfigured();
-  const googleNext =
+  let googleNext =
     offer && !next.includes("offer=")
       ? `${next}${next.includes("?") ? "&" : "?"}offer=${offer}`
       : next;
+  googleNext = appendAuthQueryParam(googleNext, "ref", ref);
   const loginHref = `${LOGIN_PATH}?next=${encodeURIComponent(googleNext)}`;
 
   async function handleRegister(e: React.FormEvent) {
@@ -82,6 +90,7 @@ export function RegisterForm() {
           full_name: fullName.trim(),
           next: googleNext,
           ...(offer ? { offer } : {}),
+          ...(ref ? { ref } : {}),
         }),
       });
       let data: unknown = null;
@@ -144,6 +153,11 @@ export function RegisterForm() {
           Al verificar tu correo tienes 15 minutos de voz: el reloj de 24 h
           arranca cuando empieces a hablar (si no usas la voz, no vence).
           Imágenes y PDF durante 7 días. El chat de texto sigue disponible.
+        </p>
+      ) : null}
+      {ref ? (
+        <p className="mb-4 rounded border border-cyan-500/25 bg-cyan-500/5 p-3 text-[11px] text-cyan-300">
+          Te invita un socio CED · Referral ID {ref}
         </p>
       ) : null}
       <form onSubmit={handleRegister} className="space-y-4">

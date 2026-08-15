@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -12,6 +14,8 @@ from app.services.public_register import (
     register_with_email,
     resend_verification_email,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/auth", tags=["auth-public"])
 
@@ -24,6 +28,7 @@ class RegisterBody(BaseModel):
     # Funnel FitLine / CED PM: offer=cierre → plan PM + 15 min voz / 24 h.
     # El resto de altas también reciben 15 min / 24 h (sin plan PM).
     offer: str = Field(default="", max_length=32)
+    ref: str = Field(default="", max_length=32)
 
 
 class ResendBody(BaseModel):
@@ -33,6 +38,7 @@ class ResendBody(BaseModel):
 
 class ApplyOfferBody(BaseModel):
     offer: str = Field(default="cierre", max_length=32)
+    ref: str = Field(default="", max_length=32)
 
 
 @router.post("/register")
@@ -49,6 +55,7 @@ def public_register(request: Request, body: RegisterBody) -> dict:
             full_name=body.full_name,
             next_path=body.next,
             offer=body.offer,
+            ref=body.ref,
         )
     except PublicRegisterError as exc:
         status = 409 if exc.code == "email_exists" else 400
@@ -67,6 +74,13 @@ def apply_offer(
     """Aplica trial de voz 15 min/24 h (Google OAuth). offer=cierre → plan PM."""
     from app.domain.plans import CIERRE_TRIAL_OFFER
     from app.services import supabase_db
+    from app.services.referrals import claim_referral
+
+    if (body.ref or "").strip():
+        try:
+            claim_referral(user_id, body.ref)
+        except Exception:
+            logger.exception("apply-offer: claim_referral failed")
 
     offer = (body.offer or "").strip().lower()
     if offer in (CIERRE_TRIAL_OFFER, "fitline"):

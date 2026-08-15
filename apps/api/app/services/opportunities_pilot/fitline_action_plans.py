@@ -104,6 +104,12 @@ def upsert_active_plan(
                 .execute()
             )
             row = (result.data or [None])[0] or {**existing, "title": clean_title, "content": merged}
+            try:
+                from app.services.referrals import note_activity
+
+                note_activity(uid, "finance")
+            except Exception:  # noqa: BLE001
+                pass
             return {"ok": True, "created": False, "plan": row}
         except Exception as exc:  # noqa: BLE001
             logger.exception("[FITLINE-PLAN] update failed user=%s", uid[:8])
@@ -126,6 +132,12 @@ def upsert_active_plan(
         row = (result.data or [None])[0]
         if not row:
             return {"ok": False, "error": "insert_empty"}
+        try:
+            from app.services.referrals import note_activity
+
+            note_activity(uid, "finance")
+        except Exception:  # noqa: BLE001
+            pass
         return {"ok": True, "created": True, "plan": row}
     except Exception as exc:  # noqa: BLE001
         logger.exception("[FITLINE-PLAN] insert failed user=%s", uid[:8])

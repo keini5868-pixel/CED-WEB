@@ -156,4 +156,10 @@ async def opportunity_detail(
         channel="http",
         metadata={"opportunity_id": opportunity_id.strip()[:80]},
     )
+    try:
+        from app.services.referrals import note_activity
+
+        note_activity(user_id, "opps")
+    except Exception:  # noqa: BLE001
+        pass
     return report

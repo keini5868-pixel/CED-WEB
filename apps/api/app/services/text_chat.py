@@ -2454,6 +2454,13 @@ def send_message(
                 http_status=429,
             )
 
+    try:
+        from app.services.referrals import note_sales_chat_if_relevant
+
+        note_sales_chat_if_relevant(user_id, text)
+    except Exception:  # noqa: BLE001
+        pass
+
     settings = get_settings()
     anthropic_key = settings.anthropic_api_key.strip()
     google_key = settings.google_api_key.strip()
@@ -3456,6 +3463,13 @@ def iter_send_message_stream(
         raise TextChatError("Mensaje vacío.")
     if len(text) > CHAT_MESSAGE_MAX_CHARS:
         raise TextChatError(CHAT_MESSAGE_TOO_LONG_ES, http_status=400)
+
+    try:
+        from app.services.referrals import note_sales_chat_if_relevant
+
+        note_sales_chat_if_relevant(user_id, text)
+    except Exception:  # noqa: BLE001
+        pass
 
     if not _can_stream_chat_text(
         text, user_id=user_id, conversation_id=conversation_id

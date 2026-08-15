@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 
-import { sanitizeAuthNext } from "@/lib/auth/paths";
+import { sanitizeAuthNext, stripAuthQueryParams } from "@/lib/auth/paths";
 import { apiUrl, isSupabaseConfigured } from "@/lib/env";
 
 type CookieToSet = {
@@ -21,14 +21,7 @@ function absoluteRedirect(request: NextRequest, path: string): string {
 }
 
 function stripOfferParam(path: string): string {
-  try {
-    const u = new URL(path, "https://ced.local");
-    u.searchParams.delete("offer");
-    const q = u.searchParams.toString();
-    return `${u.pathname}${q ? `?${q}` : ""}${u.hash}`;
-  } catch {
-    return path;
-  }
+  return stripAuthQueryParams(path, ["offer", "ref"]);
 }
 
 export async function GET(request: NextRequest) {
@@ -59,10 +52,14 @@ export async function GET(request: NextRequest) {
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
   let offer = "";
+  let ref = "";
   try {
-    offer = new URL(next, "https://ced.local").searchParams.get("offer")?.toLowerCase() || "";
+    const nextUrl = new URL(next, "https://ced.local");
+    offer = nextUrl.searchParams.get("offer")?.toLowerCase() || "";
+    ref = (nextUrl.searchParams.get("ref") || "").trim();
   } catch {
     offer = "";
+    ref = "";
   }
   const cleanNext = stripOfferParam(next);
   const response = NextResponse.redirect(absoluteRedirect(request, cleanNext));
@@ -100,6 +97,7 @@ export async function GET(request: NextRequest) {
         },
         body: JSON.stringify({
           offer: offer === "cierre" || offer === "fitline" ? "cierre" : "voice",
+          ...(ref ? { ref } : {}),
         }),
       });
     }
