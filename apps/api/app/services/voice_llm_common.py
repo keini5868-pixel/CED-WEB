@@ -199,6 +199,15 @@ def build_base_voice_system(
             fitline_turn = force_fitline or wants_fitline_knowledge(query)
         except Exception:  # noqa: BLE001
             fitline_turn = force_fitline
+        if not fitline_turn and uid:
+            try:
+                from app.services.opportunities_pilot.fitline_close_trigger import (
+                    get_engagement,
+                )
+
+                fitline_turn = int(get_engagement(uid).get("question_count") or 0) > 0
+            except Exception:  # noqa: BLE001
+                fitline_turn = False
         if fitline_turn:
             try:
                 from app.services.opportunities_pilot.fitline_close_trigger import (

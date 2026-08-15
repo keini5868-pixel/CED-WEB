@@ -58,6 +58,7 @@ def _fresh_session() -> dict[str, Any]:
         "fitline_keep_learning": False,
         "fitline_questions_since_defer": 0,
         "fitline_soft_reoffer_done": False,
+        "fitline_closer_reasked": False,
     }
 
 

@@ -435,6 +435,15 @@ def append_fitline_guide_if_needed(
     channel: Channel = "chat",
 ) -> str:
     """Prepara el turno de guía y añade overlay + conocimiento FitLine si aplica."""
+    try:
+        from app.services.opportunities_pilot.fitline_close_trigger import (
+            guide_should_yield_to_closer,
+        )
+
+        if guide_should_yield_to_closer(user_id):
+            return system
+    except Exception:  # noqa: BLE001
+        pass
     state = prepare_fitline_guide_turn(user_id, user_text, channel=channel)
     overlay = format_guide_overlay(state, channel=channel)
     if not overlay and not state.get("active") and not state.get("just_deactivated"):
