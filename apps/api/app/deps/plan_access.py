@@ -28,8 +28,8 @@ def effective_plan_limits(user_id: str) -> tuple[PlanLimits, str, bool]:
     if allowed and reason in ("free_basic", "past_due"):
         return get_plan_limits(PlanId.FREE_BASIC.value), reason, False
 
-    if allowed and reason == "trial":
-        return get_plan_limits(PlanId.ELITE.value), "trial", True
+    if allowed and reason in ("trial", "cierre_trial", "voice_trial_expired"):
+        return get_plan_limits(PlanId.ELITE.value), reason, True
 
     sub = supabase_db.get_subscription(user_id) or {}
     if str(sub.get("status") or "") == "past_due":
@@ -129,7 +129,7 @@ def chat_message_limit(user_id: str, *, profile: dict | None = None) -> int:
     if not allowed and reason == "trial_expired":
         return get_plan_limits(PlanId.FREE_BASIC.value).claude_messages_per_day
 
-    if allowed and reason == "trial":
+    if allowed and reason in ("trial", "cierre_trial", "voice_trial_expired"):
         return -1
 
     limits, _, _ = effective_plan_limits(user_id)

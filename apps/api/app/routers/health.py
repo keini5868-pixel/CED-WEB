@@ -32,6 +32,8 @@ from app.domain.plans import (
     RECHARGE_QUICK_AMOUNTS_USD,
     TRIAL_DAYS,
     USAGE_WARNING_PERCENT,
+    VOICE_TRIAL_HOURS,
+    VOICE_TRIAL_MINUTES,
     public_plans_catalog,
     quote_recharge,
 )
@@ -464,6 +466,8 @@ def meta() -> dict:
         "phase": 7,
         "web_url": settings.web_public_url,
         "trial_days": TRIAL_DAYS,
+        "trial_hours": VOICE_TRIAL_HOURS,
+        "trial_voice_minutes": VOICE_TRIAL_MINUTES,
         "usage_warning_percent": USAGE_WARNING_PERCENT,
         "plans": public_plans_catalog(),
         "founding": {

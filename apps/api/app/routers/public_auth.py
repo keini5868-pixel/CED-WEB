@@ -21,7 +21,8 @@ class RegisterBody(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(default="", max_length=120)
     next: str = Field(default="/", max_length=500)
-    # Funnel FitLine / CED PM: offer=cierre → 15 min voz / 24 h, luego pagar.
+    # Funnel FitLine / CED PM: offer=cierre → plan PM + 15 min voz / 24 h.
+    # El resto de altas también reciben 15 min / 24 h (sin plan PM).
     offer: str = Field(default="", max_length=32)
 
 
@@ -63,23 +64,29 @@ def apply_offer(
     body: ApplyOfferBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
-    """Aplica oferta FitLine (cierre) a la cuenta autenticada — p.ej. Google OAuth."""
+    """Aplica trial de voz 15 min/24 h (Google OAuth). offer=cierre → plan PM."""
     from app.domain.plans import CIERRE_TRIAL_OFFER
     from app.services import supabase_db
 
     offer = (body.offer or "").strip().lower()
-    if offer not in (CIERRE_TRIAL_OFFER, "fitline"):
-        raise HTTPException(status_code=400, detail="Oferta no válida.")
-    result = supabase_db.apply_cierre_fitline_trial(user_id)
+    if offer in (CIERRE_TRIAL_OFFER, "fitline"):
+        result = supabase_db.apply_cierre_fitline_trial(user_id)
+    else:
+        result = supabase_db.apply_voice_pool_trial(user_id)
     if not result.get("ok"):
         reason = str(result.get("reason") or "error")
+        if reason in ("legacy_trial", "not_eligible"):
+            return {"ok": True, "skipped": reason}
         if reason == "already_paid":
-            raise HTTPException(
-                status_code=409,
-                detail="Ya tienes una suscripción de pago activa.",
-            )
+            if offer in (CIERRE_TRIAL_OFFER, "fitline"):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Ya tienes una suscripción de pago activa.",
+                )
+            return {"ok": True, "skipped": reason}
         raise HTTPException(
-            status_code=503, detail="No se pudo activar la prueba FitLine."
+            status_code=503,
+            detail="No se pudo activar la prueba de voz.",
         )
     return result
 

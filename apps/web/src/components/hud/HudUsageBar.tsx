@@ -43,7 +43,9 @@ export function HudUsageBar() {
       ? "Límite alcanzado"
       : voiceLimit === "trial_daily_limit"
         ? "Voz de hoy agotada (prueba)"
-        : voiceLimit === "trial_expired"
+        : voiceLimit === "voice_trial_limit" || voiceLimit === "cierre_trial_limit"
+          ? "Prueba de voz agotada"
+        : voiceLimit === "trial_expired" || voiceLimit === "voice_trial_expired"
           ? "Prueba de voz terminada"
           : voiceLimit === "subscription"
             ? "Suscripción requerida"
@@ -61,7 +63,7 @@ export function HudUsageBar() {
     <div>
       <div className="ced-hud-text-primary flex flex-wrap items-center justify-between gap-2 font-medium">
         <span>
-          USO VOZ HOY:{" "}
+          USO VOZ{balance.voicePoolTrial ? " (prueba)" : " HOY"}:{" "}
           {loaded
             ? `${balance.used.toFixed(1)} / ${balance.plan} min`
             : "— / — min"}
@@ -91,7 +93,9 @@ export function HudUsageBar() {
         />
       </div>
       <p className="ced-hud-text-muted mt-2 text-xs">
-        Límite diario del asistente de voz · el chat de texto es independiente
+        {balance.voicePoolTrial
+          ? "15 min de voz: el reloj de 24 h arranca al hablar · el chat de texto es independiente"
+          : "Límite diario del asistente de voz · el chat de texto es independiente"}
       </p>
 
       {critical && loaded ? (
@@ -101,8 +105,13 @@ export function HudUsageBar() {
               ? "Has alcanzado tu límite diario de voz"
               : voiceLimit === "trial_daily_limit"
                 ? "Usaste tus 5 min de voz de hoy (prueba gratis)"
-                : voiceLimit === "trial_expired"
-                  ? "Tu prueba de 7 días de voz terminó"
+                : voiceLimit === "voice_trial_limit" ||
+                    voiceLimit === "cierre_trial_limit"
+                  ? "Usaste los 15 min de tu prueba de voz"
+                : voiceLimit === "trial_expired" ||
+                    voiceLimit === "cierre_trial_expired" ||
+                    voiceLimit === "voice_trial_expired"
+                  ? "Tu prueba de voz terminó"
                   : "El asistente de voz requiere plan o recarga"}
           </p>
           <p className="mt-2 opacity-90">

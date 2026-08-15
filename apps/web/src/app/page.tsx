@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
-import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS, TRIAL_DAYS } from "@ced/types";
+import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS, TRIAL_DAYS, VOICE_TRIAL_HOURS, VOICE_TRIAL_MINUTES } from "@ced/types";
 
 import {
   PublicHeaderLink,
@@ -100,7 +100,8 @@ export default function HomePage() {
             usar mapas y GPS, y publicar en redes cuando tú lo autorices.
           </p>
           <p className="mt-3 text-xs text-cyan-500">
-            Página pública — {TRIAL_DAYS} días gratis al registrarte.
+            Página pública — {VOICE_TRIAL_MINUTES} min de voz desde que empieces a hablar
+            ({VOICE_TRIAL_HOURS} h) · imágenes y PDF {TRIAL_DAYS} días.
           </p>
         </div>
       </section>

@@ -20,11 +20,28 @@ def test_trial_shows_trial_label_and_trial_ends_at():
     info = _plan_display(sub)
     assert info["is_trial"] is True
     assert info["is_paid"] is False
-    assert info["plan_label"].startswith("Trial ·")
+    assert info["plan_label"].startswith("Trial 7d ·")
     assert "Élite" in info["plan_label"] or "Elite" in info["plan_label"]
     assert info["display_expires_at"] == end
     assert info["voice_minutes_daily"] == TRIAL_VOICE_MINUTES_PER_DAY
     assert _user_status(sub) == "trial"
+
+
+def test_new_24h_trial_shows_pool_label():
+    now = datetime.now(timezone.utc)
+    end = (now + timedelta(hours=20)).isoformat()
+    sub = {
+        "plan_id": PlanId.ELITE.value,
+        "status": "trialing",
+        "created_at": (now - timedelta(hours=4)).isoformat(),
+        "trial_ends_at": end,
+        "expires_at": None,
+        "stripe_subscription_id": None,
+    }
+    info = _plan_display(sub)
+    assert info["is_trial"] is True
+    assert info["plan_label"].startswith("Prueba 7d · voz 15 min")
+    assert info["voice_minutes_daily"] == 15
 
 
 def test_paid_elite_shows_confirmed_not_trial():

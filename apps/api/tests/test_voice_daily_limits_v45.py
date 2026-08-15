@@ -1,8 +1,9 @@
 """Tests — límites diarios de voz (Starter 4 / Pro 7 / Élite 12 / Founding 18)
-y blindaje trial (5 min/día, 7 días) vs. Básico permanente post-trial (0 min).
+y blindaje trial (legacy 5 min/día × 7 días; altas nuevas 15 min / 24 h)
+vs. Básico permanente post-trial (0 min).
 
 Calibrados a margen mínimo $10/mes (Retell+Gemini $0.081/min + imágenes).
-El trial de 7 días da 5 min/día y al día 8 la voz queda en 0 (chat de texto sigue).
+El trial legacy de 7 días da 5 min/día; al vencer la voz queda en 0.
 """
 
 from __future__ import annotations
@@ -33,10 +34,12 @@ def _mock_profile(_user_id: str):
 
 
 def test_trial_user_gets_five_minutes_per_day():
-    trial_end = (datetime.now(timezone.utc) + timedelta(days=3)).isoformat()
+    now = datetime.now(timezone.utc)
+    trial_end = (now + timedelta(days=3)).isoformat()
     sub = {
         "plan_id": PlanId.STARTER.value,
         "status": "trialing",
+        "created_at": (now - timedelta(days=4)).isoformat(),
         "trial_ends_at": trial_end,
     }
     with (

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from enum import StrEnum
 
 
@@ -19,15 +20,16 @@ class PlanId(StrEnum):
 
 
 FOUNDING_MEMBER_MAX_SLOTS = 50
+# Legacy: trials de 7 días × 5 min/día ya emitidos siguen hasta vencer.
+# Altas NUEVAS: 15 min de voz; el reloj de 24 h arranca en el primer uso.
+# Imágenes/PDF del trial: 7 días desde el registro (límites Élite).
 TRIAL_DAYS = 7
-# Voz durante los 7 días de prueba — se renueva cada día (usage_logs es por
-# fecha). Al día 8 el usuario cae a free_basic (voice_enabled=False, 0 min).
 TRIAL_VOICE_MINUTES_PER_DAY = 5
-# Funnel FitLine / CED PM International: pool ÚNICO de 15 min de voz dentro de
-# las primeras 24 h desde el registro — NO se renueva a medianoche. Al agotar
-# los 15 min O al vencer las 24 h (lo que ocurra primero) → free_basic.
-CIERRE_TRIAL_HOURS = 24
-CIERRE_TRIAL_VOICE_MINUTES = 15
+VOICE_TRIAL_HOURS = 24
+VOICE_TRIAL_MINUTES = 15
+# Funnel FitLine / CED PM International: mismo pool 15 min / 24 h + plan cierre.
+CIERRE_TRIAL_HOURS = VOICE_TRIAL_HOURS
+CIERRE_TRIAL_VOICE_MINUTES = VOICE_TRIAL_MINUTES
 CIERRE_TRIAL_OFFER = "cierre"
 USAGE_WARNING_PERCENT = 80
 
@@ -224,11 +226,11 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
         claude_messages_per_day=-1,
         ai_images_text_per_day=8,
     ),
-    # Básico permanente (post-trial): SIN voz, siempre. Blindado a propósito —
-    # el trial de 7 días ya dio 5 min/día vía TRIAL_VOICE_MINUTES_PER_DAY
-    # (get_user_access status=="trialing"); una vez ese trial vence, la
-    # suscripción cae a este plan y voice_enabled=False corta la voz a 0 sin
-    # excepción, para que nadie use voz gratis indefinidamente sin pagar.
+    # Básico permanente (post-trial de 7 días): SIN voz, siempre. Blindado a
+    # propósito — el trial de voz (15 min desde el primer uso / 24 h, o
+    # legacy 7×5 min) ya se entregó vía get_user_access status=="trialing";
+    # al vencer los 7 días la suscripción cae a este plan y voice_enabled=False
+    # corta la voz a 0 sin excepción.
     # Imágenes y PDF SÍ quedan gratis de forma permanente (muestra continua de
     # capacidades CED, aprobado Keini 2026-07) con tope diario bajo — COGS
     # real Nano Banana 2 (~$0.067/img) sigue acotado a 2/día.
@@ -305,7 +307,7 @@ def plan_is_pm_fitline_focus(plan_id: str | None) -> bool:
 
 
 def is_cierre_fitline_trial(sub: dict | None) -> bool:
-    """Trial corto FitLine: plan cierre + status trialing (ventana 24 h)."""
+    """Trial FitLine: plan cierre + status trialing."""
     if not sub:
         return False
     if str(sub.get("status") or "") != "trialing":
@@ -313,9 +315,96 @@ def is_cierre_fitline_trial(sub: dict | None) -> bool:
     return normalize_plan_id(sub.get("plan_id")) == PlanId.CIERRE.value
 
 
-def trial_voice_minutes_for_subscription(sub: dict | None) -> int:
+def _parse_sub_dt(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _flag_true(value: object) -> bool:
+    if value is True:
+        return True
+    if isinstance(value, (int, float)) and value == 1:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in ("true", "t", "1", "yes")
+    return False
+
+
+def is_voice_trial_armed(sub: dict | None) -> bool:
+    """Alta nueva: 15 min de voz pendientes de primer uso (reloj aún no arranca)."""
+    if not sub:
+        return False
+    return _flag_true(sub.get("voice_trial_armed"))
+
+
+def voice_trial_started_at(sub: dict | None) -> datetime | None:
+    if not sub:
+        return None
+    return _parse_sub_dt(sub.get("voice_trial_started_at"))
+
+
+def _is_legacy_signup_clock_pool(sub: dict | None) -> bool:
+    """Cohorte breve: trial_ends_at ≈ 24 h desde created_at (reloj al registro)."""
+    if not sub:
+        return False
+    ends = _parse_sub_dt(sub.get("trial_ends_at"))
+    created = _parse_sub_dt(sub.get("created_at"))
+    if not ends or not created:
+        return False
+    window = ends - created
+    return timedelta(0) < window <= timedelta(hours=VOICE_TRIAL_HOURS + 6)
+
+
+def is_voice_pool_trial(sub: dict | None) -> bool:
+    """True si el trial de voz es pool único 15 min / 24 h (no 5 min/día).
+
+    Altas nuevas (armed o reloj ya arrancado) y funnel PM. Trials legacy de
+    7 días × 5 min/día no llevan ``voice_trial_armed``.
+    """
+    if not sub or str(sub.get("status") or "") != "trialing":
+        return False
     if is_cierre_fitline_trial(sub):
-        return CIERRE_TRIAL_VOICE_MINUTES
+        return True
+    if is_voice_trial_armed(sub) or voice_trial_started_at(sub):
+        return True
+    return _is_legacy_signup_clock_pool(sub)
+
+
+def voice_trial_window_start(sub: dict | None) -> datetime | None:
+    """Inicio del pool de 24 h. None = el usuario aún no usó la voz."""
+    if not is_voice_pool_trial(sub):
+        return None
+    started = voice_trial_started_at(sub)
+    if started:
+        return started
+    if is_voice_trial_armed(sub):
+        return None
+    ends = _parse_sub_dt((sub or {}).get("trial_ends_at"))
+    if ends:
+        return ends - timedelta(hours=VOICE_TRIAL_HOURS)
+    return None
+
+
+def voice_trial_time_expired(sub: dict | None) -> bool:
+    """True si ya corrió el reloj de 24 h (los minutos pueden seguir o no)."""
+    start = voice_trial_window_start(sub)
+    if not start:
+        return False
+    return datetime.now(timezone.utc) >= start + timedelta(hours=VOICE_TRIAL_HOURS)
+
+
+def trial_voice_minutes_for_subscription(sub: dict | None) -> int:
+    if voice_trial_time_expired(sub):
+        return 0
+    if is_voice_pool_trial(sub):
+        return VOICE_TRIAL_MINUTES
     return TRIAL_VOICE_MINUTES_PER_DAY
 
 

@@ -181,7 +181,7 @@ export function AdminUsersPanel() {
                     <div className="text-cyan-100">{planCell(u)}</div>
                     {u.is_trial ? (
                       <div className="text-[10px] text-sky-400/90">
-                        No es plan pagado · prueba 7 días
+                        No es plan pagado · prueba de voz
                       </div>
                     ) : u.is_paid ? (
                       <div className="text-[10px] text-emerald-400/80">

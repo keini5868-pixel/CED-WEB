@@ -86,25 +86,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(absoluteRedirect(request, "/login?error=auth_callback"));
   }
 
-  if (offer === "cierre" || offer === "fitline") {
-    try {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const token = session?.access_token;
-      if (token) {
-        await fetch(`${apiUrl()}/v1/auth/apply-offer`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ offer: "cierre" }),
-        });
-      }
-    } catch (exc) {
-      console.error("[AUTH:callback] apply-offer failed:", exc);
+  try {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    if (token) {
+      await fetch(`${apiUrl()}/v1/auth/apply-offer`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          offer: offer === "cierre" || offer === "fitline" ? "cierre" : "voice",
+        }),
+      });
     }
+  } catch (exc) {
+    console.error("[AUTH:callback] apply-offer failed:", exc);
   }
 
   return response;

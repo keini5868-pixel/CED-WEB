@@ -53,7 +53,7 @@ export function VerifyEmailPanel() {
   }
 
   return (
-    <AuthCard title="VERIFICA TU EMAIL" subtitle="7 días gratis te esperan">
+    <AuthCard title="VERIFICA TU EMAIL" subtitle="15 min de voz al hablar · 7 días de imágenes">
       <p className="text-center text-sm text-cyan-400/90">
         Enviamos un enlace a{" "}
         <span className="font-semibold text-cyan-300">

@@ -53,9 +53,13 @@ async def usage_balance(user_id: str = Depends(require_user_id)) -> dict:
 
 @router.post("/session/start")
 async def session_start(user_id: str = Depends(require_user_id)) -> dict:
+    await run_sync(supabase_db.start_voice_trial_clock, user_id)
     balance = await voice_access_state_async(user_id)
     access_msg = balance.get("access_message") or ""
-    if balance.get("access_denied") or access_msg == "trial_expired":
+    if balance.get("access_denied") or access_msg in (
+        "trial_expired",
+        "cierre_trial_expired",
+    ):
         detail = ACCESS_DENIED_MESSAGES.get(access_msg, access_msg or "Acceso no disponible.")
         raise HTTPException(status_code=403, detail=detail)
     if balance["blocked"]:

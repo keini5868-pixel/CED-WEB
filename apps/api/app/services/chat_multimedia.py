@@ -99,7 +99,7 @@ def _effective_plan_key(user_id: str) -> str:
         return "free_basic"
     if allowed and reason in ("free_basic", "past_due"):
         return "free_basic"
-    if allowed and reason == "trial":
+    if allowed and reason in ("trial", "cierre_trial", "voice_trial_expired"):
         return "elite"
 
     sub = supabase_db.get_subscription(user_id) or {}

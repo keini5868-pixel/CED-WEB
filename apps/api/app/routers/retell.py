@@ -72,6 +72,8 @@ from app.services.voice_client_session import clear_advanced_mode_for_call
 from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
 from app.services.voice_tool_executor import execute_voice_tool
 from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state_async
+from app.services import supabase_db
+from app.services.async_sync import run_sync
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +87,13 @@ class RegisterCallBody(BaseModel):
 
 
 async def _voice_access_or_raise(user_id: str) -> None:
+    await run_sync(supabase_db.start_voice_trial_clock, user_id)
     balance = await voice_access_state_async(user_id)
     msg = balance.get("access_message") or ""
-    if balance.get("access_denied") or msg == "trial_expired":
+    if balance.get("access_denied") or msg in (
+        "trial_expired",
+        "cierre_trial_expired",
+    ):
         detail = ACCESS_DENIED_MESSAGES.get(msg, msg or "Acceso no disponible.")
         raise HTTPException(status_code=403, detail=detail)
     if balance.get("blocked"):

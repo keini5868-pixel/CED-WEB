@@ -210,8 +210,8 @@ def register_with_email(
         )
 
     offer_n = (offer or "").strip().lower()
-    cierre_trial: dict[str, Any] | None = None
-    if offer_n in ("cierre", "fitline") and user_id:
+    voice_trial: dict[str, Any] | None = None
+    if user_id:
         import time
 
         from app.services import supabase_db
@@ -219,13 +219,17 @@ def register_with_email(
         # El trigger handle_new_user puede tardar un instante en crear la fila.
         for _ in range(5):
             time.sleep(0.4)
-            cierre_trial = supabase_db.apply_cierre_fitline_trial(user_id)
-            if cierre_trial.get("ok"):
+            if offer_n in ("cierre", "fitline"):
+                voice_trial = supabase_db.apply_cierre_fitline_trial(user_id)
+            else:
+                voice_trial = supabase_db.apply_voice_pool_trial(user_id)
+            if voice_trial.get("ok"):
                 break
         logger.info(
-            "[REGISTER] cierre fitline trial user=%s result=%s",
+            "[REGISTER] voice trial user=%s offer=%s result=%s",
             user_id[:8],
-            (cierre_trial or {}).get("reason") or (cierre_trial or {}).get("ok"),
+            offer_n or "-",
+            (voice_trial or {}).get("reason") or (voice_trial or {}).get("ok"),
         )
 
     logger.info(
@@ -240,17 +244,24 @@ def register_with_email(
         "needs_verification": True,
         "message": "Te enviamos un enlace de verificación. Revisa tu correo.",
     }
-    if cierre_trial and cierre_trial.get("ok"):
-        out["offer"] = "cierre"
-        out["trial_hours"] = cierre_trial.get("hours", 24)
-        out["trial_voice_minutes"] = cierre_trial.get(
-            "minutes_daily", 15
-        )
-        out["message"] = (
-            "Te enviamos un enlace de verificación. "
-            "Al confirmar tendrás 15 min de voz en las primeras 24 horas "
-            "(no se renuevan; FitLine / CED PM International)."
-        )
+    if voice_trial and voice_trial.get("ok"):
+        out["trial_hours"] = voice_trial.get("hours", 24)
+        out["trial_voice_minutes"] = voice_trial.get("minutes_daily", 15)
+        if offer_n in ("cierre", "fitline") or voice_trial.get("plan_id") == "cierre":
+            out["offer"] = "cierre"
+            out["message"] = (
+                "Te enviamos un enlace de verificación. "
+                "Al confirmar: 15 min de voz desde que empieces a hablar "
+                "(24 h a partir de ese momento; FitLine / CED PM International). "
+                "Imágenes y PDF durante 7 días."
+            )
+        else:
+            out["message"] = (
+                "Te enviamos un enlace de verificación. "
+                "Al confirmar: 15 min de voz desde que empieces a hablar "
+                "(el reloj de 24 h no arranca hasta entonces). "
+                "Imágenes y PDF durante 7 días."
+            )
     return out
 
 

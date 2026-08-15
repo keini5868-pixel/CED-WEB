@@ -86,29 +86,18 @@ def get_usage_minutes_since(user_id: str, since: datetime) -> float:
 
 
 def cierre_trial_window_start(sub: dict | None) -> datetime | None:
-    """Inicio de la ventana de 24 h del trial PM (derivado de trial_ends_at)."""
-    if not sub:
-        return None
-    from app.domain.plans import CIERRE_TRIAL_HOURS
+    """Inicio del pool de 24 h de voz (primer uso, o cohorte 24 h al registro)."""
+    from app.domain.plans import voice_trial_window_start
 
-    trial_end = sub.get("trial_ends_at")
-    if not trial_end:
-        return None
-    try:
-        ends = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if ends.tzinfo is None:
-        ends = ends.replace(tzinfo=timezone.utc)
-    return ends - timedelta(hours=CIERRE_TRIAL_HOURS)
+    return voice_trial_window_start(sub)
 
 
 def get_cierre_trial_used_minutes(user_id: str, sub: dict | None = None) -> float:
-    """Minutos consumidos en el pool único del trial PM (no se renueva diario)."""
+    """Minutos consumidos en el pool único del trial de voz (no se renueva diario)."""
     row = sub if sub is not None else get_subscription(user_id)
     start = cierre_trial_window_start(row)
     if not start:
-        return get_usage_minutes_today(user_id)
+        return 0.0
     return get_usage_minutes_since(user_id, start)
 
 
@@ -130,6 +119,10 @@ def add_usage_minutes(
 ) -> float:
     if minutes <= 0:
         return get_usage_minutes_today(user_id)
+    try:
+        start_voice_trial_clock(user_id)
+    except Exception:  # noqa: BLE001
+        pass
     client = _client()
     today = today_utc().isoformat()
     sid = session_id or str(uuid4())
@@ -861,87 +854,188 @@ def downgrade_to_free_basic(user_id: str) -> None:
         logger.exception("[DB] downgrade_to_free_basic failed")
 
 
-def apply_cierre_fitline_trial(user_id: str) -> dict[str, Any]:
-    """Convierte al trial FitLine: plan cierre, pool único de 15 min en 24 h.
+def apply_voice_pool_trial(
+    user_id: str, *, plan_id: str | None = None
+) -> dict[str, Any]:
+    """Trial general: 15 min de voz (reloj 24 h al primer uso) + 7 días imágenes/PDF.
 
-    Los 15 min NO se renuevan a medianoche: al agotarlos o al vencer las 24 h
-    (lo que ocurra primero) el usuario debe pagar. Solo aplica a cuentas sin
-    Stripe activo. Idempotente si ya está en ese trial.
+    No cambia el plan salvo que se pase ``plan_id`` (p. ej. cierre / FitLine).
+    Solo cuentas sin Stripe activo. Idempotente si ya está armado.
     """
     from app.domain.plans import (
-        CIERRE_TRIAL_HOURS,
-        CIERRE_TRIAL_VOICE_MINUTES,
-        PlanId,
+        TRIAL_DAYS,
+        VOICE_TRIAL_HOURS,
+        VOICE_TRIAL_MINUTES,
+        _parse_sub_dt,
+        is_voice_pool_trial,
         normalize_plan_id,
+        PlanId,
+        voice_trial_started_at,
     )
 
     sub = get_subscription(user_id)
     if sub and str(sub.get("stripe_subscription_id") or "").strip():
         return {"ok": False, "reason": "already_paid"}
 
-    if (
-        sub
-        and str(sub.get("status") or "") == "trialing"
-        and normalize_plan_id(sub.get("plan_id")) == PlanId.CIERRE.value
-    ):
-        return {
-            "ok": True,
-            "already": True,
-            "plan_id": PlanId.CIERRE.value,
-            "trial_ends_at": sub.get("trial_ends_at"),
-            "minutes_daily": CIERRE_TRIAL_VOICE_MINUTES,
-        }
+    target_plan = (
+        normalize_plan_id(plan_id)
+        if plan_id
+        else normalize_plan_id((sub or {}).get("plan_id") or PlanId.ELITE.value)
+    )
 
-    # No regenerar si ya es plan pagado activo (sin ser trial).
-    if sub and str(sub.get("status") or "") == "active" and str(
-        sub.get("stripe_subscription_id") or ""
-    ).strip():
-        return {"ok": False, "reason": "already_paid"}
+    st = str((sub or {}).get("status") or "")
+    already_pool = bool(sub and st == "trialing" and is_voice_pool_trial(sub))
+    if already_pool:
+        if plan_id and normalize_plan_id(sub.get("plan_id")) != target_plan:
+            pass  # hay que subir de elite-trial a cierre
+        else:
+            return {
+                "ok": True,
+                "already": True,
+                "plan_id": normalize_plan_id(sub.get("plan_id")),
+                "trial_ends_at": sub.get("trial_ends_at"),
+                "minutes_daily": VOICE_TRIAL_MINUTES,
+                "hours": VOICE_TRIAL_HOURS,
+                "voice_trial_armed": True,
+                "voice_trial_started_at": sub.get("voice_trial_started_at"),
+            }
+
+    if sub and st and st != "trialing":
+        return {"ok": False, "reason": "not_eligible"}
+    if sub and st == "trialing" and not already_pool:
+        created = _parse_sub_dt(sub.get("created_at"))
+        age = (
+            datetime.now(timezone.utc) - created
+            if created
+            else timedelta(days=99)
+        )
+        if age > timedelta(minutes=15):
+            return {"ok": False, "reason": "legacy_trial"}
 
     now = datetime.now(timezone.utc)
-    ends = now + timedelta(hours=CIERRE_TRIAL_HOURS)
+    existing_end = _parse_sub_dt((sub or {}).get("trial_ends_at")) if sub else None
+    seven = now + timedelta(days=TRIAL_DAYS)
+    ends = seven
+    if existing_end and existing_end > seven:
+        ends = existing_end
     ends_iso = ends.isoformat()
     now_iso = now.isoformat()
+    started_iso = None
+    existing_started = voice_trial_started_at(sub) if sub else None
+    if existing_started:
+        started_iso = existing_started.isoformat()
+
+    payload = {
+        "user_id": user_id,
+        "plan_id": target_plan,
+        "status": "trialing",
+        "access_type": "paid",
+        "trial_ends_at": ends_iso,
+        "stripe_subscription_id": None,
+        "voice_trial_armed": True,
+        "updated_at": now_iso,
+    }
+    if started_iso:
+        payload["voice_trial_started_at"] = started_iso
+
     try:
         client = _client()
-        client.table("subscriptions").upsert(
-            {
-                "user_id": user_id,
-                "plan_id": PlanId.CIERRE.value,
-                "status": "trialing",
-                "access_type": "paid",
-                "trial_ends_at": ends_iso,
-                "stripe_subscription_id": None,
-                "updated_at": now_iso,
-            },
-            on_conflict="user_id",
-        ).execute()
+        try:
+            client.table("subscriptions").upsert(
+                payload,
+                on_conflict="user_id",
+            ).execute()
+        except Exception:
+            payload.pop("voice_trial_armed", None)
+            payload.pop("voice_trial_started_at", None)
+            client.table("subscriptions").upsert(
+                payload,
+                on_conflict="user_id",
+            ).execute()
         client.table("usage_limits").upsert(
             {
                 "user_id": user_id,
-                "minutes_daily": CIERRE_TRIAL_VOICE_MINUTES,
+                "minutes_daily": VOICE_TRIAL_MINUTES,
                 "updated_at": now_iso,
             },
             on_conflict="user_id",
         ).execute()
     except Exception as exc:  # noqa: BLE001
-        logger.exception("[DB] apply_cierre_fitline_trial failed")
+        logger.exception("[DB] apply_voice_pool_trial failed")
         return {"ok": False, "reason": "db_error", "error": str(exc)}
 
     logger.info(
-        "[DB] cierre fitline trial user=%s ends=%s min=%s",
+        "[DB] voice pool trial user=%s plan=%s product_ends=%s min=%s armed=%s",
         user_id[:8],
+        target_plan,
         ends_iso,
-        CIERRE_TRIAL_VOICE_MINUTES,
+        VOICE_TRIAL_MINUTES,
+        True,
     )
     return {
         "ok": True,
         "already": False,
-        "plan_id": PlanId.CIERRE.value,
+        "plan_id": target_plan,
         "trial_ends_at": ends_iso,
-        "minutes_daily": CIERRE_TRIAL_VOICE_MINUTES,
-        "hours": CIERRE_TRIAL_HOURS,
+        "minutes_daily": VOICE_TRIAL_MINUTES,
+        "hours": VOICE_TRIAL_HOURS,
+        "voice_trial_armed": True,
+        "voice_trial_started_at": started_iso,
     }
+
+
+def start_voice_trial_clock(user_id: str) -> dict[str, Any]:
+    """Arranca el reloj de 24 h en el primer uso real de voz. Idempotente."""
+    from app.domain.plans import (
+        VOICE_TRIAL_HOURS,
+        is_voice_pool_trial,
+        is_voice_trial_armed,
+        voice_trial_started_at,
+        voice_trial_window_start,
+    )
+
+    sub = get_subscription(user_id)
+    if not sub or str(sub.get("status") or "") != "trialing":
+        return {"ok": False, "reason": "not_trialing"}
+    if not is_voice_pool_trial(sub):
+        return {"ok": False, "reason": "not_pool"}
+    if voice_trial_started_at(sub):
+        return {"ok": True, "already": True, "started_at": sub.get("voice_trial_started_at")}
+    if not is_voice_trial_armed(sub) and voice_trial_window_start(sub):
+        # Cohorte 24 h desde el registro: el reloj ya corre.
+        return {"ok": True, "already": True, "mode": "signup_window"}
+
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    try:
+        client = _client()
+        client.table("subscriptions").update(
+            {
+                "voice_trial_started_at": now_iso,
+                "voice_trial_armed": True,
+                "updated_at": now_iso,
+            }
+        ).eq("user_id", user_id).execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[DB] start_voice_trial_clock failed user=%s: %s",
+            user_id[:8],
+            exc,
+        )
+        return {"ok": False, "reason": "db_error", "error": str(exc)}
+    logger.info(
+        "[DB] voice trial clock started user=%s hours=%s",
+        user_id[:8],
+        VOICE_TRIAL_HOURS,
+    )
+    return {"ok": True, "already": False, "started_at": now_iso}
+
+
+def apply_cierre_fitline_trial(user_id: str) -> dict[str, Any]:
+    """Trial FitLine: plan cierre + 15 min de voz desde el primer uso / 24 h."""
+    from app.domain.plans import PlanId
+
+    return apply_voice_pool_trial(user_id, plan_id=PlanId.CIERRE.value)
 
 
 def expire_trial_if_needed(user_id: str) -> bool:

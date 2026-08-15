@@ -118,8 +118,8 @@ export function RegisterForm() {
         payingFlow
           ? "Crea tu cuenta y continúa al pago"
           : pmOfferFlow
-            ? "Prueba FitLine · 15 min de voz en 24 h (no se renuevan)"
-            : "7 días gratis · sin tarjeta"
+            ? "Prueba FitLine · 15 min de voz al hablar"
+            : "15 min de voz al hablar · 7 días de imágenes"
       }
     >
       {!configured ? (
@@ -135,8 +135,15 @@ export function RegisterForm() {
       {pmOfferFlow && !payingFlow ? (
         <p className="mb-4 rounded border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-200">
           Al verificar tu correo activas CED PM International: 15 minutos de voz
-          Jarvis con conocimiento FitLine, solo dentro de las primeras 24 horas
-          (no se renuevan). Luego puedes suscribirte a $22/mes o recargar desde $10.
+          Jarvis con conocimiento FitLine. El reloj de 24 h arranca cuando
+          empieces a hablar (si no usas la voz, no vence). Imágenes y PDF
+          durante 7 días. Luego puedes suscribirte a $22/mes o recargar desde $10.
+        </p>
+      ) : !payingFlow ? (
+        <p className="mb-4 rounded border border-cyan-500/30 bg-cyan-500/5 p-3 text-xs text-cyan-200">
+          Al verificar tu correo tienes 15 minutos de voz: el reloj de 24 h
+          arranca cuando empieces a hablar (si no usas la voz, no vence).
+          Imágenes y PDF durante 7 días. El chat de texto sigue disponible.
         </p>
       ) : null}
       <form onSubmit={handleRegister} className="space-y-4">

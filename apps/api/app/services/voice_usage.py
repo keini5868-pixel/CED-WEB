@@ -19,11 +19,16 @@ logger = logging.getLogger(__name__)
 
 ACCESS_DENIED_MESSAGES = {
     "trial_expired": (
-        "Tu prueba de 7 días de voz terminó. Adquiere un plan o recarga desde $10. "
-        "El chat de texto sigue disponible en plan Básico gratis."
+        "Tu prueba de 7 días terminó. Adquiere un plan o recarga "
+        "desde $10. El chat de texto sigue disponible en plan Básico gratis."
+    ),
+    "voice_trial_expired": (
+        "Tu prueba de voz (15 min en 24 h desde el primer uso) terminó. "
+        "Adquiere un plan o recarga desde $10. Imágenes, PDF y chat siguen "
+        "en tu prueba de 7 días."
     ),
     "cierre_trial_expired": (
-        "Tu prueba FitLine de 24 horas terminó. Suscríbete a CED PM International "
+        "Tu prueba FitLine de 7 días terminó. Suscríbete a CED PM International "
         "($22/mes) o recarga desde $10. El chat de texto sigue disponible."
     ),
     "past_due": (
@@ -64,6 +69,7 @@ def degraded_voice_access_state(*, reason: str = "telemetry_unavailable") -> dic
         "degraded_reason": (reason or "telemetry_unavailable")[:240],
         "voice_stack": "retell",
         "voice_transport": "retell",
+        "voice_pool_trial": False,
     }
 
 
@@ -105,6 +111,7 @@ def voice_access_state(user_id: str) -> dict:
                 "voice_transport": "retell",
                 "preview_as": None,
                 "staff_unlimited": True,
+                "voice_pool_trial": False,
             }
 
         try:
@@ -121,9 +128,15 @@ def voice_access_state(user_id: str) -> dict:
         sub = supabase_db.get_subscription(user_id)
         plan_id = normalize_plan_id((sub or {}).get("plan_id"))
 
-        # Trial PM: pool ÚNICO de 15 min en la ventana de 24 h (no se renueva
-        # a medianoche UTC). Comparar uso acumulado desde el inicio del trial.
-        if allowed and access_msg == "cierre_trial":
+        # Trial 15 min / 24 h (PM o alta general): pool único, no se renueva
+        # a medianoche UTC. Comparar uso acumulado desde el inicio del trial.
+        from app.domain.plans import is_voice_pool_trial
+
+        if allowed and access_msg in (
+            "cierre_trial",
+            "trial",
+            "voice_trial_expired",
+        ) and is_voice_pool_trial(sub):
             try:
                 used = supabase_db.get_cierre_trial_used_minutes(user_id, sub)
             except Exception as exc:  # noqa: BLE001
@@ -142,8 +155,13 @@ def voice_access_state(user_id: str) -> dict:
             )
             recharge_balance = 0.0
         bonus_minutes = recharge_balance_to_bonus_minutes(recharge_balance)
-        # free_basic / past_due: sin minutos de plan; monedero puede desbloquear voz
-        restricted_plan = access_msg in ("free_basic", "past_due") or plan_id == "free_basic"
+        # free_basic / past_due / voz de trial agotada: sin minutos de plan;
+        # monedero puede desbloquear voz.
+        restricted_plan = access_msg in (
+            "free_basic",
+            "past_due",
+            "voice_trial_expired",
+        ) or plan_id == "free_basic"
         wallet_unlocks = bonus_minutes > 0
 
         if not allowed and access_msg in ("trial_expired", "cierre_trial_expired"):
@@ -163,6 +181,7 @@ def voice_access_state(user_id: str) -> dict:
             "free_basic",
             "trial",
             "cierre_trial",
+            "voice_trial_expired",
             "past_due",
         )
         quota_exhausted = (
@@ -224,7 +243,13 @@ def voice_access_state(user_id: str) -> dict:
             if (
                 not allowed
                 or access_msg
-                in ("free_basic", "trial", "cierre_trial", "cierre_trial_expired")
+                in (
+                    "free_basic",
+                    "trial",
+                    "cierre_trial",
+                    "cierre_trial_expired",
+                    "voice_trial_expired",
+                )
             )
             else None,
             "usage_percent": round(pct, 1),
@@ -237,6 +262,13 @@ def voice_access_state(user_id: str) -> dict:
             ),
             "voice_transport": plan_voice_transport(effective_plan),
             "preview_as": preview_as or None,
+            "voice_pool_trial": bool(
+                allowed
+                and access_msg
+                in ("cierre_trial", "trial", "voice_trial_expired")
+                and is_voice_pool_trial(sub)
+            ),
+            "voice_trial_started_at": (sub or {}).get("voice_trial_started_at"),
         }
     except Exception as exc:  # noqa: BLE001 — nunca 500 por telemetría
         logger.warning(

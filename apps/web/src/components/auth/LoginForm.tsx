@@ -130,7 +130,7 @@ export function LoginForm() {
           href={`${SIGNUP_PATH}?next=${encodeURIComponent(next)}`}
           className="text-cyan-400 hover:underline"
         >
-          {next.startsWith("/pricing") ? "Crear cuenta y pagar" : "Registro — 7 días gratis"}
+          {next.startsWith("/pricing") ? "Crear cuenta y pagar" : "Registro — 15 min de voz al hablar"}
         </Link>
       </p>
       <Link

@@ -100,7 +100,7 @@ function PricingContent() {
 
       <section className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-12">
         <p className="text-center text-xs text-cyan-500">
-          7 días gratis al registrarte · sin tarjeta
+          15 min de voz al hablar · imágenes y PDF 7 días · sin tarjeta
         </p>
         <h2 className="mt-2 text-center font-[family-name:var(--font-orbitron)] text-2xl text-cyan-300">
           Elige tu plan

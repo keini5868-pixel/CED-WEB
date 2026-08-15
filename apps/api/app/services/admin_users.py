@@ -315,6 +315,7 @@ def _plan_display(sub: dict[str, Any] | None) -> dict[str, Any]:
     """Etiquetas claras: trial vs plan pagado vs básico — sin mutar datos."""
     from app.domain.plans import (
         is_cierre_fitline_trial,
+        is_voice_pool_trial,
         trial_voice_minutes_for_subscription,
     )
 
@@ -343,9 +344,11 @@ def _plan_display(sub: dict[str, Any] | None) -> dict[str, Any]:
 
     if is_trial:
         if is_cierre_fitline_trial(sub):
-            plan_label = f"Prueba FitLine 24h · {base_label}"
+            plan_label = f"Prueba FitLine 7d · {base_label}"
+        elif is_voice_pool_trial(sub):
+            plan_label = f"Prueba 7d · voz 15 min · {base_label}"
         else:
-            plan_label = f"Trial · {base_label}"
+            plan_label = f"Trial 7d · {base_label}"
         display_expires = trial_ends or expires_at
         voice_minutes = trial_voice_minutes_for_subscription(sub)
     elif plan_id == PlanId.FREE_BASIC.value:
@@ -512,23 +515,27 @@ def get_user_access(user_id: str) -> tuple[bool, str, int]:
     st = str(sub.get("status") or "")
 
     if st == "trialing":
-        # expire_trial_if_needed ya debió bajar a free_basic; si sigue trialing
-        # (p.ej. mock o carrera), bloquear voz y funciones de pago.
+        # expire_trial_if_needed ya debió bajar a free_basic si pasaron los 7 días.
+        from app.domain.plans import voice_trial_time_expired
+
         trial_end = sub.get("trial_ends_at")
         cierre = is_cierre_fitline_trial(sub)
         if trial_end:
             try:
                 exp_dt = datetime.fromisoformat(str(trial_end).replace("Z", "+00:00"))
-                if exp_dt > datetime.now(timezone.utc):
-                    return (
-                        True,
-                        "cierre_trial" if cierre else "trial",
-                        trial_voice_minutes_for_subscription(sub),
-                    )
-                return False, ("cierre_trial_expired" if cierre else "trial_expired"), 0
+                if exp_dt <= datetime.now(timezone.utc):
+                    return False, ("cierre_trial_expired" if cierre else "trial_expired"), 0
             except ValueError:
                 pass
-        return False, ("cierre_trial_expired" if cierre else "trial_expired"), 0
+        else:
+            return False, ("cierre_trial_expired" if cierre else "trial_expired"), 0
+        if voice_trial_time_expired(sub):
+            return True, "voice_trial_expired", 0
+        return (
+            True,
+            "cierre_trial" if cierre else "trial",
+            trial_voice_minutes_for_subscription(sub),
+        )
 
     # Pago fallido: chat básico sí; sin minutos/plan de pago hasta cobro OK.
     if st == "past_due":

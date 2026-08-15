@@ -27,6 +27,7 @@ export type UsageBalanceState = {
   planId: string | null;
   voiceStack: string | null;
   voiceTransport: string | null;
+  voicePoolTrial: boolean;
 };
 
 type UsageBalanceValue = {
@@ -48,6 +49,7 @@ const EMPTY_BALANCE: UsageBalanceState = {
   planId: null,
   voiceStack: null,
   voiceTransport: null,
+  voicePoolTrial: false,
 };
 
 const UsageBalanceContext = createContext<UsageBalanceValue | null>(null);
@@ -81,6 +83,7 @@ function useUsageBalancePoll(
         plan_id?: string | null;
         voice_stack?: string | null;
         voice_transport?: string | null;
+        voice_pool_trial?: boolean;
       };
       const plan = data.planMinutesDaily ?? data.plan_minutes_daily ?? 0;
       const used = data.usedMinutesToday ?? data.used_minutes_today ?? 0;
@@ -101,6 +104,9 @@ function useUsageBalancePoll(
         planId: data.plan_id ?? data.planId ?? null,
         voiceStack: data.voice_stack ?? data.voiceStack ?? null,
         voiceTransport: data.voice_transport ?? data.voiceTransport ?? null,
+        voicePoolTrial: Boolean(
+          (data as { voice_pool_trial?: boolean }).voice_pool_trial,
+        ),
       };
       setBalance(next);
       setLoaded(true);

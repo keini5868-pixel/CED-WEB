@@ -45,7 +45,7 @@ export const ACCESS_TYPE_LABELS: Record<string, string> = {
   founding_gift: "Founding regalo",
   coadmin: "Co-admin",
   admin: "Admin",
-  trial: "Trial 7 días",
+  trial: "Trial voz",
   free_basic: "Básico gratis",
 };
 
