@@ -43,6 +43,7 @@ from app.routers import (
     retell,
     retell_custom_llm,
     support,
+    trash,
     usage,
     vision,
     navigation,
@@ -187,6 +188,7 @@ def create_app() -> FastAPI:
     application.include_router(prospection.router)
     application.include_router(vision.router)
     application.include_router(conversations.router)
+    application.include_router(trash.router)
     application.include_router(billing.router)
     application.include_router(chat.router)
     application.include_router(advanced_chat.router)

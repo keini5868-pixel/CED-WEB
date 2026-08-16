@@ -5,6 +5,8 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { HudPanel } from "@ced/ui";
 
 import { useHudFeed, type HudFeedItem } from "@/contexts/HudFeedContext";
+import { useHudPanels } from "@/contexts/HudPanelContext";
+import { useHudIntelStream } from "@/hooks/useHudIntelStream";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { postVoiceChatImage, deleteVoiceChatImage } from "@/lib/api/voiceClient";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
@@ -376,7 +378,23 @@ export function HudSummaryPanel() {
 
 export function HudWavesPanel() {
   const { items } = useHudFeed();
-  const stats = items.filter((i) => i.kind === "stat" || i.kind === "news").slice(0, 6);
+  const { waves, streamConnected } = useHudPanels();
+  useHudIntelStream(!streamConnected);
+
+  const stats = useMemo(() => {
+    const fromPanels = waves.slice(0, 6).map((w) => ({
+      id: w.id,
+      text: (w.text || w.title).trim(),
+    }));
+    const fromFeed = items
+      .filter((i) => i.kind === "stat" || i.kind === "news")
+      .slice(0, 6)
+      .map((i) => ({ id: i.id, text: i.text.trim() }));
+    const merged = [...fromPanels, ...fromFeed].filter((row) => row.text);
+    return merged.filter(
+      (row, i, arr) => arr.findIndex((x) => x.text === row.text) === i,
+    ).slice(0, 6);
+  }, [items, waves]);
 
   if (stats.length === 0) {
     return (

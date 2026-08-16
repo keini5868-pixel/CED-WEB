@@ -369,6 +369,15 @@ def send_advanced_message(
             open_module=enroll.get("open_module"),
         )
 
+    from app.services.user_trash import try_trash_turn
+
+    trash_turn = try_trash_turn(user_id, text)
+    if trash_turn:
+        return _finish_payload(
+            response=str(trash_turn["spoken"]),
+            model=ADVANCED_STREAM_MODEL_LABEL,
+        )
+
     conv_id = _conversation_id(user_id, conversation_id)
     history_rows = history_as_chat_rows(history)
 
@@ -713,6 +722,21 @@ def iter_advanced_message_stream(
         )
         _dup_remember(user_id, text, payload)
         yield _sse_event("token", {"text": str(enroll["spoken"])})
+        yield _sse_flush()
+        yield _sse_event("done", payload)
+        return
+
+    from app.services.user_trash import try_trash_turn
+
+    trash_turn = try_trash_turn(user_id, text)
+    if trash_turn:
+        spoken = str(trash_turn["spoken"])
+        payload = _finish_payload(
+            response=spoken,
+            model=ADVANCED_STREAM_MODEL_LABEL,
+        )
+        _dup_remember(user_id, text, payload)
+        yield _sse_event("token", {"text": spoken})
         yield _sse_flush()
         yield _sse_event("done", payload)
         return

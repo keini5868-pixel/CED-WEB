@@ -343,6 +343,12 @@ def send_finance_message(
     if greeting:
         return _finish_payload(response=greeting, model=_stream_model_label())
 
+    from app.services.user_trash import try_trash_turn
+
+    trash_turn = try_trash_turn(user_id, text, default_group="finance")
+    if trash_turn:
+        return _finish_payload(response=str(trash_turn["spoken"]), model=_stream_model_label())
+
     instant_query = _instant_finance_query_reply(user_id, text)
     if instant_query:
         return _finish_payload(response=instant_query, model=_stream_model_label())
@@ -437,6 +443,18 @@ def iter_finance_message_stream(
         yield _sse_flush()
         yield _sse_event(
             "done", _finish_payload(response=greeting, model=_stream_model_label())
+        )
+        return
+
+    from app.services.user_trash import try_trash_turn
+
+    trash_turn = try_trash_turn(user_id, text, default_group="finance")
+    if trash_turn:
+        spoken = str(trash_turn["spoken"])
+        yield _sse_event("token", {"text": spoken})
+        yield _sse_flush()
+        yield _sse_event(
+            "done", _finish_payload(response=spoken, model=_stream_model_label())
         )
         return
 

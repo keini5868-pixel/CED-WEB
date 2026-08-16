@@ -301,14 +301,23 @@ def list_conversations(
     channel: str | None = None,
 ) -> list[dict[str, Any]]:
     client = _client()
-    q = (
-        client.table("voice_conversations")
-        .select("id, title, channel, created_at, updated_at")
-        .eq("user_id", user_id)
-    )
-    if channel:
-        q = q.eq("channel", channel)
-    result = q.order("updated_at", desc=True).limit(limit).execute()
+
+    def _run(*, hide_trashed: bool):
+        q = (
+            client.table("voice_conversations")
+            .select("id, title, channel, created_at, updated_at")
+            .eq("user_id", user_id)
+        )
+        if channel:
+            q = q.eq("channel", channel)
+        if hide_trashed:
+            q = q.is_("deleted_at", "null")
+        return q.order("updated_at", desc=True).limit(limit).execute()
+
+    try:
+        result = _run(hide_trashed=True)
+    except Exception:  # noqa: BLE001
+        result = _run(hide_trashed=False)
     return result.data or []
 
 
@@ -1337,14 +1346,21 @@ def get_pdf_artifact(file_id: str, user_id: str) -> tuple[bytes, str, str] | Non
 def list_pdf_artifacts(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
     try:
         client = _client()
-        result = (
-            client.table("ced_pdf_artifacts")
-            .select("file_id, title, filename, conversation_id, created_at")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(limit)
-            .execute()
-        )
+
+        def _run(*, hide_trashed: bool):
+            q = (
+                client.table("ced_pdf_artifacts")
+                .select("file_id, title, filename, conversation_id, created_at")
+                .eq("user_id", user_id)
+            )
+            if hide_trashed:
+                q = q.is_("deleted_at", "null")
+            return q.order("created_at", desc=True).limit(limit).execute()
+
+        try:
+            result = _run(hide_trashed=True)
+        except Exception:  # noqa: BLE001
+            result = _run(hide_trashed=False)
         return result.data or []
     except Exception:  # noqa: BLE001
         logger.warning("[DB] list_pdf_artifacts failed — tabla puede no existir aún")
@@ -1354,14 +1370,21 @@ def list_pdf_artifacts(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]
 def list_generated_images(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
     try:
         client = _client()
-        result = (
-            client.table("generated_images")
-            .select("id, prompt, quality, model, public_url, created_at")
-            .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .limit(limit)
-            .execute()
-        )
+
+        def _run(*, hide_trashed: bool):
+            q = (
+                client.table("generated_images")
+                .select("id, prompt, quality, model, public_url, created_at")
+                .eq("user_id", user_id)
+            )
+            if hide_trashed:
+                q = q.is_("deleted_at", "null")
+            return q.order("created_at", desc=True).limit(limit).execute()
+
+        try:
+            result = _run(hide_trashed=True)
+        except Exception:  # noqa: BLE001
+            result = _run(hide_trashed=False)
         return result.data or []
     except Exception:  # noqa: BLE001
         logger.warning("[DB] list_generated_images failed")

@@ -11,6 +11,8 @@ import {
   type ConversationMessage,
   type ConversationRow,
 } from "@/lib/api/conversations";
+import { sendToTrash } from "@/lib/api/trash";
+import { SelectToolbar, TrashIconButton } from "@/components/trash/TrashControls";
 import { collapseStreamingMessages } from "@/lib/voice/collapseStreamingMessages";
 import { coerceDisplayText } from "@/lib/display-text";
 
@@ -29,6 +31,9 @@ export function HistorialConversaciones({
   const [selected, setSelected] = useState<ConversationRow | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busyTrash, setBusyTrash] = useState(false);
 
   const loadList = useCallback(async () => {
     setLoading(true);
@@ -70,6 +75,22 @@ export function HistorialConversaciones({
       setMessages([]);
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  async function trashIds(ids: string[]) {
+    if (ids.length === 0) return;
+    setBusyTrash(true);
+    try {
+      await sendToTrash("conversation", ids);
+      setItems((prev) => prev.filter((c) => !ids.includes(c.id)));
+      setPicked(new Set());
+      setSelecting(false);
+      if (selected && ids.includes(selected.id)) setSelected(null);
+    } catch (e) {
+      setListError(e instanceof Error ? e.message : "No se pudo enviar a la papelera.");
+    } finally {
+      setBusyTrash(false);
     }
   }
 
@@ -115,7 +136,16 @@ export function HistorialConversaciones({
         </label>
       </div>
 
-      {loading ? (
+      <SelectToolbar
+        selecting={selecting}
+        selectedCount={picked.size}
+        busy={busyTrash}
+        onToggle={() => {
+          setSelecting((v) => !v);
+          setPicked(new Set());
+        }}
+        onTrash={() => void trashIds([...picked])}
+      />
         <p className="ced-hud-text-muted text-sm">Cargando…</p>
       ) : listError ? (
         <div className="rounded border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
@@ -136,11 +166,27 @@ export function HistorialConversaciones({
       ) : (
         <ul className="space-y-2">
           {items.map((c) => (
-            <li key={c.id}>
+            <li key={c.id} className="flex items-stretch gap-2">
+              {selecting ? (
+                <label className="flex items-center px-1">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(c.id)}
+                    onChange={() => {
+                      setPicked((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(c.id)) next.delete(c.id);
+                        else next.add(c.id);
+                        return next;
+                      });
+                    }}
+                  />
+                </label>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void openConversation(c)}
-                className="w-full rounded border border-cyan-900/50 bg-[#0a0a0a] p-4 text-left transition hover:border-cyan-500/40"
+                className="min-w-0 flex-1 rounded border border-cyan-900/50 bg-[#0a0a0a] p-4 text-left transition hover:border-cyan-500/40"
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="font-medium text-cyan-200">{c.title}</p>
@@ -155,6 +201,14 @@ export function HistorialConversaciones({
                   {new Date(c.updated_at).toLocaleString("es-MX")}
                 </p>
               </button>
+              {selecting ? null : (
+                <div className="flex items-center">
+                  <TrashIconButton
+                    disabled={busyTrash}
+                    onClick={() => void trashIds([c.id])}
+                  />
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -165,9 +219,17 @@ export function HistorialConversaciones({
         onClose={() => setSelected(null)}
         title={selected?.title ?? "Conversación"}
         footer={
-          <CedButton variant="ghost" onClick={() => setSelected(null)}>
-            CERRAR
-          </CedButton>
+          <div className="flex w-full items-center justify-between gap-2">
+            <TrashIconButton
+              disabled={busyTrash || !selected}
+              onClick={() => {
+                if (selected) void trashIds([selected.id]);
+              }}
+            />
+            <CedButton variant="ghost" onClick={() => setSelected(null)}>
+              CERRAR
+            </CedButton>
+          </div>
         }
       >
         {detailLoading ? (

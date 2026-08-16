@@ -49,6 +49,7 @@ def _fresh_session() -> dict[str, Any]:
         "advanced_last_topic": "",
         "advanced_turn_count": 0,
         "youtube_pending_confirm": None,
+        "trash_pending": None,
         "fitline_guide_active": False,
         "fitline_guide_step": 0,
         "fitline_guide_reexplain": False,
@@ -763,6 +764,37 @@ def clear_finance_pending_write(user_id: str, *, reason: str = "") -> None:
     session = _get(user_id)
     with _lock:
         session["finance_pending_write"] = None
+        session["updated_at"] = _now()
+
+
+TRASH_PENDING_TTL_SEC = 300
+
+
+def set_trash_pending(user_id: str, payload: dict[str, Any]) -> None:
+    session = _get(user_id)
+    now = _now()
+    row = dict(payload)
+    row["expires_at"] = now + TRASH_PENDING_TTL_SEC
+    with _lock:
+        session["trash_pending"] = row
+        session["updated_at"] = now
+
+
+def get_trash_pending(user_id: str) -> dict[str, Any] | None:
+    row = _get(user_id).get("trash_pending")
+    if not isinstance(row, dict):
+        return None
+    expires = float(row.get("expires_at") or 0)
+    if expires and _now() > expires:
+        clear_trash_pending(user_id)
+        return None
+    return dict(row)
+
+
+def clear_trash_pending(user_id: str) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["trash_pending"] = None
         session["updated_at"] = _now()
 
 

@@ -5,7 +5,6 @@ import { useMemo, useState, useEffect } from "react";
 
 import { useHudFeed } from "@/contexts/HudFeedContext";
 import { useHudPanels } from "@/contexts/HudPanelContext";
-import { useHudIntelStream } from "@/hooks/useHudIntelStream";
 import { useUsageBalance } from "@/hooks/useUsageBalance";
 
 function Crosshair({ className }: { className?: string }) {
@@ -34,9 +33,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 export function HudDronesPanel() {
-  const { streamConnected } = useHudPanels();
-  useHudIntelStream(!streamConnected);
-  const { items, marqueeText } = useHudFeed();
+  const { items } = useHudFeed();
   const { drones } = useHudPanels();
   const { balance } = useUsageBalance();
   const [cardIndex, setCardIndex] = useState(0);
@@ -49,20 +46,31 @@ export function HudDronesPanel() {
     };
     const fromPanels = drones.slice(0, 8).map((d) => ({
       id: d.id,
-      kind: "news" as const,
+      kind: "report" as const,
       text: d.text || d.title,
     }));
-    const fromFeed = items.slice(0, 8).map((i) => ({
-      id: i.id,
-      kind: i.kind,
-      text: i.text,
-    }));
+    // News/stat viven en WAVES — Drones solo radar operativo (uso, informes, hits tácticos).
+    const fromFeed = items
+      .filter((i) => i.kind === "report" || i.kind === "voice")
+      .slice(0, 8)
+      .map((i) => ({
+        id: i.id,
+        kind: i.kind,
+        text: i.text,
+      }));
     const merged = [...fromPanels, ...fromFeed];
     const unique = merged.filter(
       (c, i, arr) => arr.findIndex((x) => x.text === c.text) === i,
     );
     return [usageCard, ...unique].slice(0, 14);
   }, [items, drones, balance.used, balance.plan, balance.percent]);
+
+  const marqueeText = useMemo(() => {
+    const lines = cards.map((c) => c.text).filter(Boolean);
+    return lines.length > 0
+      ? lines.join("  ·  ")
+      : "Radar CED — canal táctico de sesión";
+  }, [cards]);
 
   useEffect(() => {
     if (cards.length < 2) return;

@@ -14,6 +14,8 @@ import {
   listGeneratedImages,
   type GeneratedImageRow,
 } from "@/lib/api/media-history";
+import { sendToTrash } from "@/lib/api/trash";
+import { SelectToolbar, TrashIconButton } from "@/components/trash/TrashControls";
 
 function formatWhen(value?: string): string {
   if (!value) return "";
@@ -29,6 +31,9 @@ export function HistorialArchivos() {
   const [error, setError] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<GeneratedImageRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [selecting, setSelecting] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [busyTrash, setBusyTrash] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +80,37 @@ export function HistorialArchivos() {
     }
   }
 
+  async function trashPicked() {
+    const imageIds = images.filter((r) => picked.has(`image:${r.id}`)).map((r) => r.id);
+    const pdfIds = pdfs.filter((r) => picked.has(`pdf:${r.file_id}`)).map((r) => r.file_id);
+    setBusyTrash(true);
+    try {
+      if (imageIds.length) await sendToTrash("image", imageIds);
+      if (pdfIds.length) await sendToTrash("pdf", pdfIds);
+      setImages((prev) => prev.filter((r) => !imageIds.includes(r.id)));
+      setPdfs((prev) => prev.filter((r) => !pdfIds.includes(r.file_id)));
+      setPicked(new Set());
+      setSelecting(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo enviar a la papelera.");
+    } finally {
+      setBusyTrash(false);
+    }
+  }
+
+  async function trashOne(scope: "image" | "pdf", id: string) {
+    setBusyTrash(true);
+    try {
+      await sendToTrash(scope, [id]);
+      if (scope === "image") setImages((prev) => prev.filter((r) => r.id !== id));
+      else setPdfs((prev) => prev.filter((r) => r.file_id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo enviar a la papelera.");
+    } finally {
+      setBusyTrash(false);
+    }
+  }
+
   if (loading) {
     return <p className="ced-hud-text-muted text-sm">Cargando archivos…</p>;
   }
@@ -86,6 +122,17 @@ export function HistorialArchivos() {
           {error}
         </p>
       ) : null}
+
+      <SelectToolbar
+        selecting={selecting}
+        selectedCount={picked.size}
+        busy={busyTrash}
+        onToggle={() => {
+          setSelecting((v) => !v);
+          setPicked(new Set());
+        }}
+        onTrash={() => void trashPicked()}
+      />
 
       <section>
         <h2 className="font-[family-name:var(--font-orbitron)] text-sm font-bold tracking-wider text-cyan-300">
@@ -122,6 +169,7 @@ export function HistorialArchivos() {
                   <p className="ced-hud-text-muted text-[10px]">
                     {formatWhen(row.created_at)}
                   </p>
+                <div className="flex items-center justify-between gap-1">
                   <button
                     type="button"
                     onClick={() => void saveImage(row)}
@@ -130,6 +178,27 @@ export function HistorialArchivos() {
                   >
                     {busyId === row.id ? "Descargando…" : "Descargar"}
                   </button>
+                  {selecting ? (
+                    <input
+                      type="checkbox"
+                      checked={picked.has(`image:${row.id}`)}
+                      onChange={() => {
+                        setPicked((prev) => {
+                          const next = new Set(prev);
+                          const key = `image:${row.id}`;
+                          if (next.has(key)) next.delete(key);
+                          else next.add(key);
+                          return next;
+                        });
+                      }}
+                    />
+                  ) : (
+                    <TrashIconButton
+                      disabled={busyTrash}
+                      onClick={() => void trashOne("image", row.id)}
+                    />
+                  )}
+                </div>
                 </div>
               </li>
             ))}
@@ -160,7 +229,27 @@ export function HistorialArchivos() {
                     {formatWhen(row.created_at)}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-3">
+                <div className="flex shrink-0 items-center gap-2">
+                  {selecting ? (
+                    <input
+                      type="checkbox"
+                      checked={picked.has(`pdf:${row.file_id}`)}
+                      onChange={() => {
+                        setPicked((prev) => {
+                          const next = new Set(prev);
+                          const key = `pdf:${row.file_id}`;
+                          if (next.has(key)) next.delete(key);
+                          else next.add(key);
+                          return next;
+                        });
+                      }}
+                    />
+                  ) : (
+                    <TrashIconButton
+                      disabled={busyTrash}
+                      onClick={() => void trashOne("pdf", row.file_id)}
+                    />
+                  )}
                   <a
                     href={pdfDownloadUrl(row.file_id)}
                     target="_blank"

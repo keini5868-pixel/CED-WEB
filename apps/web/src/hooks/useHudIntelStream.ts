@@ -39,7 +39,7 @@ const INTEL_LINES: { kind: "news" | "stat" | "report"; text: string }[] = [
   },
 ];
 
-/** Inyecta noticias / estadísticas / informes simulados en el ticker DRONES. */
+/** Intel de mercado (news/stat → WAVES) e informes tácticos (report → DRONES). */
 export function useHudIntelStream(enabled = true) {
   const { pushLine } = useHudFeed();
 

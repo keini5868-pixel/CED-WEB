@@ -1263,6 +1263,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         call_id,
                     )
 
+            from app.services.user_trash import try_trash_turn
+
+            if uid:
+                trash_turn = try_trash_turn(uid, user_text)
+                if trash_turn:
+                    spoken = str(trash_turn.get("spoken") or "").strip()
+                    if spoken and await deliver_voice(spoken):
+                        logger.info("[RETELL-GEMINI] trash confirm call=%s", call_id)
+                        return
+
             conversational_turn = is_casual_voice_turn(user_text, transcript)
 
             clock_reply = try_instant_datetime_reply(

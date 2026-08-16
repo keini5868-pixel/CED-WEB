@@ -315,6 +315,14 @@ class LlamaVoiceLlm:
                 except Exception:  # noqa: BLE001
                     logger.exception("[RETELL-LLAMA] enroll OPPS failed")
 
+            from app.services.user_trash import try_trash_turn
+
+            trash_turn = try_trash_turn(self.user_id, user_text)
+            if trash_turn:
+                spoken = str(trash_turn.get("spoken") or "").strip()
+                if spoken:
+                    return finalize_voice_delivery_text(spoken)
+
         kb_reply, kb_source = try_internal_knowledge_voice_reply(user_text)
         if kb_reply:
             logger.info(

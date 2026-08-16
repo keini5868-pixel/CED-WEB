@@ -123,3 +123,14 @@ def finance_chat_status(_user_id: str = Depends(require_user_id)) -> dict:
         "model": FINANCE_MODEL_LABEL if anthropic else stream_model,
         "stream_model": stream_model,
     }
+
+
+@router.get("/transactions")
+def finance_transactions(
+    user_id: str = Depends(require_user_id),
+    limit: int = 80,
+) -> dict:
+    from app.services.finance_ledger import list_transactions
+
+    rows = list_transactions(user_id, status=None, limit=limit)
+    return {"ok": True, "items": rows}

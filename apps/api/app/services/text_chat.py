@@ -2877,6 +2877,15 @@ def send_message(
             open_module=enroll.get("open_module"),
         )
 
+    from app.services.user_trash import try_trash_turn
+
+    trash_turn = try_trash_turn(user_id, text)
+    if trash_turn:
+        return _finish(
+            str(trash_turn["spoken"]),
+            route_meta={"intent": "trash", "source": "direct"},
+        )
+
     from app.services.chat_intents import (
         is_casual_chat_interrupt,
         is_creative_artifact_intent,
@@ -3588,6 +3597,28 @@ def iter_send_message_stream(
             )
         except Exception:  # noqa: BLE001
             logger.exception("[CHAT] enroll persist failed user=%s", user_id[:8])
+        return
+
+    from app.services.user_trash import try_trash_turn
+
+    trash_turn = try_trash_turn(user_id, text)
+    if trash_turn:
+        reply = str(trash_turn["spoken"])
+        yield _sse_event("token", {"text": reply})
+        yield _sse_flush()
+        if conversation_id:
+            conv_id = conversation_id
+        else:
+            conv_id, _ = _load_stream_conversation(user_id, text, conversation_id)
+        yield _sse_event(
+            "done",
+            {
+                "conversation_id": conv_id,
+                "reply": reply,
+                "usage": _stream_usage_snapshot(user_id),
+                "cognitive": {"intent": "trash", "source": "direct"},
+            },
+        )
         return
 
     yield _sse_event("status", {"text": "Preparando respuesta…"})

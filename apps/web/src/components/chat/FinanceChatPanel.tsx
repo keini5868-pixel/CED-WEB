@@ -15,6 +15,7 @@ import {
 } from "@/lib/api/finance";
 import { fetchFitlineActionPlan } from "@/lib/api/opportunitiesPilot";
 import { downloadPdfBlob } from "@/lib/api/pdf";
+import { FinanceLedgerPanel } from "@/components/chat/FinanceLedgerPanel";
 
 type FinanceChatPanelProps = {
   open: boolean;
@@ -75,6 +76,7 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
     title?: string;
     content?: { goals?: string[]; steps?: string[]; notes?: string };
   } | null>(null);
+  const [tab, setTab] = useState<"chat" | "movimientos" | "papelera">("chat");
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
@@ -278,14 +280,39 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
           </button>
         </header>
 
-        {configured === false ? (
+        <div className="flex shrink-0 gap-1 border-b border-emerald-500/20 px-3 py-1.5">
+          {(
+            [
+              ["chat", "Chat"],
+              ["movimientos", "Movimientos"],
+              ["papelera", "Papelera"],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setTab(id)}
+              className={`rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                tab === id
+                  ? "bg-emerald-500/20 text-emerald-100"
+                  : "text-emerald-500/80 hover:text-emerald-200"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab !== "chat" ? <FinanceLedgerPanel tab={tab} /> : null}
+
+        {tab === "chat" && configured === false ? (
           <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-200">
             Finanzas no disponible. Configura GOOGLE_API_KEY o ANTHROPIC_API_KEY
             en el servicio API de Railway.
           </p>
         ) : null}
 
-        {actionPlan ? (
+        {tab === "chat" && actionPlan ? (
           <div className="mx-4 mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
             <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
               Plan de acción guardado
@@ -304,6 +331,7 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
           </div>
         ) : null}
 
+        {tab === "chat" ? (
         <div
           ref={scrollRef}
           className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3"
@@ -348,11 +376,13 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
             <p className="ced-hud-text-muted text-[11px]">Procesando…</p>
           ) : null}
         </div>
+        ) : null}
 
-        {error ? (
+        {tab === "chat" && error ? (
           <p className="mx-4 mb-2 text-[11px] text-red-400">{error}</p>
         ) : null}
 
+        {tab === "chat" ? (
         <footer className="relative z-10 shrink-0 border-t border-emerald-500/20 bg-[#05100b] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
           <div className="flex gap-2">
             <textarea
@@ -385,6 +415,7 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
             Registro · Análisis · Plan de ahorro · Enter
           </p>
         </footer>
+        ) : null}
       </div>
     </div>
   );

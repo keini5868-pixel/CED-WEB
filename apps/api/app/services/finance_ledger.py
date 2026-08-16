@@ -368,6 +368,7 @@ def list_pending_payments(user_id: str, *, limit: int = 50) -> list[dict[str, An
             .select("id, type, amount, currency, category, description, due_date, occurred_on")
             .eq("user_id", uid)
             .eq("status", "pendiente")
+            .is_("deleted_at", "null")
             .order("due_date", desc=False)
             .limit(limit)
             .execute()
@@ -442,24 +443,35 @@ def list_transactions(
 ) -> list[dict[str, Any]]:
     try:
         uid = normalize_user_id(user_id)
-        query = (
-            _client()
-            .table("finance_transactions")
-            .select("id, type, amount, currency, category, description, occurred_on, status")
-            .eq("user_id", uid)
-        )
-        if status is not None:
-            query = query.eq("status", status)
-        if since is not None:
-            query = query.gte("occurred_on", since.isoformat())
-        if until is not None:
-            query = query.lte("occurred_on", until.isoformat())
-        result = (
-            query.order("occurred_on", desc=True)
-            .order("created_at", desc=True)
-            .limit(limit)
-            .execute()
-        )
+
+        def _run(*, hide_trashed: bool):
+            query = (
+                _client()
+                .table("finance_transactions")
+                .select(
+                    "id, type, amount, currency, category, description, occurred_on, status"
+                )
+                .eq("user_id", uid)
+            )
+            if hide_trashed:
+                query = query.is_("deleted_at", "null")
+            if status is not None:
+                query = query.eq("status", status)
+            if since is not None:
+                query = query.gte("occurred_on", since.isoformat())
+            if until is not None:
+                query = query.lte("occurred_on", until.isoformat())
+            return (
+                query.order("occurred_on", desc=True)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+
+        try:
+            result = _run(hide_trashed=True)
+        except Exception:  # noqa: BLE001
+            result = _run(hide_trashed=False)
         return result.data or []
     except Exception as exc:  # noqa: BLE001
         logger.warning("[FINANCE] list failed %s", exc)

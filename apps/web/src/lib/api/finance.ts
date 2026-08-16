@@ -252,3 +252,21 @@ export async function sendFinanceChatMessage(
     pdf: data.pdf ?? null,
   };
 }
+
+export type FinanceTransaction = {
+  id: string;
+  type: string;
+  amount: number;
+  currency?: string;
+  category?: string | null;
+  description?: string | null;
+  occurred_on?: string;
+  status?: string;
+};
+
+export async function listFinanceTransactions(): Promise<FinanceTransaction[]> {
+  const res = await proxyFetchAuthed("finance/transactions");
+  if (!res.ok) return [];
+  const data = await parseApiJson<{ items?: FinanceTransaction[] }>(res);
+  return data.items ?? [];
+}

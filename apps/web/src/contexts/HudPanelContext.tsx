@@ -101,10 +101,6 @@ export function HudPanelProvider({ children }: { children: ReactNode }) {
       void connectPanelStream(
         (event) => {
           dispatch({ type: "event", event });
-          if (event.type === "panel_item" && event.panel === "drones") {
-            const text = String(event.payload.text ?? event.payload.title ?? "");
-            if (text) pushLine(text, "news");
-          }
           if (event.type === "summary_chunk") {
             pushLine(event.text, "report");
           }
