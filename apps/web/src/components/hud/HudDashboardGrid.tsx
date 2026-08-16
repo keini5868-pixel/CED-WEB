@@ -22,7 +22,6 @@ import {
 } from "@/components/hud/HudLivePanels";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import { LifeDashboardPanel } from "@/components/hud/LifeDashboardPanel";
-import { DriveModeLink } from "@/components/navigation/DriveModeLink";
 import { HudFeedProvider } from "@/contexts/HudFeedContext";
 import { HudPanelProvider } from "@/contexts/HudPanelContext";
 import { useBreakpointLg } from "@/hooks/useBreakpointLg";
@@ -40,7 +39,7 @@ export function HudDashboardGrid() {
     <HudFeedProvider>
       <HudPanelProvider>
         <UsageBalanceProvider>
-        <div className="hidden grid-cols-12 gap-4 p-4 lg:grid lg:items-start">
+        <div className="hidden grid-cols-12 gap-4 p-4 pb-24 lg:grid lg:items-start">
           <div className="col-span-12">
             <Suspense fallback={null}>
               <BillingFeedback />
@@ -67,7 +66,6 @@ export function HudDashboardGrid() {
           </div>
           </div>
           <div className="col-span-4 flex flex-col items-center justify-center gap-3 py-2">
-            <DriveModeLink />
             {isLg === true ? <CedVoiceHub /> : null}
           </div>
           <div className="col-span-4">
@@ -102,14 +100,13 @@ export function HudDashboardGrid() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 p-3 pb-[max(1.5rem,env(safe-area-inset-bottom))] lg:hidden">
+        <div className="flex flex-col gap-2 p-3 pb-24 lg:hidden">
           <Suspense fallback={null}>
             <BillingFeedback />
             <MetaOAuthCallbackBanner />
             <TrialExpiredBanner />
             <CierrePartnerPreviewBanner />
           </Suspense>
-          <DriveModeLink />
           {isLg === false ? <CedVoiceHub /> : null}
           <HudCollapsible title="CASTILLO" defaultOpen>
             <LeftPanel3DCarousel />

@@ -30,6 +30,7 @@ import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedAssistantButton } from "@/components/voice/CedAssistantButton";
 import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
+import { CedActionBar } from "@/components/voice/CedActionBar";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
 import {
   CedHudQuickPopups,
@@ -40,6 +41,7 @@ import {
   CedSettingsModal,
   CedStopConfirmModal,
 } from "@/components/voice/CedVoiceModals";
+import { CED_OPEN_SETTINGS_EVENT } from "@/lib/hud/chrome-events";
 
 const JarvisOrbScene = dynamic(
   () => import("@/components/orb/JarvisOrbScene"),
@@ -212,6 +214,50 @@ export function CedVoiceHub() {
     window.addEventListener(CED_LIFE_ACTION_EVENT, onLifeAction);
     return () => window.removeEventListener(CED_LIFE_ACTION_EVENT, onLifeAction);
   }, [voice.micOn, voice.primeSessionMediaFromGesture, voice.toggleMic]);
+
+  useEffect(() => {
+    const onSettings = () => voice.setSettingsOpen(true);
+    window.addEventListener(CED_OPEN_SETTINGS_EVENT, onSettings);
+    return () => window.removeEventListener(CED_OPEN_SETTINGS_EVENT, onSettings);
+  }, [voice.setSettingsOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("settings") !== "1") return;
+    voice.setSettingsOpen(true);
+    url.searchParams.delete("settings");
+    const qs = url.searchParams.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`,
+    );
+  }, [voice.setSettingsOpen]);
+
+  const activateMic = () => {
+    unlockVoiceAudioOnGesture();
+    voice.primeSessionMediaFromGesture();
+    void (async () => {
+      const fresh = await refreshUsage();
+      const snapshot = fresh ?? balance;
+      const limit = voiceLimitReasonFromBalance(snapshot);
+      if (limit) {
+        setVoiceLimitOpen(true);
+        return;
+      }
+      void voice.toggleMic();
+    })();
+  };
+
+  const handleMic = () => {
+    if (voice.micOn) {
+      void voice.toggleMic();
+      return;
+    }
+    activateMic();
+  };
+
   const { errorMessage, clearError } = voice;
 
   const voiceLimit =
@@ -258,33 +304,54 @@ export function CedVoiceHub() {
     clearError,
   ]);
 
+  const cameraLive = voice.cameraOn && Boolean(voice.cameraStream);
+  const imageLive = Boolean(voiceImagePreview?.url) && !cameraLive;
+  const canvasBusy = cameraLive || imageLive;
+
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center px-3 py-4 sm:max-w-lg sm:px-2">
-      <div className="relative h-[min(52vw,280px)] w-[min(52vw,280px)] max-h-[320px] max-w-[320px] md:h-[300px] md:w-[300px]">
-        <JarvisOrbScene
-          orbState={voice.orbState}
-          audioLevel={voice.audioLevel}
-          palette={voice.prefs.palette}
+    <div className="mx-auto flex w-full max-w-md flex-col items-center px-3 py-4 pb-24 sm:max-w-lg sm:px-2">
+      <div
+        className={[
+          "relative mx-auto overflow-hidden",
+          canvasBusy
+            ? "aspect-[4/3] w-full max-w-[min(92vw,520px)] rounded-xl"
+            : "h-[min(52vw,280px)] w-[min(52vw,280px)] max-h-[320px] max-w-[320px] md:h-[300px] md:w-[300px]",
+        ].join(" ")}
+      >
+        <div
+          className={
+            canvasBusy
+              ? "absolute bottom-2 left-2 z-10 h-[72px] w-[72px] overflow-hidden rounded-full border border-cyan-500/40 bg-black/70 shadow-[0_0_16px_rgba(0,229,255,0.2)] md:h-[88px] md:w-[88px] [&>div]:!h-full [&>div]:!w-full [&>div]:!max-h-none [&>div]:!max-w-none"
+              : "relative h-full w-full"
+          }
+        >
+          <JarvisOrbScene
+            orbState={voice.orbState}
+            audioLevel={voice.audioLevel}
+            palette={voice.prefs.palette}
+          />
+          <CedOrbOverlay
+            orbState={voice.orbState}
+            audioLevel={voice.audioLevel}
+            palette={voice.prefs.palette}
+          />
+        </div>
+
+        <CedCameraPreview
+          overlay
+          stream={voice.cameraStream}
+          active={voice.cameraOn}
+          facing={voice.cameraFacing}
+          onFlipCamera={() => void voice.flipCamera()}
         />
-        <CedOrbOverlay
-          orbState={voice.orbState}
-          audioLevel={voice.audioLevel}
-          palette={voice.prefs.palette}
+
+        <CedVoiceImagePreview
+          overlay
+          url={imageLive ? voiceImagePreview?.url ?? null : null}
+          prompt={voiceImagePreview?.prompt}
+          onDismiss={() => setVoiceImagePreview(null)}
         />
       </div>
-
-      <CedCameraPreview
-        stream={voice.cameraStream}
-        active={voice.cameraOn}
-        facing={voice.cameraFacing}
-        onFlipCamera={() => void voice.flipCamera()}
-      />
-
-      <CedVoiceImagePreview
-        url={voiceImagePreview?.url ?? null}
-        prompt={voiceImagePreview?.prompt}
-        onDismiss={() => setVoiceImagePreview(null)}
-      />
 
       <AnimatePresence mode="wait">
         <motion.p
@@ -310,25 +377,14 @@ export function CedVoiceHub() {
         paused={voice.paused}
       />
 
-      <CedAssistantButton
-        active={voice.micOn}
-        busy={voice.micBusy}
-        paused={voice.paused}
-        onActivate={() => {
-          unlockVoiceAudioOnGesture();
-          voice.primeSessionMediaFromGesture();
-          void (async () => {
-            const fresh = await refreshUsage();
-            const snapshot = fresh ?? balance;
-            const limit = voiceLimitReasonFromBalance(snapshot);
-            if (limit) {
-              setVoiceLimitOpen(true);
-              return;
-            }
-            void voice.toggleMic();
-          })();
-        }}
-      />
+      {!voice.micOn ? (
+        <CedAssistantButton
+          active={false}
+          busy={voice.micBusy}
+          paused={voice.paused}
+          onActivate={activateMic}
+        />
+      ) : null}
 
       {voice.micOn && !voice.paused ? (
         <div className="mt-3 flex h-8 items-end gap-1">
@@ -347,25 +403,38 @@ export function CedVoiceHub() {
 
       <CedVoiceControls
         micOn={voice.micOn}
-        micBusy={voice.micBusy}
-        hideMicLaunch
-        cameraOn={voice.cameraOn}
         muted={voice.muted}
         paused={voice.paused}
         quickPopup={quickPopup}
         onQuickPopup={(id) => setQuickPopup((prev) => (prev === id ? null : id))}
-        onMic={() => void voice.toggleMic()}
-        onCamera={() => void voice.toggleCamera()}
         onMute={() => voice.setMuted((m) => !m)}
         onPause={voice.togglePause}
         onStop={() => voice.setStopConfirmOpen(true)}
-        onHistory={() => voice.setHistoryOpen(true)}
-        onChat={() => setChatOpen(true)}
-        onAdvanced={() => setAdvancedOpen(true)}
-        onFinance={() => setFinanceOpen(true)}
-        onSettings={() => voice.setSettingsOpen(true)}
-        onFiles={() => {
-          /* Fase 5 — upload */
+      />
+
+      <CedActionBar
+        micOn={voice.micOn}
+        micBusy={voice.micBusy}
+        cameraOn={voice.cameraOn}
+        chatOpen={chatOpen}
+        advancedOpen={advancedOpen}
+        financeOpen={financeOpen}
+        onMic={handleMic}
+        onCamera={() => void voice.toggleCamera()}
+        onChat={() => {
+          setChatOpen((open) => !open);
+          setAdvancedOpen(false);
+          setFinanceOpen(false);
+        }}
+        onAdvanced={() => {
+          setAdvancedOpen((open) => !open);
+          setChatOpen(false);
+          setFinanceOpen(false);
+        }}
+        onFinance={() => {
+          setFinanceOpen((open) => !open);
+          setChatOpen(false);
+          setAdvancedOpen(false);
         }}
       />
 

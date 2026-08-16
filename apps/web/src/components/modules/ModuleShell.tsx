@@ -25,7 +25,6 @@ type LoadedPanel = ComponentType<ModulePanelProps>;
  * - Does not touch main CED chat or voice session
  */
 export function ModuleShell() {
-  const [enabled, setEnabled] = useState(false);
   const [modules, setModules] = useState<CedModuleRegistration[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   /** Bumps on each open so reopen always starts clean. */
@@ -35,7 +34,6 @@ export function ModuleShell() {
 
   useEffect(() => {
     const visible = isModulesShellVisible() ? getVisibleModules() : [];
-    setEnabled(visible.length > 0);
     setModules(visible);
   }, []);
 
@@ -45,6 +43,7 @@ export function ModuleShell() {
   );
 
   const hasPilotModules = modules.some((m) => m.stage === "pilot");
+  const railModules = modules.filter((m) => m.stage === "pilot");
   const activeIsPilot = active?.stage === "pilot";
 
   const closeModule = useCallback(() => {
@@ -69,6 +68,23 @@ export function ModuleShell() {
     };
     window.addEventListener("ced-open-module", onOpen);
     return () => window.removeEventListener("ced-open-module", onOpen);
+  }, [openModule]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const mod = url.searchParams.get("mod")?.trim();
+    if (mod && getModuleById(mod)) {
+      openModule(mod);
+    }
+    if (!mod) return;
+    url.searchParams.delete("mod");
+    const qs = url.searchParams.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`,
+    );
   }, [openModule]);
 
   useEffect(() => {
@@ -98,21 +114,19 @@ export function ModuleShell() {
     };
   }, [activeId]);
 
-  if (!enabled || modules.length === 0) return null;
-
   return (
     <>
-      {/* Left rail */}
-      <aside
-        className="pointer-events-auto fixed left-2 top-1/2 z-[70] flex -translate-y-1/2 flex-col gap-2 rounded-2xl border border-cyan-500/25 bg-[#060b14]/95 p-2 shadow-xl backdrop-blur-md sm:left-3"
-        aria-label="Módulos CED"
-      >
+      {railModules.length > 0 ? (
+        <aside
+          className="pointer-events-auto fixed left-2 top-1/2 z-[70] flex -translate-y-1/2 flex-col gap-2 rounded-2xl border border-cyan-500/25 bg-[#060b14]/95 p-2 shadow-xl backdrop-blur-md sm:left-3"
+          aria-label="Módulos piloto CED"
+        >
         {hasPilotModules ? (
           <div className="mb-0.5 px-0.5 text-center text-[8px] font-semibold uppercase tracking-wider text-amber-400/80">
             Piloto
           </div>
         ) : null}
-        {modules.map((m) => {
+        {railModules.map((m) => {
           const Icon = m.icon;
           const activeMod = activeId === m.id;
           return (
@@ -137,7 +151,8 @@ export function ModuleShell() {
             </button>
           );
         })}
-      </aside>
+        </aside>
+      ) : null}
 
       <AnimatePresence>
         {activeId && active ? (

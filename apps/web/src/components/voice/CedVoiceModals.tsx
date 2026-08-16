@@ -439,7 +439,7 @@ export function CedHistoryPanel({
 
   if (!open) return null;
   return (
-    <aside className="ced-panel-glow fixed inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col border-l border-cyan-500/40 bg-black pr-[env(safe-area-inset-right,0px)] shadow-2xl">
+    <aside className="ced-panel-glow fixed inset-y-0 right-0 z-[90] flex w-full max-w-sm flex-col border-l border-cyan-500/40 bg-black pr-[env(safe-area-inset-right,0px)] shadow-2xl">
       <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/30 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
         <h2 className="font-[family-name:var(--font-orbitron)] text-sm font-bold text-[#00e5ff]">
           HISTORIAL

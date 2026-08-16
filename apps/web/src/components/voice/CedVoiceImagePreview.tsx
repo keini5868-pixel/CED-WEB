@@ -10,13 +10,16 @@ type Props = {
   url: string | null;
   prompt?: string;
   onDismiss?: () => void;
+  /** Superpone la imagen al lienzo central. */
+  overlay?: boolean;
 };
 
-/** Vista previa compacta bajo el orbe — la conversación principal va en el panel derecho. */
+/** Vista previa de imagen — en overlay cubre el núcleo; si no, queda bajo el orbe. */
 export function CedVoiceImagePreview({
   url,
   prompt,
   onDismiss,
+  overlay = false,
 }: Props) {
   const src = url ? normalizeCedMediaUrl(url) : null;
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -27,17 +30,31 @@ export function CedVoiceImagePreview({
       {src ? (
         <motion.div
           key={src}
-          initial={{ opacity: 0, y: 12, scale: 0.96 }}
+          initial={{ opacity: 0, y: overlay ? 0 : 12, scale: overlay ? 1 : 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 8, scale: 0.98 }}
-          className="mt-4 w-full max-w-sm"
+          exit={{ opacity: 0, y: overlay ? 0 : 8, scale: 0.98 }}
+          className={
+            overlay
+              ? "absolute inset-0 z-[4] overflow-hidden rounded-xl border border-cyan-500/40 bg-black/80"
+              : "mt-4 w-full max-w-sm"
+          }
         >
-          <div className="overflow-hidden rounded-xl border border-cyan-500/40 bg-black/60 shadow-[0_0_24px_rgba(0,229,255,0.15)]">
+          <div
+            className={
+              overlay
+                ? "flex h-full flex-col overflow-hidden"
+                : "overflow-hidden rounded-xl border border-cyan-500/40 bg-black/60 shadow-[0_0_24px_rgba(0,229,255,0.15)]"
+            }
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
               alt={label}
-              className="max-h-72 w-full cursor-zoom-in object-contain transition hover:opacity-95"
+              className={
+                overlay
+                  ? "min-h-0 w-full flex-1 cursor-zoom-in object-contain transition hover:opacity-95"
+                  : "max-h-72 w-full cursor-zoom-in object-contain transition hover:opacity-95"
+              }
               onClick={() => setLightboxOpen(true)}
               onError={(e) => {
                 e.currentTarget.alt = "No se pudo cargar la imagen";

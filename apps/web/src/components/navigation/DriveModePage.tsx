@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { MapPin, Navigation, X } from "lucide-react";
+import { MapPin, X } from "lucide-react";
 
 import { DriveMapView } from "@/components/navigation/DriveMapView";
 import { NavigationPanel } from "@/components/navigation/NavigationPanel";
@@ -505,15 +505,8 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
 
         <div className="flex-1" />
 
-        {!ui.results && !ui.routePreview ? (
+        {!ui.results && !ui.routePreview && (embedded || geoError) ? (
           <div className="pointer-events-auto border-t border-cyan-500/25 bg-black/85 px-3 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-md sm:px-4">
-            <div className="mb-2 flex items-center gap-2">
-              <Navigation className="h-4 w-4 text-cyan-400" />
-              <p className="font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-widest text-cyan-300">
-                MODO CONDUCIR · GPS + GUÍA
-              </p>
-            </div>
-
             {embedded ? (
               <p className="text-center text-xs leading-relaxed text-cyan-400">
                 CED sigue escuchando en segundo plano. Di: &quot;busca Walmart&quot;,
@@ -522,7 +515,9 @@ export function DriveModePage({ embedded = false, onClose }: DriveModePageProps)
             ) : null}
 
             {geoError ? (
-              <p className="mt-2 text-center text-xs text-amber-300">{geoError}</p>
+              <p className={`text-center text-xs text-amber-300 ${embedded ? "mt-2" : ""}`}>
+                {geoError}
+              </p>
             ) : null}
           </div>
         ) : null}
