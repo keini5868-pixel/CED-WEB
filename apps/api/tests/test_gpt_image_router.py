@@ -38,7 +38,9 @@ def _limits(*, text_cap: int = 5) -> PlanLimits:
 
 def test_precise_text_alias_matches_ideogram_detector():
     assert prompt_requires_precise_text('que diga "Hola"') is True
+    assert prompt_requires_precise_text("hazme un flyer de yoga") is True
     assert prompt_requires_precise_text("atardecer en la playa") is False
+    assert prompt_requires_precise_text("flyer sin texto") is False
 
 
 def test_provider_cogs_covers_gpt_image_medium():

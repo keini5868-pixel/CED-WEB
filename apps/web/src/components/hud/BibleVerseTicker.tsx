@@ -80,8 +80,12 @@ const VERSES = [
     ref: "Marcos 11:24",
   },
   {
-    text: "Mira que te mando que te esfuerces y seas valiente; no temas ni desmayes, porque Jehová tu Dios estará contigo en dondequiera que vayas.",
-    ref: "Josué 1:9",
+    text: "Jehová es mi luz y mi salvación; ¿de quién temeré?",
+    ref: "Salmos 27:1",
+  },
+  {
+    text: "No temas, porque yo estoy contigo; no desmayes, porque yo soy tu Dios que te esfuerzo.",
+    ref: "Isaías 41:10",
   },
   {
     text: "Jehová es mi pastor; nada me faltará.",
@@ -202,6 +206,118 @@ const VERSES = [
   {
     text: "Mejor es el fin del negocio que su principio; mejor es el sufrido de espíritu que el altivo de espíritu.",
     ref: "Eclesiastés 7:8",
+  },
+  {
+    text: "Dios es nuestro amparo y fortaleza, nuestro pronto auxilio en las tribulaciones.",
+    ref: "Salmos 46:1",
+  },
+  {
+    text: "Estad quietos, y conoced que yo soy Dios.",
+    ref: "Salmos 46:10",
+  },
+  {
+    text: "Este es el día que hizo Jehová; nos gozaremos y alegraremos en él.",
+    ref: "Salmos 118:24",
+  },
+  {
+    text: "Lámpara es a mis pies tu palabra, y lumbrera a mi camino.",
+    ref: "Salmos 119:105",
+  },
+  {
+    text: "Mi socorro viene de Jehová, que hizo los cielos y la tierra.",
+    ref: "Salmos 121:2",
+  },
+  {
+    text: "Para los hombres esto es imposible; mas para Dios todo es posible.",
+    ref: "Mateo 19:26",
+  },
+  {
+    text: "Venid a mí todos los que estáis trabajados y cargados, y yo os haré descansar.",
+    ref: "Mateo 11:28",
+  },
+  {
+    text: "Yo soy el camino, y la verdad, y la vida.",
+    ref: "Juan 14:6",
+  },
+  {
+    text: "Yo soy la luz del mundo; el que me sigue no andará en tinieblas.",
+    ref: "Juan 8:12",
+  },
+  {
+    text: "Gozaos en el Señor siempre. Otra vez digo: ¡Gozaos!",
+    ref: "Filipenses 4:4",
+  },
+  {
+    text: "Echando toda vuestra ansiedad sobre él, porque él tiene cuidado de vosotros.",
+    ref: "1 Pedro 5:7",
+  },
+  {
+    text: "El corazón del hombre piensa su camino; mas Jehová endereza sus pasos.",
+    ref: "Proverbios 16:9",
+  },
+  {
+    text: "Los pensamientos del diligente ciertamente tienden a la abundancia.",
+    ref: "Proverbios 21:5",
+  },
+  {
+    text: "¿Has visto hombre solícito en su trabajo? Delante de los reyes estará.",
+    ref: "Proverbios 22:29",
+  },
+  {
+    text: "Acuérdate de Jehová tu Dios, porque él te da el poder para hacer las riquezas.",
+    ref: "Deuteronomio 8:18",
+  },
+  {
+    text: "Sea la luz de Jehová nuestro Dios sobre nosotros, y confirma la obra de nuestras manos.",
+    ref: "Salmos 90:17",
+  },
+  {
+    text: "Tú guardarás en completa paz a aquel cuyo pensamiento en ti persevera.",
+    ref: "Isaías 26:3",
+  },
+  {
+    text: "En lo que requiere diligencia, no perezosos; fervientes en espíritu, sirviendo al Señor.",
+    ref: "Romanos 12:11",
+  },
+  {
+    text: "Si alguno de vosotros tiene falta de sabiduría, pídala a Dios, el cual da a todos abundantemente.",
+    ref: "Santiago 1:5",
+  },
+  {
+    text: "Por Jehová son ordenados los pasos del hombre, y él aprueba su camino.",
+    ref: "Salmos 37:23",
+  },
+  {
+    text: "Sobre toda cosa guardada, guarda tu corazón; porque de él mana la vida.",
+    ref: "Proverbios 4:23",
+  },
+  {
+    text: "He aquí que yo hago cosa nueva; pronto saldrá a luz.",
+    ref: "Isaías 43:19",
+  },
+  {
+    text: "Clama a mí, y yo te responderé, y te enseñaré cosas grandes y ocultas.",
+    ref: "Jeremías 33:3",
+  },
+  {
+    text: "El que habita al abrigo del Altísimo morará bajo la sombra del Omnipotente.",
+    ref: "Salmos 91:1",
+  },
+  {
+    text: "Así alumbre vuestra luz delante de los hombres, para que vean vuestras buenas obras.",
+    ref: "Mateo 5:16",
+  },
+  {
+    text: "Todo lo que te viniere a la mano para hacer, hazlo según tus fuerzas.",
+    ref: "Eclesiastés 9:10",
+  },
+  {
+    text: "Y todo lo que hacéis, sea de palabra o de hecho, hacedlo todo en el nombre del Señor Jesús.",
+    ref: "Colosenses 3:17",
+  },
+  {
+    text: "Gustad, y ved que es bueno Jehová; dichoso el hombre que confía en él.",
+    ref: "Salmos 34:8",
   },
 ] as const;
 

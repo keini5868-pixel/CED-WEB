@@ -198,7 +198,18 @@ def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
         "Keep the SAME person",
     )
     if any(m in topic for m in passthrough_markers):
-        return topic[:4000]
+        from app.services.copy_quality import ensure_image_quality_guards
+
+        wants_text = any(
+            m in topic
+            for m in (
+                "TEXTOS EXACTOS",
+                "Include the requested labels",
+                "Ortografía española",
+                "SPELLING:",
+            )
+        )
+        return ensure_image_quality_guards(topic[:4000], wants_text=wants_text)[:4000]
     _ = context
     return build_direct_image_prompt(topic, context="")["prompt"]
 
@@ -217,7 +228,9 @@ def build_image_generation_prompts(user_prompt: str) -> list[str]:
     variants: list[str] = []
     # Descripción directa del sujeto; la anti-fuga va al final (no como “título” legible).
     faithful = (
-        f"{topic}. Alta calidad, composición clara, buena iluminación, resultado profesional. "
+        f"{topic}. Alta calidad, composición clara y centrada, sujeto completo "
+        f"dentro del encuadre con márgenes internos, sin recortes en los bordes, "
+        f"buena iluminación, resultado profesional. "
         f"{_NO_META_TEXT_ON_IMAGE}"
     )
     variants.append(faithful)
@@ -373,10 +386,14 @@ def generate_image_gemini(
         "TEXTOS EXACTOS" in topic
         or "Ortografía española" in topic
         or "Include the requested labels" in topic
+        or "SPELLING:" in topic
     )
     if not wants_overlay and _NO_META_TEXT_ON_IMAGE[:24] not in topic:
         if "No text, letters" not in topic:
             topic = f"{topic} {_NO_META_TEXT_ON_IMAGE}"
+    from app.services.copy_quality import ensure_image_quality_guards
+
+    topic = ensure_image_quality_guards(topic, wants_text=wants_overlay)
 
     use_fast = bool(fast or wants_overlay)
     http_timeout_ms = 75_000 if use_fast else 120_000
@@ -399,14 +416,16 @@ def generate_image_gemini(
     else:
         visual_core = re.split(
             r"(?:Ortografía española|TEXTOS EXACTOS|Minimiza texto|No dibujes texto|"
-            r"CRITICAL:|Photorealistic scene|Sin texto)",
+            r"CRITICAL:|Photorealistic scene|Sin texto|FULL FRAME|Include the requested|"
+            r"SPELLING:)",
             topic,
             maxsplit=1,
         )[0].strip(" .")
         visual_core = strip_image_prompt_meta(strip_image_generation_instruction(visual_core))
         for variant in build_image_generation_prompts(visual_core)[1:]:
-            if variant not in prompt_variants:
-                prompt_variants.append(variant[:4000])
+            guarded = ensure_image_quality_guards(variant, wants_text=False)
+            if guarded not in prompt_variants:
+                prompt_variants.append(guarded[:4000])
     # `context` se ignora aquí a propósito: prepare_image_prompt ya incorporó hechos limpios.
     _ = context
 

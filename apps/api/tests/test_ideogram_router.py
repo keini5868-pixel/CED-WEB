@@ -1,13 +1,11 @@
-"""Tests — router Gemini vs Ideogram en `generate_image()` y detector estricto de costo.
+"""Tests — router Gemini vs GPT Image/Ideogram en `generate_image()`.
 
-Diseño aprobado (Keini, 2026-07-20):
-- Tier 4.0 Turbo ($0.03 real / $0.06 monedero) como default.
-- Cuotas diarias: Starter 1, Pro 3, Élite 5, Founding 8, Básico gratis 0 (excluido
-  por completo, sin fallback de monedero para este recurso específico).
-- Router ESTRICTO: solo dispara con comillas explícitas o "que diga/ponga X" en el
-  pedido ACTUAL — nunca por palabras genéricas de marketing ni por historial (ese es
-  el riesgo de "disparar Ideogram de más" que Keini pidió evitar explícitamente).
-- Cualquier falla de Ideogram degrada a Gemini sin exponer error al usuario.
+Diseño (2026-08-16):
+- Escena pura (foto/ilustración sin copy) → Nano Banana 2.
+- Texto crítico (comillas, «que diga», flyer/banner/cartel/letrero/infografía)
+  → GPT Image (fallback Ideogram). Nano Banana 2 no garantiza ortografía.
+- Pedidos «sin texto» se quedan en Nano Banana.
+- Básico gratis: cuota 0 de image_text (sin fallback de monedero para ese recurso).
 """
 
 from __future__ import annotations
@@ -127,15 +125,18 @@ def test_compose_persuasive_overlay_pain_solution():
     assert "Keep the SAME person" in prompt or "SAME person" in prompt
 
 
+def test_strict_detector_true_for_graphic_formats_with_copy():
+    assert prompt_requires_ideogram_text("hazme un flyer con los beneficios de mi taller de yoga") is True
+    assert prompt_requires_ideogram_text("banner: horarios y módulos del programa") is True
+
+
 def test_strict_detector_false_for_generic_marketing_words():
-    # Estas palabras SÍ disparan `image_prompt_needs_verbatim_text` (amplio, para
-    # decorar el prompt de Gemini) pero NO deben disparar el router de costo pagado.
+    # Palabras de marketing SIN formato gráfico (flyer/banner/cartel) no disparan
+    # el motor de tipografía: puede ser una foto de producto/evento.
     for text in (
-        "hazme un flyer con los beneficios de mi taller de yoga",
         "genera una imagen publicitaria de mi evento",
         "necesito un anuncio para vender mi curso",
         "diseño con las características de mi producto",
-        "banner: horarios y módulos del programa",
     ):
         assert prompt_requires_ideogram_text(text) is False, text
 

@@ -110,7 +110,10 @@ def test_explicit_que_diga_still_requests_verbatim():
     tech = orch["technical_prompt"]
     assert "Gran Apertura" in tech or "apertura" in tech.lower()
     assert "include the requested labels" in tech.lower()
-    assert "TEXTOS EXACTOS" not in tech
+    assert "TEXTOS EXACTOS" in tech
+    assert "FULL FRAME" in tech
+    assert "SPELLING:" in tech
+    assert "character-by-character" in tech.lower() or "carácter por carácter" in tech.lower()
 
 
 def test_reference_prompt_never_uses_escena_pedida_label():
@@ -371,3 +374,43 @@ def test_polish_spanish_for_user():
     text = polish_spanish_for_user("Sistema immune y nutricion diaria")
     assert "inmune" in text
     assert "nutrición" in text
+
+
+def test_scene_prompt_includes_safe_frame_not_spelling():
+    from app.services.copy_quality import build_direct_image_prompt
+
+    direct = build_direct_image_prompt("un águila volando sobre un cielo lluvioso")
+    prompt = direct["prompt"]
+    assert "FULL FRAME" in prompt
+    assert "No text, letters" in prompt
+    assert "SPELLING:" not in prompt
+    assert "TEXTOS EXACTOS" not in prompt
+
+
+def test_quoted_equipo_goes_verbatim_with_spelling_and_frame():
+    from app.services.copy_quality import (
+        build_direct_image_prompt,
+        prompt_requires_precise_text,
+    )
+
+    msg = 'genera un flyer que diga "equipo"'
+    assert prompt_requires_precise_text(msg) is True
+    direct = build_direct_image_prompt(msg)
+    assert direct["wants_literal_text"] is True
+    prompt = direct["prompt"]
+    assert "TEXTOS EXACTOS" in prompt
+    assert "equipo" in prompt.lower()
+    assert "FULL FRAME" in prompt
+    assert "SPELLING:" in prompt
+    assert "keep every vowel" in prompt.lower() or "u in equipo" in prompt.lower()
+
+
+def test_graphic_formats_require_precise_text_unless_sin_texto():
+    from app.services.copy_quality import prompt_requires_precise_text
+
+    assert prompt_requires_precise_text("hazme un flyer de mi taller de yoga") is True
+    assert prompt_requires_precise_text("banner con horarios del programa") is True
+    assert prompt_requires_precise_text("un cartel para la tienda") is True
+    assert prompt_requires_precise_text("flyer sin texto") is False
+    assert prompt_requires_precise_text("genera una imagen publicitaria de mi evento") is False
+    assert prompt_requires_precise_text("diseño con las características de mi producto") is False

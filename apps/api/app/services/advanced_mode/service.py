@@ -198,6 +198,14 @@ def _finish_payload(
     open_module: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {"response": response, "model": model}
+    from app.services.opportunities_pilot.fitline_enroll import (
+        maybe_force_enroll_if_signup_leak,
+    )
+
+    forced = maybe_force_enroll_if_signup_leak(None, response)
+    if forced:
+        payload["response"] = str(forced["spoken"])
+        open_module = forced.get("open_module") or open_module
     if pdf:
         payload["pdf"] = pdf
     if image:

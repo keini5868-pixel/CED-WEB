@@ -493,7 +493,10 @@ def build_marketing_creative_brief(
         if verbatim_block:
             internal += f"{verbatim_block} "
         internal += (
-            "Ortografía española impecable. "
+            "Ortografía española impecable: cada palabra completa y bien escrita, "
+            "sin letras faltantes (conservar cada vocal, incluida la u de equipo). "
+            "Todo el contenido y el texto deben quedar centrados y enteros dentro del "
+            "encuadre, con márgenes internos; nada recortado por los bordes. "
             "No escribas párrafos largos ni texto en inglés inventado."
         )
         style_mode = "edit"
@@ -507,7 +510,10 @@ def build_marketing_creative_brief(
             internal += f"{verbatim_block} "
         internal += (
             "Estilo premium, fondo limpio, máximo 4 textos cortos. "
-            "Ortografía española impecable."
+            "Ortografía española impecable: cada palabra completa y bien escrita, "
+            "sin letras faltantes. "
+            "Composición centrada: todo el contenido y el texto caben enteros en el "
+            "encuadre, con márgenes internos, sin recortes en los bordes."
         )
         style_mode = "inspired"
 

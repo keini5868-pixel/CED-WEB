@@ -1240,7 +1240,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 wants_fitline_enroll_link,
             )
 
-            if uid and wants_fitline_enroll_link(user_text):
+            voice_hist = [
+                {"role": getattr(u, "role", "user"), "content": str(getattr(u, "content", "") or "")}
+                for u in (transcript or [])
+            ]
+            if uid and wants_fitline_enroll_link(user_text, voice_hist):
                 try:
                     tool_result = await asyncio.wait_for(
                         execute_voice_tool(

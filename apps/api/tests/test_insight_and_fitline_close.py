@@ -364,8 +364,37 @@ def test_enroll_link_opens_opps_without_pasting_url():
     assert result["spoken"] == FITLINE_ENROLL_GUIDE
 
 
+def test_enroll_covers_descripcion_enlace_and_generic_pm_url():
+    from app.services.opportunities_pilot.fitline_enroll import (
+        FITLINE_ENROLL_GUIDE,
+        maybe_force_enroll_if_signup_leak,
+        wants_fitline_enroll_link,
+    )
+
+    assert wants_fitline_enroll_link(
+        "dame la descripción/enlace en PM International"
+    )
+    assert wants_fitline_enroll_link("dame el enlace de inscripción")
+    assert wants_fitline_enroll_link("quiero inscribirme en FitLine")
+    assert wants_fitline_enroll_link(
+        "https://www.pm-international.com/registration/"
+    )
+    assert wants_fitline_enroll_link(
+        "dame el enlace",
+        history=[{"role": "user", "content": "estoy viendo FitLine PM International"}],
+    )
+    leak = maybe_force_enroll_if_signup_leak(
+        "u1",
+        "Puede registrarse aquí: https://www.pm-international.com/registration/",
+    )
+    assert leak is not None
+    assert leak["spoken"] == FITLINE_ENROLL_GUIDE
+    assert leak["open_module"]["highlight"] == "signup"
+
+
 def test_enroll_not_triggered_on_generic_fitline_question():
     from app.services.opportunities_pilot.fitline_enroll import wants_fitline_enroll_link
 
     assert not wants_fitline_enroll_link("qué es el NTC de FitLine?")
     assert not wants_fitline_enroll_link("hola, cómo estás")
+    assert not wants_fitline_enroll_link("cuáles son los requisitos de inscripción de FitLine")

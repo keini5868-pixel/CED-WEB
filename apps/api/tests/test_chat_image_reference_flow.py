@@ -158,14 +158,22 @@ def test_run_generation_failure_never_returns_false_success(mock_ref: MagicMock)
     assert "Listo, señor" not in result["reply"]
 
 
+@patch("app.services.gemini_images.generate_image")
 @patch("app.services.image_reference_generator.generate_image_with_reference")
-def test_repeat_generations_stay_on_direct_path(mock_ref: MagicMock):
+def test_repeat_generations_stay_on_direct_path(mock_ref: MagicMock, mock_gen: MagicMock):
     register_text_chat_image(USER, CONV, PNG, "image/png")
     set_session_vision_analysis(USER, CONV, VISION_REPLY)
     mock_ref.return_value = {
         "ok": True,
         "url": "https://example.com/repeat.jpg",
         "quality": "standard",
+    }
+    mock_gen.return_value = {
+        "ok": True,
+        "url": "https://example.com/gpt-flyer.jpg",
+        "quality": "text",
+        "provider": "gpt_image",
+        "ideogram_used": True,
     }
 
     history = list(HISTORY_AFTER_ANALYSIS)
@@ -188,7 +196,13 @@ def test_repeat_generations_stay_on_direct_path(mock_ref: MagicMock):
             }
         )
 
-    assert mock_ref.call_count == len(prompts)
+    # Flyer con copy → GPT Image (referencia conservada). El resto sigue el path
+    # de referencia Gemini si el pedido actual no pide tipografía crítica.
+    assert mock_gen.call_count + mock_ref.call_count == len(prompts)
+    assert mock_gen.call_count >= 1
+    first_gen = mock_gen.call_args_list[0]
+    assert first_gen.kwargs["prefer_ideogram"] is True
+    assert first_gen.kwargs.get("reference_image")
 
 
 def test_followup_prompt_after_vision_analysis():

@@ -88,7 +88,20 @@ _SCENE_FORBIDS_TEXT = re.compile(
 )
 _ORTHOGRAPHY_RULE = (
     "Ortografía española impecable en todo texto visible. "
+    "Frases completas y correctamente escritas, sin errores tipográficos ni letras faltantes. "
     "Sin anglicismos innecesarios ni palabras inventadas."
+)
+_FRAME_SAFE_RULE = (
+    "FULL FRAME / SAFE AREA: keep the entire composition and ALL on-image text fully "
+    "inside the canvas with generous inner margins (about 10% safe zone). Center the "
+    "main subject and every word. Nothing cropped or clipped by the edges — no cut-off "
+    "objects, no truncated letters."
+)
+_SPELLING_STRICT_RULE = (
+    "SPELLING: every visible word must be complete and correctly spelled. "
+    "Copy requested Spanish words character-by-character "
+    "(never drop, swap, or invent letters; keep every vowel, including the u in equipo). "
+    "Incomplete or misspelled words are forbidden."
 )
 _HARD_NO_TEXT_RULE = (
     "CRITICAL: photorealistic or illustrated SCENE ONLY. "
@@ -318,19 +331,64 @@ _IDEOGRAM_EXPLICIT_TEXT_REQUEST = re.compile(
     re.I,
 )
 
+# Formatos que SIEMPRE llevan tipografía. Nano Banana 2 falla en ortografía
+# (p.ej. «equipo» → «eqipo»); estos van al híbrido GPT Image / Ideogram.
+_GRAPHIC_COPY_FORMAT = re.compile(
+    r"(?i)\b(?:flyer|cartel|letrero|r[oó]tulo|infograf[ií]a|banner)\b"
+)
+_NO_TEXT_GUARD_HINT = re.compile(
+    r"(?i)\b(?:zero letters|scene only|sin texto|ninguna letra)\b"
+)
+
 
 def prompt_requires_precise_text(prompt: str) -> bool:
-    """Señal ESTRICTA: el pedido pide tipografía/texto literal en la imagen.
+    """Texto crítico en la imagen → GPT Image (fallback Ideogram), no Nano Banana.
 
-    Enruta a GPT Image (y fallback Ideogram), NO a Nano Banana genérico.
-    Solo mira el pedido ACTUAL (nunca historial) para no gastar de más.
+    Mira solo el pedido ACTUAL (nunca historial). Incluye comillas / «que diga»
+    y formatos gráficos que siempre llevan copy (flyer, banner, cartel…).
+    «Sin texto» gana: escena pura se queda en Nano Banana.
     """
     t = (prompt or "").strip()
     if not t:
         return False
+    if _SCENE_FORBIDS_TEXT.search(t):
+        return False
     if extract_quoted_phrases(t):
         return True
-    return bool(_IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t))
+    if _IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t):
+        return True
+    return bool(_GRAPHIC_COPY_FORMAT.search(t))
+
+
+def ensure_image_quality_guards(prompt: str, *, wants_text: bool | None = None) -> str:
+    """Añade encuadre seguro y, si hay tipografía, reglas de ortografía (idempotente)."""
+    t = (prompt or "").strip()
+    if not t:
+        return t
+    no_text = (
+        "No text, letters" in t
+        or _HARD_NO_TEXT_RULE[:40] in t
+        or _NO_TEXT_GUARD_HINT.search(t)
+    )
+    if wants_text is None:
+        wants_text = (not no_text) and (
+            "TEXTOS EXACTOS" in t
+            or "Include the requested labels" in t
+            or "Ortografía española" in t
+            or "SPELLING:" in t
+            or prompt_requires_precise_text(t)
+        )
+    extras: list[str] = []
+    if "FULL FRAME" not in t and "SAFE AREA" not in t:
+        extras.append(_FRAME_SAFE_RULE)
+    if wants_text:
+        if "Ortografía española" not in t:
+            extras.append(_ORTHOGRAPHY_RULE)
+        if "SPELLING:" not in t:
+            extras.append(_SPELLING_STRICT_RULE)
+    if not extras:
+        return t
+    return f"{t} {' '.join(extras)}".strip()[:4000]
 
 
 def prompt_requires_ideogram_text(prompt: str) -> bool:
@@ -668,10 +726,8 @@ def build_direct_image_prompt(
     if not scene:
         scene = cleaned or raw
 
-    wants_text = bool(
-        prompt_requires_ideogram_text(raw)
-        or extract_quoted_phrases(raw)
-    )
+    quoted = extract_quoted_phrases(raw)
+    wants_text = bool(prompt_requires_ideogram_text(raw) or quoted)
     wants_ced = user_requests_ced_branding(raw)
 
     parts: list[str] = [scene]
@@ -681,13 +737,19 @@ def build_direct_image_prompt(
         parts.append(
             "Style with CED brand identity when relevant (futuristic cyan/blue HUD)."
         )
+    parts.append(_FRAME_SAFE_RULE)
     if wants_text:
         # El usuario ya dijo qué poner («EN TEXTO», «que diga…»). Solo anti-fuga de comando.
         parts.append(
             "Include the requested labels as clear legible on-image text. "
+            "Every word must be complete and correctly spelled. "
             "Do NOT write meta commands such as 'genera una imagen', 'okay ahora', "
             "or system instructions onto the image."
         )
+        parts.append(_ORTHOGRAPHY_RULE)
+        parts.append(_SPELLING_STRICT_RULE)
+        if quoted:
+            parts.append(format_verbatim_image_copy(quoted))
     else:
         parts.append(
             "No text, letters, titles, captions, subtitles, or watermarks anywhere "
@@ -785,7 +847,8 @@ def build_reference_text_edit_prompt(
         "lighting and background. Do NOT replace the subject with a different person "
         "or a different gesture unless the user explicitly asked for that.",
         "Add clear, legible Spanish on-image typography for a marketing ad "
-        "(pain → solution / PAS). Short lines only. High contrast. No watermarks.",
+        "(pain → solution / PAS). Short lines only. High contrast. No watermarks. "
+        f"{_FRAME_SAFE_RULE} {_ORTHOGRAPHY_RULE} {_SPELLING_STRICT_RULE}",
         f"User request: {strip_image_generation_instruction_safe(user_text)}",
     ]
     if verbatim:
@@ -818,9 +881,10 @@ def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None)
     quoted = [f'"{line}"' for line in all_lines]
     return (
         "TEXTOS EXACTOS EN ESPAÑOL (ortografía obligatoria — copiar CARÁCTER POR CARÁCTER; "
-        "no parafrasear, no inventar palabras, no mezclar inglés):\n"
+        "no parafrasear, no inventar palabras, no mezclar inglés, no omitir letras):\n"
         + "\n".join(f"- {q}" for q in quoted)
-        + "\nSi no puedes renderizar texto perfecto, usa MENOS texto pero sin errores ortográficos."
+        + "\nKeep every word fully inside the frame, centered, never cropped. "
+        "Si no puedes renderizar texto perfecto, usa MENOS texto pero sin errores ortográficos."
     )
 
 
@@ -898,9 +962,10 @@ def format_creative_image_copy(
     quoted = [f'"{line}"' for line in short]
     return (
         f"{_CREATIVE_NO_LEAK}\n"
-        "TEXTOS EXACTOS EN LA IMAGEN (una línea cada uno; copiar tal cual):\n"
+        "TEXTOS EXACTOS EN LA IMAGEN (una línea cada uno; copiar tal cual, sin faltas):\n"
         + "\n".join(f"- {q}" for q in quoted)
-        + "\nSi no puedes escribir perfecto, usa solo el titular y 2 viñetas cortas."
+        + f"\n{_FRAME_SAFE_RULE} {_SPELLING_STRICT_RULE} "
+        "Si no puedes escribir perfecto, usa solo el titular y 2 viñetas cortas."
     )
 
 
@@ -918,15 +983,24 @@ def augment_image_prompt(prompt: str, context: str = "") -> str:
     ):
         if not prompt_requires_ideogram_text(base) and not extract_quoted_phrases(base):
             if _HARD_NO_TEXT_RULE[:40] not in base:
-                return f"{base.rstrip('. ')}. {_HARD_NO_TEXT_RULE}"
-            return base
+                return ensure_image_quality_guards(
+                    f"{base.rstrip('. ')}. {_HARD_NO_TEXT_RULE}",
+                    wants_text=False,
+                )
+            return ensure_image_quality_guards(base, wants_text=False)
 
     if "TEXTOS EXACTOS" in base:
         if _ORTHOGRAPHY_RULE.split(".")[0] not in base:
-            return f"{base} {_ORTHOGRAPHY_RULE} {_CREATIVE_NO_LEAK}"
+            return ensure_image_quality_guards(
+                f"{base} {_ORTHOGRAPHY_RULE} {_CREATIVE_NO_LEAK}",
+                wants_text=True,
+            )
         if "PROHIBIDO escribir" not in base and "PROHIBIDO renderizar" not in base:
-            return f"{base} {_CREATIVE_NO_LEAK}"
-        return base
+            return ensure_image_quality_guards(
+                f"{base} {_CREATIVE_NO_LEAK}",
+                wants_text=True,
+            )
+        return ensure_image_quality_guards(base, wants_text=True)
 
     overlay = collect_image_overlay_lines(base, ctx)
     # Solo titular desde overlays reales — NUNCA base[:60] (era el prompt pintado).
@@ -937,22 +1011,27 @@ def augment_image_prompt(prompt: str, context: str = "") -> str:
     if overlay or image_prompt_needs_verbatim_text(base, ctx):
         verbatim = format_verbatim_image_copy(overlay, headline=headline or None)
         if verbatim:
-            return (
+            return ensure_image_quality_guards(
                 f"{base} {_ORTHOGRAPHY_RULE} {verbatim} {_CREATIVE_NO_LEAK} "
                 "Prefiere tipografía grande y clara; máximo una frase corta (≤12 palabras) "
-                "si el texto es largo. Mejor poco texto correcto que un párrafo ilegible."
+                "si el texto es largo. Mejor poco texto correcto que un párrafo ilegible.",
+                wants_text=True,
             )
         # Pedido de tipografía sin líneas concretas: conservar/mejorar textos de la
         # referencia; NUNCA pintar el pedido del usuario como tipografía.
-        return (
+        return ensure_image_quality_guards(
             f"{base} {_ORTHOGRAPHY_RULE} {_CREATIVE_NO_LEAK} "
             "Incluye tipografía legible en español. Si hay imagen de referencia con "
             "etiquetas o títulos, reprodúcelos con ortografía correcta. "
-            "No escribas en la imagen el pedido del usuario ni frases meta."
+            "No escribas en la imagen el pedido del usuario ni frases meta.",
+            wants_text=True,
         )
 
     # Escena pura: anti-texto duro; no mencionar «pedido/usuario» (el modelo lo pinta).
-    return f"{base.rstrip('. ')}. {_HARD_NO_TEXT_RULE}"
+    return ensure_image_quality_guards(
+        f"{base.rstrip('. ')}. {_HARD_NO_TEXT_RULE}",
+        wants_text=False,
+    )
 
 IMAGE_EMBEDDED_TEXT_DISCLAIMER = (
     "Señor, aviso: el texto dentro de imágenes generadas por IA (modelo actual: "

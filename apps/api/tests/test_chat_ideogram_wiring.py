@@ -59,23 +59,22 @@ def test_plain_request_without_text_sets_prefer_ideogram_false(mock_gen: MagicMo
 
 
 @patch("app.services.gemini_images.generate_image")
-def test_generic_marketing_flyer_does_not_prefer_ideogram(mock_gen: MagicMock):
-    """Regresión clave: pedidos de flyer/creativo con palabras genéricas de marketing
-    (beneficios, evento, servicio) NO deben marcar prefer_ideogram=True — ese es
-    justamente el riesgo de "disparar Ideogram de más" que se pidió evitar."""
+def test_marketing_flyer_prefers_gpt_image_for_on_image_copy(mock_gen: MagicMock):
+    """Flyers siempre llevan tipografía: Nano Banana 2 falla en ortografía
+    (p.ej. «equipo» sin la u). Enrutar al híbrido GPT Image / Ideogram."""
     mock_gen.return_value = {
         "ok": True,
         "url": "https://example.com/flyer.png",
         "caption": "Flyer",
-        "quality": "standard",
-        "provider": "gemini",
-        "ideogram_used": False,
+        "quality": "text",
+        "provider": "gpt_image",
+        "ideogram_used": True,
     }
     msg = "hazme un flyer de mi taller de yoga con sus beneficios y horarios"
     run_chat_image_generation(USER, CONV, msg, [], plan_id="pro")
 
     mock_gen.assert_called_once()
-    assert mock_gen.call_args.kwargs["prefer_ideogram"] is False
+    assert mock_gen.call_args.kwargs["prefer_ideogram"] is True
 
 
 @patch("app.services.gemini_images.generate_image")

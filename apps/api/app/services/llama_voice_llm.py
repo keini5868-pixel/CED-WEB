@@ -292,13 +292,15 @@ class LlamaVoiceLlm:
         if not user_text:
             return None
 
+        from app.services.opportunities_pilot.fitline_enroll import (
+            maybe_force_enroll_if_signup_leak,
+            wants_fitline_enroll_link,
+        )
+
         if self.user_id:
-            from app.services.opportunities_pilot.fitline_enroll import (
-                wants_fitline_enroll_link,
-            )
             from app.services.voice_tool_executor import execute_voice_tool
 
-            if wants_fitline_enroll_link(user_text):
+            if wants_fitline_enroll_link(user_text, self._history):
                 try:
                     tool_result = await execute_voice_tool(
                         "abrir_oportunidades_fitline",
@@ -325,6 +327,11 @@ class LlamaVoiceLlm:
 
         kb_reply, kb_source = try_internal_knowledge_voice_reply(user_text)
         if kb_reply:
+            leak = maybe_force_enroll_if_signup_leak(
+                self.user_id, kb_reply, push_voice=True
+            )
+            if leak:
+                return finalize_voice_delivery_text(str(leak["spoken"]))
             logger.info(
                 "[RETELL-LLAMA] casual source=%s call=%s text=%s",
                 kb_source,

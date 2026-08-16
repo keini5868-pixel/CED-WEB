@@ -2528,6 +2528,15 @@ def send_message(
         image: dict[str, Any] | None = None,
         open_module: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        from app.services.opportunities_pilot.fitline_enroll import (
+            maybe_force_enroll_if_signup_leak,
+        )
+
+        forced = maybe_force_enroll_if_signup_leak(user_id, reply)
+        if forced:
+            reply = str(forced["spoken"])
+            open_module = forced.get("open_module") or open_module
+            route_meta = route_meta or {"intent": "fitline_enroll", "source": "signup_leak"}
         supabase_db.append_message(
             conversation_id,
             user_id,
@@ -3568,7 +3577,15 @@ def iter_send_message_stream(
 
     from app.services.opportunities_pilot.fitline_enroll import try_fitline_enroll_turn
 
-    enroll = try_fitline_enroll_turn(user_id, text)
+    stream_hist: list[dict[str, Any]] = []
+    if conversation_id:
+        try:
+            stream_hist = supabase_db.get_conversation_messages(
+                conversation_id, user_id, limit=8,
+            )
+        except Exception:  # noqa: BLE001
+            stream_hist = []
+    enroll = try_fitline_enroll_turn(user_id, text, history=stream_hist)
     if enroll:
         reply = str(enroll["spoken"])
         yield _sse_event("token", {"text": reply})
@@ -3962,6 +3979,16 @@ def iter_send_message_stream(
         )
     reply = _finalize_chat_reply(reply)
 
+    from app.services.opportunities_pilot.fitline_enroll import (
+        maybe_force_enroll_if_signup_leak,
+    )
+
+    forced_enroll = maybe_force_enroll_if_signup_leak(user_id, reply)
+    stream_open_module: dict[str, Any] | None = None
+    if forced_enroll:
+        reply = str(forced_enroll["spoken"])
+        stream_open_module = forced_enroll.get("open_module")
+
     reply, image_attachment = _salvage_image_if_needed(
         user_id,
         conversation_id,
@@ -3987,6 +4014,9 @@ def iter_send_message_stream(
         "usage": _stream_usage_snapshot(user_id, profile),
         "cognitive": module_route_meta if module_route_meta else route.to_dict(),
     }
+    if stream_open_module:
+        payload["open_module"] = stream_open_module
+        payload["cognitive"] = {"intent": "fitline_enroll", "source": "signup_leak"}
     if pdf_attachment:
         payload["pdf"] = pdf_attachment
     if image_attachment:

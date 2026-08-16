@@ -253,7 +253,8 @@ def run_chat_image_generation(
 
     user_text = (text or "").strip()
     effective = effective_user_prompt(user_text, history)
-    # Señal ESTRICTA: comillas, "que diga/ponga", "agrégale texto" → GPT Image / Ideogram.
+    # Texto crítico (comillas, «que diga», flyer/banner/cartel) → GPT Image / Ideogram.
+    # Nano Banana 2 no garantiza ortografía (p.ej. «equipo» sin la u).
     wants_literal_text = prompt_requires_ideogram_text(user_text)
     use_reference = allow_reference and should_use_reference_generation(
         user_text,

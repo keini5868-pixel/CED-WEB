@@ -66,6 +66,9 @@ def generate_image_gpt(
     topic = (prompt or "").strip()
     if not topic:
         return {"ok": False, "error": "Prompt vacío", "code": "empty_prompt"}
+    from app.services.copy_quality import ensure_image_quality_guards
+
+    topic = ensure_image_quality_guards(topic, wants_text=True)
     if not api_key:
         return {
             "ok": False,
@@ -191,6 +194,9 @@ def edit_image_gpt(
     topic = (prompt or "").strip()
     if not topic:
         return {"ok": False, "error": "Prompt vacío", "code": "empty_prompt"}
+    from app.services.copy_quality import ensure_image_quality_guards
+
+    topic = ensure_image_quality_guards(topic, wants_text=True)
     if not api_key:
         return {
             "ok": False,

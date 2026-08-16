@@ -19,6 +19,8 @@ def test_direct_scene_keeps_user_subject_no_ced_no_textos():
     assert "photorealistic scene depicting" not in prompt
     assert direct["wants_literal_text"] is False
     assert "no text, letters" in prompt
+    assert "full frame" in prompt
+    assert "spelling:" not in prompt
 
 
 def test_direct_en_texto_holographic_map_keeps_labels_in_natural_language():
