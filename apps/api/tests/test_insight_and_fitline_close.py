@@ -228,3 +228,144 @@ def test_voice_cache_path_real_register_fires_on_third_question():
     assert s3.find("CIERRE PRIORITARIO") <= 80
     assert "90 días" in s3
     assert "Finanzas" in s3
+
+
+def test_ced_system_question_captured():
+    ok, tags, _ = looks_like_valuable_question(
+        "¿Cómo uso el modo avanzado para generar un PDF?"
+    )
+    assert ok is True
+    assert "ced" in tags
+
+
+def test_generic_trivia_not_captured():
+    ok, tags, _ = looks_like_valuable_question(
+        "¿Cómo funciona la fotosíntesis en las plantas verdes?"
+    )
+    assert ok is False
+    assert "ced" not in tags
+
+
+def test_ced_problem_question_captured():
+    ok, tags, priority = looks_like_valuable_question(
+        "El micrófono no funciona en voz y no puedo hablar con CED"
+    )
+    assert ok is True
+    assert "ced" in tags
+    assert priority == "high"
+
+
+def test_list_insights_does_not_filter_by_user_id():
+    import inspect
+
+    from app.services.insight_questions import list_insight_questions
+
+    assert "user_id" not in inspect.signature(list_insight_questions).parameters
+
+    calls: list[tuple[str, tuple, dict]] = []
+
+    class FakeQ:
+        def select(self, *a, **k):
+            calls.append(("select", a, k))
+            return self
+
+        def order(self, *a, **k):
+            calls.append(("order", a, k))
+            return self
+
+        def limit(self, *a, **k):
+            calls.append(("limit", a, k))
+            return self
+
+        def eq(self, *a, **k):
+            calls.append(("eq", a, k))
+            return self
+
+        def contains(self, *a, **k):
+            calls.append(("contains", a, k))
+            return self
+
+        def execute(self):
+            class R:
+                data = [
+                    {"id": "1", "user_id": "aaa-user", "question": "q1"},
+                    {"id": "2", "user_id": "bbb-user", "question": "q2"},
+                ]
+
+            return R()
+
+    class FakeClient:
+        def table(self, _name):
+            return FakeQ()
+
+    with patch("app.services.supabase_db._client", return_value=FakeClient()):
+        rows = list_insight_questions(status="new", limit=50)
+
+    eq_fields = [c[1][0] for c in calls if c[0] == "eq" and c[1]]
+    assert "user_id" not in eq_fields
+    assert {r["user_id"] for r in rows} == {"aaa-user", "bbb-user"}
+    assert all(r.get("user_label") for r in rows)
+
+
+def test_capture_stores_the_asking_user_not_admin():
+    inserted: dict = {}
+
+    class FakeQ:
+        def __init__(self, row):
+            self.row = row
+
+        def execute(self):
+            class R:
+                data = [self.row]
+
+            return R()
+
+    class FakeTable:
+        def insert(self, row):
+            inserted.update(row)
+            return FakeQ(row)
+
+    class FakeClient:
+        def table(self, name):
+            assert name == "ced_insight_questions"
+            return FakeTable()
+
+    with patch("app.services.supabase_db._client", return_value=FakeClient()):
+        from app.services.insight_questions import capture_insight_question
+
+        capture_insight_question(
+            "user-not-admin",
+            "¿Cómo funciona el plan de compensación de FitLine en mi país?",
+            channel="voice",
+        )
+    assert inserted["user_id"] == "user-not-admin"
+    assert "fitline" in inserted["tags"] or "business" in inserted["tags"]
+
+
+def test_enroll_link_opens_opps_without_pasting_url():
+    from app.services.opportunities_pilot.fitline_enroll import (
+        FITLINE_ENROLL_GUIDE,
+        try_fitline_enroll_turn,
+        wants_fitline_enroll_link,
+    )
+
+    assert wants_fitline_enroll_link(
+        "pásame el enlace de inscripción de PM International"
+    )
+    result = try_fitline_enroll_turn(
+        "u1", "dame el link de inscripción de FitLine"
+    )
+    assert result is not None
+    assert result["open_module"]["module"] == "opportunities"
+    assert result["open_module"]["opportunity_id"] == "fitline_pm"
+    assert result["open_module"]["highlight"] == "signup"
+    assert "http" not in result["spoken"].lower()
+    assert "Oportunidades" in result["spoken"]
+    assert result["spoken"] == FITLINE_ENROLL_GUIDE
+
+
+def test_enroll_not_triggered_on_generic_fitline_question():
+    from app.services.opportunities_pilot.fitline_enroll import wants_fitline_enroll_link
+
+    assert not wants_fitline_enroll_link("qué es el NTC de FitLine?")
+    assert not wants_fitline_enroll_link("hola, cómo estás")

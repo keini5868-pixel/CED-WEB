@@ -13,6 +13,18 @@ from app.services.marketing_creative import (
 from app.services.publish_text import is_social_publish_intent
 
 
+def test_informational_flyer_mention_is_not_creative_intent():
+    msg = "análisis del flyer de la semana: el anuncio tiene poco contraste"
+    assert is_marketing_creative_intent(msg) is False
+    assert is_image_creation_request(msg) is False
+
+
+def test_explain_flyer_is_not_creative_intent():
+    msg = "necesito que me expliques el flyer de la semana"
+    assert is_marketing_creative_intent(msg) is False
+    assert is_image_creation_request(msg) is False
+
+
 def test_marketing_creative_detects_flyer_request():
     msg = "genera una imagen donde tenga las especificaciones del basics y sus beneficios"
     assert is_marketing_creative_intent(msg)

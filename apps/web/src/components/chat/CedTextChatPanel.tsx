@@ -34,6 +34,7 @@ import { assertChatMessageLength } from "@/lib/chat-limits";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
+import { applyCedOpenModule } from "@/lib/hud/chrome-events";
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
 
 type CedTextChatPanelProps = {
@@ -531,6 +532,7 @@ export function CedTextChatPanel({
           },
         );
         if (result.conversation_id) setConversationId(result.conversation_id);
+        applyCedOpenModule(result.open_module);
         setMessages((prev) => {
           const next = [...prev];
           const last = next[next.length - 1];
@@ -772,6 +774,7 @@ export function CedTextChatPanel({
         pdfFile,
       );
       setConversationId(result.conversation_id);
+      applyCedOpenModule(result.open_module);
       if (imageFile || pdfFile) {
         const reply = result.reply || "";
         const claimsCreativeSuccess =

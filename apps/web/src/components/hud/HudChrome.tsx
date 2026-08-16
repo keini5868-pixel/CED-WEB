@@ -60,6 +60,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
         { id: "plans", label: "Planes", href: "/dashboard/plans" },
         { id: "account", label: "Cuentas", href: ACCOUNT_PATH },
         { id: "history", label: "Historial", href: "/historial" },
+        { id: "media", label: "Imágenes y PDF", href: "/historial?tab=archivos" },
         { id: "settings", label: "Configuración", onClick: openSettings },
       ]}
     />

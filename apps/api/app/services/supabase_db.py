@@ -1351,6 +1351,23 @@ def list_pdf_artifacts(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]
         return []
 
 
+def list_generated_images(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
+    try:
+        client = _client()
+        result = (
+            client.table("generated_images")
+            .select("id, prompt, quality, model, public_url, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception:  # noqa: BLE001
+        logger.warning("[DB] list_generated_images failed")
+        return []
+
+
 def count_pdfs_today(user_id: str) -> int:
     """Cuenta PDFs generados hoy (UTC) — usado para el tope diario gratis de Básico."""
     try:

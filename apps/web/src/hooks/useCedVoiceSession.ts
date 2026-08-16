@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { OrbState, VoiceSessionPreferences } from "@ced/types";
 import { ORB_STATE_LABELS } from "@ced/types";
 
+import { applyCedOpenModule } from "@/lib/hud/chrome-events";
 import { appendConversationMessage } from "@/lib/api/conversations";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { generatePdf } from "@/lib/api/pdf";
@@ -568,14 +569,11 @@ export function useCedVoiceSession(
       if (action.action === "open_module") {
         const moduleId = String(action.payload.module || "").trim();
         if (moduleId) {
-          window.dispatchEvent(
-            new CustomEvent("ced-open-module", {
-              detail: {
-                module: moduleId,
-                opportunity_id: action.payload.opportunity_id,
-              },
-            }),
-          );
+          applyCedOpenModule({
+            module: moduleId,
+            opportunity_id: String(action.payload.opportunity_id || ""),
+            highlight: String(action.payload.highlight || ""),
+          });
         }
         await ackVoiceClientAction(action.id);
         return;

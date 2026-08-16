@@ -716,7 +716,10 @@ async def _execute_voice_tool_body(
 
 
         if name == "generate_image":
-            from app.services.chat_image_generation import run_chat_image_generation
+            from app.services.chat_image_generation import (
+                run_chat_image_generation,
+                should_take_direct_image_path,
+            )
             from app.services.chat_intents import is_generate_image_intent
 
             # Preferir la frase original del usuario (voz LLM a menudo reformula
@@ -728,6 +731,11 @@ async def _execute_voice_tool_body(
                 or ""
             ).strip()
             llm_prompt = str(params.get("prompt") or "").strip()
+            if raw_user and not should_take_direct_image_path(raw_user, None):
+                return _spoken_err(
+                    "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
+                    error="image_not_requested",
+                )
             if raw_user and is_generate_image_intent(raw_user):
                 prompt = raw_user
             else:
@@ -1228,24 +1236,25 @@ async def _execute_voice_tool_body(
             return payload
 
         if name == "abrir_oportunidades_fitline":
+            from app.services.opportunities_pilot.fitline_enroll import (
+                FITLINE_ENROLL_GUIDE,
+                FITLINE_ENROLL_OPEN_MODULE,
+            )
             from app.services.opportunities_pilot.fitline_sponsor import resolve_sponsor_url
 
             sponsor = resolve_sponsor_url(user_id)
             vcs.push_client_action(
                 user_id,
                 "open_module",
-                {"module": "opportunities", "opportunity_id": "fitline_pm"},
+                dict(FITLINE_ENROLL_OPEN_MODULE),
             )
             if sponsor.get("configured"):
-                spoken = (
-                    "Te abro Oportunidades. Ahí está FitLine y el enlace para "
-                    "activar tu franquicia. Si ya te inscribiste, puedes poner "
-                    "tu propio enlace de patrocinio en esa misma sección."
-                )
+                spoken = FITLINE_ENROLL_GUIDE
             else:
                 spoken = (
-                    "Te abro Oportunidades con la ficha FitLine. "
-                    "El enlace de patrocinio aún no está configurado en el sistema."
+                    "Le abro Oportunidades con la ficha FitLine, señor. "
+                    "Baje hasta el final de la sección: el botón de inscripción "
+                    "aparecerá ahí cuando el enlace esté configurado."
                 )
             payload = _spoken_ok(spoken)
             payload["client_action"] = "open_module"

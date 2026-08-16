@@ -125,6 +125,21 @@ def test_salvage_returns_clear_error_without_false_success(mock_gen: MagicMock):
 
 
 @patch("app.services.chat_image_generation.run_chat_image_generation")
+def test_salvage_does_not_invent_image_when_user_gave_text(mock_gen: MagicMock):
+    reply, attachment = salvage_image_turn(
+        "user-1",
+        "conv-1",
+        "te paso la información del producto y el copy del anuncio",
+        [],
+        "Listo, señor. El diseño de la campaña puede mejorar el titular.",
+        None,
+    )
+    assert attachment is None
+    mock_gen.assert_not_called()
+    assert "diseño" in reply.lower()
+
+
+@patch("app.services.chat_image_generation.run_chat_image_generation")
 def test_salvage_if_needed_wrapper(mock_gen: MagicMock):
     mock_gen.return_value = {
         "ok": True,

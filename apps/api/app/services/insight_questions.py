@@ -27,10 +27,33 @@ _BUSINESS = re.compile(
     r"(?is)\b(?:"
     r"negocio|franquicia|venta|vender|cliente|prospecto|comisi[oó]n|"
     r"ingreso|ganar|dinero|precio|costo|inversi[oó]n|patrocin|"
-    r"equipo|plan|fitline|fit\s*line|pm\s*international|pm\s*internacional|"
+    r"equipo|plan\s+de\s+compensaci[oó]n|fitline|fit\s*line|"
+    r"pm\s*international|pm\s*internacional|"
     r"oportunidad|"
     r"objeci[oó]n|inscri|"
     r"producto|suplemento|ntc"
+    r")\b",
+)
+
+# Dudas de uso de CED (no saludos): módulos, voz, imagen, planes, fallos.
+_CED_SYSTEM = re.compile(
+    r"(?is)\b(?:"
+    r"\bced\b|castillo|"
+    r"modo\s+avanzado|chat\s+(?:de\s+)?texto|historial|"
+    r"configuraci[oó]n|m[oó]dulo|oportunidades|\bopps\b|"
+    r"generar\s+(?:una?\s+)?(?:imagen|pdf)|"
+    r"no\s+(?:funciona|abre|deja|puedo|carga|responde)|"
+    r"error|falla|bug|cuota|l[ií]mite|"
+    r"plan\s+(?:b[aá]sico|pro|elite|[eé]lite|starter)|"
+    r"micr[oó]fono|c[aá]mara|recarga|monedero|"
+    r"c[oó]mo\s+(?:uso|usar|abro|abrir)\b"
+    r")\b",
+)
+
+_PROBLEM = re.compile(
+    r"(?is)\b(?:"
+    r"no\s+(?:funciona|abre|deja|puedo|carga|responde|entiendo)|"
+    r"error|falla|bug|problema|se\s+traba|se\s+queda"
     r")\b",
 )
 
@@ -57,8 +80,6 @@ def looks_like_valuable_question(
         return False, [], "low"
     if _TRIVIAL.match(q):
         return False, [], "low"
-    if not _QUESTIONISH.search(q) and len(q) < 40:
-        return False, [], "low"
 
     tags: list[str] = []
     priority = "normal"
@@ -77,7 +98,10 @@ def looks_like_valuable_question(
     if _BUSINESS.search(q):
         if "fitline" not in tags:
             tags.append("business")
-        priority = "high" if priority != "high" else priority
+        priority = "high"
+
+    if _CED_SYSTEM.search(q):
+        tags.append("ced")
 
     if _QUESTIONISH.search(q):
         tags.append("question")
@@ -86,14 +110,13 @@ def looks_like_valuable_question(
         tags.append("weak_answer")
         priority = "high"
 
-    if not tags and len(q) < 50:
-        return False, [], "low"
+    if _PROBLEM.search(q) and (
+        "ced" in tags or "fitline" in tags or "business" in tags
+    ):
+        priority = "high"
 
-    if not tags:
-        tags.append("general")
-
-    # Evitar capturar puro chitchat largo sin señal
-    if tags == ["general"] and not _QUESTIONISH.search(q):
+    domain = {"fitline", "business", "ced", "weak_answer"}
+    if not domain.intersection(tags):
         return False, [], "low"
 
     return True, tags, priority
@@ -159,10 +182,46 @@ def list_insight_questions(
         q = q.contains("tags", [tag])
     try:
         result = q.execute()
-        return list(result.data or [])
+        rows = list(result.data or [])
+        return _attach_user_labels(rows)
     except Exception:  # noqa: BLE001
         logger.exception("[INSIGHT] list failed")
         return []
+
+
+def _attach_user_labels(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Añade email/label para que el admin vea de quién es cada pregunta."""
+    ids = [str(r.get("user_id") or "") for r in rows if r.get("user_id")]
+    ids = [i for i in ids if i]
+    if not ids:
+        return rows
+    try:
+        from app.services import supabase_db
+
+        found = (
+            supabase_db._client()
+            .table("profiles")
+            .select("id, email")
+            .in_("id", list(dict.fromkeys(ids)))
+            .execute()
+        )
+        by_id = {
+            str(p.get("id")): str(p.get("email") or "").strip()
+            for p in (found.data or [])
+            if p.get("id")
+        }
+    except Exception:  # noqa: BLE001
+        logger.warning("[INSIGHT] profile labels failed")
+        by_id = {}
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        item = dict(row)
+        uid = str(item.get("user_id") or "")
+        email = by_id.get(uid) or ""
+        item["user_email"] = email or None
+        item["user_label"] = email or (uid[:8] if uid else "anónimo")
+        out.append(item)
+    return out
 
 
 def update_insight_status(question_id: str, status: str) -> dict[str, Any]:

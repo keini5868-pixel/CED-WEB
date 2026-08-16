@@ -217,12 +217,12 @@ def build_base_voice_system(
                 base = append_fitline_close_trigger_if_needed(base, uid, query)
             except Exception:  # noqa: BLE001
                 pass
-            try:
-                from app.services.insight_questions import capture_insight_question
+        try:
+            from app.services.insight_questions import capture_insight_question
 
-                capture_insight_question(uid, query, channel="voice")
-            except Exception:  # noqa: BLE001
-                pass
+            capture_insight_question(uid, query, channel="voice")
+        except Exception:  # noqa: BLE001
+            pass
     # Modo Guía FitLine: mentor paso a paso (voz corta). Auto para socios nuevos.
     if uid and (query or force_fitline):
         try:

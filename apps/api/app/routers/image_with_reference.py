@@ -5,14 +5,36 @@ from __future__ import annotations
 import asyncio
 import logging
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
 from app.deps.auth import require_user_id
+from app.services import supabase_db
 from app.services.image_reference_generator import generate_image_with_reference
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/images", tags=["images"])
+
+
+@router.get("/history")
+def get_image_history(
+    user_id: str = Depends(require_user_id),
+    limit: int = Query(default=40, ge=1, le=100),
+) -> dict:
+    rows = supabase_db.list_generated_images(user_id, limit=limit)
+    images = [
+        {
+            "id": str(r.get("id") or ""),
+            "prompt": str(r.get("prompt") or ""),
+            "quality": str(r.get("quality") or ""),
+            "model": str(r.get("model") or ""),
+            "url": str(r.get("public_url") or ""),
+            "created_at": str(r.get("created_at") or ""),
+        }
+        for r in rows
+        if r.get("public_url")
+    ]
+    return {"images": images}
 
 
 @router.post("/generate-with-reference")

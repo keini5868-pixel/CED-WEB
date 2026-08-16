@@ -292,6 +292,29 @@ class LlamaVoiceLlm:
         if not user_text:
             return None
 
+        if self.user_id:
+            from app.services.opportunities_pilot.fitline_enroll import (
+                wants_fitline_enroll_link,
+            )
+            from app.services.voice_tool_executor import execute_voice_tool
+
+            if wants_fitline_enroll_link(user_text):
+                try:
+                    tool_result = await execute_voice_tool(
+                        "abrir_oportunidades_fitline",
+                        self.user_id,
+                        {},
+                    )
+                    spoken = str(tool_result.get("spoken") or "").strip()
+                    if spoken:
+                        logger.info(
+                            "[RETELL-LLAMA] enroll OPPS call=%s",
+                            self._latency_call_id,
+                        )
+                        return finalize_voice_delivery_text(spoken)
+                except Exception:  # noqa: BLE001
+                    logger.exception("[RETELL-LLAMA] enroll OPPS failed")
+
         kb_reply, kb_source = try_internal_knowledge_voice_reply(user_text)
         if kb_reply:
             logger.info(

@@ -81,7 +81,7 @@ export function AdminInsightForum({ compact = false }: Props) {
         {items.length === 0 && !busy ? (
           <p className="text-xs text-amber-500/70">
             Sin preguntas capturadas en este filtro. CED guarda automáticamente
-            dudas de negocio / FitLine / respuestas débiles.
+            dudas de todos los usuarios: FitLine/PM, uso de CED y respuestas débiles.
           </p>
         ) : null}
         {items.map((item) => (
@@ -101,6 +101,12 @@ export function AdminInsightForum({ compact = false }: Props) {
               </span>
               <span className="text-[9px] text-amber-600">
                 {item.channel || "chat"}
+              </span>
+              <span
+                className="max-w-[160px] truncate text-[9px] text-amber-400/80"
+                title={item.user_email || item.user_id || ""}
+              >
+                {item.user_label || "anónimo"}
               </span>
               {(item.tags || []).map((t) => (
                 <span

@@ -1621,7 +1621,10 @@ def _run_chat_tool(
                 }
             )
         if name == "generate_image":
-            from app.services.chat_image_generation import run_chat_image_generation
+            from app.services.chat_image_generation import (
+                run_chat_image_generation,
+                should_take_direct_image_path,
+            )
             from app.services.chat_intents import is_generate_image_intent
 
             plan_id = None
@@ -1633,11 +1636,6 @@ def _run_chat_tool(
             llm_prompt = str(tool_input.get("prompt") or "").strip()
             user_texts = user_texts_from_messages(chat_messages or [])
             raw_user = (user_texts[-1] if user_texts else "").strip()
-            # Preferir utterance del usuario: el LLM a menudo resume/reescribe el brief.
-            if raw_user and is_generate_image_intent(raw_user):
-                prompt = raw_user
-            else:
-                prompt = llm_prompt or raw_user
             prior_rows: list[dict[str, str]] = []
             if chat_messages:
                 prior_rows = [
@@ -1645,6 +1643,27 @@ def _run_chat_tool(
                     for m in chat_messages[:-1]
                     if isinstance(m, dict)
                 ]
+
+            if raw_user and not should_take_direct_image_path(raw_user, prior_rows):
+                logger.info(
+                    "[CHAT:IMG-TOOL] skip — user did not ask for an image user=%s",
+                    user_id[:8],
+                )
+                return json.dumps(
+                    {
+                        "ok": False,
+                        "skipped": True,
+                        "error": (
+                            "El usuario no pidió generar una imagen. "
+                            "Responda en texto con la información solicitada."
+                        ),
+                    }
+                )
+            # Preferir utterance del usuario: el LLM a menudo resume/reescribe el brief.
+            if raw_user and is_generate_image_intent(raw_user):
+                prompt = raw_user
+            else:
+                prompt = llm_prompt or raw_user
             quality = str(tool_input.get("quality") or "auto")
             logger.info(
                 "[CHAT:IMG-TOOL] prompt_source=%s user=%s",
@@ -2507,6 +2526,7 @@ def send_message(
         route_meta: dict | None = None,
         pdf: dict[str, Any] | None = None,
         image: dict[str, Any] | None = None,
+        open_module: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         supabase_db.append_message(
             conversation_id,
@@ -2528,6 +2548,8 @@ def send_message(
             out["pdf"] = pdf
         if image:
             out["image"] = image
+        if open_module:
+            out["open_module"] = open_module
         recharge_needed = _consume_recharge_needed()
         if recharge_needed:
             out["recharge_needed"] = recharge_needed
@@ -2843,6 +2865,16 @@ def send_message(
         return _finish(
             _finalize_chat_reply(dt_instant),
             route_meta={"intent": "datetime", "source": "instant"},
+        )
+
+    from app.services.opportunities_pilot.fitline_enroll import try_fitline_enroll_turn
+
+    enroll = try_fitline_enroll_turn(user_id, text, history=history)
+    if enroll:
+        return _finish(
+            enroll["spoken"],
+            route_meta={"intent": "fitline_enroll", "source": "direct"},
+            open_module=enroll.get("open_module"),
         )
 
     from app.services.chat_intents import (
@@ -3523,6 +3555,39 @@ def iter_send_message_stream(
             )
         except Exception:  # noqa: BLE001
             logger.exception("[CHAT] instant greeting persist failed user=%s", user_id[:8])
+        return
+
+    from app.services.opportunities_pilot.fitline_enroll import try_fitline_enroll_turn
+
+    enroll = try_fitline_enroll_turn(user_id, text)
+    if enroll:
+        reply = str(enroll["spoken"])
+        yield _sse_event("token", {"text": reply})
+        yield _sse_flush()
+        if conversation_id:
+            conv_id = conversation_id
+        else:
+            conv_id, _ = _load_stream_conversation(user_id, text, conversation_id)
+        yield _sse_event(
+            "done",
+            {
+                "conversation_id": conv_id,
+                "reply": reply,
+                "usage": _stream_usage_snapshot(user_id),
+                "cognitive": {"intent": "fitline_enroll", "source": "direct"},
+                "open_module": enroll.get("open_module"),
+            },
+        )
+        try:
+            supabase_db.append_message(
+                conv_id, user_id, "user", text, session_id=conv_id, channel="text",
+            )
+            _bump_stream_usage_cache(user_id)
+            supabase_db.append_message(
+                conv_id, user_id, "model", reply, session_id=conv_id, channel="text",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[CHAT] enroll persist failed user=%s", user_id[:8])
         return
 
     yield _sse_event("status", {"text": "Preparando respuesta…"})

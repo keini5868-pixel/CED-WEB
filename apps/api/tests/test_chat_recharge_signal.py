@@ -66,6 +66,9 @@ def test_run_chat_tool_generate_image_marks_recharge_and_keeps_code(mock_run: Ma
             "generate_image",
             {"prompt": "un gato astronauta"},
             conversation_id=CONV,
+            chat_messages=[
+                {"role": "user", "content": "genera una imagen de un gato astronauta"},
+            ],
         )
     import json
 
@@ -75,6 +78,29 @@ def test_run_chat_tool_generate_image_marks_recharge_and_keeps_code(mock_run: Ma
     signal = _consume_recharge_needed()
     assert signal is not None
     assert signal["resource"] == "image"
+
+
+@patch("app.services.chat_image_generation.run_chat_image_generation")
+def test_run_chat_tool_generate_image_skips_unsolicited(mock_run: MagicMock):
+    with patch("app.services.text_chat.supabase_db") as mock_db:
+        mock_db.get_subscription.return_value = {"plan_id": "elite"}
+        result_json = _run_chat_tool(
+            USER,
+            "generate_image",
+            {"prompt": "flyer profesional de Restorate con beneficios"},
+            conversation_id=CONV,
+            chat_messages=[
+                {
+                    "role": "user",
+                    "content": "te paso la información del producto y el copy del anuncio",
+                },
+            ],
+        )
+    import json
+
+    result = json.loads(result_json)
+    assert result.get("skipped") is True
+    mock_run.assert_not_called()
 
 
 def test_run_chat_tool_generar_pdf_needs_recharge_without_balance():

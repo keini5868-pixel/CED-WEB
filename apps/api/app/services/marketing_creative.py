@@ -165,18 +165,39 @@ def _merge_creative_raw(primary: str, alternate: str | None) -> str:
     return base
 
 
+_CREATIVE_ASK = re.compile(
+    r"\b("
+    r"gener(?:a|ar|ame|áme)|cre(?:a|ar|ame|áme)|cr[eé]ame|gener[aá]me|"
+    r"haz(?:me)?|dise[nñ]a(?:r|me)?|dibuja|pinta"
+    r")\b",
+    re.I,
+)
+
+
+_REFERENCE_COMPOSITE = re.compile(
+    r"(?i)\b(?:usa(?:ndo)?|utiliza(?:ndo)?)\s+.{0,60}\b"
+    r"(?:imagen|imegen|foto|referencia)\b.{0,40}\b(?:fondo|referencia)\b"
+)
+
+
 def is_marketing_creative_intent(text: str) -> bool:
     t = normalize_creative_request_text(text)
     if not t:
         return False
-    from app.services.chat_intents import is_text_ideation_request
+    from app.services.chat_intents import is_generate_image_intent, is_text_ideation_request
 
     # «dame una idea de creativo» ≠ generar el creativo.
     if is_text_ideation_request(t):
         return False
-    if _MARKETING_CREATIVE.search(t):
+    # Mencionar flyer/anuncio/banner en un texto informativo NO pide imagen.
+    if _MARKETING_CREATIVE.search(t) and (
+        is_generate_image_intent(t) or _CREATIVE_ASK.search(t)
+    ):
         return True
     if is_generate_image_intent(t) and _STRUCTURED_CONTENT.search(t):
+        return True
+    # «usando esta imagen de referencia en el fondo» + beneficios = creativo.
+    if _STRUCTURED_CONTENT.search(t) and _REFERENCE_COMPOSITE.search(t):
         return True
     return False
 

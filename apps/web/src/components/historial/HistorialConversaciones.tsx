@@ -16,7 +16,11 @@ import { coerceDisplayText } from "@/lib/display-text";
 
 type ChannelFilter = "" | "voice" | "text";
 
-export function HistorialConversaciones() {
+export function HistorialConversaciones({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
   const [items, setItems] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -70,7 +74,8 @@ export function HistorialConversaciones() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-8">
+    <div className={embedded ? "" : "mx-auto max-w-3xl px-4 py-8"}>
+      {embedded ? null : (
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-[family-name:var(--font-orbitron)] text-lg font-bold text-cyan-300">
@@ -87,6 +92,7 @@ export function HistorialConversaciones() {
           ← Dashboard
         </Link>
       </div>
+      )}
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row">
         <CedInput

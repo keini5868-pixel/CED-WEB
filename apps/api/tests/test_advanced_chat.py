@@ -115,11 +115,21 @@ def test_advanced_streams_business_query_without_tools():
 
 def test_advanced_image_request_detected():
     from app.services.advanced_mode.intents import needs_advanced_full_pipeline
+    from app.services.chat_image_generation import should_take_direct_image_path
     from app.services.chat_intents import is_generate_image_intent
 
     text = "antes generame una imagen de la neuroplasticidad"
     assert is_generate_image_intent(text)
+    assert should_take_direct_image_path(text, [])
     assert not needs_advanced_full_pipeline(text, [])
+
+
+def test_advanced_informational_text_does_not_take_image_path():
+    from app.services.chat_image_generation import should_take_direct_image_path
+
+    text = "te paso la información del producto Restorate y el copy del anuncio"
+    assert should_take_direct_image_path(text, []) is False
+    assert adv._try_direct_image("u1", text, [], "conv-1") is None
 
 
 def test_advanced_stream_greeting_hola_yields_token_immediately():

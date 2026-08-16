@@ -195,12 +195,15 @@ def _finish_payload(
     model: str,
     pdf: dict[str, Any] | None = None,
     image: dict[str, Any] | None = None,
+    open_module: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {"response": response, "model": model}
     if pdf:
         payload["pdf"] = pdf
     if image:
         payload["image"] = image
+    if open_module:
+        payload["open_module"] = open_module
     return payload
 
 
@@ -354,6 +357,16 @@ def send_advanced_message(
         return _finish_payload(
             response=_finalize_chat_reply(catalog_reply),
             model=ADVANCED_STREAM_MODEL_LABEL,
+        )
+
+    from app.services.opportunities_pilot.fitline_enroll import try_fitline_enroll_turn
+
+    enroll = try_fitline_enroll_turn(user_id, text, history=history_as_chat_rows(history))
+    if enroll:
+        return _finish_payload(
+            response=str(enroll["spoken"]),
+            model=ADVANCED_STREAM_MODEL_LABEL,
+            open_module=enroll.get("open_module"),
         )
 
     conv_id = _conversation_id(user_id, conversation_id)
@@ -530,6 +543,18 @@ def send_advanced_message_with_pdf(
         logger.exception("[ADV-MODE] pdf ingest failed: %s", exc)
         raise
 
+    from app.services.text_chat import _plan_id_for_user, _salvage_image_if_needed
+
+    reply, image_attachment = _salvage_image_if_needed(
+        user_id,
+        conv_id,
+        text,
+        history_rows,
+        reply,
+        image_attachment,
+        plan_id=_plan_id_for_user(user_id),
+    )
+
     return _finish_payload(
         response=_finalize_chat_reply(reply),
         model=ADVANCED_MODEL_LABEL,
@@ -673,6 +698,21 @@ def iter_advanced_message_stream(
         )
         _dup_remember(user_id, text, payload)
         yield _sse_event("token", {"text": catalog_reply})
+        yield _sse_flush()
+        yield _sse_event("done", payload)
+        return
+
+    from app.services.opportunities_pilot.fitline_enroll import try_fitline_enroll_turn
+
+    enroll = try_fitline_enroll_turn(user_id, text, history=history_rows)
+    if enroll:
+        payload = _finish_payload(
+            response=str(enroll["spoken"]),
+            model=ADVANCED_STREAM_MODEL_LABEL,
+            open_module=enroll.get("open_module"),
+        )
+        _dup_remember(user_id, text, payload)
+        yield _sse_event("token", {"text": str(enroll["spoken"])})
         yield _sse_flush()
         yield _sse_event("done", payload)
         return

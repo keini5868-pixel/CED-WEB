@@ -32,6 +32,11 @@ export type AdvancedChatResult = {
   model: string;
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
+  open_module?: {
+    module: string;
+    opportunity_id?: string;
+    highlight?: string;
+  } | null;
 };
 
 /** Bienvenida instantánea — no esperar a /advanced/status. */
@@ -174,6 +179,7 @@ export async function sendAdvancedChatMessageStream(
         model: coerceDisplayText(parsed.model) || "claude-sonnet-4-6",
         pdf: (parsed.pdf as ChatPdfAttachment | undefined) ?? null,
         image: (parsed.image as ChatImageAttachment | undefined) ?? null,
+        open_module: (parsed.open_module as AdvancedChatResult["open_module"]) ?? null,
       };
     }
   };
@@ -275,6 +281,7 @@ export async function sendAdvancedChatMessage(
     model: coerceDisplayText(data.model) || "claude-sonnet-4-6",
     pdf: data.pdf ?? null,
     image: data.image ?? null,
+    open_module: data.open_module ?? null,
   };
 }
 
@@ -317,6 +324,7 @@ export async function sendAdvancedChatMessageWithImage(
     model: coerceDisplayText(data.model) || "claude-sonnet-4-6",
     pdf: data.pdf ?? null,
     image: data.image ?? null,
+    open_module: data.open_module ?? null,
   };
 }
 
@@ -354,5 +362,6 @@ export async function sendAdvancedChatMessageWithPdf(
     model: coerceDisplayText(data.model) || "claude-sonnet-4-6",
     pdf: data.pdf ?? null,
     image: data.image ?? null,
+    open_module: data.open_module ?? null,
   };
 }

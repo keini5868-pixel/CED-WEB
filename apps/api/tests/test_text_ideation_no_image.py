@@ -46,6 +46,8 @@ _EXPLICIT_IMAGE = [
     "Diseña un creativo para Meta Ads",
     "Necesito una imagen para mi perfil",
     "generame un flyer con los beneficios",
+    "quiero un flyer de Restorate",
+    "dame una imagen de un gato",
 ]
 
 
@@ -56,6 +58,26 @@ def test_idea_requests_are_text_ideation():
 
 def test_idea_requests_do_not_trigger_image_intent():
     for msg in _IDEA_ONLY:
+        assert is_generate_image_intent(msg) is False, msg
+        assert should_take_direct_image_path(msg, []) is False, msg
+        assert is_image_creation_request(msg, []) is False, msg
+        assert is_marketing_creative_intent(msg) is False, msg
+
+
+def test_informational_copy_does_not_trigger_image():
+    msgs = [
+        "te paso la información del producto Restorate y sus beneficios",
+        "aquí está el texto para el post de Instagram",
+        "el diseño de la campaña se basa en tres pilares",
+        "la imagen de marca debe transmitir confianza",
+        "estos son los puntos del flyer de la semana pasada",
+        "análisis del anuncio de Facebook: CTR bajo y copy largo",
+        "Listo, señor, el creativo de Meta Ads necesita mejor titular",
+        "dame la información del diseño de la campaña",
+        "necesito que me expliques el flyer de la semana",
+        "quiero el análisis del banner, no una imagen nueva",
+    ]
+    for msg in msgs:
         assert is_generate_image_intent(msg) is False, msg
         assert should_take_direct_image_path(msg, []) is False, msg
         assert is_image_creation_request(msg, []) is False, msg

@@ -29,6 +29,7 @@ import {
   type AdvancedChatMessage,
   type AdvancedImageMode,
 } from "@/lib/api/advanced";
+import { applyCedOpenModule } from "@/lib/hud/chrome-events";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
@@ -299,10 +300,16 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       model: string;
       pdf?: ChatPdfAttachment | null;
       image?: ChatImageAttachment | null;
+      open_module?: {
+        module: string;
+        opportunity_id?: string;
+        highlight?: string;
+      } | null;
     }) => {
       const idx = assistantIndex;
       setModelLabel(result.model.replace("claude-", "Claude ").replace(/-/g, " "));
       setStatusHint(null);
+      applyCedOpenModule(result.open_module);
       const reply = stripPdfLinks(result.response);
       const missingImage =
         expectsImageGen &&

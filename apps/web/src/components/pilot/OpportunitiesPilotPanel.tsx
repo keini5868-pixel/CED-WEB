@@ -17,6 +17,7 @@ import {
   type OpportunitySummary,
 } from "@/lib/api/opportunitiesPilot";
 import type { ModulePanelProps } from "@/modules/types";
+import { consumeOppsGuide } from "@/lib/hud/chrome-events";
 
 function SectionBlock({
   title,
@@ -110,9 +111,11 @@ function SectionBlock({
 function DetailView({
   detail,
   onBack,
+  highlightSignup = false,
 }: {
   detail: OpportunityDetail;
   onBack: () => void;
+  highlightSignup?: boolean;
 }) {
   const sponsor = detail.sponsorship;
   const [sponsorInfo, setSponsorInfo] = useState<FitlineSponsorInfo | null>(
@@ -147,6 +150,17 @@ function DetailView({
         .catch(() => undefined);
     }
   }, [detail.action_plan]);
+
+  useEffect(() => {
+    if (!highlightSignup) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("opps-signup")?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [highlightSignup, detail.id]);
 
   const activeUrl = sponsorInfo?.url || sponsor?.url || "";
   const configured = Boolean(sponsorInfo?.configured ?? sponsor?.configured);
@@ -243,7 +257,14 @@ function DetailView({
         </section>
       ) : null}
 
-      <section className="rounded-xl border border-cyan-500/25 bg-cyan-500/5 px-4 py-3.5">
+      <section
+        id="opps-signup"
+        className={`rounded-xl border px-4 py-3.5 ${
+          highlightSignup
+            ? "border-cyan-400 bg-cyan-500/15 ring-2 ring-cyan-400/60"
+            : "border-cyan-500/25 bg-cyan-500/5"
+        }`}
+      >
         <h3 className="mb-3 text-[12px] font-semibold uppercase tracking-[0.08em] text-cyan-200">
           Activar franquicia
         </h3>
@@ -414,6 +435,7 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<OpportunityDetail | null>(null);
+  const [highlightSignup, setHighlightSignup] = useState(false);
 
   useEffect(() => {
     void fetchOpportunitiesPilotStatus().then((s) =>
@@ -438,6 +460,13 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
       setBusy(false);
     }
   }, []);
+
+  useEffect(() => {
+    const guide = consumeOppsGuide();
+    if (!guide) return;
+    setHighlightSignup(guide.highlight === "signup");
+    void openDetail(guide.opportunity_id || "fitline_pm");
+  }, [openDetail]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -482,7 +511,14 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
         ) : (
           <>
             {error ? <p className="text-sm text-red-400">{error}</p> : null}
-            <DetailView detail={detail} onBack={() => setDetail(null)} />
+            <DetailView
+              detail={detail}
+              onBack={() => {
+                setDetail(null);
+                setHighlightSignup(false);
+              }}
+              highlightSignup={highlightSignup}
+            />
           </>
         )}
       </div>

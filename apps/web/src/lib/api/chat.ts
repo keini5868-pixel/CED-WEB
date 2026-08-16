@@ -43,6 +43,12 @@ export type ChatRechargeNeeded = {
   message: string;
 };
 
+export type ChatOpenModule = {
+  module: string;
+  opportunity_id?: string;
+  highlight?: string;
+};
+
 export type ChatMessage = {
   id?: string;
   role: "user" | "model" | "system";
@@ -101,6 +107,7 @@ export async function sendChatMessage(
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
   recharge_needed?: ChatRechargeNeeded | null;
+  open_module?: ChatOpenModule | null;
 }> {
   if (pdf) {
     return sendChatMessageBlocking(
@@ -143,6 +150,7 @@ async function sendChatMessageBlocking(
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
   recharge_needed?: ChatRechargeNeeded | null;
+  open_module?: ChatOpenModule | null;
 }> {
   let res: Response;
 
@@ -192,6 +200,7 @@ async function sendChatMessageBlocking(
     pdf?: ChatPdfAttachment;
     image?: ChatImageAttachment;
     recharge_needed?: ChatRechargeNeeded;
+    open_module?: ChatOpenModule;
     detail?: string;
   }>(res);
   if (!res.ok) {
@@ -204,6 +213,7 @@ async function sendChatMessageBlocking(
     pdf: data.pdf ?? null,
     image: data.image ?? null,
     recharge_needed: data.recharge_needed ?? null,
+    open_module: data.open_module ?? null,
   };
 }
 
@@ -214,6 +224,7 @@ type StreamDonePayload = {
   pdf?: ChatPdfAttachment | null;
   image?: ChatImageAttachment | null;
   recharge_needed?: ChatRechargeNeeded | null;
+  open_module?: ChatOpenModule | null;
 };
 
 /** Chat con streaming SSE — primer token en <1s. */
@@ -314,6 +325,7 @@ export async function sendChatMessageStream(
         image: (parsed.image as ChatImageAttachment | undefined) ?? null,
         recharge_needed:
           (parsed.recharge_needed as ChatRechargeNeeded | undefined) ?? null,
+        open_module: (parsed.open_module as ChatOpenModule | undefined) ?? null,
       };
     }
   };
@@ -373,6 +385,7 @@ export async function sendChatMessageStream(
       pdf: payload?.pdf ?? null,
       image: payload?.image ?? null,
       recharge_needed: payload?.recharge_needed ?? null,
+      open_module: payload?.open_module ?? null,
     };
   }
   throw new Error("Respuesta incompleta del chat.");

@@ -19,16 +19,25 @@ _IMAGE_NOUN = (
     r"gr[aá]fico|creativo|logo|banner|flyer|portada|image|photo|drawing)"
 )
 
+_NON_IMAGE_OBJECT = (
+    r"(?:informaci[oó]n|an[aá]lisis|resumen|explicaci[oó]n|estrategia|"
+    r"plan|lista|datos?|texto|copy|contenido|idea|concepto|prompt)"
+)
+_ARTICLE = r"(?:una?|un|la|el|las|los|an?)"
+
 _IMAGE_PATTERNS = (
-    re.compile(rf"\b{_CREATE_VERBS}\s+(?:an?\s+)?{_IMAGE_NOUN}\b", re.I),
-    re.compile(rf"\b{_CREATE_VERBS}\s+(?:me\s+)?(?:an?\s+)?{_IMAGE_NOUN}\b", re.I),
-    re.compile(rf"\b{_IMAGE_NOUN}\s+(?:de|con|para|of|with|showing)\b", re.I),
-    re.compile(rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
-    re.compile(rf"\bnecesito\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
-    re.compile(rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:una?\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\b{_CREATE_VERBS}\s+(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\b{_CREATE_VERBS}\s+(?:me\s+)?(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\bquiero\s+(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\bnecesito\s+(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(rf"\bpuedes\s+{_CREATE_VERBS}\s+(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\bcan\s+you\s+{_CREATE_VERBS}\s+(?:an?\s+)?{_IMAGE_NOUN}\b", re.I),
-    # Verbo de creación cerca del sustantivo (no "dame una lista … imagen" a 200 chars).
-    re.compile(rf"\b{_CREATE_VERBS}\b.{{0,48}}\b{_IMAGE_NOUN}\b", re.I),
+    # Verbo cerca del sustantivo, salvo «dame/haz la información del diseño».
+    re.compile(
+        rf"\b{_CREATE_VERBS}\b(?!.{{0,40}}\b{_NON_IMAGE_OBJECT}\b).{{0,48}}\b{_IMAGE_NOUN}\b",
+        re.I,
+    ),
     re.compile(rf"\b{_IMAGE_NOUN}\b.{{0,48}}\b{_CREATE_VERBS}\b", re.I),
 )
 
@@ -204,6 +213,7 @@ def _pdf_has_named_topic(user_text: str, content: str) -> bool:
 _PRIOR_REFERENCE = re.compile(
     r"\b("
     r"igual\s+a\s+(?:la\s+)?(?:que\s+)?(?:te\s+)?(?:pas[eé]|sub[ií]|mand[eé]|envi[eé])"
+    r"|igual\s+a\s+(?:la\s+)?(?:imagen|foto|flyer|creativo|referencia)"
     r"|(?:la|el)\s+(?:misma|mismo)\s+(?:imagen|foto|flyer|creativo|dise[nñ]o|referencia)"
     r"|(?:mism[oa]s?\s+)(?:precios?|nombre|dise[nñ]o|estilo|textos?)"
     r"|(?:imagen|foto|flyer|creativo)\s+(?:de\s+)?referencia"

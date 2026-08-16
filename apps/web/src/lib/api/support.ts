@@ -191,6 +191,8 @@ export async function adminSendSupportMessage(
 export type InsightQuestion = {
   id: string;
   user_id?: string | null;
+  user_email?: string | null;
+  user_label?: string | null;
   question: string;
   channel?: string;
   tags?: string[];

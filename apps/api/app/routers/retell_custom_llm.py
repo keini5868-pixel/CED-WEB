@@ -1236,6 +1236,33 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 await anti_silence_if_unanswered(reason="image_fast_path_failed")
                 return
 
+            from app.services.opportunities_pilot.fitline_enroll import (
+                wants_fitline_enroll_link,
+            )
+
+            if uid and wants_fitline_enroll_link(user_text):
+                try:
+                    tool_result = await asyncio.wait_for(
+                        execute_voice_tool(
+                            "abrir_oportunidades_fitline",
+                            uid,
+                            {},
+                        ),
+                        timeout=8.0,
+                    )
+                    spoken = str(tool_result.get("spoken") or "").strip()
+                    if spoken and await deliver_voice(spoken):
+                        logger.info(
+                            "[RETELL-GEMINI] fast-path abrir_oportunidades call=%s",
+                            call_id,
+                        )
+                        return
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "[RETELL-GEMINI] fast-path abrir_oportunidades failed call=%s",
+                        call_id,
+                    )
+
             conversational_turn = is_casual_voice_turn(user_text, transcript)
 
             clock_reply = try_instant_datetime_reply(

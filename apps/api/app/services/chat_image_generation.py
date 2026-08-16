@@ -645,9 +645,15 @@ def salvage_image_turn(
     false_success = reply_promises_image_without_attachment(reply)
     prompt_dump = wants_image and reply_dumps_prompt_instead_of_image(reply, user_text)
     wait_filler = wants_image and reply_is_image_wait_filler(reply)
+    if not wants_image:
+        # Claude/avanzado a menudo dice «listo, señor» y menciona diseño/imagen
+        # en un análisis de texto. Eso NO es un pedido de generar PNG.
+        if hallucinated:
+            clean = strip_hallucinated_generate_image_text(reply)
+            return clean or reply, None
+        return reply, image_attachment
     if (
-        not wants_image
-        and not hallucinated
+        not hallucinated
         and not false_success
         and not wait_filler
         and not prompt_dump

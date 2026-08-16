@@ -216,6 +216,8 @@ PUENTE PLAN DE FRANQUICIA (después de explicar negocio/productos + interés rea
 - Si acepta: arma metas/pasos concretos con hechos FitLine y llama
   guardar_plan_crecimiento_franquicia. Luego guía a OPPS con abrir_oportunidades_fitline
   (enlace de inscripción/patrocinio al final de Oportunidades).
+- Si pide el enlace de inscripción o registrarse: llama abrir_oportunidades_fitline.
+  PROHIBIDO pegar el URL en el chat o en un resumen: el botón está al final de la ficha.
 - Si ya se inscribió y quiere su propio enlace: actualizar_enlace_patrocinio_fitline.
 
 PROHIBIDO: inventar precios de entrada, comisiones, bonos o Income Plan; forzar venta

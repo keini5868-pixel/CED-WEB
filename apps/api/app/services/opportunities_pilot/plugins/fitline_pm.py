@@ -506,7 +506,8 @@ def fitline_pm_plugin(user_id: str | None = None) -> dict[str, Any]:
                         "Use el botón «Activar su negocio (paquete manager)» "
                         "para abrir el enlace de registro. Si el enlace aún no "
                         "está configurado en el servidor, aparecerá un aviso en "
-                        "esta ficha."
+                        "esta ficha. NUNCA copies el URL en un resumen de "
+                        "conversación: abre OPPS y guía a bajar hasta el botón."
                     ),
                 },
                 "risks": {
