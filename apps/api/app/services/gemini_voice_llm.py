@@ -1142,6 +1142,54 @@ class GeminiVoiceLlm:
             )
             return
 
+        from app.services.opportunities_pilot.fitline_enroll import (
+            maybe_force_enroll_if_signup_leak,
+            wants_fitline_enroll_link,
+        )
+
+        enroll_hist = [
+            {"role": "user", "content": t}
+            for t in _user_texts_from_gemini_history(self._history)
+        ]
+        if self.user_id and wants_fitline_enroll_link(user_text, enroll_hist):
+            try:
+                from app.services.voice_tool_executor import execute_voice_tool
+
+                tool_result = await execute_voice_tool(
+                    "abrir_oportunidades_fitline",
+                    self.user_id,
+                    {},
+                )
+                spoken = str(tool_result.get("spoken") or "").strip()
+                if spoken:
+                    from app.services.voice_llm_common import ensure_voice_reply
+
+                    spoken = ensure_voice_reply(spoken)
+                    self._history = _truncate_contents(
+                        [
+                            *self._history,
+                            last,
+                            types.Content(
+                                role="model",
+                                parts=[types.Part(text=spoken)],
+                            ),
+                        ],
+                        max_turns=MAX_HISTORY_TURNS,
+                    )
+                    logger.info(
+                        "[RETELL-GEMINI] enroll OPPS user=%s",
+                        user_text[:80],
+                    )
+                    yield ResponseResponse(
+                        response_id=request.response_id,
+                        content=_delivery_text(spoken),
+                        content_complete=True,
+                        end_call=False,
+                    )
+                    return
+            except Exception:  # noqa: BLE001
+                logger.exception("[RETELL-GEMINI] enroll OPPS failed")
+
         max_tokens, timeout_sec = _voice_generation_limits(user_text)
 
         from app.services.cognitive_intents import (
@@ -1263,6 +1311,11 @@ class GeminiVoiceLlm:
                     internal_text
                     and not is_unwanted_voice_reply(internal_text, user_text=user_text)
                 ):
+                    leak = maybe_force_enroll_if_signup_leak(
+                        self.user_id, internal_text, push_voice=True
+                    )
+                    if leak:
+                        internal_text = str(leak["spoken"])
                     _log_gemini_delivery("internal_brain", internal_text, user_text=user_text)
                     self._history = _truncate_contents(
                         [
@@ -1555,6 +1608,11 @@ class GeminiVoiceLlm:
         from app.services.voice_spoken import finalize_voice_delivery_text
 
         text_response = finalize_voice_delivery_text(text_response)
+        leak = maybe_force_enroll_if_signup_leak(
+            self.user_id, text_response, push_voice=True
+        )
+        if leak:
+            text_response = str(leak["spoken"])
 
         self._history = _truncate_contents(
             [*self._history, last, types.Content(role="model", parts=[types.Part(text=text_response)])],

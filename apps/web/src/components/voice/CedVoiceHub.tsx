@@ -91,8 +91,16 @@ export function CedVoiceHub() {
   useEffect(() => {
     const onOpen = (ev: Event) => {
       const detail = (ev as CustomEvent<{ module?: string }>).detail;
-      if ((detail?.module || "").trim() === "finance") {
+      const mod = (detail?.module || "").trim();
+      if (mod === "finance") {
         setFinanceOpen(true);
+        setChatOpen(false);
+        setAdvancedOpen(false);
+      }
+      if (mod === "opportunities") {
+        setChatOpen(false);
+        setAdvancedOpen(false);
+        setFinanceOpen(false);
       }
     };
     window.addEventListener("ced-open-module", onOpen);

@@ -244,7 +244,7 @@ def test_fitline_sales_closer_is_internal_only():
     assert "PROHIBIDO" in overlay
     assert "sin retener" in overlay.lower() or "información real" in overlay.lower()
     # Compacto: persuasión operativa, no novelón
-    assert len(overlay) < 5500
+    assert len(overlay) < 6500
     assert "expansión" in overlay.lower() or "América" in overlay or "America" in overlay
 
 

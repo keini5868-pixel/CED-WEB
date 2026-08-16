@@ -18,56 +18,32 @@ FITLINE_ENROLL_OPEN_MODULE: dict[str, str] = {
     "highlight": "signup",
 }
 
-# URL genérico oficial — NUNCA pegarlo; el botón de OPPS lleva el enlace de patrocinio.
-_GENERIC_PM_SIGNUP_URL = re.compile(
-    r"(?i)(?:https?://)?(?:www\.)?pm-international\.com/[^\s<>\]\)\"']*registr[^\s<>\]\)\"']*"
+# Cualquier URL de PM International en texto (home, /registration, partner, etc.).
+_ANY_PM_URL = re.compile(
+    r"(?i)(?:https?://)?(?:www\.)?pm-international\.com(?:/[^\s<>\]\)\"']*)?"
 )
 
-_EXPLICIT_ENROLL = re.compile(
+_LINK_WORD = re.compile(
+    r"(?is)\b(?:enlace|link|url|liga|hiperv[ií]nculo|"
+    r"p[aá]gina\s+web|sitio\s+web|web\s+oficial)\b"
+)
+
+_SIGNUP_WORD = re.compile(
     r"(?is)\b(?:"
-    r"(?:enlace|link|url|liga)\s+(?:de\s+)?(?:inscripci[oó]n|registro|patrocinio)|"
-    r"(?:inscripci[oó]n|registro|patrocinio)\s+(?:de\s+)?(?:enlace|link|url|liga)|"
-    r"inscribir(?:me|se|nos)?|"
+    r"inscripci[oó]n|inscribir(?:me|se|nos)?|"
+    r"registro|registr(?:arme|arme|arse)|"
+    r"patrocinio|afiliaci[oó]n|unirme|afiliar(?:me)?|"
     r"c[oó]mo\s+(?:me\s+)?(?:inscribo|registro|uno)|"
     r"d[oó]nde\s+(?:me\s+)?(?:inscribo|registro|uno)|"
-    r"quiero\s+(?:inscribirme|registrarme|unirme|afiliarme)|"
+    r"quiero\s+(?:inscribirme|registrarme|unirme|entrar|empezar)|"
     r"activar\s+(?:mi\s+)?franquicia|"
     r"abrir\s+(?:el\s+)?(?:m[oó]dulo\s+de\s+)?oportunidades|"
-    r"abre(?:me)?\s+(?:opps|oportunidades)|"
-    r"registr(?:arme|arme|arse)\s+(?:en\s+)?(?:pm|fitline|fit\s*line)|"
-    r"unirme\s+(?:a\s+)?(?:pm|fitline|fit\s*line|la\s+franquicia)|"
+    r"[aá]bre(?:me)?\s+(?:opps|oportunidades)|"
     r"p[aá]gina\s+de\s+(?:inscripci[oó]n|registro)|"
     r"formulario\s+de\s+(?:inscripci[oó]n|registro)"
-    r")\b",
-)
-
-# «dame la descripción/enlace», «pásame el link», «quiero el url»
-_ASK_LINK = re.compile(
-    r"(?is)\b(?:dame|pasa(?:me)?|quiero|necesito|muestra(?:me)?|abre(?:me)?|"
-    r"env[ií]a(?:me)?|manda(?:me)?|comparte(?:me)?|pon(?:me)?|busca(?:me)?)\b"
-    r".{0,90}\b(?:enlace|link|url|liga)\b"
-)
-
-_DESC_SLASH_LINK = re.compile(
-    r"(?is)descripci[oó]n\s*/\s*(?:enlace|link|url)|"
-    r"(?:enlace|link|url)\s*/\s*descripci[oó]n"
-)
-
-_SIGNUP_HINT = re.compile(
-    r"(?is)\b(?:"
-    r"inscripci[oó]n|inscribir(?:me|se)?|registro|registr(?:arme|arme)|"
-    r"patrocinio|afiliaci[oó]n|unirme"
     r")\b"
 )
 
-_PM_BRAND = re.compile(
-    r"(?is)\b(?:"
-    r"fitline|fit\s*line|pm[\s\-]?internationa?l|pm-international|"
-    r"patrocinio|franquicia"
-    r")\b"
-)
-
-# Pregunta informativa: no abrir OPPS si no piden el enlace.
 _INFO_NOT_ENROLL = re.compile(
     r"(?is)\b(?:"
     r"requisitos?|"
@@ -79,8 +55,8 @@ _INFO_NOT_ENROLL = re.compile(
 
 
 def reply_leaks_generic_pm_signup(reply: str) -> bool:
-    """True si el modelo pegó el URL genérico de registro de PM International."""
-    return bool(_GENERIC_PM_SIGNUP_URL.search(reply or ""))
+    """True si el modelo pegó cualquier URL de pm-international.com."""
+    return bool(_ANY_PM_URL.search(reply or ""))
 
 
 def _history_blob(history: list[dict[str, str]] | None) -> str:
@@ -96,42 +72,53 @@ def _has_pm_brand(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
-    if _PM_BRAND.search(t):
-        return True
     try:
         from app.services.opportunities_pilot.fitline_knowledge import (
             wants_fitline_knowledge,
         )
 
-        return wants_fitline_knowledge(t)
+        if wants_fitline_knowledge(t):
+            return True
     except Exception:  # noqa: BLE001
-        return False
+        pass
+    return bool(
+        re.search(
+            r"(?is)\b(?:fitline|fit\s*line|pm[\s\-]?internationa[l]|pm-international|"
+            r"patrocinio|franquicia)\b",
+            t,
+        )
+    )
 
 
 def wants_fitline_enroll_link(
     text: str,
     history: list[dict[str, str]] | None = None,
 ) -> bool:
-    """True si piden inscribirse o el enlace — abrir OPPS, nunca pegar URL genérico."""
+    """Cualquier pedido razonable de enlace/inscripción PM → abrir OPPS.
+
+    No exige una frase exacta: «dame el enlace de PM International»,
+    «cuál es el link», «quiero inscribirme», etc.
+    """
     t = (text or "").strip()
-    if len(t) < 6:
+    if len(t) < 4:
         return False
-    if _GENERIC_PM_SIGNUP_URL.search(t):
-        return True
-    if _EXPLICIT_ENROLL.search(t):
-        if _INFO_NOT_ENROLL.search(t) and not _ASK_LINK.search(t) and not _DESC_SLASH_LINK.search(t):
-            return False
+    if _ANY_PM_URL.search(t):
         return True
 
-    asks_link = bool(_ASK_LINK.search(t) or _DESC_SLASH_LINK.search(t))
-    signupish = bool(_SIGNUP_HINT.search(t))
+    has_link = bool(_LINK_WORD.search(t))
+    has_signup = bool(_SIGNUP_WORD.search(t))
     branded = _has_pm_brand(t) or _has_pm_brand(_history_blob(history))
 
-    if asks_link and branded:
+    # Pedir el enlace/link/url de PM o FitLine (cualquier verbo o «cuál es»).
+    if has_link and branded:
         return True
-    if asks_link and signupish:
+    # «enlace de inscripción» aunque no nombren la marca en este turno.
+    if has_link and has_signup:
         return True
-    if signupish and branded and not _INFO_NOT_ENROLL.search(t):
+    # Inscribirse / registrarse en PM, salvo pregunta informativa sin pedir el link.
+    if has_signup and branded:
+        if _INFO_NOT_ENROLL.search(t) and not has_link:
+            return False
         return True
     return False
 
@@ -169,7 +156,7 @@ def maybe_force_enroll_if_signup_leak(
     *,
     push_voice: bool = False,
 ) -> dict[str, Any] | None:
-    """Si la respuesta ya pegó el URL genérico de PM, sustituir por guía OPPS."""
+    """Si la respuesta pegó un URL de PM International, sustituir por guía OPPS."""
     if not reply_leaks_generic_pm_signup(reply):
         return None
     if push_voice and user_id:

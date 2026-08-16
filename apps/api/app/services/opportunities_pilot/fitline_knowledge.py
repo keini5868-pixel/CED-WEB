@@ -121,6 +121,9 @@ _PROMPT_RULES = (
     "deporte, prospección, precios de lista de producto de referencia). "
     "Si falta precio de entrada al negocio o % del Income Plan: dilo y remite a "
     "Partner Area / enlace de patrocinio — NO busques en la web para inventar cifras. "
+    "PROHIBIDO pegar URLs de pm-international.com (ni /registration ni la home). "
+    "Si piden el enlace de inscripción, registro o patrocinio: NO escribas el link; "
+    "el sistema abre Oportunidades (OPPS) con el botón del patrocinador al final de la ficha. "
     "Solo use búsqueda web si el usuario pide EXPLÍCITAMENTE internet/noticias/"
     "datos de hoy Y el hecho concreto no está en este bloque. "
     "NO preguntes qué es un producto o marca que ya aparece aquí: aplícalo YA "
@@ -217,7 +220,8 @@ PUENTE PLAN DE FRANQUICIA (después de explicar negocio/productos + interés rea
   guardar_plan_crecimiento_franquicia. Luego guía a OPPS con abrir_oportunidades_fitline
   (enlace de inscripción/patrocinio al final de Oportunidades).
 - Si pide el enlace de inscripción o registrarse: llama abrir_oportunidades_fitline.
-  PROHIBIDO pegar el URL en el chat o en un resumen: el botón está al final de la ficha.
+  PROHIBIDO pegar el URL en el chat, en voz o en un resumen (ni pm-international.com
+  ni /registration): el botón de patrocinio está al final de la ficha Oportunidades.
 - Si ya se inscribió y quiere su propio enlace: actualizar_enlace_patrocinio_fitline.
 
 PROHIBIDO: inventar precios de entrada, comisiones, bonos o Income Plan; forzar venta

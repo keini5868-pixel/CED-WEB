@@ -161,7 +161,7 @@ export function ModuleShell() {
             role="dialog"
             aria-modal="true"
             aria-label={active.name}
-            className="fixed inset-0 z-[75] flex flex-col bg-[#0a1220]"
+            className="fixed inset-0 z-[200] flex flex-col bg-[#0a1220]"
             initial={{ opacity: 0.92, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}

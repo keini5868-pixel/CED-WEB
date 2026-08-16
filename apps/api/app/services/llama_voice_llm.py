@@ -426,6 +426,11 @@ class LlamaVoiceLlm:
             final = safe.strip()
         if not final:
             return None
+        leak = maybe_force_enroll_if_signup_leak(
+            self.user_id, final, push_voice=True
+        )
+        if leak:
+            return finalize_voice_delivery_text(str(leak["spoken"]))
         return final
 
     async def generate_natural_reply(

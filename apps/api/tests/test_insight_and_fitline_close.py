@@ -371,25 +371,40 @@ def test_enroll_covers_descripcion_enlace_and_generic_pm_url():
         wants_fitline_enroll_link,
     )
 
-    assert wants_fitline_enroll_link(
-        "dame la descripción/enlace en PM International"
-    )
-    assert wants_fitline_enroll_link("dame el enlace de inscripción")
-    assert wants_fitline_enroll_link("quiero inscribirme en FitLine")
-    assert wants_fitline_enroll_link(
-        "https://www.pm-international.com/registration/"
-    )
+    for phrase in (
+        "dame la descripción/enlace en PM International",
+        "dame el enlace de inscripción",
+        "dame el enlace de PM International",
+        "cuál es el enlace de PM International",
+        "pásame el link de FitLine",
+        "quiero inscribirme en FitLine",
+        "el enlace de PM",
+        "me das el link de PM",
+        "necesito el enlace de inscripción",
+        "mándame el url de FitLine",
+        "quiero el link para registrarme en PM",
+        "dónde me inscribo en PM International",
+        "ábreme oportunidades de FitLine",
+        "https://www.pm-international.com/registration/",
+    ):
+        assert wants_fitline_enroll_link(phrase) is True, phrase
+
     assert wants_fitline_enroll_link(
         "dame el enlace",
         history=[{"role": "user", "content": "estoy viendo FitLine PM International"}],
     )
-    leak = maybe_force_enroll_if_signup_leak(
+    leak_home = maybe_force_enroll_if_signup_leak(
         "u1",
-        "Puede registrarse aquí: https://www.pm-international.com/registration/",
+        "Puede registrarse aquí: https://www.pm-international.com/",
     )
-    assert leak is not None
-    assert leak["spoken"] == FITLINE_ENROLL_GUIDE
-    assert leak["open_module"]["highlight"] == "signup"
+    assert leak_home is not None
+    assert leak_home["spoken"] == FITLINE_ENROLL_GUIDE
+    leak_reg = maybe_force_enroll_if_signup_leak(
+        "u1",
+        "Entra en https://www.pm-international.com/registration/",
+    )
+    assert leak_reg is not None
+    assert leak_reg["open_module"]["highlight"] == "signup"
 
 
 def test_enroll_not_triggered_on_generic_fitline_question():
