@@ -43,7 +43,7 @@ export default function SupportFloatingButton() {
         <button
           type="button"
           onClick={() => setIsOpen(true)}
-          className="fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] right-[max(1.5rem,env(safe-area-inset-right))] z-[110] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-blue-600 shadow-2xl ring-2 ring-cyan-400/40 transition-transform hover:scale-110 sm:bottom-8 sm:right-8"
+          className="fixed bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] right-[max(0.75rem,env(safe-area-inset-right))] z-[35] flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-purple-600 to-blue-600 shadow-2xl ring-2 ring-cyan-400/40 transition-transform hover:scale-110 sm:h-14 sm:w-14"
           aria-label="Soporte"
         >
           <MessageCircle className="text-white" size={24} />

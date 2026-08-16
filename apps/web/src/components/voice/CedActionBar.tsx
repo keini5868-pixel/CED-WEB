@@ -77,7 +77,7 @@ export function CedActionBar({
   return (
     <nav
       aria-label="Acciones CED"
-      className="pointer-events-auto fixed inset-x-0 bottom-0 z-40 border-t border-cyan-500/25 bg-[#060b14]/95 px-2 pt-1.5 backdrop-blur-md pb-[max(0.5rem,env(safe-area-inset-bottom))]"
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-50 border-t border-cyan-500/25 bg-[#060b14]/95 px-2 pt-1.5 backdrop-blur-md pb-[max(0.5rem,env(safe-area-inset-bottom))]"
     >
       <div className="mx-auto flex max-w-lg items-stretch gap-0.5 sm:gap-1">
         <ActionBtn
