@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { OrbState, VoiceSessionPreferences } from "@ced/types";
 import { ORB_STATE_LABELS } from "@ced/types";
 
-import { applyCedOpenModule } from "@/lib/hud/chrome-events";
+import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome-events";
 import { appendConversationMessage } from "@/lib/api/conversations";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { generatePdf } from "@/lib/api/pdf";
@@ -1389,6 +1389,9 @@ export function useCedVoiceSession(
                 userText: text,
                 heardAt: Date.now(),
               });
+              if (!options?.partial) {
+                openFitlineOppsIfRequested(text);
+              }
               if (cameraStreamRef.current?.active) {
                 void postVoiceCameraStatus(true, true).catch(() => undefined);
               }
@@ -2279,6 +2282,7 @@ export function useCedVoiceSession(
             }
             modelRepliedTurnRef.current = false;
             lastUserUtteranceRef.current = trimmed;
+            openFitlineOppsIfRequested(trimmed);
 
             // Comentarios / prospección ANTES que tratamiento
             if (isStandaloneHonorificPreference(trimmed)) {

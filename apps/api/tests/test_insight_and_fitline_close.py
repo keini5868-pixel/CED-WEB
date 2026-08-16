@@ -385,6 +385,10 @@ def test_enroll_covers_descripcion_enlace_and_generic_pm_url():
         "quiero el link para registrarme en PM",
         "dónde me inscribo en PM International",
         "ábreme oportunidades de FitLine",
+        "Puedes abrir OPPS?",
+        "abre OPPS",
+        "abrir el panel de oportunidades",
+        "Hola, Said. ¿Me das el enlace de PM International?",
         "https://www.pm-international.com/registration/",
     ):
         assert wants_fitline_enroll_link(phrase) is True, phrase
@@ -413,3 +417,4 @@ def test_enroll_not_triggered_on_generic_fitline_question():
     assert not wants_fitline_enroll_link("qué es el NTC de FitLine?")
     assert not wants_fitline_enroll_link("hola, cómo estás")
     assert not wants_fitline_enroll_link("cuáles son los requisitos de inscripción de FitLine")
+    assert not wants_fitline_enroll_link("qué es OPPS")

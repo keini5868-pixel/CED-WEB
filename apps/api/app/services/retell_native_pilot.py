@@ -31,6 +31,7 @@ Reglas de tools (schemas definen nombre/params — no inventes tools):
 - FitLine / PM International / Activize / Restorate / PowerCocktail / Basics u otros
   productos PM: responde YA con conocimiento Oportunidades del system prompt.
   PROHIBIDO search_web y PROHIBIDO decir «investigando» / «consultando internet».
+  Enlace PM / «abre OPPS» → open_opportunities (nunca pegues el URL).
 - Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar).
 - YouTube: play/pause/resume/close. Siempre reproduce de inmediato (nunca pidas confirmación antes de reproducir). NUNCA confirmes play sin éxito real de la tool. SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla — sin ofrecer más ayuda. Esta regla NO aplica al resto.
 - Imagen/PDF: generate_image / generar_pdf. NUNCA digas que la imagen o el PDF están listos sin éxito de la tool.
@@ -42,7 +43,7 @@ GENERAL_ASSISTANT_STATE_PROMPT = """
 Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya (también aquí).
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
-- Clima→get_environment. Noticias/hechos→search_web. FitLine/PM/productos PM→SIN search_web (Oportunidades). YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
+- Clima→get_environment. Noticias/hechos→search_web. FitLine/PM/productos PM→SIN search_web (Oportunidades). Enlace/inscripción/«abre OPPS»→open_opportunities (nunca pegues el URL). YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
 - Imagen/PDF: generate_image / generar_pdf — NUNCA confirmes sin éxito.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
@@ -134,6 +135,9 @@ PROSPECTION_REPORT_DESCRIPTION = "Reporte de leads de hoy."
 READ_SOCIAL_COMMENTS_DESCRIPTION = "Lee comentarios recientes FB/IG y destaca prospectos."
 
 OPEN_DRIVE_MAP_DESCRIPTION = "Abre el mapa / modo conducir."
+OPEN_OPPORTUNITIES_DESCRIPTION = (
+    "Abre OPPS (FitLine). Enlace PM, inscripción o «abre OPPS». Nunca pegues el URL."
+)
 SEARCH_NEARBY_PLACES_DESCRIPTION = "Busca destino («llévame a …»)."
 SHOW_ROUTE_DESCRIPTION = "Muestra la ruta sin iniciar guía («muéstrame la ruta»)."
 START_DRIVE_NAVIGATION_DESCRIPTION = "Inicia navegación en vivo («inicia la ruta»)."
@@ -261,6 +265,7 @@ READ_SOCIAL_COMMENTS_PARAMETERS: dict[str, Any] = {
 }
 
 OPEN_DRIVE_MAP_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+OPEN_OPPORTUNITIES_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
 SEARCH_NEARBY_PLACES_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -694,6 +699,17 @@ def build_open_drive_map_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_open_opportunities_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="open_opportunities",
+        description=OPEN_OPPORTUNITIES_DESCRIPTION,
+        parameters=OPEN_OPPORTUNITIES_PARAMETERS,
+        filler="Abriendo Oportunidades, señor.",
+        timeout_ms=8_000,
+    )
+
+
 def build_search_nearby_places_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -890,6 +906,7 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
         build_prospection_report_tool(api_public_url=api_public_url),
         build_read_social_comments_tool(api_public_url=api_public_url),
         build_open_drive_map_tool(api_public_url=api_public_url),
+        build_open_opportunities_tool(api_public_url=api_public_url),
         build_search_nearby_places_tool(api_public_url=api_public_url),
         build_show_route_tool(api_public_url=api_public_url),
         build_start_drive_navigation_tool(api_public_url=api_public_url),
@@ -1216,6 +1233,7 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "prospection_report": _stats("prospection_report"),
         "read_social_comments": _stats("read_social_comments"),
         "open_drive_map": _stats("open_drive_map"),
+        "open_opportunities": _stats("open_opportunities"),
         "search_nearby_places": _stats("search_nearby_places"),
         "show_route": _stats("show_route"),
         "start_drive_navigation": _stats("start_drive_navigation"),
@@ -2176,6 +2194,15 @@ async def execute_open_drive_map_tool(*, user_id: str, payload: dict[str, Any], 
     return await _execute_native_voice_alias_tool(
         tool_name="open_drive_map",
         voice_tool_name="activar_modo_conducir",
+        user_id=user_id,
+        payload=payload,
+    )
+
+
+async def execute_open_opportunities_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    return await _execute_native_voice_alias_tool(
+        tool_name="open_opportunities",
+        voice_tool_name="abrir_oportunidades_fitline",
         user_id=user_id,
         payload=payload,
     )

@@ -37,11 +37,17 @@ _SIGNUP_WORD = re.compile(
     r"d[oó]nde\s+(?:me\s+)?(?:inscribo|registro|uno)|"
     r"quiero\s+(?:inscribirme|registrarme|unirme|entrar|empezar)|"
     r"activar\s+(?:mi\s+)?franquicia|"
-    r"abrir\s+(?:el\s+)?(?:m[oó]dulo\s+de\s+)?oportunidades|"
-    r"[aá]bre(?:me)?\s+(?:opps|oportunidades)|"
     r"p[aá]gina\s+de\s+(?:inscripci[oó]n|registro)|"
     r"formulario\s+de\s+(?:inscripci[oó]n|registro)"
     r")\b"
+)
+
+# «abre OPPS», «puedes abrir OPPS», «abrir el panel de oportunidades»
+_OPEN_OPPS = re.compile(
+    r"(?is)\b(?:(?:puedes?|puedo|me\s+puedes?|podr[ií]as?|quiero\s+que)\s+)?"
+    r"(?:abrir|[aá]bre(?:me)?|open)\s+"
+    r"(?:el\s+)?(?:m[oó]dulo\s+(?:de\s+)?|panel\s+(?:de\s+)?)?"
+    r"(?:opps|oportunidades)\b"
 )
 
 _INFO_NOT_ENROLL = re.compile(
@@ -103,6 +109,9 @@ def wants_fitline_enroll_link(
     if len(t) < 4:
         return False
     if _ANY_PM_URL.search(t):
+        return True
+    # Pedido explícito de abrir el módulo — no exige marca FitLine.
+    if _OPEN_OPPS.search(t):
         return True
 
     has_link = bool(_LINK_WORD.search(t))

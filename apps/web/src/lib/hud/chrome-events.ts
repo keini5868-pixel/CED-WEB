@@ -58,6 +58,58 @@ export function applyCedOpenModule(
   });
 }
 
+export const FITLINE_ENROLL_OPEN_MODULE = {
+  module: "opportunities",
+  opportunity_id: "fitline_pm",
+  highlight: "signup",
+} as const;
+
+/** Pedido de enlace PM / abrir OPPS — abre el panel sin esperar al modelo. */
+export function wantsFitlineEnrollOpen(text: string): boolean {
+  const t = (text || "").trim();
+  if (t.length < 4) return false;
+  if (/(?:https?:\/\/)?(?:www\.)?pm-international\.com/i.test(t)) return true;
+  if (
+    /\b(?:puedes?|puedo|me\s+puedes?|podr[ií]as?)?\s*(?:abrir|abre(?:me)?|open)\s+(?:el\s+)?(?:m[oó]dulo\s+(?:de\s+)?|panel\s+(?:de\s+)?)?(?:opps|oportunidades)\b/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  const hasLink =
+    /\b(?:enlace|link|url|liga|hiperv[ií]nculo|p[aá]gina\s+web|sitio\s+web|web\s+oficial)\b/i.test(
+      t,
+    );
+  const branded =
+    /\b(?:fitline|fit\s*line|pm[\s-]?internationa[l]|pm[\s-]?internacional|\bpm\b)\b/i.test(
+      t,
+    );
+  const signup =
+    /\b(?:inscripci[oó]n|inscribir(?:me|se)?|registro|registr(?:arme|arse)|unirme)\b/i.test(
+      t,
+    );
+  if (hasLink && branded) return true;
+  if (hasLink && signup) return true;
+  if (signup && branded) return true;
+  return false;
+}
+
+export function openFitlineOppsIfRequested(text: string): boolean {
+  if (!wantsFitlineEnrollOpen(text)) return false;
+  const key = text.trim().toLowerCase();
+  const now = Date.now();
+  if (key === lastFitlineOppsOpenKey && now - lastFitlineOppsOpenAt < 8_000) {
+    return true;
+  }
+  lastFitlineOppsOpenKey = key;
+  lastFitlineOppsOpenAt = now;
+  applyCedOpenModule(FITLINE_ENROLL_OPEN_MODULE);
+  return true;
+}
+
+let lastFitlineOppsOpenKey = "";
+let lastFitlineOppsOpenAt = 0;
+
 export function consumeOppsGuide(): {
   opportunity_id: string;
   highlight: string;

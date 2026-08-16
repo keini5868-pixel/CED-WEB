@@ -35,6 +35,15 @@ def try_instant_small_talk_voice_reply(text: str) -> str | None:
     cleaned = (text or "").strip()
     if not cleaned:
         return None
+    try:
+        from app.services.opportunities_pilot.fitline_enroll import (
+            wants_fitline_enroll_link,
+        )
+
+        if wants_fitline_enroll_link(cleaned):
+            return None
+    except Exception:  # noqa: BLE001
+        pass
 
     norm = _normalize(cleaned)
     # Nunca instantáneo en frases largas o con intención de tarea.

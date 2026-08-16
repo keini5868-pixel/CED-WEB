@@ -49,6 +49,7 @@ from app.services.retell_native_pilot import (
     execute_prospection_report_tool,
     execute_read_social_comments_tool,
     execute_open_drive_map_tool,
+    execute_open_opportunities_tool,
     execute_play_youtube_video_tool,
     execute_pause_youtube_video_tool,
     execute_resume_youtube_video_tool,
@@ -523,6 +524,16 @@ async def retell_open_drive_map_tool(request: Request) -> JSONResponse:
     payload = await _verify_retell_request(request)
     user_id = _extract_user_id(payload)
     result = await execute_open_drive_map_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/open_opportunities")
+async def retell_open_opportunities_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_open_opportunities_tool(
         user_id=user_id, payload=payload, args=payload.get("args") or {}
     )
     return JSONResponse(status_code=200, content={"result": result["result"]})

@@ -584,6 +584,15 @@ def _wants_viral_knowledge(text: str) -> bool:
 
 def _instant_chat_greeting_reply(text: str) -> str | None:
     cleaned = (text or "").strip()
+    try:
+        from app.services.opportunities_pilot.fitline_enroll import (
+            wants_fitline_enroll_link,
+        )
+
+        if wants_fitline_enroll_link(cleaned):
+            return None
+    except Exception:  # noqa: BLE001
+        pass
     if _GREETING_ONLY.match(cleaned):
         if re.search(r"como\s+estas?|cómo\s+estas?", cleaned, re.I):
             return (

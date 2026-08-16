@@ -280,6 +280,29 @@ class LlamaVoiceLlm:
             try_internal_knowledge_voice_reply,
         )
         from app.services.voice_small_talk import try_instant_small_talk_voice_reply
+        from app.services.opportunities_pilot.fitline_enroll import (
+            maybe_force_enroll_if_signup_leak,
+            wants_fitline_enroll_link,
+        )
+
+        if self.user_id and wants_fitline_enroll_link(user_text, self._history):
+            from app.services.voice_tool_executor import execute_voice_tool
+
+            try:
+                tool_result = await execute_voice_tool(
+                    "abrir_oportunidades_fitline",
+                    self.user_id,
+                    {},
+                )
+                spoken = str(tool_result.get("spoken") or "").strip()
+                if spoken:
+                    logger.info(
+                        "[RETELL-LLAMA] enroll OPPS call=%s",
+                        self._latency_call_id,
+                    )
+                    return finalize_voice_delivery_text(spoken)
+            except Exception:  # noqa: BLE001
+                logger.exception("[RETELL-LLAMA] enroll OPPS failed")
 
         instant = try_instant_small_talk_voice_reply(user_text)
         if instant:
@@ -292,31 +315,7 @@ class LlamaVoiceLlm:
         if not user_text:
             return None
 
-        from app.services.opportunities_pilot.fitline_enroll import (
-            maybe_force_enroll_if_signup_leak,
-            wants_fitline_enroll_link,
-        )
-
         if self.user_id:
-            from app.services.voice_tool_executor import execute_voice_tool
-
-            if wants_fitline_enroll_link(user_text, self._history):
-                try:
-                    tool_result = await execute_voice_tool(
-                        "abrir_oportunidades_fitline",
-                        self.user_id,
-                        {},
-                    )
-                    spoken = str(tool_result.get("spoken") or "").strip()
-                    if spoken:
-                        logger.info(
-                            "[RETELL-LLAMA] enroll OPPS call=%s",
-                            self._latency_call_id,
-                        )
-                        return finalize_voice_delivery_text(spoken)
-                except Exception:  # noqa: BLE001
-                    logger.exception("[RETELL-LLAMA] enroll OPPS failed")
-
             from app.services.user_trash import try_trash_turn
 
             trash_turn = try_trash_turn(self.user_id, user_text)

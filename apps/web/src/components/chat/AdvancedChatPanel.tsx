@@ -29,7 +29,7 @@ import {
   type AdvancedChatMessage,
   type AdvancedImageMode,
 } from "@/lib/api/advanced";
-import { applyCedOpenModule } from "@/lib/hud/chrome-events";
+import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome-events";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
@@ -222,6 +222,8 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
     const text = input.trim();
     if ((!text && !attachedImage && !attachedPdf) || configured === false) return;
     if (submitInFlightRef.current) return;
+
+    openFitlineOppsIfRequested(text);
 
     if (!attachedPdf && !attachedImage) {
       const tooLong = assertChatMessageLength(text);

@@ -32,9 +32,9 @@ def test_build_get_environment_tool_has_static_filler():
 def test_phase_a_general_assistant_token_floor_under_retell_threshold():
     """Fase A: piso sin historial debe quedar bajo el surcharge Retell (~4k) y ~3.8k objetivo."""
     est = estimate_general_assistant_token_floor()
-    assert est["tool_count"] == 34
+    assert est["tool_count"] == 35
     assert est["floor_tokens_no_history"] < 4000
-    assert est["floor_tokens_no_history"] <= 3800
+    assert est["floor_tokens_no_history"] <= 3900
     assert est["under_threshold"] is True
 
 
@@ -59,6 +59,7 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "prospection_report",
         "read_social_comments",
         "open_drive_map",
+        "open_opportunities",
         "search_nearby_places",
         "show_route",
         "start_drive_navigation",
@@ -449,6 +450,28 @@ def test_execute_map_tools_delegate_to_voice_executor():
             )
             assert mock_exec.await_args.args[0] == "start_navigation"
             assert mock_exec.await_args.args[2].get("confirm") is True
+
+    asyncio.run(_run())
+
+
+def test_execute_open_opportunities_delegates_to_fitline_tool():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_open_opportunities_tool
+
+    async def _run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={"ok": True, "spoken": "Le abro Oportunidades, señor."},
+        ) as mock_exec:
+            out = await execute_open_opportunities_tool(
+                user_id="u1",
+                payload={"call": {"call_id": "c-opps"}},
+                args={},
+            )
+            assert mock_exec.await_args.args[0] == "abrir_oportunidades_fitline"
+            assert "Oportunidades" in out["result"]
 
     asyncio.run(_run())
 

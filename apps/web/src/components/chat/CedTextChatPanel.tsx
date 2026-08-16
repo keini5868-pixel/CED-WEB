@@ -34,7 +34,7 @@ import { assertChatMessageLength } from "@/lib/chat-limits";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
-import { applyCedOpenModule } from "@/lib/hud/chrome-events";
+import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome-events";
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
 
 type CedTextChatPanelProps = {
@@ -500,6 +500,7 @@ export function CedTextChatPanel({
           { role: "model", content: "", created_at: new Date().toISOString() },
         ]),
       );
+      openFitlineOppsIfRequested(prompt);
       if (looksLikeImageGenerationRequest(prompt)) {
         setStatusHint("Generando imagen con IA…");
         setTyping(true);
@@ -621,6 +622,8 @@ export function CedTextChatPanel({
       currentMode === "publish" && imageFile
         ? text || "Usa esta imagen para publicar"
         : text;
+
+    openFitlineOppsIfRequested(outboundText);
 
     const expectsImage =
       Boolean(imageFile) ||
