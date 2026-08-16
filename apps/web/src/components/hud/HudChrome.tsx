@@ -53,7 +53,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   }
 
   return (
-    <header className="sticky top-0 z-20 w-full max-w-[100vw] overflow-x-hidden border-b border-cyan-500/20 bg-[var(--ced-bg)]/95 backdrop-blur-sm">
+    <header className="sticky top-0 z-50 w-full max-w-[100vw] overflow-visible border-b border-cyan-500/20 bg-[var(--ced-bg)]/95 backdrop-blur-sm">
       <div className="mx-auto flex w-full max-w-screen items-center gap-2 px-3 py-2 sm:px-4 sm:py-2.5 md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
           <HudNavMenu
