@@ -146,6 +146,8 @@ export function HistorialConversaciones({
         }}
         onTrash={() => void trashIds([...picked])}
       />
+
+      {loading ? (
         <p className="ced-hud-text-muted text-sm">Cargando…</p>
       ) : listError ? (
         <div className="rounded border border-red-500/40 bg-red-950/30 p-4 text-sm text-red-200">
