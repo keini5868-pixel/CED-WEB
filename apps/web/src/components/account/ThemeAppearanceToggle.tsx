@@ -7,7 +7,7 @@ const OPTIONS: Array<{ id: CedTheme; label: string; hint: string }> = [
   {
     id: "petrol",
     label: "Oscuro",
-    hint: "Fondo petróleo, tono Gemini. El chat sigue blanco.",
+    hint: "Toda la interfaz en petróleo, incluido el chat.",
   },
   {
     id: "light",
@@ -25,7 +25,7 @@ export function ThemeAppearanceToggle() {
         APARIENCIA
       </h2>
       <p className="mt-1 mb-3 text-xs text-[var(--ced-text-muted)]">
-        Oscuro en toda la app; el panel de texto permanece blanco.
+        Oscuro aplica el petróleo a toda la app, incluido el chat. Claro deja el menú y el chat claros.
       </p>
       <div className="grid grid-cols-2 gap-2">
         {OPTIONS.map((option) => {

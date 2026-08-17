@@ -320,7 +320,7 @@ body {
   }
 }
 
-/* Studio — chat blanco; el resto sigue el tema (petróleo / claro) */
+/* Studio — el chat sigue el tema (petróleo / claro) */
 .ced-studio-shell {
   background: var(--studio-shell-bg);
   height: 100dvh;
@@ -341,6 +341,7 @@ body {
 .ced-studio-ced-bubble {
   background: var(--studio-ced-bubble);
   color: #f4fbff;
+  border: 1px solid var(--studio-border);
 }
 
 .ced-studio-usage .ced-hud-text-primary,

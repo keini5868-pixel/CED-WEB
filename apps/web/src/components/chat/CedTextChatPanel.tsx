@@ -887,7 +887,7 @@ export function CedTextChatPanel({
       <div
         className={
           embedded
-            ? "flex h-full min-h-0 w-full flex-col overflow-hidden bg-white"
+            ? "flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--studio-chat-bg)] text-[var(--studio-chat-fg)]"
             : "box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-md sm:rounded-2xl sm:border"
         }
         style={
@@ -944,14 +944,14 @@ export function CedTextChatPanel({
         )}
 
         {status && !status.unlimited && status.messages_limit_daily != null && !status.trial_expired && (
-          <p className={`shrink-0 border-b px-4 py-1.5 text-[10px] ${embedded ? "border-sky-100 text-sky-700" : "border-cyan-900/40 text-cyan-600"}`}>
+          <p className={`shrink-0 border-b px-4 py-1.5 text-[10px] ${embedded ? "border-[var(--studio-border)] text-[var(--studio-hint)]" : "border-cyan-900/40 text-cyan-600"}`}>
             Mensajes hoy: {status.messages_used_today}/{status.messages_limit_daily}
           </p>
         )}
 
         <div
           ref={scrollRef}
-          className={`min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-y-contain px-4 py-4 pb-2 ${embedded ? "bg-white" : ""}`}
+          className={`min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-y-contain px-4 py-4 pb-2 ${embedded ? "bg-[var(--studio-chat-bg)]" : ""}`}
         >
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
@@ -978,13 +978,13 @@ export function CedTextChatPanel({
                         : "border border-cyan-500/25 bg-black/60 text-cyan-100/90"
                   }`}
                 >
-                  <div className={`mb-1 text-[10px] font-bold ${embedded ? (isUser ? "text-sky-800" : "text-sky-300") : "font-[family-name:var(--font-orbitron)] text-[9px] text-cyan-500"}`}>
+                  <div className={`mb-1 text-[10px] font-bold ${embedded ? (isUser ? "text-[var(--studio-label-user)]" : "text-[var(--studio-label-ced)]") : "font-[family-name:var(--font-orbitron)] text-[9px] text-cyan-500"}`}>
                     {isUser ? "User" : "CED"}
                   </div>
                   {displayContent ? (
                     <p className="whitespace-pre-wrap break-words">{displayContent}</p>
                   ) : busy && streamTargetIndexRef.current === i ? (
-                    <p className={`animate-pulse ${embedded ? "text-sky-600" : "text-cyan-400/90"}`}>
+                    <p className={`animate-pulse ${embedded ? "text-[var(--studio-hint)]" : "text-cyan-400/90"}`}>
                       {statusHint || "Generando…"}
                     </p>
                   ) : (
@@ -1003,15 +1003,15 @@ export function CedTextChatPanel({
             );
           })}
           {typing || (busy && statusHint) ? (
-            <p className={`animate-pulse text-xs ${embedded ? "text-sky-600" : "text-cyan-500"}`}>
+            <p className={`animate-pulse text-xs ${embedded ? "text-[var(--studio-hint)]" : "text-cyan-500"}`}>
               {statusHint || "CED está escribiendo…"}
             </p>
           ) : null}
         </div>
 
-        {error && <p className={`shrink-0 px-4 pb-1 text-xs ${embedded ? "text-red-600" : "text-red-400"}`}>{error}</p>}
+        {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className={`relative z-10 shrink-0 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 ${embedded ? "border-t border-sky-100 bg-white" : "border-t border-cyan-500/20 bg-[#060a0f]"}`}>
+        <footer className={`relative z-10 shrink-0 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 ${embedded ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)]" : "border-t border-cyan-500/20 bg-[#060a0f]"}`}>
           {attachedPdf ? (
             <PdfAttachmentBar
               filename={attachedPdf.name}
@@ -1071,12 +1071,12 @@ export function CedTextChatPanel({
                         : "Escribe a CED o usa el micrófono…"
               }
               disabled={Boolean(status?.blocked)}
-              className={`box-border min-h-[48px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 py-2.5 text-base leading-snug caret-sky-500 focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
+              className={`box-border min-h-[48px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 py-2.5 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
                 embedded
-                  ? `border bg-white text-slate-800 placeholder:text-sky-400/80 focus:ring-sky-300/60 ${
+                  ? `border bg-[var(--studio-composer-bg)] text-[var(--studio-composer-fg)] caret-[var(--ced-cyan)] placeholder:text-[var(--studio-hint)] focus:ring-[var(--ced-cyan)]/40 ${
                       isDictating
                         ? "border-red-400"
-                        : "border-sky-200 focus:border-sky-400"
+                        : "border-[var(--studio-border)] focus:border-[var(--ced-cyan)]"
                     }`
                   : `border bg-black/60 text-white caret-cyan-300 placeholder:text-cyan-600 focus:ring-cyan-500/40 ${
                       isDictating
@@ -1136,7 +1136,7 @@ export function CedTextChatPanel({
               <Send className="h-[18px] w-[18px] shrink-0" />
             </button>
           </div>
-          <p className={`mt-1.5 break-words text-left text-[9px] leading-snug ${embedded ? "text-sky-500/80" : "text-cyan-700"}`}>
+          <p className={`mt-1.5 break-words text-left text-[9px] leading-snug ${embedded ? "text-[var(--studio-hint)]" : "text-cyan-700"}`}>
             {isDictating
               ? "🎤 Dictando en vivo… clic en el mic para detener"
               : attachedPdf
