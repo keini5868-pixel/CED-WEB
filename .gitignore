@@ -56,5 +56,9 @@ venv/
 *.log
 logs/
 
+# Salidas de probes/ops — pueden contener claves y métricas
+scripts/_*.json
+scripts/_*.txt
+
 # Vercel
 .vercel

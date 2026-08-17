@@ -307,8 +307,7 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
 
         {tab === "chat" && configured === false ? (
           <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-200">
-            Finanzas no disponible. Configura GOOGLE_API_KEY o ANTHROPIC_API_KEY
-            en el servicio API de Railway.
+            Finanzas no disponible en este momento. Intente de nuevo más tarde.
           </p>
         ) : null}
 

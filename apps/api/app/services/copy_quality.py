@@ -1034,9 +1034,8 @@ def augment_image_prompt(prompt: str, context: str = "") -> str:
     )
 
 IMAGE_EMBEDDED_TEXT_DISCLAIMER = (
-    "Señor, aviso: el texto dentro de imágenes generadas por IA (modelo actual: "
-    "Nano Banana 2 / Gemini 3.1 Flash Image) suele no salir perfectamente legible. "
-    "Aquí está el resultado:"
+    "Señor, aviso: el texto dentro de imágenes generadas por IA "
+    "suele no salir perfectamente legible. Aquí está el resultado:"
 )
 
 

@@ -32,9 +32,9 @@ def test_build_get_environment_tool_has_static_filler():
 def test_phase_a_general_assistant_token_floor_under_retell_threshold():
     """Fase A: piso sin historial debe quedar bajo el surcharge Retell (~4k) y ~3.8k objetivo."""
     est = estimate_general_assistant_token_floor()
-    assert est["tool_count"] == 35
+    assert est["tool_count"] == 36
     assert est["floor_tokens_no_history"] < 4000
-    assert est["floor_tokens_no_history"] <= 3900
+    assert est["floor_tokens_no_history"] <= 3960
     assert est["under_threshold"] is True
 
 
@@ -60,6 +60,7 @@ def test_build_native_pilot_tools_includes_read_and_finance_write():
         "read_social_comments",
         "open_drive_map",
         "open_opportunities",
+        "send_to_trash",
         "search_nearby_places",
         "show_route",
         "start_drive_navigation",
@@ -205,6 +206,8 @@ def test_build_native_pilot_states_restrict_confirm_tools():
     assert "meta_confirm_publish" in general_tools
     assert "check_meta_networks" in general_tools
     assert "open_drive_map" in general_tools
+    assert "open_opportunities" in general_tools
+    assert "send_to_trash" in general_tools
     assert "search_nearby_places" in general_tools
     assert "show_route" in general_tools
     assert "start_drive_navigation" in general_tools
@@ -454,6 +457,82 @@ def test_execute_map_tools_delegate_to_voice_executor():
     asyncio.run(_run())
 
 
+def test_execute_send_to_trash_asks_strong_confirm():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_send_to_trash_tool
+    from app.services import voice_client_session as vcs
+
+    uid = "u-native-trash"
+    vcs._sessions.pop(uid, None)
+
+    async def _run():
+        out = await execute_send_to_trash_tool(
+            user_id=uid,
+            payload={
+                "call": {
+                    "call_id": "c-trash",
+                    "transcript_object": [
+                        {"role": "user", "content": "borrar todo en Finanzas"},
+                    ],
+                }
+            },
+            args={},
+        )
+        assert out["ok"] is True
+        assert "papelera" in out["result"].lower()
+        assert "sí, borra todo el historial de finanzas" in out["result"].lower()
+
+    asyncio.run(_run())
+    vcs._sessions.pop(uid, None)
+
+
+def test_execute_send_to_trash_ignores_llm_args_for_confirm():
+    """La frase exacta debe venir del transcript, no de args.query del LLM."""
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_send_to_trash_tool
+    from app.services import voice_client_session as vcs
+
+    uid = "u-native-trash-args"
+    vcs._sessions.pop(uid, None)
+
+    async def _run():
+        first = await execute_send_to_trash_tool(
+            user_id=uid,
+            payload={
+                "call": {
+                    "call_id": "c-trash-args",
+                    "transcript_object": [
+                        {"role": "user", "content": "borrar todo en Finanzas"},
+                    ],
+                }
+            },
+            args={},
+        )
+        assert first.get("ok") is True
+        assert "sí, borra todo el historial de finanzas" in first["result"].lower()
+
+        weak = await execute_send_to_trash_tool(
+            user_id=uid,
+            payload={
+                "call": {
+                    "call_id": "c-trash-args",
+                    "transcript_object": [
+                        {"role": "user", "content": "borrar todo en Finanzas"},
+                        {"role": "user", "content": "sí"},
+                    ],
+                }
+            },
+            args={"query": "sí, borra todo el historial de finanzas"},
+        )
+        assert "no basta" in weak["result"].lower()
+        assert weak.get("ok") is True
+
+    asyncio.run(_run())
+    vcs._sessions.pop(uid, None)
+
+
 def test_execute_open_opportunities_delegates_to_fitline_tool():
     import asyncio
 
@@ -527,6 +606,7 @@ def test_pilot_prompt_includes_camera_rules():
     assert "analyze_camera_frame" in RETELL_NATIVE_PILOT_PROMPT
     assert "search_visible_product" in RETELL_NATIVE_PILOT_PROMPT
     assert "NUNCA inventar" in RETELL_NATIVE_PILOT_PROMPT
+    assert "send_to_trash" in RETELL_NATIVE_PILOT_PROMPT
 
 
 def test_consult_advanced_tool_has_filler():

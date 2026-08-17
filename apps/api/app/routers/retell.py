@@ -50,6 +50,7 @@ from app.services.retell_native_pilot import (
     execute_read_social_comments_tool,
     execute_open_drive_map_tool,
     execute_open_opportunities_tool,
+    execute_send_to_trash_tool,
     execute_play_youtube_video_tool,
     execute_pause_youtube_video_tool,
     execute_resume_youtube_video_tool,
@@ -67,6 +68,7 @@ from app.services.retell_native_pilot import (
     get_call_pilot_metrics,
     get_pilot_metrics_snapshot,
 )
+from app.rate_limit import limiter
 from app.services.finance_write_flow import clear_finance_pending_for_call
 from app.services.meta_publish_flow import clear_meta_pending_for_call
 from app.services.voice_client_session import clear_advanced_mode_for_call
@@ -148,41 +150,37 @@ async def _verify_retell_request(request: Request) -> dict[str, Any]:
 
 
 def _format_retell_call_error(exc: Exception) -> str:
-    """Mensaje claro para el usuario según el error de Retell."""
+    """Mensaje claro para el usuario — sin nombres de proveedores ni infra."""
     raw = str(exc).strip()
     lower = raw.lower()
     if "402" in lower or "payment required" in lower or "trial" in lower:
-        return (
-            "Cuenta Retell sin saldo o prueba expirada. "
-            "Agregue método de pago en retellai.com."
-        )
+        return "La voz no está disponible en este momento. Intente de nuevo en unos minutos."
     if "401" in lower or "unauthorized" in lower:
-        return "RETELL_API_KEY inválida. Revise la variable en Railway."
+        return "No pude iniciar la voz. Intente de nuevo."
     if "422" in lower or "not found" in lower:
-        return "Agente Retell no encontrado. Ejecute bootstrap del agente."
+        return "No pude iniciar la voz. Intente de nuevo en un momento."
     if "429" in lower or "rate limit" in lower:
         return "Demasiadas llamadas. Espere unos segundos e intente de nuevo."
     if "language" in lower:
-        return "Error de idioma en agente Retell — se está corrigiendo, intente en 1 minuto."
-    if raw:
-        snippet = raw if len(raw) <= 220 else f"{raw[:220]}…"
-        return f"No pude iniciar llamada Retell: {snippet}"
-    return "No pude iniciar llamada Retell."
+        return "Ajuste de idioma en curso. Intente de nuevo en un minuto."
+    return "No pude iniciar la voz."
 
 
 @router.post("/register-call")
+@limiter.limit("20/minute")
 async def register_retell_call(
+    request: Request,
     body: RegisterCallBody | None = None,
     user_id: str = Depends(require_user_id),
 ) -> dict[str, Any]:
-    """Crea web call Retell y devuelve access_token para el SDK frontend."""
+    """Crea web call de voz y devuelve access_token para el SDK frontend."""
     settings = get_settings()
     if settings.voice_provider != "retell":
-        raise HTTPException(status_code=503, detail="Proveedor de voz Retell no activo.")
+        raise HTTPException(status_code=503, detail="Voz no disponible en este momento.")
 
     client = get_retell_client()
     if not client:
-        raise HTTPException(status_code=503, detail="RETELL_API_KEY no configurada.")
+        raise HTTPException(status_code=503, detail="Voz no disponible en este momento.")
 
     agent_id = get_retell_agent_id()
     if not agent_id:
@@ -232,18 +230,20 @@ async def register_retell_call(
 
 
 @router.post("/register-call-native-pilot")
+@limiter.limit("20/minute")
 async def register_retell_native_pilot_call(
+    request: Request,
     body: RegisterCallBody | None = None,
     user_id: str = Depends(require_user_id),
 ) -> dict[str, Any]:
-    """Web call contra el agente Retell LLM nativo de staging (piloto clima)."""
+    """Web call contra el agente de voz nativo de staging."""
     settings = get_settings()
     if settings.voice_provider != "retell":
-        raise HTTPException(status_code=503, detail="Proveedor de voz Retell no activo.")
+        raise HTTPException(status_code=503, detail="Voz no disponible en este momento.")
 
     client = get_retell_client()
     if not client:
-        raise HTTPException(status_code=503, detail="RETELL_API_KEY no configurada.")
+        raise HTTPException(status_code=503, detail="Voz no disponible en este momento.")
 
     agent_id = get_native_staging_agent_id()
     if not agent_id:
@@ -254,12 +254,12 @@ async def register_retell_native_pilot_call(
             logger.warning("[NATIVE-PILOT] bootstrap on register failed: %s", exc)
             raise HTTPException(
                 status_code=503,
-                detail=f"Piloto nativo no configurado: {exc}",
+                detail="Voz no disponible en este momento.",
             ) from exc
     if not agent_id:
         raise HTTPException(
             status_code=503,
-            detail="RETELL_NATIVE_STAGING_AGENT_ID no configurado. Ejecute bootstrap del piloto.",
+            detail="Voz no disponible en este momento.",
         )
 
     await _voice_access_or_raise(user_id)
@@ -302,15 +302,12 @@ async def register_retell_native_pilot_call(
         vcs.begin_voice_publish_session(user_id, str(call_id))
         logger.info("[NATIVE-PILOT] call=%s user=%s agent=%s", call_id, user_id[:8], agent_id[:12])
 
-    staging_info = get_last_native_staging_info() or {}
     return {
         "ok": True,
         "access_token": call.access_token,
         "call_id": call_id,
         "agent_id": agent_id,
-        "pilot": "native-llm-environment",
-        "engine": "retell-llm",
-        "model": staging_info.get("model") or settings.retell_native_pilot_model,
+        "pilot": "native",
     }
 
 
@@ -534,6 +531,16 @@ async def retell_open_opportunities_tool(request: Request) -> JSONResponse:
     payload = await _verify_retell_request(request)
     user_id = _extract_user_id(payload)
     result = await execute_open_opportunities_tool(
+        user_id=user_id, payload=payload, args=payload.get("args") or {}
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
+
+
+@router.post("/tools/send_to_trash")
+async def retell_send_to_trash_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_send_to_trash_tool(
         user_id=user_id, payload=payload, args=payload.get("args") or {}
     )
     return JSONResponse(status_code=200, content={"result": result["result"]})
@@ -879,15 +886,9 @@ async def retell_tool_handler(tool_name: str, request: Request) -> JSONResponse:
 
 @router.get("/config")
 async def retell_config(_user_id: str = Depends(require_user_id)) -> dict:
-    settings = get_settings()
     agent_id = get_retell_agent_id()
     return {
-        "provider": settings.voice_provider,
         "agentConfigured": bool(agent_id),
-        "agentId": agent_id or None,
-        "voiceId": settings.retell_voice_id.strip() or "11labs-George",
-        "brain": settings.gemini_voice_model,
-        "architecture": "retell-gpt41mini-cartesia",
     }
 
 
@@ -1312,7 +1313,8 @@ async def retell_voice_raw_debug(
 
 
 @router.get("/warmup")
-async def retell_warmup() -> dict[str, Any]:
+@limiter.limit("60/minute")
+async def retell_warmup(request: Request) -> dict[str, Any]:
     """Despierta la API sin bootstrap pesado — precalentamiento al cargar la web."""
     return {
         "ok": True,
@@ -1321,13 +1323,13 @@ async def retell_warmup() -> dict[str, Any]:
 
 
 @router.get("/status")
-async def retell_public_status() -> dict[str, Any]:
-    """Estado Retell mínimo sin auth (sin IDs internos ni URLs de LLM)."""
-    settings = get_settings()
+@limiter.limit("60/minute")
+async def retell_public_status(request: Request) -> dict[str, Any]:
+    """Estado de voz mínimo sin auth (sin IDs internos ni nombres de proveedor)."""
     agent_id = get_retell_agent_id()
     return {
         "ok": True,
-        "voice_provider": settings.voice_provider,
+        "voice_ready": bool(agent_id),
         "agent_configured": bool(agent_id),
     }
 

@@ -75,22 +75,24 @@ CONFIRM_PHRASES: dict[str, tuple[str, ...]] = {
     ),
 }
 
+_DEL = (
+    r"(?:borr(?:ar?|[aá])|elimina(?:r)?|vac[ií]a(?:r)?|limpia(?:r)?)"
+)
 _MASS_FINANCE = re.compile(
-    r"(?is)\b(?:borra|borr[aá]|elimina(?:r)?|vac[ií]a(?:r)?|limpia(?:r)?)\b.{"
-    r"0,40}\b(?:finanzas|movimientos?\s+de\s+finanzas|historial\s+de\s+finanzas)\b",
+    rf"(?is)\b{_DEL}\b.{{0,40}}\b(?:finanzas|movimientos?\s+de\s+finanzas|historial\s+de\s+finanzas)\b",
 )
 _MASS_FILES = re.compile(
-    r"(?is)\b(?:borra|elimina(?:r)?|vac[ií]a)\b.{0,40}\b(?:im[aá]genes|pdfs?|archivos)\b",
+    rf"(?is)\b{_DEL}\b.{{0,40}}\b(?:im[aá]genes|pdfs?|archivos)\b",
 )
 _MASS_CONV = re.compile(
-    r"(?is)\b(?:borra|elimina(?:r)?)\b.{0,40}\bconversaciones\b",
+    rf"(?is)\b{_DEL}\b.{{0,40}}\bconversaciones\b",
 )
 _MASS_HIST = re.compile(
-    r"(?is)\b(?:borra|elimina(?:r)?|vac[ií]a)\b.{0,40}\b(?:todo\s+el\s+)?historial\b"
+    rf"(?is)\b{_DEL}\b.{{0,40}}\b(?:todo\s+el\s+)?historial\b"
     r"(?!\s+de\s+finanzas)",
 )
 _MASS_BARE = re.compile(
-    r"(?is)\b(?:borra|elimina(?:r)?|vac[ií]a)\s+todo\b",
+    rf"(?is)\b{_DEL}\s+todo\b",
 )
 _CANCEL = re.compile(
     r"(?is)^\s*(?:cancelar?|cancela|no|mejor\s+no|olvida(?:lo)?)\s*[.!]?\s*$"

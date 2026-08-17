@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from app.domain.ced_identity import CED_CORE_IDENTITY, CED_MARKETING_EXPERTISE
+from app.domain.ced_identity import (
+    CED_CORE_IDENTITY,
+    CED_CONFIDENTIALITY,
+    CED_MARKETING_EXPERTISE,
+)
 from app.domain.ced_live_voice_prompt import CED_LIVE_VOICE_SYSTEM_PROMPT
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt
 from app.services.advanced_mode.constants import (
@@ -32,12 +36,15 @@ def test_chat_prompts_include_expertise():
     for prompt in (CHAT_SYSTEM_BASE, CHAT_SYSTEM_LIGHT_BASE):
         assert CED_MARKETING_EXPERTISE in prompt
         assert "MENTOR EN VENTAS" in prompt or "consultor" in prompt.lower()
+        assert CED_CONFIDENTIALITY in prompt
 
 
 def test_advanced_prompts_include_expertise():
     assert "consultor" in ADVANCED_SYSTEM_PROMPT.lower()
     assert CED_MARKETING_EXPERTISE in ADVANCED_SYSTEM_PROMPT
     assert CED_MARKETING_EXPERTISE in ADVANCED_STREAM_SYSTEM
+    assert CED_CONFIDENTIALITY in ADVANCED_SYSTEM_PROMPT
+    assert CED_CONFIDENTIALITY in ADVANCED_STREAM_SYSTEM
 
 
 def test_voice_prompts_include_expertise():

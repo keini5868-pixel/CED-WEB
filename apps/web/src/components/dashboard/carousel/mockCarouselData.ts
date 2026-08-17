@@ -74,8 +74,8 @@ export function getMockCarouselSnapshot(): CarouselSnapshot {
         accent: "green",
         badge: "⚡",
         lines: [
-          "API · 42 ms · OK",
-          "Gemini · Supabase · Stripe OK",
+          "API · OK",
+          "Servicios internos OK",
         ],
         footer: "Health detallado en Fase 3B",
       },

@@ -268,7 +268,7 @@ def build_base_voice_system(
                     "usa search_web u otras herramientas sin decir que no tienes información. "
                     "Responde directo como experto interno cuando el contexto lo permita.\n"
                     "FitLine/PM/productos PM: NUNCA search_web ni «investigando» si hay bloque Oportunidades.\n"
-                    "El sistema Retell dice automáticamente «Un momento, señor» al ejecutar herramientas. "
+                    "El sistema dice automáticamente «Un momento, señor» al ejecutar herramientas. "
                     "NO repitas ese filler: procede directamente con la herramienta."
                 )
         except Exception:  # noqa: BLE001
@@ -659,9 +659,10 @@ def strip_embedded_prior_assistant(
         if len(rest) >= 24:
             return rest
 
-    # Contención: prev completo embebido cerca del inicio.
-    if prev in text and text.index(prev) < 40:
-        rest = text[text.index(prev) + len(prev) :].lstrip(" \n\r\t.,;:—-")
+    # Contención: prev completo embebido cerca del inicio (preámbulo corto).
+    idx = text.find(prev)
+    if idx != -1 and idx < 80 and len(text) > len(prev) + 24:
+        rest = text[idx + len(prev) :].lstrip(" \n\r\t.,;:—-")
         if len(rest) >= 24:
             return rest
 

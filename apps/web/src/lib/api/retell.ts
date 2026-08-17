@@ -42,8 +42,8 @@ export async function registerRetellCall(): Promise<RetellRegisterCallResponse> 
     };
   }
 
-  if (!("access_token" in data) || !data.access_token) {
-    return { ok: false, error: "La API no devolvió access_token de Retell." };
+    if (!("access_token" in data) || !data.access_token) {
+    return { ok: false, error: "La API no devolvió el token de voz." };
   }
 
   return {
@@ -85,7 +85,7 @@ export async function registerRetellNativePilotCall(): Promise<RetellNativePilot
   }
 
   if (!("access_token" in data) || !data.access_token) {
-    return { ok: false, error: "La API no devolvió access_token del piloto nativo." };
+    return { ok: false, error: "La API no devolvió el token de voz." };
   }
 
   return {

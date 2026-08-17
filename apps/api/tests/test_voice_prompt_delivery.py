@@ -74,6 +74,22 @@ def test_strip_embedded_prior_assistant_removes_leading_block():
     assert not stripped.startswith("Activize es la bebida")
 
 
+def test_strip_embedded_prior_after_short_preamble():
+    prior = (
+        "Es un frasco de proteína en polvo blanco con tapa negra. "
+        "No veo marca legible en esta toma, señor."
+    )
+    newer = (
+        "En esta segunda toma el frasco muestra el logo MyProtein en el frente "
+        "y la etiqueta está más cerca de la cámara."
+    )
+    history = [{"role": "assistant", "content": prior}]
+    combined = f"Claro, señor. {prior} {newer}"
+    stripped = strip_embedded_prior_assistant(combined, history)
+    assert "MyProtein" in stripped
+    assert "frasco de proteína en polvo blanco" not in stripped
+
+
 def test_collapse_stacked_response_variants_keeps_one():
     from app.services.voice_llm_common import collapse_stacked_response_variants
 

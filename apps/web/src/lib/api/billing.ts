@@ -8,7 +8,7 @@ function billingErrorMessage(status: number, detail?: string): string {
   if (status === 401) return "Debes iniciar sesión para pagar.";
   if (status === 400 && detail) return detail;
   if (status === 503) {
-    return detail || "Pagos no disponibles. Revisa STRIPE_SECRET_KEY en Railway.";
+    return detail || "Pagos no disponibles en este momento.";
   }
   return detail || "No se pudo iniciar el pago.";
 }

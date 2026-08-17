@@ -10,6 +10,7 @@ from typing import Any
 
 import httpx
 
+from app.domain.ced_identity import CED_CONFIDENTIALITY_COMPACT
 from app.domain.ced_product_capabilities import CED_CAPABILITY_ORAL_SUMMARY
 
 logger = logging.getLogger(__name__)
@@ -32,7 +33,8 @@ Reglas de tools (schemas definen nombre/params — no inventes tools):
   productos PM: responde YA con conocimiento Oportunidades del system prompt.
   PROHIBIDO search_web y PROHIBIDO decir «investigando» / «consultando internet».
   Enlace PM / «abre OPPS» → open_opportunities (nunca pegues el URL).
-- Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar).
+- Borrar/vaciar finanzas o historial → send_to_trash. Un «sí» no basta.
+- Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar ni recitar el análisis previo).
 - YouTube: play/pause/resume/close. Siempre reproduce de inmediato (nunca pidas confirmación antes de reproducir). NUNCA confirmes play sin éxito real de la tool. SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla — sin ofrecer más ayuda. Esta regla NO aplica al resto.
 - Imagen/PDF: generate_image / generar_pdf. NUNCA digas que la imagen o el PDF están listos sin éxito de la tool.
 - Modo avanzado: solo «activa modo avanzado»→activate; análisis profundo→consult_advanced (no respondas tú); salida explícita→deactivate.
@@ -43,7 +45,7 @@ GENERAL_ASSISTANT_STATE_PROMPT = """
 Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya (también aquí).
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
-- Clima→get_environment. Noticias/hechos→search_web. FitLine/PM/productos PM→SIN search_web (Oportunidades). Enlace/inscripción/«abre OPPS»→open_opportunities (nunca pegues el URL). YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
+- Clima→get_environment. Noticias/hechos→search_web. FitLine/PM/productos PM→SIN search_web (Oportunidades). Enlace/inscripción/«abre OPPS»→open_opportunities (nunca pegues el URL). Borrar finanzas/historial→send_to_trash. YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
 - Imagen/PDF: generate_image / generar_pdf — NUNCA confirmes sin éxito.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
@@ -60,7 +62,7 @@ Estado de confirmación de registro financiero — hay un borrador pendiente.
 """.strip()
 
 ADVANCED_MODE_STATE_PROMPT = """
-Estado modo avanzado (Claude) — investigación profunda activa.
+Estado modo avanzado — investigación profunda activa.
 - Preguntas sustantivas / análisis / investigación → consult_advanced. Di el resultado tal cual.
 - Clima o ambiente → get_environment (sin salir del modo).
 - Consulta de finanzas (solo lectura) → read_finances (sin salir del modo).
@@ -86,12 +88,13 @@ Estado de confirmación de publicación — hay un borrador FB/IG pendiente.
 STATE_FINANCE_CONFIRM_PENDING = "finance_confirm_pending"
 STATE_ADVANCED_MODE_ACTIVE = "advanced_mode_active"
 
-NATIVE_PILOT_IDENTITY = """
+NATIVE_PILOT_IDENTITY = f"""
 Eres CED, asistente de voz del Castillo Evolución Digital. Trato SIEMPRE masculino («señor»).
 Charla casual: responde ya en 1-2 oraciones, sin tools. Acciones/datos: usa la tool correcta.
 PROHIBIDO inventar que ya ejecutaste una acción sin resultado exitoso de tool; si falla, dilo tal cual.
 PROHIBIDO frases de espera vacías («un momento», «voy a buscar») sin invocar la tool.
 PROHIBIDO inventar mensajería de terceros, Ads Manager, email o Google Calendar.
+{CED_CONFIDENTIALITY_COMPACT}
 """.strip()
 
 NATIVE_PILOT_CAPABILITIES_PROMPT = CED_CAPABILITY_ORAL_SUMMARY
@@ -137,6 +140,9 @@ READ_SOCIAL_COMMENTS_DESCRIPTION = "Lee comentarios recientes FB/IG y destaca pr
 OPEN_DRIVE_MAP_DESCRIPTION = "Abre el mapa / modo conducir."
 OPEN_OPPORTUNITIES_DESCRIPTION = (
     "Abre OPPS (FitLine). Enlace PM, inscripción o «abre OPPS». Nunca pegues el URL."
+)
+SEND_TO_TRASH_DESCRIPTION = (
+    "Papelera 30 días (finanzas/historial). Un «sí» no basta."
 )
 SEARCH_NEARBY_PLACES_DESCRIPTION = "Busca destino («llévame a …»)."
 SHOW_ROUTE_DESCRIPTION = "Muestra la ruta sin iniciar guía («muéstrame la ruta»)."
@@ -184,17 +190,17 @@ ACTIVATE_CAMERA_DESCRIPTION = (
 )
 DEACTIVATE_CAMERA_DESCRIPTION = "Apaga la cámara."
 ANALYZE_CAMERA_FRAME_DESCRIPTION = (
-    "Describe lo que hay frente a la cámara. PROHIBIDO inventar sin llamar esta tool."
+    "Describe esta toma. No recites el análisis previo. PROHIBIDO inventar sin esta tool."
 )
 SEARCH_VISIBLE_PRODUCT_DESCRIPTION = (
     "Identifica el objeto en cámara y busca precio/specs/dónde comprarlo."
 )
 
 ACTIVATE_ADVANCED_DESCRIPTION = (
-    "Activa modo avanzado (Claude). SOLO con la frase «activa modo avanzado»."
+    "Activa modo avanzado. SOLO con la frase «activa modo avanzado»."
 )
 CONSULT_ADVANCED_DESCRIPTION = (
-    "Análisis/investigación profunda vía Claude (modo avanzado). "
+    "Análisis/investigación profunda (modo avanzado). "
     "NUNCA respondas esas preguntas sin esta tool. Di el resultado tal cual."
 )
 DEACTIVATE_ADVANCED_DESCRIPTION = (
@@ -266,6 +272,7 @@ READ_SOCIAL_COMMENTS_PARAMETERS: dict[str, Any] = {
 
 OPEN_DRIVE_MAP_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
 OPEN_OPPORTUNITIES_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
+SEND_TO_TRASH_PARAMETERS: dict[str, Any] = {"type": "object", "properties": {}}
 SEARCH_NEARBY_PLACES_PARAMETERS: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -710,6 +717,17 @@ def build_open_opportunities_tool(*, api_public_url: str) -> dict[str, Any]:
     )
 
 
+def build_send_to_trash_tool(*, api_public_url: str) -> dict[str, Any]:
+    return _build_custom_tool(
+        api_public_url=api_public_url,
+        name="send_to_trash",
+        description=SEND_TO_TRASH_DESCRIPTION,
+        parameters=SEND_TO_TRASH_PARAMETERS,
+        filler="Un momento, señor.",
+        timeout_ms=8_000,
+    )
+
+
 def build_search_nearby_places_tool(*, api_public_url: str) -> dict[str, Any]:
     return _build_custom_tool(
         api_public_url=api_public_url,
@@ -907,6 +925,7 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
         build_read_social_comments_tool(api_public_url=api_public_url),
         build_open_drive_map_tool(api_public_url=api_public_url),
         build_open_opportunities_tool(api_public_url=api_public_url),
+        build_send_to_trash_tool(api_public_url=api_public_url),
         build_search_nearby_places_tool(api_public_url=api_public_url),
         build_show_route_tool(api_public_url=api_public_url),
         build_start_drive_navigation_tool(api_public_url=api_public_url),
@@ -1234,6 +1253,7 @@ def get_pilot_metrics_snapshot() -> dict[str, Any]:
         "read_social_comments": _stats("read_social_comments"),
         "open_drive_map": _stats("open_drive_map"),
         "open_opportunities": _stats("open_opportunities"),
+        "send_to_trash": _stats("send_to_trash"),
         "search_nearby_places": _stats("search_nearby_places"),
         "show_route": _stats("show_route"),
         "start_drive_navigation": _stats("start_drive_navigation"),
@@ -2206,6 +2226,54 @@ async def execute_open_opportunities_tool(*, user_id: str, payload: dict[str, An
         user_id=user_id,
         payload=payload,
     )
+
+
+async def execute_send_to_trash_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    """Papelera 30 días — usa el último utterance (borrar / confirmar / cancelar)."""
+    from app.services.user_trash import try_trash_turn
+
+    started = time.perf_counter()
+    call_id = _extract_call_id(payload)
+    utterance = _latest_user_utterance(payload)
+
+    if not user_id:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(
+            call_id=call_id,
+            tool_name="send_to_trash",
+            latency_ms=latency_ms,
+            ok=False,
+            query=utterance,
+        )
+        return {
+            "result": "No identifiqué al usuario, señor.",
+            "latency_ms": latency_ms,
+            "ok": False,
+        }
+
+    try:
+        trash = try_trash_turn(user_id, utterance)
+        spoken = str((trash or {}).get("spoken") or "").strip()
+        if not spoken:
+            spoken = (
+                "¿Qué envío a la papelera, señor: el historial o finanzas? "
+                "Diga «borra todo el historial» o «borra todo de finanzas»."
+            )
+        ok = True
+    except Exception:  # noqa: BLE001
+        logger.exception("[NATIVE-PILOT] send_to_trash failed user=%s", user_id[:8])
+        spoken = "Señor, no pude completar el envío a la papelera."
+        ok = False
+
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    record_tool_metric(
+        call_id=call_id,
+        tool_name="send_to_trash",
+        latency_ms=latency_ms,
+        ok=ok,
+        query=utterance[:120],
+    )
+    return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
 
 
 async def execute_search_nearby_places_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:

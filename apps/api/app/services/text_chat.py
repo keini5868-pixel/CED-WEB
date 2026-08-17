@@ -34,6 +34,7 @@ from app.domain.ced_identity import (
     CED_HUMAN_VOICE_STYLE,
     CED_MARKETING_EXPERTISE,
     CED_UNIVERSAL_CONVERSATION,
+    CED_CONFIDENTIALITY,
 )
 from app.domain.ced_memory_prompt import CED_MEMORY_USAGE_RULES
 from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_CORE
@@ -367,10 +368,12 @@ CHAT_TOOLS: list[dict[str, Any]] = [
 
 CHAT_SYSTEM_BASE = f"""Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
 Español latinoamericano natural, cálido y directo.
-Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude, Gemini ni APIs internas.
+Responde con markdown cuando ayude. Sé útil y conciso.
 ORTOGRAFÍA: escribe siempre en español correcto (tildes, sin anglicismos innecesarios, sin typos).
 
 {CED_CORE_IDENTITY}
+
+{CED_CONFIDENTIALITY}
 
 {CED_MARKETING_EXPERTISE}
 
@@ -393,7 +396,7 @@ IMPORTANTE — cerebro híbrido CED:
 - Primero usa conocimiento interno estable (conceptos, negocio, ciencia, cultura) cuando viene en el contexto.
 - Si NO hay bloque interno inyectado sobre el tema: usa tu conocimiento general del modelo para ayudar igual.
 - Solo afirma datos de hoy (clima, precios, noticias) si hay contexto web inyectado abajo o tras search_web.
-- Si te falta dato actual o no estás seguro: invoca search_web (Tavily) — no te quedes corto ni hagas un cuestionario.
+- Si te falta dato actual o no estás seguro: invoca search_web — no te quedes corto ni hagas un cuestionario.
 - Sistema avanzado: si el contexto indica confirmación pendiente, pregunta antes de profundizar.
 - NUNCA incluyas en tu respuesta al usuario el texto del bloque "Conocimiento interno CED" ni líneas tipo "- [Marketing digital] ...".
   Úsalo SOLO como contexto interno para generar respuestas naturales, útiles y en tus propias palabras.
@@ -527,7 +530,7 @@ PROMPTS DE IMAGEN (SIN REESCRITURA):
 Cuando invoques generate_image, el campo `prompt` DEBE ser el pedido del usuario TAL CUAL
 (o casi intacto: puedes quitar solo «generame una imagen» / «okay»).
 PROHIBIDO resumir, reinterpretar, inventar branding CED, mezclar historial o «mejorar» la escena.
-El backend ya adapta el prompt mínimo hacia Nano Banana / Gemini Flash Image.
+El backend ya adapta el prompt mínimo hacia el motor de imagen del sistema.
 Si el usuario pide texto largo DENTRO de la imagen («que diga», «EN TEXTO»), pásalo completo en `prompt`.
 
 PROHIBIDO (chatbot genérico): no digas "sin internet en tiempo real" ni "no puedo conectar tus cuentas" — CED tiene búsqueda, Meta OAuth y tools. No recomiendes Buffer/Hootsuite como única opción si ya tiene redes conectadas.
@@ -546,10 +549,12 @@ propia solo porque acabas de generar o analizar una imagen."""
 # primer token, que es la principal causa de que el chat "se sienta lento".
 CHAT_SYSTEM_LIGHT_BASE = f"""Eres CED (Castillo de la Evolución Digital), asistente dentro de la plataforma CED Web.
 Español latinoamericano natural, cálido y directo.
-Responde con markdown cuando ayude. Sé útil y conciso. Nunca menciones Claude, Gemini ni APIs internas.
+Responde con markdown cuando ayude. Sé útil y conciso.
 ORTOGRAFÍA: escribe siempre en español correcto (tildes, sin anglicismos innecesarios, sin typos).
 
 {CED_CORE_IDENTITY}
+
+{CED_CONFIDENTIALITY}
 
 {CED_MARKETING_EXPERTISE}
 
@@ -984,10 +989,12 @@ def _strip_chat_filler_prefix(text: str) -> str:
 def _finalize_chat_reply(text: str) -> str:
     """Post-proceso de chat de texto: dedupe y ortografía, sin recorte de voz."""
     from app.services.copy_quality import polish_spanish_for_user
+    from app.services.voice_response_guard import strip_stack_leak
 
     cleaned = _dedupe_chat_reply(text)
     cleaned = _strip_chat_filler_prefix(cleaned)
     cleaned = cleaned or (text or "").strip()
+    cleaned = strip_stack_leak(cleaned)
     return polish_spanish_for_user(cleaned)
 
 

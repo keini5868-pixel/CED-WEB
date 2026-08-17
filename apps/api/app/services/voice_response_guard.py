@@ -53,6 +53,40 @@ def contains_tool_leak(text: str) -> bool:
     )
 
 
+_INFRA_ALWAYS = re.compile(
+    r"(?i)\b(?:railway|supabase|retell|cartesia|nano\s*banana|livekit|"
+    r"ideogram|tavily|elevenlabs|ollama|anthropic)\b"
+)
+_VENDOR_CLAIM = re.compile(
+    r"(?is)\b(?:uso|usamos|estoy\s+(?:hecho|basad[oa]|construid[oa]|entrenad[oa])|"
+    r"me\s+(?:potencia|impulsa|corre)|mi\s+(?:modelo|motor|proveedor|"
+    r"infraestructura|backend|servidor)|powered\s+by|corro\s+en|"
+    r"hosteado|alojado\s+en|la\s+api\s+de|el\s+modelo\s+(?:es|que\s+uso))"
+    r".{0,56}"
+    r"(?:gemini|claude|openai|gpt-?\s*4|llama|google\s+ai|vertex)"
+)
+
+
+def contains_stack_leak(text: str) -> bool:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return False
+    return bool(_INFRA_ALWAYS.search(cleaned) or _VENDOR_CLAIM.search(cleaned))
+
+
+def strip_stack_leak(text: str) -> str:
+    """Quita frases que revelan proveedores/infra; si no queda nada, negativa fija."""
+    from app.domain.ced_identity import CED_STACK_REFUSAL
+
+    raw = (text or "").strip()
+    if not raw or not contains_stack_leak(raw):
+        return raw
+    parts = re.split(r"(?<=[.!?…])\s+", raw)
+    kept = [p for p in parts if p.strip() and not contains_stack_leak(p)]
+    out = " ".join(kept).strip()
+    return out or CED_STACK_REFUSAL
+
+
 def guard_voice_response(text: str) -> tuple[str, bool]:
     """Devuelve (texto_seguro, fue_bloqueado)."""
     cleaned = normalize_numbers_for_speech(" ".join((text or "").split()).strip())
@@ -63,6 +97,9 @@ def guard_voice_response(text: str) -> tuple[str, bool]:
     if contains_internal_kb_leak(cleaned):
         stripped = strip_internal_kb_from_reply(cleaned)
         if stripped and not contains_internal_kb_leak(stripped):
-            return stripped, False
-        return "", True
+            cleaned = stripped
+        else:
+            return "", True
+    if contains_stack_leak(cleaned):
+        cleaned = strip_stack_leak(cleaned)
     return cleaned, False

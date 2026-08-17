@@ -131,7 +131,7 @@ export async function sendAdvancedChatMessageStream(
     clearTimeout(hardTimeout);
     const data = await parseApiJson<{ detail?: unknown }>(res);
     throw new Error(
-      formatApiDetail(data.detail, "No se pudo obtener respuesta de Claude."),
+      formatApiDetail(data.detail, "No se pudo obtener respuesta del modo avanzado."),
     );
   }
 
@@ -273,7 +273,7 @@ export async function sendAdvancedChatMessage(
   const data = await parseApiJson<AdvancedChatResult & { detail?: unknown }>(res);
   if (!res.ok) {
     throw new Error(
-      formatApiDetail(data.detail, "No se pudo obtener respuesta de Claude."),
+      formatApiDetail(data.detail, "No se pudo obtener respuesta del modo avanzado."),
     );
   }
   return {

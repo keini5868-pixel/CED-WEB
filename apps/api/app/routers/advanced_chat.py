@@ -12,8 +12,6 @@ from pydantic import BaseModel, Field, field_validator
 from app.deps.auth import require_user_id
 from app.domain.chat_limits import CHAT_MESSAGE_MAX_CHARS, CHAT_MESSAGE_TOO_LONG_ES
 from app.services.advanced_mode import (
-    ADVANCED_DEEP_MODEL_LABEL,
-    ADVANCED_STREAM_MODEL_LABEL,
     advanced_is_configured,
     iter_advanced_message_stream,
     send_advanced_message,
@@ -234,6 +232,6 @@ def advanced_chat_status(_user_id: str = Depends(require_user_id)) -> dict:
         "configured": configured,
         "anthropic_configured": anthropic,
         "google_configured": False,
-        "model": ADVANCED_DEEP_MODEL_LABEL if anthropic else None,
-        "stream_model": ADVANCED_STREAM_MODEL_LABEL if anthropic else None,
+        "model": "CED Avanzado" if anthropic else None,
+        "stream_model": "CED Avanzado" if anthropic else None,
     }

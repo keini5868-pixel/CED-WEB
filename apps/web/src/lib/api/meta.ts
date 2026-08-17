@@ -35,7 +35,7 @@ export async function fetchMetaOAuthUrl(): Promise<MetaOAuthResult> {
           url: null,
           error:
             data.detail ||
-            "Sesión inválida en la API. Revisa SUPABASE_* en Railway (servicio CED-WEB).",
+            "Sesión inválida. Cierra sesión y vuelve a entrar.",
         };
       }
       if (res.status === 503 && data.detail?.includes("META")) {

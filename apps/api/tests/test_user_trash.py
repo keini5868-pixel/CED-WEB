@@ -14,6 +14,7 @@ from app.services import voice_client_session as vcs
 
 def test_detect_finance_and_historial_scopes():
     assert detect_mass_delete_group("borra todo de finanzas") == "finance"
+    assert detect_mass_delete_group("borrar todo en Finanzas") == "finance"
     assert detect_mass_delete_group("borra todo el historial de finanzas") == "finance"
     assert detect_mass_delete_group("borra todo el historial") == "historial"
     assert detect_mass_delete_group("borra todas las conversaciones") == "conversation"

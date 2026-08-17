@@ -10,16 +10,10 @@ import {
 } from "react";
 
 import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
-import { mergeTranscriptChunk } from "@/lib/voice/transcriptAccumulator";
-
-function sameVoiceBlockPrefix(a: string, b: string): boolean {
-  const na = a.trim().toLowerCase();
-  const nb = b.trim().toLowerCase();
-  if (!na || !nb) return false;
-  if (na === nb) return true;
-  const n = Math.min(na.length, nb.length, 55);
-  return n >= 28 && na.slice(0, n) === nb.slice(0, n);
-}
+import {
+  mergeTranscriptChunk,
+  resolveAgentTranscriptMerge,
+} from "@/lib/voice/transcriptAccumulator";
 
 export type HudFeedKind = "voice" | "news" | "stat" | "report" | "image";
 
@@ -137,6 +131,34 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
           if (idx >= 0) {
             const existing = prev[idx];
             if (!existing) return prev;
+            if (role === "model") {
+              const decision = resolveAgentTranscriptMerge(existing.text, trimmed, {
+                sameStream: partial || Boolean(existing.partial),
+                incomingPartial: partial,
+                previousPartial: Boolean(existing.partial),
+              });
+              if (decision.action === "new") {
+                const nextItem: HudFeedItem = {
+                  id: `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                  kind,
+                  text: decision.text,
+                  at: Date.now(),
+                  role,
+                  partial,
+                  streamKey,
+                };
+                return [nextItem, ...prev].slice(0, MAX_ITEMS);
+              }
+              const merged: HudFeedItem = {
+                ...existing,
+                text: decision.text,
+                at: Date.now(),
+                partial,
+                kind,
+                role,
+              };
+              return [merged, ...prev.filter((_, i) => i !== idx)].slice(0, MAX_ITEMS);
+            }
             const merged: HudFeedItem = {
               ...existing,
               text: mergeTranscriptChunk(existing.text, trimmed),
@@ -178,38 +200,35 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
         if (role === "model" && prev.length > 0) {
           const head = prev[0];
           if (head?.role === "model" && head.kind === "report") {
-            const sameTurn =
-              partial ||
-              head.partial ||
-              Date.now() - head.at < 45_000;
-            if (
-              sameTurn &&
-              (streamKey ? head.streamKey === streamKey : true)
-            ) {
+            const sameStream = Boolean(streamKey && head.streamKey === streamKey);
+            const decision = resolveAgentTranscriptMerge(head.text, trimmed, {
+              sameStream,
+              incomingPartial: partial,
+              previousPartial: Boolean(head.partial),
+            });
+            if (decision.action === "merge" || decision.action === "replace") {
               const merged: HudFeedItem = {
                 ...head,
-                text: mergeTranscriptChunk(head.text, trimmed),
+                text: decision.text,
                 at: Date.now(),
                 partial,
-                role: "model",
+                kind,
+                role,
                 streamKey: streamKey ?? head.streamKey,
               };
-              return [merged, ...prev.slice(1)];
+              return [merged, ...prev.slice(1)].slice(0, MAX_ITEMS);
             }
-            if (
-              !partial &&
-              !head.partial &&
-              sameVoiceBlockPrefix(head.text, trimmed)
-            ) {
-              const merged: HudFeedItem = {
-                ...head,
-                text: trimmed.length >= head.text.length ? trimmed : head.text,
+            if (decision.text !== trimmed) {
+              const nextItem: HudFeedItem = {
+                id: `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                kind,
+                text: decision.text,
                 at: Date.now(),
-                partial: false,
-                role: "model",
-                streamKey: head.streamKey ?? streamKey,
+                role,
+                partial,
+                streamKey,
               };
-              return [merged, ...prev.slice(1)];
+              return [nextItem, ...prev].slice(0, MAX_ITEMS);
             }
           }
         }

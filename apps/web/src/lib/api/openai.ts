@@ -91,7 +91,7 @@ export async function fetchRealtimeSession(
   } catch {
     return {
       ok: false,
-      error: "No se pudo contactar la API. ¿Está activa en Railway?",
+      error: "No se pudo contactar el servicio. Intente de nuevo.",
     };
   }
 

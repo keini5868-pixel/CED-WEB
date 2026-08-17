@@ -159,7 +159,6 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
   const [streaming, setStreaming] = useState(false);
   const [statusHint, setStatusHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [modelLabel, setModelLabel] = useState("Claude Haiku");
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [attachedImage, setAttachedImage] = useState<{
     file: File;
@@ -201,13 +200,6 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       // está configurado. Así avanzado responde igual que el chat normal.
       if (!status) return;
       setConfigured(status.configured);
-      if (status.model) {
-        setModelLabel(
-          (status.stream_model ?? status.model)
-            .replace("claude-", "Claude ")
-            .replace(/-/g, " "),
-        );
-      }
     });
     return () => {
       cancelled = true;
@@ -309,7 +301,6 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
       } | null;
     }) => {
       const idx = assistantIndex;
-      setModelLabel(result.model.replace("claude-", "Claude ").replace(/-/g, " "));
       setStatusHint(null);
       applyCedOpenModule(result.open_module);
       const reply = stripPdfLinks(result.response);
@@ -464,7 +455,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
                 ⚡ MODO AVANZADO
               </p>
               <p className="truncate text-[10px] text-violet-400/80">
-                Powered by {modelLabel}
+                Análisis profundo CED
               </p>
             </div>
           </div>
@@ -480,7 +471,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
         {configured === false ? (
           <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-200">
-            Modo avanzado requiere ANTHROPIC_API_KEY en el servicio API de Railway.
+            Modo avanzado no disponible en este momento. Intente de nuevo más tarde.
           </p>
         ) : null}
 

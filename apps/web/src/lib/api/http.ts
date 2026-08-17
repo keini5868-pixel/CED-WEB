@@ -4,7 +4,7 @@ export async function parseApiJson<T>(res: Response): Promise<T> {
   const trimmed = text.trim();
   if (trimmed.startsWith("<!DOCTYPE") || trimmed.startsWith("<html")) {
     throw new Error(
-      "La API no responde JSON. Revisa NEXT_PUBLIC_API_URL en Railway (debe ser la URL del servicio @ced/api, no la del web) y redeploy.",
+      "La API no responde. Intente de nuevo en un momento.",
     );
   }
   try {

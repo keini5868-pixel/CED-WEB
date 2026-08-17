@@ -29,8 +29,8 @@ _ENUM_OR_LIST_HINT = re.compile(
 
 # Lista numerada — solo capacidades reales del producto.
 CED_CAPABILITY_CATALOG_BODY = """1. Chat de texto conversacional — consejo, estrategia, creativos y acompañamiento
-2. Modo avanzado (Claude) — análisis profundo de negocio, marketing e investigación
-3. Asistente de voz (piloto nativo Retell / Jarvis) — manos libres con las herramientas clave
+2. Modo avanzado — análisis profundo de negocio, marketing e investigación
+3. Asistente de voz Jarvis — manos libres con las herramientas clave
 4. Publicación en Facebook e Instagram (Meta, con confirmación previa del texto)
 5. Prospección — detección de leads en comentarios de redes
 6. Lectura de comentarios en Facebook/Instagram
@@ -62,7 +62,7 @@ Notas honestas:
 CED_CAPABILITY_ORAL_SUMMARY = """
 Si preguntan qué puedes hacer / habilidades / herramientas del sistema:
 enumera en español capacidades REALES (máx. 4-5 puntos por turno; ofrece ampliar). Menciona a Keini Castillo.
-Incluye, en turnos sucesivos si hace falta: chat y consejo; modo avanzado Claude; voz Jarvis;
+Incluye, en turnos sucesivos si hace falta: chat y consejo; modo avanzado; voz Jarvis;
 Meta (publicar FB/IG con confirmación, comentarios, prospección); imágenes + variaciones + PDF;
 video (Veo 3 + edición de videos del usuario — piloto VIDEO en desarrollo con Keini);
 búsqueda web; finanzas; cámara/visión; mapa/navegación; YouTube; clima/ambiente; memoria;

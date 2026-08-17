@@ -34,7 +34,7 @@ export function classifyGeminiClose(
       reason,
       recoverable: false,
       userMessage:
-        "Créditos de Gemini agotados. Recarga en AI Studio (ai.studio/projects) y vuelve a activar el micrófono.",
+        "La sesión de voz se detuvo por cupo. Recargue o intente más tarde.",
     };
   }
 
@@ -48,7 +48,7 @@ export function classifyGeminiClose(
       reason,
       recoverable: false,
       userMessage:
-        "Límite de uso de Gemini alcanzado. Revisa tu plan o créditos en AI Studio.",
+        "Límite de uso de voz alcanzado. Revise su plan o intente más tarde.",
     };
   }
 
@@ -62,7 +62,7 @@ export function classifyGeminiClose(
       reason,
       recoverable: true,
       userMessage:
-        "Conflicto de VAD en Gemini. Desactiva y vuelve a activar el micrófono.",
+        "Conflicto de audio. Desactive y vuelva a activar el micrófono.",
     };
   }
 
@@ -86,7 +86,7 @@ export function classifyGeminiClose(
       code,
       reason,
       recoverable: false,
-      userMessage: "Gemini rechazó la sesión por política de uso.",
+      userMessage: "La sesión de voz no pudo continuar. Intente de nuevo.",
     };
   }
 

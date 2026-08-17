@@ -1287,7 +1287,7 @@ export function useCedVoiceSession(
           : await registerRetellCall();
         if (isStale()) return;
         if (!registration.ok) {
-          const err = registration.error || "No pude iniciar voz Retell.";
+          const err = registration.error || "No pude iniciar la voz.";
           setErrorMessage(err);
           setOrbState("error");
           await stopSession();

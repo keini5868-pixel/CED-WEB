@@ -29,7 +29,7 @@ export async function fetchUsageBalanceDetailed(): Promise<UsageBalanceResult> {
         typeof raw.detail === "string"
           ? raw.detail
           : res.status === 502
-            ? "No se pudo contactar la API. Revisa NEXT_PUBLIC_API_URL en Railway (servicio web) y redeploy."
+            ? "No se pudo contactar el servicio. Intente de nuevo."
             : `Error ${res.status} al consultar cupo de voz`;
       return { ok: false, error: detail };
     }
@@ -49,7 +49,7 @@ export async function fetchUsageBalanceDetailed(): Promise<UsageBalanceResult> {
     return {
       ok: false,
       error:
-        "Sin conexión con la API. Verifica NEXT_PUBLIC_API_URL=https://ced-web-production.up.railway.app y redeploy del web.",
+        "Sin conexión con el servicio. Intente de nuevo en un momento.",
     };
   }
 }

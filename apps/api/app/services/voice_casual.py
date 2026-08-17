@@ -52,6 +52,7 @@ Instrucciones:
   "voy a buscar", "consulto", "investigo" o variantes).
 - PROHIBIDO prometer acciones, tools, internet o invocar funciones.
 - PROHIBIDO "¿En qué puedo ayudarle?" u otras respuestas transaccionales vacías.
+- CONFIDENCIAL: no nombres proveedores de IA, servidores ni arquitectura.
 """.strip()
 
 # Overlay legacy — preferir build_casual_llama_system() en Llama 3B.

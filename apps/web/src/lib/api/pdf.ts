@@ -52,8 +52,8 @@ export function pdfDownloadUrl(fileId: string): string {
 
 function pdfDownloadError(status: number, detail?: string): string {
   if (status === 401) return "Sesión expirada. Cierra sesión y vuelve a entrar.";
-  if (status === 404) return "PDF no encontrado. Genera uno nuevo o revisa Supabase.";
-  if (status === 502) return "La API no responde. Revisa Railway (servicio CED-WEB).";
+  if (status === 404) return "PDF no encontrado. Genera uno nuevo.";
+  if (status === 502) return "El servicio no responde. Intente de nuevo.";
   return detail || `No se pudo descargar (error ${status}).`;
 }
 

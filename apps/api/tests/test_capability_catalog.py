@@ -51,6 +51,8 @@ def test_catalog_reply_is_factual():
     assert "Veo 3" in CED_CAPABILITY_CATALOG_REPLY or "veo 3" in CED_CAPABILITY_CATALOG_REPLY.lower()
     assert "VIDEO" in CED_CAPABILITY_CATALOG_REPLY or "Video" in CED_CAPABILITY_CATALOG_REPLY
     assert "Ads Manager" not in CED_CAPABILITY_CATALOG_REPLY or "no es Ads Manager" in CED_CAPABILITY_CATALOG_REPLY
+    for leak in ("Claude", "Retell", "Gemini", "Cartesia", "Railway", "Supabase"):
+        assert leak not in CED_CAPABILITY_CATALOG_REPLY
 
 
 def test_voice_capabilities_cover_product_gaps():

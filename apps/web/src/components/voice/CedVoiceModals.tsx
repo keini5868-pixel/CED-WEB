@@ -141,9 +141,7 @@ export function CedSettingsModal({
           >
             <div className="font-semibold tracking-wide">Modo Jarvis</div>
             <div className="mt-0.5 text-[10px] opacity-80">
-              {retellMode
-                ? "Retell · tono formal · pausado · ejecutivo"
-                : "Echo · formal · pausado · ejecutivo"}
+              Tono formal · pausado · ejecutivo
             </div>
           </button>
           <button
@@ -164,20 +162,15 @@ export function CedSettingsModal({
 
         {retellMode ? (
           <div className="rounded border border-amber-500/30 bg-amber-950/20 px-3 py-3 text-xs text-amber-100/90">
-            <div className="font-semibold tracking-wide text-amber-200">Voz Retell (Jarvis)</div>
+            <div className="font-semibold tracking-wide text-amber-200">Voz Jarvis</div>
             <p className="mt-1 text-[11px] leading-relaxed opacity-90">
-              CED usa su clon Jarvis en Retell + Cartesia. Tono grave y pausado configurado en
-              servidor. Para cambiar la voz, actualice el agente en Retell dashboard y ejecute
-              bootstrap.
-            </p>
-            <p className="mt-2 text-[10px] text-zinc-400">
-              El reconocimiento de voz usa modo preciso (español). Hable claro, cerca del micrófono.
+              Tono grave y pausado configurado en servidor. Hable claro, cerca del micrófono.
             </p>
           </div>
         ) : (
         <div>
           <span className="ced-hud-text-muted text-xs">
-            Voz OpenAI Realtime (requiere reiniciar sesión)
+            Voz conversacional (requiere reiniciar sesión)
           </span>
           <p className="ced-hud-text-muted mt-1 text-[10px]">
             Activa: <strong className="text-cyan-400">{prefs.voiceName}</strong>
