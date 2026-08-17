@@ -478,6 +478,60 @@ def get_session_memory_context(user_id: str) -> str:
 
 
 _WELCOME_SUMMARY_MAX = 140
+_CED_BRAND_RE = re.compile(r"\b[cC][eE][dD]\b")
+_SELF_INTRO_RE = re.compile(
+    r"(en l[ií]nea|listo para (conversar|asistir|ayudar|ayudarle)|"
+    r"bienvenido de nuevo|hola[,.]?\s*(soy|me llamo)?\s*ced|"
+    r"estoy listo|a sus [oó]rdenes|proyectos del castillo|siempre dispuesto)",
+    re.I,
+)
+_WEAK_TOPIC_RE = re.compile(
+    r"^(ced|saludo|chat|conversaci[oó]n|asistente|hola|bienvenida)$",
+    re.I,
+)
+
+
+def normalize_ced_brand(text: str) -> str:
+    """La marca es CED — nunca cED / Ced / ced en texto visible."""
+    return _CED_BRAND_RE.sub("CED", text or "")
+
+
+def _is_self_intro_summary(text: str) -> bool:
+    """Resúmenes que solo reciclan el saludo de CED, no un tema real."""
+    raw = (text or "").strip()
+    if not raw:
+        return True
+    return bool(_SELF_INTRO_RE.search(raw))
+
+
+def _substantial_topics(topics: list[str] | None) -> list[str]:
+    return [
+        str(t).strip()
+        for t in (topics or [])
+        if str(t).strip() and not _WEAK_TOPIC_RE.match(str(t).strip())
+    ]
+
+
+def _with_hablamos_de(text: str) -> str:
+    """Prefija 'hablamos de' sin romper acrónimos (CED, PDF)."""
+    t = (text or "").strip()
+    if not t:
+        return t
+    if re.match(
+        r"^(hablamos|trabajamos|coment|mencion|después|su |el plan|la estrategia|también)",
+        t,
+        re.I,
+    ):
+        return t
+    first_word = t.split()[0]
+    keep_case = (
+        first_word.isupper()
+        or first_word.upper() == "CED"
+        or (len(first_word) >= 2 and first_word[0].isupper() and first_word[1].isupper())
+    )
+    if keep_case:
+        return f"hablamos de {t}"
+    return f"hablamos de {t[0].lower()}{t[1:]}"
 
 
 def _friendly_topic_phrase(topics: list[str], summary: str = "") -> str:
@@ -495,8 +549,15 @@ def humanize_session_summary_for_user(summary: str, topics: list[str] | None = N
     """Convierte resumen interno (a veces en tercera persona) a lenguaje natural para el usuario."""
     topics = topics or []
     raw = sanitize_public_summary(summary)
+    substantial = _substantial_topics(topics)
     verbose_third_person = bool(raw and re.search(r"\bel usuario\b", raw, re.I) and len(raw) > 100)
-    friendly = _friendly_topic_phrase(topics, raw)
+    friendly = _friendly_topic_phrase(substantial or topics, raw)
+
+    if _is_self_intro_summary(raw):
+        if friendly and substantial:
+            return normalize_ced_brand(f"hablamos de {friendly}")
+        return ""
+
     if friendly and (not raw or verbose_third_person):
         phrase = friendly
         blob = raw.lower()
@@ -504,11 +565,11 @@ def humanize_session_summary_for_user(summary: str, topics: list[str] | None = N
             phrase += ", que le entregamos en PDF"
         if re.search(r"dolor de cabeza|mal de cabeza|cambiando el tema", blob):
             phrase += ", y después comentó que tenía dolor de cabeza"
-        return f"hablamos de {phrase}"
+        return normalize_ced_brand(f"hablamos de {phrase}")
 
     if not raw:
         if friendly:
-            return f"hablamos de {friendly}"
+            return normalize_ced_brand(f"hablamos de {friendly}")
         return ""
 
     t = raw
@@ -524,13 +585,11 @@ def humanize_session_summary_for_user(summary: str, topics: list[str] | None = N
     t = re.sub(r", el cual fue generado y entregado\.?", ", que le entregamos en PDF", t, flags=re.I)
     t = re.sub(r"\bel usuario\b", "usted", t, flags=re.I)
     t = re.sub(r"\s+", " ", t).strip()
-
-    if not re.match(r"^(hablamos|trabajamos|coment|mencion|después|su |el plan|la estrategia|también)", t, re.I):
-        t = f"hablamos de {t[0].lower()}{t[1:]}" if t else t
+    t = _with_hablamos_de(t)
 
     if len(t) > 240:
         t = t[:237].rsplit(" ", 1)[0] + "…"
-    return t.rstrip(".")
+    return normalize_ced_brand(t.rstrip("."))
 
 
 def _extract_recall_query(text: str) -> str:
@@ -637,16 +696,19 @@ def build_memory_greeting(user_id: str) -> str | None:
 
     when = calculate_days_ago(memory.get("created_at"))
     topics = memory.get("topics") or []
-    snippet = humanize_session_summary_for_user(str(memory.get("summary") or ""), topics)
+    summary = str(memory.get("summary") or "")
+    snippet = humanize_session_summary_for_user(summary, topics)
     if not snippet:
-        topic_label = str(topics[0]).strip() if topics else "nuestro último tema"
-        snippet = f"hablamos de {topic_label}"
+        substantial = _substantial_topics(topics)
+        if not substantial:
+            return None
+        snippet = f"hablamos de {substantial[0]}"
 
     if len(snippet) > _WELCOME_SUMMARY_MAX:
         snippet = snippet[: _WELCOME_SUMMARY_MAX - 1].rsplit(" ", 1)[0] + "…"
 
     body = f"La última vez, {when}, {snippet.rstrip('.')}."
-    return (
+    return normalize_ced_brand(
         f"Bienvenido de nuevo. {body} "
         "¿En qué te ayudo hoy? Puedo seguir con eso o lo que necesites."
     )

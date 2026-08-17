@@ -7,6 +7,7 @@ from app.services.session_memory import (
     fallback_summary_from_history,
     format_history,
     get_session_memory_context,
+    humanize_session_summary_for_user,
     looks_like_raw_transcript,
     sanitize_public_summary,
     save_session_memory,
@@ -76,6 +77,34 @@ def test_build_memory_greeting_with_memory(monkeypatch):
     assert "Bienvenido de nuevo" in greeting
     assert "lanzamiento" in greeting.lower()
     assert "user:" not in greeting.lower()
+    assert "cED" not in greeting
+
+
+def test_build_memory_greeting_skips_self_intro_summary(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.session_memory.get_last_session_memory",
+        lambda *_a, **_k: {
+            "summary": (
+                "CED está en línea y listo para conversar, "
+                "siempre dispuesto a avanzar con los proyectos del Castillo."
+            ),
+            "topics": ["CED"],
+            "tasks_executed": [],
+            "created_at": "2026-08-17T22:00:00+00:00",
+        },
+    )
+    greeting = build_memory_greeting("user-1")
+    assert greeting is None
+    assert "Hola, soy CED" in build_text_chat_welcome("user-1")
+
+
+def test_humanize_does_not_lowercase_ced_brand():
+    text = humanize_session_summary_for_user(
+        "CED y el plan de contenido para Instagram.",
+        ["Instagram"],
+    )
+    assert "cED" not in text
+    assert "CED" in text
 
 
 def test_build_memory_greeting_sanitizes_bad_summary(monkeypatch):
