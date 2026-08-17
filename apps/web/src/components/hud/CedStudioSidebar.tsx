@@ -14,13 +14,14 @@ import { MODULE_DISPLAY } from "@/lib/modules/displayNames";
 type SidebarLink = {
   id: string;
   label: string;
+  shortLabel?: string;
   href?: string;
   onClick?: () => void;
   hidden?: boolean;
 };
 
 const linkClass =
-  "ced-mark-text rounded-lg px-2 py-2 text-left text-[14px] uppercase transition hover:bg-[var(--ced-cyan)]/10";
+  "ced-mark-text rounded-lg px-1 py-1.5 text-center text-[8px] uppercase leading-tight transition hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-2 lg:text-left lg:text-[14px] lg:leading-normal";
 
 export function CedStudioSidebar({
   listen,
@@ -35,39 +36,51 @@ export function CedStudioSidebar({
     {
       id: "viability",
       label: MODULE_DISPLAY.viability,
+      shortLabel: "Producto",
       hidden: !isViabilityModuleEnabled(),
       onClick: () => dispatchCedOpenModule("viability"),
     },
     {
       id: "trends",
       label: MODULE_DISPLAY.trends,
+      shortLabel: "Tendencia",
       hidden: !isTrendsModuleEnabled(),
       onClick: () => dispatchCedOpenModule("trends"),
     },
     {
       id: "opportunities",
       label: MODULE_DISPLAY.opportunities,
+      shortLabel: "Oport.",
       hidden: !isOpportunitiesModuleEnabled(),
       onClick: () => dispatchCedOpenModule("opportunities"),
     },
-    { id: "team", label: MODULE_DISPLAY.team, href: TEAM_PATH },
+    { id: "team", label: MODULE_DISPLAY.team, shortLabel: "Estructura", href: TEAM_PATH },
     {
       id: "video-edit",
       label: "Edición de video",
+      shortLabel: "Video",
       hidden: !isVideoEditModulePilot(),
       onClick: () => dispatchCedOpenModule("video-edit"),
     },
   ];
 
   return (
-    <aside className="flex w-full shrink-0 flex-col overflow-hidden border-t border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-5 py-5 lg:h-full lg:w-[min(15.5rem,28%)] lg:border-l lg:border-t-0">
+    <aside className="flex h-full w-[6.5rem] shrink-0 flex-col overflow-hidden border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1.5 py-2 sm:w-[8rem] sm:px-2 lg:w-[min(15.5rem,28%)] lg:px-5 lg:py-5">
       <nav aria-label="Módulos CED" className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
         {links
           .filter((item) => !item.hidden)
-          .map((item) =>
-            item.href ? (
-              <Link key={item.id} href={item.href} className={linkClass}>
-                {item.label}
+          .map((item) => {
+            const full = item.label;
+            const short = item.shortLabel || item.label;
+            const node = (
+              <>
+                <span className="lg:hidden">{short}</span>
+                <span className="hidden lg:inline">{full}</span>
+              </>
+            );
+            return item.href ? (
+              <Link key={item.id} href={item.href} className={linkClass} title={full}>
+                {node}
               </Link>
             ) : (
               <button
@@ -75,16 +88,17 @@ export function CedStudioSidebar({
                 type="button"
                 onClick={item.onClick}
                 className={linkClass}
+                title={full}
               >
-                {item.label}
+                {node}
               </button>
-            ),
-          )}
+            );
+          })}
       </nav>
 
-      {extras ? <div className="mt-3 flex flex-col gap-1">{extras}</div> : null}
+      {extras ? <div className="mt-2 hidden flex-col gap-1 lg:mt-3 lg:flex">{extras}</div> : null}
 
-      <div className="mt-auto flex shrink-0 flex-col items-center gap-3 pt-6">
+      <div className="mt-auto flex min-h-0 shrink-0 flex-col items-center gap-2 overflow-y-auto pt-2 lg:gap-3 lg:pt-6">
         {listen}
         {usage ? <div className="w-full pt-1">{usage}</div> : null}
       </div>

@@ -1011,7 +1011,7 @@ export function CedTextChatPanel({
 
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className={`relative z-10 shrink-0 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 ${embedded ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)]" : "border-t border-cyan-500/20 bg-[#060a0f]"}`}>
+        <footer className={`relative z-10 shrink-0 px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] lg:pb-3" : "border-t border-cyan-500/20 bg-[#060a0f] pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
           {attachedPdf ? (
             <PdfAttachmentBar
               filename={attachedPdf.name}

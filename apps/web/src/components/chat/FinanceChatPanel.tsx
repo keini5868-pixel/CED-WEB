@@ -395,7 +395,7 @@ export function FinanceChatPanel({
         ) : null}
 
         {tab === "chat" ? (
-        <footer className="relative z-10 shrink-0 border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+        <footer className={`relative z-10 shrink-0 border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "lg:pb-3" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
           <div className="flex gap-2">
             <textarea
               ref={textareaRef}

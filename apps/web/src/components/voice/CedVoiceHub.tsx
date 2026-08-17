@@ -302,9 +302,9 @@ export function CedVoiceHub() {
   }
 
   const listenDock = (
-    <div className="flex flex-col items-center gap-3">
+    <div className="flex flex-col items-center gap-2 lg:gap-3">
       {cameraLive || imageLive ? (
-        <div className="relative h-36 w-full max-w-[220px] overflow-hidden rounded-xl">
+        <div className="relative h-20 w-full max-w-[88px] overflow-hidden rounded-xl lg:h-36 lg:max-w-[220px]">
           <CedCameraPreview
             overlay
             stream={voice.cameraStream}
@@ -326,13 +326,15 @@ export function CedVoiceHub() {
         paused={voice.paused}
         onActivate={handleMic}
       />
-      <CedVoiceHeardBadge
-        indicator={voice.heardIndicator}
-        micOn={voice.micOn}
-        paused={voice.paused}
-      />
+      <div className="hidden w-full lg:block">
+        <CedVoiceHeardBadge
+          indicator={voice.heardIndicator}
+          micOn={voice.micOn}
+          paused={voice.paused}
+        />
+      </div>
       {voice.errorMessage ? (
-        <p className="max-w-[14rem] text-center text-[11px] text-[var(--ced-text-muted)]">
+        <p className="max-w-[6rem] text-center text-[9px] leading-tight text-[var(--ced-text-muted)] lg:max-w-[14rem] lg:text-[11px]">
           {voice.errorMessage}
         </p>
       ) : null}
@@ -350,9 +352,9 @@ export function CedVoiceHub() {
   );
 
   return (
-    <div className="ced-studio flex min-h-0 w-full flex-1 flex-col overflow-hidden pb-16 lg:flex-row lg:pb-0">
+    <div className="ced-studio flex min-h-0 w-full flex-1 flex-row overflow-hidden pb-[4.35rem] lg:pb-0">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
-        <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-4 py-2 text-sm">
+        <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
           <span
             className={`h-2 w-2 rounded-full ${voice.micOn && !voice.paused ? "animate-pulse bg-sky-400" : "bg-sky-500"}`}
             aria-hidden
@@ -438,8 +440,8 @@ export function CedVoiceHub() {
       <CedStudioSidebar
         listen={listenDock}
         usage={
-          <div className="ced-studio-usage rounded-xl border border-[var(--studio-border)] bg-[var(--studio-card)] p-3">
-            <p className="ced-mark-text mb-2 text-[10px] uppercase">
+          <div className="ced-studio-usage rounded-xl border border-[var(--studio-border)] bg-[var(--studio-card)] p-1.5 lg:p-3">
+            <p className="ced-mark-text mb-1 hidden text-[10px] uppercase lg:mb-2 lg:block">
               uso de datos
             </p>
             <HudUsageBar compact />

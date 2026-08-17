@@ -33,7 +33,7 @@ export function CedListenButton({
       whileTap={{ scale: busy ? 1 : 0.97 }}
       aria-label={busy ? "Conectando asistente de voz" : active ? "Detener voz" : "Escuchar"}
       className={[
-        "flex w-[5.25rem] flex-col items-center gap-1 rounded-xl border px-2 py-2 transition",
+        "flex w-[4.75rem] flex-col items-center gap-1 rounded-xl border px-1.5 py-1.5 transition lg:w-[5.25rem] lg:px-2 lg:py-2",
         busy
           ? "cursor-wait border-[var(--ced-cyan)]/40 bg-[var(--ced-cyan)]/10 text-[var(--ced-cyan)]"
           : active

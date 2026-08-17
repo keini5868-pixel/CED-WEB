@@ -42,7 +42,7 @@ function ControlBtn({
       title={label}
       aria-label={label}
       className={[
-        "flex h-10 w-10 flex-col items-center justify-center rounded border text-[8px] font-bold tracking-wider transition sm:h-11 sm:w-11",
+        "flex h-8 w-8 flex-col items-center justify-center rounded border text-[8px] font-bold tracking-wider transition sm:h-11 sm:w-11",
         active
           ? activeClass
           : "border-cyan-900/80 bg-black/80 text-[#888888] hover:border-cyan-700 hover:text-cyan-400",
@@ -58,7 +58,7 @@ export function CedVoiceControls(props: CedVoiceControlsProps) {
   if (!props.micOn) return null;
 
   return (
-    <div className="mt-3 flex items-center justify-center gap-2">
+    <div className="mt-2 flex flex-col items-center gap-1 lg:mt-3 lg:flex-row lg:justify-center lg:gap-2">
       <ControlBtn
         active={props.muted}
         tone={props.muted ? "danger" : "default"}

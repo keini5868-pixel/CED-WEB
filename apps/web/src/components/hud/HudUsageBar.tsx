@@ -63,22 +63,30 @@ export function HudUsageBar({ compact = false }: { compact?: boolean }) {
     <div>
       <div
         className={`ced-hud-text-primary flex flex-wrap items-center justify-between gap-1 font-medium ${
-          compact ? "text-[11px] leading-tight" : ""
+          compact ? "text-[9px] leading-tight lg:text-[11px]" : ""
         }`}
       >
         <span>
           Voz{balance.voicePoolTrial ? " (prueba)" : ""}:{" "}
           {loaded
-            ? `${balance.used.toFixed(1)} / ${balance.plan} min`
-            : "— / — min"}
+            ? `${balance.used.toFixed(1)} / ${balance.plan}`
+            : "— / —"}
+          {compact ? <span className="hidden lg:inline"> min</span> : " min"}
         </span>
         <span
           className={
-            critical || criticalWarn
-              ? "text-red-400"
-              : warn
-                ? "text-amber-400"
-                : "ced-hud-text-accent"
+            compact
+              ? "hidden lg:inline " +
+                (critical || criticalWarn
+                  ? "text-red-400"
+                  : warn
+                    ? "text-amber-400"
+                    : "ced-hud-text-accent")
+              : critical || criticalWarn
+                ? "text-red-400"
+                : warn
+                  ? "text-amber-400"
+                  : "ced-hud-text-accent"
           }
         >
           {statusLabel}
@@ -107,7 +115,7 @@ export function HudUsageBar({ compact = false }: { compact?: boolean }) {
       )}
 
       {critical && loaded ? (
-        <div className="mt-3 rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-100">
+        <div className={`mt-3 rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-100 ${compact ? "hidden lg:block" : ""}`}>
           <p className="font-semibold text-red-200">
             {voiceLimit === "daily_limit"
               ? "Has alcanzado tu límite diario de voz"
@@ -158,6 +166,8 @@ export function HudUsageBar({ compact = false }: { compact?: boolean }) {
       {!critical && (warn || criticalWarn) && loaded ? (
         <div
           className={`mt-3 rounded border p-3 text-xs ${
+            compact ? "hidden lg:block " : ""
+          }${
             criticalWarn
               ? "border-red-500/40 bg-red-500/10 text-red-100"
               : "border-amber-500/40 bg-amber-500/10 text-amber-100"

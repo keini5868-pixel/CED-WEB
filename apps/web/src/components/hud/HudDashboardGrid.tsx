@@ -33,7 +33,7 @@ export function HudDashboardGrid() {
       <HudPanelProvider>
         <UsageBalanceProvider>
         <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
-          <div className="shrink-0 px-3 pt-3 lg:px-4">
+          <div className="shrink-0 px-2 pt-1 lg:px-4 lg:pt-3">
             <Suspense fallback={null}>
               <BillingFeedback />
               <MetaOAuthCallbackBanner />
