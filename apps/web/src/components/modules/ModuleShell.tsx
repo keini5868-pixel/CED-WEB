@@ -118,7 +118,7 @@ export function ModuleShell() {
     <>
       {railModules.length > 0 ? (
         <aside
-          className="pointer-events-auto fixed left-2 top-1/2 z-[70] flex -translate-y-1/2 flex-col gap-2 rounded-2xl border border-cyan-500/25 bg-[#060b14]/95 p-2 shadow-xl backdrop-blur-md sm:left-3"
+          className="pointer-events-auto fixed left-2 top-1/2 z-[70] hidden max-h-[70dvh] -translate-y-1/2 flex-col gap-2 overflow-y-auto rounded-2xl border border-cyan-500/25 bg-[#060b14]/95 p-2 shadow-xl backdrop-blur-md lg:flex sm:left-3"
           aria-label="Módulos piloto CED"
         >
         {hasPilotModules ? (
@@ -161,7 +161,7 @@ export function ModuleShell() {
             role="dialog"
             aria-modal="true"
             aria-label={active.name}
-            className="fixed inset-0 z-[200] flex flex-col bg-[#0a1220]"
+            className="fixed inset-0 z-[200] flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden bg-[#0a1220]"
             initial={{ opacity: 0.92, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
@@ -204,7 +204,7 @@ export function ModuleShell() {
               </button>
             </header>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)]">
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden overflow-x-hidden pb-[env(safe-area-inset-bottom,0px)]">
               {loadError ? (
                 <p className="p-5 text-sm text-red-400">{loadError}</p>
               ) : Panel ? (

@@ -188,7 +188,7 @@ export function TrendsModuleContent(_props: ModulePanelProps) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5 sm:px-8 sm:py-6">
+      <div className="flex-1 space-y-5 overflow-x-hidden overflow-y-auto px-4 py-4 sm:px-8 sm:py-6">
         <p className="text-sm leading-relaxed text-slate-400">{TRENDS_WELCOME}</p>
         {configured === false ? (
           <p className="text-sm text-red-300">

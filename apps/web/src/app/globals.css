@@ -323,6 +323,8 @@ body {
 /* Studio — el chat sigue el tema (petróleo / claro) */
 .ced-studio-shell {
   background: var(--studio-shell-bg);
+  width: 100%;
+  max-width: 100vw;
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;

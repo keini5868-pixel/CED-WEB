@@ -65,8 +65,8 @@ export function CedStudioSidebar({
   ];
 
   return (
-    <aside className="flex h-full w-[6.5rem] shrink-0 flex-col overflow-hidden border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1.5 py-2 sm:w-[8rem] sm:px-2 lg:w-[min(15.5rem,28%)] lg:px-5 lg:py-5">
-      <nav aria-label="Módulos CED" className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
+    <aside className="flex h-full w-[6.5rem] max-w-[32vw] shrink-0 flex-col overflow-hidden border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1.5 py-2 sm:w-[8rem] sm:max-w-none sm:px-2 lg:w-[min(15.5rem,28%)] lg:px-5 lg:py-5">
+      <nav aria-label="Módulos CED" className="flex max-h-[42%] min-h-0 shrink-0 flex-col gap-0.5 overflow-y-auto overflow-x-hidden">
         {links
           .filter((item) => !item.hidden)
           .map((item) => {
@@ -96,9 +96,9 @@ export function CedStudioSidebar({
           })}
       </nav>
 
-      {extras ? <div className="mt-2 flex flex-col gap-0.5 lg:mt-3">{extras}</div> : null}
+      {extras ? <div className="mt-2 flex shrink-0 flex-col gap-0.5 overflow-x-hidden lg:mt-3">{extras}</div> : null}
 
-      <div className="mt-auto flex min-h-0 shrink-0 flex-col items-center gap-2 overflow-y-auto pt-2 lg:gap-3 lg:pt-6">
+      <div className="mt-auto flex min-h-0 w-full flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto pt-2 lg:gap-3 lg:pt-6">
         {listen}
         {usage ? <div className="w-full pt-1">{usage}</div> : null}
       </div>

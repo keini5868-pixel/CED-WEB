@@ -543,7 +543,7 @@ export function AdvancedChatPanel({
           <p className="mx-4 mb-2 text-[11px] text-red-400">{error}</p>
         ) : null}
 
-        <footer className={`relative z-10 shrink-0 border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "lg:pb-3" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
+        <footer className={`relative z-10 shrink-0 overflow-x-hidden border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "lg:pb-3" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
           {attachedPdf ? (
             <PdfAttachmentBar
               filename={attachedPdf.name}
@@ -561,7 +561,7 @@ export function AdvancedChatPanel({
               }}
             />
           ) : null}
-          <div className="flex items-end gap-2">
+          <div className="flex min-w-0 w-full max-w-full flex-col gap-1.5 lg:flex-row lg:items-end lg:gap-2">
             <textarea
               ref={textareaRef}
               value={input}
@@ -581,8 +581,9 @@ export function AdvancedChatPanel({
                     : "Análisis, PDF, imágenes o dictado por voz…"
               }
               disabled={configured === false}
-              className="min-h-[56px] max-h-40 flex-1 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px]"
+              className="min-h-[56px] max-h-40 w-full min-w-0 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 lg:flex-1 sm:text-[12px]"
             />
+            <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
             <PdfUploadButton
               onPdfSelected={(file) => {
                 setAttachedPdf(file);
@@ -617,6 +618,7 @@ export function AdvancedChatPanel({
             >
               <Send className="h-4 w-4" />
             </button>
+            </div>
           </div>
           <p className="mt-1 text-center text-[9px] text-[var(--studio-hint)]">
             {attachedPdf

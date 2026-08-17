@@ -11,7 +11,7 @@ export function HudShell({ children, email, isSuperAdmin, studio = false }: HudS
   return (
     <div
       className={[
-        "flex flex-col overflow-x-hidden",
+        "flex max-w-[100vw] flex-col overflow-x-hidden",
         studio ? "ced-studio-shell" : "min-h-screen bg-[var(--ced-bg)]",
       ].join(" ")}
     >

@@ -351,7 +351,7 @@ export function CedVoiceHub() {
   );
 
   return (
-    <div className="ced-studio flex min-h-0 w-full flex-1 flex-row overflow-hidden">
+    <div className="ced-studio flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-row overflow-hidden">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
           <span

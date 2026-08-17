@@ -31,7 +31,7 @@ export function ImageActionBar({
   onRemove,
 }: ImageActionBarProps) {
   return (
-    <div className="image-action-bar mb-2 flex flex-col gap-2 rounded-xl bg-cyan-950/30 p-2">
+    <div className="image-action-bar mb-2 flex max-w-full flex-col gap-2 overflow-hidden rounded-xl bg-cyan-950/30 p-2">
       <div className="attached-image-preview relative inline-block self-start">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img

@@ -395,8 +395,8 @@ export function FinanceChatPanel({
         ) : null}
 
         {tab === "chat" ? (
-        <footer className={`relative z-10 shrink-0 border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "lg:pb-3" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
-          <div className="flex gap-2">
+        <footer className={`relative z-10 shrink-0 overflow-x-hidden border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "lg:pb-3" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
+          <div className="flex min-w-0 w-full max-w-full gap-2">
             <textarea
               ref={textareaRef}
               value={input}
@@ -410,7 +410,7 @@ export function FinanceChatPanel({
               rows={3}
               placeholder="Gasté 50 en materiales… / ¿Cómo voy este mes?"
               disabled={configured === false}
-              className="min-h-[56px] max-h-40 flex-1 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px]"
+              className="min-h-[56px] max-h-40 min-w-0 flex-1 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px]"
             />
             <button
               type="button"
