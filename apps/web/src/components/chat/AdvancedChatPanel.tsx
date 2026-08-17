@@ -3,9 +3,8 @@
 import { Brain, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
 import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
-import { PdfUploadButton } from "@/components/chat/PdfUploadButton";
+import { AttachMenuButton } from "@/components/chat/AttachMenuButton";
 import {
   ImageActionBar,
   imageActionHint,
@@ -584,15 +583,12 @@ export function AdvancedChatPanel({
               className="min-h-[56px] max-h-40 w-full min-w-0 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 lg:flex-1 sm:text-[12px]"
             />
             <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
-            <PdfUploadButton
+            <AttachMenuButton
               onPdfSelected={(file) => {
                 setAttachedPdf(file);
                 setAttachedImage(null);
                 setImageMode("analyze");
               }}
-              disabled={busy || configured === false || !!attachedImage || !!attachedPdf}
-            />
-            <ImageUploadButton
               onImageSelected={(file, preview) => {
                 setAttachedImage({ file, preview });
                 setAttachedPdf(null);

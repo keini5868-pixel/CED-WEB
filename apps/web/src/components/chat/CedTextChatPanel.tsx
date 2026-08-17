@@ -5,9 +5,8 @@ import { MessageCircle, Minimize2, Send, X } from "lucide-react";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
 import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
-import { PdfUploadButton } from "@/components/chat/PdfUploadButton";
+import { AttachMenuButton } from "@/components/chat/AttachMenuButton";
 import {
   ImageActionBar,
   imageActionHint,
@@ -1089,15 +1088,12 @@ export function CedTextChatPanel({
               style={{ WebkitAppearance: "none" }}
             />
             <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-1.5">
-            <PdfUploadButton
+            <AttachMenuButton
               onPdfSelected={(file) => {
                 setAttachedPdf(file);
                 setAttachedImage(null);
                 setImageMode("analyze");
               }}
-              disabled={busy || status?.blocked || !!attachedImage || !!attachedPdf}
-            />
-            <ImageUploadButton
               onImageSelected={(file, preview) => {
                 setAttachedImage({ file, preview });
                 setAttachedPdf(null);
