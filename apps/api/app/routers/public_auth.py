@@ -23,7 +23,7 @@ router = APIRouter(prefix="/v1/auth", tags=["auth-public"])
 class RegisterBody(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     password: str = Field(min_length=8, max_length=128)
-    full_name: str = Field(default="", max_length=120)
+    full_name: str = Field(min_length=3, max_length=120)
     next: str = Field(default="/", max_length=500)
     # Funnel FitLine / CED PM: offer=cierre → plan PM + 15 min voz desde registro.
     # El resto de altas también reciben 15 min totales (sin plan PM).

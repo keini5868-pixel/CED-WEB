@@ -27,15 +27,15 @@ def test_register_rejects_weak_password(monkeypatch: pytest.MonkeyPatch) -> None
         lambda: True,
     )
     with pytest.raises(PublicRegisterError) as exc:
-        register_with_email(email="nuevo@example.com", password="short", full_name="T")
+        register_with_email(email="nuevo@example.com", password="short", full_name="Ana García")
     assert exc.value.code == "weak_password"
 
 
-def test_register_rejects_bad_email(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_register_rejects_short_name(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.services.public_register.resend_configured",
         lambda: True,
     )
     with pytest.raises(PublicRegisterError) as exc:
-        register_with_email(email="no-email", password="segura123", full_name="T")
-    assert exc.value.code == "invalid_email"
+        register_with_email(email="nuevo@example.com", password="segura123", full_name="Al")
+    assert exc.value.code == "invalid_name"

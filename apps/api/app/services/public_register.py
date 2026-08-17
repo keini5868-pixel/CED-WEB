@@ -175,6 +175,11 @@ def register_with_email(
     name_n = (full_name or "").strip()
     if not EMAIL_RE.match(email_n):
         raise PublicRegisterError("Email inválido.", code="invalid_email")
+    if len(name_n) < 3:
+        raise PublicRegisterError(
+            "Escribe tu nombre completo.",
+            code="invalid_name",
+        )
     if len(password_n) < 8:
         raise PublicRegisterError(
             "La contraseña debe tener al menos 8 caracteres.",

@@ -74,6 +74,7 @@ def test_recent_tables_are_service_role_only():
         "ced_fitline_engagement": "028_insight_questions_and_fitline_engagement.sql",
         "users_referrals": "031_users_referrals.sql",
         "referral_activity_events": "031_users_referrals.sql",
+        "pm_structure_partners": "033_pm_structure_partners.sql",
         "video_edit_token_balances": "025_video_edit_tokens.sql",
         "video_edit_token_ledger": "025_video_edit_tokens.sql",
         "video_edit_jobs": "025_video_edit_tokens.sql",

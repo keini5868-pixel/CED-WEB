@@ -49,7 +49,7 @@ export function RegisterForm() {
   const searchParams = useSearchParams();
   const next = sanitizeAuthNext(searchParams.get("next"));
   const offer = resolvePmOffer(searchParams.get("offer") || "", next);
-  const ref = (
+  const urlRef = (
     searchParams.get("ref") ||
     readAuthQueryParam(next, "ref") ||
     ""
@@ -59,6 +59,7 @@ export function RegisterForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
+  const [refInput, setRefInput] = useState(urlRef);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -67,7 +68,7 @@ export function RegisterForm() {
     offer && !next.includes("offer=")
       ? `${next}${next.includes("?") ? "&" : "?"}offer=${offer}`
       : next;
-  googleNext = appendAuthQueryParam(googleNext, "ref", ref);
+  googleNext = appendAuthQueryParam(googleNext, "ref", refInput);
   const loginHref = `${LOGIN_PATH}?next=${encodeURIComponent(googleNext)}`;
 
   async function handleRegister(e: React.FormEvent) {
@@ -90,7 +91,7 @@ export function RegisterForm() {
           full_name: fullName.trim(),
           next: googleNext,
           ...(offer ? { offer } : {}),
-          ...(ref ? { ref } : {}),
+          ...(refInput ? { ref: refInput } : {}),
         }),
       });
       let data: unknown = null;
@@ -155,17 +156,19 @@ export function RegisterForm() {
           Imágenes y PDF durante 7 días. El chat de texto sigue disponible.
         </p>
       ) : null}
-      {ref ? (
+      {refInput ? (
         <p className="mb-4 rounded border border-cyan-500/25 bg-cyan-500/5 p-3 text-[11px] text-cyan-300">
-          Te invita un socio CED · Referral ID {ref}
+          Te invita un socio CED · ID de CED {refInput}
         </p>
       ) : null}
       <form onSubmit={handleRegister} className="space-y-4">
         <CedInput
-          label="Nombre"
+          label="Nombre completo"
           name="name"
           value={fullName}
           onChange={(e) => setFullName(e.target.value)}
+          required
+          minLength={3}
         />
         <CedInput
           label="Email"
@@ -176,6 +179,16 @@ export function RegisterForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
         />
+        <CedInput
+          label="ID de CED"
+          name="ref"
+          value={refInput}
+          onChange={(e) => setRefInput(e.target.value.toUpperCase())}
+          placeholder="Ej. CED7A3F2C"
+        />
+        <p className="-mt-2 text-[11px] text-cyan-600">
+          El ID del socio que te invita. Si abriste su enlace, ya viene relleno.
+        </p>
         <CedInput
           label="Contraseña"
           type="password"

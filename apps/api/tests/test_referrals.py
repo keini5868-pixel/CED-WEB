@@ -152,7 +152,37 @@ def test_dashboard_mi_equipo_route_registered():
 
     assert any(getattr(r, "path", None) == "/v1/referrals/me" for r in router.routes)
     assert any(getattr(r, "path", None) == "/v1/referrals/claim" for r in router.routes)
+    assert any(getattr(r, "path", None) == "/v1/referrals/partners" for r in router.routes)
+    assert any(getattr(r, "path", None) == "/v1/referrals/profile" for r in router.routes)
     assert any(
         getattr(r, "path", None) == "/v1/dashboard/mi-equipo"
         for r in dashboard_router.routes
     )
+
+
+def test_add_partner_validates_name_and_email():
+    from app.services.referrals import add_structure_partner
+
+    with patch("app.services.referrals.ensure_referral_code", return_value="CEDAAAA1111"):
+        assert add_structure_partner("s1", full_name="Al", email="a@b.com")["reason"] == "invalid_name"
+        assert add_structure_partner("s1", full_name="Ana García", email="no")["reason"] == "invalid_email"
+
+
+def test_add_partner_rejects_foreign_ced_id():
+    from app.services.referrals import add_structure_partner
+
+    with patch("app.services.referrals.ensure_referral_code", return_value="CEDAAAA1111"):
+        result = add_structure_partner(
+            "s1",
+            full_name="Ana García",
+            email="ana@example.com",
+            ced_id="CEDOTHER99",
+        )
+    assert result["ok"] is False
+    assert result["reason"] == "ced_id_mismatch"
+
+
+def test_complete_profile_rejects_short_name():
+    from app.services.referrals import complete_pm_profile
+
+    assert complete_pm_profile("u1", full_name="Al")["reason"] == "invalid_name"
