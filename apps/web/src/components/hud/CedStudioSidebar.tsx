@@ -20,7 +20,7 @@ type SidebarLink = {
 };
 
 const linkClass =
-  "ced-mark-text ced-gold-outline rounded-lg px-2 py-2 text-left text-[14px] uppercase transition hover:bg-[var(--ced-cyan)]/10";
+  "ced-mark-text rounded-lg px-2 py-2 text-left text-[14px] uppercase transition hover:bg-[var(--ced-cyan)]/10";
 
 export function CedStudioSidebar({
   listen,

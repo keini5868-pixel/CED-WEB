@@ -17,8 +17,6 @@ html[data-ced-theme="petrol"] {
   --ced-text: #e8f6fa;
   --ced-text-primary: #ffffff;
   --ced-text-muted: #9ec9d4;
-  --ced-gold: #ffd54f;
-  --ced-gold-outline: rgba(255, 213, 79, 0.75);
   --ced-warning: #ffc107;
   --ced-danger: #ff5252;
   --ced-page-glow: radial-gradient(ellipse at 50% 28%, rgba(8, 76, 97, 0.85) 0%, rgba(4, 40, 48, 0.2) 52%, transparent 70%);
@@ -65,10 +63,4 @@ html[data-ced-theme="light"] {
   --studio-status-fg: #1a4a73;
   --studio-usage-fg: #1a4a73;
   --ced-control-bg: #ffffff;
-}
-
-.ced-gold-outline {
-  border-width: 2px;
-  border-style: solid;
-  border-color: var(--ced-gold-outline);
 }

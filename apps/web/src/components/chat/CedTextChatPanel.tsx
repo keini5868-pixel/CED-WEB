@@ -1071,13 +1071,19 @@ export function CedTextChatPanel({
                         : "Escribe a CED o usa el micrófono…"
               }
               disabled={Boolean(status?.blocked)}
-              className={`ced-gold-outline box-border min-h-[48px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 py-2.5 text-base leading-snug caret-sky-500 focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
+              className={`box-border min-h-[48px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 py-2.5 text-base leading-snug caret-sky-500 focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
                 embedded
-                  ? `bg-white text-slate-800 placeholder:text-sky-400/80 focus:ring-[var(--ced-gold)]/40 ${
-                      isDictating ? "border-red-400" : ""
+                  ? `border bg-white text-slate-800 placeholder:text-sky-400/80 focus:ring-sky-300/60 ${
+                      isDictating
+                        ? "border-red-400"
+                        : "border-sky-200 focus:border-sky-400"
                     }`
-                  : `bg-black/60 text-white caret-cyan-300 placeholder:text-cyan-600 focus:ring-[var(--ced-gold)]/40 ${
-                      isDictating ? "border-red-500/50" : ""
+                  : `border bg-black/60 text-white caret-cyan-300 placeholder:text-cyan-600 focus:ring-cyan-500/40 ${
+                      isDictating
+                        ? "border-red-500/50 focus:border-red-400"
+                        : busy
+                          ? "border-cyan-500/40"
+                          : "border-cyan-700/60 focus:border-cyan-400"
                     }`
               }`}
               style={{ WebkitAppearance: "none" }}
@@ -1120,10 +1126,10 @@ export function CedTextChatPanel({
                 keepInputFocusRef.current = true;
               }}
               onClick={() => void submit()}
-              className={`ced-gold-outline box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px] ${
+              className={`box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px] ${
                 embedded
                   ? "bg-sky-500 text-white shadow-[0_0_12px_rgba(59,183,255,0.45)] hover:bg-sky-400"
-                  : "bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20"
+                  : "border border-cyan-400/60 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20"
               }`}
               aria-label="Enviar"
             >

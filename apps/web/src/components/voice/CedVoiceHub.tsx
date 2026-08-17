@@ -398,7 +398,7 @@ export function CedVoiceHub() {
       <CedStudioSidebar
         listen={listenDock}
         usage={
-          <div className="ced-studio-usage ced-gold-outline rounded-xl bg-[var(--studio-card)] p-3">
+          <div className="ced-studio-usage rounded-xl border border-[var(--studio-border)] bg-[var(--studio-card)] p-3">
             <p className="ced-mark-text mb-2 text-[10px] uppercase">
               uso de datos
             </p>
@@ -413,7 +413,7 @@ export function CedVoiceHub() {
                 setAdvancedOpen((open) => !open);
                 setFinanceOpen(false);
               }}
-              className="ced-mark-text ced-gold-outline rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
+              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
             >
               Avanzado
             </button>
@@ -423,14 +423,14 @@ export function CedVoiceHub() {
                 setFinanceOpen((open) => !open);
                 setAdvancedOpen(false);
               }}
-              className="ced-mark-text ced-gold-outline rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
+              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
             >
               Finanzas
             </button>
             <button
               type="button"
               onClick={() => void voice.toggleCamera()}
-              className="ced-mark-text ced-gold-outline rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
+              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
             >
               {voice.cameraOn ? "Cerrar cámara" : "Cámara"}
             </button>

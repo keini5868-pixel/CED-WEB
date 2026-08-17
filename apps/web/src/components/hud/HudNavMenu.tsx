@@ -94,7 +94,7 @@ export function HudNavMenu({ label, items, align = "left", tone = "hud" }: HudNa
               left: coords.left,
               right: coords.right,
             }}
-            className="z-[200] min-w-[11.5rem] rounded-lg ced-gold-outline bg-[#060b14] py-1 shadow-[0_12px_40px_rgba(0,0,0,0.65)]"
+            className="z-[200] min-w-[11.5rem] rounded-lg border border-cyan-500/30 bg-[#060b14] py-1 shadow-[0_12px_40px_rgba(0,0,0,0.65)]"
           >
             {visible.map((item) =>
               item.href ? (

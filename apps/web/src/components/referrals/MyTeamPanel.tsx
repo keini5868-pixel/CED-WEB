@@ -104,7 +104,7 @@ export function MyTeamPanel() {
         </p>
       </div>
 
-      <section className="ced-gold-outline rounded-xl bg-black/40 p-4">
+      <section className="rounded-xl border border-cyan-500/25 bg-black/40 p-4">
         <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
           TU REFERRAL ID
         </h2>
@@ -152,7 +152,7 @@ export function MyTeamPanel() {
           ].map(([label, value, klass]) => (
             <div
               key={String(label)}
-              className="ced-gold-outline rounded-xl bg-black/30 px-3 py-2"
+              className="rounded-xl border border-cyan-500/20 bg-black/30 px-3 py-2"
             >
               <p className="text-[10px] uppercase tracking-wider text-cyan-600">
                 {label}
@@ -167,7 +167,7 @@ export function MyTeamPanel() {
 
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
 
-      <section className="ced-gold-outline overflow-x-auto rounded-xl bg-black/40">
+      <section className="overflow-x-auto rounded-xl border border-cyan-500/25 bg-black/40">
         <table className="min-w-full text-left text-xs text-cyan-200/80">
           <thead className="font-[family-name:var(--font-orbitron)] text-[10px] uppercase tracking-wider text-cyan-500">
             <tr>

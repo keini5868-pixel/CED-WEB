@@ -12,7 +12,7 @@ export interface CedButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> 
 
 const variantClass: Record<Variant, string> = {
     primary:
-    "ced-gold-outline border-2 bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/30 ced-glow",
+    "border-2 border-[var(--ced-cyan)] bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/30 ced-glow",
   secondary:
     "border border-[var(--ced-cyan)]/80 bg-transparent text-[var(--ced-cyan)] hover:border-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10",
   ghost: "border border-transparent text-[var(--ced-cyan)]/80 hover:text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/5",

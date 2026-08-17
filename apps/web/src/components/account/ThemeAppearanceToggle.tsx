@@ -20,7 +20,7 @@ export function ThemeAppearanceToggle() {
   const { theme, setTheme } = useCedTheme();
 
   return (
-    <section className="ced-gold-outline rounded-xl bg-[var(--ced-surface)]/40 p-4">
+    <section className="rounded-xl border border-cyan-500/25 bg-[var(--ced-surface)]/40 p-4">
       <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-[var(--ced-cyan)]">
         APARIENCIA
       </h2>
@@ -35,10 +35,10 @@ export function ThemeAppearanceToggle() {
               key={option.id}
               type="button"
               onClick={() => setTheme(option.id)}
-              className={`ced-gold-outline rounded-xl px-3 py-2.5 text-left text-xs transition ${
+              className={`rounded-xl border px-3 py-2.5 text-left text-xs transition ${
                 active
-                  ? "bg-[var(--ced-cyan)]/20 text-[var(--ced-text-primary)]"
-                  : "bg-black/20 text-[var(--ced-text-muted)] hover:bg-[var(--ced-cyan)]/10"
+                  ? "border-[var(--ced-cyan)] bg-[var(--ced-cyan)]/20 text-[var(--ced-text-primary)]"
+                  : "border-cyan-500/20 bg-black/20 text-[var(--ced-text-muted)] hover:bg-[var(--ced-cyan)]/10"
               }`}
             >
               <div className="font-[family-name:var(--font-orbitron)] text-[10px] tracking-wider uppercase">

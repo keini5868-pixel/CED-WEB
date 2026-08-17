@@ -47,12 +47,6 @@ body {
   text-shadow: 0 0 10px var(--ced-cyan-glow);
 }
 
-.ced-gold-outline {
-  border-width: 2px;
-  border-style: solid;
-  border-color: var(--ced-gold-outline);
-}
-
 /* Glow solo en borde exterior del panel */
 .ced-panel-glow {
   box-shadow:

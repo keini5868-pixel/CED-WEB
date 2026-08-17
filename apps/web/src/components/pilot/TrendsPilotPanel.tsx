@@ -203,7 +203,7 @@ export function TrendsModuleContent(_props: ModulePanelProps) {
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
             placeholder='Ej: vendo suplementos alimenticios FitLine / tengo una cafetería de especialidad…'
-            className="ced-gold-outline mt-2 w-full resize-none rounded-xl bg-black/40 px-4 py-3 text-sm leading-relaxed text-slate-100 outline-none"
+            className="mt-2 w-full resize-none rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm leading-relaxed text-slate-100 outline-none"
           />
         </label>
 
@@ -213,7 +213,7 @@ export function TrendsModuleContent(_props: ModulePanelProps) {
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             placeholder="Ej: Estados Unidos / CDMX"
-            className="ced-gold-outline mt-2 w-full rounded-xl bg-black/40 px-4 py-3 text-sm text-slate-100 outline-none"
+            className="mt-2 w-full rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm text-slate-100 outline-none"
           />
         </label>
 
@@ -226,7 +226,7 @@ export function TrendsModuleContent(_props: ModulePanelProps) {
           type="button"
           disabled={busy}
           onClick={() => void submit()}
-          className="ced-gold-outline inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
         >
           {busy ? (
             <>

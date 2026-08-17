@@ -256,7 +256,7 @@ export function ViabilityModuleContent(_props: ModulePanelProps) {
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
             placeholder="Ej: Cafetería de especialidad en Santo Domingo con suscripción mensual de café..."
-            className="ced-gold-outline mt-2 w-full resize-none rounded-xl bg-black/40 px-4 py-3 text-sm leading-relaxed text-slate-100 outline-none"
+            className="mt-2 w-full resize-none rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm leading-relaxed text-slate-100 outline-none"
           />
         </label>
 
@@ -266,7 +266,7 @@ export function ViabilityModuleContent(_props: ModulePanelProps) {
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             placeholder="Ej: República Dominicana / CDMX"
-            className="ced-gold-outline mt-2 w-full rounded-xl bg-black/40 px-4 py-3 text-sm text-slate-100 outline-none"
+            className="mt-2 w-full rounded-xl border border-white/15 bg-black/40 px-4 py-3 text-sm text-slate-100 outline-none"
           />
         </label>
 
@@ -274,7 +274,7 @@ export function ViabilityModuleContent(_props: ModulePanelProps) {
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
-            className="ced-gold-outline inline-flex items-center gap-2 rounded-xl bg-white/5 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/10"
+            className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm text-slate-200 hover:bg-white/10"
           >
             <ImagePlus className="h-4 w-4" />
             Subir flyer / foto
@@ -320,7 +320,7 @@ export function ViabilityModuleContent(_props: ModulePanelProps) {
           type="button"
           disabled={busy}
           onClick={() => void submit()}
-          className="ced-gold-outline inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
+          className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500 disabled:opacity-60"
         >
           {busy ? (
             <>

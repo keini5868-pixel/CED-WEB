@@ -27,7 +27,7 @@ export function ReferralIdCard() {
   }, []);
 
   return (
-    <section className="ced-gold-outline rounded-xl bg-black/40 p-4">
+    <section className="rounded-xl border border-cyan-500/25 bg-black/40 p-4">
       <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
         REFERRAL ID
       </h2>

@@ -118,7 +118,7 @@ export function ModuleShell() {
     <>
       {railModules.length > 0 ? (
         <aside
-          className="pointer-events-auto fixed left-2 top-1/2 z-[70] flex -translate-y-1/2 flex-col gap-2 rounded-2xl ced-gold-outline bg-[#060b14]/95 p-2 shadow-xl backdrop-blur-md sm:left-3"
+          className="pointer-events-auto fixed left-2 top-1/2 z-[70] flex -translate-y-1/2 flex-col gap-2 rounded-2xl border border-cyan-500/25 bg-[#060b14]/95 p-2 shadow-xl backdrop-blur-md sm:left-3"
           aria-label="Módulos piloto CED"
         >
         {hasPilotModules ? (
@@ -138,10 +138,10 @@ export function ModuleShell() {
                 if (activeMod) closeModule();
                 else openModule(m.id);
               }}
-              className={`flex h-11 w-11 flex-col items-center justify-center rounded-xl ced-gold-outline transition ${
+              className={`flex h-11 w-11 flex-col items-center justify-center rounded-xl border transition ${
                 activeMod
-                  ? "bg-cyan-500/20 text-cyan-100"
-                  : "bg-white/5 text-slate-300 hover:bg-white/10"
+                  ? "border-cyan-400/50 bg-cyan-500/20 text-cyan-100"
+                  : "border-white/15 bg-white/5 text-slate-300 hover:bg-white/10"
               }`}
             >
               <Icon className="h-5 w-5" strokeWidth={1.75} />
