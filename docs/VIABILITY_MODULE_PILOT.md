@@ -1,4 +1,4 @@
-# Viability Module (Viabilidad) — production
+# Análisis de Producto — production
 
 Isolated rail module: product/service market viability analysis.
 Graduated from pilot — visible for logged-in users unless kill-switched off.
@@ -12,7 +12,7 @@ Graduated from pilot — visible for logged-in users unless kill-switched off.
 ### How to test
 
 1. Open CED logged in (no query flag needed).
-2. Left rail → **VIABLE** → describe product or upload flyer.
+2. Left rail → **Análisis de Producto** → describe product or upload flyer.
 3. Closing the drawer discards state.
 4. Emergency off: `VIABILITY_MODULE_ENABLED=false` (API) and/or `NEXT_PUBLIC_VIABILITY_MODULE_ENABLED=false` (web).
 

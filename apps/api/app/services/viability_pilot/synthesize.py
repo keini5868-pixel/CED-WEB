@@ -196,7 +196,7 @@ def _fallback_report(
 
     markdown = "\n\n".join(
         [
-            f"## Informe de viabilidad (piloto)\n\n**Oferta:** {offering}",
+            f"## Informe de Análisis de Producto\n\n**Oferta:** {offering}",
             f"**Región:** {region or 'no especificada'}",
             "\n".join(research_lines),
             "\n".join(advice_lines),
@@ -204,7 +204,7 @@ def _fallback_report(
     )
 
     spoken = (
-        f"Informe de viabilidad listo, señor. Probabilidad orientativa: {band}. "
+        f"Informe de Análisis de Producto listo, señor. Probabilidad orientativa: {band}. "
     )
     if competitors_out:
         names = ", ".join(c["name"] for c in competitors_out[:3])
@@ -271,7 +271,7 @@ def _llm_polish(report: dict[str, Any], offering: str) -> dict[str, Any]:
         "improvements": [i["idea"] for i in report.get("improvements") or []],
     }
     prompt = (
-        "Eres editor del informe de viabilidad CED (piloto). "
+        "Eres editor del informe de Análisis de Producto CED. "
         "Devuelve JSON con keys: likelihood_rationale (string), "
         "improvement_rewrites (array de 3-5 strings), spoken (string corto en español). "
         "REGLAS ESTRICTAS:\n"
@@ -351,7 +351,7 @@ def _llm_polish(report: dict[str, Any], offering: str) -> dict[str, Any]:
     report["advice_markdown"] = "\n".join(advice_lines)
     report["report_markdown"] = "\n\n".join(
         [
-            f"## Informe de viabilidad (piloto)\n\n**Oferta:** {offering}",
+            f"## Informe de Análisis de Producto\n\n**Oferta:** {offering}",
             f"**Región:** {report.get('region') or 'no especificada'}",
             report.get("research_markdown") or "",
             report["advice_markdown"],

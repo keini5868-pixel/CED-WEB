@@ -25,6 +25,7 @@ import { isOpportunitiesModuleEnabled } from "@/lib/pilot/opportunitiesModule";
 import { isTrendsModuleEnabled } from "@/lib/pilot/trendsModule";
 import { isViabilityModuleEnabled } from "@/lib/pilot/viabilityModule";
 import { isVideoEditModulePilot } from "@/lib/pilot/videoEditModule";
+import { MODULE_DISPLAY } from "@/lib/modules/displayNames";
 
 type HudChromeProps = {
   email?: string | null;
@@ -77,23 +78,23 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
       items={[
         {
           id: "viability",
-          label: "Viabilidad",
+          label: MODULE_DISPLAY.viability,
           hidden: !isViabilityModuleEnabled(),
           onClick: () => openModule("viability"),
         },
         {
           id: "trends",
-          label: "Trends",
+          label: MODULE_DISPLAY.trends,
           hidden: !isTrendsModuleEnabled(),
           onClick: () => openModule("trends"),
         },
         {
           id: "opportunities",
-          label: "Oportunidades",
+          label: MODULE_DISPLAY.opportunities,
           hidden: !isOpportunitiesModuleEnabled(),
           onClick: () => openModule("opportunities"),
         },
-        { id: "team", label: "Mi Equipo", href: TEAM_PATH },
+        { id: "team", label: MODULE_DISPLAY.team, href: TEAM_PATH },
         {
           id: "video-edit",
           label: "Edición de video",

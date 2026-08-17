@@ -1,4 +1,4 @@
-"""Gate de producción — módulo Tendencias.
+"""Gate de producción — módulo Análisis de Tendencia.
 
 Kill-switch: TRENDS_MODULE_ENABLED=false → 404.
 Auth: require_user_id en el router (usuarios logueados).
@@ -20,7 +20,7 @@ def require_trends_module_enabled() -> None:
     if not trends_module_enabled():
         raise HTTPException(
             status_code=404,
-            detail="Módulo de tendencias no disponible.",
+            detail="Módulo de Análisis de Tendencia no disponible.",
         )
 
 

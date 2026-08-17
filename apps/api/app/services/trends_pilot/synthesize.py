@@ -1,4 +1,4 @@
-"""Síntesis del informe de tendencias — Research vs Reasoning separados."""
+"""Síntesis del informe de Análisis de Tendencia — Research vs Reasoning separados."""
 
 from __future__ import annotations
 
@@ -133,7 +133,7 @@ def build_trends_report(
 
     markdown = "\n\n".join(
         [
-            "## Informe de tendencias (piloto)\n",
+            "## Informe de Análisis de Tendencia\n",
             f"**Rubro:** {description[:300]}",
             f"**Región:** {region or 'no especificada'}",
             "\n".join(research_lines),
@@ -142,7 +142,7 @@ def build_trends_report(
     )
 
     spoken = (
-        f"Informe de tendencias listo. Ancla: {profile.get('anchor') or 'su rubro'}. "
+        f"Informe de Análisis de Tendencia listo. Ancla: {profile.get('anchor') or 'su rubro'}. "
     )
     if trending:
         spoken += f"{len(trending)} señales de trending con fuente. "

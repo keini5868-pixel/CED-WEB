@@ -10,17 +10,6 @@ export interface HudPanelProps {
   state?: "idle" | "searching" | "receiving" | "complete";
 }
 
-const stateBorder: Record<NonNullable<HudPanelProps["state"]>, string> = {
-  idle: "border-cyan-500/45",
-  searching: "border-amber-400/60 animate-pulse",
-  receiving: "border-cyan-400/80",
-  complete: "border-cyan-400/55",
-};
-
-/**
- * Panel HUD — texto sobre fondo negro sólido.
- * Líneas decorativas solo en borde; sin patrón sobre el contenido.
- */
 export function HudPanel({
   title,
   children,
@@ -31,9 +20,8 @@ export function HudPanel({
   return (
     <section
       className={[
-        "ced-hud-panel relative isolate flex flex-col overflow-hidden rounded border bg-black",
-        stateBorder[state],
-        "ced-panel-glow",
+        "ced-hud-panel ced-gold-outline ced-panel-glow relative isolate flex flex-col overflow-hidden rounded-xl bg-black",
+        state === "searching" ? "animate-pulse" : "",
         className,
       ]
         .filter(Boolean)

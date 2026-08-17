@@ -1,4 +1,4 @@
-"""HTTP API — viabilidad de producto/servicio (producción; kill-switch por env)."""
+"""HTTP API — Análisis de Producto (producción; kill-switch por env)."""
 
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ async def viability_analyze(
         logger.exception("[VIABILITY] analyze failed user=%s", user_id[:8])
         raise HTTPException(
             status_code=502,
-            detail="No pude completar el análisis de viabilidad. Reintenta.",
+            detail="No pude completar el Análisis de Producto. Reintenta.",
         ) from exc
 
     if not report.get("ok"):

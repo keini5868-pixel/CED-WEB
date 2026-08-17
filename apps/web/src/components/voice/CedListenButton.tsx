@@ -33,12 +33,12 @@ export function CedListenButton({
       whileTap={{ scale: busy ? 1 : 0.97 }}
       aria-label={busy ? "Conectando asistente de voz" : active ? "Detener voz" : "Escuchar"}
       className={[
-        "flex w-[5.25rem] flex-col items-center gap-1 rounded-xl border px-2 py-2 transition",
+        "flex w-[5.25rem] flex-col items-center gap-1 rounded-xl ced-gold-outline px-2 py-2 transition",
         busy
-          ? "cursor-wait border-[var(--ced-cyan)]/40 bg-[var(--ced-cyan)]/10 text-[var(--ced-cyan)]"
+          ? "cursor-wait bg-[var(--ced-cyan)]/10 text-[var(--ced-cyan)]"
           : active
-            ? "border-[var(--ced-cyan)] bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] shadow-[0_0_14px_var(--ced-cyan-glow)]"
-            : "border-[var(--ced-cyan)]/70 bg-white text-[var(--ced-cyan)] shadow-[0_0_10px_var(--ced-cyan-glow)] hover:bg-[var(--ced-cyan)]/10",
+            ? "bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] shadow-[0_0_14px_var(--ced-cyan-glow)]"
+            : "bg-white text-[var(--ced-cyan)] shadow-[0_0_10px_var(--ced-cyan-glow)] hover:bg-[var(--ced-cyan)]/10",
       ].join(" ")}
     >
       <span

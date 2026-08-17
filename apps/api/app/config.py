@@ -168,9 +168,9 @@ class Settings(BaseSettings):
     # Provider voice ID Cartesia (opcional — Retell usa RETELL_VOICE_ID en prod)
     cartesia_jarvis_voice_id: str = ""
     support_chat_enabled: bool = True
-    # Módulo viabilidad (producción). Kill-switch: VIABILITY_MODULE_ENABLED=false
+    # Módulo Análisis de Producto (producción). Kill-switch: VIABILITY_MODULE_ENABLED=false
     viability_module_enabled: bool = True
-    # Módulo tendencias (producción). Kill-switch: TRENDS_MODULE_ENABLED=false
+    # Módulo Análisis de Tendencia (producción). Kill-switch: TRENDS_MODULE_ENABLED=false
     trends_module_enabled: bool = True
     # Módulo oportunidades (producción). Kill-switch: OPPORTUNITIES_MODULE_ENABLED=false
     opportunities_module_enabled: bool = True

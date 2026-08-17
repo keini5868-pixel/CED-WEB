@@ -1,4 +1,4 @@
-# Trends Module (Tendencias) — production
+# Análisis de Tendencia — production
 
 Isolated rail module: industry trends analysis.
 Graduated from pilot — visible for logged-in users unless kill-switched off.
@@ -12,7 +12,7 @@ Graduated from pilot — visible for logged-in users unless kill-switched off.
 ### How to test
 
 1. Open CED logged in (no query flag needed).
-2. Left rail → **TRENDS** → describe industry/rubro.
+2. Left rail → **Análisis de Tendencia** → describe industry/rubro.
 3. Closing the drawer discards state.
 4. Emergency off: `TRENDS_MODULE_ENABLED=false` (API) and/or `NEXT_PUBLIC_TRENDS_MODULE_ENABLED=false` (web).
 

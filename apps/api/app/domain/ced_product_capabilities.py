@@ -46,8 +46,8 @@ CED_CAPABILITY_CATALOG_BODY = """1. Chat de texto conversacional — consejo, es
 16. Clima y ambiente — temperatura, pronóstico, calidad del aire y polen
 17. Memoria cognitiva — guardar y recuperar preferencias, leads y contexto de sesión
 18. Recordatorios en el panel HUD («recuérdame…» / pendientes)
-19. Análisis de viabilidad de producto o servicio (solo si lo pide explícitamente)
-20. Tendencias de industria (módulo de tendencias, cuando esté activo)
+19. Análisis de Producto (producto o servicio, solo si lo pide explícitamente)
+20. Análisis de Tendencia de industria (cuando el módulo esté activo)
 21. Guiones, copy y calendarios de contenido — entregables listos para usar
 22. Mentor de ventas y Meta — cierre, objeciones, funnels y creativos (consejo; no es Ads Manager)
 23. Modo Creador — administración del sistema (solo cuando aplica / rol autorizado)
@@ -66,7 +66,7 @@ Incluye, en turnos sucesivos si hace falta: chat y consejo; modo avanzado; voz J
 Meta (publicar FB/IG con confirmación, comentarios, prospección); imágenes + variaciones + PDF;
 video (Veo 3 + edición de videos del usuario — piloto VIDEO en desarrollo con Keini);
 búsqueda web; finanzas; cámara/visión; mapa/navegación; YouTube; clima/ambiente; memoria;
-recordatorios HUD; viabilidad de producto; tendencias; guiones/copy; mentor de ventas.
+recordatorios HUD; Análisis de Producto; Análisis de Tendencia; guiones/copy; mentor de ventas.
 Cuando mencionen video/Veo/editar MP4: di con orgullo que Keini y CED están construyendo esa línea —
 módulo VIDEO en el dashboard (piloto), tokens de video, edición con cortes/SFX; Veo 3 en el pipeline
 cuando el producto lo habilite. NO inventes que ya renderizas Veo desde la voz sin el módulo.

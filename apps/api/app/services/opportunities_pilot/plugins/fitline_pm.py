@@ -483,8 +483,8 @@ def fitline_pm_plugin(user_id: str | None = None) -> dict[str, Any]:
                         "enlace de patrocinio / Partner Area (no con blogs).\n"
                         "3. Registrarse vía el CTA de Afiliación de este módulo.\n"
                         "4. Completar mentoría con el equipo del patrocinador.\n"
-                        "5. Usar CED para copy, prospección, Viabilidad y "
-                        "Tendencias — con terminología correcta.\n"
+                        "5. Usar CED para copy, prospección, Análisis de Producto y "
+                        "Análisis de Tendencia — con terminología correcta.\n"
                         "6. Cumplir políticas de marca, publicidad e Income Plan "
                         "de PM International."
                     ),

@@ -4,6 +4,7 @@ import { isOpportunitiesModuleEnabled } from "@/lib/pilot/opportunitiesModule";
 import { isTrendsModuleEnabled } from "@/lib/pilot/trendsModule";
 import { isViabilityModuleEnabled } from "@/lib/pilot/viabilityModule";
 import { isVideoEditModulePilot } from "@/lib/pilot/videoEditModule";
+import { MODULE_DISPLAY } from "@/lib/modules/displayNames";
 import type { CedModuleRegistration } from "@/modules/types";
 
 /**
@@ -13,8 +14,8 @@ import type { CedModuleRegistration } from "@/modules/types";
 export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
   {
     id: "viability",
-    name: "Viabilidad",
-    short: "VIABLE",
+    name: MODULE_DISPLAY.viability,
+    short: "PROD",
     icon: Target,
     stage: "production",
     isEnabled: isViabilityModuleEnabled,
@@ -25,8 +26,8 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
   },
   {
     id: "trends",
-    name: "Tendencias",
-    short: "TRENDS",
+    name: MODULE_DISPLAY.trends,
+    short: "TEND",
     icon: TrendingUp,
     stage: "production",
     isEnabled: isTrendsModuleEnabled,
@@ -37,7 +38,7 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
   },
   {
     id: "opportunities",
-    name: "Oportunidades",
+    name: MODULE_DISPLAY.opportunities,
     short: "OPPS",
     icon: Briefcase,
     stage: "production",

@@ -19,7 +19,7 @@ export function ReferralIdCard() {
         setTotal(data.counts.total);
       })
       .catch(() => {
-        /* silencioso: la página Mi equipo muestra el error */
+        /* silencioso: la página Estructura PM muestra el error */
       });
     return () => {
       cancelled = true;
@@ -27,7 +27,7 @@ export function ReferralIdCard() {
   }, []);
 
   return (
-    <section className="rounded border border-cyan-500/25 bg-black/40 p-4">
+    <section className="ced-gold-outline rounded-xl bg-black/40 p-4">
       <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
         REFERRAL ID
       </h2>

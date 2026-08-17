@@ -11,8 +11,16 @@
   --ced-text: #e0e0e0;
   --ced-text-primary: #ffffff;
   --ced-text-muted: #888888;
+  --ced-gold: #ffd54f;
+  --ced-gold-outline: rgba(255, 213, 79, 0.75);
   --ced-warning: #ffc107;
   --ced-danger: #ff5252;
   --font-orbitron: "Orbitron", system-ui, sans-serif;
   --font-inter: "Inter", system-ui, sans-serif;
+}
+
+.ced-gold-outline {
+  border-width: 2px;
+  border-style: solid;
+  border-color: var(--ced-gold-outline);
 }

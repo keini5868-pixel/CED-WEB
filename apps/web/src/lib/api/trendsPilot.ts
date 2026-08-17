@@ -83,4 +83,4 @@ export async function analyzeTrends(params: {
 }
 
 export const TRENDS_WELCOME =
-  "Módulo de tendencias. Describa su rubro o industria y generaré un informe con hallazgos de búsqueda separados del razonamiento. Nombres propios anclan la búsqueda; no invento porcentajes sin fuente.";
+  "Análisis de Tendencia. Describa su rubro o industria y generaré un informe con hallazgos de búsqueda separados del razonamiento. Nombres propios anclan la búsqueda; no invento porcentajes sin fuente.";

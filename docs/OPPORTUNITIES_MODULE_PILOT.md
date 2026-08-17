@@ -1,6 +1,6 @@
 # Opportunities Module (Oportunidades) — production
 
-Isolated like Viability / Tendencias: rail module only, no public chat, no voice, no Q&A in v1.
+Isolated like Análisis de Producto / Análisis de Tendencia: rail module only, no public chat, no voice, no Q&A in v1.
 Graduated from pilot — always visible for logged-in users unless kill-switched off.
 
 | Layer | Gate |
@@ -11,7 +11,7 @@ Graduated from pilot — always visible for logged-in users unless kill-switched
 | Voice / chat | Not wired |
 | Q&A | Not in v1 |
 
-Viability, Tendencias and Oportunidades are production modules (kill-switches default ON).
+Análisis de Producto, Análisis de Tendencia and Oportunidades are production modules (kill-switches default ON).
 
 ### Product decisions
 

@@ -1,5 +1,5 @@
 /**
- * Módulo Tendencias — producción.
+ * Módulo Análisis de Tendencia — producción.
  * Visible para usuarios logueados salvo kill-switch NEXT_PUBLIC_TRENDS_MODULE_ENABLED=false
  * (el API también respeta TRENDS_MODULE_ENABLED).
  */

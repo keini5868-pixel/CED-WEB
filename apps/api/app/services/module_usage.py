@@ -1,4 +1,4 @@
-"""Metering de módulos de producción: viability / trends / opportunities."""
+"""Metering de módulos de producción: Análisis de Producto / Análisis de Tendencia / Oportunidades."""
 
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ ModuleId = Literal["viability", "trends", "opportunities"]
 ChannelId = Literal["http", "voice", "chat", "other"]
 
 MODULE_LABELS: dict[str, str] = {
-    "viability": "VIABLE",
-    "trends": "Tendencias",
+    "viability": "Análisis de Producto",
+    "trends": "Análisis de Tendencia",
     "opportunities": "Oportunidades",
 }
 

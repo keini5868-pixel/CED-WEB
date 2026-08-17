@@ -181,7 +181,7 @@ def admin_module_usage_summary(
         description="ISO datetime UTC exclusive",
     ),
 ) -> dict:
-    """Resumen de metering VIABLE / Tendencias / Oportunidades."""
+    """Resumen de metering Análisis de Producto / Análisis de Tendencia / Oportunidades."""
     from datetime import datetime
 
     from app.services.module_usage import summarize_module_usage

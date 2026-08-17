@@ -106,4 +106,4 @@ export async function analyzeViability(params: {
 }
 
 export const VIABILITY_WELCOME =
-  "Módulo de viabilidad. Describa un producto o servicio, o suba un flyer/foto, y generaré un informe con hechos de búsqueda separados del consejo estratégico. No inventaré competidores ni precios.";
+  "Análisis de Producto. Describa un producto o servicio, o suba un flyer/foto, y generaré un informe con hechos de búsqueda separados del consejo estratégico. No inventaré competidores ni precios.";

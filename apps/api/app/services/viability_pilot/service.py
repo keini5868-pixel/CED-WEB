@@ -1,4 +1,4 @@
-"""Orquestación del análisis de viabilidad — aislado del resto de CED."""
+"""Orquestación del Análisis de Producto — aislado del resto de CED."""
 
 from __future__ import annotations
 
@@ -37,11 +37,11 @@ def analyze_viability(
             "error": "missing_offering",
             "message": (
                 "Necesito una descripción del producto/servicio, o una imagen/flyer, "
-                "para analizar viabilidad."
+                "para el Análisis de Producto."
             ),
             "spoken": (
                 "Señor, descríbame el producto o servicio, o adjunte un flyer, "
-                "para el análisis de viabilidad."
+                "para el Análisis de Producto."
             ),
             "pilot": True,
         }
@@ -115,7 +115,7 @@ def format_report_for_voice(report: dict[str, Any]) -> str:
     comps = report.get("competitors") or []
     names = ", ".join(c.get("name", "") for c in comps[:3] if c.get("name"))
     gaps = report.get("data_gaps") or []
-    parts = [f"Viabilidad orientativa: {band}."]
+    parts = [f"Análisis de Producto orientativo: {band}."]
     if names:
         parts.append(f"Comparables: {names}.")
     else:

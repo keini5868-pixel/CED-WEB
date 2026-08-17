@@ -1,4 +1,4 @@
-"""Orquestación Tendencias — piloto aislado."""
+"""Orquestación Análisis de Tendencia — piloto aislado."""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ def analyze_trends(
         return {
             "ok": False,
             "error": "missing_description",
-            "message": "Describa su rubro o industria para analizar tendencias.",
-            "spoken": "Señor, indíqueme su rubro o industria para el informe de tendencias.",
+            "message": "Describa su rubro o industria para el Análisis de Tendencia.",
+            "spoken": "Señor, indíqueme su rubro o industria para el Análisis de Tendencia.",
             "pilot": True,
         }
 

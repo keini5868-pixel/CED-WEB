@@ -1,4 +1,4 @@
-"""Módulo de tendencias de industria (producción).
+"""Módulo Análisis de Tendencia (producción).
 
 Kill-switch: TRENDS_MODULE_ENABLED=false.
 Aislado de chat público y voz (salvo tool Retell si el kill-switch está ON).

@@ -341,7 +341,7 @@ async def retell_search_web_tool(request: Request) -> JSONResponse:
 
 @router.post("/tools/analyze_product_viability")
 async def retell_analyze_product_viability_tool(request: Request) -> JSONResponse:
-    """Viabilidad de producto/servicio — solo piloto nativo + flag de módulo."""
+    """Análisis de Producto — solo piloto nativo + flag de módulo."""
     from app.services.viability_pilot.voice_tool import (
         execute_analyze_product_viability_tool,
     )

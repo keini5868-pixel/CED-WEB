@@ -1,4 +1,4 @@
-"""Tool Retell — módulo viabilidad (kill-switch VIABILITY_MODULE_ENABLED)."""
+"""Tool Retell — módulo Análisis de Producto (kill-switch VIABILITY_MODULE_ENABLED)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 TOOL_NAME = "analyze_product_viability"
 
 ANALYZE_VIABILITY_DESCRIPTION = (
-    "Análisis de viabilidad de mercado de un PRODUCTO o SERVICIO del usuario. "
+    "Análisis de Producto: mercado de un PRODUCTO o SERVICIO del usuario. "
     "SOLO llamar cuando el usuario pida explícitamente: «analiza la viabilidad», "
     "«estudio de mercado de mi…», «qué tan viable es mi…», «probabilidad de éxito de…», "
     "«análisis de mercado de mi producto/servicio». "
@@ -50,7 +50,7 @@ def build_analyze_product_viability_tool(*, api_public_url: str) -> dict[str, An
         name=TOOL_NAME,
         description=ANALYZE_VIABILITY_DESCRIPTION,
         parameters=ANALYZE_VIABILITY_PARAMETERS,
-        filler="Analizando la viabilidad de mercado, señor. Puede tardar un momento.",
+        filler="Analizando el producto en el mercado, señor. Puede tardar un momento.",
         timeout_ms=55_000,
     )
 
@@ -69,7 +69,7 @@ async def execute_analyze_product_viability_tool(
     started = time.perf_counter()
     if not viability_module_enabled():
         return {
-            "result": "El módulo de viabilidad no está activo en este entorno, señor.",
+            "result": "El módulo de Análisis de Producto no está activo en este entorno, señor.",
             "ok": False,
             "latency_ms": int((time.perf_counter() - started) * 1000),
         }
@@ -81,7 +81,7 @@ async def execute_analyze_product_viability_tool(
     # Retell already chose this tool (description param is the offering, not the trigger).
     if not description:
         return {
-            "result": "Señor, descríbame el producto o servicio para analizar su viabilidad.",
+            "result": "Señor, descríbame el producto o servicio para el Análisis de Producto.",
             "ok": False,
             "latency_ms": int((time.perf_counter() - started) * 1000),
         }
@@ -111,7 +111,7 @@ async def execute_analyze_product_viability_tool(
             "[VIABILITY-PILOT] voice tool failed user=%s",
             (user_id or "")[:8],
         )
-        spoken = "Señor, no pude completar el análisis de viabilidad en este momento."
+        spoken = "Señor, no pude completar el Análisis de Producto en este momento."
         ok = False
         report = {"ok": False}
 
@@ -162,7 +162,7 @@ def voice_prompt_line() -> str:
     if not should_register_viability_voice_tool():
         return ""
     return (
-        "- Viabilidad de producto/servicio: solo con «analiza la viabilidad / estudio de mercado "
+        "- Análisis de Producto: solo con «analiza la viabilidad / estudio de mercado "
         "de mi… / qué tan viable es mi…» → analyze_product_viability. "
         "NO confundir con generate_image, search_web, prospection ni modo avanzado."
     )

@@ -46,7 +46,7 @@ def test_catalog_reply_is_factual():
     assert "YouTube" in CED_CAPABILITY_CATALOG_REPLY
     assert "Finanzas" in CED_CAPABILITY_CATALOG_REPLY
     assert "Recordatorios" in CED_CAPABILITY_CATALOG_REPLY
-    assert "viabilidad" in CED_CAPABILITY_CATALOG_REPLY.lower()
+    assert "análisis de producto" in CED_CAPABILITY_CATALOG_REPLY.lower()
     assert "Variaciones de imagen" in CED_CAPABILITY_CATALOG_REPLY
     assert "Veo 3" in CED_CAPABILITY_CATALOG_REPLY or "veo 3" in CED_CAPABILITY_CATALOG_REPLY.lower()
     assert "VIDEO" in CED_CAPABILITY_CATALOG_REPLY or "Video" in CED_CAPABILITY_CATALOG_REPLY
@@ -64,7 +64,7 @@ def test_voice_capabilities_cover_product_gaps():
         "finanzas",
         "modo avanzado",
         "get_environment",
-        "viabilidad",
+        "análisis de producto",
         "recordatorios",
         "variaciones",
         "veo 3",

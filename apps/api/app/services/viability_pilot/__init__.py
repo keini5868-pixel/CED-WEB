@@ -1,4 +1,4 @@
-"""Módulo de viabilidad de producto/servicio (producción).
+"""Módulo Análisis de Producto (producción).
 
 Kill-switch: VIABILITY_MODULE_ENABLED=false.
 No comparte estado de sesión con chat, imagen, prospección ni modo avanzado.

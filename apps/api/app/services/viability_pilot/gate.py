@@ -1,4 +1,4 @@
-"""Gate de producción — módulo Viabilidad.
+"""Gate de producción — módulo Análisis de Producto.
 
 Kill-switch: VIABILITY_MODULE_ENABLED=false → 404.
 Auth: require_user_id en el router (usuarios logueados).
@@ -20,7 +20,7 @@ def require_viability_module_enabled() -> None:
     if not viability_module_enabled():
         raise HTTPException(
             status_code=404,
-            detail="Módulo de viabilidad no disponible.",
+            detail="Módulo de Análisis de Producto no disponible.",
         )
 
 

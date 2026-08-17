@@ -28,9 +28,9 @@ export function CedInput({
       <input
         id={inputId}
         className={[
-          "ced-input-animated w-full rounded border border-cyan-500/40 bg-black/50 px-4 py-3",
+          "ced-input-animated ced-gold-outline w-full rounded-xl bg-black/50 px-4 py-3",
           "font-[family-name:var(--font-inter)] text-sm text-cyan-100",
-          "placeholder:text-cyan-800 focus:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-400/50",
+          "placeholder:text-cyan-800 focus:outline-none focus:ring-1 focus:ring-[var(--ced-gold)]/50",
           error ? "border-red-500/60" : "",
           className,
         ]

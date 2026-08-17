@@ -1,5 +1,5 @@
 /**
- * Módulo Viabilidad — producción.
+ * Módulo Análisis de Producto — producción.
  * Visible para usuarios logueados salvo kill-switch NEXT_PUBLIC_VIABILITY_MODULE_ENABLED=false
  * (el API también respeta VIABILITY_MODULE_ENABLED).
  */

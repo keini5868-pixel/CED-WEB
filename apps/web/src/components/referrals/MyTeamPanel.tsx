@@ -73,7 +73,7 @@ export function MyTeamPanel() {
     try {
       setData(await fetchMyTeam());
     } catch (exc) {
-      setError(exc instanceof Error ? exc.message : "No se pudo cargar tu equipo.");
+      setError(exc instanceof Error ? exc.message : "No se pudo cargar la estructura PM.");
     }
   }, []);
 
@@ -95,16 +95,16 @@ export function MyTeamPanel() {
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
       <div>
         <h1 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wide text-cyan-200 sm:text-xl">
-          Mis invitados
+          Estructura PM
         </h1>
         <p className="mt-1 text-sm text-cyan-100/70">
-          Quién de tu equipo usa CED de verdad para vender PM International:
+          Quién de tu estructura PM usa CED de verdad para vender PM International:
           voz, chat de venta/prospección, Finanzas y Oportunidades. No cuenta
           actividad genérica del sistema.
         </p>
       </div>
 
-      <section className="rounded border border-cyan-500/25 bg-black/40 p-4">
+      <section className="ced-gold-outline rounded-xl bg-black/40 p-4">
         <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
           TU REFERRAL ID
         </h2>
@@ -152,7 +152,7 @@ export function MyTeamPanel() {
           ].map(([label, value, klass]) => (
             <div
               key={String(label)}
-              className="rounded border border-cyan-500/20 bg-black/30 px-3 py-2"
+              className="ced-gold-outline rounded-xl bg-black/30 px-3 py-2"
             >
               <p className="text-[10px] uppercase tracking-wider text-cyan-600">
                 {label}
@@ -167,7 +167,7 @@ export function MyTeamPanel() {
 
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
 
-      <section className="overflow-x-auto rounded border border-cyan-500/25 bg-black/40">
+      <section className="ced-gold-outline overflow-x-auto rounded-xl bg-black/40">
         <table className="min-w-full text-left text-xs text-cyan-200/80">
           <thead className="font-[family-name:var(--font-orbitron)] text-[10px] uppercase tracking-wider text-cyan-500">
             <tr>

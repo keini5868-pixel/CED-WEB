@@ -1,4 +1,4 @@
-"""HTTP API — tendencias de industria (producción; kill-switch por env)."""
+"""HTTP API — Análisis de Tendencia (producción; kill-switch por env)."""
 
 from __future__ import annotations
 
@@ -75,7 +75,7 @@ async def trends_analyze(
         logger.exception("[TRENDS] analyze failed user=%s", user_id[:8])
         raise HTTPException(
             status_code=502,
-            detail="No pude completar el análisis de tendencias. Reintenta.",
+            detail="No pude completar el Análisis de Tendencia. Reintenta.",
         ) from exc
 
     if not report.get("ok"):
