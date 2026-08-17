@@ -59,8 +59,8 @@ export function CedStudioSidebar({
   ];
 
   return (
-    <aside className="flex w-full flex-col border-t border-sky-100 bg-[#f4f9fd] px-5 py-5 lg:w-[min(15.5rem,28%)] lg:shrink-0 lg:border-l lg:border-t-0">
-      <nav aria-label="Módulos CED" className="flex flex-col gap-0.5">
+    <aside className="flex w-full shrink-0 flex-col overflow-hidden border-t border-sky-100 bg-[#f4f9fd] px-5 py-5 lg:h-full lg:w-[min(15.5rem,28%)] lg:border-l lg:border-t-0">
+      <nav aria-label="Módulos CED" className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
         {links
           .filter((item) => !item.hidden)
           .map((item) =>
@@ -83,7 +83,7 @@ export function CedStudioSidebar({
 
       {extras ? <div className="mt-3 flex flex-col gap-1">{extras}</div> : null}
 
-      <div className="mt-auto flex flex-col items-center gap-3 pt-6">
+      <div className="mt-auto flex shrink-0 flex-col items-center gap-3 pt-6">
         {listen}
         {usage ? <div className="w-full pt-1">{usage}</div> : null}
       </div>

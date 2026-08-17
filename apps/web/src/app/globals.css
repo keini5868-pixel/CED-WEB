@@ -315,6 +315,9 @@ body {
   --studio-ced-bubble: #0b1b33;
   --studio-user-text: #12324f;
   background: #ffffff;
+  height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
 }
 
 .ced-studio {

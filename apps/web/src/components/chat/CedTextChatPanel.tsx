@@ -951,7 +951,7 @@ export function CedTextChatPanel({
 
         <div
           ref={scrollRef}
-          className={`min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-4 pb-2 ${embedded ? "bg-white" : ""}`}
+          className={`min-h-0 flex-1 space-y-3 overflow-y-scroll overscroll-y-contain px-4 py-4 pb-2 ${embedded ? "bg-white" : ""}`}
         >
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";

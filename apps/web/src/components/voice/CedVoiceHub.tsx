@@ -345,8 +345,8 @@ export function CedVoiceHub() {
   );
 
   return (
-    <div className="ced-studio flex min-h-[calc(100dvh-5.5rem)] w-full flex-1 flex-col pb-16 lg:flex-row lg:pb-0">
-      <section className="flex min-h-[70vh] min-w-0 flex-1 flex-col overflow-hidden bg-white lg:min-h-0">
+    <div className="ced-studio flex min-h-0 w-full flex-1 flex-col overflow-hidden pb-16 lg:flex-row lg:pb-0">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-sky-100 px-4 py-2 text-sm">
           <span
             className={`h-2 w-2 rounded-full ${voice.micOn && !voice.paused ? "animate-pulse bg-sky-400" : "bg-sky-500"}`}
@@ -354,7 +354,7 @@ export function CedVoiceHub() {
           />
           <span className="font-medium">{readyLabel}</span>
         </div>
-        <div className="min-h-0 flex-1">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <CedTextChatPanel
             open
             variant="embedded"
