@@ -11,7 +11,7 @@ import {
 import { useUsageBalance } from "@/hooks/useUsageBalance";
 import { openBillingPortal } from "@/lib/api/billing";
 
-export function HudUsageBar() {
+export function HudUsageBar({ compact = false }: { compact?: boolean }) {
   const { balance, loaded } = useUsageBalance();
   const [rechargeOpen, setRechargeOpen] = useState(false);
   const [limitModalOpen, setLimitModalOpen] = useState(false);
@@ -61,9 +61,13 @@ export function HudUsageBar() {
 
   return (
     <div>
-      <div className="ced-hud-text-primary flex flex-wrap items-center justify-between gap-2 font-medium">
+      <div
+        className={`ced-hud-text-primary flex flex-wrap items-center justify-between gap-1 font-medium ${
+          compact ? "text-[11px] leading-tight" : ""
+        }`}
+      >
         <span>
-          USO VOZ{balance.voicePoolTrial ? " (prueba 15 min)" : " HOY"}:{" "}
+          Voz{balance.voicePoolTrial ? " (prueba)" : ""}:{" "}
           {loaded
             ? `${balance.used.toFixed(1)} / ${balance.plan} min`
             : "— / — min"}
@@ -80,7 +84,9 @@ export function HudUsageBar() {
           {statusLabel}
         </span>
       </div>
-      <div className="mt-3 h-2.5 overflow-hidden rounded bg-[#1a1a1a]">
+      <div
+        className={`mt-2 overflow-hidden rounded bg-[#1a1a1a] ${compact ? "h-1.5" : "mt-3 h-2.5"}`}
+      >
         <div
           className={`h-full transition-all duration-500 ${
             critical || criticalWarn
@@ -92,11 +98,13 @@ export function HudUsageBar() {
           style={{ width: `${balance.plan > 0 ? pct : 0}%` }}
         />
       </div>
+      {compact ? null : (
       <p className="ced-hud-text-muted mt-2 text-xs">
         {balance.voicePoolTrial
           ? "15 min de voz desde el registro · no se reinician · al agotarlos recarga o elige un plan"
           : "Límite diario del asistente de voz · el chat de texto es independiente"}
       </p>
+      )}
 
       {critical && loaded ? (
         <div className="mt-3 rounded border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-100">

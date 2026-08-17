@@ -44,14 +44,17 @@ export function HudDashboardGrid() {
           <div className="col-span-8 flex flex-col items-center justify-center gap-3 py-2">
             {isLg === true ? <CedVoiceHub /> : null}
           </div>
-          <div className="col-span-4">
+          <div className="col-span-4 flex flex-col gap-3">
             <HudGlobalPanelFrame>
               <HudGlobalPanel />
             </HudGlobalPanelFrame>
-          </div>
-          <div className="col-span-12">
-            <HudPanel title="USAGE" state="idle">
-              <HudUsageBar />
+            <HudPanel
+              title="uso de datos"
+              state="idle"
+              className="shrink-0"
+              bodyClassName="p-3 text-xs"
+            >
+              <HudUsageBar compact />
             </HudPanel>
           </div>
         </div>
@@ -67,9 +70,14 @@ export function HudDashboardGrid() {
           <HudCollapsible title="CONVERSACIÓN">
             <HudGlobalPanel />
           </HudCollapsible>
-          <HudCollapsible title="USAGE" defaultOpen>
-            <HudUsageBar />
-          </HudCollapsible>
+          <HudPanel
+            title="uso de datos"
+            state="idle"
+            className="shrink-0"
+            bodyClassName="p-3 text-xs"
+          >
+            <HudUsageBar compact />
+          </HudPanel>
         </div>
         </UsageBalanceProvider>
       </HudPanelProvider>
