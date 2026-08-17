@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { CedWordmark } from "@/components/brand/CedWordmark";
 import { PublicHeaderLink, PublicSiteHeader } from "@/components/layout/PublicSiteHeader";
 
 /** Layout público para documentos legales (privacidad / términos). */
@@ -25,9 +26,7 @@ export function LegalPageShell({
       <PublicSiteHeader
         left={
           <PublicHeaderLink href="/">
-            <span className="font-[family-name:var(--font-orbitron)] tracking-wider">
-              CED
-            </span>
+            <CedWordmark size="sm" />
           </PublicHeaderLink>
         }
         center={

@@ -17,6 +17,7 @@ type HudNavMenuProps = {
   label: string;
   items: HudNavItem[];
   align?: "left" | "right";
+  tone?: "hud" | "navy";
 };
 
 type MenuCoords = {
@@ -25,7 +26,7 @@ type MenuCoords = {
   right?: number;
 };
 
-export function HudNavMenu({ label, items, align = "left" }: HudNavMenuProps) {
+export function HudNavMenu({ label, items, align = "left", tone = "hud" }: HudNavMenuProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<MenuCoords | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -138,7 +139,12 @@ export function HudNavMenu({ label, items, align = "left" }: HudNavMenuProps) {
         aria-expanded={open}
         aria-controls={menuId}
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1 rounded px-2 py-1.5 font-[family-name:var(--font-orbitron)] text-[10px] font-semibold uppercase tracking-wider text-cyan-400 hover:bg-cyan-400/10 hover:text-cyan-200 sm:px-3 sm:text-xs"
+        className={[
+          "inline-flex items-center gap-1 rounded px-2 py-1.5 font-[family-name:var(--font-orbitron)] text-[10px] font-semibold uppercase tracking-wider sm:px-3 sm:text-xs",
+          tone === "navy"
+            ? "text-white/90 hover:bg-white/10 hover:text-white"
+            : "text-cyan-400 hover:bg-cyan-400/10 hover:text-cyan-200",
+        ].join(" ")}
       >
         {label}
         <ChevronDown

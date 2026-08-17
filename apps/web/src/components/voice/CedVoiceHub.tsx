@@ -1,15 +1,12 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
 import { AdvancedChatPanel } from "@/components/chat/AdvancedChatPanel";
 import { FinanceChatPanel } from "@/components/chat/FinanceChatPanel";
 import { ModuleShell } from "@/components/modules/ModuleShell";
-import { CedOrbOverlay } from "@/components/orb/CedOrbOverlay";
 import { useHudFeed } from "@/contexts/HudFeedContext";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
@@ -28,7 +25,6 @@ import {
 import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
-import { CedAssistantButton } from "@/components/voice/CedAssistantButton";
 import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
 import { CedActionBar } from "@/components/voice/CedActionBar";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
@@ -41,25 +37,13 @@ import {
   CedSettingsModal,
   CedStopConfirmModal,
 } from "@/components/voice/CedVoiceModals";
+import { CedListenButton } from "@/components/voice/CedListenButton";
+import { CedStudioSidebar } from "@/components/hud/CedStudioSidebar";
+import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import { CED_OPEN_SETTINGS_EVENT } from "@/lib/hud/chrome-events";
 
-const JarvisOrbScene = dynamic(
-  () => import("@/components/orb/JarvisOrbScene"),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-[280px] w-[280px] items-center justify-center rounded-full border border-cyan-500/30 bg-black">
-        <span className="font-[family-name:var(--font-orbitron)] text-xs text-cyan-600">
-          CARGANDO ORBE…
-        </span>
-      </div>
-    ),
-  },
-);
-
-/** Centro del dashboard — orbe JARVIS + controles + Gemini Live. */
+/** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
-  const [chatOpen, setChatOpen] = useState(false);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [financeOpen, setFinanceOpen] = useState(false);
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
@@ -94,11 +78,9 @@ export function CedVoiceHub() {
       const mod = (detail?.module || "").trim();
       if (mod === "finance") {
         setFinanceOpen(true);
-        setChatOpen(false);
         setAdvancedOpen(false);
       }
       if (mod === "opportunities") {
-        setChatOpen(false);
         setAdvancedOpen(false);
         setFinanceOpen(false);
       }
@@ -176,7 +158,6 @@ export function CedVoiceHub() {
         const normalized = normalizeCedMediaUrl(imageUrl);
         pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
         setVoiceImagePreview({ url: normalized, prompt });
-        setChatOpen(false);
         setChatSeedImage(null);
       }
     };
@@ -192,14 +173,12 @@ export function CedVoiceHub() {
     onGeneratedImage: (url, prompt) => {
       pushVoiceImage(url, { prompt, role: "model", status: "ready" });
       setVoiceImagePreview({ url, prompt });
-      setChatOpen(false);
       setChatSeedImage(null);
     },
   }, voiceRoute);
 
   useEffect(() => {
     if (!voice.micOn) return;
-    setChatOpen(false);
     setChatSeedImage(null);
   }, [voice.micOn]);
 
@@ -217,7 +196,6 @@ export function CedVoiceHub() {
       if (prompt) {
         setChatSeedPrompt(prompt);
       }
-      setChatOpen(true);
     };
     window.addEventListener(CED_LIFE_ACTION_EVENT, onLifeAction);
     return () => window.removeEventListener(CED_LIFE_ACTION_EVENT, onLifeAction);
@@ -314,101 +292,45 @@ export function CedVoiceHub() {
 
   const cameraLive = voice.cameraOn && Boolean(voice.cameraStream);
   const imageLive = Boolean(voiceImagePreview?.url) && !cameraLive;
-  const canvasBusy = cameraLive || imageLive;
+  const readyLabel = voice.micOn
+    ? voice.statusLabel
+    : "Asistente CED listo";
 
-  return (
-    <div className="mx-auto flex w-full max-w-md flex-col items-center px-3 py-4 pb-24 sm:max-w-lg sm:px-2">
-      <div
-        className={[
-          "relative mx-auto overflow-hidden",
-          canvasBusy
-            ? "aspect-[4/3] w-full max-w-[min(92vw,520px)] rounded-xl"
-            : "h-[min(52vw,280px)] w-[min(52vw,280px)] max-h-[320px] max-w-[320px] md:h-[300px] md:w-[300px]",
-        ].join(" ")}
-      >
-        <div
-          className={
-            canvasBusy
-              ? "absolute bottom-2 left-2 z-10 h-[72px] w-[72px] overflow-hidden rounded-full border border-cyan-500/40 bg-black/70 shadow-[0_0_16px_rgba(0,229,255,0.2)] md:h-[88px] md:w-[88px] [&>div]:!h-full [&>div]:!w-full [&>div]:!max-h-none [&>div]:!max-w-none"
-              : "relative h-full w-full"
-          }
-        >
-          <JarvisOrbScene
-            orbState={voice.orbState}
-            audioLevel={voice.audioLevel}
-            palette={voice.prefs.palette}
+  const listenDock = (
+    <div className="flex flex-col items-center gap-3">
+      {cameraLive || imageLive ? (
+        <div className="relative h-36 w-full max-w-[220px] overflow-hidden rounded-xl">
+          <CedCameraPreview
+            overlay
+            stream={voice.cameraStream}
+            active={voice.cameraOn}
+            facing={voice.cameraFacing}
+            onFlipCamera={() => void voice.flipCamera()}
           />
-          <CedOrbOverlay
-            orbState={voice.orbState}
-            audioLevel={voice.audioLevel}
-            palette={voice.prefs.palette}
+          <CedVoiceImagePreview
+            overlay
+            url={imageLive ? voiceImagePreview?.url ?? null : null}
+            prompt={voiceImagePreview?.prompt}
+            onDismiss={() => setVoiceImagePreview(null)}
           />
         </div>
-
-        <CedCameraPreview
-          overlay
-          stream={voice.cameraStream}
-          active={voice.cameraOn}
-          facing={voice.cameraFacing}
-          onFlipCamera={() => void voice.flipCamera()}
-        />
-
-        <CedVoiceImagePreview
-          overlay
-          url={imageLive ? voiceImagePreview?.url ?? null : null}
-          prompt={voiceImagePreview?.prompt}
-          onDismiss={() => setVoiceImagePreview(null)}
-        />
-      </div>
-
-      <AnimatePresence mode="wait">
-        <motion.p
-          key={voice.statusLabel}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0 }}
-          className="mt-4 text-center font-[family-name:var(--font-orbitron)] text-sm font-bold tracking-widest text-[#00e5ff]"
-        >
-          {voice.statusLabel}
-        </motion.p>
-      </AnimatePresence>
-
-      {voice.errorMessage ? (
-        <p className="ced-hud-text-secondary mt-2 max-w-sm text-center">
-          {voice.errorMessage}
-        </p>
       ) : null}
-
+      <CedListenButton
+        active={voice.micOn}
+        busy={voice.micBusy}
+        paused={voice.paused}
+        onActivate={handleMic}
+      />
       <CedVoiceHeardBadge
         indicator={voice.heardIndicator}
         micOn={voice.micOn}
         paused={voice.paused}
       />
-
-      {!voice.micOn ? (
-        <CedAssistantButton
-          active={false}
-          busy={voice.micBusy}
-          paused={voice.paused}
-          onActivate={activateMic}
-        />
+      {voice.errorMessage ? (
+        <p className="max-w-[14rem] text-center text-[11px] text-sky-800/80">
+          {voice.errorMessage}
+        </p>
       ) : null}
-
-      {voice.micOn && !voice.paused ? (
-        <div className="mt-3 flex h-8 items-end gap-1">
-          {Array.from({ length: 12 }).map((_, i) => (
-            <motion.div
-              key={i}
-              className="w-1 rounded-full bg-cyan-400"
-              animate={{
-                height: 8 + voice.inputLevel * 24 * (0.5 + Math.sin(i) * 0.5),
-              }}
-              transition={{ duration: 0.08 }}
-            />
-          ))}
-        </div>
-      ) : null}
-
       <CedVoiceControls
         micOn={voice.micOn}
         muted={voice.muted}
@@ -419,32 +341,124 @@ export function CedVoiceHub() {
         onPause={voice.togglePause}
         onStop={() => voice.setStopConfirmOpen(true)}
       />
+    </div>
+  );
 
-      <CedActionBar
-        micOn={voice.micOn}
-        micBusy={voice.micBusy}
-        cameraOn={voice.cameraOn}
-        chatOpen={chatOpen}
-        advancedOpen={advancedOpen}
-        financeOpen={financeOpen}
-        onMic={handleMic}
-        onCamera={() => void voice.toggleCamera()}
-        onChat={() => {
-          setChatOpen((open) => !open);
-          setAdvancedOpen(false);
-          setFinanceOpen(false);
-        }}
-        onAdvanced={() => {
-          setAdvancedOpen((open) => !open);
-          setChatOpen(false);
-          setFinanceOpen(false);
-        }}
-        onFinance={() => {
-          setFinanceOpen((open) => !open);
-          setChatOpen(false);
-          setAdvancedOpen(false);
-        }}
+  return (
+    <div className="ced-studio flex min-h-[calc(100dvh-5.5rem)] w-full flex-1 flex-col pb-16 lg:flex-row lg:pb-0">
+      <section className="flex min-h-[70vh] min-w-0 flex-1 flex-col overflow-hidden bg-white lg:min-h-0">
+        <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-sky-100 px-4 py-2 text-sm">
+          <span
+            className={`h-2 w-2 rounded-full ${voice.micOn && !voice.paused ? "animate-pulse bg-sky-400" : "bg-sky-500"}`}
+            aria-hidden
+          />
+          <span className="font-medium">{readyLabel}</span>
+        </div>
+        <div className="min-h-0 flex-1">
+          <CedTextChatPanel
+            open
+            variant="embedded"
+            onClose={() => undefined}
+            seedImage={chatSeedImage}
+            onSeedConsumed={() => setChatSeedImage(null)}
+            seedPrompt={chatSeedPrompt}
+            onSeedPromptConsumed={() => setChatSeedPrompt(null)}
+            onVoiceImageAttached={
+              voice.voiceSessionActive
+                ? (preview, file) => {
+                    const itemId = pushVoiceImage(preview, {
+                      fileName: file?.name,
+                      fileSize: file?.size,
+                      status: "uploading",
+                      role: "user",
+                    });
+                    void voice.registerChatImageForVoice(preview, file).then((result) => {
+                      if (!result?.image_url) return;
+                      updateVoiceImage(itemId, {
+                        imageUrl: result.image_url,
+                        text: "Imagen lista para CED",
+                        uploadStatus: "ready",
+                        fileName: result.filename || file?.name,
+                        fileSize: result.size_bytes ?? file?.size,
+                      });
+                    }).catch(() => {
+                      updateVoiceImage(itemId, {
+                        text: "Error al subir imagen",
+                        uploadStatus: "error",
+                      });
+                    });
+                  }
+                : undefined
+            }
+            voicePublishActive={voice.voiceSessionActive}
+          />
+        </div>
+      </section>
+
+      <CedStudioSidebar
+        listen={listenDock}
+        usage={
+          <div className="ced-studio-usage rounded-xl border border-sky-100 bg-white p-3">
+            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+              uso de datos
+            </p>
+            <HudUsageBar compact />
+          </div>
+        }
+        extras={
+          <div className="flex flex-col gap-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                setAdvancedOpen((open) => !open);
+                setFinanceOpen(false);
+              }}
+              className="rounded-lg px-2 py-1.5 text-left text-[13px] text-sky-800/80 hover:bg-sky-100 hover:text-sky-950"
+            >
+              Avanzado
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setFinanceOpen((open) => !open);
+                setAdvancedOpen(false);
+              }}
+              className="rounded-lg px-2 py-1.5 text-left text-[13px] text-sky-800/80 hover:bg-sky-100 hover:text-sky-950"
+            >
+              Finanzas
+            </button>
+            <button
+              type="button"
+              onClick={() => void voice.toggleCamera()}
+              className="rounded-lg px-2 py-1.5 text-left text-[13px] text-sky-800/80 hover:bg-sky-100 hover:text-sky-950"
+            >
+              {voice.cameraOn ? "Cerrar cámara" : "Cámara"}
+            </button>
+          </div>
+        }
       />
+
+      <div className="lg:hidden">
+        <CedActionBar
+          micOn={voice.micOn}
+          micBusy={voice.micBusy}
+          cameraOn={voice.cameraOn}
+          chatOpen
+          advancedOpen={advancedOpen}
+          financeOpen={financeOpen}
+          onMic={handleMic}
+          onCamera={() => void voice.toggleCamera()}
+          onChat={() => undefined}
+          onAdvanced={() => {
+            setAdvancedOpen((open) => !open);
+            setFinanceOpen(false);
+          }}
+          onFinance={() => {
+            setFinanceOpen((open) => !open);
+            setAdvancedOpen(false);
+          }}
+        />
+      </div>
 
       <CedHudQuickPopups active={quickPopup} onClose={() => setQuickPopup(null)} />
 
@@ -480,43 +494,6 @@ export function CedVoiceHub() {
       />
 
       <ModuleShell />
-
-      <CedTextChatPanel
-        open={chatOpen}
-        onClose={() => setChatOpen(false)}
-        seedImage={chatSeedImage}
-        onSeedConsumed={() => setChatSeedImage(null)}
-        seedPrompt={chatSeedPrompt}
-        onSeedPromptConsumed={() => setChatSeedPrompt(null)}
-        onVoiceImageAttached={
-          voice.voiceSessionActive
-            ? (preview, file) => {
-                const itemId = pushVoiceImage(preview, {
-                  fileName: file?.name,
-                  fileSize: file?.size,
-                  status: "uploading",
-                  role: "user",
-                });
-                void voice.registerChatImageForVoice(preview, file).then((result) => {
-                  if (!result?.image_url) return;
-                  updateVoiceImage(itemId, {
-                    imageUrl: result.image_url,
-                    text: "Imagen lista para CED",
-                    uploadStatus: "ready",
-                    fileName: result.filename || file?.name,
-                    fileSize: result.size_bytes ?? file?.size,
-                  });
-                }).catch(() => {
-                  updateVoiceImage(itemId, {
-                    text: "Error al subir imagen",
-                    uploadStatus: "error",
-                  });
-                });
-              }
-            : undefined
-        }
-        voicePublishActive={voice.voiceSessionActive}
-      />
 
       <VoiceLimitModal
         open={voiceLimitOpen}

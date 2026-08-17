@@ -49,6 +49,8 @@ type CedTextChatPanelProps = {
   /** Mientras hay sesión de voz activa, registra imagen para publicar en Instagram */
   onVoiceImageAttached?: (preview: string, file?: File) => void;
   voicePublishActive?: boolean;
+  /** Chat embebido en el dashboard (sin overlay). */
+  variant?: "overlay" | "embedded";
 };
 
 function formatTime(iso?: string) {
@@ -339,6 +341,7 @@ export function CedTextChatPanel({
   onSeedPromptConsumed,
   onVoiceImageAttached,
   voicePublishActive = false,
+  variant = "overlay",
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -361,14 +364,16 @@ export function CedTextChatPanel({
   const streamTargetIndexRef = useRef<number | null>(null);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
   const { setTextChatOpen } = useCedOverlay();
+  const embedded = variant === "embedded";
 
   useEffect(() => {
+    if (embedded) return;
     setTextChatOpen(open);
     return () => setTextChatOpen(false);
-  }, [open, setTextChatOpen]);
+  }, [embedded, open, setTextChatOpen]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || embedded) return;
 
     const vv = window.visualViewport;
     if (!vv) return;
@@ -402,7 +407,7 @@ export function CedTextChatPanel({
       window.removeEventListener("orientationchange", syncViewport);
       resetViewport();
     };
-  }, [open]);
+  }, [embedded, open]);
 
   const refreshStatus = useCallback(async () => {
     const s = await fetchChatStatus();
@@ -878,16 +883,20 @@ export function CedTextChatPanel({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[150] flex items-end justify-center overflow-x-hidden bg-black/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+  const shell = (
       <div
-        className="box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-md sm:rounded-2xl sm:border"
+        className={
+          embedded
+            ? "flex h-full min-h-0 w-full flex-col overflow-hidden bg-white"
+            : "box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-cyan-500/30 bg-[#060a0f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-md sm:rounded-2xl sm:border"
+        }
         style={
-          mobilePanelHeight
+          !embedded && mobilePanelHeight
             ? { height: mobilePanelHeight, maxHeight: mobilePanelHeight }
             : undefined
         }
       >
+        {embedded ? null : (
         <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/20 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <button
@@ -922,9 +931,10 @@ export function CedTextChatPanel({
             </button>
           </div>
         </header>
+        )}
 
         {status?.trial_expired && (
-          <p className="shrink-0 border-b border-amber-900/40 px-4 py-2 text-[10px] text-amber-400">
+          <p className={`shrink-0 border-b px-4 py-2 text-[10px] ${embedded ? "border-amber-200 bg-amber-50 text-amber-800" : "border-amber-900/40 text-amber-400"}`}>
             Tu prueba de voz terminó. El chat sigue disponible.{" "}
             <a href="/dashboard/plans" className="underline">
               Ver planes / recargar
@@ -934,14 +944,14 @@ export function CedTextChatPanel({
         )}
 
         {status && !status.unlimited && status.messages_limit_daily != null && !status.trial_expired && (
-          <p className="shrink-0 border-b border-cyan-900/40 px-4 py-1.5 text-[10px] text-cyan-600">
+          <p className={`shrink-0 border-b px-4 py-1.5 text-[10px] ${embedded ? "border-sky-100 text-sky-700" : "border-cyan-900/40 text-cyan-600"}`}>
             Mensajes hoy: {status.messages_used_today}/{status.messages_limit_daily}
           </p>
         )}
 
         <div
           ref={scrollRef}
-          className="min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-4 pb-2"
+          className={`min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-y-contain px-4 py-4 pb-2 ${embedded ? "bg-white" : ""}`}
         >
           {messages.map((msg, i) => {
             const isUser = msg.role === "user";
@@ -958,21 +968,23 @@ export function CedTextChatPanel({
                 className={`flex ${isUser ? "justify-end" : "justify-start"}`}
               >
                 <div
-                  className={`max-w-[88%] rounded-lg px-3 py-2 text-sm ${
-                    isUser
-                      ? "bg-cyan-500/15 text-cyan-50"
-                      : "border border-cyan-500/25 bg-black/60 text-cyan-100/90"
+                  className={`max-w-[88%] rounded-2xl px-3.5 py-2.5 text-sm ${
+                    embedded
+                      ? isUser
+                        ? "ced-studio-user-bubble"
+                        : "ced-studio-ced-bubble"
+                      : isUser
+                        ? "bg-cyan-500/15 text-cyan-50"
+                        : "border border-cyan-500/25 bg-black/60 text-cyan-100/90"
                   }`}
                 >
-                  {!isUser && (
-                    <div className="mb-1 font-[family-name:var(--font-orbitron)] text-[9px] text-cyan-500">
-                      CED
-                    </div>
-                  )}
+                  <div className={`mb-1 text-[10px] font-bold ${embedded ? (isUser ? "text-sky-800" : "text-sky-300") : "font-[family-name:var(--font-orbitron)] text-[9px] text-cyan-500"}`}>
+                    {isUser ? "User" : "CED"}
+                  </div>
                   {displayContent ? (
                     <p className="whitespace-pre-wrap break-words">{displayContent}</p>
                   ) : busy && streamTargetIndexRef.current === i ? (
-                    <p className="animate-pulse text-cyan-400/90">
+                    <p className={`animate-pulse ${embedded ? "text-sky-600" : "text-cyan-400/90"}`}>
                       {statusHint || "Generando…"}
                     </p>
                   ) : (
@@ -985,21 +997,21 @@ export function CedTextChatPanel({
                   {rechargeNeeded ? (
                     <RechargeInChatButton recharge={rechargeNeeded} />
                   ) : null}
-                  <p className="mt-1 text-[9px] opacity-50">{formatTime(msg.created_at)}</p>
+                  <p className={`mt-1 text-[9px] ${embedded ? "opacity-40" : "opacity-50"}`}>{formatTime(msg.created_at)}</p>
                 </div>
               </div>
             );
           })}
           {typing || (busy && statusHint) ? (
-            <p className="text-xs text-cyan-500 animate-pulse">
+            <p className={`animate-pulse text-xs ${embedded ? "text-sky-600" : "text-cyan-500"}`}>
               {statusHint || "CED está escribiendo…"}
             </p>
           ) : null}
         </div>
 
-        {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
+        {error && <p className={`shrink-0 px-4 pb-1 text-xs ${embedded ? "text-red-600" : "text-red-400"}`}>{error}</p>}
 
-        <footer className="relative z-10 shrink-0 border-t border-cyan-500/20 bg-[#060a0f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+        <footer className={`relative z-10 shrink-0 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4 ${embedded ? "border-t border-sky-100 bg-white" : "border-t border-cyan-500/20 bg-[#060a0f]"}`}>
           {attachedPdf ? (
             <PdfAttachmentBar
               filename={attachedPdf.name}
@@ -1020,7 +1032,7 @@ export function CedTextChatPanel({
           <div className="flex w-full max-w-full items-end gap-1.5 sm:gap-2">
             <textarea
               ref={textareaRef}
-              autoFocus
+              autoFocus={!embedded}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -1059,12 +1071,20 @@ export function CedTextChatPanel({
                         : "Escribe a CED o usa el micrófono…"
               }
               disabled={Boolean(status?.blocked)}
-              className={`box-border min-h-[48px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-lg border bg-black/60 px-3 py-2.5 text-base leading-snug text-white caret-cyan-300 placeholder:text-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 disabled:opacity-50 sm:text-sm ${
-                isDictating
-                  ? "border-red-500/50 focus:border-red-400"
-                  : busy
-                    ? "border-cyan-500/40"
-                    : "border-cyan-700/60 focus:border-cyan-400"
+              className={`box-border min-h-[48px] max-h-[120px] min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 py-2.5 text-base leading-snug caret-sky-500 focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
+                embedded
+                  ? `border bg-white text-slate-800 placeholder:text-sky-400/80 focus:ring-sky-300/60 ${
+                      isDictating
+                        ? "border-red-400"
+                        : "border-sky-200 focus:border-sky-400"
+                    }`
+                  : `border bg-black/60 text-white caret-cyan-300 placeholder:text-cyan-600 focus:ring-cyan-500/40 ${
+                      isDictating
+                        ? "border-red-500/50 focus:border-red-400"
+                        : busy
+                          ? "border-cyan-500/40"
+                          : "border-cyan-700/60 focus:border-cyan-400"
+                    }`
               }`}
               style={{ WebkitAppearance: "none" }}
             />
@@ -1106,13 +1126,17 @@ export function CedTextChatPanel({
                 keepInputFocusRef.current = true;
               }}
               onClick={() => void submit()}
-              className="box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full border border-cyan-400/60 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20 active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px]"
+              className={`box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px] ${
+                embedded
+                  ? "bg-sky-500 text-white shadow-[0_0_12px_rgba(59,183,255,0.45)] hover:bg-sky-400"
+                  : "border border-cyan-400/60 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20"
+              }`}
               aria-label="Enviar"
             >
               <Send className="h-[18px] w-[18px] shrink-0" />
             </button>
           </div>
-          <p className="mt-1.5 break-words text-left text-[9px] leading-snug text-cyan-700">
+          <p className={`mt-1.5 break-words text-left text-[9px] leading-snug ${embedded ? "text-sky-500/80" : "text-cyan-700"}`}>
             {isDictating
               ? "🎤 Dictando en vivo… clic en el mic para detener"
               : attachedPdf
@@ -1123,6 +1147,15 @@ export function CedTextChatPanel({
           </p>
         </footer>
       </div>
+  );
+
+  if (embedded) {
+    return shell;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[150] flex items-end justify-center overflow-x-hidden bg-black/50 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+      {shell}
     </div>
   );
 }

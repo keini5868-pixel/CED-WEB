@@ -302,3 +302,51 @@ body {
     min-height: 100dvh;
   }
 }
+
+/* Studio — chat blanco + azul claro (dashboard) */
+.ced-studio-shell {
+  --studio-navy: #0c3d73;
+  --studio-navy-deep: #08284c;
+  --studio-accent: #3bb7ff;
+  --studio-accent-soft: #e7f6ff;
+  --studio-chat-bg: #ffffff;
+  --studio-status: #f7fbff;
+  --studio-sidebar: #f4f9fd;
+  --studio-ced-bubble: #0b1b33;
+  --studio-user-text: #12324f;
+  background: #ffffff;
+}
+
+.ced-studio {
+  --studio-navy: #0c3d73;
+  --studio-navy-deep: #08284c;
+  --studio-accent: #3bb7ff;
+  --studio-accent-soft: #e7f6ff;
+  --studio-chat-bg: #ffffff;
+  --studio-status: #f7fbff;
+  --studio-sidebar: #f4f9fd;
+  --studio-ced-bubble: #0b1b33;
+  --studio-user-text: #12324f;
+}
+
+.ced-studio-status {
+  background: var(--studio-status);
+  color: #1a4a73;
+}
+
+.ced-studio-user-bubble {
+  background: var(--studio-accent-soft);
+  color: var(--studio-user-text);
+}
+
+.ced-studio-ced-bubble {
+  background: var(--studio-ced-bubble);
+  color: #f4fbff;
+}
+
+.ced-studio-usage .ced-hud-text-primary,
+.ced-studio-usage .ced-hud-text-accent,
+.ced-studio-usage .ced-hud-text-muted,
+.ced-studio-usage .ced-hud-text-body {
+  color: #1a4a73;
+}

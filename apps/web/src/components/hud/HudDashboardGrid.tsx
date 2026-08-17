@@ -3,37 +3,37 @@
 import dynamic from "next/dynamic";
 import { Suspense } from "react";
 
-import { HudPanel } from "@ced/ui";
-
-import { HudCollapsible } from "@/components/hud/HudCollapsible";
 import { MetaOAuthCallbackBanner } from "@/components/hud/ConnectNetworksButton";
 import { TrialExpiredBanner } from "@/components/billing/TrialExpiredBanner";
 import { BillingFeedback } from "@/components/billing/BillingFeedback";
 import { CierrePartnerPreviewBanner } from "@/components/preview/CierrePartnerPreviewBanner";
-import {
-  HudGlobalPanel,
-  HudGlobalPanelFrame,
-} from "@/components/hud/HudLivePanels";
-import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import { HudFeedProvider } from "@/contexts/HudFeedContext";
 import { HudPanelProvider } from "@/contexts/HudPanelContext";
-import { useBreakpointLg } from "@/hooks/useBreakpointLg";
 import { UsageBalanceProvider } from "@/hooks/useUsageBalance";
 
 const CedVoiceHub = dynamic(
   () => import("@/components/voice/CedVoiceHub").then((m) => m.CedVoiceHub),
-  { ssr: false },
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex min-h-[calc(100dvh-5.5rem)] flex-1 bg-white">
+        <div className="flex flex-1 items-center justify-center text-sm text-sky-800">
+          Cargando asistente CED…
+        </div>
+        <aside className="hidden w-[15.5rem] border-l border-sky-100 bg-[#f4f9fd] lg:block" />
+      </div>
+    ),
+  },
 );
 
-/** HUD — voz, conversación y uso. Sin carrusel CASTILLO ni paneles LIFE/DRONES/WAVES. */
+/** Dashboard studio — chat blanco + menú y voz compacta. */
 export function HudDashboardGrid() {
-  const isLg = useBreakpointLg();
   return (
     <HudFeedProvider>
       <HudPanelProvider>
         <UsageBalanceProvider>
-        <div className="hidden grid-cols-12 gap-4 p-4 pb-24 lg:grid lg:items-start">
-          <div className="col-span-12">
+        <div className="flex min-h-[calc(100dvh-5.5rem)] flex-1 flex-col">
+          <div className="shrink-0 px-3 pt-3 lg:px-4">
             <Suspense fallback={null}>
               <BillingFeedback />
               <MetaOAuthCallbackBanner />
@@ -41,43 +41,7 @@ export function HudDashboardGrid() {
               <CierrePartnerPreviewBanner />
             </Suspense>
           </div>
-          <div className="col-span-8 flex flex-col items-center justify-center gap-3 py-2">
-            {isLg === true ? <CedVoiceHub /> : null}
-          </div>
-          <div className="col-span-4 flex flex-col gap-3">
-            <HudGlobalPanelFrame>
-              <HudGlobalPanel />
-            </HudGlobalPanelFrame>
-            <HudPanel
-              title="uso de datos"
-              state="idle"
-              className="shrink-0"
-              bodyClassName="p-3 text-xs"
-            >
-              <HudUsageBar compact />
-            </HudPanel>
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-2 p-3 pb-24 lg:hidden">
-          <Suspense fallback={null}>
-            <BillingFeedback />
-            <MetaOAuthCallbackBanner />
-            <TrialExpiredBanner />
-            <CierrePartnerPreviewBanner />
-          </Suspense>
-          {isLg === false ? <CedVoiceHub /> : null}
-          <HudCollapsible title="CONVERSACIÓN">
-            <HudGlobalPanel />
-          </HudCollapsible>
-          <HudPanel
-            title="uso de datos"
-            state="idle"
-            className="shrink-0"
-            bodyClassName="p-3 text-xs"
-          >
-            <HudUsageBar compact />
-          </HudPanel>
+          <CedVoiceHub />
         </div>
         </UsageBalanceProvider>
       </HudPanelProvider>

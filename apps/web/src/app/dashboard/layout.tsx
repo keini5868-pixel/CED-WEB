@@ -9,7 +9,7 @@ export default async function DashboardLayout({
   const { user, isSuperAdmin: admin } = await getSession();
 
   return (
-    <HudShell email={user?.email ?? null} isSuperAdmin={admin}>
+    <HudShell email={user?.email ?? null} isSuperAdmin={admin} studio>
       {children}
     </HudShell>
   );

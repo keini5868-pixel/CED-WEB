@@ -186,17 +186,15 @@ export function CedOrbOverlay({
 
       <motion.span
 
-        className="relative z-10 select-none font-[family-name:var(--font-orbitron)] font-bold tracking-[0.45em]"
+        className="relative z-10 select-none font-[family-name:var(--font-orbitron)] font-bold tracking-[0.1em]"
 
         style={{
 
           color: colors.primary,
 
-          textShadow: `0 0 24px ${colors.primary}, 0 0 48px ${colors.secondary}88`,
+          textShadow: `0 0 18px ${colors.primary}, 0 0 36px ${colors.secondary}66`,
 
-          filter: `blur(${active ? 0.6 + audioLevel * 0.8 : 1.2}px)`,
-
-          fontSize: "clamp(1.75rem, 5vw, 2.35rem)",
+          fontSize: "clamp(1.35rem, 4.2vw, 1.85rem)",
 
         }}
 

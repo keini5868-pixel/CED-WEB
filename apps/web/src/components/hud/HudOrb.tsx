@@ -1,5 +1,7 @@
 "use client";
 
+import { CedWordmark } from "@/components/brand/CedWordmark";
+
 /** Orbe central con anillos — placeholder Three.js en Fase 2. */
 export function HudOrb() {
   return (
@@ -7,8 +9,8 @@ export function HudOrb() {
       <div className="absolute inset-0 animate-spin rounded-full border border-cyan-500/20 [animation-duration:12s]" />
       <div className="absolute inset-3 animate-spin rounded-full border border-dashed border-cyan-400/30 [animation-duration:8s] [animation-direction:reverse]" />
       <div className="absolute inset-6 rounded-full border-2 border-cyan-400/50 ced-glow" />
-      <span className="relative font-[family-name:var(--font-orbitron)] text-2xl font-bold text-cyan-300 ced-glow-text md:text-3xl">
-        CED
+      <span className="relative">
+        <CedWordmark size="lg" />
       </span>
       <p className="ced-hud-text-muted absolute -bottom-6 w-full text-center font-[family-name:var(--font-orbitron)] text-xs tracking-widest uppercase">
         IDLE
