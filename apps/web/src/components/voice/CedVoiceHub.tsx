@@ -327,7 +327,7 @@ export function CedVoiceHub() {
         paused={voice.paused}
       />
       {voice.errorMessage ? (
-        <p className="max-w-[14rem] text-center text-[11px] text-sky-800/80">
+        <p className="max-w-[14rem] text-center text-[11px] text-[var(--ced-text-muted)]">
           {voice.errorMessage}
         </p>
       ) : null}
@@ -347,7 +347,7 @@ export function CedVoiceHub() {
   return (
     <div className="ced-studio flex min-h-0 w-full flex-1 flex-col overflow-hidden pb-16 lg:flex-row lg:pb-0">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
-        <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-sky-100 px-4 py-2 text-sm">
+        <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-4 py-2 text-sm">
           <span
             className={`h-2 w-2 rounded-full ${voice.micOn && !voice.paused ? "animate-pulse bg-sky-400" : "bg-sky-500"}`}
             aria-hidden
@@ -398,7 +398,7 @@ export function CedVoiceHub() {
       <CedStudioSidebar
         listen={listenDock}
         usage={
-          <div className="ced-studio-usage ced-gold-outline rounded-xl bg-white p-3">
+          <div className="ced-studio-usage ced-gold-outline rounded-xl bg-[var(--studio-card)] p-3">
             <p className="ced-mark-text mb-2 text-[10px] uppercase">
               uso de datos
             </p>

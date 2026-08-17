@@ -58,7 +58,7 @@ const PLAN_STYLES: Record<
 
 export default function HomePage() {
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-black">
+    <main className="ced-page-glow relative min-h-screen overflow-x-hidden">
       <div
         className="pointer-events-none absolute inset-0 opacity-30"
         style={{

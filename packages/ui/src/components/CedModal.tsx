@@ -65,7 +65,7 @@ export function CedModal({
               {title}
             </h2>
           </header>
-          <div className="px-5 py-4 text-sm text-cyan-100/90 sm:px-6">{children}</div>
+          <div className="px-5 py-4 text-sm text-[var(--ced-text)] sm:px-6">{children}</div>
           <footer className="sticky bottom-0 z-10 flex flex-col-reverse gap-2 border-t border-cyan-500/25 bg-[var(--ced-bg-panel)] px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(0,0,0,0.45)] sm:flex-row sm:flex-wrap sm:justify-end sm:gap-3 sm:px-6">
             {footer ?? (
               <CedButton variant="secondary" onClick={onClose}>

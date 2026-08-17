@@ -15,7 +15,7 @@ export function LegalPageShell({
   children: ReactNode;
 }) {
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-black text-cyan-100">
+    <main className="ced-page-glow relative min-h-screen overflow-x-hidden text-[var(--ced-text)]">
       <div
         className="pointer-events-none absolute inset-0 opacity-30"
         style={{

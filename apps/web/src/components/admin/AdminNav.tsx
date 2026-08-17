@@ -35,7 +35,7 @@ export function AdminNav() {
   }, []);
 
   return (
-    <nav className="flex flex-wrap gap-2 border-b border-cyan-500/20 bg-[#0a0a0a]/80 px-4 py-2">
+    <nav className="flex flex-wrap gap-2 border-b border-cyan-500/20 bg-[var(--ced-bg-panel)]/80 px-4 py-2">
       {LINKS.map((link) => {
         const active = pathname === link.href;
         const isSupport = link.href === "/admin/support";

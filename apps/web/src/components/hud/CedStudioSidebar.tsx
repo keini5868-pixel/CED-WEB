@@ -60,7 +60,7 @@ export function CedStudioSidebar({
   ];
 
   return (
-    <aside className="flex w-full shrink-0 flex-col overflow-hidden border-t border-sky-100 bg-[#f4f9fd] px-5 py-5 lg:h-full lg:w-[min(15.5rem,28%)] lg:border-l lg:border-t-0">
+    <aside className="flex w-full shrink-0 flex-col overflow-hidden border-t border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-5 py-5 lg:h-full lg:w-[min(15.5rem,28%)] lg:border-l lg:border-t-0">
       <nav aria-label="Módulos CED" className="flex min-h-0 flex-col gap-0.5 overflow-y-auto">
         {links
           .filter((item) => !item.hidden)

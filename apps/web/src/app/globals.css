@@ -64,7 +64,7 @@ body {
 .ced-hud-page-bg {
   background-color: var(--ced-bg);
   background-image:
-    radial-gradient(ellipse at 50% 0%, rgba(0, 229, 255, 0.07) 0%, transparent 50%),
+    var(--ced-page-glow),
     repeating-linear-gradient(
       90deg,
       transparent,
@@ -79,6 +79,15 @@ body {
       rgba(0, 229, 255, 0.025) 56px,
       rgba(0, 229, 255, 0.025) 57px
     );
+}
+
+.ced-page-glow {
+  background-color: var(--ced-bg);
+  background-image: var(--ced-page-glow);
+}
+
+.ced-chrome-bar {
+  background: var(--ced-header-gradient);
 }
 
 /* Jerarquía de texto HUD — WCAG AA sobre #0a0a0a */
@@ -317,38 +326,17 @@ body {
   }
 }
 
-/* Studio — chat blanco + azul claro (dashboard) */
+/* Studio — chat blanco; el resto sigue el tema (petróleo / claro) */
 .ced-studio-shell {
-  --studio-navy: #0a3d4f;
-  --studio-navy-deep: #072f3d;
-  --studio-accent: #4fd4ee;
-  --studio-accent-soft: #e7f6ff;
-  --studio-chat-bg: #ffffff;
-  --studio-status: #f7fbff;
-  --studio-sidebar: #f4f9fd;
-  --studio-ced-bubble: #0b1b33;
-  --studio-user-text: #12324f;
-  background: #ffffff;
+  background: var(--studio-shell-bg);
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
 }
 
-.ced-studio {
-  --studio-navy: #0a3d4f;
-  --studio-navy-deep: #072f3d;
-  --studio-accent: #4fd4ee;
-  --studio-accent-soft: #e7f6ff;
-  --studio-chat-bg: #ffffff;
-  --studio-status: #f7fbff;
-  --studio-sidebar: #f4f9fd;
-  --studio-ced-bubble: #0b1b33;
-  --studio-user-text: #12324f;
-}
-
 .ced-studio-status {
   background: var(--studio-status);
-  color: #1a4a73;
+  color: var(--studio-status-fg);
 }
 
 .ced-studio-user-bubble {
@@ -365,5 +353,5 @@ body {
 .ced-studio-usage .ced-hud-text-accent,
 .ced-studio-usage .ced-hud-text-muted,
 .ced-studio-usage .ced-hud-text-body {
-  color: #1a4a73;
+  color: var(--studio-usage-fg);
 }

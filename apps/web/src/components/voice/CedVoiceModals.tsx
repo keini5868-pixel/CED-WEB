@@ -20,6 +20,7 @@ import {
 import { fetchUserAddress, updateUserAddress } from "@/lib/api/profile";
 import { clearEphemeralTokenCache } from "@/lib/voice/ephemeralTokenCache";
 import type { UserGender } from "@/lib/voice/addressPreferenceIntent";
+import { ThemeAppearanceToggle } from "@/components/account/ThemeAppearanceToggle";
 import { isRetellVoice } from "@/lib/voice/voiceProvider";
 
 export function CedStopConfirmModal({
@@ -100,7 +101,7 @@ export function CedSettingsModal({
     <CedModal
       open={open}
       onClose={onClose}
-      title="CONFIGURACIÓN DE VOZ"
+      title="CONFIGURACIÓN"
       footer={
         <div className="flex w-full flex-col-reverse gap-2 sm:w-auto sm:flex-row sm:gap-3">
           <CedButton variant="ghost" onClick={onClose} className="w-full sm:w-auto">
@@ -129,6 +130,7 @@ export function CedSettingsModal({
       }
     >
       <div className="max-h-[min(62vh,520px)] space-y-4 overflow-y-auto overscroll-y-contain pr-1 [-webkit-overflow-scrolling:touch]">
+        <ThemeAppearanceToggle />
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"

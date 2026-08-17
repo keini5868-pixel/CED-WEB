@@ -16,11 +16,11 @@ const CedVoiceHub = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="flex min-h-0 flex-1 overflow-hidden bg-white">
-        <div className="flex flex-1 items-center justify-center text-sm text-sky-800">
+      <div className="flex min-h-0 flex-1 overflow-hidden bg-[var(--studio-chat-bg)]">
+        <div className="flex flex-1 items-center justify-center text-sm text-[var(--ced-text-muted)]">
           Cargando asistente CED…
         </div>
-        <aside className="hidden w-[15.5rem] border-l border-sky-100 bg-[#f4f9fd] lg:block" />
+        <aside className="hidden w-[15.5rem] border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] lg:block" />
       </div>
     ),
   },

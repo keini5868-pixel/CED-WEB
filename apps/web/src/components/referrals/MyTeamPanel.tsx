@@ -94,10 +94,10 @@ export function MyTeamPanel() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
       <div>
-        <h1 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wide text-cyan-200 sm:text-xl">
+        <h1 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wide text-[var(--ced-text-primary)] sm:text-xl">
           Estructura PM
         </h1>
-        <p className="mt-1 text-sm text-cyan-100/70">
+        <p className="mt-1 text-sm text-[var(--ced-text-muted)]">
           Quién de tu estructura PM usa CED de verdad para vender PM International:
           voz, chat de venta/prospección, Finanzas y Oportunidades. No cuenta
           actividad genérica del sistema.

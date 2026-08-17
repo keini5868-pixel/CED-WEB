@@ -10,7 +10,7 @@ export function AuthCard({
   children: ReactNode;
 }) {
   return (
-    <div className="w-full max-w-md rounded border border-cyan-500/30 bg-black/55 p-8 ced-glow">
+    <div className="w-full max-w-md rounded border border-cyan-500/30 bg-[var(--ced-bg-panel)]/80 p-8 ced-glow">
       <h1 className="text-center font-[family-name:var(--font-orbitron)] text-xl tracking-widest text-cyan-300">
         {title}
       </h1>

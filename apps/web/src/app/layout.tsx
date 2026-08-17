@@ -28,7 +28,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0a",
+  themeColor: "#042830",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -41,7 +41,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className={`scroll-smooth ${orbitron.variable} ${inter.variable}`}>
+    <html lang="es" data-ced-theme="petrol" suppressHydrationWarning className={`scroll-smooth ${orbitron.variable} ${inter.variable}`}>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("ced-theme");if(t==="light"||t==="petrol"){document.documentElement.setAttribute("data-ced-theme",t);}}catch(e){}})();`,
+          }}
+        />
+      </head>
       <body className="antialiased">
         <ClientShell>{children}</ClientShell>
       </body>

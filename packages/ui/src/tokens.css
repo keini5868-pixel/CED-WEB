@@ -1,22 +1,70 @@
-/* Castillo Digital — design tokens (Tony Stark HUD) */
-:root {
-  --ced-bg: #0a0a0a;
-  --ced-bg-panel: #0a0a0a;
-  --ced-bg-panel-solid: #000000;
+/* Castillo Digital — design tokens */
+:root,
+html[data-ced-theme="petrol"] {
+  --ced-bg: #042830;
+  --ced-bg-mid: #084c61;
+  --ced-bg-panel: #063544;
+  --ced-bg-panel-solid: #042830;
+  --ced-surface: #0a5368;
   --ced-cyan: #4fd4ee;
   --ced-cyan-dim: #1a8aa3;
   --ced-cyan-muted: #5ecfe3;
   --ced-cyan-glow: rgba(79, 212, 238, 0.5);
-  --ced-header: #0a3d4f;
-  --ced-text: #e0e0e0;
+  --ced-header: #083848;
+  --ced-header-mid: #084c61;
+  --ced-header-end: #0c5368;
+  --ced-header-gradient: linear-gradient(90deg, #083848 0%, #084c61 45%, #0c5368 100%);
+  --ced-text: #e8f6fa;
   --ced-text-primary: #ffffff;
-  --ced-text-muted: #888888;
+  --ced-text-muted: #9ec9d4;
   --ced-gold: #ffd54f;
   --ced-gold-outline: rgba(255, 213, 79, 0.75);
   --ced-warning: #ffc107;
   --ced-danger: #ff5252;
+  --ced-page-glow: radial-gradient(ellipse at 50% 28%, rgba(8, 76, 97, 0.85) 0%, rgba(4, 40, 48, 0.2) 52%, transparent 70%);
+  --studio-navy: #084c61;
+  --studio-navy-deep: #042830;
+  --studio-accent: #4fd4ee;
+  --studio-accent-soft: #e7f6ff;
+  --studio-chat-bg: #ffffff;
+  --studio-status: #0a5368;
+  --studio-sidebar: #084c61;
+  --studio-shell-bg: #042830;
+  --studio-card: rgba(255, 255, 255, 0.08);
+  --studio-border: rgba(79, 212, 238, 0.22);
+  --studio-ced-bubble: #0b1b33;
+  --studio-user-text: #12324f;
+  --studio-status-fg: #e8f6fa;
+  --studio-usage-fg: #e8f6fa;
+  --ced-control-bg: #ffffff;
   --font-orbitron: "Orbitron", system-ui, sans-serif;
   --font-inter: "Inter", system-ui, sans-serif;
+}
+
+html[data-ced-theme="light"] {
+  --ced-bg: #f4f9fd;
+  --ced-bg-mid: #e7f6ff;
+  --ced-bg-panel: #ffffff;
+  --ced-bg-panel-solid: #ffffff;
+  --ced-surface: #ffffff;
+  --ced-header: #0a3d4f;
+  --ced-header-mid: #0a3d4f;
+  --ced-header-end: #0c5368;
+  --ced-header-gradient: linear-gradient(90deg, #083848 0%, #0a3d4f 45%, #0c5368 100%);
+  --ced-text: #12324f;
+  --ced-text-primary: #0b1b33;
+  --ced-text-muted: #3d6a82;
+  --ced-page-glow: radial-gradient(ellipse at 50% 20%, rgba(79, 212, 238, 0.12) 0%, transparent 55%);
+  --studio-navy: #0a3d4f;
+  --studio-navy-deep: #072f3d;
+  --studio-status: #f7fbff;
+  --studio-sidebar: #f4f9fd;
+  --studio-shell-bg: #ffffff;
+  --studio-card: #ffffff;
+  --studio-border: #d7eef8;
+  --studio-status-fg: #1a4a73;
+  --studio-usage-fg: #1a4a73;
+  --ced-control-bg: #ffffff;
 }
 
 .ced-gold-outline {

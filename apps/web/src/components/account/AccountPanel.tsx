@@ -1,20 +1,23 @@
 "use client";
 
 import { ChangePasswordForm } from "@/components/account/ChangePasswordForm";
+import { ThemeAppearanceToggle } from "@/components/account/ThemeAppearanceToggle";
 import { ReferralIdCard } from "@/components/referrals/ReferralIdCard";
 
 export function AccountPanel() {
   return (
     <div className="mx-auto max-w-lg space-y-6 px-4 py-6">
       <div>
-        <h1 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wide text-cyan-200 sm:text-xl">
+        <h1 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wide text-[var(--ced-text-primary)] sm:text-xl">
           Cuenta
         </h1>
-        <p className="mt-1 text-sm text-cyan-100/70">
+        <p className="mt-1 text-sm text-[var(--ced-text-muted)]">
           Ajustes de acceso. El cambio de contraseña no envía correo ni depende
           de recuperación por email.
         </p>
       </div>
+
+      <ThemeAppearanceToggle />
 
       <ReferralIdCard />
 

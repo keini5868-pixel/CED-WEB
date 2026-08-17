@@ -73,7 +73,7 @@ function PricingContent() {
   }, [pendingPlan, loggedIn, busy, subscribe]);
 
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-black text-cyan-100">
+    <main className="ced-page-glow relative min-h-screen overflow-x-hidden text-[var(--ced-text)]">
       <div
         className="pointer-events-none absolute inset-0 opacity-30"
         style={{
@@ -207,7 +207,7 @@ export default function PricingPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex min-h-screen items-center justify-center bg-black text-cyan-500">
+        <main className="flex min-h-screen items-center justify-center bg-[var(--ced-bg)] text-[var(--ced-cyan)]">
           Cargando planes…
         </main>
       }

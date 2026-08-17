@@ -38,7 +38,7 @@ export function CedListenButton({
           ? "cursor-wait bg-[var(--ced-cyan)]/10 text-[var(--ced-cyan)]"
           : active
             ? "bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] shadow-[0_0_14px_var(--ced-cyan-glow)]"
-            : "bg-white text-[var(--ced-cyan)] shadow-[0_0_10px_var(--ced-cyan-glow)] hover:bg-[var(--ced-cyan)]/10",
+            : "bg-[var(--ced-control-bg)] text-[var(--ced-cyan)] shadow-[0_0_10px_var(--ced-cyan-glow)] hover:bg-[var(--ced-cyan)]/10",
       ].join(" ")}
     >
       <span

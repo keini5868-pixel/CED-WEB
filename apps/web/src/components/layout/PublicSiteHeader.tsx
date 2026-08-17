@@ -11,7 +11,7 @@ type PublicSiteHeaderProps = {
 export function PublicSiteHeader({ left, center, right }: PublicSiteHeaderProps) {
   const hasCenter = center != null && center !== false && center !== "";
   return (
-    <header className="ced-public-header relative z-50 border-b border-cyan-500/20 bg-black px-4 sm:px-6">
+    <header className="ced-chrome-bar ced-public-header relative z-50 border-b border-cyan-500/20 px-4 sm:px-6">
       <div className="ced-public-header__nav flex min-h-[52px] items-center justify-between gap-3">
         <div className="min-w-0 shrink">{left}</div>
         {hasCenter ? (
