@@ -37,6 +37,7 @@ import { downloadPdfBlob } from "@/lib/api/pdf";
 type AdvancedChatPanelProps = {
   open: boolean;
   onClose: () => void;
+  variant?: "overlay" | "embedded";
 };
 
 function stripPdfLinks(content: unknown): string {
@@ -72,7 +73,7 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
         type="button"
         disabled={busy}
         onClick={() => void handleDownload()}
-        className="inline-flex items-center gap-1.5 rounded border border-violet-400/50 bg-violet-400/10 px-3 py-2 text-[11px] font-semibold text-violet-200 hover:bg-violet-400/20 disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 rounded border border-[var(--ced-cyan)]/50 bg-[var(--ced-cyan)]/10 px-3 py-2 text-[11px] font-semibold text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/20 disabled:opacity-60"
       >
         {busy ? "Descargando…" : `📄 Descargar PDF${pdf.title ? `: ${pdf.title}` : ""}`}
       </button>
@@ -106,7 +107,7 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
       <img
         src={src}
         alt={label}
-        className="max-h-56 w-full cursor-zoom-in rounded border border-violet-800/50 object-contain transition hover:opacity-95"
+        className="max-h-56 w-full cursor-zoom-in rounded border border-[var(--studio-composer-border)] object-contain transition hover:opacity-95"
         onClick={() => setLightboxOpen(true)}
         onError={(e) => {
           e.currentTarget.alt = "No se pudo cargar la imagen";
@@ -116,7 +117,7 @@ function ChatImagePreview({ image }: { image: ChatImageAttachment }) {
         type="button"
         disabled={busy}
         onClick={() => void handleDownload()}
-        className="inline-flex items-center gap-1.5 rounded border border-violet-400/40 bg-violet-400/10 px-2 py-1.5 text-[10px] text-violet-200 hover:bg-violet-400/20 disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 rounded border border-[var(--studio-composer-border)] bg-[var(--studio-composer-bg)] px-2 py-1.5 text-[10px] text-[var(--studio-text)] hover:bg-[var(--studio-composer-hover)] disabled:opacity-60"
       >
         {busy ? "Descargando…" : "🖼️ Descargar imagen"}
       </button>
@@ -139,7 +140,7 @@ function UserImagePreview({ preview }: { preview: string }) {
       <img
         src={preview}
         alt="Imagen adjunta"
-        className="max-h-40 cursor-zoom-in rounded border border-violet-800/50 object-contain"
+        className="max-h-40 cursor-zoom-in rounded border border-[var(--studio-composer-border)] object-contain"
         onClick={() => setLightboxOpen(true)}
       />
       <ImageLightbox
@@ -152,7 +153,11 @@ function UserImagePreview({ preview }: { preview: string }) {
   );
 }
 
-export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
+export function AdvancedChatPanel({
+  open,
+  onClose,
+  variant = "overlay",
+}: AdvancedChatPanelProps) {
   const [messages, setMessages] = useState<AdvancedChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -444,17 +449,24 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[155] flex items-end justify-center overflow-x-hidden bg-black/55 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div className="box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-violet-500/35 bg-[#08060f] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-lg sm:rounded-2xl">
-        <header className="flex shrink-0 items-center justify-between border-b border-violet-500/25 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
+  const embedded = variant === "embedded";
+  const panel = (
+      <div
+        className={
+          embedded
+            ? "flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--studio-chat-bg)] text-[var(--studio-chat-fg)]"
+            : "box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-[var(--studio-border)] bg-[var(--studio-chat-bg)] text-[var(--studio-chat-fg)] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-lg sm:rounded-2xl"
+        }
+      >
+        {embedded ? null : (
+        <header className="flex shrink-0 items-center justify-between border-b border-[var(--studio-border)] px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
           <div className="flex min-w-0 items-center gap-2">
-            <Brain className="h-4 w-4 shrink-0 text-violet-300" />
+            <Brain className="h-4 w-4 shrink-0 text-[var(--ced-cyan)]" />
             <div className="min-w-0">
-              <p className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-violet-200">
-                ⚡ MODO AVANZADO
+              <p className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-[var(--ced-cyan)]">
+                MODO AVANZADO
               </p>
-              <p className="truncate text-[10px] text-violet-400/80">
+              <p className="truncate text-[10px] text-[var(--ced-text-muted)]">
                 Análisis profundo CED
               </p>
             </div>
@@ -462,15 +474,16 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-violet-300 hover:bg-violet-500/10"
+            className="rounded p-1 text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10"
             aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
           </button>
         </header>
+        )}
 
         {configured === false ? (
-          <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-200">
+          <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
             Modo avanzado no disponible en este momento. Intente de nuevo más tarde.
           </p>
         ) : null}
@@ -500,16 +513,16 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
               <div
                 key={`${msg.role}-${i}`}
                 className={[
-                  "max-w-[92%] rounded-lg px-3 py-2 text-[12px] leading-relaxed",
+                  "max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
                   msg.role === "user"
-                    ? "ml-auto border border-violet-500/30 bg-violet-950/40 text-violet-50"
-                    : "mr-auto border border-violet-900/50 bg-black/50 text-violet-100/95",
+                    ? "ml-auto ced-studio-user-bubble"
+                    : "mr-auto ced-studio-ced-bubble",
                 ].join(" ")}
               >
                 {displayContent ? (
                   <p className="whitespace-pre-wrap">{displayContent}</p>
                 ) : isActiveStreamBubble && statusHint ? (
-                  <p className="animate-pulse text-violet-300/90">{statusHint}</p>
+                  <p className="animate-pulse text-[var(--studio-hint)]">{statusHint}</p>
                 ) : null}
                 {userImagePreview ? <UserImagePreview preview={userImagePreview} /> : null}
                 {msg.pdf?.file_id ? <PdfDownloadButton pdf={msg.pdf} /> : null}
@@ -518,11 +531,11 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
             );
           })}
           {streaming ? (
-            <p className="ced-hud-text-muted animate-pulse text-[11px]">
+            <p className="animate-pulse text-[11px] text-[var(--studio-hint)]">
               {statusHint || "CED está escribiendo…"}
             </p>
           ) : busy ? (
-            <p className="ced-hud-text-muted text-[11px]">Procesando…</p>
+            <p className="text-[11px] text-[var(--studio-hint)]">Procesando…</p>
           ) : null}
         </div>
 
@@ -530,7 +543,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
           <p className="mx-4 mb-2 text-[11px] text-red-400">{error}</p>
         ) : null}
 
-        <footer className="relative z-10 shrink-0 border-t border-violet-500/20 bg-[#08060f] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+        <footer className="relative z-10 shrink-0 border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
           {attachedPdf ? (
             <PdfAttachmentBar
               filename={attachedPdf.name}
@@ -568,7 +581,7 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
                     : "Análisis, PDF, imágenes o dictado por voz…"
               }
               disabled={configured === false}
-              className="min-h-[56px] max-h-40 flex-1 resize-y rounded border border-violet-900/50 bg-black/60 px-3 py-2 text-base text-violet-50 placeholder:text-violet-700 focus:border-violet-500/50 focus:outline-none disabled:opacity-50 sm:text-[12px]"
+              className="min-h-[56px] max-h-40 flex-1 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px]"
             />
             <PdfUploadButton
               onPdfSelected={(file) => {
@@ -598,14 +611,14 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
                 (!input.trim() && !attachedImage && !attachedPdf) ||
                 configured === false
               }
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-violet-500/40 bg-violet-950/50 text-violet-200 transition hover:bg-violet-900/50 disabled:opacity-40"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--ced-cyan)]/50 bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] transition hover:bg-[var(--ced-cyan)]/25 disabled:opacity-40"
               aria-label="Analizar"
               title="ANALIZAR"
             >
               <Send className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-1 text-center text-[9px] text-violet-500/70">
+          <p className="mt-1 text-center text-[9px] text-[var(--studio-hint)]">
             {attachedPdf
               ? "PDF listo — envía para que CED lo lea"
               : attachedImage
@@ -614,6 +627,13 @@ export function AdvancedChatPanel({ open, onClose }: AdvancedChatPanelProps) {
           </p>
         </footer>
       </div>
+  );
+
+  if (embedded) return panel;
+
+  return (
+    <div className="fixed inset-0 z-[155] flex items-end justify-center overflow-x-hidden bg-black/55 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+      {panel}
     </div>
   );
 }

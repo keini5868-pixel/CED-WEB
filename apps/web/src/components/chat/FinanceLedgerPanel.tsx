@@ -59,7 +59,7 @@ export function FinanceLedgerPanel({ tab }: { tab: "movimientos" | "papelera" })
   }
 
   if (loading) {
-    return <p className="px-4 py-3 text-sm text-emerald-400/80">Cargando movimientos…</p>;
+    return <p className="px-4 py-3 text-sm text-[var(--studio-hint)]">Cargando movimientos…</p>;
   }
 
   return (
@@ -80,7 +80,7 @@ export function FinanceLedgerPanel({ tab }: { tab: "movimientos" | "papelera" })
         onTrash={() => void trashIds([...picked])}
       />
       {rows.length === 0 ? (
-        <p className="text-sm text-emerald-400/70">
+        <p className="text-sm text-[var(--ced-text-muted)]">
           Aún no hay movimientos. Anote un gasto o ingreso en el chat.
         </p>
       ) : (
@@ -88,7 +88,7 @@ export function FinanceLedgerPanel({ tab }: { tab: "movimientos" | "papelera" })
           {rows.map((row) => (
             <li
               key={row.id}
-              className="flex items-center gap-2 rounded border border-emerald-500/20 bg-black/30 px-3 py-2"
+              className="flex items-center gap-2 rounded border border-[var(--studio-border)] bg-[var(--studio-card)] px-3 py-2"
             >
               {selecting ? (
                 <input
@@ -105,10 +105,10 @@ export function FinanceLedgerPanel({ tab }: { tab: "movimientos" | "papelera" })
                 />
               ) : null}
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm text-emerald-100">
+                <p className="truncate text-sm text-[var(--studio-chat-fg)]">
                   {row.description || row.category || row.type}
                 </p>
-                <p className="text-[10px] text-emerald-500/80">
+                <p className="text-[10px] text-[var(--ced-text-muted)]">
                   {row.type} · {row.amount} {row.currency || "USD"}
                   {row.occurred_on ? ` · ${row.occurred_on}` : ""}
                 </p>

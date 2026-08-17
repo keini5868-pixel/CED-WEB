@@ -44,8 +44,7 @@ import { CED_OPEN_SETTINGS_EVENT } from "@/lib/hud/chrome-events";
 
 /** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [financeOpen, setFinanceOpen] = useState(false);
+  const [workspace, setWorkspace] = useState<"chat" | "advanced" | "finance">("chat");
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
     url: string;
@@ -77,12 +76,10 @@ export function CedVoiceHub() {
       const detail = (ev as CustomEvent<{ module?: string }>).detail;
       const mod = (detail?.module || "").trim();
       if (mod === "finance") {
-        setFinanceOpen(true);
-        setAdvancedOpen(false);
+        setWorkspace("finance");
       }
       if (mod === "opportunities") {
-        setAdvancedOpen(false);
-        setFinanceOpen(false);
+        setWorkspace("chat");
       }
     };
     window.addEventListener("ced-open-module", onOpen);
@@ -292,9 +289,17 @@ export function CedVoiceHub() {
 
   const cameraLive = voice.cameraOn && Boolean(voice.cameraStream);
   const imageLive = Boolean(voiceImagePreview?.url) && !cameraLive;
-  const readyLabel = voice.micOn
-    ? voice.statusLabel
-    : "Asistente CED listo";
+  const readyLabel = workspace === "advanced"
+    ? "Modo avanzado"
+    : workspace === "finance"
+      ? "Finanzas"
+      : voice.micOn
+        ? voice.statusLabel
+        : "Asistente CED listo";
+
+  function selectWorkspace(next: "chat" | "advanced" | "finance") {
+    setWorkspace((prev) => (prev === next ? "chat" : next));
+  }
 
   const listenDock = (
     <div className="flex flex-col items-center gap-3">
@@ -353,45 +358,80 @@ export function CedVoiceHub() {
             aria-hidden
           />
           <span className="font-medium">{readyLabel}</span>
+          {workspace !== "chat" ? (
+            <button
+              type="button"
+              onClick={() => setWorkspace("chat")}
+              className="ml-auto text-[11px] font-medium text-[var(--ced-cyan)] hover:underline"
+            >
+              Volver al chat
+            </button>
+          ) : null}
         </div>
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <CedTextChatPanel
-            open
-            variant="embedded"
-            onClose={() => undefined}
-            seedImage={chatSeedImage}
-            onSeedConsumed={() => setChatSeedImage(null)}
-            seedPrompt={chatSeedPrompt}
-            onSeedPromptConsumed={() => setChatSeedPrompt(null)}
-            onVoiceImageAttached={
-              voice.voiceSessionActive
-                ? (preview, file) => {
-                    const itemId = pushVoiceImage(preview, {
-                      fileName: file?.name,
-                      fileSize: file?.size,
-                      status: "uploading",
-                      role: "user",
-                    });
-                    void voice.registerChatImageForVoice(preview, file).then((result) => {
-                      if (!result?.image_url) return;
-                      updateVoiceImage(itemId, {
-                        imageUrl: result.image_url,
-                        text: "Imagen lista para CED",
-                        uploadStatus: "ready",
-                        fileName: result.filename || file?.name,
-                        fileSize: result.size_bytes ?? file?.size,
-                      });
-                    }).catch(() => {
-                      updateVoiceImage(itemId, {
-                        text: "Error al subir imagen",
-                        uploadStatus: "error",
-                      });
-                    });
-                  }
-                : undefined
+          <div
+            className={
+              workspace === "chat"
+                ? "flex min-h-0 flex-1 flex-col overflow-hidden"
+                : "hidden"
             }
-            voicePublishActive={voice.voiceSessionActive}
-          />
+          >
+            <CedTextChatPanel
+              open
+              variant="embedded"
+              onClose={() => undefined}
+              seedImage={chatSeedImage}
+              onSeedConsumed={() => setChatSeedImage(null)}
+              seedPrompt={chatSeedPrompt}
+              onSeedPromptConsumed={() => setChatSeedPrompt(null)}
+              onVoiceImageAttached={
+                voice.voiceSessionActive
+                  ? (preview, file) => {
+                      const itemId = pushVoiceImage(preview, {
+                        fileName: file?.name,
+                        fileSize: file?.size,
+                        status: "uploading",
+                        role: "user",
+                      });
+                      void voice.registerChatImageForVoice(preview, file).then((result) => {
+                        if (!result?.image_url) return;
+                        updateVoiceImage(itemId, {
+                          imageUrl: result.image_url,
+                          text: "Imagen lista para CED",
+                          uploadStatus: "ready",
+                          fileName: result.filename || file?.name,
+                          fileSize: result.size_bytes ?? file?.size,
+                        });
+                      }).catch(() => {
+                        updateVoiceImage(itemId, {
+                          text: "Error al subir imagen",
+                          uploadStatus: "error",
+                        });
+                      });
+                    }
+                  : undefined
+              }
+              voicePublishActive={voice.voiceSessionActive}
+            />
+          </div>
+          {workspace === "advanced" ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <AdvancedChatPanel
+                open
+                variant="embedded"
+                onClose={() => setWorkspace("chat")}
+              />
+            </div>
+          ) : null}
+          {workspace === "finance" ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <FinanceChatPanel
+                open
+                variant="embedded"
+                onClose={() => setWorkspace("chat")}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
 
@@ -409,21 +449,19 @@ export function CedVoiceHub() {
           <div className="flex flex-col gap-0.5">
             <button
               type="button"
-              onClick={() => {
-                setAdvancedOpen((open) => !open);
-                setFinanceOpen(false);
-              }}
-              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
+              onClick={() => selectWorkspace("advanced")}
+              className={`ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase hover:bg-[var(--ced-cyan)]/10 ${
+                workspace === "advanced" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
+              }`}
             >
               Avanzado
             </button>
             <button
               type="button"
-              onClick={() => {
-                setFinanceOpen((open) => !open);
-                setAdvancedOpen(false);
-              }}
-              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
+              onClick={() => selectWorkspace("finance")}
+              className={`ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase hover:bg-[var(--ced-cyan)]/10 ${
+                workspace === "finance" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
+              }`}
             >
               Finanzas
             </button>
@@ -443,20 +481,14 @@ export function CedVoiceHub() {
           micOn={voice.micOn}
           micBusy={voice.micBusy}
           cameraOn={voice.cameraOn}
-          chatOpen
-          advancedOpen={advancedOpen}
-          financeOpen={financeOpen}
+          chatOpen={workspace === "chat"}
+          advancedOpen={workspace === "advanced"}
+          financeOpen={workspace === "finance"}
           onMic={handleMic}
           onCamera={() => void voice.toggleCamera()}
-          onChat={() => undefined}
-          onAdvanced={() => {
-            setAdvancedOpen((open) => !open);
-            setFinanceOpen(false);
-          }}
-          onFinance={() => {
-            setFinanceOpen((open) => !open);
-            setAdvancedOpen(false);
-          }}
+          onChat={() => setWorkspace("chat")}
+          onAdvanced={() => selectWorkspace("advanced")}
+          onFinance={() => selectWorkspace("finance")}
         />
       </div>
 
@@ -481,16 +513,6 @@ export function CedVoiceHub() {
       <CedHistoryPanel
         open={voice.historyOpen}
         onClose={() => voice.setHistoryOpen(false)}
-      />
-
-      <AdvancedChatPanel
-        open={advancedOpen}
-        onClose={() => setAdvancedOpen(false)}
-      />
-
-      <FinanceChatPanel
-        open={financeOpen}
-        onClose={() => setFinanceOpen(false)}
       />
 
       <ModuleShell />

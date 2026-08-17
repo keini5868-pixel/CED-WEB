@@ -20,6 +20,7 @@ import { FinanceLedgerPanel } from "@/components/chat/FinanceLedgerPanel";
 type FinanceChatPanelProps = {
   open: boolean;
   onClose: () => void;
+  variant?: "overlay" | "embedded";
 };
 
 function stripPdfLinks(content: unknown): string {
@@ -55,7 +56,7 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
         type="button"
         disabled={busy}
         onClick={() => void handleDownload()}
-        className="inline-flex items-center gap-1.5 rounded border border-emerald-400/50 bg-emerald-400/10 px-3 py-2 text-[11px] font-semibold text-emerald-200 hover:bg-emerald-400/20 disabled:opacity-60"
+        className="inline-flex items-center gap-1.5 rounded border border-[var(--ced-cyan)]/50 bg-[var(--ced-cyan)]/10 px-3 py-2 text-[11px] font-semibold text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/20 disabled:opacity-60"
       >
         {busy ? "Descargando…" : `📄 Descargar PDF${pdf.title ? `: ${pdf.title}` : ""}`}
       </button>
@@ -64,7 +65,11 @@ function PdfDownloadButton({ pdf }: { pdf: ChatPdfAttachment }) {
   );
 }
 
-export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
+export function FinanceChatPanel({
+  open,
+  onClose,
+  variant = "overlay",
+}: FinanceChatPanelProps) {
   const [messages, setMessages] = useState<FinanceChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -255,17 +260,24 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[155] flex items-end justify-center overflow-x-hidden bg-black/55 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
-      <div className="box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-emerald-500/35 bg-[#05100b] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-lg sm:rounded-2xl">
-        <header className="flex shrink-0 items-center justify-between border-b border-emerald-500/25 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
+  const embedded = variant === "embedded";
+  const panel = (
+      <div
+        className={
+          embedded
+            ? "flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--studio-chat-bg)] text-[var(--studio-chat-fg)]"
+            : "box-border flex h-[min(92dvh,720px)] w-full max-w-md flex-col overflow-hidden rounded-t-2xl border border-[var(--studio-border)] bg-[var(--studio-chat-bg)] text-[var(--studio-chat-fg)] shadow-2xl sm:h-[min(85dvh,680px)] sm:max-w-lg sm:rounded-2xl"
+        }
+      >
+        {embedded ? null : (
+        <header className="flex shrink-0 items-center justify-between border-b border-[var(--studio-border)] px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
           <div className="flex min-w-0 items-center gap-2">
-            <Wallet className="h-4 w-4 shrink-0 text-emerald-300" />
+            <Wallet className="h-4 w-4 shrink-0 text-[var(--ced-cyan)]" />
             <div className="min-w-0">
-              <p className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-emerald-200">
-                💰 FINANZAS
+              <p className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-[var(--ced-cyan)]">
+                FINANZAS
               </p>
-              <p className="truncate text-[10px] text-emerald-400/80">
+              <p className="truncate text-[10px] text-[var(--ced-text-muted)]">
                 Gastos, ingresos y ahorro
               </p>
             </div>
@@ -273,14 +285,15 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded p-1 text-emerald-300 hover:bg-emerald-500/10"
+            className="rounded p-1 text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10"
             aria-label="Cerrar"
           >
             <X className="h-5 w-5" />
           </button>
         </header>
+        )}
 
-        <div className="flex shrink-0 gap-1 border-b border-emerald-500/20 px-3 py-1.5">
+        <div className="flex shrink-0 gap-1 border-b border-[var(--studio-border)] px-3 py-1.5">
           {(
             [
               ["chat", "Chat"],
@@ -294,8 +307,8 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
               onClick={() => setTab(id)}
               className={`rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
                 tab === id
-                  ? "bg-emerald-500/20 text-emerald-100"
-                  : "text-emerald-500/80 hover:text-emerald-200"
+                  ? "bg-[var(--ced-cyan)]/20 text-[var(--ced-text-primary)]"
+                  : "text-[var(--ced-text-muted)] hover:text-[var(--ced-cyan)]"
               }`}
             >
               {label}
@@ -306,22 +319,22 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
         {tab !== "chat" ? <FinanceLedgerPanel tab={tab} /> : null}
 
         {tab === "chat" && configured === false ? (
-          <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-950/30 px-3 py-2 text-[11px] text-amber-200">
+          <p className="mx-4 mt-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
             Finanzas no disponible en este momento. Intente de nuevo más tarde.
           </p>
         ) : null}
 
         {tab === "chat" && actionPlan ? (
-          <div className="mx-4 mt-3 rounded-lg border border-emerald-500/30 bg-emerald-500/5 px-3 py-2">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-300">
+          <div className="mx-4 mt-3 rounded-lg border border-[var(--studio-border)] bg-[var(--studio-card)] px-3 py-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--ced-cyan)]">
               Plan de acción guardado
             </p>
-            <p className="mt-0.5 text-xs text-emerald-100">
+            <p className="mt-0.5 text-xs text-[var(--studio-chat-fg)]">
               {actionPlan.title || "Plan de crecimiento"}
             </p>
             {Array.isArray(actionPlan.content?.goals) &&
             actionPlan.content.goals.length > 0 ? (
-              <ul className="mt-1 list-inside list-disc text-[11px] text-emerald-200/80">
+              <ul className="mt-1 list-inside list-disc text-[11px] text-[var(--ced-text-muted)]">
                 {actionPlan.content.goals.slice(0, 4).map((g) => (
                   <li key={g}>{g}</li>
                 ))}
@@ -354,10 +367,10 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
               <div
                 key={`${msg.role}-${i}`}
                 className={[
-                  "max-w-[92%] rounded-lg px-3 py-2 text-[12px] leading-relaxed",
+                  "max-w-[92%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
                   msg.role === "user"
-                    ? "ml-auto border border-emerald-500/30 bg-emerald-950/40 text-emerald-50"
-                    : "mr-auto border border-emerald-900/50 bg-black/50 text-emerald-100/95",
+                    ? "ml-auto ced-studio-user-bubble"
+                    : "mr-auto ced-studio-ced-bubble",
                 ].join(" ")}
               >
                 {displayContent ? (
@@ -368,11 +381,11 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
             );
           })}
           {streaming ? (
-            <p className="ced-hud-text-muted animate-pulse text-[11px]">
+            <p className="animate-pulse text-[11px] text-[var(--studio-hint)]">
               {statusHint || "CED está escribiendo…"}
             </p>
           ) : busy ? (
-            <p className="ced-hud-text-muted text-[11px]">Procesando…</p>
+            <p className="text-[11px] text-[var(--studio-hint)]">Procesando…</p>
           ) : null}
         </div>
         ) : null}
@@ -382,7 +395,7 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
         ) : null}
 
         {tab === "chat" ? (
-        <footer className="relative z-10 shrink-0 border-t border-emerald-500/20 bg-[#05100b] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
+        <footer className="relative z-10 shrink-0 border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4">
           <div className="flex gap-2">
             <textarea
               ref={textareaRef}
@@ -397,25 +410,32 @@ export function FinanceChatPanel({ open, onClose }: FinanceChatPanelProps) {
               rows={3}
               placeholder="Gasté 50 en materiales… / ¿Cómo voy este mes?"
               disabled={configured === false}
-              className="min-h-[56px] max-h-40 flex-1 resize-y rounded border border-emerald-900/50 bg-black/60 px-3 py-2 text-base text-emerald-50 placeholder:text-emerald-700 focus:border-emerald-500/50 focus:outline-none disabled:opacity-50 sm:text-[12px]"
+              className="min-h-[56px] max-h-40 flex-1 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px]"
             />
             <button
               type="button"
               onClick={() => void submit()}
               disabled={busy || !input.trim() || configured === false}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-emerald-500/40 bg-emerald-950/50 text-emerald-200 transition hover:bg-emerald-900/50 disabled:opacity-40"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--ced-cyan)]/50 bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] transition hover:bg-[var(--ced-cyan)]/25 disabled:opacity-40"
               aria-label="Enviar"
               title="ENVIAR"
             >
               <Send className="h-4 w-4" />
             </button>
           </div>
-          <p className="mt-1 text-center text-[9px] text-emerald-500/70">
+          <p className="mt-1 text-center text-[9px] text-[var(--studio-hint)]">
             Registro · Análisis · Plan de ahorro · Enter
           </p>
         </footer>
         ) : null}
       </div>
+  );
+
+  if (embedded) return panel;
+
+  return (
+    <div className="fixed inset-0 z-[155] flex items-end justify-center overflow-x-hidden bg-black/55 p-0 backdrop-blur-[1px] sm:items-center sm:p-4">
+      {panel}
     </div>
   );
 }
