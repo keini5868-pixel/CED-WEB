@@ -96,7 +96,7 @@ export function CedStudioSidebar({
           })}
       </nav>
 
-      {extras ? <div className="mt-2 hidden flex-col gap-1 lg:mt-3 lg:flex">{extras}</div> : null}
+      {extras ? <div className="mt-2 flex flex-col gap-0.5 lg:mt-3">{extras}</div> : null}
 
       <div className="mt-auto flex min-h-0 shrink-0 flex-col items-center gap-2 overflow-y-auto pt-2 lg:gap-3 lg:pt-6">
         {listen}

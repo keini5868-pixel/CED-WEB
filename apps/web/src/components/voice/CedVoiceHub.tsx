@@ -26,7 +26,6 @@ import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
-import { CedActionBar } from "@/components/voice/CedActionBar";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
 import {
   CedHudQuickPopups,
@@ -352,7 +351,7 @@ export function CedVoiceHub() {
   );
 
   return (
-    <div className="ced-studio flex min-h-0 w-full flex-1 flex-row overflow-hidden pb-[4.35rem] lg:pb-0">
+    <div className="ced-studio flex min-h-0 w-full flex-1 flex-row overflow-hidden">
       <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
           <span
@@ -452,7 +451,7 @@ export function CedVoiceHub() {
             <button
               type="button"
               onClick={() => selectWorkspace("advanced")}
-              className={`ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase hover:bg-[var(--ced-cyan)]/10 ${
+              className={`ced-mark-text rounded-lg px-1 py-1.5 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:text-left lg:text-[11px] ${
                 workspace === "advanced" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
               }`}
             >
@@ -461,7 +460,7 @@ export function CedVoiceHub() {
             <button
               type="button"
               onClick={() => selectWorkspace("finance")}
-              className={`ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase hover:bg-[var(--ced-cyan)]/10 ${
+              className={`ced-mark-text rounded-lg px-1 py-1.5 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:text-left lg:text-[11px] ${
                 workspace === "finance" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
               }`}
             >
@@ -470,29 +469,16 @@ export function CedVoiceHub() {
             <button
               type="button"
               onClick={() => void voice.toggleCamera()}
-              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
+              className={`ced-mark-text rounded-lg px-1 py-1.5 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:text-left lg:text-[11px] ${
+                voice.cameraOn ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
+              }`}
             >
-              {voice.cameraOn ? "Cerrar cámara" : "Cámara"}
+              <span className="lg:hidden">{voice.cameraOn ? "Cerrar" : "Cámara"}</span>
+              <span className="hidden lg:inline">{voice.cameraOn ? "Cerrar cámara" : "Cámara"}</span>
             </button>
           </div>
         }
       />
-
-      <div className="lg:hidden">
-        <CedActionBar
-          micOn={voice.micOn}
-          micBusy={voice.micBusy}
-          cameraOn={voice.cameraOn}
-          chatOpen={workspace === "chat"}
-          advancedOpen={workspace === "advanced"}
-          financeOpen={workspace === "finance"}
-          onMic={handleMic}
-          onCamera={() => void voice.toggleCamera()}
-          onChat={() => setWorkspace("chat")}
-          onAdvanced={() => selectWorkspace("advanced")}
-          onFinance={() => selectWorkspace("finance")}
-        />
-      </div>
 
       <CedHudQuickPopups active={quickPopup} onClose={() => setQuickPopup(null)} />
 
