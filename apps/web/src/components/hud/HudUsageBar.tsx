@@ -93,7 +93,7 @@ export function HudUsageBar({ compact = false }: { compact?: boolean }) {
               ? "bg-red-500"
               : warn
                 ? "bg-amber-400"
-                : "bg-[#00e5ff]"
+                : "bg-[var(--ced-cyan)]"
           }`}
           style={{ width: `${balance.plan > 0 ? pct : 0}%` }}
         />

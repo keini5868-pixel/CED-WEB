@@ -105,7 +105,13 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   );
 
   return (
-    <header className="sticky top-0 z-50 w-full max-w-[100vw] overflow-visible bg-[#0c3d73] shadow-[0_8px_24px_rgba(8,40,76,0.28)]">
+    <header
+      className="sticky top-0 z-50 w-full max-w-[100vw] overflow-visible shadow-[0_8px_24px_rgba(7,47,61,0.4)]"
+      style={{
+        background:
+          "linear-gradient(90deg, #083848 0%, #0a3d4f 45%, #0c5368 100%)",
+      }}
+    >
       <div className="mx-auto flex w-full max-w-screen items-center gap-1 px-2 py-2 sm:gap-2 sm:px-4 sm:py-2.5 md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Link
@@ -114,12 +120,12 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
             aria-label="CED — Castillo de la Evolución Digital"
           >
             <span
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-sky-300/80 bg-sky-400/20 shadow-[0_0_14px_rgba(59,183,255,0.55)]"
+              className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--ced-cyan)]/80 bg-[var(--ced-cyan)]/20 shadow-[0_0_14px_var(--ced-cyan-glow)]"
               aria-hidden
             >
-              <span className="h-3.5 w-3.5 rounded-full bg-sky-300" />
+              <span className="h-3.5 w-3.5 rounded-full bg-[var(--ced-cyan)]" />
             </span>
-            <CedWordmark size="md" tone="white" className="text-base sm:text-lg" />
+            <CedWordmark size="md" className="text-base sm:text-lg" />
           </Link>
           <div className="flex shrink-0 items-center">{sistemaMenu}</div>
           <button

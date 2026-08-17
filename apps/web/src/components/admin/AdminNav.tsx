@@ -43,10 +43,10 @@ export function AdminNav() {
           <Link
             key={link.href}
             href={link.href}
-            className={`relative rounded px-3 py-1.5 text-xs font-medium tracking-wide transition ${
+            className={`relative rounded px-3 py-1.5 font-[family-name:var(--font-orbitron)] text-[10px] font-semibold uppercase tracking-[0.14em] transition ${
               active
-                ? "bg-cyan-500/20 text-cyan-100"
-                : "text-cyan-500/80 hover:bg-cyan-500/10 hover:text-cyan-200"
+                ? "border border-[var(--ced-cyan)]/70 bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] shadow-[0_0_12px_var(--ced-cyan-glow)]"
+                : "text-[var(--ced-cyan)]/70 hover:bg-[var(--ced-cyan)]/10 hover:text-[var(--ced-cyan)]"
             }`}
           >
             {link.label}

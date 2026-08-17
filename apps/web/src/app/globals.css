@@ -32,18 +32,26 @@ body {
 
 /* Glow — auth cards / botones (no usar en paneles con texto) */
 .ced-glow {
-  box-shadow: 0 0 20px var(--ced-cyan-glow), inset 0 0 8px rgba(0, 229, 255, 0.05);
+  box-shadow: 0 0 20px var(--ced-cyan-glow), inset 0 0 8px rgba(79, 212, 238, 0.08);
 }
 
 .ced-glow-text {
   text-shadow: 0 0 12px var(--ced-cyan-glow);
 }
 
+.ced-mark-text {
+  font-family: var(--font-orbitron), system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--ced-cyan);
+  text-shadow: 0 0 10px var(--ced-cyan-glow);
+}
+
 /* Glow solo en borde exterior del panel */
 .ced-panel-glow {
   box-shadow:
-    0 0 16px rgba(0, 229, 255, 0.22),
-    0 0 2px rgba(0, 229, 255, 0.45);
+    0 0 16px var(--ced-cyan-glow),
+    0 0 2px rgba(79, 212, 238, 0.45);
 }
 
 /* Patrón decorativo SOLO en fondo de página (entre paneles) */
@@ -111,7 +119,7 @@ body {
 }
 
 .ced-voice-heard-badge__dot--pulse {
-  background: #00e5ff;
+  background: var(--ced-cyan);
   animation: ced-voice-heard-pulse 1.4s ease-in-out infinite;
 }
 
@@ -305,9 +313,9 @@ body {
 
 /* Studio — chat blanco + azul claro (dashboard) */
 .ced-studio-shell {
-  --studio-navy: #0c3d73;
-  --studio-navy-deep: #08284c;
-  --studio-accent: #3bb7ff;
+  --studio-navy: #0a3d4f;
+  --studio-navy-deep: #072f3d;
+  --studio-accent: #4fd4ee;
   --studio-accent-soft: #e7f6ff;
   --studio-chat-bg: #ffffff;
   --studio-status: #f7fbff;
@@ -321,9 +329,9 @@ body {
 }
 
 .ced-studio {
-  --studio-navy: #0c3d73;
-  --studio-navy-deep: #08284c;
-  --studio-accent: #3bb7ff;
+  --studio-navy: #0a3d4f;
+  --studio-navy-deep: #072f3d;
+  --studio-accent: #4fd4ee;
   --studio-accent-soft: #e7f6ff;
   --studio-chat-bg: #ffffff;
   --studio-status: #f7fbff;

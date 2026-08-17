@@ -399,7 +399,7 @@ export function CedVoiceHub() {
         listen={listenDock}
         usage={
           <div className="ced-studio-usage rounded-xl border border-sky-100 bg-white p-3">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+            <p className="ced-mark-text mb-2 text-[10px] uppercase">
               uso de datos
             </p>
             <HudUsageBar compact />
@@ -413,7 +413,7 @@ export function CedVoiceHub() {
                 setAdvancedOpen((open) => !open);
                 setFinanceOpen(false);
               }}
-              className="rounded-lg px-2 py-1.5 text-left text-[13px] text-sky-800/80 hover:bg-sky-100 hover:text-sky-950"
+              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
             >
               Avanzado
             </button>
@@ -423,14 +423,14 @@ export function CedVoiceHub() {
                 setFinanceOpen((open) => !open);
                 setAdvancedOpen(false);
               }}
-              className="rounded-lg px-2 py-1.5 text-left text-[13px] text-sky-800/80 hover:bg-sky-100 hover:text-sky-950"
+              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
             >
               Finanzas
             </button>
             <button
               type="button"
               onClick={() => void voice.toggleCamera()}
-              className="rounded-lg px-2 py-1.5 text-left text-[13px] text-sky-800/80 hover:bg-sky-100 hover:text-sky-950"
+              className="ced-mark-text rounded-lg px-2 py-1.5 text-left text-[11px] uppercase opacity-80 hover:bg-[var(--ced-cyan)]/10 hover:opacity-100"
             >
               {voice.cameraOn ? "Cerrar cámara" : "Cámara"}
             </button>

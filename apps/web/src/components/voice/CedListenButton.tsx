@@ -35,21 +35,21 @@ export function CedListenButton({
       className={[
         "flex w-[5.25rem] flex-col items-center gap-1 rounded-xl border px-2 py-2 transition",
         busy
-          ? "cursor-wait border-sky-200 bg-sky-50 text-sky-500"
+          ? "cursor-wait border-[var(--ced-cyan)]/40 bg-[var(--ced-cyan)]/10 text-[var(--ced-cyan)]"
           : active
-            ? "border-sky-400 bg-sky-50 text-sky-800 shadow-[0_0_14px_rgba(59,183,255,0.35)]"
-            : "border-sky-300 bg-white text-sky-800 shadow-[0_0_10px_rgba(59,183,255,0.18)] hover:border-sky-400 hover:bg-sky-50",
+            ? "border-[var(--ced-cyan)] bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] shadow-[0_0_14px_var(--ced-cyan-glow)]"
+            : "border-[var(--ced-cyan)]/70 bg-white text-[var(--ced-cyan)] shadow-[0_0_10px_var(--ced-cyan-glow)] hover:bg-[var(--ced-cyan)]/10",
       ].join(" ")}
     >
       <span
         className={[
           "flex h-9 w-9 items-center justify-center rounded-full border",
           active && !paused
-            ? "border-sky-300 bg-sky-400/20 shadow-[0_0_12px_rgba(59,183,255,0.45)]"
-            : "border-sky-300 bg-sky-100",
+            ? "border-[var(--ced-cyan)] bg-[var(--ced-cyan)]/20 shadow-[0_0_12px_var(--ced-cyan-glow)]"
+            : "border-[var(--ced-cyan)]/70 bg-[var(--ced-cyan)]/10",
         ].join(" ")}
       >
-        <Mic className={`h-4 w-4 ${busy ? "animate-pulse text-sky-400" : "text-sky-600"}`} />
+        <Mic className={`h-4 w-4 ${busy ? "animate-pulse text-[var(--ced-cyan)]" : "text-[var(--ced-cyan)]"}`} />
       </span>
       <span className="font-[family-name:var(--font-orbitron)] text-[8px] font-bold tracking-[0.14em]">
         {label}

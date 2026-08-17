@@ -19,7 +19,7 @@ type SidebarLink = {
 };
 
 const linkClass =
-  "rounded-lg px-2 py-2 text-left text-[15px] font-semibold tracking-wide text-[#0c3d73] transition hover:bg-sky-100 hover:text-[#08284c]";
+  "ced-mark-text rounded-lg px-2 py-2 text-left text-[14px] uppercase transition hover:bg-[var(--ced-cyan)]/10";
 
 export function CedStudioSidebar({
   listen,

@@ -3,10 +3,11 @@
   --ced-bg: #0a0a0a;
   --ced-bg-panel: #0a0a0a;
   --ced-bg-panel-solid: #000000;
-  --ced-cyan: #00e5ff;
-  --ced-cyan-dim: #0097a7;
-  --ced-cyan-muted: #4dd0e1;
-  --ced-cyan-glow: rgba(0, 229, 255, 0.45);
+  --ced-cyan: #4fd4ee;
+  --ced-cyan-dim: #1a8aa3;
+  --ced-cyan-muted: #5ecfe3;
+  --ced-cyan-glow: rgba(79, 212, 238, 0.5);
+  --ced-header: #0a3d4f;
   --ced-text: #e0e0e0;
   --ced-text-primary: #ffffff;
   --ced-text-muted: #888888;

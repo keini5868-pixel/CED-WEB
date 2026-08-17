@@ -67,7 +67,7 @@ export function CedVoiceHeardBadge({ indicator, micOn, paused }: Props) {
             }`}
             aria-hidden
           />
-          <span className="font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-[#00e5ff]">
+          <span className="font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-[var(--ced-cyan)]">
             {copy.title}
           </span>
           {showCheck ? (

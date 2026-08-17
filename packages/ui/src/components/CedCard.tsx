@@ -18,7 +18,7 @@ export function CedCard({ title, children, className = "" }: CedCardProps) {
         .join(" ")}
     >
       {title ? (
-        <h3 className="mb-3 font-[family-name:var(--font-orbitron)] text-sm font-bold tracking-[0.18em] text-[#00e5ff] uppercase">
+        <h3 className="mb-3 font-[family-name:var(--font-orbitron)] text-sm font-bold tracking-[0.18em] text-[var(--ced-cyan)] uppercase">
           {title}
         </h3>
       ) : null}

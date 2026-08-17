@@ -29,7 +29,7 @@ export function CedWordmark({
     <span
       className={[
         "font-[family-name:var(--font-orbitron)] font-bold",
-        tone === "white" ? "text-white" : "text-cyan-300",
+        tone === "white" ? "text-white" : "text-[var(--ced-cyan)]",
         SIZE[size],
         glow ? "ced-glow-text" : "",
         className,

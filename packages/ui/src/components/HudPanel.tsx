@@ -54,7 +54,7 @@ export function HudPanel({
       />
 
       <header className="relative z-10 shrink-0 border-b border-cyan-500/30 bg-[#0a0a0a] px-4 py-2.5">
-        <h3 className="font-[family-name:var(--font-orbitron)] text-sm font-bold tracking-[0.18em] text-[#00e5ff] uppercase">
+        <h3 className="ced-mark-text text-sm uppercase">
           {title}
         </h3>
       </header>
