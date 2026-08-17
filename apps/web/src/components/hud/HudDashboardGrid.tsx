@@ -5,23 +5,16 @@ import { Suspense } from "react";
 
 import { HudPanel } from "@ced/ui";
 
-import { CAROUSEL_PANEL_HEIGHT_PX } from "@/components/dashboard/carousel/carouselLayout";
-import { LeftPanel3DCarousel } from "@/components/dashboard/LeftPanel3DCarousel";
 import { HudCollapsible } from "@/components/hud/HudCollapsible";
 import { MetaOAuthCallbackBanner } from "@/components/hud/ConnectNetworksButton";
 import { TrialExpiredBanner } from "@/components/billing/TrialExpiredBanner";
 import { BillingFeedback } from "@/components/billing/BillingFeedback";
 import { CierrePartnerPreviewBanner } from "@/components/preview/CierrePartnerPreviewBanner";
-import { HudDronesPanel } from "@/components/hud/HudDronesPanel";
 import {
   HudGlobalPanel,
   HudGlobalPanelFrame,
-  HudSummaryPanel,
-  HudSummaryPanelFrame,
-  HudWavesPanel,
 } from "@/components/hud/HudLivePanels";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
-import { LifeDashboardPanel } from "@/components/hud/LifeDashboardPanel";
 import { HudFeedProvider } from "@/contexts/HudFeedContext";
 import { HudPanelProvider } from "@/contexts/HudPanelContext";
 import { useBreakpointLg } from "@/hooks/useBreakpointLg";
@@ -32,7 +25,7 @@ const CedVoiceHub = dynamic(
   { ssr: false },
 );
 
-/** HUD — 3 columnas desktop; móvil con paneles colapsables. */
+/** HUD — voz, conversación y uso. Sin carrusel CASTILLO ni paneles LIFE/DRONES/WAVES. */
 export function HudDashboardGrid() {
   const isLg = useBreakpointLg();
   return (
@@ -48,50 +41,13 @@ export function HudDashboardGrid() {
               <CierrePartnerPreviewBanner />
             </Suspense>
           </div>
-          <div className="col-span-4">
-          <div
-            className="w-full"
-            style={{
-              height: CAROUSEL_PANEL_HEIGHT_PX,
-              maxHeight: CAROUSEL_PANEL_HEIGHT_PX,
-            }}
-          >
-            <HudPanel
-              title="CASTILLO"
-              className="h-full max-h-full shrink-0"
-              bodyClassName="flex shrink-0 flex-col px-4 py-2"
-            >
-              <LeftPanel3DCarousel />
-            </HudPanel>
-          </div>
-          </div>
-          <div className="col-span-4 flex flex-col items-center justify-center gap-3 py-2">
+          <div className="col-span-8 flex flex-col items-center justify-center gap-3 py-2">
             {isLg === true ? <CedVoiceHub /> : null}
           </div>
           <div className="col-span-4">
             <HudGlobalPanelFrame>
               <HudGlobalPanel />
             </HudGlobalPanelFrame>
-          </div>
-          <div className="col-span-3">
-            <HudPanel title="DRONES" className="min-h-[200px]">
-              <HudDronesPanel />
-            </HudPanel>
-          </div>
-          <div className="col-span-6">
-            <HudPanel title="LIFE" className="min-h-[200px]">
-              <LifeDashboardPanel />
-            </HudPanel>
-          </div>
-          <div className="col-span-3">
-            <HudPanel title="WAVES" className="min-h-[150px]">
-              <HudWavesPanel />
-            </HudPanel>
-          </div>
-          <div className="col-span-12">
-            <HudSummaryPanelFrame>
-              <HudSummaryPanel />
-            </HudSummaryPanelFrame>
           </div>
           <div className="col-span-12">
             <HudPanel title="USAGE" state="idle">
@@ -108,23 +64,8 @@ export function HudDashboardGrid() {
             <CierrePartnerPreviewBanner />
           </Suspense>
           {isLg === false ? <CedVoiceHub /> : null}
-          <HudCollapsible title="CASTILLO" defaultOpen>
-            <LeftPanel3DCarousel />
-          </HudCollapsible>
           <HudCollapsible title="CONVERSACIÓN">
             <HudGlobalPanel />
-          </HudCollapsible>
-          <HudCollapsible title="DRONES">
-            <HudDronesPanel />
-          </HudCollapsible>
-          <HudCollapsible title="SUMMARY">
-            <HudSummaryPanel />
-          </HudCollapsible>
-          <HudCollapsible title="WAVES">
-            <HudWavesPanel />
-          </HudCollapsible>
-          <HudCollapsible title="LIFE" defaultOpen>
-            <LifeDashboardPanel />
           </HudCollapsible>
           <HudCollapsible title="USAGE" defaultOpen>
             <HudUsageBar />
