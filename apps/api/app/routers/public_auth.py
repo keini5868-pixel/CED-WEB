@@ -25,8 +25,8 @@ class RegisterBody(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(default="", max_length=120)
     next: str = Field(default="/", max_length=500)
-    # Funnel FitLine / CED PM: offer=cierre → plan PM + 15 min voz / 24 h.
-    # El resto de altas también reciben 15 min / 24 h (sin plan PM).
+    # Funnel FitLine / CED PM: offer=cierre → plan PM + 15 min voz desde registro.
+    # El resto de altas también reciben 15 min totales (sin plan PM).
     offer: str = Field(default="", max_length=32)
     ref: str = Field(default="", max_length=32)
 
@@ -71,7 +71,7 @@ def apply_offer(
     body: ApplyOfferBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
-    """Aplica trial de voz 15 min/24 h (Google OAuth). offer=cierre → plan PM."""
+    """Aplica trial de voz 15 min desde el registro (Google OAuth). offer=cierre → plan PM."""
     from app.domain.plans import CIERRE_TRIAL_OFFER
     from app.services import supabase_db
     from app.services.referrals import claim_referral

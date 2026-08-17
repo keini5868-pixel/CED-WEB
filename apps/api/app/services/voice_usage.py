@@ -23,9 +23,9 @@ ACCESS_DENIED_MESSAGES = {
         "desde $10. El chat de texto sigue disponible en plan Básico gratis."
     ),
     "voice_trial_expired": (
-        "Tu prueba de voz (15 min en 24 h desde el primer uso) terminó. "
+        "Tu tiempo de prueba de voz (15 minutos desde el registro) se agotó. "
         "Adquiere un plan o recarga desde $10. Imágenes, PDF y chat siguen "
-        "en tu prueba de 7 días."
+        "disponibles mientras dure tu prueba de 7 días."
     ),
     "cierre_trial_expired": (
         "Tu prueba FitLine de 7 días terminó. Suscríbete a CED PM International "
@@ -128,8 +128,8 @@ def voice_access_state(user_id: str) -> dict:
         sub = supabase_db.get_subscription(user_id)
         plan_id = normalize_plan_id((sub or {}).get("plan_id"))
 
-        # Trial 15 min / 24 h (PM o alta general): pool único, no se renueva
-        # a medianoche UTC. Comparar uso acumulado desde el inicio del trial.
+        # Trial: pool único de 15 min desde el registro. No se renueva a
+        # medianoche ni a las 24 h. Comparar uso acumulado desde created_at.
         from app.domain.plans import is_voice_pool_trial
 
         if allowed and access_msg in (

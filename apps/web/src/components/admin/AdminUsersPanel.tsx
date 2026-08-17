@@ -143,7 +143,7 @@ export function AdminUsersPanel() {
               <th className="px-3 py-2">Nombre / Email</th>
               <th className="px-3 py-2">Tipo</th>
               <th className="px-3 py-2">Plan</th>
-              <th className="px-3 py-2">Voz/día</th>
+              <th className="px-3 py-2">Voz</th>
               <th className="px-3 py-2">Estado</th>
               <th className="px-3 py-2">Expira</th>
             </tr>
@@ -190,7 +190,9 @@ export function AdminUsersPanel() {
                     ) : null}
                   </td>
                   <td className="px-3 py-2 text-xs text-cyan-400/80">
-                    {u.minutes_daily ?? 0} min
+                    {u.is_trial
+                      ? `${u.minutes_daily ?? 0} min total`
+                      : `${u.minutes_daily ?? 0} min/día`}
                   </td>
                   <td className={`px-3 py-2 text-xs ${statusBadge(u.status)}`}>
                     {u.status === "active"

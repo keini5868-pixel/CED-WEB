@@ -86,7 +86,7 @@ def get_usage_minutes_since(user_id: str, since: datetime) -> float:
 
 
 def cierre_trial_window_start(sub: dict | None) -> datetime | None:
-    """Inicio del pool de 24 h de voz (primer uso, o cohorte 24 h al registro)."""
+    """Inicio del pool de 15 min de voz (registro, no reloj de 24 h)."""
     from app.domain.plans import voice_trial_window_start
 
     return voice_trial_window_start(sub)
@@ -866,7 +866,7 @@ def downgrade_to_free_basic(user_id: str) -> None:
 def apply_voice_pool_trial(
     user_id: str, *, plan_id: str | None = None
 ) -> dict[str, Any]:
-    """Trial general: 15 min de voz (reloj 24 h al primer uso) + 7 días imágenes/PDF.
+    """Trial general: 15 min de voz desde el registro (no se reinician) + 7 días imágenes/PDF.
 
     No cambia el plan salvo que se pase ``plan_id`` (p. ej. cierre / FitLine).
     Solo cuentas sin Stripe activo. Idempotente si ya está armado.
@@ -1041,7 +1041,7 @@ def start_voice_trial_clock(user_id: str) -> dict[str, Any]:
 
 
 def apply_cierre_fitline_trial(user_id: str) -> dict[str, Any]:
-    """Trial FitLine: plan cierre + 15 min de voz desde el primer uso / 24 h."""
+    """Trial FitLine: plan cierre + 15 min de voz desde el registro."""
     from app.domain.plans import PlanId
 
     return apply_voice_pool_trial(user_id, plan_id=PlanId.CIERRE.value)

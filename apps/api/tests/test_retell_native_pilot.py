@@ -311,12 +311,15 @@ def test_execute_generate_image_delegates_to_voice_executor():
             out = await execute_generate_image_tool(
                 user_id="u-img",
                 payload={"call": {"call_id": "c1"}},
-                args={"prompt": "un café al atardecer"},
+                args={
+                    "prompt": "un café al atardecer",
+                    "_user_request": "generame una imagen de un café al atardecer",
+                },
             )
             mock_exec.assert_awaited_once()
             assert mock_exec.await_args.args[0] == "generate_image"
-            assert mock_exec.await_args.args[2]["prompt"] == "un café al atardecer"
-            assert mock_exec.await_args.args[2]["_user_request"] == "un café al atardecer"
+            assert "café" in mock_exec.await_args.args[2]["prompt"].lower()
+            assert "imagen" in mock_exec.await_args.args[2]["_user_request"].lower()
             assert out["ok"] is True
             assert "pantalla" in out["result"].lower()
             return out

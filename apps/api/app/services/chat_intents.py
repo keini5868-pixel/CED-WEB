@@ -100,6 +100,18 @@ _CREATE_IDEA_OBJECT = re.compile(
     re.I,
 )
 
+# Hablar DE una imagen (adjunta, screenshot, queja) ≠ pedir generar una.
+_IMAGE_META_TALK = re.compile(
+    r"(?is)\b(?:"
+    r"esta\s+imagen|esa\s+imagen|la\s+imagen\s+adjunta|imagen\s+adjunta|"
+    r"no\s+se\s+adjunt[oó]|adjunt(?:a|e|ó|o)\s+(?:la\s+)?imagen|"
+    r"en\s+(?:esta|la|esa)\s+imagen|"
+    r"se\s+nota\s+(?:en\s+)?(?:esta|la|esa)\s+imagen|"
+    r"me\s+gener[oó]\s+(?:una\s+)?imagen|"
+    r"gener[oó]\s+(?:una\s+)?imagen\s+(?:y|cuando|sin|aunque)"
+    r")\b"
+)
+
 
 def is_text_ideation_request(text: str) -> bool:
     """True si el usuario pide idea/concepto/copy/texto — NO generar imagen.
@@ -123,6 +135,16 @@ def mentions_pdf(text: str) -> bool:
     return bool(re.search(r"\bpdf\b", (text or "").strip(), re.I))
 
 
+def is_image_meta_talk(text: str) -> bool:
+    """True si habla de una imagen existente/adjunta, no pide generar una."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _EXPLICIT_IMAGE_CREATE.search(t):
+        return False
+    return bool(_IMAGE_META_TALK.search(t))
+
+
 def is_generate_image_intent(text: str) -> bool:
     t = text.strip()
     if len(t) < 8:
@@ -133,6 +155,8 @@ def is_generate_image_intent(text: str) -> bool:
         return False
     # Ideas/copys/conceptos en texto — no alucinar una imagen.
     if is_text_ideation_request(t):
+        return False
+    if is_image_meta_talk(t):
         return False
     return any(p.search(t) for p in _IMAGE_PATTERNS)
 

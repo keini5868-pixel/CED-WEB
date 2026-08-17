@@ -64,7 +64,7 @@ export const FITLINE_ENROLL_OPEN_MODULE = {
   highlight: "signup",
 } as const;
 
-/** Pedido de enlace PM / abrir OPPS — abre el panel sin esperar al modelo. */
+/** Pedido EXPLÍCITO de enlace PM / abrir OPPS — no cualquier mención de «enlace». */
 export function wantsFitlineEnrollOpen(text: string): boolean {
   const t = (text || "").trim();
   if (t.length < 4) return false;
@@ -80,16 +80,30 @@ export function wantsFitlineEnrollOpen(text: string): boolean {
     /\b(?:enlace|link|url|liga|hiperv[ií]nculo|p[aá]gina\s+web|sitio\s+web|web\s+oficial)\b/i.test(
       t,
     );
+  const asked =
+    /\b(?:dame|danos|p[aá]same|m[aá]ndame|env[ií]ame|necesito|quiero|cu[aá]l\s+es|d[oó]nde\s+(?:est[aá]|queda)|me\s+das|[aá]bre(?:me)?|abrir|open)\b/i.test(
+      t,
+    );
   const branded =
-    /\b(?:fitline|fit\s*line|pm[\s-]?internationa[l]|pm[\s-]?internacional|\bpm\b)\b/i.test(
+    /\b(?:fitline|fit\s*line|pm[\s-]?internationa[l]|pm[\s-]?internacional)\b/i.test(
       t,
     );
   const signup =
-    /\b(?:inscripci[oó]n|inscribir(?:me|se)?|registro|registr(?:arme|arse)|unirme)\b/i.test(
+    /\b(?:inscripci[oó]n|inscribir(?:me|se)?|registro|registr(?:arme|arse)|unirme|patrocinio)\b/i.test(
       t,
     );
-  if (hasLink && branded) return true;
+  const linkOfPm =
+    /\b(?:enlace|link|url|liga)\s+(?:de\s+|del\s+|para\s+)?(?:pm(?:[\s-]?internationa[l])?|fitline|fit\s*line|inscripci[oó]n|registro|patrocinio)\b/i.test(
+      t,
+    );
+  const notSignupLink =
+    /\b(?:verificaci[oó]n|confirmar?\s+(?:el\s+)?correo|whatsapp|youtube|zoom|contrase[nñ]a|password)\b/i.test(
+      t,
+    );
+  if (notSignupLink && !signup) return false;
+  if (linkOfPm) return true;
   if (hasLink && signup) return true;
+  if (hasLink && branded && asked) return true;
   if (signup && branded) return true;
   return false;
 }

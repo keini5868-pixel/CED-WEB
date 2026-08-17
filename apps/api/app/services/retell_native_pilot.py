@@ -32,7 +32,7 @@ Reglas de tools (schemas definen nombre/params — no inventes tools):
 - FitLine / PM International / Activize / Restorate / PowerCocktail / Basics u otros
   productos PM: responde YA con conocimiento Oportunidades del system prompt.
   PROHIBIDO search_web y PROHIBIDO decir «investigando» / «consultando internet».
-  Enlace PM / «abre OPPS» → open_opportunities (nunca pegues el URL).
+  Enlace PM / «abre OPPS» → open_opportunities (nunca pegues el URL). Tras abrir: verifica que el patrocinador en el registro coincida.
 - Borrar/vaciar finanzas o historial → send_to_trash. Un «sí» no basta.
 - Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar ni recitar el análisis previo).
 - YouTube: play/pause/resume/close. Siempre reproduce de inmediato (nunca pidas confirmación antes de reproducir). NUNCA confirmes play sin éxito real de la tool. SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla — sin ofrecer más ayuda. Esta regla NO aplica al resto.
@@ -45,7 +45,7 @@ GENERAL_ASSISTANT_STATE_PROMPT = """
 Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya (también aquí).
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
-- Clima→get_environment. Noticias/hechos→search_web. FitLine/PM/productos PM→SIN search_web (Oportunidades). Enlace/inscripción/«abre OPPS»→open_opportunities (nunca pegues el URL). Borrar finanzas/historial→send_to_trash. YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
+- Clima→get_environment. Noticias/hechos→search_web. FitLine/PM/productos PM→SIN search_web (Oportunidades). Enlace/inscripción/«abre OPPS»→open_opportunities (nunca pegues el URL; verifica patrocinador). Borrar finanzas/historial→send_to_trash. YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
 - Imagen/PDF: generate_image / generar_pdf — NUNCA confirmes sin éxito.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
@@ -139,7 +139,8 @@ READ_SOCIAL_COMMENTS_DESCRIPTION = "Lee comentarios recientes FB/IG y destaca pr
 
 OPEN_DRIVE_MAP_DESCRIPTION = "Abre el mapa / modo conducir."
 OPEN_OPPORTUNITIES_DESCRIPTION = (
-    "Abre OPPS (FitLine). Enlace PM, inscripción o «abre OPPS». Nunca pegues el URL."
+    "Abre OPPS (FitLine). Enlace PM, inscripción o «abre OPPS». Nunca pegues el URL. "
+    "Tras abrir: verifica que el patrocinador en el registro coincida."
 )
 SEND_TO_TRASH_DESCRIPTION = (
     "Papelera 30 días (finanzas/historial). Un «sí» no basta."
@@ -170,7 +171,7 @@ RESUME_YOUTUBE_DESCRIPTION = (
 CLOSE_YOUTUBE_DESCRIPTION = "Cierra el reproductor de YouTube."
 
 GENERATE_IMAGE_DESCRIPTION = (
-    "Genera imagen por descripción hablada. Di el resultado tal cual — NUNCA confirmes sin éxito."
+    "Genera imagen SOLO si pidió crear imagen/foto. No por mencionar una imagen."
 )
 GENERAR_PDF_DESCRIPTION = (
     "Genera PDF (título/contenido). Di el resultado tal cual — NUNCA confirmes sin éxito."
@@ -2392,14 +2393,19 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
     raw = str(args.get("_user_request") or args.get("user_text") or "").strip()
     query = resolve_tool_query(payload, args)
     llm_prompt = str(args.get("prompt") or "").strip()
-    if raw and is_generate_image_intent(raw):
-        prompt = raw
-    elif query and is_generate_image_intent(query):
-        prompt = query
+    user_text = raw or query
+    from app.services.chat_image_generation import should_take_direct_image_path
+
+    if not user_text or not should_take_direct_image_path(user_text, None):
+        return {
+            "ok": False,
+            "spoken": "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
+            "error": "image_not_requested",
+        }
+    if is_generate_image_intent(user_text):
+        prompt = user_text
     else:
-        prompt = query or llm_prompt
-    if not prompt:
-        prompt = llm_prompt
+        prompt = query or llm_prompt or user_text
     quality = str(args.get("quality") or "auto").strip() or "auto"
     call_id = _extract_call_id(payload)
     return await _execute_native_voice_alias_tool(

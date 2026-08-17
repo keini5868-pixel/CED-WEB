@@ -8,7 +8,6 @@ from unittest.mock import patch
 from app.domain.plans import (
     CIERRE_TRIAL_VOICE_MINUTES,
     PlanId,
-    TRIAL_VOICE_MINUTES_PER_DAY,
     VOICE_TRIAL_MINUTES,
     is_cierre_fitline_trial,
     is_voice_pool_trial,
@@ -29,19 +28,21 @@ def test_cierre_trial_minutes_helper():
     assert CIERRE_TRIAL_VOICE_MINUTES == 15
     assert trial_voice_minutes_for_subscription(
         {"plan_id": "elite", "status": "trialing"}
-    ) == TRIAL_VOICE_MINUTES_PER_DAY
+    ) == VOICE_TRIAL_MINUTES
 
 
-def test_cierre_trial_window_start_is_24h_before_end():
-    ends = datetime(2026, 8, 12, 18, 0, tzinfo=timezone.utc)
+def test_cierre_trial_window_start_is_registration():
+    created = datetime(2026, 8, 10, 18, 0, tzinfo=timezone.utc)
+    ends = datetime(2026, 8, 17, 18, 0, tzinfo=timezone.utc)
     sub = {
         "plan_id": "cierre",
         "status": "trialing",
+        "created_at": created.isoformat(),
         "trial_ends_at": ends.isoformat(),
     }
     start = cierre_trial_window_start(sub)
     assert start is not None
-    assert start == ends - timedelta(hours=24)
+    assert start == created
 
 
 def test_cierre_fitline_trial_gets_15_minutes():
@@ -113,8 +114,8 @@ def test_cierre_fitline_trial_expires_after_24h():
     assert minutes == 0
 
 
-def test_normal_trial_still_five_minutes():
-    """Trials legacy de 7 días (created→ends ≈ 7 d) siguen con 5 min/día."""
+def test_normal_trial_gets_fifteen_minute_pool():
+    """Trials de 7 días usan el mismo pool de 15 min (no 5 min/día)."""
     now = datetime.now(timezone.utc)
     created = (now - timedelta(days=4)).isoformat()
     trial_end = (now + timedelta(days=3)).isoformat()
@@ -133,8 +134,8 @@ def test_normal_trial_still_five_minutes():
         allowed, reason, minutes = get_user_access("user-normal-trial")
     assert allowed is True
     assert reason == "trial"
-    assert minutes == 5
-    assert is_voice_pool_trial(sub) is False
+    assert minutes == 15
+    assert is_voice_pool_trial(sub) is True
 
 
 def test_new_general_signup_gets_15_minute_24h_pool():
@@ -192,8 +193,8 @@ def test_general_24h_trial_voice_state_uses_window_pool_not_daily_renew():
     assert state["voice_pool_trial"] is True
 
 
-def test_legacy_seven_day_trial_last_day_stays_five_minutes():
-    """Un trial de 7 días con <26 h restantes NO se convierte a pool de 15."""
+def test_legacy_seven_day_trial_also_gets_fifteen_minutes():
+    """Un trial de 7 días con <26 h restantes también usa el pool de 15."""
     now = datetime.now(timezone.utc)
     sub = {
         "plan_id": PlanId.ELITE.value,
@@ -201,23 +202,24 @@ def test_legacy_seven_day_trial_last_day_stays_five_minutes():
         "created_at": (now - timedelta(days=6, hours=12)).isoformat(),
         "trial_ends_at": (now + timedelta(hours=12)).isoformat(),
     }
-    assert is_voice_pool_trial(sub) is False
-    assert trial_voice_minutes_for_subscription(sub) == TRIAL_VOICE_MINUTES_PER_DAY
+    assert is_voice_pool_trial(sub) is True
+    assert trial_voice_minutes_for_subscription(sub) == VOICE_TRIAL_MINUTES
 
 
-def test_armed_trial_waits_until_first_voice_use():
-    """Sin primer uso: 15 min disponibles y el reloj de 24 h no corre."""
+def test_armed_trial_counts_from_registration():
+    """Sin uso: 15 min disponibles; el pool empieza en el registro."""
     now = datetime.now(timezone.utc)
+    created = now - timedelta(days=2)
     sub = {
         "plan_id": PlanId.ELITE.value,
         "status": "trialing",
         "voice_trial_armed": True,
         "voice_trial_started_at": None,
-        "created_at": (now - timedelta(days=2)).isoformat(),
+        "created_at": created.isoformat(),
         "trial_ends_at": (now + timedelta(days=5)).isoformat(),
     }
     assert is_voice_pool_trial(sub) is True
-    assert cierre_trial_window_start(sub) is None
+    assert cierre_trial_window_start(sub) == created
     assert trial_voice_minutes_for_subscription(sub) == VOICE_TRIAL_MINUTES
     with (
         patch("app.services.supabase_db.get_profile", side_effect=_mock_profile),
@@ -231,8 +233,8 @@ def test_armed_trial_waits_until_first_voice_use():
     assert minutes == 15
 
 
-def test_voice_clock_expires_24h_after_first_use_not_registration():
-    """Tras el primer uso, a las 24 h se corta la voz; el trial de 7 días sigue."""
+def test_voice_pool_does_not_expire_after_24h():
+    """Tras 25 h del primer uso, los 15 min siguen si no se agotaron."""
     now = datetime.now(timezone.utc)
     sub = {
         "plan_id": PlanId.ELITE.value,
@@ -250,11 +252,11 @@ def test_voice_clock_expires_24h_after_first_use_not_registration():
     ):
         allowed, reason, minutes = get_user_access("user-voice-clock-done")
     assert allowed is True
-    assert reason == "voice_trial_expired"
-    assert minutes == 0
+    assert reason == "trial"
+    assert minutes == 15
 
 
-def test_voice_trial_expired_still_gets_elite_images():
+def test_voice_trial_still_gets_elite_images_after_24h():
     from app.deps.plan_access import effective_plan_limits
 
     now = datetime.now(timezone.utc)
@@ -274,10 +276,9 @@ def test_voice_trial_expired_still_gets_elite_images():
     ):
         limits, reason, trial = effective_plan_limits("user-voice-done-images-ok")
     assert trial is True
-    assert reason == "voice_trial_expired"
+    assert reason == "trial"
     assert limits.ai_images_standard_per_day == 14
     assert limits.pdf_reports is True
-    assert limits.voice_minutes_per_day == 12  # élite; la voz ya está gated aparte
 
 
 def test_minutes_exhausted_before_24h_blocks_voice():

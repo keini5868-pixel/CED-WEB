@@ -362,6 +362,8 @@ def test_enroll_link_opens_opps_without_pasting_url():
     assert "http" not in result["spoken"].lower()
     assert "Oportunidades" in result["spoken"]
     assert result["spoken"] == FITLINE_ENROLL_GUIDE
+    assert "patrocinador" in result["spoken"].lower()
+    assert "coincida exactamente" in result["spoken"].lower()
 
 
 def test_enroll_covers_descripcion_enlace_and_generic_pm_url():
@@ -418,3 +420,16 @@ def test_enroll_not_triggered_on_generic_fitline_question():
     assert not wants_fitline_enroll_link("hola, cómo estás")
     assert not wants_fitline_enroll_link("cuáles son los requisitos de inscripción de FitLine")
     assert not wants_fitline_enroll_link("qué es OPPS")
+    assert not wants_fitline_enroll_link("el enlace no funciona")
+    assert not wants_fitline_enroll_link(
+        "el enlace de verificación del correo",
+        history=[{"role": "user", "content": "estoy viendo FitLine PM International"}],
+    )
+    assert not wants_fitline_enroll_link(
+        "pásame el enlace de YouTube",
+        history=[{"role": "user", "content": "háblame de FitLine"}],
+    )
+    assert not wants_fitline_enroll_link(
+        "en esta conversación el enlace que te dije",
+        history=[{"role": "user", "content": "FitLine PM International"}],
+    )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
-from app.domain.plans import PlanId, TRIAL_VOICE_MINUTES_PER_DAY
+from app.domain.plans import PlanId
 from app.services.admin_users import _plan_display, _user_status
 
 
@@ -20,10 +20,10 @@ def test_trial_shows_trial_label_and_trial_ends_at():
     info = _plan_display(sub)
     assert info["is_trial"] is True
     assert info["is_paid"] is False
-    assert info["plan_label"].startswith("Trial 7d ·")
+    assert info["plan_label"].startswith("Prueba 7d · voz 15 min")
     assert "Élite" in info["plan_label"] or "Elite" in info["plan_label"]
     assert info["display_expires_at"] == end
-    assert info["voice_minutes_daily"] == TRIAL_VOICE_MINUTES_PER_DAY
+    assert info["voice_minutes_daily"] == 15
     assert _user_status(sub) == "trial"
 
 

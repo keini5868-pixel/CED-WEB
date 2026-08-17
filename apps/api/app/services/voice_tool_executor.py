@@ -731,7 +731,7 @@ async def _execute_voice_tool_body(
                 or ""
             ).strip()
             llm_prompt = str(params.get("prompt") or "").strip()
-            if raw_user and not should_take_direct_image_path(raw_user, None):
+            if not raw_user or not should_take_direct_image_path(raw_user, None):
                 return _spoken_err(
                     "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
                     error="image_not_requested",
@@ -1239,6 +1239,7 @@ async def _execute_voice_tool_body(
             from app.services.opportunities_pilot.fitline_enroll import (
                 FITLINE_ENROLL_GUIDE,
                 FITLINE_ENROLL_OPEN_MODULE,
+                FITLINE_SPONSOR_VERIFY,
             )
             from app.services.opportunities_pilot.fitline_sponsor import resolve_sponsor_url
 
@@ -1254,7 +1255,8 @@ async def _execute_voice_tool_body(
                 spoken = (
                     "Le abro Oportunidades con la ficha FitLine, señor. "
                     "Baje hasta el final de la sección: el botón de inscripción "
-                    "aparecerá ahí cuando el enlace esté configurado."
+                    "aparecerá ahí cuando el enlace esté configurado. "
+                    f"{FITLINE_SPONSOR_VERIFY}"
                 )
             payload = _spoken_ok(spoken)
             payload["client_action"] = "open_module"

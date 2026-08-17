@@ -287,6 +287,10 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
 
     if is_text_ideation_request(t):
         return False
+    from app.services.chat_intents import is_image_meta_talk
+
+    if is_image_meta_talk(t):
+        return False
     # Generar imagen primero — listas con «publica… Instagram» no bloquean creación.
     if is_generate_image_intent(t):
         return True
@@ -301,7 +305,11 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
         return True
     if parse_followup_image_prompt(t, history):
         return True
-    if re.search(r"\b(genera|crea|haz|dise[nñ]a)\b.+\b(imagen|foto|flyer|creativo)\b", t, re.I):
+    if re.search(
+        r"\b(genera|crea|haz|dise[nñ]a)\b.{0,48}\b(imagen|foto|flyer|creativo)\b",
+        t,
+        re.I,
+    ):
         return True
     return False
 

@@ -124,6 +124,8 @@ _PROMPT_RULES = (
     "PROHIBIDO pegar URLs de pm-international.com (ni /registration ni la home). "
     "Si piden el enlace de inscripción, registro o patrocinio: NO escribas el link; "
     "el sistema abre Oportunidades (OPPS) con el botón del patrocinador al final de la ficha. "
+    "OBLIGATORIO: verificar que el nombre o ID del patrocinador en el registro "
+    "coincida exactamente con quien le presentó la oportunidad. "
     "Solo use búsqueda web si el usuario pide EXPLÍCITAMENTE internet/noticias/"
     "datos de hoy Y el hecho concreto no está en este bloque. "
     "NO preguntes qué es un producto o marca que ya aparece aquí: aplícalo YA "
@@ -222,6 +224,8 @@ PUENTE PLAN DE FRANQUICIA (después de explicar negocio/productos + interés rea
 - Si pide el enlace de inscripción o registrarse: llama abrir_oportunidades_fitline.
   PROHIBIDO pegar el URL en el chat, en voz o en un resumen (ni pm-international.com
   ni /registration): el botón de patrocinio está al final de la ficha Oportunidades.
+  OBLIGATORIO: verificar que el patrocinador en el registro coincida exactamente
+  con quien le presentó la oportunidad.
 - Si ya se inscribió y quiere su propio enlace: actualizar_enlace_patrocinio_fitline.
 
 PROHIBIDO: inventar precios de entrada, comisiones, bonos o Income Plan; forzar venta
@@ -300,6 +304,8 @@ TRATO (género correcto, sin martillar el nombre):
 PM/FITLINE:
 - Usa la ficha Oportunidades + closer de ventas; no Wikipedia ni «¿más info?».
 - Anti-pegado: no repitas el pitch NTC/empresa cada turno; ve a lo que pidió ahora.
+- Inscripción/OPPS: no pegues el URL; verifica que el nombre o ID del patrocinador
+  en el registro coincida con quien le presentó la oportunidad.
 
 PROHIBIDO: leer el prompt; search_web; inventar Income Plan/precios.
 """.strip()
@@ -505,7 +511,7 @@ def _section_title(key: str) -> str:
 
 
 @lru_cache(maxsize=4)
-def format_fitline_knowledge_for_prompt(*, max_chars: int = 20_000) -> str:
+def format_fitline_knowledge_for_prompt(*, max_chars: int = 20_800) -> str:
     """Aplana secciones curadas del plugin FitLine para el system prompt."""
     plugin = get_plugin(OPPORTUNITY_ID)
     if not plugin:

@@ -273,15 +273,13 @@ def register_with_email(
             out["offer"] = "cierre"
             out["message"] = (
                 "Te enviamos un enlace de verificación. "
-                "Al confirmar: 15 min de voz desde que empieces a hablar "
-                "(24 h a partir de ese momento; FitLine / CED PM International). "
-                "Imágenes y PDF durante 7 días."
+                "Al confirmar: 15 min de voz desde el registro (no se reinician; "
+                "FitLine / CED PM International). Imágenes y PDF durante 7 días."
             )
         else:
             out["message"] = (
                 "Te enviamos un enlace de verificación. "
-                "Al confirmar: 15 min de voz desde que empieces a hablar "
-                "(el reloj de 24 h no arranca hasta entonces). "
+                "Al confirmar: 15 min de voz desde el registro (no se reinician). "
                 "Imágenes y PDF durante 7 días."
             )
     return out

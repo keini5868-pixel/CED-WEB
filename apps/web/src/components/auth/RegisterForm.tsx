@@ -144,14 +144,14 @@ export function RegisterForm() {
       {pmOfferFlow && !payingFlow ? (
         <p className="mb-4 rounded border border-emerald-500/30 bg-emerald-500/5 p-3 text-xs text-emerald-200">
           Al verificar tu correo activas CED PM International: 15 minutos de voz
-          Jarvis con conocimiento FitLine. El reloj de 24 h arranca cuando
-          empieces a hablar (si no usas la voz, no vence). Imágenes y PDF
-          durante 7 días. Luego puedes suscribirte a $22/mes o recargar desde $10.
+          Jarvis con conocimiento FitLine, desde el registro. No se reinician.
+          Al agotarlos, recarga o elige un plan. Imágenes y PDF durante 7 días.
+          Luego puedes suscribirte a $22/mes o recargar desde $10.
         </p>
       ) : !payingFlow ? (
         <p className="mb-4 rounded border border-cyan-500/30 bg-cyan-500/5 p-3 text-xs text-cyan-200">
-          Al verificar tu correo tienes 15 minutos de voz: el reloj de 24 h
-          arranca cuando empieces a hablar (si no usas la voz, no vence).
+          Al verificar tu correo tienes 15 minutos de voz desde el registro.
+          No se reinician: al agotarlos recarga o elige un plan.
           Imágenes y PDF durante 7 días. El chat de texto sigue disponible.
         </p>
       ) : null}

@@ -45,40 +45,38 @@ export function VoiceLimitModal({
   const title =
     reason === "daily_limit"
       ? "Límite diario de voz alcanzado"
-      : reason === "trial_daily_limit"
-        ? "Agotaste tu voz de hoy (prueba gratis)"
-        : reason === "voice_trial_limit"
-          ? "Agotaste tu prueba de voz"
-        : reason === "cierre_trial_limit"
-          ? "Agotaste tu prueba FitLine de voz"
-          : reason === "cierre_trial_expired"
-            ? "Tu prueba FitLine de 7 días terminó"
-            : reason === "voice_trial_expired"
-              ? "Tu prueba de voz terminó"
-            : reason === "trial_expired"
-              ? "Tu prueba de 7 días terminó"
-              : reason === "no_voice"
-                ? "Voz no incluida en tu plan"
-                : "Suscripción requerida para voz";
+      : reason === "trial_daily_limit" ||
+          reason === "voice_trial_limit" ||
+          reason === "cierre_trial_limit" ||
+          reason === "voice_trial_expired"
+        ? "Tu tiempo de prueba ha terminado"
+        : reason === "cierre_trial_expired"
+          ? "Tu prueba FitLine de 7 días terminó"
+          : reason === "trial_expired"
+            ? "Tu prueba de 7 días terminó"
+            : reason === "no_voice"
+              ? "Voz no incluida en tu plan"
+              : "Suscripción requerida para voz";
+
+  const trialVoiceDone =
+    "Tu tiempo de prueba ha terminado. Recarga tiempo o elige un plan. " +
+    "Imágenes, PDF y chat siguen disponibles mientras dure tu prueba de 7 días.";
 
   const body =
     reason === "daily_limit"
       ? "Has alcanzado el límite de tu plan. Recarga desde $10: el crédito es proporcional (voz, imágenes, búsquedas, PDF…) y no expira. El chat de texto sigue disponible."
-      : reason === "trial_daily_limit"
-        ? "Usaste tus 5 minutos de voz de hoy (prueba gratuita de 7 días). Se renuevan mañana, o ahora mismo puedes suscribirte a un plan para tener más minutos cada día, o recargar desde $10 para seguir usando la voz hoy sin suscribirte."
-        : reason === "voice_trial_limit"
-          ? "Usaste los 15 minutos de tu prueba (24 h desde que empezaste a hablar). Para seguir con voz, elige un plan o recarga desde $10. Imágenes, PDF y chat siguen en tu prueba de 7 días."
-        : reason === "cierre_trial_limit"
-          ? "Usaste los minutos de tu prueba. Para seguir con voz, elige un plan o recarga desde $10."
-          : reason === "cierre_trial_expired"
-            ? "Tu prueba de 7 días terminó. Suscríbete a un plan para seguir con voz, o recarga desde $10."
-            : reason === "voice_trial_expired"
-              ? "Pasaron 24 h desde que usaste la voz por primera vez. Adquiere un plan o recarga desde $10. Imágenes, PDF y chat siguen en tu prueba de 7 días."
-            : reason === "trial_expired"
-              ? "Tu prueba de 7 días finalizó. Adquiere un plan o recarga desde $10. El chat de texto sigue gratis en plan Básico."
-              : reason === "no_voice"
-                ? "Tu plan no incluye voz incluida. Recarga desde $10 para activar el asistente con crédito proporcional, o elige un plan. El chat de texto sigue disponible."
-                : "Renueva tu suscripción para reactivar el asistente de voz. El chat de texto sigue disponible.";
+      : reason === "trial_daily_limit" ||
+          reason === "voice_trial_limit" ||
+          reason === "cierre_trial_limit" ||
+          reason === "voice_trial_expired"
+        ? trialVoiceDone
+        : reason === "cierre_trial_expired"
+          ? "Tu prueba de 7 días terminó. Suscríbete a un plan para seguir con voz, o recarga desde $10."
+          : reason === "trial_expired"
+            ? "Tu prueba de 7 días finalizó. Adquiere un plan o recarga desde $10. El chat de texto sigue gratis en plan Básico."
+            : reason === "no_voice"
+              ? "Tu plan no incluye voz incluida. Recarga desde $10 para activar el asistente con crédito proporcional, o elige un plan. El chat de texto sigue disponible."
+              : "Renueva tu suscripción para reactivar el asistente de voz. El chat de texto sigue disponible.";
 
   const subscribe = async (planId: string) => {
     setBusy(planId);

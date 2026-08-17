@@ -22,12 +22,12 @@ export interface PlanFeatures {
 }
 
 export const FOUNDING_MEMBER_MAX_SLOTS = 50;
-/** Legacy: trials de 7 días × 5 min/día ya emitidos. */
+/** Días de trial para imágenes/PDF (la voz es un pool de 15 min, no diario). */
 export const TRIAL_DAYS = 7;
 export const TRIAL_HOURS = 24;
-/** Minutos de voz/día en trials legacy de 7 días (API: 5). */
-export const TRIAL_VOICE_MINUTES_PER_DAY = 5;
-/** Pool de voz para altas nuevas: 15 min; 24 h desde el primer uso. */
+/** Cupo de voz del trial: 15 min totales desde el registro. */
+export const TRIAL_VOICE_MINUTES_PER_DAY = 15;
+/** Pool de voz del trial: 15 min totales; no se reinicia. */
 export const CIERRE_TRIAL_VOICE_MINUTES = 15;
 export const CIERRE_TRIAL_HOURS = 24;
 export const VOICE_TRIAL_MINUTES = 15;

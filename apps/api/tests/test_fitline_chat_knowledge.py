@@ -89,6 +89,7 @@ def test_format_includes_curated_products_not_invented():
     assert "ASESOR COMERCIAL" in block or "VENDER SIN PARECER" in block
     assert "CIERRE ESTRATÉGICO" in block or "cierre" in block.lower()
     assert "search_web" in block.lower() or "Tavily" in block or "PROHIBIDO" in block
+    assert "coincida exactamente" in block
 
 
 def test_wants_fitline_expanded_catalog_skus():

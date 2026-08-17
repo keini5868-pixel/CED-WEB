@@ -159,10 +159,12 @@ def should_take_direct_image_path(
         return False
     if len(t) > DIRECT_IMAGE_MAX_CHARS:
         return False
-    from app.services.chat_intents import is_text_ideation_request
+    from app.services.chat_intents import is_image_meta_talk, is_text_ideation_request
     from app.services.copy_quality import prompt_requires_ideogram_text
 
     if is_text_ideation_request(t):
+        return False
+    if is_image_meta_talk(t):
         return False
     # «Agrégale texto…» sobre imagen del hilo — path visual aunque no diga «genera imagen».
     if prompt_requires_ideogram_text(t) and (

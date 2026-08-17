@@ -39,7 +39,11 @@ def test_voice_generate_image_uses_shared_pipeline_and_pushes_event():
             execute_voice_tool(
                 "generate_image",
                 "user-voice-img",
-                {"prompt": "un café al atardecer", "call_id": "call-1"},
+                {
+                    "prompt": "generame una imagen de un café al atardecer",
+                    "_user_request": "generame una imagen de un café al atardecer",
+                    "call_id": "call-1",
+                },
             )
         )
 
@@ -47,7 +51,7 @@ def test_voice_generate_image_uses_shared_pipeline_and_pushes_event():
     kwargs = mock_gen.call_args.kwargs
     assert kwargs.get("allow_reference") is False
     assert kwargs.get("plan_id") == "elite"
-    assert mock_gen.call_args.args[2] == "un café al atardecer"
+    assert mock_gen.call_args.args[2] == "generame una imagen de un café al atardecer"
     assert result["ok"] is True
     assert result["url"] == "https://cdn.example.com/cafe.png"
     assert "pantalla" in result["spoken"].lower()
@@ -128,7 +132,14 @@ def test_voice_generate_image_no_event_on_failure():
         ),
     ):
         result = asyncio.run(
-            execute_voice_tool("generate_image", "user-voice-img", {"prompt": "algo"})
+            execute_voice_tool(
+                "generate_image",
+                "user-voice-img",
+                {
+                    "prompt": "generame una imagen de algo",
+                    "_user_request": "generame una imagen de algo",
+                },
+            )
         )
 
     assert result["ok"] is False
@@ -214,7 +225,14 @@ def test_voice_generate_image_needs_recharge_pushes_client_action_and_event():
         ),
     ):
         result = asyncio.run(
-            execute_voice_tool("generate_image", "user-voice-img-recharge", {"prompt": "algo"})
+            execute_voice_tool(
+                "generate_image",
+                "user-voice-img-recharge",
+                {
+                    "prompt": "generame una imagen de algo",
+                    "_user_request": "generame una imagen de algo",
+                },
+            )
         )
 
     assert result["ok"] is False

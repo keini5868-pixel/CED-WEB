@@ -91,6 +91,20 @@ def test_explicit_image_requests_still_work():
         assert should_take_direct_image_path(msg, []) is True, msg
 
 
+def test_talking_about_an_attached_image_does_not_generate():
+    msgs = [
+        "No se adjuntó la imagen. Intenta de nuevo en unos segundos.",
+        "en esta imagen se nota que hay un detalle de 5 minutos por día",
+        "ced le di estas instrucciones en esta imagen",
+        "me generó una imagen y no era la intención",
+        "la imagen adjunta muestra la tabla de usuarios",
+    ]
+    for msg in msgs:
+        assert is_generate_image_intent(msg) is False, msg
+        assert should_take_direct_image_path(msg, []) is False, msg
+        assert is_image_creation_request(msg, []) is False, msg
+
+
 def test_generate_image_with_idea_in_scene_still_images():
     """«genera una imagen de una idea abstracta» sigue siendo pedido visual."""
     msg = "genera una imagen de una idea abstracta flotando en el cielo"

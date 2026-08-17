@@ -41,10 +41,10 @@ export function HudUsageBar() {
     ? "Cargando…"
     : voiceLimit === "daily_limit"
       ? "Límite alcanzado"
-      : voiceLimit === "trial_daily_limit"
-        ? "Voz de hoy agotada (prueba)"
-        : voiceLimit === "voice_trial_limit" || voiceLimit === "cierre_trial_limit"
-          ? "Prueba de voz agotada"
+      : voiceLimit === "trial_daily_limit" ||
+          voiceLimit === "voice_trial_limit" ||
+          voiceLimit === "cierre_trial_limit"
+        ? "Prueba de voz agotada"
         : voiceLimit === "trial_expired" || voiceLimit === "voice_trial_expired"
           ? "Prueba de voz terminada"
           : voiceLimit === "subscription"
@@ -63,7 +63,7 @@ export function HudUsageBar() {
     <div>
       <div className="ced-hud-text-primary flex flex-wrap items-center justify-between gap-2 font-medium">
         <span>
-          USO VOZ{balance.voicePoolTrial ? " (prueba)" : " HOY"}:{" "}
+          USO VOZ{balance.voicePoolTrial ? " (prueba 15 min)" : " HOY"}:{" "}
           {loaded
             ? `${balance.used.toFixed(1)} / ${balance.plan} min`
             : "— / — min"}
@@ -94,7 +94,7 @@ export function HudUsageBar() {
       </div>
       <p className="ced-hud-text-muted mt-2 text-xs">
         {balance.voicePoolTrial
-          ? "15 min de voz: el reloj de 24 h arranca al hablar · el chat de texto es independiente"
+          ? "15 min de voz desde el registro · no se reinician · al agotarlos recarga o elige un plan"
           : "Límite diario del asistente de voz · el chat de texto es independiente"}
       </p>
 
@@ -103,11 +103,10 @@ export function HudUsageBar() {
           <p className="font-semibold text-red-200">
             {voiceLimit === "daily_limit"
               ? "Has alcanzado tu límite diario de voz"
-              : voiceLimit === "trial_daily_limit"
-                ? "Usaste tus 5 min de voz de hoy (prueba gratis)"
-                : voiceLimit === "voice_trial_limit" ||
-                    voiceLimit === "cierre_trial_limit"
-                  ? "Usaste los 15 min de tu prueba de voz"
+              : voiceLimit === "trial_daily_limit" ||
+                  voiceLimit === "voice_trial_limit" ||
+                  voiceLimit === "cierre_trial_limit"
+                ? "Tu tiempo de prueba ha terminado"
                 : voiceLimit === "trial_expired" ||
                     voiceLimit === "cierre_trial_expired" ||
                     voiceLimit === "voice_trial_expired"

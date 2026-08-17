@@ -5,10 +5,17 @@ from __future__ import annotations
 import re
 from typing import Any
 
+FITLINE_SPONSOR_VERIFY = (
+    "Antes de confirmar el registro, verifique que el nombre o ID del patrocinador "
+    "en esa página coincida exactamente con quien le presentó la oportunidad. "
+    "Así queda vinculado al equipo correcto."
+)
+
 FITLINE_ENROLL_GUIDE = (
     "Le abro Oportunidades, señor. "
     "Baje hasta el final de la ficha FitLine: ahí está el botón de inscripción. "
     "Dele clic y complete el registro en la plataforma de PM International, paso a paso. "
+    f"{FITLINE_SPONSOR_VERIFY} "
     "Si ya se inscribió y quiere su propio enlace de patrocinio, en esa misma sección puede editarlo."
 )
 
@@ -26,6 +33,31 @@ _ANY_PM_URL = re.compile(
 _LINK_WORD = re.compile(
     r"(?is)\b(?:enlace|link|url|liga|hiperv[ií]nculo|"
     r"p[aá]gina\s+web|sitio\s+web|web\s+oficial)\b"
+)
+
+_ASK_LINK = re.compile(
+    r"(?is)\b(?:"
+    r"dame|danos|p[aá]same|m[aá]ndame|env[ií]ame|necesito|"
+    r"quiero|cu[aá]l\s+es|d[oó]nde\s+(?:est[aá]|queda)|me\s+das|"
+    r"[aá]bre(?:me)?|abrir|open|p[eé]game|c[oó]piame|"
+    r"me\s+(?:das|puedes\s+dar|puedes\s+pasar)"
+    r")\b"
+)
+
+_LINK_OF_PM = re.compile(
+    r"(?is)\b(?:enlace|link|url|liga)\s+"
+    r"(?:de\s+|del\s+|para\s+)?"
+    r"(?:pm(?:[\s\-]?internationa[l])?|fitline|fit\s*line|"
+    r"inscripci[oó]n|registro|patrocinio)\b"
+)
+
+_NOT_PM_SIGNUP_LINK = re.compile(
+    r"(?is)\b(?:"
+    r"verificaci[oó]n|confirmar?\s+(?:el\s+)?correo|"
+    r"whatsapp|youtube|zoom|meet|drive|"
+    r"recuperar|contrase[nñ]a|password|"
+    r"esta\s+conversaci[oó]n"
+    r")\b"
 )
 
 _SIGNUP_WORD = re.compile(
@@ -100,29 +132,34 @@ def wants_fitline_enroll_link(
     text: str,
     history: list[dict[str, str]] | None = None,
 ) -> bool:
-    """Cualquier pedido razonable de enlace/inscripción PM → abrir OPPS.
+    """Pedido EXPLÍCITO de inscripción/enlace PM → abrir OPPS.
 
-    No exige una frase exacta: «dame el enlace de PM International»,
-    «cuál es el link», «quiero inscribirme», etc.
+    No abre OPPS solo porque alguien diga «enlace» en una charla FitLine.
     """
     t = (text or "").strip()
     if len(t) < 4:
         return False
     if _ANY_PM_URL.search(t):
         return True
-    # Pedido explícito de abrir el módulo — no exige marca FitLine.
     if _OPEN_OPPS.search(t):
         return True
 
     has_link = bool(_LINK_WORD.search(t))
     has_signup = bool(_SIGNUP_WORD.search(t))
     branded = _has_pm_brand(t) or _has_pm_brand(_history_blob(history))
+    asked = bool(_ASK_LINK.search(t))
 
-    # Pedir el enlace/link/url de PM o FitLine (cualquier verbo o «cuál es»).
-    if has_link and branded:
+    if _NOT_PM_SIGNUP_LINK.search(t) and not has_signup:
+        return False
+
+    # «enlace de PM / FitLine / inscripción» — pedido explícito del link.
+    if _LINK_OF_PM.search(t):
         return True
     # «enlace de inscripción» aunque no nombren la marca en este turno.
     if has_link and has_signup:
+        return True
+    # Pedir el link (dame/pásame/cuál es) + contexto PM/FitLine.
+    if has_link and branded and asked:
         return True
     # Inscribirse / registrarse en PM, salvo pregunta informativa sin pedir el link.
     if has_signup and branded:

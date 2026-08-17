@@ -696,7 +696,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Abre el módulo Oportunidades (OPPS) en FitLine para ver el enlace de "
             "inscripción/patrocinio y el plan. Usar cuando el usuario acepte ir a OPPS "
-            "o pida el enlace para activar su franquicia."
+            "o pida el enlace para activar su franquicia. Tras abrir, el spoken debe "
+            "instruir a verificar que el nombre o ID del patrocinador en la página de "
+            "registro coincida con quien le presentó la oportunidad."
         ),
         "parameters": {"type": "object", "properties": {}},
     },
