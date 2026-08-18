@@ -2,6 +2,7 @@
 
 import { FileText, ImagePlus, Paperclip } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { ImageUploadButton } from "@/components/chat/ImageUploadButton";
 import { PdfUploadButton } from "@/components/chat/PdfUploadButton";
@@ -30,6 +31,12 @@ function isDocumentFile(file: File): boolean {
 const triggerClass =
   "box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10 active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px]";
 
+type MenuCoords = {
+  top?: number;
+  bottom?: number;
+  right: number;
+};
+
 /** En móvil: un clip con menú Foto / Archivo. En escritorio: los dos botones sueltos. */
 export function AttachMenuButton({
   onImageSelected,
@@ -37,17 +44,45 @@ export function AttachMenuButton({
   disabled,
 }: AttachMenuButtonProps) {
   const [open, setOpen] = useState(false);
+  const [coords, setCoords] = useState<MenuCoords | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const pdfInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const onDoc = (ev: MouseEvent) => {
-      if (!rootRef.current?.contains(ev.target as Node)) setOpen(false);
+
+    const update = () => {
+      const btn = rootRef.current?.querySelector("button");
+      if (!btn) return;
+      const r = btn.getBoundingClientRect();
+      const spaceAbove = r.top;
+      const right = Math.max(8, window.innerWidth - r.left + 8);
+      if (spaceAbove < 120) {
+        setCoords({ top: r.bottom + 8, right });
+      } else {
+        setCoords({ bottom: window.innerHeight - r.top + 8, right });
+      }
+    };
+
+    update();
+    const onDoc = (ev: MouseEvent | TouchEvent) => {
+      const node = ev.target as Node;
+      if (rootRef.current?.contains(node)) return;
+      const menu = document.getElementById("ced-attach-menu");
+      if (menu?.contains(node)) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    document.addEventListener("touchstart", onDoc);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("touchstart", onDoc);
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
   }, [open]);
 
   const pickImage = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -86,6 +121,45 @@ export function AttachMenuButton({
     onPdfSelected(file);
   };
 
+  const menu =
+    open && coords
+      ? createPortal(
+          <div
+            id="ced-attach-menu"
+            role="menu"
+            style={{
+              position: "fixed",
+              top: coords.top,
+              bottom: coords.bottom,
+              right: coords.right,
+            }}
+            className="z-[220] min-w-[10.5rem] overflow-hidden rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] py-1 shadow-[0_12px_40px_rgba(0,0,0,0.55)]"
+          >
+            <button
+              type="button"
+              role="menuitem"
+              disabled={disabled}
+              onClick={() => imageInputRef.current?.click()}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-[var(--studio-chat-fg)] hover:bg-[var(--ced-cyan)]/10 disabled:opacity-40"
+            >
+              <ImagePlus className="h-4 w-4 text-[var(--ced-cyan)]" />
+              Foto
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={disabled}
+              onClick={() => pdfInputRef.current?.click()}
+              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-[var(--studio-chat-fg)] hover:bg-[var(--ced-cyan)]/10 disabled:opacity-40"
+            >
+              <FileText className="h-4 w-4 text-[var(--ced-cyan)]" />
+              Archivo PDF o Word
+            </button>
+          </div>,
+          document.body,
+        )
+      : null;
+
   return (
     <>
       <div className="hidden lg:contents">
@@ -121,33 +195,7 @@ export function AttachMenuButton({
         >
           <Paperclip className="h-[18px] w-[18px] shrink-0" />
         </button>
-        {open ? (
-          <div
-            role="menu"
-            className="absolute bottom-full right-0 z-30 mb-2 min-w-[10.5rem] overflow-hidden rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] py-1 shadow-lg"
-          >
-            <button
-              type="button"
-              role="menuitem"
-              disabled={disabled}
-              onClick={() => imageInputRef.current?.click()}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-[var(--studio-chat-fg)] hover:bg-[var(--ced-cyan)]/10 disabled:opacity-40"
-            >
-              <ImagePlus className="h-4 w-4 text-[var(--ced-cyan)]" />
-              Foto
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={disabled}
-              onClick={() => pdfInputRef.current?.click()}
-              className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-[var(--studio-chat-fg)] hover:bg-[var(--ced-cyan)]/10 disabled:opacity-40"
-            >
-              <FileText className="h-4 w-4 text-[var(--ced-cyan)]" />
-              Archivo PDF o Word
-            </button>
-          </div>
-        ) : null}
+        {menu}
       </div>
     </>
   );

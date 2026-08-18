@@ -8,6 +8,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
 import { AttachMenuButton } from "@/components/chat/AttachMenuButton";
 import {
+  MobileComposerActions,
+  useMobileComposerDock,
+} from "@/components/chat/MobileComposerDock";
+import {
   ImageActionBar,
   imageActionHint,
   imageActionPlaceholder,
@@ -48,6 +52,8 @@ type CedTextChatPanelProps = {
   /** Mientras hay sesión de voz activa, registra imagen para publicar en Instagram */
   onVoiceImageAttached?: (preview: string, file?: File) => void;
   voicePublishActive?: boolean;
+  /** En móvil embebe clip/mic/enviar en el rail derecho. */
+  mobileActionsInSidebar?: boolean;
   /** Chat embebido en el dashboard (sin overlay). */
   variant?: "overlay" | "embedded";
 };
@@ -341,6 +347,7 @@ export function CedTextChatPanel({
   onVoiceImageAttached,
   voicePublishActive = false,
   variant = "overlay",
+  mobileActionsInSidebar = false,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -364,6 +371,9 @@ export function CedTextChatPanel({
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
   const { setTextChatOpen } = useCedOverlay();
   const embedded = variant === "embedded";
+  const composerDock = useMobileComposerDock(
+    Boolean(open && embedded && mobileActionsInSidebar),
+  );
 
   useEffect(() => {
     if (embedded) return;
@@ -1087,7 +1097,7 @@ export function CedTextChatPanel({
               }`}
               style={{ WebkitAppearance: "none" }}
             />
-            <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-1.5">
+            <MobileComposerActions target={composerDock}>
             <AttachMenuButton
               onPdfSelected={(file) => {
                 setAttachedPdf(file);
@@ -1132,7 +1142,7 @@ export function CedTextChatPanel({
             >
               <Send className="h-[18px] w-[18px] shrink-0" />
             </button>
-            </div>
+            </MobileComposerActions>
           </div>
           <p className={`mt-1.5 break-words text-left text-[9px] leading-snug ${embedded ? "text-[var(--studio-hint)]" : "text-cyan-700"}`}>
             {isDictating

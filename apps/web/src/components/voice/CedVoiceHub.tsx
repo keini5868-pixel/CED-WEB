@@ -413,6 +413,7 @@ export function CedVoiceHub() {
                   : undefined
               }
               voicePublishActive={voice.voiceSessionActive}
+              mobileActionsInSidebar={workspace === "chat"}
             />
           </div>
           {workspace === "advanced" ? (
@@ -421,6 +422,7 @@ export function CedVoiceHub() {
                 open
                 variant="embedded"
                 onClose={() => setWorkspace("chat")}
+                mobileActionsInSidebar
               />
             </div>
           ) : null}

@@ -6,6 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
 import { AttachMenuButton } from "@/components/chat/AttachMenuButton";
 import {
+  MobileComposerActions,
+  useMobileComposerDock,
+} from "@/components/chat/MobileComposerDock";
+import {
   ImageActionBar,
   imageActionHint,
   imageActionPlaceholder,
@@ -37,6 +41,7 @@ type AdvancedChatPanelProps = {
   open: boolean;
   onClose: () => void;
   variant?: "overlay" | "embedded";
+  mobileActionsInSidebar?: boolean;
 };
 
 function stripPdfLinks(content: unknown): string {
@@ -156,6 +161,7 @@ export function AdvancedChatPanel({
   open,
   onClose,
   variant = "overlay",
+  mobileActionsInSidebar = false,
 }: AdvancedChatPanelProps) {
   const [messages, setMessages] = useState<AdvancedChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -175,6 +181,10 @@ export function AdvancedChatPanel({
   const messagesRef = useRef(messages);
   const streamTargetIndexRef = useRef<number | null>(null);
   const submitInFlightRef = useRef(false);
+  const embedded = variant === "embedded";
+  const composerDock = useMobileComposerDock(
+    Boolean(open && embedded && mobileActionsInSidebar),
+  );
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -448,7 +458,6 @@ export function AdvancedChatPanel({
 
   if (!open) return null;
 
-  const embedded = variant === "embedded";
   const panel = (
       <div
         className={
@@ -582,7 +591,7 @@ export function AdvancedChatPanel({
               disabled={configured === false}
               className="min-h-[56px] max-h-40 w-full min-w-0 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 lg:flex-1 sm:text-[12px]"
             />
-            <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
+            <MobileComposerActions target={composerDock}>
             <AttachMenuButton
               onPdfSelected={(file) => {
                 setAttachedPdf(file);
@@ -614,7 +623,7 @@ export function AdvancedChatPanel({
             >
               <Send className="h-4 w-4" />
             </button>
-            </div>
+            </MobileComposerActions>
           </div>
           <p className="mt-1 text-center text-[9px] text-[var(--studio-hint)]">
             {attachedPdf
