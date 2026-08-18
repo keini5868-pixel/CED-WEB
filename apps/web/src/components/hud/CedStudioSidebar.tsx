@@ -28,7 +28,7 @@ export function CedStudioSidebar({
   usage,
   extras,
 }: {
-  listen: ReactNode;
+  listen?: ReactNode;
   usage?: ReactNode;
   extras?: ReactNode;
 }) {
@@ -98,7 +98,7 @@ export function CedStudioSidebar({
 
       {extras ? <div className="mt-2 flex shrink-0 flex-col gap-0.5 overflow-x-hidden lg:mt-3">{extras}</div> : null}
 
-      <div className="mt-auto flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-2 overflow-x-hidden overflow-y-auto pt-3 lg:justify-start lg:gap-3 lg:pt-6">
+      <div className="mt-auto flex min-h-0 w-full flex-1 flex-col items-center justify-end gap-2 overflow-x-hidden overflow-y-auto pt-3 lg:gap-3">
         {listen}
         {usage ? <div className="w-full pt-1">{usage}</div> : null}
       </div>

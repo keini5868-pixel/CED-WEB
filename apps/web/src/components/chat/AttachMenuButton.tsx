@@ -32,9 +32,8 @@ const triggerClass =
   "box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10 active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px]";
 
 type MenuCoords = {
-  top?: number;
-  bottom?: number;
-  right: number;
+  left: number;
+  bottom: number;
 };
 
 /** En móvil: un clip con menú Foto / Archivo. En escritorio: los dos botones sueltos. */
@@ -56,13 +55,10 @@ export function AttachMenuButton({
       const btn = rootRef.current?.querySelector("button");
       if (!btn) return;
       const r = btn.getBoundingClientRect();
-      const spaceAbove = r.top;
-      const right = Math.max(8, window.innerWidth - r.left + 8);
-      if (spaceAbove < 120) {
-        setCoords({ top: r.bottom + 8, right });
-      } else {
-        setCoords({ bottom: window.innerHeight - r.top + 8, right });
-      }
+      const menuW = 220;
+      const left = Math.max(8, Math.min(r.left - menuW - 10, window.innerWidth - menuW - 8));
+      const bottom = Math.max(8, window.innerHeight - r.top + 10);
+      setCoords({ left, bottom });
     };
 
     update();
@@ -129,11 +125,10 @@ export function AttachMenuButton({
             role="menu"
             style={{
               position: "fixed",
-              top: coords.top,
+              left: coords.left,
               bottom: coords.bottom,
-              right: coords.right,
             }}
-            className="z-[220] min-w-[10.5rem] overflow-hidden rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] py-1 shadow-[0_12px_40px_rgba(0,0,0,0.55)]"
+            className="z-[400] min-w-[13.5rem] rounded-xl border border-[var(--ced-cyan)]/40 bg-[#071018] py-1 shadow-[0_16px_48px_rgba(0,0,0,0.75)]"
           >
             <button
               type="button"

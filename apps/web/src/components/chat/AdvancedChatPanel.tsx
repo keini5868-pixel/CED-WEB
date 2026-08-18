@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
 import { AttachMenuButton } from "@/components/chat/AttachMenuButton";
+import { SplitPortal, useComposerSplit } from "@/components/chat/ComposerSplit";
 import {
   ImageActionBar,
   imageActionHint,
@@ -37,6 +38,7 @@ type AdvancedChatPanelProps = {
   open: boolean;
   onClose: () => void;
   variant?: "overlay" | "embedded";
+  splitComposer?: boolean;
 };
 
 function stripPdfLinks(content: unknown): string {
@@ -156,6 +158,7 @@ export function AdvancedChatPanel({
   open,
   onClose,
   variant = "overlay",
+  splitComposer = false,
 }: AdvancedChatPanelProps) {
   const [messages, setMessages] = useState<AdvancedChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -176,6 +179,9 @@ export function AdvancedChatPanel({
   const streamTargetIndexRef = useRef<number | null>(null);
   const submitInFlightRef = useRef(false);
   const embedded = variant === "embedded";
+  const { bar: composerBar, actions: composerActions } = useComposerSplit(
+    Boolean(open && embedded && splitComposer),
+  );
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -542,7 +548,12 @@ export function AdvancedChatPanel({
           <p className="mx-4 mb-2 text-[11px] text-red-400">{error}</p>
         ) : null}
 
-        <footer className={`relative z-20 shrink-0 border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "lg:pb-3" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
+        <SplitPortal target={composerBar}>
+        <footer className={`relative z-20 shrink-0 px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${
+          composerBar
+            ? "bg-[var(--studio-chat-bg)]"
+            : `border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] ${embedded ? "lg:pb-3" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`
+        }`}>
           {attachedPdf ? (
             <PdfAttachmentBar
               filename={attachedPdf.name}
@@ -582,6 +593,7 @@ export function AdvancedChatPanel({
               disabled={configured === false}
               className="min-h-[56px] max-h-40 w-full min-w-0 flex-1 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px]"
             />
+            {composerActions ? null : (
             <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
             <AttachMenuButton
               onPdfSelected={(file) => {
@@ -615,15 +627,52 @@ export function AdvancedChatPanel({
               <Send className="h-4 w-4" />
             </button>
             </div>
+            )}
           </div>
+          {attachedPdf || attachedImage ? (
           <p className="mt-1 text-center text-[9px] text-[var(--studio-hint)]">
             {attachedPdf
               ? "PDF listo — envía para que CED lo lea"
-              : attachedImage
-                ? imageActionHint(imageMode)
-                : "📄 PDF · 📷 Imágenes · 🎤 dictado · Enter"}
+              : imageActionHint(imageMode)}
           </p>
+          ) : null}
         </footer>
+        </SplitPortal>
+        {composerActions ? (
+        <SplitPortal target={composerActions}>
+            <AttachMenuButton
+              onPdfSelected={(file) => {
+                setAttachedPdf(file);
+                setAttachedImage(null);
+                setImageMode("analyze");
+              }}
+              onImageSelected={(file, preview) => {
+                setAttachedImage({ file, preview });
+                setAttachedPdf(null);
+              }}
+              disabled={busy || configured === false || !!attachedImage || !!attachedPdf}
+            />
+            <MicButton
+              getBaseText={() => input}
+              onTextUpdate={setInput}
+              disabled={busy || configured === false}
+            />
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={
+                busy ||
+                (!input.trim() && !attachedImage && !attachedPdf) ||
+                configured === false
+              }
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[var(--ced-cyan)]/50 bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] transition hover:bg-[var(--ced-cyan)]/25 disabled:opacity-40"
+              aria-label="Analizar"
+              title="ANALIZAR"
+            >
+              <Send className="h-4 w-4" />
+            </button>
+        </SplitPortal>
+        ) : null}
       </div>
   );
 

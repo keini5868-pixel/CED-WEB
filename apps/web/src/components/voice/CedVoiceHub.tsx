@@ -40,6 +40,10 @@ import { CedListenButton } from "@/components/voice/CedListenButton";
 import { CedStudioSidebar } from "@/components/hud/CedStudioSidebar";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import { CED_OPEN_SETTINGS_EVENT } from "@/lib/hud/chrome-events";
+import {
+  COMPOSER_ACTIONS_ID,
+  COMPOSER_BAR_ID,
+} from "@/components/chat/ComposerSplit";
 
 /** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
@@ -300,25 +304,27 @@ export function CedVoiceHub() {
     setWorkspace((prev) => (prev === next ? "chat" : next));
   }
 
-  const listenDock = (
-    <div className="flex flex-col items-center gap-2 lg:gap-3">
-      {cameraLive || imageLive ? (
-        <div className="relative h-20 w-full max-w-[88px] overflow-hidden rounded-xl lg:h-36 lg:max-w-[220px]">
-          <CedCameraPreview
-            overlay
-            stream={voice.cameraStream}
-            active={voice.cameraOn}
-            facing={voice.cameraFacing}
-            onFlipCamera={() => void voice.flipCamera()}
-          />
-          <CedVoiceImagePreview
-            overlay
-            url={imageLive ? voiceImagePreview?.url ?? null : null}
-            prompt={voiceImagePreview?.prompt}
-            onDismiss={() => setVoiceImagePreview(null)}
-          />
-        </div>
-      ) : null}
+  const listenPreview =
+    cameraLive || imageLive ? (
+      <div className="relative h-20 w-full max-w-[88px] overflow-hidden rounded-xl lg:h-36 lg:max-w-[220px]">
+        <CedCameraPreview
+          overlay
+          stream={voice.cameraStream}
+          active={voice.cameraOn}
+          facing={voice.cameraFacing}
+          onFlipCamera={() => void voice.flipCamera()}
+        />
+        <CedVoiceImagePreview
+          overlay
+          url={imageLive ? voiceImagePreview?.url ?? null : null}
+          prompt={voiceImagePreview?.prompt}
+          onDismiss={() => setVoiceImagePreview(null)}
+        />
+      </div>
+    ) : null;
+
+  const listenButton = (
+    <div className="flex flex-col items-center gap-1.5">
       <CedListenButton
         active={voice.micOn}
         busy={voice.micBusy}
@@ -351,8 +357,9 @@ export function CedVoiceHub() {
   );
 
   return (
-    <div className="ced-studio flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-row overflow-hidden">
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
+    <div className="ced-studio flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_auto] grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+      <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
           <span
             className={`h-2 w-2 rounded-full ${voice.micOn && !voice.paused ? "animate-pulse bg-sky-400" : "bg-sky-500"}`}
@@ -380,6 +387,7 @@ export function CedVoiceHub() {
             <CedTextChatPanel
               open
               variant="embedded"
+              splitComposer={workspace === "chat"}
               onClose={() => undefined}
               seedImage={chatSeedImage}
               onSeedConsumed={() => setChatSeedImage(null)}
@@ -420,6 +428,7 @@ export function CedVoiceHub() {
               <AdvancedChatPanel
                 open
                 variant="embedded"
+                splitComposer={workspace === "advanced"}
                 onClose={() => setWorkspace("chat")}
               />
             </div>
@@ -437,7 +446,7 @@ export function CedVoiceHub() {
       </section>
 
       <CedStudioSidebar
-        listen={listenDock}
+        listen={listenPreview}
         usage={
           <div className="ced-studio-usage rounded-xl border border-[var(--studio-border)] bg-[var(--studio-card)] p-1.5 lg:p-3">
             <p className="ced-mark-text mb-1 hidden text-[10px] uppercase lg:mb-2 lg:block">
@@ -479,6 +488,19 @@ export function CedVoiceHub() {
           </div>
         }
       />
+
+      <div
+        id={COMPOSER_BAR_ID}
+        className="min-w-0 border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)]"
+      />
+      <div className="flex flex-col items-center justify-center gap-1.5 border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1.5 py-2 sm:px-2">
+        {listenButton}
+        <div
+          id={COMPOSER_ACTIONS_ID}
+          className="flex max-w-full flex-wrap items-center justify-center gap-1"
+        />
+      </div>
+      </div>
 
       <CedHudQuickPopups active={quickPopup} onClose={() => setQuickPopup(null)} />
 

@@ -7,6 +7,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
 import { AttachMenuButton } from "@/components/chat/AttachMenuButton";
+import { SplitPortal, useComposerSplit } from "@/components/chat/ComposerSplit";
 import {
   ImageActionBar,
   imageActionHint,
@@ -50,6 +51,7 @@ type CedTextChatPanelProps = {
   voicePublishActive?: boolean;
   /** Chat embebido en el dashboard (sin overlay). */
   variant?: "overlay" | "embedded";
+  splitComposer?: boolean;
 };
 
 function formatTime(iso?: string) {
@@ -341,6 +343,7 @@ export function CedTextChatPanel({
   onVoiceImageAttached,
   voicePublishActive = false,
   variant = "overlay",
+  splitComposer = false,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -364,6 +367,9 @@ export function CedTextChatPanel({
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
   const { setTextChatOpen } = useCedOverlay();
   const embedded = variant === "embedded";
+  const { bar: composerBar, actions: composerActions } = useComposerSplit(
+    Boolean(open && embedded && splitComposer),
+  );
 
   useEffect(() => {
     if (embedded) return;
@@ -1010,7 +1016,14 @@ export function CedTextChatPanel({
 
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className={`relative z-20 shrink-0 px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] lg:pb-3" : "border-t border-cyan-500/20 bg-[#060a0f] pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
+        <SplitPortal target={composerBar}>
+        <footer className={`relative z-20 shrink-0 px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${
+          composerBar
+            ? "bg-[var(--studio-chat-bg)]"
+            : embedded
+              ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] lg:pb-3"
+              : "border-t border-cyan-500/20 bg-[#060a0f] pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+        }`}>
           {attachedPdf ? (
             <PdfAttachmentBar
               filename={attachedPdf.name}
@@ -1087,6 +1100,7 @@ export function CedTextChatPanel({
               }`}
               style={{ WebkitAppearance: "none" }}
             />
+            {composerActions ? null : (
             <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-1.5">
             <AttachMenuButton
               onPdfSelected={(file) => {
@@ -1133,17 +1147,67 @@ export function CedTextChatPanel({
               <Send className="h-[18px] w-[18px] shrink-0" />
             </button>
             </div>
+            )}
           </div>
+          {isDictating || attachedPdf || attachedImage ? (
           <p className={`mt-1.5 break-words text-left text-[9px] leading-snug ${embedded ? "text-[var(--studio-hint)]" : "text-cyan-700"}`}>
             {isDictating
               ? "🎤 Dictando en vivo… clic en el mic para detener"
               : attachedPdf
                 ? "PDF listo — envía para que CED lo lea y responda"
-                : attachedImage
-                  ? imageActionHint(imageMode)
-                  : 'Enter envía · 📄 PDF/Word · 📷 imagen · 🎤 dictar · "genera una imagen de…"'}
+                : imageActionHint(imageMode)}
           </p>
+          ) : null}
         </footer>
+        </SplitPortal>
+        {composerActions ? (
+        <SplitPortal target={composerActions}>
+            <AttachMenuButton
+              onPdfSelected={(file) => {
+                setAttachedPdf(file);
+                setAttachedImage(null);
+                setImageMode("analyze");
+              }}
+              onImageSelected={(file, preview) => {
+                setAttachedImage({ file, preview });
+                setAttachedPdf(null);
+                setImageMode((prev) =>
+                  prev === "analyze" && recentMessagesAwaitPublish(messages)
+                    ? "publish"
+                    : prev,
+                );
+              }}
+              disabled={busy || status?.blocked || !!attachedImage || !!attachedPdf}
+            />
+            <MicButton
+              getBaseText={() => input}
+              onTextUpdate={handleDictationText}
+              onDictatingChange={handleDictatingChange}
+              disabled={status?.blocked}
+            />
+            <button
+              type="button"
+              disabled={
+                busy ||
+                (!input.trim() && !attachedImage && !attachedPdf) ||
+                status?.blocked
+              }
+              onPointerDown={(e) => {
+                e.preventDefault();
+                keepInputFocusRef.current = true;
+              }}
+              onClick={() => void submit()}
+              className={`box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px] ${
+                embedded
+                  ? "bg-sky-500 text-white shadow-[0_0_12px_rgba(59,183,255,0.45)] hover:bg-sky-400"
+                  : "border border-cyan-400/60 bg-cyan-400/10 text-cyan-300 hover:bg-cyan-400/20"
+              }`}
+              aria-label="Enviar"
+            >
+              <Send className="h-[18px] w-[18px] shrink-0" />
+            </button>
+        </SplitPortal>
+        ) : null}
       </div>
   );
 
