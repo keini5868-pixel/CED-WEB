@@ -8,10 +8,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { PdfAttachmentBar } from "@/components/chat/PdfAttachmentBar";
 import { AttachMenuButton } from "@/components/chat/AttachMenuButton";
 import {
-  MobileComposerActions,
-  useMobileComposerDock,
-} from "@/components/chat/MobileComposerDock";
-import {
   ImageActionBar,
   imageActionHint,
   imageActionPlaceholder,
@@ -52,8 +48,6 @@ type CedTextChatPanelProps = {
   /** Mientras hay sesión de voz activa, registra imagen para publicar en Instagram */
   onVoiceImageAttached?: (preview: string, file?: File) => void;
   voicePublishActive?: boolean;
-  /** En móvil embebe clip/mic/enviar en el rail derecho. */
-  mobileActionsInSidebar?: boolean;
   /** Chat embebido en el dashboard (sin overlay). */
   variant?: "overlay" | "embedded";
 };
@@ -347,7 +341,6 @@ export function CedTextChatPanel({
   onVoiceImageAttached,
   voicePublishActive = false,
   variant = "overlay",
-  mobileActionsInSidebar = false,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -371,9 +364,6 @@ export function CedTextChatPanel({
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
   const { setTextChatOpen } = useCedOverlay();
   const embedded = variant === "embedded";
-  const composerDock = useMobileComposerDock(
-    Boolean(open && embedded && mobileActionsInSidebar),
-  );
 
   useEffect(() => {
     if (embedded) return;
@@ -1020,7 +1010,7 @@ export function CedTextChatPanel({
 
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
-        <footer className={`relative z-10 shrink-0 overflow-x-hidden px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] lg:pb-3" : "border-t border-cyan-500/20 bg-[#060a0f] pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
+        <footer className={`relative z-20 shrink-0 px-3 pt-2 pb-2 sm:px-4 sm:pt-3 ${embedded ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] lg:pb-3" : "border-t border-cyan-500/20 bg-[#060a0f] pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`}>
           {attachedPdf ? (
             <PdfAttachmentBar
               filename={attachedPdf.name}
@@ -1038,7 +1028,7 @@ export function CedTextChatPanel({
               }}
             />
           ) : null}
-          <div className="flex w-full min-w-0 max-w-full flex-col gap-1.5 lg:flex-row lg:items-end lg:gap-2">
+          <div className="flex w-full min-w-0 max-w-full flex-row items-end gap-1.5 sm:gap-2">
             <textarea
               ref={textareaRef}
               autoFocus={!embedded}
@@ -1080,7 +1070,7 @@ export function CedTextChatPanel({
                         : "Escribe a CED o usa el micrófono…"
               }
               disabled={Boolean(status?.blocked)}
-              className={`box-border min-h-[48px] max-h-[120px] w-full min-w-0 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 py-2.5 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 lg:flex-1 sm:text-sm ${
+              className={`box-border min-h-[48px] max-h-[120px] w-full min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 py-2.5 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
                 embedded
                   ? `border bg-[var(--studio-composer-bg)] text-[var(--studio-composer-fg)] caret-[var(--ced-cyan)] placeholder:text-[var(--studio-hint)] focus:ring-[var(--ced-cyan)]/40 ${
                       isDictating
@@ -1097,7 +1087,7 @@ export function CedTextChatPanel({
               }`}
               style={{ WebkitAppearance: "none" }}
             />
-            <MobileComposerActions target={composerDock}>
+            <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-1.5">
             <AttachMenuButton
               onPdfSelected={(file) => {
                 setAttachedPdf(file);
@@ -1142,7 +1132,7 @@ export function CedTextChatPanel({
             >
               <Send className="h-[18px] w-[18px] shrink-0" />
             </button>
-            </MobileComposerActions>
+            </div>
           </div>
           <p className={`mt-1.5 break-words text-left text-[9px] leading-snug ${embedded ? "text-[var(--studio-hint)]" : "text-cyan-700"}`}>
             {isDictating
