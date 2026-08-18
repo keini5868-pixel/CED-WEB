@@ -1017,12 +1017,12 @@ export function CedTextChatPanel({
         {error && <p className="shrink-0 px-4 pb-1 text-xs text-red-400">{error}</p>}
 
         <SplitPortal target={composerBar}>
-        <footer className={`relative z-20 shrink-0 overflow-visible px-3 py-2 sm:px-4 ${
+        <footer className={`relative z-20 shrink-0 overflow-visible px-3 ${
           composerBar
-            ? "bg-[var(--studio-chat-bg)]"
+            ? "bg-[var(--studio-chat-bg)] py-1"
             : embedded
-              ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)]"
-              : "border-t border-cyan-500/20 bg-[#060a0f] pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+              ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] py-1.5"
+              : "border-t border-cyan-500/20 bg-[#060a0f] py-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4"
         }`}>
           {attachedPdf ? (
             <PdfAttachmentBar
@@ -1083,7 +1083,11 @@ export function CedTextChatPanel({
                         : "Escribe a CED o usa el micrófono…"
               }
               disabled={Boolean(status?.blocked)}
-              className={`box-border min-h-[48px] max-h-[120px] w-full min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 py-2.5 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
+              className={`box-border w-full min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
+                composerBar
+                  ? "min-h-[36px] max-h-[72px] py-1.5"
+                  : "min-h-[48px] max-h-[120px] py-2.5"
+              } ${
                 embedded
                   ? `border bg-[var(--studio-composer-bg)] text-[var(--studio-composer-fg)] caret-[var(--ced-cyan)] placeholder:text-[var(--studio-hint)] focus:ring-[var(--ced-cyan)]/40 ${
                       isDictating
@@ -1163,7 +1167,7 @@ export function CedTextChatPanel({
         {composerActions ? (
         <SplitPortal target={composerActions}>
             <AttachMenuButton
-              alwaysBoth
+              clipOnly
               onPdfSelected={(file) => {
                 setAttachedPdf(file);
                 setAttachedImage(null);

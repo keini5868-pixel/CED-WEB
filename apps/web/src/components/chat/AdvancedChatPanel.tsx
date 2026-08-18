@@ -549,10 +549,10 @@ export function AdvancedChatPanel({
         ) : null}
 
         <SplitPortal target={composerBar}>
-        <footer className={`relative z-20 shrink-0 overflow-visible px-3 py-2 sm:px-4 ${
+        <footer className={`relative z-20 shrink-0 overflow-visible px-3 ${
           composerBar
-            ? "bg-[var(--studio-chat-bg)]"
-            : `border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] ${embedded ? "" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`
+            ? "bg-[var(--studio-chat-bg)] py-1"
+            : `border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] py-1.5 ${embedded ? "" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`
         }`}>
           {attachedPdf ? (
             <PdfAttachmentBar
@@ -582,7 +582,7 @@ export function AdvancedChatPanel({
                   void submit();
                 }
               }}
-              rows={3}
+              rows={composerBar ? 1 : 3}
               placeholder={
                 attachedPdf
                   ? "Pregunta sobre el PDF o envía para analizarlo…"
@@ -591,7 +591,11 @@ export function AdvancedChatPanel({
                     : "Análisis, PDF, imágenes o dictado por voz…"
               }
               disabled={configured === false}
-              className="min-h-[56px] max-h-40 w-full min-w-0 flex-1 resize-y rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-2 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px]"
+              className={`w-full min-w-0 flex-1 rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-1.5 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px] ${
+                composerBar
+                  ? "min-h-[36px] max-h-[72px] resize-none"
+                  : "min-h-[56px] max-h-40 resize-y"
+              }`}
             />
             {composerActions ? null : (
             <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
@@ -641,7 +645,7 @@ export function AdvancedChatPanel({
         {composerActions ? (
         <SplitPortal target={composerActions}>
             <AttachMenuButton
-              alwaysBoth
+              clipOnly
               onPdfSelected={(file) => {
                 setAttachedPdf(file);
                 setAttachedImage(null);

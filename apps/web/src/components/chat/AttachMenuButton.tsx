@@ -11,8 +11,8 @@ type AttachMenuButtonProps = {
   onImageSelected: (file: File, preview: string) => void;
   onPdfSelected: (file: File) => void;
   disabled?: boolean;
-  /** Siempre PDF + imagen, como en la barra de iconos de la foto. */
-  alwaysBoth?: boolean;
+  /** Solo la grapa (Foto / PDF). Usar en la franja de iconos. */
+  clipOnly?: boolean;
 };
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -43,7 +43,7 @@ export function AttachMenuButton({
   onImageSelected,
   onPdfSelected,
   disabled,
-  alwaysBoth = false,
+  clipOnly = false,
 }: AttachMenuButtonProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<MenuCoords | null>(null);
@@ -164,12 +164,12 @@ export function AttachMenuButton({
 
   return (
     <>
-      <div className={alwaysBoth ? "contents" : "hidden lg:contents"}>
+      <div className={clipOnly ? "hidden" : "hidden lg:contents"}>
         <PdfUploadButton onPdfSelected={onPdfSelected} disabled={disabled} />
         <ImageUploadButton onImageSelected={onImageSelected} disabled={disabled} />
       </div>
 
-      <div ref={rootRef} className={alwaysBoth ? "hidden" : "relative lg:hidden"}>
+      <div ref={rootRef} className={clipOnly ? "relative" : "relative lg:hidden"}>
         <input
           ref={imageInputRef}
           type="file"
@@ -190,12 +190,16 @@ export function AttachMenuButton({
           type="button"
           disabled={disabled}
           onClick={() => setOpen((v) => !v)}
-          className={triggerClass}
+          className={
+            clipOnly
+              ? "box-border flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10 active:scale-95 disabled:opacity-40 sm:h-8 sm:w-8"
+              : triggerClass
+          }
           aria-label="Adjuntar foto o archivo"
           aria-expanded={open}
           title="Adjuntar"
         >
-          <Paperclip className="h-[18px] w-[18px] shrink-0" />
+          <Paperclip className={clipOnly ? "h-3.5 w-3.5 shrink-0" : "h-[18px] w-[18px] shrink-0"} />
         </button>
         {menu}
       </div>

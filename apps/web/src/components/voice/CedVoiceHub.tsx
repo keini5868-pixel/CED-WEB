@@ -493,7 +493,7 @@ export function CedVoiceHub() {
       />
       <div
         id={COMPOSER_ACTIONS_ID}
-        className="ced-composer-actions flex items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 py-1.5 sm:px-2 sm:py-2"
+        className="ced-composer-actions flex items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 py-1 sm:px-1.5"
       />
     </div>
 
