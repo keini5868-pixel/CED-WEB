@@ -14,18 +14,11 @@ import { CedWordmark } from "@/components/brand/CedWordmark";
 import {
   ACCOUNT_PATH,
   DASHBOARD_PATH,
-  TEAM_PATH,
 } from "@/lib/auth/paths";
 import {
-  dispatchCedOpenModule,
   dispatchCedOpenSettings,
   isDashboardPath,
 } from "@/lib/hud/chrome-events";
-import { isOpportunitiesModuleEnabled } from "@/lib/pilot/opportunitiesModule";
-import { isTrendsModuleEnabled } from "@/lib/pilot/trendsModule";
-import { isViabilityModuleEnabled } from "@/lib/pilot/viabilityModule";
-import { isVideoEditModulePilot } from "@/lib/pilot/videoEditModule";
-import { MODULE_DISPLAY } from "@/lib/modules/displayNames";
 
 type HudChromeProps = {
   email?: string | null;
@@ -37,14 +30,6 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   const router = useRouter();
   const { openDriveMap } = useDriveMap();
   const onDashboard = isDashboardPath(pathname);
-
-  function openModule(id: string) {
-    if (onDashboard) {
-      dispatchCedOpenModule(id);
-      return;
-    }
-    router.push(`${DASHBOARD_PATH}?mod=${encodeURIComponent(id)}`);
-  }
 
   function openSettings() {
     if (onDashboard) {
@@ -66,41 +51,6 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
         { id: "media", label: "Imágenes y PDF", href: "/historial?tab=archivos" },
         { id: "trash", label: "Papelera", href: "/historial?tab=papelera" },
         { id: "settings", label: "Configuración", onClick: openSettings },
-      ]}
-    />
-  );
-
-  const estrategiaMenu = (
-    <HudNavMenu
-      label="Estrategia"
-      align="right"
-      tone="navy"
-      items={[
-        {
-          id: "viability",
-          label: MODULE_DISPLAY.viability,
-          hidden: !isViabilityModuleEnabled(),
-          onClick: () => openModule("viability"),
-        },
-        {
-          id: "trends",
-          label: MODULE_DISPLAY.trends,
-          hidden: !isTrendsModuleEnabled(),
-          onClick: () => openModule("trends"),
-        },
-        {
-          id: "opportunities",
-          label: MODULE_DISPLAY.opportunities,
-          hidden: !isOpportunitiesModuleEnabled(),
-          onClick: () => openModule("opportunities"),
-        },
-        { id: "team", label: MODULE_DISPLAY.team, href: TEAM_PATH },
-        {
-          id: "video-edit",
-          label: "Edición de video",
-          hidden: !isVideoEditModulePilot(),
-          onClick: () => openModule("video-edit"),
-        },
       ]}
     />
   );
@@ -140,7 +90,6 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
         </div>
 
         <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
-          {onDashboard ? null : estrategiaMenu}
           <div className="hidden items-center gap-1 md:flex md:gap-2">
             <ConnectNetworksButton />
           </div>
