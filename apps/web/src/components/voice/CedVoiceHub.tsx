@@ -446,10 +446,8 @@ export function CedVoiceHub() {
       <CedStudioSidebar
         listen={listenDock}
         usage={
-          <div className="ced-studio-usage rounded-xl border border-[var(--studio-border)] bg-[var(--studio-card)] p-1.5 lg:p-3">
-            <p className="ced-mark-text mb-0.5 text-[8px] uppercase lg:mb-2 lg:text-[10px]">
-              uso de datos
-            </p>
+          <div className="ced-studio-usage hidden rounded-xl border border-[var(--studio-border)] bg-[var(--studio-card)] p-3 lg:block">
+            <p className="ced-mark-text mb-2 text-[10px] uppercase">uso de datos</p>
             <HudUsageBar compact />
           </div>
         }
@@ -458,7 +456,7 @@ export function CedVoiceHub() {
             <button
               type="button"
               onClick={() => selectWorkspace("advanced")}
-              className={`ced-mark-text rounded-lg px-1 py-1.5 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:text-left lg:text-[11px] ${
+              className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 workspace === "advanced" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
               }`}
             >
@@ -467,7 +465,7 @@ export function CedVoiceHub() {
             <button
               type="button"
               onClick={() => selectWorkspace("finance")}
-              className={`ced-mark-text rounded-lg px-1 py-1.5 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:text-left lg:text-[11px] ${
+              className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 workspace === "finance" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
               }`}
             >
@@ -476,7 +474,7 @@ export function CedVoiceHub() {
             <button
               type="button"
               onClick={() => void voice.toggleCamera()}
-              className={`ced-mark-text rounded-lg px-1 py-1.5 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:text-left lg:text-[11px] ${
+              className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 voice.cameraOn ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
               }`}
             >
@@ -493,7 +491,7 @@ export function CedVoiceHub() {
       />
       <div
         id={COMPOSER_ACTIONS_ID}
-        className="ced-composer-actions flex items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 py-1 sm:px-1.5"
+        className="ced-composer-actions flex h-7 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-0.5 lg:h-9 lg:px-1.5"
       />
     </div>
 
