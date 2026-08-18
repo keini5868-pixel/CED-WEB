@@ -1019,7 +1019,7 @@ export function CedTextChatPanel({
         <SplitPortal target={composerBar}>
         <footer className={`relative z-20 shrink-0 overflow-visible px-3 ${
           composerBar
-            ? "bg-[var(--studio-chat-bg)] py-0.5"
+            ? "bg-[var(--studio-chat-bg)] py-1"
             : embedded
               ? "border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] py-1.5"
               : "border-t border-cyan-500/20 bg-[#060a0f] py-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-4"
@@ -1085,7 +1085,7 @@ export function CedTextChatPanel({
               disabled={Boolean(status?.blocked)}
               className={`box-border w-full min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
                 composerBar
-                  ? "min-h-[28px] max-h-[56px] py-0.5"
+                  ? "min-h-[36px] max-h-[64px] py-1"
                   : "min-h-[48px] max-h-[120px] py-2.5"
               } ${
                 embedded

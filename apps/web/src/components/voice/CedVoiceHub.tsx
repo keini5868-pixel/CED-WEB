@@ -491,7 +491,7 @@ export function CedVoiceHub() {
       />
       <div
         id={COMPOSER_ACTIONS_ID}
-        className="ced-composer-actions flex h-7 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-0.5 lg:h-9 lg:px-1.5"
+        className="ced-composer-actions flex h-9 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 lg:h-10 lg:px-1.5"
       />
     </div>
 

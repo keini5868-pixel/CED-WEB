@@ -551,7 +551,7 @@ export function AdvancedChatPanel({
         <SplitPortal target={composerBar}>
         <footer className={`relative z-20 shrink-0 overflow-visible px-3 ${
           composerBar
-            ? "bg-[var(--studio-chat-bg)] py-0.5"
+            ? "bg-[var(--studio-chat-bg)] py-1"
             : `border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] py-1.5 ${embedded ? "" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`
         }`}>
           {attachedPdf ? (
@@ -593,7 +593,7 @@ export function AdvancedChatPanel({
               disabled={configured === false}
               className={`w-full min-w-0 flex-1 rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-1.5 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px] ${
                 composerBar
-                  ? "min-h-[28px] max-h-[56px] resize-none"
+                  ? "min-h-[36px] max-h-[64px] resize-none"
                   : "min-h-[56px] max-h-40 resize-y"
               }`}
             />
