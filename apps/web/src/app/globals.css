@@ -374,3 +374,33 @@ body:has(.ced-studio-shell) {
 .ced-studio-usage .ced-hud-text-body {
   color: var(--studio-usage-fg);
 }
+
+/* Franja de iconos bajo USO DE DATOS: no bajar si está vacía. */
+#ced-composer-bar:empty,
+#ced-composer-actions:empty {
+  display: none;
+}
+
+.ced-composer-actions {
+  gap: 0.25rem;
+}
+
+.ced-composer-actions button {
+  height: 2.25rem;
+  width: 2.25rem;
+  min-height: 2.25rem;
+  min-width: 2.25rem;
+}
+
+@media (min-width: 640px) {
+  .ced-composer-actions {
+    gap: 0.35rem;
+  }
+
+  .ced-composer-actions button {
+    height: 2.5rem;
+    width: 2.5rem;
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
+}

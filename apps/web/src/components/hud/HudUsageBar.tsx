@@ -62,8 +62,10 @@ export function HudUsageBar({ compact = false }: { compact?: boolean }) {
   return (
     <div>
       <div
-        className={`ced-hud-text-primary flex flex-wrap items-center justify-between gap-1 font-medium ${
-          compact ? "text-[9px] leading-tight lg:text-[11px]" : ""
+        className={`ced-hud-text-primary font-medium ${
+          compact
+            ? "flex flex-col items-start gap-0.5 text-[9px] leading-tight lg:text-[11px]"
+            : "flex flex-wrap items-center justify-between gap-1"
         }`}
       >
         <span>
@@ -71,22 +73,15 @@ export function HudUsageBar({ compact = false }: { compact?: boolean }) {
           {loaded
             ? `${balance.used.toFixed(1)} / ${balance.plan}`
             : "— / —"}
-          {compact ? <span className="hidden lg:inline"> min</span> : " min"}
+          {" min"}
         </span>
         <span
           className={
-            compact
-              ? "hidden lg:inline " +
-                (critical || criticalWarn
-                  ? "text-red-400"
-                  : warn
-                    ? "text-amber-400"
-                    : "ced-hud-text-accent")
-              : critical || criticalWarn
-                ? "text-red-400"
-                : warn
-                  ? "text-amber-400"
-                  : "ced-hud-text-accent"
+            critical || criticalWarn
+              ? "text-red-400"
+              : warn
+                ? "text-amber-400"
+                : "ced-hud-text-accent"
           }
         >
           {statusLabel}

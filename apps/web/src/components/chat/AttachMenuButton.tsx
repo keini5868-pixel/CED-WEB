@@ -11,6 +11,8 @@ type AttachMenuButtonProps = {
   onImageSelected: (file: File, preview: string) => void;
   onPdfSelected: (file: File) => void;
   disabled?: boolean;
+  /** Siempre PDF + imagen, como en la barra de iconos de la foto. */
+  alwaysBoth?: boolean;
 };
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
@@ -41,6 +43,7 @@ export function AttachMenuButton({
   onImageSelected,
   onPdfSelected,
   disabled,
+  alwaysBoth = false,
 }: AttachMenuButtonProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<MenuCoords | null>(null);
@@ -161,12 +164,12 @@ export function AttachMenuButton({
 
   return (
     <>
-      <div className="hidden lg:contents">
+      <div className={alwaysBoth ? "contents" : "hidden lg:contents"}>
         <PdfUploadButton onPdfSelected={onPdfSelected} disabled={disabled} />
         <ImageUploadButton onImageSelected={onImageSelected} disabled={disabled} />
       </div>
 
-      <div ref={rootRef} className="relative lg:hidden">
+      <div ref={rootRef} className={alwaysBoth ? "hidden" : "relative lg:hidden"}>
         <input
           ref={imageInputRef}
           type="file"
