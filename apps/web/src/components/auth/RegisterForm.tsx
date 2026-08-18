@@ -59,7 +59,8 @@ export function RegisterForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
-  const [refInput, setRefInput] = useState(urlRef);
+  const refInput = urlRef;
+  const [pmPartnerId, setPmPartnerId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -92,6 +93,7 @@ export function RegisterForm() {
           next: googleNext,
           ...(offer ? { offer } : {}),
           ...(refInput ? { ref: refInput } : {}),
+          ...(pmPartnerId.trim() ? { pm_partner_id: pmPartnerId.trim() } : {}),
         }),
       });
       let data: unknown = null;
@@ -158,7 +160,7 @@ export function RegisterForm() {
       ) : null}
       {refInput ? (
         <p className="mb-4 rounded border border-cyan-500/25 bg-cyan-500/5 p-3 text-[11px] text-cyan-300">
-          Te invita un socio CED · ID de CED {refInput}
+          Te invita un socio CED. El código de invitación ya viene en el enlace.
         </p>
       ) : null}
       <form onSubmit={handleRegister} className="space-y-4">
@@ -180,14 +182,15 @@ export function RegisterForm() {
           required
         />
         <CedInput
-          label="ID de CED"
-          name="ref"
-          value={refInput}
-          onChange={(e) => setRefInput(e.target.value.toUpperCase())}
-          placeholder="Ej. CED7A3F2C"
+          label="ID de socio PM"
+          name="pm_partner_id"
+          value={pmPartnerId}
+          onChange={(e) => setPmPartnerId(e.target.value)}
+          placeholder="El ID de socio de PM International"
         />
         <p className="-mt-2 text-[11px] text-cyan-600">
-          El ID del socio que te invita. Si abriste su enlace, ya viene relleno.
+          El ID que te da PM International al entrar (Partner Area). No es el ID
+          de CED.
         </p>
         <CedInput
           label="Contraseña"

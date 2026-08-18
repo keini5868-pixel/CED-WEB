@@ -5,10 +5,12 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 from app.services.referrals import (
+    add_structure_partner,
     claim_referral,
     display_name_from_profile,
     generate_referral_code,
     is_relevant_sales_chat,
+    normalize_pm_partner_id,
     normalize_referral_code,
 )
 
@@ -160,6 +162,13 @@ def test_dashboard_mi_equipo_route_registered():
     )
 
 
+def test_normalize_pm_partner_id():
+    assert normalize_pm_partner_id(" 8845123 ") == "8845123"
+    assert normalize_pm_partner_id("PM-12 345") == "PM-12345"
+    assert normalize_pm_partner_id("ab") == ""
+    assert normalize_pm_partner_id("") == ""
+
+
 def test_add_partner_validates_name_and_email():
     from app.services.referrals import add_structure_partner
 
@@ -168,18 +177,30 @@ def test_add_partner_validates_name_and_email():
         assert add_structure_partner("s1", full_name="Ana García", email="no")["reason"] == "invalid_email"
 
 
-def test_add_partner_rejects_foreign_ced_id():
+def test_add_partner_requires_pm_partner_id():
     from app.services.referrals import add_structure_partner
 
-    with patch("app.services.referrals.ensure_referral_code", return_value="CEDAAAA1111"):
+    result = add_structure_partner("s1", full_name="Ana García", email="ana@example.com")
+    assert result["reason"] == "invalid_pm_partner_id"
+
+
+def test_add_partner_accepts_pm_id_not_ced_code():
+    from app.services.referrals import add_structure_partner
+
+    with (
+        patch("app.services.referrals.ensure_referral_code", return_value="CEDAAAA1111"),
+        patch("app.services.referrals.find_profile_by_email", return_value=None),
+        patch("app.services.referrals.snapshot_structure_partner", return_value=True) as snap,
+        patch("app.services.referrals.list_my_team", return_value={"ok": True, "guests": []}),
+    ):
         result = add_structure_partner(
             "s1",
             full_name="Ana García",
             email="ana@example.com",
-            ced_id="CEDOTHER99",
+            pm_partner_id="8845123",
         )
-    assert result["ok"] is False
-    assert result["reason"] == "ced_id_mismatch"
+    assert result["ok"] is True
+    assert snap.call_args.kwargs["pm_partner_id"] == "8845123"
 
 
 def test_complete_profile_rejects_short_name():

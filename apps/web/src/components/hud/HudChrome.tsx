@@ -107,7 +107,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
 
   return (
     <header
-      className="ced-chrome-bar sticky top-0 z-50 w-full max-w-[100vw] overflow-visible shadow-[0_8px_24px_rgba(7,47,61,0.4)]"
+      className="ced-chrome-bar z-50 w-full max-w-[100vw] shrink-0 overflow-hidden shadow-[0_8px_24px_rgba(7,47,61,0.4)]"
     >
       <div className="mx-auto flex w-full max-w-screen items-center gap-1 px-2 py-2 sm:gap-2 sm:px-4 sm:py-2.5 md:px-6">
         <div className="flex min-w-0 flex-1 items-center gap-2">

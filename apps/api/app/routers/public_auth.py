@@ -29,6 +29,7 @@ class RegisterBody(BaseModel):
     # El resto de altas también reciben 15 min totales (sin plan PM).
     offer: str = Field(default="", max_length=32)
     ref: str = Field(default="", max_length=32)
+    pm_partner_id: str = Field(default="", max_length=40)
 
 
 class ResendBody(BaseModel):
@@ -56,6 +57,7 @@ def public_register(request: Request, body: RegisterBody) -> dict:
             next_path=body.next,
             offer=body.offer,
             ref=body.ref,
+            pm_partner_id=body.pm_partner_id,
         )
     except PublicRegisterError as exc:
         status = 409 if exc.code == "email_exists" else 400

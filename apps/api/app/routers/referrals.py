@@ -25,11 +25,13 @@ class ClaimBody(BaseModel):
 class PartnerBody(BaseModel):
     full_name: str = Field(default="", max_length=160)
     email: str = Field(default="", max_length=320)
-    ced_id: str = Field(default="", max_length=32)
+    pm_partner_id: str = Field(default="", max_length=40)
+    ced_id: str = Field(default="", max_length=40)
 
 
 class ProfileBody(BaseModel):
     full_name: str = Field(default="", max_length=160)
+    pm_partner_id: str = Field(default="", max_length=40)
     sponsor_ced_id: str = Field(default="", max_length=32)
 
 
@@ -40,10 +42,10 @@ def _team_payload(user_id: str) -> dict:
 def _raise_referral_error(result: dict) -> None:
     reason = str(result.get("reason") or "error")
     if reason == "unknown_code":
-        raise HTTPException(status_code=404, detail="ID de CED no válido.")
+        raise HTTPException(status_code=404, detail="Código de invitación CED no válido.")
     if reason == "self":
         raise HTTPException(
-            status_code=400, detail="No puedes usar tu propio ID de CED."
+            status_code=400, detail="No puedes usar tu propio código de invitación."
         )
     if reason == "invalid_name":
         raise HTTPException(
@@ -52,11 +54,16 @@ def _raise_referral_error(result: dict) -> None:
     if reason == "invalid_email":
         raise HTTPException(status_code=400, detail="Correo no válido.")
     if reason == "invalid_ced_id":
-        raise HTTPException(status_code=400, detail="ID de CED no válido.")
+        raise HTTPException(status_code=400, detail="Código de invitación CED no válido.")
+    if reason == "invalid_pm_partner_id":
+        raise HTTPException(
+            status_code=400,
+            detail="Escribe el ID de socio de PM International (Partner Area).",
+        )
     if reason == "ced_id_mismatch":
         raise HTTPException(
             status_code=400,
-            detail="El ID de CED debe ser el tuyo para añadir socios a tu estructura.",
+            detail="Ese ID no corresponde a un socio de PM International.",
         )
     raise HTTPException(status_code=400, detail="No se pudo guardar el socio.")
 
@@ -85,6 +92,7 @@ def save_pm_profile(body: ProfileBody, user_id: str = Depends(require_user_id)) 
     result = complete_pm_profile(
         user_id,
         full_name=body.full_name,
+        pm_partner_id=body.pm_partner_id,
         sponsor_ced_id=body.sponsor_ced_id,
     )
     if not result.get("ok"):
@@ -99,6 +107,7 @@ def create_partner(body: PartnerBody, user_id: str = Depends(require_user_id)) -
         full_name=body.full_name,
         email=body.email,
         ced_id=body.ced_id,
+        pm_partner_id=body.pm_partner_id,
     )
     if not result.get("ok"):
         _raise_referral_error(result)

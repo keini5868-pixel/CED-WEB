@@ -162,6 +162,7 @@ def register_with_email(
     next_path: str | None = "/",
     offer: str | None = None,
     ref: str | None = None,
+    pm_partner_id: str | None = None,
 ) -> dict[str, Any]:
     if not resend_configured():
         raise PublicRegisterError(
@@ -258,6 +259,12 @@ def register_with_email(
                 ref_n[:16],
                 (claimed or {}).get("reason") or (claimed or {}).get("ok"),
             )
+
+        pm_id = (pm_partner_id or "").strip()
+        if pm_id:
+            from app.services.referrals import save_pm_partner_id
+
+            save_pm_partner_id(user_id, pm_id)
 
     logger.info(
         "[REGISTER] ok email=%s user=%s via=resend offer=%s",

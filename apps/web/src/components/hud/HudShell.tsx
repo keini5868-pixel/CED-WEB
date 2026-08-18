@@ -19,7 +19,9 @@ export function HudShell({ children, email, isSuperAdmin, studio = false }: HudS
       <main
         className={[
           "flex min-h-0 flex-1 flex-col",
-        studio ? "overflow-hidden bg-[var(--studio-shell-bg)]" : "ced-hud-page-bg",
+          studio
+            ? "overflow-hidden bg-[var(--studio-shell-bg)]"
+            : "ced-hud-page-bg",
         ].join(" ")}
       >
         {children}

@@ -25,6 +25,7 @@ export type MyTeamMe = {
   email: string;
   full_name: string;
   referral_code: string;
+  pm_partner_id?: string;
   needs_onboarding: boolean;
 };
 
@@ -72,6 +73,7 @@ export async function fetchMyTeam(): Promise<MyTeamResponse> {
 
 export async function savePmProfile(input: {
   full_name: string;
+  pm_partner_id?: string;
   sponsor_ced_id?: string;
 }): Promise<MyTeamResponse> {
   const res = await proxyFetchAuthed("referrals/profile", {
@@ -79,6 +81,7 @@ export async function savePmProfile(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       full_name: input.full_name,
+      pm_partner_id: input.pm_partner_id || "",
       sponsor_ced_id: input.sponsor_ced_id || "",
     }),
   });
@@ -91,12 +94,16 @@ export async function savePmProfile(input: {
 export async function addPmPartner(input: {
   full_name: string;
   email: string;
-  ced_id: string;
+  pm_partner_id: string;
 }): Promise<MyTeamResponse> {
   const res = await proxyFetchAuthed("referrals/partners", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify({
+      full_name: input.full_name,
+      email: input.email,
+      pm_partner_id: input.pm_partner_id,
+    }),
   });
   if (!res.ok) {
     throw new Error(await readError(res, "No se pudo añadir el socio."));

@@ -32,8 +32,9 @@ export function ReferralIdCard() {
         REFERRAL ID
       </h2>
       <p className="mt-1 mb-3 text-xs text-cyan-100/60">
-        Comparte tu ID para ver si tus invitados usan voz, chat de venta,
-        Finanzas y OPPS para trabajar PM International.
+        Comparte tu enlace CED para ver si tus invitados usan voz, chat de venta,
+        Finanzas y OPPS para trabajar PM International. El ID de socio que se
+        guarda en la estructura es el de PM International, no el de CED.
       </p>
       {code ? (
         <code className="rounded border border-cyan-400/30 bg-cyan-400/5 px-3 py-1.5 font-mono text-sm tracking-widest text-cyan-200">

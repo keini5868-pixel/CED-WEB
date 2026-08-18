@@ -77,6 +77,14 @@ def normalize_referral_code(raw: str | None) -> str:
     return ""
 
 
+def normalize_pm_partner_id(raw: str | None) -> str:
+    """ID de socio PM International (Partner Area). No antepone CED."""
+    code = re.sub(r"\s+", "", (raw or "").strip())
+    if 3 <= len(code) <= 40:
+        return code
+    return ""
+
+
 def is_relevant_sales_chat(text: str) -> bool:
     t = (text or "").strip()
     if len(t) < 8:
@@ -201,7 +209,7 @@ def claim_referral(referred_id: str, code: str) -> dict[str, Any]:
         return {"ok": False, "reason": "db_error", "error": str(exc)[:160]}
 
 
-def _profile_row(user_id: str, columns: str = "id, email, full_name, referral_code") -> dict[str, Any]:
+def _profile_row(user_id: str, columns: str = "id, email, full_name, referral_code, pm_partner_id") -> dict[str, Any]:
     uid = (user_id or "").strip()
     if not uid:
         return {}
@@ -216,6 +224,10 @@ def _profile_row(user_id: str, columns: str = "id, email, full_name, referral_co
         )
         return (row.data or [None])[0] or {}
     except Exception:  # noqa: BLE001
+        if "pm_partner_id" in columns:
+            return _profile_row(
+                uid, columns.replace(", pm_partner_id", "").replace("pm_partner_id, ", "")
+            )
         return {}
 
 
@@ -239,6 +251,19 @@ def find_profile_by_email(email: str) -> dict[str, Any] | None:
         return None
 
 
+def save_pm_partner_id(user_id: str, pm_partner_id: str) -> bool:
+    uid = (user_id or "").strip()
+    pid = normalize_pm_partner_id(pm_partner_id)
+    if not uid or not pid:
+        return False
+    try:
+        _client().table("profiles").update({"pm_partner_id": pid}).eq("id", uid).execute()
+        return True
+    except Exception:  # noqa: BLE001
+        logger.warning("[REFERRAL] save pm_partner_id failed user=%s", uid[:8])
+        return False
+
+
 def snapshot_structure_partner(
     sponsor_id: str,
     referred_id: str,
@@ -246,8 +271,9 @@ def snapshot_structure_partner(
     *,
     full_name: str = "",
     email: str = "",
+    pm_partner_id: str = "",
 ) -> bool:
-    """Guarda nombre, correo e ID de CED del socio en la estructura del patrocinador."""
+    """Guarda nombre, correo e ID de socio PM en la estructura del patrocinador."""
     sid = (sponsor_id or "").strip()
     uid = (referred_id or "").strip()
     if not sid:
@@ -255,7 +281,9 @@ def snapshot_structure_partner(
     profile = _profile_row(uid) if uid else {}
     name = (full_name or str(profile.get("full_name") or "")).strip()
     mail = (email or str(profile.get("email") or "")).strip().lower()
-    partner_ced = ensure_referral_code(uid) if uid else ""
+    partner_pm = normalize_pm_partner_id(pm_partner_id) or normalize_pm_partner_id(
+        str(profile.get("pm_partner_id") or "")
+    )
     if not mail or not EMAIL_RE.match(mail):
         return False
     if not name:
@@ -266,7 +294,7 @@ def snapshot_structure_partner(
         "email": mail,
         "sponsor_ced_id": normalize_referral_code(sponsor_ced_id) or "",
         "user_id": uid or None,
-        "partner_ced_id": partner_ced or None,
+        "partner_ced_id": partner_pm or None,
         "updated_at": _now().isoformat(),
     }
     try:
@@ -284,9 +312,10 @@ def complete_pm_profile(
     user_id: str,
     *,
     full_name: str,
+    pm_partner_id: str = "",
     sponsor_ced_id: str = "",
 ) -> dict[str, Any]:
-    """Onboarding Estructura PM: nombre completo + ID de CED del patrocinador."""
+    """Onboarding Estructura PM: nombre completo + ID de socio PM."""
     uid = (user_id or "").strip()
     name = " ".join((full_name or "").split()).strip()
     if not uid:
@@ -298,6 +327,10 @@ def complete_pm_profile(
     except Exception as exc:  # noqa: BLE001
         logger.exception("[REFERRAL] complete profile failed user=%s", uid[:8])
         return {"ok": False, "reason": "db_error", "error": str(exc)[:160]}
+
+    pid = normalize_pm_partner_id(pm_partner_id)
+    if pid:
+        save_pm_partner_id(uid, pid)
 
     code = (sponsor_ced_id or "").strip()
     if code:
@@ -313,25 +346,24 @@ def add_structure_partner(
     *,
     full_name: str,
     email: str,
+    pm_partner_id: str = "",
     ced_id: str = "",
 ) -> dict[str, Any]:
-    """Alta de socio en la estructura: correo, nombre completo e ID de CED."""
+    """Alta de socio: correo, nombre completo e ID de socio PM International."""
     sid = (sponsor_id or "").strip()
     name = " ".join((full_name or "").split()).strip()
     mail = (email or "").strip().lower()
+    partner_pm = normalize_pm_partner_id(pm_partner_id or ced_id)
     if not sid:
         return {"ok": False, "reason": "invalid"}
     if len(name) < 3:
         return {"ok": False, "reason": "invalid_name"}
     if not EMAIL_RE.match(mail):
         return {"ok": False, "reason": "invalid_email"}
+    if not partner_pm:
+        return {"ok": False, "reason": "invalid_pm_partner_id"}
 
     my_code = ensure_referral_code(sid)
-    typed = normalize_referral_code(ced_id) if (ced_id or "").strip() else my_code
-    if not typed:
-        return {"ok": False, "reason": "invalid_ced_id"}
-    if typed != my_code:
-        return {"ok": False, "reason": "ced_id_mismatch"}
 
     existing_user = find_profile_by_email(mail)
     referred_id = str((existing_user or {}).get("id") or "")
@@ -339,9 +371,11 @@ def add_structure_partner(
         return {"ok": False, "reason": "self"}
 
     if referred_id:
-        claimed = claim_referral(referred_id, my_code)
-        if not claimed.get("ok"):
-            return claimed
+        if my_code:
+            try:
+                claim_referral(referred_id, my_code)
+            except Exception:  # noqa: BLE001
+                pass
         if existing_user and not str(existing_user.get("full_name") or "").strip():
             try:
                 _client().table("profiles").update({"full_name": name[:160]}).eq(
@@ -349,12 +383,14 @@ def add_structure_partner(
                 ).execute()
             except Exception:  # noqa: BLE001
                 pass
+        save_pm_partner_id(referred_id, partner_pm)
         snapshot_structure_partner(
             sid,
             referred_id,
             my_code,
             full_name=name,
             email=mail,
+            pm_partner_id=partner_pm,
         )
     else:
         saved = snapshot_structure_partner(
@@ -363,6 +399,7 @@ def add_structure_partner(
             my_code,
             full_name=name,
             email=mail,
+            pm_partner_id=partner_pm,
         )
         if not saved:
             return {"ok": False, "reason": "db_error"}
@@ -622,14 +659,25 @@ def list_my_team(referrer_id: str) -> dict[str, Any]:
             profs = (
                 _client()
                 .table("profiles")
-                .select("id, full_name, email, created_at, referral_code")
+                .select("id, full_name, email, created_at, referral_code, pm_partner_id")
                 .in_("id", ids)
                 .execute()
             )
             for p in profs.data or []:
                 profiles_by_id[str(p.get("id"))] = p
         except Exception:  # noqa: BLE001
-            logger.warning("[REFERRAL] profiles batch failed")
+            try:
+                profs = (
+                    _client()
+                    .table("profiles")
+                    .select("id, full_name, email, created_at, referral_code")
+                    .in_("id", ids)
+                    .execute()
+                )
+                for p in profs.data or []:
+                    profiles_by_id[str(p.get("id"))] = p
+            except Exception:  # noqa: BLE001
+                logger.warning("[REFERRAL] profiles batch failed")
 
     partners: list[dict[str, Any]] = []
     try:
@@ -715,14 +763,12 @@ def list_my_team(referrer_id: str) -> dict[str, Any]:
         if not gid:
             continue
         prof = profiles_by_id.get(gid) or {}
-        partner_ced = normalize_referral_code(str(prof.get("referral_code") or ""))
-        if not partner_ced:
-            partner_ced = ensure_referral_code(gid)
+        partner_pm = normalize_pm_partner_id(str(prof.get("pm_partner_id") or ""))
         _append_guest(
             gid=gid,
             full_name=str(prof.get("full_name") or ""),
             email=str(prof.get("email") or ""),
-            ced_id=partner_ced,
+            ced_id=partner_pm,
             joined_at=row.get("created_at"),
             registered=True,
         )
@@ -738,12 +784,13 @@ def list_my_team(referrer_id: str) -> dict[str, Any]:
             gid=gid,
             full_name=str(partner.get("full_name") or ""),
             email=mail,
-            ced_id=normalize_referral_code(str(partner.get("partner_ced_id") or ""))
+            ced_id=normalize_pm_partner_id(str(partner.get("partner_ced_id") or ""))
             or "",
             joined_at=partner.get("created_at"),
             registered=bool(gid),
         )
 
+    me_pm = normalize_pm_partner_id(str(me_profile.get("pm_partner_id") or ""))
     return {
         "ok": True,
         "referral_code": code,
@@ -752,6 +799,7 @@ def list_my_team(referrer_id: str) -> dict[str, Any]:
             "email": me_email,
             "full_name": me_name,
             "referral_code": code,
+            "pm_partner_id": me_pm,
             "needs_onboarding": len(me_name) < 3,
         },
         "counts": {

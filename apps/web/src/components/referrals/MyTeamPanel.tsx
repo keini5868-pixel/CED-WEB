@@ -83,11 +83,11 @@ export function MyTeamPanel() {
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState<"code" | "link" | null>(null);
   const [onboardingName, setOnboardingName] = useState("");
-  const [onboardingCed, setOnboardingCed] = useState("");
+  const [onboardingPmId, setOnboardingPmId] = useState("");
   const [onboardingBusy, setOnboardingBusy] = useState(false);
   const [partnerName, setPartnerName] = useState("");
   const [partnerEmail, setPartnerEmail] = useState("");
-  const [partnerCed, setPartnerCed] = useState("");
+  const [partnerPmId, setPartnerPmId] = useState("");
   const [partnerBusy, setPartnerBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -97,7 +97,7 @@ export function MyTeamPanel() {
       const next = await fetchMyTeam();
       setData(next);
       setOnboardingName((prev) => prev || next.me?.full_name || "");
-      setPartnerCed((prev) => prev || next.referral_code || "");
+      setOnboardingPmId((prev) => prev || next.me?.pm_partner_id || "");
     } catch (exc) {
       setError(exc instanceof Error ? exc.message : "No se pudo cargar la estructura PM.");
     }
@@ -124,7 +124,7 @@ export function MyTeamPanel() {
     try {
       const next = await savePmProfile({
         full_name: onboardingName.trim(),
-        sponsor_ced_id: onboardingCed.trim(),
+        pm_partner_id: onboardingPmId.trim(),
       });
       setData(next);
     } catch (exc) {
@@ -142,12 +142,12 @@ export function MyTeamPanel() {
       const next = await addPmPartner({
         full_name: partnerName.trim(),
         email: partnerEmail.trim(),
-        ced_id: partnerCed.trim() || data?.referral_code || "",
+        pm_partner_id: partnerPmId.trim(),
       });
       setData(next);
       setPartnerName("");
       setPartnerEmail("");
-      setPartnerCed(next.referral_code || partnerCed);
+      setPartnerPmId("");
     } catch (exc) {
       setFormError(exc instanceof Error ? exc.message : "No se pudo añadir el socio.");
     } finally {
@@ -164,8 +164,9 @@ export function MyTeamPanel() {
           Estructura PM
         </h1>
         <p className="mt-1 text-sm text-[var(--ced-text-muted)]">
-          Cada socio entra con correo, nombre completo e ID de CED. Desde ahí
-          crece su negocio: comparte tu enlace o añade socios a tu estructura.
+          Cada socio entra con correo, nombre completo e ID de socio de PM
+          International. Desde ahí crece su negocio: comparte tu enlace o añade
+          socios a tu estructura.
         </p>
       </div>
 
@@ -175,8 +176,8 @@ export function MyTeamPanel() {
             TUS DATOS DE ENTRADA
           </h2>
           <p className="mt-1 mb-3 text-xs text-[var(--ced-text-muted)]">
-            Antes de usar la estructura, guarda tu correo, nombre completo e ID
-            de CED del socio que te invita.
+            Antes de usar la estructura, guarda tu correo, nombre completo y el
+            ID de socio de PM International (Partner Area).
           </p>
           <form onSubmit={(e) => void submitOnboarding(e)} className="grid gap-3 sm:grid-cols-2">
             <label className="block text-[11px] uppercase tracking-wider text-[var(--studio-hint)]">
@@ -201,13 +202,13 @@ export function MyTeamPanel() {
               />
             </label>
             <label className="block text-[11px] uppercase tracking-wider text-[var(--studio-hint)] sm:col-span-2">
-              ID de CED
+              ID de socio PM
               <input
                 className={`${fieldClass} mt-1 font-mono tracking-wider`}
-                name="sponsor_ced_id"
-                value={onboardingCed}
-                onChange={(e) => setOnboardingCed(e.target.value.toUpperCase())}
-                placeholder="Ej. CED7A3F2C — el ID de quien te invita"
+                name="pm_partner_id"
+                value={onboardingPmId}
+                onChange={(e) => setOnboardingPmId(e.target.value)}
+                placeholder="El ID que te da PM International al entrar"
               />
             </label>
             <div className="sm:col-span-2">
@@ -225,7 +226,7 @@ export function MyTeamPanel() {
 
       <section className="rounded-xl border border-[var(--studio-border)] bg-[var(--studio-card)] p-4">
         <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-[var(--ced-cyan)]">
-          TU ID DE CED
+          TU ENLACE DE INVITACIÓN CED
         </h2>
         {data ? (
           <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -238,7 +239,7 @@ export function MyTeamPanel() {
               onClick={() => void copy("code", data.referral_code)}
               disabled={!data.referral_code}
             >
-              {copied === "code" ? "Copiado" : "Copiar ID"}
+              {copied === "code" ? "Copiado" : "Copiar código"}
             </button>
             <button
               type="button"
@@ -257,9 +258,17 @@ export function MyTeamPanel() {
             {data.invite_url}
           </p>
         ) : null}
+        {data?.me?.pm_partner_id ? (
+          <p className="mt-3 text-xs text-[var(--ced-text-muted)]">
+            Tu ID de socio PM:{" "}
+            <span className="font-mono tracking-wider text-[var(--ced-cyan)]">
+              {data.me.pm_partner_id}
+            </span>
+          </p>
+        ) : null}
         <p className="mt-3 text-xs text-[var(--ced-text-muted)]">
-          Comparte el enlace o el ID. Quien se registre entra con su correo,
-          nombre completo e ID de CED, y queda guardado en tu estructura.
+          Comparte el enlace para que entren a CED. En la ficha de cada socio
+          guarda su ID de socio de PM International, no el ID de CED.
         </p>
       </section>
 
@@ -269,7 +278,7 @@ export function MyTeamPanel() {
         </h2>
         <p className="mt-1 mb-3 text-xs text-[var(--ced-text-muted)]">
           Si entra en persona, apunta aquí su correo, nombre completo e ID de
-          CED. También puedes esperar a que use tu enlace.
+          socio de PM International. También puedes esperar a que use tu enlace.
         </p>
         <form onSubmit={(e) => void submitPartner(e)} className="grid gap-3 sm:grid-cols-3">
           <label className="block text-[11px] uppercase tracking-wider text-[var(--studio-hint)]">
@@ -297,14 +306,14 @@ export function MyTeamPanel() {
             />
           </label>
           <label className="block text-[11px] uppercase tracking-wider text-[var(--studio-hint)]">
-            ID de CED
+            ID de socio PM
             <input
               className={`${fieldClass} mt-1 font-mono tracking-wider`}
-              name="partner_ced_id"
-              value={partnerCed}
-              onChange={(e) => setPartnerCed(e.target.value.toUpperCase())}
+              name="partner_pm_id"
+              value={partnerPmId}
+              onChange={(e) => setPartnerPmId(e.target.value)}
               required
-              placeholder="Tu ID de CED"
+              placeholder="ID de socio de PM International"
             />
           </label>
           <div className="sm:col-span-3">
@@ -353,7 +362,7 @@ export function MyTeamPanel() {
             <tr>
               <th className="px-3 py-2">Nombre completo</th>
               <th className="px-3 py-2">Correo</th>
-              <th className="px-3 py-2">ID de CED</th>
+              <th className="px-3 py-2">ID de socio PM</th>
               <th className="px-3 py-2">Alta</th>
               <th className="px-3 py-2">Voz</th>
               <th className="px-3 py-2">Chat venta</th>
@@ -369,7 +378,7 @@ export function MyTeamPanel() {
               <tr>
                 <td colSpan={9} className="px-3 py-6 text-center text-[var(--studio-hint)]">
                   {data
-                    ? "Aún no hay socios. Comparte tu enlace o añade uno con correo, nombre e ID de CED."
+                    ? "Aún no hay socios. Comparte tu enlace o añade uno con correo, nombre e ID de socio PM."
                     : "Cargando socios…"}
                 </td>
               </tr>
