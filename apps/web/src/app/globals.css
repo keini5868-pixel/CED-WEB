@@ -386,15 +386,15 @@ body:has(.ced-studio-shell) {
 }
 
 .ced-composer-actions button {
-  height: 1.75rem;
-  width: 1.75rem;
-  min-height: 1.75rem;
-  min-width: 1.75rem;
+  height: 2rem;
+  width: 2rem;
+  min-height: 2rem;
+  min-width: 2rem;
 }
 
 .ced-composer-actions button svg {
-  height: 0.85rem;
-  width: 0.85rem;
+  height: 0.95rem;
+  width: 0.95rem;
 }
 
 @media (min-width: 1024px) {

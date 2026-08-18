@@ -593,7 +593,7 @@ export function AdvancedChatPanel({
               disabled={configured === false}
               className={`w-full min-w-0 flex-1 rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-1.5 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px] ${
                 composerBar
-                  ? "min-h-[36px] max-h-[64px] resize-none"
+                  ? "min-h-[42px] max-h-[72px] resize-none"
                   : "min-h-[56px] max-h-40 resize-y"
               }`}
             />

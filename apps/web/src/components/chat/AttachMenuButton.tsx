@@ -192,7 +192,7 @@ export function AttachMenuButton({
           onClick={() => setOpen((v) => !v)}
           className={
             clipOnly
-              ? "box-border flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10 active:scale-95 disabled:opacity-40 lg:h-8 lg:w-8"
+              ? "box-border flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10 active:scale-95 disabled:opacity-40 lg:h-8 lg:w-8"
               : triggerClass
           }
           aria-label="Adjuntar foto o archivo"

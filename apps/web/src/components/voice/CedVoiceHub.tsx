@@ -25,18 +25,13 @@ import {
 import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
-import { CedVoiceControls } from "@/components/voice/CedVoiceControls";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
-import {
-  CedHudQuickPopups,
-  type HudQuickPopupId,
-} from "@/components/voice/CedHudQuickPopups";
+import { CedListenButton } from "@/components/voice/CedListenButton";
 import {
   CedHistoryPanel,
   CedSettingsModal,
   CedStopConfirmModal,
 } from "@/components/voice/CedVoiceModals";
-import { CedListenButton } from "@/components/voice/CedListenButton";
 import { CedStudioSidebar } from "@/components/hud/CedStudioSidebar";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import { CED_OPEN_SETTINGS_EVENT } from "@/lib/hud/chrome-events";
@@ -54,7 +49,6 @@ export function CedVoiceHub() {
     prompt?: string;
   } | null>(null);
   const [chatSeedPrompt, setChatSeedPrompt] = useState<string | null>(null);
-  const [quickPopup, setQuickPopup] = useState<HudQuickPopupId>(null);
   const [voiceImagePreview, setVoiceImagePreview] = useState<{
     url: string;
     prompt?: string;
@@ -341,16 +335,6 @@ export function CedVoiceHub() {
           {voice.errorMessage}
         </p>
       ) : null}
-      <CedVoiceControls
-        micOn={voice.micOn}
-        muted={voice.muted}
-        paused={voice.paused}
-        quickPopup={quickPopup}
-        onQuickPopup={(id) => setQuickPopup((prev) => (prev === id ? null : id))}
-        onMute={() => voice.setMuted((m) => !m)}
-        onPause={voice.togglePause}
-        onStop={() => voice.setStopConfirmOpen(true)}
-      />
     </div>
   );
 
@@ -491,11 +475,9 @@ export function CedVoiceHub() {
       />
       <div
         id={COMPOSER_ACTIONS_ID}
-        className="ced-composer-actions flex h-9 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 lg:h-10 lg:px-1.5"
+        className="ced-composer-actions flex h-11 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 lg:h-11 lg:px-1.5"
       />
     </div>
-
-      <CedHudQuickPopups active={quickPopup} onClose={() => setQuickPopup(null)} />
 
       <CedStopConfirmModal
         open={voice.stopConfirmOpen}

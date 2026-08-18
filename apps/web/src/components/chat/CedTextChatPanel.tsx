@@ -1085,7 +1085,7 @@ export function CedTextChatPanel({
               disabled={Boolean(status?.blocked)}
               className={`box-border w-full min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
                 composerBar
-                  ? "min-h-[36px] max-h-[64px] py-1"
+                  ? "min-h-[42px] max-h-[72px] py-1.5"
                   : "min-h-[48px] max-h-[120px] py-2.5"
               } ${
                 embedded
