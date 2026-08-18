@@ -56,8 +56,12 @@ export function AttachMenuButton({
       if (!btn) return;
       const r = btn.getBoundingClientRect();
       const menuW = 220;
-      const left = Math.max(8, Math.min(r.left - menuW - 10, window.innerWidth - menuW - 8));
-      const bottom = Math.max(8, window.innerHeight - r.top + 10);
+      const gap = 8;
+      const left = Math.max(
+        gap,
+        Math.min(r.right - menuW, window.innerWidth - menuW - gap),
+      );
+      const bottom = Math.max(gap, window.innerHeight - r.top + gap);
       setCoords({ left, bottom });
     };
 

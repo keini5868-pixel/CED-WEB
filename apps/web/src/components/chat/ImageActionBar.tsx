@@ -31,7 +31,7 @@ export function ImageActionBar({
   onRemove,
 }: ImageActionBarProps) {
   return (
-    <div className="image-action-bar mb-2 flex max-w-full flex-col gap-2 overflow-hidden rounded-xl bg-cyan-950/30 p-2">
+    <div className="image-action-bar mb-2 flex max-w-full flex-col gap-2 overflow-visible rounded-xl bg-cyan-950/30 p-2 pt-3">
       <div className="attached-image-preview relative inline-block self-start">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
@@ -49,7 +49,7 @@ export function ImageActionBar({
         </button>
       </div>
 
-      <div className="image-actions flex flex-wrap gap-1.5">
+      <div className="image-actions flex flex-wrap gap-1.5 overflow-visible">
         {MODES.map(({ id, label, emoji }) => (
           <button
             key={id}

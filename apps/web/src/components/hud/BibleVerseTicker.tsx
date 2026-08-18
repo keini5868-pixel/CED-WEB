@@ -378,10 +378,10 @@ export function BibleVerseTicker() {
           visible ? "opacity-100" : "opacity-0"
         }`}
       >
-        <p className="ced-hud-text-body line-clamp-2 text-xs leading-snug text-cyan-100/90 sm:text-sm">
+        <p className="ced-hud-text-body line-clamp-1 text-[10px] leading-tight text-cyan-100/90 sm:line-clamp-2 sm:text-sm sm:leading-snug">
           {verse.text}
         </p>
-        <cite className="mt-0.5 block not-italic font-[family-name:var(--font-orbitron)] text-[9px] tracking-wider text-cyan-500/70 sm:text-[10px]">
+        <cite className="mt-0.5 hidden not-italic font-[family-name:var(--font-orbitron)] text-[9px] tracking-wider text-cyan-500/70 sm:block sm:text-[10px]">
           {verse.ref}
         </cite>
       </blockquote>

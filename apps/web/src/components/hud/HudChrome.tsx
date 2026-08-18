@@ -107,22 +107,22 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
 
   return (
     <header
-      className="ced-chrome-bar z-50 w-full max-w-[100vw] shrink-0 overflow-hidden shadow-[0_8px_24px_rgba(7,47,61,0.4)]"
+      className="ced-chrome-bar z-50 w-full max-w-[100vw] shrink-0 overflow-x-hidden shadow-[0_8px_24px_rgba(7,47,61,0.4)]"
     >
-      <div className="mx-auto flex w-full max-w-screen items-center gap-1 px-2 py-2 sm:gap-2 sm:px-4 sm:py-2.5 md:px-6">
-        <div className="flex min-w-0 flex-1 items-center gap-2">
+      <div className="mx-auto flex h-10 w-full max-w-screen items-center gap-1 px-2 sm:h-auto sm:gap-2 sm:px-4 sm:py-2.5 md:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
           <Link
             href={DASHBOARD_PATH}
-            className="flex shrink-0 items-center gap-2"
+            className="flex shrink-0 items-center gap-1.5"
             aria-label="CED — Castillo de la Evolución Digital"
           >
             <span
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--ced-cyan)]/80 bg-[var(--ced-cyan)]/20 shadow-[0_0_14px_var(--ced-cyan-glow)]"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--ced-cyan)]/80 bg-[var(--ced-cyan)]/20 shadow-[0_0_14px_var(--ced-cyan-glow)] sm:h-8 sm:w-8"
               aria-hidden
             >
-              <span className="h-3.5 w-3.5 rounded-full bg-[var(--ced-cyan)]" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[var(--ced-cyan)] sm:h-3.5 sm:w-3.5" />
             </span>
-            <CedWordmark size="md" className="text-base sm:text-lg" />
+            <CedWordmark size="sm" className="text-[11px] sm:text-lg sm:tracking-[0.16em]" />
           </Link>
           <div className="flex shrink-0 items-center">{sistemaMenu}</div>
           <button
@@ -130,11 +130,11 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
             onClick={() => openDriveMap()}
             title="Mapa"
             aria-label="Abrir mapa"
-            className="inline-flex shrink-0 rounded-lg border border-white/20 p-1.5 text-sky-100 hover:border-sky-200 hover:bg-white/10 hover:text-white"
+            className="inline-flex shrink-0 rounded-lg border border-white/20 p-1 text-sky-100 hover:border-sky-200 hover:bg-white/10 hover:text-white sm:p-1.5"
           >
             <Navigation className="h-3.5 w-3.5" strokeWidth={2} />
           </button>
-          <div className="hidden min-w-0 flex-1 justify-center px-3 md:flex">
+          <div className="min-w-0 flex-1 px-1 sm:px-3">
             <BibleVerseTicker />
           </div>
         </div>
@@ -143,23 +143,15 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
           {onDashboard ? null : estrategiaMenu}
           <div className="hidden items-center gap-1 md:flex md:gap-2">
             <ConnectNetworksButton />
-            <AdminPanelButton visible={isSuperAdmin} />
-            {email ? (
-              <span className="hidden max-w-[140px] truncate text-[10px] text-sky-100/80 xl:inline">
-                {email}
-              </span>
-            ) : null}
-            <SignOutButton className="!px-2 !py-1.5 !text-[9px] !text-white sm:!text-[10px]" />
           </div>
+          <AdminPanelButton visible={isSuperAdmin} />
+          {email ? (
+            <span className="hidden max-w-[140px] truncate text-[10px] text-sky-100/80 xl:inline">
+              {email}
+            </span>
+          ) : null}
+          <SignOutButton className="!px-2 !py-1 !text-[9px] !text-white sm:!px-2 sm:!py-1.5 sm:!text-[10px]" />
         </div>
-      </div>
-
-      <div className="flex items-center gap-2 border-t border-white/10 px-2 py-1 sm:px-3 md:hidden">
-        <div className="min-w-0 flex-1">
-          <BibleVerseTicker />
-        </div>
-        <AdminPanelButton visible={isSuperAdmin} />
-        <SignOutButton className="!px-2 !py-1 !text-[9px]" />
       </div>
     </header>
   );
