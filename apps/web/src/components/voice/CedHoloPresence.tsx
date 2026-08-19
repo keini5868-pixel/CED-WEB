@@ -30,7 +30,7 @@ function spawnSpark(ox: number, oy: number, tx: number, ty: number): Spark {
     tx: tx + (Math.random() - 0.5) * 28,
     ty: ty + (Math.random() - 0.5) * 36,
     t: 0,
-    speed: 0.022 + Math.random() * 0.028,
+    speed: 0.007 + Math.random() * 0.007,
     amp: 8 + Math.random() * 22,
     phase: Math.random() * Math.PI * 2,
     size: 2 + Math.random() * 3,
@@ -191,9 +191,9 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
         burstLeft = 42;
       }
 
-      if (on && burstLeft > 0 && now - lastSpawn > 24) {
+      if (on && burstLeft > 0 && now - lastSpawn > 52) {
         lastSpawn = now;
-        const n = Math.min(8, burstLeft);
+        const n = Math.min(3, burstLeft);
         for (let i = 0; i < n; i += 1) sparksRef.current.push(spawnSpark(ox, oy, tx, ty));
         burstLeft -= n;
       }
