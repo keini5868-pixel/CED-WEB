@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 
 type CedHoloPresenceProps = {
@@ -13,6 +13,8 @@ type Spark = {
   y: number;
   tx: number;
   ty: number;
+  nx: number;
+  ny: number;
   t: number;
   speed: number;
   amp: number;
@@ -21,170 +23,291 @@ type Spark = {
   life: number;
 };
 
-const HOLO_SRC = "/voice/holo-presence.png?v=mesh3";
-const FORM_DELAY = 0.45;
-const FORM_DURATION = 2.15;
-const formEase = [0.22, 0.84, 0.32, 1] as const;
+type Stamp = { nx: number; ny: number; r: number };
 
-function spawnSpark(ox: number, oy: number, tx: number, ty: number): Spark {
+type Pt = { x: number; y: number };
+
+const HOLO_SRC = "/voice/holo-presence.png?v=mesh4";
+const FILL_MS = 2400;
+
+function spawnSpark(
+  ox: number,
+  oy: number,
+  tx: number,
+  ty: number,
+  nx: number,
+  ny: number,
+): Spark {
   return {
     x: ox + (Math.random() - 0.5) * 8,
     y: oy + (Math.random() - 0.5) * 8,
-    tx: tx + (Math.random() - 0.5) * 28,
-    ty: ty + (Math.random() - 0.5) * 36,
+    tx,
+    ty,
+    nx,
+    ny,
     t: 0,
-    speed: 0.007 + Math.random() * 0.007,
-    amp: 8 + Math.random() * 22,
+    speed: 0.007 + Math.random() * 0.006,
+    amp: 8 + Math.random() * 18,
     phase: Math.random() * Math.PI * 2,
-    size: 2 + Math.random() * 3,
+    size: 1.8 + Math.random() * 2.4,
     life: 1,
   };
 }
 
-function HoloFace({ speaking }: { speaking: boolean }) {
+function sampleSilhouette(img: HTMLImageElement): Pt[] {
+  const c = document.createElement("canvas");
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  c.width = w;
+  c.height = h;
+  const g = c.getContext("2d");
+  if (!g) return [];
+  g.drawImage(img, 0, 0);
+  const data = g.getImageData(0, 0, w, h).data;
+  const raw: Pt[] = [];
+  const step = 5;
+  for (let y = 0; y < h; y += step) {
+    for (let x = 0; x < w; x += step) {
+      if (data[(y * w + x) * 4 + 3] > 48) {
+        raw.push({ x: x / w, y: y / h });
+      }
+    }
+  }
+  raw.sort((a, b) => b.y - a.y);
+  const n = 320;
+  if (raw.length <= n) return raw;
+  const out: Pt[] = [];
+  for (let i = 0; i < n; i += 1) {
+    out.push(raw[Math.floor((i / n) * raw.length)]);
+  }
+  return out;
+}
+
+function HoloFace({
+  speaking,
+  active,
+  stampsRef,
+  fillDone,
+}: {
+  speaking: boolean;
+  active: boolean;
+  stampsRef: MutableRefObject<Stamp[]>;
+  fillDone: boolean;
+}) {
+  const visRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const maskRef = useRef<HTMLCanvasElement | null>(null);
+  const stampedRef = useRef(0);
+  const fillDoneRef = useRef(fillDone);
+  fillDoneRef.current = fillDone;
   const ringSpeed = speaking ? 1.35 : 2.8;
   const spinSpeed = speaking ? 9 : 22;
-  const formed = FORM_DELAY + FORM_DURATION * 0.55;
+
+  useEffect(() => {
+    const vis = visRef.current;
+    const wrap = wrapRef.current;
+    if (!vis || !wrap) return;
+    const ctx = vis.getContext("2d");
+    if (!ctx) return;
+
+    const img = new Image();
+    img.src = HOLO_SRC;
+    imgRef.current = img;
+
+    const mask = document.createElement("canvas");
+    maskRef.current = mask;
+    const mctx = mask.getContext("2d");
+    if (!mctx) return;
+
+    let raf = 0;
+    const resize = () => {
+      const r = wrap.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      vis.width = Math.max(1, Math.floor(r.width * dpr));
+      vis.height = Math.max(1, Math.floor(r.height * dpr));
+      vis.style.width = `${r.width}px`;
+      vis.style.height = `${r.height}px`;
+      mask.width = vis.width;
+      mask.height = vis.height;
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      mctx.setTransform(1, 0, 0, 1, 0, 0);
+      stampedRef.current = 0;
+    };
+
+    const tick = () => {
+      const r = wrap.getBoundingClientRect();
+      const w = vis.width;
+      const h = vis.height;
+      if (!w || !h) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+
+      const stamps = stampsRef.current;
+      if (stamps.length < stampedRef.current) {
+        mctx.clearRect(0, 0, w, h);
+        stampedRef.current = 0;
+      }
+      for (let i = stampedRef.current; i < stamps.length; i += 1) {
+        const s = stamps[i];
+        const x = s.nx * w;
+        const y = s.ny * h;
+        const rad = s.r * (w / Math.max(r.width, 1));
+        const g = mctx.createRadialGradient(x, y, 0, x, y, rad);
+        g.addColorStop(0, "rgba(255,255,255,1)");
+        g.addColorStop(0.55, "rgba(255,255,255,0.85)");
+        g.addColorStop(1, "rgba(255,255,255,0)");
+        mctx.fillStyle = g;
+        mctx.beginPath();
+        mctx.arc(x, y, rad, 0, Math.PI * 2);
+        mctx.fill();
+      }
+      stampedRef.current = stamps.length;
+
+      ctx.clearRect(0, 0, w, h);
+      if (img.complete && img.naturalWidth) {
+        ctx.drawImage(img, 0, 0, w, h);
+        if (!fillDoneRef.current) {
+          ctx.globalCompositeOperation = "destination-in";
+          ctx.drawImage(mask, 0, 0);
+          ctx.globalCompositeOperation = "source-over";
+        }
+      }
+      raf = requestAnimationFrame(tick);
+    };
+
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(wrap);
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
+  }, [stampsRef]);
+
+  useEffect(() => {
+    if (!active) stampedRef.current = 0;
+  }, [active]);
 
   return (
-    <div className="relative w-[min(78vw,19rem)] sm:w-[21rem] lg:w-[24rem]">
+    <div ref={wrapRef} className="relative w-[min(78vw,19rem)] sm:w-[21rem] lg:w-[24rem]">
       <div className="absolute inset-[16%] rounded-full bg-[#4fd4ee]/18 blur-3xl" />
+      <img src={HOLO_SRC} alt="" className="pointer-events-none w-full opacity-0" />
+      <canvas ref={visRef} className="absolute inset-0 h-full w-full" />
 
-      <motion.div
-        className="relative overflow-hidden"
-        initial={{ clipPath: "inset(100% 0 0 0)" }}
-        animate={{ clipPath: "inset(0% 0 0 0)" }}
-        transition={{ duration: FORM_DURATION, delay: FORM_DELAY, ease: formEase }}
-      >
-        {[0, 1, 2, 3].map((i) => (
-          <motion.div
-            key={`echo-${i}`}
-            className="absolute left-1/2 top-[46%] z-0 h-[70%] w-[58%] -translate-x-1/2 -translate-y-1/2 rounded-[46%] border border-[#7ae7ff]/45"
-            initial={{ scale: 1, opacity: 0 }}
-            animate={{ scale: [1, 1.28], opacity: [0.5, 0] }}
-            transition={{
-              duration: ringSpeed,
-              delay: formed + i * (ringSpeed / 4),
-              repeat: Infinity,
-              ease: "easeOut",
-            }}
-          />
-        ))}
-
-        <motion.div
-          className="absolute left-[8%] right-[8%] top-[4%] bottom-[14%] z-0 rounded-[46%] border border-dashed border-[#4fd4ee]/55"
-          animate={{ rotate: 360 }}
-          transition={{ duration: spinSpeed, delay: formed, repeat: Infinity, ease: "linear" }}
-        />
-        <motion.div
-          className="absolute left-[16%] right-[16%] top-[10%] bottom-[20%] z-0 rounded-[46%] border border-dotted border-[#7ae7ff]/40"
-          animate={{ rotate: -360 }}
-          transition={{ duration: spinSpeed * 1.35, delay: formed, repeat: Infinity, ease: "linear" }}
-        />
-
-        <div className="relative z-[1] drop-shadow-[0_0_22px_rgba(79,212,238,0.85)]">
-          <motion.img
-            src={HOLO_SRC}
-            alt=""
-            className="pointer-events-none h-auto w-full select-none object-contain"
-            animate={{ y: [0, -5, 0] }}
-            transition={{ duration: 4.6, delay: FORM_DELAY + FORM_DURATION, repeat: Infinity, ease: "easeInOut" }}
-          />
-          <motion.div
-            className="absolute left-[12%] right-[12%] h-8 bg-gradient-to-b from-transparent via-[#7ae7ff]/35 to-transparent"
-            animate={{ top: ["10%", "72%", "10%"] }}
-            transition={{
-              duration: speaking ? 2.2 : 4.4,
-              delay: FORM_DELAY + FORM_DURATION,
-              repeat: Infinity,
-              ease: "linear",
-            }}
-          />
-          <div
-            className="absolute left-1/2 top-[35.5%] z-[3] h-[2.75rem] w-[2.75rem] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full sm:h-12 sm:w-12"
-            style={{
-              background:
-                "radial-gradient(circle at 50% 38%, rgba(79,212,238,0.22), rgba(3,18,26,0.94) 68%)",
-              boxShadow: "inset 0 0 0 1px rgba(122,231,255,0.28)",
-            }}
-          >
-            <div
-              className="absolute inset-0 opacity-60"
-              style={{
-                backgroundImage:
-                  "repeating-linear-gradient(to bottom, rgba(79,212,238,0.4) 0px, rgba(79,212,238,0.4) 1px, transparent 1px, transparent 4px), repeating-linear-gradient(to right, rgba(79,212,238,0.28) 0px, rgba(79,212,238,0.28) 1px, transparent 1px, transparent 5px)",
+      {fillDone ? (
+        <>
+          {[0, 1, 2, 3].map((i) => (
+            <motion.div
+              key={`echo-${i}`}
+              className="absolute left-1/2 top-[46%] z-0 h-[70%] w-[58%] -translate-x-1/2 -translate-y-1/2 rounded-[46%] border border-[#7ae7ff]/45"
+              initial={{ scale: 1, opacity: 0.5 }}
+              animate={{ scale: [1, 1.28], opacity: [0.5, 0] }}
+              transition={{
+                duration: ringSpeed,
+                delay: i * (ringSpeed / 4),
+                repeat: Infinity,
+                ease: "easeOut",
               }}
             />
-          </div>
-          <div className="absolute left-1/2 top-[88%] z-[4] -translate-x-1/2 -translate-y-1/2">
-            <motion.svg
-              viewBox="0 0 64 78"
-              className="h-11 w-11 drop-shadow-[0_0_10px_rgba(122,231,255,0.95)] sm:h-12 sm:w-12"
-              animate={{ opacity: [0.85, 1, 0.85], scale: [1, 1.06, 1] }}
-              transition={{ duration: 2.4, delay: formed, repeat: Infinity, ease: "easeInOut" }}
-              aria-hidden
-            >
-              <circle cx="32" cy="28" r="18" fill="#042830" fillOpacity="0.55" stroke="#7ae7ff" strokeWidth="2.2" />
-              <circle cx="32" cy="28" r="18" fill="none" stroke="#e8fbff" strokeWidth="0.7" opacity="0.7" />
-              <circle cx="32" cy="28" r="7.2" fill="#4fd4ee" />
-              <circle cx="32" cy="28" r="2.6" fill="#e8fbff" />
-              <text
-                x="32"
-                y="62"
-                textAnchor="middle"
-                fill="#7ae7ff"
-                fontSize="11"
-                fontFamily="var(--font-orbitron), sans-serif"
-                letterSpacing="3"
-              >
-                CED
-              </text>
-            </motion.svg>
-          </div>
-
-          {speaking
-            ? [0, 1, 2].map((i) => (
-                <motion.div
-                  key={`voice-${i}`}
-                  className="absolute left-1/2 top-[68%] z-[3] h-5 w-[4.25rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#7ae7ff]/70"
-                  initial={{ scale: 0.55, opacity: 0.7 }}
-                  animate={{ scale: [0.55, 1.55], opacity: [0.7, 0] }}
-                  transition={{
-                    duration: 0.7,
-                    delay: i * 0.22,
-                    repeat: Infinity,
-                    ease: "easeOut",
-                  }}
-                />
-              ))
-            : null}
-        </div>
-      </motion.div>
+          ))}
+          <motion.div
+            className="absolute left-[8%] right-[8%] top-[4%] bottom-[14%] z-0 rounded-[46%] border border-dashed border-[#4fd4ee]/55"
+            animate={{ rotate: 360 }}
+            transition={{ duration: spinSpeed, repeat: Infinity, ease: "linear" }}
+          />
+          <motion.div
+            className="absolute left-[16%] right-[16%] top-[10%] bottom-[20%] z-0 rounded-[46%] border border-dotted border-[#7ae7ff]/40"
+            animate={{ rotate: -360 }}
+            transition={{ duration: spinSpeed * 1.35, repeat: Infinity, ease: "linear" }}
+          />
+        </>
+      ) : null}
 
       <motion.div
-        className="pointer-events-none absolute left-[6%] right-[6%] z-[6] h-12 -translate-y-1/2 bg-gradient-to-t from-[#7ae7ff] via-[#7ae7ff]/55 to-transparent shadow-[0_0_22px_rgba(122,231,255,0.95)]"
-        initial={{ top: "100%", opacity: 1 }}
-        animate={{ top: "0%", opacity: [1, 1, 0] }}
-        transition={{
-          duration: FORM_DURATION,
-          delay: FORM_DELAY,
-          ease: formEase,
-          opacity: { duration: FORM_DURATION, delay: FORM_DELAY, times: [0, 0.88, 1] },
-        }}
-      />
+        className="absolute left-1/2 top-[88%] z-[4] -translate-x-1/2 -translate-y-1/2"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.55, duration: 0.45 }}
+      >
+        <motion.svg
+          viewBox="0 0 64 78"
+          className="h-11 w-11 drop-shadow-[0_0_10px_rgba(122,231,255,0.95)] sm:h-12 sm:w-12"
+          animate={{ opacity: [0.85, 1, 0.85], scale: [1, 1.06, 1] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+          aria-hidden
+        >
+          <circle cx="32" cy="28" r="18" fill="#042830" fillOpacity="0.55" stroke="#7ae7ff" strokeWidth="2.2" />
+          <circle cx="32" cy="28" r="18" fill="none" stroke="#e8fbff" strokeWidth="0.7" opacity="0.7" />
+          <circle cx="32" cy="28" r="7.2" fill="#4fd4ee" />
+          <circle cx="32" cy="28" r="2.6" fill="#e8fbff" />
+          <text
+            x="32"
+            y="62"
+            textAnchor="middle"
+            fill="#7ae7ff"
+            fontSize="11"
+            fontFamily="var(--font-orbitron), sans-serif"
+            letterSpacing="3"
+          >
+            CED
+          </text>
+        </motion.svg>
+      </motion.div>
+
+      {speaking
+        ? [0, 1, 2].map((i) => (
+            <motion.div
+              key={`voice-${i}`}
+              className="absolute left-1/2 top-[68%] z-[3] h-5 w-[4.25rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#7ae7ff]/70"
+              initial={{ scale: 0.55, opacity: 0.7 }}
+              animate={{ scale: [0.55, 1.55], opacity: [0.7, 0] }}
+              transition={{
+                duration: 0.7,
+                delay: i * 0.22,
+                repeat: Infinity,
+                ease: "easeOut",
+              }}
+            />
+          ))
+        : null}
     </div>
   );
 }
+
+/** Partículas desde ESCUCHAR rellenan el rostro de abajo hacia arriba. */
 export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const faceRef = useRef<HTMLDivElement>(null);
   const sparksRef = useRef<Spark[]>([]);
+  const stampsRef = useRef<Stamp[]>([]);
+  const pointsRef = useRef<Pt[]>([]);
+  const idxRef = useRef(0);
   const activeRef = useRef(active);
+  const fillDoneRef = useRef(false);
+  const [fillDone, setFillDone] = useState(false);
 
   useEffect(() => {
     activeRef.current = active;
+    if (!active) {
+      stampsRef.current = [];
+      idxRef.current = 0;
+      sparksRef.current = [];
+      fillDoneRef.current = false;
+      setFillDone(false);
+    }
   }, [active]);
+
+  useEffect(() => {
+    const img = new Image();
+    img.src = HOLO_SRC;
+    img.onload = () => {
+      pointsRef.current = sampleSilhouette(img);
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -195,7 +318,7 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
 
     let raf = 0;
     let lastSpawn = 0;
-    let burstLeft = 0;
+    let startedAt = 0;
     let armed = true;
 
     const resize = () => {
@@ -208,36 +331,49 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
 
-    const origins = () => {
+    const faceTarget = (pt: Pt) => {
       const root = wrap.getBoundingClientRect();
-      const btn = document.querySelector<HTMLElement>("[data-ced-listen]");
       const face = faceRef.current?.getBoundingClientRect();
-      const ox = btn ? btn.getBoundingClientRect().left + btn.offsetWidth / 2 - root.left : root.width - 48;
-      const oy = btn ? btn.getBoundingClientRect().top + btn.offsetHeight / 2 - root.top : root.height * 0.62;
-      const tx = face ? face.left + face.width / 2 - root.left : root.width * 0.38;
-      const ty = face ? face.top + face.height * 0.42 - root.top : root.height * 0.42;
-      return { ox, oy, tx, ty };
+      if (!face) {
+        return { tx: root.width * 0.38, ty: root.height * 0.55, nx: pt.x, ny: pt.y };
+      }
+      return {
+        tx: face.left - root.left + pt.x * face.width,
+        ty: face.top - root.top + pt.y * face.height,
+        nx: pt.x,
+        ny: pt.y,
+      };
     };
 
     const tick = (now: number) => {
       const r = wrap.getBoundingClientRect();
       ctx.clearRect(0, 0, r.width, r.height);
-      const { ox, oy, tx, ty } = origins();
       const on = activeRef.current;
+      const btn = document.querySelector<HTMLElement>("[data-ced-listen]");
+      const ox = btn ? btn.getBoundingClientRect().left + btn.offsetWidth / 2 - wrap.getBoundingClientRect().left : r.width - 48;
+      const oy = btn ? btn.getBoundingClientRect().top + btn.offsetHeight / 2 - wrap.getBoundingClientRect().top : r.height * 0.62;
 
       if (!on) {
-        burstLeft = 0;
         armed = true;
+        startedAt = 0;
       } else if (armed) {
         armed = false;
-        burstLeft = 42;
+        startedAt = now;
+        idxRef.current = 0;
+        stampsRef.current = [];
       }
 
-      if (on && burstLeft > 0 && now - lastSpawn > 52) {
+      const pts = pointsRef.current;
+      const filling = on && startedAt > 0 && now - startedAt < FILL_MS + 900;
+      if (filling && now - lastSpawn > 38 && idxRef.current < pts.length) {
         lastSpawn = now;
-        const n = Math.min(3, burstLeft);
-        for (let i = 0; i < n; i += 1) sparksRef.current.push(spawnSpark(ox, oy, tx, ty));
-        burstLeft -= n;
+        const n = Math.min(6, pts.length - idxRef.current);
+        for (let i = 0; i < n; i += 1) {
+          const pt = pts[idxRef.current];
+          idxRef.current += 1;
+          const t = faceTarget(pt);
+          sparksRef.current.push(spawnSpark(ox, oy, t.tx, t.ty, t.nx, t.ny));
+        }
       }
 
       const next: Spark[] = [];
@@ -253,11 +389,15 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
         const wave = Math.sin(u * 9 + p.phase) * p.amp * (1 - u);
         const x = px + (-dy / len) * wave;
         const y = py + (dx / len) * wave;
+        if (u >= 1) {
+          stampsRef.current.push({ nx: p.nx, ny: p.ny, r: 18 + Math.random() * 10 });
+          continue;
+        }
         p.life = on ? 1 - u : p.life - 0.06;
-        if (p.life <= 0 || u >= 1) continue;
+        if (p.life <= 0) continue;
         next.push(p);
         ctx.beginPath();
-        ctx.fillStyle = `rgba(180, 245, 255, ${0.45 + p.life * 0.55})`;
+        ctx.fillStyle = `rgba(180, 245, 255, ${0.5 + p.life * 0.5})`;
         ctx.shadowColor = "#7ae7ff";
         ctx.shadowBlur = 14;
         ctx.arc(x, y, p.size + 0.8, 0, Math.PI * 2);
@@ -265,6 +405,13 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
       }
       sparksRef.current = next;
       ctx.shadowBlur = 0;
+
+      if (on && startedAt > 0 && now - startedAt > FILL_MS && next.length === 0) {
+        if (!fillDoneRef.current) {
+          fillDoneRef.current = true;
+          setFillDone(true);
+        }
+      }
       raf = requestAnimationFrame(tick);
     };
 
@@ -297,7 +444,7 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
               transition={{ duration: 0.25 }}
               className="-translate-y-[6%]"
             >
-              <HoloFace speaking={speaking} />
+              <HoloFace speaking={speaking} active={active} stampsRef={stampsRef} fillDone={fillDone} />
             </motion.div>
           ) : null}
         </AnimatePresence>
