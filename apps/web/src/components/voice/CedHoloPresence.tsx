@@ -39,53 +39,60 @@ function spawnSpark(ox: number, oy: number, tx: number, ty: number): Spark {
 }
 
 function HoloFace({ speaking }: { speaking: boolean }) {
-  const mouthRef = useRef<HTMLDivElement>(null);
-  const glowRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    let raf = 0;
-    let t = 0;
-    const tick = () => {
-      t += 0.045;
-      const talk = speaking
-        ? 0.1 +
-          Math.abs(Math.sin(t * 11.2)) * 0.32 +
-          Math.abs(Math.sin(t * 23.7 + 0.4)) * 0.22
-        : 0.03 + Math.sin(t * 1.4) * 0.012;
-      if (mouthRef.current) {
-        mouthRef.current.style.transform = `scaleY(${1 + talk * 0.42})`;
-      }
-      if (glowRef.current) {
-        glowRef.current.style.opacity = String(0.05 + talk * 0.42);
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [speaking]);
+  const ringSpeed = speaking ? 1.35 : 2.8;
+  const spinSpeed = speaking ? 9 : 22;
 
   return (
     <div className="relative w-[min(78vw,19rem)] sm:w-[21rem] lg:w-[24rem]">
-      <div className="absolute inset-[18%] rounded-full bg-[#4fd4ee]/20 blur-3xl" />
-      <div className="relative drop-shadow-[0_0_22px_rgba(79,212,238,0.85)]">
-        <img
+      <div className="absolute inset-[16%] rounded-full bg-[#4fd4ee]/18 blur-3xl" />
+
+      {[0, 1, 2, 3].map((i) => (
+        <motion.div
+          key={`echo-${i}`}
+          className="absolute left-1/2 top-[46%] z-0 h-[70%] w-[58%] -translate-x-1/2 -translate-y-1/2 rounded-[46%] border border-[#7ae7ff]/45"
+          initial={{ scale: 1, opacity: 0.5 }}
+          animate={{ scale: [1, 1.28], opacity: [0.5, 0] }}
+          transition={{
+            duration: ringSpeed,
+            delay: i * (ringSpeed / 4),
+            repeat: Infinity,
+            ease: "easeOut",
+          }}
+        />
+      ))}
+
+      <motion.div
+        className="absolute left-[8%] right-[8%] top-[4%] bottom-[14%] z-0 rounded-[46%] border border-dashed border-[#4fd4ee]/55"
+        animate={{ rotate: 360 }}
+        transition={{ duration: spinSpeed, repeat: Infinity, ease: "linear" }}
+      />
+      <motion.div
+        className="absolute left-[16%] right-[16%] top-[10%] bottom-[20%] z-0 rounded-[46%] border border-dotted border-[#7ae7ff]/40"
+        animate={{ rotate: -360 }}
+        transition={{ duration: spinSpeed * 1.35, repeat: Infinity, ease: "linear" }}
+      />
+
+      <div className="relative z-[1] drop-shadow-[0_0_22px_rgba(79,212,238,0.85)]">
+        <motion.img
           src={HOLO_SRC}
           alt=""
-          className="pointer-events-none relative z-[1] h-auto w-full select-none object-contain"
+          className="pointer-events-none h-auto w-full select-none object-contain"
+          animate={{ y: [0, -5, 0] }}
+          transition={{ duration: 4.6, repeat: Infinity, ease: "easeInOut" }}
         />
-        <div
-          ref={mouthRef}
-          className="absolute inset-0 z-[2] origin-[50%_56%]"
-          style={{ clipPath: "inset(50% 34% 32% 34%)" }}
-        >
-          <img src={HOLO_SRC} alt="" className="h-auto w-full object-contain" />
-        </div>
-        <div
-          ref={glowRef}
-          className="absolute left-1/2 top-[56%] z-[3] h-7 w-20 -translate-x-1/2 rounded-full bg-[#7ae7ff] blur-md"
+        <motion.div
+          className="absolute left-[12%] right-[12%] h-8 bg-gradient-to-b from-transparent via-[#7ae7ff]/35 to-transparent"
+          animate={{ top: ["10%", "72%", "10%"] }}
+          transition={{ duration: speaking ? 2.2 : 4.4, repeat: Infinity, ease: "linear" }}
         />
         <div className="absolute left-1/2 top-[36%] z-[4] -translate-x-1/2 -translate-y-1/2">
-          <svg viewBox="0 0 64 78" className="h-14 w-14 drop-shadow-[0_0_10px_rgba(122,231,255,0.95)] sm:h-16 sm:w-16" aria-hidden>
+          <motion.svg
+            viewBox="0 0 64 78"
+            className="h-14 w-14 drop-shadow-[0_0_10px_rgba(122,231,255,0.95)] sm:h-16 sm:w-16"
+            animate={{ opacity: [0.85, 1, 0.85], scale: [1, 1.06, 1] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
+            aria-hidden
+          >
             <circle cx="32" cy="28" r="18" fill="#042830" fillOpacity="0.55" stroke="#7ae7ff" strokeWidth="2.2" />
             <circle cx="32" cy="28" r="18" fill="none" stroke="#e8fbff" strokeWidth="0.7" opacity="0.7" />
             <circle cx="32" cy="28" r="7.2" fill="#4fd4ee" />
@@ -101,8 +108,25 @@ function HoloFace({ speaking }: { speaking: boolean }) {
             >
               CED
             </text>
-          </svg>
+          </motion.svg>
         </div>
+
+        {speaking
+          ? [0, 1, 2].map((i) => (
+              <motion.div
+                key={`voice-${i}`}
+                className="absolute left-1/2 top-[56%] z-[3] h-6 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#7ae7ff]/70"
+                initial={{ scale: 0.55, opacity: 0.7 }}
+                animate={{ scale: [0.55, 1.55], opacity: [0.7, 0] }}
+                transition={{
+                  duration: 0.7,
+                  delay: i * 0.22,
+                  repeat: Infinity,
+                  ease: "easeOut",
+                }}
+              />
+            ))
+          : null}
       </div>
     </div>
   );
