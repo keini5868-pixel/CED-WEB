@@ -21,7 +21,7 @@ type Spark = {
   life: number;
 };
 
-const HOLO_SRC = "/voice/holo-presence.png";
+const HOLO_SRC = "/voice/holo-presence.png?v=mesh";
 
 function spawnSpark(ox: number, oy: number, tx: number, ty: number): Spark {
   return {
@@ -65,9 +65,9 @@ function HoloFace({ speaking }: { speaking: boolean }) {
   }, [speaking]);
 
   return (
-    <div className="relative w-[min(72vw,17rem)] sm:w-[19rem] lg:w-[22rem]">
-      <div className="absolute inset-[8%] rounded-full bg-[#4fd4ee]/25 blur-3xl" />
-      <div className="relative drop-shadow-[0_0_24px_rgba(79,212,238,0.9)]">
+    <div className="relative w-[min(78vw,19rem)] sm:w-[21rem] lg:w-[24rem]">
+      <div className="absolute inset-[18%] rounded-full bg-[#4fd4ee]/20 blur-3xl" />
+      <div className="relative drop-shadow-[0_0_22px_rgba(79,212,238,0.85)]">
         <img
           src={HOLO_SRC}
           alt=""
@@ -75,15 +75,34 @@ function HoloFace({ speaking }: { speaking: boolean }) {
         />
         <div
           ref={mouthRef}
-          className="absolute inset-0 z-[2] origin-[50%_58%]"
-          style={{ clipPath: "inset(52% 28% 28% 28%)" }}
+          className="absolute inset-0 z-[2] origin-[50%_56%]"
+          style={{ clipPath: "inset(50% 34% 32% 34%)" }}
         >
           <img src={HOLO_SRC} alt="" className="h-auto w-full object-contain" />
         </div>
         <div
           ref={glowRef}
-          className="absolute left-1/2 top-[58%] z-[3] h-8 w-24 -translate-x-1/2 rounded-full bg-[#7ae7ff] blur-md"
+          className="absolute left-1/2 top-[56%] z-[3] h-7 w-20 -translate-x-1/2 rounded-full bg-[#7ae7ff] blur-md"
         />
+        <div className="absolute left-1/2 top-[36%] z-[4] -translate-x-1/2 -translate-y-1/2">
+          <svg viewBox="0 0 64 78" className="h-14 w-14 drop-shadow-[0_0_10px_rgba(122,231,255,0.95)] sm:h-16 sm:w-16" aria-hidden>
+            <circle cx="32" cy="28" r="18" fill="#042830" fillOpacity="0.55" stroke="#7ae7ff" strokeWidth="2.2" />
+            <circle cx="32" cy="28" r="18" fill="none" stroke="#e8fbff" strokeWidth="0.7" opacity="0.7" />
+            <circle cx="32" cy="28" r="7.2" fill="#4fd4ee" />
+            <circle cx="32" cy="28" r="2.6" fill="#e8fbff" />
+            <text
+              x="32"
+              y="62"
+              textAnchor="middle"
+              fill="#7ae7ff"
+              fontSize="11"
+              fontFamily="var(--font-orbitron), sans-serif"
+              letterSpacing="3"
+            >
+              CED
+            </text>
+          </svg>
+        </div>
       </div>
     </div>
   );
