@@ -27,6 +27,7 @@ import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
 import { CedListenButton } from "@/components/voice/CedListenButton";
+import { CedHoloPresence } from "@/components/voice/CedHoloPresence";
 import {
   CedHistoryPanel,
   CedSettingsModal,
@@ -340,7 +341,8 @@ export function CedVoiceHub() {
 
   return (
     <div className="ced-studio flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden">
-    <div className="grid min-h-0 w-full min-w-0 flex-1 grid-cols-[minmax(0,1fr)_max-content] grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
+    <div className="relative min-h-0 w-full min-w-0 flex-1 overflow-hidden">
+    <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-[minmax(0,1fr)_max-content] grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
           <span
@@ -476,6 +478,11 @@ export function CedVoiceHub() {
       <div
         id={COMPOSER_ACTIONS_ID}
         className="ced-composer-actions flex h-11 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 lg:h-11 lg:px-1.5"
+      />
+    </div>
+      <CedHoloPresence
+        active={voice.micOn && !voice.paused}
+        speaking={voice.orbState === "speaking"}
       />
     </div>
 

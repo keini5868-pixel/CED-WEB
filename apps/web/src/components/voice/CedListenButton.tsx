@@ -28,6 +28,7 @@ export function CedListenButton({
   return (
     <motion.button
       type="button"
+      data-ced-listen
       onClick={onActivate}
       disabled={busy}
       whileTap={{ scale: busy ? 1 : 0.97 }}
