@@ -21,7 +21,7 @@ type Spark = {
   life: number;
 };
 
-const HOLO_SRC = "/voice/holo-presence.png?v=mesh";
+const HOLO_SRC = "/voice/holo-presence.png?v=mesh3";
 const FORM_DELAY = 0.45;
 const FORM_DURATION = 2.15;
 const formEase = [0.22, 0.84, 0.32, 1] as const;
@@ -100,10 +100,26 @@ function HoloFace({ speaking }: { speaking: boolean }) {
               ease: "linear",
             }}
           />
-          <div className="absolute left-1/2 top-[36%] z-[4] -translate-x-1/2 -translate-y-1/2">
+          <div
+            className="absolute left-1/2 top-[35.5%] z-[3] h-[2.75rem] w-[2.75rem] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-full sm:h-12 sm:w-12"
+            style={{
+              background:
+                "radial-gradient(circle at 50% 38%, rgba(79,212,238,0.22), rgba(3,18,26,0.94) 68%)",
+              boxShadow: "inset 0 0 0 1px rgba(122,231,255,0.28)",
+            }}
+          >
+            <div
+              className="absolute inset-0 opacity-60"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(to bottom, rgba(79,212,238,0.4) 0px, rgba(79,212,238,0.4) 1px, transparent 1px, transparent 4px), repeating-linear-gradient(to right, rgba(79,212,238,0.28) 0px, rgba(79,212,238,0.28) 1px, transparent 1px, transparent 5px)",
+              }}
+            />
+          </div>
+          <div className="absolute left-1/2 top-[88%] z-[4] -translate-x-1/2 -translate-y-1/2">
             <motion.svg
               viewBox="0 0 64 78"
-              className="h-14 w-14 drop-shadow-[0_0_10px_rgba(122,231,255,0.95)] sm:h-16 sm:w-16"
+              className="h-11 w-11 drop-shadow-[0_0_10px_rgba(122,231,255,0.95)] sm:h-12 sm:w-12"
               animate={{ opacity: [0.85, 1, 0.85], scale: [1, 1.06, 1] }}
               transition={{ duration: 2.4, delay: formed, repeat: Infinity, ease: "easeInOut" }}
               aria-hidden
@@ -130,7 +146,7 @@ function HoloFace({ speaking }: { speaking: boolean }) {
             ? [0, 1, 2].map((i) => (
                 <motion.div
                   key={`voice-${i}`}
-                  className="absolute left-1/2 top-[56%] z-[3] h-6 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#7ae7ff]/70"
+                  className="absolute left-1/2 top-[68%] z-[3] h-5 w-[4.25rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#7ae7ff]/70"
                   initial={{ scale: 0.55, opacity: 0.7 }}
                   animate={{ scale: [0.55, 1.55], opacity: [0.7, 0] }}
                   transition={{
