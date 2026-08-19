@@ -481,8 +481,8 @@ export function CedVoiceHub() {
       />
     </div>
       <CedHoloPresence
-        active={voice.micOn && !voice.paused}
-        speaking={voice.orbState === "speaking"}
+        active={voice.micOn || voice.micBusy}
+        speaking={voice.orbState === "speaking" || voice.orbState === "processing"}
       />
     </div>
 

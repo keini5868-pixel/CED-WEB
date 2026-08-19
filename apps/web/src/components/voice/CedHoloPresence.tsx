@@ -31,7 +31,7 @@ function spawnSpark(ox: number, oy: number, tx: number, ty: number): Spark {
     speed: 0.01 + Math.random() * 0.018,
     amp: 10 + Math.random() * 28,
     phase: Math.random() * Math.PI * 2,
-    size: 1.1 + Math.random() * 2.2,
+    size: 2.2 + Math.random() * 3.4,
     life: 1,
   };
 }
@@ -67,7 +67,7 @@ function HoloFace({ speaking }: { speaking: boolean }) {
   return (
     <svg
       viewBox="0 0 200 268"
-      className="h-auto w-[min(42vw,11.5rem)] drop-shadow-[0_0_28px_rgba(79,212,238,0.45)] sm:w-[13.5rem] lg:w-[16.5rem]"
+      className="h-auto w-[min(58vw,14rem)] drop-shadow-[0_0_32px_rgba(79,212,238,0.85)] sm:w-[16rem] lg:w-[18.5rem]"
       aria-hidden
     >
       <defs>
@@ -75,9 +75,9 @@ function HoloFace({ speaking }: { speaking: boolean }) {
           <ellipse cx="100" cy="118" rx="68" ry="90" />
         </clipPath>
         <radialGradient id="ced-holo-skin" cx="50%" cy="38%" r="68%">
-          <stop offset="0%" stopColor="#7ae7ff" stopOpacity="0.22" />
-          <stop offset="55%" stopColor="#0b3a48" stopOpacity="0.55" />
-          <stop offset="100%" stopColor="#031016" stopOpacity="0.9" />
+          <stop offset="0%" stopColor="#9af0ff" stopOpacity="0.55" />
+          <stop offset="45%" stopColor="#1a6a7c" stopOpacity="0.72" />
+          <stop offset="100%" stopColor="#06323c" stopOpacity="0.88" />
         </radialGradient>
         <linearGradient id="ced-holo-scan" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="#4fd4ee" stopOpacity="0" />
@@ -86,8 +86,9 @@ function HoloFace({ speaking }: { speaking: boolean }) {
         </linearGradient>
       </defs>
 
-      <ellipse cx="100" cy="118" rx="74" ry="96" fill="none" stroke="#4fd4ee" strokeOpacity="0.28" strokeWidth="1.2" />
-      <ellipse cx="100" cy="118" rx="68" ry="90" fill="url(#ced-holo-skin)" stroke="#4fd4ee" strokeWidth="1.4" />
+      <ellipse cx="100" cy="118" rx="76" ry="98" fill="#4fd4ee" fillOpacity="0.12" />
+      <ellipse cx="100" cy="118" rx="74" ry="96" fill="none" stroke="#7ae7ff" strokeOpacity="0.7" strokeWidth="2" />
+      <ellipse cx="100" cy="118" rx="68" ry="90" fill="url(#ced-holo-skin)" stroke="#4fd4ee" strokeWidth="2" />
 
       <g clipPath="url(#ced-holo-head)" opacity="0.55">
         {Array.from({ length: 14 }, (_, i) => (
@@ -259,10 +260,10 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
         if (p.life <= 0 || u >= 1) continue;
         next.push(p);
         ctx.beginPath();
-        ctx.fillStyle = `rgba(122, 231, 255, ${0.18 + p.life * 0.7})`;
-        ctx.shadowColor = "#4fd4ee";
-        ctx.shadowBlur = 8;
-        ctx.arc(x, y, p.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(180, 245, 255, ${0.45 + p.life * 0.55})`;
+        ctx.shadowColor = "#7ae7ff";
+        ctx.shadowBlur = 14;
+        ctx.arc(x, y, p.size + 0.8, 0, Math.PI * 2);
         ctx.fill();
       }
       sparksRef.current = next;
@@ -283,31 +284,26 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
   return (
     <div
       ref={wrapRef}
-      className="pointer-events-none absolute inset-0 z-20 overflow-hidden"
+      className="pointer-events-none absolute inset-0 z-[80] h-full w-full overflow-hidden"
       aria-hidden
     >
       <canvas ref={canvasRef} className="absolute inset-0" />
-      <div className="absolute inset-0 grid grid-cols-[minmax(0,1fr)_max-content] grid-rows-[minmax(0,1fr)_auto]">
-        <div className="flex items-center justify-center">
-          <AnimatePresence>
-            {active ? (
-              <motion.div
-                ref={faceRef}
-                key="ced-holo-face"
-                initial={{ opacity: 0, scale: 0.72, filter: "blur(10px)" }}
-                animate={{ opacity: 0.92, scale: 1, filter: "blur(0px)" }}
-                exit={{ opacity: 0, scale: 0.86, filter: "blur(8px)" }}
-                transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
-                className="translate-y-[-6%] mix-blend-screen"
-              >
-                <HoloFace speaking={speaking} />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
-        <div />
-        <div />
-        <div />
+      <div className="absolute inset-0 flex items-center justify-center pr-[6.5rem] sm:pr-[8rem] lg:pr-[min(15.5rem,28vw)]">
+        <AnimatePresence>
+          {active ? (
+            <motion.div
+              ref={faceRef}
+              key="ced-holo-face"
+              initial={{ opacity: 0, scale: 0.78 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="-translate-y-[8%]"
+            >
+              <HoloFace speaking={speaking} />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
       </div>
     </div>
   );
