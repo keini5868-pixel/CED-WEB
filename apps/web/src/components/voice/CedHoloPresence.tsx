@@ -27,7 +27,7 @@ type Stamp = { nx: number; ny: number; r: number };
 
 type Pt = { x: number; y: number };
 
-const HOLO_SRC = "/voice/holo-presence.png?v=mesh4";
+const HOLO_SRC = "/voice/holo-presence.png?v=mesh5";
 const FILL_MS = 2400;
 
 function spawnSpark(
