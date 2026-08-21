@@ -68,7 +68,8 @@ function sampleSilhouette(img: HTMLImageElement): Pt[] {
   const step = 5;
   for (let y = 0; y < h; y += step) {
     for (let x = 0; x < w; x += step) {
-      if (data[(y * w + x) * 4 + 3] > 48) {
+      const alpha = data[(y * w + x) * 4 + 3] ?? 0;
+      if (alpha > 48) {
         raw.push({ x: x / w, y: y / h });
       }
     }
@@ -78,7 +79,8 @@ function sampleSilhouette(img: HTMLImageElement): Pt[] {
   if (raw.length <= n) return raw;
   const out: Pt[] = [];
   for (let i = 0; i < n; i += 1) {
-    out.push(raw[Math.floor((i / n) * raw.length)]);
+    const pt = raw[Math.floor((i / n) * raw.length)];
+    if (pt) out.push(pt);
   }
   return out;
 }
@@ -151,6 +153,7 @@ function HoloFace({
       }
       for (let i = stampedRef.current; i < stamps.length; i += 1) {
         const s = stamps[i];
+        if (!s) continue;
         const x = s.nx * w;
         const y = s.ny * h;
         const rad = s.r * (w / Math.max(r.width, 1));
@@ -371,6 +374,7 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
         for (let i = 0; i < n; i += 1) {
           const pt = pts[idxRef.current];
           idxRef.current += 1;
+          if (!pt) continue;
           const t = faceTarget(pt);
           sparksRef.current.push(spawnSpark(ox, oy, t.tx, t.ty, t.nx, t.ny));
         }
