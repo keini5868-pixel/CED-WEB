@@ -264,12 +264,12 @@ function HoloFace({
         ? [0, 1, 2].map((i) => (
             <motion.div
               key={`voice-${i}`}
-              className="absolute left-1/2 top-[68%] z-[3] h-5 w-[4.25rem] -translate-x-1/2 -translate-y-1/2 rounded-full border border-[#7ae7ff]/70"
-              initial={{ scale: 0.55, opacity: 0.7 }}
-              animate={{ scale: [0.55, 1.55], opacity: [0.7, 0] }}
+              className="absolute left-1/2 top-[57.5%] z-[3] h-2.5 w-11 -translate-x-1/2 -translate-y-1/2 rounded-[999px] border border-[#7ae7ff]/80 shadow-[0_0_10px_rgba(122,231,255,0.55)] sm:h-3 sm:w-12"
+              initial={{ scaleX: 0.75, scaleY: 0.55, opacity: 0.85 }}
+              animate={{ scaleX: [0.75, 1.35], scaleY: [0.55, 1.45], opacity: [0.85, 0] }}
               transition={{
-                duration: 0.7,
-                delay: i * 0.22,
+                duration: 0.55,
+                delay: i * 0.18,
                 repeat: Infinity,
                 ease: "easeOut",
               }}
