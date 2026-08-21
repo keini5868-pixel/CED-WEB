@@ -20,6 +20,9 @@ ANALYZE_VIABILITY_DESCRIPTION = (
     "«análisis de mercado de mi producto/servicio». "
     "PROHIBIDO usar para: generar/editar imagen o flyer, publicar en redes, prospección, "
     "noticias genéricas, «busca en internet», modo avanzado, o solo preguntar un precio suelto. "
+    "PROHIBIDO para FitLine / PM International / oportunidad de franquicia PM en un país "
+    "(México, Colombia, RD, EE.UU., etc.): responde con conocimiento Oportunidades y el "
+    "ángulo de expansión en América — NUNCA ofrezcas ni llames esta tool. "
     "Si pide generar un flyer/imagen → generate_image. Si pide investigar un tema general → search_web."
 )
 
@@ -164,6 +167,8 @@ def voice_prompt_line() -> str:
     return (
         "- Análisis de Producto: solo con «analiza la viabilidad / estudio de mercado "
         "de mi… / qué tan viable es mi…» → analyze_product_viability. "
+        "PROHIBIDO para FitLine/PM o «oportunidad en [país]»: habla del momento de "
+        "crecimiento en Américas / mercados hispanos con la ficha Oportunidades. "
         "NO confundir con generate_image, search_web, prospection ni modo avanzado."
     )
 

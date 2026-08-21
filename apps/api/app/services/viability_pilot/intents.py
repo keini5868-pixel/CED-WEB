@@ -50,6 +50,10 @@ _HARD_EXCLUDE = re.compile(
     r"|busca(?:r)?\s+(?:en\s+)?(?:internet|la\s+web|google)"
     r"|noticias\s+(?:de|hoy|sobre)"
     r"|reproduce|pon(?:me)?\s+(?:un\s+)?(?:video|canci[oó]n)"
+    # FitLine / PM — oportunidad por país no es «Análisis de Producto»
+    r"|fit\s*line|fitline|pm[\s\-]?international|pm[\s\-]?int|"
+    r"oportunidad\s+(?:de\s+)?(?:pm|fitline|franquicia)|"
+    r"franquicia\s+(?:pm|fitline|de\s+pm)"
     r")",
     re.IGNORECASE,
 )

@@ -23,7 +23,7 @@ export function CedListenButton({
       ? paused
         ? "PAUSA"
         : "EN VIVO"
-      : "ESCUCHAR";
+      : "ASISTENTE";
 
   return (
     <motion.button
@@ -32,7 +32,7 @@ export function CedListenButton({
       onClick={onActivate}
       disabled={busy}
       whileTap={{ scale: busy ? 1 : 0.97 }}
-      aria-label={busy ? "Conectando asistente de voz" : active ? "Detener voz" : "Escuchar"}
+      aria-label={busy ? "Conectando asistente de voz" : active ? "Detener voz" : "Activar asistente"}
       className={[
         "flex w-[3.75rem] flex-col items-center gap-0.5 rounded-xl border px-1 py-1 transition lg:w-[5.25rem] lg:gap-1 lg:px-2 lg:py-2",
         busy

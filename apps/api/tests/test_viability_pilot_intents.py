@@ -32,6 +32,10 @@ VIABILITY_NO_COLLISIONS = [
     "Cuánto cuesta el iPhone 16",  # precio suelto → search, no viabilidad
     "Analiza esta imagen",  # visión genérica
     "Investiga el mercado de café",  # advanced/research sin phrasing de viabilidad
+    "Cómo está la oportunidad de PM en México",
+    "Vale la pena FitLine en Colombia",
+    "Análisis de mercado de la franquicia PM International en República Dominicana",
+    "Qué tan viable es FitLine en mi país",
 ]
 
 
