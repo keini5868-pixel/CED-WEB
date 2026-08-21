@@ -60,7 +60,6 @@ export function RegisterForm() {
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const refInput = urlRef;
-  const [pmPartnerId, setPmPartnerId] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -93,7 +92,6 @@ export function RegisterForm() {
           next: googleNext,
           ...(offer ? { offer } : {}),
           ...(refInput ? { ref: refInput } : {}),
-          ...(pmPartnerId.trim() ? { pm_partner_id: pmPartnerId.trim() } : {}),
         }),
       });
       let data: unknown = null;
@@ -181,17 +179,6 @@ export function RegisterForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
         />
-        <CedInput
-          label="ID de socio PM"
-          name="pm_partner_id"
-          value={pmPartnerId}
-          onChange={(e) => setPmPartnerId(e.target.value)}
-          placeholder="El ID de socio de PM International"
-        />
-        <p className="-mt-2 text-[11px] text-cyan-600">
-          El ID que te da PM International al entrar (Partner Area). No es el ID
-          de CED.
-        </p>
         <CedInput
           label="Contraseña"
           type="password"

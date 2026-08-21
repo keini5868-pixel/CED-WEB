@@ -31,6 +31,7 @@ Reglas de tools (schemas definen nombre/params — no inventes tools):
 - Lecturas: clima→get_environment; hechos/noticias→search_web; finanzas→read_finances.
 - FitLine / PM International / Activize / Restorate / PowerCocktail / Basics u otros
   productos PM: responde YA con conocimiento Oportunidades del system prompt.
+  REGLA FIJA: «PM» / «PM Internacional» = PM-International AG (FitLine). Nunca Project Management.
   PROHIBIDO search_web y PROHIBIDO decir «investigando» / «consultando internet».
   Enlace PM / «abre OPPS» → open_opportunities (nunca pegues el URL). Tras abrir: verifica que el patrocinador en el registro coincida.
 - Borrar/vaciar finanzas o historial → send_to_trash. Un «sí» no basta.
@@ -171,7 +172,7 @@ RESUME_YOUTUBE_DESCRIPTION = (
 CLOSE_YOUTUBE_DESCRIPTION = "Cierra el reproductor de YouTube."
 
 GENERATE_IMAGE_DESCRIPTION = (
-    "Genera imagen SOLO si pidió crear imagen/foto. No por mencionar una imagen."
+    "Genera imagen si pidió crear imagen/foto o eligió «la primera»."
 )
 GENERAR_PDF_DESCRIPTION = (
     "Genera PDF (título/contenido). Di el resultado tal cual — NUNCA confirmes sin éxito."
@@ -946,7 +947,7 @@ def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, An
         build_consult_advanced_tool(api_public_url=api_public_url),
         build_deactivate_advanced_mode_tool(api_public_url=api_public_url),
     ]
-    # Viabilidad — kill-switch VIABILITY_MODULE_ENABLED (default ON).
+    # Análisis de Producto — kill-switch VIABILITY_MODULE_ENABLED (default ON).
     try:
         from app.services.viability_pilot.voice_tool import (
             build_analyze_product_viability_tool,
@@ -1175,6 +1176,26 @@ def _latest_user_utterance(payload: dict[str, Any]) -> str:
             elif not lower.startswith("agent:"):
                 return line
     return ""
+
+
+def _transcript_history(payload: dict[str, Any]) -> list[dict[str, str]]:
+    call = payload.get("call") or {}
+    transcript_obj = call.get("transcript_object") or call.get("transcriptObject") or []
+    rows: list[dict[str, str]] = []
+    if not isinstance(transcript_obj, list):
+        return rows
+    for entry in transcript_obj:
+        if not isinstance(entry, dict):
+            continue
+        role = str(entry.get("role") or "").lower()
+        content = str(entry.get("content") or entry.get("text") or "").strip()
+        if not content:
+            continue
+        if role in {"user", "customer"}:
+            rows.append({"role": "user", "content": content})
+        elif role in {"agent", "assistant", "model"}:
+            rows.append({"role": "assistant", "content": content})
+    return rows
 
 
 def resolve_tool_query(payload: dict[str, Any], args: dict[str, Any]) -> str:
@@ -2387,25 +2408,27 @@ async def execute_close_youtube_player_tool(*, user_id: str, payload: dict[str, 
 
 
 async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    from app.services.chat_intents import is_generate_image_intent
+    from app.services.chat_image_generation import (
+        resolve_voice_image_prompt,
+        should_generate_image_from_voice_turn,
+    )
 
     # Preferir utterance crudo (transcript / _user_request) sobre prompt reformulado por Retell LLM.
     raw = str(args.get("_user_request") or args.get("user_text") or "").strip()
     query = resolve_tool_query(payload, args)
     llm_prompt = str(args.get("prompt") or "").strip()
     user_text = raw or query
-    from app.services.chat_image_generation import should_take_direct_image_path
+    history = _transcript_history(payload)
 
-    if not user_text or not should_take_direct_image_path(user_text, None):
+    if not user_text or not should_generate_image_from_voice_turn(
+        user_text, llm_prompt, history
+    ):
         return {
             "ok": False,
             "spoken": "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
             "error": "image_not_requested",
         }
-    if is_generate_image_intent(user_text):
-        prompt = user_text
-    else:
-        prompt = query or llm_prompt or user_text
+    prompt = resolve_voice_image_prompt(user_text, llm_prompt, history)
     quality = str(args.get("quality") or "auto").strip() or "auto"
     call_id = _extract_call_id(payload)
     return await _execute_native_voice_alias_tool(
@@ -2418,6 +2441,7 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
             "quality": quality,
             "call_id": call_id,
             "_user_request": raw or query or prompt,
+            "_history": history,
         },
     )
 
