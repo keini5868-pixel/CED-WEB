@@ -133,6 +133,23 @@ def price_id_for_recharge(amount_usd: float, settings: Settings | None = None) -
     return mapping.get(amount) or None
 
 
+def _apply_wallet_checkout_params(params: dict[str, Any]) -> dict[str, Any]:
+    """Evita el bloqueo de Apple Pay: «actualiza el domicilio de facturación».
+
+    Si Checkout pide dirección y el Customer de Stripe ya existe (a menudo sin
+    calle/CP), Wallet no puede completar el pago. `auto` solo pide dirección
+    cuando hace falta (impuestos) y `customer_update` deja que Apple Pay
+    rellene nombre y domicilio en el Customer.
+    """
+    params["billing_address_collection"] = "auto"
+    if params.get("customer"):
+        params["customer_update"] = {
+            "address": "auto",
+            "name": "auto",
+        }
+    return params
+
+
 def founding_slots_available(settings: Settings | None = None) -> tuple[int, int]:
     s = settings or get_settings()
     used, max_slots = supabase_db.get_founding_slots()
@@ -177,6 +194,7 @@ def create_subscription_checkout(user_id: str, email: str, plan_id: str) -> dict
         params["customer"] = customer_id
     elif email:
         params["customer_email"] = email
+    _apply_wallet_checkout_params(params)
 
     session = stripe.checkout.Session.create(**params)
     if not session.url:
@@ -255,6 +273,7 @@ def create_video_edit_token_checkout(
         params["customer"] = customer_id
     elif email:
         params["customer_email"] = email
+    _apply_wallet_checkout_params(params)
 
     session = stripe.checkout.Session.create(**params)
     if not session.url:
@@ -310,6 +329,7 @@ def create_recharge_checkout(user_id: str, email: str, amount_usd: float) -> dic
         params["customer"] = customer_id
     elif email:
         params["customer_email"] = email
+    _apply_wallet_checkout_params(params)
 
     session = stripe.checkout.Session.create(**params)
     if not session.url:
