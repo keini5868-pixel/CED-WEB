@@ -1630,6 +1630,167 @@ def update_video_edit_job(job_id: str, patch: dict) -> None:
         logger.exception("[DB] update_video_edit_job failed")
 
 
+def get_whatsapp_account(user_id: str) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        result = (
+            client.table("whatsapp_accounts")
+            .select("*")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def get_whatsapp_account_by_phone_number_id(
+    phone_number_id: str,
+) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        result = (
+            client.table("whatsapp_accounts")
+            .select("*")
+            .eq("phone_number_id", phone_number_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def upsert_whatsapp_account(user_id: str, data: dict[str, Any]) -> dict[str, Any]:
+    client = _client()
+    row = {"user_id": user_id, **data, "updated_at": datetime.now(timezone.utc).isoformat()}
+    result = client.table("whatsapp_accounts").upsert(row, on_conflict="user_id").execute()
+    return (result.data or [row])[0]
+
+
+def delete_whatsapp_account(user_id: str) -> None:
+    try:
+        client = _client()
+        client.table("whatsapp_accounts").delete().eq("user_id", user_id).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] delete_whatsapp_account failed")
+
+
+def list_whatsapp_flows(user_id: str) -> list[dict[str, Any]]:
+    try:
+        client = _client()
+        result = (
+            client.table("whatsapp_flows")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("priority")
+            .execute()
+        )
+        return result.data or []
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def insert_whatsapp_flow(user_id: str, data: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        row = {"user_id": user_id, **data}
+        result = client.table("whatsapp_flows").insert(row).execute()
+        rows = result.data or []
+        return rows[0] if rows else row
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] insert_whatsapp_flow failed")
+        return None
+
+
+def update_whatsapp_flow(
+    user_id: str, flow_id: str, patch: dict[str, Any]
+) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        patch = {**patch, "updated_at": datetime.now(timezone.utc).isoformat()}
+        result = (
+            client.table("whatsapp_flows")
+            .update(patch)
+            .eq("id", flow_id)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] update_whatsapp_flow failed")
+        return None
+
+
+def delete_whatsapp_flow(user_id: str, flow_id: str) -> None:
+    try:
+        client = _client()
+        client.table("whatsapp_flows").delete().eq("id", flow_id).eq("user_id", user_id).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] delete_whatsapp_flow failed")
+
+
+def get_whatsapp_contact(user_id: str, wa_from: str) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        result = (
+            client.table("whatsapp_contacts")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("wa_from", wa_from)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def upsert_whatsapp_contact(user_id: str, wa_from: str, data: dict[str, Any]) -> None:
+    try:
+        client = _client()
+        row = {
+            "user_id": user_id,
+            "wa_from": wa_from,
+            **data,
+        }
+        client.table("whatsapp_contacts").upsert(row, on_conflict="user_id,wa_from").execute()
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] upsert_whatsapp_contact failed")
+
+
+def insert_whatsapp_message(row: dict[str, Any]) -> bool:
+    try:
+        client = _client()
+        client.table("whatsapp_messages").insert(row).execute()
+        return True
+    except Exception:  # noqa: BLE001
+        # Duplicado wamid u otro — no reventar el webhook
+        logger.warning("[DB] insert_whatsapp_message skipped: %s", row.get("wamid"))
+        return False
+
+
+def list_whatsapp_messages(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
+    try:
+        client = _client()
+        result = (
+            client.table("whatsapp_messages")
+            .select("id, direction, wa_from, wa_to, body, flow_id, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception:  # noqa: BLE001
+        return []
+
+
 def get_video_edit_job(job_id: str, user_id: str | None = None) -> dict | None:
     try:
         client = _client()

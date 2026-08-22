@@ -47,6 +47,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
       items={[
         { id: "plans", label: "Planes", href: "/dashboard/plans" },
         { id: "account", label: "Cuentas", href: ACCOUNT_PATH },
+        { id: "whatsapp", label: "WhatsApp", href: "/dashboard/whatsapp" },
         { id: "history", label: "Historial", href: "/historial" },
         { id: "media", label: "Imágenes y PDF", href: "/historial?tab=archivos" },
         { id: "trash", label: "Papelera", href: "/historial?tab=papelera" },

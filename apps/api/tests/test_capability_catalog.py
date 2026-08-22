@@ -28,7 +28,7 @@ def test_capability_list_is_catalog_not_publish_or_pdf():
     assert not is_pdf_intent(CAPABILITY_LIST_MSG)
     reply = try_capability_catalog_reply(CAPABILITY_LIST_MSG)
     assert reply is not None
-    assert "WhatsApp" not in reply
+    assert "WhatsApp" in reply
     assert "YouTube" in reply
     assert "Publicación en Facebook" in reply or "Facebook" in reply
 
@@ -40,7 +40,7 @@ def test_real_publish_still_detected():
 
 
 def test_catalog_reply_is_factual():
-    assert "WhatsApp" not in CED_CAPABILITY_CATALOG_REPLY
+    assert "WhatsApp" in CED_CAPABILITY_CATALOG_REPLY
     assert "Modo avanzado" in CED_CAPABILITY_CATALOG_REPLY
     assert "PDF" in CED_CAPABILITY_CATALOG_REPLY
     assert "YouTube" in CED_CAPABILITY_CATALOG_REPLY
@@ -72,7 +72,8 @@ def test_voice_capabilities_cover_product_gaps():
         "edición",
     ):
         assert needle in low, needle
-    assert "whatsapp" not in low
+    assert "whatsapp" in low
+    assert "dashboard" in low
 
 
 def test_retell_native_prompt_includes_capability_oral_summary():

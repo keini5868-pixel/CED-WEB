@@ -118,6 +118,28 @@ def require_meta_social(user_id: str) -> None:
         )
 
 
+def require_whatsapp(user_id: str) -> None:
+    limits, reason, _ = effective_plan_limits(user_id)
+    if reason == "trial_expired":
+        raise HTTPException(
+            status_code=403,
+            detail="Tu prueba terminó. Elige un plan de pago para WhatsApp.",
+        )
+    if reason == "past_due":
+        raise HTTPException(
+            status_code=403,
+            detail="Hay un pago pendiente. Actualiza tu método de pago para WhatsApp.",
+        )
+    if not limits.meta_social_enabled:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "WhatsApp automático requiere plan Pro, Élite, Founding o Cierre. "
+                f"{PLAN_UPGRADE_HINT}"
+            ),
+        )
+
+
 def chat_message_limit(user_id: str, *, profile: dict | None = None) -> int:
     """Mensajes de chat permitidos hoy (-1 = ilimitado, 0 = bloqueado)."""
     profile = profile if profile is not None else (supabase_db.get_profile(user_id) or {})

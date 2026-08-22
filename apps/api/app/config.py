@@ -121,6 +121,9 @@ class Settings(BaseSettings):
     meta_login_config_id: str = ""
     meta_oauth_scopes: str = ""
     youtube_api_key: str = ""
+    # WhatsApp Cloud API (Embedded Signup + webhook). El verify token se copia en Meta.
+    whatsapp_verify_token: str = ""
+    whatsapp_embedded_signup_config_id: str = ""
 
     super_admin_emails: str = "keini@castillodigital.com"
 
