@@ -71,9 +71,12 @@ export function HudUsageBar({ compact = false }: { compact?: boolean }) {
         <span>
           Voz{balance.voicePoolTrial ? " (prueba)" : ""}:{" "}
           {loaded
-            ? `${balance.used.toFixed(1)} / ${balance.plan}`
+            ? `${balance.used.toFixed(1)} / ${balance.plan.toFixed(0)}`
             : "— / —"}
           {" min"}
+          {loaded && compact && balance.rechargeUsd > 0
+            ? ` · $${balance.rechargeUsd.toFixed(0)}`
+            : ""}
         </span>
         <span
           className={
@@ -106,6 +109,15 @@ export function HudUsageBar({ compact = false }: { compact?: boolean }) {
         {balance.voicePoolTrial
           ? "15 min de voz desde el registro · no se reinician · al agotarlos recarga o elige un plan"
           : "Límite diario del asistente de voz · el chat de texto es independiente"}
+        {loaded && balance.rechargeUsd > 0 ? (
+          <>
+            {" · "}
+            Recarga ${balance.rechargeUsd.toFixed(2)} ≈ {balance.bonusMinutes.toFixed(0)} min extra
+            {balance.planMinutesDaily > 0
+              ? ` (plan ${balance.planMinutesDaily} + recarga)`
+              : ""}
+          </>
+        ) : null}
       </p>
       )}
 

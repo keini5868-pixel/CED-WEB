@@ -28,6 +28,9 @@ export type UsageBalanceState = {
   voiceStack: string | null;
   voiceTransport: string | null;
   voicePoolTrial: boolean;
+  rechargeUsd: number;
+  bonusMinutes: number;
+  planMinutesDaily: number;
 };
 
 type UsageBalanceValue = {
@@ -50,6 +53,9 @@ const EMPTY_BALANCE: UsageBalanceState = {
   voiceStack: null,
   voiceTransport: null,
   voicePoolTrial: false,
+  rechargeUsd: 0,
+  bonusMinutes: 0,
+  planMinutesDaily: 0,
 };
 
 const UsageBalanceContext = createContext<UsageBalanceValue | null>(null);
@@ -84,14 +90,21 @@ function useUsageBalancePoll(
         voice_stack?: string | null;
         voice_transport?: string | null;
         voice_pool_trial?: boolean;
+        recharge_balance_usd?: number;
+        bonus_minutes_from_balance?: number;
+        total_available_minutes?: number;
       };
-      const plan = data.planMinutesDaily ?? data.plan_minutes_daily ?? 0;
+      const planDaily = data.planMinutesDaily ?? data.plan_minutes_daily ?? 0;
+      const total =
+        data.total_available_minutes ??
+        data.totalAvailableMinutes ??
+        planDaily;
       const used = data.usedMinutesToday ?? data.used_minutes_today ?? 0;
       const next: UsageBalanceState = {
         used,
-        plan,
+        plan: total,
         percent:
-          data.usage_percent ?? (plan ? (used / plan) * 100 : 0),
+          data.usage_percent ?? (total ? (used / total) * 100 : 0),
         blocked: Boolean(data.blocked),
         accessDenied: Boolean(data.access_denied),
         accessMessage: data.access_message ?? null,
@@ -107,6 +120,9 @@ function useUsageBalancePoll(
         voicePoolTrial: Boolean(
           (data as { voice_pool_trial?: boolean }).voice_pool_trial,
         ),
+        rechargeUsd: Number(data.recharge_balance_usd ?? 0),
+        bonusMinutes: Number(data.bonus_minutes_from_balance ?? 0),
+        planMinutesDaily: planDaily,
       };
       setBalance(next);
       setLoaded(true);

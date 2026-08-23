@@ -203,8 +203,10 @@ def voice_access_state(user_id: str) -> dict:
             "trial_expired",
             "cierre_trial_expired",
         )
-        pct = (used / plan_minutes * 100) if plan_minutes else (
-            100.0 if voice_blocked and used > 0 else 0.0
+        pct = (
+            (used / total_available * 100) if total_available else (
+                100.0 if voice_blocked and used > 0 else 0.0
+            )
         )
 
         # Preview admin → socio Cierre: stack OpenAI (sin Retell/Jarvis).

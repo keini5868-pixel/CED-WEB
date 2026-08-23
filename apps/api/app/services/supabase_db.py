@@ -667,6 +667,75 @@ def get_recharge_balance_usd(user_id: str) -> float:
     return 0.0
 
 
+def get_recharge_balances_map(user_ids: list[str]) -> dict[str, float]:
+    ids = [str(u) for u in user_ids if u]
+    if not ids:
+        return {}
+    out: dict[str, float] = {i: 0.0 for i in ids}
+    try:
+        client = _client()
+        result = (
+            client.table("recharge_balances")
+            .select("user_id, balance_usd")
+            .in_("user_id", ids)
+            .execute()
+        )
+        for row in result.data or []:
+            uid = str(row.get("user_id") or "")
+            if uid:
+                out[uid] = float(row.get("balance_usd") or 0)
+    except Exception:  # noqa: BLE001
+        logger.warning("[DB] get_recharge_balances_map failed")
+    return out
+
+
+def get_usage_minutes_today_map(user_ids: list[str]) -> dict[str, float]:
+    ids = [str(u) for u in user_ids if u]
+    if not ids:
+        return {}
+    today = date.today().isoformat()
+    out: dict[str, float] = {i: 0.0 for i in ids}
+    try:
+        client = _client()
+        result = (
+            client.table("usage_logs")
+            .select("user_id, minutes_consumed")
+            .in_("user_id", ids)
+            .eq("usage_date", today)
+            .execute()
+        )
+        for row in result.data or []:
+            uid = str(row.get("user_id") or "")
+            if uid:
+                out[uid] = round(out.get(uid, 0.0) + float(row.get("minutes_consumed") or 0), 2)
+    except Exception:  # noqa: BLE001
+        logger.warning("[DB] get_usage_minutes_today_map failed")
+    return out
+
+
+def get_usage_minutes_total_map(user_ids: list[str]) -> dict[str, float]:
+    """Suma histórica de voz (pool de trial, no solo hoy)."""
+    ids = [str(u) for u in user_ids if u]
+    if not ids:
+        return {}
+    out: dict[str, float] = {i: 0.0 for i in ids}
+    try:
+        client = _client()
+        result = (
+            client.table("usage_logs")
+            .select("user_id, minutes_consumed")
+            .in_("user_id", ids)
+            .execute()
+        )
+        for row in result.data or []:
+            uid = str(row.get("user_id") or "")
+            if uid:
+                out[uid] = round(out.get(uid, 0.0) + float(row.get("minutes_consumed") or 0), 2)
+    except Exception:  # noqa: BLE001
+        logger.warning("[DB] get_usage_minutes_total_map failed")
+    return out
+
+
 def log_admin_audit(
     admin_user_id: str,
     action: str,

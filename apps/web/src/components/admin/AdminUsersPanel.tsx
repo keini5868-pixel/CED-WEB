@@ -143,7 +143,8 @@ export function AdminUsersPanel() {
               <th className="px-3 py-2">Nombre / Email</th>
               <th className="px-3 py-2">Tipo</th>
               <th className="px-3 py-2">Plan</th>
-              <th className="px-3 py-2">Voz</th>
+              <th className="px-3 py-2">Uso / quedan</th>
+              <th className="px-3 py-2">Recarga</th>
               <th className="px-3 py-2">Estado</th>
               <th className="px-3 py-2">Expira</th>
             </tr>
@@ -151,13 +152,13 @@ export function AdminUsersPanel() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-cyan-600">
+                <td colSpan={8} className="px-3 py-6 text-center text-cyan-600">
                   Cargando usuarios…
                 </td>
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-cyan-600">
+                <td colSpan={8} className="px-3 py-6 text-center text-cyan-600">
                   No hay usuarios. Crea el primero con el botón de arriba.
                 </td>
               </tr>
@@ -190,9 +191,42 @@ export function AdminUsersPanel() {
                     ) : null}
                   </td>
                   <td className="px-3 py-2 text-xs text-cyan-400/80">
-                    {u.is_trial
-                      ? `${u.minutes_daily ?? 0} min total`
-                      : `${u.minutes_daily ?? 0} min/día`}
+                    <div>
+                      {(u.used_minutes ?? 0).toFixed(1)} /{" "}
+                      {(u.total_available_minutes ?? u.minutes_daily ?? 0).toFixed(0)} min
+                    </div>
+                    <div className="text-[10px] text-cyan-500/80">
+                      Quedan {(u.remaining_minutes ?? 0).toFixed(0)} min
+                      {u.is_trial ? " (prueba)" : " hoy"}
+                    </div>
+                    {u.bonus_minutes ? (
+                      <div className="text-[10px] text-emerald-400/80">
+                        Plan {u.minutes_daily ?? 0} + recarga{" "}
+                        {u.bonus_minutes.toFixed(0)}
+                      </div>
+                    ) : u.is_trial ? (
+                      <div className="text-[10px] text-sky-400/80">
+                        {u.minutes_daily ?? 0} min de prueba
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-cyan-600">
+                        {u.minutes_daily ?? 0} min/día del plan
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-xs">
+                    {(u.recharge_balance_usd ?? 0) > 0 ? (
+                      <>
+                        <div className="text-emerald-300">
+                          ${Number(u.recharge_balance_usd).toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-emerald-500/80">
+                          ≈ {Number(u.bonus_minutes ?? 0).toFixed(0)} min
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-cyan-700">—</span>
+                    )}
                   </td>
                   <td className={`px-3 py-2 text-xs ${statusBadge(u.status)}`}>
                     {u.status === "active"

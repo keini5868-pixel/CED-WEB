@@ -5,6 +5,7 @@ import { useCallback, useState } from "react";
 
 import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS } from "@ced/types";
 
+import { useUsageBalance } from "@/hooks/useUsageBalance";
 import {
   startRechargeCheckout,
   startSubscriptionCheckout,
@@ -23,6 +24,7 @@ type PlansPanelProps = {
 export function PlansPanel({ compact = false }: PlansPanelProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { balance, loaded } = useUsageBalance();
 
   const subscribe = useCallback(async (planId: string) => {
     setBusy(planId);
@@ -73,6 +75,19 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
         <p className="mt-1 text-xs text-cyan-100/60">
           Desde $10 · crédito proporcional · no expira · desbloquea voz y extras
         </p>
+        {loaded ? (
+          <p className="mt-2 text-sm text-cyan-100">
+            Saldo actual:{" "}
+            <strong className="text-emerald-300">
+              ${balance.rechargeUsd.toFixed(2)}
+            </strong>
+            {balance.bonusMinutes > 0
+              ? ` · ≈ ${balance.bonusMinutes.toFixed(0)} min de voz extra`
+              : ""}
+            {" · "}
+            Cupo: {balance.used.toFixed(1)} / {balance.plan.toFixed(0)} min
+          </p>
+        ) : null}
         <div className="mt-3 flex flex-wrap gap-2">
           {[10, 20, 40, 50, 100].map((amount) => (
             <button

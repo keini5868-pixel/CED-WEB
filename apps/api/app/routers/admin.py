@@ -65,7 +65,7 @@ def reset_my_daily_usage(user_id: str = Depends(require_super_admin)) -> dict:
 @router.get("/users")
 def admin_list_users(
     search: str = Query(default=""),
-    limit: int = Query(default=20, ge=1, le=50),
+    limit: int = Query(default=80, ge=1, le=200),
     _admin_id: str = Depends(require_super_admin),
 ) -> dict:
     try:

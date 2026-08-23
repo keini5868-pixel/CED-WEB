@@ -41,6 +41,11 @@ export type AdminUserRow = {
   trial_ends_at?: string | null;
   period_expires_at?: string | null;
   minutes_daily: number;
+  used_minutes?: number;
+  recharge_balance_usd?: number;
+  bonus_minutes?: number;
+  total_available_minutes?: number;
+  remaining_minutes?: number;
   created_at: string;
   is_founding_member: boolean;
 };
@@ -163,7 +168,9 @@ export async function fetchAdminUsers(
 
 ): Promise<AdminUsersListResult> {
 
-  const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : "";
+  const q = search.trim()
+    ? `?search=${encodeURIComponent(search.trim())}&limit=80`
+    : "?limit=80";
 
   const res = await proxyFetch(`admin/users${q}`, {
     signal: AbortSignal.timeout(15_000),

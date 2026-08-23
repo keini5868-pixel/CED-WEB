@@ -9,7 +9,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.config import get_settings
-from app.domain.plans import PLAN_LABELS, PLAN_PRICES_USD, PlanId, normalize_plan_id, plan_minutes_daily
+from app.domain.plans import (
+    PLAN_LABELS,
+    PLAN_PRICES_USD,
+    PlanId,
+    normalize_plan_id,
+    plan_minutes_daily,
+    recharge_balance_to_bonus_minutes,
+)
 from app.services import supabase_db
 from app.services.email_welcome import send_welcome_email
 
@@ -20,7 +27,7 @@ MAX_CREATIONS_PER_DAY = 10
 EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 _ADMIN_USERS_CACHE: dict[str, Any] | None = None
 _ADMIN_USERS_CACHE_AT: float = 0.0
-_ADMIN_USERS_CACHE_TTL_SEC = 60.0
+_ADMIN_USERS_CACHE_TTL_SEC = 15.0
 
 
 class AdminUserError(ValueError):
@@ -376,7 +383,7 @@ def _plan_display(sub: dict[str, Any] | None) -> dict[str, Any]:
 
 def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
     global _ADMIN_USERS_CACHE, _ADMIN_USERS_CACHE_AT
-    safe_limit = min(max(limit, 1), 50)
+    safe_limit = min(max(limit, 1), 200)
     cache_key = f"{search.strip().lower()}:{safe_limit}"
     now = time.time()
     if (
@@ -407,8 +414,23 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
 
     result = query.execute()
     rows = result.data or []
+    ids = [str(r.get("id") or "") for r in rows if r.get("id")]
+    wallet_map = supabase_db.get_recharge_balances_map(ids)
+    used_today_map = supabase_db.get_usage_minutes_today_map(ids)
     users: list[dict[str, Any]] = []
     active = expiring = trial_count = 0
+
+    trial_ids: list[str] = []
+    for row in rows:
+        subs = row.get("subscriptions") or []
+        sub = subs[0] if isinstance(subs, list) and subs else subs if isinstance(subs, dict) else None
+        if _plan_display(sub if isinstance(sub, dict) else None).get("is_trial"):
+            uid = str(row.get("id") or "")
+            if uid:
+                trial_ids.append(uid)
+    used_trial_map = (
+        supabase_db.get_usage_minutes_total_map(trial_ids) if trial_ids else {}
+    )
 
     for row in rows:
         subs = row.get("subscriptions") or []
@@ -443,6 +465,17 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
         else:
             minutes = (lim or {}).get("minutes_daily") or plan_info["voice_minutes_daily"]
 
+        uid = str(row["id"])
+        used = (
+            used_trial_map.get(uid, 0.0)
+            if plan_info["is_trial"]
+            else used_today_map.get(uid, 0.0)
+        )
+        wallet = wallet_map.get(uid, 0.0)
+        bonus = recharge_balance_to_bonus_minutes(wallet)
+        total_available = round(float(minutes or 0) + bonus, 2)
+        remaining = round(max(0.0, total_available - used), 2)
+
         users.append(
             {
                 "id": row["id"],
@@ -461,6 +494,11 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
                 "trial_ends_at": plan_info["trial_ends_at"],
                 "period_expires_at": plan_info["expires_at"],
                 "minutes_daily": minutes,
+                "used_minutes": round(used, 2),
+                "recharge_balance_usd": round(wallet, 2),
+                "bonus_minutes": bonus,
+                "total_available_minutes": total_available,
+                "remaining_minutes": remaining,
                 "created_at": row.get("created_at"),
                 "is_founding_member": row.get("is_founding_member"),
             }
