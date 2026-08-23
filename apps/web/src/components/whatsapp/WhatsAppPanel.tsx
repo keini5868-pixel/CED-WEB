@@ -137,7 +137,7 @@ export function WhatsAppPanel() {
       }
       if (!cfg.config_id) {
         setError(
-          "Falta WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID en la API. Crea un Facebook Login for Business con producto WhatsApp y pega el config_id en Railway.",
+          "Falta el config_id de WhatsApp Embedded Signup. En developers.facebook.com → tu app (tipo Business) → Facebook Login for Business → Configurations → Create from template → “WhatsApp Embedded Signup Configuration With 60 Expiration Token”. Copia el Configuration ID. En Railway, servicio API (no web), variable WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID. Redeploy y vuelve a Conectar.",
         );
         return;
       }

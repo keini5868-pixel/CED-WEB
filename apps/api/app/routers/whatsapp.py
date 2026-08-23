@@ -117,7 +117,9 @@ def whatsapp_connect_config(user_id: str = Depends(require_user_id)) -> dict:
     require_whatsapp(user_id)
     settings = get_settings()
     app_id = settings.meta_app_id.strip()
-    config_id = settings.whatsapp_embedded_signup_config_id.strip()
+    config_id = settings.whatsapp_embedded_signup_config_id.strip() or (
+        settings.meta_login_config_id.strip()
+    )
     if not app_id:
         raise HTTPException(status_code=503, detail="META_APP_ID no configurado.")
     return {
