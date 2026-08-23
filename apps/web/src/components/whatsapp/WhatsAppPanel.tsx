@@ -211,25 +211,27 @@ export function WhatsAppPanel() {
         return;
       }
       await new Promise<void>((resolve) => {
-        fb.login(
-          async (res) => {
-            const code = res.authResponse?.code;
-            window.removeEventListener("message", onMessage);
-            if (!code && !wabaId) {
-              setError("No se completó el alta de WhatsApp en Meta.");
+        fb.login((res) => {
+          const code = res.authResponse?.code;
+          window.removeEventListener("message", onMessage);
+          void (async () => {
+            try {
+              if (!code && !wabaId) {
+                setError("No se completó el alta de WhatsApp en Meta.");
+                return;
+              }
+              const result = await connectWhatsApp({
+                code: code || undefined,
+                waba_id: wabaId || undefined,
+                phone_number_id: phoneNumberId || undefined,
+              });
+              if (result.error) setError(result.error);
+              await refresh();
+            } finally {
               resolve();
-              return;
             }
-            const result = await connectWhatsApp({
-              code: code || undefined,
-              waba_id: wabaId || undefined,
-              phone_number_id: phoneNumberId || undefined,
-            });
-            if (result.error) setError(result.error);
-            await refresh();
-            resolve();
-          },
-          {
+          })();
+        }, {
             config_id: configId,
             response_type: "code",
             override_default_response_type: true,
