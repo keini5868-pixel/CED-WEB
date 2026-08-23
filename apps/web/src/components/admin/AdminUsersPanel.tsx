@@ -67,6 +67,9 @@ export function AdminUsersPanel() {
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [crediting, setCrediting] = useState<string | null>(null);
+  const [successResult, setSuccessResult] = useState<CreateAdminUserResult | null>(
+    null,
+  );
 
   const load = useCallback(async (q = search) => {
     setLoading(true);
@@ -88,6 +91,8 @@ export function AdminUsersPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const handleSearch = () => void load(search);
 
   const handleCredit = async (user: AdminUserRow) => {
     const ok = window.confirm(
