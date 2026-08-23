@@ -312,18 +312,21 @@ def create_recharge_checkout(user_id: str, email: str, amount_usd: float) -> dic
             }
         ]
 
+    recharge_meta = {
+        "user_id": user_id,
+        "email": (email or "").strip(),
+        "checkout_type": "recharge",
+        "amount_paid_usd": str(paid),
+        "client_balance_usd": str(quote["client_balance_usd"]),
+    }
     params: dict[str, Any] = {
         "mode": "payment",
         "line_items": line_items,
         "success_url": f"{web}/dashboard?billing=recharge_success&amount={paid:.0f}",
         "cancel_url": f"{web}/dashboard?billing=recharge_cancelled",
         "client_reference_id": user_id,
-        "metadata": {
-            "user_id": user_id,
-            "checkout_type": "recharge",
-            "amount_paid_usd": str(paid),
-            "client_balance_usd": str(quote["client_balance_usd"]),
-        },
+        "metadata": recharge_meta,
+        "payment_intent_data": {"metadata": recharge_meta},
     }
     if customer_id:
         params["customer"] = customer_id
@@ -427,6 +430,9 @@ def handle_stripe_event(event: dict[str, Any]) -> None:
 def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
     metadata = session.get("metadata") or {}
     checkout_type = str(metadata.get("checkout_type") or "").strip()
+    pi_obj = session.get("payment_intent")
+    if isinstance(pi_obj, dict):
+        metadata = {**(pi_obj.get("metadata") or {}), **metadata}
     user_id = _resolve_user_id(metadata, session.get("client_reference_id"), session)
     customer_id = session.get("customer")
     mode = str(session.get("mode") or "")

@@ -1272,6 +1272,18 @@ def credit_recharge_balance(
     now = datetime.now(timezone.utc).isoformat()
     try:
         client = _client()
+        pi = (stripe_payment_intent_id or "").strip()
+        if pi:
+            dup = (
+                client.table("recharges")
+                .select("id")
+                .eq("stripe_payment_intent_id", pi)
+                .limit(1)
+                .execute()
+            )
+            if dup.data:
+                logger.info("[DB] recarga ya acreditada pi=%s", pi)
+                return
         current = get_recharge_balance_usd(user_id)
         new_balance = round(current + client_balance_usd, 2)
         client.table("recharge_balances").upsert(
