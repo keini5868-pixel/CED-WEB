@@ -40,34 +40,64 @@ declare global {
   }
 }
 
+function facebookApiVersion(raw: string): string {
+  const v = (raw || "v21.0").trim();
+  return v.startsWith("v") ? v : `v${v}`;
+}
+
 function loadFacebookSdk(appId: string, apiVersion: string): Promise<void> {
+  const version = facebookApiVersion(apiVersion);
+  const init = () => {
+    if (!window.FB) {
+      throw new Error("Facebook SDK no disponible");
+    }
+    window.FB.init({
+      appId,
+      cookie: true,
+      xfbml: false,
+      version,
+    });
+  };
   if (window.FB) {
+    init();
     return Promise.resolve();
   }
   return new Promise((resolve, reject) => {
-    window.fbAsyncInit = () => {
-      window.FB?.init({
-        appId,
-        cookie: true,
-        xfbml: false,
-        version: apiVersion.replace(/^v/, "") ? apiVersion : "v21.0",
-      });
-      resolve();
+    let settled = false;
+    const ok = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        init();
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
     };
-    const existing = document.getElementById("facebook-jssdk");
-    if (existing) {
-      resolve();
-      return;
+    const fail = (message: string) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+    };
+    window.fbAsyncInit = ok;
+    if (!document.getElementById("facebook-jssdk")) {
+      const script = document.createElement("script");
+      script.id = "facebook-jssdk";
+      script.src = "https://connect.facebook.net/en_US/sdk.js";
+      script.async = true;
+      script.onerror = () =>
+        fail(
+          "No se pudo cargar el SDK de Facebook (bloqueo del navegador o red). Desactiva el bloqueador en ced-castillo.com e inténtalo de nuevo.",
+        );
+      document.body.appendChild(script);
     }
-    const script = document.createElement("script");
-    script.id = "facebook-jssdk";
-    script.src = "https://connect.facebook.net/es_LA/sdk.js";
-    script.async = true;
-    script.onerror = () => reject(new Error("No se pudo cargar Facebook SDK"));
-    document.body.appendChild(script);
     window.setTimeout(() => {
-      if (window.FB) resolve();
-    }, 4000);
+      if (window.FB) ok();
+      else
+        fail(
+          "El SDK de Facebook no cargó. En la app de Meta: Facebook Login → Settings → activa Login with the JavaScript SDK y añade ced-castillo.com en Allowed Domains.",
+        );
+    }, 8000);
   });
 }
 
@@ -147,7 +177,8 @@ export function WhatsAppPanel() {
       const onMessage = (event: MessageEvent) => {
         if (
           event.origin !== "https://www.facebook.com" &&
-          event.origin !== "https://web.facebook.com"
+          event.origin !== "https://web.facebook.com" &&
+          !event.origin.endsWith(".facebook.com")
         ) {
           return;
         }
@@ -164,9 +195,22 @@ export function WhatsAppPanel() {
         }
       };
       window.addEventListener("message", onMessage);
-      await loadFacebookSdk(cfg.app_id, cfg.api_version);
+      const appId = cfg.app_id || cfg.app_id;
+      const apiVersion = cfg.api_version || cfg.api_version;
+      const configId = cfg.config_id || cfg.config_id;
+      if (!appId) {
+        setError("META_APP_ID no llegó desde la API. Revísalo en Railway (servicio API).");
+        return;
+      }
+      await loadFacebookSdk(appId, apiVersion);
+      if (!window.FB) {
+        setError(
+          "Facebook SDK no está listo. Añade ced-castillo.com en Allowed Domains for the JavaScript SDK.",
+        );
+        return;
+      }
       await new Promise<void>((resolve) => {
-        window.FB?.login(
+        window.FB.login(
           async (res) => {
             const code = res.authResponse?.code;
             window.removeEventListener("message", onMessage);
@@ -185,7 +229,7 @@ export function WhatsAppPanel() {
             resolve();
           },
           {
-            config_id: cfg.config_id,
+            config_id: configId,
             response_type: "code",
             override_default_response_type: true,
             extras: {
@@ -196,8 +240,12 @@ export function WhatsAppPanel() {
           },
         );
       });
-    } catch {
-      setError("Error al conectar WhatsApp.");
+    } catch (err) {
+      const message =
+        err instanceof Error && err.message.trim()
+          ? err.message
+          : "Error al conectar WhatsApp.";
+      setError(message);
     } finally {
       setBusy(false);
     }
