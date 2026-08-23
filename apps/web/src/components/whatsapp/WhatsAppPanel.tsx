@@ -203,14 +203,15 @@ export function WhatsAppPanel() {
         return;
       }
       await loadFacebookSdk(appId, apiVersion);
-      if (!window.FB) {
+      const fb = window.FB;
+      if (!fb) {
         setError(
           "Facebook SDK no está listo. Añade ced-castillo.com en Allowed Domains for the JavaScript SDK.",
         );
         return;
       }
       await new Promise<void>((resolve) => {
-        window.FB.login(
+        fb.login(
           async (res) => {
             const code = res.authResponse?.code;
             window.removeEventListener("message", onMessage);
