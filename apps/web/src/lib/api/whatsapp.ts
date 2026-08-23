@@ -139,6 +139,62 @@ export async function deleteWhatsAppFlow(id: string): Promise<boolean> {
   return res.ok;
 }
 
+export async function sendWhatsAppText(to: string, body: string): Promise<{ error?: string }> {
+  const res = await proxyFetch("whatsapp/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ to, body }),
+  });
+  const data = await parseApiJson<{ detail?: string }>(res);
+  if (!res.ok) return { error: data.detail || "No se pudo enviar." };
+  return {};
+}
+
+export type WhatsAppTemplate = {
+  name?: string;
+  status?: string;
+  language?: string;
+  category?: string;
+};
+
+export async function fetchWhatsAppTemplates(): Promise<WhatsAppTemplate[]> {
+  const res = await proxyFetch("whatsapp/templates");
+  if (!res.ok) return [];
+  const data = (await res.json()) as { templates?: WhatsAppTemplate[] };
+  return data.templates ?? [];
+}
+
+export async function createWhatsAppTemplate(body: {
+  name: string;
+  language: string;
+  body: string;
+  category: string;
+}): Promise<{ error?: string }> {
+  const res = await proxyFetch("whatsapp/templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await parseApiJson<{ detail?: string }>(res);
+  if (!res.ok) return { error: data.detail || "No se pudo crear la plantilla." };
+  return {};
+}
+
+export async function sendWhatsAppTemplate(body: {
+  to: string;
+  name: string;
+  language: string;
+  body_params?: string[];
+}): Promise<{ error?: string }> {
+  const res = await proxyFetch("whatsapp/templates/send", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await parseApiJson<{ detail?: string }>(res);
+  if (!res.ok) return { error: data.detail || "No se pudo enviar la plantilla." };
+  return {};
+}
 export async function fetchWhatsAppMessages(): Promise<WhatsAppMessage[]> {
   const res = await proxyFetch("whatsapp/messages");
   if (!res.ok) return [];

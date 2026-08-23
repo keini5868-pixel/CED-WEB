@@ -1910,7 +1910,7 @@ def list_whatsapp_messages(user_id: str, *, limit: int = 40) -> list[dict[str, A
         client = _client()
         result = (
             client.table("whatsapp_messages")
-            .select("id, direction, wa_from, wa_to, body, flow_id, created_at")
+            .select("*")
             .eq("user_id", user_id)
             .order("created_at", desc=True)
             .limit(limit)

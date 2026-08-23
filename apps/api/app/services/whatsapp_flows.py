@@ -48,6 +48,22 @@ def match_flow(
 
     for flow in active:
         kind = str(flow.get("trigger_type") or "keyword").lower()
+        if kind in ("ced_ai", "ai"):
+            return flow
+
+    for flow in active:
+        kind = str(flow.get("trigger_type") or "keyword").lower()
         if kind in ("catch_all", "catchall", "default"):
             return flow
     return None
+
+
+def uses_ced_chat(flow: dict[str, Any] | None) -> bool:
+    """True si CED debe responder con el chat (no un texto fijo)."""
+    if not flow:
+        return True
+    kind = str(flow.get("trigger_type") or "").lower()
+    if kind in ("ced_ai", "ai"):
+        return True
+    reply = str(flow.get("reply_text") or "").strip()
+    return reply in ("", "__CED_AI__", "{{ced}}")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import re
 from typing import Any
 
 import httpx
@@ -127,6 +128,109 @@ def send_text_message(
             str(data.get("error", {}).get("message") or "Error enviando WhatsApp.")
         )
     return data if isinstance(data, dict) else {}
+
+
+def _graph_auth_post(path: str, access_token: str, payload: dict[str, Any]) -> dict[str, Any]:
+    url = f"{graph_base()}/{path.lstrip('/')}"
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            res = client.post(
+                url,
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            data = res.json() if res.content else {}
+    except Exception as exc:  # noqa: BLE001
+        raise WhatsAppCloudError("No pude hablar con Graph API de WhatsApp.") from exc
+    if res.status_code >= 400:
+        raise WhatsAppCloudError(
+            str((data.get("error") or {}).get("message") or "Error Graph API WhatsApp.")
+        )
+    return data if isinstance(data, dict) else {}
+
+
+def _graph_auth_get(path: str, access_token: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    url = f"{graph_base()}/{path.lstrip('/')}"
+    q = dict(params or {})
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            res = client.get(
+                url,
+                headers={"Authorization": f"Bearer {access_token}"},
+                params=q,
+            )
+            data = res.json() if res.content else {}
+    except Exception as exc:  # noqa: BLE001
+        raise WhatsAppCloudError("No pude leer Graph API de WhatsApp.") from exc
+    if res.status_code >= 400:
+        raise WhatsAppCloudError(
+            str((data.get("error") or {}).get("message") or "Error Graph API WhatsApp.")
+        )
+    return data if isinstance(data, dict) else {}
+
+
+def list_message_templates(waba_id: str, access_token: str) -> list[dict[str, Any]]:
+    data = _graph_auth_get(
+        f"{waba_id.strip()}/message_templates",
+        access_token,
+        {"limit": 80, "fields": "name,status,language,category,components"},
+    )
+    items = data.get("data")
+    return items if isinstance(items, list) else []
+
+
+def create_message_template(
+    waba_id: str,
+    access_token: str,
+    *,
+    name: str,
+    language: str,
+    body: str,
+    category: str = "UTILITY",
+) -> dict[str, Any]:
+    slug = re.sub(r"[^a-z0-9_]", "_", name.strip().lower())[:512]
+    if not slug:
+        raise WhatsAppCloudError("Nombre de plantilla no válido.")
+    payload = {
+        "name": slug,
+        "language": (language or "es").strip() or "es",
+        "category": (category or "UTILITY").strip().upper(),
+        "components": [{"type": "BODY", "text": body.strip()[:1024]}],
+    }
+    return _graph_auth_post(f"{waba_id.strip()}/message_templates", access_token, payload)
+
+
+def send_template_message(
+    *,
+    phone_number_id: str,
+    access_token: str,
+    to: str,
+    template_name: str,
+    language: str = "es",
+    body_params: list[str] | None = None,
+) -> dict[str, Any]:
+    template: dict[str, Any] = {
+        "name": template_name.strip(),
+        "language": {"code": (language or "es").strip() or "es"},
+    }
+    params = [p.strip() for p in (body_params or []) if str(p).strip()]
+    if params:
+        template["components"] = [
+            {
+                "type": "body",
+                "parameters": [{"type": "text", "text": p[:1024]} for p in params],
+            }
+        ]
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": to,
+        "type": "template",
+        "template": template,
+    }
+    return _graph_auth_post(f"{phone_number_id}/messages", access_token, payload)
 
 
 def inbound_text_events(payload: dict[str, Any]) -> list[dict[str, str]]:

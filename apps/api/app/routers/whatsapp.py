@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -16,9 +18,12 @@ from app.deps.plan_access import require_whatsapp
 from app.services import supabase_db
 from app.services.whatsapp_cloud import (
     WhatsAppCloudError,
+    create_message_template,
     exchange_oauth_code,
     fetch_phone_numbers,
     inbound_text_events,
+    list_message_templates,
+    send_template_message,
     send_text_message,
     subscribe_waba_webhooks,
     verify_webhook_signature,
@@ -27,6 +32,7 @@ from app.services.whatsapp_flows import (
     is_opt_in_message,
     is_stop_message,
     match_flow,
+    uses_ced_chat,
 )
 
 logger = logging.getLogger(__name__)
@@ -51,7 +57,7 @@ class FlowCreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     trigger_type: str = Field(default="keyword", max_length=20)
     keywords: str = Field(default="", max_length=500)
-    reply_text: str = Field(min_length=1, max_length=1000)
+    reply_text: str = Field(default="", max_length=1000)
     enabled: bool = True
     priority: int = Field(default=100, ge=0, le=9999)
 
@@ -65,9 +71,27 @@ class FlowPatchBody(BaseModel):
     priority: int | None = Field(default=None, ge=0, le=9999)
 
 
+def _ensure_ced_ai_flow(user_id: str) -> None:
+    flows = supabase_db.list_whatsapp_flows(user_id)
+    if any(str(f.get("trigger_type") or "").lower() in ("ced_ai", "ai") for f in flows):
+        return
+    supabase_db.insert_whatsapp_flow(
+        user_id,
+        {
+            "name": "CED (chat)",
+            "trigger_type": "ced_ai",
+            "keywords": "",
+            "reply_text": "__CED_AI__",
+            "enabled": True,
+            "priority": 50,
+        },
+    )
+
+
 def _seed_default_flows(user_id: str) -> None:
     existing = supabase_db.list_whatsapp_flows(user_id)
     if existing:
+        _ensure_ced_ai_flow(user_id)
         return
     supabase_db.insert_whatsapp_flow(
         user_id,
@@ -86,13 +110,10 @@ def _seed_default_flows(user_id: str) -> None:
     supabase_db.insert_whatsapp_flow(
         user_id,
         {
-            "name": "Resto de mensajes",
-            "trigger_type": "catch_all",
+            "name": "CED (chat)",
+            "trigger_type": "ced_ai",
             "keywords": "",
-            "reply_text": (
-                "Recibí tu mensaje. En breve te respondemos. "
-                "Escribe STOP si no quieres respuestas automáticas."
-            ),
+            "reply_text": "__CED_AI__",
             "enabled": True,
             "priority": 900,
         },
@@ -198,6 +219,7 @@ def whatsapp_connect(
         },
     )
     _seed_default_flows(user_id)
+    _ensure_ced_ai_flow(user_id)
     return {
         "ok": True,
         "connected": True,
@@ -223,17 +245,25 @@ def list_flows(user_id: str = Depends(require_user_id)) -> dict:
 def create_flow(body: FlowCreateBody, user_id: str = Depends(require_user_id)) -> dict:
     require_whatsapp(user_id)
     kind = body.trigger_type.strip().lower()
-    if kind not in ("keyword", "catch_all", "catchall", "default"):
+    if kind not in ("keyword", "catch_all", "catchall", "default", "ced_ai", "ai"):
         raise HTTPException(status_code=400, detail="Tipo de flujo no válido.")
     if kind == "keyword" and not body.keywords.strip():
         raise HTTPException(status_code=400, detail="Indica al menos una palabra clave.")
+    kind_store = (
+        "ced_ai"
+        if kind in ("ced_ai", "ai")
+        else ("catch_all" if kind in ("catchall", "default") else kind)
+    )
+    reply = body.reply_text.strip() or ("__CED_AI__" if kind_store == "ced_ai" else "")
+    if kind_store != "ced_ai" and not reply:
+        raise HTTPException(status_code=400, detail="Indica el texto de respuesta.")
     row = supabase_db.insert_whatsapp_flow(
         user_id,
         {
             "name": body.name.strip(),
-            "trigger_type": "catch_all" if kind in ("catchall", "default") else kind,
+            "trigger_type": kind_store,
             "keywords": body.keywords.strip(),
-            "reply_text": body.reply_text.strip(),
+            "reply_text": reply,
             "enabled": body.enabled,
             "priority": body.priority,
         },
@@ -285,7 +315,153 @@ def list_messages(
     limit: int = Query(default=40, ge=1, le=100),
 ) -> dict:
     require_whatsapp(user_id)
-    return {"messages": supabase_db.list_whatsapp_messages(user_id, limit=limit)}
+    raw = supabase_db.list_whatsapp_messages(user_id, limit=limit)
+    messages = []
+    for row in raw:
+        messages.append(
+            {
+                "id": row.get("id"),
+                "direction": row.get("direction") or row.get("direction"),
+                "wa_from": row.get("wa_from"),
+                "wa_to": row.get("wa_to"),
+                "body": row.get("body"),
+                "created_at": row.get("created_at"),
+            }
+        )
+    return {"messages": messages}
+
+
+class SendTextBody(BaseModel):
+    to: str = Field(min_length=8, max_length=20)
+    body: str = Field(min_length=1, max_length=4096)
+
+
+class TemplateCreateBody(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    language: str = Field(default="es", max_length=12)
+    body: str = Field(min_length=1, max_length=1024)
+    category: str = Field(default="UTILITY", max_length=20)
+
+
+class TemplateSendBody(BaseModel):
+    to: str = Field(min_length=8, max_length=32)
+    name: str = Field(min_length=1, max_length=80)
+    language: str = Field(default="es", max_length=12)
+    body_params: list[str] = Field(default_factory=list)
+
+
+def _require_account(user_id: str) -> dict[str, Any]:
+    acc = supabase_db.get_whatsapp_account(user_id)
+    if not acc:
+        raise HTTPException(status_code=400, detail="Conecta WhatsApp primero.")
+    return acc
+
+
+def _account_token(acc: dict[str, Any]) -> str:
+    return str(acc.get("access_token") or acc.get("access_token") or "").strip()
+
+
+def _account_phone(acc: dict[str, Any]) -> str:
+    return str(acc.get("display_phone") or acc.get("display_phone") or "")
+
+
+@router.post("/send")
+def send_outbound(body: SendTextBody, user_id: str = Depends(require_user_id)) -> dict:
+    require_whatsapp(user_id)
+    acc = _require_account(user_id)
+    token = _account_token(acc)
+    phone_number_id = str(acc.get("phone_number_id") or "")
+    to = "".join(ch for ch in body.to if ch.isdigit())
+    if not token or not phone_number_id:
+        raise HTTPException(status_code=400, detail="Falta token o número de WhatsApp.")
+    try:
+        send_text_message(
+            phone_number_id=phone_number_id,
+            access_token=token,
+            to=to,
+            body=body.body.strip(),
+        )
+    except WhatsAppCloudError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    supabase_db.insert_whatsapp_message(
+        {
+            "user_id": user_id,
+            "direction": "out",
+            "wa_from": _account_phone(acc),
+            "wa_to": to,
+            "body": body.body.strip(),
+        }
+    )
+    return {"ok": True}
+
+
+@router.get("/templates")
+def list_templates(user_id: str = Depends(require_user_id)) -> dict:
+    require_whatsapp(user_id)
+    acc = _require_account(user_id)
+    waba_id = str(acc.get("waba_id") or "").strip()
+    token = _account_token(acc)
+    if not waba_id or not token:
+        raise HTTPException(status_code=400, detail="Falta WABA o token.")
+    try:
+        items = list_message_templates(waba_id, token)
+    except WhatsAppCloudError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"templates": items}
+
+
+@router.post("/templates")
+def create_template(body: TemplateCreateBody, user_id: str = Depends(require_user_id)) -> dict:
+    require_whatsapp(user_id)
+    acc = _require_account(user_id)
+    waba_id = str(acc.get("waba_id") or "").strip()
+    token = _account_token(acc)
+    if not waba_id or not token:
+        raise HTTPException(status_code=400, detail="Falta WABA o token.")
+    try:
+        created = create_message_template(
+            waba_id,
+            token,
+            name=body.name,
+            language=body.language,
+            body=body.body,
+            category=body.category,
+        )
+    except WhatsAppCloudError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "template": created}
+
+
+@router.post("/templates/send")
+def send_template(body: TemplateSendBody, user_id: str = Depends(require_user_id)) -> dict:
+    require_whatsapp(user_id)
+    acc = _require_account(user_id)
+    token = _account_token(acc)
+    phone_number_id = str(acc.get("phone_number_id") or "")
+    to = "".join(ch for ch in body.to if ch.isdigit())
+    if not token or not phone_number_id:
+        raise HTTPException(status_code=400, detail="Falta token o número de WhatsApp.")
+    try:
+        send_template_message(
+            phone_number_id=phone_number_id,
+            access_token=token,
+            to=to,
+            template_name=body.name,
+            language=body.language,
+            body_params=body.body_params,
+        )
+    except WhatsAppCloudError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    supabase_db.insert_whatsapp_message(
+        {
+            "user_id": user_id,
+            "direction": "out",
+            "wa_from": _account_phone(acc),
+            "wa_to": to,
+            "body": f"[plantilla {body.name}]",
+        }
+    )
+    return {"ok": True}
 
 
 @router.get("/webhook")
@@ -307,18 +483,18 @@ async def whatsapp_webhook(request: Request) -> dict:
     if not verify_webhook_signature(raw, sig):
         raise HTTPException(status_code=403, detail="Firma webhook inválida.")
     try:
-        import json
-
         payload = json.loads(raw.decode("utf-8") or "{}")
     except Exception:  # noqa: BLE001
         return {"ok": True}
     if not isinstance(payload, dict):
         return {"ok": True}
-    _handle_inbound(payload)
+    threading.Thread(target=_handle_inbound, args=(payload,), daemon=True).start()
     return {"ok": True}
 
 
 def _handle_inbound(payload: dict[str, Any]) -> None:
+    from app.services.whatsapp_ai import reply_as_ced_chat
+
     for event in inbound_text_events(payload):
         phone_number_id = event["phone_number_id"]
         acc = supabase_db.get_whatsapp_account_by_phone_number_id(phone_number_id)
@@ -326,7 +502,8 @@ def _handle_inbound(payload: dict[str, Any]) -> None:
             logger.info("[WA] inbound sin cuenta phone_number_id=%s", phone_number_id[:12])
             continue
         user_id = str(acc.get("user_id") or "")
-        token = str(acc.get("access_token") or "")
+        _ensure_ced_ai_flow(user_id)
+        token = _account_token(acc)
         wa_from = event["from"]
         body = event["body"]
         wamid = event["wamid"]
@@ -336,7 +513,7 @@ def _handle_inbound(payload: dict[str, Any]) -> None:
                 "wamid": wamid,
                 "direction": "in",
                 "wa_from": wa_from,
-                "wa_to": acc.get("display_phone"),
+                "wa_to": _account_phone(acc),
                 "body": body,
                 "raw": payload,
             }
@@ -345,7 +522,7 @@ def _handle_inbound(payload: dict[str, Any]) -> None:
             continue
         now = datetime.now(timezone.utc).isoformat()
         contact = supabase_db.get_whatsapp_contact(user_id, wa_from) or {}
-        opted_out = bool(contact.get("opted_out"))
+        opted_out = bool(contact.get("opted_out") or contact.get("opted_out"))
 
         reply = ""
         flow_id = None
@@ -369,10 +546,15 @@ def _handle_inbound(payload: dict[str, Any]) -> None:
                 user_id, wa_from, {"opted_out": False, "last_inbound_at": now}
             )
             flow = match_flow(supabase_db.list_whatsapp_flows(user_id), body)
-            if not flow:
-                continue
-            reply = str(flow.get("reply_text") or "").strip()
-            flow_id = flow.get("id")
+            flow_id = (flow or {}).get("id")
+            if uses_ced_chat(flow):
+                reply = reply_as_ced_chat(
+                    owner_user_id=user_id,
+                    wa_from=wa_from,
+                    text=body,
+                )
+            else:
+                reply = str((flow or {}).get("reply_text") or "").strip()
 
         if not reply or not token:
             continue
@@ -390,7 +572,7 @@ def _handle_inbound(payload: dict[str, Any]) -> None:
             {
                 "user_id": user_id,
                 "direction": "out",
-                "wa_from": acc.get("display_phone"),
+                "wa_from": _account_phone(acc),
                 "wa_to": wa_from,
                 "body": reply,
                 "flow_id": flow_id,

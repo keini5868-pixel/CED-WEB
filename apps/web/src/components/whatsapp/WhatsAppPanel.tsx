@@ -7,6 +7,10 @@ import {
   createWhatsAppFlow,
   deleteWhatsAppFlow,
   disconnectWhatsApp,
+  createWhatsAppTemplate,
+  sendWhatsAppTemplate,
+  sendWhatsAppText,
+  fetchWhatsAppTemplates,
   fetchWhatsAppConnectConfig,
   fetchWhatsAppFlows,
   fetchWhatsAppMessages,
@@ -15,6 +19,7 @@ import {
   type WhatsAppFlow,
   type WhatsAppMessage,
   type WhatsAppStatus,
+  type WhatsAppTemplate,
 } from "@/lib/api/whatsapp";
 
 type FbAuth = {
@@ -75,6 +80,17 @@ export function WhatsAppPanel() {
   const [keywords, setKeywords] = useState("precio, costos, cuanto");
   const [reply, setReply] = useState("");
   const [trigger, setTrigger] = useState("keyword");
+  const [sendTo, setSendTo] = useState("");
+  const [sendBody, setSendBody] = useState("Hola, te escribe CED.");
+  const [templates, setTemplates] = useState<WhatsAppTemplate[]>([]);
+  const [tplName, setTplName] = useState("hello_ced");
+  const [tplLang, setTplLang] = useState("es");
+  const [tplCat, setTplCat] = useState("UTILITY");
+  const [tplBody, setTplBody] = useState("Hola {{1}}, CED confirma tu mensaje. Responde para continuar.");
+  const [tplSendName, setTplSendName] = useState("hello_world");
+  const [tplSendLang, setTplSendLang] = useState("en_US");
+  const [tplSendTo, setTplSendTo] = useState("");
+  const [tplParam, setTplParam] = useState("");
 
   const refresh = useCallback(async () => {
     const [st, fl, msgs] = await Promise.all([
@@ -85,6 +101,16 @@ export function WhatsAppPanel() {
     if (st) setStatus(st);
     setFlows(fl);
     setMessages(msgs);
+    if (st?.connected) {
+      try {
+        const t = await fetchWhatsAppTemplates();
+        setTemplates(t);
+      } catch {
+        setTemplates([]);
+      }
+    } else {
+      setTemplates([]);
+    }
   }, []);
 
   useEffect(() => {
@@ -174,9 +200,9 @@ export function WhatsAppPanel() {
       name: name.trim() || "Flujo",
       trigger_type: trigger,
       keywords,
-      reply_text: reply.trim(),
+      reply_text: trigger === "ced_ai" ? "__CED_AI__" : reply.trim(),
       enabled: true,
-      priority: trigger === "catch_all" ? 900 : 50,
+      priority: trigger === "catch_all" ? 900 : trigger === "ced_ai" ? 50 : 50,
     });
     if (result.error) {
       setError(result.error);
@@ -193,8 +219,9 @@ export function WhatsAppPanel() {
           WhatsApp
         </h1>
         <p className="mt-1 text-sm text-[var(--ced-text-muted)]">
-          Conecta un número de negocio (Meta Cloud API) y define respuestas
-          automáticas por palabra clave. El cliente escribe STOP para salir.
+          Conecta el número, envía mensajes, administra plantillas de Meta y deja
+          que CED responda WhatsApp con el mismo conocimiento que el chat (si no
+          hay una palabra clave). El cliente escribe STOP para salir.
         </p>
       </div>
 
@@ -239,6 +266,197 @@ export function WhatsAppPanel() {
         <>
           <section className="rounded border border-cyan-500/25 bg-black/40 p-4 space-y-3">
             <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
+              ENVIAR MENSAJE
+            </h2>
+            <p className="text-xs text-cyan-100/60">
+              Texto libre solo funciona dentro de la ventana de 24 h (después de que el
+              cliente te escriba). Fuera de esa ventana usa una plantilla aprobada.
+            </p>
+            <label className="block text-xs text-cyan-100/70">
+              Número destino (con código de país, sin +)
+              <input
+                value={sendTo}
+                onChange={(e) => setSendTo(e.target.value)}
+                className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                placeholder="18095551234"
+              />
+            </label>
+            <label className="block text-xs text-cyan-100/70">
+              Texto
+              <textarea
+                value={sendBody}
+                onChange={(e) => setSendBody(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy || !sendTo.trim() || !sendBody.trim()}
+              onClick={() => {
+                void (async () => {
+                  setBusy(true);
+                  setError(null);
+                  const result = await sendWhatsAppText(sendTo, sendBody);
+                  setBusy(false);
+                  if (result.error) {
+                    setError(result.error);
+                    return;
+                  }
+                  await refresh();
+                })();
+              }}
+              className="rounded border border-cyan-400/60 px-3 py-2 text-xs font-bold tracking-wider text-cyan-100 disabled:opacity-40"
+            >
+              ENVIAR TEXTO
+            </button>
+          </section>
+
+          <section className="rounded border border-cyan-500/25 bg-black/40 p-4 space-y-3">
+            <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
+              PLANTILLAS
+            </h2>
+            {templates.length === 0 ? (
+              <p className="text-xs text-cyan-100/60">
+                No hay plantillas en esta WABA todavía. Crea una (queda en revisión de
+                Meta) o usa hello_world si Meta te la dio de ejemplo.
+              </p>
+            ) : (
+              <ul className="space-y-1 text-xs text-cyan-100/80">
+                {templates.map((tpl, idx) => (
+                  <li key={`${tpl.name}-${tpl.language}-${idx}`}>
+                    {tpl.name} · {tpl.language || "?"} · {tpl.status || "?"} ·{" "}
+                    {tpl.category || ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <label className="block text-xs text-cyan-100/70">
+              Nombre nuevo
+              <input
+                value={tplName}
+                onChange={(e) => setTplName(e.target.value)}
+                className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+              />
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-xs text-cyan-100/70">
+                Idioma
+                <input
+                  value={tplLang}
+                  onChange={(e) => setTplLang(e.target.value)}
+                  className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                />
+              </label>
+              <label className="block text-xs text-cyan-100/70">
+                Categoría
+                <input
+                  value={tplCat}
+                  onChange={(e) => setTplCat(e.target.value)}
+                  className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                />
+              </label>
+            </div>
+            <label className="block text-xs text-cyan-100/70">
+              Cuerpo (usa {"{{1}}"} si necesitas un parámetro)
+              <textarea
+                value={tplBody}
+                onChange={(e) => setTplBody(e.target.value)}
+                rows={2}
+                className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy || !tplName.trim() || !tplBody.trim()}
+              onClick={() => {
+                void (async () => {
+                  setBusy(true);
+                  setError(null);
+                  const result = await createWhatsAppTemplate({
+                    name: tplName,
+                    language: tplLang,
+                    body: tplBody,
+                    category: tplCat,
+                  });
+                  setBusy(false);
+                  if (result.error) {
+                    setError(result.error);
+                    return;
+                  }
+                  await refresh();
+                })();
+              }}
+              className="rounded border border-cyan-400/60 px-3 py-2 text-xs font-bold tracking-wider text-cyan-100 disabled:opacity-40"
+            >
+              CREAR PLANTILLA
+            </button>
+            <div className="border-t border-cyan-800/40 pt-3 space-y-2">
+              <p className="text-xs text-cyan-100/70">Enviar plantilla aprobada</p>
+              <label className="block text-xs text-cyan-100/70">
+                Destino
+                <input
+                  value={tplSendTo}
+                  onChange={(e) => setTplSendTo(e.target.value)}
+                  className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                />
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="block text-xs text-cyan-100/70">
+                  Nombre
+                  <input
+                    value={tplSendName}
+                    onChange={(e) => setTplSendName(e.target.value)}
+                    className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                  />
+                </label>
+                <label className="block text-xs text-cyan-100/70">
+                  Idioma
+                  <input
+                    value={tplSendLang}
+                    onChange={(e) => setTplSendLang(e.target.value)}
+                    className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                  />
+                </label>
+              </div>
+              <label className="block text-xs text-cyan-100/70">
+                Parámetro {"{{1}}"} (opcional)
+                <input
+                  value={tplParam}
+                  onChange={(e) => setTplParam(e.target.value)}
+                  className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                />
+              </label>
+              <button
+                type="button"
+                disabled={busy || !tplSendTo.trim() || !tplSendName.trim()}
+                onClick={() => {
+                  void (async () => {
+                    setBusy(true);
+                    setError(null);
+                    const result = await sendWhatsAppTemplate({
+                      to: tplSendTo,
+                      name: tplSendName,
+                      language: tplSendLang,
+                      body_params: tplParam.trim() ? [tplParam.trim()] : [],
+                    });
+                    setBusy(false);
+                    if (result.error) {
+                      setError(result.error);
+                      return;
+                    }
+                    await refresh();
+                  })();
+                }}
+                className="rounded border border-cyan-400/60 px-3 py-2 text-xs font-bold tracking-wider text-cyan-100 disabled:opacity-40"
+              >
+                ENVIAR PLANTILLA
+              </button>
+            </div>
+          </section>
+
+          <section className="rounded border border-cyan-500/25 bg-black/40 p-4 space-y-3">
+            <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
               NUEVO FLUJO
             </h2>
             <label className="block text-xs text-cyan-100/70">
@@ -257,7 +475,8 @@ export function WhatsAppPanel() {
                 className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
               >
                 <option value="keyword">Palabra clave</option>
-                <option value="catch_all">Cualquier otro mensaje</option>
+                <option value="ced_ai">CED chat (conocimiento)</option>
+                <option value="catch_all">Texto fijo (cualquier otro)</option>
               </select>
             </label>
             {trigger === "keyword" ? (
@@ -270,19 +489,25 @@ export function WhatsAppPanel() {
                 />
               </label>
             ) : null}
-            <label className="block text-xs text-cyan-100/70">
-              Respuesta
-              <textarea
-                value={reply}
-                onChange={(e) => setReply(e.target.value)}
-                rows={3}
-                className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
-              />
-            </label>
+            {trigger === "ced_ai" ? (
+              <p className="text-xs text-cyan-100/60">
+                CED responde con el mismo conocimiento que el chat del dashboard.
+              </p>
+            ) : (
+              <label className="block text-xs text-cyan-100/70">
+                Respuesta
+                <textarea
+                  value={reply}
+                  onChange={(e) => setReply(e.target.value)}
+                  rows={3}
+                  className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                />
+              </label>
+            )}
             <button
               type="button"
               onClick={() => void addFlow()}
-              disabled={!reply.trim()}
+              disabled={trigger !== "ced_ai" && !reply.trim()}
               className="rounded border border-cyan-400/60 px-3 py-2 text-xs font-bold tracking-wider text-cyan-100 disabled:opacity-40"
             >
               GUARDAR FLUJO
@@ -306,10 +531,18 @@ export function WhatsAppPanel() {
                       <p className="font-medium">{flow.name}</p>
                       <p className="text-xs text-cyan-100/60">
                         {flow.trigger_type === "catch_all"
-                          ? "Cualquier mensaje"
-                          : `Claves: ${flow.keywords}`}
+                          ? "Cualquier mensaje (texto fijo)"
+                          : flow.trigger_type === "ced_ai" || flow.trigger_type === "ai"
+                            ? "CED chat"
+                            : `Claves: ${flow.keywords}`}
                       </p>
-                      <p className="mt-1 text-cyan-50/90">{flow.reply_text}</p>
+                      {flow.trigger_type === "ced_ai" || flow.trigger_type === "ai" ? (
+                        <p className="mt-1 text-cyan-50/90">
+                          Responde como el chat de CED
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-cyan-50/90">{flow.reply_text}</p>
+                      )}
                     </div>
                     <div className="flex shrink-0 flex-col gap-1">
                       <button

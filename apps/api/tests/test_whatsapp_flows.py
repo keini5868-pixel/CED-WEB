@@ -54,6 +54,49 @@ def test_catch_all_when_no_keyword():
     assert hit["id"] == "1"
 
 
+def test_ced_ai_wins_over_catch_all():
+    flows = [
+        {
+            "id": "canned",
+            "trigger_type": "catch_all",
+            "keywords": "",
+            "reply_text": "recibí tu mensaje",
+            "enabled": True,
+            "priority": 900,
+        },
+        {
+            "id": "ai",
+            "trigger_type": "ced_ai",
+            "keywords": "",
+            "reply_text": "__CED_AI__",
+            "enabled": True,
+            "priority": 50,
+        },
+    ]
+    hit = match_flow(flows, "explícame el producto")
+    assert hit is not None
+    assert hit["id"] == "ai"
+
+
+def test_ced_ai_catch_all_and_uses_chat():
+    from app.services.whatsapp_flows import uses_ced_chat
+
+    flows = [
+        {
+            "id": "ai",
+            "trigger_type": "ced_ai",
+            "keywords": "",
+            "reply_text": "__CED_AI__",
+            "enabled": True,
+            "priority": 900,
+        }
+    ]
+    hit = match_flow(flows, "explícame FitLine")
+    assert hit is not None
+    assert uses_ced_chat(hit) is True
+    assert uses_ced_chat({"trigger_type": "keyword", "reply_text": "El pack sale 47"}) is False
+
+
 def test_stop_detection():
     assert is_stop_message("STOP")
     assert is_stop_message("para")
