@@ -4,15 +4,23 @@ import { parseApiJson } from "@/lib/api/http";
 export type WhatsAppStatus = {
   connected: boolean;
   display_phone?: string | null;
+  display_phone?: string | null;
+  verified_name?: string | null;
   verified_name?: string | null;
   phone_number_id?: string | null;
   status?: string | null;
+  automation_goal?: string;
+  automation_cta_url?: string;
+  automation_cta_label?: string;
 };
 
 export type WhatsAppConnectConfig = {
   app_id: string;
+  app_id?: string;
   config_id: string | null;
+  config_id?: string | null;
   api_version: string;
+  api_version?: string;
   webhook_url: string;
   verify_token_configured: boolean;
 };
@@ -79,6 +87,23 @@ export async function connectWhatsApp(payload: {
     return { error: data.detail || "No se pudo conectar WhatsApp." };
   }
   return { ok: true, display_phone: data.display_phone };
+}
+
+export async function saveWhatsAppAutomation(body: {
+  goal: string;
+  cta_url: string;
+  cta_label: string;
+}): Promise<{ error?: string }> {
+  const res = await proxyFetch("whatsapp/automation", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const data = await parseApiJson<{ detail?: string }>(res);
+  if (!res.ok) {
+    return { error: data.detail || "No se pudo guardar el objetivo." };
+  }
+  return {};
 }
 
 export async function disconnectWhatsApp(): Promise<boolean> {

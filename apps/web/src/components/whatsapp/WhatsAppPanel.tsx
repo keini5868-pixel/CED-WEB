@@ -11,6 +11,7 @@ import {
   sendWhatsAppTemplate,
   sendWhatsAppText,
   fetchWhatsAppTemplates,
+  saveWhatsAppAutomation,
   fetchWhatsAppConnectConfig,
   fetchWhatsAppFlows,
   fetchWhatsAppMessages,
@@ -91,6 +92,9 @@ export function WhatsAppPanel() {
   const [tplSendLang, setTplSendLang] = useState("en_US");
   const [tplSendTo, setTplSendTo] = useState("");
   const [tplParam, setTplParam] = useState("");
+  const [goal, setGoal] = useState("");
+  const [ctaUrl, setCtaUrl] = useState("");
+  const [ctaLabel, setCtaLabel] = useState("");
 
   const refresh = useCallback(async () => {
     const [st, fl, msgs] = await Promise.all([
@@ -98,7 +102,12 @@ export function WhatsAppPanel() {
       fetchWhatsAppFlows(),
       fetchWhatsAppMessages(),
     ]);
-    if (st) setStatus(st);
+    if (st) {
+      setStatus(st);
+      setGoal(st.automation_goal || "");
+      setCtaUrl(st.automation_cta_url || "");
+      setCtaLabel(st.automation_cta_label || "");
+    }
     setFlows(fl);
     setMessages(msgs);
     if (st?.connected) {
@@ -126,7 +135,7 @@ export function WhatsAppPanel() {
         setError(cfg.error);
         return;
       }
-      if (!cfg.config_id) {
+      if (!cfg.config_id && !cfg.config_id) {
         setError(
           "Falta WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID en la API. Crea un Facebook Login for Business con producto WhatsApp y pega el config_id en Railway.",
         );
@@ -155,7 +164,7 @@ export function WhatsAppPanel() {
         }
       };
       window.addEventListener("message", onMessage);
-      await loadFacebookSdk(cfg.app_id, cfg.api_version);
+      await loadFacebookSdk(cfg.app_id || cfg.app_id, cfg.api_version || cfg.api_version);
       await new Promise<void>((resolve) => {
         window.FB?.login(
           async (res) => {
@@ -176,7 +185,7 @@ export function WhatsAppPanel() {
             resolve();
           },
           {
-            config_id: cfg.config_id,
+            config_id: cfg.config_id || cfg.config_id,
             response_type: "code",
             override_default_response_type: true,
             extras: {
@@ -264,6 +273,70 @@ export function WhatsAppPanel() {
 
       {status?.connected ? (
         <>
+          <section className="rounded border border-cyan-500/25 bg-black/40 p-4 space-y-3">
+            <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
+              OBJETIVO DE LA AUTOMATIZACIÓN
+            </h2>
+            <p className="text-xs text-cyan-100/60">
+              Cada cuenta CED conecta su propio número. Cuando alguien responde a
+              tu campaña, CED usa el mismo cerebro del chat y guía hacia lo que
+              definas aquí (grupo, enlace, llamada, etc.). Si tienes un flujo de
+              palabra clave como “hola”, páusalo para que no pise esta conversación.
+            </p>
+            <label className="block text-xs text-cyan-100/70">
+              ¿A qué quieres llevar a quien te escriba?
+              <textarea
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                rows={3}
+                className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                placeholder="Ej. Invitar al grupo de WhatsApp de onboarding y, si preguntan, agendar una llamada."
+              />
+            </label>
+            <label className="block text-xs text-cyan-100/70">
+              Enlace o grupo (opcional)
+              <input
+                value={ctaUrl}
+                onChange={(e) => setCtaUrl(e.target.value)}
+                className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                placeholder="https://chat.whatsapp.com/..."
+              />
+            </label>
+            <label className="block text-xs text-cyan-100/70">
+              Cómo llamas a ese enlace (opcional)
+              <input
+                value={ctaLabel}
+                onChange={(e) => setCtaLabel(e.target.value)}
+                className="mt-1 w-full rounded border border-cyan-800/60 bg-black/50 px-2 py-1.5 text-sm text-cyan-50"
+                placeholder="Grupo de onboarding"
+              />
+            </label>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                void (async () => {
+                  setBusy(true);
+                  setError(null);
+                  const result = await saveWhatsAppAutomation({
+                    goal,
+                    cta_url: ctaUrl,
+                    cta_label: ctaLabel,
+                  });
+                  setBusy(false);
+                  if (result.error) {
+                    setError(result.error);
+                    return;
+                  }
+                  await refresh();
+                })();
+              }}
+              className="rounded border border-cyan-400/60 px-3 py-2 text-xs font-bold tracking-wider text-cyan-100 disabled:opacity-40"
+            >
+              GUARDAR OBJETIVO
+            </button>
+          </section>
+
           <section className="rounded border border-cyan-500/25 bg-black/40 p-4 space-y-3">
             <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
               ENVIAR MENSAJE

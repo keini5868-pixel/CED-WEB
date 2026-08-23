@@ -1801,6 +1801,23 @@ def upsert_whatsapp_account(user_id: str, data: dict[str, Any]) -> dict[str, Any
     return (result.data or [row])[0]
 
 
+def update_whatsapp_account(user_id: str, patch: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        payload = {**patch, "updated_at": datetime.now(timezone.utc).isoformat()}
+        result = (
+            client.table("whatsapp_accounts")
+            .update(payload)
+            .eq("user_id", user_id)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] update_whatsapp_account failed")
+        return None
+
+
 def delete_whatsapp_account(user_id: str) -> None:
     try:
         client = _client()

@@ -53,6 +53,12 @@ class ConnectBody(BaseModel):
     access_token: str | None = None
 
 
+class AutomationBody(BaseModel):
+    goal: str = Field(default="", max_length=2000)
+    cta_url: str = Field(default="", max_length=500)
+    cta_label: str = Field(default="", max_length=120)
+
+
 class FlowCreateBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     trigger_type: str = Field(default="keyword", max_length=20)
@@ -96,20 +102,6 @@ def _seed_default_flows(user_id: str) -> None:
     supabase_db.insert_whatsapp_flow(
         user_id,
         {
-            "name": "Saludo",
-            "trigger_type": "keyword",
-            "keywords": "hola, hello, hi, buenas, buen dia, buenos dias",
-            "reply_text": (
-                "Hola, gracias por escribir. Un asesor te atiende pronto. "
-                "Escribe PRECIO u HORARIO si lo necesitas."
-            ),
-            "enabled": True,
-            "priority": 10,
-        },
-    )
-    supabase_db.insert_whatsapp_flow(
-        user_id,
-        {
             "name": "CED (chat)",
             "trigger_type": "ced_ai",
             "keywords": "",
@@ -130,7 +122,10 @@ def whatsapp_connect_config(user_id: str = Depends(require_user_id)) -> dict:
         raise HTTPException(status_code=503, detail="META_APP_ID no configurado.")
     return {
         "app_id": app_id,
+        "app_id": app_id,
         "config_id": config_id or None,
+        "config_id": config_id or None,
+        "api_version": settings.meta_api_version.strip() or "v21.0",
         "api_version": settings.meta_api_version.strip() or "v21.0",
         "webhook_url": f"{settings.api_public_url.rstrip('/')}/v1/whatsapp/webhook",
         "verify_token_configured": bool(settings.whatsapp_verify_token.strip()),
@@ -145,10 +140,45 @@ def whatsapp_status(user_id: str = Depends(require_user_id)) -> dict:
     return {
         "connected": True,
         "display_phone": acc.get("display_phone"),
+        "display_phone": acc.get("display_phone"),
+        "verified_name": acc.get("verified_name"),
         "verified_name": acc.get("verified_name"),
         "phone_number_id": acc.get("phone_number_id"),
         "waba_id": acc.get("waba_id"),
         "status": acc.get("status") or "active",
+        "automation_goal": acc.get("automation_goal") or "",
+        "automation_cta_url": acc.get("automation_cta_url") or "",
+        "automation_cta_label": acc.get("automation_cta_label") or "",
+    }
+
+
+@router.patch("/automation")
+def whatsapp_automation(
+    body: AutomationBody,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    require_whatsapp(user_id)
+    acc = supabase_db.get_whatsapp_account(user_id)
+    if not acc:
+        raise HTTPException(status_code=400, detail="Conecta WhatsApp primero.")
+    updated = supabase_db.update_whatsapp_account(
+        user_id,
+        {
+            "automation_goal": body.goal.strip(),
+            "automation_cta_url": body.cta_url.strip(),
+            "automation_cta_label": body.cta_label.strip(),
+        },
+    )
+    if not updated:
+        raise HTTPException(
+            status_code=503,
+            detail="No pude guardar el objetivo. Ejecuta la migración 037_whatsapp_automation_goal.sql en Supabase.",
+        )
+    return {
+        "ok": True,
+        "automation_goal": updated.get("automation_goal") or "",
+        "automation_cta_url": updated.get("automation_cta_url") or "",
+        "automation_cta_label": updated.get("automation_cta_label") or "",
     }
 
 
