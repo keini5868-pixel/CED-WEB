@@ -105,6 +105,7 @@ function HoloFace({
   fillDoneRef.current = fillDone;
   const ringSpeed = speaking ? 1.35 : 2.8;
   const spinSpeed = speaking ? 9 : 22;
+  const talk = speaking && fillDone;
 
   useEffect(() => {
     const vis = visRef.current;
@@ -195,7 +196,26 @@ function HoloFace({
   }, [active]);
 
   return (
-    <div ref={wrapRef} className="relative w-[min(78vw,19rem)] sm:w-[21rem] lg:w-[24rem]">
+    <motion.div
+      ref={wrapRef}
+      className="relative w-[min(78vw,19rem)] sm:w-[21rem] lg:w-[24rem]"
+      animate={
+        talk
+          ? {
+              rotate: [-1.6, 1.4, -0.9, 1.7, -1.6],
+              y: [0, -5, 2, -3, 0],
+              scale: [1, 1.018, 0.992, 1.012, 1],
+            }
+          : fillDone
+            ? { rotate: [-0.35, 0.35, -0.35], y: [0, -1.5, 0], scale: 1 }
+            : { rotate: 0, y: 0, scale: 1 }
+      }
+      transition={{
+        duration: talk ? 2.8 : 5.5,
+        repeat: Infinity,
+        ease: "easeInOut",
+      }}
+    >
       <div className="absolute inset-[16%] rounded-full bg-[#4fd4ee]/18 blur-3xl" />
       <img src={HOLO_SRC} alt="" className="pointer-events-none w-full opacity-0" />
       <canvas ref={visRef} className="absolute inset-0 h-full w-full" />
@@ -260,23 +280,75 @@ function HoloFace({
         </motion.svg>
       </motion.div>
 
+      {fillDone ? (
+        <>
+          {(
+            [
+              { side: "left" as const, x: "38.5%" },
+              { side: "right" as const, x: "61.5%" },
+            ]
+          ).map((eye) => (
+            <motion.div
+              key={`brow-${eye.side}`}
+              className="absolute z-[3] h-[2px] w-[12%] -translate-x-1/2 rounded-full bg-[#e8fbff]/80 shadow-[0_0_8px_#7ae7ff]"
+              style={{ left: eye.x, top: "39%" }}
+              animate={
+                talk
+                  ? {
+                      y: [0, -4, -1, -5, 0],
+                      rotate: eye.side === "left" ? [-6, 4, -8, 2] : [6, -4, 8, -2],
+                      opacity: [0.45, 0.9, 0.5, 0.85],
+                    }
+                  : { y: [0, -1, 0], opacity: [0.25, 0.4, 0.25] }
+              }
+              transition={{ duration: talk ? 2.2 : 4, repeat: Infinity, ease: "easeInOut" }}
+            />
+          ))}
+          {["38.5%", "61.5%"].map((x) => (
+            <motion.div
+              key={`eye-${x}`}
+              className="absolute z-[3] h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#7ae7ff]/35 shadow-[0_0_12px_#4fd4ee]"
+              style={{ left: x, top: "44.5%" }}
+              animate={
+                talk
+                  ? {
+                      scaleY: [1, 1, 0.12, 1, 1, 1, 0.12, 1],
+                      scaleX: [1, 1.08, 1, 0.95, 1.1],
+                      opacity: [0.5, 0.85, 0.2, 0.8],
+                    }
+                  : { scaleY: [1, 1, 0.15, 1], opacity: [0.3, 0.45, 0.3] }
+              }
+              transition={{
+                duration: talk ? 3.4 : 5.2,
+                repeat: Infinity,
+                ease: "easeInOut",
+              }}
+            />
+          ))}
+        </>
+      ) : null}
+
       {speaking
         ? [0, 1, 2].map((i) => (
             <motion.div
               key={`voice-${i}`}
               className="absolute left-1/2 top-[63.5%] z-[3] h-2.5 w-11 -translate-x-1/2 -translate-y-1/2 rounded-[999px] border border-[#7ae7ff]/80 shadow-[0_0_10px_rgba(122,231,255,0.55)] sm:h-3 sm:w-12"
               initial={{ scaleX: 0.75, scaleY: 0.55, opacity: 0.85 }}
-              animate={{ scaleX: [0.75, 1.35], scaleY: [0.55, 1.45], opacity: [0.85, 0] }}
+              animate={{
+                scaleX: [0.7, 1.45, 0.85, 1.3],
+                scaleY: [0.5, 1.55, 0.7, 1.25],
+                opacity: [0.85, 0],
+              }}
               transition={{
-                duration: 0.55,
-                delay: i * 0.18,
+                duration: 0.48,
+                delay: i * 0.14,
                 repeat: Infinity,
                 ease: "easeOut",
               }}
             />
           ))
         : null}
-    </div>
+    </motion.div>
   );
 }
 
