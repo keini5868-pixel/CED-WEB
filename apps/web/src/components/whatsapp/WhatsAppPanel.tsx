@@ -135,7 +135,7 @@ export function WhatsAppPanel() {
         setError(cfg.error);
         return;
       }
-      if (!cfg.config_id && !cfg.config_id) {
+      if (!cfg.config_id) {
         setError(
           "Falta WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID en la API. Crea un Facebook Login for Business con producto WhatsApp y pega el config_id en Railway.",
         );
@@ -164,7 +164,7 @@ export function WhatsAppPanel() {
         }
       };
       window.addEventListener("message", onMessage);
-      await loadFacebookSdk(cfg.app_id || cfg.app_id, cfg.api_version || cfg.api_version);
+      await loadFacebookSdk(cfg.app_id, cfg.api_version);
       await new Promise<void>((resolve) => {
         window.FB?.login(
           async (res) => {
@@ -185,7 +185,7 @@ export function WhatsAppPanel() {
             resolve();
           },
           {
-            config_id: cfg.config_id || cfg.config_id,
+            config_id: cfg.config_id,
             response_type: "code",
             override_default_response_type: true,
             extras: {

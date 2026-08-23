@@ -122,10 +122,7 @@ def whatsapp_connect_config(user_id: str = Depends(require_user_id)) -> dict:
         raise HTTPException(status_code=503, detail="META_APP_ID no configurado.")
     return {
         "app_id": app_id,
-        "app_id": app_id,
         "config_id": config_id or None,
-        "config_id": config_id or None,
-        "api_version": settings.meta_api_version.strip() or "v21.0",
         "api_version": settings.meta_api_version.strip() or "v21.0",
         "webhook_url": f"{settings.api_public_url.rstrip('/')}/v1/whatsapp/webhook",
         "verify_token_configured": bool(settings.whatsapp_verify_token.strip()),
@@ -140,8 +137,6 @@ def whatsapp_status(user_id: str = Depends(require_user_id)) -> dict:
     return {
         "connected": True,
         "display_phone": acc.get("display_phone"),
-        "display_phone": acc.get("display_phone"),
-        "verified_name": acc.get("verified_name"),
         "verified_name": acc.get("verified_name"),
         "phone_number_id": acc.get("phone_number_id"),
         "waba_id": acc.get("waba_id"),

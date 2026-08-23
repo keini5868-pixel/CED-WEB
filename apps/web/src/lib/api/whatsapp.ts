@@ -4,8 +4,6 @@ import { parseApiJson } from "@/lib/api/http";
 export type WhatsAppStatus = {
   connected: boolean;
   display_phone?: string | null;
-  display_phone?: string | null;
-  verified_name?: string | null;
   verified_name?: string | null;
   phone_number_id?: string | null;
   status?: string | null;
@@ -16,11 +14,8 @@ export type WhatsAppStatus = {
 
 export type WhatsAppConnectConfig = {
   app_id: string;
-  app_id?: string;
   config_id: string | null;
-  config_id?: string | null;
   api_version: string;
-  api_version?: string;
   webhook_url: string;
   verify_token_configured: boolean;
 };
