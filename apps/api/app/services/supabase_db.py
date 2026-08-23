@@ -577,6 +577,26 @@ def ensure_profile(user_id: str) -> None:
         raise ValueError("Perfil ausente tras ensure.")
 
 
+def get_user_id_by_email(email: str) -> str | None:
+    raw = (email or "").strip().lower()
+    if not raw or "@" not in raw:
+        return None
+    try:
+        client = _client()
+        result = (
+            client.table("profiles")
+            .select("id")
+            .ilike("email", raw)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        uid = str((rows[0] or {}).get("id") or "") if rows else ""
+        return uid or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def get_profile(user_id: str) -> dict[str, Any] | None:
     try:
         client = _client()
@@ -733,6 +753,35 @@ def get_usage_minutes_total_map(user_ids: list[str]) -> dict[str, float]:
                 out[uid] = round(out.get(uid, 0.0) + float(row.get("minutes_consumed") or 0), 2)
     except Exception:  # noqa: BLE001
         logger.warning("[DB] get_usage_minutes_total_map failed")
+    return out
+
+
+def get_last_recharges_map(user_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Última recarga por usuario (monto pagado + crédito neto)."""
+    ids = [str(u) for u in user_ids if u]
+    if not ids:
+        return {}
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        client = _client()
+        result = (
+            client.table("recharges")
+            .select("user_id, amount_paid_usd, client_balance_usd, created_at")
+            .in_("user_id", ids)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        for row in result.data or []:
+            uid = str(row.get("user_id") or "")
+            if not uid or uid in out:
+                continue
+            out[uid] = {
+                "amount_paid_usd": float(row.get("amount_paid_usd") or 0),
+                "client_balance_usd": float(row.get("client_balance_usd") or 0),
+                "created_at": row.get("created_at"),
+            }
+    except Exception:  # noqa: BLE001
+        logger.warning("[DB] get_last_recharges_map failed")
     return out
 
 

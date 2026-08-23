@@ -46,6 +46,8 @@ export type AdminUserRow = {
   bonus_minutes?: number;
   total_available_minutes?: number;
   remaining_minutes?: number;
+  last_recharge_usd?: number;
+  last_recharge_at?: string | null;
   created_at: string;
   is_founding_member: boolean;
 };
@@ -185,6 +187,46 @@ export async function fetchAdminUsers(
   if (!res.ok) {
 
     throw new Error(data.detail || "No se pudo cargar usuarios");
+
+  }
+
+  return data;
+
+}
+
+
+
+export async function creditAdminRecharge(
+
+  userId: string,
+
+  amountUsd = 10,
+
+): Promise<{ recharge_balance_usd?: number; bonus_minutes?: number }> {
+
+  const res = await proxyFetch(`admin/users/${userId}/credit-recharge`, {
+
+    method: "POST",
+
+    headers: { "Content-Type": "application/json" },
+
+    body: JSON.stringify({ amount_usd: amountUsd }),
+
+  });
+
+  const data = await parseApiJson<{
+
+    detail?: string;
+
+    recharge_balance_usd?: number;
+
+    bonus_minutes?: number;
+
+  }>(res);
+
+  if (!res.ok) {
+
+    throw new Error(data.detail || "No se pudo acreditar la recarga");
 
   }
 

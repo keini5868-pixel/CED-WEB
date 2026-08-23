@@ -372,9 +372,33 @@ def _period_end_iso(raw: Any) -> str | None:
         return None
 
 
-def _resolve_user_id(metadata: dict[str, Any], client_ref: str | None) -> str | None:
+def _resolve_user_id(
+    metadata: dict[str, Any],
+    client_ref: str | None,
+    session: dict[str, Any] | None = None,
+) -> str | None:
     uid = (metadata.get("user_id") or client_ref or "").strip()
-    return uid or None
+    if uid:
+        return uid
+    sess = session or {}
+    customer_id = str(sess.get("customer") or "").strip()
+    if customer_id:
+        found = supabase_db.get_user_id_by_stripe_customer(customer_id)
+        if found:
+            return found
+    details = sess.get("customer_details") or {}
+    email = str(
+        details.get("email")
+        or sess.get("customer_email")
+        or metadata.get("email")
+        or ""
+    ).strip()
+    if email:
+        found = supabase_db.get_user_id_by_email(email)
+        if found:
+            logger.info("[STRIPE] user resuelto por email=%s", email)
+            return found
+    return None
 
 
 def handle_stripe_event(event: dict[str, Any]) -> None:
@@ -402,12 +426,33 @@ def handle_stripe_event(event: dict[str, Any]) -> None:
 
 def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
     metadata = session.get("metadata") or {}
-    checkout_type = metadata.get("checkout_type", "")
-    user_id = _resolve_user_id(metadata, session.get("client_reference_id"))
+    checkout_type = str(metadata.get("checkout_type") or "").strip()
+    user_id = _resolve_user_id(metadata, session.get("client_reference_id"), session)
     customer_id = session.get("customer")
+    mode = str(session.get("mode") or "")
+    paid_guess = 0.0
+    if metadata.get("amount_paid_usd"):
+        try:
+            paid_guess = float(metadata.get("amount_paid_usd") or 0)
+        except (TypeError, ValueError):
+            paid_guess = 0.0
+    if paid_guess <= 0 and session.get("amount_total"):
+        paid_guess = float(session["amount_total"]) / 100.0
+    looks_like_recharge = checkout_type == "recharge" or (
+        mode == "payment"
+        and checkout_type not in ("video_edit_tokens",)
+        and int(round(paid_guess)) in {10, 20, 40, 50, 100}
+    )
 
-    if checkout_type == "recharge" and user_id:
-        paid = float(metadata.get("amount_paid_usd") or 0)
+    if looks_like_recharge:
+        if not user_id:
+            logger.error(
+                "[STRIPE] recarga sin user_id session=%s email=%s",
+                session.get("id"),
+                (session.get("customer_details") or {}).get("email"),
+            )
+            return
+        paid = paid_guess
         if paid <= 0 and session.get("amount_total"):
             paid = float(session["amount_total"]) / 100.0
         q = quote_recharge(paid)

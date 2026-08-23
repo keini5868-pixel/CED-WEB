@@ -417,6 +417,7 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
     ids = [str(r.get("id") or "") for r in rows if r.get("id")]
     wallet_map = supabase_db.get_recharge_balances_map(ids)
     used_today_map = supabase_db.get_usage_minutes_today_map(ids)
+    last_recharge_map = supabase_db.get_last_recharges_map(ids)
     users: list[dict[str, Any]] = []
     active = expiring = trial_count = 0
 
@@ -476,6 +477,9 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
         total_available = round(float(minutes or 0) + bonus, 2)
         remaining = round(max(0.0, total_available - used), 2)
 
+        last = last_recharge_map.get(uid) or {}
+        last_paid = float(last.get("amount_paid_usd") or 0)
+
         users.append(
             {
                 "id": row["id"],
@@ -499,6 +503,8 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
                 "bonus_minutes": bonus,
                 "total_available_minutes": total_available,
                 "remaining_minutes": remaining,
+                "last_recharge_usd": round(last_paid, 2),
+                "last_recharge_at": last.get("created_at"),
                 "created_at": row.get("created_at"),
                 "is_founding_member": row.get("is_founding_member"),
             }
@@ -515,6 +521,50 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
         _ADMIN_USERS_CACHE = {"key": cache_key, "data": payload}
         _ADMIN_USERS_CACHE_AT = now
     return payload
+
+
+def credit_user_recharge(
+    *,
+    admin_id: str,
+    user_id: str,
+    amount_usd: float,
+) -> dict[str, Any]:
+    """Acredita una recarga (p. ej. Stripe cobró y el webhook no ató al usuario)."""
+    global _ADMIN_USERS_CACHE
+    from app.domain.plans import quote_recharge, recharge_balance_to_bonus_minutes
+
+    paid = round(float(amount_usd), 2)
+    if int(paid) not in (10, 20, 40, 50, 100):
+        raise AdminUserError("Monto de recarga no válido (10, 20, 40, 50 o 100).")
+    profile = supabase_db.get_profile(user_id)
+    if not profile:
+        raise AdminUserError("Usuario no encontrado.")
+    q = quote_recharge(paid)
+    grant_id = f"admin_grant_{user_id[:8]}_{admin_id[:8]}_{int(time.time())}"
+    supabase_db.credit_recharge_balance(
+        user_id,
+        amount_paid_usd=float(q["amount_paid_usd"]),
+        client_balance_usd=float(q["client_balance_usd"]),
+        margin_keini_usd=float(q["margin_keini_usd"]),
+        stripe_event_id=grant_id,
+    )
+    supabase_db.log_admin_audit(
+        admin_id,
+        "RECHARGE_CREDITED_MANUALLY",
+        target_user_id=user_id,
+        payload={"amount_usd": paid, "client_balance_usd": q["client_balance_usd"]},
+    )
+    _ADMIN_USERS_CACHE = None
+    bal = supabase_db.get_recharge_balance_usd(user_id)
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "email": profile.get("email"),
+        "amount_paid_usd": paid,
+        "client_balance_usd": q["client_balance_usd"],
+        "recharge_balance_usd": round(bal, 2),
+        "bonus_minutes": recharge_balance_to_bonus_minutes(bal),
+    }
 
 
 def get_user_access(user_id: str) -> tuple[bool, str, int]:

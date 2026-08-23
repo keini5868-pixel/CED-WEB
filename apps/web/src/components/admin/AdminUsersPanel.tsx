@@ -11,6 +11,7 @@ import {
   STATUS_LABELS,
 } from "@/components/admin/adminUserUtils";
 import {
+  creditAdminRecharge,
   fetchAdminUsers,
   type AdminUserRow,
   type CreateAdminUserResult,
@@ -65,9 +66,7 @@ export function AdminUsersPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
-  const [successResult, setSuccessResult] = useState<CreateAdminUserResult | null>(
-    null,
-  );
+  const [crediting, setCrediting] = useState<string | null>(null);
 
   const load = useCallback(async (q = search) => {
     setLoading(true);
@@ -90,7 +89,22 @@ export function AdminUsersPanel() {
     void load();
   }, [load]);
 
-  const handleSearch = () => void load(search);
+  const handleCredit = async (user: AdminUserRow) => {
+    const ok = window.confirm(
+      `¿Acreditar recarga de $10 a ${user.email}? Quedarán ≈ $6 / 60 min extra. Úsalo si Stripe cobró y aquí no aparece.`,
+    );
+    if (!ok) return;
+    setCrediting(user.id);
+    setError(null);
+    try {
+      await creditAdminRecharge(user.id, 10);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo acreditar");
+    } finally {
+      setCrediting(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -221,11 +235,25 @@ export function AdminUsersPanel() {
                           ${Number(u.recharge_balance_usd).toFixed(2)}
                         </div>
                         <div className="text-[10px] text-emerald-500/80">
-                          ≈ {Number(u.bonus_minutes ?? 0).toFixed(0)} min
+                          ≈ {Number(u.bonus_minutes ?? 0).toFixed(0)} min extra
                         </div>
                       </>
                     ) : (
-                      <span className="text-cyan-700">—</span>
+                      <span className="text-cyan-700">$0.00</span>
+                    )}
+                    {(u.last_recharge_usd ?? 0) > 0 ? (
+                      <div className="mt-0.5 text-[10px] text-cyan-400/80">
+                        Pagó ${Number(u.last_recharge_usd).toFixed(0)}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="mt-1 block text-[10px] text-amber-400 underline disabled:opacity-40"
+                        disabled={crediting === u.id}
+                        onClick={() => void handleCredit(u)}
+                      >
+                        {crediting === u.id ? "…" : "Acreditar $10"}
+                      </button>
                     )}
                   </td>
                   <td className={`px-3 py-2 text-xs ${statusBadge(u.status)}`}>

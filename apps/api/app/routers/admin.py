@@ -10,7 +10,12 @@ from pydantic import BaseModel, EmailStr, Field
 from app.deps.auth import require_super_admin
 from app.domain.plans import PlanId, plan_minutes_daily
 from app.services import supabase_db
-from app.services.admin_users import AdminUserError, create_manual_user, list_admin_users
+from app.services.admin_users import (
+    AdminUserError,
+    create_manual_user,
+    credit_user_recharge,
+    list_admin_users,
+)
 from app.services.voice_usage import voice_access_state
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"])
@@ -70,6 +75,28 @@ def admin_list_users(
 ) -> dict:
     try:
         return list_admin_users(search=search, limit=limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+class CreditRechargeBody(BaseModel):
+    amount_usd: float = Field(default=10, ge=10, le=100)
+
+
+@router.post("/users/{user_id}/credit-recharge")
+def admin_credit_recharge(
+    user_id: str,
+    body: CreditRechargeBody,
+    admin_id: str = Depends(require_super_admin),
+) -> dict:
+    try:
+        return credit_user_recharge(
+            admin_id=admin_id,
+            user_id=user_id,
+            amount_usd=body.amount_usd,
+        )
+    except AdminUserError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
