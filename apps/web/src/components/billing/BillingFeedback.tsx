@@ -47,7 +47,10 @@ export function BillingFeedback() {
               `¡Plan ${plan.toUpperCase()} activo! Tu cupo ya está en tu cuenta.`,
             );
           } else {
-            setMessage(MESSAGES.success);
+            setMessage(
+              MESSAGES.success ??
+                "¡Pago confirmado! Tu plan se activará en unos segundos.",
+            );
           }
         } catch {
           if (cancelled) return;
