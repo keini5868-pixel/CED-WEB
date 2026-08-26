@@ -48,6 +48,36 @@ export async function openBillingPortal(): Promise<string | null> {
   return data.url ?? null;
 }
 
+export async function confirmCheckoutSession(sessionId: string): Promise<{
+  ok: boolean;
+  credited?: boolean;
+  recharge_balance_usd?: number;
+  plan_id?: string;
+  detail?: string;
+}> {
+  const res = await proxyFetch("billing/confirm-checkout", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sessionId }),
+  });
+  const data = await parseApiJson<{
+    ok?: boolean;
+    credited?: boolean;
+    recharge_balance_usd?: number;
+    plan_id?: string;
+    detail?: string;
+  }>(res);
+  if (!res.ok) {
+    throw new Error(data.detail || "No se pudo confirmar el pago.");
+  }
+  return {
+    ok: Boolean(data.ok),
+    credited: data.credited,
+    recharge_balance_usd: data.recharge_balance_usd,
+    plan_id: data.plan_id,
+  };
+}
+
 export async function continueWithFreeBasic(): Promise<void> {
   const res = await proxyFetch("billing/trial/continue-free", {
     method: "POST",

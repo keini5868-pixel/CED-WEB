@@ -47,6 +47,7 @@ export const ACCESS_TYPE_LABELS: Record<string, string> = {
   admin: "Admin",
   trial: "Trial voz",
   free_basic: "Básico gratis",
+  recharge: "Recarga activa",
 };
 
 export const STATUS_LABELS: Record<string, string> = {

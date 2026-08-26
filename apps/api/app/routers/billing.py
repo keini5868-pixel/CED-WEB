@@ -19,6 +19,7 @@ from app.domain.plans import (
 from app.services import supabase_db
 from app.services.integrations import check_stripe, check_supabase
 from app.services.stripe_billing import (
+    confirm_checkout_session,
     create_portal_session,
     create_recharge_checkout,
     create_subscription_checkout,
@@ -44,6 +45,10 @@ class RechargeCheckoutBody(BaseModel):
 
 class FreeBasicBody(BaseModel):
     confirm: bool = True
+
+
+class ConfirmCheckoutBody(BaseModel):
+    session_id: str = Field(..., min_length=8, max_length=200)
 
 
 @router.get("/plans")
@@ -168,6 +173,23 @@ def checkout_recharge(
     except Exception as exc:  # noqa: BLE001
         logger.exception("[BILLING] recharge checkout failed")
         raise HTTPException(status_code=503, detail="No se pudo iniciar la recarga.") from exc
+
+
+@router.post("/confirm-checkout")
+def confirm_checkout(
+    body: ConfirmCheckoutBody,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    """Tras volver de Stripe: acredita plan/recarga si el webhook aún no lo hizo."""
+    try:
+        return confirm_checkout_session(body.session_id.strip(), user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[BILLING] confirm-checkout failed")
+        raise HTTPException(
+            status_code=503, detail="No se pudo confirmar el pago."
+        ) from exc
 
 
 @router.post("/portal")

@@ -199,37 +199,50 @@ export function AdminUsersPanel() {
                   </td>
                   <td className="px-3 py-2 text-xs">
                     <div className="text-cyan-100">{planCell(u)}</div>
-                    {u.is_trial ? (
+                    {u.is_paid ? (
+                      <div className="text-[10px] text-emerald-400/80">
+                        Suscripción pagada
+                      </div>
+                    ) : u.has_active_recharge ? (
+                      <div className="text-[10px] text-emerald-400/80">
+                        Recarga con saldo
+                      </div>
+                    ) : u.is_trial ? (
                       <div className="text-[10px] text-sky-400/90">
                         No es plan pagado · prueba de voz
                       </div>
-                    ) : u.is_paid ? (
-                      <div className="text-[10px] text-emerald-400/80">
-                        Suscripción confirmada
+                    ) : (
+                      <div className="text-[10px] text-cyan-600">
+                        Sin suscripción ni recarga
                       </div>
-                    ) : null}
+                    )}
                   </td>
                   <td className="px-3 py-2 text-xs text-cyan-400/80">
-                    <div>
-                      {(u.used_minutes ?? 0).toFixed(1)} /{" "}
-                      {(u.total_available_minutes ?? u.minutes_daily ?? 0).toFixed(0)} min
+                    <div className="text-cyan-100">
+                      Quedan {(u.remaining_minutes ?? 0).toFixed(0)} min
                     </div>
                     <div className="text-[10px] text-cyan-500/80">
-                      Quedan {(u.remaining_minutes ?? 0).toFixed(0)} min
-                      {u.is_trial ? " (prueba)" : " hoy"}
+                      Usó {(u.used_minutes ?? 0).toFixed(1)}
+                      {u.is_trial ? " de la prueba" : u.is_paid ? " hoy del plan" : ""}
                     </div>
-                    {u.bonus_minutes ? (
+                    {u.is_paid ? (
+                      <div className="text-[10px] text-cyan-600">
+                        Cupo plan: {u.minutes_daily ?? 0} min/día
+                        {u.bonus_minutes
+                          ? ` + ${u.bonus_minutes.toFixed(0)} recarga`
+                          : ""}
+                      </div>
+                    ) : u.has_active_recharge ? (
                       <div className="text-[10px] text-emerald-400/80">
-                        Plan {u.minutes_daily ?? 0} + recarga{" "}
-                        {u.bonus_minutes.toFixed(0)}
+                        Disponible por recarga ≈ {Number(u.bonus_minutes ?? 0).toFixed(0)} min
                       </div>
                     ) : u.is_trial ? (
                       <div className="text-[10px] text-sky-400/80">
-                        {u.minutes_daily ?? 0} min de prueba
+                        Pool de prueba: {u.minutes_daily ?? 0} min
                       </div>
                     ) : (
                       <div className="text-[10px] text-cyan-600">
-                        {u.minutes_daily ?? 0} min/día del plan
+                        Sin minutos de voz (básico)
                       </div>
                     )}
                   </td>
@@ -237,29 +250,29 @@ export function AdminUsersPanel() {
                     {(u.recharge_balance_usd ?? 0) > 0 ? (
                       <>
                         <div className="text-emerald-300">
-                          ${Number(u.recharge_balance_usd).toFixed(2)}
+                          Saldo ${Number(u.recharge_balance_usd).toFixed(2)}
                         </div>
                         <div className="text-[10px] text-emerald-500/80">
-                          ≈ {Number(u.bonus_minutes ?? 0).toFixed(0)} min extra
+                          ≈ {Number(u.bonus_minutes ?? 0).toFixed(0)} min
                         </div>
                       </>
                     ) : (
-                      <span className="text-cyan-700">$0.00</span>
+                      <span className="text-cyan-700">Sin saldo</span>
                     )}
                     {(u.last_recharge_usd ?? 0) > 0 ? (
                       <div className="mt-0.5 text-[10px] text-cyan-400/80">
-                        Pagó ${Number(u.last_recharge_usd).toFixed(0)}
+                        Último pago ${Number(u.last_recharge_usd).toFixed(0)}
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="mt-1 block text-[10px] text-amber-400 underline disabled:opacity-40"
-                        disabled={crediting === u.id}
-                        onClick={() => void handleCredit(u)}
-                      >
-                        {crediting === u.id ? "…" : "Acreditar $10"}
-                      </button>
-                    )}
+                    ) : null}
+                    <button
+                      type="button"
+                      className="mt-1 block text-[10px] text-cyan-700 underline decoration-dotted disabled:opacity-40 hover:text-amber-400"
+                      disabled={crediting === u.id}
+                      title="Solo si Stripe cobró y el saldo no aparece aquí"
+                      onClick={() => void handleCredit(u)}
+                    >
+                      {crediting === u.id ? "…" : "Acreditar manual"}
+                    </button>
                   </td>
                   <td className={`px-3 py-2 text-xs ${statusBadge(u.status)}`}>
                     {u.status === "active"

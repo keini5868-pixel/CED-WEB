@@ -345,34 +345,46 @@ def _plan_display(sub: dict[str, Any] | None) -> dict[str, Any]:
     expires_at = sub.get("expires_at")
     stripe_sub = (sub.get("stripe_subscription_id") or "").strip()
     is_trial = st == "trialing"
-    is_paid = bool(stripe_sub) and st in ("active", "past_due", "trialing")
     base_label = PLAN_LABELS.get(plan_id, plan_id or "—")
+
+    access_raw = str(sub.get("access_type") or "")
+    is_paid = (
+        bool(stripe_sub) and st in ("active", "past_due")
+    ) or (
+        access_raw == "paid"
+        and st == "active"
+        and plan_id not in (PlanId.FREE_BASIC.value, None, "")
+    )
 
     if is_trial:
         if is_cierre_fitline_trial(sub):
-            plan_label = f"Prueba FitLine 7d · voz 15 min · {base_label}"
+            plan_label = "Prueba FitLine · voz 15 min"
         else:
-            plan_label = f"Prueba 7d · voz 15 min · {base_label}"
+            plan_label = "Prueba de voz · 15 min"
         display_expires = trial_ends or expires_at
         voice_minutes = trial_voice_minutes_for_subscription(sub)
+    elif is_paid:
+        plan_label = base_label
+        display_expires = expires_at
+        voice_minutes = plan_minutes_daily(plan_id)
     elif plan_id == PlanId.FREE_BASIC.value:
         plan_label = PLAN_LABELS[PlanId.FREE_BASIC.value]
         display_expires = expires_at
         voice_minutes = 0
-    elif is_paid or st == "active":
+    elif st == "active":
         plan_label = base_label
         display_expires = expires_at
         voice_minutes = plan_minutes_daily(plan_id)
     else:
         plan_label = base_label
         display_expires = expires_at or trial_ends
-        voice_minutes = plan_minutes_daily(plan_id) if st == "active" else 0
+        voice_minutes = 0
 
     return {
         "plan": plan_id,
         "plan_label": plan_label,
         "is_trial": is_trial,
-        "is_paid": bool(stripe_sub) and st in ("active", "past_due"),
+        "is_paid": is_paid,
         "subscription_status": st or None,
         "trial_ends_at": trial_ends,
         "expires_at": expires_at,
@@ -474,8 +486,24 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
         )
         wallet = wallet_map.get(uid, 0.0)
         bonus = recharge_balance_to_bonus_minutes(wallet)
+        has_recharge = wallet > 0.009
+        # El saldo de recarga ya baja al usarse: no restar de nuevo el uso.
+        plan_left = max(0.0, float(minutes or 0) - used)
         total_available = round(float(minutes or 0) + bonus, 2)
-        remaining = round(max(0.0, total_available - used), 2)
+        remaining = round(plan_left + bonus, 2)
+
+        if has_recharge and not plan_info["is_paid"]:
+            if plan_info["is_trial"]:
+                plan_info = {
+                    **plan_info,
+                    "plan_label": f"{plan_info['plan_label']} + recarga ${wallet:.2f}",
+                }
+            else:
+                plan_info = {
+                    **plan_info,
+                    "plan_label": f"Recarga activa · ${wallet:.2f}",
+                }
+                access = "recharge"
 
         last = last_recharge_map.get(uid) or {}
         last_paid = float(last.get("amount_paid_usd") or 0)
@@ -492,6 +520,7 @@ def list_admin_users(search: str = "", limit: int = 20) -> dict[str, Any]:
                 "plan_label": plan_info["plan_label"],
                 "is_trial": plan_info["is_trial"],
                 "is_paid": plan_info["is_paid"],
+                "has_active_recharge": has_recharge,
                 "subscription_status": plan_info["subscription_status"],
                 "status": status,
                 "expires_at": plan_info["display_expires_at"],
@@ -541,13 +570,19 @@ def credit_user_recharge(
         raise AdminUserError("Usuario no encontrado.")
     q = quote_recharge(paid)
     grant_id = f"admin_grant_{user_id[:8]}_{admin_id[:8]}_{int(time.time())}"
-    supabase_db.credit_recharge_balance(
+    ok = supabase_db.credit_recharge_balance(
         user_id,
         amount_paid_usd=float(q["amount_paid_usd"]),
         client_balance_usd=float(q["client_balance_usd"]),
         margin_keini_usd=float(q["margin_keini_usd"]),
         stripe_event_id=grant_id,
     )
+    if not ok:
+        raise AdminUserError("No se pudo acreditar la recarga (error de base de datos).")
+    try:
+        supabase_db.expire_trial_if_needed(user_id)
+    except Exception:  # noqa: BLE001
+        pass
     supabase_db.log_admin_audit(
         admin_id,
         "RECHARGE_CREDITED_MANUALLY",

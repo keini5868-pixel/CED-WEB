@@ -184,7 +184,7 @@ def create_subscription_checkout(user_id: str, email: str, plan_id: str) -> dict
     params: dict[str, Any] = {
         "mode": "subscription",
         "line_items": [{"price": price_id, "quantity": 1}],
-        "success_url": f"{web}/dashboard?billing=success&plan={pid}",
+        "success_url": f"{web}/dashboard?billing=success&plan={pid}&session_id={{CHECKOUT_SESSION_ID}}",
         "cancel_url": f"{web}/pricing?billing=cancelled",
         "client_reference_id": user_id,
         "metadata": {"user_id": user_id, "plan_id": pid, "checkout_type": "subscription"},
@@ -322,7 +322,10 @@ def create_recharge_checkout(user_id: str, email: str, amount_usd: float) -> dic
     params: dict[str, Any] = {
         "mode": "payment",
         "line_items": line_items,
-        "success_url": f"{web}/dashboard?billing=recharge_success&amount={paid:.0f}",
+        "success_url": (
+            f"{web}/dashboard?billing=recharge_success&amount={paid:.0f}"
+            "&session_id={CHECKOUT_SESSION_ID}"
+        ),
         "cancel_url": f"{web}/dashboard?billing=recharge_cancelled",
         "client_reference_id": user_id,
         "metadata": recharge_meta,
@@ -415,6 +418,8 @@ def handle_stripe_event(event: dict[str, Any]) -> None:
 
     if event_type == "checkout.session.completed":
         _handle_checkout_completed(data, event_id)
+    elif event_type == "payment_intent.succeeded":
+        _handle_payment_intent_succeeded(data, event_id)
     elif event_type in ("customer.subscription.created", "customer.subscription.updated"):
         _handle_subscription_updated(data, event_id)
     elif event_type == "customer.subscription.deleted":
@@ -427,12 +432,119 @@ def handle_stripe_event(event: dict[str, Any]) -> None:
         logger.debug("[STRIPE] evento ignorado: %s", event_type)
 
 
+def _handle_payment_intent_succeeded(pi: dict[str, Any], event_id: str) -> None:
+    """Backup si checkout.session.completed falló o no llegó."""
+    metadata = pi.get("metadata") or {}
+    if str(metadata.get("checkout_type") or "").strip() != "recharge":
+        return
+    user_id = _resolve_user_id(metadata, None, None)
+    if not user_id:
+        logger.error(
+            "[STRIPE] PI recarga sin user_id pi=%s email=%s",
+            pi.get("id"),
+            metadata.get("email"),
+        )
+        return
+    paid = 0.0
+    if metadata.get("amount_paid_usd"):
+        try:
+            paid = float(metadata.get("amount_paid_usd") or 0)
+        except (TypeError, ValueError):
+            paid = 0.0
+    if paid <= 0 and pi.get("amount_received"):
+        paid = float(pi["amount_received"]) / 100.0
+    if paid <= 0 and pi.get("amount"):
+        paid = float(pi["amount"]) / 100.0
+    if int(round(paid)) not in {10, 20, 40, 50, 100}:
+        return
+    q = quote_recharge(paid)
+    ok = supabase_db.credit_recharge_balance(
+        user_id,
+        amount_paid_usd=float(q["amount_paid_usd"]),
+        client_balance_usd=float(q["client_balance_usd"]),
+        margin_keini_usd=float(q["margin_keini_usd"]),
+        stripe_payment_intent_id=_payment_intent_id(pi.get("id") or pi),
+        stripe_event_id=event_id,
+    )
+    try:
+        supabase_db.expire_trial_if_needed(user_id)
+    except Exception:  # noqa: BLE001
+        pass
+    logger.info(
+        "[STRIPE] PI recarga %s user=%s paid=%.2f",
+        "ok" if ok else "FAIL",
+        user_id[:8],
+        float(q["amount_paid_usd"]),
+    )
+    if not ok:
+        raise RuntimeError(f"PI credit_recharge failed user={user_id[:8]}")
+
+
+def confirm_checkout_session(session_id: str, user_id: str) -> dict[str, Any]:
+    """Cliente vuelve de Stripe: acredita si el webhook aún no lo hizo."""
+    sid = (session_id or "").strip()
+    uid = (user_id or "").strip()
+    if not sid or not uid:
+        raise ValueError("session_id y user_id requeridos.")
+    settings = get_settings()
+    if not _stripe_enabled(settings):
+        raise ValueError("Stripe no configurado.")
+    _configure_stripe(settings)
+    session = stripe.checkout.Session.retrieve(sid)
+    sess = session.to_dict() if hasattr(session, "to_dict") else dict(session)
+    payment_status = str(sess.get("payment_status") or "")
+    if payment_status not in ("paid", "no_payment_required"):
+        return {"ok": False, "status": payment_status, "credited": False}
+
+    owner = _resolve_user_id(
+        sess.get("metadata") or {},
+        sess.get("client_reference_id"),
+        sess,
+    )
+    if owner and owner != uid:
+        raise ValueError("Esta sesión de pago no pertenece a tu cuenta.")
+    if not owner:
+        # Forzar user_id del cliente autenticado si Stripe no trae metadata.
+        meta = dict(sess.get("metadata") or {})
+        meta["user_id"] = uid
+        sess["metadata"] = meta
+        sess["client_reference_id"] = uid
+
+    event_id = f"confirm_{sid}"
+    _handle_checkout_completed(sess, event_id)
+    bal = supabase_db.get_recharge_balance_usd(uid)
+    sub = supabase_db.get_subscription(uid) or {}
+    return {
+        "ok": True,
+        "credited": True,
+        "payment_status": payment_status,
+        "checkout_type": (sess.get("metadata") or {}).get("checkout_type"),
+        "recharge_balance_usd": round(bal, 2),
+        "plan_id": sub.get("plan_id"),
+        "subscription_status": sub.get("status"),
+    }
+
+
+def _payment_intent_id(raw: Any) -> str | None:
+    """Stripe a veces manda el PI como string y a veces como objeto expandido."""
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        return raw.strip() or None
+    if isinstance(raw, dict):
+        pid = str(raw.get("id") or "").strip()
+        return pid or None
+    pid = str(raw).strip()
+    return pid or None
+
+
 def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
     metadata = session.get("metadata") or {}
     checkout_type = str(metadata.get("checkout_type") or "").strip()
     pi_obj = session.get("payment_intent")
     if isinstance(pi_obj, dict):
         metadata = {**(pi_obj.get("metadata") or {}), **metadata}
+    pi_id = _payment_intent_id(pi_obj)
     user_id = _resolve_user_id(metadata, session.get("client_reference_id"), session)
     customer_id = session.get("customer")
     mode = str(session.get("mode") or "")
@@ -453,25 +565,48 @@ def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
     if looks_like_recharge:
         if not user_id:
             logger.error(
-                "[STRIPE] recarga sin user_id session=%s email=%s",
+                "[STRIPE] recarga sin user_id session=%s email=%s pi=%s",
                 session.get("id"),
                 (session.get("customer_details") or {}).get("email"),
+                (pi_id or "")[:24],
             )
             return
         paid = paid_guess
         if paid <= 0 and session.get("amount_total"):
             paid = float(session["amount_total"]) / 100.0
         q = quote_recharge(paid)
-        supabase_db.credit_recharge_balance(
+        ok = supabase_db.credit_recharge_balance(
             user_id,
             amount_paid_usd=float(q["amount_paid_usd"]),
             client_balance_usd=float(q["client_balance_usd"]),
             margin_keini_usd=float(q["margin_keini_usd"]),
-            stripe_payment_intent_id=session.get("payment_intent"),
+            stripe_payment_intent_id=pi_id,
             stripe_event_id=event_id,
         )
+        # Si el trial ya venció, bajar a free_basic para que el monedero abra voz.
+        try:
+            supabase_db.expire_trial_if_needed(user_id)
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "[STRIPE] expire_trial tras recarga falló user=%s",
+                user_id[:8],
+                exc_info=True,
+            )
         if customer_id:
             supabase_db.update_subscription_stripe_customer(user_id, str(customer_id))
+        logger.info(
+            "[STRIPE] recarga %s user=%s paid=%.2f credit=%.2f pi=%s",
+            "ok" if ok else "FAIL",
+            user_id[:8],
+            float(q["amount_paid_usd"]),
+            float(q["client_balance_usd"]),
+            (pi_id or "")[:24],
+        )
+        if not ok:
+            # 500 → Stripe reintenta el webhook (antes se tragaba el error).
+            raise RuntimeError(
+                f"credit_recharge_balance failed user={user_id[:8]} pi={pi_id}"
+            )
         return
 
     if checkout_type == "video_edit_tokens" and user_id:
@@ -485,7 +620,7 @@ def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
             user_id,
             float(q["amount_paid_usd"]),
             metadata={
-                "stripe_payment_intent_id": session.get("payment_intent"),
+                "stripe_payment_intent_id": pi_id,
                 "stripe_event_id": event_id,
                 "checkout_session": session.get("id"),
             },

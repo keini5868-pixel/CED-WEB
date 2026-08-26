@@ -35,6 +35,7 @@ export type AdminUserRow = {
   plan_label?: string | null;
   is_trial?: boolean;
   is_paid?: boolean;
+  has_active_recharge?: boolean;
   subscription_status?: string | null;
   status: string;
   expires_at: string | null;

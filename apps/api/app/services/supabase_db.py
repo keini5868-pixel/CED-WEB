@@ -782,6 +782,29 @@ def get_last_recharges_map(user_ids: list[str]) -> dict[str, dict[str, Any]]:
             }
     except Exception:  # noqa: BLE001
         logger.warning("[DB] get_last_recharges_map failed")
+    missing = [i for i in ids if i not in out]
+    if missing:
+        try:
+            client = _client()
+            tx = (
+                client.table("transactions")
+                .select("user_id, amount_usd, type, created_at")
+                .in_("user_id", missing)
+                .eq("type", "recharge")
+                .order("created_at", desc=True)
+                .execute()
+            )
+            for row in tx.data or []:
+                uid = str(row.get("user_id") or "")
+                if not uid or uid in out:
+                    continue
+                out[uid] = {
+                    "amount_paid_usd": float(row.get("amount_usd") or 0),
+                    "client_balance_usd": 0.0,
+                    "created_at": row.get("created_at"),
+                }
+        except Exception:  # noqa: BLE001
+            logger.warning("[DB] get_last_recharges_map transactions fallback failed")
     return out
 
 
@@ -1268,11 +1291,16 @@ def credit_recharge_balance(
     margin_keini_usd: float,
     stripe_payment_intent_id: str | None = None,
     stripe_event_id: str | None = None,
-) -> None:
+) -> bool:
+    """Acredita monedero. Devuelve True si quedó acreditado (o ya existía el PI)."""
     now = datetime.now(timezone.utc).isoformat()
     try:
         client = _client()
-        pi = (stripe_payment_intent_id or "").strip()
+        # Stripe a veces manda el PI como dict expandido — solo guardar el id.
+        if isinstance(stripe_payment_intent_id, dict):
+            pi = str(stripe_payment_intent_id.get("id") or "").strip()
+        else:
+            pi = str(stripe_payment_intent_id or "").strip()
         if pi:
             dup = (
                 client.table("recharges")
@@ -1283,7 +1311,7 @@ def credit_recharge_balance(
             )
             if dup.data:
                 logger.info("[DB] recarga ya acreditada pi=%s", pi)
-                return
+                return True
         current = get_recharge_balance_usd(user_id)
         new_balance = round(current + client_balance_usd, 2)
         client.table("recharge_balances").upsert(
@@ -1301,8 +1329,7 @@ def credit_recharge_balance(
                 )
                 if client_balance_usd
                 else 0,
-
-                "stripe_payment_intent_id": stripe_payment_intent_id,
+                "stripe_payment_intent_id": pi or None,
             }
         ).execute()
         record_transaction(
@@ -1312,8 +1339,18 @@ def credit_recharge_balance(
             stripe_event_id=stripe_event_id,
             metadata={"client_balance_usd": client_balance_usd},
         )
+        logger.info(
+            "[DB] recarga acreditada user=%s paid=%.2f credit=%.2f bal=%.2f pi=%s",
+            user_id[:8],
+            amount_paid_usd,
+            client_balance_usd,
+            new_balance,
+            (pi or "")[:24],
+        )
+        return True
     except Exception:  # noqa: BLE001
-        logger.exception("[DB] credit_recharge_balance failed")
+        logger.exception("[DB] credit_recharge_balance failed user=%s", user_id[:8])
+        return False
 
 
 def debit_recharge_balance(
@@ -1920,6 +1957,22 @@ def insert_whatsapp_message(row: dict[str, Any]) -> bool:
         # Duplicado wamid u otro — no reventar el webhook
         logger.warning("[DB] insert_whatsapp_message skipped: %s", row.get("wamid"))
         return False
+
+
+def list_whatsapp_contacts(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
+    try:
+        client = _client()
+        result = (
+            client.table("whatsapp_contacts")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("last_inbound_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        return result.data or []
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def list_whatsapp_messages(user_id: str, *, limit: int = 40) -> list[dict[str, Any]]:
