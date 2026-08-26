@@ -560,11 +560,18 @@ def credit_user_recharge(
 ) -> dict[str, Any]:
     """Acredita una recarga (p. ej. Stripe cobró y el webhook no ató al usuario)."""
     global _ADMIN_USERS_CACHE
-    from app.domain.plans import quote_recharge, recharge_balance_to_bonus_minutes
+    from app.domain.plans import (
+        RECHARGE_MAX_USD,
+        RECHARGE_MIN_USD,
+        quote_recharge,
+        recharge_balance_to_bonus_minutes,
+    )
 
     paid = round(float(amount_usd), 2)
-    if int(paid) not in (10, 20, 40, 50, 100):
-        raise AdminUserError("Monto de recarga no válido (10, 20, 40, 50 o 100).")
+    if paid < RECHARGE_MIN_USD or paid > RECHARGE_MAX_USD:
+        raise AdminUserError(
+            f"Monto inválido. Usa entre ${RECHARGE_MIN_USD:.0f} y ${RECHARGE_MAX_USD:.0f}."
+        )
     profile = supabase_db.get_profile(user_id)
     if not profile:
         raise AdminUserError("Usuario no encontrado.")

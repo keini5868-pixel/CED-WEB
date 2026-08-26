@@ -95,15 +95,36 @@ export function AdminUsersPanel() {
   const handleSearch = () => void load(search);
 
   const handleCredit = async (user: AdminUserRow) => {
+    const raw = window.prompt(
+      `Monto a acreditar a ${user.email} (USD).\nSolo si Stripe ya cobró y el saldo no aparece.\nMínimo 10, máximo 500.`,
+      String(user.last_recharge_usd && user.last_recharge_usd >= 10 ? user.last_recharge_usd : 10),
+    );
+    if (raw == null) return;
+    const amount = Number(String(raw).replace(",", ".").trim());
+    if (!Number.isFinite(amount) || amount < 10 || amount > 500) {
+      setError("Monto inválido. Usa un número entre 10 y 500.");
+      return;
+    }
+    const credit = Math.round(amount * 0.6 * 100) / 100;
+    const mins = Math.round(credit / 0.1);
     const ok = window.confirm(
-      `¿Acreditar recarga de $10 a ${user.email}? Quedarán ≈ $6 / 60 min extra. Úsalo si Stripe cobró y aquí no aparece.`,
+      `¿Acreditar $${amount.toFixed(2)} a ${user.email}?\n` +
+        `Crédito neto ≈ $${credit.toFixed(2)} (≈ ${mins} min de voz).`,
     );
     if (!ok) return;
     setCrediting(user.id);
     setError(null);
     try {
-      await creditAdminRecharge(user.id, 10);
+      const result = await creditAdminRecharge(user.id, amount);
       await load();
+      const bal = result.recharge_balance_usd;
+      const bonus = result.bonus_minutes;
+      window.alert(
+        bal != null
+          ? `Listo. Saldo ahora $${Number(bal).toFixed(2)}` +
+              (bonus != null ? ` (≈ ${Number(bonus).toFixed(0)} min).` : ".")
+          : "Recarga acreditada.",
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "No se pudo acreditar");
     } finally {
@@ -268,10 +289,10 @@ export function AdminUsersPanel() {
                       type="button"
                       className="mt-1 block text-[10px] text-cyan-700 underline decoration-dotted disabled:opacity-40 hover:text-amber-400"
                       disabled={crediting === u.id}
-                      title="Solo si Stripe cobró y el saldo no aparece aquí"
+                      title="Solo si Stripe cobró y el saldo no aparece. Tú eliges el monto."
                       onClick={() => void handleCredit(u)}
                     >
-                      {crediting === u.id ? "…" : "Acreditar manual"}
+                      {crediting === u.id ? "…" : "Acreditar monto…"}
                     </button>
                   </td>
                   <td className={`px-3 py-2 text-xs ${statusBadge(u.status)}`}>

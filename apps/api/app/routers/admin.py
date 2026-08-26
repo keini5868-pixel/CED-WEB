@@ -80,7 +80,7 @@ def admin_list_users(
 
 
 class CreditRechargeBody(BaseModel):
-    amount_usd: float = Field(default=10, ge=10, le=100)
+    amount_usd: float = Field(default=10, ge=10, le=500)
 
 
 @router.post("/users/{user_id}/credit-recharge")

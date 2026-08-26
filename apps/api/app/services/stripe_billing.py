@@ -14,6 +14,8 @@ from app.domain.plans import (
     PLAN_LABELS,
     PLAN_PRICES_USD,
     RECHARGE_CLIENT_SHARE,
+    RECHARGE_MAX_USD,
+    RECHARGE_MIN_USD,
     RECHARGE_QUICK_AMOUNTS_USD,
     STRIPE_CHECKOUT_PLANS,
     PlanId,
@@ -455,7 +457,7 @@ def _handle_payment_intent_succeeded(pi: dict[str, Any], event_id: str) -> None:
         paid = float(pi["amount_received"]) / 100.0
     if paid <= 0 and pi.get("amount"):
         paid = float(pi["amount"]) / 100.0
-    if int(round(paid)) not in {10, 20, 40, 50, 100}:
+    if paid < RECHARGE_MIN_USD or paid > RECHARGE_MAX_USD:
         return
     q = quote_recharge(paid)
     ok = supabase_db.credit_recharge_balance(
@@ -490,7 +492,10 @@ def confirm_checkout_session(session_id: str, user_id: str) -> dict[str, Any]:
     if not _stripe_enabled(settings):
         raise ValueError("Stripe no configurado.")
     _configure_stripe(settings)
-    session = stripe.checkout.Session.retrieve(sid)
+    session = stripe.checkout.Session.retrieve(
+        sid,
+        expand=["payment_intent", "subscription"],
+    )
     sess = session.to_dict() if hasattr(session, "to_dict") else dict(session)
     payment_status = str(sess.get("payment_status") or "")
     if payment_status not in ("paid", "no_payment_required"):
@@ -559,13 +564,13 @@ def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
     looks_like_recharge = checkout_type == "recharge" or (
         mode == "payment"
         and checkout_type not in ("video_edit_tokens",)
-        and int(round(paid_guess)) in {10, 20, 40, 50, 100}
+        and RECHARGE_MIN_USD <= paid_guess <= RECHARGE_MAX_USD
     )
 
     if looks_like_recharge:
         if not user_id:
             logger.error(
-                "[STRIPE] recarga sin user_id session=%s email=%s pi=%s",
+                "[STRIPE] recarga sin user_id session=%s email=%s pi=%s — usar Acreditar monto en admin",
                 session.get("id"),
                 (session.get("customer_details") or {}).get("email"),
                 (pi_id or "")[:24],
