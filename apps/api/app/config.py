@@ -124,6 +124,8 @@ class Settings(BaseSettings):
     # WhatsApp Cloud API (Embedded Signup + webhook). El verify token se copia en Meta.
     whatsapp_verify_token: str = ""
     whatsapp_embedded_signup_config_id: str = ""
+    # Precio de venta del módulo WhatsApp CED (margen sobre el canal 360dialog).
+    whatsapp_addon_price_usd: float = 29.0
 
     super_admin_emails: str = "keini@castillodigital.com"
 
@@ -193,6 +195,18 @@ class Settings(BaseSettings):
     pocket_option_strategy_alt_enabled: bool = False
     # Video Edit módulo piloto — DEFAULT OFF. URL ?videoEditModule=pilot + header.
     video_edit_module_pilot: bool = False
+    # Automatización embudo IG/FB→WA — DEFAULT OFF.
+    # AUTOMATION_MODULE_ENABLED=true + ?automationModule=pilot
+    automation_module_enabled: bool = False
+    # Si OFF: IG/FB solo dry-run (log, sin envíos). ON tras Advanced Access Meta.
+    automation_ig_fb_live_enabled: bool = False
+    # Teléfono E.164 para wa.me en respuestas automáticas (fallback del usuario).
+    automation_default_whatsapp_e164: str = ""
+    # Verify token Meta webhook (Instagram/Facebook). Si vacío, usa whatsapp_verify_token.
+    automation_webhook_verify_token: str = ""
+    # Alias opcionales (mismo app Meta):
+    instagram_app_id: str = ""
+    instagram_app_secret: str = ""
     shotstack_api_key: str = ""
     shotstack_env: str = "stage"  # stage | v1
     sonilo_api_key: str = ""

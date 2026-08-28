@@ -4,4 +4,5 @@ export const MODULE_DISPLAY = {
   trends: "Análisis de Tendencia",
   team: "Estructura PM",
   opportunities: "Oportunidades",
+  automation: "Automatización",
 } as const;

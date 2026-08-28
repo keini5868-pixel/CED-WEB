@@ -1,5 +1,6 @@
-import { Briefcase, Clapperboard, Target, TrendingUp } from "lucide-react";
+import { Briefcase, Clapperboard, Target, TrendingUp, Workflow } from "lucide-react";
 
+import { isAutomationModulePilot } from "@/lib/pilot/automationModule";
 import { isOpportunitiesModuleEnabled } from "@/lib/pilot/opportunitiesModule";
 import { isTrendsModuleEnabled } from "@/lib/pilot/trendsModule";
 import { isViabilityModuleEnabled } from "@/lib/pilot/viabilityModule";
@@ -46,6 +47,18 @@ export const CED_MODULE_REGISTRY: CedModuleRegistration[] = [
     load: () =>
       import("@/components/pilot/OpportunitiesPilotPanel").then((m) => ({
         default: m.OpportunitiesModuleContent,
+      })),
+  },
+  {
+    id: "automation",
+    name: MODULE_DISPLAY.automation,
+    short: "AUTO",
+    icon: Workflow,
+    stage: "pilot",
+    isEnabled: isAutomationModulePilot,
+    load: () =>
+      import("@/components/pilot/AutomationPilotPanel").then((m) => ({
+        default: m.AutomationModuleContent,
       })),
   },
   {

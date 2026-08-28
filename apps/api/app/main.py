@@ -54,6 +54,7 @@ from app.routers import (
     opportunities_pilot,
     pocket_option,
     video_edit_pilot,
+    automation_pilot,
     referrals,
 )
 
@@ -205,6 +206,8 @@ def create_app() -> FastAPI:
     application.include_router(opportunities_pilot.router)
     application.include_router(pocket_option.router)
     application.include_router(video_edit_pilot.router)
+    application.include_router(automation_pilot.auth_router)
+    application.include_router(automation_pilot.webhook_router)
     application.include_router(referrals.router)
     application.include_router(referrals.dashboard_router)
     if settings.support_chat_enabled:
