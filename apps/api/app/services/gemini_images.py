@@ -110,12 +110,62 @@ def _image_models() -> tuple[str, ...]:
 def _friendly_image_error(raw: str) -> str:
     msg = (raw or "").strip()
     lower = msg.lower()
+    if any(
+        token in lower
+        for token in (
+            "quota",
+            "rate limit",
+            "resource_exhausted",
+            "exceeded your current",
+            "denied access",
+            "billing",
+            "permission_denied",
+        )
+    ):
+        return (
+            "El servicio de imágenes de Google (Gemini) no tiene cuota disponible ahora. "
+            "CED intentará usar OpenAI si está configurado; si sigue fallando, activa "
+            "facturación en Google AI Studio o contacta soporte."
+        )
     if "404" in msg or "not found" in lower or "not supported" in lower:
         return (
             "El servicio de imágenes no respondió, señor. "
             "Intente de nuevo en unos segundos."
         )
     return msg[:200] if msg else "No pude generar la imagen con Gemini."
+
+
+def _maybe_fallback_openai_scene(
+    *,
+    topic: str,
+    quality: str,
+    reference_image: bytes | None = None,
+    reference_mime: str | None = None,
+) -> dict[str, Any] | None:
+    """Respaldo cuando Gemini no responde (cuota, caída, etc.)."""
+    settings = get_settings()
+    openai_key = settings.openai_api_key.strip()
+    if not openai_key:
+        return None
+    from app.services.gpt_images import edit_image_gpt, generate_image_gpt
+
+    gpt_quality = "high" if quality == "hd" else "medium"
+    if reference_image:
+        result = edit_image_gpt(
+            prompt=topic,
+            image_bytes=reference_image,
+            content_type=reference_mime or "image/png",
+            quality=gpt_quality,
+        )
+    else:
+        result = generate_image_gpt(prompt=topic, quality=gpt_quality)
+    if result.get("ok"):
+        return result
+    logger.info(
+        "[IMAGE:ROUTER] OpenAI fallback también falló error=%s",
+        str(result.get("error"))[:120],
+    )
+    return None
 
 
 def strip_image_generation_instruction(text: str) -> str:
@@ -174,6 +224,39 @@ def _resolve_vague_subject(topic: str, context: str) -> str:
     return topic
 
 
+def rewrite_protected_brand_marks(prompt: str) -> str:
+    """No pedir logos oficiales de marca: los motores suelen bloquearlos o inventarlos mal."""
+    t = (prompt or "").strip()
+    if not t:
+        return t
+    rewritten = re.sub(
+        r"(?i)logo\s+oficial\s+de\s+(?:pm(?:\s+international)?|pmi)\b",
+        "clean original wordmark reading PM International",
+        t,
+    )
+    rewritten = re.sub(
+        r"(?i)logo\s+oficial\s+de\s+fitline\b",
+        "clean original wordmark reading FitLine",
+        rewritten,
+    )
+    rewritten = re.sub(
+        r"(?i)logo\s+oficial\s+de\s+(?:ced|c)\b",
+        "clean original wordmark reading CED",
+        rewritten,
+    )
+    touched = rewritten != t
+    mentions_logo = bool(re.search(r"(?i)\blogo\b", rewritten))
+    mentions_brand = bool(
+        re.search(r"(?i)\b(pm(?:\s+international)?|fitline|ced)\b", rewritten)
+    )
+    if touched or (mentions_logo and mentions_brand):
+        rewritten += (
+            " Do not reproduce trademarked or official corporate logos. "
+            "Use original geometric marks and legible custom wordmarks only."
+        )
+    return rewritten
+
+
 def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
     """Adaptador mínimo hacia Gemini/Nano Banana — lenguaje natural del usuario.
 
@@ -182,7 +265,7 @@ def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
     """
     from app.services.copy_quality import build_direct_image_prompt
 
-    topic = (user_prompt or "").strip()
+    topic = rewrite_protected_brand_marks((user_prompt or "").strip())
     if not topic:
         return ""
     # Briefs ya armados (marketing, direct, tipografía explícita): pasar tal cual.
@@ -925,6 +1008,24 @@ def generate_image(
         fast=gemini_fast,
     )
     if not gemini_result.get("ok"):
+        fallback = _maybe_fallback_openai_scene(
+            topic=topic,
+            quality=picked,
+            reference_image=reference_image,
+            reference_mime=reference_mime,
+        )
+        if fallback is not None:
+            logger.warning(
+                "[IMAGE:ROUTER] Gemini falló; OpenAI fallback ok user=%s",
+                user_id[:8],
+            )
+            return _finalize_generated_image(
+                user_id=user_id,
+                topic=topic,
+                display_label=display_label,
+                result=fallback,
+                ideogram_declined_reason=ideogram_declined_reason,
+            )
         err_detail = str(gemini_result.get("error") or "Gemini falló")
         logger.error("[GEMINI:IMAGE] failed user=%s error=%s", user_id[:8], err_detail[:200])
         return {

@@ -152,3 +152,49 @@ def test_generate_image_falls_back_to_ideogram_when_gpt_fails():
     assert result["provider"] == "ideogram"
     mock_ideogram.assert_called_once()
     mock_gemini.assert_not_called()
+
+
+def test_generate_image_falls_back_to_openai_when_gemini_fails():
+    from app.services import gemini_images
+
+    with (
+        patch("app.services.gemini_images.supabase_db.get_profile", return_value={}),
+        patch("app.services.gemini_images.is_super_admin", return_value=False),
+        patch(
+            "app.services.gemini_images.effective_plan_limits",
+            return_value=(_limits(), "ok", False),
+        ),
+        patch("app.services.gemini_images._day_image_counts", return_value=(0, 0, 0)),
+        patch(
+            "app.services.gemini_images.generate_image_gemini",
+            return_value={"ok": False, "error": "429 quota", "code": "gemini_error"},
+        ),
+        patch(
+            "app.services.gpt_images.generate_image_gpt",
+            return_value=GPT_OK,
+        ) as mock_gpt,
+        patch(
+            "app.services.publish_media.store_publish_image_for_client",
+            return_value="https://cdn.example.com/gpt-fallback.png",
+        ),
+        patch("app.services.supabase_db.insert_generated_image"),
+        patch(
+            "app.services.gemini_images.get_settings",
+            return_value=MagicMock(
+                google_api_key="g-key",
+                ideogram_api_key="ik-key",
+                openai_api_key="sk-test",
+                openai_model_image="gpt-image-1.5",
+            ),
+        ),
+    ):
+        result = gemini_images.generate_image(
+            user_id="user-pro",
+            plan_id="pro",
+            prompt="atardecer en la playa fotorrealista",
+            prefer_ideogram=False,
+        )
+
+    assert result["ok"] is True
+    assert result["provider"] == "gpt_image"
+    mock_gpt.assert_called_once()

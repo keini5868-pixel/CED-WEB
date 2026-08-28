@@ -314,6 +314,113 @@ def _store_result(
     return public_url, None
 
 
+def _try_openai_reference_fallback(
+    *,
+    user_id: str,
+    api_key: str,
+    model: str,
+    topic: str,
+    reference_image: bytes,
+    mime: str,
+    mode: str,
+    picked: str,
+    display_label: str,
+) -> dict[str, Any] | None:
+    gpt_data, gpt_err = _request_gpt_image_edit(
+        api_key=api_key,
+        model=model,
+        prompt=topic,
+        reference_image=reference_image,
+        mime=mime,
+        style_mode=mode,
+        quality=picked,
+    )
+    if gpt_data:
+        b64, url = _extract_image_b64(gpt_data)
+        public_url, store_err = _store_result(
+            user_id=user_id,
+            b64=b64,
+            url=url,
+            prompt=topic,
+            quality=picked,
+            model=model,
+            style_mode=mode,
+        )
+        if store_err:
+            return store_err
+        caption = (display_label or "").strip() or topic[:120]
+        return {
+            "ok": True,
+            "success": True,
+            "image_url": public_url,
+            "url": public_url,
+            "prompt": topic,
+            "display_label": caption,
+            "caption": caption,
+            "style_mode": mode,
+            "quality": picked,
+            "model": model,
+            "used_fallback": True,
+            "provider": "gpt_image_edit",
+            "estimated_cost_usd": GEMINI_STD_COST_USD,
+        }
+    logger.warning(
+        "[REF-IMG] GPT edit falló user=%s err=%s",
+        user_id[:8],
+        (gpt_err or "")[:120],
+    )
+    img_hash = _image_hash(reference_image)
+    style_desc, _style_err = _analyze_reference_style(
+        api_key=api_key,
+        reference_image=reference_image,
+        mime=mime,
+        image_hash=img_hash,
+    )
+    if not style_desc:
+        return None
+    dalle_data, dalle_err = _request_dalle_fallback(
+        api_key=api_key,
+        prompt=topic,
+        style_description=style_desc,
+        quality=picked,
+    )
+    if not dalle_data:
+        logger.warning(
+            "[REF-IMG] DALL-E fallback falló user=%s err=%s",
+            user_id[:8],
+            (dalle_err or "")[:120],
+        )
+        return None
+    b64, url = _extract_image_b64(dalle_data)
+    public_url, store_err = _store_result(
+        user_id=user_id,
+        b64=b64,
+        url=url,
+        prompt=topic,
+        quality=picked,
+        model="dall-e-3",
+        style_mode=mode,
+    )
+    if store_err:
+        return store_err
+    caption = (display_label or "").strip() or topic[:120]
+    return {
+        "ok": True,
+        "success": True,
+        "image_url": public_url,
+        "url": public_url,
+        "prompt": topic,
+        "display_label": caption,
+        "caption": caption,
+        "style_mode": mode,
+        "quality": picked,
+        "model": "dall-e-3",
+        "used_fallback": True,
+        "provider": "dall-e-3",
+        "estimated_cost_usd": GEMINI_STD_COST_USD,
+    }
+
+
 def validate_reference_image(reference_data: bytes, content_type: str | None) -> dict[str, Any] | None:
     if not reference_data:
         return {"ok": False, "error": "Imagen de referencia vacía", "code": "invalid_image"}
@@ -472,20 +579,45 @@ def _generate_image_with_reference_impl(
                     "provider": "gemini",
                     "estimated_cost_usd": cost,
                 }
-        if not api_key:
-            return {
-                "ok": False,
-                "error": str(gemini_result.get("error") or "No pude generar con referencia en Gemini."),
-                "code": str(gemini_result.get("code") or "gemini_error"),
-            }
+        if api_key:
+            model = (settings.openai_model_image or "gpt-image-1.5").strip() or "gpt-image-1.5"
+            openai_result = _try_openai_reference_fallback(
+                user_id=user_id,
+                api_key=api_key,
+                model=model,
+                topic=topic,
+                reference_image=reference_image,
+                mime=mime,
+                mode=mode,
+                picked=picked,
+                display_label=display_label,
+            )
+            if openai_result is not None:
+                return openai_result
         return {
             "ok": False,
             "error": str(gemini_result.get("error") or "No pude generar con referencia en Gemini."),
             "code": str(gemini_result.get("code") or "gemini_error"),
         }
 
+    if api_key:
+        model = (settings.openai_model_image or "gpt-image-1.5").strip() or "gpt-image-1.5"
+        openai_result = _try_openai_reference_fallback(
+            user_id=user_id,
+            api_key=api_key,
+            model=model,
+            topic=topic,
+            reference_image=reference_image,
+            mime=mime,
+            mode=mode,
+            picked=picked,
+            display_label=display_label,
+        )
+        if openai_result is not None:
+            return openai_result
+
     return {
         "ok": False,
-        "error": "Configura GOOGLE_API_KEY en Railway para imágenes con referencia.",
+        "error": "Configura GOOGLE_API_KEY u OPENAI_API_KEY en Railway para imágenes con referencia.",
         "code": "config_error",
     }
