@@ -5,11 +5,21 @@ import {
   AUTOMATION_PILOT_HEADER_VALUE,
 } from "@/lib/pilot/automationModule";
 
-function pilotHeaders(extra?: Record<string, string>): Record<string, string> {
+function pilotJsonHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     "Content-Type": "application/json",
     [AUTOMATION_PILOT_HEADER]: AUTOMATION_PILOT_HEADER_VALUE,
     ...(extra || {}),
+  };
+}
+
+async function withPilotAuth(
+  extra?: Record<string, string>,
+): Promise<Record<string, string>> {
+  const auth = await authHeaders(true).catch(() => ({} as Record<string, string>));
+  return {
+    ...(auth as Record<string, string>),
+    ...pilotJsonHeaders(extra),
   };
 }
 
@@ -48,14 +58,14 @@ async function parseJson<T>(res: Response): Promise<T> {
 
 export async function fetchAutomationStatus(): Promise<AutomationStatus> {
   const res = await proxyFetch("/v1/automation-pilot/status", {
-    headers: { ...authHeaders(), ...pilotHeaders() },
+    headers: await withPilotAuth(),
   });
   return parseJson(res);
 }
 
 export async function fetchAutomationCards(): Promise<AutomationCard[]> {
   const res = await proxyFetch("/v1/automation-pilot/cards", {
-    headers: { ...authHeaders(), ...pilotHeaders() },
+    headers: await withPilotAuth(),
   });
   const data = await parseJson<{ cards: AutomationCard[] }>(res);
   return data.cards || [];
@@ -67,7 +77,7 @@ export async function ensureAutomationCard(
 ): Promise<{ ok: boolean; automation?: { id: string; status: string }; error?: string }> {
   const res = await proxyFetch("/v1/automation-pilot/cards/ensure", {
     method: "POST",
-    headers: { ...authHeaders(), ...pilotHeaders() },
+    headers: await withPilotAuth(),
     body: JSON.stringify({ card_key: cardKey, activate }),
   });
   return parseJson(res);
@@ -79,7 +89,7 @@ export async function setAutomationStatus(
 ): Promise<{ ok: boolean; error?: string }> {
   const res = await proxyFetch(`/v1/automation-pilot/automations/${automationId}/status`, {
     method: "POST",
-    headers: { ...authHeaders(), ...pilotHeaders() },
+    headers: await withPilotAuth(),
     body: JSON.stringify({ status }),
   });
   return parseJson(res);
@@ -92,7 +102,7 @@ export async function previewAutomationSpeech(text: string): Promise<{
 }> {
   const res = await proxyFetch("/v1/automation-pilot/preview", {
     method: "POST",
-    headers: { ...authHeaders(), ...pilotHeaders() },
+    headers: await withPilotAuth(),
     body: JSON.stringify({ text }),
   });
   return parseJson(res);
@@ -104,7 +114,7 @@ export async function confirmAutomationPreview(
 ): Promise<{ ok: boolean; message?: string; error?: string }> {
   const res = await proxyFetch("/v1/automation-pilot/confirm", {
     method: "POST",
-    headers: { ...authHeaders(), ...pilotHeaders() },
+    headers: await withPilotAuth(),
     body: JSON.stringify({ preview, activate }),
   });
   return parseJson(res);
