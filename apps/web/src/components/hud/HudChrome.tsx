@@ -8,6 +8,7 @@ import { AdminPanelButton } from "@/components/hud/AdminPanelButton";
 import { BibleVerseTicker } from "@/components/hud/BibleVerseTicker";
 import { ConnectNetworksButton } from "@/components/hud/ConnectNetworksButton";
 import { HudNavMenu } from "@/components/hud/HudNavMenu";
+import { useConnectNetworks } from "@/components/hud/useConnectNetworks";
 import { SignOutButton } from "@/components/auth/SignOutButton";
 import { useDriveMap } from "@/contexts/DriveMapContext";
 import { CedWordmark } from "@/components/brand/CedWordmark";
@@ -30,6 +31,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   const router = useRouter();
   const { openDriveMap } = useDriveMap();
   const onDashboard = isDashboardPath(pathname);
+  const { status: metaStatus, busy: metaBusy, connect: connectMeta } = useConnectNetworks();
 
   function openSettings() {
     if (onDashboard) {
@@ -39,6 +41,14 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
     router.push(`${DASHBOARD_PATH}?settings=1`);
   }
 
+  const metaMenuLabel = metaStatus?.connected
+    ? metaStatus.username
+      ? `Redes · @${metaStatus.username}`
+      : "Redes conectadas"
+    : metaBusy
+      ? "Conectando redes…"
+      : "Conectar redes";
+
   const sistemaMenu = (
     <HudNavMenu
       label="Sistema"
@@ -47,6 +57,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
       items={[
         { id: "plans", label: "Planes", href: "/dashboard/plans" },
         { id: "account", label: "Cuentas", href: ACCOUNT_PATH },
+        { id: "networks", label: metaMenuLabel, onClick: () => void connectMeta() },
         { id: "whatsapp", label: "WhatsApp", href: "/dashboard/whatsapp" },
         { id: "history", label: "Historial", href: "/historial" },
         { id: "media", label: "Imágenes y PDF", href: "/historial?tab=archivos" },
