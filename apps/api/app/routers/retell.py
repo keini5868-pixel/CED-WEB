@@ -412,7 +412,8 @@ async def retell_generate_image_tool(request: Request) -> JSONResponse:
     result = await execute_generate_image_tool(
         user_id=user_id, payload=payload, args=args
     )
-    return JSONResponse(status_code=200, content={"result": result["result"]})
+    spoken = str(result.get("result") or result.get("spoken") or "").strip()
+    return JSONResponse(status_code=200, content={"result": spoken})
 
 
 @router.post("/tools/generar_pdf")

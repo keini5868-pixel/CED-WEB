@@ -359,6 +359,102 @@ def test_execute_generate_image_prefers_transcript_utterance_as_user_request():
     asyncio.run(run())
 
 
+def test_execute_generate_image_honors_retell_prompt_without_transcript():
+    """Retell tool webhook often sends only args.prompt — must not 500 / reject."""
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_generate_image_tool
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={
+                "ok": True,
+                "spoken": "Imagen generada, señor. Ya la puede ver en pantalla.",
+                "url": "https://cdn.example.com/robot.png",
+            },
+        ) as mock_exec:
+            out = await execute_generate_image_tool(
+                user_id="u-img-prompt-only",
+                payload={"call": {"call_id": "c-prompt-only"}},
+                args={"prompt": "un robot azul futurista sobre una mesa"},
+            )
+            mock_exec.assert_awaited_once()
+            assert "robot" in mock_exec.await_args.args[2]["prompt"].lower()
+            assert out["ok"] is True
+            assert "result" in out
+            assert "pantalla" in out["result"].lower()
+
+    asyncio.run(run())
+
+
+def test_execute_generate_image_reject_always_has_result_key():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_generate_image_tool
+
+    async def run():
+        out = await execute_generate_image_tool(
+            user_id="u-img-reject",
+            payload={"call": {"call_id": "c-reject"}},
+            args={},
+        )
+        assert out["ok"] is False
+        assert out["error"] == "image_not_requested"
+        assert "result" in out
+        assert out["result"]
+
+    asyncio.run(run())
+
+
+def test_execute_generate_image_accepts_option_confirmation_from_transcript():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_generate_image_tool
+
+    raw = "Ok. Te sigo. Que sea la primera."
+    llm_prompt = (
+        "Imagen con los logos de CED y PM International uniéndose y la frase "
+        "CED & PM: La inteligencia que convierte la complejidad del multinivel "
+        "en resultados automáticos."
+    )
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+            return_value={"ok": True, "spoken": "Imagen generada, señor.", "url": "https://x/y.png"},
+        ) as mock_exec:
+            out = await execute_generate_image_tool(
+                user_id="u-img-choice",
+                payload={
+                    "call": {
+                        "call_id": "c-choice",
+                        "transcript_object": [
+                            {
+                                "role": "user",
+                                "content": "Una imagen con el logo oficial de PM y CED.",
+                            },
+                            {
+                                "role": "agent",
+                                "content": '1. "CED & PM: La inteligencia." 2. "Otra frase."',
+                            },
+                            {"role": "user", "content": raw},
+                        ],
+                    },
+                },
+                args={"prompt": llm_prompt},
+            )
+            passed = mock_exec.await_args.args[2]
+            assert passed["_user_request"] == raw
+            assert "inteligencia" in passed["prompt"].lower()
+            assert passed.get("_history")
+            assert out["ok"] is True
+
+    asyncio.run(run())
+
+
 def test_execute_generar_pdf_delegates_to_voice_executor():
     import asyncio
 
@@ -484,7 +580,8 @@ def test_execute_send_to_trash_asks_strong_confirm():
         )
         assert out["ok"] is True
         assert "papelera" in out["result"].lower()
-        assert "sí, borra todo el historial de finanzas" in out["result"].lower()
+        assert "sí" in out["result"].lower()
+        assert "exactamente" not in out["result"].lower()
 
     asyncio.run(_run())
     vcs._sessions.pop(uid, None)
@@ -514,23 +611,28 @@ def test_execute_send_to_trash_ignores_llm_args_for_confirm():
             args={},
         )
         assert first.get("ok") is True
-        assert "sí, borra todo el historial de finanzas" in first["result"].lower()
+        assert "sí" in first["result"].lower()
 
-        weak = await execute_send_to_trash_tool(
-            user_id=uid,
-            payload={
-                "call": {
-                    "call_id": "c-trash-args",
-                    "transcript_object": [
-                        {"role": "user", "content": "borrar todo en Finanzas"},
-                        {"role": "user", "content": "sí"},
-                    ],
-                }
-            },
-            args={"query": "sí, borra todo el historial de finanzas"},
-        )
-        assert "no basta" in weak["result"].lower()
-        assert weak.get("ok") is True
+        with patch(
+            "app.services.user_trash.trash_group",
+            return_value={"ok": True, "count": 1},
+        ):
+            confirmed = await execute_send_to_trash_tool(
+                user_id=uid,
+                payload={
+                    "call": {
+                        "call_id": "c-trash-args",
+                        "transcript_object": [
+                            {"role": "user", "content": "borrar todo en Finanzas"},
+                            {"role": "user", "content": "sí"},
+                        ],
+                    }
+                },
+                args={"query": "sí, borra todo el historial de finanzas"},
+            )
+        assert "papelera" in confirmed["result"].lower()
+        assert "no basta" not in confirmed["result"].lower()
+        assert confirmed.get("ok") is True
 
     asyncio.run(_run())
     vcs._sessions.pop(uid, None)

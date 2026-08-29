@@ -34,7 +34,7 @@ Reglas de tools (schemas definen nombre/params — no inventes tools):
   REGLA FIJA: «PM» / «PM Internacional» = PM-International AG (FitLine). Nunca Project Management.
   PROHIBIDO search_web y PROHIBIDO decir «investigando» / «consultando internet».
   Enlace PM / «abre OPPS» → open_opportunities (nunca pegues el URL). Tras abrir: verifica que el patrocinador en el registro coincida.
-- Borrar/vaciar finanzas o historial → send_to_trash. Un «sí» no basta.
+- Borrar/vaciar finanzas o historial → send_to_trash. Un aviso y un «sí» bastan; no pidas la frase larga.
 - Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar ni recitar el análisis previo).
 - YouTube: play/pause/resume/close. Siempre reproduce de inmediato (nunca pidas confirmación antes de reproducir). NUNCA confirmes play sin éxito real de la tool. SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla — sin ofrecer más ayuda. Esta regla NO aplica al resto.
 - Imagen/PDF: generate_image / generar_pdf. NUNCA digas que la imagen o el PDF están listos sin éxito de la tool.
@@ -144,7 +144,7 @@ OPEN_OPPORTUNITIES_DESCRIPTION = (
     "Tras abrir: verifica que el patrocinador en el registro coincida."
 )
 SEND_TO_TRASH_DESCRIPTION = (
-    "Papelera 30 días (finanzas/historial). Un «sí» no basta."
+    "Papelera 30 días (finanzas/historial). Un aviso y un «sí»; no pidas la frase larga."
 )
 SEARCH_NEARBY_PLACES_DESCRIPTION = "Busca destino («llévame a …»)."
 SHOW_ROUTE_DESCRIPTION = "Muestra la ruta sin iniciar guía («muéstrame la ruta»)."
@@ -2417,18 +2417,33 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
     raw = str(args.get("_user_request") or args.get("user_text") or "").strip()
     query = resolve_tool_query(payload, args)
     llm_prompt = str(args.get("prompt") or "").strip()
-    user_text = raw or query
+    # Retell a menudo manda solo args.prompt (sin transcript en el webhook de tool).
+    user_text = raw or query or _latest_user_utterance(payload) or llm_prompt
     history = _transcript_history(payload)
 
-    if not user_text or not should_generate_image_from_voice_turn(
-        user_text, llm_prompt, history
+    # Si Retell ya invocó generate_image con un prompt, generar.
+    # El gate anti-alucinación solo aplica cuando no hay contenido usable.
+    has_tool_prompt = bool(llm_prompt.strip())
+    if not has_tool_prompt and (
+        not user_text
+        or not should_generate_image_from_voice_turn(user_text, llm_prompt, history)
     ):
+        spoken = "No pidió generar una imagen, señor. ¿En qué más le ayudo?"
         return {
+            "result": spoken,
             "ok": False,
-            "spoken": "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
+            "spoken": spoken,
             "error": "image_not_requested",
         }
-    prompt = resolve_voice_image_prompt(user_text, llm_prompt, history)
+    prompt = resolve_voice_image_prompt(user_text, llm_prompt, history) or llm_prompt or user_text
+    if not prompt.strip():
+        spoken = "Indique qué imagen desea generar, señor."
+        return {
+            "result": spoken,
+            "ok": False,
+            "spoken": spoken,
+            "error": "missing_prompt",
+        }
     quality = str(args.get("quality") or "auto").strip() or "auto"
     call_id = _extract_call_id(payload)
     return await _execute_native_voice_alias_tool(
