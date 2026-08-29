@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 import httpx
@@ -156,7 +157,7 @@ def publish_instagram(
     if not ig_id:
         raise MetaSocialError("Cuenta Instagram Business no vinculada.")
 
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=60.0) as client:
         create = client.post(
             f"https://graph.facebook.com/{api_version}/{ig_id}/media",
             data={
@@ -169,6 +170,32 @@ def publish_instagram(
         if not creation_id:
             err = create.get("error", {}).get("message") or str(create)
             raise MetaSocialError(f"Instagram: {err}")
+
+        # Contenedor IG: hay que esperar FINISHED antes de media_publish
+        # (si no → "Media ID is not available").
+        status = "IN_PROGRESS"
+        for _ in range(12):
+            st = client.get(
+                f"https://graph.facebook.com/{api_version}/{creation_id}",
+                params={
+                    "fields": "status_code,status",
+                    "access_token": token,
+                },
+            ).json()
+            status = str(st.get("status_code") or "").upper()
+            if status in {"FINISHED", "PUBLISHED", "ERROR", "EXPIRED"}:
+                break
+            time.sleep(1.5)
+        if status == "ERROR":
+            detail = st.get("status") or st.get("error") or st
+            raise MetaSocialError(f"Instagram: el contenedor de media falló ({detail}).")
+        if status not in {"FINISHED", "PUBLISHED"}:
+            logger.warning(
+                "[META:IG] publish sin FINISHED user=%s status=%s creation=%s",
+                user_id[:8],
+                status,
+                creation_id,
+            )
 
         published = client.post(
             f"https://graph.facebook.com/{api_version}/{ig_id}/media_publish",

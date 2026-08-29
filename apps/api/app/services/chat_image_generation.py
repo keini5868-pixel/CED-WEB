@@ -515,8 +515,8 @@ def run_chat_image_generation(
         }
 
     url = str(img_result["url"])
-    if conversation_id:
-        register_text_chat_image_url(user_id, conversation_id, url)
+    # Siempre registrar para publicar (aunque conversation_id aún no exista).
+    register_text_chat_image_url(user_id, conversation_id or "", url)
 
     caption = str(img_result.get("caption") or display_label or "Imagen generada")
 

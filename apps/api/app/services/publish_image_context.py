@@ -123,8 +123,10 @@ def _conv_key(user_id: str, conversation_id: str) -> str:
 
 def _store_entry(user_id: str, conversation_id: str, entry: dict[str, Any]) -> None:
     with _lock:
-        _by_conversation[_conv_key(user_id, conversation_id)] = entry
         _by_user[user_id.strip()] = entry
+        cid = (conversation_id or "").strip()
+        if cid:
+            _by_conversation[_conv_key(user_id, cid)] = entry
 
 
 def register_text_chat_image(
@@ -316,14 +318,29 @@ def resolve_image_for_publishing(
     image_url: str | None = None,
     image_data: str | None = None,
 ) -> dict[str, Any]:
-    url = str(image_url or "").strip()
+    url = (image_url or "").strip()
+    if url:
+        from app.services.publish_media import to_public_meta_image_url
+
+        public = to_public_meta_image_url(url) or (
+            url if url.startswith(("http://", "https://")) else ""
+        )
+        if public:
+            return {"ok": True, "url": public, "data": None}
+
     data = str(image_data or "").strip()
-    if url or data:
-        return {"ok": True, "url": url or None, "data": data or None}
+    if data:
+        return {"ok": True, "url": None, "data": data}
 
     eid = str(explicit_image_id or "").strip()
     if eid:
-        return {"ok": True, "url": eid, "data": None}
+        from app.services.publish_media import to_public_meta_image_url
+
+        public = to_public_meta_image_url(eid) or (
+            eid if eid.startswith(("http://", "https://")) else ""
+        )
+        if public:
+            return {"ok": True, "url": public, "data": None}
 
     if not use_last_uploaded_image:
         return _no_image_error()
@@ -332,11 +349,7 @@ def resolve_image_for_publishing(
     voice_img = get_last_voice_session_image(user_id, sid)
     if voice_img and (voice_img.get("url") or voice_img.get("data")):
         logger.info("[PUBLISH] imagen encontrada en voice session user=%s", user_id[:8])
-        return {
-            "ok": True,
-            "url": voice_img.get("url"),
-            "data": voice_img.get("data"),
-        }
+        return _normalize_resolved_image(voice_img)
 
     chat_img = get_last_chat_conversation_image(user_id, conversation_id)
     if chat_img and (chat_img.get("url") or chat_img.get("data")):
@@ -345,22 +358,38 @@ def resolve_image_for_publishing(
             (conversation_id or "")[:8],
             user_id[:8],
         )
-        return {
-            "ok": True,
-            "url": chat_img.get("url"),
-            "data": chat_img.get("data"),
-        }
+        return _normalize_resolved_image(chat_img)
 
     recent = get_last_user_upload(user_id, hours=RECENT_UPLOAD_HOURS)
     if recent and (recent.get("url") or recent.get("data")):
         logger.info("[PUBLISH] imagen encontrada en uploads recientes user=%s", user_id[:8])
-        return {
-            "ok": True,
-            "url": recent.get("url"),
-            "data": recent.get("data"),
-        }
+        return _normalize_resolved_image(recent)
+
+    try:
+        from app.services.publish_media import find_latest_publish_media_url
+
+        disk_url = find_latest_publish_media_url(user_id)
+        if disk_url:
+            logger.info("[PUBLISH] imagen encontrada en disco user=%s", user_id[:8])
+            return {"ok": True, "url": disk_url, "data": None}
+    except Exception:  # noqa: BLE001
+        logger.warning("[PUBLISH] disk lookup failed user=%s", user_id[:8], exc_info=True)
 
     return _no_image_error()
+
+
+def _normalize_resolved_image(row: dict[str, Any]) -> dict[str, Any]:
+    from app.services.publish_media import to_public_meta_image_url
+
+    raw_url = str(row.get("url") or "").strip()
+    public = to_public_meta_image_url(raw_url) or (
+        raw_url if raw_url.startswith(("http://", "https://")) else ""
+    )
+    return {
+        "ok": True,
+        "url": public or None,
+        "data": row.get("data"),
+    }
 
 
 def _no_image_error() -> dict[str, Any]:

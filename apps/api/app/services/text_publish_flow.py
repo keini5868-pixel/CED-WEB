@@ -178,6 +178,10 @@ def continue_publish_after_image(
     ) or caption
     if not caption and history:
         caption = extract_caption_from_history(history, platform=platform or "instagram")
+    from app.services.publish_text import validate_caption
+
+    if caption and not validate_caption(caption)[0]:
+        caption = ""
     if caption and platform:
         begin_publish_flow(
             user_id,
@@ -276,6 +280,10 @@ def handle_publish_flow_turn(
             or extract_inline_publish_caption(text, platform=platform)
             or extract_caption_from_history(history, platform=platform)
         )
+        from app.services.publish_text import validate_caption
+
+        if inline and not validate_caption(inline)[0]:
+            inline = ""
         if inline:
             begin_publish_flow(
                 user_id,
@@ -375,7 +383,13 @@ def handle_publish_flow_turn(
         return None
 
     if stage == "awaiting_caption_choice":
-        if is_publish_confirm(user_text, allow_short_yes=True) and caption:
+        from app.services.publish_text import validate_caption
+
+        caption_ok = bool(caption) and validate_caption(caption)[0]
+        if not caption_ok:
+            caption = ""
+        short_yes = bool(re.fullmatch(r"s[ií][\s!.]*", user_text.strip(), re.I))
+        if is_publish_confirm(user_text, allow_short_yes=True) and caption_ok:
             return _execute_publish(
                 user_id,
                 conversation_id,
@@ -383,7 +397,7 @@ def handle_publish_flow_turn(
                 caption,
                 run_tool=run_tool,
             )
-        if is_publish_help_request(user_text):
+        if is_publish_help_request(user_text) or (short_yes and not caption_ok):
             draft = suggest_caption(platform, user_text, history).strip()
             draft = _clean_caption_draft(draft)
             if not draft:

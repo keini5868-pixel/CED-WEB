@@ -75,6 +75,22 @@ def client_media_url(file_name: str) -> str:
     return f"/api/ced/media/publish/{file_name}"
 
 
+def to_public_meta_image_url(url: str) -> str:
+    """Convierte /api/ced/media/... o /v1/media/... a HTTPS absoluto para Graph/Meta."""
+    raw = (url or "").strip()
+    if not raw:
+        return ""
+    match = re.search(
+        r"(?:/api/ced/media/publish/|/v1/media/publish/)([A-Za-z0-9_.-]+)$",
+        raw,
+    )
+    if match:
+        return api_media_url(match.group(1))
+    if raw.startswith(("http://", "https://")):
+        return raw
+    return ""
+
+
 def store_publish_image(user_id: str, image_bytes: bytes, mime: str) -> str:
     """URL HTTPS pública en la API (Meta / Instagram)."""
     file_name = _save_image_file(user_id, image_bytes, mime)
@@ -148,6 +164,10 @@ def resolve_image_input(
 
     if url.startswith("http://") or url.startswith("https://"):
         return url, None, "image/jpeg"
+
+    public = to_public_meta_image_url(url)
+    if public:
+        return public, None, "image/jpeg"
 
     return None, None, "image/jpeg"
 

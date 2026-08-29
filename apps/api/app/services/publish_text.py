@@ -68,6 +68,10 @@ _CAPTION_WITH_DESCRIPTION = re.compile(
     r"(?:descripci[oó]n|descricion|texto|mensaje)\s*(?:es|:))\s*(.+)$",
     re.I,
 )
+_CAPTION_PONLE = re.compile(
+    r"\b(?:pon(?:le|me)?|p[oó]nle|titulo|t[ií]tulo)\s+(.+?)(?:\s+(?:y\s+)?(?:env[ií]a|publica|manda).*)?$",
+    re.I,
+)
 _DEICTIC_CAPTION_REF = re.compile(
     r"(?:"
     r"(?:pub|pob)lica(?:la|lo|me|r)?\s+con\s+(?:eso|lo)\s+que\s+(?:te\s+)?(?:di|dije|dec[ií]a|dice|mand[eé]|envi[eé]|ped[ií])|"
@@ -84,7 +88,8 @@ _PUBLISH_TRAILING = re.compile(
 _PUBLISH_TRAILING_EXTRA = re.compile(r"\s+con\s+ese\s+texto\s*$", re.I)
 _PUBLISH_HELP = re.compile(
     r"\b(ay[uú]da|ay[uú]dame|suger|cr[eé]ame|cr[eé]a|prop[oó]n|propone|"
-    r"t[ií]tulo|descripci[oó]n|escr[ií]belo|escribe)\b",
+    r"t[ií]tulo|descripci[oó]n|escr[ií]belo|escribe)\b|"
+    r"^(?:s[ií]|ok|dale|por\s+favor)[\s!.]*$",
     re.I,
 )
 _INLINE_CAPTION = re.compile(
@@ -95,9 +100,15 @@ _INLINE_CAPTION = re.compile(
 )
 _PUBLISH_ONLY = re.compile(
     r"^(?:ced\s+)?public[a-záéíóú]*\s+"
-    r"(?:esta\s+)?(?:imagen|foto|esto)?\s*"
+    r"(?:esta\s+)?(?:imagen|im[aá]?gen|imgen|img|foto|esto)?\s*"
     r"(?:en\s+)?(?:mi\s+)?"
     r"(?:instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram|facebook|fb)?\s*[.!?]*$",
+    re.I,
+)
+_IMAGE_ONLY_DEICTIC = re.compile(
+    r"^(?:esta|esa|la)\s+(?:imagen|im[aá]?gen|imgen|img|foto|pic)"
+    r"(?:\s+en\s+(?:instagram|insta|ig|imtagram|imstagram|intagran|instagran|intagram|"
+    r"facebook|fb|meta|redes))?\s*[.!?]*$",
     re.I,
 )
 
@@ -733,13 +744,28 @@ def _is_instruction_garbage_caption(text: str) -> bool:
     t = (text or "").strip()
     if not t or _PUBLISH_ONLY.match(t):
         return True
+    if _IMAGE_ONLY_DEICTIC.match(t):
+        return True
     if is_deictic_caption_reference(t):
         return True
     if _is_instruction_to_ced(t):
         return True
     if is_publish_confirm(t):
         return True
-    if _PUBLISH_STEM.search(t) and (_SOCIAL_PLATFORM.search(t) or re.search(r"\b(imagen|foto)\b", t, re.I)):
+    if _PUBLISH_STEM.search(t) and (_SOCIAL_PLATFORM.search(t) or re.search(r"\b(imagen|imgen|foto|img)\b", t, re.I)):
+        return True
+    # «esta imgen en intagran» / «en instagram» sin copy real
+    if _SOCIAL_PLATFORM.search(t) and re.search(
+        r"\b(?:esta|esa|la)\s+(?:imagen|im[aá]?gen|imgen|foto|img)\b",
+        t,
+        re.I,
+    ):
+        return True
+    if re.fullmatch(
+        r"(?:en\s+)?(?:instagram|insta|ig|intagran|facebook|fb)\s*[.!?]*",
+        t,
+        re.I,
+    ):
         return True
     letters = re.sub(r"[^a-záéíóúñA-ZÁÉÍÓÚÑ]", "", t)
     return len(letters) < 3
@@ -755,6 +781,7 @@ def extract_user_caption_for_publish(text: str) -> str:
         _CAPTION_NAMED,
         _CAPTION_MESSAGE_WILL,
         _CAPTION_WITH_DESCRIPTION,
+        _CAPTION_PONLE,
     ):
         match = pattern.search(t)
         if not match:
