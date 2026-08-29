@@ -28,6 +28,8 @@ PREFERRED_IG_USER_IDS = frozenset({"17841438529982300"})
 PREFERRED_IG_USERNAMES = frozenset({"ced.ev"})
 
 # Permisos mínimos para publicar (FB Page + IG Business). Re-conectar Meta tras cambiar scopes.
+# Nota: pages_messaging / pages_manage_metadata NO van en Facebook Login clásico
+# (Meta responde "Invalid Scopes"); se gestionan vía producto Messenger / App Review.
 DEFAULT_META_OAUTH_SCOPES = (
     "public_profile,"
     "pages_show_list,"
@@ -35,8 +37,6 @@ DEFAULT_META_OAUTH_SCOPES = (
     "pages_read_user_content,"
     "pages_manage_engagement,"
     "pages_manage_posts,"
-    "pages_manage_metadata,"
-    "pages_messaging,"
     "business_management,"
     "instagram_basic,"
     "instagram_content_publish,"
