@@ -43,6 +43,8 @@ _EXPLICIT_IMAGE = [
     "genera una imagen de un atardecer",
     "hazme una foto de un gato",
     "créame una imagen del producto",
+    "Genérame una imagen de el sistema CED un robot sofisticado con el logo de CED",
+    "Ok genérame una imagen con esa idea",
     "Diseña un creativo para Meta Ads",
     "generame un flyer con los beneficios",
     "quiero un flyer de Restorate",
@@ -186,3 +188,40 @@ def test_explicit_generate_after_brief_still_creates_image():
     msg = "Ok, genera la imagen: Sek en un traje negro rompiendo un cartel de Instagram"
     assert is_generate_image_intent(msg) is True
     assert should_take_direct_image_path(msg, []) is True
+
+
+def test_mobile_accent_generame_takes_direct_image_path():
+    """Teclado móvil escribe Genérame (é) — no debe caer a «concepto + ¿ajustar?»."""
+    msg = (
+        "Genérame una imagen de el sistema CED un robot sofisticado "
+        "con el logo de CED"
+    )
+    assert is_generate_image_intent(msg) is True
+    assert should_take_direct_image_path(msg, []) is True
+
+
+def test_confirm_esa_idea_reuses_prior_image_prompt():
+    from app.services.chat_image_generation import effective_user_prompt
+
+    prior = (
+        "Genérame una imagen de el sistema CED un robot sofisticado "
+        "con el logo de CED"
+    )
+    hist = [
+        {"role": "user", "content": prior},
+        {
+            "role": "assistant",
+            "content": (
+                "Aquí está la visión del robot CED.\n\n"
+                "**Concepto: El Sistema CED**\n"
+                "Un robot sofisticado de armadura oscura.\n\n"
+                "¿Quieres ajustar algo antes de generarlo?"
+            ),
+        },
+    ]
+    confirm = "Ok genérame una imagen con esa idea"
+    assert is_generate_image_intent(confirm) is True
+    assert should_take_direct_image_path(confirm, hist) is True
+    resolved = effective_user_prompt(confirm, hist)
+    assert "sistema CED" in resolved or "robot" in resolved.lower()
+    assert "esa idea" not in resolved.lower() or "sistema CED" in resolved

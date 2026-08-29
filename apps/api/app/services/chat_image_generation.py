@@ -8,10 +8,13 @@ from typing import Any
 
 from app.services.chat_intents import (
     history_has_pending_image_brief,
+    is_anaphoric_image_subject,
     is_casual_chat_interrupt,
     is_generate_image_intent,
     is_image_choice_confirmation,
     is_pdf_intent,
+    last_assistant_image_concept,
+    last_concrete_image_user_prompt,
     parse_followup_image_prompt,
     parse_generate_image_prompt,
     resolve_confirmed_image_prompt,
@@ -110,6 +113,13 @@ def build_enriched_generation_context(
 def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> str:
     t = (text or "").strip()
     parsed = parse_generate_image_prompt(t)
+    if parsed and is_anaphoric_image_subject(parsed):
+        prior = last_concrete_image_user_prompt(history)
+        if prior:
+            return prior
+        concept = last_assistant_image_concept(history)
+        if concept:
+            return concept
     if parsed:
         return parsed
     confirmed = resolve_confirmed_image_prompt(t, history)

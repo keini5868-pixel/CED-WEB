@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import re
 
+# Incluye «Genérame» / «Créame» (acento en la raíz; típico de teclado móvil).
 _CREATE_VERBS = (
-    r"(?:gener(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|"
-    r"cre(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|"
-    r"cr[eé]ame|gener[aá]me|"
+    r"(?:gen[eé]r(?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|"
+    r"cr[eé](?:a(?:r|me|mos|s|is|n|do)?|ame|áme)|"
+    r"cr[eé]ame|gener[aá]me|gen[eé]rame|"
     r"haz(?:me|nos|lo|la|es|emos|er|go)?|hacer(?:me|lo)?|"
     r"dise[nñ]a(?:r|me|mos|s|is|n|do)?|"
     r"dibuja(?:r|me|mos|s)?|pinta(?:r|me|mos|s)?|"
@@ -243,7 +244,7 @@ _IMAGE_PROMPT_PATTERNS = (
 _PDF_PATTERNS = (
     re.compile(r"\bpdf\b", re.I),
     re.compile(
-        r"\b(genera|generar|gener[aá]me|crea|crear|cr[eé]ame|exporta|exportar|convierte|convertir|"
+        r"\b(genera|generar|gener[aá]me|gen[eé]rame|crea|crear|cr[eé]ame|exporta|exportar|convierte|convertir|"
         r"guarda|guárdame|haz(me)?|dame|pon|pásalo|pasalo)\s+"
         r"(?:.{0,48}?\s+)?(?:en\s+)?(?:un(?:a)?\s+)?pdf\b",
         re.I,
@@ -442,6 +443,58 @@ def parse_generate_image_prompt(text: str) -> str | None:
     return None
 
 
+def is_anaphoric_image_subject(subject: str) -> bool:
+    """True si el sujeto del pedido es «esa idea / esa visión» sin escena concreta."""
+    t = (subject or "").strip()
+    if not t:
+        return True
+    return bool(_ANAPHORIC_IMAGE_SUBJECT.match(t))
+
+
+def last_concrete_image_user_prompt(
+    history: list[dict[str, str]] | None,
+) -> str | None:
+    """Último pedido de imagen del usuario con escena usable (no anáfora)."""
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        if role not in {"user", "customer"}:
+            continue
+        content = (row.get("content") or "").strip()
+        if not content or not is_generate_image_intent(content):
+            continue
+        parsed = parse_generate_image_prompt(content)
+        if parsed and not is_anaphoric_image_subject(parsed):
+            return content
+        if not is_anaphoric_image_subject(content) and len(content) >= 20:
+            return content
+    return None
+
+
+def last_assistant_image_concept(
+    history: list[dict[str, str]] | None,
+) -> str | None:
+    """Concepto visual propuesto por el asistente (sin haber generado aún)."""
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        if role not in {"assistant", "model", "agent"}:
+            continue
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        if not _PENDING_IMAGE_ASSISTANT.search(content):
+            continue
+        # Preferir bloque tras «Concepto» / descripción sustancial.
+        m = re.search(
+            r"(?is)(?:Concepto\s*:\s*|visi[oó]n[^:\n]*:\s*)(.+?)(?:\n\s*\n|¿|$)",
+            content,
+        )
+        if m and len(m.group(1).strip()) >= 40:
+            return m.group(1).strip()[:2000]
+        if len(content) >= 80:
+            return content[:2000]
+    return None
+
+
 _FOLLOWUP_IMAGE_CONTEXT = re.compile(
     r"\b(genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|imagen|foto|dise[nñ]o|"
     r"creativo|ilustraci[oó]n|face(?:book)?|instagram|publicar|banner|flyer|"
@@ -476,7 +529,7 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
 )
 _IMAGE_THREAD_USER = re.compile(
     r"(?:"
-    r"\b(?:genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|haz(?:me|nos|lo|la)?|dise[nñ]a(?:r|me|mos|s|is|n|do)?)"
+    r"\b(?:gen[eé]ra(?:r|me|nos|do)?|cr[eé]a(?:r|me|nos|do)?|haz(?:me|nos|lo|la)?|dise[nñ]a(?:r|me|mos|s|is|n|do)?)"
     r"\s+(?:una?\s+)?(?:imagen|foto|creativo|flyer|logo|banner|portada|dise[nñ]o)\b"
     r"|"
     r"\b(?:una?\s+)?imagen\s+que\s+(?:tenga|muestre|diga|lleve|con)\b"
@@ -492,7 +545,8 @@ _IMAGE_THREAD_ASSISTANT = re.compile(
     r"aqu[ií]\s+est[aá]\s+(?:tu|su)\s+(?:imagen|creativo)|"
     r"plasmada\s+en\s+la\s+imagen|junto\s+a\s+los\s+logos|"
     r"generando\s+su\s+imagen|"
-    r"\*\*Qu[eé]\s+es\*\*|Detalle visible|Observaciones\s+[—\-])",
+    r"\*\*Qu[eé]\s+es\*\*|Detalle visible|Observaciones\s+[—\-]|"
+    r"antes\s+de\s+generarlo|quieres\s+ajustar|Concepto:)",
     re.I,
 )
 _PENDING_IMAGE_USER = re.compile(
@@ -501,6 +555,8 @@ _PENDING_IMAGE_USER = re.compile(
 _PENDING_IMAGE_ASSISTANT = re.compile(
     r"(?is)(?:plasmada\s+en\s+la\s+imagen|junto\s+a\s+los\s+logos|"
     r"frase\s+debe|generando\s+su\s+imagen|"
+    r"antes\s+de\s+generarlo|quieres\s+ajustar|"
+    r"visi[oó]n\s+del|Concepto:|"
     r"\b1\.\s*.{8,}\b2\.\s*)"
 )
 _IMAGE_CHOICE_CONFIRM = re.compile(
@@ -509,12 +565,18 @@ _IMAGE_CHOICE_CONFIRM = re.compile(
     r"que\s+sea\s+la\s+(?P<ord1>primera|segunda|tercera|1|2|3|uno|dos|tres)"
     r"|opci[oó]n\s*(?P<ord3>1|2|3|uno|dos|tres|primera|segunda|tercera)"
     r"|n[uú]mero\s*(?P<ord4>1|2|3|uno|dos|tres)"
-    r"|esa\s+(?:frase|opci[oó]n)"
+    r"|esa\s+(?:frase|opci[oó]n|idea|visi[oó]n|concepto|descripci[oó]n)"
+    r"|con\s+esa\s+(?:idea|visi[oó]n|concepto|descripci[oó]n|propuesta)"
     r"|usa\s+la\s+primera"
     r"|adelante\s+con\s+(?:esa|la\s+primera)"
     r"|cr[eé]ala"
-    r"|genera(?:la|lo)(?:\s+(?:ya|as[ií]|con\s+esa))?"
+    r"|gen[eé]ra(?:la|lo|me)?(?:\s+(?:ya|as[ií]|con\s+esa(?:\s+\w+)?))?"
     r")"
+)
+_ANAPHORIC_IMAGE_SUBJECT = re.compile(
+    r"(?is)^\s*(?:con\s+)?(?:esa|este|esta|ese)\s+"
+    r"(?:idea|visi[oó]n|concepto|descripci[oó]n|propuesta|brief|dise[nñ]o)\s*[.!]?\s*$"
+    r"|^\s*(?:eso|lo\s+mismo|lo\s+anterior|con\s+eso)\s*[.!]?\s*$"
 )
 _SHORT_IMAGE_CHOICE = re.compile(
     r"(?is)^\s*(?:(?:ok|okay|vale|dale|perfecto|listo|te\s+sigo)[\s.,!]*)*"
