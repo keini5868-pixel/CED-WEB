@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 from typing import Any
 
@@ -121,6 +122,34 @@ async def meta_webhook_verify(
     return _hub_verify(hub_mode, hub_verify_token, hub_challenge)
 
 
+def _dm_event_from_payload(
+    *,
+    channel: str,
+    page_id: str | None,
+    sender: Any,
+    message: Any,
+    raw: Any,
+) -> dict[str, Any] | None:
+    """Normaliza un DM (formato messaging[] o changes.field=messages)."""
+    if not isinstance(message, dict):
+        message = {}
+    if message.get("is_echo") or message.get("is_deleted"):
+        return None
+    contact = str(sender or "").strip()
+    if not contact:
+        return None
+    text = str(message.get("text") or "")
+    return {
+        "channel": channel,
+        "event_type": "dm_new",
+        "contact_id": contact,
+        "text": text,
+        "page_id": page_id,
+        "ig_id": page_id if channel == "instagram" else None,
+        "raw": raw,
+    }
+
+
 def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
     """Normaliza payload Graph webhook → eventos internos."""
     events: list[dict[str, Any]] = []
@@ -130,32 +159,46 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(entry, dict):
             continue
         page_id = str(entry.get("id") or "") or None
-        # Messenger / IG DMs
+        # Messenger / IG DMs (formato platform messaging)
         for messaging in entry.get("messaging") or []:
             if not isinstance(messaging, dict):
                 continue
             sender = (messaging.get("sender") or {}).get("id")
-            message = messaging.get("message") or {}
-            text = str(message.get("text") or "")
-            if not sender:
-                continue
-            events.append(
-                {
-                    "channel": channel,
-                    "event_type": "dm_new",
-                    "contact_id": str(sender),
-                    "text": text,
-                    "page_id": page_id,
-                    "raw": messaging,
-                }
+            ev = _dm_event_from_payload(
+                channel=channel,
+                page_id=page_id,
+                sender=sender,
+                message=messaging.get("message") or {},
+                raw=messaging,
             )
-        # Comments (changes field)
+            if ev:
+                events.append(ev)
+        # Instagram Graph: comments + messages vía changes[]
         for change in entry.get("changes") or []:
             if not isinstance(change, dict):
                 continue
             field = str(change.get("field") or "")
             value = change.get("value") or {}
             if not isinstance(value, dict):
+                continue
+            if field in {"messages", "message"}:
+                sender_obj = value.get("sender") if isinstance(value.get("sender"), dict) else {}
+                from_obj = value.get("from") if isinstance(value.get("from"), dict) else {}
+                sender = sender_obj.get("id") or from_obj.get("id")
+                message = (
+                    value.get("message")
+                    if isinstance(value.get("message"), dict)
+                    else value
+                )
+                ev = _dm_event_from_payload(
+                    channel=channel,
+                    page_id=page_id,
+                    sender=sender,
+                    message=message,
+                    raw=change,
+                )
+                if ev:
+                    events.append(ev)
                 continue
             if field in {"comments", "feed"} or "comment" in field:
                 text = str(value.get("text") or value.get("message") or "")
@@ -190,16 +233,32 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
 async def _handle_meta_webhook(request: Request) -> dict[str, Any]:
     if not automation_module_enabled():
         # ACK 200 para no romper suscripción Meta; no procesar.
+        logger.info("[AUTOMATION:WEBHOOK] skipped module_disabled")
         return {"ok": True, "skipped": "module_disabled"}
     raw = await request.body()
     sig = request.headers.get("X-Hub-Signature-256")
     if not _verify_meta_signature(raw, sig):
         raise HTTPException(status_code=403, detail="Firma inválida")
     try:
-        body = await request.json()
+        body = json.loads(raw.decode("utf-8") or "{}")
     except Exception:  # noqa: BLE001
         body = {}
-    parsed = _parse_messaging_and_comments(body if isinstance(body, dict) else {})
+    if not isinstance(body, dict):
+        body = {}
+    parsed = _parse_messaging_and_comments(body)
+    logger.info(
+        "[AUTOMATION:WEBHOOK] object=%s entries=%s parsed=%s fields=%s",
+        body.get("object"),
+        len(body.get("entry") or []) if isinstance(body.get("entry"), list) else 0,
+        len(parsed),
+        [
+            str((c or {}).get("field") or "")
+            for e in (body.get("entry") or [])
+            if isinstance(e, dict)
+            for c in (e.get("changes") or [])
+            if isinstance(c, dict)
+        ][:12],
+    )
     enqueued = 0
     for ev in parsed:
         user_id = _resolve_user_id_from_meta(

@@ -74,6 +74,75 @@ def test_whatsapp_link_builder():
     assert "Hola" in link
 
 
+def test_parse_instagram_changes_messages_field():
+    from app.routers.automation_pilot import _parse_messaging_and_comments
+
+    body = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "17841438529982300",
+                "time": 1,
+                "changes": [
+                    {
+                        "field": "messages",
+                        "value": {
+                            "sender": {"id": "sender-igsid"},
+                            "recipient": {"id": "17841438529982300"},
+                            "timestamp": 1,
+                            "message": {"mid": "m1", "text": "hola dry-run"},
+                        },
+                    }
+                ],
+            }
+        ],
+    }
+    evs = _parse_messaging_and_comments(body)
+    assert len(evs) == 1
+    assert evs[0]["event_type"] == "dm_new"
+    assert evs[0]["contact_id"] == "sender-igsid"
+    assert evs[0]["text"] == "hola dry-run"
+    assert evs[0]["ig_id"] == "17841438529982300"
+
+
+def test_parse_instagram_messaging_array_still_works():
+    from app.routers.automation_pilot import _parse_messaging_and_comments
+
+    body = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "17841438529982300",
+                "messaging": [
+                    {
+                        "sender": {"id": "s2"},
+                        "message": {"text": "via messaging[]", "is_echo": False},
+                    }
+                ],
+            }
+        ],
+    }
+    evs = _parse_messaging_and_comments(body)
+    assert len(evs) == 1 and evs[0]["text"] == "via messaging[]"
+
+
+def test_parse_skips_echo_dms():
+    from app.routers.automation_pilot import _parse_messaging_and_comments
+
+    body = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "1",
+                "messaging": [
+                    {"sender": {"id": "s"}, "message": {"text": "x", "is_echo": True}}
+                ],
+            }
+        ],
+    }
+    assert _parse_messaging_and_comments(body) == []
+
+
 def test_gate_defaults_off():
     from app.services.automation_pilot.gate import (
         automation_ig_fb_live_enabled,
