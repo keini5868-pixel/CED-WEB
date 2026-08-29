@@ -136,15 +136,14 @@ def _resolve_user_id_from_meta(*, page_id: str | None, ig_id: str | None) -> str
             ):
                 return str(row.get("user_id") or "") or None
 
-        # Fallback piloto: si Meta manda entry.id=0, usar la conexión @ced.ev
-        if not page_lookup and not ig_lookup:
-            ced_rows = [
-                r
-                for r in rows
-                if str(r.get("ig_username") or "").lower() == "ced.ev"
-            ]
-            if len(ced_rows) == 1:
-                return str(ced_rows[0].get("user_id") or "") or None
+        # Fallback piloto: conexión @ced.ev si no hay match (tests Meta con ids dummy)
+        ced_rows = [
+            r
+            for r in rows
+            if str(r.get("ig_username") or "").lower() == "ced.ev"
+        ]
+        if len(ced_rows) == 1:
+            return str(ced_rows[0].get("user_id") or "") or None
     except Exception:  # noqa: BLE001
         logger.exception("[AUTOMATION] resolve user from meta failed")
     return None
