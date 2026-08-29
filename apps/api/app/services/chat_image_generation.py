@@ -7,11 +7,14 @@ import re
 from typing import Any
 
 from app.services.chat_intents import (
+    history_has_pending_image_brief,
     is_casual_chat_interrupt,
     is_generate_image_intent,
+    is_image_choice_confirmation,
     is_pdf_intent,
     parse_followup_image_prompt,
     parse_generate_image_prompt,
+    resolve_confirmed_image_prompt,
     user_requests_prior_reference,
     wants_image_reference_edit,
 )
@@ -109,6 +112,9 @@ def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> st
     parsed = parse_generate_image_prompt(t)
     if parsed:
         return parsed
+    confirmed = resolve_confirmed_image_prompt(t, history)
+    if confirmed:
+        return confirmed
     followup = parse_followup_image_prompt(t, history)
     if followup:
         return followup
@@ -166,6 +172,8 @@ def should_take_direct_image_path(
         return False
     if is_image_meta_talk(t):
         return False
+    if is_image_choice_confirmation(t) and history_has_pending_image_brief(history):
+        return True
     # «Agrégale texto…» sobre imagen del hilo — path visual aunque no diga «genera imagen».
     if prompt_requires_ideogram_text(t) and (
         wants_image_reference_edit(t) or user_requests_prior_reference(t)
@@ -181,6 +189,58 @@ def should_take_direct_image_path(
     if is_image_creation_request(t, history):
         return True
     return False
+
+
+def looks_like_visual_image_prompt(prompt: str) -> bool:
+    """True si el prompt del LLM ya describe la escena (no solo «la primera»)."""
+    t = (prompt or "").strip()
+    if len(t) < 36:
+        return False
+    return bool(
+        re.search(
+            r"(?i)\b(imagen|foto|logo|flyer|banner|creativo|frase|wordmark|"
+            r"pm\s*international|fitline|tipograf|headline|composici[oó]n|"
+            r"castillo|ced\s*&\s*pm)\b",
+            t,
+        )
+    )
+
+
+def should_generate_image_from_voice_turn(
+    user_text: str,
+    llm_prompt: str = "",
+    history: list[dict[str, str]] | None = None,
+) -> bool:
+    """Voz: pedido explícito, o confirmación de una frase ya propuesta para la imagen."""
+    t = (user_text or "").strip()
+    if should_take_direct_image_path(t, history):
+        return True
+    if is_image_choice_confirmation(t) and (
+        looks_like_visual_image_prompt(llm_prompt)
+        or history_has_pending_image_brief(history)
+    ):
+        return True
+    return False
+
+
+def resolve_voice_image_prompt(
+    user_text: str,
+    llm_prompt: str = "",
+    history: list[dict[str, str]] | None = None,
+) -> str:
+    t = (user_text or "").strip()
+    llm = (llm_prompt or "").strip()
+    if is_generate_image_intent(t):
+        return t
+    if is_image_choice_confirmation(t):
+        if looks_like_visual_image_prompt(llm):
+            return llm
+        rebuilt = resolve_confirmed_image_prompt(t, history)
+        if rebuilt:
+            return rebuilt
+        if llm:
+            return llm
+    return llm or t
 
 
 def reply_is_image_wait_filler(text: str) -> bool:

@@ -717,10 +717,10 @@ async def _execute_voice_tool_body(
 
         if name == "generate_image":
             from app.services.chat_image_generation import (
+                resolve_voice_image_prompt,
                 run_chat_image_generation,
-                should_take_direct_image_path,
+                should_generate_image_from_voice_turn,
             )
-            from app.services.chat_intents import is_generate_image_intent
 
             # Preferir la frase original del usuario (voz LLM a menudo reformula
             # `prompt` y mezcla historial). El adaptador mínimo trabaja sobre el NL crudo.
@@ -731,15 +731,13 @@ async def _execute_voice_tool_body(
                 or ""
             ).strip()
             llm_prompt = str(params.get("prompt") or "").strip()
-            if not raw_user or not should_take_direct_image_path(raw_user, None):
+            history = params.get("_history") if isinstance(params.get("_history"), list) else []
+            if not should_generate_image_from_voice_turn(raw_user, llm_prompt, history):
                 return _spoken_err(
                     "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
                     error="image_not_requested",
                 )
-            if raw_user and is_generate_image_intent(raw_user):
-                prompt = raw_user
-            else:
-                prompt = llm_prompt or raw_user
+            prompt = resolve_voice_image_prompt(raw_user, llm_prompt, history)
             if not prompt:
                 return _spoken_err(
                     "Indique qué imagen desea generar, señor.",
@@ -764,7 +762,7 @@ async def _execute_voice_tool_body(
                 user_id,
                 conversation_id,
                 prompt,
-                None,
+                history or None,
                 plan_id=str(balance.get("plan_id") or "") or None,
                 allow_reference=False,
             )

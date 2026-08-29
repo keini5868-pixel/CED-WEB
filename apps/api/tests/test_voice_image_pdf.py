@@ -339,3 +339,51 @@ def test_voice_search_web_needs_recharge_pushes_client_action():
     assert result["error"] == "needs_recharge"
     assert pushed_actions and pushed_actions[0]["action"] == "recharge_needed"
     assert pushed_actions[0]["payload"]["resource"] == "web_search"
+
+
+def test_voice_generate_image_accepts_phrase_choice_confirmation():
+    """«Que sea la primera» tras un brief de imagen debe generar, no rechazar."""
+    history = [
+        {
+            "role": "user",
+            "content": "Una imagen con el logo de PM y el logo de CED uniéndose.",
+        },
+        {
+            "role": "assistant",
+            "content": (
+                '1. "CED & PM: La inteligencia que convierte la complejidad '
+                'del multinivel en resultados automáticos." '
+                '2. "Tu negocio, simplificado."'
+            ),
+        },
+    ]
+    with (
+        patch(
+            "app.services.chat_image_generation.run_chat_image_generation",
+            return_value={
+                "ok": True,
+                "url": "https://cdn.example.com/ced-pm.png",
+                "caption": "CED PM",
+                "reply": "Listo",
+            },
+        ) as mock_gen,
+        patch("app.services.voice_tool_executor.voice_access_state", return_value={"plan_id": "elite"}),
+        patch("app.services.voice_tool_executor.vcs.push_tool_event"),
+    ):
+        result = asyncio.run(
+            execute_voice_tool(
+                "generate_image",
+                "user-voice-img-choice",
+                {
+                    "prompt": "la primera",
+                    "_user_request": "Ok. Te sigo. Que sea la primera.",
+                    "_history": history,
+                    "call_id": "call-choice",
+                },
+            )
+        )
+
+    assert result["ok"] is True
+    mock_gen.assert_called_once()
+    used = mock_gen.call_args.args[2]
+    assert "inteligencia" in used.lower() or "logo" in used.lower()

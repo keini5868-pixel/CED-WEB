@@ -48,6 +48,42 @@ _EXPLICIT_IMAGE_CREATE = re.compile(
     re.I,
 )
 
+# «Necesito una foto, pero antes acordemos…» — no es generate_image.
+_IMAGE_PREPRODUCTION = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"before\s+(?:we\s+)?(?:even\s+)?(?:creat|generat|mak|draw|design)|"
+    r"antes\s+(?:de\s+)?(?:crear|generar|hacer|dise[nñ]ar|generarla|crearla)|"
+    r"need\s+before\s+(?:creat|generat)|"
+    r"necesit[oa]\s+(?:antes|primero)\s+(?:de\s+)?(?:crear|generar|acord)|"
+    r"(?:let'?s|vamos\s+a)\s+(?:agree|acordar|ponernos\s+de\s+acuerdo)|"
+    r"\bagree\s+(?:to|on|first)\b|"
+    r"acord(?:emos|ar)\b|"
+    r"pong(?:a|á)monos\s+de\s+acuerdo|"
+    r"de\s+acuerdo\s+(?:en|para)\s+(?:hacer|crear)|"
+    r"primero\s+(?:hay\s+que\s+)?(?:acord|decidir|hablar|ponernos)|"
+    r"first\s+(?:we\s+)?(?:need\s+to\s+)?(?:agree|decide|discuss|align)|"
+    r"don'?t\s+(?:creat|generat|make)\w*\s+(?:it\s+)?(?:yet|now)|"
+    r"no\s+(?:la\s+|lo\s+)?(?:generes|crees|hagas|generar)\s+(?:todav[ií]a|a[uú]n)"
+    r")"
+)
+
+_VISUAL_CONTEXT = re.compile(
+    r"(?i)\b(?:imagen|foto|photo|picture|image|instagram|flyer|creativo|post)\b"
+)
+
+_SOFT_NEED_PHOTO = re.compile(
+    r"(?i)\b(?:necesito|quiero|i\s+need|i\s+want)\s+"
+    r"(?:(?:una?|an?|the|la|el)\s+)?(?:imagen|foto|photo|picture|image)\b"
+)
+
+_PHOTO_FOR_CHANNEL = re.compile(
+    r"(?i)\b(?:imagen|foto|photo|picture|image)\b.{0,80}\b"
+    r"(?:para|for|de)\s+(?:(?:el|la|mi|su|the|sek'?s?|ced'?s?)\s+)*"
+    r"(?:instagram|insta|\big\b|facebook|\bfb\b|tiktok|perfil|profile|feed|"
+    r"stories|story|redes)\b"
+)
+
 # Entregable pedido = idea/concepto/copy/prompt/texto (NO archivo de imagen).
 _TEXT_DELIVERABLE = (
     r"(?:idea|ideas|concepto|conceptos|copy|copies|guion(?:es)?|gui[oó]n(?:es)?|"
@@ -113,6 +149,24 @@ _IMAGE_META_TALK = re.compile(
 )
 
 
+def is_image_preproduction_talk(text: str) -> bool:
+    """True si habla de una foto/post pero aún quiere acordar el concepto.
+
+    No es un pedido de generar PNG. Ej.: «necesito una foto para Instagram,
+    pero antes acordemos algo impactante».
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _IMAGE_PREPRODUCTION.search(t) and _VISUAL_CONTEXT.search(t):
+        return True
+    if _EXPLICIT_IMAGE_CREATE.search(t):
+        return False
+    if _SOFT_NEED_PHOTO.search(t) and _PHOTO_FOR_CHANNEL.search(t):
+        return True
+    return False
+
+
 def is_text_ideation_request(text: str) -> bool:
     """True si el usuario pide idea/concepto/copy/texto — NO generar imagen.
 
@@ -123,6 +177,8 @@ def is_text_ideation_request(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    if is_image_preproduction_talk(t):
+        return True
     if not _TEXT_IDEATION.search(t):
         return False
     # «genera una imagen…» explícito gana, salvo que el objeto del verbo sea la idea.
@@ -152,6 +208,8 @@ def is_generate_image_intent(text: str) -> bool:
     # Pedido real de PDF gana; mención casual de "PDF" en una lista no bloquea imagen
     # ni la dispara (is_pdf_intent ya no es solo mentions_pdf).
     if is_pdf_intent(t):
+        return False
+    if is_image_preproduction_talk(t):
         return False
     # Ideas/copys/conceptos en texto — no alucinar una imagen.
     if is_text_ideation_request(t):
@@ -417,15 +475,68 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     re.I,
 )
 _IMAGE_THREAD_USER = re.compile(
+    r"(?:"
     r"\b(?:genera(?:r|me|nos|do)?|crea(?:r|me|nos|do)?|haz(?:me|nos|lo|la)?|dise[nñ]a(?:r|me|mos|s|is|n|do)?)"
-    r"\s+(?:una?\s+)?(?:imagen|foto|creativo|flyer|logo|banner|portada|dise[nñ]o)\b",
+    r"\s+(?:una?\s+)?(?:imagen|foto|creativo|flyer|logo|banner|portada|dise[nñ]o)\b"
+    r"|"
+    r"\b(?:una?\s+)?imagen\s+que\s+(?:tenga|muestre|diga|lleve|con)\b"
+    r"|"
+    r"\blogo\s+oficial\b"
+    r"|"
+    r"\bel\s+meta\s+de\s+(?:una?\s+)?imagen\b"
+    r")",
     re.I,
 )
 _IMAGE_THREAD_ASSISTANT = re.compile(
     r"(?:Descargar imagen|Creativo\s+[—\-]|imagen generada|"
     r"aqu[ií]\s+est[aá]\s+(?:tu|su)\s+(?:imagen|creativo)|"
+    r"plasmada\s+en\s+la\s+imagen|junto\s+a\s+los\s+logos|"
+    r"generando\s+su\s+imagen|"
     r"\*\*Qu[eé]\s+es\*\*|Detalle visible|Observaciones\s+[—\-])",
     re.I,
+)
+_PENDING_IMAGE_USER = re.compile(
+    r"(?is)\b(?:imagen|foto|flyer|creativo|banner|logo|portada)\b"
+)
+_PENDING_IMAGE_ASSISTANT = re.compile(
+    r"(?is)(?:plasmada\s+en\s+la\s+imagen|junto\s+a\s+los\s+logos|"
+    r"frase\s+debe|generando\s+su\s+imagen|"
+    r"\b1\.\s*.{8,}\b2\.\s*)"
+)
+_IMAGE_CHOICE_CONFIRM = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"que\s+sea\s+la\s+(?P<ord1>primera|segunda|tercera|1|2|3|uno|dos|tres)"
+    r"|opci[oó]n\s*(?P<ord3>1|2|3|uno|dos|tres|primera|segunda|tercera)"
+    r"|n[uú]mero\s*(?P<ord4>1|2|3|uno|dos|tres)"
+    r"|esa\s+(?:frase|opci[oó]n)"
+    r"|usa\s+la\s+primera"
+    r"|adelante\s+con\s+(?:esa|la\s+primera)"
+    r"|cr[eé]ala"
+    r"|genera(?:la|lo)(?:\s+(?:ya|as[ií]|con\s+esa))?"
+    r")"
+)
+_SHORT_IMAGE_CHOICE = re.compile(
+    r"(?is)^\s*(?:(?:ok|okay|vale|dale|perfecto|listo|te\s+sigo)[\s.,!]*)*"
+    r"(?:que\s+sea\s+)?la\s+(?P<ord2>primera|segunda|tercera|1|2|3)\s*[.!]?\s*$"
+)
+_ORDINAL_INDEX = {
+    "primera": 0,
+    "1": 0,
+    "uno": 0,
+    "segunda": 1,
+    "2": 1,
+    "dos": 1,
+    "tercera": 2,
+    "3": 2,
+    "tres": 2,
+}
+_NUMBERED_QUOTED_OPTION = re.compile(
+    r'(?:^|[.\s])(\d+)[\).:\-]\s*[«"“]([^"»”]{8,240})[»"”]',
+    re.M,
+)
+_NUMBERED_LINE_OPTION = re.compile(
+    r"(?m)^\s*(\d+)[\).:\-]\s+(.{8,240}?)$",
 )
 _CASUAL_CHAT_BLOCK = re.compile(
     r"\b("
@@ -462,9 +573,99 @@ def history_has_active_image_thread(history: list[dict[str, str]] | None) -> boo
         role = str(row.get("role") or "").lower()
         if role == "user" and _IMAGE_THREAD_USER.search(content):
             return True
-        if role in ("assistant", "model") and _IMAGE_THREAD_ASSISTANT.search(content):
+        if role in ("assistant", "model", "agent") and _IMAGE_THREAD_ASSISTANT.search(content):
             return True
     return False
+
+
+def is_image_choice_confirmation(text: str) -> bool:
+    """True si elige una frase/opción ya propuesta para generar la imagen."""
+    t = (text or "").strip()
+    if not t or len(t) > 180:
+        return False
+    if is_generate_image_intent(t) or is_text_ideation_request(t):
+        return False
+    if re.search(r"(?i)\b(pregunta|preguntas|despu[eé]s\s+de)\b", t):
+        return False
+    return bool(_SHORT_IMAGE_CHOICE.match(t) or _IMAGE_CHOICE_CONFIRM.search(t))
+
+
+def history_has_pending_image_brief(history: list[dict[str, str]] | None) -> bool:
+    """True si el hilo reciente ya describió o propuso la imagen a generar."""
+    if history_has_active_image_thread(history):
+        return True
+    for row in (history or [])[-10:]:
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        role = str(row.get("role") or "").lower()
+        if role in {"user", "customer"} and _PENDING_IMAGE_USER.search(content):
+            return True
+        if role in {"assistant", "model", "agent"} and _PENDING_IMAGE_ASSISTANT.search(
+            content
+        ):
+            return True
+    return False
+
+
+def _choice_index_from_text(text: str) -> int:
+    match = _SHORT_IMAGE_CHOICE.match(text or "") or _IMAGE_CHOICE_CONFIRM.search(text or "")
+    if not match:
+        return 0
+    groups = match.groupdict()
+    for key in ("ord1", "ord2", "ord3", "ord4"):
+        val = groups.get(key)
+        if val:
+            return _ORDINAL_INDEX.get(val.lower(), 0)
+    return 0
+
+
+def _extract_numbered_options(content: str) -> list[str]:
+    quoted = [m.group(2).strip() for m in _NUMBERED_QUOTED_OPTION.finditer(content or "")]
+    if len(quoted) >= 2:
+        return quoted[:5]
+    lines: list[str] = []
+    for match in _NUMBERED_LINE_OPTION.finditer(content or ""):
+        body = match.group(2).strip().strip('"«»“”')
+        body = re.sub(r"\s*\([^)]{0,40}\)\s*$", "", body).strip()
+        if body:
+            lines.append(body)
+    return lines[:5]
+
+
+def resolve_confirmed_image_prompt(
+    text: str,
+    history: list[dict[str, str]] | None = None,
+) -> str | None:
+    """Arma el prompt visual cuando el usuario elige «la primera» tras un brief de imagen."""
+    if not is_image_choice_confirmation(text):
+        return None
+    if not history_has_pending_image_brief(history):
+        return None
+    idx = _choice_index_from_text(text)
+    user_bits: list[str] = []
+    options: list[str] = []
+    for row in history or []:
+        content = (row.get("content") or "").strip()
+        role = str(row.get("role") or "").lower()
+        if not content:
+            continue
+        if role in {"user", "customer"} and _PENDING_IMAGE_USER.search(content):
+            user_bits.append(content)
+        if role in {"assistant", "model", "agent"}:
+            found = _extract_numbered_options(content)
+            if len(found) >= 2:
+                options = found
+    headline = options[idx] if options and 0 <= idx < len(options) else ""
+    brief = " ".join(user_bits[-3:]).strip()
+    if not brief and not headline:
+        return None
+    parts = ["Generate this image:"]
+    if brief:
+        parts.append(brief)
+    if headline:
+        parts.append(f'Headline text on the image, exactly: "{headline}"')
+    return " ".join(parts)[:4000]
 
 
 def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None = None) -> str | None:
