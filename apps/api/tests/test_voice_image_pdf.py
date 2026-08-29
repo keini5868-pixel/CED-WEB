@@ -147,6 +147,44 @@ def test_voice_generate_image_no_event_on_failure():
     assert not pushed
 
 
+def test_voice_generate_image_honors_retell_scene_prompt_without_generate_verb():
+    """Retell manda solo prompt visual (sin «genera imagen») — debe generar igual."""
+    scene = (
+        "Un asistente de IA futurista llamado CED en un centro de comando "
+        "holográfico con luz azul y tipografía limpia"
+    )
+
+    with (
+        patch(
+            "app.services.chat_image_generation.run_chat_image_generation",
+            return_value={
+                "ok": True,
+                "url": "https://cdn.example.com/ced.png",
+                "caption": "CED",
+                "reply": "Listo",
+            },
+        ) as mock_gen,
+        patch("app.services.voice_tool_executor.voice_access_state", return_value={"plan_id": "elite"}),
+        patch("app.services.voice_tool_executor.vcs.push_tool_event"),
+    ):
+        result = asyncio.run(
+            execute_voice_tool(
+                "generate_image",
+                "user-voice-img-scene",
+                {
+                    "prompt": scene,
+                    "_user_request": scene,
+                    "call_id": "call-scene",
+                },
+            )
+        )
+
+    assert result["ok"] is True
+    assert result.get("error") != "image_not_requested"
+    mock_gen.assert_called_once()
+    assert "CED" in mock_gen.call_args.args[2] or "asistente" in mock_gen.call_args.args[2].lower()
+
+
 def test_voice_generate_image_requires_prompt():
     result = asyncio.run(execute_voice_tool("generate_image", "user-voice-img", {"prompt": ""}))
     assert result["ok"] is False

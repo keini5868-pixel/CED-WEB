@@ -732,12 +732,21 @@ async def _execute_voice_tool_body(
             ).strip()
             llm_prompt = str(params.get("prompt") or "").strip()
             history = params.get("_history") if isinstance(params.get("_history"), list) else []
-            if not should_generate_image_from_voice_turn(raw_user, llm_prompt, history):
+            # Retell ya invocó generate_image: si trae prompt, generar aunque el
+            # utterance no diga literalmente «genera una imagen».
+            if not llm_prompt and not should_generate_image_from_voice_turn(
+                raw_user, llm_prompt, history
+            ):
+                logger.info(
+                    "[VOICE:IMAGE] reject user=%s reason=image_not_requested raw=%s",
+                    user_id[:8],
+                    (raw_user or "")[:80],
+                )
                 return _spoken_err(
                     "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
                     error="image_not_requested",
                 )
-            prompt = resolve_voice_image_prompt(raw_user, llm_prompt, history)
+            prompt = resolve_voice_image_prompt(raw_user, llm_prompt, history) or llm_prompt or raw_user
             if not prompt:
                 return _spoken_err(
                     "Indique qué imagen desea generar, señor.",
