@@ -170,19 +170,60 @@ def test_parse_instagram_message_edit_with_sender():
     assert evs[0]["text"] == "texto editado"
 
 
-def test_parse_message_edit_without_sender_skipped():
+def test_resolve_falls_back_when_entry_id_is_zero(monkeypatch):
+    from app.routers import automation_pilot as ap
+
+    class _FakeRes:
+        data = [
+            {
+                "user_id": "user-ced",
+                "page_id": "1323710797485913",
+                "ig_user_id": "17841438529982300",
+                "ig_username": "ced.ev",
+            }
+        ]
+
+    class _FakeTable:
+        def select(self, *_a, **_k):
+            return self
+
+        def execute(self):
+            return _FakeRes()
+
+    class _FakeClient:
+        def table(self, _name):
+            return _FakeTable()
+
+    monkeypatch.setattr(ap.supabase_db, "get_client", lambda: _FakeClient())
+    assert ap._resolve_user_id_from_meta(page_id="0", ig_id="0") == "user-ced"
+    assert ap._resolve_user_id_from_meta(page_id=None, ig_id=None) == "user-ced"
+
+
+def test_parse_changes_messages_uses_recipient_as_owner():
     from app.routers.automation_pilot import _parse_messaging_and_comments
 
     body = {
         "object": "instagram",
         "entry": [
             {
-                "id": "17841438529982300",
-                "messaging": [{"timestamp": 1, "message_edit": {"text": "x"}}],
+                "id": "0",
+                "changes": [
+                    {
+                        "field": "messages",
+                        "value": {
+                            "sender": {"id": "from-user"},
+                            "recipient": {"id": "28885340687724102"},
+                            "message": {"text": "hola"},
+                        },
+                    }
+                ],
             }
         ],
     }
-    assert _parse_messaging_and_comments(body) == []
+    evs = _parse_messaging_and_comments(body)
+    assert len(evs) == 1
+    assert evs[0]["ig_id"] == "28885340687724102"
+    assert evs[0]["contact_id"] == "from-user"
 
 
 def test_gate_defaults_off():

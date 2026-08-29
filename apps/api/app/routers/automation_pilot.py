@@ -94,25 +94,57 @@ IG_USER_ID_ALIASES: dict[str, str] = {
 }
 
 
+def _clean_meta_id(raw: Any) -> str | None:
+    value = str(raw or "").strip()
+    if not value or value == "0":
+        return None
+    return value
+
+
 def _resolve_user_id_from_meta(*, page_id: str | None, ig_id: str | None) -> str | None:
     try:
         client = supabase_db.get_client()
-        q = client.table("meta_connections").select("user_id, page_id, ig_user_id, ig_username")
+        q = client.table("meta_connections").select(
+            "user_id, page_id, ig_user_id, ig_username"
+        )
         res = q.execute()
-        ig_lookup = str(ig_id or "").strip()
-        if ig_lookup in IG_USER_ID_ALIASES:
-            ig_lookup = IG_USER_ID_ALIASES[ig_lookup]
-        for row in res.data or []:
-            if page_id and str(row.get("page_id") or "") == str(page_id):
+        rows = list(res.data or [])
+        page_lookup = _clean_meta_id(page_id)
+        ig_lookup = _clean_meta_id(ig_id)
+        ig_candidates: list[str] = []
+        if ig_lookup:
+            ig_candidates.append(ig_lookup)
+            mapped = IG_USER_ID_ALIASES.get(ig_lookup)
+            if mapped:
+                ig_candidates.append(mapped)
+        else:
+            # Meta test / entry.id=0 → ids conocidos de @ced.ev
+            ig_candidates.extend(sorted(set(IG_USER_ID_ALIASES.values())))
+
+        for row in rows:
+            if page_lookup and str(row.get("page_id") or "") == page_lookup:
                 return str(row.get("user_id") or "") or None
             row_ig = str(row.get("ig_user_id") or "")
+            if row_ig and row_ig in ig_candidates:
+                return str(row.get("user_id") or "") or None
             if ig_lookup and row_ig and row_ig == ig_lookup:
                 return str(row.get("user_id") or "") or None
-            # Match direct scoped id if stored later / webhook sends Business id
-            if ig_id and row_ig and row_ig == str(ig_id):
+            if (
+                ig_lookup
+                and ig_lookup in IG_USER_ID_ALIASES
+                and str(row.get("ig_username") or "").lower() == "ced.ev"
+            ):
                 return str(row.get("user_id") or "") or None
-            if ig_id and str(ig_id) in IG_USER_ID_ALIASES and str(row.get("ig_username") or "").lower() == "ced.ev":
-                return str(row.get("user_id") or "") or None
+
+        # Fallback piloto: si Meta manda entry.id=0, usar la conexión @ced.ev
+        if not page_lookup and not ig_lookup:
+            ced_rows = [
+                r
+                for r in rows
+                if str(r.get("ig_username") or "").lower() == "ced.ev"
+            ]
+            if len(ced_rows) == 1:
+                return str(ced_rows[0].get("user_id") or "") or None
     except Exception:  # noqa: BLE001
         logger.exception("[AUTOMATION] resolve user from meta failed")
     return None
@@ -185,7 +217,7 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
     for entry in body.get("entry") or []:
         if not isinstance(entry, dict):
             continue
-        page_id = str(entry.get("id") or "") or None
+        page_id = _clean_meta_id(entry.get("id"))
         # Messenger / IG DMs (messaging + standby; a veces llegan como objeto, no lista)
         for messaging in _as_list(entry.get("messaging")) + _as_list(entry.get("standby")):
             if not isinstance(messaging, dict):
@@ -194,6 +226,10 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
             sender_obj = messaging.get("sender")
             if isinstance(sender_obj, dict):
                 sender = sender_obj.get("id")
+            recipient_obj = (
+                messaging.get("recipient") if isinstance(messaging.get("recipient"), dict) else {}
+            )
+            owner_ig = _clean_meta_id(recipient_obj.get("id")) or page_id
             # Mensaje normal
             if isinstance(messaging.get("message"), dict):
                 ev = _dm_event_from_payload(
@@ -204,6 +240,8 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
                     raw=messaging,
                 )
                 if ev:
+                    if owner_ig and channel == "instagram":
+                        ev["ig_id"] = owner_ig
                     events.append(ev)
                 continue
             # Instagram a veces manda message_edit en vez de message
@@ -217,6 +255,8 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
                     raw=messaging,
                 )
                 if ev:
+                    if owner_ig and channel == "instagram":
+                        ev["ig_id"] = owner_ig
                     events.append(ev)
                 continue
             # Ignore reads/deliveries/reactions sin texto útil
@@ -232,7 +272,11 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
             if field in {"messages", "message"}:
                 sender_obj = value.get("sender") if isinstance(value.get("sender"), dict) else {}
                 from_obj = value.get("from") if isinstance(value.get("from"), dict) else {}
+                recipient_obj = (
+                    value.get("recipient") if isinstance(value.get("recipient"), dict) else {}
+                )
                 sender = sender_obj.get("id") or from_obj.get("id")
+                owner_ig = _clean_meta_id(recipient_obj.get("id")) or page_id
                 message = (
                     value.get("message")
                     if isinstance(value.get("message"), dict)
@@ -246,19 +290,24 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
                     raw=change,
                 )
                 if ev:
+                    if owner_ig and channel == "instagram":
+                        ev["ig_id"] = owner_ig
                     events.append(ev)
                 continue
             if field in {"comments", "feed"} or "comment" in field:
                 text = str(value.get("text") or value.get("message") or "")
+                from_obj = value.get("from") if isinstance(value.get("from"), dict) else {}
                 contact = (
-                    str((value.get("from") or {}).get("id") or "")
+                    str(from_obj.get("id") or "")
                     or str(value.get("from_id") or "")
                     or "unknown"
                 )
+                media_obj = value.get("media") if isinstance(value.get("media"), dict) else {}
                 media_id = str(
                     value.get("media_id")
                     or value.get("post_id")
                     or value.get("parent_id")
+                    or media_obj.get("id")
                     or ""
                 ) or None
                 events.append(
@@ -269,8 +318,10 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
                         "text": text,
                         "media_id": media_id,
                         "page_id": page_id,
-                        "ig_id": page_id if channel == "instagram" else None,
-                        "display_name": str((value.get("from") or {}).get("name") or "")
+                        "ig_id": page_id,
+                        "display_name": str(
+                            from_obj.get("name") or from_obj.get("username") or ""
+                        )
                         or None,
                         "raw": change,
                     }
@@ -296,6 +347,7 @@ async def _handle_meta_webhook(request: Request) -> dict[str, Any]:
     parsed = _parse_messaging_and_comments(body)
     entry0 = (body.get("entry") or [None])[0] if isinstance(body.get("entry"), list) else None
     entry_keys = sorted(entry0.keys()) if isinstance(entry0, dict) else []
+    entry_id = str(entry0.get("id") or "") if isinstance(entry0, dict) else ""
     msg_items = _as_list(entry0.get("messaging")) if isinstance(entry0, dict) else []
     standby_items = _as_list(entry0.get("standby")) if isinstance(entry0, dict) else []
     change_items = _as_list(entry0.get("changes")) if isinstance(entry0, dict) else []
@@ -312,12 +364,13 @@ async def _handle_meta_webhook(request: Request) -> dict[str, Any]:
         else []
     )
     logger.info(
-        "[AUTOMATION:WEBHOOK] object=%s entries=%s parsed=%s entry_keys=%s "
+        "[AUTOMATION:WEBHOOK] object=%s entries=%s parsed=%s entry_id=%s entry_keys=%s "
         "messaging=%s standby=%s changes=%s msg0_keys=%s has_sender=%s "
-        "edit_keys=%s fields=%s enqueued_pending",
+        "edit_keys=%s fields=%s",
         body.get("object"),
         len(body.get("entry") or []) if isinstance(body.get("entry"), list) else 0,
         len(parsed),
+        entry_id,
         entry_keys,
         len(msg_items),
         len(standby_items),
