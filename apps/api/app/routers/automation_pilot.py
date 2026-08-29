@@ -103,7 +103,7 @@ def _clean_meta_id(raw: Any) -> str | None:
 
 def _resolve_user_id_from_meta(*, page_id: str | None, ig_id: str | None) -> str | None:
     try:
-        client = supabase_db.get_client()
+        client = supabase_db._client()
         q = client.table("meta_connections").select(
             "user_id, page_id, ig_user_id, ig_username"
         )

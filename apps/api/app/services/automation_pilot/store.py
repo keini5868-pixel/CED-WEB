@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _client():
-    return supabase_db.get_client()
+    return supabase_db._client()
 
 
 def list_automations(user_id: str) -> list[dict[str, Any]]:

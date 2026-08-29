@@ -194,7 +194,7 @@ def test_resolve_falls_back_when_entry_id_is_zero(monkeypatch):
         def table(self, _name):
             return _FakeTable()
 
-    monkeypatch.setattr(ap.supabase_db, "get_client", lambda: _FakeClient())
+    monkeypatch.setattr(ap.supabase_db, "_client", lambda: _FakeClient())
     assert ap._resolve_user_id_from_meta(page_id="0", ig_id="0") == "user-ced"
     assert ap._resolve_user_id_from_meta(page_id=None, ig_id=None) == "user-ced"
 
