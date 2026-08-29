@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from urllib.parse import urlencode
 
 import httpx
@@ -22,6 +23,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/meta", tags=["meta"])
 
+# Preferencia al elegir Page con IG vinculado (evita pages[0] incorrecto).
+PREFERRED_IG_USER_IDS = frozenset({"17841438529982300"})
+PREFERRED_IG_USERNAMES = frozenset({"ced.ev"})
+
 # Permisos mínimos para publicar (FB Page + IG Business). Re-conectar Meta tras cambiar scopes.
 DEFAULT_META_OAUTH_SCOPES = (
     "public_profile,"
@@ -35,6 +40,93 @@ DEFAULT_META_OAUTH_SCOPES = (
     "instagram_content_publish,"
     "instagram_manage_comments"
 )
+
+
+def _normalize_ig_username(raw: Any) -> str:
+    return str(raw or "").strip().lstrip("@").lower()
+
+
+def select_instagram_page_candidate(
+    candidates: list[dict[str, Any]],
+    *,
+    preferred_ig_ids: frozenset[str] | None = None,
+    preferred_usernames: frozenset[str] | None = None,
+) -> dict[str, Any] | None:
+    """Elige Page+IG: preferidos por id/username, si no la primera con IG."""
+    if not candidates:
+        return None
+    pref_ids = preferred_ig_ids if preferred_ig_ids is not None else PREFERRED_IG_USER_IDS
+    pref_names = (
+        preferred_usernames if preferred_usernames is not None else PREFERRED_IG_USERNAMES
+    )
+    for c in candidates:
+        if str(c.get("ig_id") or "") in pref_ids:
+            return c
+    for c in candidates:
+        if _normalize_ig_username(c.get("ig_username")) in pref_names:
+            return c
+    return candidates[0]
+
+
+def _collect_pages_with_instagram(
+    client: httpx.Client,
+    *,
+    api_version: str,
+    pages_data: list[Any],
+    user_access_token: str,
+) -> list[dict[str, Any]]:
+    """Recorre /me/accounts y conserva solo Pages con instagram_business_account."""
+    out: list[dict[str, Any]] = []
+    for page in pages_data:
+        if not isinstance(page, dict):
+            continue
+        page_id = str(page.get("id") or "").strip()
+        if not page_id:
+            continue
+        page_token = str(page.get("access_token") or user_access_token or "").strip()
+        if not page_token:
+            continue
+        try:
+            ig_res = client.get(
+                f"https://graph.facebook.com/{api_version}/{page_id}",
+                params={
+                    "fields": "instagram_business_account",
+                    "access_token": page_token,
+                },
+            ).json()
+        except Exception:  # noqa: BLE001
+            logger.exception("[META:OAUTH] page %s ig lookup failed", page_id)
+            continue
+        if not isinstance(ig_res, dict):
+            continue
+        ig_id = str((ig_res.get("instagram_business_account") or {}).get("id") or "").strip()
+        if not ig_id:
+            continue
+        try:
+            ig_profile = client.get(
+                f"https://graph.facebook.com/{api_version}/{ig_id}",
+                params={
+                    "fields": "username,followers_count,media_count",
+                    "access_token": page_token,
+                },
+            ).json()
+        except Exception:  # noqa: BLE001
+            logger.exception("[META:OAUTH] ig profile %s failed", ig_id)
+            ig_profile = {}
+        if not isinstance(ig_profile, dict):
+            ig_profile = {}
+        out.append(
+            {
+                "page_id": page_id,
+                "page_token": page_token,
+                "page_name": str(page.get("name") or ""),
+                "ig_id": ig_id,
+                "ig_username": ig_profile.get("username"),
+                "followers_count": ig_profile.get("followers_count"),
+                "media_count": ig_profile.get("media_count"),
+            }
+        )
+    return out
 
 
 def _oauth_dialog_params(settings) -> dict[str, str]:
@@ -122,38 +214,44 @@ def meta_oauth_callback(
                 f"https://graph.facebook.com/{api_version}/me/accounts",
                 params={"access_token": access_token},
             ).json()
-            page = (pages.get("data") or [{}])[0]
-            page_token = page.get("access_token") or access_token
-            page_id = page.get("id")
+            pages_data = pages.get("data") if isinstance(pages, dict) else None
+            if not isinstance(pages_data, list):
+                pages_data = []
 
-            ig_res = client.get(
-                f"https://graph.facebook.com/{api_version}/{page_id}",
-                params={
-                    "fields": "instagram_business_account",
-                    "access_token": page_token,
-                },
-            ).json()
-            ig = (ig_res.get("instagram_business_account") or {}).get("id")
-            if not ig:
+            candidates = _collect_pages_with_instagram(
+                client,
+                api_version=api_version,
+                pages_data=pages_data,
+                user_access_token=access_token,
+            )
+            chosen = select_instagram_page_candidate(candidates)
+            if not chosen:
+                logger.warning(
+                    "[META:OAUTH] no_ig pages=%s candidates=0",
+                    len(pages_data),
+                )
                 return RedirectResponse(f"{web}/dashboard?meta=no_ig")
 
-            ig_profile = client.get(
-                f"https://graph.facebook.com/{api_version}/{ig}",
-                params={
-                    "fields": "username,followers_count,media_count",
-                    "access_token": page_token,
-                },
-            ).json()
+            page_id = str(chosen["page_id"])
+            page_token = str(chosen["page_token"])
+            ig = str(chosen["ig_id"])
+            logger.info(
+                "[META:OAUTH] picked page=%s ig=%s @%s from %s candidate(s)",
+                page_id,
+                ig,
+                chosen.get("ig_username") or "",
+                len(candidates),
+            )
 
         supabase_db.upsert_meta_connection(
             user_id,
             {
                 "ig_user_id": ig,
-                "ig_username": ig_profile.get("username"),
+                "ig_username": chosen.get("ig_username"),
                 "page_id": page_id,
                 "access_token": page_token,
-                "followers_count": ig_profile.get("followers_count"),
-                "media_count": ig_profile.get("media_count"),
+                "followers_count": chosen.get("followers_count"),
+                "media_count": chosen.get("media_count"),
             },
         )
         return RedirectResponse(f"{web}/dashboard?meta=connected")
