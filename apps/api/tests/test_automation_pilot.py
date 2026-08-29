@@ -146,7 +146,7 @@ def test_parse_instagram_messaging_as_single_object():
     assert len(evs) == 1 and evs[0]["text"] == "objeto suelto"
 
 
-def test_parse_instagram_standby_dms():
+def test_parse_instagram_message_edit_with_sender():
     from app.routers.automation_pilot import _parse_messaging_and_comments
 
     body = {
@@ -154,14 +154,35 @@ def test_parse_instagram_standby_dms():
         "entry": [
             {
                 "id": "17841438529982300",
-                "standby": [
-                    {"sender": {"id": "s4"}, "message": {"text": "via standby"}},
+                "messaging": [
+                    {
+                        "sender": {"id": "s-edit"},
+                        "timestamp": 1,
+                        "message_edit": {"mid": "m1", "text": "texto editado", "num_edit": 1},
+                    }
                 ],
             }
         ],
     }
     evs = _parse_messaging_and_comments(body)
-    assert len(evs) == 1 and evs[0]["text"] == "via standby"
+    assert len(evs) == 1
+    assert evs[0]["contact_id"] == "s-edit"
+    assert evs[0]["text"] == "texto editado"
+
+
+def test_parse_message_edit_without_sender_skipped():
+    from app.routers.automation_pilot import _parse_messaging_and_comments
+
+    body = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "17841438529982300",
+                "messaging": [{"timestamp": 1, "message_edit": {"text": "x"}}],
+            }
+        ],
+    }
+    assert _parse_messaging_and_comments(body) == []
 
 
 def test_gate_defaults_off():

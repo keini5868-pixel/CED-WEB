@@ -173,19 +173,37 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
         for messaging in _as_list(entry.get("messaging")) + _as_list(entry.get("standby")):
             if not isinstance(messaging, dict):
                 continue
-            # Solo mensajes entrantes; ignore reads/deliveries/reactions sin "message"
-            if not isinstance(messaging.get("message"), dict):
+            sender = None
+            sender_obj = messaging.get("sender")
+            if isinstance(sender_obj, dict):
+                sender = sender_obj.get("id")
+            # Mensaje normal
+            if isinstance(messaging.get("message"), dict):
+                ev = _dm_event_from_payload(
+                    channel=channel,
+                    page_id=page_id,
+                    sender=sender,
+                    message=messaging.get("message") or {},
+                    raw=messaging,
+                )
+                if ev:
+                    events.append(ev)
                 continue
-            sender = (messaging.get("sender") or {}).get("id")
-            ev = _dm_event_from_payload(
-                channel=channel,
-                page_id=page_id,
-                sender=sender,
-                message=messaging.get("message") or {},
-                raw=messaging,
-            )
-            if ev:
-                events.append(ev)
+            # Instagram a veces manda message_edit en vez de message
+            edit = messaging.get("message_edit")
+            if isinstance(edit, dict):
+                ev = _dm_event_from_payload(
+                    channel=channel,
+                    page_id=page_id,
+                    sender=sender,
+                    message={"text": str(edit.get("text") or ""), "mid": edit.get("mid")},
+                    raw=messaging,
+                )
+                if ev:
+                    events.append(ev)
+                continue
+            # Ignore reads/deliveries/reactions sin texto útil
+            continue
         # Instagram Graph: comments + messages vía changes[]
         for change in _as_list(entry.get("changes")):
             if not isinstance(change, dict):
@@ -267,9 +285,19 @@ async def _handle_meta_webhook(request: Request) -> dict[str, Any]:
     sample_msg_keys = (
         sorted(msg_items[0].keys()) if msg_items and isinstance(msg_items[0], dict) else []
     )
+    sample0 = msg_items[0] if msg_items and isinstance(msg_items[0], dict) else {}
+    has_sender = isinstance(sample0.get("sender"), dict) and bool(
+        (sample0.get("sender") or {}).get("id")
+    )
+    edit_keys = (
+        sorted((sample0.get("message_edit") or {}).keys())
+        if isinstance(sample0.get("message_edit"), dict)
+        else []
+    )
     logger.info(
         "[AUTOMATION:WEBHOOK] object=%s entries=%s parsed=%s entry_keys=%s "
-        "messaging=%s standby=%s changes=%s msg0_keys=%s fields=%s",
+        "messaging=%s standby=%s changes=%s msg0_keys=%s has_sender=%s "
+        "edit_keys=%s fields=%s enqueued_pending",
         body.get("object"),
         len(body.get("entry") or []) if isinstance(body.get("entry"), list) else 0,
         len(parsed),
@@ -278,6 +306,8 @@ async def _handle_meta_webhook(request: Request) -> dict[str, Any]:
         len(standby_items),
         len(change_items),
         sample_msg_keys,
+        has_sender,
+        edit_keys,
         [
             str((c or {}).get("field") or "")
             for c in change_items
