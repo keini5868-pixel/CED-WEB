@@ -86,15 +86,32 @@ def _verify_meta_signature(request_body: bytes, signature_header: str | None) ->
     return hmac.compare_digest(expected, got)
 
 
+# Instagram Login API usa un user id distinto al IG Business id de Page.
+# Ambos identifican @ced.ev; los webhooks de Instagram Login traen el scoped id.
+IG_USER_ID_ALIASES: dict[str, str] = {
+    "28885340687724102": "17841438529982300",  # Instagram Login scoped → Business IG
+    "17841438529982300": "17841438529982300",
+}
+
+
 def _resolve_user_id_from_meta(*, page_id: str | None, ig_id: str | None) -> str | None:
     try:
         client = supabase_db.get_client()
-        q = client.table("meta_connections").select("user_id, page_id, ig_user_id")
+        q = client.table("meta_connections").select("user_id, page_id, ig_user_id, ig_username")
         res = q.execute()
+        ig_lookup = str(ig_id or "").strip()
+        if ig_lookup in IG_USER_ID_ALIASES:
+            ig_lookup = IG_USER_ID_ALIASES[ig_lookup]
         for row in res.data or []:
             if page_id and str(row.get("page_id") or "") == str(page_id):
                 return str(row.get("user_id") or "") or None
-            if ig_id and str(row.get("ig_user_id") or "") == str(ig_id):
+            row_ig = str(row.get("ig_user_id") or "")
+            if ig_lookup and row_ig and row_ig == ig_lookup:
+                return str(row.get("user_id") or "") or None
+            # Match direct scoped id if stored later / webhook sends Business id
+            if ig_id and row_ig and row_ig == str(ig_id):
+                return str(row.get("user_id") or "") or None
+            if ig_id and str(ig_id) in IG_USER_ID_ALIASES and str(row.get("ig_username") or "").lower() == "ced.ev":
                 return str(row.get("user_id") or "") or None
     except Exception:  # noqa: BLE001
         logger.exception("[AUTOMATION] resolve user from meta failed")
