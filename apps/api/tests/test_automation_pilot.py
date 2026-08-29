@@ -126,21 +126,42 @@ def test_parse_instagram_messaging_array_still_works():
     assert len(evs) == 1 and evs[0]["text"] == "via messaging[]"
 
 
-def test_parse_skips_echo_dms():
+def test_parse_instagram_messaging_as_single_object():
     from app.routers.automation_pilot import _parse_messaging_and_comments
 
     body = {
         "object": "instagram",
         "entry": [
             {
-                "id": "1",
-                "messaging": [
-                    {"sender": {"id": "s"}, "message": {"text": "x", "is_echo": True}}
+                "id": "17841438529982300",
+                # Meta a veces manda un objeto en vez de lista
+                "messaging": {
+                    "sender": {"id": "s3"},
+                    "message": {"text": "objeto suelto"},
+                },
+            }
+        ],
+    }
+    evs = _parse_messaging_and_comments(body)
+    assert len(evs) == 1 and evs[0]["text"] == "objeto suelto"
+
+
+def test_parse_instagram_standby_dms():
+    from app.routers.automation_pilot import _parse_messaging_and_comments
+
+    body = {
+        "object": "instagram",
+        "entry": [
+            {
+                "id": "17841438529982300",
+                "standby": [
+                    {"sender": {"id": "s4"}, "message": {"text": "via standby"}},
                 ],
             }
         ],
     }
-    assert _parse_messaging_and_comments(body) == []
+    evs = _parse_messaging_and_comments(body)
+    assert len(evs) == 1 and evs[0]["text"] == "via standby"
 
 
 def test_gate_defaults_off():

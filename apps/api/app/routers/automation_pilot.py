@@ -122,6 +122,16 @@ async def meta_webhook_verify(
     return _hub_verify(hub_mode, hub_verify_token, hub_challenge)
 
 
+def _as_list(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    return []
+
+
 def _dm_event_from_payload(
     *,
     channel: str,
@@ -159,9 +169,12 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(entry, dict):
             continue
         page_id = str(entry.get("id") or "") or None
-        # Messenger / IG DMs (formato platform messaging)
-        for messaging in entry.get("messaging") or []:
+        # Messenger / IG DMs (messaging + standby; a veces llegan como objeto, no lista)
+        for messaging in _as_list(entry.get("messaging")) + _as_list(entry.get("standby")):
             if not isinstance(messaging, dict):
+                continue
+            # Solo mensajes entrantes; ignore reads/deliveries/reactions sin "message"
+            if not isinstance(messaging.get("message"), dict):
                 continue
             sender = (messaging.get("sender") or {}).get("id")
             ev = _dm_event_from_payload(
@@ -174,7 +187,7 @@ def _parse_messaging_and_comments(body: dict[str, Any]) -> list[dict[str, Any]]:
             if ev:
                 events.append(ev)
         # Instagram Graph: comments + messages vía changes[]
-        for change in entry.get("changes") or []:
+        for change in _as_list(entry.get("changes")):
             if not isinstance(change, dict):
                 continue
             field = str(change.get("field") or "")
@@ -246,16 +259,28 @@ async def _handle_meta_webhook(request: Request) -> dict[str, Any]:
     if not isinstance(body, dict):
         body = {}
     parsed = _parse_messaging_and_comments(body)
+    entry0 = (body.get("entry") or [None])[0] if isinstance(body.get("entry"), list) else None
+    entry_keys = sorted(entry0.keys()) if isinstance(entry0, dict) else []
+    msg_items = _as_list(entry0.get("messaging")) if isinstance(entry0, dict) else []
+    standby_items = _as_list(entry0.get("standby")) if isinstance(entry0, dict) else []
+    change_items = _as_list(entry0.get("changes")) if isinstance(entry0, dict) else []
+    sample_msg_keys = (
+        sorted(msg_items[0].keys()) if msg_items and isinstance(msg_items[0], dict) else []
+    )
     logger.info(
-        "[AUTOMATION:WEBHOOK] object=%s entries=%s parsed=%s fields=%s",
+        "[AUTOMATION:WEBHOOK] object=%s entries=%s parsed=%s entry_keys=%s "
+        "messaging=%s standby=%s changes=%s msg0_keys=%s fields=%s",
         body.get("object"),
         len(body.get("entry") or []) if isinstance(body.get("entry"), list) else 0,
         len(parsed),
+        entry_keys,
+        len(msg_items),
+        len(standby_items),
+        len(change_items),
+        sample_msg_keys,
         [
             str((c or {}).get("field") or "")
-            for e in (body.get("entry") or [])
-            if isinstance(e, dict)
-            for c in (e.get("changes") or [])
+            for c in change_items
             if isinstance(c, dict)
         ][:12],
     )
@@ -267,8 +292,9 @@ async def _handle_meta_webhook(request: Request) -> dict[str, Any]:
         )
         if not user_id:
             logger.info(
-                "[AUTOMATION:WEBHOOK] no user for page=%s channel=%s",
+                "[AUTOMATION:WEBHOOK] no user for page=%s ig=%s channel=%s",
                 ev.get("page_id"),
+                ev.get("ig_id"),
                 ev.get("channel"),
             )
             continue
