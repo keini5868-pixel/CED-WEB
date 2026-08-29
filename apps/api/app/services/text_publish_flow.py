@@ -238,7 +238,7 @@ def handle_publish_flow_turn(
     *,
     history: list[dict[str, str]],
     run_tool: Callable[..., str],
-    suggest_caption: Callable[[str, str, str], str],
+    suggest_caption: Callable[..., str],
 ) -> str | None:
     """Devuelve respuesta si el turno pertenece al flujo de publicación; si no, None."""
     flow = get_publish_flow(user_id, conversation_id)

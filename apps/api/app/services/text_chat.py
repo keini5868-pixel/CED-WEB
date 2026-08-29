@@ -64,6 +64,29 @@ from app.services.publish_text import PUBLISH_INSTRUCTION_ABSOLUTE_RULES
 
 logger = logging.getLogger(__name__)
 
+
+def _bridge_studio_to_voice(
+    user_id: str,
+    *,
+    text: str,
+    image: bool = False,
+    pdf_filename: str | None = None,
+) -> None:
+    """Si hay llamada de voz activa, el cerebro de voz ve el chat escrito/adjuntos."""
+    try:
+        from app.services import voice_client_session as vcs
+
+        kind = "document" if pdf_filename else ("image" if image else "text")
+        vcs.push_studio_chat_event(
+            user_id,
+            kind=kind,
+            text=text,
+            filename=(pdf_filename or "").strip(),
+        )
+    except Exception:  # noqa: BLE001
+        logger.debug("[CHAT] puente voz omitido", exc_info=True)
+
+
 CHAT_MODEL = "claude-sonnet-4-6"
 CHAT_MODEL_FAST = "claude-haiku-4-5-20251001"
 CHAT_GEMINI_MODEL = "gemini-2.5-flash"
@@ -440,8 +463,10 @@ IMPORTANTE — capacidades REALES de esta plataforma:
   Guía al módulo VIDEO del dashboard (?videoEditModule=pilot). Usa tokens de video (aparte del saldo de voz).
   Edición: subir MP4 + guion → cortes, transiciones, Text→SFX. Veo 3 en el pipeline cuando el producto lo habilite.
   NO inventes un MP4 ya renderizado desde el chat de texto; sé orgulloso del piloto y honesto con el estado.
-- Palabras clave de generación: "genera una imagen", "créame un diseño", "hazme un logo", "necesito una imagen", "diseña un creativo", "imagen de…", "crea una foto".
-- Si el pedido de imagen es vago, pide MÁS DETALLES UNA VEZ (estilo, uso). Si es claro, genera directamente.
+- Palabras clave de generación (SOLO estas cuentan como «generar ahora»): "genera una imagen", "créame un diseño", "hazme un logo", "diseña un creativo", "crea una foto", "genera la imagen".
+- «Necesito una foto para Instagram» o «I need a photo for Sek» SIN «genera/hazme/créame» NO es generate_image: habla en texto, propone el concepto y espera confirmación.
+- Si piden acordar algo impactante ANTES de crear, responde en texto. PROHIBIDO generate_image. PROHIBIDO decir que la generación falló, copyright o límites: no se pidió generar.
+- Si el pedido de imagen es vago, pide MÁS DETALLES UNA VEZ (estilo, uso). Si es un «genera/hazme» claro, genera.
 - Tras generar una imagen, preséntala (y opcionalmente pregunta si quiere ajustes visuales).
 - PROHIBIDO ofrecer publicar en Instagram/Facebook, proponer copy/caption o sugerir redes
   de forma proactiva tras generar una imagen. Solo si el usuario lo pide explícitamente
@@ -1112,39 +1137,135 @@ def _is_empty_or_placeholder_response(text: str) -> bool:
     return False
 
 
+def _vision_brief_for_publish_caption(
+    user_id: str,
+    conversation_id: str,
+) -> str:
+    """Análisis visual de la imagen a publicar — evita captions inventados (FitLine, etc.)."""
+    import base64
+
+    from app.services.publish_image_context import (
+        get_last_uploaded_image_for_session,
+        get_session_vision_analysis,
+        set_session_vision_analysis,
+    )
+
+    uid = (user_id or "").strip()
+    cid = (conversation_id or "").strip()
+    if not uid:
+        return ""
+    cached = get_session_vision_analysis(uid, cid or None)
+    if cached:
+        return cached[:2500]
+
+    row = get_last_uploaded_image_for_session(uid, cid or None)
+    if not row:
+        return ""
+
+    image_b64 = ""
+    data = row.get("data")
+    if isinstance(data, (bytes, bytearray)) and len(data) > 0:
+        image_b64 = base64.b64encode(bytes(data)).decode("ascii")
+    else:
+        url = str(row.get("url") or "").strip()
+        if url.startswith(("http://", "https://")):
+            try:
+                with httpx.Client(timeout=25.0) as client:
+                    res = client.get(url)
+                    res.raise_for_status()
+                    image_b64 = base64.b64encode(res.content).decode("ascii")
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "[CHAT:PUBLISH] no pude descargar imagen para caption user=%s",
+                    uid[:8],
+                    exc_info=True,
+                )
+                return ""
+    if not image_b64:
+        return ""
+
+    question = (
+        "Describe literalmente esta imagen en español latinoamericano (4-8 frases): "
+        "escena, sujeto, estilo visual, colores e iluminación. "
+        "Copia entre comillas TODO texto legible en la imagen. "
+        "PROHIBIDO inventar marcas, productos, suplementos o claims de salud "
+        "que no se vean claramente en la foto."
+    )
+    try:
+        from app.services.vision_search import analyze_image
+
+        result = analyze_image(image_b64, question=question)
+    except Exception:  # noqa: BLE001
+        logger.warning("[CHAT:PUBLISH] vision caption failed user=%s", uid[:8], exc_info=True)
+        return ""
+    summary = str(result.get("summary") or "").strip()
+    if summary:
+        set_session_vision_analysis(uid, cid or None, summary)
+    return summary[:2500]
+
+
 def _suggest_social_caption(
     platform: str,
     user_text: str,
     history: list[dict[str, str]],
+    *,
+    user_id: str = "",
+    conversation_id: str = "",
 ) -> str:
     settings = get_settings()
     google_key = settings.google_api_key.strip()
     if not google_key:
         return "Un momento especial compartido desde CED. #CED #EvoluciónDigital"
+
+    vision = ""
+    if user_id:
+        try:
+            vision = _vision_brief_for_publish_caption(user_id, conversation_id)
+        except Exception:  # noqa: BLE001
+            logger.warning("[CHAT:PUBLISH] vision brief omitido", exc_info=True)
+            vision = ""
+
     messages: list[dict[str, str]] = []
-    for row in history[-8:]:
+    # Solo el turno reciente: historial largo de FitLine contaminaba captions de otras fotos.
+    for row in history[-4:]:
         role = row.get("role")
         content = (row.get("content") or "").strip()
         if not content:
             continue
         if role == "model":
-            messages.append({"role": "assistant", "content": content})
+            messages.append({"role": "assistant", "content": content[:500]})
         elif role == "user":
-            messages.append({"role": "user", "content": content})
+            messages.append({"role": "user", "content": content[:500]})
+
+    vision_block = (
+        f"ANÁLISIS VISUAL DE LA IMAGEN A PUBLICAR (fuente de verdad):\n{vision}\n\n"
+        if vision
+        else (
+            "NO hay análisis visual disponible. Escribe un caption genérico de CED "
+            "SIN inventar productos FitLine/PM/Activize ni claims de salud.\n\n"
+        )
+    )
     messages.append(
         {
             "role": "user",
             "content": (
-                f"El usuario subió una imagen y quiere publicar en {platform}. "
+                f"{vision_block}"
+                f"El usuario quiere publicar esta imagen en {platform}. "
+                f"Pedido: {user_text}\n\n"
                 f"Escribe SOLO el caption del post: título breve, 1-2 frases y 3-5 hashtags. "
                 f"Sin introducción, sin «aquí tienes», sin markdown vacío. "
-                f"Contexto: {user_text}"
+                f"El caption DEBE reflejar la imagen (análisis visual). "
+                f"Si el historial habla de otro producto o tema, IGNÓRALO."
             ),
         }
     )
     system = (
         "Eres CED. Genera captions atractivos para redes en español latinoamericano. "
-        "Responde solo con el texto del post."
+        "Responde solo con el texto del post. "
+        "OBLIGATORIO: basarte en la imagen / análisis visual. "
+        "PROHIBIDO inventar FitLine, PM International, Activize, Restorate, PowerCocktail "
+        "u otros productos si no aparecen en el análisis visual. "
+        "PROHIBIDO reutilizar un copy de otro producto del historial."
     )
     try:
         return _gemini_simple_reply(
@@ -1154,6 +1275,11 @@ def _suggest_social_caption(
             messages=messages,
         )
     except Exception:  # noqa: BLE001
+        if vision:
+            # Fallback honesto basado en visión truncada — mejor que alucinar Activize.
+            first = vision.split(".")[0].strip()
+            if first:
+                return f"{first}. #CED #EvoluciónDigital"
         return "Un momento especial compartido desde CED. #CED #EvoluciónDigital"
 
 
@@ -1673,8 +1799,9 @@ def _run_chat_tool(
                         "ok": False,
                         "skipped": True,
                         "error": (
-                            "El usuario no pidió generar una imagen. "
-                            "Responda en texto con la información solicitada."
+                            "El usuario no pidió generar una imagen todavía. "
+                            "Responda SOLO en texto: acuerde el concepto. "
+                            "PROHIBIDO decir que la imagen falló, copyright o límites."
                         ),
                     }
                 )
@@ -2538,6 +2665,12 @@ def send_message(
         session_id=conversation_id,
         channel="text",
     )
+    _bridge_studio_to_voice(
+        user_id,
+        text=user_display,
+        image=bool(image_bytes),
+        pdf_filename=inbound_pdf.filename if inbound_pdf else None,
+    )
 
     def _finish(
         reply: str,
@@ -2687,7 +2820,13 @@ def send_message(
         text,
         history=history,
         run_tool=_run_chat_tool,
-        suggest_caption=_suggest_social_caption,
+        suggest_caption=lambda platform, user_text, hist: _suggest_social_caption(
+            platform,
+            user_text,
+            hist,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        ),
     )
     if publish_reply:
         return _finish(
@@ -3313,6 +3452,7 @@ def _persist_stream_turn(
         session_id=conv_id,
         channel="text",
     )
+    _bridge_studio_to_voice(user_id, text=text)
     _bump_stream_usage_cache(user_id)
     supabase_db.append_message(
         conv_id,
@@ -3838,6 +3978,7 @@ def iter_send_message_stream(
             session_id=conversation_id,
             channel="text",
         )
+        _bridge_studio_to_voice(user_id, text=text)
         _bump_stream_usage_cache(user_id)
         user_message_persisted = True
 
