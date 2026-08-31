@@ -26,7 +26,40 @@ WEB_SEARCH_VOICE_FALLBACK = (
     "¿Desea que lo intente de nuevo?"
 )
 
+# Pedidos de voz que apuntan al chat escrito / guion — no inventar ni rellenar con FitLine.
+_TEXT_CHAT_RECALL_RE = re.compile(
+    r"(?:"
+    r"lee(?:me|r)?\s+(?:lo\s+que|el\s+texto|el\s+guion|el\s+gui[oó]n|el\s+brief)|"
+    r"(?:lo\s+que\s+)?(?:te\s+)?(?:envi[eé]|mand[eé]|escrib[ií]|peg[uú]e)\s+(?:por\s+)?(?:texto|chat|escrito)|"
+    r"(?:en|del|por)\s+(?:el\s+)?chat(?:\s+de\s+texto)?|"
+    r"guion(?:es)?|gui[oó]n(?:es)?|brief(?:ing)?|"
+    r"lo\s+del\s+chat|mensaje(?:s)?\s+(?:del|de)\s+chat|"
+    r"repet[ií](?:me)?\s+lo\s+que\s+(?:te\s+)?(?:envi|mand|escrib)|"
+    r"qu[eé]\s+te\s+(?:envi[eé]|mand[eé]|escrib[ií])"
+    r")",
+    re.I,
+)
+
+_MISSING_TEXT_CHAT_OVERLAY = """
+# CHAT DE TEXTO — SIN CONTENIDO DISPONIBLE
+El usuario pide que lea/use algo que envió por texto o un guion, pero NO hay
+mensajes de chat de texto ni puente en vivo en este turno.
+OBLIGATORIO: dilo con honestidad en 1 frase (no lo tiene aquí) y pide que lo
+pegue de nuevo en el chat o lo dicte.
+PROHIBIDO inventar el guion, brief o texto.
+PROHIBIDO rellenar con FitLine, PM International, prospección u otro tema
+para «taparlo».
+""".strip()
+
 _BASE_VOICE_PROMPT: str | None = None
+
+
+def wants_text_chat_recall(text: str) -> bool:
+    """True si el turno de voz pide leer/usar lo enviado por chat o un guion."""
+    t = (text or "").strip()
+    if len(t) < 4:
+        return False
+    return bool(_TEXT_CHAT_RECALL_RE.search(t))
 
 
 def _cached_base_voice_prompt() -> str:
@@ -168,7 +201,10 @@ def build_base_voice_system(
         base = append_sales_marketing_playbook_if_needed(base, query)
     # FitLine/PM: mismo conocimiento Oportunidades que chat (productos, hechos, prospección).
     # Plan Cierre / foco PM: ficha completa siempre (paridad Retell Jarvis ↔ Realtime).
+    # Excepción: si pide el chat/guion y el turno NO es FitLine, no forzar la ficha
+    # (evita alucinar PM para tapar que no ve el texto).
     force_fitline = False
+    recall_turn = bool(query and wants_text_chat_recall(query))
     if uid:
         try:
             from app.services.opportunities_pilot.fitline_guide_mode import (
@@ -176,6 +212,16 @@ def build_base_voice_system(
             )
 
             force_fitline = user_plan_is_fitline_focus(uid)
+        except Exception:  # noqa: BLE001
+            force_fitline = False
+    if force_fitline and recall_turn:
+        try:
+            from app.services.opportunities_pilot.fitline_knowledge import (
+                wants_fitline_knowledge,
+            )
+
+            if not wants_fitline_knowledge(query):
+                force_fitline = False
         except Exception:  # noqa: BLE001
             force_fitline = False
     if not omit_fitline_knowledge and (query or force_fitline):
@@ -221,6 +267,12 @@ def build_base_voice_system(
             from app.services.insight_questions import capture_insight_question
 
             capture_insight_question(uid, query, channel="voice")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.services.user_session_profile import touch_and_learn
+
+            touch_and_learn(uid, query, channel="voice")
         except Exception:  # noqa: BLE001
             pass
     # Modo Guía FitLine: mentor paso a paso (voz corta). Auto para socios nuevos.
@@ -395,8 +447,34 @@ def build_voice_system(
         omit_fitline_knowledge=omit_fitline_knowledge,
     )
     uid = (user_id or "").strip()
+    query = (user_text or "").strip()
+    recall = wants_text_chat_recall(query) if query else False
     if uid:
         base = _append_legacy_global_memory(base, uid)
+        studio = ""
+        try:
+            from app.services.voice_client_session import format_studio_chat_overlay
+
+            studio = format_studio_chat_overlay(uid) or ""
+            if studio:
+                base = f"{base}\n\n{studio}"
+        except Exception:
+            studio = ""
+        # Pedido explícito de leer/usar el chat o guion → cargar canal texto.
+        if recall:
+            try:
+                from app.services.conversation_memory import (
+                    format_text_chat_for_voice_overlay,
+                )
+
+                text_overlay = format_text_chat_for_voice_overlay(uid)
+                if text_overlay and text_overlay not in base:
+                    base = f"{base}\n\n{text_overlay}"
+                elif not studio and not text_overlay:
+                    base = f"{base}\n\n{_MISSING_TEXT_CHAT_OVERLAY}"
+            except Exception:
+                if not studio:
+                    base = f"{base}\n\n{_MISSING_TEXT_CHAT_OVERLAY}"
     if lightweight:
         return base
     if uid:

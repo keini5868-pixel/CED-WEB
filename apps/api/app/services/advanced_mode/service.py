@@ -131,6 +131,13 @@ def _stream_system_with_clock(
     )
     base = append_sales_marketing_playbook_if_needed(base, user_text)
     base = append_fitline_knowledge_if_needed(base, user_text)
+    if user_id:
+        try:
+            from app.services.user_session_profile import append_client_memory_to_prompt
+
+            base = append_client_memory_to_prompt(base, user_id)
+        except Exception:  # noqa: BLE001
+            pass
     if user_id and user_text:
         try:
             from app.services.referrals import note_sales_chat_if_relevant
@@ -139,17 +146,23 @@ def _stream_system_with_clock(
         except Exception:  # noqa: BLE001
             pass
         try:
+            from app.services.insight_questions import capture_insight_question
+
+            capture_insight_question(user_id, user_text, channel="advanced")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            from app.services.user_session_profile import touch_and_learn
+
+            touch_and_learn(user_id, user_text, channel="advanced")
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             from app.services.opportunities_pilot.fitline_close_trigger import (
                 append_fitline_close_trigger_if_needed,
             )
 
             base = append_fitline_close_trigger_if_needed(base, user_id, user_text)
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            from app.services.insight_questions import capture_insight_question
-
-            capture_insight_question(user_id, user_text, channel="advanced")
         except Exception:  # noqa: BLE001
             pass
     from app.services.opportunities_pilot.fitline_guide_mode import (

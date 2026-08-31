@@ -1415,6 +1415,16 @@ def _build_chat_system(
         capture_insight_question(user_id, user_text, channel="chat")
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from app.services.user_session_profile import (
+            append_client_memory_to_prompt,
+            touch_and_learn,
+        )
+
+        touch_and_learn(user_id, user_text, channel="chat")
+        system = append_client_memory_to_prompt(system, user_id)
+    except Exception:  # noqa: BLE001
+        pass
     from app.services.opportunities_pilot.fitline_guide_mode import (
         append_fitline_guide_if_needed,
     )
@@ -1459,6 +1469,16 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
         from app.services.insight_questions import capture_insight_question
 
         capture_insight_question(user_id, user_text, channel="chat")
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        from app.services.user_session_profile import (
+            append_client_memory_to_prompt,
+            touch_and_learn,
+        )
+
+        touch_and_learn(user_id, user_text, channel="chat")
+        system = append_client_memory_to_prompt(system, user_id)
     except Exception:  # noqa: BLE001
         pass
     return append_fitline_guide_if_needed(system, user_id, user_text, channel="chat")

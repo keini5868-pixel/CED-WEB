@@ -81,7 +81,8 @@ export function AdminInsightForum({ compact = false }: Props) {
         {items.length === 0 && !busy ? (
           <p className="text-xs text-amber-500/70">
             Sin preguntas capturadas en este filtro. CED guarda automáticamente
-            dudas de todos los usuarios: FitLine/PM, uso de CED y respuestas débiles.
+            dudas de todos los usuarios: FitLine/PM, uso de CED, respuestas débiles,
+            leads calientes y clientes enfriándose.
           </p>
         ) : null}
         {items.map((item) => (

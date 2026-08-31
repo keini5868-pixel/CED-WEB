@@ -129,12 +129,23 @@ def capture_insight_question(
     channel: str = "chat",
     assistant_reply: str | None = None,
     metadata: dict[str, Any] | None = None,
+    force: bool = False,
+    tags_extra: list[str] | None = None,
+    priority: str | None = None,
 ) -> dict[str, Any] | None:
     """Persiste si la pregunta tiene valor. Best-effort (nunca rompe el chat)."""
     try:
-        ok, tags, priority = looks_like_valuable_question(
+        ok, tags, auto_priority = looks_like_valuable_question(
             question, assistant_reply=assistant_reply
         )
+        if force:
+            ok = True
+            tags = list(tags) or ["alert"]
+            auto_priority = priority or "high"
+        if tags_extra:
+            for t in tags_extra:
+                if t and t not in tags:
+                    tags.append(t)
         if not ok:
             return None
 
@@ -148,7 +159,7 @@ def capture_insight_question(
                 "chat", "voice", "finance", "advanced", "other"
             ) else "other",
             "tags": tags,
-            "priority": priority,
+            "priority": priority or auto_priority,
             "status": "new",
             "assistant_preview": (assistant_reply or "")[:500] or None,
             "metadata": metadata or {},

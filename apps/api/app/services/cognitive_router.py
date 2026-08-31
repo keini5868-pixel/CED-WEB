@@ -296,6 +296,14 @@ def build_voice_system_extras(user_id: str) -> str:
         )
     parts = [address, voice_platform_awareness_context(user_id), policy, meta]
     try:
+        from app.services.user_session_profile import format_memory_prompt_block
+
+        client_mem = format_memory_prompt_block(user_id)
+        if client_mem:
+            parts.append(client_mem)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         mem = memory_context_for_voice(user_id, limit=8)
     except Exception:  # noqa: BLE001
         mem = ""
@@ -329,6 +337,14 @@ def build_chat_system_extras(user_id: str, routed: CognitiveRouteResult | None =
         "CED usa cerebro interno premium por ramas + web solo cuando el dato cambia en el tiempo. "
         "No digas que no tienes internet si puedes usar contexto inyectado o herramientas.",
     ]
+    try:
+        from app.services.user_session_profile import format_memory_prompt_block
+
+        client_mem = format_memory_prompt_block(user_id)
+        if client_mem:
+            parts.append(client_mem)
+    except Exception:  # noqa: BLE001
+        pass
     if mem:
         parts.append(mem)
     try:

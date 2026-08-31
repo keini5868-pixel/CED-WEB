@@ -79,6 +79,7 @@ def test_recent_tables_are_service_role_only():
         "video_edit_token_ledger": "025_video_edit_tokens.sql",
         "video_edit_jobs": "025_video_edit_tokens.sql",
         "fitline_action_plans": "027_fitline_action_plans.sql",
+        "ced_user_memory": "041_ced_user_memory.sql",
     }
     for table, filename in files.items():
         sql = (root / filename).read_text(encoding="utf-8")
