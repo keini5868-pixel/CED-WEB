@@ -1416,13 +1416,10 @@ def _build_chat_system(
     except Exception:  # noqa: BLE001
         pass
     try:
-        from app.services.user_session_profile import (
-            append_client_memory_to_prompt,
-            touch_and_learn,
-        )
+        from app.services.user_session_profile import touch_and_learn
 
+        # El bloque corto ya viene en build_chat_system_extras; aquí solo aprendemos.
         touch_and_learn(user_id, user_text, channel="chat")
-        system = append_client_memory_to_prompt(system, user_id)
     except Exception:  # noqa: BLE001
         pass
     from app.services.opportunities_pilot.fitline_guide_mode import (
