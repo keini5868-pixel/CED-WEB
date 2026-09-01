@@ -8,15 +8,16 @@ from typing import Any
 
 from app.services.chat_intents import (
     history_has_pending_image_brief,
-    is_anaphoric_image_subject,
     is_casual_chat_interrupt,
     is_generate_image_intent,
     is_image_choice_confirmation,
     is_pdf_intent,
+    is_vague_image_subject,
     last_assistant_image_concept,
     last_concrete_image_user_prompt,
     parse_followup_image_prompt,
     parse_generate_image_prompt,
+    resolve_anaphoric_image_prompt,
     resolve_confirmed_image_prompt,
     user_requests_prior_reference,
     wants_image_reference_edit,
@@ -113,7 +114,10 @@ def build_enriched_generation_context(
 def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> str:
     t = (text or "").strip()
     parsed = parse_generate_image_prompt(t)
-    if parsed and is_anaphoric_image_subject(parsed):
+    if parsed and is_vague_image_subject(parsed):
+        resolved = resolve_anaphoric_image_prompt(t, history)
+        if resolved:
+            return resolved
         prior = last_concrete_image_user_prompt(history)
         if prior:
             return prior
@@ -241,7 +245,7 @@ def resolve_voice_image_prompt(
     t = (user_text or "").strip()
     llm = (llm_prompt or "").strip()
     if is_generate_image_intent(t):
-        return t
+        return effective_user_prompt(t, history) or t
     if is_image_choice_confirmation(t):
         if looks_like_visual_image_prompt(llm):
             return llm
@@ -362,7 +366,7 @@ def run_chat_image_generation(
     # ni historial — el historial mezclaba temas (robot + mapa, etc.).
     # SIEMPRE gana sobre internal_prompt de creativos (evita reescritura Claude/marketing).
     direct = build_direct_image_prompt(
-        user_text,
+        effective,
         has_reference=bool(ref_payload),
         context="",
     )

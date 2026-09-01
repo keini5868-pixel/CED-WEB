@@ -451,6 +451,110 @@ def is_anaphoric_image_subject(subject: str) -> bool:
     return bool(_ANAPHORIC_IMAGE_SUBJECT.match(t))
 
 
+def is_vague_image_subject(subject: str) -> bool:
+    """True si el sujeto no describe una escena concreta (deícticos, meta, «ese ejemplo»)."""
+    t = (subject or "").strip()
+    if not t:
+        return True
+    if is_anaphoric_image_subject(t):
+        return True
+    if _VAGUE_IMAGE_META_TAIL.search(t):
+        core = _VAGUE_IMAGE_META_TAIL.sub("", t).strip()
+        if len(core) < 45 or is_anaphoric_image_subject(core):
+            return True
+    if len(t) < 55 and re.search(
+        r"\b(?:ese|esa|este|esta|eso|lo\s+mismo|ejemplo|as[ií])\b",
+        t,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def last_user_visual_context(
+    history: list[dict[str, str]] | None,
+) -> str | None:
+    """Último mensaje del usuario sobre el tema visual (no comando de generar imagen)."""
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        if role not in {"user", "customer"}:
+            continue
+        content = (row.get("content") or "").strip()
+        if not content or is_generate_image_intent(content):
+            continue
+        if len(content) >= 12:
+            return content[:900]
+    return None
+
+
+def last_assistant_visual_description(
+    history: list[dict[str, str]] | None,
+) -> str | None:
+    """Última respuesta del asistente que describe una escena visual concreta."""
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        if role not in {"assistant", "model", "agent"}:
+            continue
+        content = (row.get("content") or "").strip()
+        if not content or len(content) < 40:
+            continue
+        if _ASSISTANT_VISUAL_SKIP.search(content[:160]):
+            continue
+        if re.search(
+            r"(?is)\baqu[ií]\s+est[aá]\s+(?:tu|su|la)\s+imagen",
+            content,
+        ) and len(content) < 220:
+            continue
+        if _ASSISTANT_VISUAL_MARKERS.search(content) or len(content) >= 100:
+            return content[:2000]
+    return None
+
+
+def resolve_anaphoric_image_prompt(
+    text: str,
+    history: list[dict[str, str]] | None,
+) -> str | None:
+    """Resuelve «ese ejemplo / esa idea» desde el hilo reciente de conversación."""
+    t = (text or "").strip()
+    parsed = parse_generate_image_prompt(t) or t
+    if not is_vague_image_subject(parsed):
+        return None
+
+    prior = last_concrete_image_user_prompt(history)
+    if prior:
+        from app.services.gemini_images import strip_image_generation_instruction
+
+        stripped = strip_image_generation_instruction(prior).strip()
+        return stripped or prior
+
+    concept = last_assistant_image_concept(history)
+    user_ctx = last_user_visual_context(history)
+    assistant_desc = last_assistant_visual_description(history)
+
+    parts: list[str] = []
+    if user_ctx:
+        parts.append(f"Escena pedida por el usuario: {user_ctx}")
+    if assistant_desc:
+        parts.append(f"Descripción visual a plasmar: {assistant_desc}")
+    elif concept:
+        parts.append(concept)
+
+    if parts:
+        return "\n\n".join(parts)[:3800]
+
+    blob = " ".join(
+        (row.get("content") or "").strip()
+        for row in (history or [])[-6:]
+        if (row.get("content") or "").strip()
+    ).strip()
+    if len(blob) >= 40:
+        return (
+            "Genera una imagen fotorrealista basada en esta conversación reciente: "
+            f"{blob[:2500]}"
+        )
+    return None
+
+
 def last_concrete_image_user_prompt(
     history: list[dict[str, str]] | None,
 ) -> str | None:
@@ -574,9 +678,25 @@ _IMAGE_CHOICE_CONFIRM = re.compile(
     r")"
 )
 _ANAPHORIC_IMAGE_SUBJECT = re.compile(
-    r"(?is)^\s*(?:con\s+)?(?:esa|este|esta|ese)\s+"
-    r"(?:idea|visi[oó]n|concepto|descripci[oó]n|propuesta|brief|dise[nñ]o)\s*[.!]?\s*$"
-    r"|^\s*(?:eso|lo\s+mismo|lo\s+anterior|con\s+eso)\s*[.!]?\s*$"
+    r"(?is)^\s*(?:con\s+)?(?:esa|este|esta|ese|aquell[oa])\s+"
+    r"(?:idea|visi[oó]n|concepto|descripci[oó]n|propuesta|brief|dise[nñ]o|"
+    r"ejemplo|escena|variante|versi[oó]n|opci[oó]n|habitaci[oó]n|espacio|"
+    r"ba[nñ]o|cuarto|propuesta)\s*[.!]?\s*"
+    r"(?:para\s+ver\s+(?:c[oó]mo\s+)?(?:se\s+ver[ií]a|el\s+resultado))?\s*[.!]?\s*$"
+    r"|^\s*(?:eso|lo\s+mismo|lo\s+anterior|con\s+eso|as[ií]|de\s+eso)\s*[.!]?\s*$"
+)
+_VAGUE_IMAGE_META_TAIL = re.compile(
+    r"(?is)\b(?:para\s+ver\s+(?:c[oó]mo\s+)?(?:se\s+ver[ií]a|el\s+resultado)|"
+    r"c[oó]mo\s+se\s+ver[ií]a|a\s+ver\s+c[oó]mo\s+queda)\s*[.!]?\s*$"
+)
+_ASSISTANT_VISUAL_SKIP = re.compile(
+    r"(?is)^(bienvenido|hola|buenos|retomemos|"
+    r"aqu[ií]\s+est[aá]\s+(?:tu|su|la)\s+imagen|listo\.?\s+aqu[ií])"
+)
+_ASSISTANT_VISUAL_MARKERS = re.compile(
+    r"(?is)\b(se\s+ver[ií]a|colocar|espejo|luz|led|dise[nñ]o|espacio|"
+    r"habitaci|ba[nñ]o|color|estilo|fondo|perspectiva|fotorrealist|"
+    r"vertical|horizontal|encimera|mueble|decor|vanity|l[aá]mpara)\b"
 )
 _SHORT_IMAGE_CHOICE = re.compile(
     r"(?is)^\s*(?:(?:ok|okay|vale|dale|perfecto|listo|te\s+sigo)[\s.,!]*)*"
