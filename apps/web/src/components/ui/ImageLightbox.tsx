@@ -1,7 +1,8 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 /** Modal de imagen ampliada — compartido por chat normal, avanzado y voz. */
 export function ImageLightbox({
@@ -15,6 +16,12 @@ export function ImageLightbox({
   open: boolean;
   onClose: () => void;
 }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -24,11 +31,23 @@ export function ImageLightbox({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (!open) return;
+    window.dispatchEvent(
+      new CustomEvent("ced-image-lightbox", { detail: { open: true } }),
+    );
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent("ced-image-lightbox", { detail: { open: false } }),
+      );
+    };
+  }, [open]);
 
-  return (
+  if (!open || !mounted) return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/92 p-4"
+      className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/92 p-4"
       role="dialog"
       aria-modal="true"
       aria-label="Vista ampliada"
@@ -49,6 +68,7 @@ export function ImageLightbox({
         className="max-h-[92vh] max-w-[96vw] cursor-zoom-out rounded-lg object-contain shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
-    </div>
+    </div>,
+    document.body,
   );
 }

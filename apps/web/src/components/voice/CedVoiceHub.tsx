@@ -54,6 +54,7 @@ export function CedVoiceHub() {
     url: string;
     prompt?: string;
   } | null>(null);
+  const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial, setActiveModule } =
     useHudFeed();
@@ -82,6 +83,15 @@ export function CedVoiceHub() {
     };
     window.addEventListener("ced-open-module", onOpen);
     return () => window.removeEventListener("ced-open-module", onOpen);
+  }, []);
+
+  useEffect(() => {
+    const onLightbox = (ev: Event) => {
+      const open = Boolean((ev as CustomEvent<{ open?: boolean }>).detail?.open);
+      setImageLightboxOpen(open);
+    };
+    window.addEventListener("ced-image-lightbox", onLightbox);
+    return () => window.removeEventListener("ced-image-lightbox", onLightbox);
   }, []);
 
   const voiceRoute = useMemo(() => {
@@ -481,7 +491,7 @@ export function CedVoiceHub() {
       />
     </div>
       <CedHoloPresence
-        active={voice.micOn || voice.micBusy}
+        active={(voice.micOn || voice.micBusy) && !imageLive && !imageLightboxOpen}
         speaking={voice.orbState === "speaking" || voice.orbState === "processing"}
       />
     </div>
