@@ -91,6 +91,33 @@ GUIDE_STEPS: tuple[dict[str, str], ...] = (
         ),
     },
     {
+        "id": "store_entry",
+        "title": "Entrar a la tienda / Partner Area",
+        "teach": (
+            "Detalles que la gente nueva suele saltarse al entrar a la tienda PM:\n"
+            "(1) Enlace del patrocinador o Sponsor ID — confirma que el nombre en "
+            "pantalla es quien te presentó; si no, no sigas.\n"
+            "(2) País/región correcto (precios y envío cambian).\n"
+            "(3) Confirma el correo: sin el mail de confirmación no entras después.\n"
+            "(4) Primer pedido: si te dice que lo olvidaste, puedes registrar ya y "
+            "elegir productos luego. Si hay pedido pendiente: «Pagar» retoma; "
+            "«Reiniciar» cancela y empieza otro — no mezcles esos botones.\n"
+            "(5) No es obligatorio comprar para ser distribuidor (reglas oficiales).\n"
+            "(6) Login en Partner Area (partner.pm-international.com). Si falla al "
+            "inicio, espera a que el registro esté procesado y usa el mismo correo.\n"
+            "(7) Guarda tu número de cliente y el correo de confirmación.\n"
+            "Income Plan y precios exactos: solo Partner Area / tu mentor — CED no "
+            "inventa cifras."
+        ),
+        "voice_teach": (
+            "Al entrar a la tienda: verifica el patrocinador en pantalla, el país "
+            "y el correo. Si hay pedido pendiente, Pagar retoma y Reiniciar cancela. "
+            "Luego Partner Area con el mismo mail; si el login falla, el registro "
+            "puede no estar procesado aún. Guarda tu número de cliente. "
+            "CED no inventa precios ni comisiones."
+        ),
+    },
+    {
         "id": "close",
         "title": "Cierre y siguiente paso",
         "teach": (
@@ -117,7 +144,10 @@ _ACTIVATE_RE = re.compile(
     r"soy\s+nuev[oa]\b.{0,40}\b(?:gu[ií]a|expl[ií]ca|ense[nñ]a)|"
     r"soy\s+nuev[oa]\b.{0,40}\b(?:fitline|pm\s*international|pm\s*internacional|al\s+negocio)|"
     r"no\s+s[eé]\s+nada\b.{0,40}\b(?:fitline|pm|negocio)|"
-    r"empiezo\s+de\s+cero\b.{0,40}\b(?:fitline|pm|negocio)?"
+    r"empiezo\s+de\s+cero\b.{0,40}\b(?:fitline|pm|negocio)?|"
+    r"(?:c[oó]mo\s+)?(?:entro|entrar)\s+(?:a\s+)?(?:la\s+)?tienda|"
+    r"checklist\s+(?:de\s+)?(?:tienda|registro|partner)|"
+    r"primer\s+pedido\s+(?:pm|fitline|fit\s*line)?"
     r")",
 )
 
@@ -436,6 +466,17 @@ def append_fitline_guide_if_needed(
 ) -> str:
     """Prepara el turno de guía y añade overlay + conocimiento FitLine si aplica."""
     try:
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            is_fitline_topic_suppressed_for,
+            sync_fitline_topic_preference,
+        )
+
+        sync_fitline_topic_preference(user_id, user_text)
+        if is_fitline_topic_suppressed_for(user_id):
+            return system
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         from app.services.opportunities_pilot.fitline_close_trigger import (
             guide_should_yield_to_closer,
         )
@@ -461,7 +502,9 @@ def append_fitline_guide_if_needed(
             )
 
             if wants_fitline_knowledge(user_text):
-                out = append_fitline_knowledge_if_needed(out, user_text)
+                out = append_fitline_knowledge_if_needed(
+                    out, user_text, user_id=user_id
+                )
             else:
                 block = format_fitline_knowledge_for_prompt()
                 if block:

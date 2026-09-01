@@ -10,6 +10,16 @@ from app.services.opportunities_pilot import fitline_gemini_cache as fgc
 def test_fitline_knowledge_needed_keywords():
     assert fgc.fitline_knowledge_needed(None, "qué es FitLine") is True
     assert fgc.fitline_knowledge_needed(None, "hola") is False
+    assert fgc.fitline_knowledge_needed(None, "qué es Excel") is False
+
+
+def test_fitline_knowledge_needed_ignores_cierre_force(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.opportunities_pilot.fitline_guide_mode.user_plan_is_fitline_focus",
+        lambda _uid: True,
+    )
+    assert fgc.fitline_knowledge_needed("u-cierre", "qué es Excel") is False
+    assert fgc.fitline_knowledge_needed("u-cierre", "qué es Restorate FitLine") is True
 
 
 def test_build_fitline_context_cache_text_has_fitline_and_base():

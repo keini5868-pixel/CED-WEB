@@ -1400,7 +1400,9 @@ def _build_chat_system(
     if extras:
         parts.append(extras)
     system = append_sales_marketing_playbook_if_needed("\n\n".join(parts), user_text)
-    system = append_fitline_knowledge_if_needed(system, user_text)
+    system = append_fitline_knowledge_if_needed(
+        system, user_text, user_id=user_id
+    )
     try:
         from app.services.opportunities_pilot.fitline_close_trigger import (
             append_fitline_close_trigger_if_needed,
@@ -1453,7 +1455,9 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
     system = append_sales_marketing_playbook_if_needed("\n\n".join(parts), user_text)
-    system = append_fitline_knowledge_if_needed(system, user_text)
+    system = append_fitline_knowledge_if_needed(
+        system, user_text, user_id=user_id
+    )
     try:
         from app.services.opportunities_pilot.fitline_close_trigger import (
             append_fitline_close_trigger_if_needed,

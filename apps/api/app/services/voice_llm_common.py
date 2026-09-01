@@ -199,32 +199,69 @@ def build_base_voice_system(
         )
 
         base = append_sales_marketing_playbook_if_needed(base, query)
-    # FitLine/PM: mismo conocimiento Oportunidades que chat (productos, hechos, prospección).
-    # Plan Cierre / foco PM: ficha completa siempre (paridad Retell Jarvis ↔ Realtime).
-    # Excepción: si pide el chat/guion y el turno NO es FitLine, no forzar la ficha
-    # (evita alucinar PM para tapar que no ve el texto).
-    force_fitline = False
+    # FitLine/PM: ficha SOLO si el turno es de ese tema (o modo guía activo).
+    # Plan Cierre ya no fuerza la ficha en Excel/clima/etc. (evita puentes
+    # fantasma tipo «Excel → Activize / Cell Energy»).
+    inject_fitline = False
+    guide_active = False
     recall_turn = bool(query and wants_text_chat_recall(query))
-    if uid:
+    if uid and query:
         try:
-            from app.services.opportunities_pilot.fitline_guide_mode import (
-                user_plan_is_fitline_focus,
+            from app.services import voice_client_session as vcs
+            from app.services.opportunities_pilot.fitline_knowledge import (
+                is_fitline_topic_suppressed_for,
+                should_inject_fitline_for_turn,
             )
 
-            force_fitline = user_plan_is_fitline_focus(uid)
+            guide_active = bool(vcs.is_fitline_guide_active(uid))
+            inject_fitline = should_inject_fitline_for_turn(
+                uid, query, guide_active=guide_active
+            )
+            # Continuidad: tras preguntas FitLine, follow-ups (expansión, etc.)
+            # siguen con ficha — nunca Excel/clima ni con opt-out.
+            if not inject_fitline and not is_fitline_topic_suppressed_for(uid):
+                try:
+                    from app.services.opportunities_pilot.fitline_close_trigger import (
+                        _is_fitline_question,
+                        get_engagement,
+                    )
+
+                    already = int(get_engagement(uid).get("question_count") or 0) > 0
+                    if already and _is_fitline_question(
+                        query, already_engaged=True
+                    ):
+                        inject_fitline = True
+                except Exception:  # noqa: BLE001
+                    pass
         except Exception:  # noqa: BLE001
-            force_fitline = False
-    if force_fitline and recall_turn:
+            try:
+                from app.services.opportunities_pilot.fitline_knowledge import (
+                    wants_fitline_knowledge,
+                )
+
+                inject_fitline = wants_fitline_knowledge(query)
+            except Exception:  # noqa: BLE001
+                inject_fitline = False
+    elif query:
+        try:
+            from app.services.opportunities_pilot.fitline_knowledge import (
+                wants_fitline_knowledge,
+            )
+
+            inject_fitline = wants_fitline_knowledge(query)
+        except Exception:  # noqa: BLE001
+            inject_fitline = False
+    if inject_fitline and recall_turn:
         try:
             from app.services.opportunities_pilot.fitline_knowledge import (
                 wants_fitline_knowledge,
             )
 
             if not wants_fitline_knowledge(query):
-                force_fitline = False
+                inject_fitline = False
         except Exception:  # noqa: BLE001
-            force_fitline = False
-    if not omit_fitline_knowledge and (query or force_fitline):
+            inject_fitline = False
+    if not omit_fitline_knowledge and inject_fitline:
         from app.services.opportunities_pilot.fitline_knowledge import (
             append_fitline_knowledge_if_needed,
         )
@@ -232,26 +269,28 @@ def build_base_voice_system(
         base = append_fitline_knowledge_if_needed(
             base,
             query or "FitLine PM International",
-            force=force_fitline,
+            force=bool(guide_active and not recall_turn),
+            user_id=uid or None,
         )
-    # Cierre + foro: siempre en turnos FitLine, también cuando la ficha va por
-    # Context Cache (omit_fitline_knowledge=True) — si no, voz Retell no dispara.
-    if uid and query and (force_fitline or query):
-        try:
-            from app.services.opportunities_pilot.fitline_knowledge import (
-                wants_fitline_knowledge,
-            )
-
-            fitline_turn = force_fitline or wants_fitline_knowledge(query)
-        except Exception:  # noqa: BLE001
-            fitline_turn = force_fitline
-        if not fitline_turn and uid:
+    # Cierre + foro: turnos FitLine o follow-ups cortos con engagement previo.
+    # Nunca por engagement residual si el usuario optó por fuera del tema.
+    if uid and query:
+        fitline_turn = inject_fitline
+        if not fitline_turn:
             try:
                 from app.services.opportunities_pilot.fitline_close_trigger import (
+                    _is_fitline_question,
                     get_engagement,
                 )
+                from app.services.opportunities_pilot.fitline_knowledge import (
+                    is_fitline_topic_suppressed_for,
+                )
 
-                fitline_turn = int(get_engagement(uid).get("question_count") or 0) > 0
+                if not is_fitline_topic_suppressed_for(uid):
+                    already = int(get_engagement(uid).get("question_count") or 0) > 0
+                    fitline_turn = _is_fitline_question(
+                        query, already_engaged=already
+                    )
             except Exception:  # noqa: BLE001
                 fitline_turn = False
         if fitline_turn:
@@ -275,19 +314,23 @@ def build_base_voice_system(
             touch_and_learn(uid, query, channel="voice")
         except Exception:  # noqa: BLE001
             pass
-    # Modo Guía FitLine: mentor paso a paso (voz corta). Auto para socios nuevos.
-    if uid and (query or force_fitline):
+    # Modo Guía FitLine: mentor paso a paso (voz corta). Respeta opt-out de tema.
+    if uid and query:
         try:
             from app.services.opportunities_pilot.fitline_guide_mode import (
                 append_fitline_guide_if_needed,
             )
-
-            base = append_fitline_guide_if_needed(
-                base,
-                uid,
-                query or "modo guía fitline",
-                channel="voice",
+            from app.services.opportunities_pilot.fitline_knowledge import (
+                is_fitline_topic_suppressed_for,
             )
+
+            if not is_fitline_topic_suppressed_for(uid):
+                base = append_fitline_guide_if_needed(
+                    base,
+                    uid,
+                    query,
+                    channel="voice",
+                )
         except Exception:  # noqa: BLE001
             pass
     if query and is_deliverable_request(query):

@@ -31,7 +31,10 @@ _FOLLOWUP_FITLINE = re.compile(
     r"(?is)\b(?:"
     r"negocio|franquicia|ntc|producto|productos|c[oó]mo\s+se\s+gana|"
     r"c[oó]mo\s+empiezo|inscrib|socio|patrocin|equipo|comisi[oó]n|"
-    r"ingreso|ganar|oportunidad|optimal|activize|restorate|power\s*cocktail"
+    r"ingreso|ganar|oportunidad|optimal|activize|restorate|power\s*cocktail|"
+    r"expansi[oó]n|am[eé]rica|americano|sarasota|manatee|latam|"
+    r"m[eé]xico|colombia|per[uú]|chile|espa[nñ]a|ee\.?\s*uu\.?|"
+    r"pm[\s\-]?labs|made\s+in\s+usa|speyer|schengen|cologne"
     r")\b"
 )
 
@@ -523,6 +526,17 @@ def append_fitline_close_trigger_if_needed(
     uid = (user_id or "").strip()
     if not uid:
         return base
+    try:
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            is_fitline_topic_suppressed_for,
+            sync_fitline_topic_preference,
+        )
+
+        sync_fitline_topic_preference(uid, user_text)
+        if is_fitline_topic_suppressed_for(uid):
+            return base
+    except Exception:  # noqa: BLE001
+        pass
     try:
         state = register_fitline_user_turn(uid, user_text)
         if state.get("should_inject_keep_learning"):

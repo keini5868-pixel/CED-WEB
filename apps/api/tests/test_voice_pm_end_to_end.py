@@ -58,6 +58,14 @@ def test_voice_system_with_cache_omit_still_gets_close_trigger():
 
     def fake_register(user_id, text):
         calls["n"] += 1
+        # Simula engagement real para follow-ups (expansión América, etc.).
+        try:
+            from app.services import voice_client_session as vcs
+
+            sess = vcs._get(user_id)
+            sess["fitline_question_count"] = calls["n"]
+        except Exception:  # noqa: BLE001
+            pass
         return {
             "question_count": calls["n"],
             "closer_offered": False,

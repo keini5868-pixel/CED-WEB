@@ -31,21 +31,30 @@ _STATE: dict[str, Any] = {
 
 
 def fitline_knowledge_needed(user_id: str | None, user_text: str) -> bool:
-    """True cuando el turno de voz debe incluir ficha FitLine/PM."""
+    """True cuando el turno de voz debe incluir ficha FitLine/PM.
+
+    Ya no fuerza la ficha solo por plan Cierre: Excel/clima/etc. quedan fuera.
+    """
     query = (user_text or "").strip()
     uid = (user_id or "").strip()
-    force = False
+    guide_active = False
     if uid:
         try:
-            from app.services.opportunities_pilot.fitline_guide_mode import (
-                user_plan_is_fitline_focus,
-            )
+            from app.services import voice_client_session as vcs
 
-            force = user_plan_is_fitline_focus(uid)
+            guide_active = bool(vcs.is_fitline_guide_active(uid))
         except Exception:  # noqa: BLE001
-            force = False
-    if force:
-        return True
+            guide_active = False
+    try:
+        from app.services.opportunities_pilot.fitline_knowledge import (
+            should_inject_fitline_for_turn,
+        )
+
+        return should_inject_fitline_for_turn(
+            uid or None, query, guide_active=guide_active
+        )
+    except Exception:  # noqa: BLE001
+        pass
     if not query:
         return False
     try:

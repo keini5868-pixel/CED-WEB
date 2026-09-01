@@ -130,7 +130,9 @@ def _stream_system_with_clock(
         "Responde en español natural o deja que el backend use herramientas."
     )
     base = append_sales_marketing_playbook_if_needed(base, user_text)
-    base = append_fitline_knowledge_if_needed(base, user_text)
+    base = append_fitline_knowledge_if_needed(
+        base, user_text, user_id=user_id
+    )
     if user_id:
         try:
             from app.services.user_session_profile import append_client_memory_to_prompt
@@ -448,7 +450,9 @@ def send_advanced_message(
         if partnership:
             system_prompt = f"{ADVANCED_SYSTEM_PROMPT}\n\n{partnership}"
         system_prompt = append_sales_marketing_playbook_if_needed(system_prompt, text)
-        system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
+        system_prompt = append_fitline_knowledge_if_needed(
+            system_prompt, text, user_id=user_id
+        )
         try:
             from app.services.opportunities_pilot.fitline_close_trigger import (
                 append_fitline_close_trigger_if_needed,
@@ -548,7 +552,9 @@ def send_advanced_message_with_pdf(
         if partnership:
             system_prompt = f"{system_prompt}\n\n{partnership}"
         system_prompt = append_sales_marketing_playbook_if_needed(system_prompt, text)
-        system_prompt = append_fitline_knowledge_if_needed(system_prompt, text)
+        system_prompt = append_fitline_knowledge_if_needed(
+            system_prompt, text, user_id=user_id
+        )
         try:
             from app.services.opportunities_pilot.fitline_close_trigger import (
                 append_fitline_close_trigger_if_needed,

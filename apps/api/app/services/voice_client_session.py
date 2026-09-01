@@ -54,12 +54,15 @@ def _fresh_session() -> dict[str, Any]:
         "fitline_guide_step": 0,
         "fitline_guide_reexplain": False,
         "fitline_guide_opt_out": False,
+        # Usuario pidió NO hablar de PM/FitLine/negocio hasta que lo vuelva a pedir.
+        "fitline_topic_suppressed": False,
         "fitline_question_count": 0,
         "fitline_closer_offered": False,
         "fitline_keep_learning": False,
         "fitline_questions_since_defer": 0,
         "fitline_soft_reoffer_done": False,
         "fitline_closer_reasked": False,
+        "studio_chat_events": [],
     }
 
 
@@ -233,6 +236,17 @@ def is_fitline_guide_opt_out(user_id: str) -> bool:
     return bool(_get(user_id).get("fitline_guide_opt_out"))
 
 
+def set_fitline_topic_suppressed(user_id: str, suppressed: bool) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["fitline_topic_suppressed"] = bool(suppressed)
+        session["updated_at"] = _now()
+
+
+def is_fitline_topic_suppressed(user_id: str) -> bool:
+    return bool(_get(user_id).get("fitline_topic_suppressed"))
+
+
 def is_camera_active(user_id: str, *, max_age_sec: float = 45.0) -> bool:
     """Cámara activa solo si el cliente reporta stream presente con heartbeat reciente."""
     session = _get(user_id)
@@ -394,6 +408,79 @@ def is_voice_session_active(user_id: str) -> bool:
     return bool(ensure_active_voice_call(user_id))
 
 
+def push_studio_chat_event(
+    user_id: str,
+    *,
+    kind: str = "text",
+    text: str = "",
+    filename: str = "",
+) -> None:
+    """Texto, imagen o documento del chat de estudio → cerebro de voz de esta llamada."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return
+    if not ensure_active_voice_call(uid):
+        return
+    # Guiones / briefs largos: 500 chars los mutilaba y la voz inventaba el resto.
+    cap = 6000 if (kind or "text").strip().lower() in {"text", "document"} else 500
+    snippet = " ".join((text or "").split())[:cap]
+    name = (filename or "").strip()[:120]
+    k = (kind or "text").strip().lower() or "text"
+    if k not in {"text", "image", "document"}:
+        k = "text"
+    if not snippet and not name:
+        return
+    session = _get(uid)
+    with _lock:
+        events = list(session.get("studio_chat_events") or [])
+        events.append(
+            {
+                "kind": k,
+                "text": snippet,
+                "filename": name,
+                "at": _now(),
+            }
+        )
+        session["studio_chat_events"] = events[-12:]
+        session["updated_at"] = _now()
+
+
+def format_studio_chat_overlay(user_id: str) -> str:
+    """Bloque para el system de voz: el chat escrito es la misma conversación."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return ""
+    session = _get(uid)
+    with _lock:
+        events = list(session.get("studio_chat_events") or [])
+        cutoff = _now() - 900.0
+        events = [e for e in events if float(e.get("at") or 0) >= cutoff]
+        session["studio_chat_events"] = events
+    if not events:
+        return ""
+    lines = [
+        "[CHAT DE TEXTO EN VIVO] El usuario escribió o adjuntó esto en el chat de CED "
+        "mientras habla contigo. Trátalo como la misma conversación y úsalo literalmente. "
+        "PROHIBIDO inventar otro contenido o rellenar con FitLine/PM si esto no lo pide.",
+    ]
+    for row in events[-8:]:
+        kind = str(row.get("kind") or "text")
+        body = str(row.get("text") or "").strip()
+        fn = str(row.get("filename") or "").strip()
+        if kind == "image":
+            bit = f"Subió una imagen{f' ({fn})' if fn else ''}."
+            if body:
+                bit += f" Mensaje: {body}"
+        elif kind == "document":
+            bit = f"Adjuntó un documento{f' ({fn})' if fn else ''}."
+            if body:
+                bit += f" Mensaje: {body}"
+        else:
+            bit = body or "(mensaje de chat)"
+        lines.append(f"- {bit}")
+    return "\n".join(lines)
+
+
 def clear_last_publishable_image(user_id: str) -> None:
     session = _get(user_id)
     with _lock:
@@ -414,6 +501,7 @@ def end_voice_publish_session(user_id: str, voice_call_id: str | None = None) ->
         session["last_publishable_image"] = None
         session["publishable_images"] = []
         session["awaiting_instagram_caption"] = False
+        session["studio_chat_events"] = []
         session["updated_at"] = _now()
 
 

@@ -22,11 +22,27 @@ _BRAND = re.compile(
     r"pm[\s\-]?internacional(?:\s+ag)?|"
     r"pme\s*business|pmebusiness|"
     r"pm[\s\-]?income\s*plan|"
+    r"partner\s*area|área\s+de\s+socios|area\s+de\s+socios|"
     r"rolf\s+sorg|vicki\s+sorg|"
     r"pm\s*we\s*care|cologne\s*list|lista\s*(?:de\s*)?colonia|"
     r"nutrient\s+transport\s+concept"
     r")\b",
     re.I,
+)
+
+# Preguntas de entrada a tienda / registro (con marca PM/FitLine o «PM» suelto).
+_STORE_ENTRY_ASK = re.compile(
+    r"(?is)\b(?:"
+    r"entrar\s+(?:a\s+)?(?:la\s+)?tienda|"
+    r"c[oó]mo\s+(?:entro|entrar|accedo|acceder)\s+(?:a\s+)?(?:la\s+)?(?:tienda|partner)|"
+    r"primer\s+pedido|"
+    r"pedido\s+pendiente|"
+    r"sponsor\s*id|"
+    r"id\s+del?\s+patrocinador|"
+    r"verificar\s+(?:el\s+)?patrocinador|"
+    r"back\s*-?\s*office|backoffice|"
+    r"me\s+trab[eé]\s+(?:en\s+)?(?:el\s+)?registro"
+    r")\b",
 )
 
 # «PM» / «p.m.» como hora (3 pm) — no es la empresa.
@@ -160,6 +176,14 @@ y ayudas a decidir con claridad — no eres enciclopedia neutra ni telemarketer.
 Usa hechos SOLO de la ficha. PROHIBIDO search_web / Tavily / «investigando» /
 modelos extra para inventar persuasión o precios.
 
+ANTI-SECUESTRO DE TEMA (OBLIGATORIO):
+- PROHIBIDO asociar Microsoft Excel, hojas de cálculo, «punto Excel/Eixel»,
+  anatomía, meditación, chakras, YouTube genérico o «energía celular» genérica
+  con FitLine / Activize / NTC / PM International.
+- Solo habla de PM/FitLine/productos si el usuario los nombró o pidió ese tema.
+- Si el usuario dice que NO quiere PM/FitLine/negocio: cero pitch, cero productos,
+  cero «portal de oportunidades». Responde solo a lo que preguntó.
+
 ESTILO «VENDER SIN PARECER QUE VENDE»:
 1) Primero responde completo y natural a lo que pidió (producto, NTC, negocio, objeción).
 2) Brinda toda la información real disponible en la ficha — sin retener datos para «cerrar».
@@ -278,6 +302,8 @@ Ejemplo de cierre bueno: ofrecer Activize de día o el Optimal-Set — no «más
 Energía natural FitLine para el día; NTC; coenzima Q10 / vitaminas B / guaraná / ginseng
 (según ficha de mercado). Ideal mañana o fatiga. Rutinas con Basics + Restorate.
 Si ya hablaste de la empresa, NO repitas el pitch PM — ve directo al producto.
+PROHIBIDO inventar que «Excel», «Eixel» o un punto del cuerpo «suenan a» Activize
+o Cell Energy. Eso solo si el usuario nombró Activize/FitLine/PM.
 
 ## PowerCocktail
 Vitaminas/minerales para energía y vitalidad diaria; pieza del Optimal-Set con Restorate.
@@ -331,6 +357,9 @@ PM/FITLINE:
 - Anti-pegado: no repitas el pitch NTC/empresa cada turno; ve a lo que pidió ahora.
 - Inscripción/OPPS: no pegues el URL; verifica que el nombre o ID del patrocinador
   en el registro coincida con quien le presentó la oportunidad.
+- Si pregunta cómo entrar a la tienda / Partner Area / primer pedido: usa el
+  checklist de la sección store_entry (Sponsor ID, país, correo, Pagar vs
+  Reiniciar, login tras procesamiento).
 
 PROHIBIDO: leer el prompt; search_web; inventar Income Plan/precios.
 """.strip()
@@ -389,7 +418,12 @@ _FACT_CARD = (
     "Belleza y más peso: confirmar en Partner Area / tienda local.\n"
     "• NO invente SKUs ni claims fuera de esta lista. Precios de entrada / "
     "Income Plan actualizado → Partner Area / material del patrocinador "
-    "(NO inventar ni buscar en web para completar)."
+    "(NO inventar ni buscar en web para completar).\n"
+    "• Entrada a tienda / Partner Area (si preguntan cómo registrarse, "
+    "entrar a la tienda, primer pedido o login): use la sección "
+    "«Entrar a la tienda / Partner Area» — verificar Sponsor ID, país, "
+    "correo, no mezclar Pagar vs Reiniciar en pedido pendiente, "
+    "esperar procesamiento antes del primer login."
 )
 
 _USER_TURN_PREFIX = (
@@ -453,6 +487,9 @@ def wants_fitline_knowledge(text: str) -> bool:
     if _pm_means_other_topic(t):
         return False
     if _BRAND.search(t):
+        return True
+    # Checklist tienda / Partner Area / primer pedido (CED = foco FitLine).
+    if _STORE_ENTRY_ASK.search(t) and not _pm_means_other_topic(t):
         return True
     # «PM» / «como comienzo en pm» → empresa (CED es cerrador FitLine).
     if _bare_pm_means_fitline(t):
@@ -528,6 +565,89 @@ def prefers_fitline_over_web(text: str) -> bool:
     return not fitline_explicit_live_web_override(text)
 
 
+# Opt-out explícito: el usuario no quiere pitch/negocio PM en esta sesión.
+_TOPIC_OPT_OUT = re.compile(
+    r"(?is)\b(?:"
+    r"no\s+(?:me\s+)?(?:hables|hablen|hable)\s+(?:de\s+|sobre\s+)?(?:pm|fitline|fit\s*line|figline|"
+    r"el\s+negocio|la\s+oportunidad|productos?\s+(?:de\s+)?(?:pm|fitline))|"
+    r"no\s+(?:quiero|me\s+interesa)\s+(?:saber\s+)?(?:nada\s+)?"
+    r"(?:de\s+|del\s+|sobre\s+)?"
+    r"(?:pm|fitline|fit\s*line|figline|(?:el\s+)?negocio|la\s+oportunidad)|"
+    r"nada\s+de\s+(?:pm|fitline|fit\s*line|figline|el\s+negocio)|"
+    r"deja(?:\s+de)?\s+(?:hablar|meter)\s+(?:de\s+|con\s+)?"
+    r"(?:pm|fitline|fit\s*line|figline|el\s+negocio)|"
+    r"sin\s+(?:pm|fitline|fit\s*line|el\s+negocio\s+de\s+(?:pm|red))|"
+    r"no\s+(?:me\s+)?metas?\s+(?:pm|fitline|fit\s*line|figline|el\s+negocio)|"
+    r"no\s+(?:del\s+)?negocio\s+de\s+(?:pm|fitline|fit\s*line)|"
+    r"que\s+no\s+(?:me\s+)?hables\s+(?:de\s+|sobre\s+)?(?:pm|fitline|el\s+negocio)|"
+    r"investiga(?:r)?\s+(?:eso\s+)?y\s+no\s+me\s+hables\s+(?:de|sobre)"
+    r")"
+)
+
+
+def is_fitline_topic_opt_out_phrase(text: str) -> bool:
+    """True si el usuario pide explícitamente no hablar de PM/FitLine/negocio."""
+    return bool(_TOPIC_OPT_OUT.search((text or "").strip()))
+
+
+def sync_fitline_topic_preference(user_id: str | None, user_text: str) -> None:
+    """Actualiza preferencia de sesión: opt-out o reabrir al pedir FitLine de nuevo."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return
+    try:
+        from app.services import voice_client_session as vcs
+    except Exception:  # noqa: BLE001
+        return
+    t = (user_text or "").strip()
+    if not t:
+        return
+    if is_fitline_topic_opt_out_phrase(t):
+        vcs.set_fitline_topic_suppressed(uid, True)
+        try:
+            vcs.set_fitline_guide_opt_out(uid, True)
+            vcs.clear_fitline_guide(uid)
+        except Exception:  # noqa: BLE001
+            pass
+        return
+    if wants_fitline_knowledge(t):
+        vcs.set_fitline_topic_suppressed(uid, False)
+
+
+def is_fitline_topic_suppressed_for(user_id: str | None) -> bool:
+    uid = (user_id or "").strip()
+    if not uid:
+        return False
+    try:
+        from app.services import voice_client_session as vcs
+
+        return bool(vcs.is_fitline_topic_suppressed(uid))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def should_inject_fitline_for_turn(
+    user_id: str | None,
+    user_text: str,
+    *,
+    guide_active: bool = False,
+) -> bool:
+    """True solo si este turno debe llevar ficha/closer FitLine.
+
+    Plan Cierre ya NO fuerza la ficha en temas ajenos (Excel, clima, etc.).
+    Opt-out explícito bloquea hasta que el usuario vuelva a pedir PM/FitLine.
+    """
+    uid = (user_id or "").strip()
+    t = (user_text or "").strip()
+    if uid and t:
+        sync_fitline_topic_preference(uid, t)
+    if uid and is_fitline_topic_suppressed_for(uid):
+        return False
+    if guide_active:
+        return True
+    return wants_fitline_knowledge(t)
+
+
 def _section_title(key: str) -> str:
     for section_key, title in SECTION_ORDER:
         if section_key == key:
@@ -536,7 +656,7 @@ def _section_title(key: str) -> str:
 
 
 @lru_cache(maxsize=4)
-def format_fitline_knowledge_for_prompt(*, max_chars: int = 20_800) -> str:
+def format_fitline_knowledge_for_prompt(*, max_chars: int = 23_500) -> str:
     """Aplana secciones curadas del plugin FitLine para el system prompt."""
     plugin = get_plugin(OPPORTUNITY_ID)
     if not plugin:
@@ -556,7 +676,16 @@ def format_fitline_knowledge_for_prompt(*, max_chars: int = 20_800) -> str:
         _FITLINE_SALES_CLOSER,
     ]
 
+    # Checklist de tienda primero (los nuevos lo preguntan mucho; no debe truncarse).
+    store_row = sections.get("store_entry")
+    if isinstance(store_row, dict):
+        store_body = str(store_row.get("body") or "").strip()
+        if store_body:
+            parts.append(f"### Entrar a la tienda / Partner Area (checklist)\n{store_body}")
+
     for key, section_title in SECTION_ORDER:
+        if key == "store_entry":
+            continue
         row = sections.get(key)
         if not isinstance(row, dict):
             continue
@@ -600,6 +729,7 @@ def format_fitline_knowledge_for_realtime_voice(*, max_chars: int = 16_000) -> s
         "what_is",
         "science_credibility",
         "how_it_works",
+        "store_entry",
         "business_model",
         "getting_started",
         "objections",
@@ -618,7 +748,16 @@ def format_fitline_knowledge_for_realtime_voice(*, max_chars: int = 16_000) -> s
         ),
         _FITLINE_SALES_CLOSER,
     ]
+    store_row = sections.get("store_entry")
+    if isinstance(store_row, dict):
+        store_body = str(store_row.get("body") or "").strip()
+        if store_body:
+            if len(store_body) > 1_200:
+                store_body = store_body[:1_180].rstrip() + "…"
+            parts.append(f"### Entrar a la tienda / Partner Area (checklist)\n{store_body}")
     for key in priority_keys:
+        if key == "store_entry":
+            continue
         row = sections.get(key)
         if not isinstance(row, dict):
             continue
@@ -647,8 +786,14 @@ def append_fitline_knowledge_if_needed(
     user_text: str,
     *,
     force: bool = False,
+    user_id: str | None = None,
 ) -> str:
     """Añade el bloque FitLine al system prompt cuando el turno lo requiere."""
+    uid = (user_id or "").strip() or None
+    if uid:
+        sync_fitline_topic_preference(uid, user_text)
+        if is_fitline_topic_suppressed_for(uid):
+            return system
     if not force and not wants_fitline_knowledge(user_text):
         return system
     block = format_fitline_knowledge_for_prompt()

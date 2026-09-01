@@ -14,6 +14,23 @@ from app.services.retell_custom_llm import resolve_web_search_request
 from app.services.text_chat import _build_chat_system_light, _can_stream_chat_text
 
 
+def test_wants_fitline_store_entry_phrases():
+    assert wants_fitline_knowledge("cómo entro a la tienda")
+    assert wants_fitline_knowledge("me trabé en el registro")
+    assert wants_fitline_knowledge("primer pedido pendiente")
+    assert wants_fitline_knowledge("qué es Partner Area")
+    assert wants_fitline_knowledge("verificar el patrocinador en el registro")
+
+
+def test_store_entry_checklist_in_curated_block():
+    format_fitline_knowledge_for_prompt.cache_clear()
+    block = format_fitline_knowledge_for_prompt()
+    assert "CHECKLIST DE ENTRADA" in block or "Entrar a la tienda" in block
+    assert "Sponsor ID" in block or "patrocinador" in block.lower()
+    assert "Reiniciar" in block or "Pagar" in block
+    assert "Partner Area" in block
+
+
 def test_wants_fitline_on_brand_and_products():
     assert wants_fitline_knowledge("genera una idea de imagen de venta de Activise")
     assert wants_fitline_knowledge("háblame de FitLine")
@@ -55,6 +72,83 @@ def test_wants_fitline_rejects_other_pm_meanings():
 def test_wants_fitline_rejects_generic_basics():
     assert wants_fitline_knowledge("explícame the basics of marketing") is False
     assert wants_fitline_knowledge("hola cómo estás") is False
+
+
+def test_excel_and_body_topics_do_not_want_fitline():
+    """Regresión: Excel / meditación / cuerpo ≠ Activize / Cell Energy."""
+    for q in (
+        "Qué es Excel",
+        "Quiero saber qué es Excel",
+        "mi sobrina escuchó algo en YouTube sobre Excel del cuerpo",
+        "investiga el punto Excel de meditación",
+        "hablaban de un punto que conectaba a otra dimensión",
+    ):
+        assert wants_fitline_knowledge(q) is False, q
+        assert prefers_fitline_over_web(q) is False, q
+
+
+def test_cierre_plan_does_not_force_fitline_on_excel(monkeypatch):
+    from app.services import voice_client_session as vcs
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        should_inject_fitline_for_turn,
+    )
+    from app.services.voice_llm_common import build_voice_system
+
+    uid = "excel-user-cierre"
+    monkeypatch.setattr(
+        "app.services.opportunities_pilot.fitline_guide_mode.user_plan_is_fitline_focus",
+        lambda _uid: True,
+    )
+    monkeypatch.setattr(
+        "app.services.insight_questions.capture_insight_question",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "app.services.user_session_profile.touch_and_learn",
+        lambda *a, **k: None,
+    )
+    vcs.set_fitline_topic_suppressed(uid, False)
+    assert should_inject_fitline_for_turn(uid, "Qué es Excel") is False
+    system = build_voice_system(uid, "Qué es Excel")
+    # La identidad base puede mencionar FitLine como capacidad; lo prohibido es
+    # inyectar la ficha/closer en un turno de Excel.
+    assert "HECHOS OBLIGATORIOS FITLINE" not in system
+    assert "ASESOR COMERCIAL" not in system
+    assert "CONOCIMIENTO CURADO — PM International" not in system
+    assert "CIERRE PRIORITARIO" not in system
+    assert "portal de oportunidades" not in system.lower()
+
+
+def test_fitline_topic_opt_out_blocks_until_reopen(monkeypatch):
+    from app.services import voice_client_session as vcs
+    from app.services.opportunities_pilot.fitline_knowledge import (
+        append_fitline_knowledge_if_needed,
+        is_fitline_topic_opt_out_phrase,
+        should_inject_fitline_for_turn,
+        sync_fitline_topic_preference,
+    )
+
+    uid = "opt-out-user"
+    phrase = (
+        "Quiero que investigues eso y no me hables sobre el negocio de "
+        "PM International ni nada de eso"
+    )
+    assert is_fitline_topic_opt_out_phrase(phrase)
+    sync_fitline_topic_preference(uid, phrase)
+    assert vcs.is_fitline_topic_suppressed(uid) is True
+    assert should_inject_fitline_for_turn(uid, "investiga el punto del cuerpo") is False
+    # force=True no debe colar ficha en tema ajeno con opt-out activo
+    out = append_fitline_knowledge_if_needed(
+        "BASE", "investiga el punto del cuerpo", force=True, user_id=uid
+    )
+    assert out == "BASE"
+    # Reabrir al pedir FitLine explícito
+    assert should_inject_fitline_for_turn(uid, "cuéntame de FitLine") is True
+    assert vcs.is_fitline_topic_suppressed(uid) is False
+    out2 = append_fitline_knowledge_if_needed(
+        "BASE", "cuéntame de FitLine", user_id=uid
+    )
+    assert "FitLine" in out2 or "Activize" in out2
 
 
 def test_format_includes_curated_products_not_invented():
@@ -245,7 +339,7 @@ def test_fitline_sales_closer_is_internal_only():
     assert "PROHIBIDO" in overlay
     assert "sin retener" in overlay.lower() or "información real" in overlay.lower()
     # Compacto: persuasión operativa, no novelón
-    assert len(overlay) < 6500
+    assert len(overlay) < 7500
     assert "expansión" in overlay.lower() or "América" in overlay or "America" in overlay
 
 
@@ -268,7 +362,12 @@ def test_realtime_fitline_prompt_has_knowledge_not_jarvis():
     text = build_realtime_instructions(voice_profile="fitline")
     assert "CED" in text
     assert "FitLine" in text or "FITLINE" in text.upper()
-    assert "ASESOR COMERCIAL" in text or "VENDER SIN PARECER" in text
+    assert (
+        "ASESOR COMERCIAL" in text
+        or "VENDER SIN PARECER" in text
+        or "CHECKLIST DE ENTRADA" in text
+        or "HECHOS OBLIGATORIOS FITLINE" in text
+    )
     low = text.lower()
     assert (
         "no abras cada respuesta" in low
@@ -276,8 +375,9 @@ def test_realtime_fitline_prompt_has_knowledge_not_jarvis():
         or "nunca re-emitas" in low
         or "español siempre" in low
         or "paridad retell" in low
+        or "partner area" in low
     )
     assert "NTC" in text or "Nutrient Transport" in text
     assert len(text) > 5000
-    assert len(text) <= 22500
+    assert len(text) <= 24500
 
