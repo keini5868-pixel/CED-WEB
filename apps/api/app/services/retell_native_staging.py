@@ -11,8 +11,8 @@ from app.services.retell_agent_cache import (
     set_native_staging_agent,
 )
 from app.services.retell_agent_setup import (
+    _apply_voice_model_to_payload,
     _retrieve_agent_voice_id,
-    _voice_model_for,
     _voice_speed_for,
     _voice_temperature_for,
     _voice_volume_for,
@@ -126,9 +126,7 @@ def ensure_native_staging_agent(
         "begin_message_delay_ms": 0,
         "agent_name": STAGING_AGENT_NAME,
     }
-    voice_model = _voice_model_for(voice_id)
-    if voice_model:
-        agent_payload["voice_model"] = voice_model
+    _apply_voice_model_to_payload(agent_payload, voice_id)
 
     if agent_id:
         try:
@@ -136,7 +134,7 @@ def ensure_native_staging_agent(
         except Exception as exc:
             err = str(exc).lower()
             if "voice model" in err or "voice_model" in err:
-                agent_payload.pop("voice_model", None)
+                agent_payload["voice_model"] = None
                 client.agent.update(agent_id=agent_id, **agent_payload)
             else:
                 raise

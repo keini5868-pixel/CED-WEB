@@ -399,6 +399,17 @@ def _voice_model_for(voice_id: str) -> str | None:
     return "eleven_turbo_v2_5"
 
 
+def _apply_voice_model_to_payload(agent_payload: dict[str, Any], voice_id: str) -> None:
+    """Escribe voice_model en el payload del agente Retell."""
+    voice_model = _voice_model_for(voice_id)
+    if voice_model:
+        agent_payload["voice_model"] = voice_model
+        return
+    # Retell conserva eleven_flash_v2_5 del update anterior si no enviamos null explícito.
+    if voice_id.startswith("cartesia-") or voice_id.startswith("custom_voice_"):
+        agent_payload["voice_model"] = None
+
+
 def _voice_speed_for(voice_id: str) -> float:
     settings = get_settings()
     if settings.retell_voice_speed > 0:
@@ -484,9 +495,7 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "begin_message_delay_ms": 0,
         "agent_name": "CED Jarvis",
     }
-    voice_model = _voice_model_for(voice_id)
-    if voice_model:
-        agent_payload["voice_model"] = voice_model
+    _apply_voice_model_to_payload(agent_payload, voice_id)
 
     if agent_id:
         try:
@@ -494,8 +503,8 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         except Exception as exc:
             err = str(exc).lower()
             if "voice model" in err or "voice_model" in err:
-                logger.warning("[RETELL] voice_model omit retry: %s", exc)
-                agent_payload.pop("voice_model", None)
+                logger.warning("[RETELL] voice_model clear retry: %s", exc)
+                agent_payload["voice_model"] = None
                 client.agent.update(agent_id=agent_id, **agent_payload)
             elif "not found from voice" in err:
                 if configured:
