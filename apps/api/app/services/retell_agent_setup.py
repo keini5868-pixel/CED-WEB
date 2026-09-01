@@ -387,15 +387,15 @@ def custom_llm_websocket_url() -> str:
 def _voice_model_for(voice_id: str) -> str | None:
     """Modelo TTS compatible con el proveedor de la voz Retell."""
     settings = get_settings()
+    # Voces custom/clon (Cartesia, Fish, etc.) — Retell elige el modelo del proveedor.
+    # Forzar RETELL_VOICE_MODEL aquí rompe create/update del agente y puede tumbar llamadas.
+    if voice_id.startswith("cartesia-") or voice_id.startswith("custom_voice_"):
+        return None
     configured = settings.retell_voice_model.strip()
     if configured:
         return configured
-    if voice_id.startswith("cartesia-"):
-        return None
     if voice_id.startswith("openai-"):
         return "tts-1"
-    if voice_id.startswith("custom_voice_"):
-        return None
     return "eleven_turbo_v2_5"
 
 

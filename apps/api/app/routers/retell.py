@@ -154,7 +154,11 @@ def _format_retell_call_error(exc: Exception) -> str:
     raw = str(exc).strip()
     lower = raw.lower()
     if "402" in lower or "payment required" in lower or "trial" in lower:
-        return "La voz no está disponible en este momento. Intente de nuevo en unos minutos."
+        logger.error("[RETELL] create_web_call billing error: %s", raw[:500])
+        return (
+            "El servicio de voz externo no aceptó la llamada (saldo o facturación del proveedor). "
+            "Intente de nuevo en unos minutos; si persiste, avise a soporte."
+        )
     if "401" in lower or "unauthorized" in lower:
         return "No pude iniciar la voz. Intente de nuevo."
     if "422" in lower or "not found" in lower:
@@ -1156,6 +1160,20 @@ async def retell_diagnostics(
     except Exception as exc:  # noqa: BLE001
         out["gemini_ok"] = False
         out["gemini_error"] = str(exc)
+
+    agent_id = get_retell_agent_id() or settings.retell_agent_id.strip()
+    if client and agent_id:
+        try:
+            call = await asyncio.to_thread(
+                client.call.create_web_call,
+                agent_id=agent_id,
+                metadata={"user_id": "diagnostics-probe"},
+            )
+            out["create_web_call_ok"] = True
+            out["create_web_call_id"] = getattr(call, "call_id", None)
+        except Exception as exc:  # noqa: BLE001
+            out["create_web_call_ok"] = False
+            out["create_web_call_error"] = str(exc)[:800]
 
     return out
 
