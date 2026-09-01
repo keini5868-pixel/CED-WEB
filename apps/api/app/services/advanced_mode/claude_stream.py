@@ -51,7 +51,16 @@ def _pick_stream_model(text: str) -> tuple[str, str]:
     return ADVANCED_STREAM_MODEL, ADVANCED_STREAM_MODEL_LABEL
 
 
-def stream_max_tokens(text: str) -> int:
+def stream_max_tokens(
+    text: str,
+    *,
+    history: list | None = None,
+) -> int:
+    from app.services.deliverable_replies import needs_deliverable_token_budget
+    from app.services.text_chat import CHAT_DELIVERABLE_MAX_TOKENS
+
+    if needs_deliverable_token_budget(text, history):
+        return CHAT_DELIVERABLE_MAX_TOKENS
     length = len(text.strip())
     if length < 50:
         return 280

@@ -965,6 +965,8 @@ def _hallucination_retry_message(kind: str) -> str:
 
 def _dedupe_chat_reply(text: str) -> str:
     """Elimina bloques idénticos consecutivos y muletillas duplicadas en la respuesta."""
+    from app.services.deliverable_replies import collapse_repeated_deliverable_passages
+
     cleaned = (text or "").strip()
     if not cleaned:
         return cleaned
@@ -974,6 +976,7 @@ def _dedupe_chat_reply(text: str) -> str:
         cleaned,
         flags=re.I,
     )
+    cleaned = collapse_repeated_deliverable_passages(cleaned)
     parts = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
     if len(parts) >= 2:
         deduped: list[str] = [parts[0]]
@@ -990,10 +993,17 @@ def _dedupe_chat_reply(text: str) -> str:
     return cleaned
 
 
-def _chat_max_tokens(user_text: str, *, with_tools: bool = False) -> int:
+def _chat_max_tokens(
+    user_text: str,
+    *,
+    with_tools: bool = False,
+    history: list | None = None,
+) -> int:
     if with_tools:
         return CHAT_TOOLS_MAX_TOKENS
-    if _is_deliverable_request(user_text):
+    from app.services.deliverable_replies import needs_deliverable_token_budget
+
+    if needs_deliverable_token_budget(user_text, history):
         return CHAT_DELIVERABLE_MAX_TOKENS
     return CHAT_SIMPLE_MAX_TOKENS
 
@@ -1404,6 +1414,12 @@ def _build_chat_system(
         system, user_text, user_id=user_id
     )
     try:
+        from app.services.deliverable_replies import append_deliverable_finish_if_needed
+
+        system = append_deliverable_finish_if_needed(system, user_text)
+    except Exception:  # noqa: BLE001
+        pass
+    try:
         from app.services.opportunities_pilot.fitline_close_trigger import (
             append_fitline_close_trigger_if_needed,
         )
@@ -1458,6 +1474,12 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
     system = append_fitline_knowledge_if_needed(
         system, user_text, user_id=user_id
     )
+    try:
+        from app.services.deliverable_replies import append_deliverable_finish_if_needed
+
+        system = append_deliverable_finish_if_needed(system, user_text)
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from app.services.opportunities_pilot.fitline_close_trigger import (
             append_fitline_close_trigger_if_needed,

@@ -111,11 +111,13 @@ def _conversation_id(user_id: str, explicit: str | None) -> str:
 def _stream_system_with_clock(
     user_id: str | None = None,
     user_text: str = "",
+    history: list[dict[str, Any]] | None = None,
 ) -> str:
     from app.domain.ced_identity import creator_partnership_overlay_for_user
     from app.domain.ced_sales_marketing_playbook import (
         append_sales_marketing_playbook_if_needed,
     )
+    from app.services.deliverable_replies import append_deliverable_finish_if_needed
     from app.services.opportunities_pilot.fitline_knowledge import (
         append_fitline_knowledge_if_needed,
     )
@@ -133,6 +135,7 @@ def _stream_system_with_clock(
     base = append_fitline_knowledge_if_needed(
         base, user_text, user_id=user_id
     )
+    base = append_deliverable_finish_if_needed(base, user_text, history)
     if user_id:
         try:
             from app.services.user_session_profile import append_client_memory_to_prompt
@@ -454,6 +457,14 @@ def send_advanced_message(
             system_prompt, text, user_id=user_id
         )
         try:
+            from app.services.deliverable_replies import append_deliverable_finish_if_needed
+
+            system_prompt = append_deliverable_finish_if_needed(
+                system_prompt, text, history
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
             from app.services.opportunities_pilot.fitline_close_trigger import (
                 append_fitline_close_trigger_if_needed,
             )
@@ -555,6 +566,14 @@ def send_advanced_message_with_pdf(
         system_prompt = append_fitline_knowledge_if_needed(
             system_prompt, text, user_id=user_id
         )
+        try:
+            from app.services.deliverable_replies import append_deliverable_finish_if_needed
+
+            system_prompt = append_deliverable_finish_if_needed(
+                system_prompt, text, history
+            )
+        except Exception:  # noqa: BLE001
+            pass
         try:
             from app.services.opportunities_pilot.fitline_close_trigger import (
                 append_fitline_close_trigger_if_needed,
@@ -866,8 +885,10 @@ def iter_advanced_message_stream(
         *history_for_stream(history),
         {"role": "user", "content": with_fitline_user_prefix(text)},
     ]
-    max_tokens = stream_max_tokens(text)
-    stream_system = _stream_system_with_clock(user_id, user_text=text)
+    max_tokens = stream_max_tokens(text, history=history)
+    stream_system = _stream_system_with_clock(
+        user_id, user_text=text, history=history
+    )
 
     accumulated: list[str] = []
     stream_buf = ""
@@ -906,7 +927,40 @@ def iter_advanced_message_stream(
         )
         return
 
-    reply = _finalize_chat_reply("".join(accumulated).strip())
+    raw_reply = "".join(accumulated).strip()
+    from app.services.deliverable_replies import (
+        collapse_repeated_deliverable_passages,
+        is_incomplete_deliverable,
+        DELIVERABLE_CONTINUATION_MESSAGE,
+        merge_deliverable_continuation,
+    )
+    from app.services.voice_llm_common import strip_embedded_prior_assistant
+
+    try:
+        raw_reply = strip_embedded_prior_assistant(raw_reply, history)
+        raw_reply = collapse_repeated_deliverable_passages(raw_reply)
+    except Exception:  # noqa: BLE001
+        pass
+    reply = _finalize_chat_reply(raw_reply)
+    if reply and is_incomplete_deliverable(reply, text, history):
+        try:
+            cont = anthropic_simple_reply(
+                api_key=anthropic_key,
+                system=stream_system,
+                messages=[
+                    *stream_messages,
+                    {"role": "assistant", "content": reply},
+                    {"role": "user", "content": DELIVERABLE_CONTINUATION_MESSAGE},
+                ],
+                max_tokens=max(max_tokens, 1600),
+                user_text=text,
+            )
+            if cont:
+                reply = _finalize_chat_reply(
+                    merge_deliverable_continuation(reply, cont)
+                )
+        except Exception:  # noqa: BLE001
+            logger.warning("[ADV-MODE] deliverable continuation failed", exc_info=True)
     if not reply:
         fallback_text = _stream_fallback_reply(
             stream_system=stream_system,

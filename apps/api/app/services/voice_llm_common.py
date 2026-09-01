@@ -123,7 +123,9 @@ def ensure_voice_reply(text: str | None, *, fallback: str | None = None) -> str:
 
 
 def voice_generation_limits(user_text: str) -> tuple[int, float]:
-    if is_deliverable_request(user_text):
+    from app.services.deliverable_replies import needs_deliverable_token_budget
+
+    if needs_deliverable_token_budget(user_text):
         return 3200, 28.0
     if is_prompt_creation_request(user_text):
         return 2048, 28.0
@@ -335,7 +337,18 @@ def build_base_voice_system(
             pass
     if query and is_deliverable_request(query):
         base = f"{base}\n\n{VOICE_DELIVERABLE_OVERLAY}"
-    elif query and is_advisory_voice_query(query):
+    else:
+        try:
+            from app.services.deliverable_replies import (
+                DELIVERABLE_FINISH_OVERLAY,
+                is_deliverable_continuation_turn,
+            )
+
+            if is_deliverable_continuation_turn(query):
+                base = f"{base}\n\n{VOICE_DELIVERABLE_OVERLAY}\n\n{DELIVERABLE_FINISH_OVERLAY}"
+        except Exception:  # noqa: BLE001
+            pass
+    if query and is_advisory_voice_query(query) and "ENTREGA COMPLETA" not in (base or ""):
         base = (
             f"{base}\n\n"
             "# MODO ASESORÍA (demo / video / estrategia)\n"
