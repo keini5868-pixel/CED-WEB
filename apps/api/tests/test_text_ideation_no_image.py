@@ -5,7 +5,9 @@ from __future__ import annotations
 from app.services.chat_image_generation import should_take_direct_image_path
 from app.services.chat_intents import (
     is_generate_image_intent,
+    is_script_narrative_request,
     is_text_ideation_request,
+    wants_image_reference_edit,
 )
 from app.services.marketing_creative import (
     is_image_creation_request,
@@ -104,6 +106,27 @@ def test_talking_about_an_attached_image_does_not_generate():
         assert is_generate_image_intent(msg) is False, msg
         assert should_take_direct_image_path(msg, []) is False, msg
         assert is_image_creation_request(msg, []) is False, msg
+
+
+def test_guion_continuation_does_not_generate_image():
+    msg = (
+        "Cómo continúa el guión después de ese punto? "
+        "le digo a ced que aparezca y le pido que diga un resumen de su proposito"
+    )
+    assert is_script_narrative_request(msg) is True
+    assert is_generate_image_intent(msg) is False
+    assert wants_image_reference_edit(msg) is False
+    assert should_take_direct_image_path(msg, []) is False
+    from app.services.copy_quality import prompt_requires_ideogram_text
+
+    assert prompt_requires_ideogram_text(msg) is False
+
+
+def test_image_text_edit_still_works():
+    msg = "agrégale a la imagen un texto que diga OFERTA"
+    assert is_script_narrative_request(msg) is False
+    assert wants_image_reference_edit(msg) is True
+    assert should_take_direct_image_path(msg, []) is True
 
 
 def test_generate_image_with_idea_in_scene_still_images():

@@ -12,6 +12,7 @@ from app.services.chat_intents import (
     is_generate_image_intent,
     is_image_choice_confirmation,
     is_pdf_intent,
+    is_script_narrative_request,
     is_vague_image_subject,
     last_assistant_image_concept,
     last_concrete_image_user_prompt,
@@ -185,6 +186,8 @@ def should_take_direct_image_path(
     if is_text_ideation_request(t):
         return False
     if is_image_meta_talk(t):
+        return False
+    if is_script_narrative_request(t) and not is_generate_image_intent(t):
         return False
     if is_image_choice_confirmation(t) and history_has_pending_image_brief(history):
         return True

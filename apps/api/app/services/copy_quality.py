@@ -351,6 +351,10 @@ def prompt_requires_precise_text(prompt: str) -> bool:
     t = (prompt or "").strip()
     if not t:
         return False
+    from app.services.chat_intents import is_script_narrative_request
+
+    if is_script_narrative_request(t):
+        return False
     if _SCENE_FORBIDS_TEXT.search(t):
         return False
     if extract_quoted_phrases(t):
@@ -832,6 +836,24 @@ def compose_persuasive_overlay_lines(user_text: str, *, max_lines: int = 2) -> l
     return [normalize_spanish(x) for x in lines[:max_lines] if x]
 
 
+_BG_CHANGE_RE = re.compile(
+    r"(?is)\b(?:"
+    r"cambia(?:r)?\s+(?:el\s+)?fondo|"
+    r"otro\s+fondo|"
+    r"nuevo\s+fondo|"
+    r"fondo\s+(?:a|de|en)\s+\w+|"
+    r"pon(?:le|me)?\s+(?:un\s+)?fondo|"
+    r"background|"
+    r"change\s+(?:the\s+)?background"
+    r")\b"
+)
+
+
+def user_requests_background_change(text: str) -> bool:
+    """True si el usuario pide cambiar el fondo (no solo tipografía)."""
+    return bool(_BG_CHANGE_RE.search(text or ""))
+
+
 def build_reference_text_edit_prompt(
     user_text: str,
     *,
@@ -842,10 +864,22 @@ def build_reference_text_edit_prompt(
     if not lines:
         lines = compose_persuasive_overlay_lines(user_text)
     verbatim = format_verbatim_image_copy(lines) if lines else ""
+    change_bg = user_requests_background_change(user_text)
+    if change_bg:
+        keep = (
+            "Edit the attached photo. Keep the SAME person, face, clothing and pose. "
+            "CHANGE the background as the user requested. "
+            "Do NOT replace the subject with a different person "
+            "unless the user explicitly asked for that."
+        )
+    else:
+        keep = (
+            "Edit the attached photo. Keep the SAME person, face, clothing, pose, "
+            "lighting and background. Do NOT replace the subject with a different person "
+            "or a different gesture unless the user explicitly asked for that."
+        )
     parts = [
-        "Edit the attached photo. Keep the SAME person, face, clothing, pose, "
-        "lighting and background. Do NOT replace the subject with a different person "
-        "or a different gesture unless the user explicitly asked for that.",
+        keep,
         "Add clear, legible Spanish on-image typography for a marketing ad "
         "(pain → solution / PAS). Short lines only. High contrast. No watermarks. "
         f"{_FRAME_SAFE_RULE} {_ORTHOGRAPHY_RULE} {_SPELLING_STRICT_RULE}",

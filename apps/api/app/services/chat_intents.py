@@ -323,10 +323,13 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|as[ií]\s+como\s+(?:esta|esa)"
     r"|con\s+(?:esta|esa)\s+misma"
     r"|mism[oa]s?\s+caracter[ií]sticas?"
-    r"|(?:pon|pone|ponga|agrega|a[nñ]ade|coloca|incluye)\w*"
-    r"|que\s+(?:diga|ponga|aparezca|lea|salga)"
+    r"|(?:pon|pone|ponga|agr[eé]g[aá]|a[nñ]ade|coloca|incluye)\w*"
     r"|mant[eé]n(?:me)?\s+(?:l[ao]s?\s+)?(?:precios?|textos?|lista|dise[nñ]o)"
     r"|conserva\s+(?:l[ao]s?\s+)?(?:precios?|textos?|lista)"
+    r"|(?:en|sobre|en\s+la)\s+(?:imagen|foto|flyer|creativo|banner|dise[nñ]o)\b.*"
+    r"(?:que\s+(?:diga|ponga|aparezca|lea|salga)|pon(?:le|ga|me)?\s+(?:un\s+)?texto)"
+    r"|que\s+(?:diga|ponga|aparezca|lea|salga)\s+"
+    r"(?:(?:en|sobre)\s+)?(?:la\s+)?(?:imagen|foto|flyer|banner|cartel|creativo|post)\b"
     r"|cambia\s+(?:el\s+)?(?:fondo|dise[nñ]o|estilo)"
     r")\b",
     re.I,
@@ -357,6 +360,34 @@ _EXPLICIT_PUBLISH_COMMAND = re.compile(
 )
 
 
+_SCRIPT_NARRATIVE = re.compile(
+    r"(?is)\b(?:"
+    r"gui[oó]n(?:es)?|guion(?:es)?|escena|acto|plano|narraci[oó]n|rodaje|"
+    r"contin[uú]a(?:r)?\s+(?:el\s+)?gui|despu[eé]s\s+de\s+ese\s+punto|"
+    r"en\s+esa\s+parte|en\s+este\s+punto\s+del\s+gui|"
+    r"le\s+digo\s+a\s+(?:ced|el\s+personaje|el\s+asistente|la\s+c[aá]mara)|"
+    r"aparece\s+(?:ced|el\s+personaje)|"
+    r"que\s+(?:ced\s+)?aparezca\b"
+    r")\b"
+)
+
+
+def is_script_narrative_request(text: str) -> bool:
+    """True si el usuario describe escena/guion — no pedir generar imagen."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _EXPLICIT_IMAGE_CREATE.search(t) or _VISUAL_CONTEXT.search(t):
+        return False
+    if _SCRIPT_NARRATIVE.search(t):
+        return True
+    from app.services.deliverable_replies import is_deliverable_request
+
+    if is_deliverable_request(t) and not _EXPLICIT_IMAGE_CREATE.search(t):
+        return bool(re.search(rf"\b{_TEXT_DELIVERABLE}\b", t, re.I))
+    return False
+
+
 def user_requests_prior_reference(text: str) -> bool:
     return bool(_PRIOR_REFERENCE.search((text or "").strip()))
 
@@ -364,7 +395,7 @@ def user_requests_prior_reference(text: str) -> bool:
 def wants_image_reference_edit(text: str) -> bool:
     """True si el usuario pide variar/editar/inspirarse en una imagen de referencia."""
     t = (text or "").strip()
-    if not t:
+    if not t or is_script_narrative_request(t):
         return False
     if user_requests_prior_reference(t):
         return True
