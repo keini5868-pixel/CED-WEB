@@ -96,6 +96,8 @@ CAPACIDADES (usa las herramientas cuando corresponda):
 - generar_pdf: documentos PDF descargables (content = texto completo del documento).
 - generate_image: crear imágenes y creativos publicitarios SOLO si piden explícitamente la imagen.
 - Idea/copy/prompt de texto ≠ imagen.
+- Si hay diseño/imagen en el hilo y piden ejemplos u opciones sin decir «genera»: responde en TEXTO
+  anclado al mismo diseño (estilo ChatGPT). Solo renderiza cuando lo pidan explícitamente.
 - publicar_facebook / publicar_instagram: si el usuario conectó redes Meta.
 - NUNCA escribas URLs /v1/pdf/download; la app muestra el botón Descargar.
 - NUNCA digas "voy a buscar" sin invocar search_web en el mismo turno.
@@ -138,13 +140,46 @@ def _try_instant_datetime_reply(
     return try_instant_datetime_reply(text, history=history)
 
 
-def _advanced_stream_system_with_clock() -> str:
-    return (
+def _advanced_stream_system_with_clock(
+    history: list[dict[str, Any]] | None = None,
+    *,
+    user_id: str = "",
+    conversation_id: str | None = None,
+) -> str:
+    from app.services.chat_image_generation import build_active_image_thread_context
+
+    base = (
         ADVANCED_STREAM_SYSTEM
         + f"\n\n{clock_context_block()}"
         + "\nPROHIBIDO escribir tool_code, print(), search_web() ni pseudo-código. "
         "Responde en español natural o deja que el backend use herramientas."
     )
+    thread = build_active_image_thread_context(
+        history,  # type: ignore[arg-type]
+        user_id=user_id,
+        conversation_id=conversation_id,
+    )
+    if thread:
+        base = f"{base}\n\n{thread}"
+    return base
+
+
+def _advanced_system_with_thread(
+    history: list[dict[str, Any]] | None,
+    *,
+    user_id: str,
+    conversation_id: str | None,
+) -> str:
+    from app.services.chat_image_generation import build_active_image_thread_context
+
+    thread = build_active_image_thread_context(
+        history,  # type: ignore[arg-type]
+        user_id=user_id,
+        conversation_id=conversation_id,
+    )
+    if thread:
+        return f"{ADVANCED_SYSTEM_PROMPT}\n\n{thread}"
+    return ADVANCED_SYSTEM_PROMPT
 
 
 def _needs_advanced_tools(text: str, history_rows: list[dict[str, Any]]) -> bool:
@@ -555,7 +590,11 @@ def send_advanced_message(
         reply, pdf_attachment, image_attachment = _complete_chat_with_tools(
             user_id,
             api_key=anthropic_key,
-            system=ADVANCED_SYSTEM_PROMPT,
+            system=_advanced_system_with_thread(
+                history_rows,
+                user_id=user_id,
+                conversation_id=conv_id,
+            ),
             messages=anthropic_messages,
             conversation_id=conv_id,
         )
@@ -749,7 +788,11 @@ def iter_advanced_message_stream(
     normalized = _history_for_stream(history)
     stream_messages = [*normalized, {"role": "user", "content": text}]
     max_tokens = _stream_max_tokens(text)
-    stream_system = _advanced_stream_system_with_clock()
+    stream_system = _advanced_stream_system_with_clock(
+        history_rows,
+        user_id=user_id,
+        conversation_id=conv_id,
+    )
 
     accumulated: list[str] = []
     stream_buf = ""

@@ -433,6 +433,9 @@ IMPORTANTE — CONTENIDO / IDEAS / PROMPTS DE TEXTO vs IMAGEN (acciones distinta
 - Solo genera imagen cuando pidan EXPLÍCITAMENTE crear/diseñar una imagen, foto, flyer, logo o creativo visual
   («genera una imagen…», «diseña un flyer…»).
 - «Dame una idea de imagen / creativo» o «hazme un prompt para…» = ideación de texto, NO PNG.
+- ITERACIÓN DE DISEÑO (como ChatGPT): si ya hay imagen o diseño en el hilo y piden ejemplos, opciones,
+  variantes o «cómo se vería» SIN decir genera/renderiza → responde en TEXTO anclado al MISMO diseño.
+  Solo genera imagen cuando pidan explícitamente renderizar («genera», «hazlo», «créala», «genérala»).
 
 IMPORTANTE — PM International / FitLine (módulo Oportunidades):
 - Si el mensaje habla de FitLine, PM International o productos del catálogo (Activize/Activise, Restorate, Basics, etc.)
@@ -1367,6 +1370,7 @@ def _build_chat_system(
     user_text: str,
     route: Any | None = None,
     conversation_id: str | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> str:
     from app.services.system_clock import clock_context_block
 
@@ -1391,11 +1395,22 @@ def _build_chat_system(
             else:
                 parts.append(
                     "HAY UNA IMAGEN RECIENTE EN ESTA CONVERSACIÓN.\n"
-                    "Si el usuario pide GENERAR u OTRA imagen, genera una nueva "
-                    "(generate_image / generate_image_with_reference).\n"
+                    "Mantén el hilo visual: ejemplos y variantes en TEXTO salvo que pidan "
+                    "generar/renderizar explícitamente.\n"
+                    "Si piden GENERAR otra versión del mismo diseño, usa generate_image "
+                    "(o referencia) conservando el concepto.\n"
                     "NO asumas que quiere publicar en redes salvo que lo pida "
                     "explícitamente («publica en Instagram/Facebook»)."
                 )
+    from app.services.chat_image_generation import build_active_image_thread_context
+
+    thread_ctx = build_active_image_thread_context(
+        history,
+        user_id=user_id,
+        conversation_id=conversation_id,
+    )
+    if thread_ctx:
+        parts.append(thread_ctx)
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
@@ -2813,7 +2828,7 @@ def send_message(
         messages.append({"role": "user", "content": llm_text})
         try:
             system = _build_chat_system(
-                user_id, user_caption, route, conversation_id
+                user_id, user_caption, route, conversation_id, history
             )
         except Exception:  # noqa: BLE001
             logger.exception("[CHAT] fallo armando system prompt (pdf) — usando base")
@@ -3263,7 +3278,7 @@ def send_message(
 
     messages.append({"role": "user", "content": with_fitline_user_prefix(text)})
     try:
-        system = _build_chat_system(user_id, text, route, conversation_id)
+        system = _build_chat_system(user_id, text, route, conversation_id, history)
     except Exception:  # noqa: BLE001
         logger.exception("[CHAT] fallo armando system prompt — usando base")
         system = _chat_system_for_user(user_id)

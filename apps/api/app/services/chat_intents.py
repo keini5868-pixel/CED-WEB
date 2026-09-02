@@ -202,6 +202,56 @@ def is_image_meta_talk(text: str) -> bool:
     return bool(_IMAGE_META_TALK.search(t))
 
 
+_VISUAL_DESIGN_EXPLORATION = re.compile(
+    r"(?is)\b("
+    r"dame\s+(?:\d+\s+)?(?:unos?\s+|algunos?\s+)?ejemplos?"
+    r"|(?:mu[eé]strame|ens[eé][nñ]ame)\s+(?:unos?\s+)?(?:ejemplos?|opciones?|variantes?|alternativas?)"
+    r"|qu[eé]\s+opciones?\s+hay"
+    r"|(?:c[oó]mo\s+se\s+ver[ií]a|y\s+si\s+(?:le\s+)?(?:ponemos|usamos|cambiamos|le\s+ponemos))"
+    r"|qu[eé]\s+tal\s+si\s+(?:le\s+)?(?:ponemos|cambiamos|usamos)"
+    r"|alternativas?\s+(?:para|de)\s+(?:esa|esta|el|la|ese|ese)\s+"
+    r"(?:imagen|dise[nñ]o|flyer|creativo|banner|logo|visual)"
+    r"|variantes?\s+(?:para|de|del?)\s+(?:esa|esta|el|la|mismo|misma)?\s*"
+    r"(?:imagen|dise[nñ]o|concepto|flyer|creativo|banner)?"
+    r"|explora(?:r|mos)?\s+(?:opciones|variantes|ideas)\s+(?:visual|de\s+dise[nñ]o)"
+    r"|sin\s+generar(?:la)?\s+(?:todav[ií]a|a[uú]n|la\s+imagen)?"
+    r"|antes\s+de\s+(?:generar|renderizar|crear\s+la\s+imagen)"
+    r"|(?:describe|descr[ií]beme)\s+(?:c[oó]mo\s+)?(?:se\s+ver[ií]a|quedar[ií]a)"
+    r"|ejemplos?\s+(?:de|para|sobre)\s+(?:(?:esa|esta|la|el|misma)\s+)*"
+    r"(?:imagen|dise[nñ]o|flyer|creativo|banner|logo|mismo\s+dise[nñ]o)"
+    r")\b",
+    re.I,
+)
+
+
+def is_visual_design_exploration(
+    text: str,
+    history: list[dict[str, str]] | None = None,
+) -> bool:
+    """Exploración visual en TEXTO (ejemplos/variantes) — estilo ChatGPT, sin render.
+
+    El usuario sigue conectado al mismo diseño pero pide ideas u opciones antes
+    de generar otra imagen.
+    """
+    t = (text or "").strip()
+    if not t or is_pdf_intent(t):
+        return False
+    if _EXPLICIT_IMAGE_CREATE.search(t):
+        return False
+    if not _VISUAL_DESIGN_EXPLORATION.search(t):
+        return False
+    if history_has_active_image_thread(history):
+        return True
+    if user_requests_prior_reference(t):
+        return True
+    if re.search(
+        r"(?i)\b(?:imagen|foto|flyer|creativo|dise[nñ]o|banner|logo|visual|creativo)\b",
+        t,
+    ):
+        return True
+    return False
+
+
 def is_generate_image_intent(text: str) -> bool:
     t = text.strip()
     if len(t) < 8:
@@ -677,7 +727,8 @@ _IMAGE_THREAD_USER = re.compile(
 )
 _IMAGE_THREAD_ASSISTANT = re.compile(
     r"(?:Descargar imagen|Creativo\s+[—\-]|imagen generada|"
-    r"aqu[ií]\s+est[aá]\s+(?:tu|su)\s+(?:imagen|creativo)|"
+    r"aqu[ií]\s+est[aá]\s+(?:tu|su|la)?\s*(?:imagen|creativo)|"
+    r"imagen\s+editada|"
     r"plasmada\s+en\s+la\s+imagen|junto\s+a\s+los\s+logos|"
     r"generando\s+su\s+imagen|"
     r"\*\*Qu[eé]\s+es\*\*|Detalle visible|Observaciones\s+[—\-]|"

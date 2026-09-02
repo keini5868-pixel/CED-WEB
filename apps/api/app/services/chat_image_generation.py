@@ -7,15 +7,20 @@ import re
 from typing import Any
 
 from app.services.chat_intents import (
+    history_has_active_image_thread,
     history_has_pending_image_brief,
+    is_anaphoric_image_subject,
     is_casual_chat_interrupt,
     is_generate_image_intent,
     is_image_choice_confirmation,
     is_pdf_intent,
     is_script_narrative_request,
+    is_visual_design_exploration,
     is_vague_image_subject,
     last_assistant_image_concept,
+    last_assistant_visual_description,
     last_concrete_image_user_prompt,
+    last_user_visual_context,
     parse_followup_image_prompt,
     parse_generate_image_prompt,
     resolve_anaphoric_image_prompt,
@@ -112,6 +117,70 @@ def build_enriched_generation_context(
     return "\n\n".join(parts)[:4000]
 
 
+def build_active_image_thread_context(
+    history: list[dict[str, str]] | None,
+    *,
+    user_id: str = "",
+    conversation_id: str | None = None,
+) -> str:
+    """Ancla del hilo visual para respuestas de texto conectadas al mismo diseño."""
+    from app.services.publish_image_context import (
+        get_session_vision_analysis,
+        has_publishable_image,
+    )
+
+    in_thread = history_has_active_image_thread(history)
+    has_session_image = bool(user_id) and has_publishable_image(user_id, conversation_id)
+    has_visual_anchor = bool(
+        last_concrete_image_user_prompt(history)
+        or last_assistant_visual_description(history)
+        or last_assistant_image_concept(history)
+        or (user_id and get_session_vision_analysis(user_id, conversation_id))
+        or extract_vision_context_from_history(history)
+    )
+    if not in_thread and not has_session_image and not has_visual_anchor:
+        return ""
+
+    sections: list[str] = [
+        "HILO VISUAL ACTIVO (contexto interno — no lo copies al usuario):",
+        "El usuario itera sobre el MISMO diseño o imagen. Mantén continuidad visual.",
+    ]
+    vision = ""
+    if user_id:
+        vision = get_session_vision_analysis(user_id, conversation_id) or ""
+    if not vision:
+        vision = extract_vision_context_from_history(history)
+    if vision:
+        sections.append(f"Análisis de la imagen de referencia:\n{vision[:2800]}")
+
+    prior = last_concrete_image_user_prompt(history)
+    if prior:
+        sections.append(f"Último brief visual del usuario: {prior[:900]}")
+
+    user_ctx = last_user_visual_context(history)
+    if user_ctx:
+        sections.append(f"Contexto visual reciente del usuario: {user_ctx[:700]}")
+
+    desc = last_assistant_visual_description(history)
+    if desc:
+        sections.append(f"Descripción visual previa: {desc[:1200]}")
+
+    concept = last_assistant_image_concept(history)
+    if concept and concept != desc:
+        sections.append(f"Concepto pendiente: {concept[:900]}")
+
+    sections.append(
+        "ITERACIÓN DE DISEÑO (estilo ChatGPT):\n"
+        "- Si piden ejemplos, opciones, variantes o «cómo se vería» SIN pedir generar/renderizar: "
+        "responde en TEXTO con 2-4 variantes concretas del MISMO diseño (mismo sujeto, layout, marca).\n"
+        "- NO invoques generate_image ni prometas imagen hasta que digan explícitamente "
+        "«genera», «hazlo», «créala», «genérala», «muéstrame la imagen», etc.\n"
+        "- «Esa imagen», «la de hace rato», «el flyer» = el diseño de arriba, no uno nuevo al azar.\n"
+        "- Cuando pidan renderizar, conserva el hilo visual; el backend usará la referencia de sesión."
+    )
+    return "\n\n".join(sections)[:6000]
+
+
 def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> str:
     t = (text or "").strip()
     parsed = parse_generate_image_prompt(t)
@@ -163,6 +232,11 @@ def should_use_reference_generation(
     # Flyer/creativo/banner: suele querer la foto de producto ya subida.
     if is_marketing_creative_intent(text):
         return True
+    # Mismo diseño del hilo: anáfora o referencia explícita al generar otra vez.
+    if history_has_active_image_thread(history) and is_generate_image_intent(text):
+        parsed = parse_generate_image_prompt(text) or text
+        if user_requests_prior_reference(text) or is_anaphoric_image_subject(parsed):
+            return True
     return False
 
 
@@ -184,6 +258,8 @@ def should_take_direct_image_path(
     from app.services.copy_quality import prompt_requires_ideogram_text
 
     if is_text_ideation_request(t):
+        return False
+    if is_visual_design_exploration(t, history):
         return False
     if is_image_meta_talk(t):
         return False
