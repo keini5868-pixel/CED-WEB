@@ -10,7 +10,7 @@ type Props = {
 
 const SPRITE_VER = "photo2";
 
-const SPRITES: Record<string, string> = {
+const SPRITES = {
   idle: `/voice/ced-puppet/idle.png?v=${SPRITE_VER}`,
   think: `/voice/ced-puppet/think.png?v=${SPRITE_VER}`,
   success: `/voice/ced-puppet/success.png?v=${SPRITE_VER}`,
@@ -18,7 +18,7 @@ const SPRITES: Record<string, string> = {
   ok: `/voice/ced-puppet/ok.png?v=${SPRITE_VER}`,
   listen: `/voice/ced-puppet/listen.png?v=${SPRITE_VER}`,
   present: `/voice/ced-puppet/present.png?v=${SPRITE_VER}`,
-};
+} as const;
 
 function spriteFor(gesture: PresenterGesture): string {
   switch (gesture) {
