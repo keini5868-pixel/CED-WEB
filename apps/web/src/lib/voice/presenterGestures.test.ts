@@ -28,6 +28,8 @@ describe("gesture context", () => {
   it("finanzas celebra y avanzado se pone a pensar", () => {
     expect(gestureForHotspot("finanzas")).toBe("success");
     expect(gestureForHotspot("avanzado")).toBe("think");
+    expect(gestureForHotspot("opportunities")).toBe("present");
+    expect(gestureForHotspot("module-close")).toBe("ok");
     expect(gestureForWorkspace("finance")).toBe("success");
     expect(gestureForWorkspace("advanced")).toBe("think");
   });

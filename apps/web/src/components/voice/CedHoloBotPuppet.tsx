@@ -3,22 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { PresenterGesture } from "@/lib/voice/presenterGestures";
+import { allSpriteUrls, spriteUrl } from "@/lib/voice/presenterSprites";
 
 type Props = {
   gesture: PresenterGesture;
 };
-
-const SPRITE_VER = "photo2";
-
-const SPRITES = {
-  idle: `/voice/ced-puppet/idle.png?v=${SPRITE_VER}`,
-  think: `/voice/ced-puppet/think.png?v=${SPRITE_VER}`,
-  success: `/voice/ced-puppet/success.png?v=${SPRITE_VER}`,
-  error: `/voice/ced-puppet/error.png?v=${SPRITE_VER}`,
-  ok: `/voice/ced-puppet/ok.png?v=${SPRITE_VER}`,
-  listen: `/voice/ced-puppet/listen.png?v=${SPRITE_VER}`,
-  present: `/voice/ced-puppet/present.png?v=${SPRITE_VER}`,
-} as const;
 
 const punchedCache = new Map<string, string>();
 
@@ -60,43 +49,13 @@ function punchBlack(src: string): Promise<string> {
   });
 }
 
-function spriteFor(gesture: PresenterGesture): string {
-  switch (gesture) {
-    case "think":
-    case "construct":
-    case "serious":
-      return SPRITES.think;
-    case "success":
-    case "laugh":
-      return SPRITES.success;
-    case "error":
-      return SPRITES.error;
-    case "ok":
-      return SPRITES.ok;
-    case "listen":
-    case "welcome":
-    case "farewell":
-      return SPRITES.listen;
-    case "present":
-    case "point":
-    case "look":
-      return SPRITES.present;
-    case "sad":
-    case "stress":
-      return SPRITES.think;
-    case "zen":
-    default:
-      return SPRITES.idle;
-  }
-}
-
-/** Holograma de las fotos de referencia: sprites reales, no un palito SVG. */
+/** Holograma: una foto por gesto emocional, según presenterSprites. */
 export function CedHoloBotPuppet({ gesture }: Props) {
-  const raw = useMemo(() => spriteFor(gesture), [gesture]);
+  const raw = useMemo(() => spriteUrl(gesture), [gesture]);
   const [src, setSrc] = useState(raw);
 
   useEffect(() => {
-    Object.values(SPRITES).forEach((url) => {
+    allSpriteUrls().forEach((url) => {
       void punchBlack(url);
     });
   }, []);

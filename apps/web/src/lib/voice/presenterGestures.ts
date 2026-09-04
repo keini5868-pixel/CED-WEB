@@ -107,6 +107,9 @@ export function gestureForHotspot(hotspot: string): PresenterGesture {
   if (hotspot === "nav-history" || hotspot === "nav-media") return "construct";
   if (hotspot === "asistente") return "farewell";
   if (hotspot === "sistema" || hotspot === "home") return "welcome";
+  if (hotspot === "module-close") return "ok";
+  if (hotspot === "viability" || hotspot === "trends") return "think";
+  if (hotspot === "opportunities" || hotspot === "team") return "present";
   return "present";
 }
 
