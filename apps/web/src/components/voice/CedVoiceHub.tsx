@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
@@ -28,10 +28,7 @@ import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
 import { CedListenButton, CedPresenterButton } from "@/components/voice/CedListenButton";
 import { CedHoloPresence } from "@/components/voice/CedHoloPresence";
-import {
-  CedPresenterMascot,
-  type CedPresenterMascotHandle,
-} from "@/components/voice/CedPresenterMascot";
+import { CedPresenterMascot } from "@/components/voice/CedPresenterMascot";
 import {
   CedHistoryPanel,
   CedSettingsModal,
@@ -47,8 +44,14 @@ import {
 
 /** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
-  const presenterRef = useRef<CedPresenterMascotHandle>(null);
   const [presenterOn, setPresenterOn] = useState(false);
+  const [presenterStream, setPresenterStream] = useState<MediaStream | null>(null);
+  const stopPresenterAudio = () => {
+    setPresenterStream((stream) => {
+      stream?.getTracks().forEach((t) => t.stop());
+      return null;
+    });
+  };
   const [workspace, setWorkspace] = useState<"chat" | "advanced" | "finance">("chat");
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
@@ -191,7 +194,7 @@ export function CedVoiceHub() {
         unlockVoiceAudioOnGesture();
         voice.primeSessionMediaFromGesture();
         if (!voice.micOn) {
-          presenterRef.current?.releaseMic();
+          stopPresenterAudio();
           void voice.toggleMic();
         }
       }
@@ -234,7 +237,7 @@ export function CedVoiceHub() {
         setVoiceLimitOpen(true);
         return;
       }
-      presenterRef.current?.releaseMic();
+      stopPresenterAudio();
       void voice.toggleMic();
     })();
   };
@@ -248,10 +251,23 @@ export function CedVoiceHub() {
   };
 
   const togglePresenter = () => {
-    setPresenterOn((on) => {
-      if (on) presenterRef.current?.releaseMic();
-      return !on;
-    });
+    if (presenterOn) {
+      stopPresenterAudio();
+      setPresenterOn(false);
+      return;
+    }
+    setPresenterOn(true);
+    void (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true },
+          video: false,
+        });
+        setPresenterStream(stream);
+      } catch {
+        setPresenterStream(null);
+      }
+    })();
   };
 
   const { errorMessage, clearError } = voice;
@@ -499,8 +515,8 @@ export function CedVoiceHub() {
       />
     </div>
       <CedPresenterMascot
-        ref={presenterRef}
         visible={presenterOn && !voice.micOn && !voice.micBusy}
+        audioStream={presenterStream}
       />
       <CedHoloPresence
         active={voice.micOn || voice.micBusy}
