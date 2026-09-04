@@ -42,6 +42,7 @@ export function HistorialHub() {
         </div>
         <Link
           href="/dashboard"
+          data-ced-hotspot="home"
           className="text-xs text-cyan-600 hover:text-cyan-400"
         >
           ← Dashboard

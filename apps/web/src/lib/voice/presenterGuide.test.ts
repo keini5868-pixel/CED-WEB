@@ -24,6 +24,11 @@ describe("matchPresenterGuide", () => {
     expect(matchPresenterGuide("cierra sistema")).toEqual([{ action: "close-all" }]);
   });
 
+  it("regresa al panel principal desde Historial u otras pantallas", () => {
+    expect(matchPresenterGuide("regresa a panel principal")).toEqual([{ action: "go-home" }]);
+    expect(matchPresenterGuide("volver al panel principal")).toEqual([{ action: "go-home" }]);
+  });
+
   it("cierra oportunidades por nombre, no todo el HUD", () => {
     expect(matchPresenterGuide("cierra oportunidades")).toEqual([
       { hotspot: "module-close", click: true, force: "close" },

@@ -2,7 +2,7 @@
 
 import { runPresenterClosers } from "./presenterCloseBus";
 
-export type GuideAction = "close-all" | "close-module" | "close-workspace" | "escape";
+export type GuideAction = "close-all" | "close-module" | "close-workspace" | "escape" | "go-home";
 
 export type GuideStep = {
   hotspot?: string;
@@ -165,11 +165,20 @@ function isCloseIntent(text: string): boolean {
 
 export function isPresenterCloseSpeech(text: string): boolean {
   const t = (text || "").trim();
-  return isCloseIntent(t) || isCloseAll(t);
+  return isCloseIntent(t) || isCloseAll(t) || isGoHome(t);
 }
 
 export function isCloseAllGuide(steps: GuideStep[]): boolean {
-  return steps.length === 1 && steps[0]?.action === "close-all";
+  const action = steps[0]?.action;
+  return steps.length === 1 && (action === "close-all" || action === "go-home");
+}
+
+function isGoHome(text: string): boolean {
+  return (
+    /\b(?:regresa|regreso|volver|vuelve|vaya|vamos|ll[eé]vame)\s+(?:a[l]?\s+)?(?:el\s+)?(?:panel|pantalla)\s+principal\b/i.test(
+      text,
+    ) || /^(?:panel|pantalla)\s+principal[\s!.]*$/i.test(text)
+  );
 }
 
 function isCloseAll(text: string): boolean {
@@ -186,6 +195,7 @@ function isCloseAll(text: string): boolean {
 export function matchPresenterGuide(text: string): GuideStep[] | null {
   const t = (text || "").trim();
   if (t.length < 3) return null;
+  if (isGoHome(t)) return [{ action: "go-home" }];
   if (isCloseAll(t)) return [{ action: "close-all" }];
   if (isCloseIntent(t)) {
     for (const rule of CLOSE_RULES) {
@@ -220,6 +230,11 @@ export function closeTargetHotspot(): HTMLElement | null {
 
 export function runPresenterAction(action: GuideAction): void {
   if (typeof window === "undefined") return;
+  if (action === "go-home") {
+    window.dispatchEvent(new Event("ced-close-module"));
+    window.dispatchEvent(new Event("ced-go-dashboard"));
+    return;
+  }
   runPresenterClosers();
   if (action === "close-module" || action === "close-all") {
     window.dispatchEvent(new Event("ced-close-module"));

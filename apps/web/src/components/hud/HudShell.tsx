@@ -1,5 +1,6 @@
 import { HudChrome } from "@/components/hud/HudChrome";
 import { CedOwnerUiProvider } from "@/contexts/CedOwnerUiContext";
+import { CedPresenterSessionProvider } from "@/contexts/CedPresenterSession";
 
 interface HudShellProps {
   children: React.ReactNode;
@@ -19,6 +20,7 @@ export function HudShell({
 }: HudShellProps) {
   return (
     <CedOwnerUiProvider isOwner={isPresenterOwner}>
+    <CedPresenterSessionProvider>
     <div
       className={[
         "flex max-w-[100vw] flex-col overflow-x-hidden",
@@ -38,6 +40,7 @@ export function HudShell({
         {children}
       </main>
     </div>
+    </CedPresenterSessionProvider>
     </CedOwnerUiProvider>
   );
 }

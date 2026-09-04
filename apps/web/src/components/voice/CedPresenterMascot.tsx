@@ -447,7 +447,7 @@ export function CedPresenterMascot({
       applyGesture(closingAll ? "ok" : gestureForHotspot(steps[0]?.hotspot || "sistema"));
       try {
         if (closingAll) {
-          runPresenterAction("close-all");
+          runPresenterAction(steps[0]?.action === "go-home" ? "go-home" : "close-all");
           applyGesture("ok");
           const target = closeTargetHotspot();
           if (target) {
@@ -542,7 +542,7 @@ export function CedPresenterMascot({
       if (!steps) return;
       if (isCloseAllGuide(steps)) {
         applyGesture("ok");
-        runPresenterAction("close-all");
+        runPresenterAction(steps[0]?.action === "go-home" ? "go-home" : "close-all");
       }
       const key = steps
         .map((s) => s.action || `${s.force || "go"}:${s.hotspot || ""}`)

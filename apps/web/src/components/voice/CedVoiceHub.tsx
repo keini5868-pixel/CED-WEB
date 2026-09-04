@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
@@ -9,6 +9,7 @@ import { FinanceChatPanel } from "@/components/chat/FinanceChatPanel";
 import { ModuleShell } from "@/components/modules/ModuleShell";
 import { useHudFeed } from "@/contexts/HudFeedContext";
 import { useCedOwnerUi } from "@/contexts/CedOwnerUiContext";
+import { useCedPresenterSession } from "@/contexts/CedPresenterSession";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
@@ -29,7 +30,6 @@ import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
 import { CedListenButton, CedPresenterButton } from "@/components/voice/CedListenButton";
 import { CedHoloPresence } from "@/components/voice/CedHoloPresence";
-import { CedPresenterMascot } from "@/components/voice/CedPresenterMascot";
 import {
   CedHistoryPanel,
   CedSettingsModal,
@@ -47,16 +47,8 @@ import {
 /** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
   const robotAllowed = useCedOwnerUi();
-  const [presenterOn, setPresenterOn] = useState(false);
-  const [presenterExiting, setPresenterExiting] = useState(false);
-  const presenterExitTimer = useRef(0);
-  const [presenterStream, setPresenterStream] = useState<MediaStream | null>(null);
-  const stopPresenterAudio = () => {
-    setPresenterStream((stream) => {
-      stream?.getTracks().forEach((t) => t.stop());
-      return null;
-    });
-  };
+  const presenter = useCedPresenterSession();
+  const setAssistLive = presenter.setAssistLive;
   const [workspace, setWorkspace] = useState<"chat" | "advanced" | "finance">("chat");
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
@@ -84,19 +76,9 @@ export function CedVoiceHub() {
   }, []);
 
   useEffect(() => {
-    if (robotAllowed) return;
-    window.clearTimeout(presenterExitTimer.current);
-    setPresenterStream((stream) => {
-      stream?.getTracks().forEach((t) => t.stop());
-      return null;
-    });
-    setPresenterOn(false);
-    setPresenterExiting(false);
-  }, [robotAllowed]);
-
-  useEffect(() => {
-    return () => window.clearTimeout(presenterExitTimer.current);
-  }, []);
+    setAssistLive(Boolean(voice.micOn));
+    return () => setAssistLive(false);
+  }, [voice.micOn, setAssistLive]);
 
   useEffect(() => {
     const onOpen = (ev: Event) => {
@@ -235,8 +217,9 @@ export function CedVoiceHub() {
         unlockVoiceAudioOnGesture();
         voice.primeSessionMediaFromGesture();
         if (!voice.micOn) {
-          stopPresenterAudio();
-          void voice.toggleMic();
+          presenter.beginExitForAssist(() => {
+            void voice.toggleMic();
+          });
         }
       }
       if (prompt) {
@@ -279,17 +262,10 @@ export function CedVoiceHub() {
         return;
       }
       const startVoice = () => {
-        stopPresenterAudio();
         void voice.toggleMic();
       };
-      if (presenterOn) {
-        window.clearTimeout(presenterExitTimer.current);
-        setPresenterExiting(true);
-        presenterExitTimer.current = window.setTimeout(() => {
-          setPresenterOn(false);
-          setPresenterExiting(false);
-          startVoice();
-        }, 720);
+      if (presenter.on) {
+        presenter.beginExitForAssist(startVoice);
         return;
       }
       startVoice();
@@ -305,30 +281,7 @@ export function CedVoiceHub() {
   };
 
   const togglePresenter = () => {
-    if (!robotAllowed) return;
-    if (presenterOn) {
-      window.clearTimeout(presenterExitTimer.current);
-      setPresenterExiting(true);
-      presenterExitTimer.current = window.setTimeout(() => {
-        stopPresenterAudio();
-        setPresenterOn(false);
-        setPresenterExiting(false);
-      }, 720);
-      return;
-    }
-    setPresenterExiting(false);
-    setPresenterOn(true);
-    void (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true },
-          video: false,
-        });
-        setPresenterStream(stream);
-      } catch {
-        setPresenterStream(null);
-      }
-    })();
+    presenter.toggle();
   };
 
   const { errorMessage, clearError } = voice;
@@ -418,7 +371,7 @@ export function CedVoiceHub() {
           onActivate={handleMic}
         />
         {robotAllowed ? (
-          <CedPresenterButton active={presenterOn || presenterExiting} onActivate={togglePresenter} />
+          <CedPresenterButton active={presenter.on || presenter.exiting} onActivate={togglePresenter} />
         ) : null}
       </div>
       <div className="hidden w-full lg:block">
@@ -583,14 +536,6 @@ export function CedVoiceHub() {
         className="ced-composer-actions flex h-11 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 lg:h-11 lg:px-1.5"
       />
     </div>
-      {robotAllowed ? (
-      <CedPresenterMascot
-        visible={(presenterOn || presenterExiting) && (!voice.micOn || presenterExiting)}
-        exiting={presenterExiting}
-        audioStream={presenterStream}
-        workspace={workspace}
-      />
-      ) : null}
       <CedHoloPresence
         active={voice.micOn || voice.micBusy}
         speaking={voice.orbState === "speaking" || voice.orbState === "processing"}
