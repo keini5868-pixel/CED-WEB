@@ -29,6 +29,38 @@ describe("matchPresenterGuide", () => {
     expect(matchPresenterGuide("volver al panel principal")).toEqual([{ action: "go-home" }]);
   });
 
+  it("abre cada opción del HUD por su nombre", () => {
+    expect(matchPresenterGuide("abre oportunidades")).toEqual([{ hotspot: "opportunities", click: true }]);
+    expect(matchPresenterGuide("abre análisis de producto")).toEqual([{ hotspot: "viability", click: true }]);
+    expect(matchPresenterGuide("abre tendencia")).toEqual([{ hotspot: "trends", click: true }]);
+    expect(matchPresenterGuide("abre estructura PM")).toEqual([{ hotspot: "team", click: true }]);
+    expect(matchPresenterGuide("abre avanzado")).toEqual([{ hotspot: "avanzado", click: true }]);
+    expect(matchPresenterGuide("abre finanzas")).toEqual([{ hotspot: "finanzas", click: true }]);
+    expect(matchPresenterGuide("abre cámara")).toEqual([{ hotspot: "camara", click: true }]);
+    expect(matchPresenterGuide("abre historial")).toEqual([
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-history", click: true },
+    ]);
+    expect(matchPresenterGuide("abre imágenes")).toEqual([
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-media", click: true },
+    ]);
+    expect(matchPresenterGuide("abre papelera")).toEqual([
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-trash", click: true },
+    ]);
+    expect(matchPresenterGuide("abre whatsapp")).toEqual([
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-whatsapp", click: true },
+    ]);
+    expect(matchPresenterGuide("abre redes")).toEqual([
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-networks", click: true },
+    ]);
+    expect(matchPresenterGuide("abre mapa")).toEqual([{ hotspot: "mapa", click: true }]);
+    expect(matchPresenterGuide("abre admin")).toEqual([{ hotspot: "admin", click: true }]);
+  });
+
   it("cierra oportunidades por nombre, no todo el HUD", () => {
     expect(matchPresenterGuide("cierra oportunidades")).toEqual([
       { hotspot: "module-close", click: true, force: "close" },

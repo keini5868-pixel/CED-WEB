@@ -20,6 +20,7 @@ import {
   runPresenterAction,
   clickElement,
   closeTargetHotspot,
+  presenterOpenFallback,
   type GuideStep,
 } from "@/lib/voice/presenterGuide";
 import { CedHoloBotPuppet } from "@/components/voice/CedHoloBotPuppet";
@@ -484,7 +485,10 @@ export function CedPresenterMascot({
             el = queryHotspot(step.hotspot);
             if (!el) await wait(50);
           }
-          if (!el) continue;
+          if (!el) {
+            if (step.click && presenterOpenFallback(step.hotspot)) return;
+            continue;
+          }
           applyGesture(gestureForHotspot(step.hotspot));
           el.classList.add("ced-presenter-focus");
           applyPose(poseForEl(el));
@@ -511,9 +515,15 @@ export function CedPresenterMascot({
               el.classList.remove("ced-presenter-focus");
               return;
             }
-            const expanded =
-              el.getAttribute("aria-expanded") ?? el.getAttribute("data-ced-open");
-            if (!(step.force === "open" && expanded === "true")) {
+            const alreadyOn =
+              el.getAttribute("aria-expanded") === "true" ||
+              el.getAttribute("data-ced-open") === "true" ||
+              el.getAttribute("aria-pressed") === "true";
+            if (step.force === "open" && alreadyOn) {
+              /* ya abierta */
+            } else if (step.force === "close" && !alreadyOn) {
+              /* ya cerrada */
+            } else {
               clickElement(el);
             }
           }

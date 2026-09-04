@@ -36,7 +36,12 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   const { status: metaStatus, busy: metaBusy, connect: connectMeta } = useConnectNetworks();
 
   useEffect(() => {
-    const goHome = () => {
+    const goHome = (ev: Event) => {
+      const path = (ev as CustomEvent<{ path?: string }>).detail?.path;
+      if (path) {
+        router.push(path);
+        return;
+      }
       if (!isDashboardPath(pathname)) router.push(DASHBOARD_PATH);
     };
     window.addEventListener("ced-go-dashboard", goHome);

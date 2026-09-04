@@ -76,11 +76,6 @@ export function CedVoiceHub() {
   }, []);
 
   useEffect(() => {
-    setAssistLive(Boolean(voice.micOn));
-    return () => setAssistLive(false);
-  }, [voice.micOn, setAssistLive]);
-
-  useEffect(() => {
     const onOpen = (ev: Event) => {
       const detail = (ev as CustomEvent<{ module?: string }>).detail;
       const mod = (detail?.module || "").trim();
@@ -188,6 +183,23 @@ export function CedVoiceHub() {
       setChatSeedImage(null);
     },
   }, voiceRoute);
+
+  useEffect(() => {
+    setAssistLive(Boolean(voice.micOn));
+    return () => setAssistLive(false);
+  }, [voice.micOn, setAssistLive]);
+
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem("ced-open-workspace");
+      if (pending === "advanced" || pending === "finance") {
+        sessionStorage.removeItem("ced-open-workspace");
+        setWorkspace(pending);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     const onCloseSettings = () => voice.setSettingsOpen(false);

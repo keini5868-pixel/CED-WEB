@@ -57,21 +57,28 @@ const CLOSE_RULES: Rule[] = [
 
 const OPEN_RULES: Rule[] = [
   {
-    re: /\b(whats\s*app|wasap)\b/i,
+    re: /\b(whats\s*app|wasap|guasap)\b/i,
     steps: [
       { hotspot: "sistema", click: true, force: "open" },
       { hotspot: "nav-whatsapp", click: true },
     ],
   },
   {
-    re: /\bpapelera\b/i,
+    re: /\b(papelera|basura|trash)\b/i,
     steps: [
       { hotspot: "sistema", click: true, force: "open" },
       { hotspot: "nav-trash", click: true },
     ],
   },
   {
-    re: /\b(historial|archivos|im[aá]genes y pdf)\b/i,
+    re: /\b(im[aá]genes?(?:\s+y\s+pdf)?|pdfs?|archivos)\b/i,
+    steps: [
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-media", click: true },
+    ],
+  },
+  {
+    re: /\b(historial|conversaciones)\b/i,
     steps: [
       { hotspot: "sistema", click: true, force: "open" },
       { hotspot: "nav-history", click: true },
@@ -99,8 +106,11 @@ const OPEN_RULES: Rule[] = [
     ],
   },
   {
-    re: /\b(conectar redes|redes sociales|instagram|facebook)\b/i,
-    steps: [{ hotspot: "redes", click: true }],
+    re: /\b(conectar redes|redes sociales|instagram|facebook|\bredes\b)\b/i,
+    steps: [
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-networks", click: true },
+    ],
   },
   {
     re: /\b(oportunidad(?:es)?(?:\s+(?:pm|p\.?\s*m\.?))?|fitline|fit\s*line|opps)\b/i,
@@ -115,11 +125,11 @@ const OPEN_RULES: Rule[] = [
     steps: [{ hotspot: "trends", click: true }],
   },
   {
-    re: /\b(estructura(?:\s+pm)?|equipo)\b/i,
+    re: /\b(estructura(?:\s+pm)?|equipo|mi equipo)\b/i,
     steps: [{ hotspot: "team", click: true }],
   },
   {
-    re: /\b(edici[oó]n de video|editar video)\b/i,
+    re: /\b(edici[oó]n de video|editar video|videos?)\b/i,
     steps: [{ hotspot: "video-edit", click: true }],
   },
   {
@@ -143,12 +153,24 @@ const OPEN_RULES: Rule[] = [
     steps: [{ hotspot: "mapa", click: true }],
   },
   {
+    re: /\b(admin|administraci[oó]n|panel admin)\b/i,
+    steps: [{ hotspot: "admin", click: true }],
+  },
+  {
+    re: /\b(robot|presentador|holograma)\b/i,
+    steps: [{ hotspot: "robot", click: true, force: "open" }],
+  },
+  {
+    re: /\basistente\b/i,
+    steps: [{ hotspot: "asistente", click: true, force: "open" }],
+  },
+  {
     re: /\b(chat|escribe|escribime)\b/i,
     steps: [{ hotspot: "chat", click: false }],
   },
   {
-    re: /\basistente\b/i,
-    steps: [{ hotspot: "asistente", click: false }],
+    re: /\b(dashboard|inicio)\b/i,
+    steps: [{ action: "go-home" }],
   },
   {
     re: /\b(men[uú]|pesta[nñ]a|sistema)\b/i,
@@ -212,6 +234,47 @@ export function matchPresenterGuide(text: string): GuideStep[] | null {
 export function queryHotspot(id: string): HTMLElement | null {
   if (typeof document === "undefined") return null;
   return document.querySelector<HTMLElement>(`[data-ced-hotspot="${id}"]`);
+}
+
+const OPEN_FALLBACK: Record<string, string> = {
+  opportunities: "/dashboard?mod=opportunities",
+  viability: "/dashboard?mod=viability",
+  trends: "/dashboard?mod=trends",
+  "video-edit": "/dashboard?mod=video-edit",
+  automation: "/dashboard?mod=automation",
+  team: "/dashboard/mi-equipo",
+  home: "/dashboard",
+  admin: "/admin",
+  "nav-history": "/historial",
+  "nav-media": "/historial?tab=archivos",
+  "nav-trash": "/historial?tab=papelera",
+  "nav-plans": "/dashboard/plans",
+  "nav-account": "/dashboard/account",
+  "nav-whatsapp": "/dashboard/whatsapp",
+};
+
+const WORKSPACE_FALLBACK: Record<string, "advanced" | "finance"> = {
+  avanzado: "advanced",
+  finanzas: "finance",
+};
+
+/** Si el botón no está en esta pantalla, navega a la opción. */
+export function presenterOpenFallback(hotspot: string): boolean {
+  if (typeof window === "undefined") return false;
+  const workspace = WORKSPACE_FALLBACK[hotspot];
+  if (workspace) {
+    try {
+      sessionStorage.setItem("ced-open-workspace", workspace);
+    } catch {
+      /* ignore */
+    }
+    window.dispatchEvent(new CustomEvent("ced-go-dashboard", { detail: { path: "/dashboard" } }));
+    return true;
+  }
+  const path = OPEN_FALLBACK[hotspot];
+  if (!path) return false;
+  window.dispatchEvent(new CustomEvent("ced-go-dashboard", { detail: { path } }));
+  return true;
 }
 
 /** Clic nativo: .click() a veces no dispara el onClick de un menú / overlay. */
