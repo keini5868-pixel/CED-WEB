@@ -8,14 +8,16 @@ type Props = {
   gesture: PresenterGesture;
 };
 
+const SPRITE_VER = "photo2";
+
 const SPRITES: Record<string, string> = {
-  idle: "/voice/ced-puppet/idle.png",
-  think: "/voice/ced-puppet/think.png",
-  success: "/voice/ced-puppet/success.png",
-  error: "/voice/ced-puppet/error.png",
-  ok: "/voice/ced-puppet/ok.png",
-  listen: "/voice/ced-puppet/listen.png",
-  present: "/voice/ced-puppet/present.png",
+  idle: `/voice/ced-puppet/idle.png?v=${SPRITE_VER}`,
+  think: `/voice/ced-puppet/think.png?v=${SPRITE_VER}`,
+  success: `/voice/ced-puppet/success.png?v=${SPRITE_VER}`,
+  error: `/voice/ced-puppet/error.png?v=${SPRITE_VER}`,
+  ok: `/voice/ced-puppet/ok.png?v=${SPRITE_VER}`,
+  listen: `/voice/ced-puppet/listen.png?v=${SPRITE_VER}`,
+  present: `/voice/ced-puppet/present.png?v=${SPRITE_VER}`,
 };
 
 function spriteFor(gesture: PresenterGesture): string {

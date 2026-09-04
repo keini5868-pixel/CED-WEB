@@ -596,7 +596,6 @@ export function CedPresenterMascot({
             }}
             transition={{ duration: exiting ? 0.65 : 0.45, ease: [0.16, 1, 0.3, 1] }}
           >
-            <div className="ced-holo-bot-dust" />
             <div
               ref={spriteRef}
               className="relative will-change-transform"
@@ -607,8 +606,6 @@ export function CedPresenterMascot({
                 ref={canvasRef}
                 className="pointer-events-none absolute inset-0 h-full w-full"
               />
-              <div ref={scanRef} className="ced-holo-bot-scan" />
-              <div className="ced-holo-bot-glitch" />
             </div>
           </motion.div>
         </div>

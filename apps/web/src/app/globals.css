@@ -509,6 +509,5 @@ body:has(.ced-studio-shell) {
 }
 
 .ced-holo-photo-img {
-  mix-blend-mode: screen;
-  filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.45)) saturate(1.15) contrast(1.12);
+  filter: drop-shadow(0 0 22px rgba(0, 229, 255, 0.55));
 }
