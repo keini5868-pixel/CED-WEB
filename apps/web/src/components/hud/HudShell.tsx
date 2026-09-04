@@ -1,19 +1,30 @@
 import { HudChrome } from "@/components/hud/HudChrome";
+import { CedOwnerUiProvider } from "@/contexts/CedOwnerUiContext";
 
 interface HudShellProps {
   children: React.ReactNode;
   email?: string | null;
   isSuperAdmin: boolean;
+  /** Botón ROBOT + holograma. False por defecto: un cliente nunca lo hereda. */
+  isPresenterOwner?: boolean;
   studio?: boolean;
 }
 
-export function HudShell({ children, email, isSuperAdmin, studio = false }: HudShellProps) {
+export function HudShell({
+  children,
+  email,
+  isSuperAdmin,
+  isPresenterOwner = false,
+  studio = false,
+}: HudShellProps) {
   return (
+    <CedOwnerUiProvider isOwner={isPresenterOwner}>
     <div
       className={[
         "flex max-w-[100vw] flex-col overflow-x-hidden",
         studio ? "ced-studio-shell" : "min-h-screen bg-[var(--ced-bg)]",
       ].join(" ")}
+      data-ced-presenter-owner={isPresenterOwner ? "1" : "0"}
     >
       <HudChrome email={email} isSuperAdmin={isSuperAdmin} />
       <main
@@ -27,5 +38,6 @@ export function HudShell({ children, email, isSuperAdmin, studio = false }: HudS
         {children}
       </main>
     </div>
+    </CedOwnerUiProvider>
   );
 }

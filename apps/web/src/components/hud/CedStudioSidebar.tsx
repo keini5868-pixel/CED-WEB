@@ -79,7 +79,7 @@ export function CedStudioSidebar({
               </>
             );
             return item.href ? (
-              <Link key={item.id} href={item.href} className={linkClass} title={full}>
+              <Link key={item.id} href={item.href} className={linkClass} title={full} data-ced-hotspot={item.id}>
                 {node}
               </Link>
             ) : (
@@ -89,6 +89,7 @@ export function CedStudioSidebar({
                 onClick={item.onClick}
                 className={linkClass}
                 title={full}
+                data-ced-hotspot={item.id}
               >
                 {node}
               </button>

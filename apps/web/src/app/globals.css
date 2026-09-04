@@ -473,3 +473,32 @@ body:has(.ced-studio-shell) {
   0%, 100% { transform: translateY(0); opacity: 0.55; }
   50% { transform: translateY(-10px); opacity: 0.9; }
 }
+
+.ced-presenter-focus {
+  outline: 2px solid rgba(0, 229, 255, 0.9) !important;
+  box-shadow: 0 0 18px rgba(0, 229, 255, 0.55) !important;
+  transition: outline 0.2s, box-shadow 0.2s;
+}
+
+[data-ced-gesture="construct"] .ced-holo-bot-glitch {
+  box-shadow:
+    0 0 28px rgba(0, 229, 255, 0.75),
+    inset 0 0 22px rgba(122, 231, 255, 0.4);
+}
+
+[data-ced-gesture="success"] .ced-holo-bot-dust {
+  opacity: 1;
+}
+
+[data-ced-gesture="serious"] .ced-holo-bot-scan {
+  animation-duration: 2.4s;
+}
+
+[data-ced-gesture="farewell"] {
+  filter: blur(2px);
+}
+
+/* Cliente: nunca el botón ROBOT, aunque un bundle viejo lo pinte. */
+[data-ced-presenter-owner="0"] [data-ced-hotspot="robot"] {
+  display: none !important;
+}

@@ -60,6 +60,7 @@ export function ConnectNetworksButton() {
     return (
       <button
         type="button"
+        data-ced-hotspot="redes"
         onClick={() => void connect()}
         disabled={busy}
         title="Cuenta vinculada. Clic para cambiar de cuenta."
@@ -78,6 +79,7 @@ export function ConnectNetworksButton() {
       <CedButton
         variant="secondary"
         type="button"
+        data-ced-hotspot="redes"
         disabled={busy}
         onClick={() => void connect()}
         className="!px-2.5 !py-1.5 !text-[9px] !tracking-wider sm:!px-3 sm:!text-[10px]"

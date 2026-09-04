@@ -1,12 +1,81 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
-import { useEffect, useRef } from "react";
+import { motion } from "framer-motion";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+
+import {
+  gestureForHotspot,
+  gestureForModule,
+  gestureForWorkspace,
+  gesturePose,
+  matchPresenterGesture,
+  type PresenterGesture,
+} from "@/lib/voice/presenterGestures";
+import { matchPresenterGuide, queryHotspot, type GuideStep } from "@/lib/voice/presenterGuide";
 
 type Props = {
   visible: boolean;
+  exiting?: boolean;
   audioStream: MediaStream | null;
+  workspace?: "chat" | "advanced" | "finance";
 };
+
+type Pose = { x: number; y: number; scale: number };
+
+type Particle = {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  life: number;
+  max: number;
+  size: number;
+};
+
+function homePose(): Pose {
+  if (typeof window === "undefined") return { x: 420, y: 420, scale: 1 };
+  return {
+    x: window.innerWidth * 0.42,
+    y: window.innerHeight * 0.54,
+    scale: 1,
+  };
+}
+
+function poseForEl(el: HTMLElement): Pose {
+  const r = el.getBoundingClientRect();
+  const header = r.top < 96;
+  const sidebar = r.left > window.innerWidth * 0.62;
+  if (header) {
+    return {
+      x: Math.min(window.innerWidth - 90, r.left + r.width * 0.5 + 52),
+      y: Math.min(window.innerHeight * 0.42, r.bottom + 168),
+      scale: 0.62,
+    };
+  }
+  if (sidebar) {
+    return {
+      x: r.left - 28,
+      y: r.top + r.height * 0.5 + 36,
+      scale: 0.7,
+    };
+  }
+  return {
+    x: r.left + r.width * 0.5,
+    y: r.top + r.height * 0.5 + 52,
+    scale: 0.76,
+  };
+}
+
+const POSE_TRANSITION =
+  "left 0.72s cubic-bezier(0.16,1,0.3,1), top 0.72s cubic-bezier(0.16,1,0.3,1), transform 0.72s cubic-bezier(0.16,1,0.3,1)";
+
+function writePose(node: HTMLElement | null, pose: Pose) {
+  if (!node) return;
+  node.style.left = `${Math.round(pose.x)}px`;
+  node.style.top = `${Math.round(pose.y)}px`;
+  node.style.transform = `translate(-50%, -78%) scale(${pose.scale})`;
+}
 
 function useStreamLevel(stream: MediaStream | null) {
   const levelRef = useRef(0);
@@ -52,11 +121,208 @@ function useStreamLevel(stream: MediaStream | null) {
   return levelRef;
 }
 
-/** Holograma vivo — el robot de la foto, flotando y reaccionando a la voz. */
-export function CedPresenterMascot({ visible, audioStream }: Props) {
+function wait(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+type SpeechRecLike = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((ev: { results: ArrayLike<ArrayLike<{ transcript?: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+
+function spawnBurst(particles: Particle[], kind: PresenterGesture, w: number, h: number) {
+  const n = kind === "success" || kind === "construct" ? 10 : kind === "error" ? 4 : 6;
+  for (let i = 0; i < n; i += 1) {
+    const ang = (Math.PI * 2 * i) / n + Math.random();
+    const speed = kind === "construct" ? 1.6 : 2.4;
+    particles.push({
+      x: w * 0.5 + (Math.random() - 0.5) * 20,
+      y: h * (kind === "think" ? 0.18 : 0.42),
+      vx: Math.cos(ang) * speed,
+      vy: Math.sin(ang) * speed - (kind === "success" ? 1.4 : 0.2),
+      life: 1,
+      max: 1,
+      size: 1.4 + Math.random() * 2.2,
+    });
+    if (particles.length > 48) particles.shift();
+  }
+}
+
+function paintCanvas(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  gesture: PresenterGesture,
+  t: number,
+  particles: Particle[],
+) {
+  ctx.clearRect(0, 0, w, h);
+  const cx = w * 0.5;
+  const cy = h * 0.46;
+
+  if (gesture === "construct") {
+    for (let i = 0; i < 3; i += 1) {
+      const r = 28 + i * 16 + Math.sin(t * 3 + i) * 4;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + 8, r, r * 0.38, t * (1.2 + i * 0.4), 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(0,229,255,${0.35 - i * 0.08})`;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    }
+    const hx = cx + Math.cos(t * 4.2) * 42;
+    const hy = cy + Math.sin(t * 3.4) * 18;
+    ctx.beginPath();
+    ctx.arc(hx, hy, 5, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(180,255,255,0.85)";
+    ctx.fill();
+  }
+
+  if (gesture === "think") {
+    ctx.beginPath();
+    ctx.arc(cx + 36, h * 0.14, 7 + Math.sin(t * 3) * 1.5, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(0,229,255,0.7)";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx + 48, h * 0.08, 3.2, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  if (gesture === "listen") {
+    for (let i = 0; i < 3; i += 1) {
+      const a = (t * 1.8 + i * 0.7) % 1;
+      ctx.beginPath();
+      ctx.arc(cx + 40, cy - 20, 8 + a * 18, -0.6, 0.6);
+      ctx.strokeStyle = `rgba(0,229,255,${0.45 * (1 - a)})`;
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+    }
+  }
+
+  if (gesture === "ok") {
+    ctx.strokeStyle = "rgba(0,255,180,0.85)";
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(cx - 10, cy - 40);
+    ctx.lineTo(cx - 2, cy - 28);
+    ctx.lineTo(cx + 16, cy - 52);
+    ctx.stroke();
+  }
+
+  if (gesture === "error") {
+    ctx.strokeStyle = "rgba(255,170,80,0.8)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(cx + 22, h * 0.12);
+    ctx.lineTo(cx + 36, h * 0.22);
+    ctx.moveTo(cx + 36, h * 0.12);
+    ctx.lineTo(cx + 22, h * 0.22);
+    ctx.stroke();
+  }
+
+  for (let i = particles.length - 1; i >= 0; i -= 1) {
+    const p = particles[i];
+    if (!p) continue;
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += gesture === "success" ? -0.04 : 0.02;
+    p.life -= 0.018;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2);
+    ctx.fillStyle =
+      gesture === "error"
+        ? `rgba(255,180,90,${0.7 * p.life})`
+        : `rgba(0,229,255,${0.75 * p.life})`;
+    ctx.fill();
+  }
+}
+
+/** Holograma vivo: flota, gesticula y va a la pestaña de la que hablas. Sin TTS. */
+export function CedPresenterMascot({
+  visible,
+  exiting = false,
+  audioStream,
+  workspace = "chat",
+}: Props) {
   const levelRef = useStreamLevel(visible ? audioStream : null);
   const spriteRef = useRef<HTMLDivElement>(null);
   const scanRef = useRef<HTMLDivElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const busyRef = useRef(false);
+  const lastKeyRef = useRef("");
+  const lastAtRef = useRef(0);
+  const poseRef = useRef<Pose>(homePose());
+  const gestureRef = useRef<PresenterGesture>("idle");
+  const particlesRef = useRef<Particle[]>([]);
+  const [mounted, setMounted] = useState(false);
+  const [pose, setPose] = useState<Pose>(() => homePose());
+  const [gesture, setGesture] = useState<PresenterGesture>("idle");
+
+  const applyPose = useCallback((next: Pose) => {
+    poseRef.current = next;
+    setPose(next);
+    const node =
+      wrapRef.current || document.querySelector<HTMLElement>("[data-ced-presenter-wrap]");
+    writePose(node, next);
+  }, []);
+
+  const applyGesture = useCallback((next: PresenterGesture) => {
+    gestureRef.current = next;
+    setGesture(next);
+    const canvas = canvasRef.current;
+    if (canvas) {
+      spawnBurst(particlesRef.current, next, canvas.width, canvas.height);
+    }
+  }, []);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!visible) {
+      applyPose(homePose());
+      applyGesture("idle");
+      return;
+    }
+    if (exiting) {
+      applyGesture("farewell");
+      applyPose(homePose());
+      return;
+    }
+    applyGesture("welcome");
+    const welcomeTimer = window.setTimeout(() => {
+      if (gestureRef.current === "welcome") applyGesture("idle");
+    }, 1800);
+    return () => window.clearTimeout(welcomeTimer);
+  }, [visible, exiting, applyPose, applyGesture]);
+
+  useEffect(() => {
+    if (!visible || exiting) return;
+    const fromWs = gestureForWorkspace(workspace);
+    if (fromWs) applyGesture(fromWs);
+  }, [workspace, visible, exiting, applyGesture]);
+
+  useEffect(() => {
+    if (!visible || exiting) return;
+    const onModule = (ev: Event) => {
+      const mod = (ev as CustomEvent<{ module?: string | null }>).detail?.module;
+      const next = gestureForModule(mod);
+      if (next) applyGesture(next);
+    };
+    window.addEventListener("ced-module-active", onModule);
+    return () => window.removeEventListener("ced-module-active", onModule);
+  }, [visible, exiting, applyGesture]);
 
   useEffect(() => {
     if (!visible) return;
@@ -65,44 +331,182 @@ export function CedPresenterMascot({ visible, audioStream }: Props) {
     const loop = (now: number) => {
       const t = (now - t0) / 1000;
       const level = levelRef.current;
-      const talking = level > 0.08;
-      const bob = Math.sin(t * 1.7) * 8 + Math.sin(t * 0.9) * 3;
-      const talk = talking ? Math.sin(t * 11) * (5 + level * 14) : Math.sin(t * 2.4) * 2;
-      const rotY = Math.sin(t * 1.05) * 14 + (talking ? Math.sin(t * 4.2) * 18 * level : 0);
-      const rotZ = Math.sin(t * 0.8) * 2.4 + (talking ? Math.sin(t * 6) * 5 * level : 0);
-      const rotX = talking ? Math.sin(t * 8) * 4 * level : Math.sin(t * 0.6) * 1.5;
-      const scale = 1 + level * 0.08 + (talking ? Math.abs(Math.sin(t * 14)) * 0.03 : 0);
+      const hearing = !exiting && !busyRef.current && level > 0.08;
+      if (hearing && (gestureRef.current === "idle" || gestureRef.current === "listen")) {
+        gestureRef.current = "listen";
+      } else if (!hearing && gestureRef.current === "listen") {
+        gestureRef.current = "idle";
+      }
+      const g = gesturePose(gestureRef.current, t);
+      const bob = (Math.sin(t * 1.7) * 8 + Math.sin(t * 0.9) * 3) * g.bobMul;
+      const talk = hearing ? Math.sin(t * 11) * (5 + level * 14) : Math.sin(t * 2.4) * 2;
+      const rotY = Math.sin(t * 1.05) * 10 + g.ry;
+      const rotZ = Math.sin(t * 0.8) * 1.6 + g.rz;
+      const rotX = Math.sin(t * 0.6) * 1.2 + g.rx;
+      const scale = g.scale + level * 0.05;
       const flick = 0.88 + Math.sin(t * 31) * 0.07 + Math.sin(t * 8.5) * 0.05;
       const el = spriteRef.current;
       if (el) {
-        el.style.transform = `translateY(${bob + talk}px) rotateX(${rotX}deg) rotateY(${rotY}deg) rotateZ(${rotZ}deg) scale(${scale})`;
+        el.style.transform = `translateY(${bob + talk + g.y}px) rotateX(${rotX}deg) rotateY(${rotY}deg) rotateZ(${rotZ}deg) scale(${scale})`;
         el.style.filter = `brightness(${flick}) contrast(1.08) drop-shadow(0 0 18px rgba(0,229,255,0.55))`;
       }
       const scan = scanRef.current;
-      if (scan) {
-        scan.style.opacity = String(0.18 + level * 0.35);
+      if (scan) scan.style.opacity = String(0.18 + level * 0.35);
+      const canvas = canvasRef.current;
+      const ctx = canvas?.getContext("2d");
+      if (canvas && ctx) {
+        if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
+          canvas.width = Math.max(1, canvas.clientWidth);
+          canvas.height = Math.max(1, canvas.clientHeight);
+        }
+        if (gestureRef.current === "construct" && Math.random() < 0.18) {
+          spawnBurst(particlesRef.current, "construct", canvas.width, canvas.height);
+        }
+        paintCanvas(ctx, canvas.width, canvas.height, gestureRef.current, t, particlesRef.current);
       }
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(raf);
-  }, [visible, levelRef]);
+  }, [visible, exiting, levelRef]);
 
-  return (
-    <div
-      className="pointer-events-none absolute inset-0 z-[79] flex items-center justify-center overflow-hidden pr-[6.5rem] sm:pr-[8rem] lg:pr-[min(15.5rem,28vw)]"
-      aria-hidden
-    >
-      <AnimatePresence>
-        {visible ? (
+  useEffect(() => {
+    if (!visible || exiting) return;
+    let cancelled = false;
+
+    const runSteps = async (steps: GuideStep[]) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      applyGesture(gestureForHotspot(steps[0]?.hotspot || "point"));
+      try {
+        for (const step of steps) {
+          if (cancelled) return;
+          let el: HTMLElement | null = null;
+          for (let i = 0; i < 16 && !el; i += 1) {
+            el = queryHotspot(step.hotspot);
+            if (!el) await wait(50);
+          }
+          if (!el) continue;
+          applyGesture(gestureForHotspot(step.hotspot));
+          el.classList.add("ced-presenter-focus");
+          applyPose(poseForEl(el));
+          await wait(780);
+          if (cancelled) return;
+          if (step.click) {
+            const wrap = wrapRef.current;
+            const scale = poseRef.current.scale;
+            if (wrap) {
+              wrap.style.transform = `translate(-50%, -78%) scale(${scale * 0.86})`;
+              await wait(140);
+              wrap.style.transform = `translate(-50%, -78%) scale(${scale})`;
+              await wait(90);
+            }
+            if (el.getAttribute("aria-expanded") !== "true") el.click();
+          }
+          await wait(640);
+          el.classList.remove("ced-presenter-focus");
+        }
+        applyGesture("ok");
+        await wait(2800);
+        if (!cancelled && !exiting) {
+          applyGesture("idle");
+          applyPose(homePose());
+        }
+      } finally {
+        busyRef.current = false;
+      }
+    };
+
+    const onSpeech = (raw: string) => {
+      const felt = matchPresenterGesture(raw);
+      if (felt && !busyRef.current) applyGesture(felt);
+      const steps = matchPresenterGuide(raw);
+      if (!steps) return;
+      const key = steps.map((s) => s.hotspot).join(">");
+      const now = Date.now();
+      if (key === lastKeyRef.current && now - lastAtRef.current < 7000) return;
+      lastKeyRef.current = key;
+      lastAtRef.current = now;
+      void runSteps(steps);
+    };
+
+    const onSay = (ev: Event) => {
+      const text = (ev as CustomEvent<string>).detail;
+      if (typeof text === "string") onSpeech(text);
+    };
+    window.addEventListener("ced-presenter-say", onSay);
+
+    const SpeechRec =
+      (window as unknown as { SpeechRecognition?: new () => SpeechRecLike }).SpeechRecognition ||
+      (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecLike }).webkitSpeechRecognition;
+    let rec: SpeechRecLike | null = null;
+    if (SpeechRec) {
+      rec = new SpeechRec();
+      rec.lang = "es-ES";
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.onresult = (ev) => {
+        const list = ev.results;
+        const row = list[list.length - 1];
+        const text = row?.[0]?.transcript || "";
+        if (text.trim().length >= 4) onSpeech(text);
+      };
+      rec.onend = () => {
+        if (!cancelled) {
+          try {
+            rec?.start();
+          } catch {
+            /* already started */
+          }
+        }
+      };
+      try {
+        rec.start();
+      } catch {
+        /* permission / unsupported */
+      }
+    }
+    return () => {
+      cancelled = true;
+      window.removeEventListener("ced-presenter-say", onSay);
+      if (!rec) return;
+      rec.onend = null;
+      rec.onresult = null;
+      try {
+        rec.stop();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [visible, exiting, applyPose, applyGesture]);
+
+  if (!mounted) return null;
+
+  return createPortal(
+    <div className="pointer-events-none fixed inset-0 z-[220]" aria-hidden>
+      {visible ? (
+        <div
+          ref={wrapRef}
+          data-ced-presenter-wrap
+          data-ced-gesture={gesture}
+          className="absolute will-change-[left,top,transform]"
+          style={{
+            left: `${pose.x}px`,
+            top: `${pose.y}px`,
+            transform: `translate(-50%, -78%) scale(${pose.scale})`,
+            transition: POSE_TRANSITION,
+            perspective: 720,
+            opacity: exiting ? 0.15 : 1,
+          }}
+        >
           <motion.div
-            key="ced-holo-bot"
-            className="relative translate-y-[6%]"
-            style={{ perspective: 720 }}
-            initial={{ opacity: 0, y: 36, scale: 0.45, filter: "blur(10px)" }}
-            animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-            exit={{ opacity: 0, y: 18, scale: 0.72, filter: "blur(8px)" }}
-            transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
+            initial={{ opacity: 0, scale: 0.45, filter: "blur(10px)" }}
+            animate={{
+              opacity: exiting ? 0 : 1,
+              scale: exiting ? 0.55 : 1,
+              filter: exiting ? "blur(12px)" : "blur(0px)",
+            }}
+            transition={{ duration: exiting ? 0.65 : 0.45, ease: [0.16, 1, 0.3, 1] }}
           >
             <div className="ced-holo-bot-dust" />
             <div
@@ -112,17 +516,22 @@ export function CedPresenterMascot({ visible, audioStream }: Props) {
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src="/voice/holo-bot.png?v=2"
+                src="/voice/holo-bot.png?v=3"
                 alt=""
                 className="h-[11.5rem] w-auto select-none sm:h-[13.5rem] lg:h-[15.5rem]"
                 draggable={false}
+              />
+              <canvas
+                ref={canvasRef}
+                className="pointer-events-none absolute inset-0 h-full w-full"
               />
               <div ref={scanRef} className="ced-holo-bot-scan" />
               <div className="ced-holo-bot-glitch" />
             </div>
           </motion.div>
-        ) : null}
-      </AnimatePresence>
-    </div>
+        </div>
+      ) : null}
+    </div>,
+    document.body,
   );
 }

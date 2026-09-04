@@ -52,6 +52,7 @@ export function CedListenButton({
     <motion.button
       type="button"
       data-ced-listen
+      data-ced-hotspot="asistente"
       onClick={onActivate}
       disabled={busy}
       whileTap={{ scale: busy ? 1 : 0.97 }}
@@ -73,6 +74,7 @@ export function CedPresenterButton({ active, onActivate }: CedPresenterButtonPro
   return (
     <motion.button
       type="button"
+      data-ced-hotspot="robot"
       onClick={onActivate}
       whileTap={{ scale: 0.97 }}
       aria-pressed={active}

@@ -18,6 +18,7 @@ type HudNavMenuProps = {
   items: HudNavItem[];
   align?: "left" | "right";
   tone?: "hud" | "navy";
+  hotspot?: string;
 };
 
 type MenuCoords = {
@@ -26,7 +27,7 @@ type MenuCoords = {
   right?: number;
 };
 
-export function HudNavMenu({ label, items, align = "left", tone = "hud" }: HudNavMenuProps) {
+export function HudNavMenu({ label, items, align = "left", tone = "hud", hotspot }: HudNavMenuProps) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState<MenuCoords | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -102,6 +103,7 @@ export function HudNavMenu({ label, items, align = "left", tone = "hud" }: HudNa
                   key={item.id}
                   href={item.href}
                   role="menuitem"
+                  data-ced-hotspot={`nav-${item.id}`}
                   onClick={() => {
                     item.onClick?.();
                     setOpen(false);
@@ -115,6 +117,7 @@ export function HudNavMenu({ label, items, align = "left", tone = "hud" }: HudNa
                   key={item.id}
                   type="button"
                   role="menuitem"
+                  data-ced-hotspot={`nav-${item.id}`}
                   onClick={() => {
                     item.onClick?.();
                     setOpen(false);
@@ -135,6 +138,7 @@ export function HudNavMenu({ label, items, align = "left", tone = "hud" }: HudNa
       <button
         ref={buttonRef}
         type="button"
+        data-ced-hotspot={hotspot || label.toLowerCase()}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={menuId}

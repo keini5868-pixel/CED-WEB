@@ -1071,6 +1071,7 @@ export function CedTextChatPanel({
               enterKeyHint="send"
               inputMode="text"
               aria-label="Escribe tu mensaje a CED"
+              data-ced-hotspot="chat"
               placeholder={
                 isDictating
                   ? "Escuchando… habla ahora"

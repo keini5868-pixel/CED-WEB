@@ -52,6 +52,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   const sistemaMenu = (
     <HudNavMenu
       label="Sistema"
+      hotspot="sistema"
       align="left"
       tone="navy"
       items={[
@@ -92,6 +93,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
             onClick={() => openDriveMap()}
             title="Mapa"
             aria-label="Abrir mapa"
+            data-ced-hotspot="mapa"
             className="inline-flex shrink-0 rounded-lg border border-white/20 p-1 text-sky-100 hover:border-sky-200 hover:bg-white/10 hover:text-white sm:p-1.5"
           >
             <Navigation className="h-3.5 w-3.5" strokeWidth={2} />

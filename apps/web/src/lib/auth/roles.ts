@@ -32,6 +32,17 @@ export function resolveUserRole(
   return "client";
 }
 
+export function isPresenterOwnerEmail(
+  email: string | undefined | null,
+  allowlist?: readonly string[],
+): boolean {
+  const emails = [...(allowlist ?? (typeof window === "undefined" ? getSuperAdminEmails() : []))]
+    .map(normalizeAdminEmail)
+    .filter(Boolean);
+  const normalized = normalizeAdminEmail(email || "");
+  return Boolean(normalized && emails.includes(normalized));
+}
+
 export function isSuperAdmin(
   email: string | undefined | null,
   metadataRole?: string | null,

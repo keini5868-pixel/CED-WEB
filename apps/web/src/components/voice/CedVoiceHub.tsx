@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
@@ -8,6 +8,7 @@ import { AdvancedChatPanel } from "@/components/chat/AdvancedChatPanel";
 import { FinanceChatPanel } from "@/components/chat/FinanceChatPanel";
 import { ModuleShell } from "@/components/modules/ModuleShell";
 import { useHudFeed } from "@/contexts/HudFeedContext";
+import { useCedOwnerUi } from "@/contexts/CedOwnerUiContext";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
@@ -44,7 +45,10 @@ import {
 
 /** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
+  const robotAllowed = useCedOwnerUi();
   const [presenterOn, setPresenterOn] = useState(false);
+  const [presenterExiting, setPresenterExiting] = useState(false);
+  const presenterExitTimer = useRef(0);
   const [presenterStream, setPresenterStream] = useState<MediaStream | null>(null);
   const stopPresenterAudio = () => {
     setPresenterStream((stream) => {
@@ -76,6 +80,21 @@ export function CedVoiceHub() {
     sync();
     window.addEventListener("ced-preview-persona", sync);
     return () => window.removeEventListener("ced-preview-persona", sync);
+  }, []);
+
+  useEffect(() => {
+    if (robotAllowed) return;
+    window.clearTimeout(presenterExitTimer.current);
+    setPresenterStream((stream) => {
+      stream?.getTracks().forEach((t) => t.stop());
+      return null;
+    });
+    setPresenterOn(false);
+    setPresenterExiting(false);
+  }, [robotAllowed]);
+
+  useEffect(() => {
+    return () => window.clearTimeout(presenterExitTimer.current);
   }, []);
 
   useEffect(() => {
@@ -237,8 +256,21 @@ export function CedVoiceHub() {
         setVoiceLimitOpen(true);
         return;
       }
-      stopPresenterAudio();
-      void voice.toggleMic();
+      const startVoice = () => {
+        stopPresenterAudio();
+        void voice.toggleMic();
+      };
+      if (presenterOn) {
+        window.clearTimeout(presenterExitTimer.current);
+        setPresenterExiting(true);
+        presenterExitTimer.current = window.setTimeout(() => {
+          setPresenterOn(false);
+          setPresenterExiting(false);
+          startVoice();
+        }, 720);
+        return;
+      }
+      startVoice();
     })();
   };
 
@@ -251,11 +283,18 @@ export function CedVoiceHub() {
   };
 
   const togglePresenter = () => {
+    if (!robotAllowed) return;
     if (presenterOn) {
-      stopPresenterAudio();
-      setPresenterOn(false);
+      window.clearTimeout(presenterExitTimer.current);
+      setPresenterExiting(true);
+      presenterExitTimer.current = window.setTimeout(() => {
+        stopPresenterAudio();
+        setPresenterOn(false);
+        setPresenterExiting(false);
+      }, 720);
       return;
     }
+    setPresenterExiting(false);
     setPresenterOn(true);
     void (async () => {
       try {
@@ -356,7 +395,9 @@ export function CedVoiceHub() {
           paused={voice.paused}
           onActivate={handleMic}
         />
-        <CedPresenterButton active={presenterOn} onActivate={togglePresenter} />
+        {robotAllowed ? (
+          <CedPresenterButton active={presenterOn || presenterExiting} onActivate={togglePresenter} />
+        ) : null}
       </div>
       <div className="hidden w-full lg:block">
         <CedVoiceHeardBadge
@@ -374,7 +415,7 @@ export function CedVoiceHub() {
   );
 
   return (
-    <div className="ced-studio flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden">
+    <div className="ced-studio flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden" data-ced-presenter-owner={robotAllowed ? "1" : "0"}>
     <div className="relative min-h-0 w-full min-w-0 flex-1 overflow-hidden">
     <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-[minmax(0,1fr)_max-content] grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
@@ -475,6 +516,7 @@ export function CedVoiceHub() {
           <div className="flex flex-col gap-0.5">
             <button
               type="button"
+              data-ced-hotspot="avanzado"
               onClick={() => selectWorkspace("advanced")}
               className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 workspace === "advanced" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
@@ -484,6 +526,7 @@ export function CedVoiceHub() {
             </button>
             <button
               type="button"
+              data-ced-hotspot="finanzas"
               onClick={() => selectWorkspace("finance")}
               className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 workspace === "finance" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
@@ -493,6 +536,7 @@ export function CedVoiceHub() {
             </button>
             <button
               type="button"
+              data-ced-hotspot="camara"
               onClick={() => void voice.toggleCamera()}
               className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 voice.cameraOn ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
@@ -514,10 +558,14 @@ export function CedVoiceHub() {
         className="ced-composer-actions flex h-11 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 lg:h-11 lg:px-1.5"
       />
     </div>
+      {robotAllowed ? (
       <CedPresenterMascot
-        visible={presenterOn && !voice.micOn && !voice.micBusy}
+        visible={(presenterOn || presenterExiting) && (!voice.micOn || presenterExiting)}
+        exiting={presenterExiting}
         audioStream={presenterStream}
+        workspace={workspace}
       />
+      ) : null}
       <CedHoloPresence
         active={voice.micOn || voice.micBusy}
         speaking={voice.orbState === "speaking" || voice.orbState === "processing"}
