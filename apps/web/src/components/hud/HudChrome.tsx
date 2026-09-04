@@ -45,7 +45,9 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
       if (!isDashboardPath(pathname)) router.push(DASHBOARD_PATH);
     };
     window.addEventListener("ced-go-dashboard", goHome);
-    const unreg = registerPresenterCloser(goHome);
+    const unreg = registerPresenterCloser(() => {
+      if (!isDashboardPath(pathname)) router.push(DASHBOARD_PATH);
+    });
     return () => {
       window.removeEventListener("ced-go-dashboard", goHome);
       unreg();
