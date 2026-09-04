@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
@@ -26,8 +26,12 @@ import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
-import { CedListenButton } from "@/components/voice/CedListenButton";
+import { CedListenButton, CedPresenterButton } from "@/components/voice/CedListenButton";
 import { CedHoloPresence } from "@/components/voice/CedHoloPresence";
+import {
+  CedPresenterMascot,
+  type CedPresenterMascotHandle,
+} from "@/components/voice/CedPresenterMascot";
 import {
   CedHistoryPanel,
   CedSettingsModal,
@@ -43,6 +47,8 @@ import {
 
 /** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
+  const presenterRef = useRef<CedPresenterMascotHandle>(null);
+  const [presenterOn, setPresenterOn] = useState(false);
   const [workspace, setWorkspace] = useState<"chat" | "advanced" | "finance">("chat");
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
@@ -54,7 +60,6 @@ export function CedVoiceHub() {
     url: string;
     prompt?: string;
   } | null>(null);
-  const [imageLightboxOpen, setImageLightboxOpen] = useState(false);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial, setActiveModule } =
     useHudFeed();
@@ -83,15 +88,6 @@ export function CedVoiceHub() {
     };
     window.addEventListener("ced-open-module", onOpen);
     return () => window.removeEventListener("ced-open-module", onOpen);
-  }, []);
-
-  useEffect(() => {
-    const onLightbox = (ev: Event) => {
-      const open = Boolean((ev as CustomEvent<{ open?: boolean }>).detail?.open);
-      setImageLightboxOpen(open);
-    };
-    window.addEventListener("ced-image-lightbox", onLightbox);
-    return () => window.removeEventListener("ced-image-lightbox", onLightbox);
   }, []);
 
   const voiceRoute = useMemo(() => {
@@ -195,6 +191,7 @@ export function CedVoiceHub() {
         unlockVoiceAudioOnGesture();
         voice.primeSessionMediaFromGesture();
         if (!voice.micOn) {
+          presenterRef.current?.releaseMic();
           void voice.toggleMic();
         }
       }
@@ -237,6 +234,7 @@ export function CedVoiceHub() {
         setVoiceLimitOpen(true);
         return;
       }
+      presenterRef.current?.releaseMic();
       void voice.toggleMic();
     })();
   };
@@ -247,6 +245,13 @@ export function CedVoiceHub() {
       return;
     }
     activateMic();
+  };
+
+  const togglePresenter = () => {
+    setPresenterOn((on) => {
+      if (on) presenterRef.current?.releaseMic();
+      return !on;
+    });
   };
 
   const { errorMessage, clearError } = voice;
@@ -328,12 +333,15 @@ export function CedVoiceHub() {
           />
         </div>
       ) : null}
-      <CedListenButton
-        active={voice.micOn}
-        busy={voice.micBusy}
-        paused={voice.paused}
-        onActivate={handleMic}
-      />
+      <div className="flex items-start justify-center gap-1">
+        <CedListenButton
+          active={voice.micOn}
+          busy={voice.micBusy}
+          paused={voice.paused}
+          onActivate={handleMic}
+        />
+        <CedPresenterButton active={presenterOn} onActivate={togglePresenter} />
+      </div>
       <div className="hidden w-full lg:block">
         <CedVoiceHeardBadge
           indicator={voice.heardIndicator}
@@ -490,8 +498,12 @@ export function CedVoiceHub() {
         className="ced-composer-actions flex h-11 items-center justify-center border-t border-l border-[var(--studio-border)] bg-[var(--studio-sidebar)] px-1 lg:h-11 lg:px-1.5"
       />
     </div>
+      <CedPresenterMascot
+        ref={presenterRef}
+        visible={presenterOn && !voice.micOn && !voice.micBusy}
+      />
       <CedHoloPresence
-        active={(voice.micOn || voice.micBusy) && !imageLive && !imageLightboxOpen}
+        active={voice.micOn || voice.micBusy}
         speaking={voice.orbState === "speaking" || voice.orbState === "processing"}
       />
     </div>
