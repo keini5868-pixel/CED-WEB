@@ -14,6 +14,7 @@ import {
 } from "@/lib/voice/presenterGestures";
 import {
   isPresenterCloseSpeech,
+  isCloseAllGuide,
   matchPresenterGuide,
   queryHotspot,
   runPresenterAction,
@@ -42,9 +43,18 @@ type Particle = {
   size: number;
 };
 
-/** Reposo: encima del dock ASIST/ROBOT (barra derecha), no en el centro del chat. */
+/** Reposo: encima del dock de voz, o flotando sobre el módulo abierto. */
 function homePose(): Pose {
   if (typeof window === "undefined") return { x: 1100, y: 560, scale: 0.68 };
+  const closer = document.querySelector<HTMLElement>("[data-ced-hotspot='module-close']");
+  if (closer) {
+    const r = closer.getBoundingClientRect();
+    return {
+      x: Math.max(88, Math.min(window.innerWidth - 88, r.left - 64)),
+      y: Math.min(window.innerHeight - 72, r.bottom + 158),
+      scale: 0.7,
+    };
+  }
   const dock =
     document.querySelector<HTMLElement>("[data-ced-hotspot='robot']") ||
     document.querySelector<HTMLElement>("[data-ced-hotspot='asistente']");
@@ -331,8 +341,18 @@ export function CedPresenterMascot({
       applyPose(homePose());
     };
     park();
+    const onModuleSurface = () => {
+      window.setTimeout(park, 40);
+      window.setTimeout(park, 280);
+    };
     window.addEventListener("resize", park);
-    return () => window.removeEventListener("resize", park);
+    window.addEventListener("ced-open-module", onModuleSurface);
+    window.addEventListener("ced-close-module", onModuleSurface);
+    return () => {
+      window.removeEventListener("resize", park);
+      window.removeEventListener("ced-open-module", onModuleSurface);
+      window.removeEventListener("ced-close-module", onModuleSurface);
+    };
   }, [visible, exiting, applyPose]);
 
   useEffect(() => {
@@ -411,6 +431,7 @@ export function CedPresenterMascot({
 
     const runSteps = async (steps: GuideStep[]) => {
       const closing = isCloseSteps(steps);
+      const closingAll = isCloseAllGuide(steps);
       if (busyRef.current && !closing) return;
       const gen = ++runGenRef.current;
       busyRef.current = true;
@@ -423,9 +444,9 @@ export function CedPresenterMascot({
         }
         return !stale();
       };
-      applyGesture(closing ? "ok" : gestureForHotspot(steps[0]?.hotspot || "sistema"));
+      applyGesture(closingAll ? "ok" : gestureForHotspot(steps[0]?.hotspot || "sistema"));
       try {
-        if (closing) {
+        if (closingAll) {
           runPresenterAction("close-all");
           applyGesture("ok");
           const target = closeTargetHotspot();
@@ -519,7 +540,7 @@ export function CedPresenterMascot({
       if (felt) applyGesture(felt);
       const steps = matchPresenterGuide(raw);
       if (!steps) return;
-      if (isPresenterCloseSpeech(raw) || isCloseSteps(steps)) {
+      if (isCloseAllGuide(steps)) {
         applyGesture("ok");
         runPresenterAction("close-all");
       }
@@ -595,7 +616,7 @@ export function CedPresenterMascot({
   if (!mounted) return null;
 
   return createPortal(
-    <div className="ced-presenter-layer pointer-events-none fixed inset-0 z-[220]" aria-hidden>
+    <div className="ced-presenter-layer pointer-events-none fixed inset-0 z-[480]" aria-hidden>
       {visible ? (
         <div
           ref={wrapRef}

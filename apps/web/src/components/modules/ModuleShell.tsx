@@ -115,6 +115,12 @@ export function ModuleShell() {
   }, [activeId, openGeneration]);
 
   useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent("ced-module-active", { detail: { module: activeId } }),
+    );
+  }, [activeId]);
+
+  useEffect(() => {
     if (!activeId) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -172,6 +178,7 @@ export function ModuleShell() {
             aria-modal="true"
             aria-label={active.name}
             className="fixed inset-0 z-[200] flex h-[100dvh] max-h-[100dvh] w-full max-w-[100vw] flex-col overflow-hidden bg-[#0a1220]"
+            data-ced-hotspot="module-panel"
             initial={{ opacity: 0.92, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}

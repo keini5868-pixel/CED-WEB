@@ -38,8 +38,16 @@ const CLOSE_RULES: Rule[] = [
     steps: [{ action: "escape" }],
   },
   {
-    re: /\b(oportunidades|fitline|producto|viabilidad|tendencia|video|automatizaci[oó]n|m[oó]dulo)\b/i,
-    steps: [{ hotspot: "module-close", click: true }, { action: "close-module" }],
+    re: /\b(oportunidad(?:es)?(?:\s+(?:pm|p\.?\s*m\.?))?|fitline|fit\s*line)\b/i,
+    steps: [{ hotspot: "module-close", click: true, force: "close" }, { action: "close-module" }],
+  },
+  {
+    re: /\b(producto|viabilidad|tendencia|video|automatizaci[oó]n|m[oó]dulo)\b/i,
+    steps: [{ hotspot: "module-close", click: true, force: "close" }, { action: "close-module" }],
+  },
+  {
+    re: /\b(estructura(?:\s+pm)?|equipo)\b/i,
+    steps: [{ action: "close-all" }],
   },
   {
     re: /\b(mapa)\b/i,
@@ -95,7 +103,7 @@ const OPEN_RULES: Rule[] = [
     steps: [{ hotspot: "redes", click: true }],
   },
   {
-    re: /\b(oportunidades|fitline|fit\s*line|opps)\b/i,
+    re: /\b(oportunidad(?:es)?(?:\s+(?:pm|p\.?\s*m\.?))?|fitline|fit\s*line|opps)\b/i,
     steps: [{ hotspot: "opportunities", click: true }],
   },
   {
@@ -107,7 +115,7 @@ const OPEN_RULES: Rule[] = [
     steps: [{ hotspot: "trends", click: true }],
   },
   {
-    re: /\b(estructura|equipo)\b/i,
+    re: /\b(estructura(?:\s+pm)?|equipo)\b/i,
     steps: [{ hotspot: "team", click: true }],
   },
   {
@@ -158,6 +166,10 @@ function isCloseIntent(text: string): boolean {
 export function isPresenterCloseSpeech(text: string): boolean {
   const t = (text || "").trim();
   return isCloseIntent(t) || isCloseAll(t);
+}
+
+export function isCloseAllGuide(steps: GuideStep[]): boolean {
+  return steps.length === 1 && steps[0]?.action === "close-all";
 }
 
 function isCloseAll(text: string): boolean {

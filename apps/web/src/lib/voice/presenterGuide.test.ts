@@ -23,4 +23,15 @@ describe("matchPresenterGuide", () => {
     expect(matchPresenterGuide("cierra las pestañas que abre")).toEqual([{ action: "close-all" }]);
     expect(matchPresenterGuide("cierra sistema")).toEqual([{ action: "close-all" }]);
   });
+
+  it("cierra oportunidades por nombre, no todo el HUD", () => {
+    expect(matchPresenterGuide("cierra oportunidades")).toEqual([
+      { hotspot: "module-close", click: true, force: "close" },
+      { action: "close-module" },
+    ]);
+    expect(matchPresenterGuide("cierra oportunidad PM")).toEqual([
+      { hotspot: "module-close", click: true, force: "close" },
+      { action: "close-module" },
+    ]);
+  });
 });
