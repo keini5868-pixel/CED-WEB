@@ -486,7 +486,34 @@ def fitline_pm_plugin(user_id: str | None = None) -> dict[str, Any]:
                         "5. Usar CED para copy, prospección, Análisis de Producto y "
                         "Análisis de Tendencia — con terminología correcta.\n"
                         "6. Cumplir políticas de marca, publicidad e Income Plan "
-                        "de PM International."
+                        "de PM International.\n"
+                        "7. Si es nuevo y se traba en el registro o la tienda: "
+                        "usar la sección «Entrar a la tienda / Partner Area» "
+                        "(checklist de detalles que la gente suele saltarse)."
+                    ),
+                },
+                "store_entry": {
+                    "attribution": "curated",
+                    "body": (
+                        "CHECKLIST DE ENTRADA A LA TIENDA / PARTNER AREA "
+                        "(flujo oficial de registro PM; CED no inventa precios ni %):\n"
+                        "1) Enlace del patrocinador o Sponsor ID — confirme que el "
+                        "nombre en pantalla es quien le presentó; si no, no continúe.\n"
+                        "2) País/región correcto (precios y envío cambian).\n"
+                        "3) Confirme el correo (sin el mail de confirmación no entra después).\n"
+                        "4) Acepte reglas Team Partner; el acuerdo vale cuando PM acepta.\n"
+                        "5) Primer pedido: si dice que lo olvidó, puede registrar ya y "
+                        "elegir productos luego. Pedido pendiente: «Pagar» retoma; "
+                        "«Reiniciar» cancela — no mezcle esos botones.\n"
+                        "6) No es obligatorio comprar para ser distribuidor (reglas oficiales).\n"
+                        "7) Login Partner Area (partner.pm-international.com). "
+                        "PROHIBIDO pegar URL en chat/voz. Si el login falla al inicio, "
+                        "el registro puede no estar procesado aún.\n"
+                        "8) Use solo la tienda oficial PM (FitLine Shop / PM Office).\n"
+                        "9) Guarde número de cliente y correo de confirmación.\n"
+                        "Si pregunta «cómo entro a la tienda», «Partner Area», "
+                        "«primer pedido» o «me trabé en el registro»: entregue este "
+                        "checklist paso a paso."
                     ),
                 },
                 "affiliation": {

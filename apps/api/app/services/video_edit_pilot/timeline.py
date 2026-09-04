@@ -1,4 +1,4 @@
-﻿"""Planificacion de timeline + cues Sonilo + gate Veo."""
+"""Planificacion de timeline + cues Sonilo + gate Veo."""
 
 from __future__ import annotations
 

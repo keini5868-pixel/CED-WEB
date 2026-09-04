@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveAgentTranscriptMerge } from "./transcriptAccumulator";
+import { resolveAgentTranscriptMerge, shouldSkipDuplicateAgentLine } from "./transcriptAccumulator";
 
 describe("resolveAgentTranscriptMerge", () => {
   it("does not glue two distinct agent replies without the same stream", () => {
@@ -43,5 +43,17 @@ describe("resolveAgentTranscriptMerge", () => {
     });
     expect(out.action).toBe("new");
     expect(out.text).toBe(second);
+  });
+
+  it("skips an exact replay of a previous agent reply", () => {
+    const first =
+      "PM International es una compañía líder en salud, bienestar y belleza.";
+    expect(shouldSkipDuplicateAgentLine([first], first)).toBe(true);
+    expect(
+      shouldSkipDuplicateAgentLine(
+        [first],
+        "El Plan de 90 días es la estrategia maestra de PM International.",
+      ),
+    ).toBe(false);
   });
 });

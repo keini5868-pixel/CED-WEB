@@ -96,6 +96,54 @@ def subscribe_waba_webhooks(waba_id: str, access_token: str) -> None:
         logger.warning("[WA] subscribed_apps exception", exc_info=True)
 
 
+def send_text_for_account(
+    account: dict[str, Any],
+    *,
+    to: str,
+    body: str,
+) -> dict[str, Any]:
+    from app.services.whatsapp_360 import is_360dialog, send_text_d360
+
+    token = str(account.get("access_token") or "").strip()
+    if is_360dialog(account):
+        return send_text_d360(api_key=token, to=to, body=body)
+    return send_text_message(
+        phone_number_id=str(account.get("phone_number_id") or ""),
+        access_token=token,
+        to=to,
+        body=body,
+    )
+
+
+def send_template_for_account(
+    account: dict[str, Any],
+    *,
+    to: str,
+    template_name: str,
+    language: str = "es",
+    body_params: list[str] | None = None,
+) -> dict[str, Any]:
+    from app.services.whatsapp_360 import is_360dialog, send_template_d360
+
+    token = str(account.get("access_token") or "").strip()
+    if is_360dialog(account):
+        return send_template_d360(
+            api_key=token,
+            to=to,
+            template_name=template_name,
+            language=language,
+            body_params=body_params,
+        )
+    return send_template_message(
+        phone_number_id=str(account.get("phone_number_id") or ""),
+        access_token=token,
+        to=to,
+        template_name=template_name,
+        language=language,
+        body_params=body_params,
+    )
+
+
 def send_text_message(
     *,
     phone_number_id: str,
@@ -233,8 +281,8 @@ def send_template_message(
     return _graph_auth_post(f"{phone_number_id}/messages", access_token, payload)
 
 
-def inbound_text_events(payload: dict[str, Any]) -> list[dict[str, str]]:
-    """Extrae mensajes de texto útiles del webhook Cloud API."""
+def inbound_message_events(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """Texto e imagen del webhook Cloud API / 360dialog."""
     out: list[dict[str, str]] = []
     entries = payload.get("entry") if isinstance(payload, dict) else None
     if not isinstance(entries, list):
@@ -260,19 +308,74 @@ def inbound_text_events(payload: dict[str, Any]) -> list[dict[str, str]]:
             for msg in messages:
                 if not isinstance(msg, dict):
                     continue
-                if str(msg.get("type") or "") != "text":
-                    continue
-                body = str((msg.get("text") or {}).get("body") or "").strip()
                 wa_from = str(msg.get("from") or "").strip()
                 wamid = str(msg.get("id") or "").strip()
-                if not body or not wa_from or not phone_number_id:
+                kind = str(msg.get("type") or "").strip().lower()
+                if not wa_from or not phone_number_id or not wamid:
                     continue
-                out.append(
-                    {
-                        "phone_number_id": phone_number_id,
-                        "from": wa_from,
-                        "body": body,
-                        "wamid": wamid,
-                    }
-                )
+                if kind == "text":
+                    body = str((msg.get("text") or {}).get("body") or "").strip()
+                    if not body:
+                        continue
+                    out.append(
+                        {
+                            "phone_number_id": phone_number_id,
+                            "from": wa_from,
+                            "body": body,
+                            "wamid": wamid,
+                            "kind": "text",
+                            "media_id": "",
+                            "mime": "",
+                        }
+                    )
+                    continue
+                if kind == "image":
+                    image = msg.get("image") if isinstance(msg.get("image"), dict) else {}
+                    media_id = str(image.get("id") or "").strip()
+                    caption = str(image.get("caption") or "").strip()
+                    mime = str(image.get("mime_type") or "image/jpeg").strip()
+                    out.append(
+                        {
+                            "phone_number_id": phone_number_id,
+                            "from": wa_from,
+                            "body": caption or "(imagen)",
+                            "wamid": wamid,
+                            "kind": "image",
+                            "media_id": media_id,
+                            "mime": mime or "image/jpeg",
+                        }
+                    )
     return out
+
+
+def inbound_text_events(payload: dict[str, Any]) -> list[dict[str, str]]:
+    """Solo texto — compatibilidad de tests."""
+    return [e for e in inbound_message_events(payload) if e.get("kind") == "text"]
+
+
+def download_graph_media(media_id: str, access_token: str) -> tuple[bytes, str]:
+    meta = _graph_auth_get(media_id.strip(), access_token)
+    url = str(meta.get("url") or "").strip()
+    mime = str(meta.get("mime_type") or "image/jpeg").strip() or "image/jpeg"
+    if not url:
+        raise WhatsAppCloudError("Media WhatsApp sin URL.")
+    try:
+        with httpx.Client(timeout=45.0, follow_redirects=True) as client:
+            res = client.get(url, headers={"Authorization": f"Bearer {access_token}"})
+    except Exception as exc:  # noqa: BLE001
+        raise WhatsAppCloudError("No pude descargar la imagen de WhatsApp.") from exc
+    if res.status_code >= 400 or not res.content:
+        raise WhatsAppCloudError("Fallo al descargar la imagen de WhatsApp.")
+    return res.content, mime
+
+
+def download_media_for_account(account: dict[str, Any], media_id: str) -> tuple[bytes, str]:
+    mid = (media_id or "").strip()
+    if not mid:
+        raise WhatsAppCloudError("Falta media_id.")
+    from app.services.whatsapp_360 import download_media_d360, is_360dialog
+
+    token = str(account.get("access_token") or "").strip()
+    if is_360dialog(account):
+        return download_media_d360(token, mid)
+    return download_graph_media(mid, token)

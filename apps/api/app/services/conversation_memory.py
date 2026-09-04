@@ -312,6 +312,81 @@ def _get_pending_actions(user_id: str) -> list[str]:
     return actions[:8]
 
 
+def load_recent_text_channel_messages(
+    user_id: str,
+    *,
+    limit: int = 12,
+    max_chars: int = 8_000,
+) -> list[dict[str, str]]:
+    """Últimos mensajes del chat de texto (voice_conversations channel=text).
+
+    Para que la voz pueda leer un guion/brief enviado por escrito aunque el
+    puente en vivo no estuviera activo en ese momento.
+    """
+    uid = (user_id or "").strip()
+    if not uid:
+        return []
+    cap = max(1, min(int(limit), 30))
+    out: list[dict[str, str]] = []
+    budget = max(500, int(max_chars))
+    try:
+        convs = supabase_db.list_conversations(uid, limit=2, channel="text")
+    except Exception:  # noqa: BLE001
+        logger.debug("[CONV_MEM] list text convs failed", exc_info=True)
+        return []
+    for conv in convs:
+        cid = str(conv.get("id") or "").strip()
+        if not cid:
+            continue
+        try:
+            msgs = supabase_db.get_conversation_messages(cid, uid, limit=cap)
+        except Exception:  # noqa: BLE001
+            continue
+        for m in msgs:
+            role = str(m.get("role") or "user").lower()
+            if role in ("assistant", "model"):
+                role = "model"
+            elif role != "user":
+                continue
+            content = str(m.get("content") or "").strip()
+            if not content:
+                continue
+            chunk = content[: min(budget, MAX_CONTENT)]
+            out.append({"role": role, "content": chunk})
+            budget -= len(chunk)
+            if budget <= 0 or len(out) >= cap:
+                return out
+        if out:
+            break
+    return out
+
+
+def format_text_chat_for_voice_overlay(
+    user_id: str,
+    *,
+    limit: int = 10,
+    max_chars: int = 8_000,
+) -> str:
+    """Bloque system: mensajes recientes del chat de texto para voz."""
+    rows = load_recent_text_channel_messages(
+        user_id, limit=limit, max_chars=max_chars
+    )
+    if not rows:
+        return ""
+    lines = [
+        "[CHAT DE TEXTO RECIENTE] El usuario escribió esto en el chat normal de CED "
+        "(misma cuenta). Si pide que le lea, resuma o use «lo que envió por texto / el "
+        "guion / el brief», usa ESTE contenido de forma literal. "
+        "PROHIBIDO inventar otro texto. PROHIBIDO sustituirlo con FitLine/PM u otro tema.",
+    ]
+    for row in rows:
+        role = "Usuario" if row.get("role") == "user" else "CED (chat)"
+        body = str(row.get("content") or "").strip()
+        if body:
+            lines.append(f"- {role}: {body}")
+    return "\n".join(lines)
+
+
 def load_recent_messages_for_llm(user_id: str, *, limit: int = 30) -> list[dict[str, str]]:
     """Últimos mensajes del usuario (voz + texto) para historial Gemini, orden cronológico."""
     uid = (user_id or "").strip()

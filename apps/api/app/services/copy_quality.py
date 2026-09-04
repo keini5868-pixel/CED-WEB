@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Any
+from typing import Any, Literal
 
 # Correcciones frecuentes (usuario, voz, transcripción o modelos de imagen).
 _TYPO_MAP: dict[str, str] = {
@@ -108,6 +108,36 @@ _HARD_NO_TEXT_RULE = (
     "Zero letters, words, titles, captions, subtitles, watermarks, logos as text, "
     "UI labels, or typography of any kind. Do NOT write the brief or the user's "
     "request onto the image."
+)
+_DECORATIVE_UI_RULE = (
+    "Include complex UI/UX data elements, abstract micro-text, digital metrics, "
+    "and sci-fi glyphs. The text must look like a functional, illegible technical "
+    "interface, NOT a marketing headline. Do not render logos, watermarks, "
+    "user prompts, or commands such as 'genera una imagen' on the screens."
+)
+_DECORATIVE_UI_MARKER = "functional, illegible technical interface"
+
+ImageTextMode = Literal["none", "decorative", "literal"]
+
+# Compuestos — «pantalla» o «código» sueltos no disparan HUD (baño con TV, código de descuento).
+_DECORATIVE_UI_SIGNAL = re.compile(
+    r"(?is)\b("
+    r"hologr(?:ama|áfic[oa]|afic[oa]|aphic)?|"
+    r"\bhud\b|"
+    r"interfaz\s+(?:hologr|digital|futurista|de\s+ced|sci|c[ií]an)|"
+    r"dashboard|"
+    r"pantalla\s+(?:de\s+)?(?:datos|c[oó]digo|hologr|sci|futurista)|"
+    r"c[oó]digo\s+en\s+pantalla|"
+    r"sci-?fi\s+ui|"
+    r"panel\s+de\s+control|"
+    r"jarvis"
+    r")\b"
+)
+_ORGANIC_PHOTO_SIGNAL = re.compile(
+    r"(?is)\b("
+    r"águila|aguila|ba[nñ]o|playa|monta[nñ]as?|atardecer|retrato|paisaje|"
+    r"espejo|bosque|oc[eé]ano|cielo\s+lluvioso|naturaleza"
+    r")\b"
 )
 
 
@@ -362,6 +392,32 @@ def prompt_requires_precise_text(prompt: str) -> bool:
     if _IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t):
         return True
     return bool(_GRAPHIC_COPY_FORMAT.search(t))
+
+
+def resolve_image_text_mode(text: str) -> ImageTextMode:
+    """LITERAL > DECORATIVE > NONE. Clasifica el brief fusionado, no solo el último comando."""
+    t = (text or "").strip()
+    if not t:
+        return "none"
+    if _SCENE_FORBIDS_TEXT.search(t):
+        return "none"
+    if prompt_requires_precise_text(t) or extract_quoted_phrases(t):
+        return "literal"
+    if _DECORATIVE_UI_SIGNAL.search(t):
+        if _ORGANIC_PHOTO_SIGNAL.search(t) and not user_requests_ced_branding(t):
+            # «baño con pantalla» / águila: foto, no HUD, salvo que el sujeto sea CED.
+            return "none"
+        return "decorative"
+    return "none"
+
+
+def image_text_mode_allows_ui(mode: ImageTextMode, text: str) -> bool:
+    """LITERAL + señales HUD (carrusel CED con overlay + holograma)."""
+    if mode == "decorative":
+        return True
+    if mode == "literal" and _DECORATIVE_UI_SIGNAL.search(text or ""):
+        return True
+    return False
 
 
 def ensure_image_quality_guards(prompt: str, *, wants_text: bool | None = None) -> str:
@@ -706,6 +762,7 @@ def build_direct_image_prompt(
     *,
     has_reference: bool = False,
     context: str = "",
+    visual_override: str = "",
 ) -> dict[str, Any]:
     """Adaptador mínimo: pedido del usuario en lenguaje natural → modelo de imagen.
 
@@ -713,8 +770,11 @@ def build_direct_image_prompt(
     entiende mejor la descripción directa. Sin reescritura de escena, sin historial
     (el contexto mezclaba temas de turnos previos) y sin «TEXTOS EXACTOS» inventados
     a partir del brief.
+
+    ``visual_override``: escena enriquecida por el expander (luz/composición). La
+    política de texto (NONE / DECORATIVE / LITERAL) sale siempre del ancla.
     """
-    _ = context  # historial ignorado a propósito
+    _ = context  # historial crudo ignorado a propósito
     from app.services.gemini_images import (
         strip_image_generation_instruction,
         strip_image_prompt_meta,
@@ -729,21 +789,26 @@ def build_direct_image_prompt(
     scene = strip_image_prompt_meta(strip_image_generation_instruction(cleaned)).strip()
     if not scene:
         scene = cleaned or raw
+    override = strip_image_prompt_meta((visual_override or "").strip())
+    if override:
+        scene = override
 
     quoted = extract_quoted_phrases(raw)
-    wants_text = bool(prompt_requires_ideogram_text(raw) or quoted)
+    mode = resolve_image_text_mode(raw)
+    wants_text = mode == "literal"
     wants_ced = user_requests_ced_branding(raw)
+    allow_ui = image_text_mode_allows_ui(mode, raw)
 
     parts: list[str] = [scene]
     if has_reference:
         parts.append("Use the attached image only as style/composition reference.")
     if wants_ced:
         parts.append(
-            "Style with CED brand identity when relevant (futuristic cyan/blue HUD)."
+            "Style with CED brand identity when relevant (futuristic cyan/blue HUD, "
+            "dark developer atmosphere, premium UI glow)."
         )
     parts.append(_FRAME_SAFE_RULE)
     if wants_text:
-        # El usuario ya dijo qué poner («EN TEXTO», «que diga…»). Solo anti-fuga de comando.
         parts.append(
             "Include the requested labels as clear legible on-image text. "
             "Every word must be complete and correctly spelled. "
@@ -754,6 +819,10 @@ def build_direct_image_prompt(
         parts.append(_SPELLING_STRICT_RULE)
         if quoted:
             parts.append(format_verbatim_image_copy(quoted))
+        if allow_ui:
+            parts.append(_DECORATIVE_UI_RULE)
+    elif allow_ui:
+        parts.append(_DECORATIVE_UI_RULE)
     else:
         parts.append(
             "No text, letters, titles, captions, subtitles, or watermarks anywhere "
@@ -765,6 +834,7 @@ def build_direct_image_prompt(
         "visual_brief": scene,
         "overlay_lines": [],
         "wants_literal_text": wants_text,
+        "text_mode": mode,
         "technical_prompt": prompt,
         "prompt": prompt,
     }

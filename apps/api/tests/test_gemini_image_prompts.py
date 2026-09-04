@@ -8,6 +8,7 @@ from app.services.chat_intents import (
 from app.services.gemini_images import (
     build_image_generation_prompts,
     prepare_image_prompt,
+    rewrite_protected_brand_marks,
     strip_image_generation_instruction,
 )
 from app.services.text_chat import _format_image_generation_error
@@ -189,3 +190,13 @@ def test_format_image_generation_error_avoids_duplicate_prefix():
         _format_image_generation_error("No pude generar la imagen: ya falló")
         == "No pude generar la imagen: ya falló"
     )
+
+
+def test_rewrite_protected_brand_marks_avoids_official_logos():
+    out = rewrite_protected_brand_marks(
+        "Una imagen con el logo oficial de PM y el logo oficial de CED uniéndose"
+    )
+    low = out.lower()
+    assert "logo oficial" not in low
+    assert "wordmark" in low
+    assert "trademarked" in low or "official corporate logos" in low

@@ -15,96 +15,23 @@ import {
   fetchWhatsAppConnectConfig,
   fetchWhatsAppFlows,
   fetchWhatsAppMessages,
+  fetchWhatsAppMissions,
   fetchWhatsAppStatus,
   patchWhatsAppFlow,
   type WhatsAppFlow,
   type WhatsAppMessage,
+  type WhatsAppMissionContact,
   type WhatsAppStatus,
   type WhatsAppTemplate,
 } from "@/lib/api/whatsapp";
-
-type FbAuth = {
-  authResponse?: { code?: string };
-};
-
-declare global {
-  interface Window {
-    FB?: {
-      init: (opts: Record<string, unknown>) => void;
-      login: (
-        cb: (res: FbAuth) => void,
-        opts: Record<string, unknown>,
-      ) => void;
-    };
-    fbAsyncInit?: () => void;
-  }
-}
-
-function facebookApiVersion(raw: string): string {
-  const v = (raw || "v21.0").trim();
-  return v.startsWith("v") ? v : `v${v}`;
-}
-
-function loadFacebookSdk(appId: string, apiVersion: string): Promise<void> {
-  const version = facebookApiVersion(apiVersion);
-  const init = () => {
-    if (!window.FB) {
-      throw new Error("Facebook SDK no disponible");
-    }
-    window.FB.init({
-      appId,
-      cookie: true,
-      xfbml: false,
-      version,
-    });
-  };
-  if (window.FB) {
-    init();
-    return Promise.resolve();
-  }
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const ok = () => {
-      if (settled) return;
-      settled = true;
-      try {
-        init();
-        resolve();
-      } catch (err) {
-        reject(err);
-      }
-    };
-    const fail = (message: string) => {
-      if (settled) return;
-      settled = true;
-      reject(new Error(message));
-    };
-    window.fbAsyncInit = ok;
-    if (!document.getElementById("facebook-jssdk")) {
-      const script = document.createElement("script");
-      script.id = "facebook-jssdk";
-      script.src = "https://connect.facebook.net/en_US/sdk.js";
-      script.async = true;
-      script.onerror = () =>
-        fail(
-          "No se pudo cargar el SDK de Facebook (bloqueo del navegador o red). Desactiva el bloqueador en ced-castillo.com e inténtalo de nuevo.",
-        );
-      document.body.appendChild(script);
-    }
-    window.setTimeout(() => {
-      if (window.FB) ok();
-      else
-        fail(
-          "El SDK de Facebook no cargó. En la app de Meta: Facebook Login → Settings → activa Login with the JavaScript SDK y añade ced-castillo.com en Allowed Domains.",
-        );
-    }, 8000);
-  });
-}
+import { WhatsAppConnectWizard } from "@/components/whatsapp/WhatsAppConnectWizard";
 
 export function WhatsAppPanel() {
   const [status, setStatus] = useState<WhatsAppStatus | null>(null);
   const [flows, setFlows] = useState<WhatsAppFlow[]>([]);
   const [messages, setMessages] = useState<WhatsAppMessage[]>([]);
+  const [missions, setMissions] = useState<WhatsAppMissionContact[]>([]);
+  const [hud, setHud] = useState({ close_ready: 0, leak_risk: 0, needs_human: 0 });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [name, setName] = useState("Precio");
@@ -125,21 +52,30 @@ export function WhatsAppPanel() {
   const [goal, setGoal] = useState("");
   const [ctaUrl, setCtaUrl] = useState("");
   const [ctaLabel, setCtaLabel] = useState("");
+  const [d360Key, setD360Key] = useState("");
+  const [d360PhoneId, setD360PhoneId] = useState("");
+  const [d360Display, setD360Display] = useState("");
+  const [addonPrice, setAddonPrice] = useState(29);
+  const [hubUrl, setHubUrl] = useState("https://hub.360dialog.com/");
 
   const refresh = useCallback(async () => {
-    const [st, fl, msgs] = await Promise.all([
+    const [st, fl, msgs, miss] = await Promise.all([
       fetchWhatsAppStatus(),
       fetchWhatsAppFlows(),
       fetchWhatsAppMessages(),
+      fetchWhatsAppMissions(),
     ]);
     if (st) {
       setStatus(st);
       setGoal(st.automation_goal || "");
       setCtaUrl(st.automation_cta_url || "");
       setCtaLabel(st.automation_cta_label || "");
+      if (typeof st.addon_price_usd === "number") setAddonPrice(st.addon_price_usd);
     }
     setFlows(fl);
     setMessages(msgs);
+    setMissions(miss.contacts);
+    setHud(miss.hud);
     if (st?.connected) {
       try {
         const t = await fetchWhatsAppTemplates();
@@ -154,101 +90,43 @@ export function WhatsAppPanel() {
 
   useEffect(() => {
     void refresh();
+    void fetchWhatsAppConnectConfig().then((cfg) => {
+      if ("error" in cfg) return;
+      if (typeof cfg.addon_price_usd === "number") setAddonPrice(cfg.addon_price_usd);
+      if (cfg.d360_hub_url) setHubUrl(cfg.d360_hub_url);
+    });
   }, [refresh]);
 
-  const connect = async () => {
+  const connect360 = async () => {
     setBusy(true);
     setError(null);
     try {
-      const cfg = await fetchWhatsAppConnectConfig();
-      if ("error" in cfg) {
-        setError(cfg.error);
-        return;
-      }
-      if (!cfg.config_id) {
-        setError(
-          "Falta el config_id de WhatsApp Embedded Signup. En developers.facebook.com → tu app (tipo Business) → Facebook Login for Business → Configurations → Create from template → “WhatsApp Embedded Signup Configuration With 60 Expiration Token”. Copia el Configuration ID. En Railway, servicio API (no web), variable WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID. Redeploy y vuelve a Conectar.",
-        );
-        return;
-      }
-
-      let wabaId = "";
-      let phoneNumberId = "";
-      const onMessage = (event: MessageEvent) => {
-        if (
-          event.origin !== "https://www.facebook.com" &&
-          event.origin !== "https://web.facebook.com" &&
-          !event.origin.endsWith(".facebook.com")
-        ) {
-          return;
-        }
-        try {
-          const data = JSON.parse(String(event.data));
-          if (data.type !== "WA_EMBEDDED_SIGNUP") return;
-          const info = data.data || {};
-          wabaId = String(info.waba_id || info.wabaId || "");
-          phoneNumberId = String(
-            info.phone_number_id || info.phoneNumberId || "",
-          );
-        } catch {
-          /* ignore */
-        }
-      };
-      window.addEventListener("message", onMessage);
-      const appId = cfg.app_id || cfg.app_id;
-      const apiVersion = cfg.api_version || cfg.api_version;
-      const configId = cfg.config_id || cfg.config_id;
-      if (!appId) {
-        setError("META_APP_ID no llegó desde la API. Revísalo en Railway (servicio API).");
-        return;
-      }
-      await loadFacebookSdk(appId, apiVersion);
-      const fb = window.FB;
-      if (!fb) {
-        setError(
-          "Facebook SDK no está listo. Añade ced-castillo.com en Allowed Domains for the JavaScript SDK.",
-        );
-        return;
-      }
-      await new Promise<void>((resolve) => {
-        fb.login((res) => {
-          const code = res.authResponse?.code;
-          window.removeEventListener("message", onMessage);
-          void (async () => {
-            try {
-              if (!code && !wabaId) {
-                setError("No se completó el alta de WhatsApp en Meta.");
-                return;
-              }
-              const result = await connectWhatsApp({
-                code: code || undefined,
-                waba_id: wabaId || undefined,
-                phone_number_id: phoneNumberId || undefined,
-              });
-              if (result.error) setError(result.error);
-              await refresh();
-            } finally {
-              resolve();
-            }
-          })();
-        }, {
-            config_id: configId,
-            response_type: "code",
-            override_default_response_type: true,
-            extras: {
-              setup: {},
-              featureType: "",
-              sessionInfoVersion: "3",
-            },
-          },
-        );
+      const result = await connectWhatsApp({
+        provider: "360dialog",
+        api_key: d360Key.trim(),
+        phone_number_id: d360PhoneId.trim() || undefined,
+        display_phone: d360Display.trim() || undefined,
       });
+      if (result.error) {
+        setError(result.error);
+        return;
+      }
+      if (goal.trim() || ctaUrl.trim() || ctaLabel.trim()) {
+        const saved = await saveWhatsAppAutomation({
+          goal,
+          cta_url: ctaUrl,
+          cta_label: ctaLabel,
+        });
+        if (saved.error) setError(saved.error);
+      }
+      setD360Key("");
+      await refresh();
     } catch (err) {
-      const message =
+      setError(
         err instanceof Error && err.message.trim()
           ? err.message
-          : "Error al conectar WhatsApp.";
-      setError(message);
+          : "No se pudo conectar tu WhatsApp. Revisa los datos del paso 3 e inténtalo de nuevo.",
+      );
     } finally {
       setBusy(false);
     }
@@ -276,66 +154,77 @@ export function WhatsAppPanel() {
     <div className="mx-auto max-w-2xl space-y-6 px-4 py-6">
       <div>
         <h1 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wide text-[var(--ced-text-primary)] sm:text-xl">
-          WhatsApp
+          WhatsApp con CED
         </h1>
         <p className="mt-1 text-sm text-[var(--ced-text-muted)]">
-          Conecta el número, envía mensajes, administra plantillas de Meta y deja
-          que CED responda WhatsApp con el mismo conocimiento que el chat (si no
-          hay una palabra clave). El cliente escribe STOP para salir.
+          Conecta tu número y deja que CED responda por ti con la misma inteligencia
+          del chat. Tus clientes pueden escribir STOP para dejar de recibir mensajes.
         </p>
       </div>
 
       <section className="rounded border border-cyan-500/25 bg-black/40 p-4">
         {status?.connected ? (
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-sm text-emerald-200">
-              Conectado: {status.display_phone || status.phone_number_id}
-              {status.verified_name ? ` · ${status.verified_name}` : ""}
-            </p>
-            <button
-              type="button"
-              className="text-xs text-red-300 underline"
-              onClick={async () => {
-                await disconnectWhatsApp();
-                await refresh();
-              }}
-            >
-              Desconectar
-            </button>
+          <div className="space-y-3">
+            <div className="flex items-start gap-3 rounded-lg border border-emerald-500/40 bg-emerald-950/30 px-4 py-3">
+              <span className="mt-0.5 text-lg text-emerald-400" aria-hidden>
+                ●
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-emerald-100">
+                  ¡Listo! Tu WhatsApp ya está conectado a CED
+                </p>
+                <p className="mt-1 text-xs text-emerald-200/80">
+                  Funcionando · {status.display_phone || status.phone_number_id}
+                  {status.verified_name ? ` · ${status.verified_name}` : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 text-xs text-red-300 underline"
+                onClick={async () => {
+                  await disconnectWhatsApp();
+                  await refresh();
+                }}
+              >
+                Desconectar
+              </button>
+            </div>
           </div>
         ) : (
-          <div className="space-y-3">
-            <p className="text-sm text-cyan-100/80">
-              El número debe ser de WhatsApp Business (no el personal del
-              teléfono, salvo que lo migres a la API).
-            </p>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void connect()}
-              className="rounded border border-cyan-400/60 bg-cyan-950/50 px-3 py-2 text-xs font-bold tracking-wider text-cyan-100"
-            >
-              {busy ? "CONECTANDO…" : "CONECTAR NÚMERO"}
-            </button>
-          </div>
+          <WhatsAppConnectWizard
+            hubUrl={hubUrl}
+            addonPrice={addonPrice}
+            busy={busy}
+            error={error}
+            connectionKey={d360Key}
+            phoneId={d360PhoneId}
+            displayPhone={d360Display}
+            goal={goal}
+            ctaUrl={ctaUrl}
+            ctaLabel={ctaLabel}
+            onConnectionKeyChange={setD360Key}
+            onPhoneIdChange={setD360PhoneId}
+            onDisplayPhoneChange={setD360Display}
+            onGoalChange={setGoal}
+            onCtaUrlChange={setCtaUrl}
+            onCtaLabelChange={setCtaLabel}
+            onConnect={connect360}
+          />
         )}
-        {error ? <p className="mt-3 text-xs text-red-400">{error}</p> : null}
       </section>
 
       {status?.connected ? (
         <>
           <section className="rounded border border-cyan-500/25 bg-black/40 p-4 space-y-3">
             <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
-              OBJETIVO DE LA AUTOMATIZACIÓN
+              TU OBJETIVO
             </h2>
             <p className="text-xs text-cyan-100/60">
-              Cada cuenta CED conecta su propio número. Cuando alguien responde a
-              tu campaña, CED usa el mismo cerebro del chat y guía hacia lo que
-              definas aquí (grupo, enlace, llamada, etc.). Si tienes un flujo de
-              palabra clave como “hola”, páusalo para que no pise esta conversación.
+              CED clasifica a cada persona y busca llevarla hacia este objetivo. Puedes
+              cambiarlo cuando quieras.
             </p>
             <label className="block text-xs text-cyan-100/70">
-              ¿A qué quieres llevar a quien te escriba?
+              ¿A dónde quieres que CED guíe a quien te escriba?
               <textarea
                 value={goal}
                 onChange={(e) => setGoal(e.target.value)}
@@ -386,6 +275,51 @@ export function WhatsAppPanel() {
             >
               GUARDAR OBJETIVO
             </button>
+          </section>
+
+          {error ? (
+            <p className="rounded border border-red-500/40 bg-red-950/30 px-3 py-2 text-xs text-red-300">
+              {error}
+            </p>
+          ) : null}
+
+          <section className="rounded border border-amber-500/30 bg-black/40 p-4 space-y-3">
+            <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-amber-300">
+              HUD DE INTERVENCIÓN
+            </h2>
+            <p className="text-xs text-cyan-100/60">
+              Cierre ≥85% o duda crítica: CED te avisa para un toque humano.
+              Fuga = abandono por tono, no por clics.
+            </p>
+            <div className="flex flex-wrap gap-3 text-xs text-cyan-100">
+              <span>Listos para cerrar: {hud.close_ready}</span>
+              <span>Riesgo de fuga: {hud.leak_risk}</span>
+              <span>Toque humano: {hud.needs_human}</span>
+            </div>
+            {missions.length === 0 ? (
+              <p className="text-xs text-cyan-100/50">
+                Aún no hay contactos clasificados. Cuando escriban, verás su ADN
+                aquí. Ejecuta en Supabase la migración 039_whatsapp_cognitive.sql
+                si las columnas no existen.
+              </p>
+            ) : (
+              <ul className="space-y-1.5 text-xs text-cyan-100/85">
+                {missions.slice(0, 12).map((c) => (
+                  <li
+                    key={String(c.wa_from)}
+                    className="flex flex-wrap gap-x-3 gap-y-0.5 border-b border-cyan-900/40 pb-1"
+                  >
+                    <span className="font-mono">{c.wa_from}</span>
+                    <span>{c.prospect_dna}</span>
+                    <span>cierre {c.close_score}%</span>
+                    <span>fuga {c.leak_risk}%</span>
+                    {c.human_alert ? (
+                      <span className="text-amber-300">{c.human_alert}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           <section className="rounded border border-cyan-500/25 bg-black/40 p-4 space-y-3">

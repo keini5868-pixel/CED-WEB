@@ -341,14 +341,20 @@ body:has(.ced-studio-shell) {
   overflow: hidden;
   overscroll-behavior: none;
   padding-top: env(safe-area-inset-top, 0px);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  /* El compositor va al borde inferior; no dejar franja vacía bajo el chat. */
+  padding-bottom: 0;
 }
 
 /* Móvil: el logo no se meta bajo el notch / barra de estado. */
 @media (max-width: 639px) {
   .ced-studio-shell {
     padding-top: max(1.25rem, env(safe-area-inset-top, 0px));
-    padding-bottom: max(0.25rem, env(safe-area-inset-bottom, 0px));
+    padding-bottom: 0;
+  }
+
+  #ced-composer-bar,
+  #ced-composer-actions {
+    padding-bottom: 0;
   }
 }
 

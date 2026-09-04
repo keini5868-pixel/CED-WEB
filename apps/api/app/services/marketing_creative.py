@@ -22,14 +22,36 @@ from app.services.gemini_images import strip_image_generation_instruction
 CREATIVO_PROMPT_MARKER = "[[CREATIVO]]"
 
 _CREATIVE_TAIL_NOISE = re.compile(
-    r"\s*(?:"
-    r"y\s+que\s+.*(?:referencia|fondo|imegen|imagen|imajen)"
-    r"|(?:expli|espli)\w*.*(?:referencia|fondo|imegen|imagen)"
-    r"|(?:usa|utiliza)\w*\s+(?:esta|ese|la|el|mi)?\s*(?:imagen|foto|imegen|fotograf[ií]a)?\s*"
-    r"(?:de\s+)?(?:referencia\s+)?(?:en\s+el\s+)?(?:fondo|detr[aá]s|base)(?:\s+(?:del|de\s+el)\s+\w+)?"
-    r"|(?:usa|pon)\s+.*(?:referencia|fondo|detr[aá]s|imagen\s+adjunta)"
-    r").*$",
-    re.I | re.S,
+    r"(?is)"
+    r"(?:"
+    # Cola: «… y que uses la referencia en el fondo»
+    r"\s+y\s+que\s+.{0,100}?(?:referencia|fondo|imegen|imagen|imajen)\s*$"
+    r"|"
+    r"\s+(?:expli|espli)\w*.{0,100}?(?:referencia|fondo|imegen|imagen)\s*$"
+    r"|"
+    # Cola: «usa esta imagen de referencia en el fondo»
+    r"\s+(?:usa|utiliza)\w*\s+(?:esta|ese|la|el|mi)?\s*"
+    r"(?:imagen|foto|imegen|fotograf[ií]a)?\s*"
+    r"(?:de\s+)?(?:referencia\s+)?(?:en\s+el\s+)?"
+    r"(?:fondo|detr[aá]s|base)(?:\s+(?:del|de\s+el)\s+\w+)?\s*$"
+    r"|"
+    # Prefijo corto meta: «pon/usa de fondo [esto] y …» → dejar el resto creativo
+    r"^(?:usa|pon)\s+(?:de\s+)?(?:esta|este|la|el|mi)?\s*"
+    r"(?:imagen|foto|referencia)?\s*(?:de\s+)?"
+    r"(?:en\s+(?:el\s+)?)?(?:fondo|detr[aá]s|base)"
+    r"(?:\s+(?:este|esta|el|la|del|de\s+el|mi)\s+\w+)?"
+    r"(?:\s+y)?\s+"
+    r")"
+)
+
+# Solo meta, sin creativo detrás (p. ej. «usa esta imagen de referencia en el fondo»).
+_CREATIVE_FONDO_ONLY = re.compile(
+    r"(?is)^(?:usa|pon|utiliza)\w*\s+"
+    r"(?:de\s+)?(?:esta|este|la|el|mi)?\s*"
+    r"(?:imagen|foto|imegen|fotograf[ií]a|referencia)?\s*"
+    r"(?:de\s+)?(?:referencia\s+)?(?:en\s+(?:el\s+)?)?"
+    r"(?:fondo|detr[aá]s|base)"
+    r"(?:\s+\w+){0,8}\s*$"
 )
 _META_INSTRUCTION_FRAGMENT = re.compile(
     r"^(?:"
@@ -118,10 +140,12 @@ def strip_creative_user_noise(text: str) -> str:
     """Quita instrucciones meta («genera imagen», «usa referencia en fondo») del contenido."""
     t = strip_image_generation_instruction(text or "")
     t = normalize_creative_request_text(t)
-    t = _CREATIVE_TAIL_NOISE.sub("", t).strip()
-    t = _CREATIVE_HEAD_NOISE.sub("", t).strip()
-    t = re.sub(r"^\*+\s*", "", t)
-    return t.strip()
+    if _CREATIVE_FONDO_ONLY.match(t):
+        return ""
+    cleaned = _CREATIVE_TAIL_NOISE.sub("", t).strip()
+    cleaned = _CREATIVE_HEAD_NOISE.sub("", cleaned).strip()
+    cleaned = re.sub(r"^\*+\s*", "", cleaned)
+    return cleaned.strip()
 
 
 def _is_meta_instruction_fragment(text: str) -> bool:
@@ -490,11 +514,22 @@ def build_marketing_creative_brief(
     )
 
     if has_reference_image:
+        from app.services.copy_quality import user_requests_background_change
+
+        if user_requests_background_change(user_text):
+            bg_rule = (
+                "Cambia el fondo según el pedido del usuario; "
+                "conserva el sujeto/persona nítido."
+            )
+        else:
+            bg_rule = (
+                "el elemento principal del tema debe verse nítido (centro o fondo). "
+                "Diseño limpio, fondo suave desenfocado"
+            )
         internal = (
             f"{CREATIVO_PROMPT_MARKER} "
             "Creativo cuadrado 1:1 para redes sociales. "
-            "Usa la foto adjunta: el elemento principal del tema debe verse nítido (centro o fondo). "
-            "Diseño limpio, fondo suave desenfocado, tipografía sans-serif grande. "
+            f"Usa la foto adjunta: {bg_rule}, tipografía sans-serif grande. "
             "Máximo 4 textos cortos en la imagen. "
             f"Tema: {subject}. "
         )

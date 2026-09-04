@@ -23,6 +23,7 @@ from app.services.chat_intents import (
     last_user_visual_context,
     parse_followup_image_prompt,
     parse_generate_image_prompt,
+    points_at_prior_visual,
     resolve_anaphoric_image_prompt,
     resolve_confirmed_image_prompt,
     user_requests_prior_reference,
@@ -184,7 +185,15 @@ def build_active_image_thread_context(
 def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> str:
     t = (text or "").strip()
     parsed = parse_generate_image_prompt(t)
-    if parsed and is_vague_image_subject(parsed):
+    needs_thread = bool(
+        parsed
+        and (
+            is_vague_image_subject(parsed)
+            or points_at_prior_visual(t)
+            or points_at_prior_visual(parsed)
+        )
+    )
+    if needs_thread:
         resolved = resolve_anaphoric_image_prompt(t, history)
         if resolved:
             return resolved
@@ -324,7 +333,14 @@ def resolve_voice_image_prompt(
     t = (user_text or "").strip()
     llm = (llm_prompt or "").strip()
     if is_generate_image_intent(t):
-        return effective_user_prompt(t, history) or t
+        parsed = parse_generate_image_prompt(t)
+        if parsed and (
+            is_vague_image_subject(parsed)
+            or points_at_prior_visual(t)
+            or points_at_prior_visual(parsed)
+        ):
+            return effective_user_prompt(t, history) or t
+        return t
     if is_image_choice_confirmation(t):
         if looks_like_visual_image_prompt(llm):
             return llm
@@ -403,14 +419,18 @@ def run_chat_image_generation(
         build_reference_text_edit_prompt,
         compose_persuasive_overlay_lines,
         prompt_requires_ideogram_text,
+        resolve_image_text_mode,
         summarize_overlay_labels_for_image,
+        user_requests_ced_branding,
     )
+    from app.services.image_art_expander import expand_image_scene
 
     user_text = (text or "").strip()
     effective = effective_user_prompt(user_text, history)
-    # Texto crítico (comillas, «que diga», flyer/banner/cartel) → GPT Image / Ideogram.
-    # Nano Banana 2 no garantiza ortografía (p.ej. «equipo» sin la u).
-    wants_literal_text = prompt_requires_ideogram_text(user_text)
+    # Texto crítico: brief fusionado (comillas en el concepto) gana al comando corto.
+    wants_literal_text = prompt_requires_ideogram_text(
+        effective
+    ) or prompt_requires_ideogram_text(user_text)
     use_reference = allow_reference and should_use_reference_generation(
         user_text,
         history,
@@ -441,13 +461,33 @@ def run_chat_image_generation(
             success_reply = "Listo, señor. Aquí está su creativo publicitario."
         model_prompt = effective
 
-    # Path directo (Google / Nano Banana): lenguaje natural, sin orquestador pesado
-    # ni historial — el historial mezclaba temas (robot + mapa, etc.).
-    # SIEMPRE gana sobre internal_prompt de creativos (evita reescritura Claude/marketing).
+    text_mode = resolve_image_text_mode(effective)
+    visual_thread_parts: list[str] = []
+    user_ctx = last_user_visual_context(history)
+    if user_ctx:
+        visual_thread_parts.append(user_ctx)
+    assistant_desc = last_assistant_visual_description(history)
+    if assistant_desc:
+        visual_thread_parts.append(assistant_desc)
+    visual_thread = "\n\n".join(visual_thread_parts)
+    enriched, expander_status = expand_image_scene(
+        effective,
+        visual_thread,
+        text_mode,
+    )
+    logger.info(
+        "[CHAT:IMG-GEN] expander=%s text_mode=%s scene=%s",
+        expander_status,
+        text_mode,
+        "rich" if enriched else "fallback_to_direct",
+    )
+
+    # Path directo: el expander solo viste la escena; la política de texto manda siempre.
     direct = build_direct_image_prompt(
         effective,
         has_reference=bool(ref_payload),
         context="",
+        visual_override=enriched or "",
     )
     overlay_lines: list[str] = []
     if direct.get("wants_literal_text"):
@@ -629,6 +669,12 @@ def run_chat_image_generation(
                 f"{reply}\n\nCon un plan de pago (desde Starter) puedo usar un motor "
                 "especializado en texto (GPT Image) para que se vea más legible, señor."
             )
+
+    if user_requests_ced_branding(effective) and text_mode in ("decorative", "literal"):
+        reply = (
+            f"{reply} ¿La quieres en otra pose, flotando sobre tu interfaz, "
+            "o en fondo verde para recortarla en tus videos?"
+        )
 
     return {
         "ok": True,

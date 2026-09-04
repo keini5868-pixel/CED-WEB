@@ -97,6 +97,10 @@ _MASS_BARE = re.compile(
 _CANCEL = re.compile(
     r"(?is)^\s*(?:cancelar?|cancela|no|mejor\s+no|olvida(?:lo)?)\s*[.!]?\s*$"
 )
+_EASY_CONFIRM = re.compile(
+    r"(?is)^\s*(?:s[ií]|ok(?:ay)?|vale|dale|adelante|confirmo|hazlo|procede|"
+    r"borra(?:lo)?|elim[ií]nalo)(?:\s+por\s+favor)?[\s.!,]*$"
+)
 
 
 def _client():
@@ -140,6 +144,22 @@ def detect_mass_delete_group(text: str, *, default_group: str | None = None) -> 
 def matches_strong_confirm(text: str, group: str) -> bool:
     n = _norm(text)
     return n in (CONFIRM_PHRASES.get(group) or ())
+
+
+def matches_pending_confirm(text: str, group: str) -> bool:
+    """Tras el aviso, basta un sí / dale / repetir el pedido de borrado."""
+    if matches_strong_confirm(text, group):
+        return True
+    if _EASY_CONFIRM.match((text or "").strip()):
+        return True
+    if detect_mass_delete_group(text) == group:
+        return True
+    n = _norm(text)
+    if n.startswith("si") and any(
+        w in n for w in ("borra", "elimina", "confirma", "adelante", "dale")
+    ):
+        return True
+    return False
 
 
 def confirm_phrase_for(group: str) -> str:
@@ -350,13 +370,37 @@ def purge_expired(user_id: str | None = None) -> int:
     return deleted
 
 
+def _commit_trash(user_id: str, group: str) -> dict[str, Any]:
+    from app.services import voice_client_session as vcs
+
+    result = trash_group(user_id, group)
+    vcs.clear_trash_pending(user_id)
+    n = int(result.get("count") or 0)
+    if n <= 0:
+        return {
+            "spoken": "No había nada activo que enviar a la papelera, señor.",
+            "deleted": 0,
+            "trashed": 0,
+            "group": group,
+        }
+    return {
+        "spoken": (
+            f"Listo. Envié {n} elemento(s) a la papelera. "
+            "Puede restaurarlos durante 30 días; después se eliminan solos."
+        ),
+        "deleted": n,
+        "trashed": n,
+        "group": group,
+    }
+
+
 def try_trash_turn(
     user_id: str | None,
     text: str,
     *,
     default_group: str | None = None,
 ) -> dict[str, Any] | None:
-    """Intercepta borrado masivo: pide confirmación reforzada y envía a papelera."""
+    """Borrado masivo: un aviso y un «sí» (o repetir el pedido). Va a papelera 30 días."""
     if not user_id or not (text or "").strip():
         return None
     from app.services import voice_client_session as vcs
@@ -369,43 +413,20 @@ def try_trash_turn(
         if _CANCEL.match((text or "").strip()):
             vcs.clear_trash_pending(user_id)
             return {"spoken": "Cancelado, señor. No borré nada."}
-        if matches_strong_confirm(text, pending_group):
-            result = trash_group(user_id, pending_group)
-            vcs.clear_trash_pending(user_id)
-            n = int(result.get("count") or 0)
-            if n <= 0:
-                return {
-                    "spoken": (
-                        "No había nada activo que enviar a la papelera, señor."
-                    )
-                }
+        if matches_pending_confirm(text, pending_group):
+            return _commit_trash(user_id, pending_group)
+        if group and group != pending_group:
+            vcs.set_trash_pending(user_id, {"group": group})
             return {
                 "spoken": (
-                    f"Listo. Envié {n} elemento(s) a la papelera. "
-                    "Puede restaurarlos durante 30 días; después se eliminan solos."
-                ),
-                "trashed": n,
-                "group": pending_group,
-            }
-        if group:
-            pending_group = group
-            vcs.set_trash_pending(user_id, {"group": pending_group})
-            phrase = confirm_phrase_for(pending_group)
-            return {
-                "spoken": (
-                    f"Esto enviará {_label_for_group(pending_group)} a la papelera, "
-                    f"no se borra para siempre todavía. Para confirmar, diga exactamente: "
-                    f"«{phrase}»."
+                    f"Esto enviará {_label_for_group(group)} a la papelera "
+                    f"(30 días para recuperar). ¿Seguro? Diga sí o cancelar."
                 ),
                 "needs_confirm": True,
-                "group": pending_group,
+                "group": group,
             }
-        phrase = confirm_phrase_for(pending_group)
         return {
-            "spoken": (
-                "Un «sí» no basta, señor. Para confirmar el borrado, "
-                f"diga exactamente: «{phrase}». O diga cancelar."
-            ),
+            "spoken": "¿Seguro? Diga sí para enviar a la papelera, o cancelar.",
             "needs_confirm": True,
             "group": pending_group,
         }
@@ -419,13 +440,13 @@ def try_trash_turn(
                 )
             }
         return None
+    if matches_strong_confirm(text, group):
+        return _commit_trash(user_id, group)
     vcs.set_trash_pending(user_id, {"group": group})
-    phrase = confirm_phrase_for(group)
     return {
         "spoken": (
             f"Esto enviará {_label_for_group(group)} a la papelera "
-            f"(se puede restaurar 30 días). Un «sí» no basta. "
-            f"Para confirmar, diga exactamente: «{phrase}»."
+            f"(se puede restaurar 30 días). ¿Seguro? Diga sí o cancelar."
         ),
         "needs_confirm": True,
         "group": group,

@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from app.services.user_trash import (
     detect_mass_delete_group,
+    matches_pending_confirm,
     matches_strong_confirm,
     try_trash_turn,
 )
@@ -22,36 +23,42 @@ def test_detect_finance_and_historial_scopes():
     assert detect_mass_delete_group("hola") is None
 
 
-def test_plain_yes_is_not_strong_confirm():
+def test_plain_yes_confirms_after_warning():
     assert matches_strong_confirm("sí", "finance") is False
-    assert matches_strong_confirm("si", "historial") is False
-    assert matches_strong_confirm("dale", "finance") is False
-    assert matches_strong_confirm("sí, borra todo el historial de finanzas", "finance")
+    assert matches_pending_confirm("sí", "finance") is True
+    assert matches_pending_confirm("dale", "finance") is True
+    assert matches_pending_confirm("sí, borra todo el historial de finanzas", "finance")
     assert matches_strong_confirm("sí, borra todo el historial", "historial")
     assert not matches_strong_confirm(
         "sí, borra todo el historial", "finance"
     )
 
 
-def test_trash_turn_asks_then_requires_exact_phrase():
+def test_trash_turn_asks_once_then_yes_is_enough():
     uid = "u-trash-1"
     vcs._sessions.pop(uid, None)
     first = try_trash_turn(uid, "borra todo de finanzas")
     assert first is not None
     assert first.get("needs_confirm") is True
-    assert "sí, borra todo el historial de finanzas" in first["spoken"].lower()
-
-    weak = try_trash_turn(uid, "sí")
-    assert weak is not None
-    assert weak.get("needs_confirm") is True
-    assert "no basta" in weak["spoken"].lower()
+    assert "sí" in first["spoken"].lower()
+    assert "exactamente" not in first["spoken"].lower()
 
     with patch("app.services.user_trash.trash_group", return_value={"ok": True, "count": 3}):
-        done = try_trash_turn(uid, "sí, borra todo el historial de finanzas")
+        done = try_trash_turn(uid, "sí")
     assert done is not None
-    assert done.get("trashed") == 3
+    assert done.get("deleted") == 3
     assert "papelera" in done["spoken"].lower()
     assert vcs.get_trash_pending(uid) is None
+
+
+def test_repeat_delete_command_confirms():
+    uid = "u-trash-repeat"
+    vcs._sessions.pop(uid, None)
+    try_trash_turn(uid, "borra todo de finanzas")
+    with patch("app.services.user_trash.trash_group", return_value={"ok": True, "count": 2}):
+        done = try_trash_turn(uid, "borra todo de finanzas")
+    assert done is not None
+    assert done.get("deleted") == 2
 
 
 def test_cancel_aborts_pending_trash():

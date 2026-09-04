@@ -144,6 +144,12 @@ async def voice_chat_image(
             )
         except Exception:  # noqa: BLE001
             logger.exception("[VOICE_UPLOAD] meta draft attach failed user=%s", user_id[:8])
+        vcs.push_studio_chat_event(
+            user_id,
+            kind="image",
+            text="",
+            filename=filename,
+        )
         logger.info(
             "[VOICE_UPLOAD] user=%s file=%s size=%s status=ok call=%s meta_draft=%s",
             user_id[:8],
@@ -182,6 +188,12 @@ async def voice_chat_image(
         url,
         filename=filename,
         session_id=call_id or None,
+    )
+    vcs.push_studio_chat_event(
+        user_id,
+        kind="image",
+        text="",
+        filename=filename,
     )
     meta_attach = None
     try:

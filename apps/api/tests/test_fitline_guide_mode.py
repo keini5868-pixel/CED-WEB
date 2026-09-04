@@ -73,8 +73,19 @@ def test_activate_phrases():
     assert is_guide_activate_phrase("soy nuevo, guíame")
     assert is_guide_activate_phrase("enséñame el negocio desde cero")
     assert is_guide_activate_phrase("activa modo guía")
+    assert is_guide_activate_phrase("cómo entro a la tienda")
+    assert is_guide_activate_phrase("checklist de tienda")
     assert not is_guide_activate_phrase("hola cómo estás")
     assert not is_guide_activate_phrase("precio de Restorate")
+
+
+def test_store_entry_guide_step_exists():
+    ids = [s["id"] for s in GUIDE_STEPS]
+    assert "store_entry" in ids
+    step = next(s for s in GUIDE_STEPS if s["id"] == "store_entry")
+    assert "Partner Area" in step["teach"]
+    assert "Pagar" in step["teach"] or "Reiniciar" in step["teach"]
+    assert "Sponsor" in step["teach"] or "patrocinador" in step["teach"].lower()
 
 
 def test_advance_and_reexplain_phrases():

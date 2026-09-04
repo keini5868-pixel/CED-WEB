@@ -414,3 +414,46 @@ def test_graphic_formats_require_precise_text_unless_sin_texto():
     assert prompt_requires_precise_text("flyer sin texto") is False
     assert prompt_requires_precise_text("genera una imagen publicitaria de mi evento") is False
     assert prompt_requires_precise_text("diseño con las características de mi producto") is False
+
+
+def test_image_text_mode_literal_beats_decorative():
+    from app.services.copy_quality import build_direct_image_prompt, resolve_image_text_mode
+
+    flyer = 'Haz un flyer de FitLine con el texto "Energía pura"'
+    assert resolve_image_text_mode(flyer) == "literal"
+    direct = build_direct_image_prompt(flyer)
+    assert direct["text_mode"] == "literal"
+    low = direct["prompt"].lower()
+    assert "energía pura" in low or "energia pura" in low
+    assert "illegible technical interface" not in low
+
+    carousel = (
+        'Texto overlay: "Tu asistente de IA no es un chatbot genérico". '
+        "Rostro holográfico de CED, estilo Jarvis, paleta cian."
+    )
+    assert resolve_image_text_mode(carousel) == "literal"
+    mixed = build_direct_image_prompt(carousel)
+    assert mixed["wants_literal_text"] is True
+    assert "illegible technical interface" in mixed["prompt"]
+    assert "chatbot genérico" in mixed["prompt"] or "chatbot generico" in mixed["prompt"].lower()
+
+
+def test_image_text_mode_decorative_hologram_not_organic_false_positive():
+    from app.services.copy_quality import build_direct_image_prompt, resolve_image_text_mode
+
+    robot = "Ok genera esa imagen. Robot holográfico de CED flotando sobre una base."
+    assert resolve_image_text_mode(robot) == "decorative"
+    prompt = build_direct_image_prompt(robot)["prompt"]
+    assert "No text, letters" not in prompt
+    assert "illegible technical interface" in prompt
+    assert "cyan" in prompt.lower() or "ced" in prompt.lower()
+
+    eagle = "Un águila volando sobre las montañas"
+    assert resolve_image_text_mode(eagle) == "none"
+    assert "No text, letters" in build_direct_image_prompt(eagle)["prompt"]
+
+    bath = "Un baño moderno con un espejo LED y una pantalla"
+    assert resolve_image_text_mode(bath) == "none"
+
+    discount = "generame una imagen del producto con el código de descuento en la mesa"
+    assert resolve_image_text_mode(discount) == "none"

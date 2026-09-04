@@ -13,6 +13,7 @@ import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
 import {
   mergeTranscriptChunk,
   resolveAgentTranscriptMerge,
+  shouldSkipDuplicateAgentLine,
 } from "@/lib/voice/transcriptAccumulator";
 
 export type HudFeedKind = "voice" | "news" | "stat" | "report" | "image";
@@ -138,16 +139,15 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
                 previousPartial: Boolean(existing.partial),
               });
               if (decision.action === "new") {
-                const nextItem: HudFeedItem = {
-                  id: `v-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-                  kind,
+                const replaced: HudFeedItem = {
+                  ...existing,
                   text: decision.text,
                   at: Date.now(),
-                  role,
                   partial,
-                  streamKey,
+                  kind,
+                  role,
                 };
-                return [nextItem, ...prev].slice(0, MAX_ITEMS);
+                return [replaced, ...prev.filter((_, i) => i !== idx)].slice(0, MAX_ITEMS);
               }
               const merged: HudFeedItem = {
                 ...existing,
@@ -168,6 +168,16 @@ export function HudFeedProvider({ children }: { children: ReactNode }) {
               role,
             };
             return [merged, ...prev.filter((_, i) => i !== idx)].slice(0, MAX_ITEMS);
+          }
+        }
+
+        if (role === "model" && !partial) {
+          const recent = prev
+            .filter((item) => item.role === "model" && item.kind === "report")
+            .slice(0, 6)
+            .map((item) => item.text);
+          if (shouldSkipDuplicateAgentLine(recent, trimmed)) {
+            return prev;
           }
         }
 

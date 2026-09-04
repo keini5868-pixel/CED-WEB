@@ -20,7 +20,7 @@ def test_generate_image_intent_keywords():
     assert is_generate_image_intent("creame una imagen de venezuela con empatia")
     assert is_generate_image_intent("créame un diseño para instagram")
     assert is_generate_image_intent("hazme una foto de un atardecer")
-    assert is_generate_image_intent("Necesito una imagen para mi perfil")
+    assert not is_generate_image_intent("Necesito una imagen para mi perfil")
     assert is_generate_image_intent("Diseña un creativo para Meta Ads")
     assert parse_generate_image_prompt("Generame una imagen de un castillo digital") == (
         "un castillo digital"

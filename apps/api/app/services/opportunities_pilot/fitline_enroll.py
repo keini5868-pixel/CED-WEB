@@ -11,11 +11,21 @@ FITLINE_SPONSOR_VERIFY = (
     "Así queda vinculado al equipo correcto."
 )
 
+FITLINE_STORE_ENTRY_HINTS = (
+    "En el registro: elija bien el país, confirme el correo y, si hay un primer "
+    "pedido pendiente, use «Pagar» para retomar o «Reiniciar» para cancelar — "
+    "no mezcle esos botones. "
+    "Después del alta, entre a Partner Area con el mismo correo; si el login "
+    "falla al inicio, el registro puede no estar procesado aún. "
+    "Guarde su número de cliente y el correo de confirmación."
+)
+
 FITLINE_ENROLL_GUIDE = (
     "Le abro Oportunidades, señor. "
     "Baje hasta el final de la ficha FitLine: ahí está el botón de inscripción. "
     "Dele clic y complete el registro en la plataforma de PM International, paso a paso. "
     f"{FITLINE_SPONSOR_VERIFY} "
+    f"{FITLINE_STORE_ENTRY_HINTS} "
     "Si ya se inscribió y quiere su propio enlace de patrocinio, en esa misma sección puede editarlo."
 )
 

@@ -346,7 +346,8 @@ export class CedRetellClient {
         if (this.lastTurntaking !== "agent_turn") {
           this.currentAgentStreamKey = "";
           this.lastAgentLine = "";
-          this.lastPersistedAgentLine = "";
+          // No borrar lastPersistedAgentLine: Retell reenvía el turno anterior
+          // al empezar el siguiente y eso duplicaba la burbuja en el HUD.
         }
       }
       if (turntaking === "user_turn") {

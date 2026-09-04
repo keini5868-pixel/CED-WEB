@@ -10,14 +10,19 @@ export type WhatsAppStatus = {
   automation_goal?: string;
   automation_cta_url?: string;
   automation_cta_label?: string;
+  provider?: string | null;
+  addon_price_usd?: number;
 };
 
 export type WhatsAppConnectConfig = {
-  app_id: string;
+  app_id: string | null;
   config_id: string | null;
   api_version: string;
   webhook_url: string;
   verify_token_configured: boolean;
+  d360_enabled?: boolean;
+  d360_hub_url?: string;
+  addon_price_usd?: number;
 };
 
 export type WhatsAppFlow = {
@@ -67,6 +72,9 @@ export async function connectWhatsApp(payload: {
   code?: string;
   waba_id?: string;
   phone_number_id?: string;
+  provider?: string;
+  api_key?: string;
+  display_phone?: string;
 }): Promise<{ ok?: boolean; error?: string; display_phone?: string | null }> {
   const res = await proxyFetch("whatsapp/connect", {
     method: "POST",
@@ -215,6 +223,45 @@ export async function sendWhatsAppTemplate(body: {
   if (!res.ok) return { error: data.detail || "No se pudo enviar la plantilla." };
   return {};
 }
+export type WhatsAppMissionContact = {
+  wa_from?: string | null;
+  prospect_dna?: string;
+  sentiment?: string;
+  close_score?: number;
+  leak_risk?: number;
+  human_alert?: string;
+  opted_out?: boolean;
+  last_inbound_at?: string | null;
+};
+
+export async function fetchWhatsAppMissions(): Promise<{
+  contacts: WhatsAppMissionContact[];
+  hud: { close_ready: number; leak_risk: number; needs_human: number };
+}> {
+  const empty = {
+    contacts: [] as WhatsAppMissionContact[],
+    hud: { close_ready: 0, leak_risk: 0, needs_human: 0 },
+  };
+  try {
+    const res = await proxyFetch("whatsapp/missions");
+    if (!res.ok) return empty;
+    const data = (await res.json()) as {
+      contacts?: WhatsAppMissionContact[];
+      hud?: { close_ready?: number; leak_risk?: number; needs_human?: number };
+    };
+    return {
+      contacts: data.contacts ?? [],
+      hud: {
+        close_ready: data.hud?.close_ready ?? 0,
+        leak_risk: data.hud?.leak_risk ?? 0,
+        needs_human: data.hud?.needs_human ?? 0,
+      },
+    };
+  } catch {
+    return empty;
+  }
+}
+
 export async function fetchWhatsAppMessages(): Promise<WhatsAppMessage[]> {
   const res = await proxyFetch("whatsapp/messages");
   if (!res.ok) return [];

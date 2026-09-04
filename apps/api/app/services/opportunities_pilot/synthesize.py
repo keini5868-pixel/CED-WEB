@@ -11,6 +11,7 @@ SECTION_ORDER = (
     ("social_responsibility", "Responsabilidad social"),
     ("products", "Catálogo FitLine (productos clave)"),
     ("how_it_works", "Cómo funciona"),
+    ("store_entry", "Entrar a la tienda / Partner Area (checklist)"),
     ("requirements", "Planes de inscripción"),
     ("income_potential", "Plan de compensación"),
     ("prospecting", "Prospección en redes"),

@@ -37,6 +37,19 @@ def test_blocks_publish_for_creative_with_image():
     assert not is_social_publish_intent(msg, with_image=True)
 
 
+def test_strip_keeps_flyer_after_pon_de_fondo():
+    from app.services.marketing_creative import strip_creative_user_noise
+
+    msg = "pon de fondo este producto y haz un flyer de venta con los beneficios"
+    cleaned = strip_creative_user_noise(msg)
+    assert "flyer" in cleaned.lower()
+    assert "beneficios" in cleaned.lower()
+    assert cleaned != ""
+    # Meta sola sí se vacía
+    assert strip_creative_user_noise("usa esta imagen de referencia en el fondo") == ""
+    assert strip_creative_user_noise("cambia el fondo a azul oscuro") == "cambia el fondo a azul oscuro"
+
+
 def test_explicit_publish_still_works():
     msg = "publica esta imagen en facebook"
     assert is_social_publish_intent(msg, with_image=True)

@@ -16,15 +16,23 @@ from app.config import get_settings
 from app.deps.auth import require_user_id
 from app.deps.plan_access import require_whatsapp
 from app.services import supabase_db
+from app.services.whatsapp_360 import (
+    configure_inbound_webhook,
+    is_360dialog,
+    list_templates_d360,
+    parse_channel_fields,
+    probe_api_key,
+)
 from app.services.whatsapp_cloud import (
     WhatsAppCloudError,
     create_message_template,
+    download_media_for_account,
     exchange_oauth_code,
     fetch_phone_numbers,
-    inbound_text_events,
+    inbound_message_events,
     list_message_templates,
-    send_template_message,
-    send_text_message,
+    send_template_for_account,
+    send_text_for_account,
     subscribe_waba_webhooks,
     verify_webhook_signature,
 )
@@ -51,6 +59,9 @@ class ConnectBody(BaseModel):
     waba_id: str | None = None
     phone_number_id: str | None = None
     access_token: str | None = None
+    provider: str | None = None
+    api_key: str | None = None
+    display_phone: str | None = None
 
 
 class AutomationBody(BaseModel):
@@ -120,25 +131,25 @@ def whatsapp_connect_config(user_id: str = Depends(require_user_id)) -> dict:
     config_id = settings.whatsapp_embedded_signup_config_id.strip() or (
         settings.meta_login_config_id.strip()
     )
-    if not app_id:
-        raise HTTPException(status_code=503, detail="META_APP_ID no configurado.")
+    webhook_url = f"{settings.api_public_url.rstrip('/')}/v1/whatsapp/webhook"
     return {
-        "app_id": app_id,
-        "app_id": app_id,
-        "config_id": config_id or None,
+        "app_id": app_id or None,
         "config_id": config_id or None,
         "api_version": settings.meta_api_version.strip() or "v21.0",
-        "api_version": settings.meta_api_version.strip() or "v21.0",
-        "webhook_url": f"{settings.api_public_url.rstrip('/')}/v1/whatsapp/webhook",
+        "webhook_url": webhook_url,
         "verify_token_configured": bool(settings.whatsapp_verify_token.strip()),
+        "d360_enabled": True,
+        "d360_hub_url": "https://hub.360dialog.com/",
+        "addon_price_usd": float(settings.whatsapp_addon_price_usd or 29),
     }
 
 
 @router.get("/status")
 def whatsapp_status(user_id: str = Depends(require_user_id)) -> dict:
     acc = supabase_db.get_whatsapp_account(user_id)
+    addon = float(get_settings().whatsapp_addon_price_usd or 29)
     if not acc:
-        return {"connected": False}
+        return {"connected": False, "addon_price_usd": addon, "provider": None}
     return {
         "connected": True,
         "display_phone": acc.get("display_phone"),
@@ -149,6 +160,8 @@ def whatsapp_status(user_id: str = Depends(require_user_id)) -> dict:
         "automation_goal": acc.get("automation_goal") or "",
         "automation_cta_url": acc.get("automation_cta_url") or "",
         "automation_cta_label": acc.get("automation_cta_label") or "",
+        "provider": acc.get("provider") or "meta",
+        "addon_price_usd": addon,
     }
 
 
@@ -182,12 +195,73 @@ def whatsapp_automation(
     }
 
 
+def _connect_360dialog(user_id: str, body: ConnectBody) -> dict:
+    api_key = (body.api_key or body.access_token or "").strip()
+    if not api_key:
+        raise HTTPException(
+            status_code=400,
+            detail="Pega la API key del canal en el Hub de 360dialog.",
+        )
+    try:
+        info = probe_api_key(api_key)
+    except WhatsAppCloudError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"360dialog rechazó la API key: {exc}",
+        ) from exc
+    phone_id, display, name = parse_channel_fields(info)
+    phone_id = (body.phone_number_id or "").strip() or phone_id
+    display = (body.display_phone or "").strip() or display
+    if not phone_id:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Falta el Phone number ID. En el Hub 360dialog (canal → WhatsApp) "
+                "cópialo y pégalo aquí."
+            ),
+        )
+    other = supabase_db.get_whatsapp_account_by_phone_number_id(phone_id)
+    if other and str(other.get("user_id")) != user_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Ese número ya está vinculado a otra cuenta CED.",
+        )
+    configure_inbound_webhook(api_key)
+    supabase_db.upsert_whatsapp_account(
+        user_id,
+        {
+            "provider": "360dialog",
+            "waba_id": (body.waba_id or "").strip() or None,
+            "phone_number_id": phone_id,
+            "display_phone": display or None,
+            "verified_name": name or None,
+            "access_token": api_key,
+            "status": "active",
+            "connected_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    _seed_default_flows(user_id)
+    _ensure_ced_ai_flow(user_id)
+    return {
+        "ok": True,
+        "connected": True,
+        "provider": "360dialog",
+        "display_phone": display or None,
+        "phone_number_id": phone_id,
+    }
+
+
 @router.post("/connect")
 def whatsapp_connect(
     body: ConnectBody,
     user_id: str = Depends(require_user_id),
 ) -> dict:
     require_whatsapp(user_id)
+    provider = (body.provider or "").strip().lower()
+    api_key = (body.api_key or "").strip()
+    if provider in {"360dialog", "d360", "360"} or (api_key and not body.code):
+        return _connect_360dialog(user_id, body)
+
     token = (body.access_token or "").strip()
     if body.code and not token:
         try:
@@ -244,6 +318,7 @@ def whatsapp_connect(
             "display_phone": display_phone or None,
             "verified_name": verified_name or None,
             "access_token": token,
+            "provider": "meta",
             "status": "active",
             "connected_at": datetime.now(timezone.utc).isoformat(),
         },
@@ -361,6 +436,50 @@ def list_messages(
     return {"messages": messages}
 
 
+@router.get("/missions")
+def list_missions(
+    user_id: str = Depends(require_user_id),
+    limit: int = Query(default=40, ge=1, le=80),
+) -> dict:
+    """HUD: ADN, cierre, fugas y toque humano — no un diagrama de nodos."""
+    require_whatsapp(user_id)
+    rows = supabase_db.list_whatsapp_contacts(user_id, limit=limit)
+    contacts = []
+    close_alerts = 0
+    leak_alerts = 0
+    human_needed = 0
+    for row in rows:
+        close_score = int(row.get("close_score") or 0)
+        leak_risk = int(row.get("leak_risk") or 0)
+        human = str(row.get("human_alert") or "").strip()
+        if close_score >= 85:
+            close_alerts += 1
+        if leak_risk >= 55:
+            leak_alerts += 1
+        if human:
+            human_needed += 1
+        contacts.append(
+            {
+                "wa_from": row.get("wa_from"),
+                "prospect_dna": row.get("prospect_dna") or "Analítico",
+                "sentiment": row.get("sentiment") or "neutro",
+                "close_score": close_score,
+                "leak_risk": leak_risk,
+                "human_alert": human,
+                "opted_out": bool(row.get("opted_out")),
+                "last_inbound_at": row.get("last_inbound_at"),
+            }
+        )
+    return {
+        "contacts": contacts,
+        "hud": {
+            "close_ready": close_alerts,
+            "leak_risk": leak_alerts,
+            "needs_human": human_needed,
+        },
+    }
+
+
 class SendTextBody(BaseModel):
     to: str = Field(min_length=8, max_length=20)
     body: str = Field(min_length=1, max_length=4096)
@@ -402,15 +521,10 @@ def send_outbound(body: SendTextBody, user_id: str = Depends(require_user_id)) -
     token = _account_token(acc)
     phone_number_id = str(acc.get("phone_number_id") or "")
     to = "".join(ch for ch in body.to if ch.isdigit())
-    if not token or not phone_number_id:
+    if not token:
         raise HTTPException(status_code=400, detail="Falta token o número de WhatsApp.")
     try:
-        send_text_message(
-            phone_number_id=phone_number_id,
-            access_token=token,
-            to=to,
-            body=body.body.strip(),
-        )
+        send_text_for_account(acc, to=to, body=body.body.strip())
     except WhatsAppCloudError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     supabase_db.insert_whatsapp_message(
@@ -429,8 +543,10 @@ def send_outbound(body: SendTextBody, user_id: str = Depends(require_user_id)) -
 def list_templates(user_id: str = Depends(require_user_id)) -> dict:
     require_whatsapp(user_id)
     acc = _require_account(user_id)
-    waba_id = str(acc.get("waba_id") or "").strip()
     token = _account_token(acc)
+    if is_360dialog(acc):
+        return {"templates": list_templates_d360(token)}
+    waba_id = str(acc.get("waba_id") or "").strip()
     if not waba_id or not token:
         raise HTTPException(status_code=400, detail="Falta WABA o token.")
     try:
@@ -444,6 +560,11 @@ def list_templates(user_id: str = Depends(require_user_id)) -> dict:
 def create_template(body: TemplateCreateBody, user_id: str = Depends(require_user_id)) -> dict:
     require_whatsapp(user_id)
     acc = _require_account(user_id)
+    if is_360dialog(acc):
+        raise HTTPException(
+            status_code=400,
+            detail="Con 360dialog las plantillas se crean en el Hub, no desde CED.",
+        )
     waba_id = str(acc.get("waba_id") or "").strip()
     token = _account_token(acc)
     if not waba_id or not token:
@@ -469,16 +590,15 @@ def send_template(body: TemplateSendBody, user_id: str = Depends(require_user_id
     token = _account_token(acc)
     phone_number_id = str(acc.get("phone_number_id") or "")
     to = "".join(ch for ch in body.to if ch.isdigit())
-    if not token or not phone_number_id:
+    if not token:
         raise HTTPException(status_code=400, detail="Falta token o número de WhatsApp.")
     try:
-        send_template_message(
-            phone_number_id=phone_number_id,
-            access_token=token,
+        send_template_for_account(
+            acc,
             to=to,
             template_name=body.name,
             language=body.language,
-            body_params=body.body_params,
+            body_params=list(body.body_params or []),
         )
     except WhatsAppCloudError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -510,14 +630,23 @@ def whatsapp_webhook_verify(
 async def whatsapp_webhook(request: Request) -> dict:
     raw = await request.body()
     sig = request.headers.get("x-hub-signature-256")
-    if not verify_webhook_signature(raw, sig):
-        raise HTTPException(status_code=403, detail="Firma webhook inválida.")
     try:
         payload = json.loads(raw.decode("utf-8") or "{}")
     except Exception:  # noqa: BLE001
         return {"ok": True}
     if not isinstance(payload, dict):
         return {"ok": True}
+    events = inbound_message_events(payload)
+    d360 = False
+    for event in events:
+        acc = supabase_db.get_whatsapp_account_by_phone_number_id(
+            event.get("phone_number_id") or ""
+        )
+        if acc and is_360dialog(acc):
+            d360 = True
+            break
+    if not d360 and not verify_webhook_signature(raw, sig):
+        raise HTTPException(status_code=403, detail="Firma webhook inválida.")
     threading.Thread(target=_handle_inbound, args=(payload,), daemon=True).start()
     return {"ok": True}
 
@@ -525,7 +654,7 @@ async def whatsapp_webhook(request: Request) -> dict:
 def _handle_inbound(payload: dict[str, Any]) -> None:
     from app.services.whatsapp_ai import reply_as_ced_chat
 
-    for event in inbound_text_events(payload):
+    for event in inbound_message_events(payload):
         phone_number_id = event["phone_number_id"]
         acc = supabase_db.get_whatsapp_account_by_phone_number_id(phone_number_id)
         if not acc:
@@ -533,10 +662,19 @@ def _handle_inbound(payload: dict[str, Any]) -> None:
             continue
         user_id = str(acc.get("user_id") or "")
         _ensure_ced_ai_flow(user_id)
-        token = _account_token(acc)
         wa_from = event["from"]
         body = event["body"]
         wamid = event["wamid"]
+        kind = str(event.get("kind") or "text")
+        image_bytes: bytes | None = None
+        image_mime: str | None = None
+        if kind == "image" and event.get("media_id"):
+            try:
+                image_bytes, image_mime = download_media_for_account(
+                    acc, event["media_id"]
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning("[WA] no pude bajar imagen user=%s", user_id[:8], exc_info=True)
         inserted = supabase_db.insert_whatsapp_message(
             {
                 "user_id": user_id,
@@ -577,24 +715,21 @@ def _handle_inbound(payload: dict[str, Any]) -> None:
             )
             flow = match_flow(supabase_db.list_whatsapp_flows(user_id), body)
             flow_id = (flow or {}).get("id")
-            if uses_ced_chat(flow):
+            if uses_ced_chat(flow) or image_bytes:
                 reply = reply_as_ced_chat(
                     owner_user_id=user_id,
                     wa_from=wa_from,
                     text=body,
+                    image_bytes=image_bytes,
+                    image_media_type=image_mime,
                 )
             else:
                 reply = str((flow or {}).get("reply_text") or "").strip()
 
-        if not reply or not token:
+        if not reply:
             continue
         try:
-            send_text_message(
-                phone_number_id=phone_number_id,
-                access_token=token,
-                to=wa_from,
-                body=reply,
-            )
+            send_text_for_account(acc, to=wa_from, body=reply)
         except WhatsAppCloudError:
             logger.warning("[WA] send failed user=%s", user_id[:8], exc_info=True)
             continue

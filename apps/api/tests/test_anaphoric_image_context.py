@@ -89,3 +89,114 @@ def test_run_generation_uses_bathroom_context_not_random_scene(mock_gen: MagicMo
     assert "ese ejemplo" not in low
     assert "atardecer" not in low
     assert "cliff" not in low
+
+
+CED_CAROUSEL_HISTORY = [
+    {
+        "role": "user",
+        "content": (
+            "Idea de carrusel — 3 imágenes:\n"
+            "Imagen 1 — Hook visual. Texto overlay: "
+            '"Tu asistente de IA no es un chatbot genérico". '
+            "Visual: silueta elegante de una interfaz futurista tipo Jarvis, "
+            "líneas limpias, azul/plata, minimalista. "
+            'Subtexto: "Conoce CED — Castillo de la Evolución Digital".'
+        ),
+    },
+    {
+        "role": "user",
+        "content": (
+            "Ok has esa primera imagen pero que ced con los tonos de ced "
+            "y el rostro holografico de ced"
+        ),
+    },
+    {
+        "role": "assistant",
+        "content": (
+            "**Concepto — Imagen 1 del Carrusel**\n"
+            "- Fondo: Negro profundo con destellos azul eléctrico\n"
+            "- Centro: Rostro holográfico de CED, líneas de luz azul/plata, "
+            "estilo Jarvis, semi-transparente\n"
+            "- Paleta CED: Azul eléctrico #00BFFF + Plata + Negro + toques dorados\n"
+            '- Texto overlay: "Tu asistente de IA no es un chatbot genérico"\n'
+            "¿Le damos con este concepto o quieres ajustar algo?"
+        ),
+    },
+]
+
+
+def test_esa_imagen_is_vague_and_points_at_prior():
+    from app.services.chat_intents import (
+        is_anaphoric_image_subject,
+        is_generate_image_intent,
+        is_image_meta_talk,
+        points_at_prior_visual,
+    )
+
+    assert is_vague_image_subject("esa imagen")
+    assert is_anaphoric_image_subject("esa imagen")
+    assert points_at_prior_visual("Ok genera esa imagen")
+    assert points_at_prior_visual("genera esa primera imagen pero que ced")
+    assert is_image_meta_talk("Ok genera esa imagen") is False
+    assert is_generate_image_intent("Ok genera esa imagen") is True
+
+
+def test_carousel_generate_esa_imagen_keeps_concept_and_overlay():
+    msg = "Ok genera esa imagen"
+    resolved = effective_user_prompt(msg, CED_CAROUSEL_HISTORY)
+    low = resolved.lower()
+    assert "hologr" in low
+    assert "00bfff" in low or "azul eléctrico" in low or "azul electrico" in low
+    assert "chatbot genérico" in low or "chatbot generico" in low
+    assert "jarvis" in low
+    assert "escena pedida por el usuario" not in low
+    assert "instrucciones actuales" not in low
+
+
+def test_carousel_first_generate_merges_original_brief():
+    history = CED_CAROUSEL_HISTORY[:1]
+    msg = (
+        "Ok genera esa primera imagen pero que ced con los tonos de ced "
+        "y el rostro holografico de ced"
+    )
+    resolved = effective_user_prompt(msg, history)
+    low = resolved.lower()
+    assert "chatbot genérico" in low or "chatbot generico" in low
+    assert "hologr" in low
+    assert "castillo" in low or "ced" in low
+
+
+def test_standalone_scene_does_not_merge_unrelated_history():
+    history = [
+        {"role": "user", "content": "Okay genera un robot corriendo a toda velocidad"},
+        {"role": "assistant", "content": "Listo. Aquí está tu imagen del robot."},
+    ]
+    msg = "generame una imagen de un águila volando sobre un cielo lluvioso"
+    resolved = effective_user_prompt(msg, history)
+    low = resolved.lower()
+    assert "águila" in low or "aguila" in low
+    assert "robot" not in low
+
+
+@patch("app.services.gemini_images.generate_image")
+def test_run_generation_uses_carousel_concept_not_thin_command(mock_gen: MagicMock):
+    mock_gen.return_value = {
+        "ok": True,
+        "url": "https://example.com/ced.jpg",
+        "caption": "CED",
+        "quality": "standard",
+    }
+    msg = "Ok genera esa imagen"
+    result = run_chat_image_generation(
+        "user-1",
+        "conv-ced",
+        msg,
+        CED_CAROUSEL_HISTORY,
+        plan_id="elite",
+    )
+    assert result["ok"] is True
+    prompt = mock_gen.call_args.kwargs.get("prompt") or ""
+    low = prompt.lower()
+    assert "hologr" in low
+    assert "chatbot genérico" in low or "chatbot generico" in low
+    assert "esa imagen" not in low or "hologr" in low

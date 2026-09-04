@@ -123,6 +123,26 @@ def test_compose_persuasive_overlay_pain_solution():
     )
     assert "TEXTOS EXACTOS" in prompt
     assert "Keep the SAME person" in prompt or "SAME person" in prompt
+    assert "Keep the SAME person, face, clothing, pose, lighting and background" in prompt
+
+
+def test_reference_text_edit_changes_background_when_asked():
+    from app.services.copy_quality import (
+        build_reference_text_edit_prompt,
+        user_requests_background_change,
+    )
+
+    assert user_requests_background_change("cambia el fondo a azul oscuro")
+    assert user_requests_background_change(
+        "cambia el fondo del flyer pero mantén la lista de precios"
+    )
+    prompt = build_reference_text_edit_prompt(
+        "cambia el fondo del flyer a negro pero mantén los textos",
+        overlay_lines=["Precio $49", "Horario 9am"],
+    )
+    assert "CHANGE the background" in prompt
+    assert "lighting and background" not in prompt
+    assert "cambia el fondo" in prompt.lower() or "User request:" in prompt
 
 
 def test_strict_detector_true_for_graphic_formats_with_copy():

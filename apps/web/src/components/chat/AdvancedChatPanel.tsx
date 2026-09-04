@@ -551,7 +551,7 @@ export function AdvancedChatPanel({
         <SplitPortal target={composerBar}>
         <footer className={`relative z-20 shrink-0 overflow-visible px-3 ${
           composerBar
-            ? "bg-[var(--studio-chat-bg)] py-1"
+            ? "bg-[var(--studio-chat-bg)] pt-1 pb-0"
             : `border-t border-[var(--studio-border)] bg-[var(--studio-chat-bg)] py-1.5 ${embedded ? "" : "pb-[max(0.75rem,env(safe-area-inset-bottom))]"}`
         }`}>
           {attachedPdf ? (

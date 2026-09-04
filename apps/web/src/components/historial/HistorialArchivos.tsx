@@ -72,7 +72,9 @@ export function HistorialArchivos() {
   async function savePdf(row: PdfArtifact) {
     setBusyId(row.file_id);
     try {
-      await downloadPdfBlob(row.file_id, row.filename || "documento-ced.pdf");
+      await downloadPdfBlob(row.file_id, row.filename || "documento-ced.pdf", {
+        allowDuringVoice: true,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo descargar.");
     } finally {
@@ -219,20 +221,21 @@ export function HistorialArchivos() {
             {pdfs.map((row) => (
               <li
                 key={row.file_id}
-                className="flex items-center justify-between gap-3 rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
+                className="flex flex-col gap-2 rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
               >
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-cyan-100">
-                    {row.title || row.filename}
-                  </p>
-                  <p className="ced-hud-text-muted text-[10px]">
-                    {formatWhen(row.created_at)}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="break-words text-sm text-cyan-100">
+                      {row.title || row.filename}
+                    </p>
+                    <p className="ced-hud-text-muted text-[10px]">
+                      {formatWhen(row.created_at)}
+                    </p>
+                  </div>
                   {selecting ? (
                     <input
                       type="checkbox"
+                      className="mt-1 h-5 w-5 shrink-0"
                       checked={picked.has(`pdf:${row.file_id}`)}
                       onChange={() => {
                         setPicked((prev) => {
@@ -250,21 +253,23 @@ export function HistorialArchivos() {
                       onClick={() => void trashOne("pdf", row.file_id)}
                     />
                   )}
+                </div>
+                <div className="flex w-full min-w-0 gap-2">
                   <a
                     href={pdfDownloadUrl(row.file_id)}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-[10px] uppercase tracking-wider text-cyan-400 hover:text-cyan-200"
+                    className="inline-flex min-h-11 flex-1 items-center justify-center rounded border border-cyan-700/50 px-3 text-[11px] font-semibold uppercase tracking-wider text-cyan-300"
                   >
-                    Ver
+                    Abrir
                   </a>
                   <button
                     type="button"
                     onClick={() => void savePdf(row)}
                     disabled={busyId === row.file_id}
-                    className="text-[10px] uppercase tracking-wider text-cyan-400 hover:text-cyan-200 disabled:opacity-50"
+                    className="inline-flex min-h-11 flex-1 items-center justify-center rounded border border-cyan-400/60 bg-cyan-400/10 px-3 text-[11px] font-semibold uppercase tracking-wider text-cyan-200 disabled:opacity-50"
                   >
-                    {busyId === row.file_id ? "…" : "Descargar"}
+                    {busyId === row.file_id ? "Descargando…" : "Descargar"}
                   </button>
                 </div>
               </li>

@@ -45,6 +45,15 @@ export function resolveAgentTranscriptMerge(
   return { action: "new", text: next };
 }
 
+export function shouldSkipDuplicateAgentLine(
+  previousTexts: string[],
+  incoming: string,
+): boolean {
+  const next = (incoming || "").trim();
+  if (!next) return true;
+  return previousTexts.some((item) => (item || "").trim() === next);
+}
+
 /** Hint de idioma vía system instruction (native audio no usa languageCode). */
 export function sessionLanguageInstruction(lang: "es" | "en" | "pt"): string {
   switch (lang) {

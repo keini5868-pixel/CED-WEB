@@ -82,4 +82,5 @@ def test_chat_image_generation_wires_direct_adapter():
 
     src = inspect.getsource(cig.run_chat_image_generation)
     assert "build_direct_image_prompt" in src
-    assert 'context=""' in src or "context=\"\"" in src
+    assert "visual_override" in src
+    assert "expand_image_scene" in src

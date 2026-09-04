@@ -279,6 +279,7 @@ def prepare_image_prompt(user_prompt: str, context: str = "") -> str:
         "Style with CED brand",
         "Edit the attached photo",
         "Keep the SAME person",
+        "functional, illegible technical interface",
     )
     if any(m in topic for m in passthrough_markers):
         from app.services.copy_quality import ensure_image_quality_guards
