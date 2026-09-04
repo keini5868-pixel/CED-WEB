@@ -39,7 +39,8 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
     const goHome = (ev: Event) => {
       const path = (ev as CustomEvent<{ path?: string }>).detail?.path;
       if (path) {
-        router.push(path);
+        const target = path.split("?")[0];
+        if (pathname !== target) router.push(path);
         return;
       }
       if (!isDashboardPath(pathname)) router.push(DASHBOARD_PATH);

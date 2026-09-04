@@ -445,10 +445,29 @@ export function CedPresenterMascot({
         }
         return !stale();
       };
-      applyGesture(closingAll ? "ok" : gestureForHotspot(steps[0]?.hotspot || "sistema"));
+      applyGesture(
+        steps[0]?.action === "start-assist"
+          ? "farewell"
+          : closingAll
+            ? "ok"
+            : gestureForHotspot(steps[0]?.hotspot || "sistema"),
+      );
       try {
         if (closingAll) {
-          runPresenterAction(steps[0]?.action === "go-home" ? "go-home" : "close-all");
+          const action = steps[0]?.action || "close-all";
+          if (action === "start-assist") {
+            applyGesture("farewell");
+            const mic = queryHotspot("asistente");
+            if (mic) {
+              mic.classList.add("ced-presenter-focus");
+              applyPose(poseForEl(mic));
+            }
+            await waitAlive(520);
+            mic?.classList.remove("ced-presenter-focus");
+            if (!stale()) runPresenterAction("start-assist");
+            return;
+          }
+          runPresenterAction(action === "go-home" ? "go-home" : "close-all");
           applyGesture("ok");
           const target = closeTargetHotspot();
           if (target) {
@@ -551,8 +570,11 @@ export function CedPresenterMascot({
       const steps = matchPresenterGuide(raw);
       if (!steps) return;
       if (isCloseAllGuide(steps)) {
-        applyGesture("ok");
-        runPresenterAction(steps[0]?.action === "go-home" ? "go-home" : "close-all");
+        const action = steps[0]?.action || "close-all";
+        applyGesture(action === "start-assist" ? "farewell" : "ok");
+        if (action !== "start-assist") {
+          runPresenterAction(action);
+        }
       }
       const key = steps
         .map((s) => s.action || `${s.force || "go"}:${s.hotspot || ""}`)

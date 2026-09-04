@@ -24,6 +24,15 @@ describe("matchPresenterGuide", () => {
     expect(matchPresenterGuide("cierra sistema")).toEqual([{ action: "close-all" }]);
   });
 
+  it("activa el asistente de voz y apaga el robot", () => {
+    expect(matchPresenterGuide("activa asistente de voz")).toEqual([{ action: "start-assist" }]);
+    expect(matchPresenterGuide("activa asistente de vos")).toEqual([{ action: "start-assist" }]);
+    expect(matchPresenterGuide("activa el asistente de voz")).toEqual([{ action: "start-assist" }]);
+    expect(matchPresenterGuide("abre el asistente")).toEqual([{ action: "start-assist" }]);
+    expect(matchPresenterGuide("enciende el asistente")).toEqual([{ action: "start-assist" }]);
+    expect(matchPresenterGuide("cierra el asistente")).not.toEqual([{ action: "start-assist" }]);
+  });
+
   it("regresa al panel principal desde Historial u otras pantallas", () => {
     expect(matchPresenterGuide("regresa a panel principal")).toEqual([{ action: "go-home" }]);
     expect(matchPresenterGuide("volver al panel principal")).toEqual([{ action: "go-home" }]);

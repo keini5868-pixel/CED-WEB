@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
@@ -184,6 +184,59 @@ export function CedVoiceHub() {
     },
   }, voiceRoute);
 
+  const activateMicRef = useRef<() => void>(() => undefined);
+  const startingAssistRef = useRef(false);
+
+  const activateMic = () => {
+    unlockVoiceAudioOnGesture();
+    voice.primeSessionMediaFromGesture();
+    void (async () => {
+      const fresh = await refreshUsage();
+      const snapshot = fresh ?? balance;
+      const limit = voiceLimitReasonFromBalance(snapshot);
+      if (limit) {
+        setVoiceLimitOpen(true);
+        return;
+      }
+      if (voice.micOn) {
+        if (presenter.on) presenter.beginExitForAssist();
+        return;
+      }
+      if (startingAssistRef.current) return;
+      startingAssistRef.current = true;
+      const startVoice = () => {
+        startingAssistRef.current = false;
+        if (!voice.micOn) void voice.toggleMic();
+      };
+      if (presenter.on) {
+        presenter.beginExitForAssist(startVoice);
+        return;
+      }
+      startVoice();
+    })();
+  };
+  activateMicRef.current = activateMic;
+
+  useEffect(() => {
+    const start = () => {
+      try {
+        sessionStorage.removeItem("ced-start-asistente");
+      } catch {
+        /* ignore */
+      }
+      activateMicRef.current();
+    };
+    window.addEventListener("ced-start-asistente", start);
+    try {
+      if (sessionStorage.getItem("ced-start-asistente") === "1") {
+        start();
+      }
+    } catch {
+      /* ignore */
+    }
+    return () => window.removeEventListener("ced-start-asistente", start);
+  }, []);
+
   useEffect(() => {
     setAssistLive(Boolean(voice.micOn));
     return () => setAssistLive(false);
@@ -261,28 +314,6 @@ export function CedVoiceHub() {
       `${url.pathname}${qs ? `?${qs}` : ""}${url.hash}`,
     );
   }, [voice.setSettingsOpen]);
-
-  const activateMic = () => {
-    unlockVoiceAudioOnGesture();
-    voice.primeSessionMediaFromGesture();
-    void (async () => {
-      const fresh = await refreshUsage();
-      const snapshot = fresh ?? balance;
-      const limit = voiceLimitReasonFromBalance(snapshot);
-      if (limit) {
-        setVoiceLimitOpen(true);
-        return;
-      }
-      const startVoice = () => {
-        void voice.toggleMic();
-      };
-      if (presenter.on) {
-        presenter.beginExitForAssist(startVoice);
-        return;
-      }
-      startVoice();
-    })();
-  };
 
   const handleMic = () => {
     if (voice.micOn) {

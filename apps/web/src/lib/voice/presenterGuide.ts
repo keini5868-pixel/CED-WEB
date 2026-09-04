@@ -2,7 +2,7 @@
 
 import { runPresenterClosers } from "./presenterCloseBus";
 
-export type GuideAction = "close-all" | "close-module" | "close-workspace" | "escape" | "go-home";
+export type GuideAction = "close-all" | "close-module" | "close-workspace" | "escape" | "go-home" | "start-assist";
 
 export type GuideStep = {
   hotspot?: string;
@@ -161,10 +161,6 @@ const OPEN_RULES: Rule[] = [
     steps: [{ hotspot: "robot", click: true, force: "open" }],
   },
   {
-    re: /\basistente\b/i,
-    steps: [{ hotspot: "asistente", click: true, force: "open" }],
-  },
-  {
     re: /\b(chat|escribe|escribime)\b/i,
     steps: [{ hotspot: "chat", click: false }],
   },
@@ -187,12 +183,26 @@ function isCloseIntent(text: string): boolean {
 
 export function isPresenterCloseSpeech(text: string): boolean {
   const t = (text || "").trim();
-  return isCloseIntent(t) || isCloseAll(t) || isGoHome(t);
+  return isCloseIntent(t) || isCloseAll(t) || isGoHome(t) || isStartAssist(t);
 }
 
 export function isCloseAllGuide(steps: GuideStep[]): boolean {
   const action = steps[0]?.action;
-  return steps.length === 1 && (action === "close-all" || action === "go-home");
+  return (
+    steps.length === 1 &&
+    (action === "close-all" || action === "go-home" || action === "start-assist")
+  );
+}
+
+function isStartAssist(text: string): boolean {
+  if (isCloseIntent(text)) return false;
+  return (
+    /\b(?:activa|activar|enciende|encender|prende|prender|abre|abrir)\s+(?:a[l]?\s+)?(?:el\s+)?asistente(?:\s+de\s+vo[sz])?\b/i.test(
+      text,
+    ) ||
+    /\basistente\s+de\s+vo[sz]\b/i.test(text) ||
+    /\b(?:activa|activar|enciende|encender|prende)\s+(?:la\s+)?vo[sz]\b/i.test(text)
+  );
 }
 
 function isGoHome(text: string): boolean {
@@ -217,6 +227,7 @@ function isCloseAll(text: string): boolean {
 export function matchPresenterGuide(text: string): GuideStep[] | null {
   const t = (text || "").trim();
   if (t.length < 3) return null;
+  if (isStartAssist(t)) return [{ action: "start-assist" }];
   if (isGoHome(t)) return [{ action: "go-home" }];
   if (isCloseAll(t)) return [{ action: "close-all" }];
   if (isCloseIntent(t)) {
@@ -293,6 +304,19 @@ export function closeTargetHotspot(): HTMLElement | null {
 
 export function runPresenterAction(action: GuideAction): void {
   if (typeof window === "undefined") return;
+  if (action === "start-assist") {
+    try {
+      sessionStorage.setItem("ced-start-asistente", "1");
+    } catch {
+      /* ignore */
+    }
+    window.dispatchEvent(new Event("ced-start-asistente"));
+    const onMainDash = window.location.pathname.replace(/\/$/, "") === "/dashboard";
+    if (!onMainDash) {
+      window.dispatchEvent(new CustomEvent("ced-go-dashboard", { detail: { path: "/dashboard" } }));
+    }
+    return;
+  }
   if (action === "go-home") {
     window.dispatchEvent(new Event("ced-close-module"));
     window.dispatchEvent(new Event("ced-go-dashboard"));
