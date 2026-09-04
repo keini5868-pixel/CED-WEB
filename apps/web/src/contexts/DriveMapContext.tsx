@@ -5,11 +5,13 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
 
 import type { NavClientAction } from "@/lib/api/navigation";
+import { registerPresenterCloser } from "@/lib/voice/presenterCloseBus";
 
 export type MapVoiceHandlers = {
   searchPlace: (query: string) => Promise<void>;
@@ -76,6 +78,14 @@ export function DriveMapProvider({ children }: { children: React.ReactNode }) {
     if (action) setBootstrapAction(null);
     return action;
   }, [bootstrapAction]);
+
+  useEffect(() => {
+    const onClose = () => closeDriveMap();
+    window.addEventListener("ced-close-map", onClose);
+    return () => window.removeEventListener("ced-close-map", onClose);
+  }, [closeDriveMap]);
+
+  useEffect(() => registerPresenterCloser(closeDriveMap), [closeDriveMap]);
 
   const value = useMemo(
     () => ({

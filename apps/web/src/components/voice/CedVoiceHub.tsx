@@ -38,6 +38,7 @@ import {
 import { CedStudioSidebar } from "@/components/hud/CedStudioSidebar";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import { CED_OPEN_SETTINGS_EVENT } from "@/lib/hud/chrome-events";
+import { registerPresenterCloser } from "@/lib/voice/presenterCloseBus";
 import {
   COMPOSER_ACTIONS_ID,
   COMPOSER_BAR_ID,
@@ -110,6 +111,12 @@ export function CedVoiceHub() {
     };
     window.addEventListener("ced-open-module", onOpen);
     return () => window.removeEventListener("ced-open-module", onOpen);
+  }, []);
+
+  useEffect(() => {
+    const onCloseWs = () => setWorkspace("chat");
+    window.addEventListener("ced-close-workspace", onCloseWs);
+    return () => window.removeEventListener("ced-close-workspace", onCloseWs);
   }, []);
 
   const voiceRoute = useMemo(() => {
@@ -199,6 +206,21 @@ export function CedVoiceHub() {
       setChatSeedImage(null);
     },
   }, voiceRoute);
+
+  useEffect(() => {
+    const onCloseSettings = () => voice.setSettingsOpen(false);
+    window.addEventListener("ced-close-settings", onCloseSettings);
+    return () => window.removeEventListener("ced-close-settings", onCloseSettings);
+  }, [voice.setSettingsOpen]);
+
+  useEffect(
+    () =>
+      registerPresenterCloser(() => {
+        setWorkspace("chat");
+        voice.setSettingsOpen(false);
+      }),
+    [voice.setSettingsOpen],
+  );
 
   useEffect(() => {
     if (!voice.micOn) return;
@@ -517,6 +539,7 @@ export function CedVoiceHub() {
             <button
               type="button"
               data-ced-hotspot="avanzado"
+              data-ced-open={workspace === "advanced" ? "true" : "false"}
               onClick={() => selectWorkspace("advanced")}
               className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 workspace === "advanced" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
@@ -527,6 +550,7 @@ export function CedVoiceHub() {
             <button
               type="button"
               data-ced-hotspot="finanzas"
+              data-ced-open={workspace === "finance" ? "true" : "false"}
               onClick={() => selectWorkspace("finance")}
               className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 workspace === "finance" ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"
@@ -537,6 +561,7 @@ export function CedVoiceHub() {
             <button
               type="button"
               data-ced-hotspot="camara"
+              data-ced-open={voice.cameraOn ? "true" : "false"}
               onClick={() => void voice.toggleCamera()}
               className={`ced-mark-text rounded-lg px-1 py-1 text-center text-[8px] uppercase leading-tight hover:bg-[var(--ced-cyan)]/10 sm:text-[9px] lg:px-2 lg:py-1.5 lg:text-left lg:text-[11px] ${
                 voice.cameraOn ? "bg-[var(--ced-cyan)]/15 opacity-100" : "opacity-80 hover:opacity-100"

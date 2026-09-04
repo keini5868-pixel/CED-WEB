@@ -9,10 +9,19 @@ import {
   gestureForModule,
   gestureForWorkspace,
   gesturePose,
-  matchPresenterGesture,
+  reactToSpeech,
   type PresenterGesture,
 } from "@/lib/voice/presenterGestures";
-import { matchPresenterGuide, queryHotspot, type GuideStep } from "@/lib/voice/presenterGuide";
+import {
+  isPresenterCloseSpeech,
+  matchPresenterGuide,
+  queryHotspot,
+  runPresenterAction,
+  clickElement,
+  closeTargetHotspot,
+  type GuideStep,
+} from "@/lib/voice/presenterGuide";
+import { CedHoloBotPuppet } from "@/components/voice/CedHoloBotPuppet";
 
 type Props = {
   visible: boolean;
@@ -129,7 +138,9 @@ type SpeechRecLike = {
   lang: string;
   continuous: boolean;
   interimResults: boolean;
-  onresult: ((ev: { results: ArrayLike<ArrayLike<{ transcript?: string }>> }) => void) | null;
+  onresult: ((ev: {
+    results: ArrayLike<ArrayLike<{ transcript?: string }> & { isFinal?: boolean }>;
+  }) => void) | null;
   onend: (() => void) | null;
   start: () => void;
   stop: () => void;
@@ -204,25 +215,17 @@ function paintCanvas(
     }
   }
 
-  if (gesture === "ok") {
-    ctx.strokeStyle = "rgba(0,255,180,0.85)";
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.moveTo(cx - 10, cy - 40);
-    ctx.lineTo(cx - 2, cy - 28);
-    ctx.lineTo(cx + 16, cy - 52);
-    ctx.stroke();
-  }
-
-  if (gesture === "error") {
-    ctx.strokeStyle = "rgba(255,170,80,0.8)";
+  if (gesture === "point") {
+    ctx.strokeStyle = "rgba(0,229,255,0.7)";
     ctx.lineWidth = 2;
     ctx.beginPath();
-    ctx.moveTo(cx + 22, h * 0.12);
-    ctx.lineTo(cx + 36, h * 0.22);
-    ctx.moveTo(cx + 36, h * 0.12);
-    ctx.lineTo(cx + 22, h * 0.22);
+    ctx.moveTo(w * 0.7, h * 0.32);
+    ctx.lineTo(w * 0.98, h * 0.08);
     ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(w * 0.98, h * 0.08, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(180,255,255,0.9)";
+    ctx.fill();
   }
 
   for (let i = particles.length - 1; i >= 0; i -= 1) {
@@ -259,6 +262,7 @@ export function CedPresenterMascot({
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const busyRef = useRef(false);
+  const runGenRef = useRef(0);
   const lastKeyRef = useRef("");
   const lastAtRef = useRef(0);
   const poseRef = useRef<Pose>(homePose());
@@ -303,7 +307,7 @@ export function CedPresenterMascot({
     applyGesture("welcome");
     const welcomeTimer = window.setTimeout(() => {
       if (gestureRef.current === "welcome") applyGesture("idle");
-    }, 1800);
+    }, 2600);
     return () => window.clearTimeout(welcomeTimer);
   }, [visible, exiting, applyPose, applyGesture]);
 
@@ -333,9 +337,13 @@ export function CedPresenterMascot({
       const level = levelRef.current;
       const hearing = !exiting && !busyRef.current && level > 0.08;
       if (hearing && (gestureRef.current === "idle" || gestureRef.current === "listen")) {
-        gestureRef.current = "listen";
+        if (gestureRef.current !== "listen") {
+          gestureRef.current = "listen";
+          setGesture("listen");
+        }
       } else if (!hearing && gestureRef.current === "listen") {
         gestureRef.current = "idle";
+        setGesture("idle");
       }
       const g = gesturePose(gestureRef.current, t);
       const bob = (Math.sin(t * 1.7) * 8 + Math.sin(t * 0.9) * 3) * g.bobMul;
@@ -374,15 +382,60 @@ export function CedPresenterMascot({
     if (!visible || exiting) return;
     let cancelled = false;
 
+    const isCloseSteps = (steps: GuideStep[]) =>
+      steps.some((s) => Boolean(s.action) || s.force === "close");
+
     const runSteps = async (steps: GuideStep[]) => {
-      if (busyRef.current) return;
+      const closing = isCloseSteps(steps);
+      if (busyRef.current && !closing) return;
+      const gen = ++runGenRef.current;
       busyRef.current = true;
-      applyGesture(gestureForHotspot(steps[0]?.hotspot || "point"));
+      const stale = () => cancelled || gen !== runGenRef.current;
+      const waitAlive = async (ms: number) => {
+        const t0 = Date.now();
+        while (Date.now() - t0 < ms) {
+          if (stale()) return false;
+          await wait(Math.min(40, ms - (Date.now() - t0)));
+        }
+        return !stale();
+      };
+      applyGesture(closing ? "ok" : gestureForHotspot(steps[0]?.hotspot || "sistema"));
       try {
+        if (closing) {
+          runPresenterAction("close-all");
+          applyGesture("ok");
+          const target = closeTargetHotspot();
+          if (target) {
+            target.classList.add("ced-presenter-focus");
+            applyPose(poseForEl(target));
+          } else {
+            applyPose(homePose());
+          }
+          if (!(await waitAlive(700))) {
+            target?.classList.remove("ced-presenter-focus");
+            return;
+          }
+          target?.classList.remove("ced-presenter-focus");
+          if (!exiting) {
+            applyGesture("ok");
+            applyPose(homePose());
+          }
+          return;
+        }
+
         for (const step of steps) {
-          if (cancelled) return;
+          if (stale()) return;
+          if (step.action) {
+            applyGesture("ok");
+            applyPose(homePose());
+            runPresenterAction(step.action);
+            if (!(await waitAlive(180))) return;
+            continue;
+          }
+          if (!step.hotspot) continue;
           let el: HTMLElement | null = null;
           for (let i = 0; i < 16 && !el; i += 1) {
+            if (stale()) return;
             el = queryHotspot(step.hotspot);
             if (!el) await wait(50);
           }
@@ -390,41 +443,69 @@ export function CedPresenterMascot({
           applyGesture(gestureForHotspot(step.hotspot));
           el.classList.add("ced-presenter-focus");
           applyPose(poseForEl(el));
-          await wait(780);
-          if (cancelled) return;
+          if (!(await waitAlive(480))) {
+            el.classList.remove("ced-presenter-focus");
+            return;
+          }
           if (step.click) {
             const wrap = wrapRef.current;
             const scale = poseRef.current.scale;
             if (wrap) {
               wrap.style.transform = `translate(-50%, -78%) scale(${scale * 0.86})`;
-              await wait(140);
+              if (!(await waitAlive(120))) {
+                el.classList.remove("ced-presenter-focus");
+                return;
+              }
               wrap.style.transform = `translate(-50%, -78%) scale(${scale})`;
-              await wait(90);
+              if (!(await waitAlive(70))) {
+                el.classList.remove("ced-presenter-focus");
+                return;
+              }
             }
-            if (el.getAttribute("aria-expanded") !== "true") el.click();
+            if (stale()) {
+              el.classList.remove("ced-presenter-focus");
+              return;
+            }
+            const expanded =
+              el.getAttribute("aria-expanded") ?? el.getAttribute("data-ced-open");
+            if (!(step.force === "open" && expanded === "true")) {
+              clickElement(el);
+            }
           }
-          await wait(640);
+          if (!(await waitAlive(480))) {
+            el.classList.remove("ced-presenter-focus");
+            return;
+          }
           el.classList.remove("ced-presenter-focus");
         }
+        if (stale()) return;
         applyGesture("ok");
-        await wait(2800);
-        if (!cancelled && !exiting) {
+        if (!(await waitAlive(1600))) return;
+        if (!exiting) {
           applyGesture("idle");
           applyPose(homePose());
         }
       } finally {
-        busyRef.current = false;
+        if (gen === runGenRef.current) busyRef.current = false;
       }
     };
 
     const onSpeech = (raw: string) => {
-      const felt = matchPresenterGesture(raw);
-      if (felt && !busyRef.current) applyGesture(felt);
+      const felt = reactToSpeech(raw);
+      if (felt) applyGesture(felt);
       const steps = matchPresenterGuide(raw);
       if (!steps) return;
-      const key = steps.map((s) => s.hotspot).join(">");
+      if (isPresenterCloseSpeech(raw) || isCloseSteps(steps)) {
+        applyGesture("ok");
+        runPresenterAction("close-all");
+      }
+      const key = steps
+        .map((s) => s.action || `${s.force || "go"}:${s.hotspot || ""}`)
+        .join(">");
       const now = Date.now();
-      if (key === lastKeyRef.current && now - lastAtRef.current < 7000) return;
+      const closing = isCloseSteps(steps);
+      if (!closing && key === lastKeyRef.current && now - lastAtRef.current < 4500) return;
+      if (closing && key === lastKeyRef.current && now - lastAtRef.current < 900) return;
       lastKeyRef.current = key;
       lastAtRef.current = now;
       void runSteps(steps);
@@ -448,8 +529,15 @@ export function CedPresenterMascot({
       rec.onresult = (ev) => {
         const list = ev.results;
         const row = list[list.length - 1];
-        const text = row?.[0]?.transcript || "";
-        if (text.trim().length >= 4) onSpeech(text);
+        const text = (row?.[0]?.transcript || "").trim();
+        const isFinal = row && (row as { isFinal?: boolean }).isFinal !== false;
+        if (isPresenterCloseSpeech(text)) {
+          onSpeech(text);
+          return;
+        }
+        if (!text || text.length < 4) return;
+        if (!isFinal && text.length < 10) return;
+        onSpeech(text);
       };
       rec.onend = () => {
         if (!cancelled) {
@@ -514,13 +602,7 @@ export function CedPresenterMascot({
               className="relative will-change-transform"
               style={{ transformStyle: "preserve-3d" }}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src="/voice/holo-bot.png?v=3"
-                alt=""
-                className="h-[11.5rem] w-auto select-none sm:h-[13.5rem] lg:h-[15.5rem]"
-                draggable={false}
-              />
+              <CedHoloBotPuppet gesture={gesture} />
               <canvas
                 ref={canvasRef}
                 className="pointer-events-none absolute inset-0 h-full w-full"

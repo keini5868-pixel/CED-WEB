@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Navigation } from "lucide-react";
 
@@ -20,6 +21,7 @@ import {
   dispatchCedOpenSettings,
   isDashboardPath,
 } from "@/lib/hud/chrome-events";
+import { registerPresenterCloser } from "@/lib/voice/presenterCloseBus";
 
 type HudChromeProps = {
   email?: string | null;
@@ -32,6 +34,18 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   const { openDriveMap } = useDriveMap();
   const onDashboard = isDashboardPath(pathname);
   const { status: metaStatus, busy: metaBusy, connect: connectMeta } = useConnectNetworks();
+
+  useEffect(() => {
+    const goHome = () => {
+      if (!isDashboardPath(pathname)) router.push(DASHBOARD_PATH);
+    };
+    window.addEventListener("ced-go-dashboard", goHome);
+    const unreg = registerPresenterCloser(goHome);
+    return () => {
+      window.removeEventListener("ced-go-dashboard", goHome);
+      unreg();
+    };
+  }, [pathname, router]);
 
   function openSettings() {
     if (onDashboard) {
@@ -76,6 +90,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
         <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
           <Link
             href={DASHBOARD_PATH}
+            data-ced-hotspot="home"
             className="flex shrink-0 items-center gap-1.5"
             aria-label="CED — Castillo de la Evolución Digital"
           >

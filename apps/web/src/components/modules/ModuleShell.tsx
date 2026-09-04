@@ -14,6 +14,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { isModulesShellVisible } from "@/lib/pilot/modulesShell";
 import { getModuleById, getVisibleModules } from "@/modules/registry";
 import type { CedModuleRegistration, ModulePanelProps } from "@/modules/types";
+import { registerPresenterCloser } from "@/lib/voice/presenterCloseBus";
 
 type LoadedPanel = ComponentType<ModulePanelProps>;
 
@@ -69,6 +70,14 @@ export function ModuleShell() {
     window.addEventListener("ced-open-module", onOpen);
     return () => window.removeEventListener("ced-open-module", onOpen);
   }, [openModule]);
+
+  useEffect(() => {
+    const onClose = () => closeModule();
+    window.addEventListener("ced-close-module", onClose);
+    return () => window.removeEventListener("ced-close-module", onClose);
+  }, [closeModule]);
+
+  useEffect(() => registerPresenterCloser(closeModule), [closeModule]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -134,6 +143,7 @@ export function ModuleShell() {
               key={m.id}
               type="button"
               title={m.name}
+              data-ced-hotspot={m.id}
               onClick={() => {
                 if (activeMod) closeModule();
                 else openModule(m.id);
@@ -195,6 +205,7 @@ export function ModuleShell() {
               </div>
               <button
                 type="button"
+                data-ced-hotspot="module-close"
                 onClick={closeModule}
                 className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/15 bg-white/5 text-slate-200 transition hover:border-cyan-400/50 hover:bg-cyan-500/15 hover:text-white"
                 aria-label="Cerrar módulo"

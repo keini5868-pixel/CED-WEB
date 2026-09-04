@@ -5,18 +5,22 @@ import { matchPresenterGuide } from "./presenterGuide";
 describe("matchPresenterGuide", () => {
   it("va a Sistema y abre el menú", () => {
     expect(matchPresenterGuide("esta es la pestaña de sistema")).toEqual([
-      { hotspot: "sistema", click: true },
+      { hotspot: "sistema", click: true, force: "open" },
     ]);
   });
 
   it("planes abre Sistema y luego Planes", () => {
     expect(matchPresenterGuide("aquí están los planes")).toEqual([
-      { hotspot: "sistema", click: true },
+      { hotspot: "sistema", click: true, force: "open" },
       { hotspot: "nav-plans", click: true },
     ]);
   });
 
-  it("no dispara en frases cortas", () => {
-    expect(matchPresenterGuide("ok")).toBeNull();
+  it("cierra todo y cierra Sistema", () => {
+    expect(matchPresenterGuide("cerrar")).toEqual([{ action: "close-all" }]);
+    expect(matchPresenterGuide("cierra todo")).toEqual([{ action: "close-all" }]);
+    expect(matchPresenterGuide("sierra")).toEqual([{ action: "close-all" }]);
+    expect(matchPresenterGuide("cierra las pestañas que abre")).toEqual([{ action: "close-all" }]);
+    expect(matchPresenterGuide("cierra sistema")).toEqual([{ action: "close-all" }]);
   });
 });

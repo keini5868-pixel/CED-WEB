@@ -502,3 +502,8 @@ body:has(.ced-studio-shell) {
 [data-ced-presenter-owner="0"] [data-ced-hotspot="robot"] {
   display: none !important;
 }
+
+.ced-holo-puppet {
+  overflow: visible;
+  display: block;
+}

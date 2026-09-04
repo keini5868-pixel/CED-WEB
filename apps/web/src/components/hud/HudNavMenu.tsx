@@ -5,6 +5,8 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { createPortal } from "react-dom";
 import { ChevronDown } from "lucide-react";
 
+import { registerPresenterCloser } from "@/lib/voice/presenterCloseBus";
+
 export type HudNavItem = {
   id: string;
   label: string;
@@ -55,6 +57,14 @@ export function HudNavMenu({ label, items, align = "left", tone = "hud", hotspot
     if (!open) return;
     updateCoords();
   }, [open, updateCoords]);
+
+  useEffect(() => {
+    const onCloseMenus = () => setOpen(false);
+    window.addEventListener("ced-close-hud-menus", onCloseMenus);
+    return () => window.removeEventListener("ced-close-hud-menus", onCloseMenus);
+  }, []);
+
+  useEffect(() => registerPresenterCloser(() => setOpen(false)), []);
 
   useEffect(() => {
     if (!open) return;
