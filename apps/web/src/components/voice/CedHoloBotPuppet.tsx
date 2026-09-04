@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { PresenterGesture } from "@/lib/voice/presenterGestures";
-import { allSpriteUrls, spriteUrl } from "@/lib/voice/presenterSprites";
+import { spriteUrl } from "@/lib/voice/presenterSprites";
 
 type Props = {
   gesture: PresenterGesture;
@@ -55,9 +55,7 @@ export function CedHoloBotPuppet({ gesture }: Props) {
   const [src, setSrc] = useState(raw);
 
   useEffect(() => {
-    allSpriteUrls().forEach((url) => {
-      void punchBlack(url);
-    });
+    void punchBlack(spriteUrl("idle"));
   }, []);
 
   useEffect(() => {

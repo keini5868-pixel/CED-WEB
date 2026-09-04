@@ -1,7 +1,7 @@
 import type { PresenterGesture } from "@/lib/voice/presenterGestures";
 
 /** Sube este número cuando reemplaces un PNG para saltar la caché del navegador. */
-export const PRESENTER_SPRITE_VER = "gestures1";
+export const PRESENTER_SPRITE_VER = "gestures2";
 
 export type PresenterSpriteSlot = {
   /** Archivo en /public/voice/ced-puppet/ */
