@@ -62,12 +62,12 @@ export function CedHoloBotPuppet({ gesture }: Props) {
   }, []);
 
   return (
-    <div className="ced-holo-photo relative h-[13.5rem] w-[10.2rem] sm:h-[16rem] sm:w-[12rem] lg:h-[19rem] lg:w-[14.2rem]">
+    <div className="ced-holo-photo relative h-[11.5rem] w-[8.6rem] bg-transparent sm:h-[13.5rem] sm:w-[10.2rem] lg:h-[16rem] lg:w-[12rem]">
       <img
         src={src}
         alt=""
         draggable={false}
-        className="ced-holo-photo-img pointer-events-none h-full w-full select-none object-contain object-bottom"
+        className="ced-holo-photo-img pointer-events-none h-full w-full select-none bg-transparent object-contain object-bottom"
       />
     </div>
   );

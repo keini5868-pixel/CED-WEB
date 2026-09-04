@@ -42,12 +42,24 @@ type Particle = {
   size: number;
 };
 
+/** Reposo: encima del dock ASIST/ROBOT (barra derecha), no en el centro del chat. */
 function homePose(): Pose {
-  if (typeof window === "undefined") return { x: 420, y: 420, scale: 1 };
+  if (typeof window === "undefined") return { x: 1100, y: 560, scale: 0.68 };
+  const dock =
+    document.querySelector<HTMLElement>("[data-ced-hotspot='robot']") ||
+    document.querySelector<HTMLElement>("[data-ced-hotspot='asistente']");
+  if (dock) {
+    const r = dock.getBoundingClientRect();
+    return {
+      x: Math.min(window.innerWidth - 72, Math.max(72, r.left + r.width * 0.5)),
+      y: Math.max(132, r.top - 10),
+      scale: 0.68,
+    };
+  }
   return {
-    x: window.innerWidth * 0.42,
-    y: window.innerHeight * 0.54,
-    scale: 1,
+    x: window.innerWidth - 108,
+    y: window.innerHeight - 210,
+    scale: 0.68,
   };
 }
 
@@ -305,11 +317,23 @@ export function CedPresenterMascot({
       return;
     }
     applyGesture("welcome");
+    applyPose(homePose());
     const welcomeTimer = window.setTimeout(() => {
       if (gestureRef.current === "welcome") applyGesture("idle");
     }, 2600);
     return () => window.clearTimeout(welcomeTimer);
   }, [visible, exiting, applyPose, applyGesture]);
+
+  useEffect(() => {
+    if (!visible || exiting) return;
+    const park = () => {
+      if (busyRef.current) return;
+      applyPose(homePose());
+    };
+    park();
+    window.addEventListener("resize", park);
+    return () => window.removeEventListener("resize", park);
+  }, [visible, exiting, applyPose]);
 
   useEffect(() => {
     if (!visible || exiting) return;
@@ -571,7 +595,7 @@ export function CedPresenterMascot({
   if (!mounted) return null;
 
   return createPortal(
-    <div className="pointer-events-none fixed inset-0 z-[220]" aria-hidden>
+    <div className="ced-presenter-layer pointer-events-none fixed inset-0 z-[220]" aria-hidden>
       {visible ? (
         <div
           ref={wrapRef}

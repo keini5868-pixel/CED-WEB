@@ -508,6 +508,18 @@ body:has(.ced-studio-shell) {
   display: block;
 }
 
+.ced-holo-photo {
+  background: transparent !important;
+}
+
+.ced-presenter-layer {
+  background: transparent !important;
+  mix-blend-mode: screen;
+}
+
 .ced-holo-photo-img {
-  filter: drop-shadow(0 0 22px rgba(0, 229, 255, 0.55));
+  background: transparent !important;
+  mix-blend-mode: screen;
+  filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.65));
+  transition: opacity 0.22s ease;
 }
