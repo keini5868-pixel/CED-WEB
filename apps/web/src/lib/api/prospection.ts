@@ -20,15 +20,20 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 }
 
 export async function enableProspection(): Promise<
-  { ok: true; enabled: boolean } | { ok: false; error: string }
+  { ok: true; enabled: boolean; spoken?: string } | { ok: false; error: string }
 > {
   try {
     const res = await authFetch("/v1/prospection/enable", { method: "POST" });
-    const data = (await res.json()) as { ok?: boolean; enabled?: boolean; error?: string };
+    const data = (await res.json()) as {
+      ok?: boolean;
+      enabled?: boolean;
+      error?: string;
+      spoken?: string;
+    };
     if (!res.ok || !data.ok) {
-      return { ok: false, error: data.error || "No se pudo activar prospección" };
+      return { ok: false, error: data.error || data.spoken || "No se pudo activar prospección" };
     }
-    return { ok: true, enabled: Boolean(data.enabled) };
+    return { ok: true, enabled: Boolean(data.enabled), spoken: data.spoken };
   } catch {
     return { ok: false, error: "No se pudo contactar la API" };
   }

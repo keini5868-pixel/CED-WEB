@@ -48,8 +48,10 @@ _PDF_PATTERNS = (
     r"\bpdf\s+(?:de|con|sobre)\b",
 )
 _PROSPECTION_PATTERNS = (
-    r"\b(?:prospecci[oó]n|prospectar|prospectos?)\b",
-    r"\b(?:activa|desactiva|reporte)\s+(?:la\s+)?prospecci[oó]n\b",
+    r"\b(?:activa|activar|enciende|encender|abre|abrir|desactiva|desactivar)\s+(?:el\s+|la\s+)?(?:modo\s+(?:de\s+)?)?prospecci[oó]n\b",
+    r"\bmodo\s+(?:de\s+)?prospecci[oó]n\b",
+    r"\breporte\s+(?:de\s+)?prospecci[oó]n\b",
+    r"\bbuscar?\s+prospectos?\b",
 )
 _MEMORY_PATTERNS = (
     r"\b(?:recuerda|guarda|anota|memoriza)\b",
@@ -100,7 +102,7 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\b(genera el documento|crea el reporte)\b",
     ),
     "prospection": (
-        r"\b(modo prospección|activa prospección)\b",
+        r"\b(modo(?:\s+de)?\s+prospecci[oó]n|activa(?:r)?\s+(?:el\s+)?(?:modo\s+(?:de\s+)?)?prospecci[oó]n)\b",
         r"\b(buscar prospectos|modo ventas)\b",
         r"\b(activar castillo|modo ascenso)\b",
     ),

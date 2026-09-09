@@ -21,9 +21,54 @@ LEAD_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+_MODE_COMMAND = re.compile(
+    r"\b(?:activa(?:r)?|enciende(?:r)?|prende(?:r)?|abre(?:r)?|desactiva(?:r)?)\b"
+    r".{0,48}\bprospecci[oó]n\b"
+    r"|\bmodo\s+(?:de\s+)?prospecci[oó]n\b"
+    r"|\breporte\s+(?:de\s+)?(?:leads|prospecci[oó]n)\b"
+    r"|\b(?:leads|prospecci[oó]n)\s+de\s+hoy\b",
+    re.IGNORECASE,
+)
+
+
+def is_prospection_mode_command(text: str) -> bool:
+    """True solo si piden activar/apagar/reporte — no copy ni ideas de prospección."""
+    return bool(_MODE_COMMAND.search((text or "").strip()))
+
 
 def _client():
     return supabase_db._client()
+
+
+def _instagram_connected(user_id: str) -> bool:
+    conn = supabase_db.get_meta_connection(user_id)
+    return bool(conn and conn.get("access_token") and conn.get("ig_user_id"))
+
+
+def _spoken_after_enable(user_id: str) -> str:
+    if _instagram_connected(user_id):
+        return "Prospección activada. Escaneo comentarios de Instagram en busca de leads."
+    return (
+        "Prospección activada, pero Instagram no está conectado. "
+        "Vincula Meta en Conectar Redes para escanear comentarios."
+    )
+
+
+def enable_prospection_for_user(user_id: str) -> dict[str, Any]:
+    """Activa con chequeo de plan. Misma puerta para voz, chat y REST."""
+    from app.deps.plan_access import effective_plan_limits
+
+    limits, reason, _ = effective_plan_limits(user_id)
+    if reason == "trial_expired":
+        spoken = "Tu prueba terminó. Elige un plan en Precios."
+        return {"ok": False, "error": spoken, "spoken": spoken}
+    if not limits.prospection_enabled:
+        spoken = "La prospección requiere plan Élite o Founding. Mejora en Precios."
+        return {"ok": False, "error": spoken, "spoken": spoken}
+    result = set_prospection_enabled(user_id, True)
+    result["spoken"] = _spoken_after_enable(user_id)
+    result["instagram_connected"] = _instagram_connected(user_id)
+    return result
 
 
 def set_prospection_enabled(user_id: str, enabled: bool) -> dict[str, Any]:
@@ -44,8 +89,13 @@ def set_prospection_enabled(user_id: str, enabled: bool) -> dict[str, Any]:
             daemon=True,
             name=f"prospection-scan-{user_id[:8]}",
         ).start()
-        return {"ok": True, "enabled": True, "scan": {"ok": True, "pending": True}}
-    return {"ok": True, "enabled": False}
+        return {
+            "ok": True,
+            "enabled": True,
+            "scan": {"ok": True, "pending": True},
+            "instagram_connected": _instagram_connected(user_id),
+        }
+    return {"ok": True, "enabled": False, "spoken": "Prospección desactivada."}
 
 
 def get_prospection_status(user_id: str) -> dict[str, Any]:
@@ -132,6 +182,10 @@ def scan_instagram_leads(user_id: str) -> dict[str, Any]:
         return {"ok": False, "error": "Cuenta IG no vinculada", "new_leads": 0}
 
     new_count = 0
+    existing = {
+        str(row.get("handle") or "").lower()
+        for row in supabase_db.list_leads_today(user_id, limit=80)
+    }
     try:
         with httpx.Client(timeout=15.0) as client:
             media_res = client.get(
@@ -160,14 +214,18 @@ def scan_instagram_leads(user_id: str) -> dict[str, Any]:
                     username = str(comment.get("username") or "user")
                     if not LEAD_KEYWORDS.search(text):
                         continue
+                    handle = f"@{username}"
+                    if handle.lower() in existing:
+                        continue
                     score, is_hot, intent = _score_comment(text)
                     insert_lead(
                         user_id,
-                        f"@{username}",
+                        handle,
                         score=score,
                         is_hot=is_hot,
                         intent=intent[:120],
                     )
+                    existing.add(handle.lower())
                     new_count += 1
     except Exception as exc:  # noqa: BLE001
         logger.warning("[PROSPECTION] scan %s", exc)

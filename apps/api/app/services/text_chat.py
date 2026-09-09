@@ -245,6 +245,25 @@ CHAT_TOOLS: list[dict[str, Any]] = [
         "input_schema": {"type": "object", "properties": {}, "required": []},
     },
     {
+        "name": "activar_prospeccion",
+        "description": (
+            "Activa el modo prospección de CED (escanea comentarios de Instagram en busca de leads). "
+            "SOLO si el usuario pide explícitamente activar/encender el modo prospección. "
+            "PROHIBIDO si pide copy, ideas, un mensaje o un pitch de prospección — eso se responde en texto."
+        ),
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "desactivar_prospeccion",
+        "description": "Desactiva el modo prospección de leads en Instagram.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
+        "name": "reporte_prospeccion",
+        "description": "Reporte de leads detectados hoy por el modo prospección.",
+        "input_schema": {"type": "object", "properties": {}, "required": []},
+    },
+    {
         "name": "publicar_facebook",
         "description": (
             "Publica un post en la página de Facebook conectada. La imagen DEBE venir "
@@ -458,6 +477,7 @@ IMPORTANTE — capacidades REALES de esta plataforma:
   de capacidades CED (regla de sistema inyectada). PROHIBIDO inventar módulos inexistentes.
 - CED puede publicar en Facebook e Instagram cuando el usuario conectó Meta (dashboard → Conectar Redes).
 - Usa las herramientas publicar_facebook / publicar_instagram cuando el usuario pida publicar y confirme el texto.
+- Modo prospección (leads en comentarios de Instagram): SOLO si piden activar, desactivar o un reporte. Invoca activar_prospeccion / desactivar_prospeccion / reporte_prospeccion. Si piden copy, ideas o un mensaje de prospección, responde en texto — NO actives el modo.
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
 - Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
 - Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
@@ -1362,6 +1382,10 @@ def _needs_chat_tools(text: str) -> bool:
         if not img_prompt or len(t) > DIRECT_IMAGE_MAX_CHARS:
             return True
         return False
+    from app.services.prospection import is_prospection_mode_command
+
+    if is_prospection_mode_command(t):
+        return True
     return bool(_TOOLS_KEYWORDS.search(t))
 
 
@@ -1697,6 +1721,18 @@ def _run_chat_tool(
                     "page_id": conn.get("page_id"),
                 }
             )
+        if name == "activar_prospeccion":
+            from app.services.prospection import enable_prospection_for_user
+
+            return json.dumps(enable_prospection_for_user(user_id))
+        if name == "desactivar_prospeccion":
+            from app.services.prospection import set_prospection_enabled
+
+            return json.dumps(set_prospection_enabled(user_id, False))
+        if name == "reporte_prospeccion":
+            from app.services.prospection import get_prospection_report
+
+            return json.dumps(get_prospection_report(user_id))
         if name == "publicar_facebook":
             from app.services.publish_image_context import resolve_image_for_publishing
             from app.services.publish_text import sanitize_publish_caption

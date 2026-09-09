@@ -75,7 +75,7 @@ export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: ACTIVAR_PROSPECCION,
     description:
-      "Activa modo prospección 24/7: escanea comentarios Instagram en busca de leads.",
+      "Activa modo prospección: escanea comentarios de Instagram en busca de leads. SOLO si el usuario lo pide explícitamente.",
     parameters: { type: Type.OBJECT, properties: {} },
   },
   {

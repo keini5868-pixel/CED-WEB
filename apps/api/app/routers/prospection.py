@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 
 from app.deps.auth import require_user_id
 from app.services.prospection import (
+    enable_prospection_for_user,
     get_prospection_report,
     get_prospection_status,
     scan_instagram_leads,
@@ -22,7 +23,7 @@ async def prospection_status(user_id: str = Depends(require_user_id)) -> dict:
 
 @router.post("/enable")
 async def prospection_enable(user_id: str = Depends(require_user_id)) -> dict:
-    return set_prospection_enabled(user_id, True)
+    return enable_prospection_for_user(user_id)
 
 
 @router.post("/disable")

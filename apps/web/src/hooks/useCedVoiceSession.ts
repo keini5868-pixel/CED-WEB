@@ -1597,8 +1597,8 @@ export function useCedVoiceSession(
             if (isStale()) return;
             await client.speakExactNarrationAsync(
               r.ok
-                ? `Prospección activada, ${h}.`
-                : `No pude activar prospección, ${h}.`,
+                ? r.spoken || `Prospección activada, ${h}.`
+                : r.error || `No pude activar prospección, ${h}.`,
             );
           } catch {
             if (!isStale()) {
@@ -2575,8 +2575,8 @@ export function useCedVoiceSession(
             const h = cedResolveHonorific(client.getUserAddress());
             return {
               spoken: r.ok
-                ? `Prospección activada, ${h}.`
-                : `No pude activar prospección, ${h}.`,
+                ? r.spoken || `Prospección activada, ${h}.`
+                : r.error || `No pude activar prospección, ${h}.`,
             };
           }
           if (name === DESACTIVAR_PROSPECCION) {

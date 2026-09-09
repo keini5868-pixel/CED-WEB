@@ -32,6 +32,8 @@ from app.services.voice_intent_gate import (
         ("Activa modo prospección en Facebook", True),
         ("Abre el modo avanzado con Claude", True),
         ("¿Qué clima hace hoy?", True),
+        ("Ayúdame con un mensaje de prospección para FitLine", False),
+        ("Dame ideas de prospección para FitLine", False),
     ],
 )
 def test_has_explicit_module_signal(phrase: str, expect_signal: bool) -> None:

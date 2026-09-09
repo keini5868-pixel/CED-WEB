@@ -40,11 +40,11 @@ _MODULE_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "prospection",
         re.compile(
             r"\b("
-            r"prospecci[oó]n|prospectos?|"
-            r"comentarios?\s+(?:de\s+)?(?:instagram|facebook|redes)|"
-            r"leer\s+comentarios?|"
-            r"clientes?\s+(?:potenciales?|calientes?)|"
-            r"modo\s+(?:prospecci[oó]n|ventas|ascenso)"
+            r"activa(?:r)?\s+(?:el\s+|la\s+|el\s+modo\s+de\s+)?prospecci[oó]n|"
+            r"modo\s+(?:de\s+)?prospecci[oó]n|"
+            r"reporte\s+(?:de\s+)?prospecci[oó]n|"
+            r"desactiva(?:r)?\s+(?:la\s+)?prospecci[oó]n|"
+            r"buscar?\s+prospectos?"
             r")\b",
             re.I,
         ),

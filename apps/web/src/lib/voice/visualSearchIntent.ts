@@ -29,6 +29,7 @@ const PROSPECTION_ON = [
   /\bactiva(r)?\s+prospecci[oó]n\b/i,
   /\bactiva(r)?\b.*\bprospecci[oó]n\b/i,
   /\bactivamos\b.*\bprospecci[oó]n\b/i,
+  /\bmodo\s+de\s+prospecci[oó]n\b/i,
   /\bmodo\s+prospecci[oó]n\b/i,
   /\bmodo\b.*\bprospecci[oó]n\b/i,
   /\bmodo\s+perspectiva\b/i,

@@ -146,7 +146,7 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
     ),
     "prospection": (
         r"\b(?:activa|desactiva)\s+(?:la\s+)?prospecci[óo]n\b",
-        r"\bmodo\s+prospecci[óo]n\b",
+        r"\bmodo\s+(?:de\s+)?prospecci[óo]n\b",
         r"\breporte\s+de\s+prospecci[óo]n\b",
         r"\bbuscar?\s+prospectos?\b",
     ),
@@ -265,8 +265,8 @@ SOFT_ANCHORS: dict[str, tuple[str, ...]] = {
         r"\b(?:instagram|facebook)\b",
     ),
     "prospection": (
-        r"\bprospecci[óo]n\b",
-        r"\bprospectos?\b",
+        r"\bmodo\s+(?:de\s+)?prospecci[óo]n\b",
+        r"\bactiva(?:r)?\b.*\bprospecci[óo]n\b",
     ),
     "stripe": (
         r"\bsuscripci[óo]n\b",

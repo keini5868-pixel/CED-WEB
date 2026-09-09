@@ -867,12 +867,6 @@ export class CedLiveClient {
       this.handlers.onProspectionIntent?.(utterance);
       return;
     }
-    if (
-      /\bprospecci/i.test(utterance) &&
-      !userExplicitlyRequestedProspection(utterance)
-    ) {
-      return;
-    }
     this.requestSingleResponse();
   }
 

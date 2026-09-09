@@ -1355,25 +1355,24 @@ async def _execute_voice_tool_body(
             )
 
         if name == "activar_prospeccion":
-            from app.deps.plan_access import effective_plan_limits
+            from app.services.prospection import enable_prospection_for_user
 
-            limits, reason, _ = effective_plan_limits(user_id)
-            if reason == "trial_expired":
-                return _spoken_err("Tu prueba terminó, señor. Elige un plan en Precios.")
-            if not limits.prospection_enabled:
-                return _spoken_err(
-                    "La prospección requiere plan Élite o Founding, señor. Mejora en Precios."
-                )
-            vcs.set_active_mode(user_id, "prospect")
-            result = await asyncio.to_thread(set_prospection_enabled, user_id, True)
+            result = await asyncio.to_thread(enable_prospection_for_user, user_id)
             if result.get("ok"):
-                return _spoken_ok("Sistema de prospección activado, señor.")
-            return _spoken_err("No fue posible activar prospección, señor.")
+                vcs.set_active_mode(user_id, "prospect")
+                return _spoken_ok(
+                    str(result.get("spoken") or "Sistema de prospección activado, señor.")
+                )
+            return _spoken_err(
+                str(result.get("spoken") or result.get("error") or "No fue posible activar prospección, señor.")
+            )
 
         if name == "desactivar_prospeccion":
             result = await asyncio.to_thread(set_prospection_enabled, user_id, False)
             if result.get("ok"):
-                return _spoken_ok("Prospección desactivada, señor.")
+                if vcs.get_active_mode(user_id) == "prospect":
+                    vcs.set_active_mode(user_id, None)
+                return _spoken_ok(str(result.get("spoken") or "Prospección desactivada, señor."))
             return _spoken_err("No fue posible desactivar prospección, señor.")
 
         if name == "reporte_prospeccion":
