@@ -169,6 +169,8 @@ MEMORY_RECALL_PATTERNS = [
     r"\bqu[eé] recuerdas\b",
     r"\bme recuerdas\b",
     r"\brecuerdas\b.*\b(conversaci[oó]n|charla|sesi[oó]n|hablamos|cuando)\b",
+    r"\bconversaci[oó]n.{0,60}\brecuerdas\b",
+    r"\btuvimos\s+esta\s+conversaci",
     r"\bconversaci[oó]n\s+anterior\b",
     r"\b[uú]ltima\s+conversaci[oó]n\b",
     r"\bte acuerdas\b",

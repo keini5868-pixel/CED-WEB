@@ -27,6 +27,39 @@ _NON_IMAGE_OBJECT = (
 _ARTICLE = r"(?:una?|un|la|el|las|los|an?)"
 _DETERMINER = r"(?:una?|un|la|el|las|los|an?|esa|ese|esta|este|aquell[oa])"
 
+_CONVERSATION_PASTE_STAMPS = re.compile(r"\b\d{1,2}:\d{2}\b")
+_CONVERSATION_PASTE_SPEAKER = re.compile(r"(?im)^(?:user|ced|assistant|model)\s*$")
+_CONVERSATION_RECALL_PASTE = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"tuvimos\s+esta\s+conversaci|"
+    r"horita\s+tuvimos|"
+    r"te\s+(?:pase|pas[eé])\s+(?:toda\s+)?(?:esta\s+)?conversaci|"
+    r"conversaci[oó]n.{0,60}\brecuerdas\b|"
+    r"\brecuerdas\b.{0,80}conversaci"
+    r")"
+)
+
+
+def looks_like_conversation_paste(text: str) -> bool:
+    """True si pegó un hilo (timestamps, User/CED) o pide que recuerde esa charla.
+
+    Un dump con «publicar» + Instagram no es «publica ahora».
+    """
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _CONVERSATION_RECALL_PASTE.search(t) and len(t) > 40:
+        return True
+    if len(t) < 180:
+        return False
+    if len(_CONVERSATION_PASTE_STAMPS.findall(t)) >= 2:
+        return True
+    if len(_CONVERSATION_PASTE_SPEAKER.findall(t)) >= 2:
+        return True
+    return False
+
+
 _IMAGE_PATTERNS = (
     re.compile(rf"\b{_CREATE_VERBS}\s+(?:{_DETERMINER}\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\b{_CREATE_VERBS}\s+(?:me\s+)?(?:{_DETERMINER}\s+)?{_IMAGE_NOUN}\b", re.I),
@@ -78,7 +111,10 @@ _IMAGE_PREPRODUCTION = re.compile(
     r"primero\s+(?:hay\s+que\s+)?(?:acord|decidir|hablar|ponernos)|"
     r"first\s+(?:we\s+)?(?:need\s+to\s+)?(?:agree|decide|discuss|align)|"
     r"don'?t\s+(?:creat|generat|make)\w*\s+(?:it\s+)?(?:yet|now)|"
-    r"no\s+(?:la\s+|lo\s+)?(?:generes|crees|hagas|generar)\s+(?:todav[ií]a|a[uú]n)"
+    r"no\s+(?:la\s+|lo\s+)?(?:generes|crees|hagas|generar)\s+(?:todav[ií]a|a[uú]n)|"
+    r"qu[eé]\s+imagen\s+(?:le\s+)?digo|"
+    r"imagen\s+le\s+digo\s+que\s+(?:me\s+)?genere|"
+    r"qu[eé]\s+imagen\s+(?:le\s+)?(?:pongo|uso|usar[ií]as|recomiendas)"
     r")"
 )
 
@@ -172,6 +208,8 @@ def is_image_preproduction_talk(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    if looks_like_conversation_paste(t):
+        return True
     if _IMAGE_PREPRODUCTION.search(t) and _VISUAL_CONTEXT.search(t):
         return True
     if _EXPLICIT_IMAGE_CREATE.search(t):
@@ -268,6 +306,8 @@ def is_visual_design_exploration(
 def is_generate_image_intent(text: str) -> bool:
     t = text.strip()
     if len(t) < 8:
+        return False
+    if looks_like_conversation_paste(t):
         return False
     # Pedido real de PDF gana; mención casual de "PDF" en una lista no bloquea imagen
     # ni la dispara (is_pdf_intent ya no es solo mentions_pdf).
@@ -473,6 +513,8 @@ def is_explicit_publish_to_social(text: str) -> bool:
     """
     t = (text or "").strip()
     if not t:
+        return False
+    if looks_like_conversation_paste(t):
         return False
     if not _EXPLICIT_PUBLISH_COMMAND.search(t):
         return False

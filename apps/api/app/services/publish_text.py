@@ -612,7 +612,10 @@ def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
     if not t:
         return False
     from app.domain.ced_product_capabilities import is_capability_catalog_request
+    from app.services.chat_intents import looks_like_conversation_paste
 
+    if looks_like_conversation_paste(t):
+        return False
     if is_capability_catalog_request(t):
         return False
 

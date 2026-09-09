@@ -1,12 +1,19 @@
 """Routing publicación vs creativo — casos reales del chat."""
 
-from app.services.chat_intents import parse_followup_image_prompt
+from app.services.chat_intents import (
+    is_explicit_publish_to_social,
+    is_generate_image_intent,
+    parse_followup_image_prompt,
+)
+from app.services.chat_image_generation import should_take_direct_image_path
 from app.services.marketing_creative import blocks_publish_intent, extract_product_subject
+from app.services.publish_image_context import get_publish_flow
 from app.services.publish_text import (
     detect_publish_platform_explicit,
     is_publish_platform_reply,
     is_social_publish_intent,
 )
+from app.services.text_publish_flow import handle_publish_flow_turn
 
 
 def test_publish_with_caracteristicas_not_blocked():
@@ -91,6 +98,49 @@ def test_full_ced_capability_paste_generates_image_not_instagram():
 def test_real_publica_en_instagram_still_works():
     assert is_social_publish_intent("publica esto en instagram")
     assert is_social_publish_intent("perfecto publica esto en facebook")
+
+
+def test_pasted_planning_conversation_is_not_publish():
+    from app.services.chat_intents import looks_like_conversation_paste
+    from app.services.publish_image_context import begin_publish_flow, clear_publish_flow
+    from app.services.text_publish_flow import handle_publish_flow_turn
+
+    dump = (
+        "User\n"
+        "PARA HOY queria hacer un video donde muestre a ced publicando "
+        "en Instagram con un gancho\n"
+        "19:10\n"
+        "CED\n"
+        "Voy a armar el guion. PUBLICAR Instagram (mostrar el botón).\n"
+        "19:15\n"
+        "horita tuvimos esta conversacion la recuerdas"
+    )
+    assert looks_like_conversation_paste(dump) is True
+    assert is_social_publish_intent(dump) is False
+    assert is_generate_image_intent(dump) is False
+    uid, cid = "user-paste-plan", "conv-paste-plan"
+    clear_publish_flow(uid, cid)
+    begin_publish_flow(uid, cid, platform="instagram", stage="awaiting_image")
+    reply = handle_publish_flow_turn(
+        uid,
+        cid,
+        dump,
+        history=[],
+        run_tool=lambda *a, **k: "",
+        suggest_caption=lambda *a, **k: "",
+    )
+    assert reply is None
+    assert get_publish_flow(uid, cid) is None
+
+
+def test_image_advice_is_not_generate():
+    msg = (
+        "ok y otra cosa que imagen le digo que me genere en ese momento "
+        "ya que va a quedar publicada en mi integran"
+    )
+    assert is_generate_image_intent(msg) is False
+    assert is_social_publish_intent(msg) is False
+    assert should_take_direct_image_path(msg, []) is False
 
 
 def test_orchestrate_direct_path_keeps_written_details_natural():

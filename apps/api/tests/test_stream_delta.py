@@ -26,3 +26,25 @@ def test_stream_piece_delta_incremental_passthrough():
 
 def test_strip_prefix_overlap():
     assert strip_prefix_overlap("Un momento, señor.", "Un momento, señor. Listo.") == "Listo."
+
+
+def test_stream_piece_delta_keeps_ced_and_voz_after_same_letters():
+    """Regresión: tokens cortos no deben caer porque la letra ya salió en el texto."""
+    acc = "Hook 3 — Scarcity + Founding (urgencia).\n\nGUION VIDEO — ACCIÓN\n"
+    assert stream_piece_delta(acc, "C") == "C"
+    acc += "C"
+    assert stream_piece_delta(acc, "ED") == "ED"
+    acc += "ED"
+    assert stream_piece_delta(acc, " no solo genera contenido. ") == " no solo genera contenido. "
+    acc += " no solo genera contenido. "
+    assert stream_piece_delta(acc, "V") == "V"
+    acc += "V"
+    assert stream_piece_delta(acc, "oz en off") == "oz en off"
+    acc += "oz en off"
+    assert "CED" in acc
+    assert "Voz en off" in acc
+
+
+def test_stream_piece_delta_still_skips_long_echo_substring():
+    acc = "Perfecto, señor. Aquí el guion completo del video para Instagram."
+    assert stream_piece_delta(acc, "guion completo del video") == ""

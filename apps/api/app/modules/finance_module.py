@@ -259,10 +259,12 @@ def is_finance_breakdown_intent(text: str) -> bool:
         return True
     if re.search(r"\b\d[\d.,]*\s+de\s+qu[eé]\b", t):
         return True
-    if re.search(r"\bde\s+qu[eé]\b", t) and re.search(r"\b(?:gastos?|ingresos?|\d)", t):
+    if re.search(r"\bde\s+qu[eé]\b", t) and re.search(r"\b(?:gastos?|ingresos?)\b", t):
         return True
+    # «qué es / qué son» solo con ancla financiera. Un dígito suelto («3 hooks»)
+    # + «que es dar a conocer» no es un desglose de gastos.
     if re.search(r"\bqu[eé]\s+(?:son|es|incluye)\b", t) and re.search(
-        r"\b(?:gastos?|ingresos?|\d)", t
+        r"\b(?:gastos?|ingresos?|finanzas)\b", t
     ):
         return True
     return False

@@ -50,11 +50,14 @@ def _sync_platform_from_user_text(
 
 def _publish_turn_is_off_topic(text: str) -> bool:
     """Cierra flujo de publicación si el usuario cambió a investigación o charla larga."""
+    from app.services.chat_intents import looks_like_conversation_paste
     from app.services.cognitive_intents import is_web_research_intent, requires_live_web
 
     t = (text or "").strip()
     if not t:
         return False
+    if looks_like_conversation_paste(t):
+        return True
     if is_publish_help_request(t):
         return False
     if is_social_publish_intent(t) or wants_publish_now(t) or is_publish_confirm(t):
@@ -256,8 +259,13 @@ def handle_publish_flow_turn(
         flow = None
 
     # Generar imagen NUNCA entra al flujo Meta (aunque la lista mencione Instagram).
-    from app.services.chat_intents import is_generate_image_intent
+    from app.services.chat_intents import is_generate_image_intent, looks_like_conversation_paste
     from app.services.marketing_creative import is_image_creation_request
+
+    if looks_like_conversation_paste(text):
+        if flow:
+            clear_publish_flow(user_id, conversation_id)
+        return None
 
     if is_generate_image_intent(text) or is_image_creation_request(text, history):
         if flow:

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 def stream_piece_delta(accumulated: str, piece: str) -> str:
     """Devuelve solo el texto nuevo si `piece` trae buffer acumulado."""
-    incoming = (piece or "")
+    incoming = piece or ""
     if not incoming:
         return ""
     prev = accumulated or ""
@@ -14,7 +14,9 @@ def stream_piece_delta(accumulated: str, piece: str) -> str:
         return delta if delta else ""
     if prev and len(incoming) <= len(prev) and prev.startswith(incoming):
         return ""
-    if prev and incoming in prev:
+    # No usar «incoming in prev»: un token «C» o «V» ya aparece en
+    # «Scarcity» / «Video» y el chat publicaba «ED» / «oz» en lugar de CED / Voz.
+    if prev and len(incoming) >= 16 and incoming in prev:
         return ""
     return incoming
 

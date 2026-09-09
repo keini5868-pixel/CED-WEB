@@ -212,9 +212,30 @@ function shouldRouteAttachmentViaChat(text: string, mode: ImageActionMode): bool
   );
 }
 
+function looksLikeConversationPaste(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (
+    t.length > 40 &&
+    /(?:tuvimos\s+esta\s+conversaci|horita\s+tuvimos|te\s+pase\s+(?:toda\s+)?(?:esta\s+)?conversaci|conversaci[oó]n.{0,60}recuerdas|recuerdas.{0,80}conversaci)/i.test(
+      t,
+    )
+  ) {
+    return true;
+  }
+  if (t.length < 180) return false;
+  const stamps = t.match(/\b\d{1,2}:\d{2}\b/g);
+  if ((stamps?.length ?? 0) >= 2) return true;
+  if (/^(?:user|ced|assistant)\s*$/gim.test(t) && (t.match(/^(?:user|ced)\s*$/gim)?.length ?? 0) >= 2) {
+    return true;
+  }
+  return false;
+}
+
 function looksLikeImageGenerationRequest(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
+  if (looksLikeConversationPaste(t)) return false;
   return (
     /\b(genera(?:r)?|crear?|haz(?:me)?|dise[nñ]a|ilustra)\w*.{0,80}\b(imagen|foto|flyer|creativo|banner|ilustraci[oó]n)\b/i.test(
       t,
