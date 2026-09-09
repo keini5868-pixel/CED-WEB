@@ -59,6 +59,7 @@ def _fetch_ig_comments(
             params={
                 "fields": "id,text,username,timestamp",
                 "limit": comments_limit,
+                "filter": "stream",
                 "access_token": token,
             },
         )
@@ -76,6 +77,7 @@ def _fetch_ig_comments(
                     "score": score,
                     "is_hot": is_hot or bool(LEAD_HINT.search(text)),
                     "intent": intent,
+                    "comment_id": str(comment.get("id") or ""),
                 }
             )
     return out
@@ -108,6 +110,7 @@ def _fetch_fb_comments(
             params={
                 "fields": "id,message,from,created_time",
                 "limit": comments_limit,
+                "filter": "stream",
                 "access_token": token,
             },
         )
@@ -115,7 +118,10 @@ def _fetch_fb_comments(
             text = str(comment.get("message") or "").strip()
             if not text:
                 continue
-            author = (comment.get("from") or {}).get("name") or "usuario"
+            author = (comment.get("from") or {}).get("name")
+            if not author:
+                cid = str(comment.get("id") or "anon")
+                author = f"fb-{cid[-8:]}"
             score, is_hot, intent = _score_comment(text)
             out.append(
                 {
@@ -125,6 +131,7 @@ def _fetch_fb_comments(
                     "score": score,
                     "is_hot": is_hot or bool(LEAD_HINT.search(text)),
                     "intent": intent,
+                    "comment_id": str(comment.get("id") or ""),
                 }
             )
     return out
@@ -163,8 +170,8 @@ def fetch_social_comments(
     user_id: str,
     *,
     platform: str = "both",
-    posts_limit: int = 2,
-    comments_limit: int = 15,
+    posts_limit: int = 8,
+    comments_limit: int = 25,
 ) -> dict[str, Any]:
     """Lee comentarios recientes de IG y/o FB para respuesta en voz."""
     conn = supabase_db.get_meta_connection(user_id)

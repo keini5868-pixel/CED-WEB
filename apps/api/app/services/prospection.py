@@ -2,17 +2,12 @@
 
 from __future__ import annotations
 
-import logging
 import re
 import threading
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
-
 from app.services import supabase_db
-
-logger = logging.getLogger(__name__)
 
 LEAD_KEYWORDS = re.compile(
     r"\b(info|informaci[oó]n|precio|precios|cu[aá]nto|cuesta|interesad[oa]|"
@@ -45,13 +40,84 @@ def _instagram_connected(user_id: str) -> bool:
     return bool(conn and conn.get("access_token") and conn.get("ig_user_id"))
 
 
+def _is_own_social_account(username: str, conn: dict[str, Any]) -> bool:
+    raw = (username or "").strip().lstrip("@").lower()
+    if not raw:
+        return False
+    names = {
+        str(conn.get("ig_username") or "").lower().lstrip("@"),
+        "ced",
+        "ced.ev",
+        "asistente virtual ced",
+    }
+    return raw in {n for n in names if n}
+
+
 def _spoken_after_enable(user_id: str) -> str:
-    if _instagram_connected(user_id):
-        return "Prospección activada. Escaneo comentarios de Instagram en busca de leads."
+    conn = supabase_db.get_meta_connection(user_id)
+    if conn and conn.get("access_token"):
+        return (
+            "Prospección activada. Escaneo comentarios de Instagram y Facebook en busca de leads."
+        )
     return (
-        "Prospección activada, pero Instagram no está conectado. "
-        "Vincula Meta en Conectar Redes para escanear comentarios."
+        "Prospección activada, pero Meta no está conectado. "
+        "Vincula Instagram/Facebook en Conectar Redes para escanear comentarios."
     )
+
+
+def scan_instagram_leads(user_id: str) -> dict[str, Any]:
+    """Escanea comentarios recientes de IG y Facebook si hay conexión Meta."""
+    from app.services.social_comments import fetch_social_comments
+
+    conn = supabase_db.get_meta_connection(user_id)
+    if not conn or not conn.get("access_token"):
+        return {"ok": False, "error": "Instagram no conectado", "new_leads": 0}
+
+    result = fetch_social_comments(
+        user_id,
+        platform="both",
+        posts_limit=8,
+        comments_limit=25,
+    )
+    if not result.get("ok"):
+        return {
+            "ok": False,
+            "error": str(result.get("error") or "scan_failed"),
+            "new_leads": 0,
+            "comments": 0,
+        }
+
+    comments = list(result.get("comments") or [])
+    existing = {
+        str(row.get("handle") or "").lower()
+        for row in supabase_db.list_leads_today(user_id, limit=80)
+    }
+    new_count = 0
+    for comment in comments:
+        username = str(comment.get("username") or "usuario").strip()
+        if _is_own_social_account(username, conn):
+            continue
+        handle = username if username.startswith("@") else f"@{username}"
+        if handle.lower() in existing:
+            continue
+        text = str(comment.get("text") or "")
+        score, is_hot, intent = _score_comment(text)
+        snippet = (text[:80] or intent).strip()
+        insert_lead(
+            user_id,
+            handle,
+            platform=str(comment.get("platform") or "instagram"),
+            score=score,
+            is_hot=is_hot,
+            intent=snippet[:120],
+        )
+        existing.add(handle.lower())
+        new_count += 1
+    return {
+        "ok": True,
+        "new_leads": new_count,
+        "comments": len(comments),
+    }
 
 
 def enable_prospection_for_user(user_id: str) -> dict[str, Any]:
@@ -169,66 +235,3 @@ def _score_comment(text: str) -> tuple[int, bool, str]:
     intent = "consulta precio" if re.search(r"\bprecio\b", t, re.I) else "interés general"
     return score, is_hot, intent
 
-
-def scan_instagram_leads(user_id: str) -> dict[str, Any]:
-    """Escanea comentarios recientes de IG si hay conexión Meta."""
-    conn = supabase_db.get_meta_connection(user_id)
-    if not conn or not conn.get("access_token"):
-        return {"ok": False, "error": "Instagram no conectado", "new_leads": 0}
-
-    token = str(conn["access_token"])
-    ig_id = conn.get("ig_user_id")
-    if not ig_id:
-        return {"ok": False, "error": "Cuenta IG no vinculada", "new_leads": 0}
-
-    new_count = 0
-    existing = {
-        str(row.get("handle") or "").lower()
-        for row in supabase_db.list_leads_today(user_id, limit=80)
-    }
-    try:
-        with httpx.Client(timeout=15.0) as client:
-            media_res = client.get(
-                f"https://graph.facebook.com/v21.0/{ig_id}/media",
-                params={
-                    "fields": "id,caption,timestamp",
-                    "limit": 5,
-                    "access_token": token,
-                },
-            )
-            media_items = (media_res.json().get("data") or [])[:3]
-            for media in media_items:
-                mid = media.get("id")
-                if not mid:
-                    continue
-                comments_res = client.get(
-                    f"https://graph.facebook.com/v21.0/{mid}/comments",
-                    params={
-                        "fields": "id,text,username,timestamp",
-                        "limit": 25,
-                        "access_token": token,
-                    },
-                )
-                for comment in comments_res.json().get("data") or []:
-                    text = str(comment.get("text") or "")
-                    username = str(comment.get("username") or "user")
-                    if not LEAD_KEYWORDS.search(text):
-                        continue
-                    handle = f"@{username}"
-                    if handle.lower() in existing:
-                        continue
-                    score, is_hot, intent = _score_comment(text)
-                    insert_lead(
-                        user_id,
-                        handle,
-                        score=score,
-                        is_hot=is_hot,
-                        intent=intent[:120],
-                    )
-                    existing.add(handle.lower())
-                    new_count += 1
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("[PROSPECTION] scan %s", exc)
-        return {"ok": False, "error": str(exc), "new_leads": new_count}
-
-    return {"ok": True, "new_leads": new_count}
