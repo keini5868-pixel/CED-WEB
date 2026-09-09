@@ -287,6 +287,7 @@ export async function sendChatMessageStream(
   let buffer = "";
   let streamedText = "";
   let finalPayload: StreamDonePayload | null = null;
+  let sawImageStatus = false;
 
   const parseEventBlock = (block: string) => {
     const lines = block.split("\n");
@@ -305,6 +306,7 @@ export async function sendChatMessageStream(
       const statusText = coerceDisplayText(parsed.text).trim();
       // Keepalives SSE deben resetear el stall aunque el chunk sea solo status.
       armStallWatchdog();
+      if (/generando imagen/i.test(statusText)) sawImageStatus = true;
       if (statusText) onStatus?.(statusText);
       return;
     }
@@ -368,8 +370,22 @@ export async function sendChatMessageStream(
 
   // TypeScript no infiere asignaciones dentro del parser SSE.
   const payload = finalPayload as StreamDonePayload | null;
-  if (payload?.conversation_id) {
-    return payload;
+  if (payload && (payload.conversation_id || payload.reply?.trim() || payload.image)) {
+    return {
+      conversation_id: payload.conversation_id || conversationId || "",
+      reply: payload.reply || streamedText.trim(),
+      usage: payload.usage ?? {
+        messages_used_today: 0,
+        messages_limit_daily: null,
+        unlimited: false,
+        remaining_today: null,
+        blocked: false,
+      },
+      pdf: payload.pdf ?? null,
+      image: payload.image ?? null,
+      recharge_needed: payload.recharge_needed ?? null,
+      open_module: payload.open_module ?? null,
+    };
   }
   if (streamedText.trim()) {
     return {
@@ -388,7 +404,11 @@ export async function sendChatMessageStream(
       open_module: payload?.open_module ?? null,
     };
   }
-  throw new Error("Respuesta incompleta del chat.");
+  throw new Error(
+    sawImageStatus
+      ? "No pude generar la imagen. Intenta de nuevo en unos segundos."
+      : "No pude completar la respuesta. Intenta de nuevo.",
+  );
 }
 
 export async function endChatConversation(conversationId: string): Promise<boolean> {

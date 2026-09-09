@@ -11,6 +11,14 @@ const GENERATE_IMAGE_PATTERNS = [
   new RegExp(`\\b${IMAGE_NOUN}\\s+(?:de|con|para)\\b`, "i"),
   new RegExp(`\\bquiero\\s+(?:que\\s+)?${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`, "i"),
   new RegExp(`\\bnecesito\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`, "i"),
+  new RegExp(
+    `\\bnecesit[oa]\\s+que\\s+.{0,48}${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`,
+    "i",
+  ),
+  new RegExp(
+    `\\bay[uú]da(?:me|rme|s)?\\s+a\\s+${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`,
+    "i",
+  ),
   new RegExp(`\\bpuedes\\s+${CREATE_VERBS}\\s+(?:una?\\s+)?${IMAGE_NOUN}\\b`, "i"),
   /\bpaint\s+(?:an?\s+)?image\b/i,
 ];

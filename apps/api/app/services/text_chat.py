@@ -2784,15 +2784,22 @@ def send_message(
             reply = str(forced["spoken"])
             open_module = forced.get("open_module") or open_module
             route_meta = route_meta or {"intent": "fitline_enroll", "source": "signup_leak"}
-        supabase_db.append_message(
-            conversation_id,
-            user_id,
-            "model",
-            reply,
-            session_id=conversation_id,
-            channel="text",
-        )
-        updated_status = chat_status(user_id)
+        try:
+            supabase_db.append_message(
+                conversation_id,
+                user_id,
+                "model",
+                reply,
+                session_id=conversation_id,
+                channel="text",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[CHAT] persist in _finish failed user=%s", user_id[:8])
+        try:
+            updated_status = chat_status(user_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("[CHAT] status in _finish failed user=%s", user_id[:8])
+            updated_status = {"blocked": False}
         out: dict[str, Any] = {
             "conversation_id": conversation_id,
             "reply": reply,
@@ -3957,86 +3964,109 @@ def iter_send_message_stream(
 
         gen: dict[str, Any] | None = None
         image_error: str | None = None
+        image_attachment: dict[str, Any] | None = None
+        reply = "No pude generar la imagen. Intenta de nuevo."
         from concurrent.futures import TimeoutError as _FutureTimeout
 
         # wait=False: si vence el deadline, seguir emitiendo done/error sin
         # esperar a Ideogram/Gemini (shutdown(wait=True) mataba los keepalives).
         pool = ThreadPoolExecutor(max_workers=1)
         try:
-            future = pool.submit(_run_image_job)
-            hard_deadline = time.perf_counter() + IMAGE_STREAM_DEADLINE_SEC
-            while True:
-                if time.perf_counter() > hard_deadline:
-                    image_error = (
-                        "La generación de imagen tardó demasiado. "
-                        "Intenta de nuevo en unos segundos."
-                    )
-                    break
-                try:
-                    gen = future.result(timeout=IMAGE_STREAM_KEEPALIVE_SEC)
-                    break
-                except _FutureTimeout:
-                    yield _sse_event("status", {"text": status})
-                    yield _sse_flush()
-                except Exception:
-                    logger.exception(
-                        "[CHAT] stream image job failed user=%s", user_id[:8]
-                    )
-                    image_error = "No pude generar la imagen. Intenta de nuevo."
-                    break
-        finally:
-            pool.shutdown(wait=False, cancel_futures=True)
+            try:
+                future = pool.submit(_run_image_job)
+                hard_deadline = time.perf_counter() + IMAGE_STREAM_DEADLINE_SEC
+                while True:
+                    if time.perf_counter() > hard_deadline:
+                        image_error = (
+                            "La generación de imagen tardó demasiado. "
+                            "Intenta de nuevo en unos segundos."
+                        )
+                        break
+                    try:
+                        gen = future.result(timeout=IMAGE_STREAM_KEEPALIVE_SEC)
+                        break
+                    except _FutureTimeout:
+                        yield _sse_event("status", {"text": status})
+                        yield _sse_flush()
+                    except Exception:
+                        logger.exception(
+                            "[CHAT] stream image job failed user=%s", user_id[:8]
+                        )
+                        image_error = "No pude generar la imagen. Intenta de nuevo."
+                        break
+            finally:
+                pool.shutdown(wait=False, cancel_futures=True)
 
-        if image_error is not None or gen is None:
-            reply = image_error or "No pude generar la imagen."
+            if image_error is not None or gen is None:
+                reply = image_error or "No pude generar la imagen."
+                image_attachment = None
+                gen = {
+                    "ok": False,
+                    "code": "timeout" if image_error and "tardó" in image_error else "error",
+                }
+            elif gen.get("ok") and gen.get("url"):
+                reply = str(gen.get("reply") or "Listo. Aquí está tu imagen generada.")
+                image_attachment = _chat_image_attachment(
+                    str(gen["url"]),
+                    caption=str(gen.get("caption") or "Imagen generada"),
+                    quality=str(gen.get("quality") or "") or None,
+                )
+            else:
+                reply = _format_image_generation_error(
+                    str(gen.get("error") or gen.get("reply") or "")
+                )
+                image_attachment = None
+        except Exception:  # noqa: BLE001
+            logger.exception("[CHAT] stream image path failed user=%s", user_id[:8])
+            reply = "No pude generar la imagen. Intenta de nuevo."
             image_attachment = None
-            gen = {"ok": False, "code": "timeout" if image_error and "tardó" in image_error else "error"}
-        elif gen.get("ok") and gen.get("url"):
-            reply = str(gen.get("reply") or "Listo. Aquí está tu imagen generada.")
-            image_attachment = _chat_image_attachment(
-                str(gen["url"]),
-                caption=str(gen.get("caption") or "Imagen generada"),
-                quality=str(gen.get("quality") or "") or None,
-            )
-        else:
-            reply = _format_image_generation_error(
-                str(gen.get("error") or gen.get("reply") or "")
-            )
-            image_attachment = None
-        supabase_db.append_message(
-            conversation_id,
-            user_id,
-            "user",
-            text,
-            session_id=conversation_id,
-            channel="text",
-        )
-        _bump_stream_usage_cache(user_id)
-        supabase_db.append_message(
-            conversation_id,
-            user_id,
-            "model",
-            reply,
-            session_id=conversation_id,
-            channel="text",
-        )
+            gen = {"ok": False, "code": "error"}
+
+        try:
+            usage = _stream_usage_snapshot(user_id, profile)
+        except Exception:  # noqa: BLE001
+            logger.exception("[CHAT] image usage snapshot failed user=%s", user_id[:8])
+            usage = {"blocked": False}
+
         payload: dict[str, Any] = {
             "conversation_id": conversation_id,
             "reply": reply,
-            "usage": _stream_usage_snapshot(user_id, profile),
+            "usage": usage,
             "cognitive": {
                 "intent": "generate_image",
                 "source": "direct",
-                "used_reference": bool(gen.get("used_reference")),
+                "used_reference": bool((gen or {}).get("used_reference")),
             },
         }
         if image_attachment:
             payload["image"] = image_attachment
-        elif gen.get("code") == "needs_recharge":
+        elif (gen or {}).get("code") == "needs_recharge":
             payload["recharge_needed"] = {"resource": "image", "message": reply}
+        # Cualquier usuario, cualquier pedido de imagen: emitir SSE antes de persistir
+        # para que un fallo de DB no deje «Respuesta incompleta del chat».
         yield _sse_event("token", {"text": reply})
         yield _sse_flush()
         yield _sse_event("done", payload)
+        try:
+            supabase_db.append_message(
+                conversation_id,
+                user_id,
+                "user",
+                text,
+                session_id=conversation_id,
+                channel="text",
+            )
+            _bump_stream_usage_cache(user_id)
+            supabase_db.append_message(
+                conversation_id,
+                user_id,
+                "model",
+                reply,
+                session_id=conversation_id,
+                channel="text",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[CHAT] persist after image stream failed user=%s", user_id[:8])
         return
 
     if _stream_is_blocked(user_id, profile):
@@ -4254,19 +4284,16 @@ def iter_send_message_stream(
         plan_id=_plan_id_for_user(user_id),
     )
 
-    _persist_user_message()
-    supabase_db.append_message(
-        conversation_id,
-        user_id,
-        "model",
-        reply,
-        session_id=conversation_id,
-        channel="text",
-    )
+    try:
+        usage = _stream_usage_snapshot(user_id, profile)
+    except Exception:  # noqa: BLE001
+        logger.exception("[CHAT] text usage snapshot failed user=%s", user_id[:8])
+        usage = {"blocked": False}
+
     payload: dict[str, Any] = {
         "conversation_id": conversation_id,
         "reply": reply,
-        "usage": _stream_usage_snapshot(user_id, profile),
+        "usage": usage,
         "cognitive": module_route_meta if module_route_meta else route.to_dict(),
     }
     if stream_open_module:
@@ -4280,3 +4307,15 @@ def iter_send_message_stream(
     if recharge_needed:
         payload["recharge_needed"] = recharge_needed
     yield _sse_event("done", payload)
+    try:
+        _persist_user_message()
+        supabase_db.append_message(
+            conversation_id,
+            user_id,
+            "model",
+            reply,
+            session_id=conversation_id,
+            channel="text",
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("[CHAT] persist after text stream failed user=%s", user_id[:8])

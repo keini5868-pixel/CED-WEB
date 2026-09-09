@@ -30,6 +30,18 @@ _DETERMINER = r"(?:una?|un|la|el|las|los|an?|esa|ese|esta|este|aquell[oa])"
 _IMAGE_PATTERNS = (
     re.compile(rf"\b{_CREATE_VERBS}\s+(?:{_DETERMINER}\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\b{_CREATE_VERBS}\s+(?:me\s+)?(?:{_DETERMINER}\s+)?{_IMAGE_NOUN}\b", re.I),
+    re.compile(
+        rf"\bay[uú]da(?:me|rme|s)?\s+a\s+{_CREATE_VERBS}\s+(?:{_DETERMINER}\s+)?{_IMAGE_NOUN}\b",
+        re.I,
+    ),
+    re.compile(
+        rf"\bnecesit[oa]\s+que\s+.{{0,48}}{_CREATE_VERBS}\s+(?:{_DETERMINER}\s+)?{_IMAGE_NOUN}\b",
+        re.I,
+    ),
+    re.compile(
+        rf"\b(?:me\s+)?(?:puedes|podr[ií]as?)\s+(?:por\s+favor\s+)?{_CREATE_VERBS}\s+(?:{_DETERMINER}\s+)?{_IMAGE_NOUN}\b",
+        re.I,
+    ),
     re.compile(rf"\bquiero\s+(?:que\s+)?{_CREATE_VERBS}\s+(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\bquiero\s+(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),
     re.compile(rf"\bnecesito\s+(?:{_ARTICLE}\s+)?{_IMAGE_NOUN}\b", re.I),

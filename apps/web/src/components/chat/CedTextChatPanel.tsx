@@ -216,7 +216,10 @@ function looksLikeImageGenerationRequest(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   return (
-    /\b(genera|crear?|haz(?:me)?|dise[nñ]a|ilustra)\w*.{0,60}\b(imagen|foto|flyer|creativo|banner|ilustraci[oó]n)\b/i.test(
+    /\b(genera(?:r)?|crear?|haz(?:me)?|dise[nñ]a|ilustra)\w*.{0,80}\b(imagen|foto|flyer|creativo|banner|ilustraci[oó]n)\b/i.test(
+      t,
+    ) ||
+    /\b(necesito|quiero|ayúdame|ayudame).{0,60}\b(genera(?:r)?|crear?|haz)\w*.{0,40}\b(imagen|foto)\b/i.test(
       t,
     ) ||
     /\b(imagen|foto|flyer|creativo)\b.{0,40}\b(con|de|que\s+diga|fondo|tipograf)/i.test(t)
@@ -856,7 +859,14 @@ export function CedTextChatPanel({
         }
         return prev;
       });
-      setError(e instanceof Error ? e.message : "Error al enviar.");
+      const raw = e instanceof Error ? e.message : "Error al enviar.";
+      setError(
+        /respuesta incompleta/i.test(raw)
+          ? expectsImage
+            ? "No pude generar la imagen. Intenta de nuevo en unos segundos."
+            : "No pude completar la respuesta. Intenta de nuevo."
+          : raw,
+      );
     } finally {
       clearTimeout(sendGuard);
       streamTargetIndexRef.current = null;

@@ -51,6 +51,9 @@ _EXPLICIT_IMAGE = [
     "generame un flyer con los beneficios",
     "quiero un flyer de Restorate",
     "dame una imagen de un gato",
+    "me ayudas a generar una imagen de un perro",
+    "podrías generar una imagen de un atardecer",
+    "necesito que me ayudes a generar una imagen de un hombre con varios clones",
 ]
 
 

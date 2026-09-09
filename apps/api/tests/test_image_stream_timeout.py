@@ -153,3 +153,62 @@ def test_direct_image_stream_emits_done_after_deadline_without_waiting():
     assert "event: done" in joined
     assert "tardó demasiado" in joined or "No pude generar" in joined
     assert "https://example.com/late.png" not in joined
+
+
+def test_direct_image_stream_emits_done_even_if_persist_fails():
+    """Regresión: fallo de DB tras generar no debe dejar «Respuesta incompleta»."""
+
+    events: list[str] = []
+    with (
+        patch(
+            "app.services.chat_image_generation.should_take_direct_image_path",
+            return_value=True,
+        ),
+        patch(
+            "app.services.chat_image_generation.run_chat_image_generation",
+            return_value={
+                "ok": True,
+                "url": "https://example.com/generated.png",
+                "reply": "Listo. Aquí está tu imagen generada.",
+                "caption": "Imagen generada",
+                "quality": "standard",
+            },
+        ),
+        patch("app.services.text_chat.supabase_db.get_profile", return_value={}),
+        patch("app.services.text_chat._stream_is_blocked", return_value=False),
+        patch("app.services.chat_rate_limit.check_chat_rate_limit", return_value=(True, 0)),
+        patch("app.deps.plan_access.chat_message_limit", return_value=100),
+        patch("app.services.text_chat.get_settings") as settings,
+        patch(
+            "app.services.text_chat._load_stream_conversation",
+            return_value=(CONV, []),
+        ),
+        patch(
+            "app.services.text_chat.supabase_db.append_message",
+            side_effect=RuntimeError("db down"),
+        ),
+        patch("app.services.text_chat._plan_id_for_user", return_value="pro"),
+        patch("app.services.text_chat._stream_usage_snapshot", return_value={"blocked": False}),
+        patch("app.services.text_chat._bump_stream_usage_cache"),
+        patch("app.services.text_chat._publish_flow_requires_blocking", return_value=False),
+        patch(
+            "app.services.chat_intents.resolve_pdf_detail_for_turn",
+            return_value=None,
+        ),
+        patch("app.services.llama_service.use_llama", return_value=False),
+    ):
+        settings.return_value = MagicMock(
+            google_api_key="gk",
+            anthropic_api_key="ak",
+            gemini_voice_model="gemini-2.5-flash",
+        )
+        for chunk in text_chat.iter_send_message_stream(
+            USER,
+            content="hazme una foto de un gato",
+        ):
+            events.append(chunk)
+
+    joined = "".join(events)
+    assert "event: done" in joined
+    assert "https://example.com/generated.png" in joined
+    assert "event: token" in joined

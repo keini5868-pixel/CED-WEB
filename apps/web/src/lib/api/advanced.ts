@@ -252,7 +252,11 @@ export async function sendAdvancedChatMessageStream(
   try {
     return await sendAdvancedChatMessage(message, history);
   } catch {
-    throw new Error("Respuesta incompleta del modo avanzado.");
+    throw new Error(
+      /\b(imagen|foto|flyer|creativo|banner|ilustraci[oó]n)\b/i.test(message)
+        ? "No pude generar la imagen. Intenta de nuevo en unos segundos."
+        : "No pude completar la respuesta. Intenta de nuevo.",
+    );
   }
 }
 
