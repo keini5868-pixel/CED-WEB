@@ -140,11 +140,13 @@ def extract_image_overlay_labels(
     raw = _gemini_vision(image_bytes, prompt, max_tokens=400)
     if not raw or raw.strip().upper().startswith("NINGUNO"):
         return []
-    from app.services.copy_quality import sanitize_label
+    from app.services.copy_quality import lock_on_image_spelling, sanitize_label
 
     labels: list[str] = []
     for line in raw.splitlines():
-        clean = sanitize_label(re.sub(r"^[\-\*\d.)\s]+", "", line).strip())
+        clean = lock_on_image_spelling(
+            sanitize_label(re.sub(r"^[\-\*\d.)\s]+", "", line).strip())
+        )
         if len(clean) < 3 or clean.upper() == "NINGUNO":
             continue
         if clean not in labels:

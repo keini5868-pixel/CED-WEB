@@ -415,13 +415,16 @@ def run_chat_image_generation(
     )
 
     from app.services.copy_quality import (
+        CED_ASSISTANT_TAGLINE,
         build_direct_image_prompt,
         build_reference_text_edit_prompt,
         compose_persuasive_overlay_lines,
+        lock_on_image_spelling,
         prompt_requires_ideogram_text,
         resolve_image_text_mode,
         summarize_overlay_labels_for_image,
         user_requests_ced_branding,
+        wants_ced_tagline_lock,
     )
     from app.services.image_art_expander import expand_image_scene
 
@@ -492,15 +495,21 @@ def run_chat_image_generation(
     overlay_lines: list[str] = []
     if direct.get("wants_literal_text"):
         wants_literal_text = True
-    # Texto persuasivo (dolor→solución) cuando piden agregar copy sin comillas.
-    strategy_lines = (
-        compose_persuasive_overlay_lines(user_text) if wants_literal_text else []
+    spelling_fix = wants_ced_tagline_lock(user_text) or wants_ced_tagline_lock(
+        effective
     )
+    # Texto persuasivo (dolor→solución) cuando piden agregar copy sin comillas.
+    # Las correcciones I4/Prosaeccion no deben pintar frases PAS genéricas.
+    strategy_lines: list[str] = []
+    if spelling_fix:
+        overlay_lines = [CED_ASSISTANT_TAGLINE]
+    elif wants_literal_text:
+        strategy_lines = compose_persuasive_overlay_lines(user_text)
     if strategy_lines:
         for line in strategy_lines:
             if line not in overlay_lines:
                 overlay_lines.append(line)
-    if wants_literal_text and ref_payload and not strategy_lines:
+    if wants_literal_text and ref_payload and not strategy_lines and not spelling_fix:
         try:
             from app.services.vision_search import extract_image_overlay_labels
 
@@ -510,6 +519,8 @@ def run_chat_image_generation(
             overlay_lines = summarize_overlay_labels_for_image(overlay_lines, max_labels=5)
         except Exception:  # noqa: BLE001
             logger.warning("[CHAT:IMG-GEN] OCR referencia falló user=%s", user_id[:8])
+
+    overlay_lines = [lock_on_image_spelling(ln) for ln in overlay_lines]
 
     tech = str(direct.get("prompt") or "").strip()
     if tech:

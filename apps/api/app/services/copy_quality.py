@@ -24,6 +24,11 @@ _TYPO_MAP: dict[str, str] = {
     "energia": "energía",
     "proteccion": "protección",
     "absorcion": "absorción",
+    "prospeccion": "prospección",
+    "prosaeccion": "prospección",
+    "prosaecion": "prospección",
+    "prosaeción": "prospección",
+    "i4": "IA",
 }
 
 _ENGLISH_REPLACEMENTS = {
@@ -101,7 +106,37 @@ _SPELLING_STRICT_RULE = (
     "SPELLING: every visible word must be complete and correctly spelled. "
     "Copy requested Spanish words character-by-character "
     "(never drop, swap, or invent letters; keep every vowel, including the u in equipo). "
-    "Incomplete or misspelled words are forbidden."
+    "Incomplete or misspelled words are forbidden. "
+    'If the word is IA, write the letters I and A — never the digit 4 (never "I4"). '
+    'If the word is Prospección, spell P-r-o-s-p-e-c-c-i-ó-n — never "Prosaeccion".'
+)
+
+_CED_ASSISTANT_TAGLINE = "Tu asistente de IA. Marketing. Ventas. Prospección."
+CED_ASSISTANT_TAGLINE = _CED_ASSISTANT_TAGLINE
+_CED_ON_IMAGE_SPELLING_LOCK = (
+    "LOCKED SPELLING on this image — copy character-by-character: "
+    '"IA" (never I4, 14, lA); '
+    '"Prospección" (never Prosaeccion, Prosaección, Prosaecion); '
+    '"CED"; "Marketing"; "Ventas".'
+)
+# Solo correcciones de tipografía (I4 / Prosaeccion). NO «prospección» ni
+# «asistente de IA» sueltos: esos aparecen en listados de capacidades CED.
+_FIX_ON_IMAGE_SPELLING = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"\bi4\b|"
+    r"prosaec|"
+    r"(?:corrige(?:r)?|arregla(?:r)?|mejora(?:r)?|cambia(?:r)?)\s+"
+    r"(?:la\s+|el\s+|los\s+|las\s+)?"
+    r"(?:ia|ortograf|texto|letras?|prospecci)|"
+    r"dijo\s+i4|"
+    r"en\s+vez\s+de\s+i4"
+    r")"
+)
+_IMAGE_SPELLING_FIXES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\bI4\b", re.I), "IA"),
+    (re.compile(r"\bprosaec+c?i[oó]n\b", re.I), "Prospección"),
+    (re.compile(r"\bprospeccion\b", re.I), "Prospección"),
 )
 _HARD_NO_TEXT_RULE = (
     "CRITICAL: photorealistic or illustrated SCENE ONLY. "
@@ -164,6 +199,36 @@ def _apply_typo_fixes(text: str) -> str:
         return word
 
     return re.sub(r"\b[\w\-áéíóúñü]+\b", fix_word, text, flags=re.I)
+
+
+def wants_ced_tagline_lock(text: str) -> bool:
+    """True si el usuario pide corregir IA/I4 o Prospección en la imagen (no un brief genérico)."""
+    return bool(_FIX_ON_IMAGE_SPELLING.search(text or ""))
+
+
+def _looks_like_ced_tagline(text: str) -> bool:
+    t = (text or "").casefold()
+    if "asistente" not in t:
+        return False
+    if not re.search(r"(?i)\bia\b|\bi4\b", t):
+        return False
+    return bool(
+        re.search(r"(?i)marketing", t)
+        and re.search(r"(?i)(?:ventas|prospecci|prosaec)", t)
+    )
+
+
+def lock_on_image_spelling(text: str) -> str:
+    """Corrige fallos típicos de tipografía en imagen (I4→IA, Prosaeccion→Prospección)."""
+    t = unicodedata.normalize("NFC", text or "")
+    if not t:
+        return t
+    for pattern, right in _IMAGE_SPELLING_FIXES:
+        t = pattern.sub(right, t)
+    t = _apply_typo_fixes(t)
+    if len(t) <= 120 and _looks_like_ced_tagline(t):
+        return _CED_ASSISTANT_TAGLINE
+    return t
 
 
 def normalize_spanish(text: str) -> str:
@@ -390,6 +455,8 @@ def prompt_requires_precise_text(prompt: str) -> bool:
     if extract_quoted_phrases(t):
         return True
     if _IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t):
+        return True
+    if wants_ced_tagline_lock(t):
         return True
     return bool(_GRAPHIC_COPY_FORMAT.search(t))
 
@@ -669,7 +736,7 @@ def summarize_overlay_labels_for_image(
     """Acorta etiquetas para tipografía legible (no párrafos enteros)."""
     out: list[str] = []
     for raw in lines:
-        label = sanitize_label(raw)
+        label = lock_on_image_spelling(sanitize_label(raw))
         # Markdown «**Título** — descripción» → solo el título.
         label = re.sub(r"\*+", "", label).strip()
         if "—" in label:
@@ -681,8 +748,10 @@ def summarize_overlay_labels_for_image(
             label = left.strip() if len(left.strip()) >= 4 else label
             _ = right
         label = re.sub(r"\s+", " ", label).strip(" .;,")
-        if len(label) > max_chars:
-            label = label[: max_chars - 1].rsplit(" ", 1)[0].strip()
+        locked_tagline = label.casefold() == _CED_ASSISTANT_TAGLINE.casefold()
+        cap = 80 if locked_tagline else max_chars
+        if len(label) > cap:
+            label = label[: cap - 1].rsplit(" ", 1)[0].strip()
         if len(label) < 3 or _looks_like_prompt_instruction(label):
             continue
         # Evitar nombres de tools / API en el HUD.
@@ -798,6 +867,11 @@ def build_direct_image_prompt(
     wants_text = mode == "literal"
     wants_ced = user_requests_ced_branding(raw)
     allow_ui = image_text_mode_allows_ui(mode, raw)
+    quoted = [lock_on_image_spelling(q) for q in quoted]
+    lock_tagline = wants_ced_tagline_lock(raw)
+    if wants_text and lock_tagline:
+        if _CED_ASSISTANT_TAGLINE not in quoted:
+            quoted = [_CED_ASSISTANT_TAGLINE, *[q for q in quoted if q != _CED_ASSISTANT_TAGLINE]]
 
     parts: list[str] = [scene]
     if has_reference:
@@ -817,6 +891,8 @@ def build_direct_image_prompt(
         )
         parts.append(_ORTHOGRAPHY_RULE)
         parts.append(_SPELLING_STRICT_RULE)
+        if wants_ced or lock_tagline:
+            parts.append(_CED_ON_IMAGE_SPELLING_LOCK)
         if quoted:
             parts.append(format_verbatim_image_copy(quoted))
         if allow_ui:
@@ -930,8 +1006,10 @@ def build_reference_text_edit_prompt(
     overlay_lines: list[str] | None = None,
 ) -> str:
     """Prompt para editar imagen existente: conservar sujeto + tipografía PAS."""
-    lines = list(overlay_lines or [])
-    if not lines:
+    lines = [lock_on_image_spelling(ln) for line in (overlay_lines or []) if (ln := line.strip())]
+    if wants_ced_tagline_lock(user_text):
+        lines = [_CED_ASSISTANT_TAGLINE]
+    elif not lines:
         lines = compose_persuasive_overlay_lines(user_text)
     verbatim = format_verbatim_image_copy(lines) if lines else ""
     change_bg = user_requests_background_change(user_text)
@@ -957,6 +1035,7 @@ def build_reference_text_edit_prompt(
     ]
     if verbatim:
         parts.append(verbatim)
+        parts.append(_CED_ON_IMAGE_SPELLING_LOCK)
     else:
         parts.append(
             "Include the persuasive text the user asked for as visible labels on the image."
@@ -975,7 +1054,7 @@ def strip_image_generation_instruction_safe(text: str) -> str:
 
 def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None) -> str:
     """Bloque de instrucción con textos literales para modelos de imagen."""
-    all_lines = [normalize_spanish(line) for line in lines if line.strip()]
+    all_lines = [lock_on_image_spelling(normalize_spanish(line)) for line in lines if line.strip()]
     if headline:
         head = normalize_spanish(headline)
         if head and head not in all_lines:

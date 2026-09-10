@@ -19,6 +19,35 @@ def test_normalize_spanish_fixes_common_typos():
     assert "digestión" in normalize_spanish("Digestsión optima").lower()
 
 
+def test_lock_on_image_spelling_fixes_ia_and_prospeccion():
+    from app.services.copy_quality import lock_on_image_spelling
+
+    assert lock_on_image_spelling("Tu asistente de I4.") == "Tu asistente de IA."
+    assert "Prospección" in lock_on_image_spelling(
+        "Marketing Ventas. Prosaeccion."
+    )
+    assert (
+        lock_on_image_spelling(
+            "Tu asistente de IA. Marketing Ventas. Prosaeccion."
+        )
+        == "Tu asistente de IA. Marketing. Ventas. Prospección."
+    )
+
+
+def test_ced_tagline_fix_prompt_locks_ia_and_prospeccion():
+    from app.services.copy_quality import build_direct_image_prompt
+
+    brief = build_direct_image_prompt(
+        "ok pero en la imagen anterior I4 y es IA, corrige Prosaeccion"
+    )
+    prompt = str(brief.get("prompt") or "")
+    assert "I4" in prompt or "IA" in prompt
+    assert "Prospección" in prompt
+    assert "never" in prompt.lower() or "I4" in prompt
+    assert brief.get("wants_literal_text") is True
+    assert "Tu asistente de IA. Marketing. Ventas. Prospección." in prompt
+
+
 def test_compact_overlay_line_short_and_clean():
     line = compact_overlay_line(
         "Salud intestinal",

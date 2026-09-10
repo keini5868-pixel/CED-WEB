@@ -61,6 +61,7 @@ def test_capability_paste_direct_brief_stays_short():
     assert orch.get("wants_literal_text") is True
     assert "sistema" in tech.lower() or "asistente" in tech.lower()
     assert "textos exactos" not in tech.lower()
+    assert "Tu asistente de IA. Marketing. Ventas. Prospección." not in tech
 
 
 @patch("app.services.gemini_images.generate_image")
