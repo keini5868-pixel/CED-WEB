@@ -456,7 +456,11 @@ def list_activity_lines(user_id: str, limit: int = 3) -> list[str]:
     return list_recent_voice_activity(user_id, limit=limit)
 
 
-def get_meta_connection(user_id: str) -> dict[str, Any] | None:
+def get_meta_connection(
+    user_id: str,
+    *,
+    swallow: bool = True,
+) -> dict[str, Any] | None:
     try:
         client = _client()
         result = (
@@ -468,7 +472,10 @@ def get_meta_connection(user_id: str) -> dict[str, Any] | None:
         )
         rows = result.data or []
         return rows[0] if rows else None
-    except Exception:  # noqa: BLE001
+    except Exception:
+        logger.exception("[DB] get_meta_connection failed user=%s", (user_id or "")[:8])
+        if not swallow:
+            raise
         return None
 
 
@@ -609,7 +616,8 @@ def get_profile(user_id: str) -> dict[str, Any] | None:
         )
         rows = result.data or []
         return rows[0] if rows else None
-    except Exception:  # noqa: BLE001
+    except Exception:
+        logger.exception("[DB] get_profile failed user=%s", (user_id or "")[:8])
         return None
 
 

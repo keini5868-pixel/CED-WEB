@@ -30,8 +30,12 @@ def graph_base() -> str:
 
 
 def verify_webhook_signature(raw_body: bytes, header: str | None) -> bool:
-    secret = get_settings().meta_app_secret.strip()
+    settings = get_settings()
+    secret = settings.meta_app_secret.strip()
     if not secret:
+        if settings.is_production():
+            logger.error("[WA] META_APP_SECRET vacío en production — firma rechazada")
+            return False
         logger.warning("[WA] META_APP_SECRET vacío — no se verifica firma del webhook")
         return True
     if not header or not header.startswith("sha256="):

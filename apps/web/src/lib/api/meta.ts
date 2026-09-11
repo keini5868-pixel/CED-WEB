@@ -5,6 +5,7 @@ export type MetaConnectionStatus = {
   connected: boolean;
   username?: string | null;
   followers_count?: number | null;
+  status_unavailable?: boolean;
 };
 
 export type MetaOAuthResult = {

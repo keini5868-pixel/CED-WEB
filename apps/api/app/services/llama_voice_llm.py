@@ -564,7 +564,7 @@ class LlamaVoiceLlm:
                     safe, blocked = guard_voice_response(delta)
                     if blocked:
                         continue
-                    piece = finalize_voice_delivery_text(safe)
+                    piece = (safe or "").strip()
                     if piece:
                         yield ResponseResponse(
                             response_id=request.response_id,

@@ -52,6 +52,10 @@ import {
   cedResolveHonorific,
   CED_ADVANCED_CONFIRM_PHRASE,
 } from "@/lib/voice/live/ced-brief-messages";
+import {
+  POST_SPEECH_ECHO_MS,
+  shouldSkipAlreadyAnswered,
+} from "@/lib/voice/live/turn-guard";
 
 const TOOL_ALIAS: Record<string, string> = {
   save_memory: GUARDAR_MEMORIA,
@@ -187,6 +191,8 @@ export class CedLiveClient {
   private heardUserSinceGreeting = false;
   private greetingGraceUntil = 0;
   private outboundLocked = false;
+  /** generate_image / PDF: el modelo no debe narrar la escena mientras espera. */
+  private longToolInFlight = false;
   private awaitingFirstUserSpeech = false;
   private userTurnScheduled = false;
   private userResponseTimer: number | null = null;
@@ -225,6 +231,11 @@ export class CedLiveClient {
   private exactPhraseHadUsableAudio = false;
   /** Tras primer turno: activar server create_response al terminar esta respuesta. */
   private pendingEnableAutoAfterResponse = false;
+  /** Utterance ya contestada — no rearmar por eco/VAD. */
+  private lastAnsweredUtterance = "";
+  private lastAnsweredAt = 0;
+  /** Ventana post-TTS: el mic aún capta eco del altavoz. */
+  private echoCooldownUntil = 0;
 
   private static SERVER_VAD = {
     threshold: 0.5,
@@ -496,7 +507,7 @@ export class CedLiveClient {
     const t = this.normalizeEchoText(transcript);
     if (t.length < 6) return false;
     const recent =
-      this.responseInProgress || Date.now() - this.lastModelSpeechAt < 4_500;
+      this.responseInProgress || Date.now() - this.lastModelSpeechAt < 6_500;
     if (!recent && !this.awaitingFirstUserSpeech) return false;
     const sources = [
       this.modelTranscriptAcc,
@@ -565,6 +576,12 @@ export class CedLiveClient {
   /** Permite respuestas nativas; solo bloquea ventana de saludo y duplicados. */
   private allowResponseCreated(responseId?: string | null): boolean {
     const id = responseId ?? null;
+
+    if (this.longToolInFlight && !this.intentionalResponseActive) {
+      cedRealtimeLog("response.reject.long_tool", { id });
+      this.cancelResponse(id);
+      return false;
+    }
 
     if (
       (this.greetingInFlight || !this.greetingComplete || Date.now() < this.greetingGraceUntil) &&
@@ -636,9 +653,9 @@ export class CedLiveClient {
     this.waitingForFirstUserInput = false;
     this.greetingGraceUntil = 0;
     this.blockAutoResponsesUntil = 0;
-    // Mantener VAD manual en ESTE turno — auto create_response del server
-    // chocaba con nuestro response.create → "active response in progress".
-    this.pendingEnableAutoAfterResponse = true;
+    // Siempre VAD manual: auto create_response + eco del altavoz rearmaba
+    // el mismo turno y CED se quedaba repitiendo.
+    this.pendingEnableAutoAfterResponse = false;
     this.applyTurnDetection("manual");
     cedRealtimeLog("turn_detection.first_user_armed", {
       transcript: transcript.slice(0, 60),
@@ -700,13 +717,7 @@ export class CedLiveClient {
     this.setRemoteMuted(false);
     this.userMicLive = true;
     this.blockAutoResponsesUntil = 0;
-    this.applyTurnDetection(
-      this.serverConversationMode
-        ? this.waitingForFirstUserInput
-          ? "manual"
-          : "auto"
-        : "listen",
-    );
+    this.applyTurnDetection("manual");
     this.flushInputAudioBuffer();
   }
 
@@ -803,7 +814,7 @@ export class CedLiveClient {
   private async handleCasualSocialTurn(phrase: string): Promise<void> {
     if (this.waitingForFirstUserInput) {
       this.waitingForFirstUserInput = false;
-      this.pendingEnableAutoAfterResponse = true;
+      this.pendingEnableAutoAfterResponse = false;
       this.applyTurnDetection("manual");
     }
     if (this.responseInProgress) {
@@ -841,10 +852,23 @@ export class CedLiveClient {
     if (now < this.blockAutoResponsesUntil) return;
     if (now < this.greetingGraceUntil) return;
     if (!this.heardUserSinceGreeting || !this.lastMeaningfulUserUtterance) return;
+    if (
+      shouldSkipAlreadyAnswered({
+        incoming: this.lastMeaningfulUserUtterance,
+        lastAnswered: this.lastAnsweredUtterance,
+        lastAnsweredAt: this.lastAnsweredAt,
+        now,
+      })
+    ) {
+      cedRealtimeLog("response.skip.already_answered", {
+        utterance: this.lastMeaningfulUserUtterance.slice(0, 80),
+      });
+      return;
+    }
     if (this.userTurnResponded && now - this.lastResponseCreateAt < 2500) return;
     if (now - this.lastResponseCreateAt < 700) return;
     this.postGreetingLockUntil = 0;
-    this.turnCooldownUntil = now + 2500;
+    this.turnCooldownUntil = now + POST_SPEECH_ECHO_MS;
     void this.safeResponseCreate({
       max_output_tokens: this.voiceProfile === "fitline" ? 1400 : 900,
     });
@@ -1005,6 +1029,9 @@ export class CedLiveClient {
     this.serverConversationMode = false;
     this.waitingForFirstUserInput = false;
     this.pendingEnableAutoAfterResponse = false;
+    this.lastAnsweredUtterance = "";
+    this.lastAnsweredAt = 0;
+    this.echoCooldownUntil = 0;
     this.connectGen += 1;
 
     this.dc?.close();
@@ -1431,7 +1458,14 @@ export class CedLiveClient {
         this.isLikelyAmbientOrEcho(transcript) ||
         this.isEchoOfCedGreeting(transcript) ||
         this.isEchoOfOwnSpeech(transcript) ||
-        this.isSocialFillerSpeech(transcript)
+        this.isSocialFillerSpeech(transcript) ||
+        (Date.now() < this.echoCooldownUntil &&
+          shouldSkipAlreadyAnswered({
+            incoming: transcript,
+            lastAnswered: this.lastAnsweredUtterance,
+            lastAnsweredAt: this.lastAnsweredAt,
+            now: Date.now(),
+          }))
       ) {
         cedRealtimeLog("transcript.noise", { transcript: transcript.slice(0, 80) });
         this.userTranscriptAcc = "";
@@ -1440,7 +1474,12 @@ export class CedLiveClient {
       }
 
       // Con respuesta en curso, STT residual ≈ eco (mic suele estar muteado).
-      if (this.responseInProgress || this.outboundLocked || this.greetingInFlight) {
+      if (
+        this.responseInProgress ||
+        this.outboundLocked ||
+        this.greetingInFlight ||
+        this.longToolInFlight
+      ) {
         cedRealtimeLog("transcript.ignored_during_response", {
           transcript: transcript.slice(0, 80),
         });
@@ -1470,6 +1509,20 @@ export class CedLiveClient {
         return;
       }
 
+      if (
+        shouldSkipAlreadyAnswered({
+          incoming: transcript,
+          lastAnswered: this.lastAnsweredUtterance,
+          lastAnsweredAt: this.lastAnsweredAt,
+          now: Date.now(),
+        })
+      ) {
+        cedRealtimeLog("transcript.already_answered", { transcript: transcript.slice(0, 80) });
+        this.userTranscriptAcc = "";
+        this.flushInputAudioBuffer();
+        return;
+      }
+
       handlers.onTranscriptUpdate?.(transcript, "user");
       this.userTranscriptAcc = transcript;
 
@@ -1478,20 +1531,20 @@ export class CedLiveClient {
         void this.handleCasualSocialTurn(casualPhrase);
         return;
       }
-      const firstTurn = this.onFirstUserTranscript(transcript);
+      this.onFirstUserTranscript(transcript);
       const intent = parseCameraIntent(transcript);
       if (intent === "deactivate" && this.userMicLive) {
         handlers.onCameraIntent?.(intent);
       } else if (intent === "activate" && this.userMicLive) {
         handlers.onCameraIntent?.(intent);
       }
-      // Un solo create por turno — firstTurn ya armó; no resetear userTurnResponded.
+      // Solo un create por transcript NUEVO — speech_stopped no debe rearmar el anterior.
+      this.userTurnResponded = false;
       if (
         this.greetingComplete &&
         !this.outboundLocked &&
         this.userMicLive &&
-        !this.responseInProgress &&
-        (firstTurn || !this.userTurnResponded)
+        !this.responseInProgress
       ) {
         this.triggerUserResponse();
       }
@@ -1500,16 +1553,8 @@ export class CedLiveClient {
 
     if (type === "input_audio_buffer.speech_stopped") {
       handlers.onSpeechStopped?.();
-      if (
-        this.greetingComplete &&
-        this.userMicLive &&
-        this.heardUserSinceGreeting &&
-        this.lastMeaningfulUserUtterance &&
-        !this.responseInProgress &&
-        !this.userTurnResponded
-      ) {
-        this.triggerUserResponse();
-      }
+      // No rearmar con lastMeaningfulUserUtterance: el eco post-TTS
+      // disparaba la misma respuesta en bucle.
       return;
     }
 
@@ -1519,18 +1564,14 @@ export class CedLiveClient {
       this.intentionalResponse = false;
       this.intentionalResponseActive = false;
       this.userResponseArmed = false;
-      // Permitir reintento inmediato — si no, queda “pegado” tras un cancel.
-      this.userTurnResponded = false;
+      this.echoCooldownUntil = Date.now() + POST_SPEECH_ECHO_MS;
       this.flushInputAudioBuffer();
       handlers.onInterrupted?.();
       return;
     }
 
     if (type === "input_audio_buffer.speech_started") {
-      if (this.greetingComplete && !this.responseInProgress) {
-        this.userTurnResponded = false;
-        this.lastArmedTranscript = "";
-      }
+      // No resetear userTurnResponded aquí: ruido/eco rearmaba el turno anterior.
       return;
     }
 
@@ -1554,17 +1595,21 @@ export class CedLiveClient {
       this.advancedBriefInFlight = false;
       this.userTurnScheduled = false;
       this.userResponseArmed = false;
-      if (this.pendingEnableAutoAfterResponse && this.serverConversationMode) {
-        this.pendingEnableAutoAfterResponse = false;
-        this.applyTurnDetection("auto");
-        cedRealtimeLog("turn_detection.auto_after_response_done", {});
-      }
+      this.pendingEnableAutoAfterResponse = false;
+      this.echoCooldownUntil = Date.now() + POST_SPEECH_ECHO_MS;
+      this.turnCooldownUntil = Date.now() + POST_SPEECH_ECHO_MS;
+      this.flushInputAudioBuffer();
       if (this.modelTranscriptAcc.trim()) {
         const modelText = this.modelTranscriptAcc.trim();
         this.lastCompletedModelUtterance = modelText;
         this.lastModelSpeechAt = Date.now();
         if (!this.isRogueModelGreeting(modelText)) {
           handlers.onTranscript?.(modelText, "model");
+          if (this.lastMeaningfulUserUtterance) {
+            this.lastAnsweredUtterance = this.lastMeaningfulUserUtterance;
+            this.lastAnsweredAt = Date.now();
+            this.userTurnResponded = true;
+          }
         } else {
           cedRealtimeLog("transcript.rogue_model_skipped", { text: modelText.slice(0, 80) });
         }
@@ -1915,6 +1960,27 @@ export class CedLiveClient {
     this.send(cancel);
   }
 
+  /** Corta la narración del modelo y dice un filler corto antes de un tool largo. */
+  private async hushForLongTool(filler: string): Promise<void> {
+    this.longToolInFlight = true;
+    this.flushInputAudioBuffer();
+    if (this.responseInProgress) {
+      this.triggerBargeIn();
+      await this.waitForResponseIdle(2400);
+    }
+    this.flushInputAudioBuffer();
+    await this.speakExactPhrase(filler, 32);
+    this.flushInputAudioBuffer();
+    this.longToolInFlight = true;
+    this.blockAutoResponsesUntil = Date.now() + 90_000;
+  }
+
+  private releaseLongToolHush(): void {
+    this.longToolInFlight = false;
+    this.blockAutoResponsesUntil = Date.now() + 600;
+    this.flushInputAudioBuffer();
+  }
+
   private waitForResponseIdle(maxMs = CedLiveClient.RESPONSE_IDLE_MS): Promise<void> {
     if (!this.responseInProgress) return Promise.resolve();
     return new Promise((resolve) => {
@@ -2049,28 +2115,42 @@ export class CedLiveClient {
         const prompt = String(args.prompt ?? "").trim();
         const quality = String(args.quality ?? "auto");
         h.onToolStart?.("generate_image");
-        const result = await fetchGenerateImage(
-          prompt || "imagen creativa",
-          quality as "auto" | "standard" | "hd",
-        );
-        if (result.ok) {
-          h.onGeneratedImage?.(result.url, prompt);
-          const hTitle = this.userAddress?.honorific?.trim() || "Señor";
-          const toolResult = {
-            status: "ok",
-            spoken: `Imagen generada, ${hTitle}.`,
-            image_url: result.url,
-            prompt,
-          };
-          this.dispatchVoiceToolResult("generate_image", toolResult);
-          await this.submitToolOutput(callId, toolResult);
-        } else {
-          const toolResult = {
-            status: "error",
-            spoken: result.error || "No pude generar la imagen.",
-          };
-          this.dispatchVoiceToolResult("generate_image", toolResult);
-          await this.submitToolOutput(callId, toolResult);
+        try {
+          await this.hushForLongTool(`Un momento, ${this.resolveHonorific()}.`);
+          const result = await fetchGenerateImage(
+            prompt || "imagen creativa",
+            quality as "auto" | "standard" | "hd",
+          );
+          if (result.ok) {
+            h.onGeneratedImage?.(result.url, prompt);
+            const hTitle = this.userAddress?.honorific?.trim() || "Señor";
+            const spoken = `Imagen generada, ${hTitle}.`;
+            this.dispatchVoiceToolResult("generate_image", {
+              status: "ok",
+              spoken,
+              image_url: result.url,
+              prompt,
+            });
+            await this.submitToolOutput(callId, {
+              status: "ok",
+              spoken,
+              image_url: result.url,
+              briefOnly: true,
+            });
+          } else {
+            const spoken = result.error || "No pude generar la imagen.";
+            this.dispatchVoiceToolResult("generate_image", {
+              status: "error",
+              spoken,
+            });
+            await this.submitToolOutput(callId, {
+              status: "error",
+              spoken,
+              briefOnly: true,
+            });
+          }
+        } finally {
+          this.releaseLongToolHush();
         }
         return;
       }
@@ -2087,26 +2167,35 @@ export class CedLiveClient {
           return;
         }
         h.onToolStart?.("generate_image_with_reference");
-        if (h.onGenerateImageWithReference) {
-          const result = await h.onGenerateImageWithReference(args);
-          if (result.ok && result.url) {
-            h.onGeneratedImage?.(result.url, String(args.prompt ?? ""));
-            await this.submitToolOutput(callId, {
-              status: "ok",
-              spoken: result.spoken || "Ahí está.",
-              image_url: result.url,
-            });
+        try {
+          await this.hushForLongTool(`Un momento, ${this.resolveHonorific()}.`);
+          if (h.onGenerateImageWithReference) {
+            const result = await h.onGenerateImageWithReference(args);
+            if (result.ok && result.url) {
+              h.onGeneratedImage?.(result.url, String(args.prompt ?? ""));
+              await this.submitToolOutput(callId, {
+                status: "ok",
+                spoken: result.spoken || "Imagen generada, señor.",
+                image_url: result.url,
+                briefOnly: true,
+              });
+            } else {
+              await this.submitToolOutput(callId, {
+                status: "error",
+                spoken: result.error || result.spoken || "No pude generar con la referencia.",
+                briefOnly: true,
+              });
+            }
           } else {
             await this.submitToolOutput(callId, {
               status: "error",
-              spoken: result.error || result.spoken || "No pude generar con la referencia.",
+              spoken:
+                "No tengo acceso a la imagen de referencia. Muéstrame o adjunta una imagen primero.",
+              briefOnly: true,
             });
           }
-        } else {
-          await this.submitToolOutput(callId, {
-            status: "error",
-            spoken: "No tengo acceso a la imagen de referencia. Muéstrame o adjunta una imagen primero.",
-          });
+        } finally {
+          this.releaseLongToolHush();
         }
         return;
       }

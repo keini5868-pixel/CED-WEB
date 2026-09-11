@@ -17,7 +17,13 @@ export function useConnectNetworks() {
 
   const refresh = useCallback(async () => {
     const data = await fetchMetaStatus();
-    if (data) setStatus(data);
+    if (!data) return;
+    setStatus(data);
+    if (data.status_unavailable) {
+      setError("No pude verificar redes. Intenta de nuevo.");
+      return;
+    }
+    setError(null);
   }, []);
 
   useEffect(() => {

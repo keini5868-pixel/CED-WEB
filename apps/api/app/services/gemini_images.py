@@ -5,6 +5,8 @@ from __future__ import annotations
 import base64
 import logging
 import re
+import threading
+import time
 from typing import Any
 
 from app.config import get_settings
@@ -14,6 +16,12 @@ from app.domain.plans import PlanId, get_plan_limits
 from app.services import supabase_db
 
 logger = logging.getLogger(__name__)
+
+# Un generate a la vez: el proceso corre 1 worker uvicorn; un colgado no debe
+# apilar Gemini/Ideogram/GPT. Si hay otro en curso, el segundo falla rápido.
+_IMAGE_GEN_LOCK = threading.Semaphore(1)
+_IMAGE_GEN_LOCK_WAIT_SEC = 1.5
+_IMAGE_WALL_SEC = 80.0
 
 DEFAULT_GEMINI_IMAGE_MODELS = (
     "gemini-3.1-flash-image",  # Nano Banana 2 (calidad Studio actual)
@@ -480,7 +488,7 @@ def generate_image_gemini(
     topic = ensure_image_quality_guards(topic, wants_text=wants_overlay)
 
     use_fast = bool(fast or wants_overlay)
-    http_timeout_ms = 75_000 if use_fast else 120_000
+    http_timeout_ms = 60_000
     client = genai.Client(api_key=api_key)
     try:
         from google.genai import types as _genai_types
@@ -635,7 +643,7 @@ def generate_image_with_reference_gemini(
 
             client = genai.Client(
                 api_key=api_key,
-                http_options=_genai_types.HttpOptions(timeout=120_000),
+                http_options=_genai_types.HttpOptions(timeout=60_000),
             )
         except Exception:  # noqa: BLE001
             client = genai.Client(api_key=api_key)
@@ -920,7 +928,43 @@ def generate_image(
 
     Con ``prefer_ideogram`` + ``reference_image`` edita la foto existente (GPT edits).
     """
+    acquired = _IMAGE_GEN_LOCK.acquire(timeout=_IMAGE_GEN_LOCK_WAIT_SEC)
+    if not acquired:
+        return {
+            "ok": False,
+            "error": "Hay otra generación de imagen en curso. Intenta de nuevo en unos segundos.",
+            "code": "busy",
+        }
+    try:
+        return _generate_image_unlocked(
+            user_id=user_id,
+            plan_id=plan_id,
+            prompt=prompt,
+            quality=quality,
+            context=context,
+            display_label=display_label,
+            prefer_ideogram=prefer_ideogram,
+            reference_image=reference_image,
+            reference_mime=reference_mime,
+        )
+    finally:
+        _IMAGE_GEN_LOCK.release()
+
+
+def _generate_image_unlocked(
+    *,
+    user_id: str,
+    plan_id: str | None,
+    prompt: str,
+    quality: str | None = "auto",
+    context: str = "",
+    display_label: str | None = None,
+    prefer_ideogram: bool = False,
+    reference_image: bytes | None = None,
+    reference_mime: str | None = None,
+) -> dict[str, Any]:
     settings = get_settings()
+    started = time.monotonic()
     google_key = settings.google_api_key.strip()
     topic = prepare_image_prompt(prompt, context)
     if not topic:
@@ -958,6 +1002,13 @@ def generate_image(
             display_label=display_label,
             result=ideogram_result,
         )
+
+    if time.monotonic() - started > _IMAGE_WALL_SEC:
+        return {
+            "ok": False,
+            "error": "La generación de imagen tardó demasiado. Intenta de nuevo.",
+            "code": "timeout",
+        }
 
     picked = _pick_quality(topic, None if quality == "auto" else quality)
 

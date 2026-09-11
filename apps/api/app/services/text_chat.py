@@ -128,9 +128,10 @@ CHAT_TOOLS_MAX_TOKENS = 1600
 DIRECT_IMAGE_MAX_CHARS = 8000
 # Stream imagen: keepalives + deadline. Nunca shutdown(wait=True) tras timeout —
 # eso bloqueaba el SSE y el cliente mostraba «No pude generar la imagen a tiempo».
-IMAGE_STREAM_DEADLINE_SEC = 210.0
+# 90s cubre Ideogram/GPT + Gemini recortados; el job no debe vivir 3+ minutos.
+IMAGE_STREAM_DEADLINE_SEC = 90.0
 IMAGE_STREAM_KEEPALIVE_SEC = 5.0
-BLOCKING_STREAM_DEADLINE_SEC = 210.0
+BLOCKING_STREAM_DEADLINE_SEC = 90.0
 
 _VIRAL_KEYWORDS = re.compile(
     r"\b(instagram|tiktok|reels?|viral|horario|publicar|contenido|linkedin|facebook|"

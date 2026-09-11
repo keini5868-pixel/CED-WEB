@@ -16,6 +16,7 @@ from app.deps.plan_access import require_meta_social
 from pydantic import BaseModel, Field
 
 from app.services import supabase_db
+from app.services.meta_oauth_state import sign_meta_oauth_state, verify_meta_oauth_state
 from app.services.meta_social import MetaSocialError, publish_facebook, publish_instagram
 from app.services.social_comments import fetch_social_comments
 
@@ -163,7 +164,11 @@ def meta_oauth_url(user_id: str = Depends(require_user_id)) -> dict:
         )
     api_version = settings.meta_api_version.strip() or "v21.0"
     params = _oauth_dialog_params(settings)
-    params["state"] = user_id
+    try:
+        params["state"] = sign_meta_oauth_state(user_id)
+    except Exception:  # noqa: BLE001
+        logger.exception("[META:OAUTH] no se pudo firmar state")
+        raise HTTPException(status_code=503, detail="No se pudo iniciar OAuth con Meta.") from None
     redirect = params["redirect_uri"]
     mode = "config_id" if "config_id" in params else "scope"
     scope_hint = params.get("config_id") or params.get("scope", "")
@@ -194,7 +199,10 @@ def meta_oauth_callback(
         return RedirectResponse(f"{web}/dashboard?meta=missing_config")
 
     redirect = f"{settings.api_public_url.rstrip('/')}/v1/meta/oauth/callback"
-    user_id = state
+    user_id = verify_meta_oauth_state(state)
+    if not user_id:
+        logger.warning("[META:OAUTH] state inválido o expirado")
+        return RedirectResponse(f"{web}/dashboard?meta=invalid_state")
 
     try:
         with httpx.Client(timeout=15.0) as client:
@@ -325,7 +333,11 @@ def meta_read_comments(
 
 @router.get("/status")
 def meta_status(user_id: str = Depends(require_user_id)) -> dict:
-    conn = supabase_db.get_meta_connection(user_id)
+    try:
+        conn = supabase_db.get_meta_connection(user_id, swallow=False)
+    except Exception:  # noqa: BLE001
+        logger.exception("[META:STATUS] lookup failed user=%s", user_id[:8])
+        return {"connected": False, "status_unavailable": True}
     if not conn:
         return {"connected": False}
     return {

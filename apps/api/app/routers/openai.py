@@ -218,13 +218,23 @@ async def generate_image_endpoint(
         plan_id = sub.get("plan_id") if sub else None
     except Exception:  # noqa: BLE001
         pass
-    return await asyncio.to_thread(
-        generate_image,
-        user_id=user_id,
-        plan_id=plan_id,
-        prompt=body.prompt,
-        quality=body.quality,
-    )
+    try:
+        return await asyncio.wait_for(
+            asyncio.to_thread(
+                generate_image,
+                user_id=user_id,
+                plan_id=plan_id,
+                prompt=body.prompt,
+                quality=body.quality,
+            ),
+            timeout=95.0,
+        )
+    except TimeoutError:
+        return {
+            "ok": False,
+            "error": "La generación de imagen tardó demasiado. Intenta de nuevo.",
+            "code": "timeout",
+        }
 
 
 @router.get("/config")

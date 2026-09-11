@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 import httpx
 
 from app.config import get_settings
-from app.deps.auth import require_super_admin, require_user_id
+from app.deps.auth import require_auth_user, require_super_admin, require_user_id
 from app.services.retell_agent_cache import (
     get_last_bootstrap_error,
     get_last_bootstrap_info,
@@ -74,7 +74,8 @@ from app.services.meta_publish_flow import clear_meta_pending_for_call
 from app.services.voice_client_session import clear_advanced_mode_for_call
 from app.services.retell_native_staging import bootstrap_native_staging_pilot, ensure_native_staging_agent
 from app.services.voice_tool_executor import execute_voice_tool
-from app.services.voice_usage import ACCESS_DENIED_MESSAGES, voice_access_state_async
+from app.services.user_id_utils import normalize_user_id
+from app.services.voice_usage import ACCESS_DENIED_MESSAGES, staff_auth_kwargs, voice_access_state_async
 from app.services import supabase_db
 from app.services.async_sync import run_sync
 
@@ -89,9 +90,14 @@ class RegisterCallBody(BaseModel):
     model_config = {"populate_by_name": True}
 
 
-async def _voice_access_or_raise(user_id: str) -> None:
+async def _voice_access_or_raise(
+    user_id: str,
+    *,
+    email: str | None = None,
+    role: str | None = None,
+) -> None:
     await run_sync(supabase_db.start_voice_trial_clock, user_id)
-    balance = await voice_access_state_async(user_id)
+    balance = await voice_access_state_async(user_id, email=email, role=role)
     msg = balance.get("access_message") or ""
     if balance.get("access_denied") or msg in (
         "trial_expired",
@@ -175,9 +181,10 @@ def _format_retell_call_error(exc: Exception) -> str:
 async def register_retell_call(
     request: Request,
     body: RegisterCallBody | None = None,
-    user_id: str = Depends(require_user_id),
+    user: dict = Depends(require_auth_user),
 ) -> dict[str, Any]:
     """Crea web call de voz y devuelve access_token para el SDK frontend."""
+    user_id = normalize_user_id(user["id"])
     settings = get_settings()
     if settings.voice_provider != "retell":
         raise HTTPException(status_code=503, detail="Voz no disponible en este momento.")
@@ -200,7 +207,7 @@ async def register_retell_call(
             detail=err or "RETELL_AGENT_ID no configurado. Reinicie API o ejecute bootstrap.",
         )
 
-    await _voice_access_or_raise(user_id)
+    await _voice_access_or_raise(user_id, **staff_auth_kwargs(user))
 
     try:
         await asyncio.to_thread(ensure_retell_agent, agent_id=agent_id)
@@ -238,9 +245,10 @@ async def register_retell_call(
 async def register_retell_native_pilot_call(
     request: Request,
     body: RegisterCallBody | None = None,
-    user_id: str = Depends(require_user_id),
+    user: dict = Depends(require_auth_user),
 ) -> dict[str, Any]:
     """Web call contra el agente de voz nativo de staging."""
+    user_id = normalize_user_id(user["id"])
     settings = get_settings()
     if settings.voice_provider != "retell":
         raise HTTPException(status_code=503, detail="Voz no disponible en este momento.")
@@ -266,7 +274,7 @@ async def register_retell_native_pilot_call(
             detail="Voz no disponible en este momento.",
         )
 
-    await _voice_access_or_raise(user_id)
+    await _voice_access_or_raise(user_id, **staff_auth_kwargs(user))
 
     creator_mode = "false"
     try:

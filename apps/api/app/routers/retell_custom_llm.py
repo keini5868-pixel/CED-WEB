@@ -7,7 +7,9 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+
+from app.deps.auth import require_super_admin
 
 from app.services.cognitive_intents import (
     is_camera_voice_command,
@@ -52,6 +54,7 @@ from app.services.voice_llm_common import (
     FALLBACK_REPLY,
     WEB_SEARCH_VOICE_FALLBACK,
     is_duplicate_voice_delivery,
+    is_near_duplicate_user_turn,
     is_stt_echo_of_assistant,
     normalize_voice_delivery_text,
 )
@@ -111,6 +114,9 @@ GREETING_FALLBACK_S = 2.0
 GREETING_COMPLETE_FALLBACK = "CED en línea, señor. Estoy listo para asistirle."
 WEB_SEARCH_FAST_PATH_TIMEOUT_SEC = 15.0
 GPS_INSTRUCTION_CHANNEL = "navigation_instruction"
+SILENCE_PING_PHRASE = "Señor, quedo a la espera."
+MAX_SILENCE_PINGS = 1
+SILENCE_PING_MIN_GAP_S = 14.0
 
 _turn_filler_sent: dict[str, bool] = {}
 _turn_handled: dict[str, bool] = {}
@@ -206,8 +212,10 @@ def _debounce_wait_s(user_text: str) -> float:
 
 
 @router.get("/llm-websocket/active")
-async def retell_llm_active_connections() -> dict:
-    """Conexiones LLM activas — diagnóstico sin auth."""
+async def retell_llm_active_connections(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Conexiones LLM activas — solo super admin."""
     rows = active_ws_calls()
     return {"ok": True, "active_count": len(rows), "connections": rows}
 
@@ -245,6 +253,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     latest_incoming_rid = 0
     message_queue: asyncio.Queue[dict | None] = asyncio.Queue()
     last_delivered_voice_content = ""
+    last_delivered_at = 0.0
+    silence_pings_sent = 0
     last_web_delivery_at = 0.0
     last_web_query_norm = ""
     standalone_exec_lock = asyncio.Lock()
@@ -432,7 +442,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         skip_prefix: str = "",
     ) -> bool:
         nonlocal active_response_id, last_answered_user_key, answered_response_ids
-        nonlocal last_delivered_voice_content, last_web_delivery_at
+        nonlocal last_delivered_voice_content, last_web_delivery_at, last_delivered_at
         if generation is not None and generation != generation_seq:
             logger.info(
                 "[RETELL-OPENAI] skip stale generation send rid=%s call=%s",
@@ -531,6 +541,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         active_response_id = max(active_response_id, response_id)
         answered_response_ids.add(response_id)
         last_delivered_voice_content = normalize_voice_delivery_text(content)
+        last_delivered_at = time.time()
         if user_key:
             last_answered_user_key = user_key
         logger.info(
@@ -570,7 +581,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     async def handle_message(request_json: dict) -> None:
         nonlocal active_response_id, debounce_task, last_scheduled_user_key, generation_seq
         nonlocal turn_draft_in_progress, turn_draft_user_key, latest_incoming_rid
-        nonlocal greeting_sent
+        nonlocal greeting_sent, silence_pings_sent
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
@@ -654,23 +665,33 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         response_id=response_id, reason="youtube_playing"
                     )
                     return
-            transcript_raw = request_json.get("transcript") or []
-            transcript = [
-                Utterance(role=item.get("role", "user"), content=str(item.get("content") or ""))
-                for item in transcript_raw
-                if isinstance(item, dict)
-            ]
+            if silence_pings_sent >= MAX_SILENCE_PINGS:
+                await ack_empty_response(
+                    response_id=response_id, reason="reminder_cap"
+                )
+                return
+            if last_delivered_at and (time.time() - last_delivered_at) < SILENCE_PING_MIN_GAP_S:
+                await ack_empty_response(
+                    response_id=response_id, reason="reminder_too_soon"
+                )
+                return
+            if is_duplicate_voice_delivery(last_delivered_voice_content, SILENCE_PING_PHRASE):
+                await ack_empty_response(
+                    response_id=response_id, reason="reminder_duplicate"
+                )
+                return
             async with response_lock:
                 if response_id < active_response_id:
                     return
-                reminder_text = await llm.draft_reminder(transcript)
-                await send_voice_response(
+                sent = await send_voice_response(
                     response_id=response_id,
-                    content=reminder_text,
+                    content=SILENCE_PING_PHRASE,
                     user_key="",
                     generation=None,
                 )
-            logger.info("[RETELL-GEMINI] silence ping call=%s gemini", call_id)
+            if sent:
+                silence_pings_sent += 1
+            logger.info("[RETELL-GEMINI] silence ping call=%s fixed", call_id)
             return
 
         if interaction not in ("response_required", "reminder_required"):
@@ -745,6 +766,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             logger.info("[RETELL-GEMINI] skip duplicate user turn call=%s", call_id)
             await ack_empty_response(response_id=response_id, reason="duplicate_user_key")
             return
+        if (
+            last_answered_user_key
+            and not pending_web
+            and is_near_duplicate_user_turn(last_answered_user_key, user_key)
+        ):
+            logger.info("[RETELL-GEMINI] skip near-duplicate user turn call=%s", call_id)
+            await ack_empty_response(response_id=response_id, reason="near_duplicate_user_key")
+            return
         # Eco STT del propio TTS (ej. "mi nombre es CED" tras decirlo) → bucle.
         if (
             last_delivered_voice_content
@@ -804,6 +833,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         async def run_debounced() -> None:
             nonlocal active_response_id, last_answered_user_key, turn_draft_in_progress, turn_draft_user_key
             nonlocal last_standalone_module_answered_key
+            nonlocal last_delivered_voice_content, last_delivered_at
             scheduled_key = user_key
             scheduled_rid = response_id
             gpt_calls = 0
@@ -1754,6 +1784,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         last_delivered_voice_content = normalize_voice_delivery_text(
                             streamed_text
                         )
+                        last_delivered_at = time.time()
                         logger.info(
                             "[RETELL-DELIVERY] streamed call=%s rid=%s chars=%s",
                             call_id,

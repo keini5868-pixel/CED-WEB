@@ -25,7 +25,7 @@ IMAGE_EDITS_API = "https://api.openai.com/v1/images/edits"
 GPT_IMAGE_MEDIUM_COST_USD = 0.034
 GPT_IMAGE_HIGH_COST_USD = 0.133
 # Timeout: más lento que Ideogram Turbo; no bloquear el turno eternamente.
-_TIMEOUT_SEC = 90.0
+_TIMEOUT_SEC = 50.0
 
 
 def _parse_openai_error(res: httpx.Response) -> str:

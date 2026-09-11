@@ -14,7 +14,7 @@ const META_TOAST: Record<string, string> = {
   error: "No se pudo conectar Instagram. Inténtelo de nuevo.",
   token_failed: "Meta no devolvió token. Revise permisos de la app.",
   no_ig: "La página de Facebook no tiene Instagram Business vinculado.",
-  missing_config: "META_APP_ID no configurado en el servidor.",
+  invalid_state: "La conexión de Instagram expiró. Vuelva a pulsar Conectar Redes.",
 };
 
 /** Muestra toast tras redirect OAuth (?meta=connected). */

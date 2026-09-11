@@ -8,11 +8,13 @@ from uuid import uuid4
 from fastapi import APIRouter, Body, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.deps.auth import require_user_id
+from app.deps.auth import require_auth_user
 from app.services import supabase_db
 from app.services.async_sync import run_sync
+from app.services.user_id_utils import normalize_user_id
 from app.services.voice_usage import (
     ACCESS_DENIED_MESSAGES,
+    staff_auth_kwargs,
     voice_access_state_async,
 )
 
@@ -36,8 +38,9 @@ class SessionEndBody(BaseModel):
 
 
 @router.get("/balance")
-async def usage_balance(user_id: str = Depends(require_user_id)) -> dict:
-    state = await voice_access_state_async(user_id)
+async def usage_balance(user: dict = Depends(require_auth_user)) -> dict:
+    user_id = normalize_user_id(user["id"])
+    state = await voice_access_state_async(user_id, **staff_auth_kwargs(user))
     if state.get("degraded"):
         import logging
 
@@ -52,9 +55,10 @@ async def usage_balance(user_id: str = Depends(require_user_id)) -> dict:
 
 
 @router.post("/session/start")
-async def session_start(user_id: str = Depends(require_user_id)) -> dict:
+async def session_start(user: dict = Depends(require_auth_user)) -> dict:
+    user_id = normalize_user_id(user["id"])
     await run_sync(supabase_db.start_voice_trial_clock, user_id)
-    balance = await voice_access_state_async(user_id)
+    balance = await voice_access_state_async(user_id, **staff_auth_kwargs(user))
     access_msg = balance.get("access_message") or ""
     if balance.get("access_denied") or access_msg in (
         "trial_expired",
@@ -119,8 +123,9 @@ async def session_start(user_id: str = Depends(require_user_id)) -> dict:
 @router.post("/session/tick")
 async def session_tick(
     body: SessionTickBody,
-    user_id: str = Depends(require_user_id),
+    user: dict = Depends(require_auth_user),
 ) -> dict:
+    user_id = normalize_user_id(user["id"])
     meta = _active_sessions.get(body.session_id)
     # Tras un redeploy, _active_sessions (en memoria) se vacía. No cortes la voz
     # por eso: si no hay meta pero el usuario es válido, contabiliza igual el tick
@@ -160,7 +165,7 @@ async def session_tick(
         }
 
     # Monedero: cobrar solo el tramo que supera el cupo del plan
-    state_pre = await voice_access_state_async(user_id)
+    state_pre = await voice_access_state_async(user_id, **staff_auth_kwargs(user))
     plan_minutes = float(state_pre.get("plan_minutes_daily") or 0)
     overage = max(0.0, float(used) - max(float(used_before), plan_minutes))
     if overage > 0:
@@ -173,7 +178,7 @@ async def session_tick(
             units=overage,
         )
         if not spend.get("ok"):
-            state = await voice_access_state_async(user_id)
+            state = await voice_access_state_async(user_id, **staff_auth_kwargs(user))
             return {
                 "used_minutes_today": round(used, 2),
                 "plan_minutes_daily": state["plan_minutes_daily"],
@@ -186,7 +191,7 @@ async def session_tick(
                 "recharge_balance_usd": spend.get("balance_usd", 0),
             }
 
-    state = await voice_access_state_async(user_id)
+    state = await voice_access_state_async(user_id, **staff_auth_kwargs(user))
     if state.get("degraded"):
         import logging
 
@@ -232,15 +237,25 @@ def _usage_warning(pct: float, blocked: bool) -> str | None:
 async def session_end(
     session_id: str | None = None,
     body: SessionEndBody | None = Body(default=None),
-    user_id: str = Depends(require_user_id),
+    user: dict = Depends(require_auth_user),
 ) -> dict:
     """Cierra sesión de uso. Idempotente si ya terminó o API reinició."""
+    user_id = normalize_user_id(user["id"])
     sid = (body.session_id if body else None) or session_id
     if not sid:
         raise HTTPException(status_code=400, detail="session_id requerido")
 
     meta = _active_sessions.pop(sid, None)
-    balance = await usage_balance(user_id)
+    state = await voice_access_state_async(user_id, **staff_auth_kwargs(user))
+    if state.get("degraded"):
+        logger.warning(
+            "[USAGE] balance degraded user=%s reason=%s",
+            user_id[:8],
+            state.get("degraded_reason"),
+        )
+    state.pop("allowed", None)
+    state.pop("quota_exhausted", None)
+    balance = state
     if meta and meta.get("user_id") == user_id:
         try:
             from app.services.conversation_memory import finalize_voice_session_async

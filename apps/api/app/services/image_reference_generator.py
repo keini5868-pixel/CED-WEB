@@ -158,7 +158,7 @@ def _request_gpt_image_edit(
 
     files = [("image[]", (f"reference.{ext}", reference_image, mime))]
 
-    with httpx.Client(timeout=120.0) as client:
+    with httpx.Client(timeout=55.0) as client:
         res = client.post(
             IMAGE_EDITS_API,
             headers={"Authorization": f"Bearer {api_key}"},
@@ -245,7 +245,7 @@ def _request_dalle_fallback(
         "n": 1,
         "response_format": "b64_json",
     }
-    with httpx.Client(timeout=90.0) as client:
+    with httpx.Client(timeout=55.0) as client:
         res = client.post(
             IMAGE_GENERATIONS_API,
             headers={

@@ -127,7 +127,7 @@ class Settings(BaseSettings):
     # Precio de venta del módulo WhatsApp CED (margen sobre el canal 360dialog).
     whatsapp_addon_price_usd: float = 29.0
 
-    super_admin_emails: str = "keini@castillodigital.com"
+    super_admin_emails: str = "keini@castillodigital.com,keini5868@gmail.com"
 
     resend_api_key: str = ""
     email_from: str = "CED <noreply@ced-castillo.com>"

@@ -72,7 +72,9 @@ def _app_secret() -> str:
 def _verify_meta_signature(request_body: bytes, signature_header: str | None) -> bool:
     secret = _app_secret()
     if not secret:
-        # Dev / dry setup: allow if module on and no secret configured yet.
+        if get_settings().is_production():
+            logger.error("[AUTOMATION:WEBHOOK] no app secret in production — reject")
+            return False
         logger.warning("[AUTOMATION:WEBHOOK] no app secret — skipping signature check")
         return True
     if not signature_header or not signature_header.startswith("sha256="):

@@ -73,16 +73,34 @@ def degraded_voice_access_state(*, reason: str = "telemetry_unavailable") -> dic
     }
 
 
-def voice_access_state(user_id: str) -> dict:
+def staff_auth_kwargs(user: dict | None) -> dict[str, str | None]:
+    """Email/rol del JWT para cupo staff aunque el perfil en DB falle."""
+    if not user:
+        return {"email": None, "role": None}
+    email = user.get("email")
+    role = user.get("role")
+    return {
+        "email": email if isinstance(email, str) else None,
+        "role": role if isinstance(role, str) else None,
+    }
+
+
+def voice_access_state(
+    user_id: str,
+    *,
+    email: str | None = None,
+    role: str | None = None,
+) -> dict:
     """Estado unificado de cupo voz — usado por balance, start y tick."""
     try:
         from app.deps.auth import is_staff_admin
 
         profile_early = supabase_db.get_profile(user_id) or {}
-        if is_staff_admin(
-            profile_early.get("email"),
-            profile_early.get("role") if isinstance(profile_early.get("role"), str) else None,
-        ):
+        staff_email = (email or "").strip() or profile_early.get("email")
+        staff_role = role if isinstance(role, str) else (
+            profile_early.get("role") if isinstance(profile_early.get("role"), str) else None
+        )
+        if is_staff_admin(staff_email, staff_role):
             sub = supabase_db.get_subscription(user_id)
             plan_id = normalize_plan_id((sub or {}).get("plan_id"))
             return {
@@ -294,6 +312,11 @@ def voice_access_state(user_id: str) -> dict:
         return degraded_voice_access_state(reason=str(exc))
 
 
-async def voice_access_state_async(user_id: str) -> dict:
+async def voice_access_state_async(
+    user_id: str,
+    *,
+    email: str | None = None,
+    role: str | None = None,
+) -> dict:
     """Misma lógica que voice_access_state, sin bloquear el event loop."""
-    return await run_sync(voice_access_state, user_id)
+    return await run_sync(voice_access_state, user_id, email=email, role=role)

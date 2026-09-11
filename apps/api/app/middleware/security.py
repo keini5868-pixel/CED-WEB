@@ -25,7 +25,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "camera=(self), microphone=(self), geolocation=()"
         )
         response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
-        if self._settings.is_production:
+        if self._settings.is_production():
             response.headers["Strict-Transport-Security"] = (
                 "max-age=63072000; includeSubDomains; preload"
             )

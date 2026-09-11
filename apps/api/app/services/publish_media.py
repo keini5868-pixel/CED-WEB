@@ -42,13 +42,15 @@ def decode_image_data(image_data: str) -> tuple[bytes, str]:
         return base64.b64decode(payload), mime
 
     if raw.startswith("http://") or raw.startswith("https://"):
-        import httpx
+        from app.services.safe_http_fetch import UnsafeUrlError, fetch_public_http_bytes
 
-        with httpx.Client(timeout=25.0, follow_redirects=True) as client:
-            res = client.get(raw)
-            res.raise_for_status()
-            mime = res.headers.get("content-type", "image/jpeg").split(";")[0].strip()
-            return res.content, mime or "image/jpeg"
+        try:
+            content, mime = fetch_public_http_bytes(raw, timeout=20.0)
+        except UnsafeUrlError as exc:
+            raise ValueError("URL de imagen no permitida") from exc
+        except Exception as exc:  # noqa: BLE001
+            raise ValueError("No se pudo descargar la imagen") from exc
+        return content, mime or "image/jpeg"
 
     cleaned = re.sub(r"\s+", "", raw)
     try:
@@ -174,6 +176,8 @@ def resolve_image_input(
 
 def media_file_path(file_name: str) -> Path | None:
     if not file_name or ".." in file_name or "/" in file_name or "\\" in file_name:
+        return None
+    if not re.fullmatch(r"[A-Za-z0-9-]{8}_[A-Fa-f0-9]{32}\.(jpg|jpeg|png|webp|gif)", file_name, re.I):
         return None
     path = _ensure_dir() / file_name
     return path if path.is_file() else None

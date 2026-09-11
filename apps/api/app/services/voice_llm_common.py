@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 
 from app.domain.ced_strategy_consultant import CED_STRATEGY_CONSULTATION_OVERLAY
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
@@ -88,10 +89,10 @@ PROHIBIDO: monólogo, listar capacidades, "¿En qué puedo ayudarle?", "A su ser
 
 REMINDER_OVERLAY = """
 # SILENCIO PROLONGADO
-El usuario lleva un momento en silencio. Usa el transcript para contexto.
-Responde con UNA frase natural y empática — pregunta si sigue ahí, ofrece paciencia,
-o retoma el tema anterior si aplica.
-PROHIBIDO: "Sigo atento", "¿Continuamos?", tono de chatbot de soporte.
+El usuario lleva un momento en silencio.
+Di UNA sola frase corta de presencia — sin repetir ni retomar tu respuesta anterior.
+Ejemplo: "Señor, quedo a la espera."
+PROHIBIDO: repetir el último tema, volver a explicar, "Sigo atento", "¿Continuamos?", tono de chatbot.
 """.strip()
 
 DELAY_ACK_OVERLAY = """
@@ -861,7 +862,32 @@ def is_stt_echo_of_assistant(user_text: str, last_spoken: str) -> bool:
     s_tokens = set(t for t in spoken_n.split() if len(t) > 2)
     if len(u_tokens) >= 3 and len(s_tokens) >= 3:
         overlap = sum(1 for t in u_tokens if t in s_tokens)
-        if overlap / len(u_tokens) >= 0.85 and len(user_n) <= len(spoken_n) + 12:
+        if overlap / len(u_tokens) >= 0.62:
+            return True
+    return False
+
+
+def is_near_duplicate_user_turn(previous: str, incoming: str) -> bool:
+    """True si el STT reenvió la misma pregunta con variación mínima (bucle de turno)."""
+
+    def _key(text: str) -> str:
+        folded = unicodedata.normalize("NFD", (text or "").lower())
+        folded = "".join(ch for ch in folded if unicodedata.category(ch) != "Mn")
+        return re.sub(r"[^\w\s]", " ", folded, flags=re.UNICODE)
+
+    a = " ".join(_key(previous).split())
+    b = " ".join(_key(incoming).split())
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    if len(a) >= 10 and len(b) >= 10 and (a in b or b in a):
+        return True
+    a_tokens = [t for t in a.split() if len(t) > 2]
+    b_set = {t for t in b.split() if len(t) > 2}
+    if len(a_tokens) >= 4 and len(b_set) >= 4:
+        overlap = sum(1 for t in a_tokens if t in b_set)
+        if overlap / max(len(a_tokens), len(b_set)) >= 0.78:
             return True
     return False
 

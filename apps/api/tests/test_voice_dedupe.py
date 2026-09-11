@@ -34,6 +34,28 @@ def test_stt_echo_of_assistant_identity_loop():
     assert not is_stt_echo_of_assistant("generame una imagen de un gato", spoken)
 
 
+def test_stt_echo_overlap_catches_paraphrase_of_last_line():
+    spoken = "FitLine usa el NTC para llevar nutrientes a nivel celular, señor."
+    assert is_stt_echo_of_assistant(
+        "fitline usa el ntc para llevar nutrientes a nivel celular",
+        spoken,
+    )
+
+
+def test_near_duplicate_user_turn():
+    from app.services.voice_llm_common import is_near_duplicate_user_turn
+
+    assert is_near_duplicate_user_turn("hablame de fitline", "hablame de fitline")
+    assert is_near_duplicate_user_turn(
+        "que es restorate de fitline",
+        "que es restorate de fitline senor",
+    )
+    assert not is_near_duplicate_user_turn(
+        "hablame de fitline",
+        "generame una imagen de un gato",
+    )
+
+
 def test_news_spoken_limit_allows_longer_brief():
     assert voice_spoken_limit_for_kind("news") == VOICE_NEWS_MAX_CHARS
     long_text = "Noticia. " * 400
