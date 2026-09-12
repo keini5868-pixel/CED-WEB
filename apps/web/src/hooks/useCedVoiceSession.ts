@@ -1354,6 +1354,12 @@ export function useCedVoiceSession(
                   await client.startCall(
                     registration.access_token,
                     registration.call_id,
+                    {
+                      transport: registration.transport,
+                      ice_servers: registration.ice_servers,
+                      url: registration.url,
+                      identity: registration.identity,
+                    },
                   );
                   client.setMuted(mutedRef.current);
                   setOrbState("listening");
@@ -1476,7 +1482,12 @@ export function useCedVoiceSession(
           })();
         }, USAGE_TICK_SECONDS * 1000);
 
-        await retell.startCall(registration.access_token, registration.call_id);
+        await retell.startCall(registration.access_token, registration.call_id, {
+          transport: registration.transport,
+          ice_servers: registration.ice_servers,
+          url: registration.url,
+          identity: registration.identity,
+        });
         if (isStale()) return;
         retell.setMuted(mutedRef.current);
         setOrbState("listening");

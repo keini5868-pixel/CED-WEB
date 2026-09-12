@@ -1,12 +1,22 @@
 import { parseApiJson } from "@/lib/api/http";
 import { proxyFetch } from "@/lib/api/ced-proxy";
 
+export type RetellIceServer = {
+  urls: string | string[];
+  username?: string;
+  credential?: string;
+};
+
 export type RetellRegisterCallResponse =
   | {
       ok: true;
       access_token: string;
       call_id?: string | null;
       agent_id?: string;
+      transport?: "livekit" | "gateway";
+      ice_servers?: RetellIceServer[];
+      url?: string;
+      identity?: string;
     }
   | { ok: false; error?: string; detail?: string };
 
@@ -51,6 +61,10 @@ export async function registerRetellCall(): Promise<RetellRegisterCallResponse> 
     access_token: data.access_token,
     call_id: data.call_id,
     agent_id: data.agent_id,
+    transport: data.transport,
+    ice_servers: data.ice_servers,
+    url: data.url,
+    identity: data.identity,
   };
 }
 
@@ -93,6 +107,10 @@ export async function registerRetellNativePilotCall(): Promise<RetellNativePilot
     access_token: data.access_token,
     call_id: data.call_id,
     agent_id: data.agent_id,
+    transport: data.transport,
+    ice_servers: data.ice_servers,
+    url: data.url,
+    identity: data.identity,
     pilot: data.pilot,
     engine: data.engine,
     model: data.model,

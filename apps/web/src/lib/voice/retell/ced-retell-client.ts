@@ -1,6 +1,11 @@
-import { RetellWebClient } from "retell-client-js-sdk";
+import { RetellWebClient, type StartCallConfig } from "retell-client-js-sdk";
 
 import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
+import {
+  inferRetellTransport,
+  mapRetellClientError,
+  type RetellIceServer,
+} from "@/lib/voice/retell/retell-transport";
 
 /** Tipos mínimos — livekit-client es transitiva vía retell; no importar directo (rompe next build). */
 type RetellLiveRoom = {
@@ -34,6 +39,21 @@ export interface CedRetellCallbacks {
 type RetellUpdateEvent = {
   transcript?: Array<{ role?: string; content?: string }>;
   turntaking?: string;
+};
+
+export type RetellCallMediaOptions = {
+  transport?: "livekit" | "gateway" | null;
+  ice_servers?: RetellIceServer[] | null;
+  url?: string | null;
+  identity?: string | null;
+};
+
+type RetellSdkHandle = {
+  room?: RetellLiveRoom;
+  transport?: {
+    room?: RetellLiveRoom;
+    audioEl?: HTMLAudioElement;
+  };
 };
 
 function retellLog(message: string, detail?: unknown): void {
@@ -95,11 +115,15 @@ export class CedRetellClient {
   }
 
   private liveKitRoom(): RetellLiveRoom | undefined {
-    return (this.client as unknown as { room?: RetellLiveRoom }).room;
+    const handle = this.client as unknown as RetellSdkHandle;
+    return handle.room ?? handle.transport?.room;
   }
 
   private setAgentTrackVolume(volume: number): void {
     try {
+      const handle = this.client as unknown as RetellSdkHandle;
+      const audioEl = handle.transport?.audioEl;
+      if (audioEl) audioEl.volume = volume;
       const room = this.liveKitRoom();
       if (!room) return;
       room.remoteParticipants.forEach((participant) => {
@@ -277,7 +301,7 @@ export class CedRetellClient {
   private setupListeners(): void {
     this.client.on("call_started", () => {
       this.liveKitConnected = true;
-      retellLog("call_started — LiveKit conectado");
+      retellLog("call_started — media conectado");
       this.startAudioRetryLoop();
       this.callbacks.onCallStarted?.();
     });
@@ -376,13 +400,14 @@ export class CedRetellClient {
     });
 
     this.client.on("error", (error: unknown) => {
-      const message =
+      const raw =
         typeof error === "string"
           ? error
           : error instanceof Error
             ? error.message
             : "Error en llamada Retell";
-      console.error("[CED:RETELL] error", message, error);
+      const message = mapRetellClientError(raw);
+      console.error("[CED:RETELL] error", raw, error);
       this.callbacks.onError?.(message);
     });
   }
@@ -411,7 +436,11 @@ export class CedRetellClient {
     }
   }
 
-  async startCall(accessToken: string, callId?: string | null): Promise<void> {
+  async startCall(
+    accessToken: string,
+    callId?: string | null,
+    media?: RetellCallMediaOptions,
+  ): Promise<void> {
     this.callId = callId ?? null;
     this.lastUserLine = "";
     this.lastAgentLine = "";
@@ -429,12 +458,30 @@ export class CedRetellClient {
     this.lastTurntaking = "";
     this.userTurnSeq = 0;
     this.currentUserStreamKey = "";
-    retellLog("startCall", { callId: this.callId });
 
-    await this.client.startCall({
+    const transport = inferRetellTransport({
+      transport: media?.transport,
+      accessToken,
+      iceServers: media?.ice_servers,
+    });
+    const config: StartCallConfig = {
       accessToken,
       sampleRate: 24000,
-    });
+      transport,
+      callId: this.callId || undefined,
+    };
+    if (transport === "gateway") {
+      if (media?.ice_servers?.length) config.iceServers = media.ice_servers;
+      if (media?.identity) config.identity = media.identity;
+    } else if (media?.url) {
+      config.url = media.url;
+    }
+    retellLog("startCall", { callId: this.callId, transport });
+
+    await this.client.startCall(config);
+    if (!this.liveKitConnected) {
+      throw new Error(mapRetellClientError("Error starting call"));
+    }
 
     window.setTimeout(() => {
       if (!this.agentAudioReady) {

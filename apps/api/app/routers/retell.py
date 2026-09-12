@@ -29,6 +29,7 @@ from app.services.retell_agent_setup import (
 from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
 from app.services.retell_client import get_retell_client, verify_retell_webhook
+from app.services.retell_web_call import web_call_client_payload
 from app.services.retell_native_pilot import (
     execute_activate_advanced_mode_tool,
     execute_activate_camera_tool,
@@ -224,7 +225,8 @@ async def register_retell_call(
         logger.error("[RETELL] create_web_call failed: %s", exc)
         raise HTTPException(status_code=502, detail=_format_retell_call_error(exc)) from exc
 
-    call_id = getattr(call, "call_id", None) or getattr(call, "callId", None)
+    payload = web_call_client_payload(call, agent_id=agent_id)
+    call_id = payload.get("call_id")
     if call_id:
         bind_call_user(str(call_id), user_id)
         from app.services import voice_client_session as vcs
@@ -232,12 +234,7 @@ async def register_retell_call(
         vcs.begin_voice_publish_session(user_id, str(call_id))
         logger.info("[RETELL] voice publish session reset call=%s user=%s", call_id, user_id[:8])
 
-    return {
-        "ok": True,
-        "access_token": call.access_token,
-        "call_id": call_id,
-        "agent_id": agent_id,
-    }
+    return payload
 
 
 @router.post("/register-call-native-pilot")
@@ -306,7 +303,8 @@ async def register_retell_native_pilot_call(
         logger.error("[NATIVE-PILOT] create_web_call failed: %s", exc)
         raise HTTPException(status_code=502, detail=_format_retell_call_error(exc)) from exc
 
-    call_id = getattr(call, "call_id", None) or getattr(call, "callId", None)
+    payload = web_call_client_payload(call, agent_id=agent_id, extra={"pilot": "native"})
+    call_id = payload.get("call_id")
     if call_id:
         bind_call_user(str(call_id), user_id)
         from app.services import voice_client_session as vcs
@@ -314,13 +312,7 @@ async def register_retell_native_pilot_call(
         vcs.begin_voice_publish_session(user_id, str(call_id))
         logger.info("[NATIVE-PILOT] call=%s user=%s agent=%s", call_id, user_id[:8], agent_id[:12])
 
-    return {
-        "ok": True,
-        "access_token": call.access_token,
-        "call_id": call_id,
-        "agent_id": agent_id,
-        "pilot": "native",
-    }
+    return payload
 
 
 @router.post("/tools/get_environment")

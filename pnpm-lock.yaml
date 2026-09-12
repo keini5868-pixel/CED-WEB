@@ -57,8 +57,8 @@ importers:
         specifier: ^19.1.0
         version: 19.2.7(react@19.2.7)
       retell-client-js-sdk:
-        specifier: ^2.0.8
-        version: 2.0.8(@types/dom-mediacapture-record@1.0.22)
+        specifier: 3.0.1
+        version: 3.0.1(@types/dom-mediacapture-record@1.0.22)
       three:
         specifier: ^0.175.0
         version: 0.175.0
@@ -2077,8 +2077,8 @@ packages:
     engines: {node: '>= 0.4'}
     hasBin: true
 
-  retell-client-js-sdk@2.0.8:
-    resolution: {integrity: sha512-t6bobUwqVx0DFayN389z4HbjUxyUrn9VO3ZJPMaoGrVh3qPZbGPC8DwopYLj6UgkTwpHijFX77aaeQghLGGJ7Q==}
+  retell-client-js-sdk@3.0.1:
+    resolution: {integrity: sha512-fVUIoZU78YyqYzpxwSQvmFB2Jn2oi9Tm/v7n7gOMVkEehg0YIwwvJHg3BIUm9QpWMAqht3GAzc7rPa05orJTlA==}
 
   retry@0.13.1:
     resolution: {integrity: sha512-XQBQ3I8W1Cge0Seh+6gjj03LbmRFWuoszgK9ooCpwYIrhhoO80pfq4cUkU5DkknwfOfFteRwlZ56PYOGYyFWdg==}
@@ -4481,7 +4481,7 @@ snapshots:
       path-parse: 1.0.7
       supports-preserve-symlinks-flag: 1.0.0
 
-  retell-client-js-sdk@2.0.8(@types/dom-mediacapture-record@1.0.22):
+  retell-client-js-sdk@3.0.1(@types/dom-mediacapture-record@1.0.22):
     dependencies:
       eventemitter3: 5.0.4
       livekit-client: 2.19.2(@types/dom-mediacapture-record@1.0.22)
