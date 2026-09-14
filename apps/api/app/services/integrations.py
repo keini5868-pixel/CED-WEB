@@ -34,6 +34,30 @@ def check_openai() -> dict[str, Any]:
     }
 
 
+# Ping barato y sin "thinking": el modelo de voz (p.ej. 2.5-pro) con
+# max_output_tokens=8 se come el presupuesto en thought tokens y el HUD
+# marca ALERTA aunque la clave y Gemini estén bien.
+_GEMINI_HEALTH_MODEL = "gemini-2.5-flash"
+
+
+def _gemini_response_text(response: Any) -> str:
+    text = (getattr(response, "text", None) or "").strip()
+    if text:
+        return text
+    for cand in getattr(response, "candidates", None) or []:
+        content = getattr(cand, "content", None)
+        parts = getattr(content, "parts", None) or []
+        bits: list[str] = []
+        for part in parts:
+            piece = getattr(part, "text", None)
+            if piece:
+                bits.append(str(piece))
+        joined = "".join(bits).strip()
+        if joined:
+            return joined
+    return ""
+
+
 def check_google() -> dict[str, Any]:
     """Comprueba GOOGLE_API_KEY (Gemini) — chat de texto y voz."""
     settings = get_settings()
@@ -44,7 +68,7 @@ def check_google() -> dict[str, Any]:
             "error": "missing_google_api_key",
             "hint": "Añade GOOGLE_API_KEY en Railway (servicio CED-WEB).",
         }
-    model = settings.gemini_voice_model.strip() or "gemini-2.5-pro"
+    model = _GEMINI_HEALTH_MODEL
     try:
         from google import genai
         from google.genai import types
@@ -52,12 +76,25 @@ def check_google() -> dict[str, Any]:
         client = genai.Client(api_key=api_key)
         response = client.models.generate_content(
             model=model,
-            contents=[types.Content(role="user", parts=[types.Part(text="ping")])],
-            config=types.GenerateContentConfig(max_output_tokens=8),
+            contents=[types.Content(role="user", parts=[types.Part(text="Reply with the word ok.")])],
+            config=types.GenerateContentConfig(
+                max_output_tokens=32,
+                temperature=0,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
         )
-        text = (response.text or "").strip()
+        text = _gemini_response_text(response)
         if text:
             return {"ok": True, "model": model, "provider": "google_gemini"}
+        # La API aceptó la clave y devolvió candidatos: no es un outage.
+        candidates = list(getattr(response, "candidates", None) or [])
+        if candidates:
+            return {
+                "ok": True,
+                "model": model,
+                "provider": "google_gemini",
+                "note": "empty_text_but_candidates",
+            }
         return {"ok": False, "error": "empty_response", "model": model}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": str(exc)[:200], "model": model}
