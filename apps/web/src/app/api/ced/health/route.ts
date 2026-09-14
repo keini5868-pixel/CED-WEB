@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { apiUrl } from "@/lib/env";
 
-const WEB_BUILD = "trial-15-pool-v18";
+const WEB_BUILD = "trial-15-pool-v19";
 
 /** Diagnóstico BFF: comprueba que el web alcanza la API (sin auth). */
 export async function GET() {

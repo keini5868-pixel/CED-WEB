@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Orbitron } from "next/font/google";
 import "./globals.css";
+import { MetaPixelSnippet } from "@/components/ads/MetaPixelSnippet";
 import { ClientShell } from "@/components/ClientShell";
 
 const orbitron = Orbitron({
@@ -48,6 +49,7 @@ export default function RootLayout({
             __html: `(function(){try{var t=localStorage.getItem("ced-theme");if(t==="light"||t==="petrol"){document.documentElement.setAttribute("data-ced-theme",t);}}catch(e){}})();`,
           }}
         />
+        <MetaPixelSnippet />
       </head>
       <body className="antialiased">
         <ClientShell>{children}</ClientShell>

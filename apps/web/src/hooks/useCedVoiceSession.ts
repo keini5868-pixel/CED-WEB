@@ -68,6 +68,7 @@ import {
 } from "@/lib/voice/live/ced-brief-messages";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
 import { registerRetellCall, registerRetellNativePilotCall, warmupRetellVoiceApi } from "@/lib/api/retell";
+import { trackStartTrial } from "@/lib/ads/meta-pixel";
 import { CedRetellClient } from "@/lib/voice/retell/ced-retell-client";
 import { isRetellNativePilot, isRetellVoice } from "@/lib/voice/voiceProvider";
 import {
@@ -1293,6 +1294,7 @@ export function useCedVoiceSession(
           await stopSession();
           return;
         }
+        trackStartTrial();
 
         if (startRetell && registration.ok) {
         const retell = new CedRetellClient();

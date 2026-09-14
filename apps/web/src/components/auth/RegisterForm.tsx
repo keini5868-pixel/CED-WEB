@@ -8,6 +8,7 @@ import { CedButton, CedInput } from "@ced/ui";
 import { AuthCard } from "@/components/auth/AuthCard";
 import { AuthDivider, GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 import { LOGIN_PATH, appendAuthQueryParam, readAuthQueryParam, sanitizeAuthNext } from "@/lib/auth/paths";
+import { trackCompleteRegistration } from "@/lib/ads/meta-pixel";
 import { apiUrl, isGoogleAuthEnabled, isSupabaseConfigured } from "@/lib/env";
 
 function registerErrorMessage(status: number, detail: unknown): string {
@@ -108,6 +109,7 @@ export function RegisterForm() {
         setError(registerErrorMessage(res.status, detail));
         return;
       }
+      trackCompleteRegistration();
       router.push(
         `/verify-email?email=${encodeURIComponent(email.trim())}&next=${encodeURIComponent(googleNext)}`,
       );
@@ -206,6 +208,7 @@ export function RegisterForm() {
             next={googleNext}
             disabled={loading || !configured}
             onError={setError}
+            pixelSignup
           />
         </>
       ) : null}

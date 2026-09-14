@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { markExpectedRegistration } from "@/lib/ads/meta-pixel";
 import { signInWithGoogle } from "@/lib/auth/google-oauth";
 
 type GoogleAuthButtonProps = {
@@ -9,6 +10,8 @@ type GoogleAuthButtonProps = {
   next?: string | null;
   disabled?: boolean;
   onError?: (message: string) => void;
+  /** Marca registro (no login) para CompleteRegistration al volver de Google. */
+  pixelSignup?: boolean;
 };
 
 function GoogleLogo() {
@@ -49,11 +52,13 @@ export function GoogleAuthButton({
   next,
   disabled = false,
   onError,
+  pixelSignup = false,
 }: GoogleAuthButtonProps) {
   const [busy, setBusy] = useState(false);
 
   async function handleClick() {
     setBusy(true);
+    if (pixelSignup) markExpectedRegistration();
     const result = await signInWithGoogle(next);
     if (result.error) {
       onError?.(result.error);

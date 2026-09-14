@@ -3,7 +3,18 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
+import { PUBLIC_PLANS } from "@ced/types";
+
+import { trackPurchase } from "@/lib/ads/meta-pixel";
 import { confirmCheckoutSession } from "@/lib/api/billing";
+
+function purchaseValueUsd(plan: string | null, amount: string | null): number {
+  const fromAmount = Number(amount);
+  if (Number.isFinite(fromAmount) && fromAmount > 0) return fromAmount;
+  const id = (plan || "").trim().toLowerCase();
+  const listed = PUBLIC_PLANS.find((p) => p.id === id);
+  return listed?.priceUsd ?? 0;
+}
 
 const MESSAGES: Record<string, string> = {
   success: "¡Pago confirmado! Tu plan se activará en unos segundos.",
@@ -35,6 +46,11 @@ export function BillingFeedback() {
         try {
           const result = await confirmCheckoutSession(sessionId);
           if (cancelled) return;
+          trackPurchase({
+            value: purchaseValueUsd(plan, amount),
+            planId: plan || (billing === "recharge_success" ? "recharge" : undefined),
+            eventId: sessionId,
+          });
           if (billing === "recharge_success") {
             const bal = result.recharge_balance_usd;
             setMessage(
@@ -54,6 +70,11 @@ export function BillingFeedback() {
           }
         } catch {
           if (cancelled) return;
+          trackPurchase({
+            value: purchaseValueUsd(plan, amount),
+            planId: plan || (billing === "recharge_success" ? "recharge" : undefined),
+            eventId: sessionId,
+          });
           if (billing === "success" && plan) {
             setMessage(
               `¡Plan ${plan.toUpperCase()} confirmado! Si no ves el cupo en unos segundos, refresca.`,
