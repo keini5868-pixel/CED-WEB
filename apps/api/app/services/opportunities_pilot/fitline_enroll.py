@@ -70,6 +70,7 @@ _NOT_PM_SIGNUP_LINK = re.compile(
     r")\b"
 )
 
+# «quiero entrar yo en acción / al video» NO es inscripción PM.
 _SIGNUP_WORD = re.compile(
     r"(?is)\b(?:"
     r"inscripci[oó]n|inscribir(?:me|se|nos)?|"
@@ -77,10 +78,29 @@ _SIGNUP_WORD = re.compile(
     r"patrocinio|afiliaci[oó]n|unirme|afiliar(?:me)?|"
     r"c[oó]mo\s+(?:me\s+)?(?:inscribo|registro|uno)|"
     r"d[oó]nde\s+(?:me\s+)?(?:inscribo|registro|uno)|"
-    r"quiero\s+(?:inscribirme|registrarme|unirme|entrar|empezar)|"
+    r"quiero\s+(?:inscribirme|registrarme|unirme)|"
+    r"quiero\s+(?:entrar|empezar)\s+"
+    r"(?:al?\s+|en\s+(?:el\s+)?)?"
+    r"(?:negocio|pm|fitline|fit\s*line|franquicia|oportunidad)|"
     r"activar\s+(?:mi\s+)?franquicia|"
     r"p[aá]gina\s+de\s+(?:inscripci[oó]n|registro)|"
     r"formulario\s+de\s+(?:inscripci[oó]n|registro)"
+    r")\b"
+)
+
+# Copy, reels, campaña CED: no hijackear a OPPS aunque el historial mencione PM.
+_CREATIVE_NOT_ENROLL = re.compile(
+    r"(?is)\b(?:"
+    r"reel(?:s)?|hyperlapse|hiper\s*laps?e?|hiperlas|"
+    r"gancho|guion(?:es)?|ads?\s*manager|"
+    r"campa[nñ]a|anuncio|"
+    r"frase\s+(?:impactante|corta)|"
+    r"recomendaci[oó]n|"
+    r"\bcursor\b|"
+    r"qu[eé]\s+ser[ií]a\s+bueno\s+decir|"
+    r"entrar\s+yo\s+en\s+acci[oó]n|"
+    r"trayectoria|"
+    r"\bdron\b"
     r")\b"
 )
 
@@ -108,8 +128,12 @@ def reply_leaks_generic_pm_signup(reply: str) -> bool:
 
 
 def _history_blob(history: list[dict[str, str]] | None) -> str:
+    """Solo turnos del usuario. El análisis de CED (campaña, PDF) no cuenta como pedido PM."""
     parts: list[str] = []
     for row in (history or [])[-8:]:
+        role = str(row.get("role") or "").strip().lower()
+        if role and role not in ("user", "human"):
+            continue
         content = str(row.get("content") or "").strip()
         if content:
             parts.append(content)
@@ -156,10 +180,17 @@ def wants_fitline_enroll_link(
 
     has_link = bool(_LINK_WORD.search(t))
     has_signup = bool(_SIGNUP_WORD.search(t))
-    branded = _has_pm_brand(t) or _has_pm_brand(_history_blob(history))
+    branded_now = _has_pm_brand(t)
+    branded_hist = _has_pm_brand(_history_blob(history))
+    branded = branded_now or branded_hist
     asked = bool(_ASK_LINK.search(t))
+    creative = bool(_CREATIVE_NOT_ENROLL.search(t))
 
     if _NOT_PM_SIGNUP_LINK.search(t) and not has_signup:
+        return False
+
+    # Video / campaña / copy de CED: no abrir OPPS salvo pedido explícito del enlace.
+    if creative and not has_link and not _LINK_OF_PM.search(t) and not branded_now:
         return False
 
     # «enlace de PM / FitLine / inscripción» — pedido explícito del link.
@@ -171,8 +202,8 @@ def wants_fitline_enroll_link(
     # Pedir el link (dame/pásame/cuál es) + contexto PM/FitLine.
     if has_link and branded and asked:
         return True
-    # Inscribirse / registrarse en PM, salvo pregunta informativa sin pedir el link.
-    if has_signup and branded:
+    # Inscribirse: marca en este turno, o en un turno USER previo (no en el análisis de CED).
+    if has_signup and (branded_now or (branded_hist and not creative)):
         if _INFO_NOT_ENROLL.search(t) and not has_link:
             return False
         return True

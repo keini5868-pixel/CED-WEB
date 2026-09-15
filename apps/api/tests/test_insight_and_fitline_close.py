@@ -433,3 +433,45 @@ def test_enroll_not_triggered_on_generic_fitline_question():
         "en esta conversación el enlace que te dije",
         history=[{"role": "user", "content": "FitLine PM International"}],
     )
+
+
+def test_enroll_not_triggered_on_campaign_video_or_cursor_copy():
+    from app.services.opportunities_pilot.fitline_enroll import (
+        try_fitline_enroll_turn,
+        wants_fitline_enroll_link,
+    )
+
+    campaign_hist = [
+        {
+            "role": "assistant",
+            "content": (
+                "Análisis del documento — Campaña de lanzamiento CED. "
+                "PM International ($22): cerrador de objeciones en voz. "
+                "Operador ($30–59). Pixel, StartTrial, Reels."
+            ),
+        },
+        {
+            "role": "user",
+            "content": "mira este archivo CED-Campana-Lanzamiento-Meta.pdf",
+        },
+    ]
+    hyperlapse = (
+        "ok para la recomendacionde cursor esta idesa como la vez "
+        "tengo un video de hiperlas esos que pasan asi como trayectoria "
+        "como si fuera un dron yo hice uno que pasa de la epoca antigua "
+        "a la moderna y la camara entra a una ventana donde se desaparece "
+        "y ahi quiero entrar yo en accion con ced pero que seria bueno decir "
+        "algo impactante y corto que se alinea con lo que cursor recomienda"
+    )
+    assert not wants_fitline_enroll_link(hyperlapse)
+    assert not wants_fitline_enroll_link(hyperlapse, history=campaign_hist)
+    assert try_fitline_enroll_turn("u1", hyperlapse, history=campaign_hist) is None
+    assert not wants_fitline_enroll_link(
+        "quiero entrar yo en acción con CED en el video",
+        history=campaign_hist,
+    )
+    assert wants_fitline_enroll_link("quiero entrar al negocio de FitLine")
+    assert wants_fitline_enroll_link(
+        "quiero inscribirme",
+        history=[{"role": "user", "content": "estoy viendo FitLine PM International"}],
+    )
