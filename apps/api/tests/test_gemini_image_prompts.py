@@ -199,4 +199,6 @@ def test_rewrite_protected_brand_marks_avoids_official_logos():
     low = out.lower()
     assert "logo oficial" not in low
     assert "wordmark" in low
+    assert "c-e-d" in low
+    assert "never sec" in low
     assert "trademarked" in low or "official corporate logos" in low

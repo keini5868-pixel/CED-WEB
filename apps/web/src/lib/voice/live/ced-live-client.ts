@@ -505,9 +505,13 @@ export class CedLiveClient {
   /** Eco del audio de CED captado por el mic (durante o justo después de hablar). */
   private isEchoOfOwnSpeech(transcript: string): boolean {
     const t = this.normalizeEchoText(transcript);
-    if (t.length < 6) return false;
     const recent =
       this.responseInProgress || Date.now() - this.lastModelSpeechAt < 6_500;
+    const cedOnly = /^(ced[\s,.]*)+$/i.test(t);
+    if (cedOnly && (recent || this.awaitingFirstUserSpeech)) {
+      return true;
+    }
+    if (t.length < 6) return false;
     if (!recent && !this.awaitingFirstUserSpeech) return false;
     const sources = [
       this.modelTranscriptAcc,
@@ -520,8 +524,8 @@ export class CedLiveClient {
       if (m.includes(t) || t.includes(m.slice(0, Math.min(48, m.length)))) {
         return true;
       }
-      const tWords = t.split(" ").filter((w) => w.length > 3);
-      const mSet = new Set(m.split(" ").filter((w) => w.length > 3));
+      const tWords = t.split(" ").filter((w) => w.length >= 3);
+      const mSet = new Set(m.split(" ").filter((w) => w.length >= 3));
       if (tWords.length >= 2) {
         const hits = tWords.filter((w) => mSet.has(w)).length;
         if (hits / tWords.length >= 0.55) return true;

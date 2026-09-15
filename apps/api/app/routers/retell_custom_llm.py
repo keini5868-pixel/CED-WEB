@@ -50,10 +50,14 @@ from app.services.navigation_voice_intent import (
     resolve_navigation_place_search,
     resolve_open_map_request,
 )
+from app.services.async_sync import run_sync
+from app.services.voice_history import persist_voice_turn
 from app.services.voice_llm_common import (
     FALLBACK_REPLY,
     WEB_SEARCH_VOICE_FALLBACK,
+    is_ced_name_echo,
     is_duplicate_voice_delivery,
+    is_identity_name_stutter,
     is_near_duplicate_user_turn,
     is_stt_echo_of_assistant,
     normalize_voice_delivery_text,
@@ -265,6 +269,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         llm.set_user_id(user_id)
         logger.info("[RETELL-GEMINI] user_id=%s call=%s (registry)", user_id[:8], call_id)
 
+    async def persist_voice_history(role: str, content: str, *, who: str | None = None) -> None:
+        target = (who or user_id or "").strip()
+        if not target:
+            return
+        try:
+            await run_sync(persist_voice_turn, target, role, content)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[VOICE-HIST] persist falló role=%s: %s", role, exc)
+
     from app.build_info import BUILD_VERSION
     from app.domain.openai_voice_prompt import voice_prompt_diagnostics
 
@@ -367,6 +380,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             }
             await websocket.send_json(payload)
             mark_greeting_sent(call_id)
+            if begin_text:
+                asyncio.create_task(
+                    persist_voice_history("model", begin_text, who=user_id)
+                )
             greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
             logger.info(
                 "[GREETING] sent call=%s reason=%s preview=%s",
@@ -551,6 +568,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             len(content),
             len(chunks),
         )
+        if content and content != SILENCE_PING_PHRASE:
+            asyncio.create_task(persist_voice_history("model", content, who=user_id))
         return True
 
     async def ack_empty_response(*, response_id: int, reason: str) -> None:
@@ -774,7 +793,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             logger.info("[RETELL-GEMINI] skip near-duplicate user turn call=%s", call_id)
             await ack_empty_response(response_id=response_id, reason="near_duplicate_user_key")
             return
-        # Eco STT del propio TTS (ej. "mi nombre es CED" tras decirlo) → bucle.
+        # Eco STT del propio TTS (ej. "mi nombre es CED" / "ced ced ced") → bucle.
         if (
             last_delivered_voice_content
             and not pending_web
@@ -787,6 +806,31 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
             await ack_empty_response(response_id=response_id, reason="stt_echo_self")
             return
+        if not pending_web and is_ced_name_echo(user_text, last_delivered_voice_content):
+            logger.info(
+                "[RETELL-GEMINI] skip ced name echo call=%s user=%s",
+                call_id,
+                user_text[:80],
+            )
+            await ack_empty_response(response_id=response_id, reason="ced_name_echo")
+            return
+        if (
+            not pending_web
+            and is_identity_name_stutter(user_text)
+            and last_delivered_voice_content
+        ):
+            logger.info(
+                "[RETELL-GEMINI] skip identity stutter call=%s user=%s",
+                call_id,
+                user_text[:80],
+            )
+            await ack_empty_response(response_id=response_id, reason="identity_stutter")
+            return
+        persist_who = (uid or user_id or "").strip()
+        if persist_who and user_text.strip():
+            asyncio.create_task(
+                persist_voice_history("user", user_text, who=persist_who)
+            )
         if (
             pending_web
             and user_key

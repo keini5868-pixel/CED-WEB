@@ -21,6 +21,13 @@ def test_coalesce_skips_shorter_partial():
 
 def test_coalesce_no_match_for_unrelated():
     assert _should_coalesce_voice_model_message(
-        "PDF listo, señor.",
-        "Claro, señor.",
-    ) is None
+        "Soy CED.",
+        "Soy CED.",
+    ) == "skip"
+
+
+def test_coalesce_skips_exact_duplicate():
+    assert _should_coalesce_voice_model_message(
+        "Soy CED.",
+        "Soy CED.",
+    ) == "skip"

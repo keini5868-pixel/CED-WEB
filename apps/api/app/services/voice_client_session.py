@@ -63,6 +63,7 @@ def _fresh_session() -> dict[str, Any]:
         "fitline_soft_reoffer_done": False,
         "fitline_closer_reasked": False,
         "studio_chat_events": [],
+        "conversation_id": None,
     }
 
 
@@ -143,6 +144,19 @@ def set_last_vision_summary(user_id: str, summary: str) -> None:
 
 def get_last_vision_summary(user_id: str) -> str:
     return str(_get(user_id).get("last_vision_summary") or "").strip()
+
+
+def set_conversation_id(user_id: str, conversation_id: str | None) -> None:
+    session = _get(user_id)
+    cid = (conversation_id or "").strip() or None
+    with _lock:
+        session["conversation_id"] = cid
+        session["updated_at"] = _now()
+
+
+def get_conversation_id(user_id: str) -> str | None:
+    cid = str(_get(user_id).get("conversation_id") or "").strip()
+    return cid or None
 
 
 def get_active_mode_prompt(user_id: str) -> str:

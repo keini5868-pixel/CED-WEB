@@ -249,7 +249,7 @@ def rewrite_protected_brand_marks(prompt: str) -> str:
     )
     rewritten = re.sub(
         r"(?i)logo\s+oficial\s+de\s+(?:ced|c)\b",
-        "clean original wordmark reading CED",
+        "clean original wordmark reading C-E-D (letters C then E then D, never SEC)",
         rewritten,
     )
     touched = rewritten != t
@@ -260,7 +260,8 @@ def rewrite_protected_brand_marks(prompt: str) -> str:
     if touched or (mentions_logo and mentions_brand):
         rewritten += (
             " Do not reproduce trademarked or official corporate logos. "
-            "Use original geometric marks and legible custom wordmarks only."
+            "Use original geometric marks and legible custom wordmarks only. "
+            "If the CED name appears it must read C-E-D, never SEC."
         )
     return rewritten
 

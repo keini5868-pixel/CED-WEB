@@ -570,11 +570,87 @@ def normalize_voice_delivery_text(text: str) -> str:
     return " ".join((text or "").split()).strip()
 
 
+_CED_NAME_TOKEN = re.compile(r"^(?:ced|c\.e\.d\.?)$", re.I)
+_IDENTITY_FILLER = frozenset(
+    {
+        "ced",
+        "c",
+        "e",
+        "d",
+        "mi",
+        "me",
+        "nombre",
+        "es",
+        "llamo",
+        "soy",
+        "correcto",
+        "senor",
+        "señor",
+        "si",
+        "sí",
+        "claro",
+        "ok",
+        "vale",
+    }
+)
+_SHORT_WORD_STUTTER = re.compile(
+    r"^(?P<w>\w{2,16})(?:[\s,.;:]+(?P=w)){2,}[.!?]*$",
+    re.I,
+)
+
+
+def _fold_voice_tokens(text: str) -> list[str]:
+    folded = unicodedata.normalize("NFD", normalize_voice_delivery_text(text).lower())
+    folded = "".join(ch for ch in folded if unicodedata.category(ch) != "Mn")
+    folded = re.sub(r"[^\w\s]", " ", folded, flags=re.UNICODE)
+    return [tok for tok in folded.split() if tok]
+
+
+def is_identity_name_stutter(text: str) -> bool:
+    """True si el turno es solo el nombre CED (o 'CED CED CED'), no una pregunta real."""
+    tokens = _fold_voice_tokens(text)
+    if not tokens:
+        return False
+    ced_n = sum(1 for tok in tokens if _CED_NAME_TOKEN.match(tok))
+    if ced_n >= 2 and all(tok in _IDENTITY_FILLER or _CED_NAME_TOKEN.match(tok) for tok in tokens):
+        return True
+    if len(tokens) == 1 and _CED_NAME_TOKEN.match(tokens[0]):
+        return True
+    # STT a veces deletrea C-E-D como letras sueltas.
+    if len(tokens) >= 3 and all(tok in {"c", "e", "d", "ced"} for tok in tokens):
+        return True
+    joined = " ".join(tokens)
+    stutter = _SHORT_WORD_STUTTER.match(joined)
+    if stutter and _CED_NAME_TOKEN.match(stutter.group("w")):
+        return True
+    return False
+
+
+def is_ced_name_echo(user_text: str, last_spoken: str = "") -> bool:
+    """Eco STT de 'CED' / 'CED CED CED' tras hablar del nombre."""
+    tokens = _fold_voice_tokens(user_text)
+    if not tokens:
+        return False
+    if not all(_CED_NAME_TOKEN.match(tok) for tok in tokens):
+        return False
+    if len(tokens) >= 2:
+        return True
+    spoken = " ".join(_fold_voice_tokens(last_spoken))
+    return "ced" in spoken.split()
+
+
 def dedupe_voice_reply(text: str) -> str:
     """Elimina bloques/frases idénticos consecutivos en respuestas de voz."""
     cleaned = collapse_stacked_response_variants((text or "").strip())
     if not cleaned:
         return cleaned
+    # Ráfaga 'CED CED CED' (el bucle de identidad no usaba comas).
+    cleaned = re.sub(r"(?i)\bced(?:[\s,.;:]+ced)+\b", "CED", cleaned)
+    stutter = _SHORT_WORD_STUTTER.match(re.sub(r"[.!?]+$", "", cleaned).strip())
+    if stutter:
+        cleaned = stutter.group("w")
+    if is_identity_name_stutter(cleaned):
+        return "Soy CED."
     parts = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
     if len(parts) >= 2:
         deduped: list[str] = [parts[0]]
@@ -845,6 +921,8 @@ def voice_repeats_last_assistant(new_text: str, history: list[dict]) -> bool:
 
 def is_stt_echo_of_assistant(user_text: str, last_spoken: str) -> bool:
     """True si el STT parece eco del último audio del asistente (bucle de identidad)."""
+    if is_ced_name_echo(user_text, last_spoken):
+        return True
     user = normalize_voice_delivery_text(user_text).lower()
     spoken = normalize_voice_delivery_text(last_spoken).lower()
     if not user or not spoken:
@@ -858,9 +936,10 @@ def is_stt_echo_of_assistant(user_text: str, last_spoken: str) -> bool:
     if len(user_n) >= 12 and (user_n in spoken_n or spoken_n in user_n):
         return True
     # Overlap alto en frases cortas ("mi nombre es ced" vs "correcto señor mi nombre es ced")
-    u_tokens = [t for t in user_n.split() if len(t) > 2]
-    s_tokens = set(t for t in spoken_n.split() if len(t) > 2)
-    if len(u_tokens) >= 3 and len(s_tokens) >= 3:
+    # Incluye tokens de 3 letras (CED); el umbral >2 dejaba pasar el bucle.
+    u_tokens = [t for t in user_n.split() if len(t) >= 3]
+    s_tokens = set(t for t in spoken_n.split() if len(t) >= 3)
+    if len(u_tokens) >= 2 and s_tokens:
         overlap = sum(1 for t in u_tokens if t in s_tokens)
         if overlap / len(u_tokens) >= 0.62:
             return True

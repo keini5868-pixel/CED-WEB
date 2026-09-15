@@ -91,23 +91,35 @@ async def session_start(user: dict = Depends(require_auth_user)) -> dict:
     }
 
     conversation_id = None
-    try:
-        conv = await run_sync(supabase_db.create_conversation, user_id)
-        conversation_id = conv.get("id") if conv else None
-        _active_sessions[session_id]["conversation_id"] = conversation_id
-        if not conversation_id:
+    for attempt in range(2):
+        try:
+            conv = await run_sync(supabase_db.create_conversation, user_id)
+            conversation_id = conv.get("id") if conv else None
+            if conversation_id:
+                break
             logger.error(
-                "[USAGE] session_start sin conversation_id user=%s",
+                "[USAGE] session_start sin conversation_id user=%s attempt=%s",
                 user_id[:8],
+                attempt + 1,
             )
-    except Exception as exc:  # noqa: BLE001
-        # La voz puede seguir, pero el historial no se guardará sin cid.
-        logger.exception(
-            "[USAGE] create_conversation falló user=%s: %s",
+        except Exception as exc:  # noqa: BLE001
+            logger.exception(
+                "[USAGE] create_conversation falló user=%s attempt=%s: %s",
+                user_id[:8],
+                attempt + 1,
+                exc,
+            )
+            conversation_id = None
+    _active_sessions[session_id]["conversation_id"] = conversation_id
+    if conversation_id:
+        from app.services.voice_history import set_active_conversation
+
+        set_active_conversation(user_id, conversation_id)
+    else:
+        logger.error(
+            "[USAGE] session_start sin conversation_id user=%s — historial vía servidor al primer turno",
             user_id[:8],
-            exc,
         )
-        conversation_id = None
 
     return {
         "session_id": session_id,

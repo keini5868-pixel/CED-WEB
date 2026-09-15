@@ -48,6 +48,29 @@ def test_ced_tagline_fix_prompt_locks_ia_and_prospeccion():
     assert "Tu asistente de IA. Marketing. Ventas. Prospección." in prompt
 
 
+def test_ced_logo_forces_literal_ced_wordmark_not_sec():
+    from app.services.copy_quality import (
+        build_direct_image_prompt,
+        lock_on_image_spelling,
+        prompt_requires_precise_text,
+        user_requests_ced_wordmark,
+    )
+
+    raw = "generame una imagen del logo de CED"
+    assert user_requests_ced_wordmark(raw) is True
+    assert prompt_requires_precise_text(raw) is True
+    brief = build_direct_image_prompt(raw)
+    assert brief.get("wants_literal_text") is True
+    prompt = str(brief.get("prompt") or "")
+    low = prompt.lower()
+    assert "ced" in low
+    assert "c-e-d" in low or "letters c then e then d" in low
+    assert "sec" in low  # aparece como grafía prohibida
+    assert "never sec" in low or "never render sec" in low
+    assert lock_on_image_spelling("SEC") == "CED"
+    assert not user_requests_ced_wordmark("un robot futurista del sistema CED")
+
+
 def test_compact_overlay_line_short_and_clean():
     line = compact_overlay_line(
         "Salud intestinal",
@@ -222,13 +245,18 @@ def test_history_capability_bullets_not_painted_on_new_scene():
 """
     orch = orchestrate_image_generation_brief(normal, context=hist)
     assert orch["overlay_lines"] == []
-    assert orch["wants_literal_text"] is False
+    # Logo de CED pide letras C-E-D; no hereda las viñetas del historial.
+    assert orch["wants_literal_text"] is True
     tech = orch["technical_prompt"].lower()
     assert "asistente de ia" not in tech
     assert "mentor en ventas" not in tech
-    assert "textos exactos" not in tech
-    assert "no text, letters" in tech or "sin texto" in tech
+    assert "c-e-d" in tech or "letters c then e then d" in tech
+    assert "never render sec" in tech or "never sec" in tech
     assert "alcon" in tech or "alcón" in tech
+    # El único copy forzado es el wordmark CED, no las viñetas del chat.
+    assert '"ced"' in tech
+    assert "inteligencia general" not in tech
+    assert "memoria contextual" not in tech
 
 
 def test_explicit_detalles_escritos_keeps_natural_language_not_history_bullets():

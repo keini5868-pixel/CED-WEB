@@ -39,7 +39,24 @@ def test_dedupe_voice_reply_removes_duplicate_halves():
 
 def test_dedupe_voice_reply_collapses_identity_stutter():
     stutter = "mi nombre es CED, mi nombre es CED, mi nombre es CED"
-    assert dedupe_voice_reply(stutter).lower().count("mi nombre es ced") == 1
+    assert dedupe_voice_reply(stutter) == "Soy CED."
+
+
+def test_dedupe_voice_reply_collapses_ced_ced_ced():
+    from app.services.voice_llm_common import is_ced_name_echo, is_identity_name_stutter
+
+    assert dedupe_voice_reply("CED CED CED CED") == "Soy CED."
+    assert dedupe_voice_reply("ced, ced, ced") == "Soy CED."
+    assert is_identity_name_stutter("ced ced ced")
+    assert is_ced_name_echo("ced ced ced", "Correcto, soy CED.")
+    assert is_ced_name_echo("ced ced", "")
+    assert not is_identity_name_stutter("qué es CED y para qué sirve")
+    assert not is_ced_name_echo(
+        "el logo debe decir CED no SEC",
+        "Ya generé la imagen",
+    )
+    assert is_identity_name_stutter("c e d c e d")
+    assert is_identity_name_stutter("C.E.D. C.E.D.")
 
 
 def test_voice_repeats_last_assistant():

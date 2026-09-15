@@ -31,7 +31,10 @@ def test_stt_echo_of_assistant_identity_loop():
     spoken = "Mi nombre es CED."
     assert is_stt_echo_of_assistant("mi nombre es CED", spoken)
     assert is_stt_echo_of_assistant("Mi nombre es CED.", spoken)
+    assert is_stt_echo_of_assistant("ced ced ced", spoken)
+    assert is_stt_echo_of_assistant("CED CED", "Soy CED.")
     assert not is_stt_echo_of_assistant("generame una imagen de un gato", spoken)
+    assert not is_stt_echo_of_assistant("qué es CED", spoken)
 
 
 def test_stt_echo_overlap_catches_paraphrase_of_last_line():

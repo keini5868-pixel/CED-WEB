@@ -1253,7 +1253,7 @@ export function useCedVoiceSession(
       conversationRef.current = voiceSession.conversation_id;
       if (!voiceSession.conversation_id) {
         console.warn(
-          "[CED] session/start sin conversation_id — el historial no se guardará en esta sesión",
+          "[CED] session/start sin conversation_id — el servidor guardará el historial al primer turno",
         );
       }
       if (

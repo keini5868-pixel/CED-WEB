@@ -108,7 +108,8 @@ _SPELLING_STRICT_RULE = (
     "(never drop, swap, or invent letters; keep every vowel, including the u in equipo). "
     "Incomplete or misspelled words are forbidden. "
     'If the word is IA, write the letters I and A — never the digit 4 (never "I4"). '
-    'If the word is Prospección, spell P-r-o-s-p-e-c-c-i-ó-n — never "Prosaeccion".'
+    'If the word is Prospección, spell P-r-o-s-p-e-c-c-i-ó-n — never "Prosaeccion". '
+    'If the brand is CED, write the letters C then E then D in that order — never SEC, SED, CDE, CEB, GED, TED or CEO.'
 )
 
 _CED_ASSISTANT_TAGLINE = "Tu asistente de IA. Marketing. Ventas. Prospección."
@@ -117,7 +118,13 @@ _CED_ON_IMAGE_SPELLING_LOCK = (
     "LOCKED SPELLING on this image — copy character-by-character: "
     '"IA" (never I4, 14, lA); '
     '"Prospección" (never Prosaeccion, Prosaección, Prosaecion); '
-    '"CED"; "Marketing"; "Ventas".'
+    '"CED" as C-E-D (never SEC, SED, CDE, CEB, GED, TED, CEO); '
+    '"Marketing"; "Ventas".'
+)
+_CED_WORDMARK_LOCK = (
+    "LOCKED WORDMARK: if any brand letters appear they must read exactly CED "
+    "(Latin letters C then E then D). Never render SEC, SED, CDE, CEB, GED, TED, "
+    "or CEO. Do not reverse or scramble those three letters."
 )
 # Solo correcciones de tipografía (I4 / Prosaeccion). NO «prospección» ni
 # «asistente de IA» sueltos: esos aparecen en listados de capacidades CED.
@@ -226,9 +233,22 @@ def lock_on_image_spelling(text: str) -> str:
     for pattern, right in _IMAGE_SPELLING_FIXES:
         t = pattern.sub(right, t)
     t = _apply_typo_fixes(t)
+    if len(t.strip()) <= 8 and re.fullmatch(r"(?i)sec|sed|cde|ceb|ged|ted", t.strip()):
+        return "CED"
     if len(t) <= 120 and _looks_like_ced_tagline(t):
         return _CED_ASSISTANT_TAGLINE
     return t
+
+
+_CED_WORDMARK_REQUEST = re.compile(
+    r"(?is)\b(?:logo|wordmark|isotipo|emblema|escudo|sello|letrero|marca)\b.{0,48}\bced\b"
+    r"|\bced\b.{0,48}\b(?:logo|wordmark|isotipo|emblema|escudo|sello|letrero)\b"
+)
+
+
+def user_requests_ced_wordmark(text: str) -> bool:
+    """True si piden el logo/nombre CED escrito en la imagen."""
+    return bool(_CED_WORDMARK_REQUEST.search(text or ""))
 
 
 def normalize_spanish(text: str) -> str:
@@ -457,6 +477,8 @@ def prompt_requires_precise_text(prompt: str) -> bool:
     if _IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t):
         return True
     if wants_ced_tagline_lock(t):
+        return True
+    if user_requests_ced_wordmark(t):
         return True
     return bool(_GRAPHIC_COPY_FORMAT.search(t))
 
@@ -864,10 +886,13 @@ def build_direct_image_prompt(
 
     quoted = extract_quoted_phrases(raw)
     mode = resolve_image_text_mode(raw)
-    wants_text = mode == "literal"
+    wants_wordmark = user_requests_ced_wordmark(raw)
+    wants_text = mode == "literal" or wants_wordmark
     wants_ced = user_requests_ced_branding(raw)
     allow_ui = image_text_mode_allows_ui(mode, raw)
     quoted = [lock_on_image_spelling(q) for q in quoted]
+    if wants_wordmark and "CED" not in quoted:
+        quoted = ["CED", *[q for q in quoted if q.upper() != "CED"]]
     lock_tagline = wants_ced_tagline_lock(raw)
     if wants_text and lock_tagline:
         if _CED_ASSISTANT_TAGLINE not in quoted:
@@ -891,8 +916,10 @@ def build_direct_image_prompt(
         )
         parts.append(_ORTHOGRAPHY_RULE)
         parts.append(_SPELLING_STRICT_RULE)
-        if wants_ced or lock_tagline:
+        if wants_ced or lock_tagline or wants_wordmark:
             parts.append(_CED_ON_IMAGE_SPELLING_LOCK)
+        if wants_wordmark:
+            parts.append(_CED_WORDMARK_LOCK)
         if quoted:
             parts.append(format_verbatim_image_copy(quoted))
         if allow_ui:

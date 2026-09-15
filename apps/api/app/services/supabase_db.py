@@ -22,6 +22,8 @@ def _should_coalesce_voice_model_message(previous: str, incoming: str) -> str | 
     new = (incoming or "").strip()
     if not prev or not new:
         return None
+    if new == prev:
+        return "skip"
     if new.startswith(prev) and len(new) > len(prev):
         return "update"
     if prev.startswith(new) and len(prev) >= len(new):
