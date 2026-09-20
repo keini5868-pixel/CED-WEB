@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { CedButton, HudPanel } from "@ced/ui";
 
@@ -34,7 +34,7 @@ function Chip({
   children,
 }: {
   ok: boolean;
-  children: string;
+  children: ReactNode;
 }) {
   return (
     <span

@@ -60,7 +60,9 @@ function pickProvider(): { name: string; provider: MidnightProvider } | null {
   );
   if (!entries.length) return null;
   const lace = entries.find(([name]) => /lace|mnlace/i.test(name));
-  const [name, provider] = lace ?? entries[0];
+  const picked = lace ?? entries[0];
+  if (!picked) return null;
+  const [name, provider] = picked;
   return { name, provider };
 }
 
