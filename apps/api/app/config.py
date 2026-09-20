@@ -198,6 +198,10 @@ class Settings(BaseSettings):
     # Automatización embudo IG/FB→WA — DEFAULT OFF.
     # AUTOMATION_MODULE_ENABLED=true + ?automationModule=pilot
     automation_module_enabled: bool = False
+    # CED Shield (Midnight) — DEFAULT OFF. Solo hash+fecha; no toca voz/Gemini/Retell.
+    ced_shield_enabled: bool = False
+    # POST JSON {content_sha256, sealed_at, wallet, kind, seal_id}. Vacío = dry-run.
+    ced_shield_midnight_submit_url: str = ""
     # Si OFF: IG/FB solo dry-run (log, sin envíos). ON tras Advanced Access Meta.
     automation_ig_fb_live_enabled: bool = False
     # Teléfono E.164 para wa.me en respuestas automáticas (fallback del usuario).

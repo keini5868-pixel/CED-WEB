@@ -1,0 +1,30 @@
+pragma language_version 0.16;
+
+import CompactStandardLibrary;
+
+/**
+ * CED Shield — Midnight Compact contract (spike).
+ *
+ * On-chain: SHA-256 of an off-chain artifact + a kind tag + a counter.
+ * Off-chain forever: audio, transcripts, PDF bytes, prompts, social tokens.
+ *
+ * kind: 0 = pdf, 1 = session
+ *
+ * Compile later with compactc. This source is the grant/demo contract;
+ * it is not deployed to mainnet from production CED.
+ */
+export ledger lastHash: Bytes<32>;
+
+export ledger lastKind: Uint<8>;
+
+export ledger sealCount: Counter;
+
+export circuit recordSeal(contentHash: Bytes<32>, kind: Uint<8>): [] {
+  lastHash = disclose(contentHash);
+  lastKind = disclose(kind);
+  sealCount.increment(1);
+}
+
+export circuit latestHash(): Bytes<32> {
+  return lastHash;
+}
