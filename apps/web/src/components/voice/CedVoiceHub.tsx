@@ -56,6 +56,7 @@ export function CedVoiceHub() {
   const setAssistLive = presenter.setAssistLive;
   const [workspace, setWorkspace] = useState<"chat" | "advanced" | "finance">("chat");
   const [resumeConversationId, setResumeConversationId] = useState<string | null>(null);
+  const [resumeNonce, setResumeNonce] = useState(0);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
@@ -105,6 +106,7 @@ export function CedVoiceHub() {
       setWorkspace("chat");
       setResumeConversationId(pending);
       setActiveConversationId(pending);
+      setResumeNonce((n) => n + 1);
     } catch {
       /* ignore */
     }
@@ -114,12 +116,14 @@ export function CedVoiceHub() {
     setWorkspace("chat");
     setResumeConversationId(conversationId);
     setActiveConversationId(conversationId);
+    setResumeNonce((n) => n + 1);
   }, []);
 
   const applyNewChat = useCallback(() => {
     setWorkspace("chat");
     setResumeConversationId("");
     setActiveConversationId(null);
+    setResumeNonce((n) => n + 1);
   }, []);
 
   const onResumeApplied = useCallback(() => {
@@ -488,17 +492,6 @@ export function CedVoiceHub() {
   return (
     <div className="ced-studio flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden" data-ced-presenter-owner={robotAllowed ? "1" : "0"}>
     <div className="relative min-h-0 w-full min-w-0 flex-1 overflow-hidden">
-    {!voice.historyOpen ? (
-      <button
-        type="button"
-        onClick={() => voice.setHistoryOpen(true)}
-        aria-label="Abrir chats guardados"
-        className="absolute left-0 top-14 z-40 flex items-center gap-1 rounded-r-lg border border-l-0 border-cyan-400/70 bg-black/90 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.35)] hover:bg-cyan-950"
-      >
-        <PanelLeft className="h-4 w-4" aria-hidden />
-        Chats
-      </button>
-    ) : null}
     <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-[minmax(0,1fr)_max-content] grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
@@ -545,6 +538,7 @@ export function CedVoiceHub() {
               splitComposer={workspace === "chat"}
               onClose={() => undefined}
               resumeConversationId={resumeConversationId}
+              resumeNonce={resumeNonce}
               onResumeApplied={onResumeApplied}
               seedImage={chatSeedImage}
               onSeedConsumed={() => setChatSeedImage(null)}

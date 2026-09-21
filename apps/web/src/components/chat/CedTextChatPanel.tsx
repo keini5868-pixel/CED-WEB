@@ -55,6 +55,8 @@ type CedTextChatPanelProps = {
   splitComposer?: boolean;
   /** Cargar un hilo guardado. `""` = chat nuevo. `null` = no hacer nada. */
   resumeConversationId?: string | null;
+  /** Incrementa en cada clic para reabrir el mismo hilo. */
+  resumeNonce?: number;
   onResumeApplied?: () => void;
 };
 
@@ -373,6 +375,7 @@ export function CedTextChatPanel({
   variant = "overlay",
   splitComposer = false,
   resumeConversationId = null,
+  resumeNonce = 0,
   onResumeApplied,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -389,6 +392,7 @@ export function CedTextChatPanel({
   const [statusHint, setStatusHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const resumeLockRef = useRef(false);
   const [status, setStatus] = useState<ChatStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -459,9 +463,11 @@ export function CedTextChatPanel({
   }, [open, conversationId, messages]);
 
   useEffect(() => {
+    if (resumeNonce <= 0) return;
     if (resumeConversationId === null) return;
     let cancelled = false;
     if (resumeConversationId === "") {
+      resumeLockRef.current = false;
       setConversationId(null);
       setMessages([
         {
@@ -481,6 +487,7 @@ export function CedTextChatPanel({
         const data = await getConversationMessages(id);
         if (cancelled) return;
         setConversationId(id);
+        resumeLockRef.current = true;
         const mapped: ChatMessage[] = (data.messages || []).map((m) => ({
           id: m.id,
           role: m.role === "user" ? "user" : "model",
@@ -511,7 +518,7 @@ export function CedTextChatPanel({
     return () => {
       cancelled = true;
     };
-  }, [resumeConversationId, onResumeApplied]);
+  }, [resumeNonce, resumeConversationId, onResumeApplied]);
 
   useEffect(() => {
     if (!open) return;
@@ -539,6 +546,7 @@ export function CedTextChatPanel({
       const personalized = s?.welcome_message?.trim();
       if (!personalized) return;
       setMessages((prev) => {
+        if (resumeLockRef.current) return prev;
         if (prev.some((m) => m.role === "user")) return prev;
         if (prev.length === 0) {
           return [

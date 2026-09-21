@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { CedButton, CedModal } from "@ced/ui";
 import type { VoicePaletteId, VoiceSessionPreferences } from "@ced/types";
@@ -429,6 +430,11 @@ export function CedHistoryPanel({
   const [expandedMessages, setExpandedMessages] = useState<
     { role: string; content: string; created_at?: string }[]
   >([]);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -438,16 +444,16 @@ export function CedHistoryPanel({
     void listSessionPdfs().then(setPdfs);
   }, [open]);
 
-  if (!open) return null;
-  return (
+  if (!open || !mounted) return null;
+  return createPortal(
     <>
       <button
         type="button"
-        className="fixed inset-0 z-[89] bg-black/50"
+        className="fixed inset-0 z-[200] bg-black/50"
         aria-label="Cerrar historial"
         onClick={onClose}
       />
-      <aside className="ced-panel-glow fixed inset-y-0 left-0 z-[90] flex w-full max-w-sm flex-col border-r border-cyan-500/40 bg-black pl-[env(safe-area-inset-left,0px)] shadow-2xl sm:left-0">
+      <aside className="ced-panel-glow fixed inset-y-0 left-0 z-[201] flex w-full max-w-sm flex-col border-r border-cyan-500/40 bg-black pl-[env(safe-area-inset-left,0px)] shadow-2xl sm:left-0">
       <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/30 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
         <h2 className="font-[family-name:var(--font-orbitron)] text-sm font-bold text-[var(--ced-cyan)]">
           CHATS
@@ -591,6 +597,7 @@ export function CedHistoryPanel({
         </section>
       </div>
     </aside>
-    </>
+    </>,
+    document.body,
   );
 }
