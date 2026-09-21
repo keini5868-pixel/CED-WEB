@@ -17,10 +17,15 @@ export function ImageLightbox({
   onClose: () => void;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    setFailed(false);
+  }, [src, open]);
 
   useEffect(() => {
     if (!open) return;
@@ -61,13 +66,20 @@ export function ImageLightbox({
       >
         <X className="h-5 w-5" />
       </button>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={src}
-        alt={alt}
-        className="max-h-[92vh] max-w-[96vw] cursor-zoom-out rounded-lg object-contain shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      />
+      {failed ? (
+        <p className="rounded-lg bg-black/80 px-4 py-3 text-sm text-white">
+          No se pudo abrir la imagen.
+        </p>
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={src}
+          alt=""
+          className="max-h-[92vh] max-w-[96vw] cursor-zoom-out rounded-lg object-contain shadow-2xl"
+          onClick={(e) => e.stopPropagation()}
+          onError={() => setFailed(true)}
+        />
+      )}
     </div>,
     document.body,
   );

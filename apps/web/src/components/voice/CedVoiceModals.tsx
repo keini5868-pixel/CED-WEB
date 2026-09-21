@@ -656,6 +656,9 @@ export function CedHistoryPanel({
                       src={row.url}
                       alt=""
                       className="aspect-square w-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = "none";
+                      }}
                     />
                   </button>
                   <button
@@ -686,7 +689,7 @@ export function CedHistoryPanel({
     </aside>
       <ImageLightbox
         src={lightbox?.url ?? ""}
-        alt={lightbox?.prompt || "Imagen generada"}
+        alt="Imagen"
         open={Boolean(lightbox)}
         onClose={() => setLightbox(null)}
       />
