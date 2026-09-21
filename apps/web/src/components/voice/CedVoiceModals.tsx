@@ -418,6 +418,22 @@ export function CedSettingsModal({
 
 type HistoryTab = "chats" | "pdfs" | "images";
 
+function compactPdfName(pdf: PdfArtifact): string {
+  const filename = (pdf.filename || "").trim();
+  if (filename && !/^documento-ced\.pdf$/i.test(filename)) {
+    return filename;
+  }
+  const title = (pdf.title || "").replace(/\s+/g, " ").trim();
+  const first = (title.split(/[.!?\n]/)[0] || title).trim();
+  if (first.length > 0 && first.length <= 64) {
+    return first.toLowerCase().endsWith(".pdf") ? first : `${first}.pdf`;
+  }
+  if (first.length > 64) {
+    return `${first.slice(0, 52).trim()}….pdf`;
+  }
+  return filename || "documento-ced.pdf";
+}
+
 export function CedHistoryPanel({
   open,
   onClose,
@@ -565,7 +581,7 @@ export function CedHistoryPanel({
         ) : null}
 
         {tab === "pdfs" ? (
-          <ul className="space-y-2 text-sm">
+          <ul className="space-y-2">
             {pdfs.length === 0 ? (
               <li className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3 text-xs">
                 Sin PDFs aún. Pide a CED: &quot;convierte esto a PDF&quot; por voz o chat.
@@ -574,18 +590,28 @@ export function CedHistoryPanel({
               pdfs.map((pdf) => (
                 <li
                   key={pdf.file_id}
-                  className="rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
+                  className="flex items-center gap-3 rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
                 >
-                  <p className="font-medium text-cyan-200">{pdf.title}</p>
-                  <p className="ced-hud-text-muted mt-1 text-xs">
-                    {pdf.created_at
-                      ? new Date(pdf.created_at).toLocaleString("es-MX")
-                      : "Reciente"}
-                  </p>
+                  <span
+                    className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-cyan-950/80 text-lg"
+                    aria-hidden
+                  >
+                    📄
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-cyan-100">
+                      {compactPdfName(pdf)}
+                    </p>
+                    <p className="ced-hud-text-muted text-[11px]">
+                      {pdf.created_at
+                        ? new Date(pdf.created_at).toLocaleString("es-MX")
+                        : "Reciente"}
+                    </p>
+                  </div>
                   <button
                     type="button"
                     onClick={() =>
-                      void downloadPdfBlob(pdf.file_id, pdf.filename, {
+                      void downloadPdfBlob(pdf.file_id, pdf.filename || compactPdfName(pdf), {
                         allowDuringVoice: true,
                       }).catch((e) =>
                         alert(
@@ -595,9 +621,9 @@ export function CedHistoryPanel({
                         ),
                       )
                     }
-                    className="mt-2 inline-flex text-xs font-semibold text-cyan-400 hover:text-cyan-200"
+                    className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-cyan-400 hover:text-cyan-200"
                   >
-                    📄 Descargar PDF
+                    Descargar
                   </button>
                 </li>
               ))
@@ -612,7 +638,9 @@ export function CedHistoryPanel({
             </p>
           ) : (
             <ul className="grid grid-cols-2 gap-2">
-              {images.map((row) => (
+              {images
+                .filter((row) => Boolean(row.url))
+                .map((row) => (
                 <li
                   key={row.id}
                   className="overflow-hidden rounded border border-cyan-900/50 bg-[#0a0a0a]"
@@ -620,46 +648,35 @@ export function CedHistoryPanel({
                   <button
                     type="button"
                     onClick={() => setLightbox(row)}
-                    className="block w-full"
+                    className="block w-full bg-black"
                     aria-label="Ver imagen"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={row.url}
-                      alt={row.prompt || "Imagen generada"}
+                      alt=""
                       className="aspect-square w-full object-cover"
                     />
                   </button>
-                  <div className="space-y-1 p-2">
-                    <p className="line-clamp-2 text-[11px] text-cyan-200/90">
-                      {row.prompt || "Imagen generada"}
-                    </p>
-                    <button
-                      type="button"
-                      disabled={busyId === row.id}
-                      onClick={() => {
-                        const slug = (row.prompt || "imagen")
-                          .slice(0, 40)
-                          .replace(/\s+/g, "-");
-                        setBusyId(row.id);
-                        void downloadImageBlob(
-                          row.url,
-                          `${slug || "imagen-ced"}.png`,
+                  <button
+                    type="button"
+                    disabled={busyId === row.id}
+                    onClick={() => {
+                      setBusyId(row.id);
+                      void downloadImageBlob(row.url, "imagen-ced.png")
+                        .catch((e) =>
+                          alert(
+                            e instanceof Error
+                              ? e.message
+                              : "No se pudo descargar.",
+                          ),
                         )
-                          .catch((e) =>
-                            alert(
-                              e instanceof Error
-                                ? e.message
-                                : "No se pudo descargar.",
-                            ),
-                          )
-                          .finally(() => setBusyId(null));
-                      }}
-                      className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400 hover:text-cyan-200 disabled:opacity-50"
-                    >
-                      {busyId === row.id ? "…" : "Descargar"}
-                    </button>
-                  </div>
+                        .finally(() => setBusyId(null));
+                    }}
+                    className="w-full py-2 text-[10px] font-semibold uppercase tracking-wide text-cyan-400 hover:bg-cyan-950/50 hover:text-cyan-200 disabled:opacity-50"
+                  >
+                    {busyId === row.id ? "…" : "Descargar"}
+                  </button>
                 </li>
               ))}
             </ul>
