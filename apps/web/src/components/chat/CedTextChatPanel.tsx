@@ -36,6 +36,7 @@ import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome-events";
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
+import { getConversationMessages } from "@/lib/api/conversations";
 
 type CedTextChatPanelProps = {
   open: boolean;
@@ -52,6 +53,9 @@ type CedTextChatPanelProps = {
   /** Chat embebido en el dashboard (sin overlay). */
   variant?: "overlay" | "embedded";
   splitComposer?: boolean;
+  /** Cargar un hilo guardado. `""` = chat nuevo. `null` = no hacer nada. */
+  resumeConversationId?: string | null;
+  onResumeApplied?: () => void;
 };
 
 function formatTime(iso?: string) {
@@ -368,6 +372,8 @@ export function CedTextChatPanel({
   voicePublishActive = false,
   variant = "overlay",
   splitComposer = false,
+  resumeConversationId = null,
+  onResumeApplied,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -451,6 +457,61 @@ export function CedTextChatPanel({
     if (!cid || !hasUserTurn) return;
     void endChatConversation(cid);
   }, [open, conversationId, messages]);
+
+  useEffect(() => {
+    if (resumeConversationId === null) return;
+    let cancelled = false;
+    if (resumeConversationId === "") {
+      setConversationId(null);
+      setMessages([
+        {
+          role: "model",
+          content: CHAT_DEFAULT_WELCOME,
+          created_at: new Date().toISOString(),
+        },
+      ]);
+      setError(null);
+      setInput("");
+      onResumeApplied?.();
+      return;
+    }
+    const id = resumeConversationId;
+    void (async () => {
+      try {
+        const data = await getConversationMessages(id);
+        if (cancelled) return;
+        setConversationId(id);
+        const mapped: ChatMessage[] = (data.messages || []).map((m) => ({
+          id: m.id,
+          role: m.role === "user" ? "user" : "model",
+          content: coerceDisplayText(m.content),
+          created_at: m.created_at,
+        }));
+        setMessages(
+          mapped.length > 0
+            ? mapped
+            : [
+                {
+                  role: "model",
+                  content: CHAT_DEFAULT_WELCOME,
+                  created_at: new Date().toISOString(),
+                },
+              ],
+        );
+        setError(null);
+        setInput("");
+      } catch {
+        if (!cancelled) {
+          setError("No pude abrir esa conversación.");
+        }
+      } finally {
+        if (!cancelled) onResumeApplied?.();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resumeConversationId, onResumeApplied]);
 
   useEffect(() => {
     if (!open) return;

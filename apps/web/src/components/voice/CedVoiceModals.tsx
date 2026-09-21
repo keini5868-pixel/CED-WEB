@@ -413,9 +413,15 @@ export function CedSettingsModal({
 export function CedHistoryPanel({
   open,
   onClose,
+  onResume,
+  onNewChat,
+  activeConversationId,
 }: {
   open: boolean;
   onClose: () => void;
+  onResume?: (conversationId: string) => void;
+  onNewChat?: () => void;
+  activeConversationId?: string | null;
 }) {
   const [items, setItems] = useState<ConversationRow[]>([]);
   const [pdfs, setPdfs] = useState<PdfArtifact[]>([]);
@@ -434,10 +440,17 @@ export function CedHistoryPanel({
 
   if (!open) return null;
   return (
-    <aside className="ced-panel-glow fixed inset-y-0 right-0 z-[90] flex w-full max-w-sm flex-col border-l border-cyan-500/40 bg-black pr-[env(safe-area-inset-right,0px)] shadow-2xl">
+    <>
+      <button
+        type="button"
+        className="fixed inset-0 z-[89] bg-black/50"
+        aria-label="Cerrar historial"
+        onClick={onClose}
+      />
+      <aside className="ced-panel-glow fixed inset-y-0 left-0 z-[90] flex w-full max-w-sm flex-col border-r border-cyan-500/40 bg-black pl-[env(safe-area-inset-left,0px)] shadow-2xl sm:left-0">
       <header className="flex shrink-0 items-center justify-between border-b border-cyan-500/30 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:py-3">
         <h2 className="font-[family-name:var(--font-orbitron)] text-sm font-bold text-[var(--ced-cyan)]">
-          HISTORIAL
+          CHATS
         </h2>
         <button
           type="button"
@@ -449,6 +462,18 @@ export function CedHistoryPanel({
         </button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {onNewChat ? (
+          <CedButton
+            className="mb-4 w-full"
+            onClick={() => {
+              onNewChat();
+              onClose();
+            }}
+          >
+            Nuevo chat
+          </CedButton>
+        ) : null}
+
         <section>
           <h3 className="ced-hud-text-muted mb-2 text-[10px] uppercase tracking-widest">
             PDFs de sesión
@@ -498,23 +523,34 @@ export function CedHistoryPanel({
             Conversaciones
           </h3>
           <p className="ced-hud-text-muted text-xs">
-            Guardadas en Supabase.
+            Toca un hilo para seguir en el mismo tema.
           </p>
           <ul className="mt-3 space-y-2 text-sm text-[#e0e0e0]">
             {items.length === 0 ? (
               <li className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3">
-                Sin conversaciones aún. Activa el asistente para empezar.
+                Sin conversaciones aún. Escribe o habla con CED para empezar.
               </li>
             ) : (
-              items.map((c) => (
+              items.map((c) => {
+                const active = activeConversationId === c.id;
+                return (
                 <li
                   key={c.id}
-                  className="rounded border border-cyan-900/50 bg-[#0a0a0a] p-3"
+                  className={`rounded border bg-[#0a0a0a] p-3 ${
+                    active
+                      ? "border-cyan-400/70"
+                      : "border-cyan-900/50"
+                  }`}
                 >
                   <button
                     type="button"
                     className="w-full text-left"
                     onClick={() => {
+                      if (onResume) {
+                        onResume(c.id);
+                        onClose();
+                        return;
+                      }
                       if (expandedId === c.id) {
                         setExpandedId(null);
                         setExpandedMessages([]);
@@ -531,6 +567,7 @@ export function CedHistoryPanel({
                       <p className="ced-hud-text-muted mt-1 line-clamp-2 text-xs">{c.preview}</p>
                     ) : null}
                     <p className="ced-hud-text-muted mt-1 text-xs">
+                      {c.channel === "voice" ? "Voz" : "Texto"} ·{" "}
                       {new Date(c.updated_at).toLocaleString("es-MX")}
                     </p>
                   </button>
@@ -547,11 +584,13 @@ export function CedHistoryPanel({
                     </ul>
                   ) : null}
                 </li>
-              ))
+              );
+              })
             )}
           </ul>
         </section>
       </div>
     </aside>
+    </>
   );
 }

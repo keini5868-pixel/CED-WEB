@@ -185,9 +185,9 @@ TOOL_CODE_HALLUCINATION_RETRY_MESSAGE = (
 )
 
 SEARCH_HALLUCINATION_RETRY_MESSAGE = (
-    "Dijiste que ibas a buscar pero no invocaste search_web. "
-    "Invoca search_web AHORA con function calling real, o responde con conocimiento "
-    "integrado y avisa honestamente si no hay datos actuales."
+    "Dijiste que ibas a buscar o pediste permiso para buscar, pero no invocaste search_web. "
+    "Invoca search_web AHORA con function calling real y entrega el resumen. "
+    "NO preguntes si es lead, contenido o estrategia."
 )
 
 INTERNAL_KB_LEAK_RETRY_MESSAGE = (
@@ -221,8 +221,10 @@ CHAT_TOOLS: list[dict[str, Any]] = [
         "description": (
             "Busca en internet datos actuales: noticias, clima, eventos recientes, "
             "cifras o cualquier información que cambie en el tiempo. "
-            "OBLIGATORIO invocar cuando el usuario pida buscar o información actual. "
-            "NUNCA digas 'voy a buscar' sin invocar esta herramienta en el mismo turno."
+            "OBLIGATORIO invocar cuando el usuario pida buscar, un resumen, "
+            "analizar un token/crypto/activo, o información actual. "
+            "NUNCA digas 'voy a buscar' ni preguntes permiso sin invocar esta herramienta "
+            "en el mismo turno."
         ),
         "input_schema": {
             "type": "object",
@@ -440,6 +442,9 @@ IMPORTANTE — cerebro híbrido CED:
 - Si NO hay bloque interno inyectado sobre el tema: usa tu conocimiento general del modelo para ayudar igual.
 - Solo afirma datos de hoy (clima, precios, noticias) si hay contexto web inyectado abajo o tras search_web.
 - Si te falta dato actual o no estás seguro: invoca search_web — no te quedes corto ni hagas un cuestionario.
+- Pregunta factual sobre un token, empresa, precio, noticia o activo: search_web YA y entrega el resumen.
+  PROHIBIDO preguntar si es lead, contenido, estrategia o «algo del sistema».
+  PROHIBIDO pedir permiso («¿quiere que busque?»). PROHIBIDO decir que está en memoria si no invocaste recall_memory.
 - Sistema avanzado: si el contexto indica confirmación pendiente, pregunta antes de profundizar.
 - NUNCA incluyas en tu respuesta al usuario el texto del bloque "Conocimiento interno CED" ni líneas tipo "- [Marketing digital] ...".
   Úsalo SOLO como contexto interno para generar respuestas naturales, útiles y en tus propias palabras.
@@ -508,9 +513,12 @@ INVOCACIÓN OBLIGATORIA DE HERRAMIENTAS (BÚSQUEDA WEB):
 Cuando necesites información actual (noticias, clima, eventos recientes, cifras):
 DEBES invocar search_web mediante function calling REAL.
 
-NUNCA digas "voy a buscar", "buscaré" o "investigaré" sin invocar search_web en el mismo turno.
+NUNCA digas "voy a buscar", "buscaré", "investigaré", "voy a traerle información" o "un momento"
+sin invocar search_web en el mismo turno.
 
 Si dices que vas a buscar, DEBES invocar search_web inmediatamente y responder con el resultado.
+
+PROHIBIDO preguntar «¿quiere que busque?» / «¿hay un ángulo específico?» en vez de buscar.
 
 Si search_web devuelve status=timeout o fallback=True, AVISA honestamente:
 "Señor, no pude obtener información actual en este momento. Según lo que tengo registrado, [responde con conocimiento integrado]."
@@ -853,9 +861,9 @@ def _try_direct_pdf_from_context(
     if detail == "ask":
         return PDF_DETAIL_CLARIFY_QUESTION, {}
 
-    level = detail if detail in ("brief", "full") else "brief"
+    level = detail if detail in ("brief", "full", "revise") else "brief"
     source_text = text
-    if not is_pdf_intent(text):
+    if not is_pdf_intent(text) and detail != "revise":
         prior = prior_pdf_user_request(history)
         if not prior:
             return None
@@ -1136,24 +1144,78 @@ def _ensure_chat_reply_no_kb_leak(
 
 
 def _promised_web_search_without_tool(text: str) -> bool:
-    """True si promete buscar pero no entrega resultado sustantivo."""
+    """True si promete buscar, pide permiso, o no entrega resultado sustantivo."""
     t = (text or "").strip()
     if not t:
         return False
     if _has_hallucinated_tool_code(t):
         return True
+    if re.search(
+        r"(?i)("
+        r"quiere que busque|"
+        r"busco (?:eso|eso ahora)|"
+        r"[aá]ngulo espec[ií]fico|"
+        r"estrategia,? un lead|"
+        r"lead, contenido|"
+        r"qu[eé] espec[ií]ficamente quiere que (?:analice|busque|resuelva)|"
+        r"est[aá] en mi memoria,? pero necesito"
+        r")",
+        t,
+    ):
+        return True
     promised = bool(
         re.search(
             r"\b(buscar[eé]|voy a buscar|investigar[eé]|consultar[eé] en internet|"
-            r"d[eé]jame buscar|perm[ií]teme buscar)\b",
+            r"d[eé]jame buscar|perm[ií]teme buscar|"
+            r"voy a traer(?:le|les)? informaci|"
+            r"buscando informaci|"
+            r"necesito (?:hacer )?una b[uú]squeda|"
+            r"b[uú]squeda en tiempo real|"
+            r"informaci[oó]n actual sobre)\b",
             t,
             re.I,
         )
     )
     if not promised:
         return False
+    delivered = bool(
+        re.search(r"(?i)(\$|usd|€|precio actual|seg[uú]n |fuente)", t)
+    ) and len(re.sub(r"[^a-záéíóúñA-ZÁÉÍÓÚÑ0-9]", "", t)) > 120
+    if delivered:
+        return False
     substantive = len(re.sub(r"[^a-záéíóúñA-ZÁÉÍÓÚÑ0-9]", "", t)) > 80
-    return not substantive
+    return not substantive or bool(re.search(r"\?", t))
+
+
+_WEB_SEARCH_FOLLOWUP = re.compile(
+    r"^(ok+|okay|vale|dale|s[ií]|si+|busca(?:lo|me)?|adelante|hazlo|"
+    r"dame(?:\s+un)?\s+resumen|resumen(?:lo)?|contin[uú]a|sigue)[\s.!?]*$",
+    re.I,
+)
+
+
+def _is_web_search_followup(
+    text: str,
+    history: list[dict[str, Any]] | None = None,
+) -> bool:
+    """«ok» / «dame un resumen» después de que CED prometió buscar y no entregó."""
+    t = (text or "").strip()
+    if not t or not history:
+        return False
+    if not (
+        _WEB_SEARCH_FOLLOWUP.match(t)
+        or re.search(r"(?i)\b(resumen|busca(?:lo)?|analiza(?:lo)?)\b", t)
+    ):
+        return False
+    last = ""
+    for msg in reversed(history):
+        role = str(msg.get("role") or "")
+        if role in ("model", "assistant"):
+            last = str(msg.get("content") or "")
+            break
+    if not last:
+        return False
+    return _promised_web_search_without_tool(last)
 
 
 def _is_empty_or_placeholder_response(text: str) -> bool:
@@ -1372,7 +1434,10 @@ def _generate_chat_image_with_reference(
     )
 
 
-def _needs_chat_tools(text: str) -> bool:
+def _needs_chat_tools(
+    text: str,
+    history: list[dict[str, Any]] | None = None,
+) -> bool:
     t = (text or "").strip()
     if not t:
         return False
@@ -1386,6 +1451,15 @@ def _needs_chat_tools(text: str) -> bool:
     from app.services.prospection import is_prospection_mode_command
 
     if is_prospection_mode_command(t):
+        return True
+    if _is_web_search_followup(t, history):
+        return True
+    from app.services.cognitive_intents import is_live_market_query, requires_live_web
+    from app.services.opportunities_pilot.fitline_knowledge import prefers_fitline_over_web
+
+    if is_live_market_query(t):
+        return True
+    if requires_live_web(t) and not prefers_fitline_over_web(t):
         return True
     return bool(_TOOLS_KEYWORDS.search(t))
 
@@ -2529,7 +2603,7 @@ def _complete_chat_resilient(
     """Gemini para chat normal; Claude para herramientas / análisis."""
     trimmed_system = _trim_system(system)
 
-    if not _needs_chat_tools(user_text):
+    if not _needs_chat_tools(user_text, messages):
         reply, pdf_attachment, image_attachment = _simple_chat_cascade(
             anthropic_key=anthropic_key,
             google_key=google_key,
@@ -3184,7 +3258,7 @@ def send_message(
     # del texto citado («tiempo», «cita», «correo») no deben secuestrar el pedido.
     detail = resolve_pdf_detail_for_turn(text, history)
     if detail == "ask" or (
-        detail in ("brief", "full") and (
+        detail in ("brief", "full", "revise") and (
             resolve_pdf_request(text, history) or prior_pdf_user_request(history)
         )
     ):
@@ -3604,6 +3678,7 @@ def _can_stream_chat_text(
     from app.services.chat_module_context import requires_sync_module_handler
     from app.services.cognitive_intents import (
         is_conversation_recall_intent,
+        is_live_market_query,
         is_news_intent,
         is_weather_intent,
         is_web_research_intent,
@@ -3614,7 +3689,7 @@ def _can_stream_chat_text(
         return False
     if requires_sync_module_handler(text):
         return False
-    if is_weather_intent(text) or is_news_intent(text):
+    if is_weather_intent(text) or is_news_intent(text) or is_live_market_query(text):
         return True
     if is_conversation_recall_intent(text):
         return False
@@ -3631,7 +3706,9 @@ def _can_stream_chat_text(
         return False
     if requires_live_web(text) and not prefers_fitline_over_web(text):
         return False
-    if _needs_chat_tools(text) and not (is_weather_intent(text) or is_news_intent(text)):
+    if _needs_chat_tools(text) and not (
+        is_weather_intent(text) or is_news_intent(text) or is_live_market_query(text)
+    ):
         return False
     return True
 
@@ -3940,7 +4017,11 @@ def iter_send_message_stream(
     from app.services.chat_intents import resolve_pdf_detail_for_turn
 
     pdf_detail = resolve_pdf_detail_for_turn(text, history)
-    if pdf_detail in ("ask", "brief", "full"):
+    if pdf_detail in ("ask", "brief", "full", "revise"):
+        yield from _iter_blocking_send(user_id, text, conversation_id)
+        return
+
+    if _is_web_search_followup(text, history):
         yield from _iter_blocking_send(user_id, text, conversation_id)
         return
 
@@ -4178,6 +4259,12 @@ def iter_send_message_stream(
         system = f"{system}\n\n{module_context}"
         yield _sse_event("status", {"text": "Consultando datos del módulo…"})
         yield _sse_flush()
+    else:
+        from app.services.cognitive_intents import is_live_market_query
+
+        if is_live_market_query(text):
+            yield from _iter_blocking_send(user_id, text, conversation_id)
+            return
 
     token_budget = _chat_max_tokens(text)
     accumulated: list[str] = []

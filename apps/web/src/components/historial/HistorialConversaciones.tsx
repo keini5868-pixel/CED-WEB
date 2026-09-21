@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { CedButton, CedInput, CedModal } from "@ced/ui";
 
 import {
+  CED_RESUME_CONVERSATION_KEY,
   getConversationMessages,
   listConversations,
   type ConversationMessage,
@@ -23,6 +25,7 @@ export function HistorialConversaciones({
 }: {
   embedded?: boolean;
 }) {
+  const router = useRouter();
   const [items, setItems] = useState<ConversationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -228,9 +231,24 @@ export function HistorialConversaciones({
                 if (selected) void trashIds([selected.id]);
               }}
             />
+            <div className="flex flex-wrap items-center justify-end gap-2">
+            <CedButton
+              onClick={() => {
+                if (!selected) return;
+                try {
+                  sessionStorage.setItem(CED_RESUME_CONVERSATION_KEY, selected.id);
+                } catch {
+                  /* ignore */
+                }
+                router.push("/dashboard");
+              }}
+            >
+              Continuar
+            </CedButton>
             <CedButton variant="ghost" onClick={() => setSelected(null)}>
               CERRAR
             </CedButton>
+            </div>
           </div>
         }
       >

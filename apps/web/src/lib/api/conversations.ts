@@ -1,5 +1,8 @@
 import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 
+/** sessionStorage: el dashboard abre este hilo al cargar. */
+export const CED_RESUME_CONVERSATION_KEY = "ced-resume-conversation";
+
 export type ConversationRow = {
   id: string;
   title: string;

@@ -88,6 +88,42 @@ def test_chat_text_invokes_tool_not_hallucinates():
     )
 
 
+def test_chat_detects_permission_ask_as_failed_search():
+    stall = (
+        "Señor, necesito hacer una búsqueda en tiempo real para darle datos "
+        "precisos sobre Nosana — precio actual, volumen, casos de uso.\n\n"
+        "¿Quiere que busque eso ahora para un análisis completo, o hay un "
+        "ángulo específico (inversión, contenido sobre el token, estrategia comercial)?"
+    )
+    assert _promised_web_search_without_tool(stall)
+    from app.services.text_chat import _is_web_search_followup, _needs_chat_tools
+
+    history = [{"role": "model", "content": stall}]
+    assert _is_web_search_followup("dame un resumen", history)
+    assert _is_web_search_followup("ok", history)
+    assert _needs_chat_tools("analiza el token nosana") is True
+    assert _needs_chat_tools("naliza el token nosana") is True
+
+
+def test_live_market_query_is_not_bare_news():
+    from app.services.cognitive_intents import (
+        is_live_market_query,
+        is_news_intent,
+        is_web_research_intent,
+        requires_live_web,
+    )
+    from app.services.text_chat import _can_stream_chat_text
+
+    assert is_news_intent("dame un resumen") is False
+    assert is_live_market_query("analiza el token nosana") is True
+    assert is_live_market_query("es un token de la red de solana se llama nosana") is True
+    assert is_web_research_intent("analiza el token nosana") is True
+    assert requires_live_web("analiza el token nosana") is True
+    assert is_live_market_query("qué es un embudo de ventas") is False
+    assert _can_stream_chat_text("analiza el token nosana") is True
+    assert _can_stream_chat_text("dame un resumen") is True
+
+
 def test_chat_detects_tool_code_hallucination():
     assert _has_hallucinated_tool_code(TRUMP_TOOL_CODE_REPLY)
     assert _promised_web_search_without_tool(TRUMP_TOOL_CODE_REPLY)

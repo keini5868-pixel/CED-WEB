@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Navigation } from "lucide-react";
+import { createPortal } from "react-dom";
+import { Navigation, PanelLeft } from "lucide-react";
 
 import { AdminPanelButton } from "@/components/hud/AdminPanelButton";
 import { BibleVerseTicker } from "@/components/hud/BibleVerseTicker";
@@ -18,6 +19,7 @@ import {
   DASHBOARD_PATH,
 } from "@/lib/auth/paths";
 import {
+  dispatchCedOpenHistory,
   dispatchCedOpenSettings,
   isDashboardPath,
 } from "@/lib/hud/chrome-events";
@@ -34,6 +36,24 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
   const { openDriveMap } = useDriveMap();
   const onDashboard = isDashboardPath(pathname);
   const { status: metaStatus, busy: metaBusy, connect: connectMeta } = useConnectNetworks();
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  function openChats() {
+    if (onDashboard) {
+      dispatchCedOpenHistory();
+      return;
+    }
+    try {
+      sessionStorage.setItem("ced-open-history", "1");
+    } catch {
+      /* ignore */
+    }
+    router.push(DASHBOARD_PATH);
+  }
 
   useEffect(() => {
     const goHome = (ev: Event) => {
@@ -78,11 +98,12 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
       align="left"
       tone="navy"
       items={[
+        { id: "conversations", label: "Conversaciones", onClick: openChats },
         { id: "plans", label: "Planes", href: "/dashboard/plans" },
         { id: "account", label: "Cuentas", href: ACCOUNT_PATH },
         { id: "networks", label: metaMenuLabel, onClick: () => void connectMeta() },
         { id: "whatsapp", label: "WhatsApp", href: "/dashboard/whatsapp" },
-        { id: "history", label: "Historial", href: "/historial" },
+        { id: "history", label: "Historial completo", href: "/historial" },
         { id: "media", label: "Imágenes y PDF", href: "/historial?tab=archivos" },
         { id: "trash", label: "Papelera", href: "/historial?tab=papelera" },
         { id: "settings", label: "Configuración", onClick: openSettings },
@@ -113,6 +134,16 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
           <div className="flex shrink-0 items-center">{sistemaMenu}</div>
           <button
             type="button"
+            onClick={openChats}
+            title="Conversaciones"
+            aria-label="Abrir chats guardados"
+            className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-cyan-300/70 bg-cyan-400/20 px-1.5 py-1 text-[10px] font-semibold uppercase tracking-wide text-cyan-50 hover:border-cyan-200 hover:bg-cyan-400/30 sm:px-2 sm:py-1.5 sm:text-[11px]"
+          >
+            <PanelLeft className="h-3.5 w-3.5" aria-hidden />
+            <span>Chats</span>
+          </button>
+          <button
+            type="button"
             onClick={() => openDriveMap()}
             title="Mapa"
             aria-label="Abrir mapa"
@@ -139,6 +170,20 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
           <SignOutButton className="!px-2 !py-1 !text-[9px] !text-white sm:!px-2 sm:!py-1.5 sm:!text-[10px]" />
         </div>
       </div>
+      {portalReady && onDashboard
+        ? createPortal(
+            <button
+              type="button"
+              onClick={() => dispatchCedOpenHistory()}
+              aria-label="Abrir conversaciones"
+              className="fixed left-0 top-[5.75rem] z-[80] flex items-center gap-1.5 rounded-r-lg border border-l-0 border-cyan-300 bg-[#031820] px-2.5 py-2.5 text-xs font-bold uppercase tracking-widest text-cyan-100 shadow-[0_0_22px_rgba(34,211,238,0.5)] hover:bg-cyan-950"
+            >
+              <PanelLeft className="h-4 w-4" aria-hidden />
+              Chats
+            </button>,
+            document.body,
+          )
+        : null}
     </header>
   );
 }

@@ -70,7 +70,8 @@ NEWS_PATTERNS = [
     r"\b(relevante|importante)\w*\b.*\b(noticia|mundo|internacional)\b",
     r"\b(mundo|internacional|global)\b.*\b(noticia|titular)\b",
     r"\bdime\b.*\b(noticia|ultim|titular|hoy|decir|relevante)\b",
-    r"\bdame\b.*\b(noticia|ultim|titular|resumen|relevante)\b",
+    r"\bdame\b.*\b(noticia|ultim|titular|relevante)\b",
+    r"\bdame\b.*\bresumen\b.*\b(noticia|hoy|mundo|internacional)\b",
     r"\bbusca(r|me)?\b.*\b(noticia|titular|actualidad)\b",
     r"\bcu[eé]ntame\b.*\b(noticia|hoy|ultim)\b",
     r"\btitulares\b",
@@ -103,6 +104,8 @@ WEB_PATTERNS = [
     r"\b(reddit|twitter|x\.com)\b",
     r"\bmercado\b.*\bhoy\b",
     r"\btendencia\b",
+    r"\banali[sz]a\w*\b.*\b(token|crypto|cripto|coin|blockchain)\b",
+    r"\b(token|crypto|cripto|criptomoneda|blockchain)\b",
 ]
 
 VOLATILE_PATTERNS = [
@@ -255,8 +258,33 @@ def is_news_intent(text: str) -> bool:
     return _matches(t, NEWS_PATTERNS)
 
 
+def is_live_market_query(text: str) -> bool:
+    """Token/crypto/precio de un activo — dato vivo, no consultoría de ventas."""
+    t = normalize_text(text)
+    if len(t) < 6:
+        return False
+    has_asset = bool(
+        re.search(
+            r"\b(token|crypto|cripto|criptomoneda|blockchain|on-?chain|"
+            r"solana|bitcoin|ethereum|\bbtc\b|\beth\b)\b",
+            t,
+        )
+    )
+    if not has_asset:
+        return False
+    if re.search(
+        r"\b(analiza|analisis|resumen|precio|cotiza|info|informacion|"
+        r"que es|que significa|red|mercado|volumen|roadmap)\b",
+        t,
+    ):
+        return True
+    return bool(re.search(r"\b(token|crypto|cripto|criptomoneda|blockchain)\b", t))
+
+
 def is_web_research_intent(text: str) -> bool:
     if is_news_intent(text) or is_weather_intent(text):
+        return True
+    if is_live_market_query(text):
         return True
     t = normalize_text(text)
     if len(t) < 6:
@@ -270,7 +298,7 @@ def is_web_research_intent(text: str) -> bool:
 
 def is_internal_knowledge_query(text: str) -> bool:
     """Conceptos estables / explicaciones — cerebro interno, no web."""
-    if is_news_intent(text) or is_weather_intent(text):
+    if is_news_intent(text) or is_weather_intent(text) or is_live_market_query(text):
         return False
     t = normalize_text(text)
     if re.search(
@@ -295,6 +323,8 @@ def is_internal_knowledge_query(text: str) -> bool:
 
 def requires_live_web(text: str) -> bool:
     """Solo noticias/clima/datos de hoy o búsqueda explícita en internet."""
+    if is_live_market_query(text):
+        return True
     if is_internal_knowledge_query(text):
         return False
     if is_news_intent(text) or is_weather_intent(text):

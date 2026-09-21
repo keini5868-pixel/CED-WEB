@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
 import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
@@ -37,12 +37,17 @@ import {
 } from "@/components/voice/CedVoiceModals";
 import { CedStudioSidebar } from "@/components/hud/CedStudioSidebar";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
-import { CED_OPEN_SETTINGS_EVENT } from "@/lib/hud/chrome-events";
+import {
+  CED_OPEN_HISTORY_EVENT,
+  CED_OPEN_SETTINGS_EVENT,
+} from "@/lib/hud/chrome-events";
 import { registerPresenterCloser } from "@/lib/voice/presenterCloseBus";
 import {
   COMPOSER_ACTIONS_ID,
   COMPOSER_BAR_ID,
 } from "@/components/chat/ComposerSplit";
+import { CED_RESUME_CONVERSATION_KEY } from "@/lib/api/conversations";
+import { PanelLeft } from "lucide-react";
 
 /** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
@@ -50,6 +55,8 @@ export function CedVoiceHub() {
   const presenter = useCedPresenterSession();
   const setAssistLive = presenter.setAssistLive;
   const [workspace, setWorkspace] = useState<"chat" | "advanced" | "finance">("chat");
+  const [resumeConversationId, setResumeConversationId] = useState<string | null>(null);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [voiceLimitOpen, setVoiceLimitOpen] = useState(false);
   const [chatSeedImage, setChatSeedImage] = useState<{
     url: string;
@@ -88,6 +95,35 @@ export function CedVoiceHub() {
     };
     window.addEventListener("ced-open-module", onOpen);
     return () => window.removeEventListener("ced-open-module", onOpen);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem(CED_RESUME_CONVERSATION_KEY);
+      if (!pending) return;
+      sessionStorage.removeItem(CED_RESUME_CONVERSATION_KEY);
+      setWorkspace("chat");
+      setResumeConversationId(pending);
+      setActiveConversationId(pending);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const applyResume = useCallback((conversationId: string) => {
+    setWorkspace("chat");
+    setResumeConversationId(conversationId);
+    setActiveConversationId(conversationId);
+  }, []);
+
+  const applyNewChat = useCallback(() => {
+    setWorkspace("chat");
+    setResumeConversationId("");
+    setActiveConversationId(null);
+  }, []);
+
+  const onResumeApplied = useCallback(() => {
+    setResumeConversationId(null);
   }, []);
 
   useEffect(() => {
@@ -302,6 +338,23 @@ export function CedVoiceHub() {
   }, [voice.setSettingsOpen]);
 
   useEffect(() => {
+    try {
+      if (sessionStorage.getItem("ced-open-history") === "1") {
+        sessionStorage.removeItem("ced-open-history");
+        voice.setHistoryOpen(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [voice.setHistoryOpen]);
+
+  useEffect(() => {
+    const onHistory = () => voice.setHistoryOpen(true);
+    window.addEventListener(CED_OPEN_HISTORY_EVENT, onHistory);
+    return () => window.removeEventListener(CED_OPEN_HISTORY_EVENT, onHistory);
+  }, [voice.setHistoryOpen]);
+
+  useEffect(() => {
     if (typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (url.searchParams.get("settings") !== "1") return;
@@ -435,6 +488,17 @@ export function CedVoiceHub() {
   return (
     <div className="ced-studio flex min-h-0 w-full min-w-0 max-w-full flex-1 flex-col overflow-hidden" data-ced-presenter-owner={robotAllowed ? "1" : "0"}>
     <div className="relative min-h-0 w-full min-w-0 flex-1 overflow-hidden">
+    {!voice.historyOpen ? (
+      <button
+        type="button"
+        onClick={() => voice.setHistoryOpen(true)}
+        aria-label="Abrir chats guardados"
+        className="absolute left-0 top-14 z-40 flex items-center gap-1 rounded-r-lg border border-l-0 border-cyan-400/70 bg-black/90 px-2 py-2 text-[11px] font-semibold uppercase tracking-wide text-cyan-200 shadow-[0_0_18px_rgba(34,211,238,0.35)] hover:bg-cyan-950"
+      >
+        <PanelLeft className="h-4 w-4" aria-hidden />
+        Chats
+      </button>
+    ) : null}
     <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-[minmax(0,1fr)_max-content] grid-rows-[minmax(0,1fr)_auto] overflow-hidden">
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
@@ -443,6 +507,20 @@ export function CedVoiceHub() {
             aria-hidden
           />
           <span className="font-medium">{readyLabel}</span>
+          <button
+            type="button"
+            onClick={() => voice.setHistoryOpen(!voice.historyOpen)}
+            aria-expanded={voice.historyOpen}
+            aria-label="Abrir chats guardados"
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-semibold uppercase tracking-wide ${
+              voice.historyOpen
+                ? "border-cyan-400/70 bg-cyan-400/15 text-cyan-200"
+                : "border-cyan-500/40 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-400/20"
+            }`}
+          >
+            <PanelLeft className="h-3.5 w-3.5" aria-hidden />
+            Chats
+          </button>
           {workspace !== "chat" ? (
             <button
               type="button"
@@ -466,6 +544,8 @@ export function CedVoiceHub() {
               variant="embedded"
               splitComposer={workspace === "chat"}
               onClose={() => undefined}
+              resumeConversationId={resumeConversationId}
+              onResumeApplied={onResumeApplied}
               seedImage={chatSeedImage}
               onSeedConsumed={() => setChatSeedImage(null)}
               seedPrompt={chatSeedPrompt}
@@ -604,6 +684,9 @@ export function CedVoiceHub() {
       <CedHistoryPanel
         open={voice.historyOpen}
         onClose={() => voice.setHistoryOpen(false)}
+        onResume={applyResume}
+        onNewChat={applyNewChat}
+        activeConversationId={activeConversationId}
       />
 
       <ModuleShell />

@@ -123,6 +123,25 @@ def fetch_module_stream_context(
                     f"Contexto noticias (datos en vivo):\n{context}\n\n{_MODULE_CONTEXT_RULES}",
                     {"intent": "news", "source": "web_context"},
                 )
+
+        from app.services.cognitive_intents import is_live_market_query
+
+        if is_live_market_query(text):
+            from app.services.gemini_grounded import execute_search_web_sync
+
+            web = execute_search_web_sync(text, kind="general")
+            context = str(
+                web.get("context_for_llm") or web.get("spoken") or web.get("summary") or ""
+            ).strip()
+            if context:
+                return (
+                    f"Contexto de mercado (datos en vivo):\n{context}\n\n"
+                    "Entrega un resumen factual YA. "
+                    "PROHIBIDO preguntar si es lead, contenido o estrategia. "
+                    "PROHIBIDO pedir permiso para buscar.\n"
+                    f"{_MODULE_CONTEXT_RULES}",
+                    {"intent": "market", "source": "web_context"},
+                )
     except Exception:  # noqa: BLE001
         logger.exception("[CHAT-MODULE] context fetch failed user=%s", user_id[:8])
 
