@@ -7,11 +7,16 @@ import { CedButton, CedModal } from "@ced/ui";
 import type { VoicePaletteId, VoiceSessionPreferences } from "@ced/types";
 
 import {
-  getConversationMessages,
   listConversations,
   type ConversationRow,
 } from "@/lib/api/conversations";
 import { downloadPdfBlob, listSessionPdfs, type PdfArtifact } from "@/lib/api/pdf";
+import {
+  downloadImageBlob,
+  listGeneratedImages,
+  type GeneratedImageRow,
+} from "@/lib/api/media-history";
+import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { OPENAI_VOICE_OPTIONS } from "@/lib/voice/openaiVoices";
 import {
   JARVIS_VOICE_PRESET,
@@ -411,6 +416,8 @@ export function CedSettingsModal({
   );
 }
 
+type HistoryTab = "chats" | "pdfs" | "images";
+
 export function CedHistoryPanel({
   open,
   onClose,
@@ -424,12 +431,12 @@ export function CedHistoryPanel({
   onNewChat?: () => void;
   activeConversationId?: string | null;
 }) {
+  const [tab, setTab] = useState<HistoryTab>("chats");
   const [items, setItems] = useState<ConversationRow[]>([]);
   const [pdfs, setPdfs] = useState<PdfArtifact[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [expandedMessages, setExpandedMessages] = useState<
-    { role: string; content: string; created_at?: string }[]
-  >([]);
+  const [images, setImages] = useState<GeneratedImageRow[]>([]);
+  const [lightbox, setLightbox] = useState<GeneratedImageRow | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -438,10 +445,16 @@ export function CedHistoryPanel({
 
   useEffect(() => {
     if (!open) return;
+    setTab("chats");
     void listConversations()
       .then(setItems)
       .catch(() => setItems([]));
-    void listSessionPdfs().then(setPdfs);
+    void listSessionPdfs()
+      .then(setPdfs)
+      .catch(() => setPdfs([]));
+    void listGeneratedImages()
+      .then(setImages)
+      .catch(() => setImages([]));
   }, [open]);
 
   if (!open || !mounted) return null;
@@ -467,23 +480,91 @@ export function CedHistoryPanel({
           ✕
         </button>
       </header>
-      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
-        {onNewChat ? (
-          <CedButton
-            className="mb-4 w-full"
-            onClick={() => {
-              onNewChat();
-              onClose();
-            }}
+      <nav className="flex shrink-0 border-b border-cyan-900/50 px-2" aria-label="Secciones">
+        {(
+          [
+            ["chats", "Chats"],
+            ["pdfs", "PDFs"],
+            ["images", "Imágenes"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setTab(id)}
+            aria-selected={tab === id}
+            className={`flex-1 px-2 py-2.5 text-[11px] font-semibold uppercase tracking-wide ${
+              tab === id
+                ? "border-b-2 border-cyan-400 text-cyan-200"
+                : "text-[#888888] hover:text-cyan-200"
+            }`}
           >
-            Nuevo chat
-          </CedButton>
+            {label}
+          </button>
+        ))}
+      </nav>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
+        {tab === "chats" ? (
+          <>
+            {onNewChat ? (
+              <CedButton
+                className="mb-4 w-full"
+                onClick={() => {
+                  onNewChat();
+                  onClose();
+                }}
+              >
+                Nuevo chat
+              </CedButton>
+            ) : null}
+            <p className="ced-hud-text-muted mb-3 text-xs">
+              Toca un hilo para seguir en el mismo tema.
+            </p>
+            <ul className="space-y-2 text-sm text-[#e0e0e0]">
+              {items.length === 0 ? (
+                <li className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3">
+                  Sin conversaciones aún. Escribe o habla con CED para empezar.
+                </li>
+              ) : (
+                items.map((c) => {
+                  const active = activeConversationId === c.id;
+                  return (
+                    <li
+                      key={c.id}
+                      className={`rounded border bg-[#0a0a0a] p-3 ${
+                        active ? "border-cyan-400/70" : "border-cyan-900/50"
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className="w-full text-left"
+                        onClick={() => {
+                          if (onResume) {
+                            onResume(c.id);
+                            onClose();
+                          }
+                        }}
+                      >
+                        <p className="font-medium text-[var(--ced-cyan)]">{c.title}</p>
+                        {c.preview ? (
+                          <p className="ced-hud-text-muted mt-1 line-clamp-2 text-xs">
+                            {c.preview}
+                          </p>
+                        ) : null}
+                        <p className="ced-hud-text-muted mt-1 text-xs">
+                          {c.channel === "voice" ? "Voz" : "Texto"} ·{" "}
+                          {new Date(c.updated_at).toLocaleString("es-MX")}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </>
         ) : null}
 
-        <section>
-          <h3 className="ced-hud-text-muted mb-2 text-[10px] uppercase tracking-widest">
-            PDFs de sesión
-          </h3>
+        {tab === "pdfs" ? (
           <ul className="space-y-2 text-sm">
             {pdfs.length === 0 ? (
               <li className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3 text-xs">
@@ -522,81 +603,76 @@ export function CedHistoryPanel({
               ))
             )}
           </ul>
-        </section>
+        ) : null}
 
-        <section className="mt-6">
-          <h3 className="ced-hud-text-muted mb-2 text-[10px] uppercase tracking-widest">
-            Conversaciones
-          </h3>
-          <p className="ced-hud-text-muted text-xs">
-            Toca un hilo para seguir en el mismo tema.
-          </p>
-          <ul className="mt-3 space-y-2 text-sm text-[#e0e0e0]">
-            {items.length === 0 ? (
-              <li className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3">
-                Sin conversaciones aún. Escribe o habla con CED para empezar.
-              </li>
-            ) : (
-              items.map((c) => {
-                const active = activeConversationId === c.id;
-                return (
+        {tab === "images" ? (
+          images.length === 0 ? (
+            <p className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3 text-xs">
+              Sin imágenes aún. Pide a CED una foto o un creativo.
+            </p>
+          ) : (
+            <ul className="grid grid-cols-2 gap-2">
+              {images.map((row) => (
                 <li
-                  key={c.id}
-                  className={`rounded border bg-[#0a0a0a] p-3 ${
-                    active
-                      ? "border-cyan-400/70"
-                      : "border-cyan-900/50"
-                  }`}
+                  key={row.id}
+                  className="overflow-hidden rounded border border-cyan-900/50 bg-[#0a0a0a]"
                 >
                   <button
                     type="button"
-                    className="w-full text-left"
-                    onClick={() => {
-                      if (onResume) {
-                        onResume(c.id);
-                        onClose();
-                        return;
-                      }
-                      if (expandedId === c.id) {
-                        setExpandedId(null);
-                        setExpandedMessages([]);
-                        return;
-                      }
-                      setExpandedId(c.id);
-                      void getConversationMessages(c.id)
-                        .then((data) => setExpandedMessages(data.messages))
-                        .catch(() => setExpandedMessages([]));
-                    }}
+                    onClick={() => setLightbox(row)}
+                    className="block w-full"
+                    aria-label="Ver imagen"
                   >
-                    <p className="font-medium text-[var(--ced-cyan)]">{c.title}</p>
-                    {c.preview ? (
-                      <p className="ced-hud-text-muted mt-1 line-clamp-2 text-xs">{c.preview}</p>
-                    ) : null}
-                    <p className="ced-hud-text-muted mt-1 text-xs">
-                      {c.channel === "voice" ? "Voz" : "Texto"} ·{" "}
-                      {new Date(c.updated_at).toLocaleString("es-MX")}
-                    </p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={row.url}
+                      alt={row.prompt || "Imagen generada"}
+                      className="aspect-square w-full object-cover"
+                    />
                   </button>
-                  {expandedId === c.id && expandedMessages.length > 0 ? (
-                    <ul className="mt-3 max-h-48 space-y-2 overflow-y-auto border-t border-cyan-900/40 pt-3 text-xs">
-                      {expandedMessages.map((m) => (
-                        <li key={`${m.created_at}-${m.content.slice(0, 20)}`}>
-                          <span className="text-cyan-600">
-                            {m.role === "user" ? "Tú" : "CED"}:
-                          </span>{" "}
-                          {m.content}
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
+                  <div className="space-y-1 p-2">
+                    <p className="line-clamp-2 text-[11px] text-cyan-200/90">
+                      {row.prompt || "Imagen generada"}
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busyId === row.id}
+                      onClick={() => {
+                        const slug = (row.prompt || "imagen")
+                          .slice(0, 40)
+                          .replace(/\s+/g, "-");
+                        setBusyId(row.id);
+                        void downloadImageBlob(
+                          row.url,
+                          `${slug || "imagen-ced"}.png`,
+                        )
+                          .catch((e) =>
+                            alert(
+                              e instanceof Error
+                                ? e.message
+                                : "No se pudo descargar.",
+                            ),
+                          )
+                          .finally(() => setBusyId(null));
+                      }}
+                      className="text-[10px] font-semibold uppercase tracking-wide text-cyan-400 hover:text-cyan-200 disabled:opacity-50"
+                    >
+                      {busyId === row.id ? "…" : "Descargar"}
+                    </button>
+                  </div>
                 </li>
-              );
-              })
-            )}
-          </ul>
-        </section>
+              ))}
+            </ul>
+          )
+        ) : null}
       </div>
     </aside>
+      <ImageLightbox
+        src={lightbox?.url ?? ""}
+        alt={lightbox?.prompt || "Imagen generada"}
+        open={Boolean(lightbox)}
+        onClose={() => setLightbox(null)}
+      />
     </>,
     document.body,
   );
