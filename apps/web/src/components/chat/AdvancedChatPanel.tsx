@@ -12,6 +12,7 @@ import {
   imageActionPlaceholder,
   type ImageActionMode,
 } from "@/components/chat/ImageActionBar";
+import { DictationWaveform } from "@/components/chat/DictationWaveform";
 import { MicButton } from "@/components/chat/MicButton";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { appendStreamChunk } from "@/lib/stream-chunk";
@@ -173,6 +174,8 @@ export function AdvancedChatPanel({
   } | null>(null);
   const [attachedPdf, setAttachedPdf] = useState<File | null>(null);
   const [imageMode, setImageMode] = useState<ImageActionMode>("analyze");
+  const [isDictating, setIsDictating] = useState(false);
+  const [dictationLevel, setDictationLevel] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef(messages);
@@ -572,6 +575,7 @@ export function AdvancedChatPanel({
             />
           ) : null}
           <div className="flex min-w-0 w-full max-w-full flex-row items-end gap-1.5 sm:gap-2">
+            <div className="relative min-w-0 flex-1">
             <textarea
               ref={textareaRef}
               value={input}
@@ -584,19 +588,27 @@ export function AdvancedChatPanel({
               }}
               rows={composerBar ? 1 : 3}
               placeholder={
-                attachedPdf
+                isDictating
+                  ? "Escuchando… habla ahora"
+                  : attachedPdf
                   ? "Pregunta sobre el PDF o envía para analizarlo…"
                   : attachedImage
                     ? imageActionPlaceholder(imageMode)
                     : "Análisis, PDF, imágenes o dictado por voz…"
               }
               disabled={configured === false}
-              className={`w-full min-w-0 flex-1 rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-1.5 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px] ${
+              className={`w-full min-w-0 rounded-xl border border-[var(--studio-border)] bg-[var(--studio-composer-bg)] px-3 py-1.5 text-base text-[var(--studio-composer-fg)] placeholder:text-[var(--studio-hint)] focus:border-[var(--ced-cyan)] focus:outline-none disabled:opacity-50 sm:text-[12px] ${
                 composerBar
                   ? "min-h-[42px] max-h-[72px] resize-none"
                   : "min-h-[56px] max-h-40 resize-y"
-              }`}
+              } ${isDictating ? "pb-6" : ""}`}
             />
+            {isDictating ? (
+              <div className="pointer-events-none absolute inset-x-3 bottom-1.5">
+                <DictationWaveform level={dictationLevel} active />
+              </div>
+            ) : null}
+            </div>
             {composerActions ? null : (
             <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-2">
             <AttachMenuButton
@@ -614,6 +626,8 @@ export function AdvancedChatPanel({
             <MicButton
               getBaseText={() => input}
               onTextUpdate={setInput}
+              onDictatingChange={setIsDictating}
+              onLevel={setDictationLevel}
               disabled={busy || configured === false}
             />
             <button
@@ -660,6 +674,8 @@ export function AdvancedChatPanel({
             <MicButton
               getBaseText={() => input}
               onTextUpdate={setInput}
+              onDictatingChange={setIsDictating}
+              onLevel={setDictationLevel}
               disabled={busy || configured === false}
             />
             <button

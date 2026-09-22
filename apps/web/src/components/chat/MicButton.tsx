@@ -3,19 +3,21 @@
 import { Loader2, Mic, MicOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
 import { transcribeChatAudio } from "@/lib/api/chat";
+import { sanitizeDictationTranscript } from "@/lib/chat/dictation-transcript";
 
 type MicButtonProps = {
-  /** Texto del input al iniciar dictado (se preserva como prefijo) */
   getBaseText: () => string;
-  /** Actualización en vivo mientras habla y al terminar */
   onTextUpdate: (text: string) => void;
   onDictatingChange?: (active: boolean) => void;
+  onLevel?: (level: number) => void;
   disabled?: boolean;
 };
 
 const MIN_RECORDING_MS = 400;
 const MIN_AUDIO_BYTES = 800;
+const MIN_PEAK_LEVEL = 0.04;
 
 type SpeechRecognitionInstance = {
   lang: string;
@@ -58,7 +60,6 @@ function isLikelyIos(): boolean {
 
 function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
   if (typeof window === "undefined") return null;
-  // Safari/iOS: el constructor a veces existe pero no abre el micrófono.
   if (isLikelyIos()) return null;
   const w = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor;
@@ -108,10 +109,12 @@ export function MicButton({
   getBaseText,
   onTextUpdate,
   onDictatingChange,
+  onLevel,
   disabled,
 }: MicButtonProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [meterStream, setMeterStream] = useState<MediaStream | null>(null);
 
   const isRecordingRef = useRef(false);
   const baseTextRef = useRef("");
@@ -122,16 +125,26 @@ export function MicButton({
   const recordingStartedAtRef = useRef<number | null>(null);
   const fallbackFromSpeechRef = useRef(false);
   const touchArmedRef = useRef(false);
+  const peakLevelRef = useRef(0);
+
+  const level = useAudioAnalyser(meterStream, isRecording);
+
+  useEffect(() => {
+    if (level > peakLevelRef.current) peakLevelRef.current = level;
+    onLevel?.(isRecording ? level : 0);
+  }, [level, isRecording, onLevel]);
 
   const setRecording = (active: boolean) => {
     isRecordingRef.current = active;
     setIsRecording(active);
     onDictatingChange?.(active);
+    if (!active) onLevel?.(0);
   };
 
   const stopStream = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    setMeterStream(null);
   };
 
   const stopLiveRecognition = () => {
@@ -154,7 +167,11 @@ export function MicButton({
 
   const publishLiveTranscript = (results: SpeechRecognitionResultList) => {
     const { final, interim } = buildTranscriptFromResults(results);
-    const dictated = `${final}${interim}`.trim();
+    const dictated = sanitizeDictationTranscript(`${final}${interim}`);
+    if (!dictated) {
+      onTextUpdate(baseTextRef.current);
+      return;
+    }
     onTextUpdate(mergeBaseAndDictation(baseTextRef.current, dictated));
   };
 
@@ -178,6 +195,7 @@ export function MicButton({
         alert("Necesito permiso para usar el micrófono");
         setRecording(false);
         stopLiveRecognition();
+        stopStream();
         return;
       }
       if (event.error === "no-speech" || event.error === "aborted") return;
@@ -190,7 +208,7 @@ export function MicButton({
       ) {
         fallbackFromSpeechRef.current = true;
         stopLiveRecognition();
-        void startWhisperFallback();
+        void startWhisperFallback(streamRef.current ?? undefined);
       }
     };
 
@@ -201,6 +219,7 @@ export function MicButton({
         recognition.start();
       } catch {
         setRecording(false);
+        stopStream();
       }
     };
 
@@ -218,18 +237,23 @@ export function MicButton({
   const stopLiveDictation = () => {
     setRecording(false);
     stopLiveRecognition();
+    stopStream();
   };
 
   const transcribeBlob = async (audioBlob: Blob) => {
     if (audioBlob.size < MIN_AUDIO_BYTES) return;
+    if (peakLevelRef.current < MIN_PEAK_LEVEL) return;
     setIsTranscribing(true);
     try {
-      const text = await transcribeChatAudio(audioBlob);
+      const text = sanitizeDictationTranscript(await transcribeChatAudio(audioBlob));
       if (text) {
         onTextUpdate(mergeBaseAndDictation(baseTextRef.current, text));
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Error transcribiendo. Intenta de nuevo.");
+      const msg = e instanceof Error ? e.message : "";
+      if (!/no se detectó voz|audio vacío/i.test(msg)) {
+        alert(msg || "Error transcribiendo. Intenta de nuevo.");
+      }
     } finally {
       setIsTranscribing(false);
       onDictatingChange?.(false);
@@ -242,10 +266,12 @@ export function MicButton({
     try {
       const stream =
         existingStream ??
+        streamRef.current ??
         (await navigator.mediaDevices.getUserMedia({
           audio: true,
         }));
       streamRef.current = stream;
+      setMeterStream(stream);
 
       if (typeof MediaRecorder === "undefined") {
         stopStream();
@@ -267,15 +293,15 @@ export function MicButton({
       };
 
       mediaRecorder.onstop = () => {
-        stopStream();
         const startedAt = recordingStartedAtRef.current ?? Date.now();
         recordingStartedAtRef.current = null;
+        const type = mediaRecorder.mimeType || mimeType || "audio/webm";
+        const audioBlob = new Blob(audioChunksRef.current, { type });
+        stopStream();
         if (Date.now() - startedAt < MIN_RECORDING_MS) {
           onDictatingChange?.(false);
           return;
         }
-        const type = mediaRecorder.mimeType || mimeType || "audio/webm";
-        const audioBlob = new Blob(audioChunksRef.current, { type });
         void transcribeBlob(audioBlob);
       };
 
@@ -284,6 +310,7 @@ export function MicButton({
     } catch {
       alert("Necesito permiso para usar el micrófono");
       setRecording(false);
+      stopStream();
     }
   };
 
@@ -295,9 +322,20 @@ export function MicButton({
   };
 
   const startDictation = () => {
-    if (!startLiveDictation()) {
-      void startWhisperFallback();
-    }
+    void (async () => {
+      peakLevelRef.current = 0;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        streamRef.current = stream;
+        setMeterStream(stream);
+        if (!startLiveDictation()) {
+          await startWhisperFallback(stream);
+        }
+      } catch {
+        alert("Necesito permiso para usar el micrófono");
+        setRecording(false);
+      }
+    })();
   };
 
   const stopDictation = () => {
@@ -334,7 +372,6 @@ export function MicButton({
     <button
       type="button"
       onPointerDown={(e) => {
-        // Evita que el teclado móvil se cierre y se trague el toque.
         e.preventDefault();
         if (e.pointerType === "mouse") return;
         touchArmedRef.current = true;

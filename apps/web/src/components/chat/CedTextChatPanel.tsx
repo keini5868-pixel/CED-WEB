@@ -14,6 +14,7 @@ import {
   imageActionPlaceholder,
   type ImageActionMode,
 } from "@/components/chat/ImageActionBar";
+import { DictationWaveform } from "@/components/chat/DictationWaveform";
 import { MicButton } from "@/components/chat/MicButton";
 import { fetchGenerateImageWithReference } from "@/lib/api/openai";
 import {
@@ -393,6 +394,7 @@ export function CedTextChatPanel({
   const [attachedPdf, setAttachedPdf] = useState<File | null>(null);
   const [imageMode, setImageMode] = useState<ImageActionMode>("analyze");
   const [isDictating, setIsDictating] = useState(false);
+  const [dictationLevel, setDictationLevel] = useState(0);
   const [busy, setBusy] = useState(false);
   const [typing, setTyping] = useState(false);
   const [statusHint, setStatusHint] = useState<string | null>(null);
@@ -1190,6 +1192,7 @@ export function CedTextChatPanel({
             />
           ) : null}
           <div className="flex w-full min-w-0 max-w-full flex-row items-end gap-1.5 sm:gap-2">
+            <div className="relative min-w-0 flex-1">
             <textarea
               ref={textareaRef}
               autoFocus={!embedded}
@@ -1232,11 +1235,11 @@ export function CedTextChatPanel({
                         : "Escribe a CED o usa el micrófono…"
               }
               disabled={Boolean(status?.blocked)}
-              className={`box-border w-full min-w-0 flex-1 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
+              className={`box-border w-full min-w-0 resize-none overflow-y-auto overflow-x-hidden rounded-full px-4 text-base leading-snug focus:outline-none focus:ring-2 disabled:opacity-50 sm:text-sm ${
                 composerBar
                   ? "min-h-[42px] max-h-[72px] py-1.5"
                   : "min-h-[48px] max-h-[120px] py-2.5"
-              } ${
+              } ${isDictating ? "pb-6" : ""} ${
                 embedded
                   ? `border bg-[var(--studio-composer-bg)] text-[var(--studio-composer-fg)] caret-[var(--ced-cyan)] placeholder:text-[var(--studio-hint)] focus:ring-[var(--ced-cyan)]/40 ${
                       isDictating
@@ -1253,6 +1256,12 @@ export function CedTextChatPanel({
               }`}
               style={{ WebkitAppearance: "none" }}
             />
+            {isDictating ? (
+              <div className="pointer-events-none absolute inset-x-3 bottom-1.5">
+                <DictationWaveform level={dictationLevel} active />
+              </div>
+            ) : null}
+            </div>
             {composerActions ? null : (
             <div className="flex shrink-0 items-center justify-end gap-1 sm:gap-1.5">
             <AttachMenuButton
@@ -1276,6 +1285,7 @@ export function CedTextChatPanel({
               getBaseText={() => input}
               onTextUpdate={handleDictationText}
               onDictatingChange={handleDictatingChange}
+              onLevel={setDictationLevel}
               disabled={status?.blocked}
             />
             <button
@@ -1337,6 +1347,7 @@ export function CedTextChatPanel({
               getBaseText={() => input}
               onTextUpdate={handleDictationText}
               onDictatingChange={handleDictatingChange}
+              onLevel={setDictationLevel}
               disabled={status?.blocked}
             />
             <button

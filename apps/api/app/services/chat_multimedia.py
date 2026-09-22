@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 import tempfile
 from datetime import date
 from typing import Any
@@ -17,6 +18,27 @@ from app.services import supabase_db
 from app.services.vision_search import analyze_image
 
 logger = logging.getLogger(__name__)
+
+_WHISPER_JUNK_RE = re.compile(
+    r"amara(?:\.org)?|subt[ií]tulos?(?:\s+realizados)?|subtitles?\s+by|"
+    r"comunidad\s+de\s+amara|thanks\s+for\s+watching|thank you for watching|"
+    r"transcripci[oó]n\s+autom[aá]tica|subtitulos?\s+amara|"
+    r"^\s*\(?\s*music\s*\)?\s*$",
+    re.IGNORECASE,
+)
+
+
+def sanitize_dictation_transcript(text: str) -> str:
+    """Vacío si Whisper inventó subtítulos/Amara en silencio."""
+    raw = (text or "").strip()
+    if not raw or len(raw) <= 2:
+        return ""
+    if _WHISPER_JUNK_RE.search(raw) and len(raw) < 96:
+        return ""
+    if raw.lower() in {"you", "thank you", "thanks", "music"}:
+        return ""
+    return raw
+
 
 CHAT_DICTATION_DAILY: dict[str, int] = {
     "free_basic": 0,
@@ -240,9 +262,9 @@ def transcribe_audio(user_id: str, audio_bytes: bytes, *, filename: str = "recor
             http_status=500,
         ) from exc
 
-    text = str(data.get("text") or "").strip()
+    text = sanitize_dictation_transcript(str(data.get("text") or ""))
     if not text:
-        raise TextChatError("No se detectó voz en la grabación.", http_status=400)
+        return ""
 
     _log_feature_usage(
         user_id,
