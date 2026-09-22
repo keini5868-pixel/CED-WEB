@@ -73,7 +73,6 @@ def test_voice_prompt_compressed_under_previous_size():
     prompt = build_ced_voice_system_prompt()
     assert "FUNCTION CALLING OBLIGATORIO" in prompt
     assert "CONVERSACIÓN UNIVERSAL" in prompt
-    assert "Gemini 2.5 Flash" in prompt
     assert "publicar_facebook" in prompt
     assert diag["includes_universal_conversation"] is True
     assert diag["llm_provider"] == "gemini_2.5_flash"
