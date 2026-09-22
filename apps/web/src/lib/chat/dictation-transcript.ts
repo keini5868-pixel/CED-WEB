@@ -10,3 +10,14 @@ export function sanitizeDictationTranscript(text: string): string {
   if (/^(you|thank you|thanks|music)$/i.test(raw)) return "";
   return raw;
 }
+
+/** El toque de soltar dictado no debe encender el asistente CED. */
+let assistLockUntil = 0;
+
+export function markDictationAssistLock(ms = 900): void {
+  assistLockUntil = Date.now() + ms;
+}
+
+export function isDictationAssistLocked(): boolean {
+  return Date.now() < assistLockUntil;
+}

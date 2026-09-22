@@ -53,6 +53,7 @@ import {
   warmConversationCache,
 } from "@/lib/api/conversations";
 import { CedHudTour } from "@/components/hud/CedHudTour";
+import { isDictationAssistLocked } from "@/lib/chat/dictation-transcript";
 import { PanelLeft } from "lucide-react";
 
 /** Dashboard — chat principal + voz compacta. */
@@ -391,6 +392,7 @@ export function CedVoiceHub() {
   }, [voice.setSettingsOpen]);
 
   const handleMic = () => {
+    if (isDictationAssistLocked()) return;
     if (voice.micOn) {
       void voice.toggleMic();
       return;

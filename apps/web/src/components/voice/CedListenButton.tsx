@@ -3,6 +3,8 @@
 import { Bot, Mic } from "lucide-react";
 import { motion } from "framer-motion";
 
+import { isDictationAssistLocked } from "@/lib/chat/dictation-transcript";
+
 type CedListenButtonProps = {
   active: boolean;
   busy: boolean;
@@ -53,7 +55,11 @@ export function CedListenButton({
       type="button"
       data-ced-listen
       data-ced-hotspot="asistente"
-      onClick={onActivate}
+      onClick={(e) => {
+        e.stopPropagation();
+        if (isDictationAssistLocked()) return;
+        onActivate();
+      }}
       disabled={busy}
       whileTap={{ scale: busy ? 1 : 0.97 }}
       aria-label={busy ? "Conectando asistente de voz" : active ? "Detener voz" : "Activar asistente"}

@@ -1239,7 +1239,7 @@ export function CedTextChatPanel({
                 composerBar
                   ? "min-h-[42px] max-h-[72px] py-1.5"
                   : "min-h-[48px] max-h-[120px] py-2.5"
-              } ${isDictating ? "pb-6" : ""} ${
+              } ${
                 embedded
                   ? `border bg-[var(--studio-composer-bg)] text-[var(--studio-composer-fg)] caret-[var(--ced-cyan)] placeholder:text-[var(--studio-hint)] focus:ring-[var(--ced-cyan)]/40 ${
                       isDictating

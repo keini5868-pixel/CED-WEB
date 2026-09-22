@@ -601,7 +601,7 @@ export function AdvancedChatPanel({
                 composerBar
                   ? "min-h-[42px] max-h-[72px] resize-none"
                   : "min-h-[56px] max-h-40 resize-y"
-              } ${isDictating ? "pb-6" : ""}`}
+              }`}
             />
             {isDictating ? (
               <div className="pointer-events-none absolute inset-x-3 bottom-1.5">

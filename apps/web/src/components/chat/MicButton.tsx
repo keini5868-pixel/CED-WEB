@@ -5,7 +5,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { useAudioAnalyser } from "@/hooks/useAudioAnalyser";
 import { transcribeChatAudio } from "@/lib/api/chat";
-import { sanitizeDictationTranscript } from "@/lib/chat/dictation-transcript";
+import {
+  markDictationAssistLock,
+  sanitizeDictationTranscript,
+} from "@/lib/chat/dictation-transcript";
 
 type MicButtonProps = {
   getBaseText: () => string;
@@ -348,6 +351,7 @@ export function MicButton({
 
   const handleToggle = () => {
     if (disabled || isTranscribing) return;
+    markDictationAssistLock();
     if (isRecordingRef.current) {
       stopDictation();
     } else {
@@ -373,11 +377,18 @@ export function MicButton({
       type="button"
       onPointerDown={(e) => {
         e.preventDefault();
+        e.stopPropagation();
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          /* ignore */
+        }
         if (e.pointerType === "mouse") return;
         touchArmedRef.current = true;
         handleToggle();
       }}
-      onClick={() => {
+      onClick={(e) => {
+        e.stopPropagation();
         if (touchArmedRef.current) {
           touchArmedRef.current = false;
           return;
