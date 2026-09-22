@@ -36,7 +36,11 @@ import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome-events";
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
-import { getConversationMessages } from "@/lib/api/conversations";
+import {
+  getConversationMessages,
+  peekCachedMessages,
+  rememberConversationMessages,
+} from "@/lib/api/conversations";
 
 type CedTextChatPanelProps = {
   open: boolean;
@@ -481,35 +485,43 @@ export function CedTextChatPanel({
       onResumeApplied?.();
       return;
     }
-    const id = resumeConversationId;
+    const id = resumeConversationId.trim();
+    const applyMapped = (raw: { id?: string; role: string; content: string; created_at: string }[]) => {
+      const mapped: ChatMessage[] = raw.map((m) => ({
+        id: m.id,
+        role: m.role === "user" ? "user" : "model",
+        content: coerceDisplayText(m.content),
+        created_at: m.created_at,
+      }));
+      setConversationId(id);
+      resumeLockRef.current = true;
+      setMessages(
+        mapped.length > 0
+          ? mapped
+          : [
+              {
+                role: "model",
+                content: CHAT_DEFAULT_WELCOME,
+                created_at: new Date().toISOString(),
+              },
+            ],
+      );
+      setError(null);
+      setInput("");
+    };
+    const cached = peekCachedMessages(id);
+    if (cached && cached.length > 0) {
+      applyMapped(cached);
+    }
     void (async () => {
       try {
         const data = await getConversationMessages(id);
         if (cancelled) return;
-        setConversationId(id);
-        resumeLockRef.current = true;
-        const mapped: ChatMessage[] = (data.messages || []).map((m) => ({
-          id: m.id,
-          role: m.role === "user" ? "user" : "model",
-          content: coerceDisplayText(m.content),
-          created_at: m.created_at,
-        }));
-        setMessages(
-          mapped.length > 0
-            ? mapped
-            : [
-                {
-                  role: "model",
-                  content: CHAT_DEFAULT_WELCOME,
-                  created_at: new Date().toISOString(),
-                },
-              ],
-        );
-        setError(null);
-        setInput("");
+        applyMapped(data.messages || []);
+        rememberConversationMessages(id, data.messages || []);
       } catch {
-        if (!cancelled) {
-          setError("No pude abrir esa conversación.");
+        if (!cancelled && !(cached && cached.length > 0)) {
+          applyMapped([]);
         }
       } finally {
         if (!cancelled) onResumeApplied?.();
@@ -519,6 +531,20 @@ export function CedTextChatPanel({
       cancelled = true;
     };
   }, [resumeNonce, resumeConversationId, onResumeApplied]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+    if (!messages.some((m) => m.role === "user")) return;
+    rememberConversationMessages(
+      conversationId,
+      messages.map((m) => ({
+        id: m.id || "",
+        role: m.role,
+        content: m.content,
+        created_at: m.created_at || new Date().toISOString(),
+      })),
+    );
+  }, [conversationId, messages]);
 
   useEffect(() => {
     if (!open) return;

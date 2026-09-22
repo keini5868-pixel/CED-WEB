@@ -323,30 +323,73 @@ def list_conversations(
     return result.data or []
 
 
+def list_messages_for_conversations(
+    conversation_ids: list[str],
+    *,
+    per_conversation: int = 80,
+) -> dict[str, list[dict[str, Any]]]:
+    """Últimos N mensajes por hilo en una sola consulta (sin N+1)."""
+    ids = [str(cid).strip() for cid in conversation_ids if str(cid).strip()]
+    grouped: dict[str, list[dict[str, Any]]] = {cid: [] for cid in ids}
+    if not ids:
+        return grouped
+    cap = max(1, min(per_conversation, 120))
+    client = _client()
+    try:
+        result = (
+            client.table("voice_messages")
+            .select("id, conversation_id, role, content, created_at")
+            .in_("conversation_id", ids)
+            .order("created_at", desc=True)
+            .limit(min(len(ids) * cap, 1500))
+            .execute()
+        )
+    except Exception:  # noqa: BLE001
+        return grouped
+    for row in result.data or []:
+        cid = str(row.get("conversation_id") or "").strip()
+        bucket = grouped.get(cid)
+        if bucket is None or len(bucket) >= cap:
+            continue
+        bucket.append(row)
+    for rows in grouped.values():
+        rows.reverse()
+    return grouped
+
+
 def list_conversations_filtered(
     user_id: str,
     *,
     limit: int = 50,
     channel: str | None = None,
     q: str | None = None,
+    include_messages: bool = False,
 ) -> list[dict[str, Any]]:
     """Lista conversaciones con vista previa; filtra por canal y texto."""
     import re
 
     cap = max(1, min(limit, 100))
     rows = list_conversations(user_id, limit=cap * 2 if q else cap, channel=channel)
+    ids = [str(conv["id"]) for conv in rows]
+    preview_n = 80 if include_messages else 8
+    by_id = list_messages_for_conversations(ids, per_conversation=preview_n)
     needle = re.sub(r"[%_\\]", "", (q or "").strip().lower())
     out: list[dict[str, Any]] = []
 
     for conv in rows:
-        msgs = get_conversation_messages(str(conv["id"]), user_id, limit=8)
+        cid = str(conv["id"])
+        msgs = by_id.get(cid) or []
         preview = ""
-        for m in msgs:
+        for m in reversed(msgs):
             content = str(m.get("content") or "").strip()
             if content:
                 preview = content[:160]
                 break
+        if not preview:
+            preview = str(conv.get("title") or "").strip()[:160]
         item = {**conv, "preview": preview, "message_count": len(msgs)}
+        if include_messages:
+            item["messages"] = msgs
         if needle:
             haystack = f"{conv.get('title', '')} {preview}".lower()
             if needle not in haystack:

@@ -25,6 +25,7 @@ def list_conversations(
     limit: int = Query(default=50, ge=1, le=100),
     channel: str | None = Query(default=None, pattern="^(voice|text)$"),
     q: str | None = Query(default=None, max_length=120),
+    include_messages: bool = Query(default=False),
 ) -> dict:
     try:
         items = supabase_db.list_conversations_filtered(
@@ -32,6 +33,7 @@ def list_conversations(
             limit=limit,
             channel=channel,
             q=q,
+            include_messages=include_messages,
         )
         return {"conversations": items}
     except Exception as exc:  # noqa: BLE001
@@ -66,14 +68,27 @@ def get_messages(
     conversation_id: str,
     user_id: str = Depends(require_user_id),
 ) -> dict:
+    cid = (conversation_id or "").strip()
+    conv = None
+    messages: list = []
     try:
-        conv = supabase_db.get_conversation(conversation_id, user_id)
-        if not conv:
-            raise HTTPException(status_code=404, detail="Conversación no encontrada.")
-        messages = supabase_db.get_conversation_messages(conversation_id, user_id)
-        return {"messages": messages, "conversation": conv}
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
+        conv = supabase_db.get_conversation(cid, user_id)
+        messages = supabase_db.get_conversation_messages(cid, user_id)
+    except Exception as exc:  # noqa: BLE001 — abrir hilo vacío antes que 404
+        import logging
+
+        logging.getLogger(__name__).warning(
+            "[CONV] get_messages fallo conv=%s: %s", cid[:12], exc
+        )
+    if not conv:
+        conv = {
+            "id": cid,
+            "title": "Conversación",
+            "channel": "text",
+            "created_at": "",
+            "updated_at": "",
+        }
+    return {"messages": messages, "conversation": conv}
 
 
 @router.post("/messages")

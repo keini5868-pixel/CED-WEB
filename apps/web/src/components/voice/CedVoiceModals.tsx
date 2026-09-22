@@ -8,6 +8,7 @@ import type { VoicePaletteId, VoiceSessionPreferences } from "@ced/types";
 
 import {
   listConversations,
+  peekCachedConversations,
   type ConversationRow,
 } from "@/lib/api/conversations";
 import { downloadPdfBlob, listSessionPdfs, type PdfArtifact } from "@/lib/api/pdf";
@@ -457,14 +458,20 @@ export function CedHistoryPanel({
 
   useEffect(() => {
     setMounted(true);
+    const cached = peekCachedConversations();
+    if (cached?.length) setItems(cached);
   }, []);
 
   useEffect(() => {
     if (!open) return;
     setTab("chats");
-    void listConversations()
+    const cached = peekCachedConversations();
+    if (cached?.length) setItems(cached);
+    void listConversations({ limit: 40, includeMessages: true })
       .then(setItems)
-      .catch(() => setItems([]));
+      .catch(() => {
+        if (!cached?.length) setItems([]);
+      });
     void listSessionPdfs()
       .then(setPdfs)
       .catch(() => setPdfs([]));

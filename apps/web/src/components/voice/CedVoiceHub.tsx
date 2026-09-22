@@ -46,7 +46,10 @@ import {
   COMPOSER_ACTIONS_ID,
   COMPOSER_BAR_ID,
 } from "@/components/chat/ComposerSplit";
-import { CED_RESUME_CONVERSATION_KEY } from "@/lib/api/conversations";
+import {
+  CED_RESUME_CONVERSATION_KEY,
+  warmConversationCache,
+} from "@/lib/api/conversations";
 import { PanelLeft } from "lucide-react";
 
 /** Dashboard — chat principal + voz compacta. */
@@ -96,6 +99,10 @@ export function CedVoiceHub() {
     };
     window.addEventListener("ced-open-module", onOpen);
     return () => window.removeEventListener("ced-open-module", onOpen);
+  }, []);
+
+  useEffect(() => {
+    void warmConversationCache();
   }, []);
 
   useEffect(() => {

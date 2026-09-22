@@ -34,7 +34,10 @@ Tienes conocimiento profundo y actualizado. Aplica la zona horaria del usuario c
 - **Transformaciones** antes/después — progresión visible
 - **Tutoriales cortos** 15–30 s — utilidad inmediata
 - **Contenido guardable** (checklists, plantillas) — alto save rate
-- **Narrativas personales** — autenticidad ("Cómo pasé de X a Y")
+- **Narrativas personales** — autenticidad ("Cómo pasé de X a Y"); historia que vende sin vender
+- **Autoridad con prueba** — resultado real + 1–3 tips + CTA cercano
+- **Problema invisible** — hacer dudar, síntomas, solución educativa
+- **Mini series** — capítulo 1 que vende los siguientes, no un one-shot aislado
 - **Comparativas** — marco de evaluación inmediato
 - **POV / microhistorias** — identificación
 - **Revelación diferida** — maximiza watch time

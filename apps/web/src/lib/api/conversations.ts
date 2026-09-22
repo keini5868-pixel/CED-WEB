@@ -3,6 +3,9 @@ import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 /** sessionStorage: el dashboard abre este hilo al cargar. */
 export const CED_RESUME_CONVERSATION_KEY = "ced-resume-conversation";
 
+const LIST_CACHE_KEY = "ced-chat-list-cache";
+const MSG_CACHE_PREFIX = "ced-chat-msgs:";
+
 export type ConversationRow = {
   id: string;
   title: string;
@@ -11,6 +14,7 @@ export type ConversationRow = {
   updated_at: string;
   preview?: string;
   message_count?: number;
+  messages?: ConversationMessage[];
 };
 
 export type ConversationMessage = {
@@ -24,6 +28,7 @@ export type ListConversationsOptions = {
   limit?: number;
   channel?: "voice" | "text" | "";
   q?: string;
+  includeMessages?: boolean;
 };
 
 export class ConversationsApiError extends Error {
@@ -35,6 +40,79 @@ export class ConversationsApiError extends Error {
   }
 }
 
+let memList: ConversationRow[] | null = null;
+const memMsgs = new Map<string, ConversationMessage[]>();
+
+function stripMessages(row: ConversationRow): ConversationRow {
+  const { messages: _ignored, ...rest } = row;
+  return rest;
+}
+
+function readSession<T>(key: string): T | null {
+  try {
+    const raw = sessionStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+function writeSession(key: string, value: unknown): void {
+  try {
+    sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* quota */
+  }
+}
+
+export function peekCachedConversations(): ConversationRow[] | null {
+  if (memList && memList.length > 0) return memList;
+  const stored = readSession<ConversationRow[]>(LIST_CACHE_KEY);
+  if (stored && Array.isArray(stored) && stored.length > 0) {
+    memList = stored;
+    return stored;
+  }
+  return memList;
+}
+
+export function peekCachedMessages(
+  conversationId: string,
+): ConversationMessage[] | null {
+  const id = conversationId.trim();
+  if (!id) return null;
+  const hit = memMsgs.get(id);
+  if (hit) return hit;
+  const stored = readSession<ConversationMessage[]>(MSG_CACHE_PREFIX + id);
+  if (stored && Array.isArray(stored)) {
+    memMsgs.set(id, stored);
+    return stored;
+  }
+  return null;
+}
+
+export function rememberConversationMessages(
+  conversationId: string,
+  messages: ConversationMessage[],
+): void {
+  const id = conversationId.trim();
+  if (!id) return;
+  const clipped = messages.slice(-80);
+  memMsgs.set(id, clipped);
+  writeSession(MSG_CACHE_PREFIX + id, clipped);
+}
+
+function rememberList(rows: ConversationRow[]): void {
+  const slim = rows.map(stripMessages);
+  memList = slim;
+  writeSession(LIST_CACHE_KEY, slim);
+  for (const row of rows) {
+    if (row.messages && row.messages.length > 0) {
+      rememberConversationMessages(row.id, row.messages);
+    }
+  }
+}
+
 export async function listConversations(
   options: ListConversationsOptions = {},
 ): Promise<ConversationRow[]> {
@@ -42,6 +120,7 @@ export async function listConversations(
   if (options.limit) params.set("limit", String(options.limit));
   if (options.channel) params.set("channel", options.channel);
   if (options.q?.trim()) params.set("q", options.q.trim());
+  if (options.includeMessages) params.set("include_messages", "true");
   const qs = params.toString();
   const res = await proxyFetchAuthed(
     `conversations${qs ? `?${qs}` : ""}`,
@@ -55,22 +134,65 @@ export async function listConversations(
     throw new ConversationsApiError(detail, res.status);
   }
   const data = (await res.json()) as { conversations?: ConversationRow[] };
-  return data.conversations ?? [];
+  const rows = data.conversations ?? [];
+  rememberList(rows);
+  return rows;
+}
+
+export async function warmConversationCache(): Promise<void> {
+  if (peekCachedConversations()?.length) {
+    void listConversations({ limit: 40, includeMessages: true }).catch(() => {
+      /* keep cache */
+    });
+    return;
+  }
+  try {
+    await listConversations({ limit: 40, includeMessages: true });
+  } catch {
+    /* ignore */
+  }
+}
+
+function emptyConversation(id: string): ConversationRow {
+  return {
+    id,
+    title: "Conversación",
+    created_at: "",
+    updated_at: "",
+  };
 }
 
 export async function getConversationMessages(
   conversationId: string,
 ): Promise<{ messages: ConversationMessage[]; conversation: ConversationRow }> {
-  const res = await proxyFetchAuthed(
-    `conversations/${encodeURIComponent(conversationId)}/messages`,
-  );
-  if (!res.ok) {
-    throw new ConversationsApiError(
-      "No se pudo cargar la conversación.",
-      res.status,
+  const id = conversationId.trim();
+  const cached = peekCachedMessages(id);
+  try {
+    const res = await proxyFetchAuthed(
+      `conversations/${encodeURIComponent(id)}/messages`,
     );
+    if (!res.ok) {
+      return {
+        messages: cached ?? [],
+        conversation: emptyConversation(id),
+      };
+    }
+    const data = (await res.json()) as {
+      messages?: ConversationMessage[];
+      conversation?: ConversationRow;
+    };
+    const messages = data.messages ?? cached ?? [];
+    rememberConversationMessages(id, messages);
+    return {
+      messages,
+      conversation: data.conversation ?? emptyConversation(id),
+    };
+  } catch {
+    return {
+      messages: cached ?? [],
+      conversation: emptyConversation(id),
+    };
   }
-  return res.json();
 }
 
 export async function appendConversationMessage(

@@ -28,7 +28,25 @@ def test_wants_playbook_on_copy_and_campaigns():
     assert wants_sales_marketing_playbook("hazme un copy para vender Activise")
     assert wants_sales_marketing_playbook("estructura una campaña de Meta Ads")
     assert wants_sales_marketing_playbook("dame un hook para un Reel")
+    assert wants_sales_marketing_playbook("hazme un guion tipo historia que venda")
+    assert wants_sales_marketing_playbook("primer video de una mini serie")
     assert wants_sales_marketing_playbook("hola cómo estás") is False
+
+
+def test_playbook_has_reel_script_structures():
+    body = CED_SALES_MARKETING_PLAYBOOK.lower()
+    for token in (
+        "historia que vende",
+        "punto de quiebre",
+        "problema invisible",
+        "mini serie",
+        "5 hooks",
+        "3 hooks",
+        "no fuerces las 6",
+        "una pregunta",
+    ):
+        assert token in body
+    assert "¿quieres que use" in body or "estructura x" in body
 
 
 def test_terminology_always_in_expertise():
