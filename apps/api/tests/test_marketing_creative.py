@@ -159,3 +159,16 @@ def test_attachment_detects_typo_benefits_and_reference_image():
     assert resolved["style_mode"] == "edit"
     assert "TEXTOS EXACTOS" in resolved["internal_prompt"]
     assert "EN EL FONDO" not in resolved["display_label"]
+
+
+def test_publicity_budget_rewrite_is_not_a_creative():
+    msg = (
+        "Presupuesto de publicidad para Carolina Certific\n"
+        "1. INFRAESTRUCTURA. Inversión: $600 USD\n"
+        "2. GESTIÓN MENSUAL. Inversión Mensual: $550 USD\n"
+        "GENERA ESTO CON MEJOR EXTRUTURA TODO MEJOR ENUMERADO "
+        "Y EL NOMBRE ES PARA Carolina Exotic Fish"
+    )
+    assert is_marketing_creative_intent(msg) is False
+    assert is_image_creation_request(msg) is False
+    assert should_build_creative_brief(msg) is False

@@ -17,6 +17,7 @@ from app.services.retell_agent_setup import (
     _voice_temperature_for,
     _voice_volume_for,
     resolve_retell_voice_id,
+    retell_turn_taking_payload,
 )
 from app.services.retell_client import get_retell_client
 from app.services.retell_native_pilot import (
@@ -116,9 +117,7 @@ def ensure_native_staging_agent(
         "voice_speed": _voice_speed_for(voice_id),
         "voice_temperature": _voice_temperature_for(voice_id),
         "volume": _voice_volume_for(voice_id),
-        "responsiveness": 0.85,
-        "interruption_sensitivity": settings.retell_interruption_sensitivity,
-        "denoising_mode": settings.retell_denoising_mode,
+        **retell_turn_taking_payload(),
         "language": "es-419",
         "stt_mode": "accurate",
         "webhook_url": webhook,

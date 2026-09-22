@@ -38,6 +38,7 @@ from app.services.retell_custom_llm import (
     is_inaudible_or_noise,
     should_clear_pending_script,
     should_respond_to_transcript,
+    looks_incomplete_user_utterance,
     is_unwanted_voice_reply,
     promised_voice_search_without_result,
     web_search_hold_phrase,
@@ -205,14 +206,17 @@ def _normalize_user_key(text: str) -> str:
 
 
 def _debounce_wait_s(user_text: str) -> float:
+    """Espera STT final tras endpointing. Frases a medias esperan más."""
+    if looks_incomplete_user_utterance(user_text):
+        return 0.72
     words = len(user_text.split())
     if words <= 5:
-        return 0.06
+        return 0.42
     if words >= 20:
-        return 0.20
+        return 0.52
     if words >= 10:
-        return 0.14
-    return 0.10
+        return 0.48
+    return 0.45
 
 
 @router.get("/llm-websocket/active")

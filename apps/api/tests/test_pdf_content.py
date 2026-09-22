@@ -167,6 +167,59 @@ def test_store_pdf_memory_only_without_service_role(monkeypatch):
     assert "informe" in artifact.title.lower()
 
 
+def test_store_pdf_revise_keeps_source_and_forces_compose(monkeypatch):
+    source = (
+        "Presupuesto de publicidad para Carolina Certific\n"
+        "1. Fee único $600\n2. Mensual $550\n3. Pauta $200\n"
+        "TOTAL $1350"
+    )
+    captured: dict[str, str] = {}
+
+    def fake_compose(**kwargs):
+        captured["draft"] = kwargs.get("draft_content") or ""
+        captured["level"] = kwargs.get("detail_level") or ""
+        captured["request"] = kwargs.get("user_request") or ""
+        return (
+            "Presupuesto de publicidad — Carolina Exotic Fish\n"
+            "1. Infraestructura: $600\n2. Gestión mensual: $550\n"
+            "3. Campaña de lanzamiento: $200\nTotal inicial: $1,350"
+        )
+
+    fake_pdf = b"%PDF-1.4 " + (b"x" * 200)
+    monkeypatch.setattr("app.services.pdf_report.compose_pdf_body", fake_compose)
+    monkeypatch.setattr("app.services.supabase_db.save_pdf_artifact", lambda **_: True)
+    monkeypatch.setattr(
+        "app.services.supabase_db.get_pdf_artifact",
+        lambda file_id, user_id: (fake_pdf, "doc.pdf", "Presupuesto"),
+    )
+
+    artifact = store_pdf(
+        user_id="user-test",
+        title="Presupuesto de publicidad — Carolina Exotic Fish",
+        content=source,
+        user_request="GENERA ESTO CON MEJOR ESTRUCTURA. El nombre es Carolina Exotic Fish",
+        detail_level="revise",
+    )
+    assert artifact.file_id
+    assert captured["level"] == "revise"
+    assert "$600" in captured["draft"]
+    assert "Carolina Exotic Fish" in captured["request"]
+
+
+def test_compose_pdf_revise_prompt_keeps_source():
+    from app.services.pdf_report import _compose_pdf_prompt
+
+    prompt = _compose_pdf_prompt(
+        title="Presupuesto",
+        user_request="cámbiale el nombre a Carolina Exotic Fish",
+        draft_content="1. Fee $600\n2. Mensual $550",
+        detail_level="revise",
+    )
+    assert "MODO EDICIÓN" in prompt
+    assert "Fee $600" in prompt
+    assert "NO ignores el borrador" in prompt
+
+
 def test_dedupe_chat_reply_removes_exact_duplicate_halves():
     text = "Bloque A.\n\nBloque A."
     assert _dedupe_chat_reply(text) == "Bloque A."

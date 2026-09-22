@@ -122,7 +122,15 @@ def _compose_pdf_prompt(
         "\n".join(f"- {line}" for line in context_lines) if context_lines else "(sin contexto previo)"
     )
     level = (detail_level or "brief").strip().lower()
-    if level == "full":
+    draft_limit = 20_000 if level == "revise" else 900
+    if level == "revise":
+        length_rules = (
+            "- MODO EDICIÓN: reescribe el documento aplicando los cambios pedidos.\n"
+            "- Conserva cifras, precios, partidas, secciones y datos. NO resumas ni omitas ítems.\n"
+            "- Mejora enumeración, títulos y claridad. Cambia nombres/cliente si lo piden.\n"
+            "- Extensión: la que necesite el documento fuente (puede ser 400–1200 palabras)."
+        )
+    elif level == "full":
         length_rules = (
             "- Extensión: contenido COMPLETO y detallado (aprox. 500–900 palabras cuando el tema lo permita).\n"
             "- Desarrolla secciones con explicación útil; no rellenes con paja."
@@ -132,23 +140,32 @@ def _compose_pdf_prompt(
             "- Extensión: RESUMEN BREVE por defecto (aprox. 120–220 palabras).\n"
             "- Solo lo esencial: 3–6 puntos o secciones cortas. PROHIBIDO un tratado largo."
         )
+    if level == "revise":
+        extra_rules = (
+            "- El borrador ES el documento a editar: consérvalo y aplícale los cambios.\n"
+            "- NO ignores el borrador. NO lo resumas. NO lo sustituyas por un texto nuevo genérico."
+        )
+    else:
+        extra_rules = (
+            "- PROHIBIDO devolver solo el título o repetir la petición del usuario.\n"
+            "- Si el borrador/contexto habla de OTRO tema distinto a la petición actual, IGNÓRALO y redacta solo lo pedido ahora.\n"
+            "- PROHIBIDO pegar la respuesta anterior completa del chat; escribe contenido nuevo y completo sobre el tema pedido."
+        )
     return f"""Redacta el CONTENIDO de un documento PDF en español.
 
 Título del documento: {safe_title}
 
 Petición del usuario: {req}
 
-Borrador recibido (puede ser solo el título o la petición — NO lo copies tal cual):
-{draft[:900] if draft else "(vacío)"}
+{"Documento fuente a editar (consérvalo y aplícale los cambios pedidos):" if level == "revise" else "Borrador recibido (puede ser solo el título o la petición — NO lo copies tal cual):"}
+{draft[:draft_limit] if draft else "(vacío)"}
 
 Contexto de la conversación:
 {context_block}
 
 INSTRUCCIONES:
 - Entrega el documento que el usuario pidió (consejos, resumen, guía, listado, análisis, etc.).
-- PROHIBIDO devolver solo el título o repetir la petición del usuario.
-- Si el borrador/contexto habla de OTRO tema distinto a la petición actual, IGNÓRALO y redacta solo lo pedido ahora.
-- PROHIBIDO pegar la respuesta anterior completa del chat; escribe contenido nuevo y completo sobre el tema pedido.
+{extra_rules}
 - Si piden consejos de "El Alquimista", escribe consejos reales inspirados en la obra de Paulo Coelho (Leyenda Personal, señales, miedo, viaje, tesoro, etc.).
 - Usa secciones numeradas o viñetas cuando ayude.
 {length_rules}
@@ -174,7 +191,7 @@ def _compose_pdf_body_cloud_fallback(prompt: str, *, detail_level: str = "brief"
     """Gemini/Claude cuando la composición directa con Gemini falla."""
     from app.services.cloud_llm_fallback import chat_cloud_reply
 
-    max_tokens = 4096 if (detail_level or "").lower() == "full" else 1200
+    max_tokens = 4096 if (detail_level or "").lower() in ("full", "revise") else 1200
     try:
         text = chat_cloud_reply(
             system=(
@@ -217,9 +234,9 @@ def compose_pdf_body(
         context_snippets=context_snippets,
         detail_level=level,
     )
-    max_tokens = 4096 if level == "full" else 1800
+    max_tokens = 4096 if level in ("full", "revise") else 1800
     # brief: suficiente para no cortar a mitad si hubo eco residual del borrador.
-    compose_timeout = PDF_COMPOSE_TIMEOUT_SEC if level == "full" else min(PDF_COMPOSE_TIMEOUT_SEC, 12.0)
+    compose_timeout = PDF_COMPOSE_TIMEOUT_SEC if level in ("full", "revise") else min(PDF_COMPOSE_TIMEOUT_SEC, 12.0)
     def _call_gemini() -> str:
         from google import genai
         from google.genai import types
@@ -432,10 +449,12 @@ def store_pdf(
         context.append(req)
 
     # Si el usuario pidió un tema nuevo corto, no alimentar compose con el
-    # monólogo anterior completo como "borrador".
+    # monólogo anterior completo como "borrador". En revisión hay que CONSERVAR
+    # el documento fuente aunque la instrucción sea corta ("cámbiale el nombre").
     draft_for_compose = raw_body or resolved
     if (
-        req
+        level != "revise"
+        and req
         and draft_for_compose
         and len(req) < 120
         and len(draft_for_compose) > 200
@@ -444,7 +463,10 @@ def store_pdf(
         draft_for_compose = req
 
     composed_ok = False
-    if pdf_content_needs_composition(safe_title, resolved, user_request=req):
+    needs_compose = level == "revise" or pdf_content_needs_composition(
+        safe_title, resolved, user_request=req
+    )
+    if needs_compose:
         composed = compose_pdf_body(
             title=safe_title,
             user_request=req,

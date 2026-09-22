@@ -153,7 +153,12 @@ export class CedRetellClient {
   }
 
   private maybeBargeIn(): void {
-    // Retell gestiona interrupciones en servidor; silenciar aquí cortaba el audio a medias.
+    // Claude-like: si el usuario empieza a hablar, CED se calla al instante.
+    // Retell corta el TTS en servidor; el mute local evita el solape audible.
+    if (this.youtubeMediaMode) return;
+    if (!this.agentSpeaking) return;
+    this.muteAgentPlayback();
+    this.callbacks.onClearAgentPartial?.();
   }
 
   private stopAudioRetry(): void {
@@ -383,8 +388,8 @@ export class CedRetellClient {
 
       const userText = this.latestLine(lines, "user");
       if (userText && userText !== this.pendingUserText) {
-        this.maybeBargeIn();
         if (update.turntaking === "user_turn") {
+          this.maybeBargeIn();
           this.scheduleUserTranscript(userText);
         }
       }

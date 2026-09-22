@@ -38,8 +38,10 @@ import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
 import {
   getConversationMessages,
+  peekCachedConversations,
   peekCachedMessages,
   rememberConversationMessages,
+  VOICE_THREAD_RESUME_NOTE,
 } from "@/lib/api/conversations";
 
 type CedTextChatPanelProps = {
@@ -486,18 +488,38 @@ export function CedTextChatPanel({
       return;
     }
     const id = resumeConversationId.trim();
-    const applyMapped = (raw: { id?: string; role: string; content: string; created_at: string }[]) => {
+    const applyMapped = (
+      raw: { id?: string; role: string; content: string; created_at: string }[],
+      channel?: string,
+    ) => {
       const mapped: ChatMessage[] = raw.map((m) => ({
         id: m.id,
         role: m.role === "user" ? "user" : "model",
         content: coerceDisplayText(m.content),
         created_at: m.created_at,
       }));
+      const fromVoice =
+        channel === "voice" ||
+        peekCachedConversations()?.some((c) => c.id === id && c.channel === "voice");
+      const alreadyNoted = mapped.some((m) =>
+        (m.content || "").includes("conversación de voz"),
+      );
+      const next =
+        fromVoice && mapped.length > 0 && !alreadyNoted
+          ? [
+              {
+                role: "model" as const,
+                content: VOICE_THREAD_RESUME_NOTE,
+                created_at: mapped[0]?.created_at || new Date().toISOString(),
+              },
+              ...mapped,
+            ]
+          : mapped;
       setConversationId(id);
       resumeLockRef.current = true;
       setMessages(
-        mapped.length > 0
-          ? mapped
+        next.length > 0
+          ? next
           : [
               {
                 role: "model",
@@ -517,7 +539,7 @@ export function CedTextChatPanel({
       try {
         const data = await getConversationMessages(id);
         if (cancelled) return;
-        applyMapped(data.messages || []);
+        applyMapped(data.messages || [], data.conversation?.channel);
         rememberConversationMessages(id, data.messages || []);
       } catch {
         if (!cancelled && !(cached && cached.length > 0)) {

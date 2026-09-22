@@ -17,7 +17,7 @@ import {
   type OpportunitySummary,
 } from "@/lib/api/opportunitiesPilot";
 import type { ModulePanelProps } from "@/modules/types";
-import { consumeOppsGuide } from "@/lib/hud/chrome-events";
+import { consumeOppsGuide, startFitlineGuideFromHud } from "@/lib/hud/chrome-events";
 
 function SectionBlock({
   title,
@@ -112,10 +112,12 @@ function DetailView({
   detail,
   onBack,
   highlightSignup = false,
+  highlightGuide = false,
 }: {
   detail: OpportunityDetail;
   onBack: () => void;
   highlightSignup?: boolean;
+  highlightGuide?: boolean;
 }) {
   const sponsor = detail.sponsorship;
   const [sponsorInfo, setSponsorInfo] = useState<FitlineSponsorInfo | null>(
@@ -132,6 +134,7 @@ function DetailView({
   const [sponsorDraft, setSponsorDraft] = useState("");
   const [sponsorBusy, setSponsorBusy] = useState(false);
   const [sponsorMsg, setSponsorMsg] = useState<string | null>(null);
+  const [sponsorChecked, setSponsorChecked] = useState(false);
   const [editingLink, setEditingLink] = useState(false);
   const [plan, setPlan] = useState<FitlineActionPlan | null>(
     detail.action_plan ?? null,
@@ -150,6 +153,17 @@ function DetailView({
         .catch(() => undefined);
     }
   }, [detail.action_plan]);
+
+  useEffect(() => {
+    if (!highlightGuide) return;
+    const timer = window.setTimeout(() => {
+      document.getElementById("opps-guide")?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [highlightGuide, detail.id]);
 
   useEffect(() => {
     if (!highlightSignup) return;
@@ -258,6 +272,30 @@ function DetailView({
       ) : null}
 
       <section
+        id="opps-guide"
+        className={`rounded-xl border px-4 py-3.5 ${
+          highlightGuide
+            ? "border-cyan-400 bg-cyan-500/15 ring-2 ring-cyan-400/60"
+            : "border-white/10 bg-black/25"
+        }`}
+      >
+        <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.08em] text-cyan-200">
+          Soy nuevo
+        </h3>
+        <p className="mb-3 text-[13px] leading-relaxed text-slate-400">
+          CED te explica el negocio en tres bloques: empresa y productos, cómo se
+          gana, y cómo empezar. Un paso a la vez.
+        </p>
+        <button
+          type="button"
+          onClick={() => startFitlineGuideFromHud()}
+          className="inline-flex w-full items-center justify-center rounded-xl border border-cyan-500/50 bg-cyan-500/15 px-4 py-2.5 text-sm font-semibold text-cyan-100 hover:bg-cyan-500/25"
+        >
+          Soy nuevo, guíame
+        </button>
+      </section>
+
+      <section
         id="opps-signup"
         className={`rounded-xl border px-4 py-3.5 ${
           highlightSignup
@@ -270,11 +308,33 @@ function DetailView({
         </h3>
         {configured && activeUrl ? (
           <div className="space-y-2">
+            <p className="text-[12px] leading-relaxed text-slate-400">
+              En el registro, confirma que el nombre o ID del patrocinador es
+              quien te presentó la oportunidad. CED no pega el enlace en el chat:
+              entra por este botón.
+            </p>
+            <label className="flex items-start gap-2 text-[12px] text-slate-300">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={sponsorChecked}
+                onChange={(e) => setSponsorChecked(e.target.checked)}
+              />
+              Voy a verificar el patrocinador antes de continuar.
+            </label>
             <a
-              href={activeUrl}
+              href={sponsorChecked ? activeUrl : undefined}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-cyan-600/90 px-4 py-3 text-sm font-semibold text-white hover:bg-cyan-500"
+              aria-disabled={!sponsorChecked}
+              onClick={(e) => {
+                if (!sponsorChecked) e.preventDefault();
+              }}
+              className={`inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold ${
+                sponsorChecked
+                  ? "bg-cyan-600/90 text-white hover:bg-cyan-500"
+                  : "cursor-not-allowed bg-cyan-900/40 text-white/40"
+              }`}
             >
               {sponsorInfo?.cta_label ||
                 sponsor?.cta_label ||
@@ -306,7 +366,8 @@ function DetailView({
         )}
         {usingOwn ? (
           <p className="mt-2 text-[11px] text-emerald-300/90">
-            Estás usando tu propio enlace de patrocinio.
+            Estás usando tu propio enlace de patrocinio. El equipo de referidos
+            está en Cuenta.
           </p>
         ) : sponsorInfo?.has_default ? (
           <p className="mt-2 text-[11px] text-slate-500">
@@ -436,6 +497,7 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<OpportunityDetail | null>(null);
   const [highlightSignup, setHighlightSignup] = useState(false);
+  const [highlightGuide, setHighlightGuide] = useState(false);
 
   useEffect(() => {
     void fetchOpportunitiesPilotStatus().then((s) =>
@@ -465,6 +527,7 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
     const guide = consumeOppsGuide();
     if (!guide) return;
     setHighlightSignup(guide.highlight === "signup");
+    setHighlightGuide(guide.highlight === "guide");
     void openDetail(guide.opportunity_id || "fitline_pm");
   }, [openDetail]);
 
@@ -482,6 +545,16 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
               </p>
             ) : null}
             {error ? <p className="text-sm text-red-400">{error}</p> : null}
+            <button
+              type="button"
+              onClick={() => startFitlineGuideFromHud()}
+              className="w-full rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-3 text-left text-sm text-cyan-100 hover:bg-cyan-500/20"
+            >
+              <span className="font-semibold">Soy nuevo, guíame</span>
+              <span className="mt-1 block text-[13px] text-slate-400">
+                Mentor paso a paso: empresa, cómo se gana, cómo empezar.
+              </span>
+            </button>
             <ul className="space-y-3">
               {catalog.map((item) => (
                 <li key={item.id}>
@@ -516,8 +589,10 @@ export function OpportunitiesModuleContent(_props: ModulePanelProps) {
               onBack={() => {
                 setDetail(null);
                 setHighlightSignup(false);
+                setHighlightGuide(false);
               }}
               highlightSignup={highlightSignup}
+              highlightGuide={highlightGuide}
             />
           </>
         )}

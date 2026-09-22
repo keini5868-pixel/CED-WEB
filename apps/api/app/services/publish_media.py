@@ -64,6 +64,17 @@ def _save_image_file(user_id: str, image_bytes: bytes, mime: str) -> str:
     file_name = f"{user_id[:8]}_{uuid.uuid4().hex}.{ext}"
     path = _ensure_dir() / file_name
     path.write_bytes(image_bytes)
+    try:
+        from app.services.supabase_db import save_image_blob
+
+        save_image_blob(
+            file_name=file_name,
+            user_id=user_id,
+            mime=mime,
+            image_bytes=image_bytes,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("[MEDIA] no se persistió blob remoto file=%s", file_name[:24])
     return file_name
 
 
@@ -180,4 +191,20 @@ def media_file_path(file_name: str) -> Path | None:
     if not re.fullmatch(r"[A-Za-z0-9-]{8}_[A-Fa-f0-9]{32}\.(jpg|jpeg|png|webp|gif)", file_name, re.I):
         return None
     path = _ensure_dir() / file_name
+    if path.is_file():
+        return path
+    try:
+        from app.services.supabase_db import get_image_blob
+
+        blob = get_image_blob(file_name)
+    except Exception:  # noqa: BLE001
+        blob = None
+    if not blob:
+        return None
+    raw, _mime = blob
+    try:
+        path.write_bytes(raw)
+    except Exception:  # noqa: BLE001
+        logger.warning("[MEDIA] no se pudo cachear blob en disco %s", file_name[:24])
+        return None
     return path if path.is_file() else None

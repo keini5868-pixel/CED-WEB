@@ -158,6 +158,51 @@ def test_resolve_pdf_skips_filler_assistant_closing():
     assert "algo más" not in body.lower()
 
 
+_CAROLINA_BUDGET = """
+Presupuesto de publicidad para Carolina Certific
+1. INFRAESTRUCTURA Y CONFIGURACIÓN INICIAL (FEE ÚNICO)
+Creación y optimización de Fan Page. Inversión: $600.00 USD
+2. ESTRATEGIA DE GESTIÓN MENSUAL
+Sistema SEC, 3 publicaciones semanales. Inversión Mensual: $550.00 USD
+3. CAMPAÑA DE LANZAMIENTO
+Meta Ads. Inversión Sugerida: $200.00 USD
+TOTAL INICIAL: $1,350.00 USD
+GENERA ESTO CON MEJOR EXTRUTURA TODO MEJOR ENUMERADO Y EL NOMBRE NO ES ESE EL NOMBRE ES PARA Carolina Exotic Fish
+"""
+
+
+def test_budget_revision_is_pdf_not_image():
+    from app.services.chat_intents import is_pdf_revision_intent
+    from app.services.marketing_creative import (
+        is_image_creation_request,
+        is_marketing_creative_intent,
+    )
+
+    msg = _CAROLINA_BUDGET.strip()
+    assert is_pdf_revision_intent(msg)
+    assert is_pdf_intent(msg)
+    assert not is_generate_image_intent(msg)
+    assert not is_marketing_creative_intent(msg)
+    assert not is_image_creation_request(msg)
+    req = resolve_pdf_request(msg, [])
+    assert req is not None
+    title, body = req
+    assert "Carolina Exotic Fish" in title
+    assert "$550" in body
+    assert "Carolina Exotic Fish" in body
+    from app.services.chat_image_generation import should_take_direct_image_path
+
+    assert should_take_direct_image_path(msg, []) is False
+
+
+def test_edita_el_pdf_is_revision_intent():
+    from app.services.chat_intents import is_pdf_revision_intent
+
+    assert is_pdf_revision_intent("edita el pdf y pon mejor estructura")
+    assert is_pdf_intent("edita el pdf y cámbiale el nombre")
+    assert is_pdf_intent("mejora el documento con mejor enumerado")
+
+
 def test_pdf_success_message_mentions_historial():
     from app.services.text_chat import _normalize_pdf_tool_reply, _pdf_success_message
 

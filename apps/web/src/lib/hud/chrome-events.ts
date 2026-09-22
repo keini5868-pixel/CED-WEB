@@ -64,24 +64,36 @@ export function applyCedOpenModule(
   });
 }
 
+export const FITLINE_GUIDE_SEED =
+  "modo guía: soy nuevo en FitLine, guíame desde cero";
+
+export const CED_FITLINE_GUIDE_START_EVENT = "ced-fitline-guide-start";
+
+export function startFitlineGuideFromHud(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(CED_FITLINE_GUIDE_START_EVENT));
+}
+
 export const FITLINE_ENROLL_OPEN_MODULE = {
   module: "opportunities",
   opportunity_id: "fitline_pm",
   highlight: "signup",
 } as const;
 
-/** Pedido EXPLÍCITO de enlace PM / abrir OPPS — no cualquier mención de «enlace». */
+/** Pedido EXPLÍCITO de enlace PM / abrir OPPS — no copy, guion ni idea de contenido. */
 export function wantsFitlineEnrollOpen(text: string): boolean {
   const t = (text || "").trim();
   if (t.length < 4) return false;
-  if (/(?:https?:\/\/)?(?:www\.)?pm-international\.com/i.test(t)) return true;
-  if (
+  const creative =
+    /\b(?:gui[oó]n(?:es)?|guion(?:es)?|copy|copies|hook|gancho|reel|reels|caption|prompt|prompts|idea(?:s)?\s+de\s+(?:contenido|video|publicaci[oó]n)|secuencia\s+de\s+prospecci[oó]n)\b/i.test(
+      t,
+    );
+  const abreOpps =
     /\b(?:puedes?|puedo|me\s+puedes?|podr[ií]as?)?\s*(?:abrir|abre(?:me)?|open)\s+(?:el\s+)?(?:m[oó]dulo\s+(?:de\s+)?|panel\s+(?:de\s+)?)?(?:opps|oportunidades)\b/i.test(
       t,
-    )
-  ) {
-    return true;
-  }
+    );
+  if (/(?:https?:\/\/)?(?:www\.)?pm-international\.com/i.test(t)) return true;
+  if (abreOpps) return true;
   const hasLink =
     /\b(?:enlace|link|url|liga|hiperv[ií]nculo|p[aá]gina\s+web|sitio\s+web|web\s+oficial)\b/i.test(
       t,
@@ -106,11 +118,12 @@ export function wantsFitlineEnrollOpen(text: string): boolean {
     /\b(?:verificaci[oó]n|confirmar?\s+(?:el\s+)?correo|whatsapp|youtube|zoom|contrase[nñ]a|password)\b/i.test(
       t,
     );
+  if (creative && !hasLink && !linkOfPm && !abreOpps) return false;
   if (notSignupLink && !signup) return false;
   if (linkOfPm) return true;
   if (hasLink && signup) return true;
   if (hasLink && branded && asked) return true;
-  if (signup && branded) return true;
+  if (signup && branded && !creative) return true;
   return false;
 }
 

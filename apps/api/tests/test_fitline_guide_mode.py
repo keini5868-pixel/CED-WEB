@@ -69,6 +69,7 @@ def test_opt_out_blocks_auto_reentry(monkeypatch):
 
 def test_activate_phrases():
     assert is_guide_activate_phrase("modo guía")
+    assert is_guide_activate_phrase("soy nuevo, guíame")
     assert is_guide_activate_phrase("explícame cómo funciona esto desde cero")
     assert is_guide_activate_phrase("soy nuevo, guíame")
     assert is_guide_activate_phrase("enséñame el negocio desde cero")

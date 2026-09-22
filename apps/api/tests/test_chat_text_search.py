@@ -96,6 +96,7 @@ def test_chat_detects_permission_ask_as_failed_search():
         "ángulo específico (inversión, contenido sobre el token, estrategia comercial)?"
     )
     assert _promised_web_search_without_tool(stall)
+    assert _promised_web_search_without_tool("¿Desea que lo busque ahora?")
     from app.services.text_chat import _is_web_search_followup, _needs_chat_tools
 
     history = [{"role": "model", "content": stall}]
@@ -103,6 +104,16 @@ def test_chat_detects_permission_ask_as_failed_search():
     assert _is_web_search_followup("ok", history)
     assert _needs_chat_tools("analiza el token nosana") is True
     assert _needs_chat_tools("naliza el token nosana") is True
+
+
+def test_voice_thread_can_continue_as_text():
+    from app.services.text_chat import conversation_allows_text_continue
+
+    assert conversation_allows_text_continue({"id": "x", "channel": "voice"})
+    assert conversation_allows_text_continue({"id": "x", "channel": "text"})
+    assert conversation_allows_text_continue({"id": "x", "channel": "mixed"})
+    assert not conversation_allows_text_continue(None)
+    assert not conversation_allows_text_continue({"id": "x", "channel": "whatsapp"})
 
 
 def test_live_market_query_is_not_bare_news():

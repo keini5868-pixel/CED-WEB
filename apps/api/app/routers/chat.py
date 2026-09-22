@@ -68,7 +68,11 @@ def get_text_messages(
 ) -> dict:
     try:
         conv = supabase_db.get_conversation(conversation_id, user_id)
-        if not conv or conv.get("channel") != "text":
+        if not conv:
+            raise HTTPException(status_code=404, detail="Conversación no encontrada.")
+        from app.services.text_chat import conversation_allows_text_continue
+
+        if not conversation_allows_text_continue(conv):
             raise HTTPException(status_code=404, detail="Conversación no encontrada.")
         messages = supabase_db.get_conversation_messages(conversation_id, user_id)
         return {"messages": messages, "conversation": conv}

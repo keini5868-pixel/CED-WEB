@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
@@ -41,11 +41,20 @@ def upload_publish_image(
         return {"ok": False, "error": f"No se pudo subir la imagen: {exc}"}
 
 
-@router.get("/publish/{file_name}")
-def serve_publish_media(file_name: str) -> FileResponse:
+@router.get("/publish/{file_name}", response_model=None)
+def serve_publish_media(file_name: str) -> FileResponse | Response:
     path: Path | None = media_file_path(file_name)
-    if not path:
+    if path:
+        ext = path.suffix.lower()
+        media_type = _MIME.get(ext, "application/octet-stream")
+        return FileResponse(path, media_type=media_type)
+    try:
+        from app.services.supabase_db import get_image_blob
+
+        blob = get_image_blob(file_name)
+    except Exception:  # noqa: BLE001
+        blob = None
+    if not blob:
         raise HTTPException(status_code=404, detail="Imagen no encontrada")
-    ext = path.suffix.lower()
-    media_type = _MIME.get(ext, "application/octet-stream")
-    return FileResponse(path, media_type=media_type)
+    raw, mime = blob
+    return Response(content=raw, media_type=mime or "image/jpeg")

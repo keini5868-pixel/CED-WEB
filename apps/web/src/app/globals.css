@@ -389,13 +389,17 @@ body:has(.ced-studio-shell) {
 
 .ced-composer-actions {
   gap: 0.2rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ced-composer-actions button {
-  height: 2rem;
-  width: 2rem;
-  min-height: 2rem;
-  min-width: 2rem;
+  height: 2.75rem;
+  width: 2.75rem;
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+  touch-action: manipulation;
 }
 
 .ced-composer-actions button svg {

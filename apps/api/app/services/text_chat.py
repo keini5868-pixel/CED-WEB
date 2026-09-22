@@ -444,7 +444,9 @@ IMPORTANTE — cerebro híbrido CED:
 - Si te falta dato actual o no estás seguro: invoca search_web — no te quedes corto ni hagas un cuestionario.
 - Pregunta factual sobre un token, empresa, precio, noticia o activo: search_web YA y entrega el resumen.
   PROHIBIDO preguntar si es lead, contenido, estrategia o «algo del sistema».
-  PROHIBIDO pedir permiso («¿quiere que busque?»). PROHIBIDO decir que está en memoria si no invocaste recall_memory.
+  PROHIBIDO pedir permiso («¿quiere que busque?», «¿desea que lo busque?», «¿hay un ángulo específico?»).
+  PROHIBIDO fillers («déjame consultar», «voy a buscar y le aviso», «consultando internet») sin invocar search_web en el mismo turno.
+  PROHIBIDO decir que está en memoria si no invocaste recall_memory.
 - Sistema avanzado: si el contexto indica confirmación pendiente, pregunta antes de profundizar.
 - NUNCA incluyas en tu respuesta al usuario el texto del bloque "Conocimiento interno CED" ni líneas tipo "- [Marketing digital] ...".
   Úsalo SOLO como contexto interno para generar respuestas naturales, útiles y en tus propias palabras.
@@ -1153,6 +1155,8 @@ def _promised_web_search_without_tool(text: str) -> bool:
     if re.search(
         r"(?i)("
         r"quiere que busque|"
+        r"desea que (?:lo |la |le )?busque|"
+        r"le busco (?:eso|eso en)|"
         r"busco (?:eso|eso ahora)|"
         r"[aá]ngulo espec[ií]fico|"
         r"estrategia,? un lead|"
@@ -1647,7 +1651,20 @@ class TextChatError(ValueError):
     def __init__(self, message: str, *, http_status: int = 400) -> None:
         super().__init__(message)
         self.http_status = http_status
-    pass
+
+
+def conversation_allows_text_continue(conv: dict[str, Any] | None) -> bool:
+    """Un hilo de voz se puede seguir por texto (mismo id; no rehidrata Retell)."""
+    if not conv:
+        return False
+    channel = str(conv.get("channel") or "text").strip().lower()
+    return channel in {"text", "voice", "mixed"}
+
+
+def _require_owned_chat_thread(conv: dict[str, Any] | None) -> dict[str, Any]:
+    if not conversation_allows_text_continue(conv):
+        raise TextChatError("Conversación no encontrada.", http_status=404)
+    return conv or {}
 
 
 def _message_limit_for_user(user_id: str) -> int:
@@ -1721,8 +1738,7 @@ def end_text_conversation(user_id: str, conversation_id: str) -> dict[str, Any]:
         raise TextChatError("conversation_id requerido.", http_status=400)
 
     conv = supabase_db.get_conversation(cid, user_id)
-    if not conv or conv.get("channel") != "text":
-        raise TextChatError("Conversación no encontrada.", http_status=404)
+    _require_owned_chat_thread(conv)
 
     msgs = supabase_db.get_conversation_messages(cid, user_id, limit=80)
     user_turns = sum(1 for m in msgs if str(m.get("role") or "") == "user")
@@ -2810,8 +2826,7 @@ def send_message(
 
     if conversation_id:
         conv = supabase_db.get_conversation(conversation_id, user_id)
-        if not conv or conv.get("channel") != "text":
-            raise TextChatError("Conversación no encontrada.")
+        _require_owned_chat_thread(conv)
     else:
         title_source = text or (
             f"PDF: {inbound_pdf.filename}" if inbound_pdf else "Imagen adjunta"
@@ -3566,8 +3581,7 @@ def _load_stream_conversation(
 ) -> tuple[str, list[dict[str, Any]]]:
     if conversation_id:
         conv = supabase_db.get_conversation(conversation_id, user_id)
-        if not conv or conv.get("channel") != "text":
-            raise TextChatError("Conversación no encontrada.")
+        _require_owned_chat_thread(conv)
         history = supabase_db.get_conversation_messages(
             conversation_id,
             user_id,

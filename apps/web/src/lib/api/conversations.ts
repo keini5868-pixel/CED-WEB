@@ -3,6 +3,9 @@ import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 /** sessionStorage: el dashboard abre este hilo al cargar. */
 export const CED_RESUME_CONVERSATION_KEY = "ced-resume-conversation";
 
+export const VOICE_THREAD_RESUME_NOTE =
+  "Esto fue una conversación de voz. Puedes seguir aquí por texto; el micrófono no se reabre solo.";
+
 const LIST_CACHE_KEY = "ced-chat-list-cache";
 const MSG_CACHE_PREFIX = "ced-chat-msgs:";
 

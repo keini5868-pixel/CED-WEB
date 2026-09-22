@@ -36,3 +36,5 @@ También aplica a cualquier usuario que conecte sus redes sociales a CED: puede 
 Compact source y demo Lace ya están en el repo. Kill-switch `CED_SHIELD_ENABLED` apagado en producción. Pedimos seed + acceso al equipo Compact para la tx real en preprod (Wave 2).
 
 Kill-switch: `CED_SHIELD_ENABLED=false` (default). Fallo de Midnight ≠ fallo de voz.
+
+**Después de Wave 2 (no en este grant):** cajón HUD Mesa (Kraken curado, identificado) | Midnight (este sello ZK). No se vende compra-en-exchange como privada. Spec: `MARKETS_RAILS.md`.

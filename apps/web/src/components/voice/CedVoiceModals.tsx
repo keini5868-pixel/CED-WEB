@@ -138,6 +138,13 @@ export function CedSettingsModal({
     >
       <div className="max-h-[min(62vh,520px)] space-y-4 overflow-y-auto overscroll-y-contain pr-1 [-webkit-overflow-scrolling:touch]">
         <ThemeAppearanceToggle />
+        <p className="rounded border border-cyan-900/50 bg-[#0a0a0a] px-3 py-2 text-[11px] leading-relaxed text-[#aaaaaa]">
+          <span className="font-semibold text-cyan-200">Jarvis</span> es la voz
+          de CED en este HUD.{" "}
+          <span className="font-semibold text-cyan-200">Shield / Midnight</span>{" "}
+          es un sello ZK aparte: no forma parte de la sesión de voz y sigue
+          apagado en producción.
+        </p>
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
@@ -641,7 +648,8 @@ export function CedHistoryPanel({
         {tab === "images" ? (
           images.length === 0 ? (
             <p className="ced-hud-text-muted rounded border border-cyan-900/50 bg-[#0a0a0a] p-3 text-xs">
-              Sin imágenes aún. Pide a CED una foto o un creativo.
+              Sin imágenes aún. Pide a CED una foto o un creativo. Las nuevas se
+              guardan para que no desaparezcan al redesplegar.
             </p>
           ) : (
             <ul className="grid grid-cols-2 gap-2">

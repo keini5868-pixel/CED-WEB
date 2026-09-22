@@ -38,8 +38,10 @@ import {
 import { CedStudioSidebar } from "@/components/hud/CedStudioSidebar";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import {
+  CED_FITLINE_GUIDE_START_EVENT,
   CED_OPEN_HISTORY_EVENT,
   CED_OPEN_SETTINGS_EVENT,
+  FITLINE_GUIDE_SEED,
 } from "@/lib/hud/chrome-events";
 import { registerPresenterCloser } from "@/lib/voice/presenterCloseBus";
 import {
@@ -50,6 +52,7 @@ import {
   CED_RESUME_CONVERSATION_KEY,
   warmConversationCache,
 } from "@/lib/api/conversations";
+import { CedHudTour } from "@/components/hud/CedHudTour";
 import { PanelLeft } from "lucide-react";
 
 /** Dashboard — chat principal + voz compacta. */
@@ -98,7 +101,15 @@ export function CedVoiceHub() {
       }
     };
     window.addEventListener("ced-open-module", onOpen);
-    return () => window.removeEventListener("ced-open-module", onOpen);
+    const onGuide = () => {
+      setWorkspace("chat");
+      setChatSeedPrompt(FITLINE_GUIDE_SEED);
+    };
+    window.addEventListener(CED_FITLINE_GUIDE_START_EVENT, onGuide);
+    return () => {
+      window.removeEventListener("ced-open-module", onOpen);
+      window.removeEventListener(CED_FITLINE_GUIDE_START_EVENT, onGuide);
+    };
   }, []);
 
   useEffect(() => {
@@ -666,6 +677,7 @@ export function CedVoiceHub() {
       />
     </div>
 
+      <CedHudTour />
       <CedStopConfirmModal
         open={voice.stopConfirmOpen}
         onClose={() => voice.setStopConfirmOpen(false)}

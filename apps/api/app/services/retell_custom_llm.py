@@ -93,6 +93,91 @@ _GENERIC_AGENT_LINES = frozenset(
 
 _ACK_ONLY = frozenset({"ok", "okay", "sí", "si", "vale", "bien", "yes", "news", "noticias"})
 
+# Última palabra de un turno que aún no cerró (pausa al respirar, no fin de idea).
+_INCOMPLETE_TAIL_WORDS = frozenset(
+    {
+        "y",
+        "e",
+        "o",
+        "u",
+        "de",
+        "del",
+        "al",
+        "a",
+        "en",
+        "con",
+        "por",
+        "para",
+        "que",
+        "porque",
+        "pero",
+        "entonces",
+        "como",
+        "cuando",
+        "donde",
+        "este",
+        "esta",
+        "pues",
+        "eh",
+        "em",
+        "oye",
+        "oiga",
+        "espera",
+        "esperate",
+        "necesito",
+        "quiero",
+        "puedes",
+        "podrias",
+        "genera",
+        "crear",
+        "crea",
+        "hazme",
+        "haz",
+        "ayudame",
+        "el",
+        "la",
+        "los",
+        "las",
+        "un",
+        "una",
+        "mi",
+        "tu",
+        "su",
+        "me",
+        "te",
+        "se",
+        "nos",
+        "les",
+        "lo",
+        "generes",
+        "genere",
+        "generame",
+        "hagas",
+        "haga",
+        "ayudes",
+        "ayude",
+        "creas",
+    }
+)
+
+_VOCATIVE_WORDS = frozenset(
+    {"oye", "oiga", "ced", "señor", "senor", "jarvis", "hey", "hola", "buenas"}
+)
+
+
+def looks_incomplete_user_utterance(text: str) -> bool:
+    """True si el STT cortó a media frase (pausa de respiración)."""
+    normalized = _normalize(text or "")
+    words = [w for w in normalized.split() if w]
+    if not words:
+        return False
+    if words[-1] in _INCOMPLETE_TAIL_WORDS:
+        return True
+    if len(words) <= 2 and all(w in _VOCATIVE_WORDS for w in words) and "hola" not in words:
+        return True
+    return False
+
+
 # Palabras de asentimiento / cierre de turno — combinables en frases cortas
 # como "ok perfecto", "muy bien", "de acuerdo", "sí gracias", "todo bien".
 _ACK_CLOSING_WORDS = frozenset(
@@ -669,6 +754,9 @@ def should_respond_to_transcript(
         return False
 
     if normalized in _ECHO_USER_LINES:
+        return False
+
+    if looks_incomplete_user_utterance(last):
         return False
 
     if interaction_type == "reminder_required":

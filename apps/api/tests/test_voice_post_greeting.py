@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 from app.services.gemini_voice_llm import GeminiVoiceLlm
 from app.services.kb_turn_cache import clear_turn_kb_cache, get_turn_kb_hits
-from app.services.retell_custom_llm import should_respond_to_transcript
+from app.services.retell_custom_llm import looks_incomplete_user_utterance, should_respond_to_transcript
 from app.services.retell_llm_types import ResponseRequiredRequest, Utterance
 
 
@@ -33,6 +33,28 @@ def test_partial_stt_fragment_should_not_respond():
         Utterance(role="user", content="¿C"),
     ]
     assert should_respond_to_transcript(tx, interaction_type="response_required") is False
+
+
+def test_mid_sentence_pause_should_not_respond():
+    assert looks_incomplete_user_utterance("necesito que") is True
+    assert looks_incomplete_user_utterance("oye ced") is True
+    assert looks_incomplete_user_utterance("genera un") is True
+    assert looks_incomplete_user_utterance("ayúdame con") is True
+    assert looks_incomplete_user_utterance("hola") is False
+    assert looks_incomplete_user_utterance("¿Cómo estás?") is False
+    assert looks_incomplete_user_utterance("necesito que me hagas un pdf") is False
+
+    tx = [
+        Utterance(role="agent", content="CED en línea, señor."),
+        Utterance(role="user", content="oye necesito que me generes"),
+    ]
+    assert should_respond_to_transcript(tx, interaction_type="response_required") is False
+
+    done = [
+        Utterance(role="agent", content="CED en línea, señor."),
+        Utterance(role="user", content="necesito que me hagas un pdf del presupuesto"),
+    ]
+    assert should_respond_to_transcript(done, interaction_type="response_required") is True
 
 
 def test_draft_response_yields_when_agent_is_last_in_transcript():

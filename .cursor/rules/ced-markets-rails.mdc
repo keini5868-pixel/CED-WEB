@@ -1,0 +1,14 @@
+---
+description: Mesa Kraken vs Midnight ZK — dos rieles; no trading ni Shield en prod todavía
+alwaysApply: true
+---
+
+# CED mercados — dos rieles (aún no integrar)
+
+Tras AKINDO: cajón HUD **Mesa | Midnight**. Hasta entonces solo spec (`apps/web/src/lib/markets/`).
+
+- **Mesa:** spot Kraken curado, KYC, `country_code`. Copy: identificado, no privado.
+- **Midnight:** NIGHT, Lace, Compact/Shield. Copy: ZK solo aquí.
+- **Puente:** comprar NIGHT en Kraken (red **Cardano**) → withdraw → Lace. No fingir un paso.
+- **PROHIBIDO:** un botón «compra privada»; ZK sobre BTC/ETH en el CEX; `CED_SHIELD_ENABLED` en prod; Shield en Jarvis/voz/Retell; 600 tickers; margin/futuros/memes; Submit AKINDO antes de ~27 Sep 2026; DM a Hoskinson.
+- **HUD:** un control tipo Chats (overlay), no sidebar. No construir el cajón ni cliente Kraken hasta jueces + riel B real.

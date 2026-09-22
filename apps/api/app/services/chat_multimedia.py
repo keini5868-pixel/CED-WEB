@@ -210,7 +210,7 @@ def transcribe_audio(user_id: str, audio_bytes: bytes, *, filename: str = "recor
         )
 
     suffix = ".webm"
-    if filename.lower().endswith((".mp3", ".wav", ".m4a", ".ogg", ".webm")):
+    if filename.lower().endswith((".mp3", ".wav", ".m4a", ".mp4", ".aac", ".ogg", ".webm")):
         suffix = filename[filename.rfind(".") :]
 
     try:

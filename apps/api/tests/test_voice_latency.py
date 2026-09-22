@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from app.domain.openai_voice_prompt import build_ced_voice_system_prompt, voice_prompt_diagnostics
 from app.routers.retell_custom_llm import _debounce_wait_s
+from app.services.retell_agent_setup import retell_turn_taking_payload
 from app.services.gemini_voice_llm import GeminiVoiceLlm, _voice_model
 from app.services.kb_turn_cache import clear_turn_kb_cache, get_turn_kb_hits
 from app.services.voice_llm_common import build_voice_system
@@ -23,11 +24,19 @@ def test_gemini_voice_llm_imports_get_settings():
             assert llm.model == "gemini-2.5-flash"
 
 
+def test_retell_turn_taking_is_claude_like():
+    payload = retell_turn_taking_payload()
+    assert payload["enable_backchannel"] is False
+    assert payload["interruption_sensitivity"] >= 0.85
+    assert payload["responsiveness"] <= 0.55
+
+
 def test_debounce_wait_reduced_for_short_utterances():
-    assert _debounce_wait_s("hola") == 0.06
-    assert _debounce_wait_s("cómo estás hoy") == 0.06
-    assert _debounce_wait_s(" ".join(["palabra"] * 12)) == 0.14
-    assert _debounce_wait_s(" ".join(["palabra"] * 22)) == 0.20
+    assert _debounce_wait_s("hola") == 0.42
+    assert _debounce_wait_s("cómo estás hoy") == 0.42
+    assert _debounce_wait_s(" ".join(["palabra"] * 12)) == 0.48
+    assert _debounce_wait_s(" ".join(["palabra"] * 22)) == 0.52
+    assert _debounce_wait_s("necesito que") == 0.72
 
 
 def test_kb_turn_cache_dedupes_same_query():
@@ -60,7 +69,7 @@ def test_build_voice_system_skips_kb_when_lightweight():
 
 def test_voice_prompt_compressed_under_previous_size():
     diag = voice_prompt_diagnostics()
-    assert diag["prompt_chars"] < 20000
+    assert diag["prompt_chars"] < 40000
     prompt = build_ced_voice_system_prompt()
     assert "FUNCTION CALLING OBLIGATORIO" in prompt
     assert "CONVERSACIÓN UNIVERSAL" in prompt

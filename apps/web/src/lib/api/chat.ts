@@ -424,9 +424,18 @@ export async function endChatConversation(conversationId: string): Promise<boole
   }
 }
 
+function recordingFilename(audioBlob: Blob): string {
+  const t = (audioBlob.type || "").toLowerCase();
+  if (t.includes("mp4") || t.includes("m4a") || t.includes("aac")) return "recording.m4a";
+  if (t.includes("mpeg") || t.includes("mp3")) return "recording.mp3";
+  if (t.includes("ogg")) return "recording.ogg";
+  if (t.includes("wav")) return "recording.wav";
+  return "recording.webm";
+}
+
 export async function transcribeChatAudio(audioBlob: Blob): Promise<string> {
   const formData = new FormData();
-  formData.append("audio", audioBlob, "recording.webm");
+  formData.append("audio", audioBlob, recordingFilename(audioBlob));
   const res = await proxyFetch("chat/transcribe", {
     method: "POST",
     body: formData,

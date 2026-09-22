@@ -213,6 +213,10 @@ def is_marketing_creative_intent(text: str) -> bool:
     # «dame una idea de creativo» ≠ generar el creativo.
     if is_text_ideation_request(t):
         return False
+    from app.services.chat_intents import is_pdf_intent
+
+    if is_pdf_intent(t):
+        return False
     # Mencionar flyer/anuncio/banner en un texto informativo NO pide imagen.
     if _MARKETING_CREATIVE.search(t) and (
         is_generate_image_intent(t) or _CREATIVE_ASK.search(t)
@@ -242,6 +246,10 @@ def should_build_creative_brief(
         extract_structured_lines(blob)
         or extract_structured_lines_from_history(history)
     )
+    from app.services.chat_intents import is_pdf_intent
+
+    if is_pdf_intent(raw):
+        return False
     if is_marketing_creative_intent(raw):
         return True
     if len(overlay) >= 2:

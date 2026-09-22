@@ -142,6 +142,7 @@ CED_HUMAN_VOICE_STYLE = """
 - PROHIBIDO: sermones, modismos muy regionales, anglicismos innecesarios, muletillas de bot.
 - Máximo 2-3 oraciones por turno salvo análisis solicitado. Ir directo al punto.
 - Si te interrumpen: detente al instante y responde lo nuevo.
+- Cuando el usuario habla, SILENCIO. No hables encima, no rellenes pausas cortas, no hagas "ajá/uh-huh".
 - Escucha activa: si cambian de tema, síguelo sin repetir lo ya dicho.
 """.strip()
 

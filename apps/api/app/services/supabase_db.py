@@ -1670,6 +1670,72 @@ def count_generated_images_this_month(user_id: str) -> tuple[int, int, int]:
         return 0, 0, 0
 
 
+def save_image_blob(
+    *,
+    file_name: str,
+    user_id: str,
+    mime: str,
+    image_bytes: bytes,
+) -> bool:
+    """Persiste bytes de /v1/media/publish para que no mueran con el disco de Railway."""
+    import base64
+
+    from app.services.supabase_client import service_role_configured
+    from app.services.user_id_utils import normalize_user_id
+
+    if not service_role_configured() or not file_name or not image_bytes:
+        return False
+    uid = normalize_user_id(user_id)
+    try:
+        from app.services.supabase_client import get_supabase_admin
+
+        client = get_supabase_admin(require_service_role=True)
+        client.table("ced_image_blobs").upsert(
+            {
+                "file_name": file_name,
+                "user_id": uid,
+                "mime": (mime or "image/jpeg")[:80],
+                "image_base64": base64.b64encode(image_bytes).decode("ascii"),
+            }
+        ).execute()
+        return True
+    except Exception:  # noqa: BLE001
+        logger.warning("[DB] save_image_blob failed file=%s", file_name[:40])
+        return False
+
+
+def get_image_blob(file_name: str) -> tuple[bytes, str] | None:
+    import base64
+
+    name = (file_name or "").strip()
+    if not name:
+        return None
+    try:
+        from app.services.supabase_client import get_supabase_admin, service_role_configured
+
+        if not service_role_configured():
+            return None
+        client = get_supabase_admin(require_service_role=True)
+        result = (
+            client.table("ced_image_blobs")
+            .select("image_base64, mime")
+            .eq("file_name", name)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            return None
+        raw = base64.b64decode(str(rows[0].get("image_base64") or ""))
+        if not raw:
+            return None
+        mime = str(rows[0].get("mime") or "image/jpeg")
+        return raw, mime
+    except Exception:  # noqa: BLE001
+        logger.warning("[DB] get_image_blob failed file=%s", name[:40])
+        return None
+
+
 def insert_generated_image(
     *,
     user_id: str,

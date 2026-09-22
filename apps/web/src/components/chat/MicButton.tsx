@@ -8,7 +8,7 @@ import { transcribeChatAudio } from "@/lib/api/chat";
 type MicButtonProps = {
   /** Texto del input al iniciar dictado (se preserva como prefijo) */
   getBaseText: () => string;
-  /** Actualizaci├│n en vivo mientras habla y al terminar */
+  /** Actualización en vivo mientras habla y al terminar */
   onTextUpdate: (text: string) => void;
   onDictatingChange?: (active: boolean) => void;
   disabled?: boolean;
@@ -49,13 +49,34 @@ type SpeechRecognitionResultList = {
 
 type SpeechRecognitionCtor = new () => SpeechRecognitionInstance;
 
+function isLikelyIos(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  if (/iPad|iPhone|iPod/i.test(ua)) return true;
+  return navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+}
+
 function getSpeechRecognitionCtor(): SpeechRecognitionCtor | null {
   if (typeof window === "undefined") return null;
+  // Safari/iOS: el constructor a veces existe pero no abre el micrófono.
+  if (isLikelyIos()) return null;
   const w = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor;
     webkitSpeechRecognition?: SpeechRecognitionCtor;
   };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null;
+}
+
+function pickRecorderMime(): string | undefined {
+  if (typeof MediaRecorder === "undefined") return undefined;
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/mp4",
+    "audio/aac",
+    "audio/mpeg",
+  ];
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type));
 }
 
 function mergeBaseAndDictation(base: string, dictated: string): string {
@@ -99,6 +120,8 @@ export function MicButton({
   const audioChunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const recordingStartedAtRef = useRef<number | null>(null);
+  const fallbackFromSpeechRef = useRef(false);
+  const touchArmedRef = useRef(false);
 
   const setRecording = (active: boolean) => {
     isRecordingRef.current = active;
@@ -115,6 +138,8 @@ export function MicButton({
     const recognition = recognitionRef.current;
     if (!recognition) return;
     recognition.onend = null;
+    recognition.onerror = null;
+    recognition.onresult = null;
     try {
       recognition.stop();
     } catch {
@@ -150,15 +175,27 @@ export function MicButton({
 
     recognition.onerror = (event) => {
       if (event.error === "not-allowed") {
-        alert("Necesito permiso para usar el micr├│fono");
+        alert("Necesito permiso para usar el micrófono");
         setRecording(false);
         stopLiveRecognition();
-      } else if (event.error !== "no-speech" && event.error !== "aborted") {
-        console.warn("[MicButton] speech error", event.error);
+        return;
+      }
+      if (event.error === "no-speech" || event.error === "aborted") return;
+      console.warn("[MicButton] speech error", event.error);
+      if (
+        isRecordingRef.current &&
+        (event.error === "network" ||
+          event.error === "service-not-allowed" ||
+          event.error === "audio-capture")
+      ) {
+        fallbackFromSpeechRef.current = true;
+        stopLiveRecognition();
+        void startWhisperFallback();
       }
     };
 
     recognition.onend = () => {
+      if (fallbackFromSpeechRef.current) return;
       if (!isRecordingRef.current) return;
       try {
         recognition.start();
@@ -199,23 +236,28 @@ export function MicButton({
     }
   };
 
-  const startWhisperFallback = async () => {
+  const startWhisperFallback = async (existingStream?: MediaStream) => {
     baseTextRef.current = getBaseText().trim();
+    fallbackFromSpeechRef.current = false;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      const stream =
+        existingStream ??
+        (await navigator.mediaDevices.getUserMedia({
+          audio: true,
+        }));
       streamRef.current = stream;
 
-      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
+      if (typeof MediaRecorder === "undefined") {
+        stopStream();
+        alert("Este navegador no permite grabar audio para dictar. Prueba Chrome o Safari actualizado.");
+        setRecording(false);
+        return;
+      }
 
-      const mediaRecorder = new MediaRecorder(stream, { mimeType });
+      const mimeType = pickRecorderMime();
+      const mediaRecorder = mimeType
+        ? new MediaRecorder(stream, { mimeType })
+        : new MediaRecorder(stream);
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
       recordingStartedAtRef.current = Date.now();
@@ -232,20 +274,21 @@ export function MicButton({
           onDictatingChange?.(false);
           return;
         }
-        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const type = mediaRecorder.mimeType || mimeType || "audio/webm";
+        const audioBlob = new Blob(audioChunksRef.current, { type });
         void transcribeBlob(audioBlob);
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(250);
       setRecording(true);
     } catch {
-      alert("Necesito permiso para usar el micr├│fono");
+      alert("Necesito permiso para usar el micrófono");
       setRecording(false);
     }
   };
 
   const stopWhisperFallback = () => {
-    if (mediaRecorderRef.current && isRecordingRef.current) {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       mediaRecorderRef.current.stop();
     }
     setRecording(false);
@@ -265,9 +308,9 @@ export function MicButton({
     stopWhisperFallback();
   };
 
-  const handleClick = () => {
+  const handleToggle = () => {
     if (disabled || isTranscribing) return;
-    if (isRecording) {
+    if (isRecordingRef.current) {
       stopDictation();
     } else {
       startDictation();
@@ -290,7 +333,20 @@ export function MicButton({
   return (
     <button
       type="button"
-      onClick={handleClick}
+      onPointerDown={(e) => {
+        // Evita que el teclado móvil se cierre y se trague el toque.
+        e.preventDefault();
+        if (e.pointerType === "mouse") return;
+        touchArmedRef.current = true;
+        handleToggle();
+      }}
+      onClick={() => {
+        if (touchArmedRef.current) {
+          touchArmedRef.current = false;
+          return;
+        }
+        handleToggle();
+      }}
       disabled={disabled || isTranscribing}
       aria-pressed={isRecording}
       className={`box-border flex h-11 w-11 min-h-[44px] min-w-[44px] shrink-0 flex-none items-center justify-center rounded-full border transition active:scale-95 disabled:opacity-40 sm:h-10 sm:w-10 sm:min-h-[40px] sm:min-w-[40px] ${
@@ -300,15 +356,16 @@ export function MicButton({
             ? "border-cyan-700/40 bg-black/30 text-cyan-500"
             : "border-cyan-900/40 bg-black/25 text-cyan-700 hover:border-cyan-700/50 hover:bg-cyan-950/40 hover:text-cyan-400"
       }`}
+      style={{ touchAction: "manipulation" }}
       aria-label={
         isRecording
           ? "Detener dictado"
           : isTranscribing
-            ? "TranscribiendoÔÇª"
+            ? "Transcribiendo…"
             : "Activar dictado por voz"
       }
       title={
-        idle ? "Clic para dictar en vivo" : isRecording ? "Clic para detener" : "TranscribiendoÔÇª"
+        idle ? "Toca para dictar" : isRecording ? "Toca para detener" : "Transcribiendo…"
       }
     >
       {isTranscribing ? (

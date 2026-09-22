@@ -54,6 +54,17 @@ def test_explicit_brief_pdf_generates_without_ask():
     assert mock_exec.call_args.kwargs["detail_level"] == "brief"
 
 
+def test_budget_revision_skips_brief_or_full_ask():
+    msg = (
+        "Presupuesto de publicidad para Carolina Certific\n"
+        "1. FEE ÚNICO $600\n2. MENSUAL $550\n3. PAUTA $200\n"
+        "GENERA ESTO CON MEJOR EXTRUTURA TODO MEJOR ENUMERADO "
+        "Y EL NOMBRE ES PARA Carolina Exotic Fish"
+    )
+    assert is_pdf_intent(msg)
+    assert resolve_pdf_detail_for_turn(msg, []) == "revise"
+
+
 def test_explicit_full_pdf_generates_without_ask():
     msg = "genera un PDF completo y detallado sobre el alquimista"
     assert is_pdf_intent(msg)

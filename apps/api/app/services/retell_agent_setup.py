@@ -23,6 +23,19 @@ JARVIS_VOICE_HINTS = (
     "formal", "deep", "adrian", "callum",
 )
 
+def retell_turn_taking_payload() -> dict[str, Any]:
+    """Turn-taking estilo conversación natural: silencio al hablar el usuario, sin backchannel."""
+    settings = get_settings()
+    sensitivity = min(1.0, max(0.0, float(settings.retell_interruption_sensitivity)))
+    responsiveness = min(1.0, max(0.0, float(settings.retell_responsiveness)))
+    return {
+        "responsiveness": responsiveness,
+        "interruption_sensitivity": sensitivity,
+        "enable_backchannel": False,
+        "denoising_mode": settings.retell_denoising_mode,
+    }
+
+
 # Orden: clon Cartesia prod primero; nunca voces femeninas genéricas
 PREFERRED_RETELL_VOICES = (
     CED_JARVIS_CUSTOM_VOICE_ID,
@@ -485,9 +498,7 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
         "voice_speed": _voice_speed_for(voice_id),
         "voice_temperature": _voice_temperature_for(voice_id),
         "volume": _voice_volume_for(voice_id),
-        "responsiveness": 0.85,
-        "interruption_sensitivity": settings.retell_interruption_sensitivity,
-        "denoising_mode": settings.retell_denoising_mode,
+        **retell_turn_taking_payload(),
         "language": "es-419",
         "stt_mode": "accurate",
         "webhook_url": webhook,

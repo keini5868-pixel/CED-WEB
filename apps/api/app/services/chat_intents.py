@@ -1074,6 +1074,64 @@ def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None 
     return t
 
 
+_PDF_REVISION = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"\b(?:edita|editar|modifica(?:r)?|corrige(?:r)?|actualiza(?:r)?|reestructura(?:r)?|mejora(?:r)?)\s+"
+    r"(?:el\s+|este\s+|esta\s+|un\s+)?(?:pdf|documento|propuesta)\b"
+    r"|"
+    r"\b(?:gener[aeá]|crea(?:r)?|haz(?:me)?|arma(?:r)?)\s+"
+    r"(?:esto|eso|el\s+presupuesto|la\s+propuesta|el\s+documento).{0,120}"
+    r"(?:mejor\s+e[sx]truc?tura|mejor\s+enumerad|enumera(?:do|r)?)\b"
+    r"|"
+    r"\bmejor\s+e[sx]truc?tura\b.{0,80}\b(?:enumera|enumerado|presupuesto|propuesta|pdf|documento)\b"
+    r"|"
+    r"\b(?:presupuesto|propuesta|documento)\b.{0,80}\b(?:mejor\s+e[sx]truc?tura|mejor\s+enumerad)\b"
+    r"|"
+    r"\b(?:c[aá]mbiale|cambia(?:r)?)\s+(?:el\s+)?nombre\b.{0,160}"
+    r"\b(?:presupuesto|propuesta|documento|pdf)\b"
+    r")"
+)
+
+_BUSINESS_DOC_PASTE = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"presupuesto\s+de\s+publicidad|"
+    r"propuesta\s+de\s+(?:marketing|negocio|publicidad)|"
+    r"inversi[oó]n\s+mensual|"
+    r"fee\s+[uú]nico|"
+    r"inversi[oó]n\s+sugerida"
+    r")"
+)
+
+_DOC_GENERATE_VERB = re.compile(
+    r"\b(?:gener[aeá]|crea(?:r)?|haz(?:me)?|arma(?:r)?|mejora(?:r)?|enumera(?:r)?)\b",
+    re.I,
+)
+
+_VISUAL_ASSET_NOUN = re.compile(
+    r"\b(?:imagen|foto|flyer|creativo|banner|logo|portada)\b",
+    re.I,
+)
+
+
+def is_pdf_revision_intent(text: str) -> bool:
+    """Editar/reestructurar un documento o presupuesto — no un creativo visual."""
+    t = (text or "").strip()
+    if len(t) < 12:
+        return False
+    if _PDF_REVISION.search(t):
+        return True
+    if (
+        len(t) >= 180
+        and _BUSINESS_DOC_PASTE.search(t)
+        and _DOC_GENERATE_VERB.search(t)
+        and not _VISUAL_ASSET_NOUN.search(t)
+    ):
+        return True
+    return False
+
+
 def is_pdf_intent(text: str) -> bool:
     """True solo ante pedido real de crear/exportar un PDF — no por mencionar la palabra."""
     t = text.strip()
@@ -1081,7 +1139,9 @@ def is_pdf_intent(text: str) -> bool:
         return False
     # Nunca basarse solo en mentions_pdf("… PDF …"): eso disparaba PDFs falsos en listas
     # de capacidades ("generación de imágenes y PDF", etc.).
-    return any(p.search(t) for p in _PDF_PATTERNS[1:])
+    if any(p.search(t) for p in _PDF_PATTERNS[1:]):
+        return True
+    return is_pdf_revision_intent(t)
 
 
 def parse_pdf_request(text: str) -> tuple[str, str] | None:
@@ -1180,6 +1240,28 @@ def infer_pdf_title(user_text: str, content: str) -> str:
         return "Plan Semanal de Estrategia CED"
     if re.search(r"lanzamiento\s+(?:de\s+)?ced", blob, re.I):
         return "Plan de Lanzamiento CED"
+    if re.search(r"presupuesto\s+de\s+publicidad", blob, re.I):
+        renamed = re.search(
+            r"nombre.{0,80}(?:es\s+para|es|a)\s+(carolina\s+exotic\s+fish)",
+            blob,
+            re.I,
+        )
+        if renamed:
+            return "Presupuesto de publicidad — Carolina Exotic Fish"
+        named = re.search(
+            r"(?:para|cliente:?)\s+([A-Za-zÁÉÍÓÚÜÑáéíóúüñ][\wÁÉÍÓÚÜÑáéíóúüñ ]{2,60})",
+            blob,
+            re.I,
+        )
+        if named:
+            label = named.group(1).strip()
+            if not re.search(r"carolina\s+certific", label, re.I):
+                return f"Presupuesto de publicidad — {label[:80]}"
+        if re.search(r"carolina\s+exotic\s+fish", blob, re.I):
+            return "Presupuesto de publicidad — Carolina Exotic Fish"
+        return "Presupuesto de publicidad"
+    if re.search(r"\bpresupuesto\b", blob, re.I) and re.search(r"\b(publicidad|marketing|meta\s+ads)\b", blob, re.I):
+        return "Presupuesto de publicidad"
     if re.search(r"\bestrategia\b", blob, re.I) and not re.search(r"tornado|noticia", blob, re.I):
         return "Estrategia CED"
     if re.search(r"\btornado\b", blob, re.I):
@@ -1226,6 +1308,10 @@ def resolve_pdf_request(
     t = (text or "").strip()
     if not is_pdf_intent(t):
         return None
+
+    if is_pdf_revision_intent(t) and len(t) >= 160:
+        title = infer_pdf_title(t, t)
+        return title[:200], t[:50_000]
 
     parsed = parse_pdf_request(t)
     title = parsed[0] if parsed else "Documento CED"
@@ -1379,7 +1465,7 @@ def resolve_pdf_detail_for_turn(
 ) -> str | None:
     """
     Devuelve:
-      - 'brief' | 'full' → generar con ese nivel
+      - 'brief' | 'full' | 'revise' → generar con ese nivel
       - 'ask' → preguntar antes de generar
       - None → no es un turno de PDF
     """
@@ -1395,6 +1481,9 @@ def resolve_pdf_detail_for_turn(
             return "ask"
         # Respuesta ambigua tras la pregunta → default breve.
         return "brief"
+
+    if is_pdf_revision_intent(t):
+        return "revise"
 
     if not is_pdf_intent(t):
         return None
