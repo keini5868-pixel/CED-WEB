@@ -36,6 +36,7 @@ import { assertChatMessageLength } from "@/lib/chat-limits";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
+import { fetchVoiceClientState } from "@/lib/api/voiceClient";
 import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome-events";
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
 import {
@@ -87,6 +88,22 @@ const VOICE_LIVE_PREFIX = "voice-live:";
 
 function isVoiceLiveMessage(msg: ChatMessage): boolean {
   return String(msg.id || "").startsWith(VOICE_LIVE_PREFIX);
+}
+
+function upsertLiveTranscriptMessage(
+  prev: ChatMessage[],
+  live: { text: string; role: "user" | "model"; streamKey: string; partial: boolean },
+): ChatMessage[] {
+  const id = `${VOICE_LIVE_PREFIX}${live.streamKey}`;
+  const next: ChatMessage = {
+    id,
+    role: live.role,
+    content: live.text,
+    created_at: new Date().toISOString(),
+    partial: live.partial,
+  };
+  const kept = prev.filter((m) => !isDefaultWelcome(m) && m.id !== id);
+  return [...kept, next];
 }
 
 function formatTime(iso?: string) {
@@ -628,6 +645,40 @@ export function CedTextChatPanel({
       return [...usefulRest, ...live];
     });
   }, [liveVoiceTurns, voiceSessionActive]);
+
+  useEffect(() => {
+    if (!open || !voiceSessionActive) return;
+    let cancelled = false;
+    let lastSeq = 0;
+    const pull = async () => {
+      try {
+        const state = await fetchVoiceClientState(false);
+        if (cancelled) return;
+        const live = state.live_transcript;
+        const text = String(live?.text || "").trim();
+        const seq = Number(live?.seq || 0);
+        if (!text || seq <= lastSeq) return;
+        lastSeq = seq;
+        const role = live?.role === "user" ? "user" : "model";
+        setMessages((prev) =>
+          upsertLiveTranscriptMessage(prev, {
+            text,
+            role,
+            streamKey: String(live?.stream_key || `${role}-live`),
+            partial: Boolean(live?.partial),
+          }),
+        );
+      } catch {
+        /* sin sesión */
+      }
+    };
+    void pull();
+    const timer = window.setInterval(() => void pull(), 350);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [open, voiceSessionActive]);
 
   useEffect(() => {
     if (!conversationId) return;

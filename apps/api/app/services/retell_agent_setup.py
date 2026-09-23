@@ -24,10 +24,11 @@ JARVIS_VOICE_HINTS = (
 )
 
 def retell_turn_taking_payload() -> dict[str, Any]:
-    """Turn-taking estilo conversación natural: silencio al hablar el usuario, sin backchannel."""
+    """Espera la pausa natural: no saltar a media frase ni cortar al usuario."""
     settings = get_settings()
-    sensitivity = min(1.0, max(0.0, float(settings.retell_interruption_sensitivity)))
-    responsiveness = min(1.0, max(0.0, float(settings.retell_responsiveness)))
+    # Tope duro: env viejo en Railway (0.9/0.5) cortaba al usuario a media idea.
+    sensitivity = min(0.45, max(0.0, float(settings.retell_interruption_sensitivity)))
+    responsiveness = min(0.28, max(0.0, float(settings.retell_responsiveness)))
     return {
         "responsiveness": responsiveness,
         "interruption_sensitivity": sensitivity,

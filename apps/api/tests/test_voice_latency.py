@@ -24,19 +24,19 @@ def test_gemini_voice_llm_imports_get_settings():
             assert llm.model == "gemini-2.5-flash"
 
 
-def test_retell_turn_taking_is_claude_like():
+def test_retell_turn_taking_waits_for_user():
     payload = retell_turn_taking_payload()
     assert payload["enable_backchannel"] is False
-    assert payload["interruption_sensitivity"] >= 0.85
-    assert payload["responsiveness"] <= 0.55
+    assert payload["interruption_sensitivity"] <= 0.45
+    assert payload["responsiveness"] <= 0.28
 
 
-def test_debounce_wait_reduced_for_short_utterances():
-    assert _debounce_wait_s("hola") == 0.42
-    assert _debounce_wait_s("cómo estás hoy") == 0.42
-    assert _debounce_wait_s(" ".join(["palabra"] * 12)) == 0.48
-    assert _debounce_wait_s(" ".join(["palabra"] * 22)) == 0.52
-    assert _debounce_wait_s("necesito que") == 0.72
+def test_debounce_wait_lets_user_finish():
+    assert _debounce_wait_s("necesito que") == 1.35
+    assert _debounce_wait_s("hola") == 1.05
+    assert _debounce_wait_s("cómo estás hoy") == 1.05
+    assert _debounce_wait_s("¿Cómo estás?") == 0.70
+    assert _debounce_wait_s(" ".join(["palabra"] * 12)) == 0.90
 
 
 def test_kb_turn_cache_dedupes_same_query():

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Any
 
@@ -233,17 +234,19 @@ def _normalize_user_key(text: str) -> str:
 
 
 def _debounce_wait_s(user_text: str) -> float:
-    """Espera STT final tras endpointing. Frases a medias esperan más."""
-    if looks_incomplete_user_utterance(user_text):
-        return 0.72
-    words = len(user_text.split())
+    """Espera STT final tras endpointing. No responder a media respiración."""
+    stripped = (user_text or "").strip()
+    if looks_incomplete_user_utterance(stripped):
+        return 1.35
+    words = len(stripped.split())
+    closed = bool(re.search(r"[.!?…]$", stripped))
+    if not closed:
+        if words <= 8:
+            return 1.05
+        return 0.90
     if words <= 5:
-        return 0.42
-    if words >= 20:
-        return 0.52
-    if words >= 10:
-        return 0.48
-    return 0.45
+        return 0.70
+    return 0.55
 
 
 @router.get("/llm-websocket/active")
