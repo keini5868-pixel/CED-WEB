@@ -64,6 +64,8 @@ def _fresh_session() -> dict[str, Any]:
         "fitline_closer_reasked": False,
         "studio_chat_events": [],
         "conversation_id": None,
+        "live_transcript": None,
+        "live_transcript_seq": 0,
     }
 
 
@@ -344,7 +346,52 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
             "camera_stream_present": bool(session.get("camera_stream_present")),
             "client_action": deepcopy(action) if action else None,
             "tool_events": deepcopy(session.get("tool_events") or []),
+            "live_transcript": deepcopy(session.get("live_transcript")),
         }
+
+
+def set_live_transcript(
+    user_id: str,
+    *,
+    role: str,
+    text: str,
+    stream_key: str,
+    partial: bool = False,
+) -> dict[str, Any] | None:
+    """Snapshot reemplazable: el chat de voz lee esto en el poll de client-state.
+
+    Retell gateway (SDK 3) no emite el evento `update` al browser; el custom LLM
+    sí tiene el texto y lo publica aquí.
+    """
+    uid = (user_id or "").strip()
+    cleaned = (text or "").replace("\x00", "").strip()
+    if not uid or not cleaned:
+        return None
+    key = (stream_key or "").strip() or f"{role}-live"
+    norm_role = "user" if role == "user" else "model"
+    session = _get(uid)
+    with _lock:
+        prev = session.get("live_transcript") or {}
+        if (
+            isinstance(prev, dict)
+            and str(prev.get("text") or "") == cleaned
+            and str(prev.get("role") or "") == norm_role
+            and str(prev.get("stream_key") or "") == key
+            and bool(prev.get("partial")) == bool(partial)
+        ):
+            return deepcopy(prev)
+        seq = int(session.get("live_transcript_seq") or 0) + 1
+        session["live_transcript_seq"] = seq
+        row = {
+            "seq": seq,
+            "role": norm_role,
+            "text": cleaned[:8000],
+            "stream_key": key[:120],
+            "partial": bool(partial),
+        }
+        session["live_transcript"] = row
+        session["updated_at"] = _now()
+        return deepcopy(row)
 
 
 def set_vision_result(user_id: str, request_id: int, summary: str) -> None:
@@ -516,6 +563,7 @@ def end_voice_publish_session(user_id: str, voice_call_id: str | None = None) ->
         session["publishable_images"] = []
         session["awaiting_instagram_caption"] = False
         session["studio_chat_events"] = []
+        session["live_transcript"] = None
         session["updated_at"] = _now()
 
 

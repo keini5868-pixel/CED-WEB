@@ -53,6 +53,7 @@ from app.services.navigation_voice_intent import (
 )
 from app.services.async_sync import run_sync
 from app.services.voice_history import persist_voice_turn
+from app.services import voice_client_session as vcs
 from app.services.voice_llm_common import (
     FALLBACK_REPLY,
     WEB_SEARCH_VOICE_FALLBACK,
@@ -267,11 +268,33 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     last_web_query_norm = ""
     standalone_exec_lock = asyncio.Lock()
     last_standalone_module_answered_key = ""
+    live_agent_acc: dict[int, str] = {}
 
     user_id = await resolve_call_user_robust(call_id)
     if user_id:
         llm.set_user_id(user_id)
         logger.info("[RETELL-GEMINI] user_id=%s call=%s (registry)", user_id[:8], call_id)
+
+    def publish_live_transcript(
+        role: str,
+        text: str,
+        *,
+        stream_key: str,
+        partial: bool,
+    ) -> None:
+        target = (user_id or "").strip()
+        if not target:
+            return
+        try:
+            vcs.set_live_transcript(
+                target,
+                role="user" if role == "user" else "model",
+                text=text,
+                stream_key=stream_key,
+                partial=partial,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("[VOICE-LIVE] no se pudo publicar transcript role=%s", role)
 
     async def persist_voice_history(role: str, content: str, *, who: str | None = None) -> None:
         target = (who or user_id or "").strip()
@@ -385,6 +408,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             await websocket.send_json(payload)
             mark_greeting_sent(call_id)
             if begin_text:
+                publish_live_transcript(
+                    "model",
+                    begin_text,
+                    stream_key="agent-greeting",
+                    partial=False,
+                )
                 asyncio.create_task(
                     persist_voice_history("model", begin_text, who=user_id)
                 )
@@ -452,6 +481,30 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             "end_call": False,
         }
         await websocket.send_json(payload)
+        if safe:
+            prev = live_agent_acc.get(response_id, "")
+            if prev and safe.startswith(prev):
+                acc = safe
+            elif prev and prev.startswith(safe) and len(safe) < len(prev):
+                acc = prev
+            else:
+                acc = f"{prev}{safe}" if prev else safe
+            live_agent_acc[response_id] = acc
+            publish_live_transcript(
+                "model",
+                acc,
+                stream_key=f"agent-{response_id}",
+                partial=not content_complete,
+            )
+        elif content_complete:
+            acc = live_agent_acc.get(response_id, "")
+            if acc:
+                publish_live_transcript(
+                    "model",
+                    acc,
+                    stream_key=f"agent-{response_id}",
+                    partial=False,
+                )
         return True
 
     async def send_voice_response(
@@ -573,6 +626,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             len(chunks),
         )
         if content and content != SILENCE_PING_PHRASE:
+            publish_live_transcript(
+                "model",
+                content,
+                stream_key=f"agent-{response_id}",
+                partial=False,
+            )
             asyncio.create_task(persist_voice_history("model", content, who=user_id))
         return True
 
@@ -832,6 +891,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
         persist_who = (uid or user_id or "").strip()
         if persist_who and user_text.strip():
+            publish_live_transcript(
+                "user",
+                user_text,
+                stream_key=f"user-{response_id}",
+                partial=False,
+            )
             asyncio.create_task(
                 persist_voice_history("user", user_text, who=persist_who)
             )

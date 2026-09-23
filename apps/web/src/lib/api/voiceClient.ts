@@ -33,12 +33,21 @@ export type VoiceToolEvent = {
   message?: string;
 };
 
+export type VoiceLiveTranscript = {
+  seq?: number;
+  role?: "user" | "model" | string;
+  text?: string;
+  stream_key?: string;
+  partial?: boolean;
+};
+
 export type VoiceClientState = {
   ok: boolean;
   camera_active?: boolean;
   camera_stream_present?: boolean;
   client_action?: VoiceClientAction | null;
   tool_events?: VoiceToolEvent[];
+  live_transcript?: VoiceLiveTranscript | null;
 };
 
 export async function fetchVoiceClientState(consume = false): Promise<VoiceClientState> {

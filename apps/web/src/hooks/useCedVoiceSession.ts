@@ -354,6 +354,7 @@ export function useCedVoiceSession(
   const retellEarlyEndRetriesRef = useRef(0);
   const lastPersistedAgentLineRef = useRef("");
   const youtubeMediaModeRef = useRef(false);
+  const lastLiveTranscriptSeqRef = useRef(0);
 
   useEffect(() => {
     prefsRef.current = prefs;
@@ -767,6 +768,24 @@ export function useCedVoiceSession(
             }
           }
         }
+        const live = state.live_transcript;
+        const liveText = String(live?.text || "").trim();
+        const liveSeq = Number(live?.seq || 0);
+        if (liveText && liveSeq > lastLiveTranscriptSeqRef.current) {
+          lastLiveTranscriptSeqRef.current = liveSeq;
+          const role = live?.role === "user" ? "user" : "model";
+          callbacksRef.current?.onTranscript?.(liveText, role, {
+            partial: Boolean(live?.partial),
+            streamKey: String(live?.stream_key || `${role}-live`),
+          });
+          if (role === "user") {
+            setHeardIndicator({
+              status: "heard",
+              userText: liveText,
+              heardAt: Date.now(),
+            });
+          }
+        }
         const action = state.client_action;
         if (!action || action.id === lastVoiceActionIdRef.current) return;
         lastVoiceActionIdRef.current = action.id;
@@ -910,6 +929,7 @@ export function useCedVoiceSession(
     userInitiatedStopRef.current = true;
     voiceSessionGenRef.current += 1;
     lastPersistedAgentLineRef.current = "";
+    lastLiveTranscriptSeqRef.current = 0;
     clearUsageInterval();
     clientRef.current?.disconnect();
     clientRef.current = null;
@@ -1285,7 +1305,9 @@ export function useCedVoiceSession(
       const startRetell = retellActive();
       if (startRetell) {
         isRetellSessionRef.current = true;
+        lastLiveTranscriptSeqRef.current = 0;
         setVoiceSessionActive(true);
+        setRetellPollActive(true);
         setStatusLabel("Iniciando llamada…");
         const registration = isRetellNativePilot()
           ? await registerRetellNativePilotCall()
