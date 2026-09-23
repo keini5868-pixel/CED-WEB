@@ -460,6 +460,11 @@ export function useCedVoiceSession(
     [captureCameraJpeg],
   );
 
+  const waitForCameraFrameRef = useRef(waitForCameraFrame);
+  waitForCameraFrameRef.current = waitForCameraFrame;
+  const persistVoiceTranscriptRef = useRef(persistVoiceTranscript);
+  persistVoiceTranscriptRef.current = persistVoiceTranscript;
+
   useEffect(() => {
     isDriveMapOpenRef.current = isDriveMapOpen;
     openDriveMapRef.current = openDriveMap;
@@ -608,7 +613,7 @@ export function useCedVoiceSession(
         await postVoiceCameraStatus(streamLive, streamLive);
         await ensureCameraCaptureVideo(hadStream ? 2000 : 5000);
         // compact=true usa resolución de visión (960×720 @ 0.78) para analyze y visual_search
-        const frame = await waitForCameraFrame(
+        const frame = await waitForCameraFrameRef.current(
           hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
           true,
         );
@@ -673,7 +678,7 @@ export function useCedVoiceSession(
             callbacksRef.current?.onGeneratedImage?.(normalized, ev.prompt);
           }
           if (ev.type === "pdf_created" && ev.title) {
-            void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
+            void persistVoiceTranscriptRef.current("model", `PDF generado: ${String(ev.title)}`);
             setHistoryOpen(true);
           }
           if (ev.type === "camera_activate") {
@@ -801,7 +806,9 @@ export function useCedVoiceSession(
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [retellPollActive, waitForCameraFrame, callbacks, persistVoiceTranscript]);
+    // Solo retellPollActive: el nivel de audio re-renderiza el hub ~8/s y cancelaba
+    // el fetch de client-state antes de aplicar live_transcript.
+  }, [retellPollActive]);
 
   const resolvePublishImage = useCallback(
     async (

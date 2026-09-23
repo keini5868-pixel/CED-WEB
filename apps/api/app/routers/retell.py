@@ -220,6 +220,7 @@ async def register_retell_call(
             client.call.create_web_call,
             agent_id=agent_id,
             metadata={"user_id": user_id},
+            retell_llm_dynamic_variables={"user_id": user_id},
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("[RETELL] create_web_call failed: %s", exc)

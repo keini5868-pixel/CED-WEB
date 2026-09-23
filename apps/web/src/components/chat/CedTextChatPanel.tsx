@@ -670,7 +670,16 @@ export function CedTextChatPanel({
       if (!personalized) return;
       setMessages((prev) => {
         if (resumeLockRef.current) return prev;
-        if (prev.some((m) => m.role === "user" || isVoiceLiveMessage(m))) return prev;
+        if (
+          prev.some(
+            (m) =>
+              m.role === "user" ||
+              isVoiceLiveMessage(m) ||
+              String(m.id || "").startsWith("voice-kept:"),
+          )
+        ) {
+          return prev;
+        }
         if (prev.length === 0) {
           return [
             {
@@ -680,7 +689,7 @@ export function CedTextChatPanel({
             },
           ];
         }
-        if (prev.length === 1 && prev[0]?.role === "model") {
+        if (prev.length === 1 && isDefaultWelcome(prev[0]!)) {
           return [{ ...prev[0], content: personalized }];
         }
         return prev;
