@@ -560,6 +560,8 @@ export function CedVoiceHub() {
               resumeConversationId={resumeConversationId}
               resumeNonce={resumeNonce}
               onResumeApplied={onResumeApplied}
+              voiceSessionActive={voice.voiceSessionActive}
+              bindVoiceConversationId={voice.conversationId}
               seedImage={chatSeedImage}
               onSeedConsumed={() => setChatSeedImage(null)}
               seedPrompt={chatSeedPrompt}

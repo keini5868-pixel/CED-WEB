@@ -13,6 +13,7 @@ import {
   type ImageActionMode,
 } from "@/components/chat/ImageActionBar";
 import { DictationWaveform } from "@/components/chat/DictationWaveform";
+import { ChatCopyButton } from "@/components/chat/ChatCopyButton";
 import { MicButton } from "@/components/chat/MicButton";
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
 import { appendStreamChunk } from "@/lib/stream-chunk";
@@ -527,6 +528,11 @@ export function AdvancedChatPanel({
                     : "mr-auto ced-studio-ced-bubble",
                 ].join(" ")}
               >
+                {displayContent ? (
+                  <div className="mb-1 flex justify-end">
+                    <ChatCopyButton text={displayContent} />
+                  </div>
+                ) : null}
                 {displayContent ? (
                   <p className="whitespace-pre-wrap">{displayContent}</p>
                 ) : isActiveStreamBubble && statusHint ? (

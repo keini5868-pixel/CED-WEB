@@ -10,6 +10,7 @@ import { useHudIntelStream } from "@/hooks/useHudIntelStream";
 import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { postVoiceChatImage, deleteVoiceChatImage } from "@/lib/api/voiceClient";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
+import { ChatCopyButton } from "@/components/chat/ChatCopyButton";
 
 function roleLabel(kind: HudFeedItem["kind"], item?: HudFeedItem): string {
   if (kind === "image" && item?.role === "user") return "Usted · Imagen";
@@ -307,9 +308,12 @@ export function HudGlobalPanel() {
           <div className="space-y-3">
             {chronological.map((item) => (
               <div key={item.id} className="group">
+                <div className="flex items-center justify-between gap-2">
                 <p className="font-[family-name:var(--font-orbitron)] text-[10px] uppercase tracking-wider text-cyan-500/90">
                   {roleLabel(item.kind, item)}
                 </p>
+                {item.text ? <ChatCopyButton text={item.text} /> : null}
+                </div>
                 {item.kind === "image" ? (
                   <>
                     <p className="ced-hud-text-body mt-1 text-sm text-cyan-100/90">{item.text}</p>

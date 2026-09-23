@@ -59,6 +59,8 @@ export type ChatMessage = {
   /** Preview local de imagen adjunta por el usuario (solo UI) */
   user_image_preview?: string | null;
   recharge_needed?: ChatRechargeNeeded | null;
+  /** Turno de voz aún en curso (se reescribe en vivo). */
+  partial?: boolean;
 };
 
 export type ChatStatus = {

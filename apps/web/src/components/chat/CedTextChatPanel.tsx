@@ -15,6 +15,7 @@ import {
   type ImageActionMode,
 } from "@/components/chat/ImageActionBar";
 import { DictationWaveform } from "@/components/chat/DictationWaveform";
+import { ChatCopyButton } from "@/components/chat/ChatCopyButton";
 import { MicButton } from "@/components/chat/MicButton";
 import { fetchGenerateImageWithReference } from "@/lib/api/openai";
 import {
@@ -37,6 +38,7 @@ import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome-events";
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
+import { useHudFeed } from "@/contexts/HudFeedContext";
 import {
   getConversationMessages,
   peekCachedConversations,
@@ -65,7 +67,20 @@ type CedTextChatPanelProps = {
   /** Incrementa en cada clic para reabrir el mismo hilo. */
   resumeNonce?: number;
   onResumeApplied?: () => void;
+  /** Sesión de voz en curso — el transcript se escribe en este chat. */
+  voiceSessionActive?: boolean;
+  bindVoiceConversationId?: string | null;
 };
+
+function isDefaultWelcome(msg: ChatMessage): boolean {
+  return msg.role === "model" && msg.content === CHAT_DEFAULT_WELCOME && !msg.id;
+}
+
+const VOICE_LIVE_PREFIX = "voice-live:";
+
+function isVoiceLiveMessage(msg: ChatMessage): boolean {
+  return String(msg.id || "").startsWith(VOICE_LIVE_PREFIX);
+}
 
 function formatTime(iso?: string) {
   if (!iso) {
@@ -384,6 +399,8 @@ export function CedTextChatPanel({
   resumeConversationId = null,
   resumeNonce = 0,
   onResumeApplied,
+  voiceSessionActive = false,
+  bindVoiceConversationId = null,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -408,6 +425,9 @@ export function CedTextChatPanel({
   const streamTargetIndexRef = useRef<number | null>(null);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
   const { setTextChatOpen } = useCedOverlay();
+  const { voiceItems } = useHudFeed();
+  const voiceSessionGateRef = useRef(false);
+  const voiceStartedAtRef = useRef(0);
   const embedded = variant === "embedded";
   const { bar: composerBar, actions: composerActions } = useComposerSplit(
     Boolean(open && embedded && splitComposer),
@@ -555,6 +575,66 @@ export function CedTextChatPanel({
       cancelled = true;
     };
   }, [resumeNonce, resumeConversationId, onResumeApplied]);
+
+  useEffect(() => {
+    if (!bindVoiceConversationId) return;
+    setConversationId(bindVoiceConversationId);
+  }, [bindVoiceConversationId]);
+
+  useEffect(() => {
+    if (voiceSessionActive && !voiceSessionGateRef.current) {
+      voiceSessionGateRef.current = true;
+      voiceStartedAtRef.current = Date.now() - 400;
+      setMessages((prev) =>
+        prev.map((m) =>
+          isVoiceLiveMessage(m)
+            ? {
+                ...m,
+                id: `voice-kept:${String(m.id).slice(VOICE_LIVE_PREFIX.length)}`,
+                partial: false,
+              }
+            : m,
+        ),
+      );
+    }
+    if (!voiceSessionActive) {
+      voiceSessionGateRef.current = false;
+      setMessages((prev) =>
+        prev.map((m) => (m.partial ? { ...m, partial: false } : m)),
+      );
+    }
+  }, [voiceSessionActive]);
+
+  useEffect(() => {
+    if (!voiceSessionActive) return;
+    const started = voiceStartedAtRef.current || 0;
+    const live: ChatMessage[] = [...voiceItems]
+      .reverse()
+      .filter(
+        (item) =>
+          (item.kind === "voice" || item.kind === "report") &&
+          Boolean(item.text?.trim()) &&
+          item.at >= started,
+      )
+      .map((item) => ({
+        id: `${VOICE_LIVE_PREFIX}${item.streamKey || item.id}`,
+        role: item.role === "user" ? "user" : "model",
+        content: item.text,
+        created_at: new Date(item.at).toISOString(),
+        partial: Boolean(item.partial),
+      }));
+    if (live.length === 0) return;
+    setMessages((prev) => {
+      const rest = prev.filter((m) => !isVoiceLiveMessage(m));
+      const usefulRest = rest.filter((m) => !isDefaultWelcome(m));
+      const merged = [...usefulRest, ...live];
+      merged.sort(
+        (a, b) =>
+          Date.parse(a.created_at || "0") - Date.parse(b.created_at || "0"),
+      );
+      return merged;
+    });
+  }, [voiceItems, voiceSessionActive]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -1133,11 +1213,19 @@ export function CedTextChatPanel({
                         : "border border-cyan-500/25 bg-black/60 text-cyan-100/90"
                   }`}
                 >
-                  <div className={`mb-1 text-[10px] font-bold ${embedded ? (isUser ? "text-[var(--studio-label-user)]" : "text-[var(--studio-label-ced)]") : "font-[family-name:var(--font-orbitron)] text-[9px] text-cyan-500"}`}>
-                    {isUser ? "User" : "CED"}
+                  <div className={`mb-1 flex items-center justify-between gap-2 ${embedded ? (isUser ? "text-[var(--studio-label-user)]" : "text-[var(--studio-label-ced)]") : "font-[family-name:var(--font-orbitron)] text-[9px] text-cyan-500"}`}>
+                    <span className={`text-[10px] font-bold ${embedded ? "" : "font-[family-name:var(--font-orbitron)] text-[9px] text-cyan-500"}`}>
+                      {isUser ? "User" : "CED"}
+                    </span>
+                    <ChatCopyButton text={displayContent} />
                   </div>
                   {displayContent ? (
-                    <p className="whitespace-pre-wrap break-words">{displayContent}</p>
+                    <p className={`whitespace-pre-wrap break-words ${msg.partial ? "opacity-90" : ""}`}>
+                      {displayContent}
+                      {msg.partial ? (
+                        <span className="ml-0.5 inline-block h-3 w-1 animate-pulse bg-cyan-400 align-middle" />
+                      ) : null}
+                    </p>
                   ) : busy && streamTargetIndexRef.current === i ? (
                     <p className={`animate-pulse ${embedded ? "text-[var(--studio-hint)]" : "text-cyan-400/90"}`}>
                       {statusHint || "Generando…"}

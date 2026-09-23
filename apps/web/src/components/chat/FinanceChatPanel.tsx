@@ -15,6 +15,7 @@ import {
 } from "@/lib/api/finance";
 import { fetchFitlineActionPlan } from "@/lib/api/opportunitiesPilot";
 import { downloadPdfBlob } from "@/lib/api/pdf";
+import { ChatCopyButton } from "@/components/chat/ChatCopyButton";
 import { FinanceLedgerPanel } from "@/components/chat/FinanceLedgerPanel";
 
 type FinanceChatPanelProps = {
@@ -373,6 +374,11 @@ export function FinanceChatPanel({
                     : "mr-auto ced-studio-ced-bubble",
                 ].join(" ")}
               >
+                {displayContent ? (
+                  <div className="mb-1 flex justify-end">
+                    <ChatCopyButton text={displayContent} />
+                  </div>
+                ) : null}
                 {displayContent ? (
                   <p className="whitespace-pre-wrap">{displayContent}</p>
                 ) : null}

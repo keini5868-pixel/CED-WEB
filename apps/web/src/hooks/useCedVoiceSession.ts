@@ -274,6 +274,7 @@ export function useCedVoiceSession(
   const [micOn, setMicOn] = useState(false);
   const [retellPollActive, setRetellPollActive] = useState(false);
   const [voiceSessionActive, setVoiceSessionActive] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const lastVoiceActionIdRef = useRef<number | null>(null);
   const lastCameraHeartbeatRef = useRef(0);
   const lastToolEventIdRef = useRef(0);
@@ -1251,6 +1252,7 @@ export function useCedVoiceSession(
       ]);
       usageSessionRef.current = voiceSession.session_id;
       conversationRef.current = voiceSession.conversation_id;
+      setConversationId(voiceSession.conversation_id || null);
       if (!voiceSession.conversation_id) {
         console.warn(
           "[CED] session/start sin conversation_id — el servidor guardará el historial al primer turno",
@@ -3241,5 +3243,6 @@ export function useCedVoiceSession(
     clearError,
     registerChatImageForVoice,
     voiceSessionActive,
+    conversationId,
   };
 }
