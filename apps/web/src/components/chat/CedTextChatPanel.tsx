@@ -689,8 +689,9 @@ export function CedTextChatPanel({
             },
           ];
         }
-        if (prev.length === 1 && isDefaultWelcome(prev[0]!)) {
-          return [{ ...prev[0], content: personalized }];
+        const only = prev[0];
+        if (prev.length === 1 && only && isDefaultWelcome(only)) {
+          return [{ ...only, content: personalized }];
         }
         return prev;
       });
