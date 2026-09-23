@@ -103,7 +103,51 @@ function upsertLiveTranscriptMessage(
     partial: live.partial,
   };
   const kept = prev.filter((m) => !isDefaultWelcome(m) && m.id !== id);
+  const last = [...kept].reverse().find((m) => m.role === live.role);
+  if (last && (last.content === live.text || last.content.startsWith(live.text))) {
+    return kept;
+  }
+  if (last && live.text.startsWith(last.content)) {
+    return kept.map((m) =>
+      m === last ? { ...m, content: live.text, partial: live.partial } : m,
+    );
+  }
   return [...kept, next];
+}
+
+function mergePersistedVoiceMessages(
+  prev: ChatMessage[],
+  remote: { id: string; role: string; content: string; created_at: string }[],
+): ChatMessage[] {
+  const mapped: ChatMessage[] = remote
+    .filter((m) => Boolean(m.content?.trim()))
+    .map((m) => ({
+      id: m.id,
+      role: m.role === "user" ? "user" : "model",
+      content: m.content,
+      created_at: m.created_at,
+      partial: false,
+    }));
+  if (mapped.length === 0) return prev;
+  const livePartials = prev.filter((m) => isVoiceLiveMessage(m));
+  const next = mapped.map((m) => ({ ...m }));
+  for (const live of livePartials) {
+    const last = [...next].reverse().find((m) => m.role === live.role);
+    if (!last) {
+      next.push(live);
+      continue;
+    }
+    if (live.content === last.content || last.content.startsWith(live.content)) {
+      continue;
+    }
+    if (live.content.startsWith(last.content)) {
+      last.content = live.content;
+      last.partial = live.partial;
+      continue;
+    }
+    next.push(live);
+  }
+  return next;
 }
 
 function formatTime(iso?: string) {
@@ -641,13 +685,26 @@ export function CedTextChatPanel({
     if (live.length === 0) return;
     setMessages((prev) => {
       const rest = prev.filter((m) => !isVoiceLiveMessage(m));
-      const usefulRest = rest.filter((m) => !isDefaultWelcome(m));
-      return [...usefulRest, ...live];
+      const usefulRest = rest.filter((m) => !isDefaultWelcome(m)).map((m) => ({ ...m }));
+      for (const item of live) {
+        const last = [...usefulRest].reverse().find((m) => m.role === item.role);
+        if (last && (last.content === item.content || last.content.startsWith(item.content))) {
+          continue;
+        }
+        if (last && item.content.startsWith(last.content)) {
+          last.content = item.content;
+          last.partial = item.partial;
+          continue;
+        }
+        usefulRest.push(item);
+      }
+      return usefulRest;
     });
   }, [liveVoiceTurns, voiceSessionActive]);
 
   useEffect(() => {
     if (!open || !voiceSessionActive) return;
+    const threadId = bindVoiceConversationId || conversationId;
     let cancelled = false;
     let lastSeq = 0;
     const pull = async () => {
@@ -657,28 +714,39 @@ export function CedTextChatPanel({
         const live = state.live_transcript;
         const text = String(live?.text || "").trim();
         const seq = Number(live?.seq || 0);
-        if (!text || seq <= lastSeq) return;
-        lastSeq = seq;
-        const role = live?.role === "user" ? "user" : "model";
-        setMessages((prev) =>
-          upsertLiveTranscriptMessage(prev, {
-            text,
-            role,
-            streamKey: String(live?.stream_key || `${role}-live`),
-            partial: Boolean(live?.partial),
-          }),
-        );
+        if (text && seq > lastSeq) {
+          lastSeq = seq;
+          const role = live?.role === "user" ? "user" : "model";
+          setMessages((prev) =>
+            upsertLiveTranscriptMessage(prev, {
+              text,
+              role,
+              streamKey: String(live?.stream_key || `${role}-live`),
+              partial: Boolean(live?.partial),
+            }),
+          );
+        }
       } catch {
         /* sin sesión */
       }
+      if (!threadId) return;
+      try {
+        const data = await getConversationMessages(threadId);
+        if (cancelled) return;
+        const remote = data.messages || [];
+        if (remote.length === 0) return;
+        setMessages((prev) => mergePersistedVoiceMessages(prev, remote));
+      } catch {
+        /* historial aún vacío */
+      }
     };
     void pull();
-    const timer = window.setInterval(() => void pull(), 350);
+    const timer = window.setInterval(() => void pull(), 450);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, voiceSessionActive]);
+  }, [open, voiceSessionActive, bindVoiceConversationId, conversationId]);
 
   useEffect(() => {
     if (!conversationId) return;

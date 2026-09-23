@@ -241,7 +241,8 @@ def append_message(
         )
         if last.data:
             row = last.data[0] or {}
-            if str(row.get("role") or "") in ("model", "assistant", "user"):
+            last_role = str(row.get("role") or "")
+            if last_role == role and last_role in ("model", "assistant", "user"):
                 prev = str(row.get("content") or "").strip()
                 created_raw = row.get("created_at")
                 recent = True

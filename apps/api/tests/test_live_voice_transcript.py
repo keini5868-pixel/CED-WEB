@@ -78,3 +78,29 @@ def test_client_state_http_exposes_live_transcript():
     assert data["live_transcript"]["text"] == "Listo, señor."
     assert data["live_transcript"]["stream_key"] == "agent-9"
     assert data["live_transcript"]["role"] == "model"
+
+
+def test_resolve_call_conversation_from_metadata():
+    from app.services.retell_call_registry import (
+        bind_call_user,
+        release_call_user,
+        resolve_call_conversation,
+        resolve_call_user,
+    )
+
+    call_id = "call-conv-live-1"
+    release_call_user(call_id)
+    uid = resolve_call_user(
+        call_id,
+        {
+            "call": {
+                "metadata": {
+                    "user_id": UID,
+                    "conversation_id": "conv-abc",
+                }
+            }
+        },
+    )
+    assert uid == UID
+    assert resolve_call_conversation(call_id) == "conv-abc"
+    release_call_user(call_id)

@@ -28,13 +28,17 @@ export async function warmupRetellVoiceApi(): Promise<void> {
   }
 }
 
-export async function registerRetellCall(): Promise<RetellRegisterCallResponse> {
+export async function registerRetellCall(
+  conversationId?: string | null,
+): Promise<RetellRegisterCallResponse> {
   let response: Response;
   try {
     response = await proxyFetch("retell/register-call", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        conversation_id: conversationId?.trim() || undefined,
+      }),
     });
   } catch {
     return { ok: false, error: "No se pudo contactar la API de voz." };
@@ -74,13 +78,17 @@ export type RetellNativePilotRegisterResponse = RetellRegisterCallResponse & {
   model?: string;
 };
 
-export async function registerRetellNativePilotCall(): Promise<RetellNativePilotRegisterResponse> {
+export async function registerRetellNativePilotCall(
+  conversationId?: string | null,
+): Promise<RetellNativePilotRegisterResponse> {
   let response: Response;
   try {
     response = await proxyFetch("retell/register-call-native-pilot", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        conversation_id: conversationId?.trim() || undefined,
+      }),
     });
   } catch {
     return { ok: false, error: "No se pudo contactar la API del piloto nativo." };

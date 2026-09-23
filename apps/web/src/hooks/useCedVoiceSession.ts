@@ -1317,8 +1317,8 @@ export function useCedVoiceSession(
         setRetellPollActive(true);
         setStatusLabel("Iniciando llamada…");
         const registration = isRetellNativePilot()
-          ? await registerRetellNativePilotCall()
-          : await registerRetellCall();
+          ? await registerRetellNativePilotCall(conversationRef.current)
+          : await registerRetellCall(conversationRef.current);
         if (isStale()) return;
         if (!registration.ok) {
           const err = registration.error || "No pude iniciar la voz.";
@@ -1378,8 +1378,8 @@ export function useCedVoiceSession(
               void (async () => {
                 try {
                   const registration = isRetellNativePilot()
-          ? await registerRetellNativePilotCall()
-          : await registerRetellCall();
+          ? await registerRetellNativePilotCall(conversationRef.current)
+          : await registerRetellCall(conversationRef.current);
                   if (isStale() || !registration.ok) {
                     setRetellPollActive(false);
                     await stopSession();

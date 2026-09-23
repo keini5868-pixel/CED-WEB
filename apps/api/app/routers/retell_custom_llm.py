@@ -24,6 +24,7 @@ from app.services.voice_llm_factory import build_voice_llm
 from app.services.retell_call_registry import (
     bind_call_user,
     release_call_user,
+    resolve_call_conversation,
     resolve_call_user,
 )
 from app.services.retell_custom_llm import (
@@ -53,7 +54,7 @@ from app.services.navigation_voice_intent import (
     resolve_open_map_request,
 )
 from app.services.async_sync import run_sync
-from app.services.voice_history import persist_voice_turn
+from app.services.voice_history import persist_voice_turn, set_active_conversation
 from app.services import voice_client_session as vcs
 from app.services.voice_llm_common import (
     FALLBACK_REPLY,
@@ -157,8 +158,11 @@ async def resolve_call_user_robust(
         detail = await asyncio.to_thread(client.call.retrieve, call_id=cid)
         meta = getattr(detail, "metadata", None) or {}
         val = str(meta.get("user_id") or meta.get("userId") or "").strip()
+        conv = str(meta.get("conversation_id") or meta.get("conversationId") or "").strip()
         if val:
-            bind_call_user(cid, val)
+            bind_call_user(cid, val, conversation_id=conv or None)
+            if conv:
+                set_active_conversation(val, conv)
             logger.info("[RETELL-GEMINI] user_id recuperado vía API call=%s", cid)
             return val
     except Exception as exc:  # noqa: BLE001 — fallback best-effort
@@ -308,6 +312,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     if user_id:
         llm.set_user_id(user_id)
         logger.info("[RETELL-GEMINI] user_id=%s call=%s (registry)", user_id[:8], call_id)
+    bound_conv = resolve_call_conversation(call_id)
+    if user_id and bound_conv:
+        set_active_conversation(user_id, bound_conv)
+    last_hist_persist_at = 0.0
+    last_hist_persist_sig = ""
 
     def publish_live_transcript(
         role: str,
@@ -332,13 +341,44 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
         except Exception:  # noqa: BLE001
             logger.warning("[VOICE-LIVE] no se pudo publicar transcript role=%s", role)
+        try:
+            asyncio.get_running_loop().create_task(
+                persist_voice_history(
+                    "user" if role == "user" else "model",
+                    text,
+                    who=target,
+                    partial=partial,
+                )
+            )
+        except RuntimeError:
+            pass
 
-    async def persist_voice_history(role: str, content: str, *, who: str | None = None) -> None:
+    async def persist_voice_history(
+        role: str,
+        content: str,
+        *,
+        who: str | None = None,
+        partial: bool = False,
+    ) -> None:
+        nonlocal last_hist_persist_at, last_hist_persist_sig, bound_conv
         target = (who or user_id or "").strip()
         if not target:
             return
+        text = (content or "").strip()
+        if not text:
+            return
+        conv = resolve_call_conversation(call_id) or bound_conv
+        if conv:
+            bound_conv = conv
+            set_active_conversation(target, conv)
+        sig = f"{role}:{text}"
+        now = time.time()
+        if partial and sig == last_hist_persist_sig and now - last_hist_persist_at < 0.45:
+            return
+        last_hist_persist_at = now
+        last_hist_persist_sig = sig
         try:
-            await run_sync(persist_voice_turn, target, role, content)
+            await run_sync(persist_voice_turn, target, role, text, conversation_id=conv)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[VOICE-HIST] persist falló role=%s: %s", role, exc)
 
@@ -702,7 +742,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         nonlocal turn_draft_in_progress, turn_draft_user_key, latest_incoming_rid
         nonlocal greeting_sent, silence_pings_sent, user_id
         nonlocal live_agent_turn, live_user_turn, last_live_turntaking
-        nonlocal last_published_agent, last_published_user
+        nonlocal last_published_agent, last_published_user, bound_conv
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
@@ -738,6 +778,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             from app.services import voice_client_session as vcs
 
             vcs.sync_voice_call(uid, call_id)
+            conv = resolve_call_conversation(call_id, request_json)
+            if conv:
+                bound_conv = conv
+                set_active_conversation(uid, conv)
 
         if interaction == "ping_pong":
             uid = resolve_call_user(call_id, request_json)

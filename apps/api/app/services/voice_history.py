@@ -51,7 +51,12 @@ def ensure_voice_conversation_id(user_id: str) -> str | None:
         return None
 
 
-def persist_voice_turn(user_id: str, role: str, content: str) -> None:
+def persist_voice_turn(
+    user_id: str,
+    role: str,
+    content: str,
+    conversation_id: str | None = None,
+) -> None:
     """Best-effort: guarda el turno en voice_messages aunque el cliente cierre."""
     uid = (user_id or "").strip()
     text = (content or "").strip()
@@ -59,6 +64,9 @@ def persist_voice_turn(user_id: str, role: str, content: str) -> None:
         return
     if role not in ("user", "model", "system"):
         role = "model"
+    forced = (conversation_id or "").strip()
+    if forced:
+        set_active_conversation(uid, forced)
     cid = ensure_voice_conversation_id(uid)
     if not cid:
         logger.warning("[VOICE-HIST] sin conversation_id — no se guardó %s user=%s", role, uid[:8])

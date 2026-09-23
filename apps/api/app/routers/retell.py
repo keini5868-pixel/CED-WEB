@@ -28,6 +28,7 @@ from app.services.retell_agent_setup import (
 )
 from app.services.retell_ws_tracker import active_ws_calls
 from app.services.retell_call_registry import bind_call_user, release_call_user, resolve_call_user
+from app.services.voice_history import get_active_conversation, set_active_conversation
 from app.services.retell_client import get_retell_client, verify_retell_webhook
 from app.services.retell_web_call import web_call_client_payload
 from app.services.retell_native_pilot import (
@@ -87,8 +88,20 @@ router = APIRouter(prefix="/v1/retell", tags=["retell"])
 
 class RegisterCallBody(BaseModel):
     user_id: str | None = Field(default=None, alias="userId")
+    conversation_id: str | None = Field(default=None, alias="conversationId")
 
     model_config = {"populate_by_name": True}
+
+
+def _conversation_id_for_call(user_id: str, body: RegisterCallBody | None) -> str | None:
+    """El chat de texto y el LLM deben escribir en el mismo hilo de session/start."""
+    conv = ((body.conversation_id if body else None) or "").strip()
+    if not conv:
+        conv = (get_active_conversation(user_id) or "").strip()
+    if conv:
+        set_active_conversation(user_id, conv)
+        return conv
+    return None
 
 
 async def _voice_access_or_raise(
@@ -215,12 +228,19 @@ async def register_retell_call(
     except Exception as exc:  # noqa: BLE001
         logger.warning("[RETELL] agent refresh before call failed (continuing): %s", exc)
 
+    conversation_id = _conversation_id_for_call(user_id, body)
+    call_vars: dict[str, str] = {"user_id": user_id}
+    call_meta: dict[str, str] = {"user_id": user_id}
+    if conversation_id:
+        call_vars["conversation_id"] = conversation_id
+        call_meta["conversation_id"] = conversation_id
+
     try:
         call = await asyncio.to_thread(
             client.call.create_web_call,
             agent_id=agent_id,
-            metadata={"user_id": user_id},
-            retell_llm_dynamic_variables={"user_id": user_id},
+            metadata=call_meta,
+            retell_llm_dynamic_variables=call_vars,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("[RETELL] create_web_call failed: %s", exc)
@@ -229,11 +249,16 @@ async def register_retell_call(
     payload = web_call_client_payload(call, agent_id=agent_id)
     call_id = payload.get("call_id")
     if call_id:
-        bind_call_user(str(call_id), user_id)
+        bind_call_user(str(call_id), user_id, conversation_id=conversation_id)
         from app.services import voice_client_session as vcs
 
         vcs.begin_voice_publish_session(user_id, str(call_id))
-        logger.info("[RETELL] voice publish session reset call=%s user=%s", call_id, user_id[:8])
+        logger.info(
+            "[RETELL] voice publish session reset call=%s user=%s conv=%s",
+            call_id,
+            user_id[:8],
+            (conversation_id or "")[:8],
+        )
 
     return payload
 
@@ -290,15 +315,22 @@ async def register_retell_native_pilot_call(
     except Exception as exc:  # noqa: BLE001
         logger.warning("[NATIVE-PILOT] agent refresh before call failed (continuing): %s", exc)
 
+    conversation_id = _conversation_id_for_call(user_id, body)
+    native_meta: dict[str, str] = {"user_id": user_id, "pilot": "native-llm-environment"}
+    native_vars: dict[str, str] = {
+        "user_id": user_id,
+        "creator_mode": creator_mode,
+    }
+    if conversation_id:
+        native_meta["conversation_id"] = conversation_id
+        native_vars["conversation_id"] = conversation_id
+
     try:
         call = await asyncio.to_thread(
             client.call.create_web_call,
             agent_id=agent_id,
-            metadata={"user_id": user_id, "pilot": "native-llm-environment"},
-            retell_llm_dynamic_variables={
-                "user_id": user_id,
-                "creator_mode": creator_mode,
-            },
+            metadata=native_meta,
+            retell_llm_dynamic_variables=native_vars,
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("[NATIVE-PILOT] create_web_call failed: %s", exc)
@@ -307,11 +339,17 @@ async def register_retell_native_pilot_call(
     payload = web_call_client_payload(call, agent_id=agent_id, extra={"pilot": "native"})
     call_id = payload.get("call_id")
     if call_id:
-        bind_call_user(str(call_id), user_id)
+        bind_call_user(str(call_id), user_id, conversation_id=conversation_id)
         from app.services import voice_client_session as vcs
 
         vcs.begin_voice_publish_session(user_id, str(call_id))
-        logger.info("[NATIVE-PILOT] call=%s user=%s agent=%s", call_id, user_id[:8], agent_id[:12])
+        logger.info(
+            "[NATIVE-PILOT] call=%s user=%s agent=%s conv=%s",
+            call_id,
+            user_id[:8],
+            agent_id[:12],
+            (conversation_id or "")[:8],
+        )
 
     return payload
 
