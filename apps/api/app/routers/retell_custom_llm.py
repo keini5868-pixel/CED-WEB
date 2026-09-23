@@ -165,6 +165,32 @@ async def resolve_call_user_robust(
     return None
 
 
+def _utterance_role_content(item: Any) -> tuple[str, str]:
+    if isinstance(item, dict):
+        role = str(item.get("role") or "").lower().strip()
+        content = str(item.get("content") or item.get("text") or "").strip()
+        return role, content
+    role = str(getattr(item, "role", "") or "").lower().strip()
+    content = str(getattr(item, "content", "") or getattr(item, "text", "") or "").strip()
+    return role, content
+
+
+def latest_transcript_line(transcript: list[Any] | None, role: str) -> str:
+    latest = ""
+    want_user = role == "user"
+    for item in transcript or []:
+        raw_role, content = _utterance_role_content(item)
+        if not content:
+            continue
+        is_user = raw_role in {"user", "customer"}
+        is_agent = raw_role in {"agent", "assistant", "model"}
+        if want_user and is_user:
+            latest = content
+        elif not want_user and is_agent:
+            latest = content
+    return latest
+
+
 def _voice_turn_key(call_id: str, rid: int) -> str:
     return f"{call_id}:{rid}"
 
@@ -269,6 +295,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     standalone_exec_lock = asyncio.Lock()
     last_standalone_module_answered_key = ""
     live_agent_acc: dict[int, str] = {}
+    live_agent_turn = 0
+    live_user_turn = 0
+    last_live_turntaking = ""
+    last_published_agent = ""
+    last_published_user = ""
 
     user_id = await resolve_call_user_robust(call_id)
     if user_id:
@@ -281,9 +312,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         *,
         stream_key: str,
         partial: bool,
+        who: str | None = None,
     ) -> None:
-        target = (user_id or "").strip()
+        nonlocal user_id
+        target = (who or user_id or "").strip()
         if not target:
+            logger.info("[VOICE-LIVE] skip sin user_id role=%s call=%s", role, call_id)
             return
         try:
             vcs.set_live_transcript(
@@ -663,7 +697,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     async def handle_message(request_json: dict) -> None:
         nonlocal active_response_id, debounce_task, last_scheduled_user_key, generation_seq
         nonlocal turn_draft_in_progress, turn_draft_user_key, latest_incoming_rid
-        nonlocal greeting_sent, silence_pings_sent
+        nonlocal greeting_sent, silence_pings_sent, user_id
+        nonlocal live_agent_turn, live_user_turn, last_live_turntaking
+        nonlocal last_published_agent, last_published_user
 
         interaction = str(request_json.get("interaction_type") or "")
         note_ws_interaction(call_id, interaction)
@@ -694,6 +730,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
         uid = await resolve_call_user_robust(call_id, request_json)
         if uid:
+            user_id = uid
             llm.set_user_id(uid)
             from app.services import voice_client_session as vcs
 
@@ -730,9 +767,37 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         if interaction == "update_only":
-            turntaking = request_json.get("turntaking")
+            turntaking = str(request_json.get("turntaking") or "")
             if turntaking:
                 logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)
+            if uid:
+                if turntaking == "agent_turn" and last_live_turntaking != "agent_turn":
+                    live_agent_turn += 1
+                if turntaking == "user_turn" and last_live_turntaking != "user_turn":
+                    live_user_turn += 1
+                if turntaking:
+                    last_live_turntaking = turntaking
+                tx = request_json.get("transcript") or []
+                agent_line = latest_transcript_line(tx, "agent")
+                user_line = latest_transcript_line(tx, "user")
+                if user_line and user_line != last_published_user:
+                    last_published_user = user_line
+                    publish_live_transcript(
+                        "user",
+                        user_line,
+                        stream_key=f"user-{live_user_turn or 1}",
+                        partial=turntaking == "user_turn",
+                        who=uid,
+                    )
+                if agent_line and agent_line != last_published_agent:
+                    last_published_agent = agent_line
+                    publish_live_transcript(
+                        "model",
+                        agent_line,
+                        stream_key=f"agent-{live_agent_turn or 1}",
+                        partial=turntaking != "user_turn",
+                        who=uid,
+                    )
             return
 
         if interaction == "reminder_required":
@@ -896,6 +961,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 user_text,
                 stream_key=f"user-{response_id}",
                 partial=False,
+                who=persist_who,
             )
             asyncio.create_task(
                 persist_voice_history("user", user_text, who=persist_who)

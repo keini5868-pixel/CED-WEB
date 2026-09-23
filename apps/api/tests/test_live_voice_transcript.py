@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.deps.auth import require_user_id
 from app.main import create_app
+from app.routers.retell_custom_llm import latest_transcript_line
 from app.services import voice_client_session as vcs
 
 UID = "550e8400-e29b-41d4-a716-446655440077"
@@ -19,7 +20,14 @@ def teardown_function() -> None:
     vcs.end_voice_publish_session(UID)
 
 
-def test_set_live_transcript_grows_same_stream():
+def test_latest_transcript_line_picks_last_agent():
+    tx = [
+        {"role": "agent", "content": "Hola"},
+        {"role": "user", "content": "qué hora es"},
+        {"role": "agent", "content": "Son las diez, señor."},
+    ]
+    assert latest_transcript_line(tx, "agent") == "Son las diez, señor."
+    assert latest_transcript_line(tx, "user") == "qué hora es"
     first = vcs.set_live_transcript(
         UID,
         role="model",
