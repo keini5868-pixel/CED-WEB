@@ -38,7 +38,6 @@ import { downloadGeneratedImage } from "@/lib/api/image-download";
 import { downloadPdfBlob } from "@/lib/api/pdf";
 import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome-events";
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
-import { useHudFeed } from "@/contexts/HudFeedContext";
 import {
   getConversationMessages,
   peekCachedConversations,
@@ -46,6 +45,13 @@ import {
   rememberConversationMessages,
   VOICE_THREAD_RESUME_NOTE,
 } from "@/lib/api/conversations";
+
+export type LiveVoiceTurn = {
+  streamKey: string;
+  role: "user" | "model";
+  content: string;
+  partial?: boolean;
+};
 
 type CedTextChatPanelProps = {
   open: boolean;
@@ -70,6 +76,7 @@ type CedTextChatPanelProps = {
   /** Sesión de voz en curso — el transcript se escribe en este chat. */
   voiceSessionActive?: boolean;
   bindVoiceConversationId?: string | null;
+  liveVoiceTurns?: LiveVoiceTurn[];
 };
 
 function isDefaultWelcome(msg: ChatMessage): boolean {
@@ -401,6 +408,7 @@ export function CedTextChatPanel({
   onResumeApplied,
   voiceSessionActive = false,
   bindVoiceConversationId = null,
+  liveVoiceTurns = [],
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -425,9 +433,7 @@ export function CedTextChatPanel({
   const streamTargetIndexRef = useRef<number | null>(null);
   const [mobilePanelHeight, setMobilePanelHeight] = useState<number | null>(null);
   const { setTextChatOpen } = useCedOverlay();
-  const { voiceItems } = useHudFeed();
   const voiceSessionGateRef = useRef(false);
-  const voiceStartedAtRef = useRef(0);
   const embedded = variant === "embedded";
   const { bar: composerBar, actions: composerActions } = useComposerSplit(
     Boolean(open && embedded && splitComposer),
@@ -584,7 +590,6 @@ export function CedTextChatPanel({
   useEffect(() => {
     if (voiceSessionActive && !voiceSessionGateRef.current) {
       voiceSessionGateRef.current = true;
-      voiceStartedAtRef.current = Date.now() - 400;
       setMessages((prev) =>
         prev.map((m) =>
           isVoiceLiveMessage(m)
@@ -606,35 +611,23 @@ export function CedTextChatPanel({
   }, [voiceSessionActive]);
 
   useEffect(() => {
-    if (!voiceSessionActive) return;
-    const started = voiceStartedAtRef.current || 0;
-    const live: ChatMessage[] = [...voiceItems]
-      .reverse()
-      .filter(
-        (item) =>
-          (item.kind === "voice" || item.kind === "report") &&
-          Boolean(item.text?.trim()) &&
-          item.at >= started,
-      )
+    if (!voiceSessionActive && liveVoiceTurns.length === 0) return;
+    const live: ChatMessage[] = liveVoiceTurns
+      .filter((item) => Boolean(item.content?.trim()))
       .map((item) => ({
-        id: `${VOICE_LIVE_PREFIX}${item.streamKey || item.id}`,
+        id: `${VOICE_LIVE_PREFIX}${item.streamKey}`,
         role: item.role === "user" ? "user" : "model",
-        content: item.text,
-        created_at: new Date(item.at).toISOString(),
+        content: item.content,
+        created_at: new Date().toISOString(),
         partial: Boolean(item.partial),
       }));
     if (live.length === 0) return;
     setMessages((prev) => {
       const rest = prev.filter((m) => !isVoiceLiveMessage(m));
       const usefulRest = rest.filter((m) => !isDefaultWelcome(m));
-      const merged = [...usefulRest, ...live];
-      merged.sort(
-        (a, b) =>
-          Date.parse(a.created_at || "0") - Date.parse(b.created_at || "0"),
-      );
-      return merged;
+      return [...usefulRest, ...live];
     });
-  }, [voiceItems, voiceSessionActive]);
+  }, [liveVoiceTurns, voiceSessionActive]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -677,7 +670,7 @@ export function CedTextChatPanel({
       if (!personalized) return;
       setMessages((prev) => {
         if (resumeLockRef.current) return prev;
-        if (prev.some((m) => m.role === "user")) return prev;
+        if (prev.some((m) => m.role === "user" || isVoiceLiveMessage(m))) return prev;
         if (prev.length === 0) {
           return [
             {

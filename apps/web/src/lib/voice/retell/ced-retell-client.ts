@@ -104,6 +104,8 @@ export class CedRetellClient {
   private lastTurntaking = "";
   private userTurnSeq = 0;
   private currentUserStreamKey = "";
+  private lastAgentPartialEmitAt = 0;
+  private lastEmittedAgentPartial = "";
 
   constructor() {
     this.client = new RetellWebClient();
@@ -285,12 +287,9 @@ export class CedRetellClient {
       return;
     }
     if (partial) {
-      const low = sanitized.toLowerCase();
-      if (incomplete && sanitized.length < 48) return;
-      if (/^ced en[\s.!,?]*$/i.test(sanitized)) return;
-      if (incomplete && /^hola,?\s*se[nñ]or[\s.!,?]*$/i.test(sanitized)) return;
-      if (incomplete && low.startsWith("ced en ") && sanitized.length < 40) return;
-      if (incomplete && sanitized.length < 72 && !/[.!?…]["']?$/.test(sanitized)) return;
+      // En vivo: mostrar desde las primeras palabras. Un streamKey estable
+      // reescribe la misma burbuja (no cascada).
+      if (sanitized.length < 2) return;
     }
     if (!this.currentAgentStreamKey) {
       this.agentTurnSeq += 1;
@@ -397,11 +396,12 @@ export class CedRetellClient {
       const agentText = this.latestLine(lines, "agent");
       if (!agentText || agentText === this.lastAgentLine) return;
       this.lastAgentLine = agentText;
-      // NO emitimos parciales del agente. Retell envía el transcript de forma
-      // incremental (creciendo palabra por palabra) y renderizar cada estado
-      // intermedio producía la "cascada" de burbujas. Mostramos SOLO la línea
-      // final en agent_stop_talking. El usuario igual escucha la voz en tiempo
-      // real; el texto es secundario. Esto elimina la cascada de raíz.
+      const now = Date.now();
+      const grew = agentText.length - this.lastEmittedAgentPartial.length;
+      if (now - this.lastAgentPartialEmitAt < 80 && grew < 6) return;
+      this.lastAgentPartialEmitAt = now;
+      this.lastEmittedAgentPartial = agentText;
+      this.emitAgentTranscript(agentText, true);
     });
 
     this.client.on("error", (error: unknown) => {

@@ -245,6 +245,8 @@ export function useCedVoiceSession(
     voiceTransport?: string | null;
   },
 ) {
+  const callbacksRef = useRef(callbacks);
+  callbacksRef.current = callbacks;
   const voiceRouteRef = useRef(voiceRoute);
   voiceRouteRef.current = voiceRoute;
   const retellActive = () => isRetellVoice(voiceRouteRef.current);
@@ -667,7 +669,7 @@ export function useCedVoiceSession(
           if (ev.type === "generated_image" && ev.image_url) {
             const normalized = normalizeCedMediaUrl(ev.image_url);
             lastPublishableImageRef.current = normalized;
-            callbacks?.onGeneratedImage?.(normalized, ev.prompt);
+            callbacksRef.current?.onGeneratedImage?.(normalized, ev.prompt);
           }
           if (ev.type === "pdf_created" && ev.title) {
             void persistVoiceTranscript("model", `PDF generado: ${String(ev.title)}`);
@@ -894,7 +896,7 @@ export function useCedVoiceSession(
     (speak = true) => {
       setStatusLabel("Cámara activa — vista en vivo");
       setErrorMessage(null);
-      callbacks?.onTranscript?.(CAMERA_PRIVACY_SPOKEN, "model", {
+      callbacksRef.current?.onTranscript?.(CAMERA_PRIVACY_SPOKEN, "model", {
         partial: false,
       });
       if (speak) {
@@ -1076,7 +1078,7 @@ export function useCedVoiceSession(
         }
       } catch {
         setErrorMessage(CAMERA_PERMISSION_DENIED_SPOKEN);
-        callbacks?.onTranscript?.(CAMERA_PERMISSION_DENIED_SPOKEN, "model", {
+        callbacksRef.current?.onTranscript?.(CAMERA_PERMISSION_DENIED_SPOKEN, "model", {
           partial: false,
         });
         clientRef.current?.sendNarrationBrief(CAMERA_PERMISSION_DENIED_SPOKEN);
@@ -1137,7 +1139,7 @@ export function useCedVoiceSession(
         } catch (error) {
           console.error("[CAMERA] activate error:", error);
           setErrorMessage(CAMERA_PERMISSION_DENIED_SPOKEN);
-          callbacks?.onTranscript?.(CAMERA_PERMISSION_DENIED_SPOKEN, "model", {
+          callbacksRef.current?.onTranscript?.(CAMERA_PERMISSION_DENIED_SPOKEN, "model", {
             partial: false,
           });
           clientRef.current?.sendNarrationBrief(CAMERA_PERMISSION_DENIED_SPOKEN);
@@ -1388,7 +1390,7 @@ export function useCedVoiceSession(
           },
           onTranscript: (text, role, options) => {
             if (isStale()) return;
-            callbacks?.onTranscript?.(
+            callbacksRef.current?.onTranscript?.(
               text,
               role === "user" ? "user" : "model",
               options,
@@ -1426,7 +1428,7 @@ export function useCedVoiceSession(
             );
           },
           onClearAgentPartial: () => {
-            callbacks?.onClearAgentPartial?.();
+            callbacksRef.current?.onClearAgentPartial?.();
           },
           onError: (message) => {
             if (isStale()) return;
@@ -1788,7 +1790,7 @@ export function useCedVoiceSession(
       const notifyGeneratedImage = (url: string, prompt?: string) => {
         const normalized = normalizeCedMediaUrl(url);
         lastPublishableImageRef.current = normalized;
-        callbacks?.onGeneratedImage?.(normalized, prompt);
+        callbacksRef.current?.onGeneratedImage?.(normalized, prompt);
       };
 
       const publishSuccessBrief = (platform: PublishPlatform) =>
@@ -2253,22 +2255,35 @@ export function useCedVoiceSession(
           }, 1600);
         },
         onTranscriptUpdate: (text, role) => {
-          if (isStale() || role !== "user") return;
+          if (isStale()) return;
           const trimmed = text.trim();
           if (!trimmed || /^<noise>$/i.test(trimmed)) return;
-          lastUserSpeechAtRef.current = Date.now();
-          idlePresenceSentRef.current = false;
-          clearIdlePresenceTimer();
-          lastUserUtteranceRef.current = trimmed;
-          if (webFetchRef.current) {
-            setOrbState("processing");
-            setStatusLabel("Buscando en internet…");
+          if (role === "user") {
+            lastUserSpeechAtRef.current = Date.now();
+            idlePresenceSentRef.current = false;
+            clearIdlePresenceTimer();
+            lastUserUtteranceRef.current = trimmed;
+            if (webFetchRef.current) {
+              setOrbState("processing");
+              setStatusLabel("Buscando en internet…");
+            }
+            setHeardIndicator({
+              status: "heard",
+              userText: trimmed,
+              heardAt: Date.now(),
+            });
+            callbacksRef.current?.onTranscript?.(trimmed, "user", {
+              partial: true,
+              streamKey: "openai-user",
+            });
+            return;
           }
-          setHeardIndicator({
-            status: "heard",
-            userText: trimmed,
-            heardAt: Date.now(),
-          });
+          if (role === "model") {
+            callbacksRef.current?.onTranscript?.(trimmed, "model", {
+              partial: true,
+              streamKey: "openai-agent",
+            });
+          }
         },
         onTranscript: (text, role) => {
           if (isStale()) return;
@@ -2289,7 +2304,10 @@ export function useCedVoiceSession(
           ) {
             return;
           }
-          callbacks?.onTranscript?.(trimmed, role);
+          callbacksRef.current?.onTranscript?.(trimmed, role, {
+            partial: false,
+            streamKey: role === "user" ? "openai-user" : "openai-agent",
+          });
           persistVoiceTranscript(role, trimmed);
           if (role === "user") {
             if (client.isGreetingInProgress()) {

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
-import { CedTextChatPanel } from "@/components/chat/CedTextChatPanel";
+import { CedTextChatPanel, type LiveVoiceTurn } from "@/components/chat/CedTextChatPanel";
 import { AdvancedChatPanel } from "@/components/chat/AdvancedChatPanel";
 import { FinanceChatPanel } from "@/components/chat/FinanceChatPanel";
 import { ModuleShell } from "@/components/modules/ModuleShell";
@@ -78,6 +78,35 @@ export function CedVoiceHub() {
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial, setActiveModule } =
     useHudFeed();
+  const [liveVoiceTurns, setLiveVoiceTurns] = useState<LiveVoiceTurn[]>([]);
+  const voiceWasActiveRef = useRef(false);
+  const upsertLiveVoiceTurn = useCallback(
+    (
+      text: string,
+      role: "user" | "model",
+      options?: { partial?: boolean; streamKey?: string },
+    ) => {
+      const content = (text || "").trim();
+      if (!content) return;
+      const streamKey = options?.streamKey || `${role}-${Date.now()}`;
+      setLiveVoiceTurns((prev) => {
+        const idx = prev.findIndex((t) => t.streamKey === streamKey && t.role === role);
+        const row: LiveVoiceTurn = {
+          streamKey,
+          role,
+          content,
+          partial: Boolean(options?.partial),
+        };
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx] = row;
+          return next;
+        }
+        return [...prev, row];
+      });
+    },
+    [],
+  );
   const [previewTick, setPreviewTick] = useState(0);
 
   useEffect(() => {
@@ -234,6 +263,7 @@ export function CedVoiceHub() {
   const voice = useCedVoiceSession(refreshUsage, {
     onTranscript: (text, role, options) => {
       pushVoiceLine(text, role, options);
+      upsertLiveVoiceTurn(text, role, options);
     },
     onClearAgentPartial: clearAgentPartial,
     onGeneratedImage: (url, prompt) => {
@@ -242,6 +272,13 @@ export function CedVoiceHub() {
       setChatSeedImage(null);
     },
   }, voiceRoute);
+
+  useEffect(() => {
+    if (voice.voiceSessionActive && !voiceWasActiveRef.current) {
+      setLiveVoiceTurns([]);
+    }
+    voiceWasActiveRef.current = voice.voiceSessionActive;
+  }, [voice.voiceSessionActive]);
 
   const activateMicRef = useRef<() => void>(() => undefined);
   const startingAssistRef = useRef(false);
@@ -560,8 +597,9 @@ export function CedVoiceHub() {
               resumeConversationId={resumeConversationId}
               resumeNonce={resumeNonce}
               onResumeApplied={onResumeApplied}
-              voiceSessionActive={voice.voiceSessionActive}
+              voiceSessionActive={voice.voiceSessionActive || liveVoiceTurns.length > 0}
               bindVoiceConversationId={voice.conversationId}
+              liveVoiceTurns={liveVoiceTurns}
               seedImage={chatSeedImage}
               onSeedConsumed={() => setChatSeedImage(null)}
               seedPrompt={chatSeedPrompt}
