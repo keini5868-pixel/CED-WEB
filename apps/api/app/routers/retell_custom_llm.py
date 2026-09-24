@@ -109,6 +109,7 @@ from app.services.retell_ws_tracker import (
     mark_script_delivered,
     mark_ws_connected,
     mark_ws_disconnected,
+    note_transcript_publish,
     note_ws_interaction,
     set_pending_advanced_topic,
 )
@@ -408,9 +409,29 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if not chat_turns:
             return
         vcs.set_chat_turns(target, chat_turns)
-        asyncio.create_task(
-            run_sync(sync_voice_transcript, target, tx, bound_conv, sync_baseline)
-        )
+        conv = bound_conv
+        baseline = sync_baseline
+
+        async def _sync_and_trace() -> None:
+            """La task no se espera: sin esto un fallo del sync se perdía en silencio."""
+            try:
+                await run_sync(sync_voice_transcript, target, tx, conv, baseline)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "[VOICE-LIVE] sync del transcript falló call=%s turns=%s",
+                    call_id,
+                    len(chat_turns),
+                )
+                note_transcript_publish(call_id, turns=len(chat_turns), error=repr(exc))
+                return
+            note_transcript_publish(
+                call_id,
+                turns=len(chat_turns),
+                conversation_id=conv,
+                user_id=target,
+            )
+
+        asyncio.create_task(_sync_and_trace())
 
     async def persist_voice_history(
         role: str,
@@ -891,6 +912,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if interaction == "update_only":
             if not uid:
                 logger.warning("[VOICE-LIVE] update_only sin user_id call=%s", call_id)
+                note_transcript_publish(call_id, turns=0, error="update_only sin user_id")
             turntaking = str(request_json.get("turntaking") or "")
             if turntaking:
                 logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)

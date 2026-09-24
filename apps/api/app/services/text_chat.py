@@ -15,6 +15,7 @@ import httpx
 
 from app.config import get_settings
 from app.services import supabase_db
+from app.services.chat_continuity import append_previous_thread_if_needed
 from app.services.cognitive_router import build_chat_system_extras, route_message
 from app.services.chat_intents import (
     PDF_DETAIL_CLARIFY_QUESTION,
@@ -1562,10 +1563,18 @@ def _build_chat_system(
         append_fitline_guide_if_needed,
     )
 
+    system = append_previous_thread_if_needed(
+        system, user_id, user_text, conversation_id, history
+    )
     return append_fitline_guide_if_needed(system, user_id, user_text, channel="chat")
 
 
-def _build_chat_system_light(user_id: str, user_text: str) -> str:
+def _build_chat_system_light(
+    user_id: str,
+    user_text: str,
+    conversation_id: str | None = None,
+    history: list[dict[str, Any]] | None = None,
+) -> str:
     """System prompt mínimo para streaming — sin consultas DB (meta, dirección, KB)
     y sin instrucciones de tools (esta ruta nunca las necesita, ver
     _can_stream_chat_text) para minimizar el prompt_eval de Llama."""
@@ -1622,6 +1631,9 @@ def _build_chat_system_light(user_id: str, user_text: str) -> str:
         system = append_client_memory_to_prompt(system, user_id)
     except Exception:  # noqa: BLE001
         pass
+    system = append_previous_thread_if_needed(
+        system, user_id, user_text, conversation_id, history
+    )
     return append_fitline_guide_if_needed(system, user_id, user_text, channel="chat")
 
 
@@ -4260,7 +4272,7 @@ def iter_send_message_stream(
 
     messages.append({"role": "user", "content": with_fitline_user_prefix(text)})
     try:
-        system = _build_chat_system_light(user_id, text)
+        system = _build_chat_system_light(user_id, text, conversation_id, history)
     except Exception:  # noqa: BLE001
         logger.exception("[CHAT] fallo armando system prompt — usando base")
         system = CHAT_SYSTEM_BASE

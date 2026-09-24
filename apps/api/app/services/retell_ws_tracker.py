@@ -45,6 +45,35 @@ def note_ws_interaction(call_id: str, interaction_type: str) -> None:
         )
         row["last_interaction"] = interaction_type
         row["interaction_count"] = int(row.get("interaction_count") or 0) + 1
+        by_type = row.setdefault("interactions", {})
+        key = (interaction_type or "desconocido").strip() or "desconocido"
+        by_type[key] = int(by_type.get(key) or 0) + 1
+
+
+def note_transcript_publish(
+    call_id: str,
+    *,
+    turns: int,
+    conversation_id: str | None = None,
+    user_id: str | None = None,
+    error: str | None = None,
+) -> None:
+    """Rastro de por qué el transcript en vivo aparece (o no) en el chat."""
+    cid = (call_id or "").strip()
+    if not cid:
+        return
+    with _lock:
+        row = _by_call.setdefault(cid, {"call_id": cid, "connected_at": time.time()})
+        if error:
+            row["transcript_errors"] = int(row.get("transcript_errors") or 0) + 1
+            row["last_transcript_error"] = error[:200]
+            return
+        row["transcript_publishes"] = int(row.get("transcript_publishes") or 0) + 1
+        row["transcript_turns_seen"] = turns
+        if conversation_id:
+            row["bound_conversation"] = conversation_id
+        if user_id:
+            row["bound_user"] = user_id
 
 
 def mark_greeting_sent(call_id: str) -> None:
