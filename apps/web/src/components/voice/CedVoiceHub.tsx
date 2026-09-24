@@ -296,13 +296,18 @@ export function CedVoiceHub() {
         if (state.conversation_id) {
           chatThreadIdRef.current = state.conversation_id;
         }
-        for (const turn of state.transcript_turns || []) {
-          const text = String(turn.content || "").trim();
-          if (!text) continue;
-          upsertLiveVoiceTurn(text, turn.role === "user" ? "user" : "model", {
-            partial: false,
-            streamKey: String(turn.id || `${turn.role}-${turn.created_at}`),
-          });
+        const turns = state.transcript_turns || [];
+        if (turns.length > 0) {
+          setLiveVoiceTurns(
+            turns
+              .map((turn) => ({
+                streamKey: String(turn.id || `${turn.role}-${turn.created_at}`),
+                role: (turn.role === "user" ? "user" : "model") as "user" | "model",
+                content: String(turn.content || "").trim(),
+                partial: false,
+              }))
+              .filter((row) => Boolean(row.content)),
+          );
         }
         const live = state.live_transcript;
         const liveText = String(live?.text || "").trim();

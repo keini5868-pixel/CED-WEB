@@ -29,7 +29,7 @@ def get_active_conversation(user_id: str) -> str | None:
 
 
 def ensure_voice_conversation_id(user_id: str) -> str | None:
-    """Crea o reutiliza la conversación de esta sesión de voz."""
+    """Reutiliza el hilo abierto en el panel; no crea uno paralelo vacío."""
     uid = (user_id or "").strip()
     if not uid:
         return None
@@ -39,6 +39,12 @@ def ensure_voice_conversation_id(user_id: str) -> str | None:
     try:
         from app.services import supabase_db
 
+        recent = supabase_db.list_conversations(uid, limit=1)
+        latest_id = str((recent[0] or {}).get("id") or "").strip() if recent else ""
+        if latest_id:
+            set_active_conversation(uid, latest_id)
+            logger.info("[VOICE-HIST] reusando hilo reciente conv=%s user=%s", latest_id[:8], uid[:8])
+            return latest_id
         conv: dict[str, Any] = supabase_db.create_conversation(uid)
         cid = str(conv.get("id") or "").strip()
         if not cid:

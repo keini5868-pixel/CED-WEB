@@ -807,6 +807,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if conv:
                 bound_conv = conv
                 set_active_conversation(uid, conv)
+            else:
+                from app.services.voice_history import ensure_voice_conversation_id
+
+                reused = ensure_voice_conversation_id(uid)
+                if reused:
+                    bound_conv = reused
 
         if interaction == "ping_pong":
             uid = resolve_call_user(call_id, request_json)
@@ -839,6 +845,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         if interaction == "update_only":
+            if not uid:
+                logger.warning("[VOICE-LIVE] update_only sin user_id call=%s", call_id)
             turntaking = str(request_json.get("turntaking") or "")
             if turntaking:
                 logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)

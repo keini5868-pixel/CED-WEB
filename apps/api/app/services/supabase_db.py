@@ -469,6 +469,36 @@ def get_conversation_messages(
     return result.data or []
 
 
+def _newest_messages(
+    conversation_id: str,
+    user_id: str,
+    limit: int = 40,
+) -> list[dict[str, Any]]:
+    """Últimos N mensajes (no los primeros: el live vive al final)."""
+    client = _client()
+    conv = (
+        client.table("voice_conversations")
+        .select("id")
+        .eq("id", conversation_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not conv.data:
+        return []
+    result = (
+        client.table("voice_messages")
+        .select("id, role, content, created_at")
+        .eq("conversation_id", conversation_id)
+        .order("created_at", desc=True)
+        .limit(max(1, min(limit, 80)))
+        .execute()
+    )
+    rows = list(result.data or [])
+    rows.reverse()
+    return rows
+
+
 def recent_session_messages(
     user_id: str,
     conversation_id: str | None = None,
@@ -476,32 +506,40 @@ def recent_session_messages(
     limit: int = 40,
     max_age_sec: int = 2700,
 ) -> tuple[list[dict[str, Any]], str | None]:
-    """Mensajes del hilo activo, o del más reciente si se acaba de escribir en voz."""
+    """El hilo con mensajes más nuevos, no uno vacío atado en memoria."""
     uid = (user_id or "").strip()
-    cid = (conversation_id or "").strip()
-    if uid and cid:
-        conv = get_conversation(cid, uid)
-        if conv:
-            return get_conversation_messages(cid, uid, limit=limit), cid
     if not uid:
         return [], None
-    rows = list_conversations(uid, limit=1)
-    if not rows:
-        return [], None
-    latest = rows[0] or {}
-    latest_id = str(latest.get("id") or "").strip()
-    if not latest_id:
-        return [], None
-    updated_raw = latest.get("updated_at")
-    if updated_raw:
-        try:
-            updated_at = datetime.fromisoformat(str(updated_raw).replace("Z", "+00:00"))
-            age = (datetime.now(timezone.utc) - updated_at).total_seconds()
-            if age > max_age_sec:
-                return [], None
-        except ValueError:
-            pass
-    return get_conversation_messages(latest_id, uid, limit=limit), latest_id
+    ids: list[str] = []
+    bound = (conversation_id or "").strip()
+    if bound:
+        ids.append(bound)
+    for row in list_conversations(uid, limit=5):
+        rid = str((row or {}).get("id") or "").strip()
+        if not rid or rid in ids:
+            continue
+        updated_raw = (row or {}).get("updated_at")
+        if updated_raw and rid != bound:
+            try:
+                updated_at = datetime.fromisoformat(str(updated_raw).replace("Z", "+00:00"))
+                if (datetime.now(timezone.utc) - updated_at).total_seconds() > max_age_sec:
+                    continue
+            except ValueError:
+                pass
+        ids.append(rid)
+    best_msgs: list[dict[str, Any]] = []
+    best_id: str | None = None
+    best_ts = ""
+    for conv_id in ids:
+        msgs = _newest_messages(conv_id, uid, limit=limit)
+        if not msgs:
+            continue
+        last_ts = str((msgs[-1] or {}).get("created_at") or "")
+        if last_ts >= best_ts:
+            best_ts = last_ts
+            best_msgs = msgs
+            best_id = conv_id
+    return best_msgs, best_id
 
 
 def list_recent_voice_activity(user_id: str, limit: int = 3) -> list[str]:

@@ -1280,10 +1280,7 @@ export function CedTextChatPanel({
     .filter((item) => {
       const role = item.role === "user" ? "user" : "model";
       return !pinnedMessages.some(
-        (m) =>
-          m.role === role &&
-          isStickyWelcome(m) &&
-          (m.content === item.content || m.content.startsWith(item.content)),
+        (m) => m.role === role && isStickyWelcome(m) && m.content === item.content,
       );
     })
     .map((item) => ({
