@@ -221,6 +221,8 @@ export interface CedVoiceSessionCallbacks {
   onLiveChatTurns?: (
     turns: Array<{ role: "user" | "model"; content: string; streamKey: string }>,
   ) => void;
+  /** Hilo donde el servidor está escribiendo el transcript de la llamada. */
+  onVoiceThreadId?: (id: string) => void;
 }
 
 export type VoiceHeardStatus =
@@ -778,6 +780,9 @@ export function useCedVoiceSession(
               );
             }
           }
+        }
+        if (state.conversation_id) {
+          callbacksRef.current?.onVoiceThreadId?.(state.conversation_id);
         }
         const live = state.live_transcript;
         const liveText = String(live?.text || "").trim();

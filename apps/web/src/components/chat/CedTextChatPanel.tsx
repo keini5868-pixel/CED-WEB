@@ -526,6 +526,7 @@ export function CedTextChatPanel({
   const resumeLockRef = useRef(false);
   const [status, setStatus] = useState<ChatStatus | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const keepInputFocusRef = useRef(false);
   const streamTargetIndexRef = useRef<number | null>(null);
@@ -729,16 +730,15 @@ export function CedTextChatPanel({
 
   useEffect(() => {
     if (!open || !voiceSessionActive) return;
-    const threadId = bindVoiceConversationId || conversationId;
     let cancelled = false;
     let lastSeq = 0;
+    let lastHistoryPull = 0;
     const pull = async () => {
       try {
-        const state = await fetchVoiceClientState(false, { transcript: true });
+        // Sin `transcript`: esa variante consulta Supabase y el hub ya la pide
+        // una vez por sesión. Aquí solo interesan las parciales en memoria.
+        const state = await fetchVoiceClientState(false);
         if (cancelled) return;
-        if (state.conversation_id && state.conversation_id !== conversationId) {
-          setConversationId(state.conversation_id);
-        }
         const live = state.live_transcript;
         const text = String(live?.text || "").trim();
         const seq = Number(live?.seq || 0);
@@ -754,15 +754,13 @@ export function CedTextChatPanel({
             }),
           );
         }
-        const remote = state.transcript_turns || [];
-        if (remote.length > 0) {
-          setMessages((prev) => mergePersistedVoiceMessages(prev, remote));
-        }
       } catch {
         /* sin sesión */
       }
       const threadId = bindVoiceConversationId || conversationId;
       if (!threadId) return;
+      if (Date.now() - lastHistoryPull < 2500) return;
+      lastHistoryPull = Date.now();
       try {
         const data = await getConversationMessages(threadId);
         if (cancelled) return;
@@ -957,7 +955,17 @@ export function CedTextChatPanel({
     });
   }, [open]);
 
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    // Si el usuario subió a leer, dejar de seguir el fondo: durante la voz el
+    // transcript se refresca varias veces por segundo y lo arrastraba abajo.
+    stickToBottomRef.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+  }, []);
+
   useEffect(() => {
+    if (!stickToBottomRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, typing, liveVoiceTurns]);
 
@@ -1354,6 +1362,7 @@ export function CedTextChatPanel({
 
         <div
           ref={scrollRef}
+          onScroll={handleScroll}
           className={`min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-scroll overscroll-y-contain px-3 py-3 pb-2 sm:px-4 sm:py-4 ${embedded ? "bg-[var(--studio-chat-bg)]" : ""}`}
         >
           {visibleMessages.map((msg, i) => {
@@ -1461,6 +1470,7 @@ export function CedTextChatPanel({
                 }
               }}
               onFocus={() => {
+                stickToBottomRef.current = true;
                 window.setTimeout(() => {
                   scrollRef.current?.scrollTo({
                     top: scrollRef.current.scrollHeight,

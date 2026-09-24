@@ -11,7 +11,6 @@ import { useHudFeed } from "@/contexts/HudFeedContext";
 import { useCedOwnerUi } from "@/contexts/CedOwnerUiContext";
 import { useCedPresenterSession } from "@/contexts/CedPresenterSession";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
-import { fetchVoiceClientState } from "@/lib/api/voiceClient";
 import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
@@ -56,6 +55,20 @@ import {
 import { CedHudTour } from "@/components/hud/CedHudTour";
 import { isDictationAssistLocked } from "@/lib/chat/dictation-transcript";
 import { PanelLeft } from "lucide-react";
+
+/** El poll de voz repite el mismo transcript: sin esto el panel re-renderiza ~2/s. */
+function sameVoiceTurns(a: LiveVoiceTurn[], b: LiveVoiceTurn[]): boolean {
+  if (a.length !== b.length) return false;
+  return a.every((turn, i) => {
+    const other = b[i];
+    return (
+      !!other &&
+      turn.role === other.role &&
+      turn.content === other.content &&
+      turn.partial === other.partial
+    );
+  });
+}
 
 /** Dashboard — chat principal + voz compacta. */
 export function CedVoiceHub() {
@@ -284,14 +297,16 @@ export function CedVoiceHub() {
     },
     getChatConversationId: () => chatThreadIdRef.current,
     onLiveChatTurns: (turns) => {
-      setLiveVoiceTurns(
-        turns.map((turn) => ({
-          streamKey: turn.streamKey,
-          role: turn.role,
-          content: turn.content,
-          partial: false,
-        })),
-      );
+      const next: LiveVoiceTurn[] = turns.map((turn) => ({
+        streamKey: turn.streamKey,
+        role: turn.role,
+        content: turn.content,
+        partial: false,
+      }));
+      setLiveVoiceTurns((prev) => (sameVoiceTurns(prev, next) ? prev : next));
+    },
+    onVoiceThreadId: (id) => {
+      chatThreadIdRef.current = id;
     },
   }, voiceRoute);
 
@@ -302,50 +317,8 @@ export function CedVoiceHub() {
     voiceWasActiveRef.current = voice.voiceSessionActive;
   }, [voice.voiceSessionActive]);
 
-  useEffect(() => {
-    if (!voice.voiceSessionActive) return;
-    let cancelled = false;
-    const pull = async () => {
-      try {
-        const state = await fetchVoiceClientState(false, { transcript: true });
-        if (cancelled) return;
-        if (state.conversation_id) {
-          chatThreadIdRef.current = state.conversation_id;
-        }
-        const memTurns = state.chat_turns || [];
-        const dbTurns = state.transcript_turns || [];
-        const source = dbTurns.length >= memTurns.length ? dbTurns : memTurns;
-        if (source.length > 0) {
-          setLiveVoiceTurns(
-            source
-              .map((turn, index) => ({
-                streamKey: String(turn.id || `${turn.role}-${turn.created_at || index}`),
-                role: (turn.role === "user" ? "user" : "model") as "user" | "model",
-                content: String(turn.content || "").trim(),
-                partial: false,
-              }))
-              .filter((row) => Boolean(row.content)),
-          );
-        }
-        const live = state.live_transcript;
-        const liveText = String(live?.text || "").trim();
-        if (liveText) {
-          upsertLiveVoiceTurn(liveText, live?.role === "user" ? "user" : "model", {
-            partial: Boolean(live?.partial),
-            streamKey: String(live?.stream_key || `${live?.role || "model"}-live`),
-          });
-        }
-      } catch {
-        /* sin sesión */
-      }
-    };
-    void pull();
-    const timer = window.setInterval(() => void pull(), 600);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [voice.voiceSessionActive, upsertLiveVoiceTurn]);
+  /* El transcript llega por los callbacks del hook: un segundo poll aquí
+     multiplicaba las consultas a Supabase y frenaba el chat de texto. */
 
   const activateMicRef = useRef<() => void>(() => undefined);
   const startingAssistRef = useRef(false);

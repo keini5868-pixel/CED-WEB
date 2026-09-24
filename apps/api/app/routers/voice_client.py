@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import time
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -28,6 +30,19 @@ ALLOWED_IMAGE_MIMES = frozenset(
         "image/heif",
     },
 )
+
+
+# El navegador tiene varios polls vivos durante una llamada (chat, hub, hook) y
+# todos piden el mismo transcript: sin esta ventana la voz ahogaba a Supabase y
+# el chat de texto se quedaba esperando hilo libre.
+TRANSCRIPT_CACHE_TTL_S = 1.2
+_transcript_cache: dict[str, tuple[float, list[dict[str, Any]], str | None]] = {}
+_transcript_locks: dict[str, asyncio.Lock] = {}
+
+
+def clear_transcript_cache() -> None:
+    _transcript_cache.clear()
+    _transcript_locks.clear()
 
 
 class CameraStatusBody(BaseModel):
@@ -68,19 +83,39 @@ async def voice_client_state(
     if not transcript:
         return payload
     cid = vcs.get_conversation_id(user_id)
-    try:
-        from app.services.async_sync import run_sync
-
-        messages, found = await run_sync(
-            supabase_db.recent_session_messages,
-            user_id,
-            cid,
-        )
-    except Exception:  # noqa: BLE001
-        messages, found = [], cid
+    messages, found = await _recent_messages_cached(user_id, cid)
     payload["conversation_id"] = found or cid
     payload["transcript_turns"] = messages or []
     return payload
+
+
+async def _recent_messages_cached(
+    user_id: str,
+    conversation_id: str | None,
+) -> tuple[list[dict[str, Any]], str | None]:
+    lock = _transcript_locks.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        cached = _transcript_cache.get(user_id)
+        now = time.monotonic()
+        if cached and now - cached[0] < TRANSCRIPT_CACHE_TTL_S:
+            return cached[1], cached[2]
+        try:
+            from app.services.async_sync import run_sync
+
+            messages, found = await run_sync(
+                supabase_db.recent_session_messages,
+                user_id,
+                conversation_id,
+            )
+        except Exception:  # noqa: BLE001
+            return [], conversation_id
+        _transcript_cache[user_id] = (now, messages or [], found)
+        if len(_transcript_cache) > 500:
+            oldest = sorted(_transcript_cache.items(), key=lambda kv: kv[1][0])[:100]
+            for key, _ in oldest:
+                _transcript_cache.pop(key, None)
+                _transcript_locks.pop(key, None)
+        return messages or [], found
 
 
 @router.post("/camera-status")

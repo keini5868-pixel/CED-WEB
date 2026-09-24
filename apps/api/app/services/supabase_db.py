@@ -285,6 +285,10 @@ def append_message(
             last_role = str(row.get("role") or "")
             if last_role == role and last_role in ("model", "assistant", "user"):
                 prev = str(row.get("content") or "").strip()
+                if role in ("model", "assistant") and prev and prev == content:
+                    # Cada activación de voz reescribía el mismo saludo, así que
+                    # el hilo acumulaba "Hola de nuevo…" una vez por sesión.
+                    return
                 created_raw = row.get("created_at")
                 recent = True
                 if created_raw:
@@ -513,6 +517,11 @@ def recent_session_messages(
     ids: list[str] = []
     bound = (conversation_id or "").strip()
     if bound:
+        # El barrido de abajo cuesta ~13 queries; con el hilo atado ya resuelto
+        # bastan 2, y esto lo llama el poll de voz varias veces por segundo.
+        bound_msgs = _newest_messages(bound, uid, limit=limit)
+        if bound_msgs:
+            return bound_msgs, bound
         ids.append(bound)
     for row in list_conversations(uid, limit=5):
         rid = str((row or {}).get("id") or "").strip()

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from app.deps.auth import require_user_id
 from app.main import create_app
 from app.routers.retell_custom_llm import latest_transcript_line
+from app.routers.voice_client import clear_transcript_cache
 from app.services import voice_client_session as vcs
 
 UID = "550e8400-e29b-41d4-a716-446655440077"
@@ -14,10 +15,12 @@ UID = "550e8400-e29b-41d4-a716-446655440077"
 
 def setup_function() -> None:
     vcs.end_voice_publish_session(UID)
+    clear_transcript_cache()
 
 
 def teardown_function() -> None:
     vcs.end_voice_publish_session(UID)
+    clear_transcript_cache()
 
 
 def test_latest_transcript_line_picks_last_agent():
@@ -55,9 +58,11 @@ def test_latest_transcript_line_picks_last_agent():
 def test_client_state_transcript_turns_from_db(monkeypatch):
     app = create_app()
     app.dependency_overrides[require_user_id] = lambda: UID
+    calls: list[str] = []
 
     def fake_recent(user_id: str, conversation_id: str | None = None, **kwargs):
         assert user_id == UID
+        calls.append(user_id)
         return (
             [
                 {
@@ -81,6 +86,11 @@ def test_client_state_transcript_turns_from_db(monkeypatch):
     assert data["ok"] is True
     assert data["conversation_id"] == "conv-live"
     assert data["transcript_turns"][0]["content"] == "qué hora es"
+
+    # Varios polls del navegador comparten una sola lectura de Supabase.
+    for _ in range(4):
+        assert client.get("/v1/voice/client-state?transcript=true").status_code == 200
+    assert len(calls) == 1
 
 
 def test_set_live_transcript_skips_identical_snapshot():
