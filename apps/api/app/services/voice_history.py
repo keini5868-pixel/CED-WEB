@@ -88,3 +88,39 @@ def persist_voice_turn(
             role,
             exc,
         )
+
+
+def sync_voice_transcript(
+    user_id: str,
+    utterances: list[dict[str, Any]] | None,
+    conversation_id: str | None = None,
+) -> None:
+    """Replica el transcript de Retell (user + agent) en el mismo hilo del chat."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return
+    turns: list[tuple[str, str]] = []
+    for item in utterances or []:
+        if not isinstance(item, dict):
+            role = str(getattr(item, "role", "") or "").lower()
+            content = str(getattr(item, "content", "") or getattr(item, "text", "") or "").strip()
+        else:
+            role = str(item.get("role") or "").lower()
+            content = str(item.get("content") or item.get("text") or "").strip()
+        if not content:
+            continue
+        turns.append(("user" if role in {"user", "customer"} else "model", content))
+    if not turns:
+        return
+    forced = (conversation_id or "").strip()
+    if forced:
+        set_active_conversation(uid, forced)
+    cid = ensure_voice_conversation_id(uid)
+    if not cid:
+        return
+    try:
+        from app.services import supabase_db
+
+        supabase_db.sync_conversation_utterances(cid, uid, turns)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[VOICE-HIST] sync transcript falló user=%s: %s", uid[:8], exc)

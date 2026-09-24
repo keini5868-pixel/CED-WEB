@@ -54,7 +54,7 @@ from app.services.navigation_voice_intent import (
     resolve_open_map_request,
 )
 from app.services.async_sync import run_sync
-from app.services.voice_history import persist_voice_turn, set_active_conversation
+from app.services.voice_history import persist_voice_turn, set_active_conversation, sync_voice_transcript
 from app.services import voice_client_session as vcs
 from app.services.voice_llm_common import (
     FALLBACK_REPLY,
@@ -365,6 +365,27 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
         except RuntimeError:
             pass
+
+    def publish_full_transcript(who: str, tx: list[Any]) -> None:
+        """Transcript completo de Retell → memoria + DB (el panel lo pinta en vivo)."""
+        target = (who or "").strip()
+        if not target or not tx:
+            return
+        chat_turns: list[dict[str, str]] = []
+        for item in tx:
+            raw_role, raw_content = _utterance_role_content(item)
+            if not raw_content:
+                continue
+            chat_turns.append(
+                {
+                    "role": "user" if raw_role in {"user", "customer"} else "model",
+                    "content": raw_content,
+                }
+            )
+        if not chat_turns:
+            return
+        vcs.set_chat_turns(target, chat_turns)
+        asyncio.create_task(run_sync(sync_voice_transcript, target, tx, bound_conv))
 
     async def persist_voice_history(
         role: str,
@@ -850,14 +871,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             turntaking = str(request_json.get("turntaking") or "")
             if turntaking:
                 logger.info("[RETELL-GEMINI] turntaking=%s call=%s", turntaking, call_id)
-            if uid:
+            who = (uid or user_id or "").strip()
+            tx = request_json.get("transcript") or []
+            if who:
+                publish_full_transcript(who, tx)
+            if who:
                 if turntaking == "agent_turn" and last_live_turntaking != "agent_turn":
                     live_agent_turn += 1
                 if turntaking == "user_turn" and last_live_turntaking != "user_turn":
                     live_user_turn += 1
                 if turntaking:
                     last_live_turntaking = turntaking
-                tx = request_json.get("transcript") or []
                 agent_line = latest_transcript_line(tx, "agent")
                 user_line = latest_transcript_line(tx, "user")
                 if user_line and user_line != last_published_user:
@@ -867,7 +891,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         user_line,
                         stream_key=f"user-{live_user_turn or 1}",
                         partial=turntaking == "user_turn",
-                        who=uid,
+                        who=who,
                     )
                 if agent_line and agent_line != last_published_agent:
                     last_published_agent = agent_line
@@ -876,7 +900,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         agent_line,
                         stream_key=f"agent-{live_agent_turn or 1}",
                         partial=turntaking != "user_turn",
-                        who=uid,
+                        who=who,
                     )
             return
 
@@ -925,6 +949,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         transcript_raw = request_json.get("transcript") or []
+        who_live = (uid or user_id or "").strip()
+        if who_live:
+            publish_full_transcript(who_live, transcript_raw)
         transcript = [
             Utterance(role=item.get("role", "user"), content=str(item.get("content") or ""))
             for item in transcript_raw

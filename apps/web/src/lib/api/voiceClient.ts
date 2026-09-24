@@ -57,6 +57,7 @@ export type VoiceClientState = {
   live_transcript?: VoiceLiveTranscript | null;
   conversation_id?: string | null;
   transcript_turns?: VoiceTranscriptTurn[];
+  chat_turns?: VoiceTranscriptTurn[];
 };
 
 export async function fetchVoiceClientState(

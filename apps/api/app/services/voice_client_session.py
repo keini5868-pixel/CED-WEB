@@ -66,6 +66,7 @@ def _fresh_session() -> dict[str, Any]:
         "conversation_id": None,
         "live_transcript": None,
         "live_transcript_seq": 0,
+        "chat_turns": [],
     }
 
 
@@ -347,6 +348,7 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
             "client_action": deepcopy(action) if action else None,
             "tool_events": deepcopy(session.get("tool_events") or []),
             "live_transcript": deepcopy(session.get("live_transcript")),
+            "chat_turns": deepcopy(session.get("chat_turns") or []),
         }
 
 
@@ -390,8 +392,36 @@ def set_live_transcript(
             "partial": bool(partial),
         }
         session["live_transcript"] = row
+        turns = list(session.get("chat_turns") or [])
+        last = turns[-1] if turns else None
+        if isinstance(last, dict) and str(last.get("role") or "") == norm_role:
+            last["content"] = cleaned[:8000]
+        else:
+            turns.append({"role": norm_role, "content": cleaned[:8000]})
+        session["chat_turns"] = turns
         session["updated_at"] = _now()
         return deepcopy(row)
+
+
+def set_chat_turns(user_id: str, turns: list[dict[str, Any]]) -> None:
+    """Conversación completa (como Claude): lista user/model para el panel de chat."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return
+    cleaned: list[dict[str, str]] = []
+    for item in turns or []:
+        role_raw = str(item.get("role") or "").lower()
+        text = str(item.get("content") or item.get("text") or "").replace("\x00", "").strip()
+        if not text:
+            continue
+        cleaned.append({
+            "role": "user" if role_raw in {"user", "customer"} else "model",
+            "content": text[:8000],
+        })
+    session = _get(uid)
+    with _lock:
+        session["chat_turns"] = cleaned
+        session["updated_at"] = _now()
 
 
 def set_vision_result(user_id: str, request_id: int, summary: str) -> None:
@@ -564,6 +594,7 @@ def end_voice_publish_session(user_id: str, voice_call_id: str | None = None) ->
         session["awaiting_instagram_caption"] = False
         session["studio_chat_events"] = []
         session["live_transcript"] = None
+        session["chat_turns"] = []
         session["updated_at"] = _now()
 
 

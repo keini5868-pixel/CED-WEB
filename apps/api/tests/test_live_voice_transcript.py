@@ -111,6 +111,25 @@ def test_client_state_http_exposes_live_transcript():
     assert data["live_transcript"]["role"] == "model"
 
 
+def test_chat_turns_exposed_on_client_state():
+    vcs.set_chat_turns(
+        UID,
+        [
+            {"role": "agent", "content": "Hola, señor."},
+            {"role": "user", "content": "qué hora es"},
+        ],
+    )
+    app = create_app()
+    app.dependency_overrides[require_user_id] = lambda: UID
+    client = TestClient(app)
+    res = client.get("/v1/voice/client-state")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["chat_turns"][0]["role"] == "model"
+    assert data["chat_turns"][0]["content"] == "Hola, señor."
+    assert data["chat_turns"][1]["role"] == "user"
+
+
 def test_resolve_call_conversation_from_metadata():
     from app.services.retell_call_registry import (
         bind_call_user,

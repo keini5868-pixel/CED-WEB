@@ -1277,12 +1277,6 @@ export function CedTextChatPanel({
   const pinnedMessages = messages.filter((m) => !isVoiceLiveMessage(m));
   const liveDisplay: ChatMessage[] = liveVoiceTurns
     .filter((item) => Boolean(item.content?.trim()))
-    .filter((item) => {
-      const role = item.role === "user" ? "user" : "model";
-      return !pinnedMessages.some(
-        (m) => m.role === role && isStickyWelcome(m) && m.content === item.content,
-      );
-    })
     .map((item) => ({
       id: `${VOICE_LIVE_PREFIX}${item.streamKey}`,
       role: item.role === "user" ? "user" : "model",
@@ -1290,7 +1284,7 @@ export function CedTextChatPanel({
       created_at: new Date().toISOString(),
       partial: Boolean(item.partial),
     }));
-  const visibleMessages = [...pinnedMessages, ...liveDisplay];
+  const visibleMessages = liveDisplay.length > 0 ? liveDisplay : pinnedMessages;
 
   const shell = (
       <div

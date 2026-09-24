@@ -217,6 +217,10 @@ export interface CedVoiceSessionCallbacks {
   onClearAgentPartial?: () => void;
   /** Hilo visible en el chat de texto — voz debe escribir aquí. */
   getChatConversationId?: () => string | null;
+  /** Conversación completa en vivo para el panel (estilo Claude). */
+  onLiveChatTurns?: (
+    turns: Array<{ role: "user" | "model"; content: string; streamKey: string }>,
+  ) => void;
 }
 
 export type VoiceHeardStatus =
@@ -668,7 +672,7 @@ export function useCedVoiceSession(
           lastCameraHeartbeatRef.current = now;
           void postVoiceCameraStatus(false, false).catch(() => undefined);
         }
-        const state = await fetchVoiceClientState(false);
+        const state = await fetchVoiceClientState(false, { transcript: true });
         const events = state.tool_events ?? [];
         for (const ev of events) {
           const id = Number(ev.id || 0);
@@ -778,6 +782,20 @@ export function useCedVoiceSession(
         const live = state.live_transcript;
         const liveText = String(live?.text || "").trim();
         const liveSeq = Number(live?.seq || 0);
+        const chatTurns = state.chat_turns || [];
+        const dbTurns = state.transcript_turns || [];
+        const sourceTurns = dbTurns.length >= chatTurns.length ? dbTurns : chatTurns;
+        if (sourceTurns.length > 0) {
+          callbacksRef.current?.onLiveChatTurns?.(
+            sourceTurns
+              .map((turn, index) => ({
+                role: (turn.role === "user" ? "user" : "model") as "user" | "model",
+                content: String(turn.content || "").trim(),
+                streamKey: String(turn.id || `chat-${index}`),
+              }))
+              .filter((row) => Boolean(row.content)),
+          );
+        }
         if (liveText && liveSeq > lastLiveTranscriptSeqRef.current) {
           lastLiveTranscriptSeqRef.current = liveSeq;
           const role = live?.role === "user" ? "user" : "model";

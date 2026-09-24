@@ -542,6 +542,48 @@ def recent_session_messages(
     return best_msgs, best_id
 
 
+def sync_conversation_utterances(
+    conversation_id: str,
+    user_id: str,
+    turns: list[tuple[str, str]],
+) -> None:
+    """Alinea voice_messages con el transcript live de la llamada (user/CED)."""
+    cid = (conversation_id or "").strip()
+    uid = (user_id or "").strip()
+    if not cid or not uid or not turns:
+        return
+    owner = get_conversation(cid, uid)
+    if not owner:
+        raise PermissionError("Conversación no encontrada")
+    existing = _newest_messages(cid, uid, limit=80)
+    base = 0
+    if existing:
+        first = str((existing[0] or {}).get("content") or "")
+        if str((existing[0] or {}).get("role") or "") == "model" and (
+            first.startswith("Bienvenido de nuevo") or first.startswith("Hola, soy CED.")
+        ):
+            base = 1
+    client = _client()
+    now = datetime.now(timezone.utc).isoformat()
+    for i, (role, content) in enumerate(turns):
+        text = (content or "").strip()
+        if not text:
+            continue
+        norm = "user" if role == "user" else "model"
+        ei = base + i
+        if ei < len(existing):
+            row = existing[ei] or {}
+            if str(row.get("role") or "") != norm or str(row.get("content") or "") != text:
+                client.table("voice_messages").update({"content": text, "role": norm}).eq(
+                    "id", row["id"]
+                ).execute()
+        else:
+            client.table("voice_messages").insert(
+                {"conversation_id": cid, "role": norm, "content": text}
+            ).execute()
+    client.table("voice_conversations").update({"updated_at": now}).eq("id", cid).execute()
+
+
 def list_recent_voice_activity(user_id: str, limit: int = 3) -> list[str]:
     """Últimos mensajes de voz para tarjeta ACTIVIDAD CED."""
     try:

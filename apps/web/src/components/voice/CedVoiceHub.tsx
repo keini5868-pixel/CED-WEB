@@ -107,6 +107,12 @@ export function CedVoiceHub() {
           next[idx] = row;
           return next;
         }
+        const last = prev[prev.length - 1];
+        if (last && last.role === role) {
+          const next = [...prev];
+          next[next.length - 1] = { ...row, streamKey: last.streamKey };
+          return next;
+        }
         return [...prev, row];
       });
     },
@@ -277,6 +283,16 @@ export function CedVoiceHub() {
       setChatSeedImage(null);
     },
     getChatConversationId: () => chatThreadIdRef.current,
+    onLiveChatTurns: (turns) => {
+      setLiveVoiceTurns(
+        turns.map((turn) => ({
+          streamKey: turn.streamKey,
+          role: turn.role,
+          content: turn.content,
+          partial: false,
+        })),
+      );
+    },
   }, voiceRoute);
 
   useEffect(() => {
@@ -296,12 +312,14 @@ export function CedVoiceHub() {
         if (state.conversation_id) {
           chatThreadIdRef.current = state.conversation_id;
         }
-        const turns = state.transcript_turns || [];
-        if (turns.length > 0) {
+        const memTurns = state.chat_turns || [];
+        const dbTurns = state.transcript_turns || [];
+        const source = dbTurns.length >= memTurns.length ? dbTurns : memTurns;
+        if (source.length > 0) {
           setLiveVoiceTurns(
-            turns
-              .map((turn) => ({
-                streamKey: String(turn.id || `${turn.role}-${turn.created_at}`),
+            source
+              .map((turn, index) => ({
+                streamKey: String(turn.id || `${turn.role}-${turn.created_at || index}`),
                 role: (turn.role === "user" ? "user" : "model") as "user" | "model",
                 content: String(turn.content || "").trim(),
                 partial: false,
