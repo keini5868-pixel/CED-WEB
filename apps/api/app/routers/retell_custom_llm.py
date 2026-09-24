@@ -330,6 +330,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         set_active_conversation(user_id, bound_conv)
     last_hist_persist_at = 0.0
     last_hist_persist_sig = ""
+    sync_baseline: int | None = None
 
     def publish_live_transcript(
         role: str,
@@ -354,17 +355,39 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             )
         except Exception:  # noqa: BLE001
             logger.warning("[VOICE-LIVE] no se pudo publicar transcript role=%s", role)
+        if partial:
+            # Las líneas parciales solo son snapshot en memoria: el transcript de
+            # Retell (publish_full_transcript) es quien escribe el hilo en la DB,
+            # si no cada palabra nueva del STT crearía otra fila.
+            return
         try:
             asyncio.get_running_loop().create_task(
                 persist_voice_history(
                     "user" if role == "user" else "model",
                     text,
                     who=target,
-                    partial=partial,
                 )
             )
         except RuntimeError:
             pass
+
+    async def capture_sync_baseline(who: str, conv: str | None) -> None:
+        """Congela cuántos mensajes había antes de la llamada — el transcript no los toca."""
+        nonlocal sync_baseline
+        if sync_baseline is not None or not who or not conv:
+            return
+        try:
+            from app.services import supabase_db as _sdb
+
+            sync_baseline = await run_sync(_sdb.count_conversation_messages, conv, who)
+            logger.info(
+                "[VOICE-LIVE] baseline=%s conv=%s call=%s",
+                sync_baseline,
+                conv[:8],
+                call_id,
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("[VOICE-LIVE] baseline falló conv=%s call=%s", conv[:8], call_id)
 
     def publish_full_transcript(who: str, tx: list[Any]) -> None:
         """Transcript completo de Retell → memoria + DB (el panel lo pinta en vivo)."""
@@ -385,7 +408,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if not chat_turns:
             return
         vcs.set_chat_turns(target, chat_turns)
-        asyncio.create_task(run_sync(sync_voice_transcript, target, tx, bound_conv))
+        asyncio.create_task(
+            run_sync(sync_voice_transcript, target, tx, bound_conv, sync_baseline)
+        )
 
     async def persist_voice_history(
         role: str,
@@ -531,14 +556,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             await websocket.send_json(payload)
             mark_greeting_sent(call_id)
             if begin_text:
+                # publish_live_transcript ya persiste el saludo; hacerlo otra vez
+                # aquí duplicaba la burbuja de bienvenida en el chat.
                 publish_live_transcript(
                     "model",
                     begin_text,
                     stream_key="agent-greeting",
                     partial=False,
-                )
-                asyncio.create_task(
-                    persist_voice_history("model", begin_text, who=user_id)
                 )
             greeting_release_task = asyncio.create_task(release_post_greeting_cooldown())
             logger.info(
@@ -821,8 +845,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if uid:
             user_id = uid
             llm.set_user_id(uid)
-            from app.services import voice_client_session as vcs
-
             vcs.sync_voice_call(uid, call_id)
             conv = resolve_call_conversation(call_id, request_json)
             if conv:
@@ -834,6 +856,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 reused = ensure_voice_conversation_id(uid)
                 if reused:
                     bound_conv = reused
+            await capture_sync_baseline(uid, bound_conv)
 
         if interaction == "ping_pong":
             uid = resolve_call_user(call_id, request_json)
@@ -909,8 +932,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             # no interrumpir con "¿sigue ahí?" (regla exclusiva del modo YouTube).
             uid_for_mode = uid or resolve_call_user(call_id, request_json)
             if uid_for_mode:
-                from app.services import voice_client_session as vcs
-
                 if vcs.get_active_mode(uid_for_mode) == "youtube":
                     await ack_empty_response(
                         response_id=response_id, reason="youtube_playing"
@@ -2199,8 +2220,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         uid = resolve_call_user(call_id) or user_id
         if uid:
             try:
-                from app.services import voice_client_session as vcs
-
                 vcs.end_voice_publish_session(uid, call_id)
             except Exception:  # noqa: BLE001
                 pass

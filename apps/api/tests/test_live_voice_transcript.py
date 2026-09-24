@@ -111,6 +111,33 @@ def test_client_state_http_exposes_live_transcript():
     assert data["live_transcript"]["role"] == "model"
 
 
+def test_websocket_handler_does_not_shadow_vcs():
+    """Re-importar `vcs` dentro del handler lo vuelve variable libre sin valor.
+
+    Con ese shadowing, publicar la transcripción en vivo lanzaba NameError en cada
+    `update_only` y el chat nunca recibía texto.
+    """
+    import ast
+    import inspect
+
+    from app.routers import retell_custom_llm
+
+    tree = ast.parse(inspect.getsource(retell_custom_llm))
+    handler = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "retell_llm_websocket"
+    )
+    shadowed = [
+        alias.asname or alias.name
+        for node in ast.walk(handler)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+        if (alias.asname or alias.name) == "vcs"
+    ]
+    assert shadowed == [], "vcs se importa dentro del handler y rompe las closures"
+
+
 def test_chat_turns_exposed_on_client_state():
     vcs.set_chat_turns(
         UID,

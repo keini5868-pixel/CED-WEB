@@ -94,6 +94,7 @@ def sync_voice_transcript(
     user_id: str,
     utterances: list[dict[str, Any]] | None,
     conversation_id: str | None = None,
+    baseline: int | None = None,
 ) -> None:
     """Replica el transcript de Retell (user + agent) en el mismo hilo del chat."""
     uid = (user_id or "").strip()
@@ -121,6 +122,6 @@ def sync_voice_transcript(
     try:
         from app.services import supabase_db
 
-        supabase_db.sync_conversation_utterances(cid, uid, turns)
+        supabase_db.sync_conversation_utterances(cid, uid, turns, baseline)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[VOICE-HIST] sync transcript falló user=%s: %s", uid[:8], exc)

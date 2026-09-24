@@ -542,12 +542,26 @@ def recent_session_messages(
     return best_msgs, best_id
 
 
+def count_conversation_messages(conversation_id: str, user_id: str) -> int:
+    """Mensajes ya guardados — marca desde dónde puede escribir el transcript de una llamada."""
+    cid = (conversation_id or "").strip()
+    uid = (user_id or "").strip()
+    if not cid or not uid:
+        return 0
+    return len(_newest_messages(cid, uid, limit=200))
+
+
 def sync_conversation_utterances(
     conversation_id: str,
     user_id: str,
     turns: list[tuple[str, str]],
+    baseline: int | None = None,
 ) -> None:
-    """Alinea voice_messages con el transcript live de la llamada (user/CED)."""
+    """Alinea voice_messages con el transcript live de la llamada (user/CED).
+
+    `baseline` son los mensajes previos a la llamada: nunca se tocan, así el
+    transcript no puede sobrescribir la conversación de texto anterior.
+    """
     cid = (conversation_id or "").strip()
     uid = (user_id or "").strip()
     if not cid or not uid or not turns:
@@ -555,14 +569,17 @@ def sync_conversation_utterances(
     owner = get_conversation(cid, uid)
     if not owner:
         raise PermissionError("Conversación no encontrada")
-    existing = _newest_messages(cid, uid, limit=80)
-    base = 0
-    if existing:
-        first = str((existing[0] or {}).get("content") or "")
-        if str((existing[0] or {}).get("role") or "") == "model" and (
-            first.startswith("Bienvenido de nuevo") or first.startswith("Hola, soy CED.")
-        ):
-            base = 1
+    existing = _newest_messages(cid, uid, limit=200)
+    if baseline is not None:
+        base = max(0, min(int(baseline), len(existing)))
+    else:
+        base = 0
+        if existing:
+            first = str((existing[0] or {}).get("content") or "")
+            if str((existing[0] or {}).get("role") or "") == "model" and (
+                first.startswith("Bienvenido de nuevo") or first.startswith("Hola, soy CED.")
+            ):
+                base = 1
     client = _client()
     now = datetime.now(timezone.utc).isoformat()
     for i, (role, content) in enumerate(turns):
