@@ -49,6 +49,13 @@ def test_blueprints_forbid_inventing_other_structures():
     assert "5 opciones de hook" in CED_SCRIPT_BLUEPRINTS
 
 
+def test_extras_never_postponed_until_the_user_gives_the_topic():
+    body = CED_SCRIPT_BLUEPRINTS.lower()
+    assert "los extras van siempre" in body
+    assert "[corchetes]" in body
+    assert "cuando me compartas el tema" in body  # ejemplo de lo prohibido
+
+
 def test_detect_each_blueprint_kind():
     assert detect_script_blueprint("dame la estructura para una mini serie") == "mini_serie"
     assert detect_script_blueprint("guion tipo historia que vende") == "historia"
