@@ -205,6 +205,47 @@ def get_conversation(conversation_id: str, user_id: str) -> dict[str, Any] | Non
     return rows[0] if rows else None
 
 
+_RETELL_CALL_PREFIX = "retell:"
+
+
+def bind_retell_call(user_id: str, conversation_id: str, call_id: str) -> None:
+    """Persiste call_id → hilo para que el Custom LLM (otra réplica) encuentre al usuario."""
+    uid = (user_id or "").strip()
+    conv = (conversation_id or "").strip()
+    cid = (call_id or "").strip()
+    if not uid or not conv or not cid:
+        return
+    client = _client()
+    client.table("voice_conversations").update(
+        {
+            "gemini_session_id": f"{_RETELL_CALL_PREFIX}{cid}",
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+    ).eq("id", conv).eq("user_id", uid).execute()
+
+
+def lookup_retell_call(call_id: str) -> dict[str, str] | None:
+    cid = (call_id or "").strip()
+    if not cid:
+        return None
+    client = _client()
+    result = (
+        client.table("voice_conversations")
+        .select("id, user_id")
+        .eq("gemini_session_id", f"{_RETELL_CALL_PREFIX}{cid}")
+        .limit(1)
+        .execute()
+    )
+    row = (result.data or [None])[0]
+    if not row:
+        return None
+    uid = str(row.get("user_id") or "").strip()
+    conv = str(row.get("id") or "").strip()
+    if not uid or not conv:
+        return None
+    return {"user_id": uid, "conversation_id": conv}
+
+
 def append_message(
     conversation_id: str,
     user_id: str,

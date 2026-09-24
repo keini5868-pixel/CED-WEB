@@ -135,3 +135,45 @@ def test_resolve_call_conversation_from_metadata():
     assert uid == UID
     assert resolve_call_conversation(call_id) == "conv-abc"
     release_call_user(call_id)
+
+
+def test_lookup_retell_call_roundtrip(monkeypatch):
+    stored: dict[str, str] = {}
+
+    class _Table:
+        def __init__(self, name: str):
+            self.name = name
+            self._eq = {}
+
+        def update(self, payload):
+            stored.update(payload)
+            return self
+
+        def select(self, *_args, **_kwargs):
+            return self
+
+        def eq(self, key, val):
+            self._eq[key] = val
+            return self
+
+        def limit(self, *_args, **_kwargs):
+            return self
+
+        def execute(self):
+            if self.name == "voice_conversations" and stored:
+                if self._eq.get("gemini_session_id") == stored.get("gemini_session_id"):
+                    return type("R", (), {"data": [{"id": "conv-1", "user_id": UID}]})()
+                if "id" in self._eq:
+                    return type("R", (), {"data": [{"id": "conv-1"}]})()
+            return type("R", (), {"data": []})()
+
+    class _Client:
+        def table(self, name: str):
+            return _Table(name)
+
+    monkeypatch.setattr("app.services.supabase_db._client", lambda: _Client())
+    from app.services import supabase_db
+
+    supabase_db.bind_retell_call(UID, "conv-1", "call-xyz")
+    row = supabase_db.lookup_retell_call("call-xyz")
+    assert row == {"user_id": UID, "conversation_id": "conv-1"}

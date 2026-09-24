@@ -725,36 +725,7 @@ export function CedTextChatPanel({
     }
   }, [voiceSessionActive]);
 
-  useEffect(() => {
-    if (!voiceSessionActive && liveVoiceTurns.length === 0) return;
-    const live: ChatMessage[] = liveVoiceTurns
-      .filter((item) => Boolean(item.content?.trim()))
-      .map((item) => ({
-        id: `${VOICE_LIVE_PREFIX}${item.streamKey}`,
-        role: item.role === "user" ? "user" : "model",
-        content: item.content,
-        created_at: new Date().toISOString(),
-        partial: Boolean(item.partial),
-      }));
-    if (live.length === 0) return;
-    setMessages((prev) => {
-      const rest = prev.filter((m) => !isVoiceLiveMessage(m));
-      const usefulRest = rest.filter((m) => !isDefaultWelcome(m)).map((m) => ({ ...m }));
-      for (const item of live) {
-        const last = lastCoalesceTarget(usefulRest, item.role);
-        if (last && (last.content === item.content || last.content.startsWith(item.content))) {
-          continue;
-        }
-        if (last && item.content.startsWith(last.content) && (isVoiceLiveMessage(last) || last.partial)) {
-          last.content = item.content;
-          last.partial = item.partial;
-          continue;
-        }
-        usefulRest.push(item);
-      }
-      return usefulRest;
-    });
-  }, [liveVoiceTurns, voiceSessionActive]);
+  /* liveVoiceTurns se pinta aparte (visibleMessages) — no mezclar con el saludo. */
 
   useEffect(() => {
     if (!open || !voiceSessionActive) return;
@@ -988,7 +959,7 @@ export function CedTextChatPanel({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, typing]);
+  }, [messages, typing, liveVoiceTurns]);
 
   const focusInput = useCallback(() => {
     const run = () => {
@@ -1303,6 +1274,27 @@ export function CedTextChatPanel({
 
   if (!open) return null;
 
+  const pinnedMessages = messages.filter((m) => !isVoiceLiveMessage(m));
+  const liveDisplay: ChatMessage[] = liveVoiceTurns
+    .filter((item) => Boolean(item.content?.trim()))
+    .filter((item) => {
+      const role = item.role === "user" ? "user" : "model";
+      return !pinnedMessages.some(
+        (m) =>
+          m.role === role &&
+          isStickyWelcome(m) &&
+          (m.content === item.content || m.content.startsWith(item.content)),
+      );
+    })
+    .map((item) => ({
+      id: `${VOICE_LIVE_PREFIX}${item.streamKey}`,
+      role: item.role === "user" ? "user" : "model",
+      content: item.content,
+      created_at: new Date().toISOString(),
+      partial: Boolean(item.partial),
+    }));
+  const visibleMessages = [...pinnedMessages, ...liveDisplay];
+
   const shell = (
       <div
         className={
@@ -1373,7 +1365,7 @@ export function CedTextChatPanel({
           ref={scrollRef}
           className={`min-h-0 flex-1 space-y-3 overflow-x-hidden overflow-y-scroll overscroll-y-contain px-3 py-3 pb-2 sm:px-4 sm:py-4 ${embedded ? "bg-[var(--studio-chat-bg)]" : ""}`}
         >
-          {messages.map((msg, i) => {
+          {visibleMessages.map((msg, i) => {
             const isUser = msg.role === "user";
             const pdfAttachment = msg.pdf ?? null;
             const imageAttachment = msg.image ?? null;

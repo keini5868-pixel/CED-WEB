@@ -11,6 +11,7 @@ import { useHudFeed } from "@/contexts/HudFeedContext";
 import { useCedOwnerUi } from "@/contexts/CedOwnerUiContext";
 import { useCedPresenterSession } from "@/contexts/CedPresenterSession";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
+import { fetchVoiceClientState } from "@/lib/api/voiceClient";
 import { useCedVoiceSession } from "@/hooks/useCedVoiceSession";
 import { prefetchEphemeralToken } from "@/lib/voice/ephemeralTokenCache";
 import { unlockVoiceAudioOnGesture } from "@/lib/voice/live/audio-context";
@@ -284,6 +285,44 @@ export function CedVoiceHub() {
     }
     voiceWasActiveRef.current = voice.voiceSessionActive;
   }, [voice.voiceSessionActive]);
+
+  useEffect(() => {
+    if (!voice.voiceSessionActive) return;
+    let cancelled = false;
+    const pull = async () => {
+      try {
+        const state = await fetchVoiceClientState(false, { transcript: true });
+        if (cancelled) return;
+        if (state.conversation_id) {
+          chatThreadIdRef.current = state.conversation_id;
+        }
+        for (const turn of state.transcript_turns || []) {
+          const text = String(turn.content || "").trim();
+          if (!text) continue;
+          upsertLiveVoiceTurn(text, turn.role === "user" ? "user" : "model", {
+            partial: false,
+            streamKey: String(turn.id || `${turn.role}-${turn.created_at}`),
+          });
+        }
+        const live = state.live_transcript;
+        const liveText = String(live?.text || "").trim();
+        if (liveText) {
+          upsertLiveVoiceTurn(liveText, live?.role === "user" ? "user" : "model", {
+            partial: Boolean(live?.partial),
+            streamKey: String(live?.stream_key || `${live?.role || "model"}-live`),
+          });
+        }
+      } catch {
+        /* sin sesión */
+      }
+    };
+    void pull();
+    const timer = window.setInterval(() => void pull(), 600);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [voice.voiceSessionActive, upsertLiveVoiceTurn]);
 
   const activateMicRef = useRef<() => void>(() => undefined);
   const startingAssistRef = useRef(false);

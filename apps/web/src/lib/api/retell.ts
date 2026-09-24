@@ -12,6 +12,7 @@ export type RetellRegisterCallResponse =
       ok: true;
       access_token: string;
       call_id?: string | null;
+      conversation_id?: string | null;
       agent_id?: string;
       transport?: "livekit" | "gateway";
       ice_servers?: RetellIceServer[];
@@ -69,6 +70,7 @@ export async function registerRetellCall(
     ice_servers: data.ice_servers,
     url: data.url,
     identity: data.identity,
+    conversation_id: "conversation_id" in data ? data.conversation_id : undefined,
   };
 }
 
@@ -119,6 +121,7 @@ export async function registerRetellNativePilotCall(
     ice_servers: data.ice_servers,
     url: data.url,
     identity: data.identity,
+    conversation_id: "conversation_id" in data ? data.conversation_id : undefined,
     pilot: data.pilot,
     engine: data.engine,
     model: data.model,

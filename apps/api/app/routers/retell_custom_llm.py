@@ -146,7 +146,20 @@ async def resolve_call_user_robust(
     if uid:
         return uid
     cid = (call_id or "").strip()
-    if not cid or cid in _api_uid_lookups:
+    if not cid:
+        return None
+    try:
+        from app.services import supabase_db
+
+        row = await asyncio.to_thread(supabase_db.lookup_retell_call, cid)
+        if row:
+            bind_call_user(cid, row["user_id"], conversation_id=row["conversation_id"])
+            set_active_conversation(row["user_id"], row["conversation_id"])
+            logger.info("[RETELL-GEMINI] user_id vía DB call=%s", cid)
+            return row["user_id"]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[RETELL-GEMINI] lookup DB call=%s: %s", cid, exc)
+    if cid in _api_uid_lookups:
         return None
     _api_uid_lookups.add(cid)
     try:
@@ -360,14 +373,26 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         who: str | None = None,
         partial: bool = False,
     ) -> None:
-        nonlocal last_hist_persist_at, last_hist_persist_sig, bound_conv
+        nonlocal last_hist_persist_at, last_hist_persist_sig, bound_conv, user_id
         target = (who or user_id or "").strip()
-        if not target:
-            return
         text = (content or "").strip()
         if not text:
             return
         conv = resolve_call_conversation(call_id) or bound_conv
+        if not conv or not target:
+            try:
+                from app.services import supabase_db as _sdb
+
+                row = await run_sync(_sdb.lookup_retell_call, call_id)
+                if row:
+                    conv = conv or row["conversation_id"]
+                    target = target or row["user_id"]
+                    if row["user_id"] and not user_id:
+                        user_id = row["user_id"]
+            except Exception:  # noqa: BLE001
+                pass
+        if not target:
+            return
         if conv:
             bound_conv = conv
             set_active_conversation(target, conv)

@@ -229,6 +229,14 @@ async def register_retell_call(
         logger.warning("[RETELL] agent refresh before call failed (continuing): %s", exc)
 
     conversation_id = _conversation_id_for_call(user_id, body)
+    if not conversation_id:
+        try:
+            conv = await asyncio.to_thread(supabase_db.create_conversation, user_id)
+            conversation_id = str((conv or {}).get("id") or "").strip() or None
+            if conversation_id:
+                set_active_conversation(user_id, conversation_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[RETELL] create_conversation en register-call falló: %s", exc)
     call_vars: dict[str, str] = {"user_id": user_id}
     call_meta: dict[str, str] = {"user_id": user_id}
     if conversation_id:
@@ -253,12 +261,24 @@ async def register_retell_call(
         from app.services import voice_client_session as vcs
 
         vcs.begin_voice_publish_session(user_id, str(call_id))
+        if conversation_id:
+            try:
+                await asyncio.to_thread(
+                    supabase_db.bind_retell_call,
+                    user_id,
+                    conversation_id,
+                    str(call_id),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[RETELL] bind_retell_call falló: %s", exc)
         logger.info(
             "[RETELL] voice publish session reset call=%s user=%s conv=%s",
             call_id,
             user_id[:8],
             (conversation_id or "")[:8],
         )
+    if conversation_id:
+        payload["conversation_id"] = conversation_id
 
     return payload
 
@@ -343,6 +363,16 @@ async def register_retell_native_pilot_call(
         from app.services import voice_client_session as vcs
 
         vcs.begin_voice_publish_session(user_id, str(call_id))
+        if conversation_id:
+            try:
+                await asyncio.to_thread(
+                    supabase_db.bind_retell_call,
+                    user_id,
+                    conversation_id,
+                    str(call_id),
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[NATIVE-PILOT] bind_retell_call falló: %s", exc)
         logger.info(
             "[NATIVE-PILOT] call=%s user=%s agent=%s conv=%s",
             call_id,
@@ -350,6 +380,8 @@ async def register_retell_native_pilot_call(
             agent_id[:12],
             (conversation_id or "")[:8],
         )
+    if conversation_id:
+        payload["conversation_id"] = conversation_id
 
     return payload
 

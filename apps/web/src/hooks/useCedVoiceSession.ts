@@ -1329,6 +1329,10 @@ export function useCedVoiceSession(
           await stopSession();
           return;
         }
+        if (registration.conversation_id) {
+          conversationRef.current = registration.conversation_id;
+          setConversationId(registration.conversation_id);
+        }
         trackStartTrial();
 
         if (startRetell && registration.ok) {
