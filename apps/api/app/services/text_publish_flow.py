@@ -262,7 +262,12 @@ def handle_publish_flow_turn(
     from app.services.chat_intents import is_generate_image_intent, looks_like_conversation_paste
     from app.services.marketing_creative import is_image_creation_request
 
-    if looks_like_conversation_paste(text):
+    from app.domain.ced_script_blueprints import (
+        is_script_format_catalog,
+        is_video_content_calendar,
+    )
+
+    if looks_like_conversation_paste(text) or is_script_format_catalog(text) or is_video_content_calendar(text):
         if flow:
             clear_publish_flow(user_id, conversation_id)
         return None

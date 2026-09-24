@@ -40,10 +40,14 @@ def test_playbook_has_reel_script_structures():
         "punto de quiebre",
         "problema invisible",
         "mini serie",
+        "entretenimiento",
+        "demostrativo",
+        "reflexivo",
         "5 hooks",
         "3 hooks",
         "no fuerces las 6",
         "una pregunta",
+        "cuál de los 10",
     ):
         assert token in body
     assert "¿quieres que use" in body or "estructura x" in body

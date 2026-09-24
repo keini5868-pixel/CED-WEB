@@ -95,6 +95,32 @@ def test_full_ced_capability_paste_generates_image_not_instagram():
     )
 
 
+def test_video_format_catalog_is_not_publish():
+    """«Comparte un aprendizaje» + «esta estrutura» no es publicar en Instagram."""
+    msg = (
+        "quiero usar esta estrutura Índice de formatos\n"
+        "01 - Historia: Storytelling que vende sin vender.\n"
+        "10- Reflexivo: Comparte un aprendizaje o una reflexión personal."
+    )
+    assert is_social_publish_intent(msg) is False
+    assert (
+        handle_publish_flow_turn(
+            "user-salon",
+            "conv-salon",
+            msg,
+            history=[
+                {
+                    "role": "user",
+                    "content": "3 videos por semana de aqui al 24 para un salon",
+                }
+            ],
+            run_tool=lambda *a, **k: "",
+            suggest_caption=lambda *a, **k: "",
+        )
+        is None
+    )
+
+
 def test_real_publica_en_instagram_still_works():
     assert is_social_publish_intent("publica esto en instagram")
     assert is_social_publish_intent("perfecto publica esto en facebook")

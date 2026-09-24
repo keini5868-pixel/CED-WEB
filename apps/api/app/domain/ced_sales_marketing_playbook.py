@@ -78,24 +78,15 @@ El primer texto es una BASE; una frase al cierre: pueden afinarlo con su voz y r
 NO fuerces las 6 estructuras de Reel. Usa: gancho específico → desarrollo → CTA.
 Entrega: pieza lista + **3 hooks** alternativos (no 5).
 
-### 6b) Guion / Reel / TikTok / idea de VIDEO — las 6 estructuras
-Elige UNA (no mezcles, no nombres la etiqueta salvo que la pidan):
-- Transformación o historia personal → **Historia que vende**
-  Gancho emocional → problema inicial → punto de quiebre → solución → lección → CTA natural.
-- Enseña algo útil → **Educativo**
-  Hook → problema común → explicación sencilla → consejo práctico → CTA.
-- Posiciona expertise o resultado real → **Autoridad**
-  Gancho con meta deseable → prueba social/experiencia → 1 a 3 tips → promesa de cambio → CTA.
-- Responde duda o comentario → **Respuesta a duda**
-  Reacción → problema o error → solución práctica → invitación a más dudas.
-- Revela lo que no ven → **Problema invisible**
-  Gancho que haga dudar → problema invisible → síntomas → solución → CTA (educativo, no alarmista).
-- Inicia una serie → **Mini serie (cap. 1)**
-  Hook fuerte → contexto → por qué la serie → qué aprenderán después → CTA para seguir
-  + **5 títulos** de la mini serie.
-
-Entrega en un turno: guion listo para grabar (gancho 1–3 s) + **5 hooks** alternativos.
-En voz: ~5 bloques (60–90 s) + 5 ganchos de una línea. En chat: texto completo.
+### 6b) Guion / Reel / TikTok / idea de VIDEO — plantilla de 10 formatos
+Manda el bloque PLANTILLAS OFICIALES DE GUION. PROHIBIDO inventar otra estructura.
+Los 10: Historia que vende · Qué vendes · Educativo · Autoridad · Problema invisible ·
+Responde dudas · Mini serie · Entretenimiento · Demostrativo · Reflexivo.
+Si no eligió formato: pregunta cuál de los 10 (no pidas datos todavía).
+Si eligió: pide SOLO los datos de ese formato y entrega con sus secciones literales
+y la duración pedida (reparte palabras, no borres secciones).
+Punto de quiebre, por qué creó la serie y extras (5 hooks / 5 títulos) van cuando
+el formato los pide. En voz: ~5 bloques + extras en una línea. En chat: texto completo.
 """.strip()
 
 _PLAYBOOK_TRIGGERS = re.compile(
@@ -104,6 +95,7 @@ _PLAYBOOK_TRIGGERS = re.compile(
     r"prompt|contenido|campa[nñ]a|anuncio|ads?|meta\s*ads?|facebook\s*ads?|"
     r"instagram\s*ads?|reel|reels|tiktok|funnel|embudo|"
     r"mini\s*serie|problema\s+invisible|historia\s+que\s+vende|"
+    r"qu[eé]\s+vendes|entretenimiento|demostrativ|reflexiv|"
     r"aida|pas\b|pastor|bab\b|fab\b|"
     r"venta|ventas|prospecci[oó]n|cierre|objeci[oó]n|"
     r"estrategia|marketing|publicidad|creativo|lead|leads|"

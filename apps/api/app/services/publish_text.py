@@ -618,6 +618,14 @@ def is_social_publish_intent(text: str, *, with_image: bool = False) -> bool:
         return False
     if is_capability_catalog_request(t):
         return False
+    from app.domain.ced_script_blueprints import (
+        is_script_format_catalog,
+        is_video_content_calendar,
+    )
+
+    # «Comparte un aprendizaje» + «esta estrutura» no es publicar una foto.
+    if is_script_format_catalog(t) or is_video_content_calendar(t):
+        return False
 
     from app.services.chat_intents import (
         is_attachment_image_edit_request,

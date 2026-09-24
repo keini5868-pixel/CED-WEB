@@ -202,6 +202,12 @@ def build_base_voice_system(
         )
 
         base = append_sales_marketing_playbook_if_needed(base, query)
+    if query:
+        # Un «hazme un guion para un reel» no siempre entra por consultoría:
+        # la plantilla de guiones se engancha aparte para cubrir también la voz.
+        from app.domain.ced_script_blueprints import with_script_blueprints_if_needed
+
+        base = with_script_blueprints_if_needed(base, query)
     # FitLine/PM: ficha SOLO si el turno es de ese tema (o modo guía activo).
     # Plan Cierre ya no fuerza la ficha en Excel/clima/etc. (evita puentes
     # fantasma tipo «Excel → Activize / Cell Energy»).
