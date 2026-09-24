@@ -78,7 +78,11 @@ export function CedVoiceHub() {
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial, setActiveModule } =
     useHudFeed();
+  const chatThreadIdRef = useRef<string | null>(null);
   const [liveVoiceTurns, setLiveVoiceTurns] = useState<LiveVoiceTurn[]>([]);
+  const onConversationId = useCallback((id: string | null) => {
+    chatThreadIdRef.current = id;
+  }, []);
   const voiceWasActiveRef = useRef(false);
   const upsertLiveVoiceTurn = useCallback(
     (
@@ -271,6 +275,7 @@ export function CedVoiceHub() {
       setVoiceImagePreview({ url, prompt });
       setChatSeedImage(null);
     },
+    getChatConversationId: () => chatThreadIdRef.current,
   }, voiceRoute);
 
   useEffect(() => {
@@ -600,6 +605,7 @@ export function CedVoiceHub() {
               voiceSessionActive={voice.voiceSessionActive || liveVoiceTurns.length > 0}
               bindVoiceConversationId={voice.conversationId}
               liveVoiceTurns={liveVoiceTurns}
+              onConversationId={onConversationId}
               seedImage={chatSeedImage}
               onSeedConsumed={() => setChatSeedImage(null)}
               seedPrompt={chatSeedPrompt}

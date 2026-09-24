@@ -165,6 +165,22 @@ function emptyConversation(id: string): ConversationRow {
   };
 }
 
+export async function createConversation(
+  channel: "text" | "voice" = "text",
+): Promise<ConversationRow | null> {
+  try {
+    const res = await proxyFetchAuthed(
+      `conversations?channel=${encodeURIComponent(channel)}`,
+      { method: "POST" },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as { conversation?: ConversationRow };
+    return data.conversation ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getConversationMessages(
   conversationId: string,
 ): Promise<{ messages: ConversationMessage[]; conversation: ConversationRow }> {

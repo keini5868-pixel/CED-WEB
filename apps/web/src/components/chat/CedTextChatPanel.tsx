@@ -41,6 +41,7 @@ import { applyCedOpenModule, openFitlineOppsIfRequested } from "@/lib/hud/chrome
 import { useCedOverlay } from "@/contexts/CedOverlayContext";
 import {
   getConversationMessages,
+  createConversation,
   peekCachedConversations,
   peekCachedMessages,
   rememberConversationMessages,
@@ -78,16 +79,45 @@ type CedTextChatPanelProps = {
   voiceSessionActive?: boolean;
   bindVoiceConversationId?: string | null;
   liveVoiceTurns?: LiveVoiceTurn[];
+  onConversationId?: (id: string | null) => void;
 };
 
 function isDefaultWelcome(msg: ChatMessage): boolean {
   return msg.role === "model" && msg.content === CHAT_DEFAULT_WELCOME && !msg.id;
 }
 
+function isStickyWelcomeContent(content: string): boolean {
+  const text = content.trim();
+  if (!text) return false;
+  if (text === CHAT_DEFAULT_WELCOME) return true;
+  return (
+    text.startsWith("Bienvenido de nuevo") ||
+    text.startsWith("Hola, soy CED.")
+  );
+}
+
+function isStickyWelcome(msg: ChatMessage): boolean {
+  return msg.role === "model" && isStickyWelcomeContent(msg.content);
+}
+
 const VOICE_LIVE_PREFIX = "voice-live:";
 
 function isVoiceLiveMessage(msg: ChatMessage): boolean {
   return String(msg.id || "").startsWith(VOICE_LIVE_PREFIX);
+}
+
+function lastCoalesceTarget(
+  messages: ChatMessage[],
+  role: string,
+): ChatMessage | undefined {
+  return [...messages]
+    .reverse()
+    .find(
+      (m) =>
+        m.role === role &&
+        !isStickyWelcome(m) &&
+        (isVoiceLiveMessage(m) || Boolean(m.partial) || Boolean(m.id)),
+    );
 }
 
 function upsertLiveTranscriptMessage(
@@ -103,11 +133,11 @@ function upsertLiveTranscriptMessage(
     partial: live.partial,
   };
   const kept = prev.filter((m) => !isDefaultWelcome(m) && m.id !== id);
-  const last = [...kept].reverse().find((m) => m.role === live.role);
+  const last = lastCoalesceTarget(kept, live.role);
   if (last && (last.content === live.text || last.content.startsWith(live.text))) {
     return kept;
   }
-  if (last && live.text.startsWith(last.content)) {
+  if (last && live.text.startsWith(last.content) && (isVoiceLiveMessage(last) || last.partial)) {
     return kept.map((m) =>
       m === last ? { ...m, content: live.text, partial: live.partial } : m,
     );
@@ -117,22 +147,28 @@ function upsertLiveTranscriptMessage(
 
 function mergePersistedVoiceMessages(
   prev: ChatMessage[],
-  remote: { id: string; role: string; content: string; created_at: string }[],
+  remote: { id?: string; role?: string; content?: string; created_at?: string }[],
 ): ChatMessage[] {
+  const sticky = prev.filter((m) => isStickyWelcome(m) && !m.id);
   const mapped: ChatMessage[] = remote
     .filter((m) => Boolean(m.content?.trim()))
+    .filter((m) => !isStickyWelcomeContent(String(m.content || "")) || Boolean(m.id))
     .map((m) => ({
       id: m.id,
       role: m.role === "user" ? "user" : "model",
-      content: m.content,
-      created_at: m.created_at,
+      content: String(m.content || ""),
+      created_at: m.created_at || new Date().toISOString(),
       partial: false,
     }));
   if (mapped.length === 0) return prev;
   const livePartials = prev.filter((m) => isVoiceLiveMessage(m));
-  const next = mapped.map((m) => ({ ...m }));
+  const header =
+    sticky.length > 0 && !mapped.some((m) => isStickyWelcomeContent(m.content))
+      ? sticky.slice(0, 1)
+      : [];
+  const next = [...header, ...mapped.map((m) => ({ ...m }))];
   for (const live of livePartials) {
-    const last = [...next].reverse().find((m) => m.role === live.role);
+    const last = lastCoalesceTarget(next, live.role);
     if (!last) {
       next.push(live);
       continue;
@@ -140,7 +176,7 @@ function mergePersistedVoiceMessages(
     if (live.content === last.content || last.content.startsWith(live.content)) {
       continue;
     }
-    if (live.content.startsWith(last.content)) {
+    if (live.content.startsWith(last.content) && (isVoiceLiveMessage(last) || last.partial)) {
       last.content = live.content;
       last.partial = live.partial;
       continue;
@@ -470,6 +506,7 @@ export function CedTextChatPanel({
   voiceSessionActive = false,
   bindVoiceConversationId = null,
   liveVoiceTurns = [],
+  onConversationId,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -649,6 +686,23 @@ export function CedTextChatPanel({
   }, [bindVoiceConversationId]);
 
   useEffect(() => {
+    onConversationId?.(conversationId);
+  }, [conversationId, onConversationId]);
+
+  useEffect(() => {
+    if (!open || conversationId || resumeLockRef.current) return;
+    let cancelled = false;
+    void createConversation("text").then((conv) => {
+      const id = conv?.id?.trim();
+      if (cancelled || !id) return;
+      setConversationId((prev) => prev || id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, conversationId]);
+
+  useEffect(() => {
     if (voiceSessionActive && !voiceSessionGateRef.current) {
       voiceSessionGateRef.current = true;
       setMessages((prev) =>
@@ -687,11 +741,11 @@ export function CedTextChatPanel({
       const rest = prev.filter((m) => !isVoiceLiveMessage(m));
       const usefulRest = rest.filter((m) => !isDefaultWelcome(m)).map((m) => ({ ...m }));
       for (const item of live) {
-        const last = [...usefulRest].reverse().find((m) => m.role === item.role);
+        const last = lastCoalesceTarget(usefulRest, item.role);
         if (last && (last.content === item.content || last.content.startsWith(item.content))) {
           continue;
         }
-        if (last && item.content.startsWith(last.content)) {
+        if (last && item.content.startsWith(last.content) && (isVoiceLiveMessage(last) || last.partial)) {
           last.content = item.content;
           last.partial = item.partial;
           continue;
@@ -709,8 +763,11 @@ export function CedTextChatPanel({
     let lastSeq = 0;
     const pull = async () => {
       try {
-        const state = await fetchVoiceClientState(false);
+        const state = await fetchVoiceClientState(false, { transcript: true });
         if (cancelled) return;
+        if (state.conversation_id && state.conversation_id !== conversationId) {
+          setConversationId(state.conversation_id);
+        }
         const live = state.live_transcript;
         const text = String(live?.text || "").trim();
         const seq = Number(live?.seq || 0);
@@ -726,9 +783,14 @@ export function CedTextChatPanel({
             }),
           );
         }
+        const remote = state.transcript_turns || [];
+        if (remote.length > 0) {
+          setMessages((prev) => mergePersistedVoiceMessages(prev, remote));
+        }
       } catch {
         /* sin sesión */
       }
+      const threadId = bindVoiceConversationId || conversationId;
       if (!threadId) return;
       try {
         const data = await getConversationMessages(threadId);
@@ -789,6 +851,7 @@ export function CedTextChatPanel({
       if (!personalized) return;
       setMessages((prev) => {
         if (resumeLockRef.current) return prev;
+        if (voiceSessionActive) return prev;
         if (
           prev.some(
             (m) =>
@@ -818,7 +881,7 @@ export function CedTextChatPanel({
     return () => {
       cancelled = true;
     };
-  }, [open, refreshStatus]);
+  }, [open, refreshStatus, voiceSessionActive]);
 
   useEffect(() => {
     if (!open || !seedImage?.url) return;

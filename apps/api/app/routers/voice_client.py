@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.deps.auth import require_user_id
+from app.services import supabase_db
 from app.services import voice_client_session as vcs
 from app.services.publish_media import client_media_url, decode_image_data
 
@@ -61,8 +62,25 @@ def _client_url_from_public(public_url: str) -> str:
 async def voice_client_state(
     user_id: str = Depends(require_user_id),
     consume: bool = False,
+    transcript: bool = False,
 ) -> dict[str, Any]:
-    return {"ok": True, **vcs.get_state(user_id, consume_action=consume)}
+    payload = {"ok": True, **vcs.get_state(user_id, consume_action=consume)}
+    if not transcript:
+        return payload
+    cid = vcs.get_conversation_id(user_id)
+    try:
+        from app.services.async_sync import run_sync
+
+        messages, found = await run_sync(
+            supabase_db.recent_session_messages,
+            user_id,
+            cid,
+        )
+    except Exception:  # noqa: BLE001
+        messages, found = [], cid
+    payload["conversation_id"] = found or cid
+    payload["transcript_turns"] = messages or []
+    return payload
 
 
 @router.post("/camera-status")

@@ -41,6 +41,13 @@ export type VoiceLiveTranscript = {
   partial?: boolean;
 };
 
+export type VoiceTranscriptTurn = {
+  id?: string;
+  role?: string;
+  content?: string;
+  created_at?: string;
+};
+
 export type VoiceClientState = {
   ok: boolean;
   camera_active?: boolean;
@@ -48,11 +55,19 @@ export type VoiceClientState = {
   client_action?: VoiceClientAction | null;
   tool_events?: VoiceToolEvent[];
   live_transcript?: VoiceLiveTranscript | null;
+  conversation_id?: string | null;
+  transcript_turns?: VoiceTranscriptTurn[];
 };
 
-export async function fetchVoiceClientState(consume = false): Promise<VoiceClientState> {
-  const qs = consume ? "?consume=true" : "";
-  const res = await proxyFetch(`voice/client-state${qs}`);
+export async function fetchVoiceClientState(
+  consume = false,
+  opts?: { transcript?: boolean },
+): Promise<VoiceClientState> {
+  const qs = new URLSearchParams();
+  if (consume) qs.set("consume", "true");
+  if (opts?.transcript) qs.set("transcript", "true");
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  const res = await proxyFetch(`voice/client-state${suffix}`);
   if (res.status === 401 || res.status === 403) {
     return { ok: false };
   }

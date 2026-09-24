@@ -51,10 +51,11 @@ def list_conversations(
 @router.post("")
 def start_conversation(
     title: str = "Conversación CED",
+    channel: str = Query(default="text", pattern="^(voice|text)$"),
     user_id: str = Depends(require_user_id),
 ) -> dict:
     try:
-        conv = supabase_db.create_conversation(user_id, title=title)
+        conv = supabase_db.create_conversation(user_id, title=title, channel=channel)
         return {"conversation": conv}
     except ValueError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

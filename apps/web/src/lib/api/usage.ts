@@ -54,14 +54,20 @@ export async function fetchUsageBalanceDetailed(): Promise<UsageBalanceResult> {
   }
 }
 
-export async function startVoiceSession(): Promise<{
+export async function startVoiceSession(conversationId?: string | null): Promise<{
   session_id: string;
   conversation_id: string | null;
   plan_id?: string | null;
   voice_stack?: string | null;
   voice_transport?: string | null;
 }> {
-  const res = await proxyFetch("usage/session/start", { method: "POST" });
+  const res = await proxyFetch("usage/session/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conversation_id: conversationId?.trim() || undefined,
+    }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(

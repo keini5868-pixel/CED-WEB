@@ -215,6 +215,8 @@ export interface CedVoiceSessionCallbacks {
   onGeneratedImage?: (url: string, prompt?: string) => void;
   /** Retracta bubble agent en HUD al interrumpir (Retell). */
   onClearAgentPartial?: () => void;
+  /** Hilo visible en el chat de texto — voz debe escribir aquí. */
+  getChatConversationId?: () => string | null;
 }
 
 export type VoiceHeardStatus =
@@ -1276,7 +1278,7 @@ export function useCedVoiceSession(
       }
 
       const [voiceSession] = await Promise.all([
-        startVoiceSession(),
+        startVoiceSession(callbacksRef.current?.getChatConversationId?.() || conversationRef.current),
         retellActive() ? warmupRetellVoiceApi() : Promise.resolve(),
       ]);
       usageSessionRef.current = voiceSession.session_id;

@@ -54,8 +54,17 @@ async def usage_balance(user: dict = Depends(require_auth_user)) -> dict:
     return state
 
 
+class SessionStartBody(BaseModel):
+    conversation_id: str | None = Field(default=None, alias="conversationId")
+
+    model_config = {"populate_by_name": True}
+
+
 @router.post("/session/start")
-async def session_start(user: dict = Depends(require_auth_user)) -> dict:
+async def session_start(
+    user: dict = Depends(require_auth_user),
+    body: SessionStartBody | None = Body(default=None),
+) -> dict:
     user_id = normalize_user_id(user["id"])
     await run_sync(supabase_db.start_voice_trial_clock, user_id)
     balance = await voice_access_state_async(user_id, **staff_auth_kwargs(user))
@@ -91,25 +100,34 @@ async def session_start(user: dict = Depends(require_auth_user)) -> dict:
     }
 
     conversation_id = None
-    for attempt in range(2):
+    preferred = ((body.conversation_id if body else None) or "").strip()
+    if preferred:
         try:
-            conv = await run_sync(supabase_db.create_conversation, user_id)
-            conversation_id = conv.get("id") if conv else None
-            if conversation_id:
-                break
-            logger.error(
-                "[USAGE] session_start sin conversation_id user=%s attempt=%s",
-                user_id[:8],
-                attempt + 1,
-            )
+            existing = await run_sync(supabase_db.get_conversation, preferred, user_id)
+            if existing:
+                conversation_id = preferred
         except Exception as exc:  # noqa: BLE001
-            logger.exception(
-                "[USAGE] create_conversation falló user=%s attempt=%s: %s",
-                user_id[:8],
-                attempt + 1,
-                exc,
-            )
-            conversation_id = None
+            logger.warning("[USAGE] conversation previa no usable: %s", exc)
+    if not conversation_id:
+        for attempt in range(2):
+            try:
+                conv = await run_sync(supabase_db.create_conversation, user_id)
+                conversation_id = conv.get("id") if conv else None
+                if conversation_id:
+                    break
+                logger.error(
+                    "[USAGE] session_start sin conversation_id user=%s attempt=%s",
+                    user_id[:8],
+                    attempt + 1,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.exception(
+                    "[USAGE] create_conversation falló user=%s attempt=%s: %s",
+                    user_id[:8],
+                    attempt + 1,
+                    exc,
+                )
+                conversation_id = None
     _active_sessions[session_id]["conversation_id"] = conversation_id
     if conversation_id:
         from app.services.voice_history import set_active_conversation

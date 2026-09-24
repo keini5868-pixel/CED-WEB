@@ -230,7 +230,7 @@ def append_message(
         raise PermissionError("Conversación no encontrada")
     conv_channel = str((owner.data[0] or {}).get("channel") or channel)
 
-    if conv_channel == "voice" and role in ("model", "assistant", "user"):
+    if role in ("model", "assistant", "user"):
         last = (
             client.table("voice_messages")
             .select("id, content, role, created_at")
@@ -426,6 +426,41 @@ def get_conversation_messages(
         .execute()
     )
     return result.data or []
+
+
+def recent_session_messages(
+    user_id: str,
+    conversation_id: str | None = None,
+    *,
+    limit: int = 40,
+    max_age_sec: int = 2700,
+) -> tuple[list[dict[str, Any]], str | None]:
+    """Mensajes del hilo activo, o del más reciente si se acaba de escribir en voz."""
+    uid = (user_id or "").strip()
+    cid = (conversation_id or "").strip()
+    if uid and cid:
+        conv = get_conversation(cid, uid)
+        if conv:
+            return get_conversation_messages(cid, uid, limit=limit), cid
+    if not uid:
+        return [], None
+    rows = list_conversations(uid, limit=1)
+    if not rows:
+        return [], None
+    latest = rows[0] or {}
+    latest_id = str(latest.get("id") or "").strip()
+    if not latest_id:
+        return [], None
+    updated_raw = latest.get("updated_at")
+    if updated_raw:
+        try:
+            updated_at = datetime.fromisoformat(str(updated_raw).replace("Z", "+00:00"))
+            age = (datetime.now(timezone.utc) - updated_at).total_seconds()
+            if age > max_age_sec:
+                return [], None
+        except ValueError:
+            pass
+    return get_conversation_messages(latest_id, uid, limit=limit), latest_id
 
 
 def list_recent_voice_activity(user_id: str, limit: int = 3) -> list[str]:

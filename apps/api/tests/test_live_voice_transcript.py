@@ -52,6 +52,37 @@ def test_latest_transcript_line_picks_last_agent():
     assert row["role"] == "model"
 
 
+def test_client_state_transcript_turns_from_db(monkeypatch):
+    app = create_app()
+    app.dependency_overrides[require_user_id] = lambda: UID
+
+    def fake_recent(user_id: str, conversation_id: str | None = None, **kwargs):
+        assert user_id == UID
+        return (
+            [
+                {
+                    "id": "m1",
+                    "role": "user",
+                    "content": "qué hora es",
+                    "created_at": "2026-09-24T03:00:00Z",
+                }
+            ],
+            "conv-live",
+        )
+
+    monkeypatch.setattr(
+        "app.routers.voice_client.supabase_db.recent_session_messages",
+        fake_recent,
+    )
+    client = TestClient(app)
+    res = client.get("/v1/voice/client-state?transcript=true")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["ok"] is True
+    assert data["conversation_id"] == "conv-live"
+    assert data["transcript_turns"][0]["content"] == "qué hora es"
+
+
 def test_set_live_transcript_skips_identical_snapshot():
     vcs.set_live_transcript(UID, role="user", text="hola", stream_key="user-2", partial=False)
     a = vcs.get_state(UID)["live_transcript"]
