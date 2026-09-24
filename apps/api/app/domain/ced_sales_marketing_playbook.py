@@ -124,11 +124,15 @@ def wants_sales_marketing_playbook(text: str) -> bool:
 
 def append_sales_marketing_playbook_if_needed(system: str, user_text: str) -> str:
     """Inyecta el playbook cuando el turno es de marketing/ventas/copy."""
+    from app.domain.ced_script_blueprints import with_script_blueprints_if_needed
+
     if not wants_sales_marketing_playbook(user_text):
-        return system
+        return with_script_blueprints_if_needed(system, user_text)
     base = (system or "").rstrip()
     if not base:
-        return CED_SALES_MARKETING_PLAYBOOK
-    if "PLAYBOOK INTERNO — MARKETING" in base:
-        return base
-    return f"{base}\n\n{CED_SALES_MARKETING_PLAYBOOK}"
+        out = CED_SALES_MARKETING_PLAYBOOK
+    elif "PLAYBOOK INTERNO — MARKETING" in base:
+        out = base
+    else:
+        out = f"{base}\n\n{CED_SALES_MARKETING_PLAYBOOK}"
+    return with_script_blueprints_if_needed(out, user_text)
