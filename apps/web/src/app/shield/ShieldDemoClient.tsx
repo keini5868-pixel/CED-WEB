@@ -210,7 +210,7 @@ export function ShieldDemoClient() {
           writeMode: "lace_bound",
         });
         setWalletError(
-          "Lace no implementa signData todavía. El sello de abajo — wallet + SHA-256 — es el envío. Quédate en /shield y copia el JSON. No vayas a /add-plugin y no se finge firma.",
+          "Sello listo. Lace no implementa signData; no se finge firma ni txid. Copie el JSON: wallet viva + SHA-256.",
         );
         return;
       }
@@ -300,7 +300,13 @@ export function ShieldDemoClient() {
           <Chip ok={Boolean(wallet)}>
             {wallet ? "Wallet viva" : "Wallet no conectada"}
           </Chip>
-          <Chip ok={signed}>{signed ? "Sello firmado" : "Sin firma"}</Chip>
+          <Chip ok={signed || seal?.writeMode === "lace_bound"}>
+            {signed
+              ? "Sello firmado"
+              : seal?.writeMode === "lace_bound"
+                ? "Sello listo"
+                : "Sin firma"}
+          </Chip>
           <Chip ok>Compact 0.16</Chip>
           <Chip ok>Red {LACE_NETWORK}</Chip>
         </div>
@@ -406,8 +412,9 @@ export function ShieldDemoClient() {
           <HudPanel title="3. FIRMAR EN LACE">
             <div className="space-y-4">
               <p className="text-xs leading-relaxed text-cyan-500/80">
-                La extensión firma el compromiso. Eso es una atestación de
-                wallet Midnight, no un tx Compact inventado.
+                Pedimos signData a Lace. Hoy la extensión responde que el
+                método no está implementado. El sello sigue siendo wallet +
+                hash, sin firma inventada.
               </p>
               <CedButton
                 onClick={() => void onSign()}
@@ -419,11 +426,14 @@ export function ShieldDemoClient() {
                 <p className="text-xs text-cyan-300">
                   Firma recibida. Verifying key en el JSON de abajo.
                 </p>
+              ) : seal?.writeMode === "lace_bound" ? (
+                <p className="text-xs text-cyan-300">
+                  Lace no firmó. Copie el JSON: ese es el envío de Wave 2.
+                </p>
               ) : (
                 <p className="text-xs text-cyan-500/70">
-                  Si Lace dice «método no implementado», recargue y firme otra
-                  vez. Preview 2.39 a veces stubbea signData; la wallet y el
-                  hash igual cuentan.
+                  Tras conectar y hashear, pulse aquí. Si Lace no firma, el
+                  JSON de abajo igual vale.
                 </p>
               )}
             </div>
