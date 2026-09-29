@@ -1,4 +1,4 @@
-import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
+import { proxyFetch } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
 export type ShieldStatus = {
@@ -16,7 +16,7 @@ export type ShieldStatus = {
 
 export async function fetchShieldStatus(): Promise<ShieldStatus | null> {
   try {
-    const res = await proxyFetchAuthed("v1/shield/status", { cache: "no-store" });
+    const res = await proxyFetch("v1/shield/status", { cache: "no-store" });
     if (!res.ok) return null;
     return await parseApiJson<ShieldStatus>(res);
   } catch {

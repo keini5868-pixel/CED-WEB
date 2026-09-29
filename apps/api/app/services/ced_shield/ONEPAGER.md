@@ -33,7 +33,7 @@ Un caso concreto: socios de PM International, que necesitan mostrar seguimiento 
 También aplica a cualquier usuario que conecte sus redes sociales a CED: puede probar que cierta cuenta o interacción existió sin exponer sus datos de conexión al resto del sistema.
 
 ## Ask (grant / Aliit)
-Compact source y demo Lace ya están en el repo. Kill-switch `CED_SHIELD_ENABLED` apagado en producción. Pedimos seed + acceso al equipo Compact para la tx real en preprod (Wave 2).
+Demo `/shield`: Lace viva + SHA-256 + `signData` (atestación de wallet). No se finge txid. Compact `recordSeal` está en el repo; el envío on-chain espera contrato deployado + keys ZK. Kill-switch `CED_SHIELD_ENABLED` apagado en el producto. Pedimos seed Compact para cerrar la tx preprod.
 
 Kill-switch: `CED_SHIELD_ENABLED=false` (default). Fallo de Midnight ≠ fallo de voz.
 

@@ -61,7 +61,11 @@ function redirectAuthCodeIfNeeded(request: NextRequest): NextResponse | null {
 export async function updateSession(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   // Railway healthcheck — nunca bloquear por Supabase
-  if (pathname === "/health" || pathname === "/api/ced/health") {
+  if (
+    pathname === "/health" ||
+    pathname === "/api/ced/health" ||
+    pathname === "/api/ced/shield/status"
+  ) {
     return NextResponse.next({ request });
   }
 

@@ -28,4 +28,4 @@ Un control como **Chats** (barra o Sistema → Mercados). Overlay desplegable, n
 
 ## AKINDO
 
-Submit ~27 Sep 2026. Demo `/shield` + este kill-switch. No DM Hoskinson. Fallo Midnight ≠ fallo voz.
+Wave 2: demo `/shield` (Lace + hash + firma). Kill-switch OFF en prod. No DM Hoskinson. Fallo Midnight ≠ fallo voz.

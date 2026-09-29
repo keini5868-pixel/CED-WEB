@@ -12,21 +12,34 @@ import {
   PublicSiteHeader,
 } from "@/components/layout/PublicSiteHeader";
 import {
-  buildRecordSealCall,
   COMPACT_CIRCUIT,
   COMPACT_CONTRACT,
   LACE_NETWORK,
-  type CompactRecordSealCall,
 } from "@/lib/shield/circuit";
+import {
+  buildShieldCommitment,
+  commitmentMessage,
+  utf8ToHex,
+  utcNowIso,
+  type ShieldCommitment,
+} from "@/lib/shield/commitment";
 import { DEMO_ARTIFACT, sha256Hex } from "@/lib/shield/hash";
-import { connectLace, laceInstalled, type LaceOk } from "@/lib/shield/lace";
+import {
+  connectLace,
+  laceInstalled,
+  readLaceLive,
+  signCommitmentHex,
+  type LaceLiveSnapshot,
+  type LaceOk,
+  type LaceSignature,
+} from "@/lib/shield/lace";
 
 type DemoSeal = {
-  sealedAt: string;
-  wallet: string;
-  digest: string;
-  call: CompactRecordSealCall;
-  writeMode: "client_preview";
+  commitment: ShieldCommitment;
+  message: string;
+  messageHex: string;
+  signature: LaceSignature | null;
+  writeMode: "lace_attestation" | "lace_bound" | "client_preview";
 };
 
 function Chip({
@@ -53,6 +66,7 @@ function Chip({
 export function ShieldDemoClient() {
   const [hasLace, setHasLace] = useState(false);
   const [wallet, setWallet] = useState<LaceOk | null>(null);
+  const [live, setLive] = useState<LaceLiveSnapshot | null>(null);
   const [walletError, setWalletError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [digest, setDigest] = useState<string>("");
@@ -71,12 +85,18 @@ export function ShieldDemoClient() {
   }, []);
 
   const killSwitchOff = apiStatus ? !apiStatus.enabled : true;
+  const signed = Boolean(seal?.signature);
+
+  const refreshLive = useCallback(async () => {
+    const snap = await readLaceLive();
+    setLive(snap);
+    return snap;
+  }, []);
 
   const onConnect = useCallback(async () => {
     setBusy(true);
     setWalletError(null);
     const result = await connectLace(LACE_NETWORK);
-    setBusy(false);
     if (!result.ok) {
       if (result.reason === "no_extension") {
         setWalletError(
@@ -85,26 +105,61 @@ export function ShieldDemoClient() {
       } else if (result.reason === "user_rejected") {
         setWalletError("Conexión cancelada en Lace.");
       } else {
-        setWalletError(result.detail || "No pude conectar Lace.");
+        setWalletError(
+          result.detail ||
+            "No pude conectar Lace. Abra el icono de la extensión, recargue y pruebe otra vez.",
+        );
       }
       setWallet(null);
+      setLive(null);
+      setBusy(false);
       return;
     }
     setWallet(result);
-  }, []);
+    const snap = await refreshLive();
+    const liveAddress = snap?.address || result.address;
+    if (liveAddress !== result.address) {
+      setWallet({ ...result, address: liveAddress });
+    }
+    setSeal((prev) => {
+      if (!prev) return prev;
+      const commitment = buildShieldCommitment({
+        contentSha256: prev.commitment.content_sha256,
+        kind: prev.commitment.kind,
+        sealedAt: prev.commitment.sealed_at,
+        wallet: liveAddress,
+      });
+      const message = commitmentMessage(commitment);
+      return {
+        ...prev,
+        commitment,
+        message,
+        messageHex: utf8ToHex(message),
+        signature: null,
+        writeMode: "client_preview",
+      };
+    });
+    setBusy(false);
+  }, [refreshLive]);
 
-  const onSealSample = useCallback(async () => {
+  const onHash = useCallback(async () => {
     setBusy(true);
     setWalletError(null);
     try {
       const hex = await sha256Hex(DEMO_ARTIFACT);
       setDigest(hex);
-      const call = buildRecordSealCall(hex, "session");
-      setSeal({
-        sealedAt: new Date().toISOString().replace(/\.\d{3}Z$/, "Z"),
+      const commitment = buildShieldCommitment({
+        contentSha256: hex,
+        kind: "session",
+        sealedAt: utcNowIso(),
         wallet: wallet?.address || "(conecte Lace para atar la wallet)",
-        digest: hex,
-        call,
+      });
+      const message = commitmentMessage(commitment);
+      setSeal({
+        commitment,
+        message,
+        messageHex: utf8ToHex(message),
+        signature: null,
         writeMode: "client_preview",
       });
     } catch (err) {
@@ -114,19 +169,93 @@ export function ShieldDemoClient() {
     }
   }, [wallet?.address]);
 
+  const onSign = useCallback(async () => {
+    if (!digest) {
+      setWalletError("Primero hashee la muestra.");
+      return;
+    }
+    if (!wallet) {
+      setWalletError("Conecte Lace antes de firmar.");
+      return;
+    }
+    setBusy(true);
+    setWalletError(null);
+    try {
+      const snap = await refreshLive();
+      const liveAddress = snap?.address || wallet.address;
+      setWallet((prev) =>
+        prev && liveAddress !== prev.address
+          ? { ...prev, address: liveAddress }
+          : prev,
+      );
+      const commitment = buildShieldCommitment({
+        contentSha256: digest,
+        kind: "session",
+        sealedAt: seal?.commitment.sealed_at || utcNowIso(),
+        wallet: liveAddress,
+      });
+      const message = commitmentMessage(commitment);
+      const messageHex = utf8ToHex(message);
+      const result = await signCommitmentHex(messageHex, message);
+      if (!result.ok && result.reason === "user_rejected") {
+        setWalletError("Firma cancelada en Lace.");
+        return;
+      }
+      if (!result.ok && result.reason === "no_signData") {
+        setSeal({
+          commitment,
+          message,
+          messageHex,
+          signature: null,
+          writeMode: "lace_bound",
+        });
+        setWalletError(
+          "Lace no implementa signData todavía. El sello de abajo — wallet + SHA-256 — es el envío. Quédate en /shield y copia el JSON. No vayas a /add-plugin y no se finge firma.",
+        );
+        return;
+      }
+      if (!result.ok) {
+        setWalletError(result.detail || "Lace no firmó el sello.");
+        return;
+      }
+      setSeal({
+        commitment,
+        message,
+        messageHex,
+        signature: result.signature,
+        writeMode: "lace_attestation",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }, [digest, seal?.commitment.sealed_at, wallet]);
+
   const payloadJson = useMemo(() => {
     if (!seal) return "";
     return JSON.stringify(
       {
-        schema: "ced-shield-v1",
-        circuit: seal.call.circuit,
-        contract: seal.call.contract,
-        kind: "session",
-        content_sha256: seal.digest,
-        sealed_at: seal.sealedAt,
-        wallet: seal.wallet,
+        ...seal.commitment,
         write_mode: seal.writeMode,
-        never_on_chain: seal.call.neverOnChain,
+        lace_network: LACE_NETWORK,
+        compact_call: `${COMPACT_CIRCUIT}(Bytes<32>, kind)`,
+        attestation: seal.signature
+          ? {
+              encoding: "hex",
+              keyType: "unshielded",
+              message: seal.message,
+              signature: seal.signature.signature,
+              verifyingKey: seal.signature.verifyingKey,
+            }
+          : null,
+        sign_data_status:
+          seal.writeMode === "lace_attestation"
+            ? "signed"
+            : seal.writeMode === "lace_bound"
+              ? "lace_not_implemented"
+              : "not_attempted",
+        on_chain_txid: null,
+        on_chain_note:
+          "No se inventa txid ni firma. recordSeal on-chain requiere contrato deployado + keys ZK. Lace ConnectedAPI no implementa signData; el sello es hash + wallet viva en preprod.",
       },
       null,
       2,
@@ -168,6 +297,10 @@ export function ShieldDemoClient() {
           <Chip ok={hasLace}>
             {hasLace ? "Lace detectada" : "Lace no detectada"}
           </Chip>
+          <Chip ok={Boolean(wallet)}>
+            {wallet ? "Wallet viva" : "Wallet no conectada"}
+          </Chip>
+          <Chip ok={signed}>{signed ? "Sello firmado" : "Sin firma"}</Chip>
           <Chip ok>Compact 0.16</Chip>
           <Chip ok>Red {LACE_NETWORK}</Chip>
         </div>
@@ -175,25 +308,30 @@ export function ShieldDemoClient() {
         <HudPanel title="QUÉ ES ESTE DEMO">
           <div className="space-y-3 text-sm leading-relaxed text-cyan-100/90">
             <p>
-              CED Shield sella que un PDF o una sesión existió. Midnight recibe
-              solo el SHA-256, la fecha y la wallet. El contenido se queda en
-              CED.
+              CED Shield prueba que un PDF o una sesión existió. Midnight y Lace
+              ven solo el SHA-256, la fecha y la wallet. El contenido se queda
+              en CED.
             </p>
             <p className="text-cyan-400/80">
-              Esto no es privacidad de la voz. Retell, Gemini, Tavily y Meta no
-              pasan por este módulo. El kill-switch{" "}
+              Paso sólido de Wave 2: Lace firma el compromiso (
+              <code className="text-cyan-300">signData</code>
+              ). No se finge un txid. La circuit{" "}
+              <code className="text-cyan-300">{COMPACT_CIRCUIT}</code> en{" "}
+              <code className="text-cyan-300">{COMPACT_CONTRACT}</code> es el
+              contrato; el envío on-chain entra cuando haya deploy + keys ZK.
+              Jarvis, Retell y Meta no pasan por aquí.{" "}
               <code className="text-cyan-300">CED_SHIELD_ENABLED</code> sigue
-              apagado en producción.
+              apagado en el producto.
             </p>
           </div>
         </HudPanel>
 
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6 lg:grid-cols-3">
           <HudPanel title="1. CONECTAR LACE">
             <div className="space-y-4">
               <p className="text-xs leading-relaxed text-cyan-500/80">
-                Usa <code className="text-cyan-300">window.midnight</code> (DApp
-                connector). No se carga midnight.js en el HUD de voz.
+                <code className="text-cyan-300">window.midnight</code> — DApp
+                connector. No entra al HUD de voz.
               </p>
               <CedButton onClick={() => void onConnect()} disabled={busy}>
                 {wallet ? "Reconectar Lace" : "Conectar Lace"}
@@ -207,36 +345,46 @@ export function ShieldDemoClient() {
                   <div>
                     <dt className="text-cyan-600">network</dt>
                     <dd>
-                      {wallet.networkId} · {wallet.source}
+                      {live?.networkId || wallet.networkId} · {wallet.source}
                     </dd>
+                  </div>
+                  {live?.indexerUri ? (
+                    <div>
+                      <dt className="text-cyan-600">indexer</dt>
+                      <dd className="break-all">{live.indexerUri}</dd>
+                    </div>
+                  ) : null}
+                  {live?.dustBalance ? (
+                    <div>
+                      <dt className="text-cyan-600">dust</dt>
+                      <dd>{live.dustBalance}</dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt className="text-cyan-600">signData</dt>
+                    <dd>{live?.canSignData ? "sí" : "no"}</dd>
                   </div>
                 </dl>
               ) : (
                 <p className="text-xs text-cyan-500/70">
-                  Extensión: Lace Midnight Preview. Red de demo: {LACE_NETWORK}.
+                  Extensión: Lace Midnight Preview. Red: {LACE_NETWORK}.
                 </p>
               )}
-              {walletError ? (
-                <p className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-                  {walletError}
-                </p>
-              ) : null}
             </div>
           </HudPanel>
 
-          <HudPanel title="2. SELLAR MUESTRA">
+          <HudPanel title="2. HASH MUESTRA">
             <div className="space-y-4">
               <p className="text-xs leading-relaxed text-cyan-500/80">
-                Hashea un artefacto de ejemplo en el navegador y arma la llamada
-                a <code className="text-cyan-300">{COMPACT_CIRCUIT}</code> en{" "}
-                <code className="text-cyan-300">{COMPACT_CONTRACT}</code>.
+                SHA-256 en el navegador. Compact espera{" "}
+                <code className="text-cyan-300">Bytes&lt;32&gt;</code> + kind.
               </p>
               <CedButton
                 variant="secondary"
-                onClick={() => void onSealSample()}
+                onClick={() => void onHash()}
                 disabled={busy}
               >
-                Hashear y armar circuit
+                Hashear muestra
               </CedButton>
               {digest ? (
                 <dl className="space-y-2 font-mono text-[11px] text-cyan-200/90">
@@ -247,16 +395,48 @@ export function ShieldDemoClient() {
                   <div>
                     <dt className="text-cyan-600">circuit</dt>
                     <dd>
-                      {COMPACT_CIRCUIT}(Bytes&lt;32&gt;, kind=1 SESSION)
+                      {COMPACT_CIRCUIT}(hash, SESSION)
                     </dd>
                   </div>
                 </dl>
               ) : null}
             </div>
           </HudPanel>
+
+          <HudPanel title="3. FIRMAR EN LACE">
+            <div className="space-y-4">
+              <p className="text-xs leading-relaxed text-cyan-500/80">
+                La extensión firma el compromiso. Eso es una atestación de
+                wallet Midnight, no un tx Compact inventado.
+              </p>
+              <CedButton
+                onClick={() => void onSign()}
+                disabled={busy || !digest || !wallet}
+              >
+                Firmar sello en Lace
+              </CedButton>
+              {signed ? (
+                <p className="text-xs text-cyan-300">
+                  Firma recibida. Verifying key en el JSON de abajo.
+                </p>
+              ) : (
+                <p className="text-xs text-cyan-500/70">
+                  Si Lace dice «método no implementado», recargue y firme otra
+                  vez. Preview 2.39 a veces stubbea signData; la wallet y el
+                  hash igual cuentan.
+                </p>
+              )}
+            </div>
+          </HudPanel>
         </div>
 
-        <HudPanel title="PAYLOAD ON-CHAIN (SOLO HASH)" bodyClassName="overflow-auto">
+        {walletError ? (
+          <p className="rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+            {walletError}
+          </p>
+        ) : null}
+
+        <HudPanel title="SELLO (HASH + FIRMA, SIN CONTENIDO)" bodyClassName="overflow-auto">
           {seal ? (
             <div className="space-y-3">
               <pre className="max-h-80 overflow-auto rounded border border-cyan-900/60 bg-black/70 p-3 font-mono text-[11px] leading-relaxed text-cyan-100">
@@ -264,18 +444,18 @@ export function ShieldDemoClient() {
               </pre>
               <div className="flex flex-wrap gap-3">
                 <CedButton variant="ghost" onClick={() => void onCopy()}>
-                  {copied ? "Copiado" : "Copiar payload"}
+                  {copied ? "Copiado" : "Copiar sello"}
                 </CedButton>
                 <p className="self-center text-[11px] text-cyan-600">
-                  write_mode = client_preview. La tx ZK en {LACE_NETWORK} es el
-                  siguiente paso de Wave 2; este demo no finge un txid.
+                  write_mode = {seal.writeMode}. on_chain_txid = null a
+                  propósito.
                 </p>
               </div>
             </div>
           ) : (
             <p className="text-sm text-cyan-500/70">
-              Conecte Lace y selle la muestra para ver el JSON que iría a
-              Midnight.
+              Conecte Lace, hashee y firme para ver el sello que un juez puede
+              verificar.
             </p>
           )}
         </HudPanel>
@@ -284,12 +464,12 @@ export function ShieldDemoClient() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <p className="mb-2 font-[family-name:var(--font-orbitron)] text-[10px] tracking-widest text-cyan-400">
-                VA A MIDNIGHT
+                VA A MIDNIGHT / LACE
               </p>
               <ul className="list-disc space-y-1 pl-5 text-sm text-cyan-100/85">
                 <li>content_sha256</li>
                 <li>sealed_at</li>
-                <li>wallet</li>
+                <li>wallet + firma unshielded</li>
                 <li>kind (pdf | session)</li>
               </ul>
             </div>
@@ -307,7 +487,7 @@ export function ShieldDemoClient() {
         </HudPanel>
 
         <p className="text-center text-[12px] text-cyan-600">
-          Módulo piloto. No está en el producto ni en Jarvis.{" "}
+          Módulo piloto. No está en Jarvis.{" "}
           <Link href="/" className="text-cyan-400 hover:text-cyan-200">
             Volver a CED
           </Link>

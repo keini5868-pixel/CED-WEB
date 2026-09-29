@@ -108,23 +108,27 @@ function isLongRunningChatPath(path: string): boolean {
   );
 }
 
+function isPublicApiPath(path: string, method: string): boolean {
+  return method === "GET" && path.toLowerCase() === "shield/status";
+}
+
 async function forward(request: NextRequest, pathSegments: string[]) {
   const { token, authResponse } = await resolveAccessToken(request);
+  const path = pathSegments.map(encodeURIComponent).join("/");
 
-  if (!token) {
+  if (!token && !isPublicApiPath(path, request.method)) {
     return mergeAuthCookies(
       NextResponse.json({ detail: "Sin sesión" }, { status: 401 }),
       authResponse,
     );
   }
-
-  const path = pathSegments.map(encodeURIComponent).join("/");
   const search = request.nextUrl.search;
   const target = `${apiUrl()}/v1/${path}${search}`;
 
-  const headers: HeadersInit = {
-    Authorization: `Bearer ${token}`,
-  };
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
   const requestContentType = request.headers.get("content-type");
   if (requestContentType) {
     headers["Content-Type"] = requestContentType;
