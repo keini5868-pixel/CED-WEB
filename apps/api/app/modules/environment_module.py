@@ -180,9 +180,14 @@ def is_environment_intent(text: str) -> bool:
         return False
     # Imagen/PDF con texto citado («el tiempo va a pasar») no es clima.
     from app.services.chat_intents import is_creative_artifact_intent
+    from app.services.user_ask import is_llm_first_turn, module_probe_text
 
     if is_creative_artifact_intent(text):
         return False
+    if is_llm_first_turn(text):
+        t = module_probe_text(text).strip().lower()
+        if len(t) < 4:
+            return False
     return any(re.search(p, t) for p in ENVIRONMENT_PATTERNS)
 
 

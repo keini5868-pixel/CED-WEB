@@ -3263,13 +3263,16 @@ def send_message(
     )
     from app.services.cognitive_intents import is_conversation_recall_intent
     from app.modules.environment_module import is_environment_intent
+    from app.services.user_ask import module_probe_text
     from app.services.session_memory import build_conversation_recall_reply
     from app.services.chat_image_generation import (
         should_take_direct_image_path,
         run_chat_image_generation,
     )
 
-    if is_conversation_recall_intent(text):
+    probe = module_probe_text(text)
+
+    if is_conversation_recall_intent(probe):
         recall_reply = build_conversation_recall_reply(
             user_id,
             text,
@@ -3351,10 +3354,10 @@ def send_message(
     # Tras imagen/PDF: módulos LIFE. Si el pedido era creativo, no competir.
     creative = is_creative_artifact_intent(text)
 
-    if not creative and is_environment_intent(text):
+    if not creative and is_environment_intent(probe):
         from app.modules.environment_module import handle_environment_query_sync
 
-        env_result = handle_environment_query_sync(user_id, text)
+        env_result = handle_environment_query_sync(user_id, probe)
         return _finish(
             _finalize_chat_reply(str(env_result.get("spoken") or "")),
             route_meta={"intent": "environment", "source": "direct"},
@@ -3367,22 +3370,22 @@ def send_message(
     )
     from app.modules.finance_module import handle_finance_query_sync, is_finance_intent
 
-    if not creative and is_reminder_intent(text) and re.search(r"recu[eé]rdame", text, re.I):
-        reminder_result = handle_reminder_create_sync(user_id, text)
+    if not creative and is_reminder_intent(probe) and re.search(r"recu[eé]rdame", probe, re.I):
+        reminder_result = handle_reminder_create_sync(user_id, probe)
         return _finish(
             _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
             route_meta={"intent": "reminder_create", "source": "direct"},
         )
 
-    if not creative and is_reminder_intent(text):
-        reminder_result = handle_reminder_query_sync(user_id, text)
+    if not creative and is_reminder_intent(probe):
+        reminder_result = handle_reminder_query_sync(user_id, probe)
         return _finish(
             _finalize_chat_reply(str(reminder_result.get("spoken") or "")),
             route_meta={"intent": "reminder_list", "source": "direct"},
         )
 
-    if not creative and is_finance_intent(text):
-        finance_result = handle_finance_query_sync(user_id, text)
+    if not creative and is_finance_intent(probe):
+        finance_result = handle_finance_query_sync(user_id, probe)
         return _finish(
             _finalize_chat_reply(str(finance_result.get("spoken") or "")),
             route_meta={"intent": "finance", "source": "direct"},

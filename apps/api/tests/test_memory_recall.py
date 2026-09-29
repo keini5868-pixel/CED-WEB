@@ -1,6 +1,11 @@
 """Tests — recall natural de conversaciones previas (chat y voz)."""
 
-from app.services.cognitive_intents import is_conversation_recall_intent
+from app.services.cognitive_intents import (
+    CognitiveIntent,
+    analyze_intent,
+    is_conversation_recall_intent,
+    parse_memory_save,
+)
 from app.services.session_memory import (
     build_conversation_recall_reply,
     humanize_session_summary_for_user,
@@ -10,7 +15,42 @@ from app.services.session_memory import (
 def test_is_conversation_recall_intent():
     assert is_conversation_recall_intent("hola me recuerdas nuestra conversacion anterior porfa")
     assert is_conversation_recall_intent("¿de qué hablamos la última vez?")
+    assert is_conversation_recall_intent("de que hablamos ayer")
     assert not is_conversation_recall_intent("hola")
+
+
+def test_pasted_script_is_not_memory_save():
+    script = (
+        "Cinco hooks para elegir\n"
+        "1. ¿Cansada de maquillarte las cejas diariamente?\n"
+        "Hook recomendado: “¿Quieres cejas maquilladas sin maquillarte?”\n"
+        "2. Guion educativo: Powder Shadow Brows\n"
+        "ESCENA 4 - CONSEJO PRÁCTICO | 27-34 segundos\n"
+        "Narración: “Recuerda que el resultado se suaviza durante la cicatrización "
+        "y que, aproximadamente a los 40 días, realizamos un retoque.”\n"
+    )
+    assert parse_memory_save(script) is None
+    assert analyze_intent(script).primary != CognitiveIntent.MEMORY_SAVE
+
+
+def test_explicit_remember_this_still_saves():
+    assert parse_memory_save("recuerda que mi nicho es micropigmentación de cejas")
+    assert analyze_intent("recuerda que mi nicho es micropigmentación de cejas").primary == (
+        CognitiveIntent.MEMORY_SAVE
+    )
+
+
+def test_cta_tweak_is_not_session_recall():
+    """«eso de que hablamos por WhatsApp» es el CTA, no un pedido de memoria."""
+    msg = (
+        "Eso de que hablamos por whasatpp no me gusta es mejor algo como "
+        "te gustaría saber cómo te quedarían un diseño personalizado"
+    )
+    assert is_conversation_recall_intent(msg) is False
+    from app.services.cognitive_intents import CognitiveIntent, analyze_intent
+
+    assert analyze_intent(msg).primary != CognitiveIntent.MEMORY_RECALL
+    assert is_conversation_recall_intent("oye estamos creando un guion") is False
 
 
 def test_humanize_session_summary_from_third_person():

@@ -103,10 +103,11 @@ _MODULE_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "finance",
         re.compile(
             r"\b("
-            r"finanzas?|gasto(?:s)?|ingreso(?:s)?|"
-            r"pagu[eé]|gast[eé]|compr[eé]|cobr[eé]|"
-            r"plan\s+de\s+ahorro|presupuesto|"
-            r"mis\s+finanzas|modo\s+financiero|"
+            r"mis\s+finanzas|modo\s+financiero|en\s+finanzas|"
+            r"mis\s+(?:gastos|ingresos)|"
+            r"registra(?:r)?\s+(?:un\s+)?gasto|"
+            r"pagu[eé]\s+\d|gast[eé]\s+\d|compr[eé]\s+\d|cobr[eé]\s+\d|"
+            r"plan\s+de\s+ahorro|presupuesto\s+(?:mensual|familiar|personal)|"
             r"cu[aá]nto\s+(?:he\s+)?gast|cu[aá]nto\s+debo|"
             r"pagos?\s+pendientes?"
             r")\b",
@@ -166,7 +167,11 @@ def _normalize(text: str) -> str:
 
 def has_explicit_module_signal(user_text: str) -> bool:
     """True si el texto menciona explícitamente algún módulo/herramienta."""
-    norm = _normalize(user_text)
+    from app.services.user_ask import is_llm_first_turn, module_probe_text
+
+    if is_llm_first_turn(user_text):
+        return False
+    norm = _normalize(module_probe_text(user_text))
     if not norm:
         return False
     return any(pattern.search(norm) for _, pattern in _MODULE_SIGNAL_PATTERNS)
@@ -174,7 +179,11 @@ def has_explicit_module_signal(user_text: str) -> bool:
 
 def detect_local_module_hints(user_text: str) -> list[str]:
     """Devuelve nombres de módulo cuya señal local coincide (puede ser >1)."""
-    norm = _normalize(user_text)
+    from app.services.user_ask import is_llm_first_turn, module_probe_text
+
+    if is_llm_first_turn(user_text):
+        return []
+    norm = _normalize(module_probe_text(user_text))
     if not norm:
         return []
     hits: list[str] = []

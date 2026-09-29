@@ -381,7 +381,12 @@ def detect_intent(
     Returns:
         Detection. Usa `.activate` para saber si el orquestador debe activar.
     """
-    text = _normalize(user_text)
+    from app.services.user_ask import is_llm_first_turn, module_probe_text
+
+    if is_llm_first_turn(user_text):
+        return Detection(module=None, confidence=CONF_NONE, is_action=False)
+
+    text = _normalize(module_probe_text(user_text))
     if not text:
         return Detection(module=None, confidence=CONF_NONE, is_action=False)
 

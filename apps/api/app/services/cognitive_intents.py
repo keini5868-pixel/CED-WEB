@@ -162,10 +162,7 @@ ADVANCED_PATTERNS = [
 ]
 
 MEMORY_SAVE_PATTERNS = [
-    r"\brecuerda\b",
-    r"\bguarda(r)?\s+(que|esto|en memoria)\b",
-    r"\bno olvides\b",
-    r"\bapunta\b",
+    r"^\s*(?:ced[,:]?\s+|por\s+favor\s+)?(?:recuerda(?:\s+que)?|guarda(?:r)?\s+(?:que|esto|en\s+memoria)|no\s+olvides|apunta(?:\s+que)?)\b",
 ]
 
 MEMORY_RECALL_PATTERNS = [
@@ -177,8 +174,10 @@ MEMORY_RECALL_PATTERNS = [
     r"\bconversaci[oó]n\s+anterior\b",
     r"\b[uú]ltima\s+conversaci[oó]n\b",
     r"\bte acuerdas\b",
-    r"\bde qu[eé] hablamos\b",
-    r"\bqu[eé] hablamos\b",
+    # «¿de qué hablamos?» — no «eso de que hablamos por WhatsApp» (un CTA).
+    r"(?:^|\?)\s*(?:y\s+)?(?:de\s+)?qu[eé]\s+hablamos\b",
+    r"\bde qu[eé]\s+hablamos\s+(?:la\s+)?(?:[uú]ltima|ayer|antes|hoy|el\s+otro|en\s+la)\b",
+    r"\bqu[eé]\s+hablamos\s+(?:la\s+)?(?:[uú]ltima|ayer|antes|hoy)\b",
     r"\bqu[eé] guardaste\b",
     r"\brecupera\b.*\bmemoria\b",
     r"\bbusca(r)?\s+en memoria\b",
@@ -190,7 +189,25 @@ def is_conversation_recall_intent(text: str) -> bool:
     t = normalize_text(text)
     if len(t) < 8:
         return False
+    if _is_script_tweak_not_recall(t):
+        return False
     return _matches(t, MEMORY_RECALL_PATTERNS)
+
+
+def _is_script_tweak_not_recall(text: str) -> bool:
+    """Sigue el guion/idea en curso: no es «¿de qué hablamos hace 7 horas?»."""
+    if re.search(
+        r"\b(?:no me gusta|mejor algo como|cambialo|c[aá]mbialo|"
+        r"otro (?:que|cta|cierre)|mas largo|m[aá]s largo|muy corto|"
+        r"estamos creando|sigue con|esa idea)\b",
+        text,
+        re.I,
+    ):
+        return True
+    if re.search(r"\b(?:whats?app|cta|cierre|gancho|guion|gui[oó]n)\b", text, re.I):
+        if re.search(r"\b(?:eso de|en vez de|en lugar de|no me gusta|mejor)\b", text, re.I):
+            return True
+    return False
 
 META_PATTERNS = [
     r"\bpublica(r|me)?\b.*\b(instagram|facebook|ig|fb|redes)\b",
@@ -395,27 +412,45 @@ def is_explicit_advanced(text: str) -> bool:
     return False
 
 
+_SCRIPT_PASTE_MARKERS = re.compile(
+    r"(?is)(?:\bescena\s+\d|\bnarraci[oó]n\s*:|\bguion\s+educativ|"
+    r"\bhook\s+recomendado|\bcinco\s+hooks|\b5\s+hooks|"
+    r"\d+\s*[-–]\s*\d+\s+segundos)"
+)
+
+
 def parse_memory_save(text: str) -> str | None:
+    """Solo cuando el usuario le pide a CED que recuerde algo, no un «Recuerda que…» de guion."""
     t = (text or "").strip()
+    if not t:
+        return None
+    if _SCRIPT_PASTE_MARKERS.search(t):
+        return None
     if not _matches(normalize_text(t), MEMORY_SAVE_PATTERNS):
         return None
     for pat in (
-        r"recuerda\s+que\s+(.+)",
-        r"guarda\s+que\s+(.+)",
-        r"no olvides\s+(.+)",
-        r"apunta\s+(.+)",
+        r"^\s*(?:ced[,:]?\s+|por\s+favor\s+)?recuerda\s+que\s+(.+)",
+        r"^\s*(?:ced[,:]?\s+|por\s+favor\s+)?guarda(?:r)?\s+que\s+(.+)",
+        r"^\s*(?:ced[,:]?\s+|por\s+favor\s+)?no\s+olvides\s+(.+)",
+        r"^\s*(?:ced[,:]?\s+|por\s+favor\s+)?apunta\s+que\s+(.+)",
     ):
-        m = re.search(pat, t, re.I)
+        m = re.search(pat, t, re.I | re.S)
         if m:
             return m.group(1).strip()[:4000]
+    # «recuerda: cejas powder» / «guarda esto: …» corto, al inicio.
+    if len(t) > 280:
+        return None
     return t[:4000]
 
 
 def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysis:
-    t = normalize_text(text)
     raw = (text or "").strip()
+    from app.services.user_ask import is_llm_first_turn, module_probe_text
 
-    mem_save = parse_memory_save(raw)
+    scoped = module_probe_text(raw)
+    t = normalize_text(scoped)
+
+    mem_save = parse_memory_save(scoped)
     if mem_save:
         return IntentAnalysis(
             primary=CognitiveIntent.MEMORY_SAVE,
@@ -428,7 +463,18 @@ def analyze_intent(text: str, *, confirm_pending: bool = False) -> IntentAnalysi
             memory_save_text=mem_save,
         )
 
-    if _matches(t, MEMORY_RECALL_PATTERNS):
+    if is_llm_first_turn(raw) and not mem_save:
+        return IntentAnalysis(
+            primary=CognitiveIntent.INTERNAL_KNOWLEDGE,
+            web_kind="general",
+            needs_web=False,
+            needs_advanced=False,
+            needs_advanced_confirm=False,
+            has_advanced_confirm=False,
+            is_volatile=False,
+        )
+
+    if is_conversation_recall_intent(scoped):
         return IntentAnalysis(
             primary=CognitiveIntent.MEMORY_RECALL,
             web_kind="general",
