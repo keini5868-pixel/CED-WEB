@@ -131,6 +131,19 @@ def health(_request: Request) -> dict[str, str]:
     return payload
 
 
+@router.get("/health/voice")
+@limiter.exempt
+def health_voice(_request: Request):
+    """Semáforo público de voz. 503 si saldo o API caído — no reinicia Railway (/health sigue ok)."""
+    from fastapi.responses import JSONResponse
+
+    from app.services.retell_provider_health import public_status
+
+    body = public_status()
+    status_code = 200 if body.get("status") == "ok" else 503
+    return JSONResponse(status_code=status_code, content=body)
+
+
 @router.get("/health/llama")
 @limiter.exempt
 def health_llama(

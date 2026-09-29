@@ -7,7 +7,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import httpx
@@ -169,6 +169,15 @@ async def _verify_retell_request(request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="Invalid JSON") from exc
 
 
+def _note_create_web_call(*, ok: bool, error: Exception | None = None) -> None:
+    try:
+        from app.services.retell_provider_health import note_create_web_call
+
+        note_create_web_call(ok=ok, error=error)
+    except Exception:  # noqa: BLE001
+        logger.warning("[RETELL] provider health note failed", exc_info=True)
+
+
 def _format_retell_call_error(exc: Exception) -> str:
     """Mensaje claro para el usuario — sin nombres de proveedores ni infra."""
     raw = str(exc).strip()
@@ -252,8 +261,10 @@ async def register_retell_call(
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("[RETELL] create_web_call failed: %s", exc)
+        _note_create_web_call(ok=False, error=exc)
         raise HTTPException(status_code=502, detail=_format_retell_call_error(exc)) from exc
 
+    _note_create_web_call(ok=True)
     payload = web_call_client_payload(call, agent_id=agent_id)
     call_id = payload.get("call_id")
     if call_id:
@@ -354,8 +365,10 @@ async def register_retell_native_pilot_call(
         )
     except Exception as exc:  # noqa: BLE001
         logger.error("[NATIVE-PILOT] create_web_call failed: %s", exc)
+        _note_create_web_call(ok=False, error=exc)
         raise HTTPException(status_code=502, detail=_format_retell_call_error(exc)) from exc
 
+    _note_create_web_call(ok=True)
     payload = web_call_client_payload(call, agent_id=agent_id, extra={"pilot": "native"})
     call_id = payload.get("call_id")
     if call_id:
@@ -1136,6 +1149,29 @@ async def retell_call_debug(
     )
 
 
+@router.get("/provider-health")
+async def retell_provider_health(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict[str, Any]:
+    """Semáforo de voz (API vs saldo). No crea llamadas de pago."""
+    from app.services.retell_provider_health import snapshot
+
+    return snapshot()
+
+
+@router.post("/provider-health/probe")
+async def retell_provider_health_probe(
+    _admin_id: str = Depends(require_super_admin),
+    canary: bool = Query(False),
+) -> dict[str, Any]:
+    """Tick manual. canary=true hace un create_web_call (puede cobrar) y lo borra."""
+    from app.services.retell_provider_health import probe_billing_canary, probe_cheap
+
+    if canary:
+        return await asyncio.to_thread(probe_billing_canary)
+    return await asyncio.to_thread(probe_cheap)
+
+
 @router.get("/diagnostics")
 async def retell_diagnostics(
     _admin_id: str = Depends(require_super_admin),
@@ -1158,6 +1194,9 @@ async def retell_diagnostics(
     if not client:
         out["ok"] = False
         out["error"] = "RETELL_API_KEY no configurada"
+        from app.services.retell_provider_health import snapshot as provider_health_snapshot
+
+        out["provider_health"] = provider_health_snapshot()
         return out
 
     agent_id = get_retell_agent_id() or settings.retell_agent_id.strip()
@@ -1242,10 +1281,15 @@ async def retell_diagnostics(
             )
             out["create_web_call_ok"] = True
             out["create_web_call_id"] = getattr(call, "call_id", None)
+            _note_create_web_call(ok=True)
         except Exception as exc:  # noqa: BLE001
             out["create_web_call_ok"] = False
             out["create_web_call_error"] = str(exc)[:800]
+            _note_create_web_call(ok=False, error=exc)
 
+    from app.services.retell_provider_health import snapshot as provider_health_snapshot
+
+    out["provider_health"] = provider_health_snapshot()
     return out
 
 

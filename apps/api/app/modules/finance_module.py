@@ -91,8 +91,34 @@ _ANALYSIS_REQUEST = re.compile(
     r"\bexplica(?:r)?\s+(?:este|esta|el|la|lo|estos|estas|me)\b|"
     r"\bexplica(?:r)?\s+(?:el\s+)?(?:texto|mensaje|p[aá]rrafo|documento|contenido|tono|argumento)\b|"
     r"\bdesglose\s+(?:del?\s+)?(?:texto|mensaje|argumento|contenido)\b|"
-    r"\bqu[eé]\s+(?:significa|quiere\s+decir)\b"
+    r"\bqu[eé]\s+(?:significa|quiere\s+decir)\b|"
+    r"\bqu[eé]\s+te\s+parecen\b|"
+    r"\bdime\s+en\s+una\s+(?:sola\s+)?frase\b|"
+    r"\bopini[oó]n\s+(?:sobre|de|de\s+estas?)\b"
     r")",
+    re.I,
+)
+# Guion/copy pegado: «ingresos» y «qué es» no son el ledger personal.
+_COPY_REVIEW = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"\b(?:hooks?|ganchos?|guion(?:es)?|gui[oó]n(?:es)?|copy|caption|reel|script)\b|"
+    r"\bhooks?\s+alternativ|"
+    r"\belige\s+el\s+hook\b|"
+    r"\bversi[oó]n\s+final\s+optimizada\b|"
+    r"\[hook\b"
+    r")",
+)
+_PERSONAL_LEDGER = re.compile(
+    r"\b(?:"
+    r"mis\s+(?:gastos?|ingresos?|finanzas)|"
+    r"los\s+(?:gastos?|ingresos?)\s+(?:del?\s+)?(?:mes|d[ií]a|semana)|"
+    r"gastos?\s+del?\s+(?:mes|d[ií]a|semana)|"
+    r"ingresos?\s+del?\s+(?:mes|d[ií]a|semana)|"
+    r"esa\s+cifra|"
+    r"en\s+finanzas|"
+    r"desglose\s+(?:de\s+)?(?:mis\s+)?(?:gastos?|ingresos?)"
+    r")\b",
     re.I,
 )
 _EXPLICIT_FINANCE_SAVE = re.compile(
@@ -173,11 +199,17 @@ def _detect_period(text: str) -> str:
 def is_non_finance_text_analysis(text: str) -> bool:
     """True si pide analizar/explicar un texto y NO registrar en finanzas."""
     t = (text or "").strip()
-    if not t or not _ANALYSIS_REQUEST.search(t):
+    if not t:
         return False
     if _EXPLICIT_FINANCE_SAVE.search(t) or _PERSONAL_FINANCE_NOUN.search(t):
         return False
-    return True
+    if _PERSONAL_LEDGER.search(t):
+        return False
+    if _ANALYSIS_REQUEST.search(t):
+        return True
+    if _COPY_REVIEW.search(t) and len(t) >= 160:
+        return True
+    return False
 
 
 def is_finance_write_intent(text: str) -> bool:
@@ -243,29 +275,25 @@ def is_finance_breakdown_intent(text: str) -> bool:
         return False
     if is_non_finance_text_analysis(t):
         return False
-    # Exige ancla financiera: no basta «explica» / «desglose» sueltos.
+    # «explica … ingresos» a 400 caracteres de un hook NO es el ledger.
     if re.search(
-        r"\b(?:desglose|desglosar|desglosa)\b.*\b(?:gasto|gastos|ingreso|ingresos|finanzas|categor)",
+        r"\b(?:desglose|desglosar|desglosa)\b.{0,48}\b(?:gasto|gastos|ingreso|ingresos|finanzas|categor)",
         t,
     ) or re.search(
-        r"\b(?:gasto|gastos|ingreso|ingresos|finanzas)\b.*\b(?:desglose|desglosar|desglosa|explica)",
+        r"\b(?:gasto|gastos|ingreso|ingresos|finanzas)\b.{0,48}\b(?:desglose|desglosar|desglosa)",
         t,
     ):
         return True
     if re.search(
-        r"\b(?:explica|explicar|detalle|detallar)\b.*\b(?:gasto|gastos|ingreso|ingresos|finanzas|cifra|categor)",
+        r"\b(?:explica|explicar|detalle|detallar)\b.{0,48}\b(?:mis\s+)?(?:gastos?|ingresos?|finanzas|cifra|categor)",
         t,
     ):
         return True
-    if re.search(r"\b\d[\d.,]*\s+de\s+qu[eé]\b", t):
+    if re.search(r"\b\d[\d.,]*\s+de\s+qu[eé]\b", t) and len(t) <= 120:
         return True
-    if re.search(r"\bde\s+qu[eé]\b", t) and re.search(r"\b(?:gastos?|ingresos?)\b", t):
+    if re.search(r"\bde\s+qu[eé]\b", t) and _PERSONAL_LEDGER.search(t):
         return True
-    # «qué es / qué son» solo con ancla financiera. Un dígito suelto («3 hooks»)
-    # + «que es dar a conocer» no es un desglose de gastos.
-    if re.search(r"\bqu[eé]\s+(?:son|es|incluye)\b", t) and re.search(
-        r"\b(?:gastos?|ingresos?|finanzas)\b", t
-    ):
+    if re.search(r"\bqu[eé]\s+(?:son|es|incluye)\b", t) and _PERSONAL_LEDGER.search(t):
         return True
     return False
 
@@ -327,7 +355,7 @@ def is_finance_intent(text: str) -> bool:
 
     if is_creative_artifact_intent(text):
         return False
-    # Análisis de texto largo / «explica este mensaje» ≠ módulo finanzas.
+    # Análisis de texto largo / «explica este mensaje» / hooks pegados ≠ finanzas.
     if is_non_finance_text_analysis(text):
         return False
     return (

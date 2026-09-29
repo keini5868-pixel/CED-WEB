@@ -265,6 +265,26 @@ def test_breakdown_intent_de_que():
     assert not is_finance_breakdown_intent("gasté 600 en materiales")
 
 
+def test_pasted_hooks_opinion_is_not_finance_breakdown():
+    """Regresión: un guion de venta con la palabra «ingresos» + «qué es»
+    no puede secuestrar el chat hacia «desglose de esa cifra»."""
+    from app.modules.finance_module import is_finance_breakdown_intent
+
+    text = (
+        "# 5 Hooks alternativos para probar\n"
+        "¿Y si pudieras tener un negocio generando ingresos sin inventar nada?\n"
+        "Descubrí cómo personas sin experiencia generan ingresos reales en 90 días.\n"
+        "## Guion completo (versión final optimizada)\n"
+        "[HOOK — 0–4 s] ¿Y si pudieras\n"
+        "Prepará una clase donde te explico todo el proyecto — qué es, cómo funciona.\n"
+        "Elige el hook que más resuene. dime en una sola frase que te parecen estas opciones"
+    )
+    assert is_finance_breakdown_intent(text) is False
+    assert is_finance_intent(text) is False
+    assert is_finance_query_intent(text) is False
+    assert not is_finance_intent("qué te parecen estos hooks para generar ingresos")
+
+
 def test_handle_breakdown_intent(monkeypatch):
     import app.modules.finance_module as fm
 

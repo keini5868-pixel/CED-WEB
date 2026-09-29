@@ -125,6 +125,18 @@ async def lifespan(_app: FastAPI):
     except Exception:  # noqa: BLE001
         logger.exception("Pocket Option worker no arrancó")
 
+    retell_health_stop = None
+    try:
+        from app.services.retell_provider_health import (
+            start_monitor_if_enabled,
+            stop_monitor as retell_stop_monitor,
+        )
+
+        start_monitor_if_enabled()
+        retell_health_stop = retell_stop_monitor
+    except Exception:  # noqa: BLE001
+        logger.exception("Retell health monitor no arrancó")
+
     yield
 
     if po_stop is not None:
@@ -132,6 +144,11 @@ async def lifespan(_app: FastAPI):
             await po_stop()
         except Exception:  # noqa: BLE001
             logger.exception("Pocket Option worker stop falló")
+    if retell_health_stop is not None:
+        try:
+            await retell_health_stop()
+        except Exception:  # noqa: BLE001
+            logger.exception("Retell health monitor stop falló")
 
 
 def create_app() -> FastAPI:

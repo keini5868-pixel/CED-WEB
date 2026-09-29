@@ -38,18 +38,30 @@ def build_detailed_health() -> dict[str, Any]:
     gemini, gemini_ms = _timed(check_gemini)
     claude, claude_ms = _timed(_check_claude)
 
+    from app.services.retell_provider_health import snapshot as voice_snapshot
+
+    voice_snap = voice_snapshot()
+    voice_status = str(voice_snap.get("voice") or "unknown")
+    voice_fail = voice_status in ("billing", "down")
+
     services = {
         "gemini": {**gemini, "latency_ms": gemini_ms},
         "supabase_db": {**supabase_db, "latency_ms": supabase_ms},
         "supabase_auth": {**supabase_auth, "latency_ms": auth_ms},
         "stripe": {**stripe, "latency_ms": stripe_ms},
         "claude": {**claude, "latency_ms": claude_ms},
+        "voice": {
+            "ok": not voice_fail,
+            "status": voice_status,
+            "api_ok": bool(voice_snap.get("api_ok")),
+        },
     }
 
     critical_ok = (
         gemini.get("ok")
         and supabase_db.get("ok")
         and stripe.get("ok")
+        and not voice_fail
     )
     latencies = [gemini_ms, supabase_ms, stripe_ms]
     avg_latency = int(sum(latencies) / len(latencies)) if latencies else 0
@@ -72,6 +84,17 @@ def health_card_lines(health: dict[str, Any]) -> list[str]:
         mark = "OK" if svc.get("ok") else "—"
         return f"{name} {mark}"
 
+    voice = services.get("voice") or {}
+    voice_status = str(voice.get("status") or "unknown")
+    if voice_status == "ok":
+        voz_line = "Voz OK"
+    elif voice_status == "billing":
+        voz_line = "Voz SALDO"
+    elif voice_status == "down":
+        voz_line = "Voz CAÍDA"
+    else:
+        voz_line = "Voz —"
+
     return [
         f"API · {avg} ms · {status}",
         " · ".join(
@@ -81,4 +104,5 @@ def health_card_lines(health: dict[str, Any]) -> list[str]:
                 label("Stripe", "stripe"),
             ],
         ),
+        voz_line,
     ]
