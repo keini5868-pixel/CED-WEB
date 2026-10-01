@@ -78,7 +78,12 @@ from app.services.voice_tool_executor import (
     execute_voice_tool,
 )
 from app.services.voice_tool_async import IMAGE_TOOL_TIMEOUT_SEC, execute_deferred_tool_batch
-from app.services.chat_intents import is_generate_image_intent, is_pdf_intent
+from app.services.chat_intents import is_pdf_intent
+from app.services.chat_image_generation import should_take_direct_image_path
+from app.services.image_text_ritual import (
+    build_overlay_readback_reply,
+    needs_overlay_readback,
+)
 from app.services.voice_spoken import (
     chunk_ends_with_punctuation,
     compose_voice_tool_delivery,
@@ -208,6 +213,23 @@ def latest_transcript_line(transcript: list[Any] | None, role: str) -> str:
         elif not want_user and is_agent:
             latest = content
     return latest
+
+
+def _transcript_as_chat_history(
+    transcript: list[Any] | None,
+    *,
+    skip_last_user: bool = True,
+) -> list[dict[str, str]]:
+    rows: list[dict[str, str]] = []
+    for item in transcript or []:
+        raw_role, content = _utterance_role_content(item)
+        if not content:
+            continue
+        mapped = "user" if raw_role in {"user", "customer"} else "assistant"
+        rows.append({"role": mapped, "content": content})
+    if skip_last_user and rows and rows[-1]["role"] == "user":
+        rows = rows[:-1]
+    return rows
 
 
 def _voice_turn_key(call_id: str, rid: int) -> str:
@@ -1547,9 +1569,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             # Fast-path imagen: utterance crudo → adaptador mínimo (misma pipeline que chat).
             # Evita que el LLM de voz reformule/mezcle el pedido antes de Nano Banana.
+            voice_image_history = _transcript_as_chat_history(transcript)
+            if uid and needs_overlay_readback(user_text, voice_image_history):
+                overlay_reply = build_overlay_readback_reply(user_text, voice_image_history)
+                if overlay_reply and await deliver_voice(overlay_reply):
+                    logger.info(
+                        "[RETELL-GEMINI] overlay lock readback call=%s text=%s",
+                        call_id,
+                        user_text[:80],
+                    )
+                    return
+                await anti_silence_if_unanswered(reason="overlay_lock_undelivered")
+                return
             if (
                 uid
-                and is_generate_image_intent(user_text)
+                and should_take_direct_image_path(user_text, voice_image_history)
                 and not is_pdf_intent(user_text)
             ):
                 await fire_latency_filler("module", module="image_gen")
@@ -1561,6 +1595,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             {
                                 "prompt": user_text,
                                 "_user_request": user_text,
+                                "_history": voice_image_history,
                                 "call_id": call_id,
                             },
                         ),

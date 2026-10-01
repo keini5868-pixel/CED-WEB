@@ -74,6 +74,6 @@ class ImageGenModule(BaseModule):
             spoken=spoken,
             handles_response=True,
             send_filler=True,
-            filler=MODULE_ACKS.get("image_gen", "Generando imagen, señor."),
+            filler=MODULE_ACKS.get("image_gen", "Va."),
             tool_events=tool_events,
         )

@@ -9,8 +9,8 @@ from app.services.openai_voice_tools import OPENAI_REALTIME_TOOLS
 
 EXECUTION_MESSAGES: dict[str, str] = {
     "search_web": "Consultando, señor",
-    "generate_image": "Generando imagen, señor",
-    "generate_image_with_reference": "Generando imagen, señor",
+    "generate_image": "Va.",
+    "generate_image_with_reference": "Va.",
     "save_memory": "Un momento, señor",
     "recall_memory": "Consultando memoria, señor",
     "recall_previous_conversations": "Consultando conversaciones, señor",

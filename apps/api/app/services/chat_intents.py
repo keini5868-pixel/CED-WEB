@@ -303,6 +303,91 @@ def is_visual_design_exploration(
     return False
 
 
+_EXPLORATORY_TALK = re.compile(
+    r"(?is)\b(?:"
+    r"tengo\s+(?:una?\s+)?idea|"
+    r"se\s+me\s+ocurri[oó]|"
+    r"estaba\s+pensando|"
+    r"estoy\s+pensando|"
+    r"vamos\s+a\s+(?:hablar|armar|pensar|desarrollar|ver)|"
+    r"hablemos(?:\s+de)?|"
+    r"quiero\s+contarte|"
+    r"te\s+(?:cuento|voy\s+a\s+contar)|"
+    r"me\s+surgi[oó]|"
+    r"desarrollar\s+(?:esta\s+|una\s+)?idea|"
+    r"sobre\s+una\s+idea|"
+    r"una\s+idea\s+(?:de|para|que)|"
+    r"quisiera\s+hablar|"
+    r"necesito\s+pensar|"
+    r"sin\s+generar|"
+    r"no\s+(?:la\s+|lo\s+)?generes|"
+    r"antes\s+de\s+generar|"
+    r"i\s+have\s+(?:an?\s+)?idea|"
+    r"let'?s\s+(?:talk|discuss|think)|"
+    r"i\s+was\s+thinking"
+    r")\b"
+)
+
+_ASSISTANT_IMAGE_OFFER = re.compile(
+    r"(?is)(?:"
+    r"(?:¿\s*)?(?:la|lo)\s+(?:genero|creo|hago|renderizo)\b|"
+    r"(?:¿\s*)?genero\s+(?:la\s+|el\s+)?(?:imagen|foto|flyer|creativo|ahora)|"
+    r"quieres\s+que\s+(?:la\s+|lo\s+)?(?:genere|cree|haga|renderice)|"
+    r"cuando\s+quieras\s+(?:la\s+|lo\s+)?genero|"
+    r"dime\s+y\s+(?:la\s+|lo\s+)?genero|"
+    r"puedo\s+generarte|"
+    r"shall\s+i\s+generate|"
+    r"want\s+me\s+to\s+generate|"
+    r"should\s+i\s+(?:generate|create|render)\s+(?:the\s+)?(?:image|flyer)"
+    r")"
+)
+
+_BARE_AFFIRMATION = re.compile(
+    r"(?is)^\s*(?:ok(?:ay)?|vale|dale|s[ií]|perfecto|listo|te\s+sigo|"
+    r"adelante|de\s+acuerdo|hazlo|hazla|yes|yeah|go)\s*[.!]?\s*$"
+)
+
+
+def is_explicit_image_command(text: str) -> bool:
+    """Mandato de renderizar ahora (genera/crea/haz + imagen), no charla sobre la idea."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    return bool(_EXPLICIT_IMAGE_CREATE.search(t))
+
+
+def is_exploratory_talk(text: str) -> bool:
+    """El usuario está pensando la idea. No es un pedido de PNG/PDF/publicar."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if is_explicit_image_command(t):
+        return False
+    if is_text_ideation_request(t):
+        return True
+    if is_image_preproduction_talk(t):
+        return True
+    return bool(_EXPLORATORY_TALK.search(t))
+
+
+def is_bare_affirmation(text: str) -> bool:
+    return bool(_BARE_AFFIRMATION.match((text or "").strip()))
+
+
+def assistant_offered_image_act(history: list[dict[str, str]] | None) -> bool:
+    """True si el último turno de CED ofreció generar la imagen ahora."""
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        if role in {"assistant", "model", "agent"}:
+            return bool(_ASSISTANT_IMAGE_OFFER.search(content))
+        if role in {"user", "customer"}:
+            return False
+    return False
+
+
 def is_generate_image_intent(text: str) -> bool:
     t = text.strip()
     if len(t) < 8:
@@ -317,6 +402,8 @@ def is_generate_image_intent(text: str) -> bool:
         return False
     # Ideas/copys/conceptos en texto — no alucinar una imagen.
     if is_text_ideation_request(t):
+        return False
+    if is_exploratory_talk(t) and not is_explicit_image_command(t):
         return False
     if is_image_meta_talk(t):
         return False
@@ -433,7 +520,10 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"(?:que\s+(?:diga|ponga|aparezca|lea|salga)|pon(?:le|ga|me)?\s+(?:un\s+)?texto)"
     r"|que\s+(?:diga|ponga|aparezca|lea|salga)\s+"
     r"(?:(?:en|sobre)\s+)?(?:la\s+)?(?:imagen|foto|flyer|banner|cartel|creativo|post)\b"
-    r"|cambia\s+(?:el\s+)?(?:fondo|dise[nñ]o|estilo)"
+    r"|cambia\s+(?:el\s+)?(?:fondo|dise[nñ]o|estilo|color|colores)"
+    r"|c[a\u00e1]mbia(?:le|la|lo|les|las)?\s+(?:el|la|los|las)?\s*(?:color|fondo|texto|tipograf)?"
+    r"|hazl[oa]\s+m[a\u00e1]s\s+(?:oscur\w*|clar\w*|grande|peque\w*|colorid\w*)"
+    r"|mas\s+texto"
     r")\b",
     re.I,
 )
@@ -502,7 +592,9 @@ def wants_image_reference_edit(text: str) -> bool:
         return False
     if user_requests_prior_reference(t):
         return True
-    return bool(_REFERENCE_EDIT_OR_VARIATION.search(t))
+    if _REFERENCE_EDIT_OR_VARIATION.search(t):
+        return True
+    return bool(len(t) <= 120 and _FOLLOWUP_EDIT_SIGNAL.search(t))
 
 
 def is_explicit_publish_to_social(text: str) -> bool:
@@ -786,7 +878,10 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"conserv(?:a|ando)\s+(?:l[ao]s?\s+)?textos?|"
     r"quiero\s+que\s+mantengas|"
     r"con\s+(?:l[ao]s?\s+)?textos?|"
-    r"integr(?:a|ados?)\s+(?:l[ao]s?\s+)?textos?"
+    r"integr(?:a|ados?)\s+(?:l[ao]s?\s+)?textos?|"
+    r"m[aá]s\s+texto|"
+    r"c[aá]mbial[oa]s?\s+(?:el\s+)?color|"
+    r"cambia\s+(?:el\s+)?color"
     r")\b",
     re.I,
 )
@@ -901,7 +996,6 @@ _CASUAL_CHAT_BLOCK = re.compile(
     r"dolor\s+de\s+cabeza|mal\s+de\s+cabeza|me\s+duele\s+la\s+cabeza|"
     r"solo\s+quiero\s+charlar|charlar\s+un\s+rato|conversar|platique|platicar|"
     r"estoy\s+(?:mal|enferm|cansad|triste)|me\s+siento|"
-    r"por\s+cierto|a\s+prop[oó]sito|"
     r"olvida(?:lo|mos)?|dejemos\s+(?:eso|lo)|"
     r"no\s+(?:sobre|de)\s+(?:eso|marketing|estrategia)"
     r")\b",
@@ -914,6 +1008,17 @@ def is_casual_chat_interrupt(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    if is_explicit_image_command(t) or is_generate_image_intent(t):
+        return False
+    if is_exploratory_talk(t) or is_text_ideation_request(t):
+        return False
+    try:
+        from app.services.opportunities_pilot.fitline_knowledge import wants_fitline_knowledge
+
+        if wants_fitline_knowledge(t):
+            return False
+    except Exception:  # noqa: BLE001
+        pass
     if _CASUAL_CHAT_BLOCK.search(t):
         return True
     from app.services.cognitive_intents import is_personal_vent_intent, is_topic_change

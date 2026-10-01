@@ -88,6 +88,36 @@ def client_media_url(file_name: str) -> str:
     return f"/api/ced/media/publish/{file_name}"
 
 
+_PUBLISH_FILE = re.compile(
+    r"(?:/api/ced/media/publish/|/v1/media/publish/)([A-Za-z0-9_.-]+)",
+)
+_MIME_BY_EXT = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+
+
+def load_local_publish_bytes(url: str) -> tuple[bytes, str] | None:
+    """Lee bytes de una URL de publish_media en disco — sin HTTP a localhost."""
+    match = _PUBLISH_FILE.search(url or "")
+    if not match:
+        return None
+    path = media_file_path(match.group(1))
+    if not path:
+        return None
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return None
+    if not raw:
+        return None
+    mime = _MIME_BY_EXT.get(path.suffix.lower(), "image/jpeg")
+    return raw, mime
+
+
 def to_public_meta_image_url(url: str) -> str:
     """Convierte /api/ced/media/... o /v1/media/... a HTTPS absoluto para Graph/Meta."""
     raw = (url or "").strip()

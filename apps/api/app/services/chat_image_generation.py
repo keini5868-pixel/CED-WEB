@@ -7,16 +7,22 @@ import re
 from typing import Any
 
 from app.services.chat_intents import (
+    assistant_offered_image_act,
     history_has_active_image_thread,
     history_has_pending_image_brief,
     is_anaphoric_image_subject,
+    is_bare_affirmation,
     is_casual_chat_interrupt,
+    is_explicit_image_command,
+    is_exploratory_talk,
     is_generate_image_intent,
     is_image_choice_confirmation,
+    is_image_meta_talk,
     is_pdf_intent,
     is_script_narrative_request,
-    is_visual_design_exploration,
+    is_text_ideation_request,
     is_vague_image_subject,
+    is_visual_design_exploration,
     last_assistant_image_concept,
     last_assistant_visual_description,
     last_concrete_image_user_prompt,
@@ -177,6 +183,7 @@ def build_active_image_thread_context(
         "- NO invoques generate_image ni prometas imagen hasta que digan explícitamente "
         "«genera», «hazlo», «créala», «genérala», «muéstrame la imagen», etc.\n"
         "- «Esa imagen», «la de hace rato», «el flyer» = el diseño de arriba, no uno nuevo al azar.\n"
+        "- Un ajuste (color, texto, fondo, oscuridad) = la MISMA pieza: conserva sujeto, layout y copy.\n"
         "- Cuando pidan renderizar, conserva el hilo visual; el backend usará la referencia de sesión."
     )
     return "\n\n".join(sections)[:6000]
@@ -184,6 +191,11 @@ def build_active_image_thread_context(
 
 def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> str:
     t = (text or "").strip()
+    from app.services.image_text_ritual import compose_confirmed_overlay_prompt
+
+    overlay_prompt = compose_confirmed_overlay_prompt(t, history)
+    if overlay_prompt:
+        return overlay_prompt
     parsed = parse_generate_image_prompt(t)
     needs_thread = bool(
         parsed
@@ -210,7 +222,20 @@ def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> st
         return confirmed
     followup = parse_followup_image_prompt(t, history)
     if followup:
+        prior = last_concrete_image_user_prompt(history) or last_user_visual_context(history)
+        if prior and prior.strip().lower() != followup.strip().lower():
+            return (
+                f"{prior.strip()}\n\nAjuste sobre la misma imagen "
+                f"(conserva sujeto, composición y textos; no inventes otra escena): {followup}"
+            )[:4000]
         return followup
+    if wants_image_reference_edit(t) and history_has_active_image_thread(history):
+        prior = last_concrete_image_user_prompt(history) or last_user_visual_context(history)
+        if prior and prior.strip().lower() != t.lower():
+            return (
+                f"{prior.strip()}\n\nAjuste sobre la misma imagen "
+                f"(conserva sujeto, composición y textos; no inventes otra escena): {t}"
+            )[:4000]
     cleaned = strip_creative_user_noise(t)
     return cleaned or t
 
@@ -263,10 +288,11 @@ def should_take_direct_image_path(
         return False
     if len(t) > DIRECT_IMAGE_MAX_CHARS:
         return False
-    from app.services.chat_intents import is_image_meta_talk, is_text_ideation_request
     from app.services.copy_quality import prompt_requires_ideogram_text
 
     if is_text_ideation_request(t):
+        return False
+    if is_exploratory_talk(t) and not is_explicit_image_command(t):
         return False
     if is_visual_design_exploration(t, history):
         return False
@@ -274,8 +300,16 @@ def should_take_direct_image_path(
         return False
     if is_script_narrative_request(t) and not is_generate_image_intent(t):
         return False
-    if is_image_choice_confirmation(t) and history_has_pending_image_brief(history):
-        return True
+    from app.services.image_text_ritual import needs_overlay_readback
+
+    if is_bare_affirmation(t):
+        return assistant_offered_image_act(history)
+    if is_image_choice_confirmation(t):
+        return assistant_offered_image_act(history) or (
+            is_explicit_image_command(t) and history_has_pending_image_brief(history)
+        )
+    if needs_overlay_readback(t, history):
+        return False
     # «Agrégale texto…» sobre imagen del hilo — path visual aunque no diga «genera imagen».
     if prompt_requires_ideogram_text(t) and (
         wants_image_reference_edit(t) or user_requests_prior_reference(t)
@@ -288,7 +322,7 @@ def should_take_direct_image_path(
         return False
     if parse_followup_image_prompt(t, history):
         return True
-    if is_image_creation_request(t, history):
+    if is_image_creation_request(t, history) and not is_exploratory_talk(t):
         return True
     return False
 
@@ -317,7 +351,7 @@ def should_generate_image_from_voice_turn(
     t = (user_text or "").strip()
     if should_take_direct_image_path(t, history):
         return True
-    if is_image_choice_confirmation(t) and (
+    if is_image_choice_confirmation(t) and assistant_offered_image_act(history) and (
         looks_like_visual_image_prompt(llm_prompt)
         or history_has_pending_image_brief(history)
     ):
@@ -410,6 +444,7 @@ def run_chat_image_generation(
     from app.services.gemini_images import generate_image
     from app.services.image_reference_generator import generate_image_with_reference
     from app.services.publish_image_context import (
+        get_last_image_generation_prompt,
         register_text_chat_image_url,
         resolve_reference_image_bytes,
     )
@@ -427,13 +462,30 @@ def run_chat_image_generation(
         wants_ced_tagline_lock,
     )
     from app.services.image_art_expander import expand_image_scene
+    from app.services.image_text_ritual import (
+        delivery_caption_for_image,
+        locked_overlay_lines,
+    )
 
     user_text = (text or "").strip()
     effective = effective_user_prompt(user_text, history)
-    # Texto crítico: brief fusionado (comillas en el concepto) gana al comando corto.
-    wants_literal_text = prompt_requires_ideogram_text(
-        effective
-    ) or prompt_requires_ideogram_text(user_text)
+    thread_prompt = get_last_image_generation_prompt(user_id, conversation_id)
+    thread_edit = bool(
+        parse_followup_image_prompt(user_text, history)
+        or wants_image_reference_edit(user_text)
+    )
+    if thread_prompt and thread_edit:
+        delta = user_text
+        if thread_prompt.strip().lower() not in effective.lower():
+            effective = (
+                f"{thread_prompt.strip()}\n\nAjuste sobre la misma imagen "
+                f"(conserva sujeto, composición y textos; no inventes otra escena): {delta}"
+            )[:4000]
+    # Texto crítico: en un ajuste del hilo manda el pedido ACTUAL, no el brief previo.
+    # Si no, «cámbiale el color» heredaba el flyer y se iba a Ideogram como pieza nueva.
+    wants_literal_text = prompt_requires_ideogram_text(user_text)
+    if not thread_edit:
+        wants_literal_text = wants_literal_text or prompt_requires_ideogram_text(effective)
     use_reference = allow_reference and should_use_reference_generation(
         user_text,
         history,
@@ -450,6 +502,8 @@ def run_chat_image_generation(
     display_label = ""
     success_reply = "Listo. Aquí está tu imagen generada."
     style_mode = "edit"
+    locked_copy = locked_overlay_lines(user_text, history)
+    overlay_delivery = delivery_caption_for_image(user_text, history)
 
     if creation:
         display_label = creation["display_label"]
@@ -463,6 +517,9 @@ def run_chat_image_generation(
             display_label = build_display_label(extract_product_subject(chat_context))
             success_reply = "Listo, señor. Aquí está su creativo publicitario."
         model_prompt = effective
+
+    if overlay_delivery:
+        success_reply = overlay_delivery
 
     text_mode = resolve_image_text_mode(effective)
     visual_thread_parts: list[str] = []
@@ -493,7 +550,12 @@ def run_chat_image_generation(
         visual_override=enriched or "",
     )
     overlay_lines: list[str] = []
-    if direct.get("wants_literal_text"):
+    for line in locked_copy:
+        if line not in overlay_lines:
+            overlay_lines.append(line)
+    if direct.get("wants_literal_text") and (
+        not thread_edit or prompt_requires_ideogram_text(user_text)
+    ):
         wants_literal_text = True
     spelling_fix = wants_ced_tagline_lock(user_text) or wants_ced_tagline_lock(
         effective
@@ -600,8 +662,9 @@ def run_chat_image_generation(
             style_mode=style_mode if creation else "edit",
             quality="auto",
         )
-        if (not img_result.get("ok") or not img_result.get("url")) and not wants_image_reference_edit(
-            user_text
+        if (not img_result.get("ok") or not img_result.get("url")) and not (
+            wants_image_reference_edit(user_text)
+            or parse_followup_image_prompt(user_text, history)
         ):
             logger.warning(
                 "[CHAT:IMG-GEN] reference failed; falling back to plain user=%s code=%s",
@@ -660,7 +723,12 @@ def run_chat_image_generation(
 
     url = str(img_result["url"])
     # Siempre registrar para publicar (aunque conversation_id aún no exista).
-    register_text_chat_image_url(user_id, conversation_id or "", url)
+    register_text_chat_image_url(
+        user_id,
+        conversation_id or "",
+        url,
+        prompt=str(model_prompt or effective or user_text),
+    )
 
     caption = str(img_result.get("caption") or display_label or "Imagen generada")
 
@@ -861,7 +929,10 @@ def salvage_image_turn(
     if not wants_image:
         # Claude/avanzado a menudo dice «listo, señor» y menciona diseño/imagen
         # en un análisis de texto. Eso NO es un pedido de generar PNG.
-        if hallucinated:
+        if hallucinated or (
+            false_success
+            and (is_text_ideation_request(user_text) or is_exploratory_talk(user_text))
+        ):
             clean = strip_hallucinated_generate_image_text(reply)
             return clean or reply, None
         return reply, image_attachment

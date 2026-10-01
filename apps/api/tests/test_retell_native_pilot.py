@@ -273,7 +273,7 @@ def test_native_image_pdf_tools_have_fillers_and_timeouts():
     img = build_generate_image_tool(api_public_url="https://api.example.com")
     assert img["name"] == "generate_image"
     assert img["speak_during_execution"] is True
-    assert "generando su imagen" in img["execution_message_description"].lower()
+    assert img["execution_message_description"].strip().lower() == "va."
     assert img["timeout_ms"] == 60_000
     assert img["url"].endswith("/v1/retell/tools/generate_image")
     assert "prompt" in img["parameters"]["properties"]

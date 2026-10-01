@@ -60,11 +60,11 @@ _MODULE_FILLERS: dict[str, tuple[str, ...]] = {
         "Verifico clientes potenciales, señor.",
     ),
     "image_gen": (
-        "Genero la imagen, señor.",
-        "Un momento, creo el diseño, señor.",
-        "Trabajo en su imagen ahora, señor.",
-        "Permítame generar eso, señor.",
-        "Preparo la imagen, señor.",
+        "Va.",
+        "Un momento.",
+        "Va.",
+        "Un momento.",
+        "Va.",
     ),
     "pdf": (
         "Preparo el documento, señor.",

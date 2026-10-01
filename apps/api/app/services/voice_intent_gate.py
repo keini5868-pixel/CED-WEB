@@ -28,8 +28,8 @@ _MODULE_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "publish",
         re.compile(
             r"\b("
-            r"publica(?:r)?|postea(?:r)?|"
-            r"instagram|facebook|"
+            r"publica(?:r|me|lo|la)?\s+(?:esto|eso|en)|"
+            r"postea(?:r)?|"
             r"sube(?:r)?\s+a\s+(?:instagram|facebook|redes)|"
             r"comparte(?:r)?\s+en\s+(?:instagram|facebook|redes)"
             r")\b",
@@ -53,10 +53,12 @@ _MODULE_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         "image_gen",
         re.compile(
             r"\b("
-            r"genera(?:r|me)?|crea(?:r|me)?|dise[nñ]a(?:r|me)?|"
+            r"genera(?:r|me)?\s+(?:una?\s+)?(?:imagen|foto|ilustraci[oó]n|logo|banner|flyer)|"
+            r"crea(?:r|me)?\s+(?:una?\s+)?(?:imagen|foto|ilustraci[oó]n|logo|banner|flyer)|"
+            r"dise[nñ]a(?:r|me)?\s+(?:una?\s+)?(?:imagen|foto|logo|banner|flyer)|"
             r"dibuja(?:r|me)?|pinta(?:r|me)?|"
-            r"imagen(?:es)?|foto(?:s)?|ilustraci[oó]n|logo|banner|flyer|portada|"
-            r"edita(?:r|me)?\s+(?:la\s+)?(?:imagen|foto)"
+            r"edita(?:r|me)?\s+(?:la\s+)?(?:imagen|foto)|"
+            r"c[aá]mbial[oa]\s+(?:el|la|los|las)?\s*(?:color|fondo|texto)?"
             r")\b",
             re.I,
         ),
@@ -167,9 +169,18 @@ def _normalize(text: str) -> str:
 
 def has_explicit_module_signal(user_text: str) -> bool:
     """True si el texto menciona explícitamente algún módulo/herramienta."""
+    from app.services.chat_intents import (
+        is_exploratory_talk,
+        is_explicit_image_command,
+        is_text_ideation_request,
+    )
     from app.services.user_ask import is_llm_first_turn, module_probe_text
 
     if is_llm_first_turn(user_text):
+        return False
+    if is_text_ideation_request(user_text):
+        return False
+    if is_exploratory_talk(user_text) and not is_explicit_image_command(user_text):
         return False
     norm = _normalize(module_probe_text(user_text))
     if not norm:
@@ -179,9 +190,18 @@ def has_explicit_module_signal(user_text: str) -> bool:
 
 def detect_local_module_hints(user_text: str) -> list[str]:
     """Devuelve nombres de módulo cuya señal local coincide (puede ser >1)."""
+    from app.services.chat_intents import (
+        is_exploratory_talk,
+        is_explicit_image_command,
+        is_text_ideation_request,
+    )
     from app.services.user_ask import is_llm_first_turn, module_probe_text
 
     if is_llm_first_turn(user_text):
+        return []
+    if is_text_ideation_request(user_text):
+        return []
+    if is_exploratory_talk(user_text) and not is_explicit_image_command(user_text):
         return []
     norm = _normalize(module_probe_text(user_text))
     if not norm:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.domain.ced_identity import CED_CONFIDENTIALITY, CED_MARKETING_EXPERTISE
+from app.domain.ced_identity import CED_COHERENCE_RULES, CED_CONFIDENTIALITY, CED_MARKETING_EXPERTISE
 from app.domain.ced_product_capabilities import CED_CAPABILITY_CATALOG_SYSTEM_RULE
 from app.domain.ced_sales_marketing_playbook import CED_SALES_MARKETING_PLAYBOOK
 from app.domain.ced_sales_mentor import CED_SALES_MENTOR_CORE
@@ -25,6 +25,8 @@ Das análisis profundos, detallados y accionables: estrategias completas, planes
 Responde en español latinoamericano, profesional pero cercano. Trata al usuario como "señor" o por su nombre.
 
 {CED_MARKETING_EXPERTISE}
+
+{CED_COHERENCE_RULES}
 
 {CED_CONFIDENTIALITY}
 
@@ -60,6 +62,8 @@ Español latinoamericano, profesional y cercano. Trata al usuario como "señor".
 Tu valor es el criterio de experto; las tools son instrumentos.
 
 {CED_MARKETING_EXPERTISE}
+
+{CED_COHERENCE_RULES}
 
 {CED_CONFIDENTIALITY}
 

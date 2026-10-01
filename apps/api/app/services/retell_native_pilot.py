@@ -21,33 +21,32 @@ NATIVE_PILOT_GREETING = "CED en línea, señor. Estoy listo para conversar."
 # Fase A costo: catálogo textual eliminado — los schemas JSON ya listan cada tool.
 # Mantener solo reglas críticas (confirm flows, anti-stuck, YouTube silencio).
 READ_TOOLS_PROMPT = """
-Reglas de tools (schemas definen nombre/params — no inventes tools):
-- Charla casual, gracias, check-ins: SIN tools. Respuesta 1-4 oraciones.
+Reglas de tools (schemas = nombre/params; no inventes tools):
+- Charla, gracias, check-ins: SIN tools. 1-4 oraciones.
 - Tras tool: di el resultado tal cual. No re-llames sin petición nueva.
-- Tools lentas (clima, PDF, imagen, búsqueda, cámara, avanzado): invoca la tool YA.
-  NO digas antes «ok, creo el PDF», «voy a consultar» ni «deme un momento» —
-  el filler de la tool habla al empezar; luego espera el resultado.
-- Escritura (finanzas/Meta): prepare → «sí» en voz → confirm_*. NUNCA prepare+confirm en el mismo turno. Un «sí» basta si hay borrador. Tras confirm OK: di el mensaje y EN EL MISMO TURNO transition_to_general_assistant.
+- Tools lentas (clima, PDF, imagen, búsqueda, cámara, avanzado): invoca YA.
+  El filler habla al empezar; tú callas (no «voy a consultar» ni «deme un momento»).
+- Escritura (finanzas/Meta): prepare → «sí» → confirm_*. NUNCA prepare+confirm juntos.
+  Un «sí» basta si hay borrador. Tras OK: di el mensaje y transition_to_general_assistant.
 - Lecturas: clima→get_environment; hechos/noticias→search_web; finanzas→read_finances.
-- FitLine / PM International / Activize / Restorate / PowerCocktail / Basics u otros
-  productos PM: responde YA con conocimiento Oportunidades del system prompt.
-  REGLA FIJA: «PM» / «PM Internacional» = PM-International AG (FitLine). Nunca Project Management.
-  PROHIBIDO search_web y PROHIBIDO decir «investigando» / «consultando internet».
-  Enlace PM / «abre OPPS» → open_opportunities (nunca pegues el URL). Tras abrir: verifica que el patrocinador en el registro coincida.
-- Borrar/vaciar finanzas o historial → send_to_trash. Un aviso y un «sí» bastan; no pidas la frase larga.
-- Cámara: activate una vez; visión solo con analyze_camera_frame / search_visible_product (NUNCA inventar ni recitar el análisis previo).
-- YouTube: play/pause/resume/close. Siempre reproduce de inmediato (nunca pidas confirmación antes de reproducir). NUNCA confirmes play sin éxito real de la tool. SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla — sin ofrecer más ayuda. Esta regla NO aplica al resto.
+- FitLine/PM/Restorate/Activize: Oportunidades YA. «PM»=PM-International AG (FitLine).
+  PROHIBIDO search_web e «investigando». Enlace/OPPS→open_opportunities (verifica patrocinador).
+- Borrar finanzas/historial → send_to_trash. Un aviso y un «sí».
+- Cámara: activate una vez; visión solo analyze_camera_frame / search_visible_product (no inventes).
+- YouTube: play/pause/resume/close. Reproduce ya. NUNCA confirmes play sin éxito.
+  SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla. Esta regla NO aplica al resto.
 - Imagen/PDF: generate_image / generar_pdf. NUNCA digas que la imagen o el PDF están listos sin éxito de la tool.
-- Modo avanzado: solo «activa modo avanzado»→activate; análisis profundo→consult_advanced (no respondas tú); salida explícita→deactivate.
-- Instagram sin imagen: si dice «ya subí la imagen», vuelve a meta_prepare_publish (HUD, no solo cámara).
+  Ajuste (color, fondo, texto) = la MISMA pieza; no inventes otra escena.
+- Avanzado: «activa modo avanzado»→activate; análisis→consult_advanced; salida→deactivate.
+- IG sin imagen: «ya subí la imagen»→meta_prepare_publish otra vez (HUD, no solo cámara).
 """.strip()
 
 GENERAL_ASSISTANT_STATE_PROMPT = """
 Estado general — hub de tools. Charla sin tools; acciones vía schemas.
-- Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya (también aquí).
+- Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya.
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
-- Clima→get_environment. Noticias/hechos→search_web. FitLine/PM/productos PM→SIN search_web (Oportunidades). Enlace/inscripción/«abre OPPS»→open_opportunities (nunca pegues el URL; verifica patrocinador). Borrar finanzas/historial→send_to_trash. YouTube: play/pause/resume/close; con música: UNA frase y SILENCIO.
-- Imagen/PDF: generate_image / generar_pdf — NUNCA confirmes sin éxito.
+- Clima→get_environment. Noticias→search_web. FitLine/PM→SIN search_web. OPPS→open_opportunities. Borrar→send_to_trash. YouTube: con música, UNA frase y SILENCIO.
+- Imagen/PDF: generate_image / generar_pdf — NUNCA confirmes sin éxito. Ajuste visual = la misma pieza.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
 
@@ -590,7 +589,7 @@ def build_generate_image_tool(*, api_public_url: str) -> dict[str, Any]:
         name="generate_image",
         description=GENERATE_IMAGE_DESCRIPTION,
         parameters=GENERATE_IMAGE_PARAMETERS,
-        filler="Un momento, generando su imagen, señor.",
+        filler="Va.",
         timeout_ms=60_000,
     )
 

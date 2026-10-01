@@ -364,18 +364,50 @@ function looksLikeConversationPaste(text: string): boolean {
   return false;
 }
 
+function looksLikeImageFollowupEdit(text: string): boolean {
+  const t = text.trim();
+  if (!t || t.length > 240) return false;
+  return /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto|grande|peque)|otro\s+(?:color|fondo|estilo)|ponle|qu[ií]tale|agr[eé]gale|otra\s+versi[oó]n|as[ií]\s+pero)\b/i.test(
+    t,
+  );
+}
+
+function recentThreadHasGeneratedImage(messages: ChatMessage[]): boolean {
+  return messages.slice(-8).some((m) => {
+    if (m.image?.url) return true;
+    const c = m.content || "";
+    return /imagen generada|aqu[ií]\s+est[aá]\s+tu\s+imagen|creativo\s+[—\-]/i.test(c);
+  });
+}
+
 function looksLikeImageGenerationRequest(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
   if (looksLikeConversationPaste(t)) return false;
+  if (
+    /\b(tengo\s+(?:una?\s+)?idea|vamos\s+a\s+hablar|estaba\s+pensando|hablemos|se\s+me\s+ocurri)/i.test(
+      t,
+    ) &&
+    !/\b(genera(?:r)?|crear?|haz(?:me)?|dise[nñ]a)\w*.{0,80}\b(imagen|foto|flyer|creativo)\b/i.test(
+      t,
+    )
+  ) {
+    return false;
+  }
+  // Flyer/banner sin copy cerrado: CED pregunta «¿La genero?» — no mostrar «Generando».
+  if (
+    /\b(flyer|banner|cartel|infograf)/i.test(t) &&
+    !/(["«“]|que\s+diga)/i.test(t)
+  ) {
+    return false;
+  }
   return (
     /\b(genera(?:r)?|crear?|haz(?:me)?|dise[nñ]a|ilustra)\w*.{0,80}\b(imagen|foto|flyer|creativo|banner|ilustraci[oó]n)\b/i.test(
       t,
     ) ||
     /\b(necesito|quiero|ayúdame|ayudame).{0,60}\b(genera(?:r)?|crear?|haz)\w*.{0,40}\b(imagen|foto)\b/i.test(
       t,
-    ) ||
-    /\b(imagen|foto|flyer|creativo)\b.{0,40}\b(con|de|que\s+diga|fondo|tipograf)/i.test(t)
+    )
   );
 }
 
@@ -1025,6 +1057,8 @@ export function CedTextChatPanel({
     const expectsImage =
       Boolean(imageFile) ||
       looksLikeImageGenerationRequest(outboundText) ||
+      (looksLikeImageFollowupEdit(outboundText) &&
+        recentThreadHasGeneratedImage(messages)) ||
       (currentMode === "variation" ||
         currentMode === "inspired" ||
         currentMode === "edit");
@@ -1139,7 +1173,9 @@ export function CedTextChatPanel({
           currentMode === "edit" ||
           currentMode === "variation" ||
           currentMode === "inspired" ||
-          looksLikeImageGenerationRequest(outboundText)
+          looksLikeImageGenerationRequest(outboundText) ||
+          (looksLikeImageFollowupEdit(outboundText) &&
+            recentThreadHasGeneratedImage(messages))
         ) {
           setStatusHint("Generando imagen con IA…");
         }

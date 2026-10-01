@@ -302,17 +302,26 @@ def detect_module(
     text = (user_text or "").strip()
     if not text:
         return None
-
-    t = text.lower()
     if active_module and _is_pure_ack(text):
         return active_module
+
+    t = text.lower()
+    from app.services.chat_intents import (
+        is_exploratory_talk,
+        is_explicit_image_command,
+        is_text_ideation_request,
+    )
+
+    ideation = (
+        is_exploratory_talk(text) or is_text_ideation_request(text)
+    ) and not is_explicit_image_command(text)
 
     if is_meta_publish_intent(text) or resolve_meta_publish_request(text, transcript):
         return "publish"
     if resolve_social_comments_request(text):
         return "publish"
 
-    if any(re.search(p, t) for p in _IMAGE_GEN_PATTERNS):
+    if not ideation and any(re.search(p, t) for p in _IMAGE_GEN_PATTERNS):
         return "image_gen"
     if any(re.search(p, t) for p in _PDF_PATTERNS):
         return "pdf"
@@ -391,6 +400,8 @@ def detect_module(
         return "web_search"
 
     patterned = detect_module_from_patterns(text)
+    if patterned == "image_gen" and ideation:
+        patterned = None
     if patterned:
         return patterned
 
@@ -404,7 +415,16 @@ def _detect_fresh_module(
     user_id: str = "",
 ) -> str | None:
     t = user_text.lower()
-    if any(re.search(p, t) for p in _IMAGE_GEN_PATTERNS):
+    from app.services.chat_intents import (
+        is_exploratory_talk,
+        is_explicit_image_command,
+        is_text_ideation_request,
+    )
+
+    ideation = (
+        is_exploratory_talk(user_text) or is_text_ideation_request(user_text)
+    ) and not is_explicit_image_command(user_text)
+    if not ideation and any(re.search(p, t) for p in _IMAGE_GEN_PATTERNS):
         return "image_gen"
     if any(re.search(p, t) for p in _PDF_PATTERNS):
         return "pdf"

@@ -48,8 +48,6 @@ _EXPLICIT_IMAGE = [
     "Genérame una imagen de el sistema CED un robot sofisticado con el logo de CED",
     "Ok genérame una imagen con esa idea",
     "Diseña un creativo para Meta Ads",
-    "generame un flyer con los beneficios",
-    "quiero un flyer de Restorate",
     "dame una imagen de un gato",
     "me ayudas a generar una imagen de un perro",
     "podrías generar una imagen de un atardecer",
@@ -95,6 +93,15 @@ def test_explicit_image_requests_still_work():
         assert is_text_ideation_request(msg) is False, msg
         assert is_generate_image_intent(msg) is True, msg
         assert should_take_direct_image_path(msg, []) is True, msg
+
+
+def test_flyer_without_locked_copy_does_not_direct_generate():
+    for msg in (
+        "generame un flyer con los beneficios",
+        "quiero un flyer de Restorate",
+    ):
+        assert is_generate_image_intent(msg) is True, msg
+        assert should_take_direct_image_path(msg, []) is False, msg
 
 
 def test_talking_about_an_attached_image_does_not_generate():
@@ -175,7 +182,8 @@ def test_image_choice_confirmation_generates_after_phrase_options():
                 '1. "CED & PM: La inteligencia que convierte la complejidad '
                 'del multinivel en resultados automáticos." (Enfocada en eficiencia). '
                 '2. "Donde la tecnología del Castillo se une al poder de FitLine." '
-                '3. "Deja de descifrar el negocio y empieza a escalarlo."'
+                '3. "Deja de descifrar el negocio y empieza a escalarlo." '
+                "La genero ahora?"
             ),
         },
     ]
@@ -191,8 +199,8 @@ def test_image_choice_confirmation_generates_after_phrase_options():
         "CED & PM: La inteligencia que convierte la complejidad del multinivel "
         "en resultados automáticos."
     )
-    assert should_generate_image_from_voice_turn(msg, llm, []) is True
-    assert "inteligencia" in resolve_voice_image_prompt(msg, llm, []).lower()
+    assert should_generate_image_from_voice_turn(msg, llm, history) is True
+    assert "inteligencia" in resolve_voice_image_prompt(msg, llm, history).lower()
 
 
 def test_need_photo_for_instagram_without_generate_is_not_image_intent():

@@ -162,10 +162,12 @@ def register_text_chat_image_url(
     *,
     filename: str = "",
     preserve_reference_bytes: bool = True,
+    prompt: str = "",
 ) -> str:
     url = (image_url or "").strip()
     if not url:
         return ""
+    locked_prompt = (prompt or "").strip()[:4000]
     entry: dict[str, Any] = {
         "url": url,
         "data": None,
@@ -173,6 +175,7 @@ def register_text_chat_image_url(
         "conversation_id": conversation_id,
         "filename": filename,
         "size_bytes": 0,
+        "prompt": locked_prompt,
     }
     if preserve_reference_bytes:
         existing = get_last_uploaded_image_for_session(user_id, conversation_id)
@@ -182,6 +185,19 @@ def register_text_chat_image_url(
                 entry["data"] = bytes(data)
                 entry["mime"] = existing.get("mime") or "image/jpeg"
                 entry["size_bytes"] = len(entry["data"])
+            if not locked_prompt:
+                entry["prompt"] = str(existing.get("prompt") or "").strip()[:4000]
+    if not entry.get("data"):
+        try:
+            from app.services.publish_media import load_local_publish_bytes
+
+            loaded = load_local_publish_bytes(url)
+        except Exception:  # noqa: BLE001
+            loaded = None
+        if loaded:
+            entry["data"] = loaded[0]
+            entry["mime"] = loaded[1]
+            entry["size_bytes"] = len(loaded[0])
     _store_entry(user_id, conversation_id, entry)
     _mirror_to_voice_session(user_id, public_url=url, filename=filename)
     return url
@@ -278,6 +294,21 @@ def get_session_vision_analysis(
         return str(row.get("analysis") or "").strip()
 
 
+def get_last_image_generation_prompt(
+    user_id: str,
+    conversation_id: str | None,
+    *,
+    max_age_sec: float = MAX_AGE_SEC,
+) -> str:
+    """Último brief con el que se generó/editó la imagen de sesión."""
+    row = get_last_uploaded_image_for_session(
+        user_id, conversation_id, max_age_sec=max_age_sec
+    )
+    if not row:
+        return ""
+    return str(row.get("prompt") or "").strip()
+
+
 def resolve_reference_image_bytes(
     user_id: str,
     conversation_id: str | None,
@@ -297,6 +328,14 @@ def resolve_reference_image_bytes(
     url = str(row.get("url") or "").strip()
     if not url:
         return None
+    try:
+        from app.services.publish_media import load_local_publish_bytes
+
+        local = load_local_publish_bytes(url)
+        if local:
+            return local
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from app.services.publish_media import decode_image_data
 

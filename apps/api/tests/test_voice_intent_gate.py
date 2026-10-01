@@ -34,6 +34,8 @@ from app.services.voice_intent_gate import (
         ("¿Qué clima hace hoy?", True),
         ("Ayúdame con un mensaje de prospección para FitLine", False),
         ("Dame ideas de prospección para FitLine", False),
+        ("tengo una idea para un flyer de Instagram", False),
+        ("dame una idea de flyer de Restorate", False),
     ],
 )
 def test_has_explicit_module_signal(phrase: str, expect_signal: bool) -> None:

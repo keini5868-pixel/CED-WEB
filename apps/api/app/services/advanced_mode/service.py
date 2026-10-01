@@ -423,6 +423,17 @@ def send_advanced_message(
 
     anthropic_key = require_anthropic_api_key()
 
+    from app.services.image_text_ritual import (
+        build_overlay_readback_reply,
+        needs_overlay_readback,
+    )
+
+    if needs_overlay_readback(text, history_rows):
+        return _finish_payload(
+            response=_finalize_chat_reply(build_overlay_readback_reply(text, history_rows)),
+            model=ADVANCED_STREAM_MODEL_LABEL,
+        )
+
     image_result = _try_direct_image(user_id, text, history_rows, conv_id)
     if image_result:
         return image_result
@@ -802,6 +813,19 @@ def iter_advanced_message_stream(
     anthropic_key = require_anthropic_api_key()
 
     from app.services.chat_image_generation import should_take_direct_image_path
+    from app.services.image_text_ritual import (
+        build_overlay_readback_reply,
+        needs_overlay_readback,
+    )
+
+    if needs_overlay_readback(text, history_rows):
+        overlay_reply = _finalize_chat_reply(build_overlay_readback_reply(text, history_rows))
+        payload = _finish_payload(
+            response=overlay_reply,
+            model=ADVANCED_STREAM_MODEL_LABEL,
+        )
+        yield from _yield_done_cached(user_id, text, payload)
+        return
 
     # Imagen: ruta directa (Gemini Flash Image) — no pasar por chat con herramientas.
     if should_take_direct_image_path(text, history_rows):

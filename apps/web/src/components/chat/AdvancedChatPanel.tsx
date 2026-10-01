@@ -289,13 +289,23 @@ export function AdvancedChatPanel({
       return next;
     });
     setStreaming(true);
+    const looksFollowupEdit =
+      /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto)|otro\s+(?:color|fondo|estilo)|ponle|qu[ií]tale|agr[eé]gale)\b/i.test(
+        text,
+      );
+    const threadHasImage = messages.slice(-8).some(
+      (m) =>
+        Boolean(m.image?.url) ||
+        /imagen generada|aqu[ií]\s+est[aá]\s+tu\s+imagen/i.test(m.content || ""),
+    );
     const expectsImageGen =
       Boolean(imageFile && (currentMode === "edit" || currentMode === "variation" || currentMode === "inspired")) ||
       (!imageFile &&
         !pdfFile &&
-        /\b(genera|crear?|haz(?:me)?|dise[nñ]a)\w*.{0,60}\b(imagen|foto|flyer|creativo|banner)\b/i.test(
+        (/\b(genera|crear?|haz(?:me)?|dise[nñ]a)\w*.{0,60}\b(imagen|foto|flyer|creativo|banner)\b/i.test(
           text,
-        ));
+        ) ||
+          (looksFollowupEdit && threadHasImage)));
     setStatusHint(
       pdfFile
         ? "Leyendo documento…"

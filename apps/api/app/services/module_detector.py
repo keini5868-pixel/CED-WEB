@@ -138,8 +138,8 @@ STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
     "social": (
         r"\bpubl[íi]c(?:ame|a)\s+esto\b",
         r"\bhaz\s+la\s+publicaci[óo]n\b",
-        r"\bpubl[íi]ca(?:lo|la)?\b",
-        r"\bpublicar\b",
+        r"\bpubl[íi]ca(?:lo|la)\b",
+        r"\bpubl[íi]ca(?:r)?\s+(?:en|esto|eso|la|el)\b",
         r"\bpost[ée]a(?:lo|la)?\b",
         r"\bsube\s+a\s+(?:instagram|facebook)\b",
         r"\bcomparte\s+en\s+(?:instagram|facebook|redes)\b",

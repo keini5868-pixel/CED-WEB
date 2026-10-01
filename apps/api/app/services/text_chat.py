@@ -464,6 +464,8 @@ IMPORTANTE — CONTENIDO / IDEAS / PROMPTS DE TEXTO vs IMAGEN (acciones distinta
 - ITERACIÓN DE DISEÑO (como ChatGPT): si ya hay imagen o diseño en el hilo y piden ejemplos, opciones,
   variantes o «cómo se vería» SIN decir genera/renderiza → responde en TEXTO anclado al MISMO diseño.
   Solo genera imagen cuando pidan explícitamente renderizar («genera», «hazlo», «créala», «genérala»).
+- AJUSTE DE LA MISMA IMAGEN: «cámbiale el color», «hazlo más oscuro», «más texto», «otro fondo»
+  = editar la pieza que acabas de generar. PROHIBIDO inventar otro sujeto u otra escena.
 
 IMPORTANTE — PM International / FitLine (módulo Oportunidades):
 - Si el mensaje habla de FitLine, PM International o productos del catálogo (Activize/Activise, Restorate, Basics, etc.)
@@ -498,7 +500,8 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Palabras clave de generación (SOLO estas cuentan como «generar ahora»): "genera una imagen", "genérame una imagen", "créame un diseño", "hazme un logo", "diseña un creativo", "crea una foto", "genera la imagen".
 - «Necesito una foto para Instagram» o «I need a photo for Sek» SIN «genera/genérame/hazme/créame» NO es generate_image: habla en texto, propone el concepto y espera confirmación.
 - Si piden acordar algo impactante ANTES de crear, responde en texto. PROHIBIDO generate_image. PROHIBIDO decir que la generación falló, copyright o límites: no se pidió generar.
-- Si el pedido es «genera/genérame/créame/hazme una imagen de X» (aunque X sea corto: robot, logo CED, etc.): GENERA YA. PROHIBIDO describir el concepto y preguntar «¿quieres ajustar?» / estilo / colores antes de generar.
+- Overlay: flyer/banner/cartel o «con texto» SIN comillas ni «que diga X» → NO generate_image. Di exactamente el titular y pregunta «¿La genero?». FitLine/PM: conocimiento interno, sin Tavily.
+- Si el pedido es «genera/genérame/créame/hazme una imagen de X» (escena, no gráfico con copy) (aunque X sea corto: robot, logo CED, etc.): GENERA YA. PROHIBIDO describir el concepto y preguntar «¿quieres ajustar?» / estilo / colores antes de generar.
 - Si el pedido de imagen es vago SIN verbo de generación («necesito algo visual»), pide MÁS DETALLES UNA VEZ. Si es un «genera/hazme» claro, genera.
 - Tras generar una imagen, preséntala (y opcionalmente pregunta si quiere ajustes visuales). NUNCA digas que la imagen está lista si no la generó el sistema en ese turno.
 - PROHIBIDO ofrecer publicar en Instagram/Facebook, proponer copy/caption o sugerir redes
@@ -3269,6 +3272,10 @@ def send_message(
         should_take_direct_image_path,
         run_chat_image_generation,
     )
+    from app.services.image_text_ritual import (
+        build_overlay_readback_reply,
+        needs_overlay_readback,
+    )
 
     probe = module_probe_text(text)
 
@@ -3309,6 +3316,12 @@ def send_message(
                 },
                 pdf=attachment if attachment.get("file_id") else None,
             )
+
+    if needs_overlay_readback(text, history):
+        return _finish(
+            _finalize_chat_reply(build_overlay_readback_reply(text, history)),
+            route_meta={"intent": "overlay_lock", "source": "direct"},
+        )
 
     if should_take_direct_image_path(text, history):
         plan_id = None
@@ -4058,6 +4071,11 @@ def iter_send_message_stream(
         run_chat_image_generation,
         should_take_direct_image_path,
     )
+    from app.services.image_text_ritual import needs_overlay_readback
+
+    if needs_overlay_readback(text, history):
+        yield from _iter_blocking_send(user_id, text, conversation_id)
+        return
 
     if should_take_direct_image_path(text, history):
         status = "Generando imagen con IA…"

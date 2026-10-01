@@ -732,6 +732,24 @@ async def _execute_voice_tool_body(
             ).strip()
             llm_prompt = str(params.get("prompt") or "").strip()
             history = params.get("_history") if isinstance(params.get("_history"), list) else []
+            from app.services.image_text_ritual import (
+                build_overlay_readback_reply,
+                needs_overlay_readback,
+            )
+
+            gate_text = raw_user or llm_prompt
+            if needs_overlay_readback(gate_text, history):
+                spoken = build_overlay_readback_reply(gate_text, history)
+                logger.info(
+                    "[VOICE:IMAGE] overlay lock user=%s raw=%s",
+                    user_id[:8],
+                    (raw_user or "")[:80],
+                )
+                return {
+                    "ok": True,
+                    "skipped": True,
+                    "spoken": spoken,
+                }
             # Retell ya invocó generate_image: si trae prompt, generar aunque el
             # utterance no diga literalmente «genera una imagen».
             if not llm_prompt and not should_generate_image_from_voice_turn(
@@ -790,9 +808,12 @@ async def _execute_voice_tool_body(
                         "prompt": prompt,
                     },
                 )
+                spoken = str(
+                    result.get("reply") or "Imagen generada, señor. Ya la puede ver en pantalla."
+                ).strip()
                 return {
                     "ok": True,
-                    "spoken": "Imagen generada, señor. Ya la puede ver en pantalla.",
+                    "spoken": spoken,
                     "url": url,
                     "image_url": url,
                     "prompt": prompt,

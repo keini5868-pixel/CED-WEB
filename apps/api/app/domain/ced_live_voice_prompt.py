@@ -2,6 +2,7 @@
 
 from app.domain.ced_identity import (
     CED_CORE_IDENTITY,
+    CED_COHERENCE_RULES,
     CED_CREATOR_IDENTITY,
     CED_HUMAN_VOICE_STYLE,
     CED_MARKETING_EXPERTISE,
@@ -26,6 +27,8 @@ NUNCA nombres proveedores de IA, servidores ni arquitectura.
 {CED_CONFIDENTIALITY}
 
 {CED_MARKETING_EXPERTISE}
+
+{CED_COHERENCE_RULES}
 
 {CED_CREATOR_IDENTITY}
 

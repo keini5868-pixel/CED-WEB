@@ -8,20 +8,25 @@ import pytest
 
 from app.services.chat_image_generation import (
     build_enriched_generation_context,
+    effective_user_prompt,
     extract_vision_context_from_history,
     run_chat_image_generation,
+    salvage_image_turn,
     should_take_direct_image_path,
     should_use_reference_generation,
 )
 from app.services.chat_intents import (
     parse_followup_image_prompt,
     user_requests_prior_reference,
+    wants_image_reference_edit,
 )
 from app.services.marketing_creative import resolve_image_creation_from_text
 from app.services.publish_image_context import (
     clear_session_image,
+    get_last_image_generation_prompt,
     get_session_vision_analysis,
     register_text_chat_image,
+    register_text_chat_image_url,
     resolve_reference_image_bytes,
     set_session_vision_analysis,
 )
@@ -338,3 +343,75 @@ def test_advanced_direct_image_followup(mock_run: MagicMock):
     assert result is not None
     assert result.get("image", {}).get("url")
     mock_run.assert_called_once()
+
+
+HISTORY_AFTER_FLYER = [
+    {"role": "user", "content": "genera un flyer de Restorate con fondo oscuro"},
+    {"role": "assistant", "content": "Listo. Aquí está tu imagen generada."},
+]
+
+
+def test_color_followup_is_same_image_edit():
+    assert wants_image_reference_edit("cambiale el color") is True
+    assert wants_image_reference_edit("hazlo mas oscuro") is True
+    follow = parse_followup_image_prompt("cambiale el color", HISTORY_AFTER_FLYER)
+    assert follow == "cambiale el color"
+    assert should_take_direct_image_path("cambiale el color", HISTORY_AFTER_FLYER) is True
+    merged = effective_user_prompt("cambiale el color", HISTORY_AFTER_FLYER)
+    assert "Restorate" in merged
+    assert "Ajuste sobre la misma imagen" in merged
+    assert "cambiale el color" in merged
+
+
+def test_url_only_session_hydrates_bytes_from_disk(tmp_path, monkeypatch):
+    from app.services import publish_media
+
+    fname = "userimg1_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.png"
+    path = tmp_path / fname
+    path.write_bytes(PNG)
+    monkeypatch.setattr(publish_media, "media_file_path", lambda name: path if name == fname else None)
+    url = f"/api/ced/media/publish/{fname}"
+    register_text_chat_image_url(USER, CONV, url, prompt="flyer Restorate fondo oscuro")
+    resolved = resolve_reference_image_bytes(USER, CONV)
+    assert resolved is not None
+    assert resolved[0] == PNG
+    assert get_last_image_generation_prompt(USER, CONV) == "flyer Restorate fondo oscuro"
+    assert should_use_reference_generation(
+        "cambiale el color",
+        HISTORY_AFTER_FLYER,
+        user_id=USER,
+        conversation_id=CONV,
+    )
+
+
+@patch("app.services.gemini_images.generate_image")
+@patch("app.services.image_reference_generator.generate_image_with_reference")
+def test_followup_color_does_not_plain_fallback(mock_ref: MagicMock, mock_gen: MagicMock):
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    mock_ref.return_value = {"ok": False, "error": "referencia falló", "code": "internal_error"}
+    result = run_chat_image_generation(
+        USER,
+        CONV,
+        "cambiale el color",
+        HISTORY_AFTER_FLYER,
+        plan_id="elite",
+    )
+    assert result["ok"] is False
+    mock_ref.assert_called_once()
+    mock_gen.assert_not_called()
+    prompt = mock_ref.call_args.kwargs["prompt"]
+    assert "Restorate" in prompt or "Ajuste sobre la misma imagen" in prompt
+
+
+def test_ideation_hallucination_is_stripped_not_generated():
+    reply, attachment = salvage_image_turn(
+        USER,
+        CONV,
+        "dame una idea de flyer de Restorate",
+        [],
+        'generate_image({"prompt": "un gato espacial"})\nListo, aquí está tu imagen.',
+        None,
+    )
+    assert attachment is None
+    assert "generate_image" not in reply
+    assert "gato espacial" not in reply.lower() or "idea" in reply.lower()

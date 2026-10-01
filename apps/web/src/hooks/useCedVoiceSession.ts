@@ -1934,7 +1934,7 @@ export function useCedVoiceSession(
         if (webFetchRef.current) return;
         webFetchRef.current = true;
         setOrbState("processing");
-        setStatusLabel("Generando imagen…");
+        setStatusLabel("Un momento…");
         void (async () => {
           try {
             const r = await fetchGenerateImage(prompt);
@@ -2520,7 +2520,7 @@ export function useCedVoiceSession(
             [ANALIZAR_CAMARA]: "Analizando cámara…",
             request_camera_activation: "Activando cámara…",
             request_camera_deactivation: "Apagando cámara…",
-            generate_image: "Generando imagen con IA…",
+            generate_image: "Un momento…",
             generate_image_with_reference: "Generando variación con referencia…",
             [GENERAR_PDF]: "Generando PDF…",
           };

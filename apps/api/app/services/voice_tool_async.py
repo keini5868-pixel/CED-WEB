@@ -31,7 +31,7 @@ _TOOL_ACK: dict[str, str] = {
     "publicar_instagram": "Un momento, señor.",
     "publicar_facebook": "Un momento, señor.",
     "generar_pdf": "Preparando el PDF, señor.",
-    "generate_image": "Un momento, generando su imagen, señor.",
+    "generate_image": "Va.",
     "analyze_camera_frame": "Analizando, señor.",
     "buscar_lo_visible": "Analizando, señor.",
     "registrar_movimiento_financiero": "Anotando el movimiento, señor.",

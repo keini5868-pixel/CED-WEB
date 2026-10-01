@@ -319,6 +319,10 @@ def is_image_creation_request(text: str, history: list[dict[str, str]] | None = 
 
     if is_text_ideation_request(t):
         return False
+    from app.services.chat_intents import is_exploratory_talk, is_explicit_image_command
+
+    if is_exploratory_talk(t) and not is_explicit_image_command(t):
+        return False
     from app.services.chat_intents import is_image_meta_talk
 
     if is_image_meta_talk(t):
