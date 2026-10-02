@@ -290,7 +290,7 @@ export function AdvancedChatPanel({
     });
     setStreaming(true);
     const looksFollowupEdit =
-      /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto)|otro\s+(?:color|fondo|estilo)|ponle|qu[ií]tale|agr[eé]gale)\b/i.test(
+      /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto|grues|negrit)|las?\s+letras|negrita|grosor|otro\s+(?:color|fondo|estilo)|ponle|qu[ií]tale|agr[eé]gale)\b/i.test(
         text,
       );
     const threadHasImage = messages.slice(-8).some(

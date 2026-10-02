@@ -363,6 +363,23 @@ def test_color_followup_is_same_image_edit():
     assert "cambiale el color" in merged
 
 
+def test_thicker_letters_followup_is_same_image_edit():
+    msg = "ok pero las letras que sean un poco mas gruesas"
+    history = [
+        {
+            "role": "user",
+            "content": 'genera una imagen con fondo azul oscuro y las letras "credibilidad"',
+        },
+        {"role": "assistant", "content": "Listo. Aqui esta la imagen con los cambios pedidos."},
+    ]
+    assert wants_image_reference_edit(msg) is True
+    assert parse_followup_image_prompt(msg, history) == msg
+    assert should_take_direct_image_path(msg, history) is True
+    from app.services.chat_image_generation import reply_is_image_wait_filler
+
+    assert reply_is_image_wait_filler("Va. Generando letras mas gruesas.") is True
+
+
 def test_url_only_session_hydrates_bytes_from_disk(tmp_path, monkeypatch):
     from app.services import publish_media
 

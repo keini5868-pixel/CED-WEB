@@ -522,8 +522,10 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"(?:(?:en|sobre)\s+)?(?:la\s+)?(?:imagen|foto|flyer|banner|cartel|creativo|post)\b"
     r"|cambia\s+(?:el\s+)?(?:fondo|dise[nñ]o|estilo|color|colores)"
     r"|c[a\u00e1]mbia(?:le|la|lo|les|las)?\s+(?:el|la|los|las)?\s*(?:color|fondo|texto|tipograf)?"
-    r"|hazl[oa]\s+m[a\u00e1]s\s+(?:oscur\w*|clar\w*|grande|peque\w*|colorid\w*)"
+    r"|hazl[oa]\s+m[a\u00e1]s\s+(?:oscur\w*|clar\w*|grande|peque\w*|colorid\w*|grues\w*)"
     r"|mas\s+texto"
+    r"|las?\s+letras"
+    r"|m[a\u00e1]s\s+(?:grues\w*|negrit\w*|fin[ao]s?)"
     r")\b",
     re.I,
 )
@@ -857,7 +859,8 @@ _FOLLOWUP_IMAGE_CONTEXT = re.compile(
     re.I,
 )
 _FOLLOWUP_SKIP = re.compile(
-    r"^(?:ok|gracias|s[ií]|no|vale|perfecto|listo|env[ií]a|publica|dale|hola|buenas)\b",
+    r"^(?:ok|gracias|s[ií]|no|vale|perfecto|listo|env[ií]a|publica|dale|hola|buenas)"
+    r"(?:\s*[.!]*)?$",
     re.I,
 )
 # El mensaje ACTUAL (no el historial) debe traer una señal real de edición/continuación
@@ -868,7 +871,7 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"\b("
     r"hazl[oa]s?|c[aá]mbial[oa]|ajust[aá]l[oa]|ponle|qu[ií]tale|agr[eé]gale|mejor[aá]l[oa]|"
     r"otra\s+versi[oó]n|otra\s+variaci[oó]n|otra\s+vez|de\s+nuevo|una\s+m[aá]s|"
-    r"m[aá]s\s+(?:grande|peque[nñ]|oscur|clar|colorid|realist|simple|detall)|"
+    r"m[aá]s\s+(?:grande|peque[nñ]|oscur\w*|clar\w*|colorid\w*|realist\w*|simple|detall\w*|grues\w*|fin[ao]s?|negrit\w*)|"
     r"en\s+otro\s+color|otro\s+color|diferente\s+color|otro\s+estilo|otro\s+fondo|"
     r"con\s+(?:otro|un)\s+(?:fondo|estilo)|as[ií]\s+pero|en\s+vez\s+de|"
     r"cambia(?:le)?\s+(?:el|la|los|las)|quita(?:le)?\s+(?:el|la|los|las)|"
@@ -881,7 +884,11 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"integr(?:a|ados?)\s+(?:l[ao]s?\s+)?textos?|"
     r"m[aá]s\s+texto|"
     r"c[aá]mbial[oa]s?\s+(?:el\s+)?color|"
-    r"cambia\s+(?:el\s+)?color"
+    r"cambia\s+(?:el\s+)?color|"
+    r"las?\s+letras|"
+    r"letras?\s+(?:que\s+sean|m[aá]s|menos)|"
+    r"(?:negrita|grosor|tipograf[ií]a)|"
+    r"pero\s+(?:las?\s+)?(?:letras|textos?|tipograf)"
     r")\b",
     re.I,
 )

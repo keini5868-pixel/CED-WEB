@@ -367,7 +367,7 @@ function looksLikeConversationPaste(text: string): boolean {
 function looksLikeImageFollowupEdit(text: string): boolean {
   const t = text.trim();
   if (!t || t.length > 240) return false;
-  return /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto|grande|peque)|otro\s+(?:color|fondo|estilo)|ponle|qu[ií]tale|agr[eé]gale|otra\s+versi[oó]n|as[ií]\s+pero)\b/i.test(
+  return /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto|grande|peque|grues|negrit)|las?\s+letras|negrita|grosor|otro\s+(?:color|fondo|estilo)|ponle|qu[ií]tale|agr[eé]gale|otra\s+versi[oó]n|as[ií]\s+pero)\b/i.test(
     t,
   );
 }

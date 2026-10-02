@@ -63,7 +63,8 @@ _IMAGE_WAIT_FILLER = re.compile(
     r"|dame\s+un\s+(?:momento|segundo)"
     r"|estoy\s+generando"
     r"|voy\s+a\s+generar"
-    r"|generando\s+(?:la\s+)?(?:imagen|foto|creativo)"
+    r"|generando\s+(?:la\s+|las?\s+)?(?:imagen|foto|creativo|letras|texto|tipograf)"
+    r"|va\.\s*generando"
     r"|perm[ií]teme\s+generar"
     r"|ahora\s+mismo\s+(?:la\s+)?genero"
     r")\b",
@@ -321,6 +322,8 @@ def should_take_direct_image_path(
     if is_casual_chat_interrupt(t):
         return False
     if parse_followup_image_prompt(t, history):
+        return True
+    if history_has_active_image_thread(history) and wants_image_reference_edit(t):
         return True
     if is_image_creation_request(t, history) and not is_exploratory_talk(t):
         return True
