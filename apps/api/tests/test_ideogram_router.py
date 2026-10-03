@@ -122,8 +122,7 @@ def test_compose_persuasive_overlay_pain_solution():
         overlay_lines=lines,
     )
     assert "TEXTOS EXACTOS" in prompt
-    assert "Keep the SAME person" in prompt or "SAME person" in prompt
-    assert "Keep the SAME person, face, clothing, pose, lighting and background" in prompt
+    assert "SAME subject" in prompt or "SAME person" in prompt
 
 
 def test_reference_text_edit_changes_background_when_asked():

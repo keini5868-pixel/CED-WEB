@@ -122,9 +122,10 @@ _CED_ON_IMAGE_SPELLING_LOCK = (
     '"Marketing"; "Ventas".'
 )
 _CED_WORDMARK_LOCK = (
-    "LOCKED WORDMARK: if any brand letters appear they must read exactly CED "
-    "(Latin letters C then E then D). Never render SEC, SED, CDE, CEB, GED, TED, "
-    "or CEO. Do not reverse or scramble those three letters."
+    "LOCKED WORDMARK: the ONLY visible text is the circular mark CED "
+    "(exactly three Latin letters: C then E then D). Never CEDD, C E D D, SEC, SED, "
+    "CDE, CEB, GED, TED, or CEO. No buttons, captions, slogans, Prospección, "
+    "Marketing, Ventas, or any other word anywhere on the image."
 )
 # Solo correcciones de tipografía (I4 / Prosaeccion). NO «prospección» ni
 # «asistente de IA» sueltos: esos aparecen en listados de capacidades CED.
@@ -794,12 +795,11 @@ def summarize_overlay_labels_for_image(
 _CED_BRAND_REQUEST = re.compile(
     r"(?is)\b(?:"
     r"sistema\s+ced\b|"
-    r"\bced\b|"
     r"castillo\s+de\s+la\s+evoluci[oó]n|"
     r"marca\s+ced|"
-    r"logo\s+(?:de\s+)?ced|"
     r"branding\s+ced|"
-    r"infograf[ií]a\s+(?:del\s+)?(?:sistema\s+)?ced"
+    r"infograf[ií]a\s+(?:del\s+)?(?:sistema\s+)?ced|"
+    r"hud\s+(?:de\s+)?ced"
     r")\b"
 )
 
@@ -900,8 +900,12 @@ def build_direct_image_prompt(
 
     parts: list[str] = [scene]
     if has_reference:
-        parts.append("Use the attached image only as style/composition reference.")
-    if wants_ced:
+        parts.append(
+            "EDIT the attached image. Keep the EXACT same subject "
+            "(same castle, building, person or object and the same logo). "
+            "Apply only the requested change. Do not invent a different scene."
+        )
+    if wants_ced and not wants_wordmark:
         parts.append(
             "Style with CED brand identity when relevant (futuristic cyan/blue HUD, "
             "dark developer atmosphere, premium UI glow)."
@@ -920,9 +924,14 @@ def build_direct_image_prompt(
             parts.append(_CED_ON_IMAGE_SPELLING_LOCK)
         if wants_wordmark:
             parts.append(_CED_WORDMARK_LOCK)
+            if not quoted or quoted == ["CED"]:
+                parts.append(
+                    "No other on-image text besides CED. No UI buttons, no slogans, "
+                    "no pain-solution captions, no Marketing/Ventas/Prospeccion labels."
+                )
         if quoted:
             parts.append(format_verbatim_image_copy(quoted))
-        if allow_ui:
+        if allow_ui and not wants_wordmark:
             parts.append(_DECORATIVE_UI_RULE)
     elif allow_ui:
         parts.append(_DECORATIVE_UI_RULE)
@@ -1003,9 +1012,6 @@ def compose_persuasive_overlay_lines(user_text: str, *, max_lines: int = 2) -> l
         lines.append(pain)
     if solution and solution not in lines:
         lines.append(solution)
-    if not lines and prompt_requires_precise_text(t):
-        # Pedido genérico de texto persuasivo sin keyword clara.
-        lines = ["Hay un problema real aquí.", "Y también hay una solución."]
     return [normalize_spanish(x) for x in lines[:max_lines] if x]
 
 
@@ -1014,8 +1020,11 @@ _BG_CHANGE_RE = re.compile(
     r"cambia(?:r)?\s+(?:el\s+)?fondo|"
     r"otro\s+fondo|"
     r"nuevo\s+fondo|"
-    r"fondo\s+(?:a|de|en)\s+\w+|"
+    r"fondo\s+(?:a|de|en|natural|atr[aá]s)\s+\w+|"
+    r"fondo\s+natural|"
     r"pon(?:le|me)?\s+(?:un\s+)?fondo|"
+    r"atr[aá]s\s+(?:de\s+)?(?:unas?\s+)?monta|"
+    r"monta[nñ]as?\s+atr[aá]s|"
     r"background|"
     r"change\s+(?:the\s+)?background"
     r")\b"
@@ -1025,6 +1034,44 @@ _BG_CHANGE_RE = re.compile(
 def user_requests_background_change(text: str) -> bool:
     """True si el usuario pide cambiar el fondo (no solo tipografía)."""
     return bool(_BG_CHANGE_RE.search(text or ""))
+
+
+def user_asks_for_on_image_copy(text: str) -> bool:
+    """True solo si pidieron copy/frase, no un logo suelto."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if extract_quoted_phrases(t):
+        return True
+    if _IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t):
+        return True
+    if _GRAPHIC_COPY_FORMAT.search(t) and re.search(
+        r"(?i)\b(?:beneficio|que\s+diga|texto|copy|titular|eslogan)\b",
+        t,
+    ):
+        return True
+    return False
+
+
+def build_reference_scene_edit_prompt(user_text: str) -> str:
+    """Edita la foto adjunta: mismo sujeto, solo el cambio pedido. Sin copy inventado."""
+    request = strip_image_generation_instruction_safe(user_text)
+    if user_requests_background_change(user_text):
+        keep = (
+            "EDIT the attached image. Keep the EXACT same subject "
+            "(same castle/building/person/object, same geometry, same circular CED logo "
+            "reading exactly CED — never CEDD). "
+            "Only change the background as the user asked. "
+            "Do NOT generate a different building. "
+            "Do NOT add buttons, captions, slogans, or extra words."
+        )
+    else:
+        keep = (
+            "EDIT the attached image. Keep the EXACT same subject and composition. "
+            "Apply only the user's requested visual change. "
+            "Do NOT replace the subject. Do NOT add unsolicited text."
+        )
+    return f"{keep} User request: {request}".strip()[:3800]
 
 
 def build_reference_text_edit_prompt(
@@ -1042,31 +1089,38 @@ def build_reference_text_edit_prompt(
     change_bg = user_requests_background_change(user_text)
     if change_bg:
         keep = (
-            "Edit the attached photo. Keep the SAME person, face, clothing and pose. "
+            "Edit the attached photo. Keep the SAME subject "
+            "(same person or the same castle/building/object, same logo). "
             "CHANGE the background as the user requested. "
-            "Do NOT replace the subject with a different person "
+            "Do NOT replace the subject with a different person or building "
             "unless the user explicitly asked for that."
         )
     else:
         keep = (
-            "Edit the attached photo. Keep the SAME person, face, clothing, pose, "
-            "lighting and background. Do NOT replace the subject with a different person "
-            "or a different gesture unless the user explicitly asked for that."
+            "Edit the attached photo. Keep the SAME subject "
+            "(same person or the same castle/building/object, same pose and logo). "
+            "Do NOT replace the subject unless the user explicitly asked for that."
         )
     parts = [
         keep,
-        "Add clear, legible Spanish on-image typography for a marketing ad "
-        "(pain → solution / PAS). Short lines only. High contrast. No watermarks. "
-        f"{_FRAME_SAFE_RULE} {_ORTHOGRAPHY_RULE} {_SPELLING_STRICT_RULE}",
         f"User request: {strip_image_generation_instruction_safe(user_text)}",
     ]
+    if lines or user_asks_for_on_image_copy(user_text):
+        parts.insert(
+            1,
+            "Add clear, legible Spanish on-image typography only for the lines "
+            "the user asked for. Short lines. High contrast. No extra slogans. "
+            f"{_FRAME_SAFE_RULE} {_ORTHOGRAPHY_RULE} {_SPELLING_STRICT_RULE}",
+        )
+    else:
+        parts.insert(
+            1,
+            "Do not add new captions, buttons or slogans. "
+            "If a logo is already present, keep it reading exactly CED (never CEDD).",
+        )
     if verbatim:
         parts.append(verbatim)
         parts.append(_CED_ON_IMAGE_SPELLING_LOCK)
-    else:
-        parts.append(
-            "Include the persuasive text the user asked for as visible labels on the image."
-        )
     return " ".join(p for p in parts if p).strip()[:3800]
 
 

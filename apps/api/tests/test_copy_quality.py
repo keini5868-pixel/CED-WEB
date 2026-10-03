@@ -69,6 +69,8 @@ def test_ced_logo_forces_literal_ced_wordmark_not_sec():
     assert "never sec" in low or "never render sec" in low
     assert lock_on_image_spelling("SEC") == "CED"
     assert not user_requests_ced_wordmark("un robot futurista del sistema CED")
+    assert "cedd" in low
+    assert "pain-solution" in low or "no other on-image text" in low
 
 
 def test_compact_overlay_line_short_and_clean():
@@ -514,3 +516,43 @@ def test_image_text_mode_decorative_hologram_not_organic_false_positive():
 
     discount = "generame una imagen del producto con el código de descuento en la mesa"
     assert resolve_image_text_mode(discount) == "none"
+
+
+def test_castle_ced_logo_does_not_invent_pas_or_hud_copy():
+    from app.services.copy_quality import (
+        build_direct_image_prompt,
+        compose_persuasive_overlay_lines,
+        user_asks_for_on_image_copy,
+        user_requests_ced_branding,
+        user_requests_ced_wordmark,
+    )
+
+    msg = (
+        "genera una imagen de un castillo en un logo moderno y ese castillo "
+        "tenga el logo redondo de (CED) con un fondo de unas montanas"
+    )
+    assert user_requests_ced_wordmark(msg) is True
+    assert user_requests_ced_branding(msg) is False
+    assert user_asks_for_on_image_copy(msg) is False
+    assert compose_persuasive_overlay_lines(msg) == []
+    prompt = str(build_direct_image_prompt(msg).get("prompt") or "").lower()
+    assert "ced" in prompt
+    assert "hay un problema" not in prompt
+    assert "y también hay una solución" not in prompt
+    assert "illegible technical interface" not in prompt
+
+
+def test_background_followup_keeps_same_subject_and_adds_no_copy():
+    from app.services.copy_quality import (
+        build_reference_scene_edit_prompt,
+        user_requests_background_change,
+    )
+
+    msg = "ok pero ahora a ese castillo ponle un fondo natural atras de unas montanas"
+    assert user_requests_background_change(msg) is True
+    prompt = build_reference_scene_edit_prompt(msg)
+    low = prompt.lower()
+    assert "exact same subject" in low or "same castle" in low
+    assert "background" in low
+    assert "hay un problema" not in low
+    assert "persuasive" not in low

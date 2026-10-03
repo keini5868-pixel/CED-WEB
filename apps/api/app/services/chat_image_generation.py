@@ -455,12 +455,15 @@ def run_chat_image_generation(
     from app.services.copy_quality import (
         CED_ASSISTANT_TAGLINE,
         build_direct_image_prompt,
+        build_reference_scene_edit_prompt,
         build_reference_text_edit_prompt,
         compose_persuasive_overlay_lines,
         lock_on_image_spelling,
         prompt_requires_ideogram_text,
         resolve_image_text_mode,
         summarize_overlay_labels_for_image,
+        user_asks_for_on_image_copy,
+        user_requests_background_change,
         user_requests_ced_branding,
         wants_ced_tagline_lock,
     )
@@ -477,18 +480,29 @@ def run_chat_image_generation(
         parse_followup_image_prompt(user_text, history)
         or wants_image_reference_edit(user_text)
     )
+    bg_only_edit = thread_edit and user_requests_background_change(user_text)
     if thread_prompt and thread_edit:
         delta = user_text
         if thread_prompt.strip().lower() not in effective.lower():
-            effective = (
-                f"{thread_prompt.strip()}\n\nAjuste sobre la misma imagen "
-                f"(conserva sujeto, composición y textos; no inventes otra escena): {delta}"
-            )[:4000]
+            if bg_only_edit:
+                effective = (
+                    f"{thread_prompt.strip()}\n\nAjuste sobre la MISMA imagen: "
+                    f"conserva el sujeto exacto; solo cambia el fondo; no añadas texto: {delta}"
+                )[:4000]
+            else:
+                effective = (
+                    f"{thread_prompt.strip()}\n\nAjuste sobre la misma imagen "
+                    f"(conserva sujeto, composición y textos; no inventes otra escena): {delta}"
+                )[:4000]
     # Texto crítico: en un ajuste del hilo manda el pedido ACTUAL, no el brief previo.
-    # Si no, «cámbiale el color» heredaba el flyer y se iba a Ideogram como pieza nueva.
-    wants_literal_text = prompt_requires_ideogram_text(user_text)
+    # Logo CED o un cambio de fondo no deben heredar slogans PAS.
+    wants_literal_text = user_asks_for_on_image_copy(user_text) or (
+        prompt_requires_ideogram_text(user_text) and not bg_only_edit
+    )
     if not thread_edit:
-        wants_literal_text = wants_literal_text or prompt_requires_ideogram_text(effective)
+        wants_literal_text = wants_literal_text or user_asks_for_on_image_copy(effective)
+    if bg_only_edit:
+        wants_literal_text = False
     use_reference = allow_reference and should_use_reference_generation(
         user_text,
         history,
@@ -556,8 +570,10 @@ def run_chat_image_generation(
     for line in locked_copy:
         if line not in overlay_lines:
             overlay_lines.append(line)
-    if direct.get("wants_literal_text") and (
-        not thread_edit or prompt_requires_ideogram_text(user_text)
+    if (
+        not bg_only_edit
+        and direct.get("wants_literal_text")
+        and (not thread_edit or prompt_requires_ideogram_text(user_text))
     ):
         wants_literal_text = True
     spelling_fix = wants_ced_tagline_lock(user_text) or wants_ced_tagline_lock(
@@ -568,13 +584,20 @@ def run_chat_image_generation(
     strategy_lines: list[str] = []
     if spelling_fix:
         overlay_lines = [CED_ASSISTANT_TAGLINE]
-    elif wants_literal_text:
+    elif wants_literal_text and user_asks_for_on_image_copy(user_text):
         strategy_lines = compose_persuasive_overlay_lines(user_text)
     if strategy_lines:
         for line in strategy_lines:
             if line not in overlay_lines:
                 overlay_lines.append(line)
-    if wants_literal_text and ref_payload and not strategy_lines and not spelling_fix:
+    if (
+        wants_literal_text
+        and ref_payload
+        and not strategy_lines
+        and not spelling_fix
+        and not bg_only_edit
+        and user_asks_for_on_image_copy(user_text)
+    ):
         try:
             from app.services.vision_search import extract_image_overlay_labels
 
@@ -590,8 +613,9 @@ def run_chat_image_generation(
     tech = str(direct.get("prompt") or "").strip()
     if tech:
         model_prompt = tech
-    if wants_literal_text and ref_payload:
-        # Edición tipográfica: conservar foto + texto PAS (no regenerar de cero).
+    if bg_only_edit and ref_payload:
+        model_prompt = build_reference_scene_edit_prompt(user_text)
+    elif wants_literal_text and ref_payload:
         model_prompt = build_reference_text_edit_prompt(
             user_text,
             overlay_lines=overlay_lines or strategy_lines,
