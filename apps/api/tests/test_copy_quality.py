@@ -464,12 +464,13 @@ def test_quoted_equipo_goes_verbatim_with_spelling_and_frame():
     assert "keep every vowel" in prompt.lower() or "u in equipo" in prompt.lower()
 
 
-def test_graphic_formats_require_precise_text_unless_sin_texto():
+def test_graphic_formats_require_precise_text_only_when_copy_asked():
     from app.services.copy_quality import prompt_requires_precise_text
 
-    assert prompt_requires_precise_text("hazme un flyer de mi taller de yoga") is True
+    assert prompt_requires_precise_text("hazme un flyer de mi taller de yoga") is False
+    assert prompt_requires_precise_text("un cartel para la tienda") is False
     assert prompt_requires_precise_text("banner con horarios del programa") is True
-    assert prompt_requires_precise_text("un cartel para la tienda") is True
+    assert prompt_requires_precise_text("hazme un flyer con los beneficios de yoga") is True
     assert prompt_requires_precise_text("flyer sin texto") is False
     assert prompt_requires_precise_text("genera una imagen publicitaria de mi evento") is False
     assert prompt_requires_precise_text("diseño con las características de mi producto") is False

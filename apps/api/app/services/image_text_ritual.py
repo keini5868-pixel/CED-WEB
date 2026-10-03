@@ -44,6 +44,9 @@ _CON_FRASE = re.compile(
 _ETIQUETAS = re.compile(
     r"(?is)\betiquetas?\s*:?\s+(.+?)(?:\s+en\s+texto\b|$)"
 )
+_EN_TEXTO_PHRASES = re.compile(
+    r"(?is)(?:etiquetas?|ponga[sn]?|pon(?:le|ga|me)?|con)\s+(.+?)\s+en\s+texto\b"
+)
 
 _ESCRITOS_BLOCK = re.compile(
     r"(?is)(?:detalles?\s+(?:resumidos\s+)?escritos?)\s+(.{12,400})"
@@ -133,6 +136,11 @@ def _extract_from_text(text: str) -> list[str]:
         _add(match.group(1) or "")
     for match in _ETIQUETAS.finditer(t):
         blob = (match.group(1) or "").strip()
+        for part in re.split(r"\s*,\s*|\s+y\s+", blob):
+            _add(part)
+    for match in _EN_TEXTO_PHRASES.finditer(t):
+        blob = (match.group(1) or "").strip()
+        blob = re.sub(r"(?is)\b(?:donde|que)\s+$", "", blob).strip()
         for part in re.split(r"\s*,\s*|\s+y\s+", blob):
             _add(part)
     for match in _ESCRITOS_BLOCK.finditer(t):

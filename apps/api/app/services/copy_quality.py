@@ -461,7 +461,7 @@ def prompt_requires_precise_text(prompt: str) -> bool:
     """Texto crítico en la imagen → GPT Image (fallback Ideogram), no Nano Banana.
 
     Mira solo el pedido ACTUAL (nunca historial). Incluye comillas / «que diga»
-    y formatos gráficos que siempre llevan copy (flyer, banner, cartel…).
+    y formatos gráficos SOLO si pidieron copy (beneficios, horarios, titular…).
     «Sin texto» gana: escena pura se queda en Nano Banana.
     """
     t = (prompt or "").strip()
@@ -481,7 +481,9 @@ def prompt_requires_precise_text(prompt: str) -> bool:
         return True
     if user_requests_ced_wordmark(t):
         return True
-    return bool(_GRAPHIC_COPY_FORMAT.search(t))
+    # Flyer/banner sin copy pedido: escena, no tipografía inventada.
+    # El ritual de overlay («¿La genero?») sigue pidiendo las palabras exactas.
+    return user_asks_for_on_image_copy(t)
 
 
 def resolve_image_text_mode(text: str) -> ImageTextMode:
@@ -1021,6 +1023,8 @@ _BG_CHANGE_RE = re.compile(
     r"otro\s+fondo|"
     r"nuevo\s+fondo|"
     r"fondo\s+(?:a|de|en|natural|atr[aá]s)\s+\w+|"
+    r"fondo\s+(?:amarill|azul|verde|rojo|negro|blanc|oscur|clar|natural|gris|rosa|naranja)|"
+    r"con\s+(?:un\s+)?fondo|"
     r"fondo\s+natural|"
     r"pon(?:le|me)?\s+(?:un\s+)?fondo|"
     r"atr[aá]s\s+(?:de\s+)?(?:unas?\s+)?monta|"
@@ -1046,7 +1050,7 @@ def user_asks_for_on_image_copy(text: str) -> bool:
     if _IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t):
         return True
     if _GRAPHIC_COPY_FORMAT.search(t) and re.search(
-        r"(?i)\b(?:beneficio|que\s+diga|texto|copy|titular|eslogan)\b",
+        r"(?i)\b(?:beneficios?|que\s+diga|texto|copy|titular|eslogan|horarios?|precios?)\b",
         t,
     ):
         return True

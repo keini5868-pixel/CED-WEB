@@ -417,7 +417,57 @@ def test_followup_color_does_not_plain_fallback(mock_ref: MagicMock, mock_gen: M
     mock_ref.assert_called_once()
     mock_gen.assert_not_called()
     prompt = mock_ref.call_args.kwargs["prompt"]
-    assert "Restorate" in prompt or "Ajuste sobre la misma imagen" in prompt
+    low = prompt.lower()
+    assert "same subject" in low or "misma imagen" in low
+    assert "cambiale el color" in low or "user request" in low
+    assert "hay un problema" not in low
+
+
+HISTORY_AFTER_CASTLE = [
+    {"role": "user", "content": "hazme un castillo"},
+    {"role": "assistant", "content": "Listo. Aqui esta tu imagen generada."},
+]
+
+
+def test_any_subject_background_followup_is_same_image_edit():
+    msg = "oye pero quiero que salga ese castillo con un fondo amarillo"
+    assert wants_image_reference_edit(msg) is True
+    assert parse_followup_image_prompt(msg, HISTORY_AFTER_CASTLE) == msg
+    assert should_take_direct_image_path(msg, HISTORY_AFTER_CASTLE) is True
+    from app.services.copy_quality import user_asks_for_on_image_copy, user_requests_background_change
+
+    assert user_requests_background_change(msg) is True
+    assert user_asks_for_on_image_copy(msg) is False
+    merged = effective_user_prompt(msg, HISTORY_AFTER_CASTLE)
+    assert "castillo" in merged.lower()
+    assert "fondo amarillo" in merged.lower()
+    assert "Ajuste sobre la misma imagen" in merged
+
+
+def test_ese_mismo_followup_is_same_image_edit():
+    msg = "ese mismo con un fondo azul"
+    assert wants_image_reference_edit(msg) is True
+    assert parse_followup_image_prompt(msg, HISTORY_AFTER_FLYER) == msg
+    assert user_requests_prior_reference(msg) is True
+
+
+@patch("app.services.gemini_images.generate_image")
+@patch("app.services.image_reference_generator.generate_image_with_reference")
+def test_scene_followup_uses_reference_and_adds_no_copy(mock_ref: MagicMock, mock_gen: MagicMock):
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    register_text_chat_image_url(USER, CONV, "https://example.com/castle.png", prompt="hazme un castillo")
+    mock_ref.return_value = {"ok": True, "url": "https://example.com/castle-yellow.png"}
+    msg = "quiero que salga ese mismo con un fondo amarillo"
+    result = run_chat_image_generation(USER, CONV, msg, HISTORY_AFTER_CASTLE, plan_id="elite")
+    assert result["ok"] is True
+    mock_ref.assert_called_once()
+    mock_gen.assert_not_called()
+    prompt = str(mock_ref.call_args.kwargs.get("prompt") or "")
+    low = prompt.lower()
+    assert "same subject" in low
+    assert "fondo amarillo" in low or "user request" in low
+    assert "hay un problema" not in low
+    assert "textos exactos" not in low
 
 
 def test_ideation_hallucination_is_stripped_not_generated():

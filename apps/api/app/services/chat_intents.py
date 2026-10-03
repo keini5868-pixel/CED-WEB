@@ -487,7 +487,8 @@ _PRIOR_REFERENCE = re.compile(
     r"\b("
     r"igual\s+a\s+(?:la\s+)?(?:que\s+)?(?:te\s+)?(?:pas[eé]|sub[ií]|mand[eé]|envi[eé])"
     r"|igual\s+a\s+(?:la\s+)?(?:imagen|foto|flyer|creativo|referencia)"
-    r"|(?:la|el)\s+(?:misma|mismo)\s+(?:imagen|foto|flyer|creativo|dise[nñ]o|referencia)"
+    r"|(?:la|el)\s+(?:misma|mismo)\s+(?:imagen|foto|flyer|creativo|dise[nñ]o|referencia|castillo|logo|sujeto|edificio|producto)"
+    r"|ese\s+mismo(?=\s+(?:con|pero|y)|[.\s]*$)|esa\s+misma(?=\s+(?:con|pero|y)|[.\s]*$)"
     r"|(?:mism[oa]s?\s+)(?:precios?|nombre|dise[nñ]o|estilo|textos?)"
     r"|(?:imagen|foto|flyer|creativo)\s+(?:de\s+)?referencia"
     r"|(?:que|la\s+que)\s+(?:te\s+)?(?:pas[eé]|sub[ií]|mand[eé]|envi[eé]|compart[ií])"
@@ -513,7 +514,7 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|as[ií]\s+como\s+(?:esta|esa)"
     r"|con\s+(?:esta|esa)\s+misma"
     r"|mism[oa]s?\s+caracter[ií]sticas?"
-    r"|(?:pon|pone|ponga|agr[eé]g[aá]|a[nñ]ade|coloca|incluye)\w*"
+    r"|pon(?:le|me|er)\w*|ponga(?!s)\w*|agr[eé]g[aá]\w*|a[nñ]ade\w*|coloca\w*|incluye\w*"
     r"|mant[eé]n(?:me)?\s+(?:l[ao]s?\s+)?(?:precios?|textos?|lista|dise[nñ]o)"
     r"|conserva\s+(?:l[ao]s?\s+)?(?:precios?|textos?|lista)"
     r"|(?:en|sobre|en\s+la)\s+(?:imagen|foto|flyer|creativo|banner|dise[nñ]o)\b.*"
@@ -523,6 +524,9 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|cambia\s+(?:el\s+)?(?:fondo|dise[nñ]o|estilo|color|colores)"
     r"|c[a\u00e1]mbia(?:le|la|lo|les|las)?\s+(?:el|la|los|las)?\s*(?:color|fondo|texto|tipograf)?"
     r"|hazl[oa]\s+m[a\u00e1]s\s+(?:oscur\w*|clar\w*|grande|peque\w*|colorid\w*|grues\w*)"
+    r"|ese\s+mismo(?=\s+(?:con|pero|y)|[.\s]*$)|esa\s+misma(?=\s+(?:con|pero|y)|[.\s]*$)"
+    r"|salga\s+(?:ese|esa|el|la)\s+"
+    r"|ese\s+(?:castillo|imagen|foto|flyer|dise[nñ]o|logo)"
     r"|mas\s+texto"
     r"|las?\s+letras"
     r"|m[a\u00e1]s\s+(?:grues\w*|negrit\w*|fin[ao]s?)"
@@ -596,7 +600,7 @@ def wants_image_reference_edit(text: str) -> bool:
         return True
     if _REFERENCE_EDIT_OR_VARIATION.search(t):
         return True
-    return bool(len(t) <= 120 and _FOLLOWUP_EDIT_SIGNAL.search(t))
+    return bool(len(t) <= 280 and _FOLLOWUP_EDIT_SIGNAL.search(t))
 
 
 def is_explicit_publish_to_social(text: str) -> bool:
@@ -824,6 +828,23 @@ def last_concrete_image_user_prompt(
             return content
         if not is_anaphoric_image_subject(content) and len(content) >= 20:
             return content
+    # «hazme un castillo» no usa la palabra imagen, pero sí abrió el hilo visual.
+    prev_user = ""
+    for row in history or []:
+        role = str(row.get("role") or "").lower()
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        if role in {"user", "customer"}:
+            prev_user = content
+            continue
+        if (
+            role in {"assistant", "model", "agent"}
+            and prev_user
+            and _IMAGE_THREAD_ASSISTANT.search(content)
+            and not is_anaphoric_image_subject(prev_user)
+        ):
+            return prev_user
     return None
 
 
@@ -874,6 +895,11 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"m[aá]s\s+(?:grande|peque[nñ]|oscur\w*|clar\w*|colorid\w*|realist\w*|simple|detall\w*|grues\w*|fin[ao]s?|negrit\w*)|"
     r"en\s+otro\s+color|otro\s+color|diferente\s+color|otro\s+estilo|otro\s+fondo|"
     r"con\s+(?:otro|un)\s+(?:fondo|estilo)|as[ií]\s+pero|en\s+vez\s+de|"
+    r"ese\s+mismo(?=\s+(?:con|pero|y)|[.\s]*$)|esa\s+misma(?=\s+(?:con|pero|y)|[.\s]*$)|"
+    r"el\s+mismo\s+(?:castillo|imagen|foto|flyer|dise[nñ]o|logo|sujeto)|"
+    r"ese\s+(?:castillo|imagen|foto|flyer|dise[nñ]o|logo)|"
+    r"salga\s+(?:ese|esa|el|la)\s+|"
+    r"fondo\s+(?:amarill|azul|verde|rojo|negro|blanc|oscur|clar|natural|gris)|"
     r"cambia(?:le)?\s+(?:el|la|los|las)|quita(?:le)?\s+(?:el|la|los|las)|"
     r"agrega(?:le)?\s+(?:el|la|los|las|un|una)|"
     r"ahora\s+(?:con|sin)|pero\s+(?:con|sin)|"
@@ -951,7 +977,7 @@ _PRIOR_VISUAL_POINTER = re.compile(
     r"(?is)\b(?:esa|este|esta|ese|aquell[oa])\s+"
     r"(?:primera|segunda|tercera|1(?:ra)?|2(?:da)?)?\s*"
     r"(?:imagen|idea|concepto|ejemplo|visi[oó]n|dise[nñ]o|escena|"
-    r"propuesta|carrusel|pieza|versi[oó]n)\b"
+    r"propuesta|carrusel|pieza|versi[oó]n|castillo|foto|flyer|logo|sujeto)\b"
     r"|\bla\s+primera\s+imagen\b"
     r"|\bgenera(?:r|me|la|lo)?\s+esa\b"
 )
@@ -1016,6 +1042,8 @@ def is_casual_chat_interrupt(text: str) -> bool:
     if not t:
         return False
     if is_explicit_image_command(t) or is_generate_image_intent(t):
+        return False
+    if wants_image_reference_edit(t):
         return False
     if is_exploratory_talk(t) or is_text_ideation_request(t):
         return False
@@ -1140,8 +1168,8 @@ def resolve_confirmed_image_prompt(
 def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None = None) -> str | None:
     """Detecta pedidos cortos de imagen que continúan un tema visual reciente."""
     t = (text or "").strip()
-    # Revisiones de tipografía pueden ser más largas («mantén textos: A, B, C…»).
-    max_len = 500 if re.search(r"(?i)\btextos?\b", t) else 120
+    # Revisiones de tipografía o «ese mismo con fondo…» pueden pasar de 120.
+    max_len = 500 if re.search(r"(?i)\btextos?\b", t) else 280
     if not t or is_generate_image_intent(t) or len(t) > max_len or len(t) < 6:
         return None
     if is_casual_chat_interrupt(t):

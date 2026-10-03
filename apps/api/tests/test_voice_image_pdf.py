@@ -49,12 +49,12 @@ def test_voice_generate_image_uses_shared_pipeline_and_pushes_event():
 
     mock_gen.assert_called_once()
     kwargs = mock_gen.call_args.kwargs
-    assert kwargs.get("allow_reference") is False
+    assert kwargs.get("allow_reference") is True
     assert kwargs.get("plan_id") == "elite"
     assert mock_gen.call_args.args[2] == "generame una imagen de un café al atardecer"
     assert result["ok"] is True
     assert result["url"] == "https://cdn.example.com/cafe.png"
-    assert "pantalla" in result["spoken"].lower()
+    assert "listo" in result["spoken"].lower() or "pantalla" in result["spoken"].lower()
     assert pushed and pushed[0]["type"] == "generated_image"
     assert pushed[0]["image_url"] == "https://cdn.example.com/cafe.png"
 
@@ -97,8 +97,48 @@ def test_voice_generate_image_prefers_raw_user_request_over_llm_rewrite():
 
     assert result["ok"] is True
     assert mock_gen.call_args.args[2] == raw
+    assert mock_gen.call_args.kwargs.get("allow_reference") is True
     assert "sistema CED" not in mock_gen.call_args.args[2]
     assert "robot" not in mock_gen.call_args.args[2]
+
+
+def test_voice_image_edit_uses_raw_utterance_and_reference():
+    raw = "oye pero quiero que salga ese castillo con un fondo amarillo"
+    rewritten = "Crea un nuevo castillo medieval dorado con slogan CED"
+
+    with (
+        patch(
+            "app.services.chat_image_generation.run_chat_image_generation",
+            return_value={
+                "ok": True,
+                "url": "https://cdn.example.com/castle-yellow.png",
+                "caption": "Castillo",
+                "reply": "Listo",
+            },
+        ) as mock_gen,
+        patch("app.services.voice_tool_executor.voice_access_state", return_value={"plan_id": "elite"}),
+        patch("app.services.voice_tool_executor.vcs.push_tool_event"),
+    ):
+        result = asyncio.run(
+            execute_voice_tool(
+                "generate_image",
+                "user-voice-img-edit",
+                {
+                    "prompt": rewritten,
+                    "_user_request": raw,
+                    "call_id": "call-edit",
+                    "_history": [
+                        {"role": "user", "content": "hazme un castillo"},
+                        {"role": "assistant", "content": "Listo. Aqui esta tu imagen generada."},
+                    ],
+                },
+            )
+        )
+
+    assert result["ok"] is True
+    assert mock_gen.call_args.args[2] == raw
+    assert mock_gen.call_args.kwargs.get("allow_reference") is True
+    assert "slogan" not in mock_gen.call_args.args[2].lower()
 
 
 def test_three_modes_share_run_chat_image_generation_entry():

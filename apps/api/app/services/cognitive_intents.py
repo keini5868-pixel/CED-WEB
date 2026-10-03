@@ -627,7 +627,7 @@ def is_brand_followup_question(text: str) -> bool:
 _TOPIC_CHANGE_PATTERNS = [
     re.compile(r"^(d[ií]me|cu[eé]ntame|qu[eé] son|cu[aá]les)\b", re.I),
     re.compile(r"\b(noticias|clima|precio|qui[eé]n es)\b", re.I),
-    re.compile(r"^(oye|hey|espera|cambiando)\b", re.I),
+    re.compile(r"^(oye|hey|espera|cambiando)\s*[.!?]*$", re.I),
     re.compile(r"\bcambiando\s+(?:de\s+|el\s+)?tema\b", re.I),
     re.compile(r"\botro\s+tema\b", re.I),
     re.compile(r"\bhablemos\s+de\s+otra\b", re.I),

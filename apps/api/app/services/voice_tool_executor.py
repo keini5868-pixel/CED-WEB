@@ -777,21 +777,42 @@ async def _execute_voice_tool_body(
                 or params.get("call_id")
                 or ""
             ).strip() or None
-            logger.info(
-                "[VOICE:IMAGE] start user=%s prompt=%s raw=%s",
-                user_id[:8],
-                prompt[:80],
-                bool(raw_user and prompt == raw_user),
+            if not conversation_id:
+                try:
+                    from app.services.voice_history import get_active_conversation
+
+                    conversation_id = get_active_conversation(user_id)
+                except Exception:  # noqa: BLE001
+                    conversation_id = None
+            from app.services.chat_intents import (
+                parse_followup_image_prompt,
+                wants_image_reference_edit,
             )
-            # Misma pipeline que chat/avanzado (build_direct_image_prompt).
+
+            # En un ajuste («ese mismo», fondo, color) manda el utterance crudo.
+            # En confirmación de overlay/opción, el prompt ya resuelto.
+            if raw_user and (
+                wants_image_reference_edit(raw_user)
+                or parse_followup_image_prompt(raw_user, history)
+            ):
+                pipeline_text = raw_user
+            else:
+                pipeline_text = prompt
+            logger.info(
+                "[VOICE:IMAGE] start user=%s prompt=%s raw=%s ref=1",
+                user_id[:8],
+                pipeline_text[:80],
+                bool(raw_user),
+            )
+            # Misma pipeline que chat/avanzado: edita la imagen de sesión si la hay.
             result = await asyncio.to_thread(
                 run_chat_image_generation,
                 user_id,
                 conversation_id,
-                prompt,
+                pipeline_text,
                 history or None,
                 plan_id=str(balance.get("plan_id") or "") or None,
-                allow_reference=False,
+                allow_reference=True,
             )
             if result.get("ok") and result.get("url"):
                 url = str(result.get("url") or "")
@@ -854,13 +875,25 @@ async def _execute_voice_tool_body(
             )
 
         if name == "generate_image_with_reference":
+            from app.services.copy_quality import (
+                build_reference_scene_edit_prompt,
+                user_asks_for_on_image_copy,
+            )
             from app.services.image_reference_generator import generate_image_with_reference
 
-            prompt = str(params.get("prompt") or "").strip()
+            raw_user = str(
+                params.get("_user_request")
+                or params.get("user_text")
+                or params.get("utterance")
+                or ""
+            ).strip()
+            prompt = str(params.get("prompt") or raw_user or "").strip()
             style_mode = str(params.get("style_mode") or "edit")
             quality = str(params.get("quality") or "standard")
             if not prompt:
                 return _spoken_err("Indique qué desea generar o cambiar en la imagen, señor.")
+            if raw_user and not user_asks_for_on_image_copy(raw_user):
+                prompt = build_reference_scene_edit_prompt(raw_user)
 
             ref = await asyncio.to_thread(_load_reference_image_bytes, user_id, params)
             if not ref:

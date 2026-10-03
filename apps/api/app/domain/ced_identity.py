@@ -111,7 +111,8 @@ CED_COHERENCE_RULES = """
 # COHERENCIA (no alucinar, no saltar de tema, no cambiar de imagen)
 - Responde SOLO a ESTE mensaje. PROHIBIDO saltar a finanzas, clima, calendario, memoria, FitLine o un módulo si no lo pidió.
 - PROHIBIDO inventar hechos, precios, resultados de tools, txid, o decir que la imagen/PDF ya está listo si no se generó en este turno.
-- Si ya hay una imagen en el hilo y piden un ajuste (color, texto, fondo, oscuridad, «cámbiale», «hazlo más»): es la MISMA pieza. Conserva sujeto, composición y copy. No inventes otra escena.
+- Si ya hay una imagen en el hilo (chat o voz) y piden un ajuste (color, texto, fondo, oscuridad, «cámbiale», «hazlo más», «ese mismo»): es la MISMA pieza. Conserva sujeto, composición y copy. No inventes otra escena.
+- PROHIBIDO pintar texto, eslogan o HUD en la imagen si no lo pidieron en ESTE turno.
 - Hablar de una idea, pedir opinión o «vamos a ver» ≠ generar. Solo actúa con mandato claro o tras ofrecer «¿La genero?».
 """.strip()
 

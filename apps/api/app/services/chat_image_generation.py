@@ -254,7 +254,10 @@ def should_use_reference_generation(
     NO debe forzar generate_image_with_reference en un «genera una imagen de X»
     plano: eso dejaba el chat atascado en el path de referencia tras un fallo.
     """
-    from app.services.publish_image_context import resolve_reference_image_bytes
+    from app.services.publish_image_context import (
+        get_session_vision_analysis,
+        resolve_reference_image_bytes,
+    )
 
     if not resolve_reference_image_bytes(user_id, conversation_id):
         return False
@@ -264,8 +267,11 @@ def should_use_reference_generation(
     # Follow-up corto que continúa editando el hilo visual.
     if parse_followup_image_prompt(text, history):
         return True
-    # Flyer/creativo/banner: suele querer la foto de producto ya subida.
-    if is_marketing_creative_intent(text):
+    # Tras analizar/subir una foto, un creativo usa esa pieza — no un flyer nuevo suelto.
+    if is_marketing_creative_intent(text) and (
+        extract_vision_context_from_history(history)
+        or get_session_vision_analysis(user_id, conversation_id)
+    ):
         return True
     # Mismo diseño del hilo: anáfora o referencia explícita al generar otra vez.
     if history_has_active_image_thread(history) and is_generate_image_intent(text):
@@ -378,6 +384,12 @@ def resolve_voice_image_prompt(
         ):
             return effective_user_prompt(t, history) or t
         return t
+    if (
+        wants_image_reference_edit(t)
+        or parse_followup_image_prompt(t, history)
+        or points_at_prior_visual(t)
+    ):
+        return effective_user_prompt(t, history) or t
     if is_image_choice_confirmation(t):
         if looks_like_visual_image_prompt(llm):
             return llm
@@ -386,7 +398,7 @@ def resolve_voice_image_prompt(
             return rebuilt
         if llm:
             return llm
-    return llm or t
+    return t or llm
 
 
 def reply_is_image_wait_filler(text: str) -> bool:
@@ -442,7 +454,7 @@ def run_chat_image_generation(
     """
     Ejecuta generación de imagen para chat. Nunca devuelve ok=True sin url.
 
-    allow_reference=False: solo descripción de texto (voz v1 — sin imagen de referencia).
+    allow_reference=False: solo descripción de texto, sin editar la imagen de sesión.
     """
     from app.services.gemini_images import generate_image
     from app.services.image_reference_generator import generate_image_with_reference
@@ -480,14 +492,17 @@ def run_chat_image_generation(
         parse_followup_image_prompt(user_text, history)
         or wants_image_reference_edit(user_text)
     )
+    copy_edit = user_asks_for_on_image_copy(user_text)
     bg_only_edit = thread_edit and user_requests_background_change(user_text)
+    scene_only_edit = thread_edit and not copy_edit
     if thread_prompt and thread_edit:
         delta = user_text
         if thread_prompt.strip().lower() not in effective.lower():
-            if bg_only_edit:
+            if scene_only_edit:
                 effective = (
                     f"{thread_prompt.strip()}\n\nAjuste sobre la MISMA imagen: "
-                    f"conserva el sujeto exacto; solo cambia el fondo; no añadas texto: {delta}"
+                    f"conserva el sujeto exacto; aplica solo el cambio pedido; "
+                    f"no añadas texto: {delta}"
                 )[:4000]
             else:
                 effective = (
@@ -495,13 +510,13 @@ def run_chat_image_generation(
                     f"(conserva sujeto, composición y textos; no inventes otra escena): {delta}"
                 )[:4000]
     # Texto crítico: en un ajuste del hilo manda el pedido ACTUAL, no el brief previo.
-    # Logo CED o un cambio de fondo no deben heredar slogans PAS.
-    wants_literal_text = user_asks_for_on_image_copy(user_text) or (
-        prompt_requires_ideogram_text(user_text) and not bg_only_edit
+    # Un cambio de fondo/color no debe heredar slogans PAS ni tipografía de un flyer anterior.
+    wants_literal_text = copy_edit or (
+        prompt_requires_ideogram_text(user_text) and not scene_only_edit
     )
     if not thread_edit:
         wants_literal_text = wants_literal_text or user_asks_for_on_image_copy(effective)
-    if bg_only_edit:
+    if scene_only_edit:
         wants_literal_text = False
     use_reference = allow_reference and should_use_reference_generation(
         user_text,
@@ -571,7 +586,7 @@ def run_chat_image_generation(
         if line not in overlay_lines:
             overlay_lines.append(line)
     if (
-        not bg_only_edit
+        not scene_only_edit
         and direct.get("wants_literal_text")
         and (not thread_edit or prompt_requires_ideogram_text(user_text))
     ):
@@ -595,7 +610,7 @@ def run_chat_image_generation(
         and ref_payload
         and not strategy_lines
         and not spelling_fix
-        and not bg_only_edit
+        and not scene_only_edit
         and user_asks_for_on_image_copy(user_text)
     ):
         try:
@@ -613,7 +628,7 @@ def run_chat_image_generation(
     tech = str(direct.get("prompt") or "").strip()
     if tech:
         model_prompt = tech
-    if bg_only_edit and ref_payload:
+    if scene_only_edit and ref_payload:
         model_prompt = build_reference_scene_edit_prompt(user_text)
     elif wants_literal_text and ref_payload:
         model_prompt = build_reference_text_edit_prompt(
