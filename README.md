@@ -58,6 +58,17 @@ pnpm dev:web
 - API: http://localhost:8000  
 - Meta planes: http://localhost:8000/v1/meta  
 
+## Midnight / AKINDO (CED Shield)
+
+Sello verificable: SHA-256 + Lace. El documento no va a la chain.
+
+- Demo: https://ced-castillo.com/shield
+- Deck: https://ced-castillo.com/shield/pitch
+- Compact (Apache-2.0): `apps/api/app/services/ced_shield/compact/`
+- Pack de envío: `docs/akindo/`
+
+`CED_SHIELD_ENABLED` off en el producto. Jarvis no usa este riel.
+
 ## Roadmap
 
 Ver `MIGRATION_PLAN.md` y `PHASE0_REPORT.md`.

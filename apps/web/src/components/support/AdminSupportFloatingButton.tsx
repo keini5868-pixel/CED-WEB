@@ -17,6 +17,7 @@ export default function AdminSupportFloatingButton() {
   const hidden =
     pathname?.startsWith("/login") ||
     pathname?.startsWith("/drive") ||
+    pathname?.startsWith("/shield") ||
     textChatOpen;
 
   const fetchCount = useCallback(() => fetchAdminSupportUnreadCount(), []);

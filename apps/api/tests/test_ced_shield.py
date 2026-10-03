@@ -145,6 +145,8 @@ def test_status_payload_points_to_compact_demo():
     assert body["voice_untouched"] is True
     assert body["compact_circuit"] == "recordSeal"
     assert body["demo_path"] == "/shield"
+    assert body["pitch_path"] == "/shield/pitch"
+    assert body["compact_license"] == "Apache-2.0"
     assert "CedShield.compact" in body["compact_contract"]
     assert body["lace_network"] == "preprod"
 
@@ -159,6 +161,9 @@ def test_compact_source_is_hash_only():
     src = path.read_text(encoding="utf-8")
     assert "recordSeal" in src
     assert "pragma language_version 0.16" in src
+    assert "SPDX-License-Identifier: Apache-2.0" in src
+    license_text = (path.parent / "LICENSE").read_text(encoding="utf-8")
+    assert "Apache License" in license_text
     import re
 
     executable = re.sub(r"/\*.*?\*/", "", src, flags=re.S)

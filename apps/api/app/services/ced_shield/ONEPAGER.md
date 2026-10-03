@@ -1,40 +1,42 @@
-# CED Shield — one-pager (spike)
+# CED Shield — judge one-pager (Wave 2)
 
-**Qué es:** un sello verificable de que un PDF o una sesión existió.  
-**Qué no es:** privacidad mágica de CED. Voz (Retell), Gemini, Tavily y Meta no cambian.
+**What it is:** a verifiable seal that a PDF or a session existed.  
+**What it is not:** magic privacy for all of CED. Voice (Retell), Gemini, Tavily, and Meta do not change.
 
-## Problema
-Pymes y operadores (marketing, propuestas, PDFs) necesitan probar *que* un entregable existió, sin publicar el contenido en una blockchain pública.
+Live demo: https://ced-castillo.com/shield  
+Deck: https://ced-castillo.com/shield/pitch  
+Contract: `compact/CedShield.compact` · Apache-2.0
 
-## Módulo
-Tras el flujo normal de CED, el usuario conecta una wallet Midnight y pide sellar. CED calcula SHA-256 **en servidor o en el cliente** y manda a la chain **solo**:
+## Problem
+Operators need to prove *that* a deliverable existed, without publishing the document on a public chain.
 
-- `content_sha256`
-- `sealed_at` (UTC)
-- `wallet`
-- `kind` (`pdf` | `session`)
-- `seal_id`
+## Dual-ledger (Midnight model)
 
-Nunca: audio, transcript, bytes del PDF, prompts, precios, nombres de clientes.
-
-**Compact (en el repo):** `compact/CedShield.compact` — circuit `recordSeal(contentHash, kind)`.  
-**Demo Lace:** `/shield` — `window.midnight`, red `preprod`. No se añade midnight.js al bundle de voz.
-
-## On-chain vs off-chain
-
-| Va a Midnight | Se queda en CED / el dispositivo |
+| Goes to Midnight / Lace | Stays in CED |
 |---|---|
-| Hash + fecha + wallet | Chat, voz, PDF, Meta, Tavily |
-| Prueba de existencia | El documento real |
+| `content_sha256`, `sealed_at`, wallet, `kind` | Chat, voice, PDF bytes, audio, transcript, prompts |
 
-## Por qué CED
-Ya hay usuarios reales, voz, PDFs y un flujo de negocio. Midnight necesita apps, no más demos DeFi. CED Shield es un caso de *rational privacy* para pymes.
-Un caso concreto: socios de PM International, que necesitan mostrar seguimiento de su red y su crecimiento sin exponer los datos de cada referido.
-También aplica a cualquier usuario que conecte sus redes sociales a CED: puede probar que cierta cuenta o interacción existió sin exponer sus datos de conexión al resto del sistema.
+**Compact:** `recordSeal(contentHash, kind)` — Compact 0.16, `disclose()` only on the hash and kind.  
+**Lace:** `window.midnight`, network `preprod`. Not bundled into the voice HUD.
 
-## Ask (grant / Aliit)
-Demo `/shield`: Lace viva + SHA-256 + `signData` (atestación de wallet). No se finge txid. Compact `recordSeal` está en el repo; el envío on-chain espera contrato deployado + keys ZK. Kill-switch `CED_SHIELD_ENABLED` apagado en el producto. Pedimos seed Compact para cerrar la tx preprod.
+## Why CED
+Midnight needs apps with a job, not another DeFi demo. CED already has users and PDFs.  
+Concrete case: prove a growth report existed without exposing a referral network.
 
-Kill-switch: `CED_SHIELD_ENABLED=false` (default). Fallo de Midnight ≠ fallo de voz.
+## This wave
+Lace live + SHA-256 + `signData`. No invented txid. On-chain send waits for deployed contract + ZK keys.  
+Kill-switch `CED_SHIELD_ENABLED` stays off in the product. Midnight failure ≠ voice failure.
 
-**Después de Wave 2 (no en este grant):** cajón HUD Mesa (Kraken curado, identificado) | Midnight (este sello ZK). No se vende compra-en-exchange como privada. Spec: `MARKETS_RAILS.md`.
+## How this maps to judging
+
+| Weight | What we show |
+|---|---|
+| 40% Engineering | Compact source, Lace connector, SHA-256 in-browser |
+| 15% QA | `test_ced_shield.py`, kill-switch default off, no fake txid |
+| 15% Product | Real CED job (PDF / session seal), not a DeFi clone |
+| 15% UX | `/shield` three-step loop a judge can finish |
+| 10% Communication | `/shield/pitch` + this page + video |
+| 5% BD | Existing CED users; grant wallet already set (USDT / Ethereum) |
+
+## After this grant
+HUD Mesa (identified Kraken) | Midnight (this ZK seal). Never one “private buy” button. Spec: `MARKETS_RAILS.md`.

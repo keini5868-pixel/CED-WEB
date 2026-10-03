@@ -40,8 +40,10 @@ def status_payload() -> dict[str, Any]:
         "kill_switch": "CED_SHIELD_ENABLED",
         "compact_contract": COMPACT_CONTRACT_PATH,
         "compact_circuit": COMPACT_CIRCUIT,
+        "compact_license": "Apache-2.0",
         "lace_network": LACE_NETWORK,
         "demo_path": DEMO_PATH,
+        "pitch_path": "/shield/pitch",
     }
 
 

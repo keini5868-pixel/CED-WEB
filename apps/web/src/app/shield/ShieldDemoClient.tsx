@@ -288,6 +288,7 @@ export function ShieldDemoClient() {
         }
         right={
           <div className="flex items-center gap-2">
+            <PublicHeaderLink href="/shield/pitch">Deck</PublicHeaderLink>
             <PublicHeaderLink href="/privacy">Privacy</PublicHeaderLink>
             <PublicHeaderLink href="/">CED</PublicHeaderLink>
           </div>
@@ -533,6 +534,10 @@ export function ShieldDemoClient() {
 
         <p className="text-center text-[12px] text-cyan-600">
           Pilot module. Not in Jarvis. English for AKINDO judges.{" "}
+          <Link href="/shield/pitch" className="text-cyan-400 hover:text-cyan-200">
+            Wave 2 deck
+          </Link>
+          {" · "}
           <Link href="/" className="text-cyan-400 hover:text-cyan-200">
             Back to CED
           </Link>
