@@ -771,19 +771,13 @@ async def _execute_voice_tool_body(
                     error="missing_prompt",
                 )
             balance = voice_access_state(user_id)
+            # Hilo visual de ESTA llamada — nunca el último chat viejo de Supabase.
             conversation_id = str(
                 params.get("conversation_id")
                 or params.get("session_id")
                 or params.get("call_id")
                 or ""
-            ).strip() or None
-            if not conversation_id:
-                try:
-                    from app.services.voice_history import get_active_conversation
-
-                    conversation_id = get_active_conversation(user_id)
-                except Exception:  # noqa: BLE001
-                    conversation_id = None
+            ).strip() or f"voice:{user_id}"
             from app.services.chat_intents import (
                 parse_followup_image_prompt,
                 wants_image_reference_edit,

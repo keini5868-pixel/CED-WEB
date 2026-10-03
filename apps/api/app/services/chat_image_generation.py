@@ -30,6 +30,7 @@ from app.services.chat_intents import (
     parse_followup_image_prompt,
     parse_generate_image_prompt,
     points_at_prior_visual,
+    visual_episode_history,
     resolve_anaphoric_image_prompt,
     resolve_confirmed_image_prompt,
     user_requests_prior_reference,
@@ -467,8 +468,10 @@ def run_chat_image_generation(
     from app.services.copy_quality import (
         CED_ASSISTANT_TAGLINE,
         build_direct_image_prompt,
+        build_reference_logo_on_scene_prompt,
         build_reference_scene_edit_prompt,
         build_reference_text_edit_prompt,
+        is_ced_wordmark_only_request,
         compose_persuasive_overlay_lines,
         lock_on_image_spelling,
         prompt_requires_ideogram_text,
@@ -486,13 +489,15 @@ def run_chat_image_generation(
     )
 
     user_text = (text or "").strip()
+    history = visual_episode_history(history)
     effective = effective_user_prompt(user_text, history)
     thread_prompt = get_last_image_generation_prompt(user_id, conversation_id)
     thread_edit = bool(
         parse_followup_image_prompt(user_text, history)
         or wants_image_reference_edit(user_text)
     )
-    copy_edit = user_asks_for_on_image_copy(user_text)
+    wordmark_only = is_ced_wordmark_only_request(user_text)
+    copy_edit = user_asks_for_on_image_copy(user_text) and not wordmark_only
     bg_only_edit = thread_edit and user_requests_background_change(user_text)
     scene_only_edit = thread_edit and not copy_edit
     if thread_prompt and thread_edit:
@@ -524,6 +529,10 @@ def run_chat_image_generation(
         user_id=user_id,
         conversation_id=conversation_id,
     )
+    if allow_reference and not use_reference and (thread_edit or wordmark_only):
+        # «el castillo que acabas de generar» debe usar la última imagen del usuario,
+        # aunque el conversation_id de voz no coincida con el del chat viejo.
+        use_reference = bool(resolve_reference_image_bytes(user_id, conversation_id))
     ref_payload = resolve_reference_image_bytes(user_id, conversation_id) if use_reference else None
 
     creation = resolve_image_creation_from_text(
@@ -628,7 +637,11 @@ def run_chat_image_generation(
     tech = str(direct.get("prompt") or "").strip()
     if tech:
         model_prompt = tech
-    if scene_only_edit and ref_payload:
+    if (scene_only_edit or wordmark_only) and ref_payload and wordmark_only:
+        model_prompt = build_reference_logo_on_scene_prompt(user_text)
+        overlay_lines = ["CED"]
+        wants_literal_text = False
+    elif scene_only_edit and ref_payload:
         model_prompt = build_reference_scene_edit_prompt(user_text)
     elif wants_literal_text and ref_payload:
         model_prompt = build_reference_text_edit_prompt(

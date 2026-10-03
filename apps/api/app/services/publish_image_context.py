@@ -232,28 +232,74 @@ def get_last_uploaded_image_for_session(
 ) -> dict[str, Any] | None:
     uid = user_id.strip()
     now = _now()
+    candidates: list[dict[str, Any]] = []
     with _lock:
-        if conversation_id:
-            row = _by_conversation.get(_conv_key(uid, conversation_id))
-            if row and now - float(row.get("at") or 0) <= max_age_sec:
-                return dict(row)
+        # La última imagen del usuario gana siempre — no un flyer de otro chat.
         row = _by_user.get(uid)
         if row and now - float(row.get("at") or 0) <= max_age_sec:
             return dict(row)
+        if conversation_id:
+            row = _by_conversation.get(_conv_key(uid, conversation_id))
+            if row and now - float(row.get("at") or 0) <= max_age_sec:
+                candidates.append(dict(row))
 
-    try:
-        from app.services import voice_client_session as vcs
+    if not candidates:
+        try:
+            from app.services import voice_client_session as vcs
 
-        stored = vcs.get_last_publishable_image(uid, max_age_sec=max_age_sec, ignore_call_binding=True)
-        if stored:
-            return {
-                "url": stored.get("url"),
-                "data": stored.get("data"),
-                "at": now,
-            }
-    except Exception:  # noqa: BLE001
-        pass
-    return None
+            stored = vcs.get_last_publishable_image(
+                uid, max_age_sec=max_age_sec, ignore_call_binding=True
+            )
+            if stored and (stored.get("url") or stored.get("data")):
+                candidates.append(
+                    {
+                        "url": stored.get("url"),
+                        "data": stored.get("data"),
+                        "at": now,
+                        "prompt": "",
+                    }
+                )
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not candidates:
+        try:
+            from app.services.supabase_db import list_generated_images
+
+            latest = list_generated_images(uid, limit=1)
+            if latest:
+                created = str(latest[0].get("created_at") or "")
+                url = str(latest[0].get("public_url") or "").strip()
+                prompt = str(latest[0].get("prompt") or "").strip()[:4000]
+                if url:
+                    candidates.append(
+                        {
+                            "url": url,
+                            "data": None,
+                            "at": now,
+                            "prompt": prompt,
+                            "created_at": created,
+                        }
+                    )
+        except Exception:  # noqa: BLE001
+            pass
+
+    if not candidates:
+        return None
+
+    def _row_ts(row: dict[str, Any]) -> float:
+        created = str(row.get("created_at") or "").strip()
+        if created:
+            try:
+                from datetime import datetime
+
+                return datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
+            except Exception:  # noqa: BLE001
+                pass
+        return float(row.get("at") or 0)
+
+    # La imagen MÁS reciente del usuario gana — no un flyer viejo de otro hilo.
+    return max(candidates, key=_row_ts)
 
 
 def has_publishable_image(user_id: str, conversation_id: str | None = None) -> bool:

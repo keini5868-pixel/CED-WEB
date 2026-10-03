@@ -470,6 +470,80 @@ def test_scene_followup_uses_reference_and_adds_no_copy(mock_ref: MagicMock, moc
     assert "textos exactos" not in low
 
 
+def test_ced_logo_on_last_castle_does_not_inherit_old_phrase():
+    from app.services.chat_intents import visual_episode_history
+    from app.services.copy_quality import (
+        build_reference_logo_on_scene_prompt,
+        is_ced_wordmark_only_request,
+    )
+    from app.services.image_text_ritual import locked_overlay_lines
+
+    old_and_new = [
+        {"role": "user", "content": 'hazme un flyer que diga "Credibilidad ahora"'},
+        {"role": "assistant", "content": "Listo. Aqui esta tu imagen generada."},
+        {"role": "user", "content": "hazme un castillo digital con montanas y un lobo"},
+        {"role": "assistant", "content": "Listo. Aqui esta tu imagen generada."},
+    ]
+    msg = "el castillo que acabas de generar, ponle el logo de CED redondo que diga CED"
+    assert is_ced_wordmark_only_request(msg) is True
+    assert wants_image_reference_edit(msg) is True
+    assert locked_overlay_lines(msg, old_and_new) == ["CED"]
+    assert "Credibilidad" not in "".join(locked_overlay_lines(msg, old_and_new))
+    episode = visual_episode_history(old_and_new)
+    assert "castillo" in episode[0]["content"]
+    assert "flyer" not in episode[0]["content"].lower()
+    logo = build_reference_logo_on_scene_prompt(msg).lower()
+    assert "attached" in logo
+    assert "circular" in logo or "ced" in logo
+    assert "never expand" in logo
+    assert "congregación evangélica" not in logo
+    assert "congregacion evangelica" not in logo
+    assert "do not replace" in logo or "exact same scene" in logo
+
+
+@patch("app.services.gemini_images.generate_image")
+@patch("app.services.image_reference_generator.generate_image_with_reference")
+def test_ced_logo_edit_keeps_castle_reference(mock_ref: MagicMock, mock_gen: MagicMock):
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    register_text_chat_image_url(
+        USER, CONV, "https://example.com/castle.png", prompt="castillo digital lobo montanas"
+    )
+    mock_ref.return_value = {"ok": True, "url": "https://example.com/castle-ced.png"}
+    history = [
+        {"role": "user", "content": 'flyer que diga "frase vieja del otro chat"'},
+        {"role": "assistant", "content": "Listo. Aqui esta tu imagen generada."},
+        {"role": "user", "content": "hazme un castillo digital con un lobo"},
+        {"role": "assistant", "content": "Listo. Aqui esta tu imagen generada."},
+    ]
+    msg = "el castillo que acabas de generar necesito el logo de CED redondo"
+    result = run_chat_image_generation(USER, CONV, msg, history, plan_id="elite")
+    assert result["ok"] is True
+    mock_ref.assert_called_once()
+    prompt = str(mock_ref.call_args.kwargs.get("prompt") or "")
+    low = prompt.lower()
+    assert "frase vieja" not in low
+    assert "congregación" not in low
+    assert "ced" in low
+    assert "attached" in low or "same scene" in low
+
+
+def test_newer_user_image_beats_old_conversation_image():
+    from app.services.publish_image_context import (
+        clear_session_image,
+        get_last_uploaded_image_for_session,
+    )
+
+    clear_session_image(USER, "old-chat")
+    clear_session_image(USER, CONV)
+    register_text_chat_image(USER, "old-chat", PNG, "image/png")
+    register_text_chat_image_url(USER, "old-chat", "https://example.com/old-flyer.png", prompt="flyer viejo")
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    register_text_chat_image_url(USER, CONV, "https://example.com/castle.png", prompt="castillo nuevo")
+    row = get_last_uploaded_image_for_session(USER, "old-chat")
+    assert row is not None
+    assert "castle" in str(row.get("url") or "") or row.get("prompt") == "castillo nuevo"
+
+
 def test_ideation_hallucination_is_stripped_not_generated():
     reply, attachment = salvage_image_turn(
         USER,

@@ -127,6 +127,18 @@ _CED_WORDMARK_LOCK = (
     "CDE, CEB, GED, TED, or CEO. No buttons, captions, slogans, Prospección, "
     "Marketing, Ventas, or any other word anywhere on the image."
 )
+_CED_NO_EXPAND = (
+    "CED is only the three letters C-E-D (Castillo Evolución Digital brand). "
+    "Never expand CED into another organization, church, congregation, ministry, "
+    "evangelical name, company, or acronym. Do not write any expansion of CED."
+)
+_CED_LOGO_ON_SCENE = (
+    "EDIT the attached image. Keep the EXACT same scene "
+    "(same castle, wolf, mountains, lighting and composition). "
+    "ADD a circular CED logo in the center. Letters only: C then E then D. "
+    "Do NOT replace the photo with a blank circle or a white background. "
+    "Do NOT invent other words."
+)
 # Solo correcciones de tipografía (I4 / Prosaeccion). NO «prospección» ni
 # «asistente de IA» sueltos: esos aparecen en listados de capacidades CED.
 _FIX_ON_IMAGE_SPELLING = re.compile(
@@ -247,9 +259,29 @@ _CED_WORDMARK_REQUEST = re.compile(
 )
 
 
+_CED_DIGA = re.compile(
+    r"(?is)\bque\s+diga\s*c[\s.\-]*e[\s.\-]*d\b"
+    r"|\bdiga\s+el\s+logo\s+(?:de\s+)?c[\s.\-]*e[\s.\-]*d\b"
+)
+
+
 def user_requests_ced_wordmark(text: str) -> bool:
     """True si piden el logo/nombre CED escrito en la imagen."""
-    return bool(_CED_WORDMARK_REQUEST.search(text or ""))
+    t = text or ""
+    return bool(_CED_WORDMARK_REQUEST.search(t) or _CED_DIGA.search(t))
+
+
+def is_ced_wordmark_only_request(text: str) -> bool:
+    """Piden solo el logo/letras CED — no un titular o frase de otra pieza."""
+    t = (text or "").strip()
+    if not t or not user_requests_ced_wordmark(t):
+        return False
+    extras = [
+        q
+        for q in extract_quoted_phrases(t)
+        if re.sub(r"[\s.\-]", "", q).upper() not in {"CED", "CEDD"}
+    ]
+    return not extras
 
 
 def normalize_spanish(text: str) -> str:
@@ -925,7 +957,11 @@ def build_direct_image_prompt(
         if wants_ced or lock_tagline or wants_wordmark:
             parts.append(_CED_ON_IMAGE_SPELLING_LOCK)
         if wants_wordmark:
-            parts.append(_CED_WORDMARK_LOCK)
+            parts.append(_CED_NO_EXPAND)
+            if has_reference:
+                parts.append(_CED_LOGO_ON_SCENE)
+            else:
+                parts.append(_CED_WORDMARK_LOCK)
             if not quoted or quoted == ["CED"]:
                 parts.append(
                     "No other on-image text besides CED. No UI buttons, no slogans, "
@@ -1057,9 +1093,20 @@ def user_asks_for_on_image_copy(text: str) -> bool:
     return False
 
 
+def build_reference_logo_on_scene_prompt(user_text: str) -> str:
+    """Edita la foto adjunta: mismo escenario + logo CED circular. Sin expandir CED."""
+    request = strip_image_generation_instruction_safe(user_text)
+    return (
+        f"{_CED_LOGO_ON_SCENE} {_CED_NO_EXPAND} {_CED_WORDMARK_LOCK} "
+        f"User request: {request}"
+    ).strip()[:3800]
+
+
 def build_reference_scene_edit_prompt(user_text: str) -> str:
     """Edita la foto adjunta: mismo sujeto, solo el cambio pedido. Sin copy inventado."""
     request = strip_image_generation_instruction_safe(user_text)
+    if user_requests_ced_wordmark(user_text):
+        return build_reference_logo_on_scene_prompt(user_text)
     if user_requests_background_change(user_text):
         keep = (
             "EDIT the attached image. Keep the EXACT same subject "

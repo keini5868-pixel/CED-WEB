@@ -527,6 +527,9 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|ese\s+mismo(?=\s+(?:con|pero|y)|[.\s]*$)|esa\s+misma(?=\s+(?:con|pero|y)|[.\s]*$)"
     r"|salga\s+(?:ese|esa|el|la)\s+"
     r"|ese\s+(?:castillo|imagen|foto|flyer|dise[nñ]o|logo)"
+    r"|acabas\s+de\s+generar|que\s+me\s+generaste|que\s+acabas\s+de|"
+    r"como\s+la\s+del?\s+(?:castillo|imagen|foto)|"
+    r"el\s+castillo\s+que"
     r"|mas\s+texto"
     r"|las?\s+letras"
     r"|m[a\u00e1]s\s+(?:grues\w*|negrit\w*|fin[ao]s?)"
@@ -848,6 +851,31 @@ def last_concrete_image_user_prompt(
     return None
 
 
+def visual_episode_history(
+    history: list[dict[str, str]] | None,
+) -> list[dict[str, str]]:
+    """Solo el hilo visual actual: desde el último «genera una imagen» que no es un edit."""
+    rows = list(history or [])
+    if not rows:
+        return []
+    start = 0
+    for i, row in enumerate(rows):
+        role = str(row.get("role") or "").lower()
+        content = str(row.get("content") or "").strip()
+        if role not in {"user", "customer"} or not content:
+            continue
+        if wants_image_reference_edit(content):
+            continue
+        nxt = str(rows[i + 1].get("content") or "") if i + 1 < len(rows) else ""
+        if is_generate_image_intent(content) or (
+            len(content) >= 16
+            and not is_bare_affirmation(content)
+            and _IMAGE_THREAD_ASSISTANT.search(nxt)
+        ):
+            start = i
+    return rows[start:]
+
+
 def last_assistant_image_concept(
     history: list[dict[str, str]] | None,
 ) -> str | None:
@@ -899,6 +927,9 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"el\s+mismo\s+(?:castillo|imagen|foto|flyer|dise[nñ]o|logo|sujeto)|"
     r"ese\s+(?:castillo|imagen|foto|flyer|dise[nñ]o|logo)|"
     r"salga\s+(?:ese|esa|el|la)\s+|"
+    r"acabas\s+de\s+generar|que\s+me\s+generaste|que\s+acabas\s+de|"
+    r"como\s+la\s+del?\s+(?:castillo|imagen|foto)|"
+    r"el\s+castillo\s+que|"
     r"fondo\s+(?:amarill|azul|verde|rojo|negro|blanc|oscur|clar|natural|gris)|"
     r"cambia(?:le)?\s+(?:el|la|los|las)|quita(?:le)?\s+(?:el|la|los|las)|"
     r"agrega(?:le)?\s+(?:el|la|los|las|un|una)|"
@@ -980,6 +1011,9 @@ _PRIOR_VISUAL_POINTER = re.compile(
     r"propuesta|carrusel|pieza|versi[oó]n|castillo|foto|flyer|logo|sujeto)\b"
     r"|\bla\s+primera\s+imagen\b"
     r"|\bgenera(?:r|me|la|lo)?\s+esa\b"
+    r"|\bacabas\s+de\s+generar\b"
+    r"|\bque\s+me\s+generaste\b"
+    r"|\bel\s+castillo\s+que\b"
 )
 _USER_VISUAL_BRIEF = re.compile(
     r"(?is)\b(?:imagen|foto|overlay|texto|visual|fondo|paleta|carrusel|"

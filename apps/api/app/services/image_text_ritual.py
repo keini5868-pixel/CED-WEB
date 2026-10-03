@@ -156,6 +156,10 @@ def locked_overlay_lines(
     history: list[dict[str, str]] | None = None,
 ) -> list[str]:
     """Palabras exactas a pintar: comillas, «que diga», etiquetas o el read-back de CED."""
+    from app.services.copy_quality import is_ced_wordmark_only_request
+
+    if is_ced_wordmark_only_request(text):
+        return ["CED"]
     found = _extract_from_text(text)
     if found:
         return found
