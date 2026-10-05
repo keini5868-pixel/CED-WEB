@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { TEAM_PATH } from "@/lib/auth/paths";
+import { COMMUNITY_PATH, TEAM_PATH } from "@/lib/auth/paths";
 import { dispatchCedOpenModule } from "@/lib/hud/chrome-events";
 import { isOpportunitiesModuleEnabled } from "@/lib/pilot/opportunitiesModule";
 import { isTrendsModuleEnabled } from "@/lib/pilot/trendsModule";
@@ -55,6 +55,7 @@ export function CedStudioSidebar({
       onClick: () => dispatchCedOpenModule("opportunities"),
     },
     { id: "team", label: MODULE_DISPLAY.team, shortLabel: "Estructura", href: TEAM_PATH },
+    { id: "comunidad", label: "Sala CED", shortLabel: "Sala", href: COMMUNITY_PATH },
     {
       id: "video-edit",
       label: "Edición de video",

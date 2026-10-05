@@ -254,6 +254,7 @@ const OPEN_FALLBACK: Record<string, string> = {
   "video-edit": "/dashboard?mod=video-edit",
   automation: "/dashboard?mod=automation",
   team: "/dashboard/mi-equipo",
+  comunidad: "/dashboard/comunidad",
   home: "/dashboard",
   admin: "/admin",
   "nav-history": "/historial",

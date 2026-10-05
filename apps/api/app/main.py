@@ -57,6 +57,7 @@ from app.routers import (
     automation_pilot,
     referrals,
     ced_shield,
+    community,
 )
 
 logger = logging.getLogger("ced.api")
@@ -225,6 +226,7 @@ def create_app() -> FastAPI:
     application.include_router(pocket_option.router)
     application.include_router(video_edit_pilot.router)
     application.include_router(ced_shield.router)
+    application.include_router(community.router)
     application.include_router(automation_pilot.auth_router)
     application.include_router(automation_pilot.webhook_router)
     application.include_router(referrals.router)

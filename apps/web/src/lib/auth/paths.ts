@@ -3,6 +3,7 @@
 export const DASHBOARD_PATH = "/dashboard";
 export const ACCOUNT_PATH = "/dashboard/account";
 export const TEAM_PATH = "/dashboard/mi-equipo";
+export const COMMUNITY_PATH = "/dashboard/comunidad";
 export const DRIVE_PATH = "/drive";
 export const ADMIN_PATH = "/admin";
 export const LOGIN_PATH = "/login";

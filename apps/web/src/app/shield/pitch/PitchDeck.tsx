@@ -140,6 +140,7 @@ export function PitchDeck() {
   }, [go, i, last]);
 
   const s = SLIDES[i];
+  if (!s) return null;
 
   return (
     <main className="ced-page-glow relative min-h-screen overflow-hidden text-cyan-50">
