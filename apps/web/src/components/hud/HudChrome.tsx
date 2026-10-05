@@ -15,6 +15,7 @@ import { useDriveMap } from "@/contexts/DriveMapContext";
 import { CedWordmark } from "@/components/brand/CedWordmark";
 import {
   ACCOUNT_PATH,
+  AUTOMATION_PATH,
   COMMUNITY_PATH,
   DASHBOARD_PATH,
 } from "@/lib/auth/paths";
@@ -83,7 +84,7 @@ export function HudChrome({ email, isSuperAdmin }: HudChromeProps) {
         { id: "comunidad", label: "Sala CED", href: COMMUNITY_PATH },
         { id: "account", label: "Cuentas", href: ACCOUNT_PATH },
         { id: "networks", label: metaMenuLabel, onClick: () => void connectMeta() },
-        { id: "whatsapp", label: "WhatsApp", href: "/dashboard/whatsapp" },
+        { id: "automatizacion", label: "Automatización", href: AUTOMATION_PATH },
         { id: "history", label: "Historial", href: "/historial" },
         { id: "media", label: "Imágenes y PDF", href: "/historial?tab=archivos" },
         { id: "trash", label: "Papelera", href: "/historial?tab=papelera" },

@@ -60,7 +60,11 @@ describe("matchPresenterGuide", () => {
     ]);
     expect(matchPresenterGuide("abre whatsapp")).toEqual([
       { hotspot: "sistema", click: true, force: "open" },
-      { hotspot: "nav-whatsapp", click: true },
+      { hotspot: "nav-automatizacion", click: true },
+    ]);
+    expect(matchPresenterGuide("abre automatizacion")).toEqual([
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-automatizacion", click: true },
     ]);
     expect(matchPresenterGuide("abre redes")).toEqual([
       { hotspot: "sistema", click: true, force: "open" },

@@ -31,6 +31,7 @@ from app.routers import (
     legal,
     media,
     whatsapp,
+    manychat,
     memory,
     advanced_chat,
     finance_chat,
@@ -200,6 +201,8 @@ def create_app() -> FastAPI:
     application.include_router(panels.router)
     application.include_router(meta.router)
     application.include_router(whatsapp.router)
+    application.include_router(manychat.router)
+    application.include_router(manychat.webhook_router)
     application.include_router(media.router)
     application.include_router(retell.router)
     application.include_router(retell_custom_llm.router)

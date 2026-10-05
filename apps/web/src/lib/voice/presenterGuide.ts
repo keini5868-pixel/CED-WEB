@@ -57,10 +57,10 @@ const CLOSE_RULES: Rule[] = [
 
 const OPEN_RULES: Rule[] = [
   {
-    re: /\b(whats\s*app|wasap|guasap)\b/i,
+    re: /\b(automatizaci[oó]n|manychat|whats\s*app|wasap|guasap)\b/i,
     steps: [
       { hotspot: "sistema", click: true, force: "open" },
-      { hotspot: "nav-whatsapp", click: true },
+      { hotspot: "nav-automatizacion", click: true },
     ],
   },
   {
@@ -133,8 +133,11 @@ const OPEN_RULES: Rule[] = [
     steps: [{ hotspot: "video-edit", click: true }],
   },
   {
-    re: /\b(automatizaci[oó]n|automation)\b/i,
-    steps: [{ hotspot: "automation", click: true }],
+    re: /\b(automation)\b/i,
+    steps: [
+      { hotspot: "sistema", click: true, force: "open" },
+      { hotspot: "nav-automatizacion", click: true },
+    ],
   },
   {
     re: /\bavanzado\b/i,
@@ -262,7 +265,8 @@ const OPEN_FALLBACK: Record<string, string> = {
   "nav-trash": "/historial?tab=papelera",
   "nav-plans": "/dashboard/plans",
   "nav-account": "/dashboard/account",
-  "nav-whatsapp": "/dashboard/whatsapp",
+  "nav-whatsapp": "/dashboard/automatizacion",
+  "nav-automatizacion": "/dashboard/automatizacion",
 };
 
 const WORKSPACE_FALLBACK: Record<string, "advanced" | "finance"> = {

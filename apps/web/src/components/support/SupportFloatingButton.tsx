@@ -20,6 +20,7 @@ export default function SupportFloatingButton() {
     pathname?.startsWith("/drive") ||
     pathname?.startsWith("/shield") ||
     pathname?.startsWith("/dashboard/comunidad") ||
+    pathname?.startsWith("/dashboard/automatizacion") ||
     pathname === "/dashboard" ||
     pathname === "/app" ||
     textChatOpen;

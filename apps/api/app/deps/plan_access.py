@@ -118,6 +118,16 @@ def require_meta_social(user_id: str) -> None:
         )
 
 
+def manychat_access(user_id: str) -> tuple[bool, str]:
+    """True si el plan puede encender Automatización ManyChat (mismo umbral que WhatsApp)."""
+    limits, reason, _ = effective_plan_limits(user_id)
+    if reason in {"trial_expired", "past_due"}:
+        return False, reason
+    if not limits.meta_social_enabled:
+        return False, "plan"
+    return True, reason
+
+
 def require_whatsapp(user_id: str) -> None:
     limits, reason, _ = effective_plan_limits(user_id)
     if reason == "trial_expired":
