@@ -9,6 +9,28 @@ from app.services.copy_quality import (
 from app.services.gemini_images import prepare_image_prompt
 
 
+def test_bote_de_creatina_is_a_tub_not_a_boat():
+    from app.services.copy_quality import lock_spanish_image_subject
+
+    locked = lock_spanish_image_subject(
+        "hombre musculoso con un bote de creatina en la mano"
+    )
+    low = locked.lower()
+    assert "bote de creatina" in low
+    assert "not a boat" in low
+    assert "subject lock" in low
+    brief = build_direct_image_prompt(
+        "genera un hombre musculoso con un envase de creatina en su mano",
+        visual_override="A cinematic ship helm at sunset, nautical deck.",
+    )
+    prompt = str(brief["prompt"]).lower()
+    assert "creatina" in prompt
+    assert "envase" in prompt or "bote" in prompt
+    assert "do not change the subject" in prompt
+    assert "ship helm" in prompt  # lighting leftover is ok
+    assert prompt.index("creatina") < prompt.index("ship helm")
+
+
 def test_direct_scene_keeps_user_subject_no_ced_no_textos():
     msg = "generame una imagen de un hombre recostado de un arbol en un atardecer"
     direct = build_direct_image_prompt(msg)

@@ -2,7 +2,11 @@
 
 import pytest
 
-from app.services.image_art_expander import _clean_expander_output, expand_image_scene
+from app.services.image_art_expander import (
+    _clean_expander_output,
+    _expander_changed_subject,
+    expand_image_scene,
+)
 
 
 def test_clean_expander_strips_preamble_and_fences():
@@ -22,3 +26,20 @@ def test_expand_skips_without_api_key(monkeypatch):
     scene, status = expand_image_scene("un águila volando", "", "none")
     assert scene is None
     assert status == "skip"
+
+
+def test_expander_rejects_boat_when_anchor_is_creatine_tub():
+    assert (
+        _expander_changed_subject(
+            "hombre con un bote de creatina en la mano",
+            "A muscular man at a ship helm on a nautical deck.",
+        )
+        is True
+    )
+    assert (
+        _expander_changed_subject(
+            "hombre con un bote de creatina en la mano",
+            "A muscular man holding a creatine tub under gym lighting.",
+        )
+        is False
+    )

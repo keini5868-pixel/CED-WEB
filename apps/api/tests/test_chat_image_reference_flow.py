@@ -16,6 +16,7 @@ from app.services.chat_image_generation import (
     should_use_reference_generation,
 )
 from app.services.chat_intents import (
+    is_image_subject_correction,
     parse_followup_image_prompt,
     user_requests_prior_reference,
     wants_image_reference_edit,
@@ -556,3 +557,30 @@ def test_ideation_hallucination_is_stripped_not_generated():
     assert attachment is None
     assert "generate_image" not in reply
     assert "gato espacial" not in reply.lower() or "idea" in reply.lower()
+
+
+def test_creatine_correction_is_new_image_not_reference_edit():
+    msg = (
+        "mejor especifica esa imagen que queria: un hombre musculoso "
+        "con un envase de creatina en la mano"
+    )
+    assert is_image_subject_correction(msg) is True
+    assert wants_image_reference_edit(msg) is False
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    assert (
+        should_use_reference_generation(
+            msg,
+            [
+                {"role": "user", "content": "genera un hombre musculoso con un bote de creatina"},
+                {"role": "assistant", "content": "Listo. Aqui esta tu imagen generada."},
+            ],
+            user_id=USER,
+            conversation_id=CONV,
+        )
+        is False
+    )
+
+
+def test_color_tweak_still_uses_reference():
+    assert is_image_subject_correction("cambiale el color") is False
+    assert wants_image_reference_edit("cambiale el color") is True

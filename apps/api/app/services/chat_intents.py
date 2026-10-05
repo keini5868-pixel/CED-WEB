@@ -594,10 +594,62 @@ def user_requests_prior_reference(text: str) -> bool:
     return bool(_PRIOR_REFERENCE.search((text or "").strip()))
 
 
+_SUBJECT_CORRECTION = re.compile(
+    r"\b("
+    r"no\s+es\s+(?:eso|esa|lo\s+que)|"
+    r"no\s+es\s+lo\s+que\s+(?:ped[ií]|dije|quiero)|"
+    r"no\s+ped[ií]|"
+    r"est[aá]\s+mal|"
+    r"deber[ií]a\s+ser|"
+    r"te\s+dije|"
+    r"yo\s+(?:ped[ií]|quer[ií]a)|"
+    r"no\s+un\s+(?:barco|tim[oó]n|gym|gimnasio)|"
+    r"no\s+quiero\s+(?:esa|eso|un|una)|"
+    r"vuelve\s+a\s+gener|"
+    r"genera(?:me|r)?\s+de\s+nuevo|"
+    r"otra\s+imagen\s+(?:correcta|de\s+cero|desde\s+cero)|"
+    r"la\s+imagen\s+correcta|"
+    r"especif(?:ica|iqu[eé]|ic[aá])|"
+    r"mejor\s+(?:genera|haz|esa\s+imagen\s+que)"
+    r")\b",
+    re.I,
+)
+_CONCRETE_SUBJECT = re.compile(
+    r"\b(?:hombre|mujer|persona|envase|embase|bote\s+de|frasco|creatina|"
+    r"castillo|perro|gato|auto|coche|playa|bosque)\b",
+    re.I,
+)
+_TWEAK_ONLY = re.compile(
+    r"\b(?:color|fondo|luz|iluminaci[oó]n|filtro|saturaci[oó]n|brillo|contraste|"
+    r"grosor|tipograf|letra|negrita)\b",
+    re.I,
+)
+
+
+def is_image_subject_correction(text: str) -> bool:
+    """El usuario rechaza la escena y pide el sujeto que sí quería."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _SUBJECT_CORRECTION.search(t):
+        return True
+    if _CONCRETE_SUBJECT.search(t) and not _TWEAK_ONLY.search(t):
+        if re.search(
+            r"\b(?:esa\s+imagen\s+que\s+quer[ií]a|la\s+imagen\s+que\s+ped[ií]|"
+            r"mejor\s+esa\s+imagen|especif)",
+            t,
+            re.I,
+        ):
+            return True
+    return False
+
+
 def wants_image_reference_edit(text: str) -> bool:
     """True si el usuario pide variar/editar/inspirarse en una imagen de referencia."""
     t = (text or "").strip()
     if not t or is_script_narrative_request(t):
+        return False
+    if is_image_subject_correction(t):
         return False
     if user_requests_prior_reference(t):
         return True

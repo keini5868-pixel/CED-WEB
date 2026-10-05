@@ -31,6 +31,36 @@ _TYPO_MAP: dict[str, str] = {
     "i4": "IA",
 }
 
+# «Bote de creatina» = envase, no barco. El expander y los modelos lo leen mal.
+_PRODUCT_CONTAINER = re.compile(
+    r"\b(?P<kind>bote|envase|embase|frasco|pote|tarro|lata|tubo)\s+de\s+"
+    r"(?P<what>[a-záéíóúñü0-9][\wáéíóúñü\-]{1,32})",
+    re.I,
+)
+_NAUTICAL_INTENT = re.compile(
+    r"\b(?:barco|tim[oó]n|velero|yate|puerto|muelle|mar\b|oc[eé]ano|navegar)\b",
+    re.I,
+)
+
+
+def lock_spanish_image_subject(text: str) -> str:
+    """Ancla homógrafos de producto para que la imagen no cambie de escena."""
+    raw = (text or "").strip()
+    if not raw or _NAUTICAL_INTENT.search(raw):
+        return raw
+    locks: list[str] = []
+    for match in _PRODUCT_CONTAINER.finditer(raw):
+        kind = match.group("kind")
+        what = match.group("what")
+        locks.append(
+            f"The phrase '{kind} de {what}' is a PRODUCT TUB/JAR/CONTAINER of {what} "
+            f"held in a hand — NOT a boat, ship, helm, tiller, deck, harbor, or water."
+        )
+    if not locks:
+        return raw
+    return f"{raw}\n\nSUBJECT LOCK: {' '.join(locks)}"
+
+
 _ENGLISH_REPLACEMENTS = {
     "immune": "inmune",
     "digestion": "digestión",
@@ -914,9 +944,13 @@ def build_direct_image_prompt(
     scene = strip_image_prompt_meta(strip_image_generation_instruction(cleaned)).strip()
     if not scene:
         scene = cleaned or raw
+    scene = lock_spanish_image_subject(scene)
     override = strip_image_prompt_meta((visual_override or "").strip())
     if override:
-        scene = override
+        scene = (
+            f"{scene} Lighting, camera and atmosphere only: {override}. "
+            "Do not change the subject, objects in hand, or setting named by the user."
+        )
 
     quoted = extract_quoted_phrases(raw)
     mode = resolve_image_text_mode(raw)

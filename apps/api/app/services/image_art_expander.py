@@ -21,6 +21,8 @@ _EXPANDER_SYSTEM = """You are CED's art director for image-generation prompts. Y
 Hard rules:
 - Do not chat, greet, or use markdown.
 - Do not change the subject. If the anchor is an eagle, the output is an eagle. No robots or HUD unless the anchor asks for them.
+- Spanish "bote/envase/frasco de X" is a product tub or jar of X, never a boat, ship, helm, or nautical scene unless the anchor names barco/timón/mar.
+- Keep every noun the user named (person, object in hand, product). Enrich light and camera only.
 - Do not invent slogans, CTAs, or commercial copy. If text is not quoted in the anchor, it does not exist.
 - CED dark cyan HUD atmosphere is opt-in: only if the anchor or visual thread names CED / Castillo / holographic CED assistant.
 - Output one plain continuous English paragraph (scene direction). Keep any quoted overlay text in the user's original language, unchanged.
@@ -78,6 +80,21 @@ def _call_gemini_flash(user_payload: str) -> str:
     return (getattr(response, "text", None) or "").strip()
 
 
+def _expander_changed_subject(anchor: str, enriched: str) -> bool:
+    """True si el expander inventó barco/timón sobre un envase de producto."""
+    if not re.search(r"\b(?:bote|envase|embase|frasco|pote)\s+de\b", anchor, re.I):
+        return False
+    if re.search(r"\b(?:barco|tim[oó]n|velero|yate|mar\b)\b", anchor, re.I):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:boat|ship|helm|tiller|rudder|yacht|nautical|harbor|harbour|deck)\b",
+            enriched,
+            re.I,
+        )
+    )
+
+
 def expand_image_scene(
     anchor: str,
     visual_thread: str = "",
@@ -110,5 +127,7 @@ def expand_image_scene(
     if len(cleaned) < 48:
         return None, "error"
     if re.search(r"(?i)aquí tienes|here is the prompt", cleaned):
+        return None, "error"
+    if _expander_changed_subject(base, cleaned):
         return None, "error"
     return cleaned[:2200], "hit"

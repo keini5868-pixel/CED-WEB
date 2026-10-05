@@ -18,6 +18,7 @@ from app.services.chat_intents import (
     is_generate_image_intent,
     is_image_choice_confirmation,
     is_image_meta_talk,
+    is_image_subject_correction,
     is_pdf_intent,
     is_script_narrative_request,
     is_text_ideation_request,
@@ -491,10 +492,17 @@ def run_chat_image_generation(
     user_text = (text or "").strip()
     history = visual_episode_history(history)
     effective = effective_user_prompt(user_text, history)
+    from app.services.copy_quality import lock_spanish_image_subject
+
+    effective = lock_spanish_image_subject(effective)
+    subject_fix = is_image_subject_correction(user_text)
     thread_prompt = get_last_image_generation_prompt(user_id, conversation_id)
     thread_edit = bool(
-        parse_followup_image_prompt(user_text, history)
-        or wants_image_reference_edit(user_text)
+        not subject_fix
+        and (
+            parse_followup_image_prompt(user_text, history)
+            or wants_image_reference_edit(user_text)
+        )
     )
     wordmark_only = is_ced_wordmark_only_request(user_text)
     copy_edit = user_asks_for_on_image_copy(user_text) and not wordmark_only
@@ -533,6 +541,8 @@ def run_chat_image_generation(
         # «el castillo que acabas de generar» debe usar la última imagen del usuario,
         # aunque el conversation_id de voz no coincida con el del chat viejo.
         use_reference = bool(resolve_reference_image_bytes(user_id, conversation_id))
+    if subject_fix:
+        use_reference = False
     ref_payload = resolve_reference_image_bytes(user_id, conversation_id) if use_reference else None
 
     creation = resolve_image_creation_from_text(
@@ -782,7 +792,7 @@ def run_chat_image_generation(
         user_id,
         conversation_id or "",
         url,
-        prompt=str(model_prompt or effective or user_text),
+        prompt=str(effective or user_text),
     )
 
     caption = str(img_result.get("caption") or display_label or "Imagen generada")
