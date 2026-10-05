@@ -68,7 +68,7 @@ export async function saveManyChatBehavior(
   body: ManyChatBehavior,
 ): Promise<ManyChatStatus> {
   const res = await proxyFetch("manychat/behavior", {
-    method: "PUT",
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

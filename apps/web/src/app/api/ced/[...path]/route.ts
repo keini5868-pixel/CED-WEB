@@ -246,6 +246,11 @@ export async function POST(request: NextRequest, context: RouteContext) {
   return forward(request, path);
 }
 
+export async function PUT(request: NextRequest, context: RouteContext) {
+  const { path } = await context.params;
+  return forward(request, path);
+}
+
 export async function PATCH(request: NextRequest, context: RouteContext) {
   const { path } = await context.params;
   return forward(request, path);

@@ -84,6 +84,7 @@ def get_status(user_id: str = Depends(require_user_id)) -> dict[str, Any]:
 
 
 @router.put("/behavior")
+@router.post("/behavior")
 def put_behavior(
     body: BehaviorBody,
     user_id: str = Depends(require_user_id),
