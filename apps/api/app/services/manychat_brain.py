@@ -236,13 +236,73 @@ def manychat_response(
     }
 
 
-def _fallback_greeting(contact_name: str) -> str:
-    if contact_name:
+def _fallback_greeting(
+    contact_name: str,
+    *,
+    inbound: str = "",
+    account: dict[str, Any] | None = None,
+    first_turn: bool = True,
+) -> str:
+    acc = account or {}
+    cta = str(acc.get("cta_url") or "").strip()
+    label = str(acc.get("cta_label") or "grupo").strip()
+    hi = f"{contact_name}, " if contact_name else ""
+    low = (inbound or "").lower()
+    if any(w in low for w in ("evento", "interesado", "saber", "trata", "más", "mas")):
+        if cta:
+            return (
+                f"{hi}es un espacio para vender más con marketing digital: embudo, "
+                f"videos y campañas. Si te late, entra a {label}: {cta}"
+            )
         return (
-            f"Hola {contact_name}, qué gusto tenerte por aquí. "
-            "¿A qué te dedicas o qué vendes hoy?"
+            f"{hi}es sobre cómo vender más con marketing digital: tu embudo, "
+            "tus videos y tus campañas. ¿Qué parte te interesa primero?"
         )
-    return "Hola, qué gusto tenerte por aquí. ¿A qué te dedicas o qué vendes hoy?"
+    if first_turn or low in {"hola", "info", "buenas", "hey"}:
+        if contact_name:
+            return (
+                f"Hola {contact_name}, qué gusto tenerte por aquí. "
+                "¿A qué te dedicas o qué vendes hoy?"
+            )
+        return "Hola, qué gusto tenerte por aquí. ¿A qué te dedicas o qué vendes hoy?"
+    return f"{hi}cuéntame un poco más qué quieres resolver y te oriento."
+
+
+def _haiku_dm_reply(prompt: str) -> str:
+    import httpx
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    api_key = settings.anthropic_api_key.strip()
+    if not api_key:
+        raise RuntimeError("missing anthropic key")
+    with httpx.Client(timeout=6.0) as client:
+        res = client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 180,
+                "system": _DM_SYSTEM,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+        )
+        res.raise_for_status()
+        data = res.json()
+    parts = [
+        str(block.get("text") or "")
+        for block in (data.get("content") or [])
+        if isinstance(block, dict) and block.get("type") == "text"
+    ]
+    text = " ".join(parts).strip()
+    if not text:
+        raise RuntimeError("empty haiku")
+    return text
 
 
 def _gemini_dm_reply(prompt: str) -> str:
@@ -255,16 +315,9 @@ def _gemini_dm_reply(prompt: str) -> str:
     api_key = settings.google_api_key.strip()
     if not api_key:
         raise RuntimeError("missing google key")
-    model = (settings.gemini_voice_model or "").strip() or "gemini-2.0-flash"
-    try:
-        client = genai.Client(
-            api_key=api_key,
-            http_options=types.HttpOptions(timeout=7000),
-        )
-    except Exception:
-        client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key)
     response = client.models.generate_content(
-        model=model,
+        model="gemini-2.0-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             system_instruction=_DM_SYSTEM,
@@ -272,19 +325,35 @@ def _gemini_dm_reply(prompt: str) -> str:
             max_output_tokens=180,
         ),
     )
-    return (response.text or "").strip()
+    text = (response.text or "").strip()
+    if not text:
+        raise RuntimeError("empty gemini")
+    return text
 
 
-def generate_dm_reply(prompt: str, *, contact_name: str = "") -> str:
+def generate_dm_reply(
+    prompt: str,
+    *,
+    contact_name: str = "",
+    inbound: str = "",
+    account: dict[str, Any] | None = None,
+    first_turn: bool = True,
+) -> str:
     """Respuesta corta para ManyChat: ManyChat corta a los ~10s."""
-    with ThreadPoolExecutor(max_workers=1) as pool:
-        future = pool.submit(_gemini_dm_reply, prompt)
-        try:
-            text = future.result(timeout=7.5)
-        except Exception as exc:
-            logger.warning("[MANYCHAT] dm reply timeout/fail: %s", exc)
-            return _fallback_greeting(contact_name)
-    return text or _fallback_greeting(contact_name)
+    fallback = _fallback_greeting(
+        contact_name, inbound=inbound, account=account, first_turn=first_turn
+    )
+    for worker in (_haiku_dm_reply, _gemini_dm_reply):
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(worker, prompt)
+            try:
+                text = future.result(timeout=7.0)
+            except Exception as exc:
+                logger.warning("[MANYCHAT] %s fail: %s", worker.__name__, exc)
+                continue
+        if text and not _POISON.search(text):
+            return text
+    return fallback
 
 
 def reply_as_ced(
@@ -326,7 +395,13 @@ def reply_as_ced(
     if thread:
         prompt = prompt + "\n\nConversación reciente:\n" + "\n".join(thread)
     try:
-        raw = generate_dm_reply(prompt, contact_name=name)
+        raw = generate_dm_reply(
+            prompt,
+            contact_name=name,
+            inbound=inbound,
+            account=account,
+            first_turn=first_turn,
+        )
     except Exception:
         logger.exception("[MANYCHAT] chat CED exception")
         raw = ""

@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 from app.services.manychat_brain import (
     ROLE_PRESETS,
+    _fallback_greeting,
     build_behavior_prompt,
     first_name,
     inbound_text,
@@ -53,6 +54,14 @@ def test_behavior_prompt_includes_template_and_cta():
     assert "señor" in low
     assert first_name({"first_name": "Carlos"}) == "Carlos"
     assert first_name({"first_name": "Subscriber"}) == ""
+    event = _fallback_greeting(
+        "Ana",
+        inbound="me gustaria saber de que trata el evento",
+        account={"cta_url": "https://chat.whatsapp.com/x", "cta_label": "Grupo"},
+        first_turn=False,
+    ).lower()
+    assert "evento" in event or "marketing" in event
+    assert "qué vendes" not in event
     assert "califica y cierra" in low
     assert "qué buscas" in low
     assert "no inventes precios" in low
