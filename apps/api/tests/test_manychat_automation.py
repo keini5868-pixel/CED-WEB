@@ -132,11 +132,8 @@ def test_webhook_requires_secret_and_uses_brain():
     )
     secret = acc["webhook_secret"]
 
-    with patch("app.services.text_chat.send_message") as mocked:
-        mocked.return_value = {
-            "reply": "Va. Aquí está el grupo https://chat.whatsapp.com/x",
-            "conversation_id": "c1",
-        }
+    with patch("app.services.manychat_brain.generate_dm_reply") as mocked:
+        mocked.return_value = "Va. Aquí está el grupo https://chat.whatsapp.com/x"
         http = TestClient(app)
         bad = http.post("/webhooks/manychat/wrong", json={"last_input_text": "hola"})
         assert bad.status_code == 401
@@ -157,7 +154,8 @@ def test_webhook_requires_secret_and_uses_brain():
         assert body["content"]["type"] == "instagram"
         assert "grupo" in body["content"]["messages"][0]["text"].lower()
         mocked.assert_called_once()
-        prompt = mocked.call_args.kwargs.get("content") or ""
-        assert mocked.call_args.kwargs.get("channel") == "manychat"
+        prompt = mocked.call_args.args[0] if mocked.call_args.args else ""
+        if not prompt:
+            prompt = mocked.call_args.kwargs.get("prompt") or ""
         assert "quiero el grupo" in prompt
         assert "https://chat.whatsapp.com/x" in prompt

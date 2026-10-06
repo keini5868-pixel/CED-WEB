@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from app.services import manychat_store as store
@@ -50,6 +51,18 @@ ROLE_PRESETS: dict[str, dict[str, str]] = {
 }
 
 _MD_JUNK = re.compile(r"[#*_`>]{1,}")
+_POISON = re.compile(
+    r"imagen recibida|el texto es el que acordamos|t[ií]tulo y la descripci[oó]n|"
+    r"publicar[eé]|hashtags",
+    re.I,
+)
+_DM_SYSTEM = (
+    "Eres CED contestando un mensaje directo de Instagram por el dueño de la cuenta. "
+    "Tutea. Nunca digas señor ni señora. No eres el asistente de voz. "
+    "Si hay nombre, úsalo. No inventes nombres. "
+    "2 a 4 frases. Una pregunta. Sin markdown. "
+    "No hables de publicar fotos, títulos, descripciones ni imágenes recibidas."
+)
 
 
 def _plain(text: str) -> str:
@@ -219,14 +232,63 @@ def manychat_response(
     }
 
 
+def _fallback_greeting(contact_name: str) -> str:
+    if contact_name:
+        return (
+            f"Hola {contact_name}, qué gusto tenerte por aquí. "
+            "¿A qué te dedicas o qué vendes hoy?"
+        )
+    return "Hola, qué gusto tenerte por aquí. ¿A qué te dedicas o qué vendes hoy?"
+
+
+def _gemini_dm_reply(prompt: str) -> str:
+    from google import genai
+    from google.genai import types
+
+    from app.config import get_settings
+
+    settings = get_settings()
+    api_key = settings.google_api_key.strip()
+    if not api_key:
+        raise RuntimeError("missing google key")
+    model = (settings.gemini_voice_model or "").strip() or "gemini-2.0-flash"
+    try:
+        client = genai.Client(
+            api_key=api_key,
+            http_options=types.HttpOptions(timeout=7000),
+        )
+    except Exception:
+        client = genai.Client(api_key=api_key)
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            system_instruction=_DM_SYSTEM,
+            temperature=0.6,
+            max_output_tokens=180,
+        ),
+    )
+    return (response.text or "").strip()
+
+
+def generate_dm_reply(prompt: str, *, contact_name: str = "") -> str:
+    """Respuesta corta para ManyChat: ManyChat corta a los ~10s."""
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(_gemini_dm_reply, prompt)
+        try:
+            text = future.result(timeout=7.5)
+        except Exception as exc:
+            logger.warning("[MANYCHAT] dm reply timeout/fail: %s", exc)
+            return _fallback_greeting(contact_name)
+    return text or _fallback_greeting(contact_name)
+
+
 def reply_as_ced(
     *,
     owner_user_id: str,
     account: dict[str, Any],
     payload: dict[str, Any],
 ) -> str:
-    from app.services.text_chat import TextChatError, send_message
-
     inbound = inbound_text(payload)
     sid = subscriber_id(payload)
     contact = store.get_contact(owner_user_id, sid) or {}
@@ -252,28 +314,22 @@ def reply_as_ced(
     for row in reversed(prior[:6]):
         if str(row.get("subscriber_id") or "") != sid:
             continue
+        body = str(row.get("body") or "")
+        if _POISON.search(body):
+            continue
         who = "Contacto" if str(row.get("direction") or "") == "in" else "CED"
-        thread.append(f"{who}: {str(row.get('body') or '')[:220]}")
+        thread.append(f"{who}: {body[:220]}")
     if thread:
         prompt = prompt + "\n\nConversación reciente:\n" + "\n".join(thread)
     try:
-        result = send_message(
-            owner_user_id,
-            content=prompt,
-            conversation_id=None,
-            channel="manychat",
-        )
-    except TextChatError as exc:
-        logger.warning("[MANYCHAT] chat CED falló: %s", exc)
-        return "Ahora mismo no pude completar la respuesta. Escríbeme de nuevo en un momento."
+        raw = generate_dm_reply(prompt, contact_name=name)
     except Exception:
         logger.exception("[MANYCHAT] chat CED exception")
-        return "Tuve un problema al responder. Inténtalo otra vez."
-    cid = str(result.get("conversation_id") or "").strip()
-    if cid:
-        store.upsert_contact(owner_user_id, sid, {"conversation_id": cid, "display_name": name})
-    reply = _plain(str(result.get("reply") or ""))
+        raw = ""
+    reply = _plain(raw)
     reply = re.sub(r"\bseñora?s?\b[:,]?\s*", "", reply, flags=re.I)
     reply = " ".join(reply.split())
+    if not reply or _POISON.search(reply):
+        reply = _fallback_greeting(name)
     store.log_message(owner_user_id, sid, "out", reply)
     return reply
