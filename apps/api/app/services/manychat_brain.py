@@ -60,8 +60,15 @@ _DM_SYSTEM = (
     "Eres CED contestando un mensaje directo de Instagram por el dueño de la cuenta. "
     "Tutea. Nunca digas señor ni señora. No eres el asistente de voz. "
     "Si hay nombre, úsalo. No inventes nombres. "
-    "2 a 4 frases. Una pregunta. Sin markdown. "
+    "Máximo 2 frases. Una pregunta solo si aún no está listo. Sin markdown. "
+    "Si pide entrar al evento o al grupo, manda el enlace YA: sin recap del negocio. "
+    "Si solo dice gracias, agradece corto. No digas que ya está dentro del grupo. "
     "No hables de publicar fotos, títulos, descripciones ni imágenes recibidas."
+)
+_CTA_NOW = re.compile(
+    r"entrar|unirme|pasame|p[aá]same|mandame|m[aá]ndame|el grupo|"
+    r"acceso|el link|el enlace|quiero el evento|al evento|me apunto|inscrib",
+    re.I,
 )
 
 
@@ -71,9 +78,13 @@ def _plain(text: str) -> str:
     t = re.sub(r"^#+\s*", "", t, flags=re.M)
     t = re.sub(r"```[\s\S]*?```", " ", t)
     t = " ".join(t.split())
-    if len(t) > 900:
-        t = t[:890].rsplit(" ", 1)[0] + "…"
+    if len(t) > 420:
+        t = t[:410].rsplit(" ", 1)[0] + "…"
     return t
+
+
+def wants_cta_now(inbound: str) -> bool:
+    return bool(_CTA_NOW.search(inbound or ""))
 
 
 def inbound_text(payload: dict[str, Any]) -> str:
@@ -158,7 +169,7 @@ def build_behavior_prompt(
         "ManyChat solo entrega el mensaje; TÚ eres el cerebro. Responde como CED de esta cuenta.",
         "Esto NO es publicar en redes ni editar una foto. No digas que recibiste una imagen.",
         "No ofrezcas título, descripción ni hashtags para una publicación.",
-        "Texto corrido, breve, sin Markdown ni tablas. Máximo 5 frases. Una pregunta por mensaje.",
+        "Texto corrido, breve, sin Markdown ni tablas. Máximo 2 frases.",
         "PROHIBIDO inventar precios, stock, políticas o datos que no estén en el conocimiento de la cuenta.",
         "PROHIBIDO tratar de «señor», «señora» o de usted. Eso es solo el asistente de voz con el dueño.",
         "Tutea. Habla como un humano cercano, no como Jarvis ni como un bot de soporte.",
@@ -190,10 +201,14 @@ def build_behavior_prompt(
         parts.append("NUNCA digas ni hagas: " + never)
     if cta_url:
         hint = f"Enlace de cierre ({cta_label or 'grupo'}): {cta_url}"
-        if cta_when == "always":
-            parts.append(hint + " Inclúyelo en esta respuesta.")
-        elif cta_when == "never":
+        if cta_when == "never" and not wants_cta_now(inbound):
             parts.append("Hay un enlace configurado pero NO lo envíes salvo que el contacto lo pida.")
+        elif cta_when == "always" or wants_cta_now(inbound):
+            parts.append(
+                hint + " YA pidió entrar o el enlace. Máximo 2 frases. "
+                "Manda el enlace en ESTA respuesta. Sin recap del negocio. "
+                "No digas que ya está dentro del grupo."
+            )
         else:
             parts.append(
                 hint + " Compártelo SOLO cuando la persona esté lista o lo pida "
@@ -248,6 +263,8 @@ def _fallback_greeting(
     label = str(acc.get("cta_label") or "grupo").strip()
     hi = f"{contact_name}, " if contact_name else ""
     low = (inbound or "").lower()
+    if wants_cta_now(inbound) and cta:
+        return f"{hi}dale, entra aquí: {cta}"
     if any(w in low for w in ("evento", "interesado", "saber", "trata", "más", "mas")):
         if cta:
             return (

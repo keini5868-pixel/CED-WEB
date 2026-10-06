@@ -10,6 +10,7 @@ from app.services.manychat_brain import (
     inbound_text,
     manychat_response,
     subscriber_id,
+    wants_cta_now,
 )
 from app.services.manychat_store import (
     ensure_account,
@@ -69,6 +70,21 @@ def test_behavior_prompt_includes_template_and_cta():
     assert "cuando la persona esté lista" in low
     assert "hola quiero info" in low
     assert ROLE_PRESETS["closer"]["label"]
+    assert wants_cta_now("me interesa mucho quiero entrar al evento")
+    assert not wants_cta_now("me gustaria saber de que trata el evento")
+    ready = build_behavior_prompt(
+        acc, "quiero entrar al evento", contact_name="Dugleidis", first_turn=False
+    ).lower()
+    assert "manda el enlace" in ready
+    assert "sin recap" in ready
+    join = _fallback_greeting(
+        "Dugleidis",
+        inbound="quiero entrar al evento",
+        account={"cta_url": "https://chat.whatsapp.com/x", "cta_label": "Grupo"},
+        first_turn=False,
+    ).lower()
+    assert "https://chat.whatsapp.com/x" in join
+    assert "embudo" not in join
 
 
 def test_manychat_json_is_instagram_v2():
