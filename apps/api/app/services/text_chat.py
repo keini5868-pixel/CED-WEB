@@ -106,8 +106,11 @@ _chat_channel: contextvars.ContextVar[str] = contextvars.ContextVar(
 )
 
 _MANYCHAT_SYSTEM = (
-    "CANAL MENSAJE DIRECTO (ManyChat). Esto NO es publicar en Instagram/Facebook "
-    "ni editar una foto del chat. PROHIBIDO decir «Imagen recibida». "
+    "CANAL MENSAJE DIRECTO (ManyChat). El interlocutor NO es el dueño del asistente. "
+    "IGNORA el trato «señor/señora» y el registro de voz/Jarvis. Tutea. "
+    "Usa el nombre del contacto si el prompt lo da. Nunca inventes un nombre. "
+    "Esto NO es publicar en Instagram/Facebook ni editar una foto del chat. "
+    "PROHIBIDO decir «Imagen recibida». "
     "PROHIBIDO pedir título, descripción o hashtags de una publicación. "
     "PROHIBIDO invocar publicar_instagram, publicar_facebook o generate_image. "
     "Responde solo el mensaje del contacto según la plantilla del dueño."
@@ -507,12 +510,13 @@ IMPORTANTE — capacidades REALES de esta plataforma:
 - Si las redes NO están conectadas, indica conectar en el dashboard — NO digas que es imposible en absoluto.
 - Puedes generar PDFs descargables con generar_pdf. El campo content debe incluir TODO el texto del documento, no solo el título.
 - Puedes GENERAR IMÁGENES con generate_image cuando pidan crear/diseñar una imagen. Invoca la herramienta; la app muestra la imagen en el chat.
-- También puedes variar/editar a partir de una imagen de referencia cuando lo pidan.
+- También puedes EDITAR la última imagen generada o adjunta (fondo, logo, color, detalles). Pedidos como «ponle/omle/pmle un fondo azul», «ponle el logo de PM arriba a la izquierda», «a esa misma foto» son EDICIONES: DEBES invocar generate_image (el backend usa la foto anterior). PROHIBIDO decir que no puedes editar imágenes. Sí puedes.
+- Si piden «genera desde cero con todos esos detalles», invoca generate_image con el pedido TAL CUAL; el backend reúne el hilo visual.
 - VIDEO (piloto / en desarrollo con Keini): generación con Veo 3 y edición de videos del usuario.
   Guía al módulo VIDEO del dashboard (?videoEditModule=pilot). Usa tokens de video (aparte del saldo de voz).
   Edición: subir MP4 + guion → cortes, transiciones, Text→SFX. Veo 3 en el pipeline cuando el producto lo habilite.
   NO inventes un MP4 ya renderizado desde el chat de texto; sé orgulloso del piloto y honesto con el estado.
-- Palabras clave de generación (SOLO estas cuentan como «generar ahora»): "genera una imagen", "genérame una imagen", "créame un diseño", "hazme un logo", "diseña un creativo", "crea una foto", "genera la imagen".
+- Palabras clave de generación/edición (cuentan como «generar ahora»): "genera una imagen", "genérame una imagen", "créame un diseño", "hazme un logo", "diseña un creativo", "crea una foto", "genera la imagen", "ponle un fondo", "ponle el logo", "omle", "pmle", "a esa misma foto", "a esa misma imagen", "cambia el fondo", "arriba a la izquierda".
 - «Necesito una foto para Instagram» o «I need a photo for Sek» SIN «genera/genérame/hazme/créame» NO es generate_image: habla en texto, propone el concepto y espera confirmación.
 - Si piden acordar algo impactante ANTES de crear, responde en texto. PROHIBIDO generate_image. PROHIBIDO decir que la generación falló, copyright o límites: no se pidió generar.
 - Overlay: flyer/banner/cartel o «con texto» SIN comillas ni «que diga X» → NO generate_image. Di exactamente el titular y pregunta «¿La genero?». FitLine/PM: conocimiento interno, sin Tavily.
@@ -1461,6 +1465,8 @@ def _needs_chat_tools(
     text: str,
     history: list[dict[str, Any]] | None = None,
 ) -> bool:
+    if _is_manychat_channel():
+        return False
     t = (text or "").strip()
     if not t:
         return False
@@ -1496,9 +1502,9 @@ def _build_chat_system(
 ) -> str:
     from app.services.system_clock import clock_context_block
 
-    parts = [_chat_system_for_user(user_id), clock_context_block()]
     if _is_manychat_channel():
-        parts.insert(0, _MANYCHAT_SYSTEM)
+        return "\n\n".join([_MANYCHAT_SYSTEM, clock_context_block()])
+    parts = [_chat_system_for_user(user_id), clock_context_block()]
     if conversation_id and not _is_manychat_channel():
         from app.services.publish_image_context import has_publishable_image
 
@@ -2450,7 +2456,12 @@ def _extract_image_from_tool_result(result: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return None
     if isinstance(data, dict) and data.get("ok") and data.get("url"):
-        caption = str(data.get("caption") or data.get("prompt") or "Imagen generada")
+        from app.services.copy_quality import safe_image_display_caption
+
+        caption = safe_image_display_caption(
+            str(data.get("caption") or data.get("display_label") or ""),
+            edited="EDIT" in str(data.get("prompt") or ""),
+        )
         return {
             "url": str(data["url"]),
             "caption": caption,
@@ -3134,7 +3145,9 @@ def send_message(
                     # Pedido libre: conservar instrucciones del usuario (lobo, textos, etc.).
                     ref_prompt = (text or "").strip() or "Edita esta imagen según lo pedido."
                     success_reply = "Listo. Aquí está la imagen con los cambios pedidos."
-                    caption = ref_prompt[:72] if len(ref_prompt) <= 72 else "Imagen editada"
+                    from app.services.copy_quality import safe_image_display_caption
+
+                    caption = safe_image_display_caption(ref_prompt, edited=True)
                     route_intent = "image_reference_edit"
 
                 ref_result = _generate_chat_image_with_reference(

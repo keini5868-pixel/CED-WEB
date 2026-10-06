@@ -248,20 +248,19 @@ def reply_as_ced(
         contact_name=name,
         first_turn=first_turn,
     )
-    conversation_id = str(contact.get("conversation_id") or "").strip() or None
-    recent = store.list_messages(owner_user_id, limit=8)
-    if any(
-        str(row.get("subscriber_id") or "") == sid
-        and str(row.get("direction") or "") == "out"
-        and "imagen recibida" in str(row.get("body") or "").lower()
-        for row in recent
-    ):
-        conversation_id = None
+    thread = []
+    for row in reversed(prior[:6]):
+        if str(row.get("subscriber_id") or "") != sid:
+            continue
+        who = "Contacto" if str(row.get("direction") or "") == "in" else "CED"
+        thread.append(f"{who}: {str(row.get('body') or '')[:220]}")
+    if thread:
+        prompt = prompt + "\n\nConversación reciente:\n" + "\n".join(thread)
     try:
         result = send_message(
             owner_user_id,
             content=prompt,
-            conversation_id=conversation_id,
+            conversation_id=None,
             channel="manychat",
         )
     except TextChatError as exc:
