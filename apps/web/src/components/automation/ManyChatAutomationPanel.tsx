@@ -107,12 +107,12 @@ export function ManyChatAutomationPanel() {
     void load().catch((err: Error) => setError(err.message));
   }, [load]);
 
-  async function persist(enabled?: boolean) {
+  async function persist(nextEnabled?: boolean) {
     setBusy(true);
     setError(null);
     try {
       const st = await saveManyChatBehavior({
-        enabled,
+        ...(typeof nextEnabled === "boolean" ? { enabled: nextEnabled } : {}),
         role,
         tone,
         mission,
@@ -120,8 +120,8 @@ export function ManyChatAutomationPanel() {
         objections,
         never_say: neverSay,
         cta_when: ctaWhen,
-        cta_url: ctaUrl,
-        cta_label: ctaLabel,
+        cta_url: ctaUrl.trim(),
+        cta_label: ctaLabel.trim(),
       });
       if (st.error) {
         setError(st.error);
@@ -167,10 +167,9 @@ export function ManyChatAutomationPanel() {
           <h1 className="mt-1 font-[family-name:var(--font-orbitron)] text-2xl text-cyan-50 sm:text-4xl">
             ManyChat + CED
           </h1>
-          <p className="mt-2 max-w-2xl text-sm text-cyan-200/70">
-            ManyChat abre el DM de Instagram. CED conversa: preguntas, objeciones,
-            cierre y el enlace de tu grupo. Cada cuenta CED usa su propio ManyChat
-            y su propia plantilla.
+          <p className="mt-2 max-w-2xl font-sans text-sm tracking-normal text-cyan-200/80">
+            Primero llena la plantilla y el enlace del grupo. Guarda. Luego
+            Activa CED. ManyChat lo hacemos después, cuando yo te diga.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -196,7 +195,7 @@ export function ManyChatAutomationPanel() {
 
       <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6 sm:px-8">
         {error ? (
-          <p className="rounded-lg border border-red-400/40 bg-red-950/40 px-3 py-2 text-sm text-red-100">
+          <p className="rounded-lg border border-red-400/40 bg-red-950/40 px-3 py-2 font-sans text-sm tracking-normal text-red-100">
             {error}
           </p>
         ) : null}
@@ -209,35 +208,11 @@ export function ManyChatAutomationPanel() {
 
         <section className="rounded-2xl border border-cyan-500/20 bg-black/30 p-5">
           <h2 className="font-[family-name:var(--font-orbitron)] text-sm tracking-[0.18em] text-cyan-200">
-            1. Conecta ManyChat
+            1. Plantilla
           </h2>
-          <ol className="mt-3 list-decimal space-y-1 pl-5 text-sm text-cyan-200/75">
-            {(status?.setup || []).map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-          <div className="mt-4 grid gap-3">
-            <CopyField label="URL del Dynamic Block" value={status?.webhook_url || "…"} />
-            <CopyField label="Secreto" value={status?.webhook_secret || "…"} />
-          </div>
-          <p className="mt-3 text-xs text-cyan-300/60">
-            En el body del Dynamic Block: last_input_text = {"{{last_input_text}}"},
-            id = {"{{user_id}}"}. Si rotas el secreto, pega de nuevo la URL.
-          </p>
-          <div className="mt-3">
-            <CedButton type="button" variant="ghost" disabled={busy} onClick={() => void rotate()}>
-              Rotar secreto
-            </CedButton>
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-cyan-500/20 bg-black/30 p-5">
-          <h2 className="font-[family-name:var(--font-orbitron)] text-sm tracking-[0.18em] text-cyan-200">
-            2. Plantilla de comportamiento
-          </h2>
-          <p className="mt-2 text-sm text-cyan-200/70">
-            Así quieres que CED responda en los DM. Esto es de esta cuenta; no se
-            mezcla con otras.
+          <p className="mt-2 font-sans text-sm tracking-normal text-cyan-200/80">
+            Cómo quieres que CED hable en los DM. Llena los recuadros y baja a
+            guardar.
           </p>
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {ROLES.map((item) => (
@@ -330,11 +305,10 @@ export function ManyChatAutomationPanel() {
 
         <section className="rounded-2xl border border-cyan-500/20 bg-black/30 p-5">
           <h2 className="font-[family-name:var(--font-orbitron)] text-sm tracking-[0.18em] text-cyan-200">
-            3. Enlace de cierre
+            2. Enlace del grupo
           </h2>
-          <p className="mt-2 text-sm text-cyan-200/70">
-            Grupo de WhatsApp, calendario o la URL que quieras. CED no inventa un
-            enlace si este campo está vacío.
+          <p className="mt-2 font-sans text-sm tracking-normal text-cyan-200/80">
+            Pega el enlace de WhatsApp. CED no inventa un grupo si esto está vacío.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label>
@@ -380,6 +354,25 @@ export function ManyChatAutomationPanel() {
           <div className="mt-5">
             <CedButton type="button" disabled={busy} onClick={() => void persist()}>
               Guardar plantilla
+            </CedButton>
+          </div>
+        </section>
+
+        <section className="rounded-2xl border border-cyan-500/20 bg-black/30 p-5">
+          <h2 className="font-[family-name:var(--font-orbitron)] text-sm tracking-[0.18em] text-cyan-200">
+            ManyChat — después
+          </h2>
+          <p className="mt-2 font-sans text-sm tracking-normal text-cyan-200/80">
+            No copies nada de aquí todavía. Cuando la plantilla esté guardada y
+            CED activo, te digo exactamente qué pegar en ManyChat.
+          </p>
+          <div className="mt-4 grid gap-3">
+            <CopyField label="URL del Dynamic Block" value={status?.webhook_url || "…"} />
+            <CopyField label="Secreto" value={status?.webhook_secret || "…"} />
+          </div>
+          <div className="mt-3">
+            <CedButton type="button" variant="ghost" disabled={busy} onClick={() => void rotate()}>
+              Rotar secreto
             </CedButton>
           </div>
         </section>

@@ -74,6 +74,39 @@ def test_inbound_payload_aliases():
     assert subscriber_id({"id": 99}) == "99"
 
 
+def test_behavior_post_saves_template():
+    from fastapi.testclient import TestClient
+
+    from app.deps.auth import require_user_id
+    from app.main import app
+
+    reset_memory_for_tests()
+    app.dependency_overrides[require_user_id] = lambda: "owner-1"
+    try:
+        http = TestClient(app)
+        res = http.post(
+            "/v1/manychat/behavior",
+            json={
+                "role": "closer",
+                "tone": "cercano",
+                "mission": "Cierra al grupo.",
+                "ask_lines": "¿Qué buscas?",
+                "objections": "Responde y pregunta.",
+                "never_say": "No inventes precios.",
+                "cta_when": "ready",
+                "cta_url": "https://chat.whatsapp.com/x",
+                "cta_label": "Grupo",
+            },
+        )
+        assert res.status_code == 200
+        body = res.json()
+        assert body["mission"] == "Cierra al grupo."
+        assert body["cta_url"] == "https://chat.whatsapp.com/x"
+        assert body["cta_label"] == "Grupo"
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_webhook_requires_secret_and_uses_brain():
     from fastapi.testclient import TestClient
 

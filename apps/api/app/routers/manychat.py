@@ -25,15 +25,17 @@ INACTIVE_REPLY = (
 
 
 class BehaviorBody(BaseModel):
+    model_config = {"extra": "ignore"}
+
     enabled: bool | None = None
     role: str = Field(default="closer", max_length=24)
     tone: str = Field(default="cercano", max_length=24)
-    mission: str = Field(default="", max_length=2500)
-    ask_lines: str = Field(default="", max_length=800)
-    objections: str = Field(default="", max_length=1200)
-    never_say: str = Field(default="", max_length=800)
+    mission: str = Field(default="", max_length=8000)
+    ask_lines: str = Field(default="", max_length=4000)
+    objections: str = Field(default="", max_length=4000)
+    never_say: str = Field(default="", max_length=2000)
     cta_when: str = Field(default="ready", max_length=16)
-    cta_url: str = Field(default="", max_length=500)
+    cta_url: str = Field(default="", max_length=2000)
     cta_label: str = Field(default="", max_length=120)
 
 
@@ -85,10 +87,23 @@ def get_status(user_id: str = Depends(require_user_id)) -> dict[str, Any]:
 
 @router.put("/behavior")
 @router.post("/behavior")
-def put_behavior(
-    body: BehaviorBody,
+async def put_behavior(
+    request: Request,
     user_id: str = Depends(require_user_id),
 ) -> dict[str, Any]:
+    try:
+        raw = await request.json()
+    except Exception:
+        raw = {}
+    if not isinstance(raw, dict):
+        raw = {}
+    try:
+        body = BehaviorBody.model_validate(raw)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="No pude leer la plantilla. Recarga la página e inténtalo otra vez.",
+        ) from exc
     allowed, reason = manychat_access(user_id)
     if body.enabled is True and not allowed:
         raise HTTPException(
@@ -99,21 +114,27 @@ def put_behavior(
                 else "Tu prueba terminó. Elige un plan para activar Automatización."
             ),
         )
-    store.save_account(
-        user_id,
-        {
-            "enabled": body.enabled if body.enabled is not None else store.ensure_account(user_id)["enabled"],
-            "role": body.role,
-            "tone": body.tone,
-            "mission": body.mission,
-            "ask_lines": body.ask_lines,
-            "objections": body.objections,
-            "never_say": body.never_say,
-            "cta_when": body.cta_when,
-            "cta_url": body.cta_url,
-            "cta_label": body.cta_label,
-        },
-    )
+    try:
+        store.save_account(
+            user_id,
+            {
+                "enabled": body.enabled
+                if body.enabled is not None
+                else store.ensure_account(user_id)["enabled"],
+                "role": body.role,
+                "tone": body.tone,
+                "mission": body.mission,
+                "ask_lines": body.ask_lines,
+                "objections": body.objections,
+                "never_say": body.never_say,
+                "cta_when": body.cta_when,
+                "cta_url": body.cta_url,
+                "cta_label": body.cta_label,
+            },
+        )
+    except Exception:
+        logger.exception("[MANYCHAT] save behavior failed")
+        raise HTTPException(status_code=500, detail="No se pudo guardar la plantilla.")
     return _status_payload(user_id)
 
 
