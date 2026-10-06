@@ -84,12 +84,47 @@ def subscriber_id(payload: dict[str, Any]) -> str:
     return "unknown"
 
 
+_BAD_NAMES = {
+    "",
+    "subscriber",
+    "user",
+    "usuario",
+    "instagram",
+    "unknown",
+    "contacto",
+    "{{first_name}}",
+    "{{name}}",
+}
+
+
+def first_name(payload: dict[str, Any], stored: str = "") -> str:
+    nested = payload.get("custom_fields") if isinstance(payload.get("custom_fields"), dict) else {}
+    raw = (
+        payload.get("first_name")
+        or payload.get("name")
+        or payload.get("full_name")
+        or nested.get("first_name")
+        or stored
+        or ""
+    )
+    token = str(raw).strip().split()[0] if str(raw).strip() else ""
+    token = re.sub(r"[^A-Za-zÁÉÍÓÚÜÑáéíóúüñ'-]", "", token)
+    if token.lower() in _BAD_NAMES or len(token) < 2:
+        return ""
+    return token[:24]
+
+
 def display_name(payload: dict[str, Any]) -> str:
-    name = payload.get("name") or payload.get("first_name") or ""
-    return str(name).strip()[:80]
+    return first_name(payload)
 
 
-def build_behavior_prompt(account: dict[str, Any], inbound: str) -> str:
+def build_behavior_prompt(
+    account: dict[str, Any],
+    inbound: str,
+    *,
+    contact_name: str = "",
+    first_turn: bool = True,
+) -> str:
     role = str(account.get("role") or "closer")
     preset = ROLE_PRESETS.get(role) or ROLE_PRESETS["closer"]
     mission = (account.get("mission") or "").strip() or preset["mission"]
@@ -108,6 +143,8 @@ def build_behavior_prompt(account: dict[str, Any], inbound: str) -> str:
         "No ofrezcas título, descripción ni hashtags para una publicación.",
         "Texto corrido, breve, sin Markdown ni tablas. Máximo 5 frases. Una pregunta por mensaje.",
         "PROHIBIDO inventar precios, stock, políticas o datos que no estén en el conocimiento de la cuenta.",
+        "PROHIBIDO tratar de «señor», «señora» o de usted. Eso es solo el asistente de voz con el dueño.",
+        "Tutea. Habla como un humano cercano, no como Jarvis ni como un bot de soporte.",
         f"Tono: {tone}.",
         f"Rol: {preset['label']}.",
         f"Plantilla de comportamiento: {mission}",
@@ -116,6 +153,22 @@ def build_behavior_prompt(account: dict[str, Any], inbound: str) -> str:
         parts.append("Preguntas que puedes usar (no las dispares todas a la vez):\n" + asks)
     if objections:
         parts.append("Objeciones: " + objections)
+    if contact_name:
+        if first_turn:
+            parts.append(
+                f"El contacto se llama {contact_name}. En ESTE primer mensaje salúdalo por su "
+                f"nombre (ej. «Hola {contact_name}, qué gusto tenerte por aquí»). "
+                "Luego una pregunta corta. No inventes otro nombre."
+            )
+        else:
+            parts.append(
+                f"El contacto se llama {contact_name}. Puedes usar su nombre con naturalidad, "
+                "sin repetir «hola» cada turno."
+            )
+    else:
+        parts.append(
+            "No tenemos el nombre. Saluda sin «señor». Nunca inventes un nombre."
+        )
     if never:
         parts.append("NUNCA digas ni hagas: " + never)
     if cta_url:
@@ -156,6 +209,8 @@ def manychat_response(
                 "payload": {
                     "last_input_text": "{{last_input_text}}",
                     "id": "{{user_id}}",
+                    "first_name": "{{first_name}}",
+                    "name": "{{name}}",
                     "secret": secret,
                 },
                 "timeout": 86400,
@@ -174,15 +229,25 @@ def reply_as_ced(
 
     inbound = inbound_text(payload)
     sid = subscriber_id(payload)
-    name = display_name(payload)
     contact = store.get_contact(owner_user_id, sid) or {}
+    name = first_name(payload, str(contact.get("display_name") or ""))
+    prior = store.list_messages(owner_user_id, limit=16)
+    first_turn = not any(
+        str(row.get("subscriber_id") or "") == sid and str(row.get("direction") or "") == "in"
+        for row in prior
+    )
     store.upsert_contact(
         owner_user_id,
         sid,
         {"display_name": name, "last_text": inbound},
     )
     store.log_message(owner_user_id, sid, "in", inbound)
-    prompt = build_behavior_prompt(account, inbound)
+    prompt = build_behavior_prompt(
+        account,
+        inbound,
+        contact_name=name,
+        first_turn=first_turn,
+    )
     conversation_id = str(contact.get("conversation_id") or "").strip() or None
     recent = store.list_messages(owner_user_id, limit=8)
     if any(
@@ -209,5 +274,7 @@ def reply_as_ced(
     if cid:
         store.upsert_contact(owner_user_id, sid, {"conversation_id": cid, "display_name": name})
     reply = _plain(str(result.get("reply") or ""))
+    reply = re.sub(r"\bseñora?s?\b[:,]?\s*", "", reply, flags=re.I)
+    reply = " ".join(reply.split())
     store.log_message(owner_user_id, sid, "out", reply)
     return reply

@@ -5,6 +5,7 @@ from unittest.mock import patch
 from app.services.manychat_brain import (
     ROLE_PRESETS,
     build_behavior_prompt,
+    first_name,
     inbound_text,
     manychat_response,
     subscriber_id,
@@ -42,10 +43,16 @@ def test_behavior_prompt_includes_template_and_cta():
         "cta_url": "https://chat.whatsapp.com/grupo-ced",
         "cta_label": "Grupo CED",
     }
-    prompt = build_behavior_prompt(acc, "hola quiero info")
+    prompt = build_behavior_prompt(
+        acc, "hola quiero info", contact_name="María", first_turn=True
+    )
     low = prompt.lower()
     assert "mensaje directo" in low
     assert "no es publicar" in low
+    assert "maría" in low
+    assert "señor" in low
+    assert first_name({"first_name": "Carlos"}) == "Carlos"
+    assert first_name({"first_name": "Subscriber"}) == ""
     assert "califica y cierra" in low
     assert "qué buscas" in low
     assert "no inventes precios" in low
@@ -68,6 +75,7 @@ def test_manychat_json_is_instagram_v2():
     cb = payload["content"]["external_message_callback"]
     assert cb["url"].endswith("/webhooks/manychat/abc")
     assert "{{last_input_text}}" in cb["payload"]["last_input_text"]
+    assert cb["payload"]["first_name"] == "{{first_name}}"
 
 
 def test_inbound_payload_aliases():
