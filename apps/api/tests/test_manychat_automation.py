@@ -75,8 +75,8 @@ def test_behavior_prompt_includes_template_and_cta():
     ready = build_behavior_prompt(
         acc, "quiero entrar al evento", contact_name="Dugleidis", first_turn=False
     ).lower()
-    assert "manda el enlace" in ready
-    assert "sin recap" in ready
+    assert "enlace en esta respuesta" in ready
+    assert "no alargues" in ready
     join = _fallback_greeting(
         "Dugleidis",
         inbound="quiero entrar al evento",

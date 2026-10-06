@@ -60,8 +60,8 @@ _DM_SYSTEM = (
     "Eres CED contestando un mensaje directo de Instagram por el dueño de la cuenta. "
     "Tutea. Nunca digas señor ni señora. No eres el asistente de voz. "
     "Si hay nombre, úsalo. No inventes nombres. "
-    "Máximo 2 frases. Una pregunta solo si aún no está listo. Sin markdown. "
-    "Si pide entrar al evento o al grupo, manda el enlace YA: sin recap del negocio. "
+    "3 frases está bien, no un párrafo. Una pregunta si aún no está listo. Sin markdown. "
+    "Si pide entrar al evento o al grupo, una frase cálida y el enlace. "
     "Si solo dice gracias, agradece corto. No digas que ya está dentro del grupo. "
     "No hables de publicar fotos, títulos, descripciones ni imágenes recibidas."
 )
@@ -78,8 +78,8 @@ def _plain(text: str) -> str:
     t = re.sub(r"^#+\s*", "", t, flags=re.M)
     t = re.sub(r"```[\s\S]*?```", " ", t)
     t = " ".join(t.split())
-    if len(t) > 420:
-        t = t[:410].rsplit(" ", 1)[0] + "…"
+    if len(t) > 700:
+        t = t[:690].rsplit(" ", 1)[0] + "…"
     return t
 
 
@@ -169,7 +169,7 @@ def build_behavior_prompt(
         "ManyChat solo entrega el mensaje; TÚ eres el cerebro. Responde como CED de esta cuenta.",
         "Esto NO es publicar en redes ni editar una foto. No digas que recibiste una imagen.",
         "No ofrezcas título, descripción ni hashtags para una publicación.",
-        "Texto corrido, breve, sin Markdown ni tablas. Máximo 2 frases.",
+        "Texto corrido, sin Markdown ni tablas. Máximo 3 frases.",
         "PROHIBIDO inventar precios, stock, políticas o datos que no estén en el conocimiento de la cuenta.",
         "PROHIBIDO tratar de «señor», «señora» o de usted. Eso es solo el asistente de voz con el dueño.",
         "Tutea. Habla como un humano cercano, no como Jarvis ni como un bot de soporte.",
@@ -205,9 +205,8 @@ def build_behavior_prompt(
             parts.append("Hay un enlace configurado pero NO lo envíes salvo que el contacto lo pida.")
         elif cta_when == "always" or wants_cta_now(inbound):
             parts.append(
-                hint + " YA pidió entrar o el enlace. Máximo 2 frases. "
-                "Manda el enlace en ESTA respuesta. Sin recap del negocio. "
-                "No digas que ya está dentro del grupo."
+                hint + " YA pidió entrar. Una frase cálida y el enlace en ESTA respuesta. "
+                "No alargues el pitch. No digas que ya está dentro del grupo."
             )
         else:
             parts.append(
