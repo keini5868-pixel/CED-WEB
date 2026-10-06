@@ -105,6 +105,10 @@ _BAD_NAMES = {
     "instagram",
     "unknown",
     "contacto",
+    "asistente",
+    "virtual",
+    "ced",
+    "admin",
     "{{first_name}}",
     "{{name}}",
 }
