@@ -44,7 +44,8 @@ def test_behavior_prompt_includes_template_and_cta():
     }
     prompt = build_behavior_prompt(acc, "hola quiero info")
     low = prompt.lower()
-    assert "dm de instagram" in low
+    assert "mensaje directo" in low
+    assert "no es publicar" in low
     assert "califica y cierra" in low
     assert "qué buscas" in low
     assert "no inventes precios" in low
@@ -149,5 +150,6 @@ def test_webhook_requires_secret_and_uses_brain():
         assert "grupo" in body["content"]["messages"][0]["text"].lower()
         mocked.assert_called_once()
         prompt = mocked.call_args.kwargs.get("content") or ""
+        assert mocked.call_args.kwargs.get("channel") == "manychat"
         assert "quiero el grupo" in prompt
         assert "https://chat.whatsapp.com/x" in prompt

@@ -102,8 +102,10 @@ def build_behavior_prompt(account: dict[str, Any], inbound: str) -> str:
     cta_when = str(account.get("cta_when") or "ready")
 
     parts = [
-        "Estás contestando un DM de Instagram en nombre del dueño de ESTA cuenta CED.",
+        "Estás contestando un mensaje directo en nombre del dueño de ESTA cuenta CED.",
         "ManyChat solo entrega el mensaje; TÚ eres el cerebro. Responde como CED de esta cuenta.",
+        "Esto NO es publicar en redes ni editar una foto. No digas que recibiste una imagen.",
+        "No ofrezcas título, descripción ni hashtags para una publicación.",
         "Texto corrido, breve, sin Markdown ni tablas. Máximo 5 frases. Una pregunta por mensaje.",
         "PROHIBIDO inventar precios, stock, políticas o datos que no estén en el conocimiento de la cuenta.",
         f"Tono: {tone}.",
@@ -182,11 +184,20 @@ def reply_as_ced(
     store.log_message(owner_user_id, sid, "in", inbound)
     prompt = build_behavior_prompt(account, inbound)
     conversation_id = str(contact.get("conversation_id") or "").strip() or None
+    recent = store.list_messages(owner_user_id, limit=8)
+    if any(
+        str(row.get("subscriber_id") or "") == sid
+        and str(row.get("direction") or "") == "out"
+        and "imagen recibida" in str(row.get("body") or "").lower()
+        for row in recent
+    ):
+        conversation_id = None
     try:
         result = send_message(
             owner_user_id,
             content=prompt,
             conversation_id=conversation_id,
+            channel="manychat",
         )
     except TextChatError as exc:
         logger.warning("[MANYCHAT] chat CED falló: %s", exc)

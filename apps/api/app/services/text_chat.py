@@ -101,6 +101,21 @@ CHAT_SYSTEM_MAX_CHARS = 14_000
 _pending_recharge_signal: contextvars.ContextVar[dict[str, Any] | None] = (
     contextvars.ContextVar("pending_recharge_signal", default=None)
 )
+_chat_channel: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "ced_chat_channel", default=""
+)
+
+_MANYCHAT_SYSTEM = (
+    "CANAL MENSAJE DIRECTO (ManyChat). Esto NO es publicar en Instagram/Facebook "
+    "ni editar una foto del chat. PROHIBIDO decir «Imagen recibida». "
+    "PROHIBIDO pedir título, descripción o hashtags de una publicación. "
+    "PROHIBIDO invocar publicar_instagram, publicar_facebook o generate_image. "
+    "Responde solo el mensaje del contacto según la plantilla del dueño."
+)
+
+
+def _is_manychat_channel() -> bool:
+    return _chat_channel.get() == "manychat"
 
 
 def _mark_recharge_needed(resource: str, message: str) -> None:
@@ -1482,7 +1497,9 @@ def _build_chat_system(
     from app.services.system_clock import clock_context_block
 
     parts = [_chat_system_for_user(user_id), clock_context_block()]
-    if conversation_id:
+    if _is_manychat_channel():
+        parts.insert(0, _MANYCHAT_SYSTEM)
+    if conversation_id and not _is_manychat_channel():
         from app.services.publish_image_context import has_publishable_image
 
         if has_publishable_image(user_id, conversation_id):
@@ -1509,15 +1526,16 @@ def _build_chat_system(
                     "NO asumas que quiere publicar en redes salvo que lo pida "
                     "explícitamente («publica en Instagram/Facebook»)."
                 )
-    from app.services.chat_image_generation import build_active_image_thread_context
+    if not _is_manychat_channel():
+        from app.services.chat_image_generation import build_active_image_thread_context
 
-    thread_ctx = build_active_image_thread_context(
-        history,
-        user_id=user_id,
-        conversation_id=conversation_id,
-    )
-    if thread_ctx:
-        parts.append(thread_ctx)
+        thread_ctx = build_active_image_thread_context(
+            history,
+            user_id=user_id,
+            conversation_id=conversation_id,
+        )
+        if thread_ctx:
+            parts.append(thread_ctx)
     if _wants_viral_knowledge(user_text):
         parts.append(CED_VIRAL_KNOWLEDGE_2026)
         parts.append(CED_MEMORY_USAGE_RULES)
@@ -2760,7 +2778,9 @@ def send_message(
     image_mode: str | None = None,
     pdf_bytes: bytes | None = None,
     pdf_filename: str | None = None,
+    channel: str | None = None,
 ) -> dict[str, Any]:
+    _chat_channel.set((channel or "").strip().lower())
     text = content.strip()
     mode = (image_mode or "").strip().lower()
     inbound_pdf = None
@@ -3021,20 +3041,22 @@ def send_message(
             image=image_attachment,
         )
 
-    publish_reply = handle_publish_flow_turn(
-        user_id,
-        conversation_id,
-        text,
-        history=history,
-        run_tool=_run_chat_tool,
-        suggest_caption=lambda platform, user_text, hist: _suggest_social_caption(
-            platform,
-            user_text,
-            hist,
-            user_id=user_id,
-            conversation_id=conversation_id,
-        ),
-    )
+    publish_reply = None
+    if not _is_manychat_channel():
+        publish_reply = handle_publish_flow_turn(
+            user_id,
+            conversation_id,
+            text,
+            history=history,
+            run_tool=_run_chat_tool,
+            suggest_caption=lambda platform, user_text, hist: _suggest_social_caption(
+                platform,
+                user_text,
+                hist,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            ),
+        )
     if publish_reply:
         return _finish(
             _finalize_chat_reply(publish_reply),
