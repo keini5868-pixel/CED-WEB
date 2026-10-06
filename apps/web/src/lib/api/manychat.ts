@@ -75,10 +75,7 @@ function formatApiError(data: unknown, status: number): string {
 }
 
 async function readJson<T>(res: Response): Promise<T & { error?: string }> {
-  const data = (await res.json().catch(() => ({}))) as T & {
-    error?: unknown;
-    detail?: unknown;
-  };
+  const data = (await res.json().catch(() => ({}))) as T & { error?: string };
   if (!res.ok) {
     return { ...data, error: formatApiError(data, res.status) };
   }
