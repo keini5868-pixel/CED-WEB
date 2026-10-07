@@ -277,4 +277,35 @@ export async function createAdminUser(
 
 }
 
+export type AdminToolFund = {
+  id: string;
+  label: string;
+  use: string;
+  configured: boolean;
+  funds: "ok" | "low" | "missing" | "unknown";
+  summary: string;
+  billing_url: string;
+  billing_note: string;
+};
+
+export type AdminToolFundsResult = {
+  ok: boolean;
+  admin_only?: boolean;
+  generated_at?: string;
+  tools: AdminToolFund[];
+  note?: string;
+  error?: string;
+};
+
+export async function fetchAdminToolFunds(): Promise<AdminToolFundsResult> {
+  const res = await proxyFetch("admin/tool-funds");
+  const data = await parseApiJson<AdminToolFundsResult & { detail?: string }>(res);
+  if (!res.ok) {
+    throw new Error(
+      typeof data.detail === "string" ? data.detail : "No se pudieron leer las herramientas.",
+    );
+  }
+  return data;
+}
+
 

@@ -67,6 +67,14 @@ def reset_my_daily_usage(user_id: str = Depends(require_super_admin)) -> dict:
     }
 
 
+@router.get("/tool-funds")
+def admin_tool_funds(_admin_id: str = Depends(require_super_admin)) -> dict:
+    """Estado y saldos de herramientas internas. Solo super admin."""
+    from app.services.admin_tool_funds import snapshot
+
+    return snapshot()
+
+
 @router.get("/users")
 def admin_list_users(
     search: str = Query(default=""),
