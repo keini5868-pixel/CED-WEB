@@ -11,6 +11,19 @@ def test_blocks_tool_invoke():
     assert blocked == ""
 
 
+def test_blocks_xml_generate_image_dump():
+    leaked = (
+        "Listo. Voy a generar ese flyer.\nVa.\n"
+        "<generate_image>\n"
+        '{"prompt": "Flyer oscuro", "size": "1080x1350"}\n'
+        "</generate_image>"
+    )
+    assert contains_tool_leak(leaked)
+    text, was = guard_voice_response(leaked)
+    assert was is True
+    assert text == ""
+
+
 def test_allows_natural_speech():
     assert not contains_tool_leak("Publicación enviada con éxito, señor.")
     text, was = guard_voice_response("Publicación enviada con éxito, señor.")

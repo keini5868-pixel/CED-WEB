@@ -29,6 +29,22 @@ _TYPO_MAP: dict[str, str] = {
     "prosaecion": "prospección",
     "prosaeción": "prospección",
     "i4": "IA",
+    "omle": "ponle",
+    "pmle": "ponle",
+    "pnele": "ponle",
+    "frazco": "frasco",
+    "isquierda": "izquierda",
+    "exquina": "esquina",
+}
+
+_IMAGE_REQUEST_TYPOS = {
+    "omle": "ponle",
+    "pmle": "ponle",
+    "pnele": "ponle",
+    "ponl": "ponle",
+    "frazco": "frasco",
+    "isquierda": "izquierda",
+    "exquina": "esquina",
 }
 
 # «Bote de creatina» = envase, no barco. El expander y los modelos lo leen mal.
@@ -43,9 +59,74 @@ _NAUTICAL_INTENT = re.compile(
 )
 
 
+_FITLINE_PACK = re.compile(
+    r"\b(?:activize|activise|activiz|restorate|power\s*cocktail|basics)\b",
+    re.I,
+)
+_OFFICIAL_PACK_HINT = re.compile(
+    r"\b(?:original|oficial|frasco|envase|bote|pote|tarro|en\s+la\s+mano)\b",
+    re.I,
+)
+_PM_LOGO_HINT = re.compile(
+    r"\blogo\s+de\s+(?:pm|pm[\s\-]?international|fitline)\b",
+    re.I,
+)
+_MODEL_PROMPT_LEAK = re.compile(
+    r"(?is)(?:^|\b)(?:EDIT the attached|Keep the EXACT same subject|"
+    r"SUBJECT LOCK:|User request:|photorealistic scene|"
+    r"same castle/building|Ajuste sobre la)"
+)
+
+
+def normalize_image_request_typos(text: str) -> str:
+    """Corrige typos de edición visual (omle/pmle, frazco, isquierda)."""
+    t = text or ""
+    if not t:
+        return t
+
+    def _fix(match: re.Match[str]) -> str:
+        word = match.group(0)
+        right = _IMAGE_REQUEST_TYPOS.get(word.lower())
+        if not right:
+            return word
+        return _replace_word_preserve_case(word, right)
+
+    return re.sub(r"\b[\w\-áéíóúñü]+\b", _fix, t, flags=re.I)
+
+
+def safe_image_display_caption(
+    label: str = "",
+    *,
+    edited: bool = False,
+) -> str:
+    """Caption visible: nunca el prompt interno del motor."""
+    fallback = "Imagen editada" if edited else "Imagen generada"
+    t = re.sub(r"\s+", " ", (label or "").strip())
+    if not t:
+        return fallback
+    if _MODEL_PROMPT_LEAK.search(t):
+        return fallback
+    if t.lower().startswith("edit "):
+        return fallback
+    if "\n" in (label or "") or len(t) > 80:
+        return fallback
+    return t
+
+
+def official_brand_likeness_note(text: str) -> str | None:
+    """Honestidad: IA no inserta el artwork oficial salvo que el usuario lo adjunte."""
+    t = text or ""
+    if not re.search(r"(?i)\b(?:original|oficial|logo\s+de\s+pm)\b", t):
+        return None
+    return (
+        "El frasco y el logo se aproximan al look oficial (IA). "
+        "Si tienes la foto o el logo oficiales, súbelos y los uso tal cual."
+    )
+
+
 def lock_spanish_image_subject(text: str) -> str:
     """Ancla homógrafos de producto para que la imagen no cambie de escena."""
-    raw = (text or "").strip()
+    raw = normalize_image_request_typos((text or "").strip())
     if not raw or _NAUTICAL_INTENT.search(raw):
         return raw
     locks: list[str] = []
@@ -55,6 +136,18 @@ def lock_spanish_image_subject(text: str) -> str:
         locks.append(
             f"The phrase '{kind} de {what}' is a PRODUCT TUB/JAR/CONTAINER of {what} "
             f"held in a hand — NOT a boat, ship, helm, tiller, deck, harbor, or water."
+        )
+    if _FITLINE_PACK.search(raw) and _OFFICIAL_PACK_HINT.search(raw):
+        locks.append(
+            "Activize/FitLine pack must look like the official PM-International "
+            "retail jar (recognizable branded supplement container in hand), "
+            "not a generic unlabeled bottle and not a different product. "
+            "Do not invent a fake product name on the label."
+        )
+    if _PM_LOGO_HINT.search(raw):
+        locks.append(
+            "Add a small recognizable PM-International logo in the requested corner "
+            "(default top-left). Do not invent a different brand or slogans."
         )
     if not locks:
         return raw
@@ -411,7 +504,7 @@ def extract_structured_lines_from_history(
 
 def extract_quoted_phrases(text: str, *, max_phrases: int = 5) -> list[str]:
     phrases: list[str] = []
-    for match in re.finditer(r'["«“]([^"»”]{4,80})["»”]', text or ""):
+    for match in re.finditer(r'["«“]([^"»”]{4,200})["»”]', text or ""):
         phrase = normalize_spanish(match.group(1).strip())
         if phrase and phrase not in phrases:
             phrases.append(phrase)
@@ -1107,7 +1200,8 @@ _BG_CHANGE_RE = re.compile(
 
 def user_requests_background_change(text: str) -> bool:
     """True si el usuario pide cambiar el fondo (no solo tipografía)."""
-    return bool(_BG_CHANGE_RE.search(text or ""))
+    t = normalize_image_request_typos(text or "")
+    return bool(_BG_CHANGE_RE.search(t))
 
 
 def user_asks_for_on_image_copy(text: str) -> bool:
@@ -1144,18 +1238,27 @@ def build_reference_scene_edit_prompt(user_text: str) -> str:
     if user_requests_background_change(user_text):
         keep = (
             "EDIT the attached image. Keep the EXACT same subject "
-            "(same castle/building/person/object, same geometry, same circular CED logo "
-            "reading exactly CED — never CEDD). "
+            "(same person, product, object, and composition). "
             "Only change the background as the user asked. "
-            "Do NOT generate a different building. "
+            "Do NOT generate a different subject. "
             "Do NOT add buttons, captions, slogans, or extra words."
         )
+        if _PM_LOGO_HINT.search(user_text):
+            keep += (
+                " If the user also asked for a PM-International logo, place a small "
+                "recognizable mark in the requested corner (default top-left)."
+            )
     else:
         keep = (
             "EDIT the attached image. Keep the EXACT same subject and composition. "
             "Apply only the user's requested visual change. "
             "Do NOT replace the subject. Do NOT add unsolicited text."
         )
+        if _PM_LOGO_HINT.search(user_text):
+            keep += (
+                " Place a small recognizable PM-International logo in the requested "
+                "corner (default top-left). Do not invent a different brand."
+            )
     return f"{keep} User request: {request}".strip()[:3800]
 
 

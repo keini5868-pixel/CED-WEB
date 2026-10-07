@@ -288,6 +288,9 @@ export function useCedVoiceSession(
   const lastVoiceActionIdRef = useRef<number | null>(null);
   const lastCameraHeartbeatRef = useRef(0);
   const lastToolEventIdRef = useRef(0);
+  const voiceSessionActiveRef = useRef(false);
+  const sessionStartedAtRef = useRef(0);
+  const replayVoiceImagesRef = useRef(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -379,6 +382,9 @@ export function useCedVoiceSession(
   useEffect(() => {
     micOnRef.current = micOn;
   }, [micOn]);
+  useEffect(() => {
+    voiceSessionActiveRef.current = voiceSessionActive;
+  }, [voiceSessionActive]);
 
   const persistMessage = useCallback(
     async (role: "user" | "model", text: string) => {
@@ -676,11 +682,13 @@ export function useCedVoiceSession(
         }
         const state = await fetchVoiceClientState(false, { transcript: true });
         const events = state.tool_events ?? [];
+        const allowVoiceImages = replayVoiceImagesRef.current;
         for (const ev of events) {
           const id = Number(ev.id || 0);
           if (!id || id <= lastToolEventIdRef.current) continue;
           lastToolEventIdRef.current = id;
           if (ev.type === "generated_image" && ev.image_url) {
+            if (!allowVoiceImages || !voiceSessionActiveRef.current) continue;
             const normalized = normalizeCedMediaUrl(ev.image_url);
             lastPublishableImageRef.current = normalized;
             callbacksRef.current?.onGeneratedImage?.(normalized, ev.prompt);
@@ -781,6 +789,7 @@ export function useCedVoiceSession(
             }
           }
         }
+        replayVoiceImagesRef.current = true;
         if (state.conversation_id) {
           callbacksRef.current?.onVoiceThreadId?.(state.conversation_id);
         }
@@ -970,6 +979,9 @@ export function useCedVoiceSession(
     setRetellPollActive(false);
     lastVoiceActionIdRef.current = null;
     isRetellSessionRef.current = false;
+    voiceSessionActiveRef.current = false;
+    sessionStartedAtRef.current = 0;
+    replayVoiceImagesRef.current = false;
     setVoiceSessionActive(false);
     handlersRef.current = null;
 
@@ -1338,6 +1350,20 @@ export function useCedVoiceSession(
       if (startRetell) {
         isRetellSessionRef.current = true;
         lastLiveTranscriptSeqRef.current = 0;
+        lastPublishableImageRef.current = null;
+        sessionStartedAtRef.current = Date.now();
+        replayVoiceImagesRef.current = false;
+        try {
+          const prior = await fetchVoiceClientState(false);
+          const priorEvents = prior.tool_events ?? [];
+          lastToolEventIdRef.current = priorEvents.reduce(
+            (max, ev) => Math.max(max, Number(ev.id || 0)),
+            lastToolEventIdRef.current,
+          );
+        } catch {
+          /* el poll no debe pintar una imagen de la llamada anterior */
+        }
+        voiceSessionActiveRef.current = true;
         setVoiceSessionActive(true);
         setRetellPollActive(true);
         setStatusLabel("Iniciando llamada…");
@@ -1365,25 +1391,10 @@ export function useCedVoiceSession(
           onCallStarted: () => {
             if (isStale()) return;
             retellCallStartedAtRef.current = Date.now();
-            lastPublishableImageRef.current = null;
             lastVoiceActionIdRef.current = null;
             setOrbState("listening");
             setStatusLabel(ORB_STATE_LABELS.listening);
-            void (async () => {
-              try {
-                const state = await fetchVoiceClientState(false);
-                const events = state.tool_events ?? [];
-                const maxId = events.reduce(
-                  (max, ev) => Math.max(max, Number(ev.id || 0)),
-                  lastToolEventIdRef.current,
-                );
-                lastToolEventIdRef.current = maxId;
-              } catch {
-                /* mantener cursor de eventos */
-              }
-              if (isStale()) return;
-              setRetellPollActive(true);
-            })();
+            setRetellPollActive(true);
           },
           onCallEnded: () => {
             if (isStale()) return;

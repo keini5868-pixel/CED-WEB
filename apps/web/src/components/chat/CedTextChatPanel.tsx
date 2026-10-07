@@ -47,6 +47,10 @@ import {
   rememberConversationMessages,
   VOICE_THREAD_RESUME_NOTE,
 } from "@/lib/api/conversations";
+import {
+  looksLikeImageToolDump,
+  shouldHideHudTranscript,
+} from "@/lib/voice/hud-transcript-filter";
 
 export type LiveVoiceTurn = {
   streamKey: string;
@@ -1321,6 +1325,7 @@ export function CedTextChatPanel({
   const pinnedMessages = messages.filter((m) => !isVoiceLiveMessage(m));
   const liveDisplay: ChatMessage[] = liveVoiceTurns
     .filter((item) => Boolean(item.content?.trim()))
+    .filter((item) => !looksLikeImageToolDump(item.content) && !shouldHideHudTranscript(item.content))
     .map((item) => ({
       id: `${VOICE_LIVE_PREFIX}${item.streamKey}`,
       role: item.role === "user" ? "user" : "model",
@@ -1328,7 +1333,13 @@ export function CedTextChatPanel({
       created_at: new Date().toISOString(),
       partial: Boolean(item.partial),
     }));
-  const visibleMessages = liveDisplay.length > 0 ? liveDisplay : pinnedMessages;
+  const cleanedPinned = pinnedMessages.filter((m) => !looksLikeImageToolDump(m.content));
+  const visibleMessages =
+    liveDisplay.length > 0
+      ? liveDisplay
+      : voiceSessionActive
+        ? cleanedPinned.filter((m) => isStickyWelcome(m)).slice(-1)
+        : cleanedPinned;
 
   const shell = (
       <div

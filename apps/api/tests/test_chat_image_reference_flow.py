@@ -584,3 +584,118 @@ def test_creatine_correction_is_new_image_not_reference_edit():
 def test_color_tweak_still_uses_reference():
     assert is_image_subject_correction("cambiale el color") is False
     assert wants_image_reference_edit("cambiale el color") is True
+
+
+ACTIVIZE_THREAD = [
+    {
+        "role": "user",
+        "content": (
+            "hola ced quiero generar una imagen de una persona con un frazco "
+            "de activize en la mano pero quiero que el frasco sea el original"
+        ),
+    },
+    {"role": "assistant", "content": "Listo. Aquí está tu imagen generada."},
+    {
+        "role": "user",
+        "content": "ok pero ahora a esa misma foto ponle un fondo azul",
+    },
+    {"role": "assistant", "content": "Listo. Aquí está tu imagen con los cambios pedidos."},
+    {
+        "role": "user",
+        "content": "ok perfecto a esa misma foto omle el logo de pm arriba a la isquierda en la exquina",
+    },
+    {"role": "assistant", "content": "Listo. Aquí está tu imagen con los cambios pedidos."},
+]
+
+
+def test_omle_pmle_logo_routes_to_same_image_edit():
+    from app.services.chat_intents import is_simple_photo_edit_request
+    from app.services.marketing_creative import resolve_image_creation_from_text
+
+    omle = "ok perfecto a esa misma foto omle el logo de pm arriba a la isquierda en la exquina"
+    pmle = "ok perfecto a esa misma imagen pmle el logo de pm arriba a la isquierda en la exquina"
+    assert wants_image_reference_edit(omle) is True
+    assert wants_image_reference_edit(pmle) is True
+    assert user_requests_prior_reference(omle) is True
+    assert is_simple_photo_edit_request(omle) is True
+    assert should_take_direct_image_path(omle, ACTIVIZE_THREAD) is True
+    assert should_take_direct_image_path(pmle, ACTIVIZE_THREAD) is True
+    assert resolve_image_creation_from_text(omle, ACTIVIZE_THREAD) is None
+
+
+def test_fondo_azul_is_edit_not_marketing_creativo():
+    from app.services.marketing_creative import resolve_image_creation_from_text
+
+    msg = "ok pero ahora a esa misma foto ponle un fondo azul"
+    assert wants_image_reference_edit(msg) is True
+    assert should_take_direct_image_path(msg, ACTIVIZE_THREAD[:2]) is True
+    creation = resolve_image_creation_from_text(msg, ACTIVIZE_THREAD[:2])
+    assert creation is None
+    merged = effective_user_prompt(msg, ACTIVIZE_THREAD[:2])
+    assert "activize" in merged.lower()
+    assert "fondo azul" in merged.lower()
+    assert "creativo —" not in merged.lower()
+
+
+def test_from_scratch_composes_activize_blue_and_pm_logo():
+    from app.services.chat_intents import (
+        compose_visual_thread_brief,
+        user_requests_from_scratch_compose,
+    )
+
+    msg = "ok genera esa desde cero asi con todo esos detalles"
+    assert user_requests_from_scratch_compose(msg) is True
+    assert should_take_direct_image_path(msg, ACTIVIZE_THREAD) is True
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    assert (
+        should_use_reference_generation(
+            msg,
+            ACTIVIZE_THREAD,
+            user_id=USER,
+            conversation_id=CONV,
+        )
+        is False
+    )
+    brief = compose_visual_thread_brief(msg, ACTIVIZE_THREAD) or ""
+    low = brief.lower()
+    assert "activize" in low
+    assert "fondo azul" in low
+    assert "logo de pm" in low
+    merged = effective_user_prompt(msg, ACTIVIZE_THREAD)
+    assert "activize" in merged.lower()
+    assert "fondo azul" in merged.lower()
+    assert "logo de pm" in merged.lower()
+
+
+def test_safe_caption_never_leaks_edit_prompt():
+    from app.services.copy_quality import safe_image_display_caption
+
+    leak = (
+        "EDIT the attached image. Keep the EXACT same subject "
+        "(same castle/building/person/object, same geometry, same circular C"
+    )
+    assert safe_image_display_caption(leak, edited=True) == "Imagen editada"
+    assert "EDIT" not in safe_image_display_caption(leak)
+    assert safe_image_display_caption("Flyer — DUGLE STUDIO") == "Flyer — DUGLE STUDIO"
+
+
+@patch("app.services.gemini_images.generate_image")
+@patch("app.services.image_reference_generator.generate_image_with_reference")
+def test_activize_fondo_azul_reply_is_not_creativo(mock_ref: MagicMock, mock_gen: MagicMock):
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    register_text_chat_image_url(USER, CONV, "https://example.com/activize.png", prompt="activize")
+    mock_ref.return_value = {
+        "ok": True,
+        "url": "https://example.com/activize-blue.png",
+        "caption": (
+            "EDIT the attached image. Keep the EXACT same subject "
+            "(same castle/building/person/object"
+        ),
+    }
+    msg = "ok pero ahora a esa misma foto ponle un fondo azul"
+    result = run_chat_image_generation(USER, CONV, msg, ACTIVIZE_THREAD[:2], plan_id="elite")
+    assert result["ok"] is True
+    mock_ref.assert_called_once()
+    assert "creativo" not in str(result.get("reply") or "").lower()
+    assert "EDIT the attached" not in str(result.get("caption") or "")
+    assert result["caption"] == "Imagen editada"

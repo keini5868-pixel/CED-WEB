@@ -22,6 +22,12 @@ _CODE_LEAK = re.compile(
     re.IGNORECASE,
 )
 
+_XML_TOOL_LEAK = re.compile(
+    r"</?\s*(?:generate_image|generar_pdf|search_web|function_call|tool_call|"
+    r"invoke|tool_code)\b",
+    re.IGNORECASE,
+)
+
 _TOOL_NAMED_ARG = re.compile(r"\b[a-z_][a-z0-9_]*\s*\(\s*[a-z_]+\s*=", re.IGNORECASE)
 _TOOL_SNAKE_CALL = re.compile(r"\b[a-z_][a-z0-9_]*(?:_[a-z0-9_]+)+\s*\(", re.IGNORECASE)
 _TOOL_INVOKE_ONLY = re.compile(r"^[a-z_][a-z0-9_]*\s*\([^)]*\)\s*\.?$", re.IGNORECASE)
@@ -41,9 +47,12 @@ def contains_code_leak(text: str) -> bool:
 
 
 def contains_tool_leak(text: str) -> bool:
-    cleaned = " ".join((text or "").split()).strip()
+    raw = text or ""
+    cleaned = " ".join(raw.split()).strip()
     if not cleaned:
         return False
+    if _XML_TOOL_LEAK.search(raw) or _XML_TOOL_LEAK.search(cleaned):
+        return True
     return bool(
         _TOOL_NAMED_ARG.search(cleaned)
         or _TOOL_SNAKE_CALL.search(cleaned)

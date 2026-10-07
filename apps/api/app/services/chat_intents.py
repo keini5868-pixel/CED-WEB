@@ -487,7 +487,8 @@ _PRIOR_REFERENCE = re.compile(
     r"\b("
     r"igual\s+a\s+(?:la\s+)?(?:que\s+)?(?:te\s+)?(?:pas[eé]|sub[ií]|mand[eé]|envi[eé])"
     r"|igual\s+a\s+(?:la\s+)?(?:imagen|foto|flyer|creativo|referencia)"
-    r"|(?:la|el)\s+(?:misma|mismo)\s+(?:imagen|foto|flyer|creativo|dise[nñ]o|referencia|castillo|logo|sujeto|edificio|producto)"
+    r"|(?:la|el|esa|esta)\s+(?:misma|mismo)\s+(?:imagen|foto|flyer|creativo|dise[nñ]o|referencia|castillo|logo|sujeto|edificio|producto)"
+    r"|a\s+esa\s+misma\s+(?:imagen|foto|flyer|pieza)"
     r"|ese\s+mismo(?=\s+(?:con|pero|y)|[.\s]*$)|esa\s+misma(?=\s+(?:con|pero|y)|[.\s]*$)"
     r"|(?:mism[oa]s?\s+)(?:precios?|nombre|dise[nñ]o|estilo|textos?)"
     r"|(?:imagen|foto|flyer|creativo)\s+(?:de\s+)?referencia"
@@ -514,7 +515,11 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|as[ií]\s+como\s+(?:esta|esa)"
     r"|con\s+(?:esta|esa)\s+misma"
     r"|mism[oa]s?\s+caracter[ií]sticas?"
-    r"|pon(?:le|me|er)\w*|ponga(?!s)\w*|agr[eé]g[aá]\w*|a[nñ]ade\w*|coloca\w*|incluye\w*"
+    r"|pon(?:le|me|er)\w*|ponga(?!s)\w*|omle|pmle|pnele|"
+    r"agr[eé]g[aá]\w*|a[nñ]ade\w*|coloca\w*|incluye\w*"
+    r"|logo\s+de\s+(?:pm|ced|fitline)"
+    r"|(?:arriba|abajo)\s+a\s+la\s+(?:isquierda|izquierda|derecha)"
+    r"|(?:en\s+)?(?:la\s+)?(?:esquina|exquina)"
     r"|mant[eé]n(?:me)?\s+(?:l[ao]s?\s+)?(?:precios?|textos?|lista|dise[nñ]o)"
     r"|conserva\s+(?:l[ao]s?\s+)?(?:precios?|textos?|lista)"
     r"|(?:en|sobre|en\s+la)\s+(?:imagen|foto|flyer|creativo|banner|dise[nñ]o)\b.*"
@@ -591,7 +596,10 @@ def is_script_narrative_request(text: str) -> bool:
 
 
 def user_requests_prior_reference(text: str) -> bool:
-    return bool(_PRIOR_REFERENCE.search((text or "").strip()))
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
+    return bool(_PRIOR_REFERENCE.search(t))
 
 
 _SUBJECT_CORRECTION = re.compile(
@@ -646,7 +654,9 @@ def is_image_subject_correction(text: str) -> bool:
 
 def wants_image_reference_edit(text: str) -> bool:
     """True si el usuario pide variar/editar/inspirarse en una imagen de referencia."""
-    t = (text or "").strip()
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
     if not t or is_script_narrative_request(t):
         return False
     if is_image_subject_correction(t):
@@ -903,6 +913,98 @@ def last_concrete_image_user_prompt(
     return None
 
 
+_FROM_SCRATCH_COMPOSE = re.compile(
+    r"(?i)(?:desde\s+cero|de\s+cero).{0,80}(?:todo|detalles)|"
+    r"(?:todo(?:s)?\s+(?:esos|estos)\s+detalles)|"
+    r"genera(?:r|me|la|lo|nos)?\s+(?:esa|esta|la|una)?\s*"
+    r"(?:imagen\s+|foto\s+)?(?:desde|de)\s+cero"
+)
+_SIMPLE_PHOTO_EDIT = re.compile(
+    r"(?i)\b(?:"
+    r"fondo\s+(?:azul|verde|rojo|negro|blanc|amarill|gris|rosa|naranja|oscur|clar)|"
+    r"logo\s+de\s+(?:pm|ced|fitline|la\s+marca)|"
+    r"(?:omle|pmle|pnele|ponle)\s+(?:el\s+)?(?:logo|fondo)|"
+    r"(?:esquina|exquina)\s+(?:superior|inferior)?"
+    r")\b"
+)
+
+
+def user_requests_from_scratch_compose(text: str) -> bool:
+    """«Genera esa desde cero con todos esos detalles» — reúne el hilo, no un sujeto nuevo."""
+    return bool(_FROM_SCRATCH_COMPOSE.search(text or ""))
+
+
+def is_simple_photo_edit_request(text: str) -> bool:
+    """Cambio de fondo/logo sobre la misma foto — no un flyer/creativo de marketing."""
+    from app.services.copy_quality import (
+        normalize_image_request_typos,
+        user_requests_background_change,
+    )
+
+    t = normalize_image_request_typos((text or "").strip())
+    if not t:
+        return False
+    if user_requests_background_change(t):
+        return True
+    return bool(_SIMPLE_PHOTO_EDIT.search(t))
+
+
+def collect_visual_thread_deltas(
+    history: list[dict[str, str]] | None,
+) -> list[str]:
+    """Ajustes del usuario en el episodio visual (fondo, logo, color), no el generate inicial."""
+    deltas: list[str] = []
+    for row in visual_episode_history(history):
+        role = str(row.get("role") or "").lower()
+        if role not in {"user", "customer"}:
+            continue
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        if is_generate_image_intent(content) and not wants_image_reference_edit(content):
+            continue
+        if (
+            wants_image_reference_edit(content)
+            or parse_followup_image_prompt(content, history)
+            or is_simple_photo_edit_request(content)
+        ):
+            deltas.append(content)
+    return deltas
+
+
+def compose_visual_thread_brief(
+    text: str,
+    history: list[dict[str, str]] | None,
+) -> str | None:
+    """Brief único: escena original + fondo + logo + demás ajustes del hilo."""
+    from app.services.copy_quality import normalize_image_request_typos
+
+    current = normalize_image_request_typos((text or "").strip())
+    prior = last_concrete_image_user_prompt(history)
+    deltas = collect_visual_thread_deltas(history)
+    parts: list[str] = []
+    seen: set[str] = set()
+
+    def _add(chunk: str | None) -> None:
+        clean = (chunk or "").strip()
+        key = clean.lower()
+        if not clean or key in seen:
+            return
+        seen.add(key)
+        parts.append(clean)
+
+    _add(prior)
+    for delta in deltas:
+        _add(delta)
+    if current and not user_requests_from_scratch_compose(current):
+        _add(current)
+    if not parts:
+        return None
+    if len(parts) == 1 and not user_requests_from_scratch_compose(current):
+        return None
+    return "\n\n".join(parts)[:4000]
+
+
 def visual_episode_history(
     history: list[dict[str, str]] | None,
 ) -> list[dict[str, str]]:
@@ -970,7 +1072,11 @@ _FOLLOWUP_SKIP = re.compile(
 # generaba imagen con cualquier mensaje tras el primer pedido de imagen en la conversación).
 _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"\b("
-    r"hazl[oa]s?|c[aá]mbial[oa]|ajust[aá]l[oa]|ponle|qu[ií]tale|agr[eé]gale|mejor[aá]l[oa]|"
+    r"hazl[oa]s?|c[aá]mbial[oa]|ajust[aá]l[oa]|ponle|omle|pmle|pnele|"
+    r"qu[ií]tale|agr[eé]gale|mejor[aá]l[oa]|"
+    r"logo\s+de\s+(?:pm|ced|fitline)|"
+    r"(?:arriba|abajo)\s+a\s+la\s+(?:isquierda|izquierda|derecha)|"
+    r"(?:esquina|exquina)|"
     r"otra\s+versi[oó]n|otra\s+variaci[oó]n|otra\s+vez|de\s+nuevo|una\s+m[aá]s|"
     r"m[aá]s\s+(?:grande|peque[nñ]|oscur\w*|clar\w*|colorid\w*|realist\w*|simple|detall\w*|grues\w*|fin[ao]s?|negrit\w*)|"
     r"en\s+otro\s+color|otro\s+color|diferente\s+color|otro\s+estilo|otro\s+fondo|"
@@ -1168,6 +1274,8 @@ def is_image_choice_confirmation(text: str) -> bool:
         return False
     if is_generate_image_intent(t) or is_text_ideation_request(t):
         return False
+    if user_requests_from_scratch_compose(t):
+        return False
     if re.search(r"(?i)\b(pregunta|preguntas|despu[eé]s\s+de)\b", t):
         return False
     return bool(_SHORT_IMAGE_CHOICE.match(t) or _IMAGE_CHOICE_CONFIRM.search(t))
@@ -1253,7 +1361,9 @@ def resolve_confirmed_image_prompt(
 
 def parse_followup_image_prompt(text: str, history: list[dict[str, str]] | None = None) -> str | None:
     """Detecta pedidos cortos de imagen que continúan un tema visual reciente."""
-    t = (text or "").strip()
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
     # Revisiones de tipografía o «ese mismo con fondo…» pueden pasar de 120.
     max_len = 500 if re.search(r"(?i)\btextos?\b", t) else 280
     if not t or is_generate_image_intent(t) or len(t) > max_len or len(t) < 6:

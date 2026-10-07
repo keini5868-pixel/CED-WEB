@@ -34,7 +34,10 @@ from app.services.chat_intents import (
     visual_episode_history,
     resolve_anaphoric_image_prompt,
     resolve_confirmed_image_prompt,
+    user_requests_from_scratch_compose,
     user_requests_prior_reference,
+    compose_visual_thread_brief,
+    is_simple_photo_edit_request,
     wants_image_reference_edit,
 )
 from app.services.marketing_creative import (
@@ -199,6 +202,10 @@ def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> st
     overlay_prompt = compose_confirmed_overlay_prompt(t, history)
     if overlay_prompt:
         return overlay_prompt
+    if user_requests_from_scratch_compose(t):
+        composed = compose_visual_thread_brief(t, history)
+        if composed:
+            return composed
     parsed = parse_generate_image_prompt(t)
     needs_thread = bool(
         parsed
@@ -263,6 +270,8 @@ def should_use_reference_generation(
 
     if not resolve_reference_image_bytes(user_id, conversation_id):
         return False
+    if user_requests_from_scratch_compose(text):
+        return False
     # Variación / edición / «igual a la que te pasé» / «mismos precios».
     if wants_image_reference_edit(text):
         return True
@@ -292,7 +301,9 @@ def should_take_direct_image_path(
     Los briefs largos (fondo + tipografía + overlays) DEBEN entrar aquí: el límite
     anterior de 500 chars desviaba a Claude/texto y terminaba en stall silencioso.
     """
-    t = (text or "").strip()
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
     if not t or is_pdf_intent(t):
         return False
     if len(t) > DIRECT_IMAGE_MAX_CHARS:
@@ -311,6 +322,11 @@ def should_take_direct_image_path(
         return False
     from app.services.image_text_ritual import needs_overlay_readback
 
+    if user_requests_from_scratch_compose(t) and (
+        history_has_active_image_thread(history)
+        or last_concrete_image_user_prompt(history)
+    ):
+        return True
     if is_bare_affirmation(t):
         return assistant_offered_image_act(history)
     if is_image_choice_confirmation(t):
@@ -327,11 +343,18 @@ def should_take_direct_image_path(
     # Intent de imagen gana a «cambio de tema» / small-talk (listas con «clima», etc.).
     if is_generate_image_intent(t):
         return True
+    if user_requests_from_scratch_compose(t) and (
+        history_has_active_image_thread(history)
+        or last_concrete_image_user_prompt(history)
+    ):
+        return True
     if is_casual_chat_interrupt(t):
         return False
     if parse_followup_image_prompt(t, history):
         return True
-    if history_has_active_image_thread(history) and wants_image_reference_edit(t):
+    if history_has_active_image_thread(history) and (
+        wants_image_reference_edit(t) or is_simple_photo_edit_request(t)
+    ):
         return True
     if is_image_creation_request(t, history) and not is_exploratory_talk(t):
         return True
@@ -475,8 +498,12 @@ def run_chat_image_generation(
         is_ced_wordmark_only_request,
         compose_persuasive_overlay_lines,
         lock_on_image_spelling,
+        lock_spanish_image_subject,
+        normalize_image_request_typos,
+        official_brand_likeness_note,
         prompt_requires_ideogram_text,
         resolve_image_text_mode,
+        safe_image_display_caption,
         summarize_overlay_labels_for_image,
         user_asks_for_on_image_copy,
         user_requests_background_change,
@@ -489,11 +516,9 @@ def run_chat_image_generation(
         locked_overlay_lines,
     )
 
-    user_text = (text or "").strip()
+    user_text = normalize_image_request_typos((text or "").strip())
     history = visual_episode_history(history)
     effective = effective_user_prompt(user_text, history)
-    from app.services.copy_quality import lock_spanish_image_subject
-
     effective = lock_spanish_image_subject(effective)
     subject_fix = is_image_subject_correction(user_text)
     thread_prompt = get_last_image_generation_prompt(user_id, conversation_id)
@@ -545,18 +570,31 @@ def run_chat_image_generation(
         use_reference = False
     ref_payload = resolve_reference_image_bytes(user_id, conversation_id) if use_reference else None
 
-    creation = resolve_image_creation_from_text(
-        user_text,
-        history,
-        has_reference_image=bool(ref_payload),
-    )
+    simple_photo_edit = (
+        thread_edit
+        or scene_only_edit
+        or bg_only_edit
+        or is_simple_photo_edit_request(user_text)
+    ) and not is_marketing_creative_intent(user_text)
+
+    creation = None
+    if not simple_photo_edit:
+        creation = resolve_image_creation_from_text(
+            user_text,
+            history,
+            has_reference_image=bool(ref_payload),
+        )
     display_label = ""
     success_reply = "Listo. Aquí está tu imagen generada."
     style_mode = "edit"
     locked_copy = locked_overlay_lines(user_text, history)
     overlay_delivery = delivery_caption_for_image(user_text, history)
 
-    if creation:
+    if simple_photo_edit:
+        display_label = "Imagen editada"
+        success_reply = "Listo. Aquí está tu imagen con los cambios pedidos."
+        model_prompt = effective
+    elif creation:
         display_label = creation["display_label"]
         success_reply = creation.get("reply") or "Listo. Aquí está su creativo."
         style_mode = creation.get("style_mode") or "edit"
@@ -795,7 +833,10 @@ def run_chat_image_generation(
         prompt=str(effective or user_text),
     )
 
-    caption = str(img_result.get("caption") or display_label or "Imagen generada")
+    caption = safe_image_display_caption(
+        str(img_result.get("caption") or display_label or ""),
+        edited=bool(ref_payload or thread_edit or simple_photo_edit),
+    )
 
     if img_result.get("ideogram_used"):
         # GPT Image / Ideogram ya renderizan tipografía — sin aviso de Gemini.
@@ -813,6 +854,12 @@ def run_chat_image_generation(
                 f"{reply}\n\nCon un plan de pago (desde Starter) puedo usar un motor "
                 "especializado en texto (GPT Image) para que se vea más legible, señor."
             )
+
+    likeness = official_brand_likeness_note(user_text) or official_brand_likeness_note(
+        effective
+    )
+    if likeness and likeness not in reply:
+        reply = f"{reply}\n\n{likeness}"
 
     if user_requests_ced_branding(effective) and text_mode in ("decorative", "literal"):
         reply = (
@@ -832,14 +879,30 @@ def run_chat_image_generation(
     }
 
 
-_HALLUCINATED_GENERATE_IMAGE = re.compile(r"generate_image\s*\(", re.I)
+_HALLUCINATED_GENERATE_IMAGE = re.compile(
+    r"(?is)"
+    r"(?:"
+    r"<\s*generate_image\b"
+    r"|</\s*generate_image\s*>"
+    r"|generate_image\s*\("
+    r"|generate_image\s*\{"
+    r")"
+)
 _HALLUCINATED_JSON_PROMPT = re.compile(
-    r"""generate_image\s*\(\s*\{[^}]*["']prompt["']\s*:\s*["']([^"']+)["']""",
+    r"""(?:generate_image\s*\(\s*)?\{[^}]*["']prompt["']\s*:\s*["']([^"']+)["']""",
     re.I | re.S,
 )
 _HALLUCINATED_KW_PROMPT = re.compile(
     r"""generate_image\s*\(\s*prompt\s*=\s*["']([^"']+)["']""",
     re.I,
+)
+_XML_GENERATE_IMAGE_BLOCK = re.compile(
+    r"(?is)<\s*generate_image\b[^>]*>.*?</\s*generate_image\s*>"
+)
+_JSON_TOOL_BLOB = re.compile(
+    r"(?is)\{[^{}]*[\"']prompt[\"']\s*:\s*[\"'].*?[\"']\s*,\s*"
+    r"[\"'](?:size|style|aspect_ratio)[\"']\s*:"
+    r".*?\}"
 )
 _FALSE_SUCCESS_MARKERS = (
     "aquí está tu",
@@ -879,6 +942,8 @@ _VISUAL_NOUNS = (
 # LLM pegó el prompt / brief como si fuera el resultado (sin llamar la tool).
 _PROMPT_DUMP_MARKERS = (
     "prompt:",
+    '"prompt":',
+    "'prompt':",
     "descripción visual",
     "descripcion visual",
     "brief visual",
@@ -886,6 +951,8 @@ _PROMPT_DUMP_MARKERS = (
     "instrucciones actuales",
     '{"prompt"',
     "{'prompt'",
+    "<generate_image",
+    "</generate_image>",
 )
 
 
@@ -909,10 +976,14 @@ def extract_hallucinated_generate_image_prompt(text: str) -> str | None:
 
 
 def strip_hallucinated_generate_image_text(text: str) -> str:
+    cleaned = text or ""
+    cleaned = _XML_GENERATE_IMAGE_BLOCK.sub("", cleaned)
+    cleaned = re.sub(r"(?is)<\s*/?\s*generate_image\b[^>]*>", "", cleaned)
+    cleaned = _JSON_TOOL_BLOB.sub("", cleaned)
     cleaned = re.sub(
         r"print\s*\(\s*generate_image\s*\([^)]*\)\s*\)",
         "",
-        text or "",
+        cleaned,
         flags=re.I | re.S,
     )
     cleaned = re.sub(
@@ -922,6 +993,7 @@ def strip_hallucinated_generate_image_text(text: str) -> str:
         flags=re.I | re.S,
     )
     cleaned = re.sub(r"generate_image\s*\([^)]*\)", "", cleaned, flags=re.I | re.S)
+    cleaned = re.sub(r"(?im)^\s*va\.\s*$", "", cleaned)
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
     return cleaned.strip()
 
@@ -986,10 +1058,17 @@ def salvage_image_turn(
             return clean or str(image_attachment.get("caption") or "Imagen generada"), image_attachment
         return reply, image_attachment
 
-    wants_image = should_take_direct_image_path(user_text, history)
     hallucinated = looks_like_hallucinated_generate_image(reply)
     false_success = reply_promises_image_without_attachment(reply)
-    prompt_dump = wants_image and reply_dumps_prompt_instead_of_image(reply, user_text)
+    dumped = reply_dumps_prompt_instead_of_image(reply, user_text)
+    explicit_image = is_generate_image_intent(user_text) and not is_text_ideation_request(
+        user_text
+    )
+    wants_image = should_take_direct_image_path(user_text, history)
+    if not wants_image and explicit_image and (hallucinated or dumped or false_success):
+        # Overlay ritual no debe dejar pasar un dump XML/JSON de generate_image.
+        wants_image = True
+    prompt_dump = wants_image and dumped
     wait_filler = wants_image and reply_is_image_wait_filler(reply)
     if not wants_image:
         # Claude/avanzado a menudo dice «listo, señor» y menciona diseño/imagen

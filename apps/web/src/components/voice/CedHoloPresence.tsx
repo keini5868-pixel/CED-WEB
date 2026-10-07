@@ -507,6 +507,11 @@ export function CedHoloPresence({ active, speaking }: CedHoloPresenceProps) {
       className="pointer-events-none absolute inset-0 z-[80] h-full w-full overflow-hidden"
       aria-hidden
     >
+      {active ? (
+        <div
+          className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(6,12,22,0.94)_0%,rgba(6,12,22,0.82)_38%,rgba(6,12,22,0.35)_62%,transparent_78%)]"
+        />
+      ) : null}
       <canvas ref={canvasRef} className="absolute inset-0" />
       <div className="absolute inset-0 flex items-center justify-center pr-[6.5rem] sm:pr-[8rem] lg:pr-[min(15.5rem,28vw)]">
         <AnimatePresence>

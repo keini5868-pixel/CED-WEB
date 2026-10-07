@@ -62,11 +62,37 @@ def test_nano_banana_2_is_primary_image_model():
     assert "gemini-2.5-flash-image" in models
 
 
+XML_HALLUCINATED = """Listo. Voy a generar ese flyer con fondo oscuro y la frase exacta.
+
+Va.
+
+<generate_image>
+{
+"prompt": "Flyer profesional fondo oscuro. Texto: 'La credibilidad incumplida es como un bacon'.",
+"size": "1080x1350",
+"style": "professional_dark_minimal"
+}
+</generate_image>
+
+Listo. Quieres que le ajuste algo?"""
+
+
 def test_detects_json_style_generate_image_hallucination():
     assert looks_like_hallucinated_generate_image(HALLUCINATED)
     assert _has_hallucinated_tool_code(HALLUCINATED)
     assert _has_hallucinated_tool(HALLUCINATED)
     assert _tool_hallucination_kind(HALLUCINATED) == "generate_image"
+
+
+def test_detects_xml_generate_image_hallucination():
+    assert looks_like_hallucinated_generate_image(XML_HALLUCINATED)
+    assert _has_hallucinated_tool(XML_HALLUCINATED)
+    assert _has_hallucinated_tool_code(XML_HALLUCINATED)
+    assert _tool_hallucination_kind(XML_HALLUCINATED) == "generate_image"
+    stripped = strip_hallucinated_generate_image_text(XML_HALLUCINATED)
+    assert "generate_image" not in stripped
+    assert "<generate_image" not in stripped.lower()
+    assert "professional_dark_minimal" not in stripped
 
 
 def test_extract_and_strip_hallucinated_tool_text():
@@ -80,6 +106,34 @@ def test_extract_and_strip_hallucinated_tool_text():
 def test_reply_promises_image_without_attachment():
     assert reply_promises_image_without_attachment("Aquí está tu árbol. 🌳")
     assert not reply_promises_image_without_attachment("El árbol es una planta.")
+
+
+@patch("app.services.chat_image_generation.run_chat_image_generation")
+def test_salvage_xml_dump_generates_instead_of_showing_tool(mock_gen: MagicMock):
+    mock_gen.return_value = {
+        "ok": True,
+        "url": "https://example.com/flyer.png",
+        "reply": "Listo. Aquí está tu imagen generada.",
+        "caption": "Flyer",
+        "quality": "standard",
+    }
+    user = (
+        "quiero generar un flyer de fondo oscuro que tenga escrito esta frase "
+        "la credibilidad incumplida es como un bacon que te cobra una deuda "
+        "con intereses dobles"
+    )
+    reply, attachment = salvage_image_turn(
+        "user-1",
+        "conv-1",
+        user,
+        [],
+        XML_HALLUCINATED,
+        None,
+    )
+    assert attachment and attachment.get("url")
+    assert "generate_image" not in reply
+    assert "<generate_image" not in reply.lower()
+    mock_gen.assert_called_once()
 
 
 @patch("app.services.chat_image_generation.run_chat_image_generation")

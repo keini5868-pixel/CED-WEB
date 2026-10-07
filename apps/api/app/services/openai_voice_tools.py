@@ -59,7 +59,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
             "(cámara, adjunto o imagen previa en contexto). "
             "Úsala cuando diga: 'genera algo parecido a esto', 'hazme una variación', "
             "'crea con el mismo estilo', 'modifica esta imagen', 'genera versiones de esto', "
-            "'cámbiale el color', 'hazlo más moderno/minimalista'. "
+            "'cámbiale el color', 'ponle un fondo', 'ponle el logo', 'omle/pmle el logo', "
+            "'hazlo más moderno/minimalista'. "
+            "PROHIBIDO decir que no puedes editar la última imagen — sí puedes; invoca esta tool. "
             "REQUIERE imagen de referencia visible o adjunta. "
             "PROHIBIDO invocar sin referencia. Ejecuta DE INMEDIATO tras confirmar detalles."
         ),

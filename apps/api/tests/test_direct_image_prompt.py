@@ -9,6 +9,28 @@ from app.services.copy_quality import (
 from app.services.gemini_images import prepare_image_prompt
 
 
+def test_activize_original_jar_is_locked_not_generic():
+    from app.services.copy_quality import (
+        build_reference_scene_edit_prompt,
+        lock_spanish_image_subject,
+        official_brand_likeness_note,
+    )
+
+    locked = lock_spanish_image_subject(
+        "persona con un frazco de activize en la mano pero el frasco sea el original"
+    )
+    low = locked.lower()
+    assert "frasco de activize" in low
+    assert "official" in low or "retail jar" in low
+    assert "not a boat" in low
+    note = official_brand_likeness_note("quiero que el frasco sea el original")
+    assert note is not None
+    assert "oficial" in note.lower() or "look oficial" in note.lower()
+    bg = build_reference_scene_edit_prompt("ponle un fondo azul")
+    assert "castle/building" not in bg
+    assert "same person" in bg or "same subject" in bg.lower()
+
+
 def test_bote_de_creatina_is_a_tub_not_a_boat():
     from app.services.copy_quality import lock_spanish_image_subject
 

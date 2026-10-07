@@ -348,7 +348,9 @@ def _try_openai_reference_fallback(
         )
         if store_err:
             return store_err
-        caption = (display_label or "").strip() or topic[:120]
+        from app.services.copy_quality import safe_image_display_caption
+
+        caption = safe_image_display_caption(display_label, edited=True)
         return {
             "ok": True,
             "success": True,
@@ -403,7 +405,9 @@ def _try_openai_reference_fallback(
     )
     if store_err:
         return store_err
-    caption = (display_label or "").strip() or topic[:120]
+    from app.services.copy_quality import safe_image_display_caption
+
+    caption = safe_image_display_caption(display_label, edited=True)
     return {
         "ok": True,
         "success": True,
@@ -563,7 +567,9 @@ def _generate_image_with_reference_impl(
                 if store_err:
                     return store_err
                 cost = float(gemini_result.get("estimated_cost_usd") or GEMINI_STD_COST_USD)
-                caption = (display_label or "").strip() or topic[:120]
+                from app.services.copy_quality import safe_image_display_caption
+
+                caption = safe_image_display_caption(display_label, edited=True)
                 return {
                     "ok": True,
                     "success": True,

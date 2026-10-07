@@ -9,6 +9,8 @@ import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 type Props = {
   url: string | null;
   prompt?: string;
+  /** Cambia en cada generación para forzar recarga aunque la URL se parezca. */
+  shownAt?: number;
   onDismiss?: () => void;
   /** Superpone la imagen al lienzo central. */
   overlay?: boolean;
@@ -18,10 +20,12 @@ type Props = {
 export function CedVoiceImagePreview({
   url,
   prompt,
+  shownAt,
   onDismiss,
   overlay = false,
 }: Props) {
   const src = url ? normalizeCedMediaUrl(url) : null;
+  const frameKey = src ? `${src}#${shownAt ?? 0}` : "empty";
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const label = prompt ? `Imagen: ${prompt}` : "Imagen generada por CED";
 
@@ -29,7 +33,7 @@ export function CedVoiceImagePreview({
     <AnimatePresence>
       {src ? (
         <motion.div
-          key={src}
+          key={frameKey}
           initial={{ opacity: 0, y: overlay ? 0 : 12, scale: overlay ? 1 : 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: overlay ? 0 : 8, scale: 0.98 }}

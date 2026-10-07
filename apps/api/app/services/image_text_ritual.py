@@ -33,12 +33,33 @@ _GRAPHIC_DELIVERABLE = re.compile(
 
 _QUE_DIGA = re.compile(
     r"(?is)que\s+(?:diga[n]?|ponga[n]?|lea)\s+"
-    r"(?:[«\"'“]([^\"'»”\n]{2,80})[»\"'”]|([A-ZÁÉÍÓÚÑ0-9][^.\n?]{1,72}))"
+    r"(?:[«\"'“]([^\"'»”\n]{2,200})[»\"'”]|([A-ZÁÉÍÓÚÑ0-9][^.\n?]{1,200}))"
 )
 
 _CON_FRASE = re.compile(
-    r"(?is)(?:con\s+(?:el\s+texto|la\s+frase|las?\s+palabras?))\s+"
-    r"[«\"'“]?([^\"'»”\n.]{2,80})"
+    r"(?is)(?:con\s+(?:el\s+texto|la\s+frase|las?\s+palabras?|esta\s+frase))\s+"
+    r"[«\"'“]?([^\"'»”\n.]{2,200})"
+)
+
+# «que tenga escrito esta frase X» / «escrito: X» — sin comillas.
+_ESTA_FRASE = re.compile(
+    r"(?is)(?:esta\s+frase|la\s+frase(?:\s+exacta)?)\s+"
+    r"[«\"'“]?([^\"'»”\n]{8,200})"
+)
+_FRASE_ERA = re.compile(
+    r"(?is)(?:la\s+)?frase\s+era\s*[,:]?\s+"
+    r"[«\"'“]?([^\"'»”\n]{8,200})"
+)
+_TENGA_ESCRITO = re.compile(
+    r"(?is)(?:tenga\s+escrito|que\s+tenga\s+escrito)\s+"
+    r"(?:esta\s+frase\s+)?[«\"'“]?([^\"'»”\n]{8,200})"
+)
+_SCENE_TAIL = re.compile(
+    r"(?is)\s+(?:imagina(?:te)?|visualiza(?:r)?|visualmente|"
+    r"fondo\s+(?:oscuro|claro|negro|blanco)|"
+    r"con\s+(?:un|una)\s+(?:carpintero|hombre|mujer|persona|escena)|"
+    r"hay\s+unas?\s+herramient|"
+    r"un\s+carpintero)\b.*$"
 )
 
 _ETIQUETAS = re.compile(
@@ -82,9 +103,11 @@ _FITLINE_HEADLINES: tuple[tuple[re.Pattern[str], str], ...] = (
 _DELIVERY = "Listo. El texto es el que acordamos."
 
 
-def _clean_overlay(raw: str) -> str | None:
+def _clean_overlay(raw: str, *, max_len: int = 200) -> str | None:
     t = re.sub(r"\s+", " ", (raw or "").strip()).strip(" .,;:¿?")
-    if len(t) < 2 or len(t) > 80:
+    t = re.sub(r"(?is)^esta\s+frase\s+", "", t).strip()
+    t = _SCENE_TAIL.sub("", t).strip(" .,;:¿?")
+    if len(t) < 2 or len(t) > max_len:
         return None
     if _VAGUE_OVERLAY.match(t) or _OFFER_LEAK.search(t):
         return None
@@ -132,6 +155,12 @@ def _extract_from_text(text: str) -> list[str]:
         _add(match.group(1) or match.group(2) or "")
     for match in _CON_FRASE.finditer(t):
         _add(match.group(1) or "")
+    for match in _ESTA_FRASE.finditer(t):
+        _add(match.group(1) or "")
+    for match in _FRASE_ERA.finditer(t):
+        _add(match.group(1) or "")
+    for match in _TENGA_ESCRITO.finditer(t):
+        _add(match.group(1) or "")
     for match in _READBACK_LOCK.finditer(t):
         _add(match.group(1) or "")
     for match in _ETIQUETAS.finditer(t):
@@ -145,7 +174,7 @@ def _extract_from_text(text: str) -> list[str]:
             _add(part)
     for match in _ESCRITOS_BLOCK.finditer(t):
         first = (match.group(1) or "").split("\n", 1)[0].strip()
-        _add(first[:72])
+        _add(first[:200])
     for label in extract_spoken_overlay_labels(t):
         _add(label)
     return found
@@ -155,7 +184,11 @@ def locked_overlay_lines(
     text: str,
     history: list[dict[str, str]] | None = None,
 ) -> list[str]:
-    """Palabras exactas a pintar: comillas, «que diga», etiquetas o el read-back de CED."""
+    """Palabras exactas a pintar: comillas, «que diga», etiquetas o el read-back de CED.
+
+    Nunca hereda copy de un flyer viejo del hilo (versículo, frase anterior).
+    Solo el turno actual o el read-back inmediato («va a decir exactamente»).
+    """
     from app.services.copy_quality import is_ced_wordmark_only_request
 
     if is_ced_wordmark_only_request(text):
@@ -163,10 +196,25 @@ def locked_overlay_lines(
     found = _extract_from_text(text)
     if found:
         return found
+    inherit = (
+        not (text or "").strip()
+        or is_bare_affirmation(text)
+        or is_image_choice_confirmation(text)
+    )
+    if not inherit:
+        return []
     for row in reversed(history or []):
-        found = _extract_from_text(str(row.get("content") or ""))
-        if found:
-            return found
+        role = str(row.get("role") or "").lower()
+        content = str(row.get("content") or "")
+        if role in {"assistant", "model", "agent"}:
+            readback: list[str] = []
+            for match in _READBACK_LOCK.finditer(content):
+                clean = _clean_overlay(match.group(1) or "")
+                if clean and clean not in readback:
+                    readback.append(clean)
+            return readback
+        if role in {"user", "customer"}:
+            return _extract_from_text(content)
     return []
 
 
@@ -178,7 +226,8 @@ def overlay_is_locked(
 
 
 _EXPLICIT_TEXT_ASK = re.compile(
-    r"(?is)\b(?:en\s+texto|con\s+texto|que\s+diga|con\s+el\s+texto|con\s+la\s+frase)\b"
+    r"(?is)\b(?:en\s+texto|con\s+texto|que\s+diga|con\s+el\s+texto|"
+    r"con\s+la\s+frase|esta\s+frase|tenga\s+escrito|frase\s+era)\b"
 )
 
 

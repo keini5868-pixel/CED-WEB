@@ -54,6 +54,7 @@ import {
 } from "@/lib/api/conversations";
 import { CedHudTour } from "@/components/hud/CedHudTour";
 import { isDictationAssistLocked } from "@/lib/chat/dictation-transcript";
+import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
 import { PanelLeft } from "lucide-react";
 
 /** El poll de voz repite el mismo transcript: sin esto el panel re-renderiza ~2/s. */
@@ -88,6 +89,7 @@ export function CedVoiceHub() {
   const [voiceImagePreview, setVoiceImagePreview] = useState<{
     url: string;
     prompt?: string;
+    at: number;
   } | null>(null);
   const { balance, loaded, refresh: refreshUsage } = useUsageBalance();
   const { pushVoiceLine, pushVoiceImage, updateVoiceImage, clearAgentPartial, setActiveModule } =
@@ -98,13 +100,15 @@ export function CedVoiceHub() {
     chatThreadIdRef.current = id;
   }, []);
   const voiceWasActiveRef = useRef(false);
+  const voiceSessionActiveRef = useRef(false);
+  const micWasOnRef = useRef(false);
   const upsertLiveVoiceTurn = useCallback(
     (
       text: string,
       role: "user" | "model",
       options?: { partial?: boolean; streamKey?: string },
     ) => {
-      const content = (text || "").trim();
+      const content = sanitizeHudTranscript((text || "").trim());
       if (!content) return;
       const streamKey = options?.streamKey || `${role}-${Date.now()}`;
       setLiveVoiceTurns((prev) => {
@@ -261,6 +265,7 @@ export function CedVoiceHub() {
 
   useEffect(() => {
     const onToolResult = (ev: Event) => {
+      if (!voiceSessionActiveRef.current) return;
       const detail = (ev as CustomEvent<{ tool_name?: string; result?: Record<string, unknown> }>)
         .detail;
       const toolName = detail?.tool_name ?? "";
@@ -276,13 +281,13 @@ export function CedVoiceHub() {
           typeof result?.prompt === "string" ? result.prompt : undefined;
         const normalized = normalizeCedMediaUrl(imageUrl);
         pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
-        setVoiceImagePreview({ url: normalized, prompt });
+        setVoiceImagePreview({ url: normalized, prompt, at: Date.now() });
         setChatSeedImage(null);
       }
     };
     window.addEventListener("ced-voice-tool-result", onToolResult);
     return () => window.removeEventListener("ced-voice-tool-result", onToolResult);
-  }, []);
+  }, [pushVoiceImage]);
 
   const voice = useCedVoiceSession(refreshUsage, {
     onTranscript: (text, role, options) => {
@@ -292,7 +297,7 @@ export function CedVoiceHub() {
     onClearAgentPartial: clearAgentPartial,
     onGeneratedImage: (url, prompt) => {
       pushVoiceImage(url, { prompt, role: "model", status: "ready" });
-      setVoiceImagePreview({ url, prompt });
+      setVoiceImagePreview({ url, prompt, at: Date.now() });
       setChatSeedImage(null);
     },
     getChatConversationId: () => chatThreadIdRef.current,
@@ -310,12 +315,27 @@ export function CedVoiceHub() {
     },
   }, voiceRoute);
 
+  voiceSessionActiveRef.current = voice.voiceSessionActive;
+
   useEffect(() => {
-    if (voice.voiceSessionActive && !voiceWasActiveRef.current) {
+    const started = voice.voiceSessionActive && !voiceWasActiveRef.current;
+    const ended = !voice.voiceSessionActive && voiceWasActiveRef.current;
+    if (started || ended) {
       setLiveVoiceTurns([]);
+      setVoiceImagePreview(null);
     }
     voiceWasActiveRef.current = voice.voiceSessionActive;
   }, [voice.voiceSessionActive]);
+
+  useEffect(() => {
+    if (voice.micOn && !micWasOnRef.current) {
+      setVoiceImagePreview(null);
+    }
+    if (!voice.micOn) {
+      setVoiceImagePreview(null);
+    }
+    micWasOnRef.current = voice.micOn;
+  }, [voice.micOn]);
 
   /* El transcript llega por los callbacks del hook: un segundo poll aquí
      multiplicaba las consultas a Supabase y frenaba el chat de texto. */
@@ -556,6 +576,7 @@ export function CedVoiceHub() {
             overlay
             url={imageLive ? voiceImagePreview?.url ?? null : null}
             prompt={voiceImagePreview?.prompt}
+            shownAt={voiceImagePreview?.at}
             onDismiss={() => setVoiceImagePreview(null)}
           />
         </div>

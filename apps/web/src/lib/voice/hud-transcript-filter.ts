@@ -40,11 +40,37 @@ const TOOL_EMBEDDED =
 
 
 
+/** Claude/Gemini pegan <generate_image>{JSON}</generate_image> en el chat/HUD. */
+
+const XML_TOOL_LEAK =
+
+  /<\/?\s*(?:generate_image|generar_pdf|search_web|function_call|tool_call|invoke)\b/i;
+
+
+
+const FAKE_IMAGE_JSON =
+
+  /["']prompt["']\s*:\s*["'][\s\S]{6,}["']\s*,\s*["'](?:size|style)["']\s*:/i;
+
+
+
+export function looksLikeImageToolDump(text: string): boolean {
+
+  const raw = text || "";
+
+  return XML_TOOL_LEAK.test(raw) || FAKE_IMAGE_JSON.test(raw);
+
+}
+
+
+
 export function shouldHideHudTranscript(text: string): boolean {
 
   const cleaned = (text || "").replace(/\s+/g, " ").trim();
 
   if (!cleaned) return true;
+
+  if (looksLikeImageToolDump(text) || looksLikeImageToolDump(cleaned)) return true;
 
   if (CODE_LEAK.test(cleaned)) return true;
 

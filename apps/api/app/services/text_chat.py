@@ -181,6 +181,8 @@ HALLUCINATED_TOOL_PATTERNS = (
     r"```\s*generar_pdf",
     r"```\s*search_web",
     r"\bgenerate_image\s*\(",
+    r"<\s*generate_image\b",
+    r"</\s*generate_image\s*>",
 )
 
 HALLUCINATED_TOOL_CODE_PATTERNS = (
@@ -196,6 +198,8 @@ HALLUCINATED_TOOL_CODE_PATTERNS = (
     r"generate_image\s*\(\s*\{",
     r'generate_image\s*\(\s*["\']prompt["\']',
     r"generar_pdf\s*\(\s*content\s*=",
+    r"<\s*generate_image\b",
+    r"</\s*generate_image\s*>",
 )
 
 TOOL_CODE_HALLUCINATION_RETRY_MESSAGE = (
@@ -4112,6 +4116,14 @@ def iter_send_message_stream(
         yield from _iter_blocking_send(user_id, text, conversation_id)
         return
 
+    if is_generate_image_intent(text) and not should_take_direct_image_path(
+        text, history
+    ):
+        # Nunca mandar un pedido de imagen al stream ligero (sin tools):
+        # Gemini inventa <generate_image>{JSON}</generate_image> y la UI lo muestra.
+        yield from _iter_blocking_send(user_id, text, conversation_id)
+        return
+
     if should_take_direct_image_path(text, history):
         status = "Generando imagen con IA…"
         yield _sse_event("status", {"text": status})
@@ -4354,6 +4366,7 @@ def iter_send_message_stream(
     _perf("pre_stream")
     try:
         from app.services.stream_delta import stream_piece_delta
+        from app.services.chat_image_generation import looks_like_hallucinated_generate_image
 
         # Claude directo — sin Llama. Medido en producción: Llama (13B, CPU en
         # Railway) agota siempre su timeout sin producir un token y el pipeline
@@ -4377,6 +4390,8 @@ def iter_send_message_stream(
                 continue
             stream_buf += delta
             accumulated.append(delta)
+            if looks_like_hallucinated_generate_image(stream_buf):
+                break
             yield _sse_event("token", {"text": delta})
         _perf("stream_done")
     except Exception as exc:  # noqa: BLE001

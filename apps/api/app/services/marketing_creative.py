@@ -602,6 +602,10 @@ def resolve_image_creation_from_text(
     has_reference_image: bool | None = None,
 ) -> dict[str, str] | None:
     """Pedido de creativo sin adjunto (solo texto + historial)."""
+    from app.services.chat_intents import is_simple_photo_edit_request
+
+    if is_simple_photo_edit_request(user_text):
+        return None
     if not is_image_creation_request(user_text, history):
         return None
     if has_reference_image is None:

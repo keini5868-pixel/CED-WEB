@@ -75,6 +75,43 @@ def test_quoted_flyer_generates_now():
     assert "Restorate" in locked_overlay_lines(msg, [])[0]
 
 
+def test_old_bible_overlay_does_not_paint_new_carpenter_flyer():
+    history = [
+        {
+            "role": "user",
+            "content": 'hazme un flyer que diga "Buscad primeramente el reino de Dios y su justicia"',
+        },
+        {"role": "assistant", "content": "Listo. Aquí está tu imagen generada."},
+    ]
+    msg = (
+        "quiero generar un flyer, la frase era, inevitablemente el tiempo va a pasar, "
+        "no te dediques a perder, imagina ese carpintero hay unas herramientas"
+    )
+    lines = locked_overlay_lines(msg, history)
+    assert overlay_is_locked(msg, history) is True
+    assert needs_overlay_readback(msg, history) is False
+    assert should_take_direct_image_path(msg, history) is True
+    blob = " ".join(lines).lower()
+    assert "tiempo va a pasar" in blob
+    assert "reino de dios" not in blob
+    assert "carpintero" not in blob
+
+
+def test_esta_frase_without_quotes_generates_now():
+    msg = (
+        "quiero generar un flyer de fondo oscuro que tenga escrito esta frase "
+        "la credibilidad incumplida es como un bacon que te cobra una deuda "
+        "con intereses dobles"
+    )
+    lines = locked_overlay_lines(msg, [])
+    assert overlay_is_locked(msg, []) is True
+    assert needs_overlay_readback(msg, []) is False
+    assert should_take_direct_image_path(msg, []) is True
+    assert lines
+    assert "credibilidad incumplida" in lines[0].lower()
+    assert "bacon" in lines[0].lower()
+
+
 def test_cartel_in_scene_is_not_overlay_ritual():
     msg = "Ok, genera la imagen: Sek en un traje negro rompiendo un cartel de Instagram"
     assert needs_overlay_readback(msg, []) is False
