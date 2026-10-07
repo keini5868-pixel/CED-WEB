@@ -377,6 +377,12 @@ def should_take_direct_image_path(
         return False
     if is_visual_design_exploration(t, history):
         return False
+    if user_insists_on_pending_image(t, history) and (
+        history_has_pending_image_brief(history)
+        or last_concrete_image_user_prompt(history)
+        or history_has_active_image_thread(history)
+    ):
+        return True
     if is_image_meta_talk(t):
         return False
     if is_script_narrative_request(t) and not is_generate_image_intent(t):
@@ -1166,7 +1172,13 @@ _FALSE_SUCCESS_MARKERS = (
     "listo, señor",
     "listo senor",
     "imagen lista",
+    "imagen está lista",
+    "imagen esta lista",
+    "la imagen está lista",
+    "la imagen esta lista",
     "foto lista",
+    "hecho. la imagen",
+    "generando la imagen",
 )
 _VISUAL_NOUNS = (
     "imagen",
@@ -1311,9 +1323,19 @@ def salvage_image_turn(
     explicit_image = is_generate_image_intent(user_text) and not is_text_ideation_request(
         user_text
     )
+    from app.services.copy_quality import user_requests_background_change
+
     wants_image = should_take_direct_image_path(user_text, history)
     if not wants_image and explicit_image and (hallucinated or dumped or false_success):
         # Overlay ritual no debe dejar pasar un dump XML/JSON de generate_image.
+        wants_image = True
+    if not wants_image and (hallucinated or dumped or false_success) and (
+        history_has_active_image_thread(history)
+        or last_concrete_image_user_prompt(history)
+        or user_requests_background_change(user_text)
+        or wants_image_reference_edit(user_text)
+        or user_insists_on_pending_image(user_text, history)
+    ):
         wants_image = True
     prompt_dump = wants_image and dumped
     wait_filler = wants_image and reply_is_image_wait_filler(reply)

@@ -105,7 +105,40 @@ def test_extract_and_strip_hallucinated_tool_text():
 
 def test_reply_promises_image_without_attachment():
     assert reply_promises_image_without_attachment("Aquí está tu árbol. 🌳")
+    assert reply_promises_image_without_attachment(
+        'Hecho. La imagen está lista con fondo azul oscuro, la frase '
+        '"Inevitablemente el tiempo va a pasar" y el emoji del rayo.'
+    )
     assert not reply_promises_image_without_attachment("El árbol es una planta.")
+
+
+@patch("app.services.chat_image_generation.run_chat_image_generation")
+def test_salvage_false_ready_claim_on_background_edit(mock_gen: MagicMock):
+    mock_gen.return_value = {
+        "ok": True,
+        "url": "https://example.com/blue.png",
+        "reply": "Listo. El texto es el que acordamos.",
+        "caption": "Flyer",
+        "quality": "text",
+    }
+    history = [
+        {
+            "role": "user",
+            "content": "necesito genera una imagen con fondo oscuro y una frase",
+        },
+        {"role": "assistant", "content": "Listo. El texto es el que acordamos."},
+    ]
+    reply, attachment = salvage_image_turn(
+        "user-1",
+        "conv-1",
+        "ok me gusta pero el fondo que sea azul oscuro",
+        history,
+        'Hecho. La imagen está lista con fondo azul oscuro y la frase "Inevitablemente".',
+        None,
+    )
+    assert attachment and attachment.get("url")
+    mock_gen.assert_called_once()
+    assert "está lista" not in reply.lower() or "acordamos" in reply.lower()
 
 
 @patch("app.services.chat_image_generation.run_chat_image_generation")

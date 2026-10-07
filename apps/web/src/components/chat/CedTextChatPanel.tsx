@@ -371,7 +371,7 @@ function looksLikeConversationPaste(text: string): boolean {
 function looksLikeImageFollowupEdit(text: string): boolean {
   const t = text.trim();
   if (!t || t.length > 240) return false;
-  return /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto|grande|peque|grues|negrit)|las?\s+letras|negrita|grosor|otro\s+(?:color|fondo|estilo)|ponle|qu[ií]tale|agr[eé]gale|otra\s+versi[oó]n|as[ií]\s+pero)\b/i.test(
+  return /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto|grande|peque|grues|negrit)|las?\s+letras|negrita|grosor|otro\s+(?:color|fondo|estilo)|(?:el\s+)?fondo\s+que\s+sea|fondo\s+(?:azul|oscur)|ponle|qu[ií]tale|agr[eé]gale|otra\s+versi[oó]n|as[ií]\s+pero|no\s+(?:la\s+|lo\s+)?(?:vi|veo)|no\s+veo\s+la\s+imagen)\b/i.test(
     t,
   );
 }
@@ -417,8 +417,8 @@ function looksLikeImageGenerationRequest(text: string): boolean {
 
 function looksLikeImageWaitFiller(text: string): boolean {
   const t = text.trim();
-  if (!t || t.length > 280) return false;
-  return /\b(un\s+momento|en\s+seguida|estoy\s+generando|voy\s+a\s+generar|generando\s+(?:la\s+)?(?:imagen|foto))\b/i.test(
+  if (!t || t.length > 600) return false;
+  return /\b(un\s+momento|en\s+seguida|estoy\s+generando|voy\s+a\s+generar|generando\s+(?:la\s+)?(?:imagen|foto)|imagen\s+est[aá]\s+lista)\b/i.test(
     t,
   );
 }

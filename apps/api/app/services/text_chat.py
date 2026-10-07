@@ -4459,6 +4459,20 @@ def iter_send_message_stream(
         reply = str(forced_enroll["spoken"])
         stream_open_module = forced_enroll.get("open_module")
 
+    from app.services.chat_image_generation import (
+        looks_like_hallucinated_generate_image as _halluc_img,
+        reply_promises_image_without_attachment,
+        should_take_direct_image_path as _direct_img,
+    )
+
+    if not image_attachment and (
+        _direct_img(text, history)
+        or _halluc_img(reply)
+        or reply_promises_image_without_attachment(reply)
+    ):
+        yield _sse_event("status", {"text": "Generando imagen con IA…"})
+        yield _sse_flush()
+
     reply, image_attachment = _salvage_image_if_needed(
         user_id,
         conversation_id,

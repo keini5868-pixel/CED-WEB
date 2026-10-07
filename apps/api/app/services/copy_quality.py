@@ -1290,6 +1290,8 @@ _BG_CHANGE_RE = re.compile(
     r"nuevo\s+fondo|"
     r"fondo\s+(?:a|de|en|natural|atr[aá]s)\s+\w+|"
     r"fondo\s+(?:amarill|azul|verde|rojo|negro|blanc|oscur|clar|natural|gris|rosa|naranja)|"
+    r"(?:el\s+)?fondo\s+que\s+sea|"
+    r"que\s+sea\s+(?:un\s+)?fondo|"
     r"con\s+(?:un\s+)?fondo|"
     r"fondo\s+natural|"
     r"pon(?:le|me)?\s+(?:un\s+)?fondo|"

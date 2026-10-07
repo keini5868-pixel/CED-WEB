@@ -390,6 +390,13 @@ export async function sendChatMessageStream(
     };
   }
   if (streamedText.trim()) {
+    const promisedImage =
+      /imagen\s+est[aá]\s+lista|generando\s+(?:la\s+)?imagen|aqu[ií]\s+est[aá]\s+tu\s+imagen/i.test(
+        streamedText,
+      );
+    if (promisedImage && !payload?.image) {
+      throw new Error("No pude generar la imagen. Intenta de nuevo en unos segundos.");
+    }
     return {
       conversation_id: payload?.conversation_id || conversationId || "",
       reply: streamedText.trim(),

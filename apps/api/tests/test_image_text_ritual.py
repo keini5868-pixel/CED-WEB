@@ -210,6 +210,32 @@ def test_idea_talk_is_not_overlay_ritual():
     assert should_take_direct_image_path(msg, []) is False
 
 
+def test_dark_blue_background_tweak_takes_direct_path():
+    from app.services.chat_image_generation import should_take_direct_image_path
+    from app.services.chat_intents import (
+        parse_followup_image_prompt,
+        wants_image_reference_edit,
+    )
+    from app.services.copy_quality import user_requests_background_change
+
+    history = [
+        {
+            "role": "user",
+            "content": (
+                "necesito genera una imagen con una frase la imagen debe ser de "
+                "fondo oscuro y la frase es inevitablemente el tiempo va a pasar"
+            ),
+        },
+        {"role": "assistant", "content": "Listo. El texto es el que acordamos."},
+    ]
+    msg = "ok me gusta pero el fondo que sea azul oscuro"
+    assert user_requests_background_change(msg) is True
+    assert wants_image_reference_edit(msg) is True
+    assert parse_followup_image_prompt(msg, history) == msg
+    assert should_take_direct_image_path(msg, history) is True
+    assert should_take_direct_image_path("no veo la imagen", history) is True
+
+
 def test_voice_image_filler_is_va():
     assert MODULE_ACKS["image_gen"] == "Va."
     assert get_tool_acknowledgment("generate_image") == "Va."
