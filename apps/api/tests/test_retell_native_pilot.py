@@ -334,34 +334,54 @@ def test_execute_generate_image_delegates_to_voice_executor():
     asyncio.run(run())
 
 
-def test_execute_generate_image_prefers_transcript_utterance_as_user_request():
-    """Native Retell: utterance del transcript como _user_request (no solo prompt LLM)."""
+def test_execute_generate_image_prefers_args_prompt_over_split_utterance():
+    """STT partido («blanco.») no debe ganar al args.prompt completo."""
     import asyncio
 
     from app.services.retell_native_pilot import execute_generate_image_tool
 
-    raw = "generame una imagen de un águila sobre el mar"
-    rewritten = "Infografía CED con branding corporativo y tipografía"
+    full = (
+        'Flyer de fondo oscuro con el texto "Inevitablemente el tiempo va a pasar, '
+        'no te dediques a perderlo" en relieve blanco.'
+    )
 
     async def run():
         with patch(
             "app.services.voice_tool_executor.execute_voice_tool",
             new_callable=AsyncMock,
-            return_value={"ok": True, "spoken": "Imagen generada, señor.", "url": "https://x/y.png"},
+            return_value={
+                "ok": True,
+                "spoken": "Listo, señor. Ya puede verla en pantalla.",
+                "url": "https://x/y.png",
+                "prompt_used": full,
+            },
         ) as mock_exec:
-            await execute_generate_image_tool(
+            out = await execute_generate_image_tool(
                 user_id="u-img-2",
                 payload={
                     "call": {
                         "call_id": "c2",
-                        "transcript_object": [{"role": "user", "content": raw}],
+                        "transcript_object": [
+                            {
+                                "role": "user",
+                                "content": (
+                                    "Flyer de fondo oscuro con el texto Inevitablemente "
+                                    "el tiempo va a pasar, no te dediques a perderlo en relieve"
+                                ),
+                            },
+                            {"role": "user", "content": "blanco."},
+                        ],
                     },
                 },
-                args={"prompt": rewritten},
+                args={"prompt": full},
             )
             passed = mock_exec.await_args.args[2]
-            assert passed["prompt"] == raw
-            assert passed["_user_request"] == raw
+            assert passed["prompt"] == full
+            assert "Inevitablemente" in passed["prompt"]
+            assert passed["prompt"].strip() != "blanco."
+            assert out["ok"] is True
+            assert "prompt_used=" in out["result"]
+            assert "Inevitablemente" in out["result"]
 
     asyncio.run(run())
 
@@ -393,7 +413,7 @@ def test_execute_generate_image_honors_retell_prompt_without_transcript():
             assert out.get("published") is True
             assert "ok=true published=true" in out["result"]
             assert "pantalla" in out["result"].lower()
-            assert "https://" not in out["result"]
+            assert "url=https://cdn.example.com/robot.png" in out["result"]
 
     asyncio.run(run())
 
@@ -466,7 +486,7 @@ def test_native_image_success_speech_is_code_owned_not_visual_review():
     assert "ok=true published=true" in text
     assert "prompt_used=" in text
     assert "Do not describe" in text
-    assert "https://" not in text
+    assert "Do not read the URL" in text
 
 
 def test_execute_generate_image_busy_fails_fast_when_another_job_runs():

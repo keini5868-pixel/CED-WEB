@@ -717,13 +717,13 @@ async def _execute_voice_tool_body(
 
         if name == "generate_image":
             from app.services.chat_image_generation import (
+                pick_voice_image_source_prompt,
                 resolve_voice_image_prompt,
                 run_chat_image_generation,
                 should_generate_image_from_voice_turn,
+                voice_prompt_is_mismatch,
             )
 
-            # Preferir la frase original del usuario (voz LLM a menudo reformula
-            # `prompt` y mezcla historial). El adaptador mínimo trabaja sobre el NL crudo.
             raw_user = str(
                 params.get("_user_request")
                 or params.get("user_text")
@@ -735,10 +735,14 @@ async def _execute_voice_tool_body(
             from app.services.image_text_ritual import (
                 build_overlay_readback_reply,
                 needs_overlay_readback,
+                overlay_is_locked,
             )
 
             gate_text = raw_user or llm_prompt
-            if needs_overlay_readback(gate_text, history):
+            copy_already_locked = overlay_is_locked(llm_prompt, history) or overlay_is_locked(
+                raw_user, history
+            )
+            if needs_overlay_readback(gate_text, history) and not copy_already_locked:
                 spoken = build_overlay_readback_reply(gate_text, history)
                 logger.info(
                     "[VOICE:IMAGE] overlay lock user=%s raw=%s",
@@ -746,9 +750,10 @@ async def _execute_voice_tool_body(
                     (raw_user or "")[:80],
                 )
                 return {
-                    "ok": True,
+                    "ok": False,
                     "skipped": True,
                     "spoken": spoken,
+                    "error": "overlay_readback",
                 }
             # Retell ya invocó generate_image: si trae prompt, generar aunque el
             # utterance no diga literalmente «genera una imagen».
@@ -764,11 +769,27 @@ async def _execute_voice_tool_body(
                     "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
                     error="image_not_requested",
                 )
-            prompt = resolve_voice_image_prompt(raw_user, llm_prompt, history) or llm_prompt or raw_user
+            prompt = pick_voice_image_source_prompt(
+                args_prompt=llm_prompt,
+                heard=raw_user,
+                history=history,
+            )
+            prompt = resolve_voice_image_prompt(prompt, llm_prompt, history) or prompt or llm_prompt or raw_user
+            logger.info(
+                "[VOICE:IMAGE] args.prompt=%s prompt_used=%s raw=%s",
+                llm_prompt[:160],
+                (prompt or "")[:160],
+                (raw_user or "")[:80],
+            )
             if not prompt:
                 return _spoken_err(
                     "Indique qué imagen desea generar, señor.",
                     error="missing_prompt",
+                )
+            if voice_prompt_is_mismatch(prompt, llm_prompt):
+                return _spoken_err(
+                    "El prompt de la imagen no coincidió con lo pedido, señor.",
+                    error="prompt_mismatch",
                 )
             balance = voice_access_state(user_id)
             # Hilo visual de ESTA llamada — nunca el último chat viejo de Supabase.
@@ -780,25 +801,26 @@ async def _execute_voice_tool_body(
             ).strip() or f"voice:{user_id}"
             from app.services.chat_intents import (
                 parse_followup_image_prompt,
+                user_requests_image_edit,
                 wants_image_reference_edit,
             )
 
-            # En un ajuste («ese mismo», fondo, color) manda el utterance crudo.
-            # En confirmación de overlay/opción, el prompt ya resuelto.
+            # Ajuste sobre la pieza: utterance crudo. Pieza nueva: prompt ya elegido.
             if raw_user and (
                 wants_image_reference_edit(raw_user)
+                or user_requests_image_edit(raw_user)
                 or parse_followup_image_prompt(raw_user, history)
             ):
                 pipeline_text = raw_user
             else:
                 pipeline_text = prompt
             logger.info(
-                "[VOICE:IMAGE] start user=%s prompt=%s raw=%s ref=1",
+                "[VOICE:IMAGE] start user=%s args.prompt=%s prompt_used=%s raw=%s",
                 user_id[:8],
+                llm_prompt[:80],
                 pipeline_text[:80],
                 bool(raw_user),
             )
-            # Misma pipeline que chat/avanzado: edita la imagen de sesión si la hay.
             result = await asyncio.to_thread(
                 run_chat_image_generation,
                 user_id,
@@ -810,29 +832,37 @@ async def _execute_voice_tool_body(
             )
             if result.get("ok") and result.get("url"):
                 url = str(result.get("url") or "")
+                prompt_used = str(result.get("prompt_used") or prompt)
                 logger.info(
-                    "[VOICE:IMAGE] ok user=%s url=%s",
+                    "[VOICE:IMAGE] ok user=%s url=%s args.prompt=%s prompt_used=%s",
                     user_id[:8],
                     url[:120],
+                    llm_prompt[:120],
+                    prompt_used[:120],
                 )
+                if voice_prompt_is_mismatch(prompt_used, llm_prompt):
+                    return _spoken_err(
+                        "El prompt de la imagen no coincidió con lo pedido, señor.",
+                        error="prompt_mismatch",
+                    )
                 vcs.push_tool_event(
                     user_id,
                     {
                         "type": "generated_image",
                         "image_url": url,
-                        "prompt": prompt,
+                        "prompt": prompt_used,
                     },
                 )
-                spoken = str(
-                    result.get("reply") or "Imagen generada, señor. Ya la puede ver en pantalla."
-                ).strip()
+                spoken = "Listo, señor. Ya puede verla en pantalla."
                 return {
                     "ok": True,
                     "spoken": spoken,
                     "url": url,
                     "image_url": url,
-                    "prompt": prompt,
+                    "prompt": prompt_used,
+                    "prompt_used": prompt_used,
                     "caption": str(result.get("caption") or ""),
+                    "published": True,
                 }
             err = str(result.get("error") or result.get("reply") or "image_failed")
             logger.error(

@@ -1373,22 +1373,26 @@ def format_native_image_tool_result(
     spoken: str,
     error: str = "",
     prompt_used: str = "",
+    url: str = "",
 ) -> str:
-    """Lo que Retell (y el LLM) leen: flags reales + frase fija. Sin URL."""
+    """Lo que Retell (y el LLM) leen: flags reales, URL y prompt. Sin recitar la URL."""
     line = (spoken or "").strip()
     used = re.sub(r"\s+", " ", (prompt_used or "").strip())[:160]
     if ok and published:
         status = "ok=true published=true"
         extra = f' prompt_used="{used}"' if used else ""
+        url_bit = f" url={url}" if url else ""
         return (
-            f"{status}{extra}. Speak exactly: {line} "
-            "Do not describe how the image looks. Do not claim a display error. "
+            f"{status}{url_bit}{extra}. Speak exactly: {line} "
+            "Do not describe how the image looks. Do not read the URL. "
+            "Do not claim a display error. "
             "Do not call generate_image again unless the user asks a new change."
         )
     err = (error or "failed").strip()
+    extra = f' prompt_used="{used}"' if used else ""
     status = f"ok=false published=false error={err}"
     return (
-        f"{status}. Speak exactly: {line} "
+        f"{status}{extra}. Speak exactly: {line} "
         "Do not invent a HUD/view error. Do not say the image was generated."
     )
 
@@ -2485,24 +2489,50 @@ async def execute_close_youtube_player_tool(*, user_id: str, payload: dict[str, 
     )
 
 
+def _incomplete_voice_image_brief(heard: str, args_prompt: str) -> bool:
+    """STT partido: rechazar solo si no hay brief usable en args.prompt."""
+    from app.services.chat_image_generation import heard_is_prompt_fragment
+
+    h = (heard or "").strip()
+    a = (args_prompt or "").strip()
+    if not h:
+        return False
+    if not image_brief_looks_truncated(h):
+        return False
+    if a and heard_is_prompt_fragment(h, a):
+        return False
+    h_alnum = re.sub(r"[^\wáéíóúñ ]+", "", h.casefold())
+    a_alnum = re.sub(r"[^\wáéíóúñ ]+", "", a.casefold())
+    if a and h_alnum and h_alnum in a_alnum:
+        return False
+    return True
+
+
 async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
     from app.services.chat_image_generation import (
+        join_same_image_request_utterances,
+        pick_voice_image_source_prompt,
         resolve_voice_image_prompt,
         should_generate_image_from_voice_turn,
+        voice_prompt_is_mismatch,
     )
     from app.services.voice_tool_executor import execute_voice_tool
 
     started = time.perf_counter()
     call_id = _extract_call_id(payload)
 
-    def _fail(spoken: str, error: str) -> dict[str, Any]:
+    def _fail(spoken: str, error: str, *, prompt_used: str = "") -> dict[str, Any]:
         latency_ms = int((time.perf_counter() - started) * 1000)
         record_tool_metric(
             call_id=call_id, tool_name="generate_image", latency_ms=latency_ms, ok=False
         )
         return {
             "result": format_native_image_tool_result(
-                ok=False, published=False, spoken=spoken, error=error
+                ok=False,
+                published=False,
+                spoken=spoken,
+                error=error,
+                prompt_used=prompt_used,
             ),
             "ok": False,
             "spoken": spoken,
@@ -2511,16 +2541,22 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
             "published": False,
         }
 
-    # Preferir utterance crudo (transcript / _user_request) sobre prompt reformulado por Retell LLM.
     raw = str(args.get("_user_request") or args.get("user_text") or "").strip()
     query = resolve_tool_query(payload, args)
     llm_prompt = str(args.get("prompt") or "").strip()
-    heard = raw or query or _latest_user_utterance(payload)
-    # Retell a menudo manda solo args.prompt (sin transcript en el webhook de tool).
-    user_text = heard or llm_prompt
     history = _transcript_history(payload)
+    heard = raw or query or _latest_user_utterance(payload)
+    joined = join_same_image_request_utterances(history)
+    user_text = heard or llm_prompt
 
-    if heard and image_brief_looks_truncated(heard):
+    logger.info(
+        "[NATIVE:IMAGE] args.prompt=%s heard=%s joined=%s",
+        llm_prompt[:160],
+        (heard or "")[:160],
+        bool(joined and joined != heard),
+    )
+
+    if _incomplete_voice_image_brief(heard, llm_prompt):
         return _fail(
             "No alcancé el pedido completo, señor. Dígame el fondo y la frase exacta.",
             "incomplete_brief",
@@ -2535,9 +2571,25 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
             "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
             "image_not_requested",
         )
-    prompt = resolve_voice_image_prompt(user_text, llm_prompt, history) or llm_prompt or user_text
+    prompt = pick_voice_image_source_prompt(
+        args_prompt=llm_prompt,
+        heard=heard,
+        history=history,
+    )
+    prompt = resolve_voice_image_prompt(prompt, llm_prompt, history) or prompt or llm_prompt or user_text
     if not prompt.strip():
         return _fail("Indique qué imagen desea generar, señor.", "missing_prompt")
+    if voice_prompt_is_mismatch(prompt, llm_prompt):
+        logger.warning(
+            "[NATIVE:IMAGE] prompt mismatch args.prompt=%s prompt_used=%s",
+            llm_prompt[:160],
+            prompt[:160],
+        )
+        return _fail(
+            "El prompt de la imagen no coincidió con lo pedido, señor. Inténtelo de nuevo.",
+            "prompt_mismatch",
+            prompt_used=prompt,
+        )
     if not user_id:
         return _fail("No identifiqué al usuario, señor.", "missing_user_id")
 
@@ -2562,11 +2614,25 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
         )
     finally:
         _end_image_job(user_id)
+    if result.get("skipped"):
+        spoken = str(result.get("spoken") or "").strip() or "¿Confirma el texto de la imagen, señor?"
+        return _fail(spoken, "overlay_readback", prompt_used=prompt)
     url = str(result.get("url") or result.get("image_url") or "").strip()
+    prompt_used = str(result.get("prompt_used") or result.get("prompt") or prompt).strip()
+    logger.info(
+        "[NATIVE:IMAGE] args.prompt=%s prompt_used=%s url=%s",
+        llm_prompt[:160],
+        prompt_used[:160],
+        bool(url),
+    )
     ok = bool(result.get("ok")) and bool(url)
+    if ok and voice_prompt_is_mismatch(prompt_used, llm_prompt):
+        ok = False
+        result = {**result, "ok": False, "error": "prompt_mismatch"}
+    published = ok
     spoken = (
         _VOICE_IMAGE_SUCCESS
-        if ok
+        if ok and published
         else str(result.get("spoken") or "No pude generar la imagen, señor.").strip()
     )
     latency_ms = int((time.perf_counter() - started) * 1000)
@@ -2576,16 +2642,19 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
     return {
         "result": format_native_image_tool_result(
             ok=ok,
-            published=ok,
+            published=published,
             spoken=spoken,
             error="" if ok else str(result.get("error") or "image_failed"),
-            prompt_used=prompt if ok else "",
+            prompt_used=prompt_used if ok else prompt_used,
+            url=url if ok else "",
         ),
         "ok": ok,
         "spoken": spoken,
         "latency_ms": latency_ms,
-        "published": ok,
+        "published": published,
         "error": None if ok else str(result.get("error") or "image_failed"),
+        "url": url if ok else None,
+        "prompt_used": prompt_used,
     }
 
 

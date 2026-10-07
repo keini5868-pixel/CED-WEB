@@ -504,13 +504,113 @@ def extract_structured_lines_from_history(
 
 def extract_quoted_phrases(text: str, *, max_phrases: int = 5) -> list[str]:
     phrases: list[str] = []
-    for match in re.finditer(r'["«“]([^"»”]{4,200})["»”]', text or ""):
+    blob = text or ""
+    for match in re.finditer(r'["«“]([^"»”]{4,200})["»”]', blob):
         phrase = normalize_spanish(match.group(1).strip())
         if phrase and phrase not in phrases:
             phrases.append(phrase)
         if len(phrases) >= max_phrases:
-            break
+            return phrases
+    # Comillas simples del dictado / HUD: 'Inevitablemente… perderlo'
+    if len(phrases) < max_phrases:
+        for match in re.finditer(r"'([^']{8,200})'", blob):
+            phrase = normalize_spanish(match.group(1).strip())
+            if phrase and phrase not in phrases:
+                phrases.append(phrase)
+            if len(phrases) >= max_phrases:
+                break
     return phrases
+
+
+_UNQUOTED_COPY_LEAD = re.compile(
+    r"(?is)(?:que\s+diga[n]?|con\s+(?:el\s+)?texto|con\s+la\s+frase|el\s+texto(?:\s+que\s+diga)?)\s+"
+)
+_UNQUOTED_COPY_STOP = re.compile(
+    r"(?is)\s+(?:en\s+(?:relieve|azul|cian|blanco|negrita)|texto\s+(?:azul|cian|blanco)|"
+    r"con\s+sombra|sombra\s+\w+|tipograf|en\s+azul|en\s+cian)"
+)
+
+
+def extract_literal_on_image_copy(text: str, *, max_phrases: int = 5) -> list[str]:
+    """Copy literal: comillas, o la frase tras «que diga» / «el texto»."""
+    quoted = extract_quoted_phrases(text, max_phrases=max_phrases)
+    if quoted:
+        return quoted
+    t = (text or "").strip()
+    if not t:
+        return []
+    lead = _UNQUOTED_COPY_LEAD.search(t)
+    if not lead:
+        return []
+    rest = t[lead.end() :].strip().strip("\"'«“»”")
+    stop = _UNQUOTED_COPY_STOP.search(rest)
+    if stop:
+        rest = rest[: stop.start()]
+    rest = re.sub(r"\s+", " ", rest).strip(" .,;:")
+    if 8 <= len(rest) <= 200:
+        return [normalize_spanish(rest)]
+    return []
+
+
+_TEXT_ONLY_FLYER = re.compile(r"(?i)\b(?:flyer|cartel|letrero|r[oó]tulo|banner)\b")
+_NAMED_PEOPLE = re.compile(
+    r"(?i)\b(?:persona|personas|gente|bailar|bailarines|mujer|hombre|modelo|retrato|"
+    r"niñ[oa]|grupo\s+de)\b"
+)
+
+
+def is_text_only_flyer_request(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _NAMED_PEOPLE.search(t):
+        return False
+    has_format = bool(
+        _TEXT_ONLY_FLYER.search(t) or re.search(r"(?i)\bfondo\b", t)
+    )
+    if not has_format:
+        return False
+    return bool(
+        extract_literal_on_image_copy(t)
+        or prompt_requires_precise_text(t)
+        or user_asks_for_on_image_copy(t)
+    )
+
+
+def literal_typography_locks(text: str) -> str:
+    """Cierra color, sombra, puntuación y peso cuando el pedido es copy literal."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    parts: list[str] = []
+    if extract_literal_on_image_copy(t) or user_asks_for_on_image_copy(t):
+        parts.append(
+            "Preserve ALL punctuation inside the quoted copy exactly "
+            "(commas, periods, accents). Do not drop or replace commas."
+        )
+        parts.append(
+            "Use exactly one typeface and the same font weight for every word "
+            "of the on-image copy. Do not mix bold and regular in the same sentence."
+        )
+    if re.search(r"(?i)sombra\s+blanca|blanca\s+(?:tenue\s+y\s+)?opaca", t):
+        parts.append(
+            "Drop shadow MUST be white, soft and opaque (sombra blanca tenue y opaca), "
+            "NOT cyan, NOT the fill color, NOT a colored glow."
+        )
+    elif re.search(r"(?i)\bsombra\b", t):
+        parts.append("Render the shadow in the exact color the user named, not the fill color.")
+    if re.search(r"(?i)azul\s+cian|cian|cyan", t) and re.search(
+        r"(?i)\b(?:texto|letra|frase|tipograf)\b", t
+    ):
+        parts.append(
+            "Letter fill is cyan-blue. If a white shadow was requested, the shadow stays white."
+        )
+    if is_text_only_flyer_request(t):
+        parts.append(
+            "sin personas ni otros elementos salvo los indicados. "
+            "No people, no dancers, no extra objects except those the user named."
+        )
+    return " ".join(parts)
 
 
 def overlay_lines_from_strings(bullets: list[str]) -> list[str]:
@@ -1045,7 +1145,7 @@ def build_direct_image_prompt(
             "Do not change the subject, objects in hand, or setting named by the user."
         )
 
-    quoted = extract_quoted_phrases(raw)
+    quoted = extract_literal_on_image_copy(raw)
     mode = resolve_image_text_mode(raw)
     wants_wordmark = user_requests_ced_wordmark(raw)
     wants_text = mode == "literal" or wants_wordmark
@@ -1096,6 +1196,9 @@ def build_direct_image_prompt(
                 )
         if quoted:
             parts.append(format_verbatim_image_copy(quoted))
+        typo_lock = literal_typography_locks(raw)
+        if typo_lock:
+            parts.append(typo_lock)
         if allow_ui and not wants_wordmark:
             parts.append(_DECORATIVE_UI_RULE)
     elif allow_ui:
@@ -1333,7 +1436,8 @@ def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None)
     quoted = [f'"{line}"' for line in all_lines]
     return (
         "TEXTOS EXACTOS EN ESPAÑOL (ortografía obligatoria — copiar CARÁCTER POR CARÁCTER; "
-        "no parafrasear, no inventar palabras, no mezclar inglés, no omitir letras):\n"
+        "no parafrasear, no inventar palabras, no mezclar inglés, no omitir letras; "
+        "respetar comas, puntos y tildes tal cual van entre comillas):\n"
         + "\n".join(f"- {q}" for q in quoted)
         + "\nKeep every word fully inside the frame, centered, never cropped. "
         "Si no puedes renderizar texto perfecto, usa MENOS texto pero sin errores ortográficos."

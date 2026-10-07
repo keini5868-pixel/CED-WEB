@@ -36,6 +36,10 @@ from app.services.chat_intents import (
     resolve_confirmed_image_prompt,
     user_requests_from_scratch_compose,
     user_requests_prior_reference,
+    user_requests_new_image_piece,
+    user_requests_image_edit,
+    user_insists_on_pending_image,
+    image_request_needs_new_or_edit_clarification,
     compose_visual_thread_brief,
     is_simple_photo_edit_request,
     wants_image_reference_edit,
@@ -50,6 +54,35 @@ from app.services.marketing_creative import (
 )
 
 DIRECT_IMAGE_MAX_CHARS = 8000
+IMAGE_NEW_OR_EDIT_CLARIFICATION = "¿Nueva pieza o modificar la anterior?"
+_PROMPT_COVER_STOPWORDS = {
+    "con",
+    "que",
+    "una",
+    "uno",
+    "los",
+    "las",
+    "del",
+    "para",
+    "por",
+    "el",
+    "la",
+    "de",
+    "en",
+    "un",
+    "y",
+    "o",
+    "a",
+    "the",
+    "and",
+    "fondo",
+    "texto",
+    "flyer",
+    "imagen",
+    "genera",
+    "hazme",
+    "crea",
+}
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +235,12 @@ def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> st
     overlay_prompt = compose_confirmed_overlay_prompt(t, history)
     if overlay_prompt:
         return overlay_prompt
+    if user_insists_on_pending_image(t, history):
+        prior = last_concrete_image_user_prompt(history) or last_user_visual_context(
+            history
+        )
+        if prior:
+            return prior
     if user_requests_from_scratch_compose(t):
         composed = compose_visual_thread_brief(t, history)
         if composed:
@@ -264,22 +303,44 @@ def should_use_reference_generation(
     plano: eso dejaba el chat atascado en el path de referencia tras un fallo.
     """
     from app.services.publish_image_context import (
+        disarm_generated_edit_reference,
+        get_last_uploaded_image_for_session,
         get_session_vision_analysis,
         resolve_reference_image_bytes,
+        session_image_usable_for_edit,
+        _row_is_user_upload,
     )
 
     if not resolve_reference_image_bytes(user_id, conversation_id):
         return False
     if user_requests_from_scratch_compose(text):
         return False
+    if user_insists_on_pending_image(text, history):
+        return False
+    new_piece = user_requests_new_image_piece(text, history) and not user_requests_prior_reference(
+        text
+    )
+    row = get_last_uploaded_image_for_session(user_id, conversation_id)
+    is_upload = _row_is_user_upload(row)
+    if new_piece:
+        # Foto subida + análisis: creativo sobre esa toma. Generación previa: pieza nueva.
+        if is_upload and is_marketing_creative_intent(text) and (
+            extract_vision_context_from_history(history)
+            or get_session_vision_analysis(user_id, conversation_id)
+        ):
+            return True
+        disarm_generated_edit_reference(user_id, conversation_id)
+        return False
+    if not session_image_usable_for_edit(user_id, conversation_id):
+        return False
     # Variación / edición / «igual a la que te pasé» / «mismos precios».
-    if wants_image_reference_edit(text):
+    if wants_image_reference_edit(text) or user_requests_image_edit(text):
         return True
     # Follow-up corto que continúa editando el hilo visual.
     if parse_followup_image_prompt(text, history):
         return True
     # Tras analizar/subir una foto, un creativo usa esa pieza — no un flyer nuevo suelto.
-    if is_marketing_creative_intent(text) and (
+    if is_upload and is_marketing_creative_intent(text) and (
         extract_vision_context_from_history(history)
         or get_session_vision_analysis(user_id, conversation_id)
     ):
@@ -335,6 +396,11 @@ def should_take_direct_image_path(
         )
     if needs_overlay_readback(t, history):
         return False
+    if user_insists_on_pending_image(t, history) and (
+        history_has_pending_image_brief(history)
+        or last_concrete_image_user_prompt(history)
+    ):
+        return True
     # «Agrégale texto…» sobre imagen del hilo — path visual aunque no diga «genera imagen».
     if prompt_requires_ideogram_text(t) and (
         wants_image_reference_edit(t) or user_requests_prior_reference(t)
@@ -426,6 +492,138 @@ def resolve_voice_image_prompt(
     return t or llm
 
 
+_ASSISTANT_BREAKS_UTTERANCE_JOIN = re.compile(
+    r"(?i)listo|pantalla|imagen generada|aqu[ií] est[aá]|no pude|otra generaci"
+)
+
+
+def join_same_image_request_utterances(
+    history: list[dict[str, str]] | None,
+    *,
+    max_turns: int = 4,
+) -> str:
+    """Une turnos consecutivos del usuario del mismo pedido (STT partido)."""
+    chunks: list[str] = []
+    for row in reversed(history or []):
+        role = str(row.get("role") or "").lower()
+        content = (row.get("content") or "").strip()
+        if not content:
+            continue
+        if role in {"assistant", "model", "agent"}:
+            if _ASSISTANT_BREAKS_UTTERANCE_JOIN.search(content) or len(content) > 160:
+                break
+            continue
+        if role in {"user", "customer"}:
+            chunks.append(content)
+            if len(chunks) >= max_turns:
+                break
+        elif chunks:
+            break
+    if not chunks:
+        return ""
+    latest = chunks[0]
+    # Dos pedidos completos distintos: quédate con el último.
+    if (
+        len(chunks) >= 2
+        and is_generate_image_intent(latest)
+        and is_generate_image_intent(chunks[1])
+        and len(latest.split()) >= 8
+        and len(chunks[1].split()) >= 8
+    ):
+        return latest
+    chunks.reverse()
+    return re.sub(r"\s+", " ", " ".join(chunks)).strip()
+
+
+def utterance_too_thin_for_prompt(heard: str, args_prompt: str) -> bool:
+    h = re.sub(r"\s+", " ", (heard or "").strip())
+    a = re.sub(r"\s+", " ", (args_prompt or "").strip())
+    if not h:
+        return True
+    words = h.split()
+    if len(words) < 5:
+        return True
+    if a and len(words) * 2 < len(a.split()) and len(h) * 2 < len(a):
+        return True
+    return False
+
+
+def heard_is_prompt_fragment(heard: str, args_prompt: str) -> bool:
+    h = re.sub(r"[^\wáéíóúñ ]+", "", (heard or "").strip().casefold())
+    a = re.sub(r"[^\wáéíóúñ ]+", "", (args_prompt or "").strip().casefold())
+    if not h or not a or len(h) < 3:
+        return False
+    return h in a and len(h.split()) <= 6
+
+
+def image_prompt_covers_request(used: str, requested: str) -> bool:
+    """True si prompt_used conserva lo esencial de args.prompt / el pedido."""
+    from app.services.copy_quality import extract_literal_on_image_copy
+
+    req = (requested or "").strip()
+    used_l = re.sub(r"\s+", " ", (used or "").strip()).casefold()
+    if not req:
+        return True
+    if not used_l:
+        return False
+    for quote in extract_literal_on_image_copy(req):
+        qn = re.sub(r"\s+", " ", quote).casefold()
+        q_alnum = re.sub(r"[^\wáéíóúñ ]", "", qn)
+        used_alnum = re.sub(r"[^\wáéíóúñ ]", "", used_l)
+        if len(q_alnum) >= 8 and q_alnum not in used_alnum:
+            return False
+    words = [
+        w
+        for w in re.findall(r"[a-záéíóúñ]{4,}", req.casefold())
+        if w not in _PROMPT_COVER_STOPWORDS
+    ]
+    if not words:
+        return True
+    hits = sum(1 for w in words if w in used_l)
+    return hits >= max(2, int(len(words) * 0.45))
+
+
+def pick_voice_image_source_prompt(
+    *,
+    args_prompt: str,
+    heard: str,
+    history: list[dict[str, str]] | None = None,
+) -> str:
+    """args.prompt manda; el utterance crudo respalda si falta o si el LLM reescribió el sujeto."""
+    args = (args_prompt or "").strip()
+    joined = join_same_image_request_utterances(history)
+    heard_s = (joined or heard or "").strip()
+    thin = bool(
+        heard_s
+        and (
+            utterance_too_thin_for_prompt(heard_s, args)
+            or heard_is_prompt_fragment(heard_s, args)
+        )
+    )
+    if args and (not heard_s or thin):
+        return args
+    if heard_s and not args:
+        return heard_s
+    if args and heard_s:
+        if image_prompt_covers_request(args, heard_s):
+            return args
+        if is_generate_image_intent(heard_s) or looks_like_visual_image_prompt(heard_s):
+            return heard_s
+        return args
+    return args or heard_s
+
+
+def voice_prompt_is_mismatch(prompt_used: str, args_prompt: str) -> bool:
+    """Falso éxito: se usó un fragmento STT en vez del args.prompt completo."""
+    args = (args_prompt or "").strip()
+    used = (prompt_used or "").strip()
+    if not args:
+        return False
+    if image_prompt_covers_request(used, args):
+        return False
+    return utterance_too_thin_for_prompt(used, args) or heard_is_prompt_fragment(used, args)
+
+
 def reply_is_image_wait_filler(text: str) -> bool:
     """True si la respuesta solo promete generar sin adjuntar imagen."""
     t = (text or "").strip()
@@ -487,6 +685,7 @@ def run_chat_image_generation(
         get_last_image_generation_prompt,
         register_text_chat_image_url,
         resolve_reference_image_bytes,
+        session_image_usable_for_edit,
     )
 
     from app.services.copy_quality import (
@@ -496,6 +695,7 @@ def run_chat_image_generation(
         build_reference_scene_edit_prompt,
         build_reference_text_edit_prompt,
         is_ced_wordmark_only_request,
+        is_text_only_flyer_request,
         compose_persuasive_overlay_lines,
         lock_on_image_spelling,
         lock_spanish_image_subject,
@@ -518,15 +718,36 @@ def run_chat_image_generation(
 
     user_text = normalize_image_request_typos((text or "").strip())
     history = visual_episode_history(history)
+    insist = user_insists_on_pending_image(user_text, history)
+    new_piece = insist or (
+        user_requests_new_image_piece(user_text, history)
+        and not user_requests_prior_reference(user_text)
+    )
+    if (
+        allow_reference
+        and session_image_usable_for_edit(user_id, conversation_id)
+        and image_request_needs_new_or_edit_clarification(user_text)
+        and not new_piece
+        and not user_requests_image_edit(user_text)
+    ):
+        return {
+            "ok": False,
+            "error": "needs_clarification",
+            "code": "needs_clarification",
+            "reply": IMAGE_NEW_OR_EDIT_CLARIFICATION,
+            "url": None,
+        }
     effective = effective_user_prompt(user_text, history)
     effective = lock_spanish_image_subject(effective)
     subject_fix = is_image_subject_correction(user_text)
     thread_prompt = get_last_image_generation_prompt(user_id, conversation_id)
     thread_edit = bool(
         not subject_fix
+        and not new_piece
         and (
             parse_followup_image_prompt(user_text, history)
             or wants_image_reference_edit(user_text)
+            or user_requests_image_edit(user_text)
         )
     )
     wordmark_only = is_ced_wordmark_only_request(user_text)
@@ -562,20 +783,27 @@ def run_chat_image_generation(
         user_id=user_id,
         conversation_id=conversation_id,
     )
-    if allow_reference and not use_reference and (thread_edit or wordmark_only):
+    if allow_reference and not use_reference and not new_piece and (thread_edit or wordmark_only):
         # «el castillo que acabas de generar» debe usar la última imagen del usuario,
         # aunque el conversation_id de voz no coincida con el del chat viejo.
-        use_reference = bool(resolve_reference_image_bytes(user_id, conversation_id))
+        use_reference = bool(
+            session_image_usable_for_edit(user_id, conversation_id)
+            and resolve_reference_image_bytes(user_id, conversation_id)
+        )
     if subject_fix:
         use_reference = False
     ref_payload = resolve_reference_image_bytes(user_id, conversation_id) if use_reference else None
 
     simple_photo_edit = (
-        thread_edit
-        or scene_only_edit
-        or bg_only_edit
-        or is_simple_photo_edit_request(user_text)
-    ) and not is_marketing_creative_intent(user_text)
+        not new_piece
+        and (
+            thread_edit
+            or scene_only_edit
+            or bg_only_edit
+            or is_simple_photo_edit_request(user_text)
+        )
+        and not is_marketing_creative_intent(user_text)
+    )
 
     creation = None
     if not simple_photo_edit:
@@ -612,12 +840,13 @@ def run_chat_image_generation(
 
     text_mode = resolve_image_text_mode(effective)
     visual_thread_parts: list[str] = []
-    user_ctx = last_user_visual_context(history)
-    if user_ctx:
-        visual_thread_parts.append(user_ctx)
-    assistant_desc = last_assistant_visual_description(history)
-    if assistant_desc:
-        visual_thread_parts.append(assistant_desc)
+    if not new_piece:
+        user_ctx = last_user_visual_context(history)
+        if user_ctx:
+            visual_thread_parts.append(user_ctx)
+        assistant_desc = last_assistant_visual_description(history)
+        if assistant_desc:
+            visual_thread_parts.append(assistant_desc)
     visual_thread = "\n\n".join(visual_thread_parts)
     enriched, expander_status = expand_image_scene(
         effective,
@@ -701,6 +930,13 @@ def run_chat_image_generation(
         model_prompt = (
             f"{model_prompt} Keep these visible labels legible: {labels}."
         )[:3800]
+    if new_piece and is_text_only_flyer_request(user_text):
+        people_lock = (
+            "sin personas ni otros elementos salvo los indicados. "
+            "No people, no dancers, no extra objects except those the user named."
+        )
+        if "no people" not in model_prompt.lower():
+            model_prompt = f"{model_prompt} {people_lock}"[:3800]
 
     logger.info(
         "[CHAT:IMG-GEN] direct_adapter user=%s scene=%s wants_text=%s creation=%s ref=%s overlays=%s",
@@ -822,6 +1058,7 @@ def run_chat_image_generation(
             "code": img_result.get("code"),
             "url": None,
             "display_label": display_label,
+            "prompt_used": str(effective or user_text),
         }
 
     url = str(img_result["url"])
@@ -831,6 +1068,7 @@ def run_chat_image_generation(
         conversation_id or "",
         url,
         prompt=str(effective or user_text),
+        preserve_reference_bytes=bool(ref_payload) and not new_piece,
     )
 
     caption = safe_image_display_caption(
@@ -867,6 +1105,14 @@ def run_chat_image_generation(
             "o en fondo verde para recortarla en tus videos?"
         )
 
+    prompt_used = str(model_prompt or effective or user_text)
+    logger.info(
+        "[CHAT:IMG-GEN] args.prompt=%s prompt_used=%s ref=%s new_piece=%s",
+        user_text[:160],
+        prompt_used[:160],
+        bool(ref_payload),
+        new_piece,
+    )
     return {
         "ok": True,
         "url": url,
@@ -876,6 +1122,7 @@ def run_chat_image_generation(
         "display_label": display_label,
         "used_reference": bool(ref_payload),
         "provider": img_result.get("provider"),
+        "prompt_used": prompt_used,
     }
 
 

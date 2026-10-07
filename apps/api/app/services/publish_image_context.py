@@ -149,6 +149,10 @@ def register_text_chat_image(
         "conversation_id": conversation_id,
         "filename": filename,
         "size_bytes": len(image_bytes),
+        "source": "upload",
+        "generation_ok": True,
+        "prompt_match": True,
+        "edit_armed": True,
     }
     _store_entry(user_id, conversation_id, entry)
     _mirror_to_voice_session(user_id, public_url=public_url, filename=filename, size_bytes=len(image_bytes))
@@ -176,6 +180,10 @@ def register_text_chat_image_url(
         "filename": filename,
         "size_bytes": 0,
         "prompt": locked_prompt,
+        "source": "generated" if locked_prompt else "upload",
+        "generation_ok": True,
+        "prompt_match": True,
+        "edit_armed": True,
     }
     if preserve_reference_bytes:
         existing = get_last_uploaded_image_for_session(user_id, conversation_id)
@@ -353,6 +361,82 @@ def get_last_image_generation_prompt(
     if not row:
         return ""
     return str(row.get("prompt") or "").strip()
+
+
+def _row_is_user_upload(row: dict[str, Any] | None) -> bool:
+    if not row:
+        return False
+    source = str(row.get("source") or "").strip().lower()
+    if source == "upload":
+        return True
+    if source == "generated":
+        return False
+    return not bool(str(row.get("prompt") or "").strip())
+
+
+def session_image_usable_for_edit(
+    user_id: str,
+    conversation_id: str | None,
+    *,
+    max_age_sec: float = MAX_AGE_SEC,
+) -> bool:
+    """True si la última imagen puede usarse como referencia de edición."""
+    row = get_last_uploaded_image_for_session(
+        user_id, conversation_id, max_age_sec=max_age_sec
+    )
+    if not row:
+        return False
+    if row.get("generation_ok") is False or row.get("prompt_match") is False:
+        return False
+    if _row_is_user_upload(row):
+        return True
+    return bool(row.get("edit_armed", True))
+
+
+def disarm_generated_edit_reference(
+    user_id: str,
+    conversation_id: str | None = None,
+) -> None:
+    """La referencia de una generación dura un turno: no queda armada indefinidamente."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return
+    with _lock:
+        row = _by_user.get(uid)
+        if row and not _row_is_user_upload(row):
+            row["edit_armed"] = False
+        cid = (conversation_id or "").strip()
+        if cid:
+            conv = _by_conversation.get(_conv_key(uid, cid))
+            if conv and not _row_is_user_upload(conv):
+                conv["edit_armed"] = False
+
+
+def mark_session_image_unusable_for_edit(
+    user_id: str,
+    conversation_id: str | None = None,
+    *,
+    reason: str = "mismatch",
+) -> None:
+    uid = (user_id or "").strip()
+    if not uid:
+        return
+    with _lock:
+        targets: list[dict[str, Any]] = []
+        row = _by_user.get(uid)
+        if row:
+            targets.append(row)
+        cid = (conversation_id or "").strip()
+        if cid:
+            conv = _by_conversation.get(_conv_key(uid, cid))
+            if conv:
+                targets.append(conv)
+        for entry in targets:
+            if reason == "failed":
+                entry["generation_ok"] = False
+            else:
+                entry["prompt_match"] = False
+            entry["edit_armed"] = False
 
 
 def resolve_reference_image_bytes(

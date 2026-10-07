@@ -398,6 +398,8 @@ def is_generate_image_intent(text: str) -> bool:
     # ni la dispara (is_pdf_intent ya no es solo mentions_pdf).
     if is_pdf_intent(t):
         return False
+    if user_insists_on_pending_image(t):
+        return True
     if is_image_preproduction_talk(t):
         return False
     # Ideas/copys/conceptos en texto — no alucinar una imagen.
@@ -602,6 +604,143 @@ def user_requests_prior_reference(text: str) -> bool:
     return bool(_PRIOR_REFERENCE.search(t))
 
 
+_NEW_IMAGE_PIECE = re.compile(
+    rf"(?i)\b(?:"
+    rf"{_CREATE_VERBS}\s+(?:{_DETERMINER}\s+)?(?:otro|otra|nuev[oa]\s+)?"
+    rf"{_IMAGE_NOUN}"
+    rf"|otro\s+(?:flyer|banner|imagen|foto|creativo|cartel|pieza)"
+    rf"|otra\s+(?:imagen|foto|pieza|flyer)"
+    rf"|imagen\s+nueva|flyer\s+nuev[oa]|pieza\s+nueva"
+    rf")\b"
+)
+_EXPLICIT_IMAGE_EDIT = re.compile(
+    r"(?i)\b(?:"
+    r"c[aá]mbial[oa]s?|ponle|ponga(?:le)?|ajust[aá](?:le|la|lo)?"
+    r"|hazl[oa]\s+m[aá]s"
+    r"|la\s+misma\s+pero|el\s+mismo\s+pero|esa\s+misma|ese\s+mismo"
+    r"|qu[ií]tale|agr[eé]gale|mejor[aá]l[oa]"
+    r"|modif[ií]cal[oa]|ed[ií]tal[oa]|retoc[aá]l[oa]"
+    r")\b"
+)
+_INSIST_MISSING_IMAGE = re.compile(
+    r"(?is)\b(?:"
+    r"no\s+(?:la\s+|lo\s+)?(?:vi|veo|v[ií]|sal[ií][oó]|aparec[ií][oó])|"
+    r"no\s+(?:hay|tengo)\s+(?:la\s+)?(?:imagen|foto|flyer)|"
+    r"no\s+me\s+(?:la\s+|lo\s+)?(?:diste|mostraste|sali[oó]|apareci[oó]|gener)|"
+    r"no\s+se\s+(?:gener[oó]|cre[oó]|mostr[oó]|adjunt)|"
+    r"sigue\s+sin\s+(?:imagen|foto|flyer)|"
+    r"d[oó]nde\s+est[aá]\s+(?:la\s+)?(?:imagen|foto|flyer)|"
+    r"no\s+hab[ií]a\s+visto\s+(?:la\s+)?(?:imagen|foto|flyer)"
+    r")\b"
+)
+_INSIST_SHOW_PENDING = re.compile(
+    r"(?is)^(?:por\s+favor[, ]*)?(?:"
+    r"mu[eé]strame\s+(?:la\s+|el\s+)?(?:imagen|foto|flyer)|"
+    r"gen[eé]ral[ao]s?(?:\s+ya)?|"
+    r"ya\s+g[eé]ner(?:a|ala|alo|ame)"
+    r")(?:\s+(?:ya|ahora|por\s+favor))?\.?\s*$"
+)
+_INSIST_SHORT_PENDING = re.compile(
+    r"(?i)^(?:ok[,.]?\s*)?(?:por\s+favor[, ]*)?(?:gen[eé]r\w*|hazme|cr[eé]a|mu[eé]strame)"
+    r"(?:\s+ya)?\s+"
+    r"(?:el\s+|la\s+|esa\s+|este\s+|esta\s+)"
+    r"(?:flyer|imagen|foto|banner)"
+    r"(?:\s+(?:ya|ahora|por\s+favor|que\s+te\s+(?:ped[ií]|dije)|de\s+hace\s+rato))?\.?\s*$"
+)
+
+
+def user_insists_on_pending_image(
+    text: str,
+    history: list[dict[str, str]] | None = None,
+) -> bool:
+    """True si el usuario dice que no vio la imagen y pide generar el brief ya dictado."""
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
+    if not t:
+        return False
+    if re.search(r"(?i)\b(?:otro|otra|nuev[oa])\s+(?:flyer|imagen|foto|pieza)\b", t):
+        return False
+    if _INSIST_MISSING_IMAGE.search(t):
+        return True
+    if not history:
+        return False
+    if not history_has_pending_image_brief(history):
+        return False
+    if re.search(r"(?i)\bfondo|que\s+diga|sombra|el\s+texto\s+", t):
+        return False
+    if _INSIST_SHOW_PENDING.search(t) or _INSIST_SHORT_PENDING.search(t):
+        return True
+    return False
+
+
+def user_requests_new_image_piece(text: str, history: list[dict[str, str]] | None = None) -> bool:
+    """True si pide una pieza nueva (genera/crea/hazme un flyer|imagen), no un ajuste."""
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
+    if not t:
+        return False
+    if user_insists_on_pending_image(t, history):
+        return False
+    if user_requests_prior_reference(t):
+        return False
+    if _EXPLICIT_IMAGE_EDIT.search(t):
+        return False
+    if re.search(
+        r"(?i)\b(?:esta|esa|la misma|el mismo|la anterior)\s+"
+        r"(?:imagen|foto|flyer|pieza|banner)\b",
+        t,
+    ):
+        return False
+    if re.search(
+        r"(?i)\b(?:variaci[oó]n|acabas\s+de\s+generar|que\s+me\s+generaste)\b",
+        t,
+    ):
+        return False
+    if _NEW_IMAGE_PIECE.search(t):
+        return True
+    # Brief visual completo sin verbo de crear (tool de voz: args.prompt ya es la escena).
+    if re.search(r"(?i)\b(?:flyer|banner|cartel|letrero)\b", t) and re.search(
+        r"(?i)\b(?:fondo|texto|frase|que\s+diga|sombra|tipograf)\b", t
+    ):
+        return True
+    return False
+
+
+def user_requests_image_edit(text: str) -> bool:
+    """Verbos de modificar la pieza anterior (cámbiale, ponle, hazlo más grande…)."""
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
+    if not t:
+        return False
+    if user_requests_new_image_piece(t) and not user_requests_prior_reference(t):
+        return False
+    return bool(_EXPLICIT_IMAGE_EDIT.search(t) or user_requests_prior_reference(t))
+
+
+def image_request_needs_new_or_edit_clarification(text: str) -> bool:
+    """True si hay pieza previa y el pedido no deja claro si es nueva o un ajuste."""
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
+    if not t:
+        return False
+    if user_insists_on_pending_image(t) or user_requests_new_image_piece(t) or user_requests_image_edit(t):
+        return False
+    if wants_image_reference_edit(t) or user_requests_prior_reference(t):
+        return False
+    if is_generate_image_intent(t):
+        return False
+    if re.search(r"(?i)\b(?:que\s+diga|texto|frase|fondo)\b", t):
+        return False
+    return bool(
+        re.search(r"(?i)\b(?:flyer|imagen|foto|banner|cartel|creativo)\b", t)
+        and 2 <= len(t.split()) <= 6
+    )
+
+
 _SUBJECT_CORRECTION = re.compile(
     r"\b("
     r"no\s+es\s+(?:eso|esa|lo\s+que)|"
@@ -660,6 +799,9 @@ def wants_image_reference_edit(text: str) -> bool:
     if not t or is_script_narrative_request(t):
         return False
     if is_image_subject_correction(t):
+        return False
+    # «genera un flyer que diga X» es pieza nueva: «que diga» no debe forzar edit.
+    if user_requests_new_image_piece(t) and not user_requests_prior_reference(t):
         return False
     if user_requests_prior_reference(t):
         return True
@@ -887,6 +1029,14 @@ def last_concrete_image_user_prompt(
             continue
         content = (row.get("content") or "").strip()
         if not content or not is_generate_image_intent(content):
+            continue
+        if _INSIST_MISSING_IMAGE.search(content):
+            continue
+        if len(content.split()) <= 8 and re.search(
+            r"(?i)^(ok[,.]?\s*)?(?:gen[eé]r\w*|hazme|cr[eé]a).{0,24}"
+            r"(?:el\s+|la\s+|una?\s+)?(?:flyer|imagen|foto)\s*$",
+            content,
+        ):
             continue
         parsed = parse_generate_image_prompt(content)
         if parsed and not is_anaphoric_image_subject(parsed):

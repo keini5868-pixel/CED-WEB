@@ -128,6 +128,82 @@ def test_en_texto_with_labels_is_locked():
     assert should_take_direct_image_path(msg, []) is True
 
 
+def test_spoken_copy_without_quotes_locks_overlay():
+    msg = (
+        "genera un flyer con fondo oscuro y el texto "
+        "Inevitablemente el tiempo va a pasar, no te dediques a perderlo "
+        "en azul cian con sombra blanca opaca"
+    )
+    assert overlay_is_locked(msg, []) is True
+    assert needs_overlay_readback(msg, []) is False
+    assert should_take_direct_image_path(msg, []) is True
+
+
+def test_missing_image_followup_generates_the_same_brief():
+    from app.services.chat_image_generation import effective_user_prompt
+    from app.services.chat_intents import user_insists_on_pending_image
+
+    original = (
+        "genera un flyer con fondo oscuro y el texto "
+        "'Inevitablemente el tiempo va a pasar, no te dediques a perderlo' "
+        "en azul cian"
+    )
+    history = [
+        {"role": "user", "content": original},
+        {
+            "role": "assistant",
+            "content": "En la pieza va a decir exactamente: Inevitablemente el tiempo. ¿La genero?",
+        },
+    ]
+    follow = "no había visto la imagen, genérame el flyer"
+    assert user_insists_on_pending_image(follow, history) is True
+    assert needs_overlay_readback(follow, history) is False
+    assert should_take_direct_image_path(follow, history) is True
+    assert "Inevitablemente" in (effective_user_prompt(follow, history) or "")
+    assert user_insists_on_pending_image("genérame el flyer", history) is True
+    assert "Inevitablemente" in (
+        effective_user_prompt("genérame el flyer", history) or ""
+    )
+
+
+def test_marketing_flyer_with_brand_is_not_pending_insist():
+    from app.services.chat_intents import user_insists_on_pending_image
+
+    history = [
+        {"role": "user", "content": "analiza esta imagen"},
+        {
+            "role": "assistant",
+            "content": "Flyer promocional DUGLE STUDIO. Precios $49 / $79 / $99.",
+        },
+    ]
+    assert (
+        user_insists_on_pending_image(
+            "genera creativo estilo flyer con DUGLE STUDIO", history
+        )
+        is False
+    )
+    assert (
+        user_insists_on_pending_image(
+            'genera flyer "DUGLE STUDIO" con precios $49 $79 $99', history
+        )
+        is False
+    )
+
+
+def test_voice_args_prompt_locks_overlay_even_if_heard_is_thin():
+    llm_prompt = (
+        'Flyer de fondo oscuro con el texto "Inevitablemente el tiempo va a pasar, '
+        'no te dediques a perderlo" en azul cian'
+    )
+    raw_user = "hazme un flyer"
+    assert overlay_is_locked(llm_prompt, []) is True
+    assert needs_overlay_readback(raw_user, []) is True
+    copy_already_locked = overlay_is_locked(llm_prompt, []) or overlay_is_locked(
+        raw_user, []
+    )
+    assert copy_already_locked is True
+
+
 def test_idea_talk_is_not_overlay_ritual():
     msg = "tengo una idea para un flyer de Instagram"
     assert needs_overlay_readback(msg, []) is False

@@ -14,10 +14,12 @@ from app.services.chat_intents import (
     is_script_narrative_request,
     last_concrete_image_user_prompt,
     last_user_visual_context,
+    user_insists_on_pending_image,
     wants_image_reference_edit,
 )
 from app.services.copy_quality import (
     build_image_headline,
+    extract_literal_on_image_copy,
     extract_quoted_phrases,
     extract_spoken_overlay_labels,
     prompt_requires_precise_text,
@@ -151,6 +153,8 @@ def _extract_from_text(text: str) -> list[str]:
 
     for phrase in extract_quoted_phrases(t):
         _add(phrase)
+    for phrase in extract_literal_on_image_copy(t):
+        _add(phrase)
     for match in _QUE_DIGA.finditer(t):
         _add(match.group(1) or match.group(2) or "")
     for match in _CON_FRASE.finditer(t):
@@ -200,6 +204,7 @@ def locked_overlay_lines(
         not (text or "").strip()
         or is_bare_affirmation(text)
         or is_image_choice_confirmation(text)
+        or user_insists_on_pending_image(text, history)
     )
     if not inherit:
         return []
@@ -259,6 +264,10 @@ def needs_overlay_readback(
     if is_exploratory_talk(t) and not is_explicit_image_command(t):
         return False
     if overlay_is_locked(t, history):
+        return False
+    if user_insists_on_pending_image(t, history) and (
+        overlay_is_locked("", history) or last_concrete_image_user_prompt(history)
+    ):
         return False
     if not _wants_graphic_copy(t):
         return False

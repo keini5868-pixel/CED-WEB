@@ -184,7 +184,7 @@ def test_repeat_generations_stay_on_direct_path(mock_ref: MagicMock, mock_gen: M
 
     history = list(HISTORY_AFTER_ANALYSIS)
     prompts = [
-        "genera flyer DUGLE STUDIO con precios $49 $79 $99",
+        'genera flyer "DUGLE STUDIO" con precios $49 $79 $99',
         "otra vez igual con los mismos precios",
         "hazlo de nuevo mismo diseño",
         "genera otra imagen creativo referencia",

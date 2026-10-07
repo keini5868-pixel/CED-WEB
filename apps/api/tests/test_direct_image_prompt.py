@@ -118,6 +118,24 @@ def test_prepare_image_prompt_no_longer_merges_chat_history():
     assert "textos exactos" not in low
 
 
+def test_literal_flyer_locks_shadow_punctuation_and_no_people():
+    msg = (
+        "genera un flyer con fondo oscuro y el texto "
+        "'Inevitablemente el tiempo va a pasar, no te dediques a perderlo' "
+        "en azul cian con sombra blanca opaca"
+    )
+    direct = build_direct_image_prompt(msg)
+    prompt = str(direct["prompt"])
+    low = prompt.lower()
+    assert direct["wants_literal_text"] is True
+    assert "Inevitablemente el tiempo va a pasar, no te dediques a perderlo" in prompt
+    assert "," in prompt
+    assert "sombra blanca" in low or "shadow must be white" in low
+    assert "not cyan" in low
+    assert "same font weight" in low or "one typeface" in low
+    assert "sin personas" in low or "no people" in low
+
+
 def test_chat_image_generation_wires_direct_adapter():
     """Chat/avanzado/voz: run_chat_image_generation usa build_direct_image_prompt."""
     import inspect
