@@ -101,7 +101,6 @@ export function CedVoiceHub() {
   }, []);
   const voiceWasActiveRef = useRef(false);
   const voiceSessionActiveRef = useRef(false);
-  const micWasOnRef = useRef(false);
   const upsertLiveVoiceTurn = useCallback(
     (
       text: string,
@@ -326,16 +325,6 @@ export function CedVoiceHub() {
     }
     voiceWasActiveRef.current = voice.voiceSessionActive;
   }, [voice.voiceSessionActive]);
-
-  useEffect(() => {
-    if (voice.micOn && !micWasOnRef.current) {
-      setVoiceImagePreview(null);
-    }
-    if (!voice.micOn) {
-      setVoiceImagePreview(null);
-    }
-    micWasOnRef.current = voice.micOn;
-  }, [voice.micOn]);
 
   /* El transcript llega por los callbacks del hook: un segundo poll aquí
      multiplicaba las consultas a Supabase y frenaba el chat de texto. */

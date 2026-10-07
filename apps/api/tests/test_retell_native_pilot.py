@@ -273,7 +273,13 @@ def test_native_image_pdf_tools_have_fillers_and_timeouts():
     img = build_generate_image_tool(api_public_url="https://api.example.com")
     assert img["name"] == "generate_image"
     assert img["speak_during_execution"] is True
-    assert img["execution_message_description"].strip().lower() == "va."
+    filler = img["execution_message_description"].lower()
+    assert "creando su imagen" in filler
+    assert filler.strip() != "va."
+    prompt_desc = img["parameters"]["properties"]["prompt"]["description"].lower()
+    assert "palabras exactas" in prompt_desc
+    assert "luz" not in prompt_desc
+    assert "cálida" not in prompt_desc
     assert img["timeout_ms"] == 60_000
     assert img["url"].endswith("/v1/retell/tools/generate_image")
     assert "prompt" in img["parameters"]["properties"]
@@ -290,7 +296,8 @@ def test_native_image_pdf_tools_have_fillers_and_timeouts():
 def test_pilot_prompt_includes_image_pdf_rules():
     assert "generate_image" in RETELL_NATIVE_PILOT_PROMPT
     assert "generar_pdf" in RETELL_NATIVE_PILOT_PROMPT
-    assert "NUNCA digas que la imagen o el PDF están listos" in RETELL_NATIVE_PILOT_PROMPT
+    assert "published=true" in RETELL_NATIVE_PILOT_PROMPT
+    assert "invoca YA" in RETELL_NATIVE_PILOT_PROMPT
 
 
 def test_execute_generate_image_delegates_to_voice_executor():
@@ -383,8 +390,10 @@ def test_execute_generate_image_honors_retell_prompt_without_transcript():
             mock_exec.assert_awaited_once()
             assert "robot" in mock_exec.await_args.args[2]["prompt"].lower()
             assert out["ok"] is True
-            assert "result" in out
+            assert out.get("published") is True
+            assert "ok=true published=true" in out["result"]
             assert "pantalla" in out["result"].lower()
+            assert "https://" not in out["result"]
 
     asyncio.run(run())
 
@@ -404,6 +413,92 @@ def test_execute_generate_image_reject_always_has_result_key():
         assert out["error"] == "image_not_requested"
         assert "result" in out
         assert out["result"]
+        assert "ok=false published=false" in out["result"]
+
+    asyncio.run(run())
+
+
+def test_execute_generate_image_rejects_truncated_transcript_even_with_invented_prompt():
+    import asyncio
+
+    from app.services.retell_native_pilot import execute_generate_image_tool
+
+    async def run():
+        with patch(
+            "app.services.voice_tool_executor.execute_voice_tool",
+            new_callable=AsyncMock,
+        ) as mock_exec:
+            out = await execute_generate_image_tool(
+                user_id="u-img-trunc",
+                payload={
+                    "call": {
+                        "call_id": "c-trunc",
+                        "transcript_object": [
+                            {"role": "user", "content": "el flyer. Capítulo"},
+                        ],
+                    },
+                },
+                args={
+                    "prompt": (
+                        "Flyer elegante, minimalista, inicio de una nueva etapa, "
+                        "estilo Castillo Evolución Digital, luz cálida, éxito global"
+                    ),
+                },
+            )
+            mock_exec.assert_not_awaited()
+            assert out["ok"] is False
+            assert out["error"] == "incomplete_brief"
+            assert "ok=false published=false" in out["result"]
+            assert "frase exacta" in out["result"].lower()
+
+    asyncio.run(run())
+
+
+def test_native_image_success_speech_is_code_owned_not_visual_review():
+    from app.services.retell_native_pilot import format_native_image_tool_result
+
+    text = format_native_image_tool_result(
+        ok=True,
+        published=True,
+        spoken="Listo, señor. Ya puede verla en pantalla.",
+        prompt_used="flyer fondo oscuro con la frase X",
+    )
+    assert "ok=true published=true" in text
+    assert "prompt_used=" in text
+    assert "Do not describe" in text
+    assert "https://" not in text
+
+
+def test_execute_generate_image_busy_fails_fast_when_another_job_runs():
+    import asyncio
+
+    from app.services.retell_native_pilot import (
+        _end_image_job,
+        execute_generate_image_tool,
+    )
+
+    async def run():
+        from app.services import retell_native_pilot as pilot
+
+        uid = "u-img-busy"
+        assert pilot._try_begin_image_job(uid) is True
+        try:
+            with patch(
+                "app.services.voice_tool_executor.execute_voice_tool",
+                new_callable=AsyncMock,
+            ) as mock_exec:
+                out = await execute_generate_image_tool(
+                    user_id=uid,
+                    payload={"call": {"call_id": "c-busy"}},
+                    args={"prompt": "un café al atardecer con taza humeante"},
+                )
+                mock_exec.assert_not_awaited()
+                assert out["ok"] is False
+                assert out["error"] == "busy"
+                assert out["latency_ms"] < 500
+                assert "otra generación" in out["result"].lower()
+        finally:
+            _end_image_job(uid)
 
     asyncio.run(run())
 

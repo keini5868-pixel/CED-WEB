@@ -1360,8 +1360,9 @@ export function useCedVoiceSession(
             (max, ev) => Math.max(max, Number(ev.id || 0)),
             lastToolEventIdRef.current,
           );
+          replayVoiceImagesRef.current = true;
         } catch {
-          /* el poll no debe pintar una imagen de la llamada anterior */
+          /* el primer poll hidrata el cursor y no pinta imágenes viejas */
         }
         voiceSessionActiveRef.current = true;
         setVoiceSessionActive(true);

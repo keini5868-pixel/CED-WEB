@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from collections.abc import Callable
@@ -24,7 +25,7 @@ READ_TOOLS_PROMPT = """
 Reglas de tools (schemas = nombre/params; no inventes tools):
 - Charla, gracias, check-ins: SIN tools. 1-4 oraciones.
 - Tras tool: di el resultado tal cual. No re-llames sin petición nueva.
-- Tools lentas (clima, PDF, imagen, búsqueda, cámara, avanzado): invoca YA.
+- Tools lentas (clima, PDF, búsqueda, cámara, avanzado): invoca YA.
   El filler habla al empezar; tú callas (no «voy a consultar» ni «deme un momento»).
 - Escritura (finanzas/Meta): prepare → «sí» → confirm_*. NUNCA prepare+confirm juntos.
   Un «sí» basta si hay borrador. Tras OK: di el mensaje y transition_to_general_assistant.
@@ -32,11 +33,11 @@ Reglas de tools (schemas = nombre/params; no inventes tools):
 - FitLine/PM/Restorate/Activize: Oportunidades YA. «PM»=PM-International AG (FitLine).
   PROHIBIDO search_web e «investigando». Enlace/OPPS→open_opportunities (verifica patrocinador).
 - Borrar finanzas/historial → send_to_trash. Un aviso y un «sí».
-- Cámara: activate una vez; visión solo analyze_camera_frame / search_visible_product (no inventes).
+- Cámara: activate una vez; visión solo analyze_camera_frame / search_visible_product. NUNCA inventar lo visible.
 - YouTube: play/pause/resume/close. Reproduce ya. NUNCA confirmes play sin éxito.
   SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla. Esta regla NO aplica al resto.
-- Imagen/PDF: generate_image / generar_pdf. NUNCA digas que la imagen o el PDF están listos sin éxito de la tool.
-  Ajuste (color, fondo, texto) = la MISMA pieza; no inventes otra escena.
+- Imagen: generate_image si el pedido está completo. prompt = palabras del usuario.
+  Confirma la frase. NUNCA describas la foto. Di published=true. Una a la vez. PDF: generar_pdf.
 - Avanzado: «activa modo avanzado»→activate; análisis→consult_advanced; salida→deactivate.
 - IG sin imagen: «ya subí la imagen»→meta_prepare_publish otra vez (HUD, no solo cámara).
 """.strip()
@@ -46,7 +47,7 @@ Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya.
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
 - Clima→get_environment. Noticias→search_web. FitLine/PM→SIN search_web. OPPS→open_opportunities. Borrar→send_to_trash. YouTube: con música, UNA frase y SILENCIO.
-- Imagen/PDF: generate_image / generar_pdf — NUNCA confirmes sin éxito. Ajuste visual = la misma pieza.
+- Imagen/PDF: generate_image / generar_pdf solo con brief completo. NUNCA confirmes sin published=true. Ajuste = la misma pieza.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
 
@@ -66,7 +67,7 @@ Estado modo avanzado — investigación profunda activa.
 - Preguntas sustantivas / análisis / investigación → consult_advanced. Di el resultado tal cual.
 - Clima o ambiente → get_environment (sin salir del modo).
 - Consulta de finanzas (solo lectura) → read_finances (sin salir del modo).
-- Generar imagen → generate_image (sin salir del modo). Di el resultado tal cual — NUNCA confirmes sin éxito.
+- Generar imagen → generate_image (sin salir del modo). Di el result tal cual — NUNCA confirmes sin published=true ni describas la foto.
 - Generar PDF → generar_pdf (sin salir del modo). Di el resultado tal cual — NUNCA confirmes sin éxito.
 - Si dice «modo normal», «sal del modo avanzado» o «desactiva modo avanzado» → deactivate_advanced_mode y transition_to_general_assistant.
 - NO llames cámara ni escritura de finanzas aquí — indica que debe salir al modo normal primero.
@@ -111,13 +112,14 @@ RETELL_NATIVE_PILOT_PROMPT = (
     "hacer crecer CED y el Castillo Evolución Digital: eres parte del equipo, no una herramienta fría.\n\n"
     "Cuando el tema sea desarrollo, pruebas o avance del sistema:\n"
     '- Entusiasmo genuino y breve ("¡Excelente, señor! Listo para ponerla a prueba.").\n'
-    '- Si algo sale bien: una frase de celebración ("Esto quedó fantástico, señor.").\n'
+    '- Si algo sale bien (salvo imagen/PDF): una frase de celebración ("Excelente, señor.").\n'
     "- Ingenio ligero cuando se presta — UNA chispa, no un monólogo.\n\n"
     "PROHIBIDO en este modo:\n"
     "- Volverte charlatán o forzar humor en cada turno.\n"
     "- Cambiar el tono en tareas serias (pagos, publicaciones, navegación): ahí claridad primero.\n"
     "- Hablar por iniciativa mientras suena YouTube — el silencio de música sigue intacto.\n"
-    "- Adulación excesiva o melodrama."
+    "- Adulación excesiva o melodrama.\n"
+    "- Describir cómo quedó una imagen."
 )
 
 GET_ENVIRONMENT_DESCRIPTION = (
@@ -171,7 +173,7 @@ RESUME_YOUTUBE_DESCRIPTION = (
 CLOSE_YOUTUBE_DESCRIPTION = "Cierra el reproductor de YouTube."
 
 GENERATE_IMAGE_DESCRIPTION = (
-    "Genera imagen si pidió crear imagen/foto o eligió «la primera»."
+    "Imagen si el pedido está completo. Cortado: pregunta. prompt = palabras del usuario."
 )
 GENERAR_PDF_DESCRIPTION = (
     "Genera PDF (título/contenido). Di el resultado tal cual — NUNCA confirmes sin éxito."
@@ -332,14 +334,11 @@ GENERATE_IMAGE_PARAMETERS: dict[str, Any] = {
     "properties": {
         "prompt": {
             "type": "string",
-            "description": (
-                "Descripción detallada de la imagen a generar "
-                "(ej. 'un café al atardecer con luz cálida')."
-            ),
+            "description": "Palabras exactas del usuario. Sin estilo extra.",
         },
         "quality": {
             "type": "string",
-            "description": "Calidad opcional: auto, standard o hd. Por defecto auto.",
+            "description": "auto, standard o hd.",
         },
     },
     "required": ["prompt"],
@@ -472,6 +471,26 @@ DEACTIVATE_ADVANCED_PARAMETERS: dict[str, Any] = {
 _lock = threading.Lock()
 _tool_metrics: list[dict[str, Any]] = []
 _call_metrics: dict[str, dict[str, Any]] = {}
+_image_inflight_users: set[str] = set()
+
+
+def _try_begin_image_job(user_id: str) -> bool:
+    uid = (user_id or "").strip()
+    if not uid:
+        return False
+    with _lock:
+        if uid in _image_inflight_users:
+            return False
+        _image_inflight_users.add(uid)
+        return True
+
+
+def _end_image_job(user_id: str) -> None:
+    uid = (user_id or "").strip()
+    if not uid:
+        return
+    with _lock:
+        _image_inflight_users.discard(uid)
 
 
 def _build_custom_tool(
@@ -589,7 +608,7 @@ def build_generate_image_tool(*, api_public_url: str) -> dict[str, Any]:
         name="generate_image",
         description=GENERATE_IMAGE_DESCRIPTION,
         parameters=GENERATE_IMAGE_PARAMETERS,
-        filler="Va.",
+        filler="Perfecto, señor. Estoy creando su imagen, me toma unos segundos.",
         timeout_ms=60_000,
     )
 
@@ -1312,6 +1331,66 @@ _FAILURE_SPOKEN_MARKERS = (
     "no está disponible",
     "permisos",
 )
+
+_VOICE_IMAGE_SUCCESS = "Listo, señor. Ya puede verla en pantalla."
+
+_TRUNCATED_IMAGE_UTTERANCE = re.compile(
+    r"(?is)"
+    r"^(?:sí[.,]?\s*)?(?:necesito que me\s+)?(?:quiero que\s+)?"
+    r"(?:el\s+|un\s+|una\s+)?"
+    r"(?:fly(?:er)?|gen(?:era(?:me|r)?)?)\b[\s.]*"
+    r"(?:cap[ií]tulo)?"
+    r"[\s.]*$"
+)
+
+
+def image_brief_looks_truncated(text: str) -> bool:
+    """True si el usuario aún no dictó un pedido visual usable (corte a mitad)."""
+    t = re.sub(r"\s+", " ", (text or "").strip())
+    if not t:
+        return True
+    if _TRUNCATED_IMAGE_UTTERANCE.match(t):
+        return True
+    if re.search(r"(?i)\bfly\.\s*$", t) or t.lower().rstrip(".").endswith(" el fly"):
+        return True
+    words = t.split()
+    has_flyer = bool(re.search(r"(?i)\bflyers?\b", t))
+    has_detail = bool(
+        re.search(
+            r"(?i)\b(?:fondo|frase|texto|diga|escrito|oscuro|claro|con)\b",
+            t,
+        )
+    )
+    if has_flyer and len(words) <= 5 and not has_detail:
+        return True
+    return False
+
+
+def format_native_image_tool_result(
+    *,
+    ok: bool,
+    published: bool,
+    spoken: str,
+    error: str = "",
+    prompt_used: str = "",
+) -> str:
+    """Lo que Retell (y el LLM) leen: flags reales + frase fija. Sin URL."""
+    line = (spoken or "").strip()
+    used = re.sub(r"\s+", " ", (prompt_used or "").strip())[:160]
+    if ok and published:
+        status = "ok=true published=true"
+        extra = f' prompt_used="{used}"' if used else ""
+        return (
+            f"{status}{extra}. Speak exactly: {line} "
+            "Do not describe how the image looks. Do not claim a display error. "
+            "Do not call generate_image again unless the user asks a new change."
+        )
+    err = (error or "failed").strip()
+    status = f"ok=false published=false error={err}"
+    return (
+        f"{status}. Speak exactly: {line} "
+        "Do not invent a HUD/view error. Do not say the image was generated."
+    )
 
 
 def _spoken_indicates_failure(spoken: str) -> bool:
@@ -2411,53 +2490,103 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
         resolve_voice_image_prompt,
         should_generate_image_from_voice_turn,
     )
+    from app.services.voice_tool_executor import execute_voice_tool
+
+    started = time.perf_counter()
+    call_id = _extract_call_id(payload)
+
+    def _fail(spoken: str, error: str) -> dict[str, Any]:
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(
+            call_id=call_id, tool_name="generate_image", latency_ms=latency_ms, ok=False
+        )
+        return {
+            "result": format_native_image_tool_result(
+                ok=False, published=False, spoken=spoken, error=error
+            ),
+            "ok": False,
+            "spoken": spoken,
+            "error": error,
+            "latency_ms": latency_ms,
+            "published": False,
+        }
 
     # Preferir utterance crudo (transcript / _user_request) sobre prompt reformulado por Retell LLM.
     raw = str(args.get("_user_request") or args.get("user_text") or "").strip()
     query = resolve_tool_query(payload, args)
     llm_prompt = str(args.get("prompt") or "").strip()
+    heard = raw or query or _latest_user_utterance(payload)
     # Retell a menudo manda solo args.prompt (sin transcript en el webhook de tool).
-    user_text = raw or query or _latest_user_utterance(payload) or llm_prompt
+    user_text = heard or llm_prompt
     history = _transcript_history(payload)
 
-    # Si Retell ya invocó generate_image con un prompt, generar.
-    # El gate anti-alucinación solo aplica cuando no hay contenido usable.
+    if heard and image_brief_looks_truncated(heard):
+        return _fail(
+            "No alcancé el pedido completo, señor. Dígame el fondo y la frase exacta.",
+            "incomplete_brief",
+        )
+
     has_tool_prompt = bool(llm_prompt.strip())
     if not has_tool_prompt and (
         not user_text
         or not should_generate_image_from_voice_turn(user_text, llm_prompt, history)
     ):
-        spoken = "No pidió generar una imagen, señor. ¿En qué más le ayudo?"
-        return {
-            "result": spoken,
-            "ok": False,
-            "spoken": spoken,
-            "error": "image_not_requested",
-        }
+        return _fail(
+            "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
+            "image_not_requested",
+        )
     prompt = resolve_voice_image_prompt(user_text, llm_prompt, history) or llm_prompt or user_text
     if not prompt.strip():
-        spoken = "Indique qué imagen desea generar, señor."
-        return {
-            "result": spoken,
-            "ok": False,
-            "spoken": spoken,
-            "error": "missing_prompt",
-        }
+        return _fail("Indique qué imagen desea generar, señor.", "missing_prompt")
+    if not user_id:
+        return _fail("No identifiqué al usuario, señor.", "missing_user_id")
+
+    if not _try_begin_image_job(user_id):
+        return _fail(
+            "Hay otra generación en curso, señor. Espere a que termine.",
+            "busy",
+        )
+
     quality = str(args.get("quality") or "auto").strip() or "auto"
-    call_id = _extract_call_id(payload)
-    return await _execute_native_voice_alias_tool(
-        tool_name="generate_image",
-        voice_tool_name="generate_image",
-        user_id=user_id,
-        payload=payload,
-        args={
-            "prompt": prompt,
-            "quality": quality,
-            "call_id": call_id,
-            "_user_request": raw or query or prompt,
-            "_history": history,
-        },
+    try:
+        result = await execute_voice_tool(
+            "generate_image",
+            user_id,
+            {
+                "prompt": prompt,
+                "quality": quality,
+                "call_id": call_id,
+                "_user_request": heard or prompt,
+                "_history": history,
+            },
+        )
+    finally:
+        _end_image_job(user_id)
+    url = str(result.get("url") or result.get("image_url") or "").strip()
+    ok = bool(result.get("ok")) and bool(url)
+    spoken = (
+        _VOICE_IMAGE_SUCCESS
+        if ok
+        else str(result.get("spoken") or "No pude generar la imagen, señor.").strip()
     )
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    record_tool_metric(
+        call_id=call_id, tool_name="generate_image", latency_ms=latency_ms, ok=ok
+    )
+    return {
+        "result": format_native_image_tool_result(
+            ok=ok,
+            published=ok,
+            spoken=spoken,
+            error="" if ok else str(result.get("error") or "image_failed"),
+            prompt_used=prompt if ok else "",
+        ),
+        "ok": ok,
+        "spoken": spoken,
+        "latency_ms": latency_ms,
+        "published": ok,
+        "error": None if ok else str(result.get("error") or "image_failed"),
+    }
 
 
 async def execute_generar_pdf_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
