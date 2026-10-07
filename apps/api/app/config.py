@@ -167,10 +167,11 @@ class Settings(BaseSettings):
     # aísla al hablante principal y suprime la propia voz de CED si se filtra de vuelta al micrófono
     # (surcharge $0.005/min en Retell). "noise-cancellation" es el default de Retell (sin este filtro).
     retell_denoising_mode: str = "noise-and-background-speech-cancellation"
-    # Espera a que el usuario termine. Alto = CED salta a media frase.
-    retell_interruption_sensitivity: float = 0.40
-    # Más bajo = más pausa natural antes de responder (Retell: -0.1 ≈ +0.5 s).
-    retell_responsiveness: float = 0.22
+    # Qué tan fácil TÚ callas a CED (0 = no se puede cortar; 1 = al primer sonido).
+    retell_interruption_sensitivity: float = 0.72
+    # Espera extra de Retell al terminar tú: 1.0 = 0 s, 0.9 = +1 s, cada 0.1 menos = +0.5 s.
+    # 0.88 ≈ 1 s. Valores viejos tipo 0.22 sumaban ~4 s en cada turno.
+    retell_responsiveness: float = 0.88
     # Provider voice ID Cartesia (opcional — Retell usa RETELL_VOICE_ID en prod)
     cartesia_jarvis_voice_id: str = ""
     support_chat_enabled: bool = True

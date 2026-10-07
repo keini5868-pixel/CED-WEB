@@ -27,16 +27,28 @@ def test_gemini_voice_llm_imports_get_settings():
 def test_retell_turn_taking_waits_for_user():
     payload = retell_turn_taking_payload()
     assert payload["enable_backchannel"] is False
-    assert payload["interruption_sensitivity"] <= 0.45
-    assert payload["responsiveness"] <= 0.28
+    assert payload["enable_dynamic_responsiveness"] is True
+    assert 0.75 <= payload["responsiveness"] <= 0.95
+    assert 0.55 <= payload["interruption_sensitivity"] <= 0.85
+
+
+def test_retell_turn_taking_lifts_stale_env():
+    with patch("app.services.retell_agent_setup.get_settings") as mocked:
+        settings = mocked.return_value
+        settings.retell_responsiveness = 0.22
+        settings.retell_interruption_sensitivity = 0.40
+        settings.retell_denoising_mode = "noise-and-background-speech-cancellation"
+        payload = retell_turn_taking_payload()
+    assert payload["responsiveness"] == 0.88
+    assert payload["interruption_sensitivity"] == 0.72
 
 
 def test_debounce_wait_lets_user_finish():
-    assert _debounce_wait_s("necesito que") == 1.35
-    assert _debounce_wait_s("hola") == 1.05
-    assert _debounce_wait_s("cómo estás hoy") == 1.05
-    assert _debounce_wait_s("¿Cómo estás?") == 0.70
-    assert _debounce_wait_s(" ".join(["palabra"] * 12)) == 0.90
+    assert _debounce_wait_s("necesito que") == 1.10
+    assert _debounce_wait_s("hola") == 0.30
+    assert _debounce_wait_s("cómo estás hoy") == 0.30
+    assert _debounce_wait_s("¿Cómo estás?") == 0.20
+    assert _debounce_wait_s(" ".join(["palabra"] * 12)) == 0.25
 
 
 def test_kb_turn_cache_dedupes_same_query():

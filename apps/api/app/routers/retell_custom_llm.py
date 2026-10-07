@@ -274,19 +274,19 @@ def _normalize_user_key(text: str) -> str:
 
 
 def _debounce_wait_s(user_text: str) -> float:
-    """Espera STT final tras endpointing. No responder a media respiración."""
+    """Espera extra solo si el STT cortó a media idea. Retell ya espera ~1 s."""
     stripped = (user_text or "").strip()
     if looks_incomplete_user_utterance(stripped):
-        return 1.35
+        return 1.10
     words = len(stripped.split())
     closed = bool(re.search(r"[.!?…]$", stripped))
-    if not closed:
-        if words <= 8:
-            return 1.05
-        return 0.90
-    if words <= 5:
-        return 0.70
-    return 0.55
+    if closed:
+        return 0.20
+    if words <= 3:
+        return 0.30
+    if words <= 8:
+        return 0.40
+    return 0.25
 
 
 @router.get("/llm-websocket/active")

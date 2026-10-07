@@ -24,15 +24,20 @@ JARVIS_VOICE_HINTS = (
 )
 
 def retell_turn_taking_payload() -> dict[str, Any]:
-    """Espera la pausa natural: no saltar a media frase ni cortar al usuario."""
+    """Turno premium: ~1 s de espera, tú puedes cortar a CED, sin backchannel."""
     settings = get_settings()
-    # Tope duro: env viejo en Railway (0.9/0.5) cortaba al usuario a media idea.
-    sensitivity = min(0.45, max(0.0, float(settings.retell_interruption_sensitivity)))
-    responsiveness = min(0.28, max(0.0, float(settings.retell_responsiveness)))
+    raw_r = float(settings.retell_responsiveness)
+    raw_s = float(settings.retell_interruption_sensitivity)
+    # Env viejo 0.22/0.40 dejaba un hueco de ~4 s y costaba interrumpir.
+    if raw_r < 0.75:
+        raw_r = 0.88
+    if raw_s < 0.55:
+        raw_s = 0.72
     return {
-        "responsiveness": responsiveness,
-        "interruption_sensitivity": sensitivity,
+        "responsiveness": min(0.95, max(0.75, raw_r)),
+        "interruption_sensitivity": min(0.85, max(0.55, raw_s)),
         "enable_backchannel": False,
+        "enable_dynamic_responsiveness": True,
         "denoising_mode": settings.retell_denoising_mode,
     }
 
@@ -517,6 +522,10 @@ def ensure_retell_agent(*, agent_id: str | None = None, voice_id_override: str |
             if "voice model" in err or "voice_model" in err:
                 logger.warning("[RETELL] voice_model clear retry: %s", exc)
                 agent_payload["voice_model"] = None
+                client.agent.update(agent_id=agent_id, **agent_payload)
+            elif "dynamic_responsiveness" in err:
+                logger.warning("[RETELL] enable_dynamic_responsiveness omitido: %s", exc)
+                agent_payload.pop("enable_dynamic_responsiveness", None)
                 client.agent.update(agent_id=agent_id, **agent_payload)
             elif "not found from voice" in err:
                 if configured:
