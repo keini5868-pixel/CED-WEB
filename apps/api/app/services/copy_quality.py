@@ -1355,9 +1355,12 @@ def build_reference_scene_edit_prompt(user_text: str) -> str:
             )
     else:
         keep = (
-            "EDIT the attached image. Keep the EXACT same subject and composition. "
-            "Apply only the user's requested visual change. "
-            "Do NOT replace the subject. Do NOT add unsolicited text."
+            "EDIT the attached image. Keep the EXACT same subject, composition, "
+            "on-image lettering, layout and colors. "
+            "Apply only the user's requested visual change "
+            "(for example thin lightning bolts from above onto the existing letters). "
+            "Do NOT replace the poster with a new scene, robot, product, or slogan. "
+            "Do NOT change or invent on-image copy."
         )
         if _PM_LOGO_HINT.search(user_text):
             keep += (

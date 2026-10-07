@@ -80,8 +80,19 @@ def _call_gemini_flash(user_payload: str) -> str:
     return (getattr(response, "text", None) or "").strip()
 
 
+_EXPANDER_FORBIDDEN_SUBJECTS = re.compile(
+    r"\b(?:robot|android|cyborg|humanoid|mech(?:a)?|"
+    r"inteligencia artificial|artificial intelligence)\b",
+    re.I,
+)
+
+
 def _expander_changed_subject(anchor: str, enriched: str) -> bool:
-    """True si el expander inventó barco/timón sobre un envase de producto."""
+    """True si el expander inventó otro sujeto (barco, robot, IA) sobre el ancla."""
+    if _EXPANDER_FORBIDDEN_SUBJECTS.search(enriched) and not _EXPANDER_FORBIDDEN_SUBJECTS.search(
+        anchor
+    ):
+        return True
     if not re.search(r"\b(?:bote|envase|embase|frasco|pote)\s+de\b", anchor, re.I):
         return False
     if re.search(r"\b(?:barco|tim[oó]n|velero|yate|mar\b)\b", anchor, re.I):

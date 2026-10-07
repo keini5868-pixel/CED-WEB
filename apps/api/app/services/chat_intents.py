@@ -541,6 +541,9 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|mas\s+texto"
     r"|las?\s+letras"
     r"|m[a\u00e1]s\s+(?:grues\w*|negrit\w*|fin[ao]s?)"
+    r"|otra\s+igual"
+    r"|(?:la|lo)\s+dejes?\s+as[ií]|d[eé]ja(?:la|lo)\s+as[ií]"
+    r"|rayitos?|rayos?\s+de\s+electricidad"
     r")\b",
     re.I,
 )
@@ -619,10 +622,49 @@ _EXPLICIT_IMAGE_EDIT = re.compile(
     r"c[aá]mbial[oa]s?|ponle|ponga(?:le)?|ajust[aá](?:le|la|lo)?"
     r"|hazl[oa]\s+m[aá]s"
     r"|la\s+misma\s+pero|el\s+mismo\s+pero|esa\s+misma|ese\s+mismo"
-    r"|qu[ií]tale|agr[eé]gale|mejor[aá]l[oa]"
+    r"|otra\s+igual|una\s+igual|"
+    r"(?:la|lo)\s+dejes?\s+as[ií]|d[eé]ja(?:la|lo)\s+as[ií]|"
+    r"qu[ií]tale|agr[eé]gale|mejor[aá]l[oa]"
     r"|modif[ií]cal[oa]|ed[ií]tal[oa]|retoc[aá]l[oa]"
     r")\b"
 )
+_KEEP_SAME_PIECE = re.compile(
+    r"(?is)\b(?:"
+    r"(?:la|lo)\s+dejes?\s+as[ií]|"
+    r"d[eé]ja(?:la|lo)\s+as[ií]|"
+    r"otra\s+igual|"
+    r"una\s+igual"
+    r")\b"
+)
+_KEEP_SAME_DETAILS = re.compile(
+    r"(?i)\b(?:"
+    r"el\s+mismo\s+fondo|mismo\s+fondo|"
+    r"mismo\s+tono|"
+    r"mism[oa]s?\s+(?:letras|textos?|frase)"
+    r")\b"
+)
+
+
+def user_keeps_same_image_piece(
+    text: str,
+    history: list[dict[str, str]] | None = None,
+) -> bool:
+    """True si pide otra versión de la pieza actual, no un creativo nuevo."""
+    from app.services.copy_quality import normalize_image_request_typos
+
+    t = normalize_image_request_typos((text or "").strip())
+    if not t:
+        return False
+    if re.search(r"(?i)\b(?:otro|otra|nuev[oa])\s+(?:flyer|imagen|foto|pieza|banner)\b", t):
+        if not re.search(r"(?i)\bigual\b", t):
+            return False
+    if _KEEP_SAME_PIECE.search(t):
+        return True
+    if _KEEP_SAME_DETAILS.search(t) and history_has_active_image_thread(history):
+        return True
+    return False
+
+
 _INSIST_MISSING_IMAGE = re.compile(
     r"(?is)\b(?:"
     r"no\s+(?:la\s+|lo\s+)?(?:vi|veo|v[ií]|sal[ií][oó]|aparec[ií][oó])|"
@@ -683,6 +725,8 @@ def user_requests_new_image_piece(text: str, history: list[dict[str, str]] | Non
     if not t:
         return False
     if user_insists_on_pending_image(t, history):
+        return False
+    if user_keeps_same_image_piece(t, history):
         return False
     if user_requests_prior_reference(t):
         return False
@@ -801,6 +845,8 @@ def wants_image_reference_edit(text: str) -> bool:
         return False
     if is_image_subject_correction(t):
         return False
+    if user_keeps_same_image_piece(t):
+        return True
     # «genera un flyer que diga X» es pieza nueva: «que diga» no debe forzar edit.
     if user_requests_new_image_piece(t) and not user_requests_prior_reference(t):
         return False
@@ -1228,7 +1274,9 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"logo\s+de\s+(?:pm|ced|fitline)|"
     r"(?:arriba|abajo)\s+a\s+la\s+(?:isquierda|izquierda|derecha)|"
     r"(?:esquina|exquina)|"
-    r"otra\s+versi[oó]n|otra\s+variaci[oó]n|otra\s+vez|de\s+nuevo|una\s+m[aá]s|"
+    r"otra\s+versi[oó]n|otra\s+variaci[oó]n|otra\s+igual|otra\s+vez|de\s+nuevo|una\s+m[aá]s|"
+    r"(?:la|lo)\s+dejes?\s+as[ií]|d[eé]ja(?:la|lo)\s+as[ií]|"
+    r"rayitos?|rayos?\s+de\s+electricidad|"
     r"m[aá]s\s+(?:grande|peque[nñ]|oscur\w*|clar\w*|colorid\w*|realist\w*|simple|detall\w*|grues\w*|fin[ao]s?|negrit\w*)|"
     r"en\s+otro\s+color|otro\s+color|diferente\s+color|otro\s+estilo|otro\s+fondo|"
     r"con\s+(?:otro|un)\s+(?:fondo|estilo)|as[ií]\s+pero|en\s+vez\s+de|"

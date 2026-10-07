@@ -16,6 +16,7 @@ from app.services.chat_image_generation import (
     utterance_too_thin_for_prompt,
 )
 from app.services.chat_intents import (
+    user_keeps_same_image_piece,
     user_requests_image_edit,
     user_requests_new_image_piece,
     wants_image_reference_edit,
@@ -47,6 +48,45 @@ def _clean_session():
     clear_session_image(USER, CONV)
     yield
     clear_session_image(USER, CONV)
+
+
+def test_same_flyer_with_lightning_is_not_a_new_piece():
+    from app.services.chat_image_generation import (
+        effective_user_prompt,
+        should_take_direct_image_path,
+        should_use_reference_generation,
+    )
+
+    original = (
+        "necesito genera una imagen con una frase la imagen debe ser de fondo oscuro "
+        "y la frase es inevitablemente el tiempo va a pasar no te dediques a perderlo "
+        "y un emoji de un rayo"
+    )
+    follow = (
+        "Okay me gusta esa quiero que la dejes así pero que me generes otra igual "
+        "donde desde arriba hacia las letras también vengan unos rayitos muy delgados "
+        "así como de rayos de electricidad Pero muy delgados como si fuesen a caer "
+        "encima de la frase inevitablemente el tiempo va a pasar no te dediques a perder "
+        "con el mismo fondo oscuro y el mismo tono de las letras igual genera una imagen "
+        "así como te digo"
+    )
+    history = [
+        {"role": "user", "content": original},
+        {"role": "assistant", "content": "Listo. El texto es el que acordamos."},
+    ]
+    assert user_keeps_same_image_piece(follow, history) is True
+    assert user_requests_new_image_piece(follow, history) is False
+    assert wants_image_reference_edit(follow) is True
+    assert should_take_direct_image_path(follow, history) is True
+    effective = effective_user_prompt(follow, history) or ""
+    assert "Inevitablemente" in effective or "inevitablemente" in effective
+    assert "rayitos" in effective.lower() or "electricidad" in effective.lower()
+    assert "así como te digo" not in effective or "fondo oscuro" in effective.lower()
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    register_text_chat_image_url(USER, CONV, "https://example.com/flyer-1.png", prompt=original)
+    assert should_use_reference_generation(
+        follow, history, user_id=USER, conversation_id=CONV
+    ) is True
 
 
 def test_new_flyer_with_que_diga_is_not_a_reference_edit():

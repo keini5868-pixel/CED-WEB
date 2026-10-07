@@ -370,8 +370,13 @@ function looksLikeConversationPaste(text: string): boolean {
 
 function looksLikeImageFollowupEdit(text: string): boolean {
   const t = text.trim();
-  if (!t || t.length > 240) return false;
-  return /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto|grande|peque|grues|negrit)|las?\s+letras|negrita|grosor|otro\s+(?:color|fondo|estilo)|(?:el\s+)?fondo\s+que\s+sea|fondo\s+(?:azul|oscur)|ponle|qu[ií]tale|agr[eé]gale|otra\s+versi[oó]n|as[ií]\s+pero|no\s+(?:la\s+|lo\s+)?(?:vi|veo)|no\s+veo\s+la\s+imagen)\b/i.test(
+  if (!t) return false;
+  const keepSame =
+    /\b(otra\s+igual|dejes?\s+as[ií]|rayitos?|rayos?\s+de\s+electricidad|las?\s+letras|fondo\s+que\s+sea|mismo\s+fondo|mismo\s+tono)\b/i.test(
+      t,
+    );
+  if (t.length > 240 && !keepSame) return false;
+  return keepSame || /\b(c[aá]mbial[oa]|hazl[oa]\s+m[aá]s|m[aá]s\s+(?:oscur|clar|texto|grande|peque|grues|negrit)|negrita|grosor|otro\s+(?:color|fondo|estilo)|fondo\s+(?:azul|oscur)|ponle|qu[ií]tale|agr[eé]gale|otra\s+versi[oó]n|as[ií]\s+pero|no\s+(?:la\s+|lo\s+)?(?:vi|veo)|no\s+veo\s+la\s+imagen)\b/i.test(
     t,
   );
 }

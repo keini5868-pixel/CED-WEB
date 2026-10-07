@@ -38,6 +38,7 @@ from app.services.chat_intents import (
     user_requests_prior_reference,
     user_requests_new_image_piece,
     user_requests_image_edit,
+    user_keeps_same_image_piece,
     user_insists_on_pending_image,
     image_request_needs_new_or_edit_clarification,
     compose_visual_thread_brief,
@@ -241,6 +242,19 @@ def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> st
         )
         if prior:
             return prior
+    if user_keeps_same_image_piece(t, history) or (
+        wants_image_reference_edit(t) and history_has_active_image_thread(history)
+    ):
+        prior = last_concrete_image_user_prompt(history) or last_user_visual_context(
+            history
+        )
+        if prior and prior.strip().lower() != t.lower():
+            return (
+                f"{prior.strip()}\n\nAjuste sobre la misma imagen "
+                f"(conserva sujeto, composición y textos; no inventes otra escena): {t}"
+            )[:4000]
+        if prior:
+            return prior
     if user_requests_from_scratch_compose(t):
         composed = compose_visual_thread_brief(t, history)
         if composed:
@@ -332,7 +346,17 @@ def should_use_reference_generation(
         disarm_generated_edit_reference(user_id, conversation_id)
         return False
     if not session_image_usable_for_edit(user_id, conversation_id):
-        return False
+        # Un PNG generado sigue sirviendo si piden «otra igual / déjala así»,
+        # aunque el armado de un turno ya se haya consumido. Un fallo/mismatch no.
+        row = get_last_uploaded_image_for_session(user_id, conversation_id)
+        hard_fail = bool(
+            row
+            and (
+                row.get("generation_ok") is False or row.get("prompt_match") is False
+            )
+        )
+        if hard_fail or not user_keeps_same_image_piece(text, history):
+            return False
     # Variación / edición / «igual a la que te pasé» / «mismos precios».
     if wants_image_reference_edit(text) or user_requests_image_edit(text):
         return True
@@ -854,11 +878,17 @@ def run_chat_image_generation(
         if assistant_desc:
             visual_thread_parts.append(assistant_desc)
     visual_thread = "\n\n".join(visual_thread_parts)
-    enriched, expander_status = expand_image_scene(
-        effective,
-        visual_thread,
-        text_mode,
+    skip_expand = bool(
+        thread_edit or (not new_piece and (use_reference or locked_copy))
     )
+    if skip_expand:
+        enriched, expander_status = None, "skip"
+    else:
+        enriched, expander_status = expand_image_scene(
+            effective,
+            visual_thread,
+            text_mode,
+        )
     logger.info(
         "[CHAT:IMG-GEN] expander=%s text_mode=%s scene=%s",
         expander_status,
