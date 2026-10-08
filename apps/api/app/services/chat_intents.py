@@ -544,6 +544,8 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|otra\s+igual"
     r"|(?:la|lo)\s+dejes?\s+as[ií]|d[eé]ja(?:la|lo)\s+as[ií]"
     r"|rayitos?|rayos?\s+de\s+electricidad"
+    r"|quit(?:a(?:r|s|le)?|es)\s+todo|pantalla\s+(?:azul|completa|entera)|"
+    r"contorno\s+negr|letras?\s+blanc"
     r")\b",
     re.I,
 )
@@ -728,6 +730,10 @@ def user_requests_new_image_piece(text: str, history: list[dict[str, str]] | Non
         return False
     if user_keeps_same_image_piece(t, history):
         return False
+    from app.services.copy_quality import user_requests_flat_color_field
+
+    if user_requests_flat_color_field(t):
+        return False
     if user_requests_prior_reference(t):
         return False
     if _EXPLICIT_IMAGE_EDIT.search(t):
@@ -760,6 +766,10 @@ def user_requests_image_edit(text: str) -> bool:
     t = normalize_image_request_typos((text or "").strip())
     if not t:
         return False
+    from app.services.copy_quality import user_requests_flat_color_field
+
+    if user_requests_flat_color_field(t):
+        return True
     if user_requests_new_image_piece(t) and not user_requests_prior_reference(t):
         return False
     return bool(_EXPLICIT_IMAGE_EDIT.search(t) or user_requests_prior_reference(t))
@@ -846,6 +856,10 @@ def wants_image_reference_edit(text: str) -> bool:
     if is_image_subject_correction(t):
         return False
     if user_keeps_same_image_piece(t):
+        return True
+    from app.services.copy_quality import user_requests_flat_color_field
+
+    if user_requests_flat_color_field(t):
         return True
     # «genera un flyer que diga X» es pieza nueva: «que diga» no debe forzar edit.
     if user_requests_new_image_piece(t) and not user_requests_prior_reference(t):
@@ -1277,6 +1291,8 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"otra\s+versi[oó]n|otra\s+variaci[oó]n|otra\s+igual|otra\s+vez|de\s+nuevo|una\s+m[aá]s|"
     r"(?:la|lo)\s+dejes?\s+as[ií]|d[eé]ja(?:la|lo)\s+as[ií]|"
     r"rayitos?|rayos?\s+de\s+electricidad|"
+    r"quit(?:a(?:r|s|le)?|es)\s+todo|pantalla\s+(?:azul|completa|entera)|"
+    r"contorno\s+negr|letras?\s+blanc|"
     r"m[aá]s\s+(?:grande|peque[nñ]|oscur\w*|clar\w*|colorid\w*|realist\w*|simple|detall\w*|grues\w*|fin[ao]s?|negrit\w*)|"
     r"en\s+otro\s+color|otro\s+color|diferente\s+color|otro\s+estilo|otro\s+fondo|"
     r"con\s+(?:otro|un)\s+(?:fondo|estilo)|as[ií]\s+pero|en\s+vez\s+de|"

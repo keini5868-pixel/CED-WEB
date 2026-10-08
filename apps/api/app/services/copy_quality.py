@@ -1289,7 +1289,8 @@ _BG_CHANGE_RE = re.compile(
     r"otro\s+fondo|"
     r"nuevo\s+fondo|"
     r"fondo\s+(?:a|de|en|natural|atr[aá]s)\s+\w+|"
-    r"fondo\s+(?:amarill|azul|verde|rojo|negro|blanc|oscur|clar|natural|gris|rosa|naranja)|"
+    r"fondo\s+(?:amarill\w*|azul\w*|verde\w*|rojo\w*|negr\w*|blanc\w*|"
+    r"oscur\w*|clar\w*|natural|gris\w*|rosa\w*|naranja\w*|cian\w*)|"
     r"(?:el\s+)?fondo\s+que\s+sea|"
     r"que\s+sea\s+(?:un\s+)?fondo|"
     r"con\s+(?:un\s+)?fondo|"
@@ -1301,12 +1302,52 @@ _BG_CHANGE_RE = re.compile(
     r"change\s+(?:the\s+)?background"
     r")\b"
 )
+_FLAT_COLOR_FIELD = re.compile(
+    r"(?is)\b(?:"
+    r"quit(?:a(?:r|s|le)?|es)\s+todo(?:\s+eso)?(?:\s+de)?(?:\s+que\s+tiene)?\s+atr[aá]s|"
+    r"quit(?:a(?:r|s|le)?|es)\s+todo\s+(?:ese\s+|el\s+)?fondo|"
+    r"quit(?:a(?:r|s|le)?|es)\s+todo(?=\s*,|\s*$)|"
+    r"nada\s+m[aá]s\s+(?:un\s+)?fondo|"
+    r"solo\s+(?:un\s+)?fondo|"
+    r"fondo\s+liso|"
+    r"pantalla\s+(?:azul\w*|oscur\w*|negr\w*|completa|entera|de\s+fondo)|"
+    r"toda\s+(?:la\s+|una\s+)?pantalla|"
+    r"sin\s+(?:pared|velas?|reloj|objetos|escena|habitaci)"
+    r")\b"
+)
 
 
 def user_requests_background_change(text: str) -> bool:
     """True si el usuario pide cambiar el fondo (no solo tipografía)."""
     t = normalize_image_request_typos(text or "")
-    return bool(_BG_CHANGE_RE.search(t))
+    return bool(_BG_CHANGE_RE.search(t) or _FLAT_COLOR_FIELD.search(t))
+
+
+def user_requests_flat_color_field(text: str) -> bool:
+    """True si pide borrar la escena y dejar solo un color de fondo (flyer plano)."""
+    t = normalize_image_request_typos(text or "")
+    return bool(_FLAT_COLOR_FIELD.search(t))
+
+
+def user_requests_flat_rebuild(text: str) -> bool:
+    """True si este turno debe rehacerse como poster plano, no como foto-edit."""
+    return user_requests_flat_color_field(text)
+
+
+def build_flat_color_field_prompt(user_text: str, prior: str = "") -> str:
+    """Rehace la pieza como gráfico plano: color de fondo + copy, sin habitación."""
+    request = strip_image_generation_instruction_safe(user_text)
+    prior_bit = (prior or "").strip()
+    parts = [
+        "Rebuild as a FLAT graphic poster, not a photograph of a room.",
+        "Full-bleed solid color background only. No wall, furniture, candles, "
+        "clocks, shelves, people, products, or extra objects.",
+        "Keep only the agreed on-image sentence. Do not invent a new title.",
+    ]
+    if prior_bit:
+        parts.append(f"Original brief to preserve (copy and intent): {prior_bit[:1200]}")
+    parts.append(f"User change: {request}")
+    return " ".join(parts).strip()[:3800]
 
 
 def user_asks_for_on_image_copy(text: str) -> bool:
@@ -1340,6 +1381,8 @@ def build_reference_scene_edit_prompt(user_text: str) -> str:
     request = strip_image_generation_instruction_safe(user_text)
     if user_requests_ced_wordmark(user_text):
         return build_reference_logo_on_scene_prompt(user_text)
+    if user_requests_flat_rebuild(user_text):
+        return build_flat_color_field_prompt(user_text)
     if user_requests_background_change(user_text):
         keep = (
             "EDIT the attached image. Keep the EXACT same subject "

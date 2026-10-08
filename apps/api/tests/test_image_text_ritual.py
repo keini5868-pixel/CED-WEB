@@ -236,6 +236,82 @@ def test_dark_blue_background_tweak_takes_direct_path():
     assert should_take_direct_image_path("no veo la imagen", history) is True
 
 
+def test_flat_color_field_followup_rebuilds_and_takes_direct_path():
+    from app.services.chat_image_generation import (
+        effective_user_prompt,
+        should_take_direct_image_path,
+        should_use_reference_generation,
+    )
+    from app.services.chat_intents import (
+        user_requests_image_edit,
+        user_requests_new_image_piece,
+        wants_image_reference_edit,
+    )
+    from app.services.copy_quality import (
+        user_requests_flat_color_field,
+        user_requests_flat_rebuild,
+    )
+    from app.services.publish_image_context import (
+        register_text_chat_image,
+        register_text_chat_image_url,
+    )
+
+    original = (
+        "necesito genera una imagen con una frase la imagen debe ser de "
+        "fondo oscuro y la frase es inevitablemente el tiempo va a pasar "
+        "no te dediques a perderlo"
+    )
+    history = [
+        {"role": "user", "content": original},
+        {"role": "assistant", "content": "Listo. Aquí está tu imagen generada."},
+    ]
+    strip = (
+        "quites todo eso de atrás, letras blancas con contorno negro"
+    )
+    screen = "quita todo, pantalla azul"
+    color = "ok me gusta pero el fondo que sea azul oscuro"
+
+    assert user_requests_flat_color_field(strip) is True
+    assert user_requests_flat_color_field(screen) is True
+    assert user_requests_flat_rebuild(screen) is True
+    assert user_requests_flat_rebuild(color) is False
+    assert user_requests_new_image_piece(strip, history) is False
+    assert user_requests_image_edit(screen) is True
+    assert wants_image_reference_edit(screen) is True
+    assert should_take_direct_image_path(strip, history) is True
+    assert should_take_direct_image_path(screen, history) is True
+    assert should_take_direct_image_path(color, history) is True
+
+    rebuilt = effective_user_prompt(screen, history) or ""
+    assert "FLAT graphic poster" in rebuilt
+    assert "inevitablemente" in rebuilt.lower()
+    assert "conserva sujeto" not in rebuilt.lower()
+
+    register_text_chat_image(
+        "user-flat-field",
+        "conv-flat-field",
+        (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01"
+            b"\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0c"
+            b"IDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xdb\x00\x00\x00\x00"
+            b"IEND\xaeB`\x82"
+        ),
+        "image/png",
+    )
+    register_text_chat_image_url(
+        "user-flat-field",
+        "conv-flat-field",
+        "https://example.com/room.png",
+        prompt=original,
+    )
+    assert should_use_reference_generation(
+        screen,
+        history,
+        user_id="user-flat-field",
+        conversation_id="conv-flat-field",
+    ) is False
+
+
 def test_voice_image_filler_is_va():
     assert MODULE_ACKS["image_gen"] == "Va."
     assert get_tool_acknowledgment("generate_image") == "Va."

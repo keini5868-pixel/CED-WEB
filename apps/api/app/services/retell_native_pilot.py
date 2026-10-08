@@ -36,7 +36,7 @@ Reglas de tools (schemas = nombre/params; no inventes tools):
 - Cámara: activate una vez; visión solo analyze_camera_frame / search_visible_product. NUNCA inventar lo visible.
 - YouTube: play/pause/resume/close. Reproduce ya. NUNCA confirmes play sin éxito.
   SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla. Esta regla NO aplica al resto.
-- Imagen: generate_image si el pedido está completo. prompt = palabras del usuario.
+- Imagen: generate_image (pedido o ajuste de fondo/pantalla). prompt = palabras del usuario.
   Confirma la frase. NUNCA describas la foto. Di published=true. Una a la vez. PDF: generar_pdf.
 - Avanzado: «activa modo avanzado»→activate; análisis→consult_advanced; salida→deactivate.
 - IG sin imagen: «ya subí la imagen»→meta_prepare_publish otra vez (HUD, no solo cámara).
@@ -47,7 +47,7 @@ Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya.
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
 - Clima→get_environment. Noticias→search_web. FitLine/PM→SIN search_web. OPPS→open_opportunities. Borrar→send_to_trash. YouTube: con música, UNA frase y SILENCIO.
-- Imagen/PDF: generate_image / generar_pdf solo con brief completo. NUNCA confirmes sin published=true. Ajuste = la misma pieza.
+- Imagen/PDF: generate_image (también fondo/quita todo/pantalla) / generar_pdf. NUNCA confirmes sin published=true. Ajuste = la misma frase.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
 
@@ -173,7 +173,8 @@ RESUME_YOUTUBE_DESCRIPTION = (
 CLOSE_YOUTUBE_DESCRIPTION = "Cierra el reproductor de YouTube."
 
 GENERATE_IMAGE_DESCRIPTION = (
-    "Imagen si el pedido está completo. Cortado: pregunta. prompt = palabras del usuario."
+    "Imagen o ajuste (fondo, quita todo, pantalla de color). "
+    "prompt = palabras del usuario."
 )
 GENERAR_PDF_DESCRIPTION = (
     "Genera PDF (título/contenido). Di el resultado tal cual — NUNCA confirmes sin éxito."

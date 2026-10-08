@@ -804,12 +804,14 @@ async def _execute_voice_tool_body(
                 user_requests_image_edit,
                 wants_image_reference_edit,
             )
+            from app.services.copy_quality import user_requests_flat_rebuild
 
             # Ajuste sobre la pieza: utterance crudo. Pieza nueva: prompt ya elegido.
             if raw_user and (
                 wants_image_reference_edit(raw_user)
                 or user_requests_image_edit(raw_user)
                 or parse_followup_image_prompt(raw_user, history)
+                or user_requests_flat_rebuild(raw_user)
             ):
                 pipeline_text = raw_user
             else:

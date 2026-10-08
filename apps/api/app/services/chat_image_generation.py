@@ -242,6 +242,19 @@ def effective_user_prompt(text: str, history: list[dict[str, str]] | None) -> st
         )
         if prior:
             return prior
+    from app.services.copy_quality import (
+        build_flat_color_field_prompt,
+        user_requests_flat_rebuild,
+    )
+
+    if user_requests_flat_rebuild(t) and (
+        history_has_active_image_thread(history)
+        or last_concrete_image_user_prompt(history)
+    ):
+        prior = last_concrete_image_user_prompt(history) or last_user_visual_context(
+            history
+        )
+        return build_flat_color_field_prompt(t, prior or "")
     if user_keeps_same_image_piece(t, history) or (
         wants_image_reference_edit(t) and history_has_active_image_thread(history)
     ):
@@ -331,6 +344,10 @@ def should_use_reference_generation(
         return False
     if user_insists_on_pending_image(text, history):
         return False
+    from app.services.copy_quality import user_requests_flat_rebuild
+
+    if user_requests_flat_rebuild(text):
+        return False
     new_piece = user_requests_new_image_piece(text, history) and not user_requests_prior_reference(
         text
     )
@@ -401,6 +418,15 @@ def should_take_direct_image_path(
         return False
     if is_visual_design_exploration(t, history):
         return False
+    from app.services.copy_quality import (
+        user_requests_background_change,
+        user_requests_flat_rebuild,
+    )
+
+    if history_has_active_image_thread(history) and (
+        user_requests_flat_rebuild(t) or user_requests_background_change(t)
+    ):
+        return True
     if user_insists_on_pending_image(t, history) and (
         history_has_pending_image_brief(history)
         or last_concrete_image_user_prompt(history)
@@ -505,10 +531,13 @@ def resolve_voice_image_prompt(
         ):
             return effective_user_prompt(t, history) or t
         return t
+    from app.services.copy_quality import user_requests_flat_rebuild
+
     if (
         wants_image_reference_edit(t)
         or parse_followup_image_prompt(t, history)
         or points_at_prior_visual(t)
+        or user_requests_flat_rebuild(t)
     ):
         return effective_user_prompt(t, history) or t
     if is_image_choice_confirmation(t):
@@ -737,6 +766,8 @@ def run_chat_image_generation(
         summarize_overlay_labels_for_image,
         user_asks_for_on_image_copy,
         user_requests_background_change,
+        user_requests_flat_rebuild,
+        build_flat_color_field_prompt,
         user_requests_ced_branding,
         wants_ced_tagline_lock,
     )
@@ -770,6 +801,10 @@ def run_chat_image_generation(
     effective = effective_user_prompt(user_text, history)
     effective = lock_spanish_image_subject(effective)
     subject_fix = is_image_subject_correction(user_text)
+    flat_rebuild = (not new_piece) and user_requests_flat_rebuild(user_text)
+    if flat_rebuild and "FLAT graphic poster" not in effective:
+        prior = last_concrete_image_user_prompt(history) or ""
+        effective = build_flat_color_field_prompt(user_text, prior)
     thread_prompt = get_last_image_generation_prompt(user_id, conversation_id)
     thread_edit = bool(
         not subject_fix
@@ -782,9 +817,9 @@ def run_chat_image_generation(
     )
     wordmark_only = is_ced_wordmark_only_request(user_text)
     copy_edit = user_asks_for_on_image_copy(user_text) and not wordmark_only
-    bg_only_edit = thread_edit and user_requests_background_change(user_text)
-    scene_only_edit = thread_edit and not copy_edit
-    if thread_prompt and thread_edit:
+    bg_only_edit = thread_edit and user_requests_background_change(user_text) and not flat_rebuild
+    scene_only_edit = thread_edit and not copy_edit and not flat_rebuild
+    if thread_prompt and thread_edit and not flat_rebuild:
         delta = user_text
         if thread_prompt.strip().lower() not in effective.lower():
             if scene_only_edit:
@@ -803,6 +838,8 @@ def run_chat_image_generation(
     wants_literal_text = copy_edit or (
         prompt_requires_ideogram_text(user_text) and not scene_only_edit
     )
+    if flat_rebuild:
+        wants_literal_text = True
     if not thread_edit:
         wants_literal_text = wants_literal_text or user_asks_for_on_image_copy(effective)
     if scene_only_edit:
@@ -820,12 +857,13 @@ def run_chat_image_generation(
             session_image_usable_for_edit(user_id, conversation_id)
             and resolve_reference_image_bytes(user_id, conversation_id)
         )
-    if subject_fix:
+    if subject_fix or flat_rebuild:
         use_reference = False
     ref_payload = resolve_reference_image_bytes(user_id, conversation_id) if use_reference else None
 
     simple_photo_edit = (
         not new_piece
+        and not flat_rebuild
         and (
             thread_edit
             or scene_only_edit
@@ -879,7 +917,7 @@ def run_chat_image_generation(
             visual_thread_parts.append(assistant_desc)
     visual_thread = "\n\n".join(visual_thread_parts)
     skip_expand = bool(
-        thread_edit or (not new_piece and (use_reference or locked_copy))
+        flat_rebuild or thread_edit or (not new_piece and (use_reference or locked_copy))
     )
     if skip_expand:
         enriched, expander_status = None, "skip"

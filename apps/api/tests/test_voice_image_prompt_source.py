@@ -198,6 +198,40 @@ def test_new_then_edit_then_new_piece_does_not_inherit(
     assert "La disciplina vence al reloj" in str(third_kw.get("prompt") or "")
 
 
+@patch("app.services.gemini_images.generate_image")
+@patch("app.services.image_reference_generator.generate_image_with_reference")
+def test_flat_screen_followup_does_not_use_room_photo(
+    mock_ref: MagicMock, mock_gen: MagicMock
+):
+    mock_gen.return_value = {
+        "ok": True,
+        "url": "https://example.com/flat-blue.png",
+        "quality": "text",
+        "provider": "gpt_image",
+        "ideogram_used": True,
+    }
+    first = run_chat_image_generation(USER, CONV, NEW_FLYER, [], plan_id="elite")
+    assert first["ok"] is True
+    register_text_chat_image(USER, CONV, PNG, "image/png")
+    register_text_chat_image_url(USER, CONV, str(first["url"]), prompt=NEW_FLYER)
+    history = [
+        {"role": "user", "content": NEW_FLYER},
+        {"role": "assistant", "content": "Listo. Aquí está tu imagen generada."},
+    ]
+    mock_gen.reset_mock()
+    mock_ref.reset_mock()
+    follow = "quita todo, pantalla azul, letras blancas con contorno negro"
+    out = run_chat_image_generation(USER, CONV, follow, history, plan_id="elite")
+    assert out["ok"] is True
+    assert out["used_reference"] is False
+    mock_ref.assert_not_called()
+    prompt = str(mock_gen.call_args.kwargs.get("prompt") or "")
+    assert "FLAT graphic poster" in prompt
+    assert "Inevitablemente" in prompt or "inevitablemente" in prompt.lower()
+    assert "conserva el sujeto exacto" not in prompt.lower()
+    assert mock_gen.call_args.kwargs.get("reference_image") in (None, "")
+
+
 def test_failed_or_mismatched_image_is_not_edit_reference():
     register_text_chat_image(USER, CONV, PNG, "image/png")
     register_text_chat_image_url(
