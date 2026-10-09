@@ -266,9 +266,9 @@ _CED_LOGO_ON_SCENE = (
 _CED_CORNER_BADGE = re.compile(
     r"(?is)\b(?:esquina|arriba|cuadrit|rect[aá]ngul|cajita|caja\s+azul)\b"
 )
-_DO_NOT_PAINT_PROMPT_WORDS = (
-    "Never draw instruction English on the image: no headings, no 'change to apply', "
-    "no 'edit the attached', no system labels. Only the scene and the Spanish copy."
+_VISIBLE_COPY_ONLY = (
+    "On-image letters: only the Spanish sentence the user asked for, and CED "
+    "if they asked for that mark. No English. No extra labels."
 )
 # Solo correcciones de tipografía (I4 / Prosaeccion). NO «prospección» ni
 # «asistente de IA» sueltos: esos aparecen en listados de capacidades CED.
@@ -412,7 +412,21 @@ def is_ced_wordmark_only_request(text: str) -> bool:
         for q in extract_quoted_phrases(t)
         if re.sub(r"[\s.\-]", "", q).upper() not in {"CED", "CEDD"}
     ]
-    return not extras
+    if extras:
+        return False
+    if re.search(r"(?i)\b(?:frase|titular|eslogan|inevitablemente)\b", t):
+        return False
+    if re.search(r"(?i)\bque\s+diga\b", t) and not re.search(
+        r"(?i)\bque\s+diga\s*(?:el\s+logo\s+(?:de\s+)?)?c[\s.\-]*e[\s.\-]*d\b",
+        t,
+    ):
+        return False
+    if re.search(r"(?i)\b(?:fondo\s+oscur|puerta)\b", t) and not re.search(
+        r"(?i)\b(?:acabas\s+de\s+generar|el\s+castillo\s+que|esa\s+misma\s+imagen)\b",
+        t,
+    ):
+        return False
+    return True
 
 
 def normalize_spanish(text: str) -> str:
@@ -1193,11 +1207,11 @@ def build_direct_image_prompt(
             parts.append(_CED_ON_IMAGE_SPELLING_LOCK)
         if wants_wordmark:
             parts.append(_CED_NO_EXPAND)
-            if has_reference:
+            if has_reference and is_ced_wordmark_only_request(raw):
                 parts.append(_CED_LOGO_ON_SCENE)
-            else:
+            elif is_ced_wordmark_only_request(raw):
                 parts.append(_CED_WORDMARK_LOCK)
-            if not quoted or quoted == ["CED"]:
+            if is_ced_wordmark_only_request(raw) and (not quoted or quoted == ["CED"]):
                 parts.append(
                     "No other on-image text besides CED. No UI buttons, no slogans, "
                     "no pain-solution captions, no Marketing/Ventas/Prospeccion labels."
@@ -1377,7 +1391,7 @@ def user_asks_for_on_image_copy(text: str) -> bool:
 
 def _change_to_apply(user_text: str) -> str:
     request = strip_image_generation_instruction_safe(user_text)
-    return f"{_DO_NOT_PAINT_PROMPT_WORDS} Apply this change: {request}".strip()
+    return f"{_VISIBLE_COPY_ONLY} {request}".strip()
 
 
 def build_reference_logo_on_scene_prompt(user_text: str) -> str:

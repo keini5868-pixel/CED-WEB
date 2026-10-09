@@ -677,11 +677,39 @@ def test_ced_corner_badge_prompt_does_not_paint_user_request():
     prompt = build_reference_logo_on_scene_prompt(msg)
     low = prompt.lower()
     assert "user request" not in low
+    assert "apply this change" not in low
     assert "white background" in low or "white canvas" in low
     assert "top-right" in low or "corner" in low
     assert "cyan" in low
     assert "circular ced logo in the center" not in low
     assert "CED" in prompt
+
+
+def test_new_castle_with_ced_and_phrase_is_not_a_reference_edit():
+    from app.services.chat_intents import (
+        user_requests_new_image_piece,
+        wants_image_reference_edit,
+    )
+    from app.services.copy_quality import (
+        build_reference_scene_edit_prompt,
+        is_ced_wordmark_only_request,
+    )
+
+    msg = (
+        "genera una imagen con un fondo totalmente oscuro con un castillo digital "
+        "y en la puerta el logo redondo CED y abajo inevitablemente el tiempo "
+        "va a pasar no te dediques a perderlo"
+    )
+    history = [
+        {"role": "user", "content": "genera un flyer con un reloj de arena"},
+        {"role": "assistant", "content": "Listo. Aquí está tu imagen generada."},
+    ]
+    assert is_ced_wordmark_only_request(msg) is False
+    assert user_requests_new_image_piece(msg, history) is True
+    assert wants_image_reference_edit(msg) is False
+    prompt = build_reference_scene_edit_prompt(msg)
+    assert "apply this change" not in prompt.lower()
+    assert "user request" not in prompt.lower()
 
 
 def test_safe_caption_never_leaks_edit_prompt():

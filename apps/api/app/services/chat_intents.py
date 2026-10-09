@@ -751,6 +751,15 @@ def user_requests_new_image_piece(text: str, history: list[dict[str, str]] | Non
         return False
     if _NEW_IMAGE_PIECE.search(t):
         return True
+    if re.search(r"(?i)\bcastillo\b", t) and not re.search(
+        r"(?i)\b(?:ese|el mismo|esa misma)\s+castillo\b|"
+        r"\b(?:acabas\s+de\s+generar|el\s+castillo\s+que)\b",
+        t,
+    ):
+        if is_generate_image_intent(t) or re.search(
+            r"(?i)\b(?:imagen|foto|flyer|fondo|frase|puerta)\b", t
+        ):
+            return True
     # Brief visual completo sin verbo de crear (tool de voz: args.prompt ya es la escena).
     if re.search(r"(?i)\b(?:flyer|banner|cartel|letrero)\b", t) and re.search(
         r"(?i)\b(?:fondo|texto|frase|que\s+diga|sombra|tipograf)\b", t
@@ -855,6 +864,13 @@ def wants_image_reference_edit(text: str) -> bool:
         return False
     if is_image_subject_correction(t):
         return False
+    if re.search(r"(?i)\bcastillo\b", t) and not re.search(
+        r"(?i)\b(?:ese|el mismo|esa misma)\s+castillo\b|"
+        r"\b(?:acabas\s+de\s+generar|el\s+castillo\s+que)\b",
+        t,
+    ):
+        if is_generate_image_intent(t) or user_requests_new_image_piece(t):
+            return False
     if user_keeps_same_image_piece(t):
         return True
     from app.services.copy_quality import user_requests_flat_color_field
