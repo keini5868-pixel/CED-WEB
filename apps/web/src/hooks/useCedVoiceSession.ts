@@ -681,14 +681,21 @@ export function useCedVoiceSession(
           void postVoiceCameraStatus(false, false).catch(() => undefined);
         }
         const state = await fetchVoiceClientState(false, { transcript: true });
-        const events = state.tool_events ?? [];
+        const events = [...(state.tool_events ?? [])].sort(
+          (a, b) => Number(a.id || 0) - Number(b.id || 0),
+        );
         const allowVoiceImages = replayVoiceImagesRef.current;
+        const sessionStartedAt = sessionStartedAtRef.current;
         for (const ev of events) {
           const id = Number(ev.id || 0);
           if (!id || id <= lastToolEventIdRef.current) continue;
           lastToolEventIdRef.current = id;
           if (ev.type === "generated_image" && ev.image_url) {
-            if (!allowVoiceImages || !voiceSessionActiveRef.current) continue;
+            const eventAtMs = Number(ev.at || 0) * 1000;
+            const fromThisSession =
+              sessionStartedAt > 0 && eventAtMs >= sessionStartedAt - 2000;
+            if (!voiceSessionActiveRef.current) continue;
+            if (!allowVoiceImages && !fromThisSession) continue;
             const normalized = normalizeCedMediaUrl(ev.image_url);
             lastPublishableImageRef.current = normalized;
             callbacksRef.current?.onGeneratedImage?.(normalized, ev.prompt);
@@ -790,6 +797,29 @@ export function useCedVoiceSession(
           }
         }
         replayVoiceImagesRef.current = true;
+        const latest = state.latest_generated_image;
+        const latestUrl = String(latest?.image_url || "").trim();
+        if (
+          latestUrl &&
+          voiceSessionActiveRef.current &&
+          sessionStartedAt > 0
+        ) {
+          const createdMs = Date.parse(String(latest?.created_at || ""));
+          const fromThisSession =
+            Number.isFinite(createdMs) && createdMs >= sessionStartedAt - 2000;
+          const normalized = normalizeCedMediaUrl(latestUrl);
+          if (
+            fromThisSession &&
+            normalized &&
+            normalized !== lastPublishableImageRef.current
+          ) {
+            lastPublishableImageRef.current = normalized;
+            callbacksRef.current?.onGeneratedImage?.(
+              normalized,
+              latest?.prompt ? String(latest.prompt) : undefined,
+            );
+          }
+        }
         if (state.conversation_id) {
           callbacksRef.current?.onVoiceThreadId?.(state.conversation_id);
         }
@@ -971,27 +1001,34 @@ export function useCedVoiceSession(
     voiceSessionGenRef.current += 1;
     lastPersistedAgentLineRef.current = "";
     lastLiveTranscriptSeqRef.current = 0;
+    micBusyRef.current = false;
+    setMicBusy(false);
+    setMicOn(false);
+    setVoiceSessionActive(false);
+    voiceSessionActiveRef.current = false;
+    setRetellPollActive(false);
     clearUsageInterval();
     clientRef.current?.disconnect();
     clientRef.current = null;
-    void retellClientRef.current?.stopCall();
+    const retell = retellClientRef.current;
     retellClientRef.current = null;
-    setRetellPollActive(false);
-    lastVoiceActionIdRef.current = null;
-    isRetellSessionRef.current = false;
-    voiceSessionActiveRef.current = false;
-    sessionStartedAtRef.current = 0;
-    replayVoiceImagesRef.current = false;
-    setVoiceSessionActive(false);
-    handlersRef.current = null;
-
-    if (usageSessionRef.current) {
+    if (retell) {
       try {
-        await endVoiceSession(usageSessionRef.current);
+        void retell.stopCall();
       } catch {
         /* ignore */
       }
-      usageSessionRef.current = null;
+    }
+    lastVoiceActionIdRef.current = null;
+    isRetellSessionRef.current = false;
+    sessionStartedAtRef.current = 0;
+    replayVoiceImagesRef.current = false;
+    handlersRef.current = null;
+
+    const usageSid = usageSessionRef.current;
+    usageSessionRef.current = null;
+    if (usageSid) {
+      void endVoiceSession(usageSid).catch(() => undefined);
     }
 
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
@@ -1002,7 +1039,6 @@ export function useCedVoiceSession(
     sessionMediaPreauthRef.current = null;
     cameraPermissionGrantedRef.current = false;
     setCameraPermissionGranted(false);
-    setMicOn(false);
     setCameraOn(false);
     setRetellInputLevel(0);
     setCameraStream(null);
@@ -1245,11 +1281,11 @@ export function useCedVoiceSession(
   }, [cameraOn, startCameraWithFacing]);
 
   const toggleMic = useCallback(async () => {
-    if (micBusyRef.current) return;
     if (micOn) {
       await stopSession();
       return;
     }
+    if (micBusyRef.current) return;
 
     unlockVoiceAudioOnGesture();
     const preauth = primeSessionMediaFromGesture();

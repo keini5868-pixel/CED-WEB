@@ -60,9 +60,15 @@ export function CedListenButton({
         if (isDictationAssistLocked()) return;
         onActivate();
       }}
-      disabled={busy}
-      whileTap={{ scale: busy ? 1 : 0.97 }}
-      aria-label={busy ? "Conectando asistente de voz" : active ? "Detener voz" : "Activar asistente"}
+      disabled={busy && !active}
+      whileTap={{ scale: busy && !active ? 1 : 0.97 }}
+      aria-label={
+        busy && !active
+          ? "Conectando asistente de voz"
+          : active
+            ? "Detener voz"
+            : "Activar asistente"
+      }
       className={dockClass(active && !paused, busy)}
     >
       <span className={iconWrapClass(active && !paused)}>

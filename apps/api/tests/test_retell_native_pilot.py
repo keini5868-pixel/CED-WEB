@@ -297,6 +297,7 @@ def test_pilot_prompt_includes_image_pdf_rules():
     assert "generate_image" in RETELL_NATIVE_PILOT_PROMPT
     assert "generar_pdf" in RETELL_NATIVE_PILOT_PROMPT
     assert "published=true" in RETELL_NATIVE_PILOT_PROMPT
+    assert "NUNCA confirmes lista sin ok=true published=true" in RETELL_NATIVE_PILOT_PROMPT
     assert "invoca YA" in RETELL_NATIVE_PILOT_PROMPT
 
 
@@ -327,6 +328,7 @@ def test_execute_generate_image_delegates_to_voice_executor():
             assert mock_exec.await_args.args[0] == "generate_image"
             assert "café" in mock_exec.await_args.args[2]["prompt"].lower()
             assert "imagen" in mock_exec.await_args.args[2]["_user_request"].lower()
+            assert mock_exec.await_args.args[2]["_skip_overlay_readback"] is True
             assert out["ok"] is True
             assert "pantalla" in out["result"].lower()
             return out
@@ -472,6 +474,20 @@ def test_execute_generate_image_rejects_truncated_transcript_even_with_invented_
             assert "frase exacta" in out["result"].lower()
 
     asyncio.run(run())
+
+
+def test_native_image_failure_forbids_ready_claim():
+    from app.services.retell_native_pilot import format_native_image_tool_result
+
+    text = format_native_image_tool_result(
+        ok=False,
+        published=False,
+        spoken="En la pieza va a decir exactamente: Restorate. ¿La genero?",
+        error="overlay_readback",
+    )
+    assert "ok=false published=false" in text
+    assert "Do not say the image was generated" in text
+    assert "ya puede verla" not in text.lower()
 
 
 def test_native_image_success_speech_is_code_owned_not_visual_review():

@@ -59,6 +59,60 @@ def test_voice_generate_image_uses_shared_pipeline_and_pushes_event():
     assert pushed[0]["image_url"] == "https://cdn.example.com/cafe.png"
 
 
+def test_voice_generate_image_asks_overlay_without_skip_flag():
+    with patch(
+        "app.services.chat_image_generation.run_chat_image_generation"
+    ) as mock_gen:
+        result = asyncio.run(
+            execute_voice_tool(
+                "generate_image",
+                "user-overlay",
+                {
+                    "prompt": "hazme un flyer de Restorate",
+                    "_user_request": "hazme un flyer de Restorate",
+                },
+            )
+        )
+    mock_gen.assert_not_called()
+    assert result["ok"] is False
+    assert result.get("skipped") is True
+    assert result.get("error") == "overlay_readback"
+    assert "¿La genero?" in str(result.get("spoken") or "")
+
+
+def test_voice_generate_image_skip_overlay_generates_now():
+    with (
+        patch(
+            "app.services.chat_image_generation.run_chat_image_generation",
+            return_value={
+                "ok": True,
+                "url": "https://cdn.example.com/flyer.png",
+                "caption": "Restorate",
+            },
+        ) as mock_gen,
+        patch(
+            "app.services.chat_image_generation.voice_prompt_is_mismatch",
+            return_value=False,
+        ),
+        patch("app.services.voice_tool_executor.voice_access_state", return_value={"plan_id": "elite"}),
+        patch("app.services.voice_tool_executor.vcs.push_tool_event"),
+    ):
+        result = asyncio.run(
+            execute_voice_tool(
+                "generate_image",
+                "user-overlay-skip",
+                {
+                    "prompt": "hazme un flyer de Restorate",
+                    "_user_request": "hazme un flyer de Restorate",
+                    "_skip_overlay_readback": True,
+                },
+            )
+        )
+    mock_gen.assert_called_once()
+    assert result["ok"] is True
+    assert result["url"] == "https://cdn.example.com/flyer.png"
+
+
 def test_voice_generate_image_prefers_raw_user_request_over_llm_rewrite():
     """Voz: el utterance crudo gana al prompt reformulado por el LLM conversacional."""
     raw = (

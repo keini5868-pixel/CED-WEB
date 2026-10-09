@@ -13,6 +13,7 @@ export type VoiceClientAction = {
 
 export type VoiceToolEvent = {
   id: number;
+  at?: number;
   type?: string;
   module?: string;
   image_url?: string;
@@ -58,6 +59,12 @@ export type VoiceClientState = {
   conversation_id?: string | null;
   transcript_turns?: VoiceTranscriptTurn[];
   chat_turns?: VoiceTranscriptTurn[];
+  latest_generated_image?: {
+    id?: string;
+    image_url?: string;
+    prompt?: string;
+    created_at?: string;
+  } | null;
 };
 
 export async function fetchVoiceClientState(

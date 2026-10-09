@@ -121,6 +121,28 @@ def test_client_state_http_exposes_live_transcript():
     assert data["live_transcript"]["role"] == "model"
 
 
+def test_client_state_http_exposes_latest_generated_image(monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.voice_client.supabase_db.list_generated_images",
+        lambda user_id, *, limit=40: [
+            {
+                "id": "img-1",
+                "public_url": "https://cdn.example.com/voice.png",
+                "prompt": "flyer azul",
+                "created_at": "2026-10-09T12:00:00Z",
+            }
+        ][:limit],
+    )
+    app = create_app()
+    app.dependency_overrides[require_user_id] = lambda: UID
+    client = TestClient(app)
+    res = client.get("/v1/voice/client-state")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["latest_generated_image"]["image_url"] == "https://cdn.example.com/voice.png"
+    assert data["latest_generated_image"]["prompt"] == "flyer azul"
+
+
 def test_websocket_handler_does_not_shadow_vcs():
     """Re-importar `vcs` dentro del handler lo vuelve variable libre sin valor.
 

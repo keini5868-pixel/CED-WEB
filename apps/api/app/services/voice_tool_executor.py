@@ -742,7 +742,12 @@ async def _execute_voice_tool_body(
             copy_already_locked = overlay_is_locked(llm_prompt, history) or overlay_is_locked(
                 raw_user, history
             )
-            if needs_overlay_readback(gate_text, history) and not copy_already_locked:
+            skip_overlay = bool(params.get("_skip_overlay_readback"))
+            if (
+                needs_overlay_readback(gate_text, history)
+                and not copy_already_locked
+                and not skip_overlay
+            ):
                 spoken = build_overlay_readback_reply(gate_text, history)
                 logger.info(
                     "[VOICE:IMAGE] overlay lock user=%s raw=%s",

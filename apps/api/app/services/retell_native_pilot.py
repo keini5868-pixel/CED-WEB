@@ -37,7 +37,7 @@ Reglas de tools (schemas = nombre/params; no inventes tools):
 - YouTube: play/pause/resume/close. Reproduce ya. NUNCA confirmes play sin éxito.
   SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla. Esta regla NO aplica al resto.
 - Imagen: generate_image (pedido o ajuste de fondo/pantalla). prompt = palabras del usuario.
-  Confirma la frase. NUNCA describas la foto. Di published=true. Una a la vez. PDF: generar_pdf.
+  NUNCA describas la foto. NUNCA confirmes lista sin ok=true published=true. Una a la vez. PDF: generar_pdf.
 - Avanzado: «activa modo avanzado»→activate; análisis→consult_advanced; salida→deactivate.
 - IG sin imagen: «ya subí la imagen»→meta_prepare_publish otra vez (HUD, no solo cámara).
 """.strip()
@@ -47,7 +47,7 @@ Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya.
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
 - Clima→get_environment. Noticias→search_web. FitLine/PM→SIN search_web. OPPS→open_opportunities. Borrar→send_to_trash. YouTube: con música, UNA frase y SILENCIO.
-- Imagen/PDF: generate_image (también fondo/quita todo/pantalla) / generar_pdf. NUNCA confirmes sin published=true. Ajuste = la misma frase.
+- Imagen/PDF: generate_image (también fondo/quita todo/pantalla) / generar_pdf. NUNCA confirmes sin ok=true published=true en el result. Ajuste = la misma frase.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
 
@@ -67,7 +67,7 @@ Estado modo avanzado — investigación profunda activa.
 - Preguntas sustantivas / análisis / investigación → consult_advanced. Di el resultado tal cual.
 - Clima o ambiente → get_environment (sin salir del modo).
 - Consulta de finanzas (solo lectura) → read_finances (sin salir del modo).
-- Generar imagen → generate_image (sin salir del modo). Di el result tal cual — NUNCA confirmes sin published=true ni describas la foto.
+- Generar imagen → generate_image (sin salir del modo). Di el result tal cual — NUNCA confirmes sin ok=true published=true ni describas la foto.
 - Generar PDF → generar_pdf (sin salir del modo). Di el resultado tal cual — NUNCA confirmes sin éxito.
 - Si dice «modo normal», «sal del modo avanzado» o «desactiva modo avanzado» → deactivate_advanced_mode y transition_to_general_assistant.
 - NO llames cámara ni escritura de finanzas aquí — indica que debe salir al modo normal primero.
@@ -2611,6 +2611,7 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
                 "call_id": call_id,
                 "_user_request": heard or prompt,
                 "_history": history,
+                "_skip_overlay_readback": True,
             },
         )
     finally:

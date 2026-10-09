@@ -38,11 +38,16 @@ ALLOWED_IMAGE_MIMES = frozenset(
 TRANSCRIPT_CACHE_TTL_S = 1.2
 _transcript_cache: dict[str, tuple[float, list[dict[str, Any]], str | None]] = {}
 _transcript_locks: dict[str, asyncio.Lock] = {}
+LATEST_IMAGE_CACHE_TTL_S = 2.0
+_latest_image_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+_latest_image_locks: dict[str, asyncio.Lock] = {}
 
 
 def clear_transcript_cache() -> None:
     _transcript_cache.clear()
     _transcript_locks.clear()
+    _latest_image_cache.clear()
+    _latest_image_locks.clear()
 
 
 class CameraStatusBody(BaseModel):
@@ -80,6 +85,7 @@ async def voice_client_state(
     transcript: bool = False,
 ) -> dict[str, Any]:
     payload = {"ok": True, **vcs.get_state(user_id, consume_action=consume)}
+    payload["latest_generated_image"] = await _latest_generated_image_cached(user_id)
     if not transcript:
         return payload
     cid = vcs.get_conversation_id(user_id)
@@ -87,6 +93,46 @@ async def voice_client_state(
     payload["conversation_id"] = found or cid
     payload["transcript_turns"] = messages or []
     return payload
+
+
+async def _latest_generated_image_cached(user_id: str) -> dict[str, Any] | None:
+    lock = _latest_image_locks.setdefault(user_id, asyncio.Lock())
+    async with lock:
+        cached = _latest_image_cache.get(user_id)
+        now = time.monotonic()
+        if cached and now - cached[0] < LATEST_IMAGE_CACHE_TTL_S:
+            return cached[1]
+        row = await _load_latest_generated_image(user_id)
+        _latest_image_cache[user_id] = (now, row)
+        if len(_latest_image_cache) > 500:
+            oldest = sorted(_latest_image_cache.items(), key=lambda kv: kv[1][0])[:100]
+            for key, _ in oldest:
+                _latest_image_cache.pop(key, None)
+                _latest_image_locks.pop(key, None)
+        return row
+
+
+async def _load_latest_generated_image(user_id: str) -> dict[str, Any] | None:
+    try:
+        from app.services.async_sync import run_sync
+
+        rows = await run_sync(supabase_db.list_generated_images, user_id, limit=1)
+    except Exception:  # noqa: BLE001
+        return None
+    if not rows:
+        return None
+    row = rows[0] if isinstance(rows, list) else None
+    if not isinstance(row, dict):
+        return None
+    url = str(row.get("public_url") or "").strip()
+    if not url:
+        return None
+    return {
+        "id": str(row.get("id") or ""),
+        "image_url": url,
+        "prompt": str(row.get("prompt") or ""),
+        "created_at": str(row.get("created_at") or ""),
+    }
 
 
 async def _recent_messages_cached(

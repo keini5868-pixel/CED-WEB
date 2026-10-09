@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CED_LIFE_ACTION_EVENT, type LifeActionDetail } from "@/lib/lifeActions";
-import { CedTextChatPanel, type LiveVoiceTurn } from "@/components/chat/CedTextChatPanel";
+import {
+  CedTextChatPanel,
+  type LiveVoiceImage,
+  type LiveVoiceTurn,
+} from "@/components/chat/CedTextChatPanel";
 import { AdvancedChatPanel } from "@/components/chat/AdvancedChatPanel";
 import { FinanceChatPanel } from "@/components/chat/FinanceChatPanel";
 import { ModuleShell } from "@/components/modules/ModuleShell";
@@ -96,6 +100,26 @@ export function CedVoiceHub() {
     useHudFeed();
   const chatThreadIdRef = useRef<string | null>(null);
   const [liveVoiceTurns, setLiveVoiceTurns] = useState<LiveVoiceTurn[]>([]);
+  const [liveVoiceImages, setLiveVoiceImages] = useState<LiveVoiceImage[]>([]);
+
+  const showVoiceGeneratedImage = useCallback((url: string, prompt?: string) => {
+    const normalized = normalizeCedMediaUrl(url);
+    if (!normalized) return;
+    setLiveVoiceImages((prev) => {
+      if (prev.some((item) => item.url === normalized)) return prev;
+      return [
+        ...prev,
+        {
+          streamKey: `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          url: normalized,
+          prompt,
+        },
+      ];
+    });
+    pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
+    setVoiceImagePreview({ url: normalized, prompt, at: Date.now() });
+    setChatSeedImage(null);
+  }, [pushVoiceImage]);
   const onConversationId = useCallback((id: string | null) => {
     chatThreadIdRef.current = id;
   }, []);
@@ -278,15 +302,12 @@ export function CedVoiceHub() {
       if (toolName.includes("image") && imageUrl) {
         const prompt =
           typeof result?.prompt === "string" ? result.prompt : undefined;
-        const normalized = normalizeCedMediaUrl(imageUrl);
-        pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
-        setVoiceImagePreview({ url: normalized, prompt, at: Date.now() });
-        setChatSeedImage(null);
+        showVoiceGeneratedImage(imageUrl, prompt);
       }
     };
     window.addEventListener("ced-voice-tool-result", onToolResult);
     return () => window.removeEventListener("ced-voice-tool-result", onToolResult);
-  }, [pushVoiceImage]);
+  }, [showVoiceGeneratedImage]);
 
   const voice = useCedVoiceSession(refreshUsage, {
     onTranscript: (text, role, options) => {
@@ -295,9 +316,7 @@ export function CedVoiceHub() {
     },
     onClearAgentPartial: clearAgentPartial,
     onGeneratedImage: (url, prompt) => {
-      pushVoiceImage(url, { prompt, role: "model", status: "ready" });
-      setVoiceImagePreview({ url, prompt, at: Date.now() });
-      setChatSeedImage(null);
+      showVoiceGeneratedImage(url, prompt);
     },
     getChatConversationId: () => chatThreadIdRef.current,
     onLiveChatTurns: (turns) => {
@@ -321,6 +340,7 @@ export function CedVoiceHub() {
     const ended = !voice.voiceSessionActive && voiceWasActiveRef.current;
     if (started || ended) {
       setLiveVoiceTurns([]);
+      setLiveVoiceImages([]);
       setVoiceImagePreview(null);
     }
     voiceWasActiveRef.current = voice.voiceSessionActive;
@@ -650,6 +670,7 @@ export function CedVoiceHub() {
               voiceSessionActive={voice.voiceSessionActive || liveVoiceTurns.length > 0}
               bindVoiceConversationId={voice.conversationId}
               liveVoiceTurns={liveVoiceTurns}
+              liveVoiceImages={liveVoiceImages}
               onConversationId={onConversationId}
               seedImage={chatSeedImage}
               onSeedConsumed={() => setChatSeedImage(null)}

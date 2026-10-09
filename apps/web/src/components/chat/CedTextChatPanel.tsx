@@ -59,6 +59,13 @@ export type LiveVoiceTurn = {
   partial?: boolean;
 };
 
+/** Imagen generada por voz — se pinta en el hilo, no solo en el recuadro del dock. */
+export type LiveVoiceImage = {
+  streamKey: string;
+  url: string;
+  prompt?: string;
+};
+
 type CedTextChatPanelProps = {
   open: boolean;
   onClose: () => void;
@@ -83,6 +90,7 @@ type CedTextChatPanelProps = {
   voiceSessionActive?: boolean;
   bindVoiceConversationId?: string | null;
   liveVoiceTurns?: LiveVoiceTurn[];
+  liveVoiceImages?: LiveVoiceImage[];
   onConversationId?: (id: string | null) => void;
 };
 
@@ -547,6 +555,7 @@ export function CedTextChatPanel({
   voiceSessionActive = false,
   bindVoiceConversationId = null,
   liveVoiceTurns = [],
+  liveVoiceImages = [],
   onConversationId,
 }: CedTextChatPanelProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1338,10 +1347,24 @@ export function CedTextChatPanel({
       created_at: new Date().toISOString(),
       partial: Boolean(item.partial),
     }));
+  const imageDisplay: ChatMessage[] = liveVoiceImages
+    .filter((img) => Boolean(img.url?.trim()))
+    .map((img) => ({
+      id: `${VOICE_LIVE_PREFIX}${img.streamKey}`,
+      role: "model",
+      content: "",
+      created_at: new Date().toISOString(),
+      image: {
+        url: img.url,
+        prompt: img.prompt,
+        caption: img.prompt,
+      },
+    }));
   const cleanedPinned = pinnedMessages.filter((m) => !looksLikeImageToolDump(m.content));
+  const liveWithImages = [...liveDisplay, ...imageDisplay];
   const visibleMessages =
-    liveDisplay.length > 0
-      ? liveDisplay
+    liveWithImages.length > 0
+      ? liveWithImages
       : voiceSessionActive
         ? cleanedPinned.filter((m) => isStickyWelcome(m)).slice(-1)
         : cleanedPinned;
