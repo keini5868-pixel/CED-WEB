@@ -137,7 +137,7 @@ _PHOTO_FOR_CHANNEL = re.compile(
 # Entregable pedido = idea/concepto/copy/prompt/texto (NO archivo de imagen).
 _TEXT_DELIVERABLE = (
     r"(?:idea|ideas|concepto|conceptos|copy|copies|guion(?:es)?|gui[oó]n(?:es)?|"
-    r"texto|textos|descripci[oó]n(?:es)?|caption|eslogan|slogan|"
+    r"gion(?:es)?|texto|textos|descripci[oó]n(?:es)?|caption|eslogan|slogan|"
     r"titular(?:es)?|headline|hook|gancho|prompt|prompts|script|scripts|"
     r"contenido|contenidos|pitch|gancho\s+de\s+venta)"
 )
@@ -176,6 +176,12 @@ _TEXT_IDEATION = re.compile(
     r"|"
     r"\bcopy\s+(?:del|de\s+el|para\s+(?:el|la|mi|un))\s+"
     r"(?:creativo|flyer|banner|post|anuncio)\b"
+    r"|"
+    r"\b(?:ay[uú]dame|ayudar|corrige[rs]?|corregir|revisa(?:r)?)\b.{0,48}"
+    r"\b(?:gui[oó]n|gion|script|copy|texto|di[aá]logo)\b"
+    r"|"
+    r"\b(?:gui[oó]n|gion|script|di[aá]logo)\b.{0,48}"
+    r"\b(?:corrige[rs]?|corregir|revisa(?:r)?|ayud)\w*"
     r")",
 )
 
@@ -545,7 +551,9 @@ _REFERENCE_EDIT_OR_VARIATION = re.compile(
     r"|(?:la|lo)\s+dejes?\s+as[ií]|d[eé]ja(?:la|lo)\s+as[ií]"
     r"|rayitos?|rayos?\s+de\s+electricidad"
     r"|quit(?:a(?:r|s|le)?|es)\s+todo|pantalla\s+(?:azul|completa|entera)|"
-    r"contorno\s+negr|letras?\s+blanc"
+    r"contorno\s+negr|letras?\s+blanc|"
+    r"corrig[ea](?:r|s)?|"
+    r"el\s+escrito|la\s+frase\s+qued|qued[oó]\s+mal"
     r")\b",
     re.I,
 )
@@ -577,13 +585,20 @@ _EXPLICIT_PUBLISH_COMMAND = re.compile(
 
 _SCRIPT_NARRATIVE = re.compile(
     r"(?is)\b(?:"
-    r"gui[oó]n(?:es)?|guion(?:es)?|escena|acto|plano|narraci[oó]n|rodaje|"
+    r"gui[oó]n(?:es)?|guion(?:es)?|gion(?:es)?|escena|acto|plano|narraci[oó]n|rodaje|"
     r"contin[uú]a(?:r)?\s+(?:el\s+)?gui|despu[eé]s\s+de\s+ese\s+punto|"
     r"en\s+esa\s+parte|en\s+este\s+punto\s+del\s+gui|"
     r"le\s+digo\s+a\s+(?:ced|el\s+personaje|el\s+asistente|la\s+c[aá]mara)|"
     r"aparece\s+(?:ced|el\s+personaje)|"
     r"que\s+(?:ced\s+)?aparezca\b"
     r")\b"
+)
+_SCRIPT_OBJECT = re.compile(
+    r"(?is)\b(?:gui[oó]n(?:es)?|gion(?:es)?|script(?:s)?|di[aá]logo(?:s)?)\b"
+)
+_VISUAL_ARTIFACT = re.compile(
+    r"(?is)\b(?:imagen|foto|flyer|pieza|banner|cartel|letrero|logo|"
+    r"castillo|pantalla|holograma)\b"
 )
 
 
@@ -592,15 +607,29 @@ def is_script_narrative_request(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
-    if _EXPLICIT_IMAGE_CREATE.search(t) or _VISUAL_CONTEXT.search(t):
+    if _EXPLICIT_IMAGE_CREATE.search(t):
         return False
-    if _SCRIPT_NARRATIVE.search(t):
+    if _VISUAL_CONTEXT.search(t) and not _SCRIPT_OBJECT.search(t):
+        return False
+    if _SCRIPT_NARRATIVE.search(t) or _SCRIPT_OBJECT.search(t):
         return True
     from app.services.deliverable_replies import is_deliverable_request
 
     if is_deliverable_request(t) and not _EXPLICIT_IMAGE_CREATE.search(t):
         return bool(re.search(rf"\b{_TEXT_DELIVERABLE}\b", t, re.I))
     return False
+
+
+def is_text_work_request(text: str) -> bool:
+    """Este turno pide guion/copy/texto. Nunca disparar generación de imagen."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if is_explicit_image_command(t) and not is_text_ideation_request(t):
+        return False
+    if is_text_ideation_request(t) or is_script_narrative_request(t):
+        return True
+    return bool(_SCRIPT_OBJECT.search(t))
 
 
 def user_requests_prior_reference(text: str) -> bool:
@@ -627,7 +656,9 @@ _EXPLICIT_IMAGE_EDIT = re.compile(
     r"|otra\s+igual|una\s+igual|"
     r"(?:la|lo)\s+dejes?\s+as[ií]|d[eé]ja(?:la|lo)\s+as[ií]|"
     r"qu[ií]tale|agr[eé]gale|mejor[aá]l[oa]"
-    r"|modif[ií]cal[oa]|ed[ií]tal[oa]|retoc[aá]l[oa]"
+    r"|modif[ií]cal[oa]|ed[ií]tal[oa]|retoc[aá]l[oa]|"
+    r"corrig[ea](?:r|s)?\s+(?:la\s+|el\s+|los\s+|las\s+)?"
+    r"(?:imagen|foto|flyer|pieza|letras)"
     r")\b"
 )
 _KEEP_SAME_PIECE = re.compile(
@@ -657,6 +688,10 @@ def user_keeps_same_image_piece(
     t = normalize_image_request_typos((text or "").strip())
     if not t:
         return False
+    from app.services.copy_quality import user_requests_overlay_correction
+
+    if user_requests_overlay_correction(t) and history_has_active_image_thread(history):
+        return True
     if re.search(r"(?i)\b(?:otro|otra|nuev[oa])\s+(?:flyer|imagen|foto|pieza|banner)\b", t):
         if not re.search(r"(?i)\bigual\b", t):
             return False
@@ -728,6 +763,10 @@ def user_requests_new_image_piece(text: str, history: list[dict[str, str]] | Non
         return False
     if user_insists_on_pending_image(t, history):
         return False
+    from app.services.copy_quality import user_requests_overlay_correction
+
+    if user_requests_overlay_correction(t):
+        return False
     if user_keeps_same_image_piece(t, history):
         return False
     from app.services.copy_quality import user_requests_flat_color_field
@@ -735,8 +774,6 @@ def user_requests_new_image_piece(text: str, history: list[dict[str, str]] | Non
     if user_requests_flat_color_field(t):
         return False
     if user_requests_prior_reference(t):
-        return False
-    if _EXPLICIT_IMAGE_EDIT.search(t):
         return False
     if re.search(
         r"(?i)\b(?:esta|esa|la misma|el mismo|la anterior)\s+"
@@ -749,8 +786,11 @@ def user_requests_new_image_piece(text: str, history: list[dict[str, str]] | Non
         t,
     ):
         return False
+    # «generame una imagen … ponga [frase]» es pieza nueva; ponga no es edición.
     if _NEW_IMAGE_PIECE.search(t):
         return True
+    if _EXPLICIT_IMAGE_EDIT.search(t):
+        return False
     if re.search(r"(?i)\bcastillo\b", t) and not re.search(
         r"(?i)\b(?:ese|el mismo|esa misma)\s+castillo\b|"
         r"\b(?:acabas\s+de\s+generar|el\s+castillo\s+que)\b",
@@ -842,6 +882,10 @@ def is_image_subject_correction(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
+    from app.services.copy_quality import user_requests_overlay_correction
+
+    if user_requests_overlay_correction(t):
+        return False
     if _SUBJECT_CORRECTION.search(t):
         return True
     if _CONCRETE_SUBJECT.search(t) and not _TWEAK_ONLY.search(t):
@@ -860,8 +904,12 @@ def wants_image_reference_edit(text: str) -> bool:
     from app.services.copy_quality import normalize_image_request_typos
 
     t = normalize_image_request_typos((text or "").strip())
-    if not t or is_script_narrative_request(t):
+    if not t or is_text_work_request(t):
         return False
+    from app.services.copy_quality import user_requests_overlay_correction
+
+    if user_requests_overlay_correction(t):
+        return True
     if is_image_subject_correction(t):
         return False
     if re.search(r"(?i)\bcastillo\b", t) and not re.search(
@@ -1335,7 +1383,10 @@ _FOLLOWUP_EDIT_SIGNAL = re.compile(
     r"las?\s+letras|"
     r"letras?\s+(?:que\s+sean|m[aá]s|menos)|"
     r"(?:negrita|grosor|tipograf[ií]a)|"
-    r"pero\s+(?:las?\s+)?(?:letras|textos?|tipograf)"
+    r"pero\s+(?:las?\s+)?(?:letras|textos?|tipograf)|"
+    r"corrig[ea](?:r|s)?\s+(?:la\s+|el\s+)?(?:imagen|foto|flyer|pieza|letras)|"
+    r"(?:el\s+escrito|las?\s+letras).{0,24}(?:de\s+la\s+imagen|qued[oó]\s+mal)|"
+    r"la\s+imagen.{0,48}qued[oó]\s+mal"
     r")\b",
     re.I,
 )

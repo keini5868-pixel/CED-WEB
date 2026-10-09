@@ -14,6 +14,7 @@ type Props = {
   onDismiss?: () => void;
   /** Superpone la imagen al lienzo central. */
   overlay?: boolean;
+  generating?: boolean;
 };
 
 /** Vista previa de imagen — en overlay cubre el núcleo; si no, queda bajo el orbe. */
@@ -23,11 +24,29 @@ export function CedVoiceImagePreview({
   shownAt,
   onDismiss,
   overlay = false,
+  generating = false,
 }: Props) {
   const src = url ? normalizeCedMediaUrl(url) : null;
-  const frameKey = src ? `${src}#${shownAt ?? 0}` : "empty";
+  const frameKey = src ? `${src}#${shownAt ?? 0}` : generating ? "generating" : "empty";
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const label = prompt ? `Imagen: ${prompt}` : "Imagen generada por CED";
+
+  if (generating && !src) {
+    return (
+      <div
+        className={
+          overlay
+            ? "absolute inset-0 z-[4] flex flex-col items-center justify-center overflow-hidden rounded-xl border border-cyan-400/50 bg-black/85"
+            : "mt-4 flex w-full max-w-sm flex-col items-center justify-center rounded-xl border border-cyan-400/50 bg-black/70 px-4 py-8"
+        }
+      >
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-300" />
+        <p className="mt-2 text-center font-[family-name:var(--font-orbitron)] text-[8px] tracking-widest text-cyan-200 lg:text-[10px]">
+          GENERANDO IMAGEN
+        </p>
+      </div>
+    );
+  }
 
   return (
     <AnimatePresence>
@@ -51,19 +70,29 @@ export function CedVoiceImagePreview({
             }
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
+            <div className="relative min-h-0 flex-1">
             <img
               src={src}
               alt={label}
               className={
                 overlay
-                  ? "min-h-0 w-full flex-1 cursor-zoom-in object-contain transition hover:opacity-95"
-                  : "max-h-72 w-full cursor-zoom-in object-contain transition hover:opacity-95"
+                  ? `min-h-0 w-full flex-1 cursor-zoom-in object-contain transition ${generating ? "opacity-40" : "hover:opacity-95"}`
+                  : `max-h-72 w-full cursor-zoom-in object-contain transition ${generating ? "opacity-40" : "hover:opacity-95"}`
               }
               onClick={() => setLightboxOpen(true)}
               onError={(e) => {
                 e.currentTarget.alt = "No se pudo cargar la imagen";
               }}
             />
+            {generating ? (
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/45">
+                <span className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-300" />
+                <p className="mt-2 font-[family-name:var(--font-orbitron)] text-[8px] tracking-widest text-cyan-200 lg:text-[10px]">
+                  GENERANDO IMAGEN
+                </p>
+              </div>
+            ) : null}
+            </div>
             <div className="flex items-center justify-between gap-2 px-3 py-2">
               <p className="ced-hud-text-secondary truncate text-xs">
                 {prompt ? `Imagen: ${prompt}` : "Imagen generada"}

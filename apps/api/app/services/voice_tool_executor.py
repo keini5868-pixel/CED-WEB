@@ -809,14 +809,22 @@ async def _execute_voice_tool_body(
                 user_requests_image_edit,
                 wants_image_reference_edit,
             )
-            from app.services.copy_quality import user_requests_flat_rebuild
+            from app.services.copy_quality import (
+                user_requests_flat_rebuild,
+                user_requests_overlay_correction,
+            )
 
-            # Ajuste sobre la pieza: utterance crudo. Pieza nueva: prompt ya elegido.
+            # Ajuste / escrito: utterance crudo. Pieza nueva: prompt ya elegido.
+            from app.services.image_overlay_orchestrator import plan_image_generation
+
+            image_plan = plan_image_generation(raw_user or prompt, history)
             if raw_user and (
-                wants_image_reference_edit(raw_user)
+                image_plan.use_user_utterance
+                or wants_image_reference_edit(raw_user)
                 or user_requests_image_edit(raw_user)
                 or parse_followup_image_prompt(raw_user, history)
                 or user_requests_flat_rebuild(raw_user)
+                or user_requests_overlay_correction(raw_user)
             ):
                 pipeline_text = raw_user
             else:
@@ -827,6 +835,22 @@ async def _execute_voice_tool_body(
                 llm_prompt[:80],
                 pipeline_text[:80],
                 bool(raw_user),
+            )
+            def _push_image_progress(event: dict) -> None:
+                try:
+                    vcs.push_tool_event(user_id, event)
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "[VOICE:IMAGE] %s event failed user=%s",
+                        event.get("type"),
+                        user_id[:8],
+                    )
+
+            _push_image_progress(
+                {
+                    "type": "generating_image",
+                    "prompt": pipeline_text[:160],
+                }
             )
             result = await asyncio.to_thread(
                 run_chat_image_generation,
@@ -848,6 +872,7 @@ async def _execute_voice_tool_body(
                     prompt_used[:120],
                 )
                 if voice_prompt_is_mismatch(prompt_used, llm_prompt):
+                    _push_image_progress({"type": "image_generation_failed", "prompt": prompt_used[:160]})
                     return _spoken_err(
                         "El prompt de la imagen no coincidió con lo pedido, señor.",
                         error="prompt_mismatch",
@@ -872,6 +897,13 @@ async def _execute_voice_tool_body(
                     "published": True,
                 }
             err = str(result.get("error") or result.get("reply") or "image_failed")
+            _push_image_progress(
+                {
+                    "type": "image_generation_failed",
+                    "prompt": pipeline_text[:160],
+                    "message": err[:160],
+                }
+            )
             logger.error(
                 "[VOICE:IMAGE] fail user=%s error=%s code=%s",
                 user_id[:8],

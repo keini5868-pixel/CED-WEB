@@ -20,8 +20,10 @@ from app.services.chat_intents import (
 from app.services.copy_quality import (
     build_image_headline,
     extract_literal_on_image_copy,
+    extract_locked_slogan,
     extract_quoted_phrases,
     extract_spoken_overlay_labels,
+    is_scene_instruction_caption,
     prompt_requires_precise_text,
 )
 from app.services.marketing_creative import extract_product_subject
@@ -113,6 +115,8 @@ def _clean_overlay(raw: str, *, max_len: int = 200) -> str | None:
         return None
     if _VAGUE_OVERLAY.match(t) or _OFFER_LEAK.search(t):
         return None
+    if is_scene_instruction_caption(t):
+        return None
     return t
 
 
@@ -151,6 +155,9 @@ def _extract_from_text(text: str) -> list[str]:
         if clean and clean not in found:
             found.append(clean)
 
+    slogan = extract_locked_slogan(t)
+    if slogan:
+        _add(slogan)
     for phrase in extract_quoted_phrases(t):
         _add(phrase)
     for phrase in extract_literal_on_image_copy(t):

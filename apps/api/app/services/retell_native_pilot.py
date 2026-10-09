@@ -36,7 +36,7 @@ Reglas de tools (schemas = nombre/params; no inventes tools):
 - Cámara: activate una vez; visión solo analyze_camera_frame / search_visible_product. NUNCA inventar lo visible.
 - YouTube: play/pause/resume/close. Reproduce ya. NUNCA confirmes play sin éxito.
   SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla. Esta regla NO aplica al resto.
-- Imagen: generate_image (pedido o ajuste de fondo/pantalla). prompt = palabras del usuario.
+- Imagen: generate_image (pedido, fondo o escrito). prompt = palabras del usuario. Corregir = misma pieza.
   NUNCA describas la foto. NUNCA confirmes lista sin ok=true published=true. Una a la vez. PDF: generar_pdf.
 - Avanzado: «activa modo avanzado»→activate; análisis→consult_advanced; salida→deactivate.
 - IG sin imagen: «ya subí la imagen»→meta_prepare_publish otra vez (HUD, no solo cámara).
@@ -47,7 +47,7 @@ Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya.
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
 - Clima→get_environment. Noticias→search_web. FitLine/PM→SIN search_web. OPPS→open_opportunities. Borrar→send_to_trash. YouTube: con música, UNA frase y SILENCIO.
-- Imagen/PDF: generate_image (también fondo/quita todo/pantalla) / generar_pdf. NUNCA confirmes sin ok=true published=true en el result. Ajuste = la misma frase.
+- Imagen/PDF: generate_image (fondo/escrito/pantalla) / generar_pdf. NUNCA confirmes sin ok=true published=true. Corregir escrito = misma pieza.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
 
@@ -173,8 +173,8 @@ RESUME_YOUTUBE_DESCRIPTION = (
 CLOSE_YOUTUBE_DESCRIPTION = "Cierra el reproductor de YouTube."
 
 GENERATE_IMAGE_DESCRIPTION = (
-    "Imagen o ajuste (fondo, quita todo, pantalla de color). "
-    "prompt = palabras del usuario."
+    "Imagen o ajuste (fondo, pantalla, escrito). "
+    "prompt = palabras del usuario. Corregir frase = misma pieza."
 )
 GENERAR_PDF_DESCRIPTION = (
     "Genera PDF (título/contenido). Di el resultado tal cual — NUNCA confirmes sin éxito."

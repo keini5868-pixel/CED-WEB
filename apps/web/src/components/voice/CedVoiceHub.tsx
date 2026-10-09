@@ -101,18 +101,44 @@ export function CedVoiceHub() {
   const chatThreadIdRef = useRef<string | null>(null);
   const [liveVoiceTurns, setLiveVoiceTurns] = useState<LiveVoiceTurn[]>([]);
   const [liveVoiceImages, setLiveVoiceImages] = useState<LiveVoiceImage[]>([]);
+  const [imageGenerating, setImageGenerating] = useState(false);
+
+  const showVoiceGeneratingImage = useCallback((prompt?: string) => {
+    setImageGenerating(true);
+    setLiveVoiceImages((prev) => {
+      if (prev.some((item) => item.status === "generating")) return prev;
+      return [
+        ...prev,
+        {
+          streamKey: `img-wait-${Date.now()}`,
+          prompt,
+          status: "generating",
+        },
+      ];
+    });
+  }, []);
+
+  const clearVoiceGeneratingImage = useCallback(() => {
+    setImageGenerating(false);
+    setLiveVoiceImages((prev) => prev.filter((item) => item.status !== "generating"));
+  }, []);
 
   const showVoiceGeneratedImage = useCallback((url: string, prompt?: string) => {
     const normalized = normalizeCedMediaUrl(url);
     if (!normalized) return;
+    setImageGenerating(false);
     setLiveVoiceImages((prev) => {
-      if (prev.some((item) => item.url === normalized)) return prev;
+      if (prev.some((item) => item.url === normalized)) {
+        return prev.filter((item) => item.status !== "generating");
+      }
+      const withoutWait = prev.filter((item) => item.status !== "generating");
       return [
-        ...prev,
+        ...withoutWait,
         {
           streamKey: `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           url: normalized,
           prompt,
+          status: "ready",
         },
       ];
     });
@@ -315,6 +341,12 @@ export function CedVoiceHub() {
       upsertLiveVoiceTurn(text, role, options);
     },
     onClearAgentPartial: clearAgentPartial,
+    onGeneratingImage: (prompt) => {
+      showVoiceGeneratingImage(prompt);
+    },
+    onImageGenerationFailed: () => {
+      clearVoiceGeneratingImage();
+    },
     onGeneratedImage: (url, prompt) => {
       showVoiceGeneratedImage(url, prompt);
     },
@@ -342,9 +374,16 @@ export function CedVoiceHub() {
       setLiveVoiceTurns([]);
       setLiveVoiceImages([]);
       setVoiceImagePreview(null);
+      setImageGenerating(false);
     }
     voiceWasActiveRef.current = voice.voiceSessionActive;
   }, [voice.voiceSessionActive]);
+
+  useEffect(() => {
+    if (!imageGenerating) return undefined;
+    const timer = window.setTimeout(() => clearVoiceGeneratingImage(), 90_000);
+    return () => window.clearTimeout(timer);
+  }, [imageGenerating, clearVoiceGeneratingImage]);
 
   /* El transcript llega por los callbacks del hook: un segundo poll aquí
      multiplicaba las consultas a Supabase y frenaba el chat de texto. */
@@ -558,6 +597,7 @@ export function CedVoiceHub() {
 
   const cameraLive = voice.cameraOn && Boolean(voice.cameraStream);
   const imageLive = Boolean(voiceImagePreview?.url) && !cameraLive;
+  const imageStage = (imageLive || imageGenerating) && !cameraLive;
   const readyLabel = workspace === "advanced"
     ? "Modo avanzado"
     : workspace === "finance"
@@ -572,7 +612,7 @@ export function CedVoiceHub() {
 
   const listenDock = (
     <div className="flex flex-col items-center gap-2 lg:gap-3">
-      {cameraLive || imageLive ? (
+      {cameraLive || imageStage ? (
         <div className="relative h-20 w-full max-w-[88px] overflow-hidden rounded-xl lg:h-36 lg:max-w-[220px]">
           <CedCameraPreview
             overlay
@@ -583,6 +623,7 @@ export function CedVoiceHub() {
           />
           <CedVoiceImagePreview
             overlay
+            generating={imageGenerating}
             url={imageLive ? voiceImagePreview?.url ?? null : null}
             prompt={voiceImagePreview?.prompt}
             shownAt={voiceImagePreview?.at}

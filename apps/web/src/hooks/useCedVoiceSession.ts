@@ -213,6 +213,10 @@ export interface CedVoiceSessionCallbacks {
   ) => void;
   /** Imagen generada (voz) — abrir chat / preview */
   onGeneratedImage?: (url: string, prompt?: string) => void;
+  /** La tool ya está generando — HUD de carga detrás del holograma. */
+  onGeneratingImage?: (prompt?: string) => void;
+  /** La generación falló — quitar el spinner. */
+  onImageGenerationFailed?: (prompt?: string) => void;
   /** Retracta bubble agent en HUD al interrumpir (Retell). */
   onClearAgentPartial?: () => void;
   /** Hilo visible en el chat de texto — voz debe escribir aquí. */
@@ -690,6 +694,16 @@ export function useCedVoiceSession(
           const id = Number(ev.id || 0);
           if (!id || id <= lastToolEventIdRef.current) continue;
           lastToolEventIdRef.current = id;
+          if (ev.type === "generating_image") {
+            if (voiceSessionActiveRef.current) {
+              callbacksRef.current?.onGeneratingImage?.(ev.prompt);
+            }
+          }
+          if (ev.type === "image_generation_failed") {
+            if (voiceSessionActiveRef.current) {
+              callbacksRef.current?.onImageGenerationFailed?.(ev.prompt);
+            }
+          }
           if (ev.type === "generated_image" && ev.image_url) {
             const eventAtMs = Number(ev.at || 0) * 1000;
             const fromThisSession =

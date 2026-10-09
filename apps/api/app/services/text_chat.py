@@ -1543,6 +1543,7 @@ def _build_chat_system(
             history,
             user_id=user_id,
             conversation_id=conversation_id,
+            user_text=user_text,
         )
         if thread_ctx:
             parts.append(thread_ctx)

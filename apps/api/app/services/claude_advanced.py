@@ -145,6 +145,7 @@ def _advanced_stream_system_with_clock(
     *,
     user_id: str = "",
     conversation_id: str | None = None,
+    user_text: str = "",
 ) -> str:
     from app.services.chat_image_generation import build_active_image_thread_context
 
@@ -158,6 +159,7 @@ def _advanced_stream_system_with_clock(
         history,  # type: ignore[arg-type]
         user_id=user_id,
         conversation_id=conversation_id,
+        user_text=user_text,
     )
     if thread:
         base = f"{base}\n\n{thread}"
@@ -169,6 +171,7 @@ def _advanced_system_with_thread(
     *,
     user_id: str,
     conversation_id: str | None,
+    user_text: str = "",
 ) -> str:
     from app.services.chat_image_generation import build_active_image_thread_context
 
@@ -176,6 +179,7 @@ def _advanced_system_with_thread(
         history,  # type: ignore[arg-type]
         user_id=user_id,
         conversation_id=conversation_id,
+        user_text=user_text,
     )
     if thread:
         return f"{ADVANCED_SYSTEM_PROMPT}\n\n{thread}"
@@ -594,6 +598,7 @@ def send_advanced_message(
                 history_rows,
                 user_id=user_id,
                 conversation_id=conv_id,
+                user_text=text,
             ),
             messages=anthropic_messages,
             conversation_id=conv_id,
@@ -792,6 +797,7 @@ def iter_advanced_message_stream(
         history_rows,
         user_id=user_id,
         conversation_id=conv_id,
+        user_text=text,
     )
 
     accumulated: list[str] = []

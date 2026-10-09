@@ -22,6 +22,7 @@ from app.services.chat_intents import (
     is_pdf_intent,
     is_script_narrative_request,
     is_text_ideation_request,
+    is_text_work_request,
     is_vague_image_subject,
     is_visual_design_exploration,
     last_assistant_image_concept,
@@ -169,12 +170,16 @@ def build_active_image_thread_context(
     *,
     user_id: str = "",
     conversation_id: str | None = None,
+    user_text: str = "",
 ) -> str:
     """Ancla del hilo visual para respuestas de texto conectadas al mismo diseño."""
     from app.services.publish_image_context import (
         get_session_vision_analysis,
         has_publishable_image,
     )
+
+    if user_text and is_text_work_request(user_text):
+        return ""
 
     in_thread = history_has_active_image_thread(history)
     has_session_image = bool(user_id) and has_publishable_image(user_id, conversation_id)
@@ -412,7 +417,7 @@ def should_take_direct_image_path(
         return False
     from app.services.copy_quality import prompt_requires_ideogram_text
 
-    if is_text_ideation_request(t):
+    if is_text_work_request(t) or is_text_ideation_request(t):
         return False
     if is_exploratory_talk(t) and not is_explicit_image_command(t):
         return False
@@ -434,6 +439,8 @@ def should_take_direct_image_path(
     ):
         return True
     if is_image_meta_talk(t):
+        return False
+    if is_text_work_request(t):
         return False
     if is_script_narrative_request(t) and not is_generate_image_intent(t):
         return False
@@ -664,6 +671,15 @@ def pick_voice_image_source_prompt(
     if heard_s and not args:
         return heard_s
     if args and heard_s:
+        from app.services.copy_quality import (
+            extract_locked_slogan,
+            user_requests_overlay_correction,
+        )
+
+        if user_requests_overlay_correction(heard_s):
+            return heard_s
+        if extract_locked_slogan(heard_s) and not extract_locked_slogan(args):
+            return heard_s
         if image_prompt_covers_request(args, heard_s):
             return args
         if is_generate_image_intent(heard_s) or looks_like_visual_image_prompt(heard_s):
@@ -767,6 +783,9 @@ def run_chat_image_generation(
         user_asks_for_on_image_copy,
         user_requests_background_change,
         user_requests_flat_rebuild,
+        user_requests_overlay_correction,
+        extract_locked_slogan,
+        is_scene_instruction_caption,
         build_flat_color_field_prompt,
         user_requests_ced_branding,
         wants_ced_tagline_lock,
@@ -779,10 +798,14 @@ def run_chat_image_generation(
 
     user_text = normalize_image_request_typos((text or "").strip())
     history = visual_episode_history(history)
+    overlay_fix = user_requests_overlay_correction(user_text)
     insist = user_insists_on_pending_image(user_text, history)
-    new_piece = insist or (
-        user_requests_new_image_piece(user_text, history)
-        and not user_requests_prior_reference(user_text)
+    new_piece = (not overlay_fix) and (
+        insist
+        or (
+            user_requests_new_image_piece(user_text, history)
+            and not user_requests_prior_reference(user_text)
+        )
     )
     if (
         allow_reference
@@ -816,7 +839,7 @@ def run_chat_image_generation(
         )
     )
     wordmark_only = is_ced_wordmark_only_request(user_text)
-    copy_edit = user_asks_for_on_image_copy(user_text) and not wordmark_only
+    copy_edit = (user_asks_for_on_image_copy(user_text) or overlay_fix) and not wordmark_only
     bg_only_edit = thread_edit and user_requests_background_change(user_text) and not flat_rebuild
     scene_only_edit = thread_edit and not copy_edit and not flat_rebuild
     if thread_prompt and thread_edit and not flat_rebuild:
@@ -857,6 +880,10 @@ def run_chat_image_generation(
             session_image_usable_for_edit(user_id, conversation_id)
             and resolve_reference_image_bytes(user_id, conversation_id)
         )
+    if overlay_fix and allow_reference and resolve_reference_image_bytes(
+        user_id, conversation_id
+    ):
+        use_reference = True
     if subject_fix or flat_rebuild:
         use_reference = False
     ref_payload = resolve_reference_image_bytes(user_id, conversation_id) if use_reference else None
@@ -883,7 +910,14 @@ def run_chat_image_generation(
     display_label = ""
     success_reply = "Listo. Aquí está tu imagen generada."
     style_mode = "edit"
-    locked_copy = locked_overlay_lines(user_text, history)
+    locked_copy = [
+        ln
+        for ln in locked_overlay_lines(user_text, history)
+        if not is_scene_instruction_caption(ln)
+    ]
+    slogan = extract_locked_slogan(user_text)
+    if slogan and slogan not in locked_copy:
+        locked_copy = [slogan, *[ln for ln in locked_copy if ln.casefold() != slogan.casefold()]]
     overlay_delivery = delivery_caption_for_image(user_text, history)
 
     if simple_photo_edit:
@@ -959,6 +993,8 @@ def run_chat_image_generation(
     strategy_lines: list[str] = []
     if spelling_fix:
         overlay_lines = [CED_ASSISTANT_TAGLINE]
+    elif overlay_fix:
+        strategy_lines = []
     elif wants_literal_text and user_asks_for_on_image_copy(user_text):
         strategy_lines = compose_persuasive_overlay_lines(user_text)
     if strategy_lines:
@@ -970,6 +1006,7 @@ def run_chat_image_generation(
         and ref_payload
         and not strategy_lines
         and not spelling_fix
+        and not overlay_fix
         and not scene_only_edit
         and user_asks_for_on_image_copy(user_text)
     ):
@@ -988,7 +1025,18 @@ def run_chat_image_generation(
     tech = str(direct.get("prompt") or "").strip()
     if tech:
         model_prompt = tech
-    if (scene_only_edit or wordmark_only) and ref_payload and wordmark_only:
+    if overlay_fix:
+        from app.services.image_overlay_orchestrator import enforce_overlay_fix_prompt
+
+        prior = thread_prompt or last_concrete_image_user_prompt(history) or ""
+        model_prompt = enforce_overlay_fix_prompt(
+            user_text=user_text,
+            prior_prompt=prior,
+            locked_copy=overlay_lines,
+            has_reference=bool(ref_payload),
+            history=history,
+        )
+    elif (scene_only_edit or wordmark_only) and ref_payload and wordmark_only:
         model_prompt = build_reference_logo_on_scene_prompt(user_text)
         overlay_lines = ["CED"]
         wants_literal_text = False
@@ -1393,14 +1441,15 @@ def salvage_image_turn(
     )
     from app.services.copy_quality import user_requests_background_change
 
-    wants_image = should_take_direct_image_path(user_text, history)
-    if not wants_image and explicit_image and (hallucinated or dumped or false_success):
+    text_work = is_text_work_request(user_text)
+    wants_image = (not text_work) and should_take_direct_image_path(user_text, history)
+    if not wants_image and not text_work and explicit_image and (
+        hallucinated or dumped or false_success
+    ):
         # Overlay ritual no debe dejar pasar un dump XML/JSON de generate_image.
         wants_image = True
-    if not wants_image and (hallucinated or dumped or false_success) and (
-        history_has_active_image_thread(history)
-        or last_concrete_image_user_prompt(history)
-        or user_requests_background_change(user_text)
+    if not wants_image and not text_work and (hallucinated or dumped or false_success) and (
+        user_requests_background_change(user_text)
         or wants_image_reference_edit(user_text)
         or user_insists_on_pending_image(user_text, history)
     ):

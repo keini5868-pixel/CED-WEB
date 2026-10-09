@@ -268,7 +268,8 @@ _CED_CORNER_BADGE = re.compile(
 )
 _VISIBLE_COPY_ONLY = (
     "On-image letters: only the Spanish sentence the user asked for, and CED "
-    "if they asked for that mark. No English. No extra labels."
+    "if they asked for that mark. No English. No extra labels. "
+    "Never paint scene words (tierra, puerta, castillo, fondo) as titles."
 )
 # Solo correcciones de tipografía (I4 / Prosaeccion). NO «prospección» ni
 # «asistente de IA» sueltos: esos aparecen en listados de capacidades CED.
@@ -545,7 +546,39 @@ def extract_quoted_phrases(text: str, *, max_phrases: int = 5) -> list[str]:
 
 
 _UNQUOTED_COPY_LEAD = re.compile(
-    r"(?is)(?:que\s+diga[n]?|con\s+(?:el\s+)?texto|con\s+la\s+frase|el\s+texto(?:\s+que\s+diga)?)\s+"
+    r"(?is)(?:que\s+diga[n]?|que\s+ah[ií]\s+(?:vaya|diga|ponga)|"
+    r"con\s+(?:el\s+)?texto|con\s+la\s+frase|el\s+texto(?:\s+que\s+diga)?|"
+    r"(?:que\s+)?ponga[n]?)\s+"
+)
+_SLOGAN_TIME_PASSES = re.compile(
+    r"(?is)(inevitablemente\s+el\s+tiempo\s+va\s+a\s+pasar"
+    r"(?:\s*[,.]?\s*no\s+te\s+dediques\s+a\s+perder(?:lo)?)?)"
+)
+_SCENE_CAPTION_ONLY = re.compile(
+    r"(?is)^(?:la\s+|el\s+|las\s+|los\s+|en\s+(?:la\s+|el\s+)?)?"
+    r"(?:tierra|suelo|frente|puerta|castillo|fondo|azul|oscuro|digital|"
+    r"antigua|luz|redondo|holograma|escena|imagen|foto|flyer)s?"
+    r"(?:\s+(?:tierra|suelo|frente|puerta|castillo|fondo|azul|oscuro))?$"
+)
+_OVERLAY_CORRECTION = re.compile(
+    r"(?is)\b(?:"
+    r"corrig[ea](?:r|s)?\s+(?:la\s+|el\s+|los\s+|las\s+)?"
+    r"(?:escrito|frase|texto|letras?|copy|ortograf)|"
+    r"arregla(?:r|s)?\s+(?:la\s+|el\s+|los\s+|las\s+)?"
+    r"(?:escrito|frase|texto|letras?)|"
+    r"(?:el\s+escrito|la\s+frase|el\s+texto|las?\s+letras?)\s+"
+    r"(?:est[aá]|qued[oó]|sali[oó])\s+mal|"
+    r"(?:qued[oó]\s+mal).{0,80}(?:escrito|frase|texto|letras)|"
+    r"(?:escrito|frase|texto|letras).{0,40}qued[oó]\s+mal|"
+    r"quiero\s+que\s+ah[ií]\s+(?:vaya|diga|ponga)|"
+    r"la\s+corrijas\s+(?:la\s+|el\s+)?"
+    r"(?:escrito|frase|texto)"
+    r")\b"
+)
+_NO_SCENE_CAPTIONS = (
+    "Never paint scene-instruction words as on-image captions "
+    "(tierra, suelo, frente, puerta, castillo, fondo, azul oscuro, digital). "
+    "Those describe the picture; they are not titles."
 )
 _UNQUOTED_COPY_STOP = re.compile(
     r"(?is)\s+(?:en\s+(?:relieve|azul|cian|blanco|negrita)|texto\s+(?:azul|cian|blanco)|"
@@ -553,11 +586,53 @@ _UNQUOTED_COPY_STOP = re.compile(
 )
 
 
+def extract_locked_slogan(text: str) -> str | None:
+    """Frase CED conocida, incluso sin comillas ni «que diga»."""
+    match = _SLOGAN_TIME_PASSES.search(text or "")
+    if not match:
+        return None
+    phrase = re.sub(r"\s+", " ", match.group(1)).strip()
+    low = phrase.casefold()
+    if "inevitablemente el tiempo va a pasar" in low and "dediques" not in low:
+        return "Inevitablemente el tiempo va a pasar no te dediques a perder"
+    return normalize_spanish(phrase)
+
+
+def is_scene_instruction_caption(text: str) -> bool:
+    """True si el texto es instrucción de escena (tierra, puerta), no copy."""
+    t = re.sub(r"\s+", " ", (text or "").strip()).strip(" .,;:")
+    if not t:
+        return True
+    if _SCENE_CAPTION_ONLY.match(t):
+        return True
+    parts = t.casefold().split()
+    return bool(
+        len(parts) == 2
+        and parts[0] == parts[1]
+        and _SCENE_CAPTION_ONLY.match(parts[0])
+    )
+
+
+def user_requests_overlay_correction(text: str) -> bool:
+    """Pide corregir el escrito de la pieza actual, no inventar otra escena."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    from app.services.chat_intents import is_text_work_request
+
+    if is_text_work_request(t):
+        return False
+    return bool(_OVERLAY_CORRECTION.search(t))
+
+
 def extract_literal_on_image_copy(text: str, *, max_phrases: int = 5) -> list[str]:
-    """Copy literal: comillas, o la frase tras «que diga» / «el texto»."""
+    """Copy literal: comillas, slogan conocido, o la frase tras «que diga» / «ponga»."""
     quoted = extract_quoted_phrases(text, max_phrases=max_phrases)
     if quoted:
-        return quoted
+        return [q for q in quoted if not is_scene_instruction_caption(q)][:max_phrases]
+    slogan = extract_locked_slogan(text)
+    if slogan:
+        return [slogan]
     t = (text or "").strip()
     if not t:
         return []
@@ -569,7 +644,7 @@ def extract_literal_on_image_copy(text: str, *, max_phrases: int = 5) -> list[st
     if stop:
         rest = rest[: stop.start()]
     rest = re.sub(r"\s+", " ", rest).strip(" .,;:")
-    if 8 <= len(rest) <= 200:
+    if 8 <= len(rest) <= 200 and not is_scene_instruction_caption(rest):
         return [normalize_spanish(rest)]
     return []
 
@@ -1022,7 +1097,16 @@ def collect_image_overlay_lines(prompt: str, context: str = "") -> list[str]:
     for label in spoken:
         if label not in lines:
             lines.append(label)
-    cleaned = [ln for ln in lines if ln and not _looks_like_prompt_instruction(ln)]
+    cleaned = [
+        ln
+        for ln in lines
+        if ln
+        and not _looks_like_prompt_instruction(ln)
+        and not is_scene_instruction_caption(ln)
+    ]
+    slogan = extract_locked_slogan(prompt)
+    if slogan and slogan not in cleaned:
+        cleaned.insert(0, slogan)
     if cleaned:
         return summarize_overlay_labels_for_image(cleaned, max_labels=5)
     # Sin líneas de contenido reales: no inventar tipografía a partir del pedido.
@@ -1051,7 +1135,8 @@ def summarize_overlay_labels_for_image(
             _ = right
         label = re.sub(r"\s+", " ", label).strip(" .;,")
         locked_tagline = label.casefold() == _CED_ASSISTANT_TAGLINE.casefold()
-        cap = 80 if locked_tagline else max_chars
+        locked_slogan = bool(extract_locked_slogan(label))
+        cap = 120 if locked_tagline or locked_slogan else max_chars
         if len(label) > cap:
             label = label[: cap - 1].rsplit(" ", 1)[0].strip()
         if len(label) < 3 or _looks_like_prompt_instruction(label):
@@ -1377,7 +1462,9 @@ def user_asks_for_on_image_copy(text: str) -> bool:
     t = (text or "").strip()
     if not t:
         return False
-    if extract_quoted_phrases(t):
+    if extract_quoted_phrases(t) or extract_locked_slogan(t):
+        return True
+    if user_requests_overlay_correction(t):
         return True
     if _IDEOGRAM_EXPLICIT_TEXT_REQUEST.search(t):
         return True
@@ -1526,6 +1613,7 @@ def format_verbatim_image_copy(lines: list[str], *, headline: str | None = None)
         "respetar comas, puntos y tildes tal cual van entre comillas):\n"
         + "\n".join(f"- {q}" for q in quoted)
         + "\nKeep every word fully inside the frame, centered, never cropped. "
+        f"{_NO_SCENE_CAPTIONS} "
         "Si no puedes renderizar texto perfecto, usa MENOS texto pero sin errores ortográficos."
     )
 

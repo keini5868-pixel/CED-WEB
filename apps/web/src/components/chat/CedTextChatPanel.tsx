@@ -62,8 +62,9 @@ export type LiveVoiceTurn = {
 /** Imagen generada por voz — se pinta en el hilo, no solo en el recuadro del dock. */
 export type LiveVoiceImage = {
   streamKey: string;
-  url: string;
+  url?: string;
   prompt?: string;
+  status?: "generating" | "ready";
 };
 
 type CedTextChatPanelProps = {
@@ -1348,17 +1349,20 @@ export function CedTextChatPanel({
       partial: Boolean(item.partial),
     }));
   const imageDisplay: ChatMessage[] = liveVoiceImages
-    .filter((img) => Boolean(img.url?.trim()))
+    .filter((img) => Boolean(img.url?.trim()) || img.status === "generating")
     .map((img) => ({
       id: `${VOICE_LIVE_PREFIX}${img.streamKey}`,
       role: "model",
-      content: "",
+      content: img.status === "generating" ? "Generando imagen…" : "",
       created_at: new Date().toISOString(),
-      image: {
-        url: img.url,
-        prompt: img.prompt,
-        caption: img.prompt,
-      },
+      image:
+        img.status === "generating" || !img.url
+          ? null
+          : {
+              url: img.url,
+              prompt: img.prompt,
+              caption: img.prompt,
+            },
     }));
   const cleanedPinned = pinnedMessages.filter((m) => !looksLikeImageToolDump(m.content));
   const liveWithImages = [...liveDisplay, ...imageDisplay];
@@ -1471,7 +1475,12 @@ export function CedTextChatPanel({
                     </span>
                     <ChatCopyButton text={displayContent} />
                   </div>
-                  {displayContent ? (
+                  {displayContent === "Generando imagen…" ? (
+                    <div className="flex items-center gap-3 py-2">
+                      <span className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-300" />
+                      <p className="animate-pulse text-sm text-cyan-200">Generando imagen…</p>
+                    </div>
+                  ) : displayContent ? (
                     <p className={`whitespace-pre-wrap break-words ${msg.partial ? "opacity-90" : ""}`}>
                       {displayContent}
                       {msg.partial ? (

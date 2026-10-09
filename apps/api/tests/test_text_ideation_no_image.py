@@ -7,6 +7,7 @@ from app.services.chat_intents import (
     is_generate_image_intent,
     is_script_narrative_request,
     is_text_ideation_request,
+    is_text_work_request,
     wants_image_reference_edit,
 )
 from app.services.marketing_creative import (
@@ -116,6 +117,43 @@ def test_talking_about_an_attached_image_does_not_generate():
         assert is_generate_image_intent(msg) is False, msg
         assert should_take_direct_image_path(msg, []) is False, msg
         assert is_image_creation_request(msg, []) is False, msg
+
+
+def test_help_correcting_a_script_never_generates_image():
+    """Guion/corrección de texto no puede disparar PNG, ni con hilo visual previo."""
+    history = [
+        {
+            "role": "user",
+            "content": "generame una imagen de un castillo digital con el logo CED",
+        },
+        {"role": "assistant", "content": "Listo, señor. Ya puede verla en pantalla."},
+    ]
+    msgs = [
+        "ayúdame con un guion a corregir algo",
+        "ayudame con un gion a corregir algo",
+        "ayúdame a corregir un guion",
+        "corrige este guion por favor",
+        "quiero que me ayudes con el guión, hay que corregir una parte",
+    ]
+    for msg in msgs:
+        assert is_text_work_request(msg) is True, msg
+        assert is_generate_image_intent(msg) is False, msg
+        assert wants_image_reference_edit(msg) is False, msg
+        assert should_take_direct_image_path(msg, history) is False, msg
+        assert is_image_creation_request(msg, history) is False, msg
+
+    from app.services.chat_image_generation import salvage_image_turn
+
+    reply, attachment = salvage_image_turn(
+        "user-script",
+        "conv-script",
+        "ayúdame con un guion a corregir algo",
+        history,
+        "Listo, señor. Aquí está tu imagen.",
+        None,
+    )
+    assert attachment is None
+    assert "generate_image" not in (reply or "")
 
 
 def test_guion_continuation_does_not_generate_image():

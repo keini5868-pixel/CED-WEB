@@ -55,8 +55,8 @@ def test_voice_generate_image_uses_shared_pipeline_and_pushes_event():
     assert result["ok"] is True
     assert result["url"] == "https://cdn.example.com/cafe.png"
     assert "listo" in result["spoken"].lower() or "pantalla" in result["spoken"].lower()
-    assert pushed and pushed[0]["type"] == "generated_image"
-    assert pushed[0]["image_url"] == "https://cdn.example.com/cafe.png"
+    assert [ev["type"] for ev in pushed] == ["generating_image", "generated_image"]
+    assert pushed[1]["image_url"] == "https://cdn.example.com/cafe.png"
 
 
 def test_voice_generate_image_asks_overlay_without_skip_flag():
@@ -238,7 +238,10 @@ def test_voice_generate_image_no_event_on_failure():
 
     assert result["ok"] is False
     assert "imagen" in result["spoken"].lower()
-    assert not pushed
+    types = [row[1]["type"] for row in pushed if len(row) > 1 and isinstance(row[1], dict)]
+    assert "generated_image" not in types
+    assert "generating_image" in types
+    assert "image_generation_failed" in types
 
 
 def test_voice_generate_image_honors_retell_scene_prompt_without_generate_verb():
@@ -371,7 +374,10 @@ def test_voice_generate_image_needs_recharge_pushes_client_action_and_event():
     assert result["error"] == "needs_recharge"
     assert pushed_actions and pushed_actions[0]["action"] == "recharge_needed"
     assert pushed_actions[0]["payload"]["resource"] == "image"
-    assert pushed_events and pushed_events[0]["type"] == "recharge_needed"
+    types = [ev["type"] for ev in pushed_events]
+    assert "generating_image" in types
+    assert "recharge_needed" in types
+    assert types[-1] == "recharge_needed"
 
 
 def test_voice_generar_pdf_without_plan_and_without_balance_needs_recharge():
