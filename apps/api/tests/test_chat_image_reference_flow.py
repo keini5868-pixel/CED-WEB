@@ -667,6 +667,23 @@ def test_from_scratch_composes_activize_blue_and_pm_logo():
     assert "logo de pm" in merged.lower()
 
 
+def test_ced_corner_badge_prompt_does_not_paint_user_request():
+    from app.services.copy_quality import build_reference_logo_on_scene_prompt
+
+    msg = (
+        "quiero que esa misma imagen tenga el logo arriba en un cuadrito "
+        "en la esquina derecha azul cian y en ese azul cian le pongas CED"
+    )
+    prompt = build_reference_logo_on_scene_prompt(msg)
+    low = prompt.lower()
+    assert "user request" not in low
+    assert "white background" in low or "white canvas" in low
+    assert "top-right" in low or "corner" in low
+    assert "cyan" in low
+    assert "circular ced logo in the center" not in low
+    assert "CED" in prompt
+
+
 def test_safe_caption_never_leaks_edit_prompt():
     from app.services.copy_quality import safe_image_display_caption
 

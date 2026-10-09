@@ -298,7 +298,9 @@ def _store_result(
         return None, {"ok": False, "error": "No se pudo almacenar la imagen generada", "code": "storage_error"}
 
     cost = GEMINI_HD_COST_USD if quality == "hd" else GEMINI_STD_COST_USD
-    log_prompt = f"[ref:{style_mode}] {prompt[:500]}"
+    from app.services.copy_quality import safe_image_display_caption
+
+    log_prompt = safe_image_display_caption(prompt, edited=True)
     try:
         supabase_db.insert_generated_image(
             user_id=user_id,

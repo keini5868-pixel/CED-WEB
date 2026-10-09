@@ -756,9 +756,11 @@ def _finalize_generated_image(
     )
     db_quality = "text" if literal_engine else picked
     try:
+        from app.services.copy_quality import safe_image_display_caption
+
         supabase_db.insert_generated_image(
             user_id=user_id,
-            prompt=topic,
+            prompt=safe_image_display_caption(display_label or topic),
             quality=db_quality,
             model=model,
             public_url=public_url,

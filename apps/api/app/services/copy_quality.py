@@ -73,7 +73,8 @@ _PM_LOGO_HINT = re.compile(
 )
 _MODEL_PROMPT_LEAK = re.compile(
     r"(?is)(?:^|\b)(?:EDIT the attached|Keep the EXACT same subject|"
-    r"SUBJECT LOCK:|User request:|photorealistic scene|"
+    r"SUBJECT LOCK:|User request:|Apply this change:|"
+    r"\[ref:|photorealistic scene|"
     r"same castle/building|Ajuste sobre la)"
 )
 
@@ -256,11 +257,18 @@ _CED_NO_EXPAND = (
     "evangelical name, company, or acronym. Do not write any expansion of CED."
 )
 _CED_LOGO_ON_SCENE = (
-    "EDIT the attached image. Keep the EXACT same scene "
+    "Keep the attached image's scene "
     "(same castle, wolf, mountains, lighting and composition). "
     "ADD a circular CED logo in the center. Letters only: C then E then D. "
     "Do NOT replace the photo with a blank circle or a white background. "
     "Do NOT invent other words."
+)
+_CED_CORNER_BADGE = re.compile(
+    r"(?is)\b(?:esquina|arriba|cuadrit|rect[aá]ngul|cajita|caja\s+azul)\b"
+)
+_DO_NOT_PAINT_PROMPT_WORDS = (
+    "Never draw instruction English on the image: no headings, no 'change to apply', "
+    "no 'edit the attached', no system labels. Only the scene and the Spanish copy."
 )
 # Solo correcciones de tipografía (I4 / Prosaeccion). NO «prospección» ni
 # «asistente de IA» sueltos: esos aparecen en listados de capacidades CED.
@@ -1367,29 +1375,44 @@ def user_asks_for_on_image_copy(text: str) -> bool:
     return False
 
 
-def build_reference_logo_on_scene_prompt(user_text: str) -> str:
-    """Edita la foto adjunta: mismo escenario + logo CED circular. Sin expandir CED."""
+def _change_to_apply(user_text: str) -> str:
     request = strip_image_generation_instruction_safe(user_text)
+    return f"{_DO_NOT_PAINT_PROMPT_WORDS} Apply this change: {request}".strip()
+
+
+def build_reference_logo_on_scene_prompt(user_text: str) -> str:
+    """Edita la foto adjunta: mismo escenario + logo CED. Sin expandir CED."""
+    request = _change_to_apply(user_text)
+    if _CED_CORNER_BADGE.search(user_text or "") or re.search(
+        r"(?i)\b(?:cian|cyan)\b", user_text or ""
+    ):
+        return (
+            "Keep the attached poster exactly: same subject, same dark background, "
+            "same Spanish phrase already on the image. "
+            "Add a small cyan rectangle in the requested corner (default top-right) "
+            "containing only the three letters CED. "
+            "Do not switch to a white background. Do not add English labels. "
+            f"{_CED_NO_EXPAND} {_CED_WORDMARK_LOCK} {request}"
+        ).strip()[:3800]
     return (
-        f"{_CED_LOGO_ON_SCENE} {_CED_NO_EXPAND} {_CED_WORDMARK_LOCK} "
-        f"User request: {request}"
+        f"{_CED_LOGO_ON_SCENE} {_CED_NO_EXPAND} {_CED_WORDMARK_LOCK} {request}"
     ).strip()[:3800]
 
 
 def build_reference_scene_edit_prompt(user_text: str) -> str:
     """Edita la foto adjunta: mismo sujeto, solo el cambio pedido. Sin copy inventado."""
-    request = strip_image_generation_instruction_safe(user_text)
     if user_requests_ced_wordmark(user_text):
         return build_reference_logo_on_scene_prompt(user_text)
     if user_requests_flat_rebuild(user_text):
         return build_flat_color_field_prompt(user_text)
     if user_requests_background_change(user_text):
         keep = (
-            "EDIT the attached image. Keep the EXACT same subject "
+            "Keep the EXACT same subject "
             "(same person, product, object, and composition). "
             "Only change the background as the user asked. "
             "Do NOT generate a different subject. "
-            "Do NOT add buttons, captions, slogans, or extra words."
+            "Do NOT add buttons, captions, slogans, or extra words. "
+            "Do NOT switch the poster to a white canvas."
         )
         if _PM_LOGO_HINT.search(user_text):
             keep += (
@@ -1398,19 +1421,20 @@ def build_reference_scene_edit_prompt(user_text: str) -> str:
             )
     else:
         keep = (
-            "EDIT the attached image. Keep the EXACT same subject, composition, "
+            "Keep the EXACT same subject, composition, "
             "on-image lettering, layout and colors. "
-            "Apply only the user's requested visual change "
+            "Apply only the requested visual change "
             "(for example thin lightning bolts from above onto the existing letters). "
             "Do NOT replace the poster with a new scene, robot, product, or slogan. "
-            "Do NOT change or invent on-image copy."
+            "Do NOT change or invent on-image copy. "
+            "Do NOT switch the poster to a white canvas."
         )
         if _PM_LOGO_HINT.search(user_text):
             keep += (
                 " Place a small recognizable PM-International logo in the requested "
                 "corner (default top-left). Do not invent a different brand."
             )
-    return f"{keep} User request: {request}".strip()[:3800]
+    return f"{keep} {_change_to_apply(user_text)}".strip()[:3800]
 
 
 def build_reference_text_edit_prompt(
@@ -1442,7 +1466,7 @@ def build_reference_text_edit_prompt(
         )
     parts = [
         keep,
-        f"User request: {strip_image_generation_instruction_safe(user_text)}",
+        _change_to_apply(user_text),
     ]
     if lines or user_asks_for_on_image_copy(user_text):
         parts.insert(
