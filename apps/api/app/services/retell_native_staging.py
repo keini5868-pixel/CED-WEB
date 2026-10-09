@@ -43,7 +43,7 @@ def _resolve_staging_voice_id(client: Any) -> str:
 
 def _llm_payload(*, api_public_url: str, with_tools: bool) -> dict[str, Any]:
     settings = get_settings()
-    model = (settings.retell_native_pilot_model or "gemini-3.0-flash").strip()
+    model = (settings.retell_native_pilot_model or "claude-5.5-haiku").strip()
     payload: dict[str, Any] = {
         "model": model,
         "model_temperature": 0,

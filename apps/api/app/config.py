@@ -142,7 +142,8 @@ class Settings(BaseSettings):
     # Piloto Retell LLM nativo (staging) — agente separado, no toca RETELL_AGENT_ID prod
     retell_native_staging_agent_id: str = ""
     retell_native_staging_llm_id: str = ""
-    retell_native_pilot_model: str = "gemini-3.0-flash"
+    # Cerebro del LLM nativo Retell (Jarvis Native Pilot). No es la voz/clon TTS.
+    retell_native_pilot_model: str = "claude-5.5-haiku"
     retell_voice_id: str = ""
     retell_webhook_secret: str = ""
     retell_auto_bootstrap: bool = False
