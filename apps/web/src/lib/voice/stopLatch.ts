@@ -47,7 +47,29 @@ const SHORT_STOP = new Set([
   "un esto",
 ]);
 
-const WAKE_LEAD = new Set(["ok", "okay", "okey", "oye", "hey", "ey"]);
+const WAKE_LEAD = new Set([
+  "ok",
+  "okay",
+  "okey",
+  "okei",
+  "okai",
+  "oye",
+  "hey",
+  "ey",
+]);
+const WAKE_NAME = new Set([
+  "ced",
+  "set",
+  "sec",
+  "sed",
+  "c",
+  "ce",
+  "seth",
+  "said",
+  "seid",
+  "sit",
+  "cet",
+]);
 const ADDRESS = new Set(["senor", "senora", "don", "dona"]);
 const GLUE = new Set([
   "si",
@@ -102,7 +124,7 @@ function editDistance(a: string, b: string): number {
 }
 
 function isName(token: string): boolean {
-  if (["ced", "set", "sec", "sed", "c", "ce"].includes(token)) return true;
+  if (WAKE_NAME.has(token)) return true;
   if (token.length < 2 || token.length > 5) return false;
   return ["ced", "set", "sec", "sed"].some((base) => editDistance(token, base) <= 1);
 }

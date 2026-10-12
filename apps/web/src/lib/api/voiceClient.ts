@@ -57,6 +57,7 @@ export type VoiceClientState = {
   camera_stream_present?: boolean;
   cue_mode?: boolean;
   cue_open?: boolean;
+  voice_held?: boolean;
   client_action?: VoiceClientAction | null;
   tool_events?: VoiceToolEvent[];
   live_transcript?: VoiceLiveTranscript | null;

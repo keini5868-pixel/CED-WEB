@@ -712,6 +712,9 @@ export function useCedVoiceSession(
         }
         const state = await fetchVoiceClientState(false, { transcript: true });
         setCueOpen(cueModeRef.current && Boolean(state.cue_open));
+        if (typeof state.voice_held === "boolean") {
+          retellClientRef.current?.syncPresentationHeld(state.voice_held);
+        }
         const events = [...(state.tool_events ?? [])].sort(
           (a, b) => Number(a.id || 0) - Number(b.id || 0),
         );

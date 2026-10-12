@@ -456,6 +456,7 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
             "camera_stream_present": bool(session.get("camera_stream_present")),
             "cue_mode": bool(session.get("cue_mode")),
             "cue_open": bool(session.get("cue_open")),
+            "voice_held": bool(session.get("voice_held")),
             "client_action": deepcopy(action) if action else None,
             "tool_events": deepcopy(session.get("tool_events") or []),
             "live_transcript": deepcopy(session.get("live_transcript")),

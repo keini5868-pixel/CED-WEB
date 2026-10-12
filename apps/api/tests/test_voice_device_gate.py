@@ -136,6 +136,20 @@ def test_camera_on_announcement_is_silenced_after_stopo():
     )
 
 
+def test_ok_ced_after_stop_releases_hold():
+    uid = "gate-wake"
+    vcs.note_heard_line(uid, "stop")
+    vcs.mark_stop_heard(uid)
+    vcs.set_voice_held(uid, True)
+    from app.services.voice_cue import decide_cue
+
+    action, text = decide_cue("ok ced", enabled=True, listening=False)
+    assert action == "greet"
+    vcs.set_voice_held(uid, False)
+    assert vcs.voice_is_held(uid) is False
+    assert text == ""
+
+
 def test_buenos_dias_after_stop_cannot_overwrite_the_stop():
     uid = "gate-buenos"
     vcs.note_heard_line(uid, "stop")

@@ -324,6 +324,7 @@ export class CedRetellClient {
   }
 
   private emitAgentTranscript(text: string, partial: boolean): void {
+    if (this.voiceHeld) return;
     const { text: sttCleaned, incomplete } = sanitizeAgentStt(text);
     const sanitized = sanitizeHudTranscript(sttCleaned);
     if (!sanitized) {
@@ -576,6 +577,17 @@ export class CedRetellClient {
   setMuted(muted: boolean): void {
     if (muted) this.client.mute();
     else this.client.unmute();
+  }
+
+  /** Stop de presentación (servidor o STT). No mezclar con GRABAR ni cámara. */
+  syncPresentationHeld(held: boolean): void {
+    if (held && !this.voiceHeld) {
+      this.holdVoice();
+      return;
+    }
+    if (!held && this.voiceHeld) {
+      this.releaseVoice();
+    }
   }
 
   /**
