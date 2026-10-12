@@ -166,3 +166,28 @@ def silence_camera_status_speech(text: str, user_id: str = "") -> bool:
     if voice_is_held(user_id) or is_stop_utterance(heard):
         return True
     return not is_camera_open_phrase(heard)
+
+
+_CAMERA_CHATTER = re.compile(
+    r"(?i)\b(?:"
+    r"analic(?:ar|e|a)?|qu[eé]\s+(?:desea|ves|quieres)|"
+    r"con\s+la\s+c[aá]mara|lo\s+visible|describe(?:\s+lo\s+que\s+ves)?"
+    r")\b",
+)
+
+
+def silence_camera_chatter_while_held(text: str, user_id: str = "") -> bool:
+    """Tras stop, no seguir hablando de analizar o preguntar por la cámara."""
+    t = (text or "").strip()
+    if not t or not _CAMERA_CHATTER.search(t):
+        return False
+    from app.services.voice_client_session import (
+        last_heard_line,
+        stop_heard_recently,
+        voice_is_held,
+    )
+
+    heard = last_heard_line(user_id) if user_id else current_turn_text()
+    if voice_is_held(user_id) or stop_heard_recently(user_id, window=15.0):
+        return True
+    return is_stop_utterance(heard)

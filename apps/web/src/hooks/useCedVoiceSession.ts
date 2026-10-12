@@ -334,6 +334,7 @@ export function useCedVoiceSession(
   const cameraFacingRef = useRef<"user" | "environment">("user");
   const cameraActivateInFlightRef = useRef<Promise<void> | null>(null);
   const lastHeardUserTextRef = useRef("");
+  const voicePresentationHeldRef = useRef(false);
   const cameraPermissionGrantedRef = useRef(false);
   const sessionMediaPreauthRef = useRef<Promise<void> | null>(null);
   const activateCameraFromVoiceRef = useRef<
@@ -713,6 +714,7 @@ export function useCedVoiceSession(
         const state = await fetchVoiceClientState(false, { transcript: true });
         setCueOpen(cueModeRef.current && Boolean(state.cue_open));
         if (typeof state.voice_held === "boolean") {
+          voicePresentationHeldRef.current = state.voice_held;
           retellClientRef.current?.syncPresentationHeld(state.voice_held);
         }
         const events = [...(state.tool_events ?? [])].sort(
@@ -2151,6 +2153,13 @@ export function useCedVoiceSession(
       };
 
       const runCameraAnalyze = (text: string) => {
+        if (
+          voicePresentationHeldRef.current ||
+          isStopUtterance(text) ||
+          isStopUtterance(lastHeardUserTextRef.current)
+        ) {
+          return;
+        }
         if (webFetchRef.current) return;
         webFetchRef.current = true;
         setOrbState("processing");
@@ -2221,6 +2230,13 @@ export function useCedVoiceSession(
       const handleClientVoiceIntents = (text: string) => {
         const t = text.trim();
         if (!t) return;
+        if (
+          voicePresentationHeldRef.current ||
+          isStopUtterance(t) ||
+          isStopUtterance(lastHeardUserTextRef.current)
+        ) {
+          return;
+        }
 
         const pending = pendingPublishRef.current;
 

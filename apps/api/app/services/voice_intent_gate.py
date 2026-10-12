@@ -218,12 +218,19 @@ def should_run_orchestrator(
     *,
     active_module: str | None = None,
     forced_module: str | None = None,
+    user_id: str = "",
 ) -> bool:
     """Decide si el turno debe pasar por orquestador + detector completo."""
-    from app.services.voice_cue import is_stop_utterance
+    from app.services.voice_cue import is_stop_utterance, utterance_ends_with_silence
 
-    if is_stop_utterance(user_text):
+    if is_stop_utterance(user_text) or utterance_ends_with_silence(user_text):
         return False
+    uid = (user_id or "").strip()
+    if uid:
+        from app.services import voice_client_session as vcs
+
+        if vcs.voice_is_held(uid) or vcs.stop_heard_recently(uid, window=15.0):
+            return False
     if active_module:
         return True
     if forced_module:

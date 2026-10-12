@@ -78,6 +78,15 @@ class CameraModule(BaseModule):
     ) -> ModuleResult:
         if idle := self._guard_passive():
             return idle
+        from app.services.voice_cue import is_stop_utterance, utterance_ends_with_silence
+
+        if (
+            vcs.voice_is_held(user_id)
+            or vcs.stop_heard_recently(user_id, window=15.0)
+            or is_stop_utterance(user_text)
+            or utterance_ends_with_silence(user_text)
+        ):
+            return ModuleResult(ok=True, spoken="", handles_response=True)
         if is_camera_deactivation_intent(user_text):
             return await self._deactivate_camera(user_id)
 

@@ -584,7 +584,12 @@ async def execute_voice_tool(
         from app.services.voice_device_gate import camera_open_allowed
         from app.services.voice_cue import is_stop_utterance
 
-        if is_stop_utterance(heard) or is_stop_utterance(vcs.last_heard_line(user_id)):
+        if (
+            vcs.voice_is_held(user_id)
+            or vcs.stop_heard_recently(user_id, window=15.0)
+            or is_stop_utterance(heard)
+            or is_stop_utterance(vcs.last_heard_line(user_id))
+        ):
             logger.info("[DEVICE] stop no toca la cámara user=%s tool=%s", user_id[:8], name)
             return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
         if name == "request_camera_activation" and not camera_open_allowed(user_id, heard):

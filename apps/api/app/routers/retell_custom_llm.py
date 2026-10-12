@@ -653,6 +653,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return False
         if vcs.voice_is_held(who):
             return True
+        if vcs.stop_heard_recently(who, window=15.0):
+            return True
         from app.services.voice_cue import is_stop_utterance
 
         return is_stop_utterance(vcs.last_heard_line(who))
@@ -680,9 +682,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 }
             )
             return True
-        from app.services.voice_device_gate import silence_camera_status_speech
+        from app.services.voice_device_gate import (
+            silence_camera_chatter_while_held,
+            silence_camera_status_speech,
+        )
 
-        if silence_camera_status_speech(content, user_id or ""):
+        if silence_camera_status_speech(content, user_id or "") or silence_camera_chatter_while_held(
+            content, user_id or ""
+        ):
             logger.info(
                 "[CAMERA] silenciada partial call=%s rid=%s",
                 call_id,
@@ -804,9 +811,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             safe = FALLBACK_REPLY
         content = safe or FALLBACK_REPLY
         content = finalize_voice_delivery_text(content)
-        from app.services.voice_device_gate import silence_camera_status_speech
+        from app.services.voice_device_gate import (
+            silence_camera_chatter_while_held,
+            silence_camera_status_speech,
+        )
 
-        if silence_camera_status_speech(content, user_id or ""):
+        if silence_camera_status_speech(content, user_id or "") or silence_camera_chatter_while_held(
+            content, user_id or ""
+        ):
             logger.info(
                 "[CAMERA] silenciada outbound call=%s rid=%s preview=%s",
                 call_id,
@@ -953,6 +965,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if session_who:
             vcs.set_voice_held(session_who, True)
             vcs.mark_stop_heard(session_who)
+            try:
+                orch = get_orchestrator(call_id)
+                if orch.active_module:
+                    await orch.deactivate_current(user_id=session_who)
+            except Exception:  # noqa: BLE001
+                logger.exception(
+                    "[CUE] stop deactivate module failed call=%s", call_id
+                )
         generation_seq += 1
         if debounce_task and not debounce_task.done():
             debounce_task.cancel()
@@ -1196,11 +1216,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 await cut_agent_for_stop(heard_now, who=uid)
                 await ack_empty_response(response_id=response_id, reason="voice_held")
                 return
-            if action != "answer":
-                await ack_empty_response(response_id=response_id, reason="voice_held")
-                return
-            vcs.set_voice_held(uid, False)
-            cue_override = cue_text or None
+            await ack_empty_response(response_id=response_id, reason="voice_held")
+            return
         if uid and vcs.cue_enabled(uid):
             from app.services.voice_cue import CUE_GREETING, decide_cue
 
@@ -1620,6 +1637,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     "[RETELL-TURN] rid=%s superseded=answered gpt_calls=0 call=%s",
                     scheduled_rid,
                     call_id,
+                )
+                return
+
+            if uid and (
+                vcs.voice_is_held(uid)
+                or vcs.stop_heard_recently(uid, window=15.0)
+            ):
+                await ack_empty_response(
+                    response_id=scheduled_rid,
+                    reason="stop_latched_debounce",
                 )
                 return
 
@@ -2131,6 +2158,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 user_text,
                 active_module=orch.active_module,
                 forced_module=forced_module,
+                user_id=uid or "",
             )
             if run_orchestrator and not forced_module and has_explicit_module_signal(user_text):
                 forced_module = detect_voice_module_intent(
@@ -2186,7 +2214,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             delivered,
                         )
                     else:
-                        await anti_silence_if_unanswered(reason="orch_empty_spoken")
+                        if _must_stay_silent():
+                            await ack_empty_response(
+                                response_id=scheduled_rid,
+                                reason="orch_empty_stop",
+                            )
+                        else:
+                            await anti_silence_if_unanswered(reason="orch_empty_spoken")
                     return
                 if mod_hint == "youtube" and has_explicit_module_signal(user_text):
                     # Señal YouTube explícita (dijo "YouTube") pero ni play/control/
@@ -2314,10 +2348,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         piece = (event.content or "").strip()
                         if piece:
                             from app.services.voice_device_gate import (
+                                silence_camera_chatter_while_held,
                                 silence_camera_status_speech,
                             )
 
                             if silence_camera_status_speech(
+                                streamed_text + piece, uid or ""
+                            ) or silence_camera_chatter_while_held(
                                 streamed_text + piece, uid or ""
                             ):
                                 await cut_agent_for_stop(

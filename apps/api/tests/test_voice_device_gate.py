@@ -160,6 +160,37 @@ def test_buenos_dias_after_stop_cannot_overwrite_the_stop():
     assert vcs.voice_is_held(uid) is True
 
 
+def test_camera_chatter_silenced_after_stop():
+    from app.services.voice_device_gate import silence_camera_chatter_while_held
+
+    uid = "gate-chatter"
+    vcs.set_voice_held(uid, True)
+    assert (
+        silence_camera_chatter_while_held(
+            "Señor, ¿qué desea que analice con la cámara?", uid
+        )
+        is True
+    )
+    vcs.set_voice_held(uid, False)
+
+
+def test_should_run_orchestrator_false_while_held():
+    from app.services.voice_intent_gate import should_run_orchestrator
+
+    uid = "gate-orch-held"
+    vcs.set_voice_held(uid, True)
+    assert (
+        should_run_orchestrator(
+            "hola",
+            active_module="camera",
+            forced_module=None,
+            user_id=uid,
+        )
+        is False
+    )
+    vcs.set_voice_held(uid, False)
+
+
 def test_stopo_drops_queued_camera_and_stays_silent():
     uid = "gate-stopo"
     vcs.note_heard_line(uid, "CED enciende la cámara")
