@@ -20,7 +20,16 @@ def test_stop_does_not_receive_the_camera_tool():
     assert "request_camera_activation" in device_tools_for_turn("activa la cámara")
     assert "activar_modo_conducir" in device_tools_for_turn("abre el mapa")
     assert "request_camera_activation" not in device_tools_for_turn("abre el mapa")
-    for phrase in ("stop", "etop", "e top", "okay set stop", "ok ced stop"):
+    for phrase in (
+        "stop",
+        "etop",
+        "estop",
+        "esto",
+        "es todo",
+        "e top",
+        "okay set stop",
+        "ok ced stop",
+    ):
         assert camera_open_allowed("gate-a", phrase) is False
         assert map_open_allowed("gate-a", phrase) is False
 

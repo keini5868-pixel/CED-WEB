@@ -106,6 +106,7 @@ import {
   isCameraAnalyzeIntent,
 } from "@/lib/voice/cameraAnalyzeIntent";
 import { parseCameraIntent } from "@/lib/voice/cameraIntents";
+import { isStopUtterance } from "@/lib/voice/stopLatch";
 import {
   parseFacebookPublishMessage,
   parseDirectPublishContent,
@@ -332,6 +333,7 @@ export function useCedVoiceSession(
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const cameraFacingRef = useRef<"user" | "environment">("user");
   const cameraActivateInFlightRef = useRef<Promise<void> | null>(null);
+  const lastHeardUserTextRef = useRef("");
   const cameraPermissionGrantedRef = useRef(false);
   const sessionMediaPreauthRef = useRef<Promise<void> | null>(null);
   const activateCameraFromVoiceRef = useRef<
@@ -439,6 +441,7 @@ export function useCedVoiceSession(
     ) => {
       const trimmed = text.trim();
       if (!trimmed) return;
+      if (role === "user") lastHeardUserTextRef.current = trimmed;
       if (role === "model" && options?.partial) return;
       if (role === "model") {
         if (trimmed === lastPersistedAgentLineRef.current) return;
@@ -561,6 +564,10 @@ export function useCedVoiceSession(
       payload: Record<string, unknown>;
     }) => {
       if (action.action === "camera_activate") {
+        if (isStopUtterance(lastHeardUserTextRef.current)) {
+          await ackVoiceClientAction(action.id);
+          return;
+        }
         console.log("[CAMERA] poll activate action_id=%s", action.id);
         await activateCameraFromVoiceRef.current({
           ackActionId: action.id,
@@ -733,7 +740,9 @@ export function useCedVoiceSession(
             setHistoryOpen(true);
           }
           if (ev.type === "camera_activate") {
-            activateCameraFromVoiceRef.current({ showFeedback: false });
+            if (!isStopUtterance(lastHeardUserTextRef.current)) {
+              activateCameraFromVoiceRef.current({ showFeedback: false });
+            }
           }
           if (ev.type === "recharge_needed") {
             const resource = String(ev.resource || "");
@@ -1226,6 +1235,12 @@ export function useCedVoiceSession(
 
   const activateCameraFromVoice = useCallback(
     (opts?: { ackActionId?: number; showFeedback?: boolean }) => {
+      if (isStopUtterance(lastHeardUserTextRef.current)) {
+        if (opts?.ackActionId) {
+          return ackVoiceClientAction(opts.ackActionId);
+        }
+        return Promise.resolve();
+      }
       const finish = (promise: Promise<void>) => {
         if (cameraActivateInFlightRef.current === promise) {
           cameraActivateInFlightRef.current = null;
@@ -1540,6 +1555,7 @@ export function useCedVoiceSession(
               options,
             );
             if (role === "user") {
+              lastHeardUserTextRef.current = text;
               setHeardIndicator({
                 status: "heard",
                 userText: text,
@@ -1550,10 +1566,6 @@ export function useCedVoiceSession(
               }
               if (cameraStreamRef.current?.active) {
                 void postVoiceCameraStatus(true, true).catch(() => undefined);
-              }
-              const camIntent = parseCameraIntent(text);
-              if (camIntent === "activate") {
-                void toggleCameraRef.current(true);
               }
             } else {
               modelRepliedTurnRef.current = true;

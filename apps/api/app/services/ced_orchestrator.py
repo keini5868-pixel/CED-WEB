@@ -614,9 +614,9 @@ class CedOrchestrator:
         user_id: str,
     ) -> OrchestratorResult:
         self._ensure_passive_agents()
-        from app.services.voice_cue import utterance_ends_with_silence
+        from app.services.voice_cue import is_stop_utterance
 
-        if utterance_ends_with_silence(user_text):
+        if is_stop_utterance(user_text):
             return OrchestratorResult.conversation_only()
         if (
             self.active_module

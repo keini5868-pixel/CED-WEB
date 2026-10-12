@@ -577,6 +577,10 @@ def is_camera_activation_intent(text: str) -> bool:
     raw = (text or "").strip()
     if not raw:
         return False
+    from app.services.voice_cue import is_stop_utterance
+
+    if is_stop_utterance(raw):
+        return False
     if is_camera_deactivation_intent(raw):
         return False
     t = normalize_text(raw)

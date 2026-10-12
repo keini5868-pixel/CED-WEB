@@ -190,7 +190,7 @@ FINANCE_CONFIRM_DESCRIPTION = (
 FINANCE_CANCEL_DESCRIPTION = "Descarta el borrador financiero sin guardar."
 
 ACTIVATE_CAMERA_DESCRIPTION = (
-    "Enciende la cámara una vez. Solo confirma activación — no describe lo visible."
+    "Enciende la cámara una vez. Nunca con stop. No describes lo visible."
 )
 DEACTIVATE_CAMERA_DESCRIPTION = "Apaga la cámara."
 ANALYZE_CAMERA_FRAME_DESCRIPTION = (
@@ -849,14 +849,17 @@ def build_finance_cancel_write_tool(*, api_public_url: str) -> dict[str, Any]:
 
 
 def build_activate_camera_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
+    # Sin filler: Retell lo dice ANTES del webhook. Stop no debe oír «activando la cámara».
+    tool = _build_custom_tool(
         api_public_url=api_public_url,
         name="activate_camera",
         description=ACTIVATE_CAMERA_DESCRIPTION,
         parameters=ACTIVATE_CAMERA_PARAMETERS,
-        filler="Activando la cámara, señor.",
+        filler="",
         timeout_ms=12_000,
     )
+    tool["speak_during_execution"] = False
+    return tool
 
 
 def build_deactivate_camera_tool(*, api_public_url: str) -> dict[str, Any]:

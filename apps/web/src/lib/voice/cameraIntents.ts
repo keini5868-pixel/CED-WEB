@@ -1,5 +1,7 @@
 /** Detección de intents de cámara en transcripciones (español). */
 
+import { isStopUtterance } from "@/lib/voice/stopLatch";
+
 export type CameraIntent = "activate" | "deactivate" | null;
 
 const ACTIVATE_PATTERNS = [
@@ -24,7 +26,7 @@ const DEACTIVATE_PATTERNS = [
 
 export function parseCameraIntent(transcript: string): CameraIntent {
   const text = transcript.trim();
-  if (!text) return null;
+  if (!text || isStopUtterance(text)) return null;
   for (const pattern of DEACTIVATE_PATTERNS) {
     if (pattern.test(text)) return "deactivate";
   }

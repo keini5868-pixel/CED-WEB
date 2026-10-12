@@ -14,3 +14,8 @@ def test_activa_la_camara():
 def test_not_activation_when_analyze():
     assert not is_camera_activation_intent("¿qué ves en la cámara?")
     assert not is_camera_activation_intent("apaga la cámara")
+
+
+def test_stop_is_not_camera():
+    for phrase in ("stop", "estop", "etop", "esto", "es todo", "alto", "cállate"):
+        assert not is_camera_activation_intent(phrase)

@@ -93,7 +93,8 @@ def test_camera_tools_have_fillers_and_timeouts():
     )
 
     activate = build_activate_camera_tool(api_public_url="https://api.example.com")
-    assert "Activando la cámara" in activate["execution_message_description"]
+    assert activate["execution_message_description"] == ""
+    assert activate["speak_during_execution"] is False
     assert activate["timeout_ms"] == 12_000
 
     analyze = build_analyze_camera_frame_tool(api_public_url="https://api.example.com")

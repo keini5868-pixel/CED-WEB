@@ -220,9 +220,9 @@ def should_run_orchestrator(
     forced_module: str | None = None,
 ) -> bool:
     """Decide si el turno debe pasar por orquestador + detector completo."""
-    from app.services.voice_cue import utterance_ends_with_silence
+    from app.services.voice_cue import is_stop_utterance
 
-    if utterance_ends_with_silence(user_text):
+    if is_stop_utterance(user_text):
         return False
     if active_module:
         return True

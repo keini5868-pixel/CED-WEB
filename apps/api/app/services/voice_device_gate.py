@@ -104,19 +104,25 @@ def _blocked_by_stop(user_id: str) -> bool:
 
 
 def camera_open_allowed(user_id: str, heard: str = "") -> bool:
-    if _blocked_by_stop(user_id):
+    from app.services.voice_client_session import voice_is_held
+
+    if voice_is_held(user_id) or _blocked_by_stop(user_id) or is_stop_utterance(heard):
         return False
-    text = (heard or current_turn_text()).strip()
-    if not text:
+    latest = last_heard_line(user_id).strip()
+    text = (latest or heard or current_turn_text()).strip()
+    if not text or is_stop_utterance(text):
         return False
     return is_camera_open_phrase(text) or is_camera_vision_phrase(text)
 
 
 def map_open_allowed(user_id: str, heard: str = "") -> bool:
-    if _blocked_by_stop(user_id):
+    from app.services.voice_client_session import voice_is_held
+
+    if voice_is_held(user_id) or _blocked_by_stop(user_id) or is_stop_utterance(heard):
         return False
-    text = (heard or current_turn_text()).strip()
-    if not text:
+    latest = last_heard_line(user_id).strip()
+    text = (latest or heard or current_turn_text()).strip()
+    if not text or is_stop_utterance(text):
         return False
     return is_map_open_phrase(text)
 

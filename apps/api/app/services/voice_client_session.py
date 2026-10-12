@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from copy import deepcopy
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _sessions: dict[str, dict[str, Any]] = {}
@@ -165,6 +168,7 @@ def set_voice_held(user_id: str, held: bool) -> None:
         session["voice_held"] = bool(held)
         if held:
             session["cue_open"] = False
+            session["last_heard_line"] = "stop"
         session["updated_at"] = _now()
 
 
@@ -388,6 +392,12 @@ def consume_tool_events(user_id: str, *, since_id: int = 0) -> list[dict[str, An
 
 
 def push_client_action(user_id: str, action: str, payload: dict[str, Any] | None = None) -> int:
+    if action == "camera_activate":
+        from app.services.voice_device_gate import camera_open_allowed
+
+        if not camera_open_allowed(user_id):
+            logger.info("[CAMERA] no abrir: stop u otra frase user=%s", user_id[:8])
+            return 0
     session = _get(user_id)
     action_id = _next_event_id()
     with _lock:

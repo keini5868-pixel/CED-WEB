@@ -587,9 +587,11 @@ def promised_voice_search_without_result(text: str, *, user_text: str = "") -> b
 
 
 def resolve_camera_voice_request(user_text: str) -> str | None:
-    """Tool de cámara a ejecutar, o None."""
+    """Tool de cámara a ejecutar, o None. Stop no es cámara."""
     last = (user_text or "").strip()
-    if not last or not is_camera_voice_command(last):
+    from app.services.voice_cue import is_stop_utterance
+
+    if not last or is_stop_utterance(last) or not is_camera_voice_command(last):
         return None
     norm = _normalize(last)
     if re.search(r"\b(apaga|desactiva|cierra|deja de mirar)\b", norm):
