@@ -29,13 +29,17 @@ export function isRetellVoice(route?: VoiceRouteInput | null): boolean {
   return resolveVoiceProvider(route) === "retell";
 }
 
-/** Piloto Retell LLM nativo — activar con ?voicePilot=native o NEXT_PUBLIC_RETELL_NATIVE_PILOT=true */
+/**
+ * Retell LLM nativo (tools HTTP) — solo pruebas con ?voicePilot=native.
+ * Producción usa Custom LLM: stop / ok CED / hold van por WebSocket.
+ */
 export function isRetellNativePilot(): boolean {
-  if (typeof window !== "undefined") {
-    const params = new URLSearchParams(window.location.search);
-    const pilot = params.get("voicePilot")?.trim().toLowerCase();
-    if (pilot === "native") return true;
-    if (pilot === "prod" || pilot === "production") return false;
+  if (typeof window === "undefined") {
+    return false;
   }
-  return process.env.NEXT_PUBLIC_RETELL_NATIVE_PILOT === "true";
+  const pilot = new URLSearchParams(window.location.search)
+    .get("voicePilot")
+    ?.trim()
+    .toLowerCase();
+  return pilot === "native";
 }

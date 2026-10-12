@@ -158,6 +158,25 @@ function isStopCommand(tokens: string[]): boolean {
   );
 }
 
+const LOOSE_STOP = /\b(s+t+o+p+[a-z]*|estop[a-z]*|stopo|stoppo|alto|callate|cayate|para|parar)\b/;
+
+/** STT ruidoso: «shops», «esto» corto, etc. — solo para latch local de mute. */
+export function mayBeStopHint(text: string): boolean {
+  const t = norm(text);
+  if (!t || t.length > 24) return false;
+  if (isStopUtterance(text)) return true;
+  if (LOOSE_STOP.test(t)) return true;
+  const tokens = t.split(" ").filter(Boolean);
+  if (tokens.length <= 3) {
+    return tokens.some(
+      (token) =>
+        isStopWord(token) ||
+        (token.length >= 3 && token.length <= 7 && editDistance(token, "stop") <= 1),
+    );
+  }
+  return false;
+}
+
 export function isStopUtterance(text: string): boolean {
   let tokens = norm(text).split(" ").filter(Boolean);
   while (tokens.length && ADDRESS.has(tokens[tokens.length - 1] ?? "")) {

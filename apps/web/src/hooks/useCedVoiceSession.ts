@@ -111,7 +111,7 @@ import {
   isCameraOpenUtterance,
   parseCameraIntent,
 } from "@/lib/voice/cameraIntents";
-import { isStopUtterance, isWakeUtterance } from "@/lib/voice/stopLatch";
+import { isStopUtterance, isWakeUtterance, mayBeStopHint } from "@/lib/voice/stopLatch";
 import {
   parseFacebookPublishMessage,
   parseDirectPublishContent,
@@ -1589,7 +1589,7 @@ export function useCedVoiceSession(
             );
             if (role === "user") {
               lastHeardUserTextRef.current = text;
-              if (isStopUtterance(text)) {
+              if (isStopUtterance(text) || mayBeStopHint(text)) {
                 latchPresentationStop(text);
               } else if (
                 voicePresentationHeldRef.current &&

@@ -1,7 +1,7 @@
 import { RetellWebClient, type StartCallConfig } from "retell-client-js-sdk";
 
 import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
-import { isStopUtterance, isWakeUtterance } from "@/lib/voice/stopLatch";
+import { isStopUtterance, isWakeUtterance, mayBeStopHint } from "@/lib/voice/stopLatch";
 import {
   inferRetellTransport,
   mapRetellClientError,
@@ -206,7 +206,7 @@ export class CedRetellClient {
   private applyVoiceHold(userText: string): void {
     const text = userText.trim();
     if (!text) return;
-    if (isStopUtterance(text)) {
+    if (isStopUtterance(text) || mayBeStopHint(text)) {
       this.holdVoice();
       this.callbacks.onPresentationStop?.(text);
       return;
@@ -423,6 +423,16 @@ export class CedRetellClient {
       const lines = update.transcript;
       if (!Array.isArray(lines) || lines.length === 0) return;
 
+      for (const entry of lines) {
+        const roleRaw = String(entry.role || "").toLowerCase();
+        const isUser = roleRaw === "user" || roleRaw === "customer";
+        const content = String(entry.content || "").trim();
+        if (isUser && content && (isStopUtterance(content) || mayBeStopHint(content))) {
+          this.applyVoiceHold(content);
+          break;
+        }
+      }
+
       const turntaking = update.turntaking;
       if (turntaking === "agent_turn") {
         this.clearUserDebounce();
@@ -444,6 +454,9 @@ export class CedRetellClient {
       if (turntaking === "user_turn") {
         this.muteAgentPlayback();
         this.maybeBargeIn();
+        if (this.voiceHeld) {
+          this.muteAgentPlayback();
+        }
       }
       if (turntaking) {
         this.lastTurntaking = turntaking;
