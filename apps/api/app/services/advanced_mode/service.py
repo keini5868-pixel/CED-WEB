@@ -846,7 +846,12 @@ def iter_advanced_message_stream(
         try:
             for kind, payload in _iter_blocking_with_keepalives(_run_image_job):
                 if kind == "ping":
-                    yield _sse_event("status", {"text": status})
+                    from app.services.ced_sentinel import status_or_correction
+
+                    yield _sse_event(
+                        "status",
+                        {"text": status_or_correction(user_id, status)},
+                    )
                     yield _sse_flush()
                 else:
                     result = payload
@@ -881,7 +886,12 @@ def iter_advanced_message_stream(
         try:
             for kind, payload in _iter_blocking_with_keepalives(_run_tools_pipeline):
                 if kind == "ping":
-                    yield _sse_event("status", {"text": status})
+                    from app.services.ced_sentinel import status_or_correction
+
+                    yield _sse_event(
+                        "status",
+                        {"text": status_or_correction(user_id, status)},
+                    )
                     yield _sse_flush()
                 else:
                     result = payload

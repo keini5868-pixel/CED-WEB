@@ -29,8 +29,17 @@ export async function warmupRetellVoiceApi(): Promise<void> {
   }
 }
 
+export async function setRetellCueMode(enabled: boolean): Promise<void> {
+  await proxyFetch("retell/cue-mode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+}
+
 export async function registerRetellCall(
   conversationId?: string | null,
+  opts?: { cueMode?: boolean },
 ): Promise<RetellRegisterCallResponse> {
   let response: Response;
   try {
@@ -39,6 +48,7 @@ export async function registerRetellCall(
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         conversation_id: conversationId?.trim() || undefined,
+        cue_mode: Boolean(opts?.cueMode),
       }),
     });
   } catch {

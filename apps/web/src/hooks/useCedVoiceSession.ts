@@ -67,7 +67,7 @@ import {
   cedResolveHonorific,
 } from "@/lib/voice/live/ced-brief-messages";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
-import { registerRetellCall, registerRetellNativePilotCall, warmupRetellVoiceApi } from "@/lib/api/retell";
+import { registerRetellCall, registerRetellNativePilotCall, setRetellCueMode, warmupRetellVoiceApi } from "@/lib/api/retell";
 import { trackStartTrial } from "@/lib/ads/meta-pixel";
 import { CedRetellClient } from "@/lib/voice/retell/ced-retell-client";
 import { isRetellNativePilot, isRetellVoice } from "@/lib/voice/voiceProvider";
@@ -286,6 +286,19 @@ export function useCedVoiceSession(
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [statusLabel, setStatusLabel] = useState(ORB_STATE_LABELS.idle);
   const [micOn, setMicOn] = useState(false);
+  const [cueMode, setCueMode] = useState(false);
+  const [cueOpen, setCueOpen] = useState(false);
+  const cueModeRef = useRef(false);
+
+  useEffect(() => {
+    try {
+      const stored = sessionStorage.getItem("ced-cue-mode") === "1";
+      cueModeRef.current = stored;
+      setCueMode(stored);
+    } catch {
+      /* private mode */
+    }
+  }, []);
   const [retellPollActive, setRetellPollActive] = useState(false);
   const [voiceSessionActive, setVoiceSessionActive] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -685,6 +698,7 @@ export function useCedVoiceSession(
           void postVoiceCameraStatus(false, false).catch(() => undefined);
         }
         const state = await fetchVoiceClientState(false, { transcript: true });
+        setCueOpen(cueModeRef.current && Boolean(state.cue_open));
         const events = [...(state.tool_events ?? [])].sort(
           (a, b) => Number(a.id || 0) - Number(b.id || 0),
         );
@@ -1418,9 +1432,14 @@ export function useCedVoiceSession(
         setVoiceSessionActive(true);
         setRetellPollActive(true);
         setStatusLabel("Iniciando llamada…");
+        if (cueModeRef.current) {
+          await setRetellCueMode(true).catch(() => undefined);
+        }
         const registration = isRetellNativePilot()
           ? await registerRetellNativePilotCall(conversationRef.current)
-          : await registerRetellCall(conversationRef.current);
+          : await registerRetellCall(conversationRef.current, {
+              cueMode: cueModeRef.current,
+            });
         if (isStale()) return;
         if (!registration.ok) {
           const err = registration.error || "No pude iniciar la voz.";
@@ -1468,9 +1487,14 @@ export function useCedVoiceSession(
               );
               void (async () => {
                 try {
+                  if (cueModeRef.current) {
+                    await setRetellCueMode(true).catch(() => undefined);
+                  }
                   const registration = isRetellNativePilot()
-          ? await registerRetellNativePilotCall(conversationRef.current)
-          : await registerRetellCall(conversationRef.current);
+                    ? await registerRetellNativePilotCall(conversationRef.current)
+                    : await registerRetellCall(conversationRef.current, {
+                        cueMode: cueModeRef.current,
+                      });
                   if (isStale() || !registration.ok) {
                     setRetellPollActive(false);
                     await stopSession();
@@ -3307,6 +3331,19 @@ export function useCedVoiceSession(
     [micOn],
   );
 
+  const toggleCueMode = useCallback(() => {
+    const next = !cueModeRef.current;
+    cueModeRef.current = next;
+    setCueMode(next);
+    if (!next) setCueOpen(false);
+    try {
+      sessionStorage.setItem("ced-cue-mode", next ? "1" : "0");
+    } catch {
+      /* private mode */
+    }
+    void setRetellCueMode(next).catch(() => undefined);
+  }, []);
+
   const clearError = useCallback(() => {
     setErrorMessage(null);
     setOrbState((s) => (s === "error" ? "idle" : s));
@@ -3352,6 +3389,9 @@ export function useCedVoiceSession(
     statusLabel,
     audioLevel,
     micOn,
+    cueMode,
+    cueOpen,
+    toggleCueMode,
     cameraOn,
     cameraFacing,
     cameraPermissionGranted,

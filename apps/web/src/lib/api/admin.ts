@@ -308,4 +308,61 @@ export async function fetchAdminToolFunds(): Promise<AdminToolFundsResult> {
   return data;
 }
 
+export type SentinelLevel = "ok" | "watch" | "error";
+
+export type SentinelCheck = {
+  area: string;
+  level: SentinelLevel;
+  title: string;
+  detail: string;
+  latency_ms?: number | null;
+};
+
+export type SentinelEvent = {
+  id: string;
+  at: string | null;
+  kind: string;
+  area: string;
+  level: SentinelLevel;
+  title: string;
+  detail: string;
+  latency_ms?: number | null;
+};
+
+export type SentinelStatus = {
+  enabled: boolean;
+  running: boolean;
+  persistent: boolean;
+  enabled_at: string | null;
+  checked_at: string | null;
+  checks: SentinelCheck[];
+  events: SentinelEvent[];
+};
+
+export async function fetchAdminSentinel(): Promise<SentinelStatus> {
+  const res = await proxyFetch("admin/sentinel");
+  const data = await parseApiJson<SentinelStatus & { detail?: string }>(res);
+  if (!res.ok) {
+    throw new Error(
+      typeof data.detail === "string" ? data.detail : "No se pudo leer el centinela.",
+    );
+  }
+  return data;
+}
+
+export async function setAdminSentinelEnabled(enabled: boolean): Promise<SentinelStatus> {
+  const res = await proxyFetch("admin/sentinel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  const data = await parseApiJson<SentinelStatus & { detail?: string }>(res);
+  if (!res.ok) {
+    throw new Error(
+      typeof data.detail === "string" ? data.detail : "No se pudo cambiar la guardia.",
+    );
+  }
+  return data;
+}
+
 

@@ -81,6 +81,32 @@ export function CedListenButton({
   );
 }
 
+type CedCueButtonProps = {
+  active: boolean;
+  onActivate: () => void;
+};
+
+/** Modo grabación: CED espera «Ok CED» y se calla con «Ok CED, stop». */
+export function CedCueButton({ active, onActivate }: CedCueButtonProps) {
+  return (
+    <motion.button
+      type="button"
+      data-ced-hotspot="grabar"
+      onClick={onActivate}
+      whileTap={{ scale: 0.97 }}
+      aria-pressed={active}
+      aria-label={active ? "Salir del modo grabación" : "Modo grabación"}
+      className={`w-full rounded-lg border px-2 py-1.5 font-[family-name:var(--font-orbitron)] text-[9px] font-bold tracking-[0.14em] lg:text-[11px] ${
+        active
+          ? "border-amber-300 bg-amber-400/20 text-amber-100 shadow-[0_0_10px_rgba(252,211,77,0.35)]"
+          : "border-[var(--ced-cyan)]/70 bg-[var(--ced-control-bg)] text-[var(--ced-cyan)] hover:bg-[var(--ced-cyan)]/10"
+      }`}
+    >
+      {active ? "GRABAR ON" : "GRABAR"}
+    </motion.button>
+  );
+}
+
 /** Presentador holográfico — al lado del asistente. */
 export function CedPresenterButton({ active, onActivate }: CedPresenterButtonProps) {
   return (

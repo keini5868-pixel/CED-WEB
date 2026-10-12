@@ -242,3 +242,25 @@ def admin_module_usage_summary(
             status_code=503,
             detail="No se pudo leer module_usage.",
         ) from exc
+
+
+class SentinelToggleBody(BaseModel):
+    enabled: bool
+
+
+@router.get("/sentinel")
+def admin_sentinel_status(_admin_id: str = Depends(require_super_admin)) -> dict:
+    """Parte del centinela. Sigue llenándose con el teléfono apagado si está activo."""
+    from app.services.ced_sentinel import public_status
+
+    return public_status()
+
+
+@router.post("/sentinel")
+def admin_sentinel_toggle(
+    body: SentinelToggleBody,
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    from app.services.ced_sentinel import set_enabled
+
+    return set_enabled(body.enabled)

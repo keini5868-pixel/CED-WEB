@@ -218,6 +218,7 @@ def compose_pdf_body(
     draft_content: str = "",
     context_snippets: list[str] | None = None,
     detail_level: str = "brief",
+    user_id: str | None = None,
 ) -> str:
     """Redacta el cuerpo del PDF con Gemini cuando el modelo no pasó contenido sustantivo."""
     from app.config import get_settings
@@ -272,7 +273,16 @@ def compose_pdf_body(
     else:
         logger.warning("[PDF] compose skipped — no GOOGLE_API_KEY")
 
-    return _compose_pdf_body_cloud_fallback(prompt, detail_level=level)
+    if not user_id:
+        return _compose_pdf_body_cloud_fallback(prompt, detail_level=level)
+    from app.services.ced_sentinel import correcting
+
+    with correcting(
+        user_id,
+        area="pdf",
+        detail="La redacción directa no alcanzó; otro modelo retoma el documento.",
+    ):
+        return _compose_pdf_body_cloud_fallback(prompt, detail_level=level)
 
 
 def _persist_pdf_artifact(
@@ -473,6 +483,7 @@ def store_pdf(
             draft_content=draft_for_compose,
             context_snippets=context[:4],
             detail_level=level,
+            user_id=user_id,
         )
         if composed:
             resolved = composed

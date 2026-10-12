@@ -3880,7 +3880,12 @@ def _iter_blocking_send(
                 result = future.result(timeout=IMAGE_STREAM_KEEPALIVE_SEC)
                 break
             except _FutureTimeout:
-                if should_take_direct_image_path(text, None):
+                from app.services.ced_sentinel import status_or_correction
+
+                live = status_or_correction(user_id, "")
+                if live:
+                    yield _sse_event("status", {"text": live})
+                elif should_take_direct_image_path(text, None):
                     yield _sse_event("status", {"text": "Generando imagen con IA…"})
                 yield _sse_flush()
             except TextChatError as exc:
@@ -4100,6 +4105,8 @@ def iter_send_message_stream(
 
     pdf_detail = resolve_pdf_detail_for_turn(text, history)
     if pdf_detail in ("ask", "brief", "full", "revise"):
+        yield _sse_event("status", {"text": "Generando documento…"})
+        yield _sse_flush()
         yield from _iter_blocking_send(user_id, text, conversation_id)
         return
 
@@ -4163,7 +4170,12 @@ def iter_send_message_stream(
                         gen = future.result(timeout=IMAGE_STREAM_KEEPALIVE_SEC)
                         break
                     except _FutureTimeout:
-                        yield _sse_event("status", {"text": status})
+                        from app.services.ced_sentinel import status_or_correction
+
+                        yield _sse_event(
+                            "status",
+                            {"text": status_or_correction(user_id, status)},
+                        )
                         yield _sse_flush()
                     except Exception:
                         logger.exception(

@@ -32,7 +32,7 @@ import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
-import { CedListenButton, CedPresenterButton } from "@/components/voice/CedListenButton";
+import { CedCueButton, CedListenButton, CedPresenterButton } from "@/components/voice/CedListenButton";
 import { CedHoloPresence } from "@/components/voice/CedHoloPresence";
 import {
   CedHistoryPanel,
@@ -598,7 +598,11 @@ export function CedVoiceHub() {
   const cameraLive = voice.cameraOn && Boolean(voice.cameraStream);
   const imageLive = Boolean(voiceImagePreview?.url) && !cameraLive;
   const imageStage = (imageLive || imageGenerating) && !cameraLive;
-  const readyLabel = workspace === "advanced"
+  const readyLabel = voice.cueMode && voice.micOn
+    ? voice.cueOpen
+      ? "CED activo — di Ok CED, stop para callarlo"
+      : "En espera — di Ok CED"
+    : workspace === "advanced"
     ? "Modo avanzado"
     : workspace === "finance"
       ? "Finanzas"
@@ -631,16 +635,19 @@ export function CedVoiceHub() {
           />
         </div>
       ) : null}
-      <div className="flex items-start justify-center gap-1">
-        <CedListenButton
-          active={voice.micOn}
-          busy={voice.micBusy}
-          paused={voice.paused}
-          onActivate={handleMic}
-        />
-        {robotAllowed ? (
-          <CedPresenterButton active={presenter.on || presenter.exiting} onActivate={togglePresenter} />
-        ) : null}
+      <div className="flex w-full flex-col items-center gap-1">
+        <CedCueButton active={voice.cueMode} onActivate={voice.toggleCueMode} />
+        <div className="flex items-start justify-center gap-1">
+          <CedListenButton
+            active={voice.micOn}
+            busy={voice.micBusy}
+            paused={voice.paused}
+            onActivate={handleMic}
+          />
+          {robotAllowed ? (
+            <CedPresenterButton active={presenter.on || presenter.exiting} onActivate={togglePresenter} />
+          ) : null}
+        </div>
       </div>
       <div className="hidden w-full lg:block">
         <CedVoiceHeardBadge
@@ -664,7 +671,15 @@ export function CedVoiceHub() {
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden bg-[var(--studio-chat-bg)]">
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
           <span
-            className={`h-2 w-2 rounded-full ${voice.micOn && !voice.paused ? "animate-pulse bg-sky-400" : "bg-sky-500"}`}
+            className={`h-2 w-2 rounded-full ${
+              voice.cueMode && voice.micOn
+                ? voice.cueOpen
+                  ? "animate-pulse bg-emerald-400"
+                  : "bg-amber-300"
+                : voice.micOn && !voice.paused
+                  ? "animate-pulse bg-sky-400"
+                  : "bg-sky-500"
+            }`}
             aria-hidden
           />
           <span className="font-medium">{readyLabel}</span>

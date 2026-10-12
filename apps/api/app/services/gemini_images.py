@@ -149,31 +149,43 @@ def _maybe_fallback_openai_scene(
     quality: str,
     reference_image: bytes | None = None,
     reference_mime: str | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Respaldo cuando Gemini no responde (cuota, caída, etc.)."""
     settings = get_settings()
     openai_key = settings.openai_api_key.strip()
     if not openai_key:
         return None
+    from app.services.ced_sentinel import correcting
     from app.services.gpt_images import edit_image_gpt, generate_image_gpt
 
-    gpt_quality = "high" if quality == "hd" else "medium"
-    if reference_image:
-        result = edit_image_gpt(
-            prompt=topic,
-            image_bytes=reference_image,
-            content_type=reference_mime or "image/png",
-            quality=gpt_quality,
+    def _run() -> dict[str, Any] | None:
+        gpt_quality = "high" if quality == "hd" else "medium"
+        if reference_image:
+            result = edit_image_gpt(
+                prompt=topic,
+                image_bytes=reference_image,
+                content_type=reference_mime or "image/png",
+                quality=gpt_quality,
+            )
+        else:
+            result = generate_image_gpt(prompt=topic, quality=gpt_quality)
+        if result.get("ok"):
+            return result
+        logger.info(
+            "[IMAGE:ROUTER] OpenAI fallback también falló error=%s",
+            str(result.get("error"))[:120],
         )
-    else:
-        result = generate_image_gpt(prompt=topic, quality=gpt_quality)
-    if result.get("ok"):
-        return result
-    logger.info(
-        "[IMAGE:ROUTER] OpenAI fallback también falló error=%s",
-        str(result.get("error"))[:120],
-    )
-    return None
+        return None
+
+    if not user_id:
+        return _run()
+    with correcting(
+        user_id,
+        area="imagen",
+        detail="Gemini no respondió; otro motor retoma la imagen.",
+    ):
+        return _run()
 
 
 def strip_image_generation_instruction(text: str) -> str:
@@ -896,7 +908,17 @@ def _maybe_generate_with_ideogram(
 
     from app.services.ideogram_images import generate_image_ideogram
 
-    result = generate_image_ideogram(prompt=topic)
+    if openai_key:
+        from app.services.ced_sentinel import correcting
+
+        with correcting(
+            user_id,
+            area="imagen",
+            detail="El primer motor de imagen falló; otro retoma el pedido.",
+        ):
+            result = generate_image_ideogram(prompt=topic)
+    else:
+        result = generate_image_ideogram(prompt=topic)
     if not result.get("ok"):
         logger.info(
             "[IMAGE:ROUTER] ideogram failed, fallback a Gemini user=%s error=%s",
@@ -1068,6 +1090,7 @@ def _generate_image_unlocked(
             quality=picked,
             reference_image=reference_image,
             reference_mime=reference_mime,
+            user_id=user_id,
         )
         if fallback is not None:
             logger.warning(

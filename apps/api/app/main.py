@@ -139,6 +139,15 @@ async def lifespan(_app: FastAPI):
     except Exception:  # noqa: BLE001
         logger.exception("Retell health monitor no arrancó")
 
+    sentinel_stop = None
+    try:
+        from app.services.ced_sentinel import resume_if_enabled, stop_monitor
+
+        resume_if_enabled()
+        sentinel_stop = stop_monitor
+    except Exception:  # noqa: BLE001
+        logger.exception("Centinela no arrancó")
+
     yield
 
     if po_stop is not None:
@@ -151,6 +160,11 @@ async def lifespan(_app: FastAPI):
             await retell_health_stop()
         except Exception:  # noqa: BLE001
             logger.exception("Retell health monitor stop falló")
+    if sentinel_stop is not None:
+        try:
+            sentinel_stop()
+        except Exception:  # noqa: BLE001
+            logger.exception("Centinela stop falló")
 
 
 def create_app() -> FastAPI:

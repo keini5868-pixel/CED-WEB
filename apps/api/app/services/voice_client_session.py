@@ -57,6 +57,8 @@ def _fresh_session() -> dict[str, Any]:
         # Usuario pidió NO hablar de PM/FitLine/negocio hasta que lo vuelva a pedir.
         "fitline_topic_suppressed": False,
         "fitline_question_count": 0,
+        "cue_mode": False,
+        "cue_open": False,
         "fitline_closer_offered": False,
         "fitline_keep_learning": False,
         "fitline_questions_since_defer": 0,
@@ -124,6 +126,30 @@ def set_active_mode(user_id: str, mode: str | None) -> None:
 def get_active_mode(user_id: str) -> str | None:
     mode = _get(user_id).get("active_mode")
     return str(mode).strip() if mode else None
+
+
+def set_cue_mode(user_id: str, enabled: bool) -> None:
+    """Modo grabación. Al activarlo CED queda en espera hasta «Ok CED»."""
+    session = _get(user_id)
+    with _lock:
+        session["cue_mode"] = bool(enabled)
+        session["cue_open"] = False
+        session["updated_at"] = _now()
+
+
+def cue_enabled(user_id: str) -> bool:
+    return bool(_get(user_id).get("cue_mode"))
+
+
+def set_cue_open(user_id: str, open_: bool) -> None:
+    session = _get(user_id)
+    with _lock:
+        session["cue_open"] = bool(open_)
+        session["updated_at"] = _now()
+
+
+def cue_is_open(user_id: str) -> bool:
+    return bool(_get(user_id).get("cue_open"))
 
 
 def set_map_search_results(user_id: str, places: list[dict[str, Any]] | None) -> None:
@@ -345,6 +371,8 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
         return {
             "camera_active": bool(session.get("camera_active")),
             "camera_stream_present": bool(session.get("camera_stream_present")),
+            "cue_mode": bool(session.get("cue_mode")),
+            "cue_open": bool(session.get("cue_open")),
             "client_action": deepcopy(action) if action else None,
             "tool_events": deepcopy(session.get("tool_events") or []),
             "live_transcript": deepcopy(session.get("live_transcript")),

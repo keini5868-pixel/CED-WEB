@@ -928,6 +928,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     "[GREETING] skip re-saludo tras reconexión call=%s", call_id
                 )
                 return
+            if uid and vcs.cue_enabled(uid):
+                greeting_sent = True
+                mark_greeting_sent(call_id)
+                post_greeting_ready.set()
+                await ack_empty_response(response_id=0, reason="cue_standby")
+                logger.info("[GREETING] modo grabación: sin saludo inicial call=%s", call_id)
+                return
             await send_greeting(0, reason="call_details")
             return
 
@@ -975,6 +982,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             # Con música de YouTube sonando, el silencio del usuario es intencional:
             # no interrumpir con "¿sigue ahí?" (regla exclusiva del modo YouTube).
             uid_for_mode = uid or resolve_call_user(call_id, request_json)
+            if uid_for_mode and vcs.cue_enabled(uid_for_mode):
+                await ack_empty_response(response_id=response_id, reason="cue_standby")
+                return
             if uid_for_mode:
                 if vcs.get_active_mode(uid_for_mode) == "youtube":
                     await ack_empty_response(
@@ -1023,7 +1033,42 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if isinstance(item, dict)
         ]
 
-        if not should_respond_to_transcript(transcript, interaction_type=interaction):
+        cue_override: str | None = None
+        if uid and vcs.cue_enabled(uid):
+            from app.services.voice_cue import CUE_GREETING, decide_cue
+
+            cue_action, cue_text = decide_cue(
+                merged_user_query(transcript),
+                enabled=True,
+                listening=vcs.cue_is_open(uid),
+            )
+            if cue_action == "ignore":
+                await ack_empty_response(response_id=response_id, reason="cue_idle")
+                return
+            if cue_action == "stop":
+                vcs.set_cue_open(uid, False)
+                logger.info("[CUE] stop call=%s", call_id)
+                await ack_empty_response(response_id=response_id, reason="cue_stop")
+                return
+            if cue_action == "greet":
+                vcs.set_cue_open(uid, True)
+                logger.info("[CUE] wake call=%s", call_id)
+                async with response_lock:
+                    if response_id < active_response_id:
+                        return
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=CUE_GREETING,
+                        user_key="cue-greet",
+                        generation=None,
+                    )
+                return
+            vcs.set_cue_open(uid, True)
+            cue_override = cue_text or None
+
+        if cue_override is None and not should_respond_to_transcript(
+            transcript, interaction_type=interaction
+        ):
             logger.info(
                 "[RETELL-GEMINI] skip interaction=%s call=%s text=%s",
                 interaction,
@@ -1034,7 +1079,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 await ack_empty_response(response_id=response_id, reason="should_respond_false")
             return
 
-        user_text = merged_user_query(transcript)
+        user_text = cue_override or merged_user_query(transcript)
         if is_inaudible_or_noise(user_text):
             logger.info("[RETELL-GEMINI] skip inaudible/noise call=%s text=%s", call_id, user_text[:40])
             if interaction == "response_required":
