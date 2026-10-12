@@ -71,6 +71,22 @@ def test_while_open_a_normal_question_is_answered():
     assert "vender más" in text
 
 
+def test_stop_at_the_end_of_a_longer_line_still_closes():
+    action, _text = decide_cue(
+        "explicame el marketing y ya stop",
+        enabled=True,
+        listening=True,
+    )
+    assert action == "stop"
+    action, text = decide_cue(
+        "hay que hacer un stop en la campaña de redes porque vende más",
+        enabled=True,
+        listening=True,
+    )
+    assert action == "answer"
+    assert "vende" in text
+
+
 def test_off_mode_does_not_gate():
     action, text = decide_cue("hola, cómo estás", enabled=False, listening=False)
     assert action == "off"

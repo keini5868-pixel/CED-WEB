@@ -850,6 +850,34 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             call_id,
         )
 
+    last_stop_cut_at = 0.0
+
+    def _heard_stop(text: str) -> bool:
+        from app.services.voice_cue import utterance_ends_with_silence
+
+        return utterance_ends_with_silence(text)
+
+    async def cut_agent_for_stop(line: str) -> None:
+        """Corta lo que CED está diciendo en cuanto se oye stop."""
+        nonlocal last_stop_cut_at, generation_seq
+        now = time.time()
+        if now - last_stop_cut_at < 1.2:
+            return
+        last_stop_cut_at = now
+        generation_seq += 1
+        who = (user_id or "").strip()
+        if who:
+            vcs.set_cue_open(who, False)
+        await websocket.send_json(
+            {
+                "response_type": "agent_interrupt",
+                "content": "",
+                "content_complete": True,
+                "end_call": False,
+            }
+        )
+        logger.info("[CUE] interrupt stop call=%s text=%s", call_id, (line or "")[:80])
+
     async def handle_message(request_json: dict) -> None:
         nonlocal active_response_id, debounce_task, last_scheduled_user_key, generation_seq
         nonlocal turn_draft_in_progress, turn_draft_user_key, latest_incoming_rid
@@ -949,6 +977,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             tx = request_json.get("transcript") or []
             if who:
                 publish_full_transcript(who, tx)
+            user_line = latest_transcript_line(tx, "user")
+            if user_line and _heard_stop(user_line):
+                await cut_agent_for_stop(user_line)
             if who:
                 if turntaking == "agent_turn" and last_live_turntaking != "agent_turn":
                     live_agent_turn += 1
@@ -1032,6 +1063,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             for item in transcript_raw
             if isinstance(item, dict)
         ]
+
+        heard_now = latest_transcript_line(transcript_raw, "user")
+        if _heard_stop(heard_now):
+            if uid:
+                vcs.set_cue_open(uid, False)
+            await cut_agent_for_stop(heard_now)
+            await ack_empty_response(response_id=response_id, reason="silence_command")
+            return
 
         cue_override: str | None = None
         if uid and vcs.cue_enabled(uid):

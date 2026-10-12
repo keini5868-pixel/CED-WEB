@@ -164,6 +164,19 @@ def is_silence_command(text: str) -> bool:
     return _is_stop_command(_norm(text).split())
 
 
+def utterance_ends_with_silence(text: str) -> bool:
+    """True si el turno termina en stop, aunque venga detrás de otra frase."""
+    tokens = _norm(text).split()
+    if not tokens:
+        return False
+    if _is_stop_command(tokens):
+        return True
+    for size in range(1, min(4, len(tokens)) + 1):
+        if _is_stop_command(tokens[-size:]):
+            return True
+    return False
+
+
 def _is_stop_command(tokens: list[str]) -> bool:
     """True si la frase corta es un stop, con o sin el nombre."""
     if not tokens or len(tokens) > 8:
@@ -210,7 +223,7 @@ def decide_cue(text: str, *, enabled: bool, listening: bool) -> tuple[str, str]:
     tokens = _norm(raw).split()
     if not tokens:
         return "ignore", ""
-    if _is_stop_command(tokens):
+    if utterance_ends_with_silence(raw):
         return "stop", ""
     wake_at = _wake_index(tokens)
     if wake_at >= 0:
