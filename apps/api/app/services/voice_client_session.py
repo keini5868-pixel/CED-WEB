@@ -60,8 +60,6 @@ def _fresh_session() -> dict[str, Any]:
         # Usuario pidió NO hablar de PM/FitLine/negocio hasta que lo vuelva a pedir.
         "fitline_topic_suppressed": False,
         "fitline_question_count": 0,
-        "cue_mode": False,
-        "cue_open": False,
         "voice_held": False,
         "last_heard_line": "",
         "last_heard_at": 0.0,
@@ -135,38 +133,6 @@ def get_active_mode(user_id: str) -> str | None:
     return str(mode).strip() if mode else None
 
 
-def set_cue_mode(user_id: str, enabled: bool) -> None:
-    """Modo grabación (GRABAR). Con ON, CED escucha al usuario; stop lo calla."""
-    session = _get(user_id)
-    with _lock:
-        session["cue_mode"] = bool(enabled)
-        session["cue_open"] = bool(enabled)
-        if enabled:
-            session["voice_held"] = False
-            session["stop_heard_at"] = 0.0
-            line = str(session.get("last_heard_line") or "")
-            from app.services.voice_cue import is_stop_utterance
-
-            if is_stop_utterance(line):
-                session["last_heard_line"] = ""
-        session["updated_at"] = _now()
-
-
-def cue_enabled(user_id: str) -> bool:
-    return bool(_get(user_id).get("cue_mode"))
-
-
-def set_cue_open(user_id: str, open_: bool) -> None:
-    session = _get(user_id)
-    with _lock:
-        session["cue_open"] = bool(open_)
-        session["updated_at"] = _now()
-
-
-def cue_is_open(user_id: str) -> bool:
-    return bool(_get(user_id).get("cue_open"))
-
-
 def _drop_queued_camera_open(session: dict[str, Any]) -> None:
     action = session.get("client_action") or {}
     if action.get("action") == "camera_activate":
@@ -181,15 +147,12 @@ def set_voice_held(user_id: str, held: bool) -> None:
     with _lock:
         session["voice_held"] = bool(held)
         if held:
-            session["cue_open"] = False
             session["last_heard_line"] = "stop"
             _drop_queued_camera_open(session)
             if session.get("active_mode") == "camera":
                 session["active_mode"] = None
         else:
             session["stop_heard_at"] = 0.0
-            if session.get("cue_mode"):
-                session["cue_open"] = True
         session["updated_at"] = _now()
 
 
@@ -464,8 +427,6 @@ def get_state(user_id: str, *, consume_action: bool = False) -> dict[str, Any]:
         return {
             "camera_active": bool(session.get("camera_active")),
             "camera_stream_present": bool(session.get("camera_stream_present")),
-            "cue_mode": bool(session.get("cue_mode")),
-            "cue_open": bool(session.get("cue_open")),
             "voice_held": bool(session.get("voice_held")),
             "client_action": deepcopy(action) if action else None,
             "tool_events": deepcopy(session.get("tool_events") or []),

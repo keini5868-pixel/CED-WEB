@@ -1,8 +1,7 @@
-"""Modo grabación: CED solo habla entre el nombre y un stop.
+"""Stop de presentación y despertar con «Ok CED» (independiente del micrófono).
 
-La llamada sigue abierta. «Ok CED», «okay set» y los errores típicos del
-reconocedor lo despiertan. «Ok CED, stop», «okay set stop» o un «stop»
-suelto lo callan. El resto del speech no genera respuesta.
+Tras «stop», CED calla hasta el siguiente aviso. «Ok CED» / variantes STT
+lo reactivan; otro «stop» lo vuelve a callar.
 """
 
 from __future__ import annotations

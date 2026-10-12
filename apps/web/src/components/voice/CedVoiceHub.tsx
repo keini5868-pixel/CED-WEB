@@ -32,7 +32,7 @@ import { CedVoiceDebugPanel } from "@/components/voice/CedVoiceDebugPanel";
 import { CedVoiceImagePreview } from "@/components/voice/CedVoiceImagePreview";
 import { CedVoiceHeardBadge } from "@/components/voice/CedVoiceHeardBadge";
 import { CedCameraPreview } from "@/components/voice/CedCameraPreview";
-import { CedCueButton, CedListenButton, CedPresenterButton } from "@/components/voice/CedListenButton";
+import { CedListenButton, CedPresenterButton } from "@/components/voice/CedListenButton";
 import { CedHoloPresence } from "@/components/voice/CedHoloPresence";
 import {
   CedHistoryPanel,
@@ -606,11 +606,7 @@ export function CedVoiceHub() {
   const cameraLive = voice.cameraOn && Boolean(voice.cameraStream);
   const imageLive = Boolean(voiceImagePreview?.url) && !cameraLive;
   const imageStage = (imageLive || imageGenerating) && !cameraLive;
-  const readyLabel = voice.cueMode && voice.micOn
-    ? voice.cueOpen
-      ? "Modo GRABAR — CED te escucha (stop para callar)"
-      : "Modo GRABAR — di Ok CED o stop"
-    : workspace === "advanced"
+  const readyLabel = workspace === "advanced"
     ? "Modo avanzado"
     : workspace === "finance"
       ? "Finanzas"
@@ -644,7 +640,6 @@ export function CedVoiceHub() {
         </div>
       ) : null}
       <div className="flex w-full flex-col items-center gap-1">
-        <CedCueButton active={voice.cueMode} onActivate={voice.toggleCueMode} />
         <div className="flex items-start justify-center gap-1">
           <CedListenButton
             active={voice.micOn}
@@ -662,7 +657,6 @@ export function CedVoiceHub() {
           indicator={voice.heardIndicator}
           micOn={voice.micOn}
           paused={voice.paused}
-          cueMode={voice.cueMode}
         />
       </div>
       {voice.errorMessage ? (
@@ -681,13 +675,9 @@ export function CedVoiceHub() {
         <div className="ced-studio-status flex shrink-0 items-center gap-2 border-b border-[var(--studio-border)] px-3 py-1.5 text-xs sm:px-4 sm:py-2 sm:text-sm">
           <span
             className={`h-2 w-2 rounded-full ${
-              voice.cueMode && voice.micOn
-                ? voice.cueOpen
-                  ? "animate-pulse bg-emerald-400"
-                  : "bg-amber-300"
-                : voice.micOn && !voice.paused
-                  ? "animate-pulse bg-sky-400"
-                  : "bg-sky-500"
+              voice.micOn && !voice.paused
+                ? "animate-pulse bg-sky-400"
+                : "bg-sky-500"
             }`}
             aria-hidden
           />

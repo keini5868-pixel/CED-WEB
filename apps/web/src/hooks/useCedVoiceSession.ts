@@ -69,7 +69,7 @@ import {
   cedResolveHonorific,
 } from "@/lib/voice/live/ced-brief-messages";
 import { cedVoiceLog } from "@/lib/voice/cedVoiceLogger";
-import { registerRetellCall, registerRetellNativePilotCall, setRetellCueMode, warmupRetellVoiceApi } from "@/lib/api/retell";
+import { registerRetellCall, registerRetellNativePilotCall, warmupRetellVoiceApi } from "@/lib/api/retell";
 import { trackStartTrial } from "@/lib/ads/meta-pixel";
 import { CedRetellClient } from "@/lib/voice/retell/ced-retell-client";
 import { isRetellNativePilot, isRetellVoice } from "@/lib/voice/voiceProvider";
@@ -289,24 +289,6 @@ export function useCedVoiceSession(
   const [orbState, setOrbState] = useState<OrbState>("idle");
   const [statusLabel, setStatusLabel] = useState(ORB_STATE_LABELS.idle);
   const [micOn, setMicOn] = useState(false);
-  const [cueMode, setCueMode] = useState(false);
-  const [cueOpen, setCueOpen] = useState(false);
-  const cueModeRef = useRef(false);
-  const cueOpenRef = useRef(false);
-
-  useEffect(() => {
-    cueOpenRef.current = cueOpen;
-  }, [cueOpen]);
-
-  useEffect(() => {
-    try {
-      const stored = sessionStorage.getItem("ced-cue-mode") === "1";
-      cueModeRef.current = stored;
-      setCueMode(stored);
-    } catch {
-      /* private mode */
-    }
-  }, []);
   const [retellPollActive, setRetellPollActive] = useState(false);
   const [voiceSessionActive, setVoiceSessionActive] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -342,7 +324,6 @@ export function useCedVoiceSession(
   const cameraActivateInFlightRef = useRef<Promise<void> | null>(null);
   const lastHeardUserTextRef = useRef("");
   const voicePresentationHeldRef = useRef(false);
-  const cueResponseWaitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraPermissionGrantedRef = useRef(false);
   const sessionMediaPreauthRef = useRef<Promise<void> | null>(null);
   const activateCameraFromVoiceRef = useRef<
@@ -393,6 +374,7 @@ export function useCedVoiceSession(
   const retellCallStartedAtRef = useRef(0);
   const retellEarlyEndRetriesRef = useRef(0);
   const lastPersistedAgentLineRef = useRef("");
+  const lastPersistedUserLineRef = useRef("");
   const youtubeMediaModeRef = useRef(false);
   const lastLiveTranscriptSeqRef = useRef(0);
 
@@ -451,7 +433,12 @@ export function useCedVoiceSession(
     ) => {
       const trimmed = text.trim();
       if (!trimmed) return;
-      if (role === "user") lastHeardUserTextRef.current = trimmed;
+      if (role === "user") {
+        if (options?.partial) return;
+        lastHeardUserTextRef.current = trimmed;
+        if (trimmed === lastPersistedUserLineRef.current) return;
+        lastPersistedUserLineRef.current = trimmed;
+      }
       if (role === "model" && options?.partial) return;
       if (role === "model") {
         if (trimmed === lastPersistedAgentLineRef.current) return;
@@ -720,7 +707,6 @@ export function useCedVoiceSession(
           void postVoiceCameraStatus(false, false).catch(() => undefined);
         }
         const state = await fetchVoiceClientState(false, { transcript: true });
-        setCueOpen(cueModeRef.current && Boolean(state.cue_open));
         if (state.voice_held) {
           voicePresentationHeldRef.current = true;
           retellClientRef.current?.syncPresentationHeld(true);
@@ -889,7 +875,17 @@ export function useCedVoiceSession(
         const chatTurns = state.chat_turns || [];
         const dbTurns = state.transcript_turns || [];
         const sourceTurns = dbTurns.length >= chatTurns.length ? dbTurns : chatTurns;
-        // Retell SDK ya pinta user/model vía onTranscript; live_transcript duplicaba burbujas.
+        if (sourceTurns.length > 0) {
+          callbacksRef.current?.onLiveChatTurns?.(
+            sourceTurns
+              .map((turn, index) => ({
+                role: (turn.role === "user" ? "user" : "model") as "user" | "model",
+                content: String(turn.content || "").trim(),
+                streamKey: String(turn.id || `chat-${index}`),
+              }))
+              .filter((row) => Boolean(row.content)),
+          );
+        }
         if (liveText && liveSeq > lastLiveTranscriptSeqRef.current) {
           lastLiveTranscriptSeqRef.current = liveSeq;
         }
@@ -1032,6 +1028,7 @@ export function useCedVoiceSession(
     userInitiatedStopRef.current = true;
     voiceSessionGenRef.current += 1;
     lastPersistedAgentLineRef.current = "";
+    lastPersistedUserLineRef.current = "";
     lastLiveTranscriptSeqRef.current = 0;
     micBusyRef.current = false;
     setMicBusy(false);
@@ -1455,14 +1452,9 @@ export function useCedVoiceSession(
         setVoiceSessionActive(true);
         setRetellPollActive(true);
         setStatusLabel("Iniciando llamada…");
-        if (cueModeRef.current) {
-          await setRetellCueMode(true).catch(() => undefined);
-        }
         const registration = isRetellNativePilot()
           ? await registerRetellNativePilotCall(conversationRef.current)
-          : await registerRetellCall(conversationRef.current, {
-              cueMode: cueModeRef.current,
-            });
+          : await registerRetellCall(conversationRef.current);
         if (isStale()) return;
         if (!registration.ok) {
           const err = registration.error || "No pude iniciar la voz.";
@@ -1499,16 +1491,8 @@ export function useCedVoiceSession(
             lastVoiceActionIdRef.current = null;
             voicePresentationHeldRef.current = false;
             retellClientRef.current?.releasePresentationHold();
-            if (cueResponseWaitRef.current) {
-              clearTimeout(cueResponseWaitRef.current);
-              cueResponseWaitRef.current = null;
-            }
             setOrbState("listening");
-            setStatusLabel(
-              cueModeRef.current
-                ? "Modo GRABAR — di «Ok CED»"
-                : ORB_STATE_LABELS.listening,
-            );
+            setStatusLabel(ORB_STATE_LABELS.listening);
             setRetellPollActive(true);
           },
           onCallEnded: () => {
@@ -1532,14 +1516,9 @@ export function useCedVoiceSession(
               );
               void (async () => {
                 try {
-                  if (cueModeRef.current) {
-                    await setRetellCueMode(true).catch(() => undefined);
-                  }
                   const registration = isRetellNativePilot()
                     ? await registerRetellNativePilotCall(conversationRef.current)
-                    : await registerRetellCall(conversationRef.current, {
-                        cueMode: cueModeRef.current,
-                      });
+                    : await registerRetellCall(conversationRef.current);
                   if (isStale() || !registration.ok) {
                     setRetellPollActive(false);
                     await stopSession();
@@ -1572,10 +1551,6 @@ export function useCedVoiceSession(
           onAgentTalking: (talking) => {
             if (isStale()) return;
             modelSpeakingRef.current = talking;
-            if (talking && cueResponseWaitRef.current) {
-              clearTimeout(cueResponseWaitRef.current);
-              cueResponseWaitRef.current = null;
-            }
             setOrbState(talking ? "speaking" : "listening");
             setStatusLabel(
               talking ? ORB_STATE_LABELS.speaking : ORB_STATE_LABELS.listening,
@@ -1614,29 +1589,6 @@ export function useCedVoiceSession(
               });
               if (!options?.partial) {
                 openFitlineOppsIfRequested(text);
-                if (cueResponseWaitRef.current) {
-                  clearTimeout(cueResponseWaitRef.current);
-                  cueResponseWaitRef.current = null;
-                }
-                if (
-                  cueModeRef.current &&
-                  !cueOpenRef.current &&
-                  !isWakeUtterance(text) &&
-                  !isStopUtterance(text) &&
-                  !mayBeStopHint(text)
-                ) {
-                  cueResponseWaitRef.current = setTimeout(() => {
-                    cueResponseWaitRef.current = null;
-                    if (isStale() || modelSpeakingRef.current) return;
-                    setHeardIndicator({
-                      status: "listening",
-                      userText: null,
-                      heardAt: null,
-                    });
-                    setOrbState("listening");
-                    setStatusLabel("Modo GRABAR — di «Ok CED»");
-                  }, 2200);
-                }
               }
               if (cameraStreamRef.current?.active) {
                 void postVoiceCameraStatus(true, true).catch(() => undefined);
@@ -3434,27 +3386,6 @@ export function useCedVoiceSession(
     [micOn],
   );
 
-  const toggleCueMode = useCallback(() => {
-    const next = !cueModeRef.current;
-    cueModeRef.current = next;
-    setCueMode(next);
-    if (!next) {
-      setCueOpen(false);
-    } else {
-      setCueOpen(true);
-      voicePresentationHeldRef.current = false;
-      retellClientRef.current?.releasePresentationHold();
-      setStatusLabel("Modo GRABAR — CED te escucha");
-      setHeardIndicator({ status: "listening", userText: null, heardAt: null });
-    }
-    try {
-      sessionStorage.setItem("ced-cue-mode", next ? "1" : "0");
-    } catch {
-      /* private mode */
-    }
-    void setRetellCueMode(next).catch(() => undefined);
-  }, []);
-
   const clearError = useCallback(() => {
     setErrorMessage(null);
     setOrbState((s) => (s === "error" ? "idle" : s));
@@ -3500,9 +3431,6 @@ export function useCedVoiceSession(
     statusLabel,
     audioLevel,
     micOn,
-    cueMode,
-    cueOpen,
-    toggleCueMode,
     cameraOn,
     cameraFacing,
     cameraPermissionGranted,
