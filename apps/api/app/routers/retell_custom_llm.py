@@ -656,6 +656,26 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     ) -> bool:
         if generation is not None and generation != generation_seq:
             return False
+        from app.services.voice_device_gate import silence_camera_status_speech
+
+        if silence_camera_status_speech(content, user_id or ""):
+            logger.info(
+                "[CAMERA] silenciada partial call=%s rid=%s",
+                call_id,
+                response_id,
+            )
+            if not content_complete:
+                return False
+            await websocket.send_json(
+                {
+                    "response_type": "response",
+                    "response_id": response_id,
+                    "content": "",
+                    "content_complete": True,
+                    "end_call": False,
+                }
+            )
+            return True
         safe, blocked = guard_voice_response(content)
         if blocked:
             logger.warning(
@@ -747,6 +767,26 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             safe = FALLBACK_REPLY
         content = safe or FALLBACK_REPLY
         content = finalize_voice_delivery_text(content)
+        from app.services.voice_device_gate import silence_camera_status_speech
+
+        if silence_camera_status_speech(content, user_id or ""):
+            logger.info(
+                "[CAMERA] silenciada outbound call=%s rid=%s preview=%s",
+                call_id,
+                response_id,
+                content[:80],
+            )
+            await websocket.send_json(
+                {
+                    "response_type": "response",
+                    "response_id": response_id,
+                    "content": "",
+                    "content_complete": True,
+                    "end_call": False,
+                }
+            )
+            answered_response_ids.add(response_id)
+            return True
         if not content:
             content = FALLBACK_REPLY
         if is_duplicate_voice_delivery(last_delivered_voice_content, content):
@@ -1367,11 +1407,21 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 module: str | None = None,
             ) -> None:
                 nonlocal filler_sent_at
+                from app.services.voice_cue import is_stop_utterance
+                from app.services.voice_device_gate import silence_camera_status_speech
+
+                who = (uid or user_id or "").strip()
+                if who and (
+                    vcs.voice_is_held(who) or is_stop_utterance(vcs.last_heard_line(who))
+                ):
+                    return
                 phrase = pick_voice_filler(
                     category,
                     call_id=call_id,
                     module=module,
                 )
+                if silence_camera_status_speech(phrase, who):
+                    return
                 if await send_filler_once_partial(phrase):
                     filler_sent_at = time.monotonic()
                     logger.info(
@@ -2042,7 +2092,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 )
             if uid and run_orchestrator:
                 mod_hint = forced_module
-                if mod_hint:
+                if mod_hint and mod_hint != "camera":
                     await fire_latency_filler("module", module=mod_hint)
                 clear_pending_advanced_topic(call_id)
                 orch_result = await orch.process(
@@ -2210,6 +2260,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         draft_events.append(event)
                         piece = (event.content or "").strip()
                         if piece:
+                            from app.services.voice_device_gate import (
+                                silence_camera_status_speech,
+                            )
+
+                            if silence_camera_status_speech(
+                                streamed_text + piece, uid or ""
+                            ):
+                                await cut_agent_for_stop(
+                                    vcs.last_heard_line(uid or "")
+                                )
+                                break
                             await ensure_filler_hold()
                             async with response_lock:
                                 if _turn_stale():

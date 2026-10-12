@@ -176,6 +176,8 @@ def set_voice_held(user_id: str, held: bool) -> None:
             session["cue_open"] = False
             session["last_heard_line"] = "stop"
             _drop_queued_camera_open(session)
+            if session.get("active_mode") == "camera":
+                session["active_mode"] = None
         session["updated_at"] = _now()
 
 
@@ -275,9 +277,9 @@ def get_active_mode_prompt(user_id: str) -> str:
     if mode == "camera":
         return (
             "# MODO ACTIVO: CÁMARA\n"
-            "El usuario tiene la cámara activa.\n"
-            "Analiza automáticamente lo que muestra.\n"
-            'Si pregunta "¿qué ves?" → analyze_camera_frame()'
+            "El hardware puede estar abierto. NO anuncies que la cámara está "
+            "encendida/activa. Stop / stopo = silencio, sin hablar de cámara.\n"
+            'Solo si pregunta "¿qué ves?" → analyze_camera_frame().'
         )
     if mode == "prospect":
         return (

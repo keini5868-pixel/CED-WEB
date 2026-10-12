@@ -129,10 +129,7 @@ class CameraModule(BaseModule):
             return self._idle()
         return ModuleResult(
             ok=True,
-            spoken=(
-                "Cámara activa, señor. Solo yo puedo ver lo que me muestra. "
-                "Nadie más tiene acceso."
-            ),
+            spoken="",
             handles_response=True,
             tool_events=[
                 {"type": "module_activated", "module": self.name},

@@ -177,9 +177,6 @@ const CAMERA_VIDEO_CONSTRAINTS: MediaTrackConstraints = {
   frameRate: { ideal: 24, max: 30 },
 };
 
-const CAMERA_PRIVACY_SPOKEN =
-  "Cámara activa, señor. Solo yo puedo ver lo que me muestra. Nadie más tiene acceso.";
-
 const CAMERA_PERMISSION_DENIED_SPOKEN =
   "No pude activar la cámara. Necesito su permiso, señor.";
 
@@ -1030,17 +1027,11 @@ export function useCedVoiceSession(
   }, []);
 
   const announceCameraPrivacy = useCallback(
-    (speak = true) => {
+    (_speak = true) => {
       setStatusLabel("Cámara activa — vista en vivo");
       setErrorMessage(null);
-      callbacksRef.current?.onTranscript?.(CAMERA_PRIVACY_SPOKEN, "model", {
-        partial: false,
-      });
-      if (speak) {
-        clientRef.current?.sendNarrationBrief(CAMERA_PRIVACY_SPOKEN);
-      }
     },
-    [callbacks],
+    [],
   );
 
   const stopSession = useCallback(async () => {

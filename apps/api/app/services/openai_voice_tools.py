@@ -180,7 +180,7 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
             "Enciende la cámara SOLO si el usuario dijo «CED enciende la cámara» "
             "(o okay set / ok ced enciende la cámara). "
             "NUNCA con stop, GRABAR, mira esto, activa, abre o qué ves. "
-            "Tras activar: 'Cámara activa.' NO describes nada visual hasta analyze_camera_frame."
+            "NO anuncies 'Cámara activa' ni 'cámara encendida'. Stop/stopo = silencio."
         ),
         "parameters": {
             "type": "object",

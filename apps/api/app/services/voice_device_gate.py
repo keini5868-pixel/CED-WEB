@@ -136,3 +136,33 @@ def user_asked_for_camera(text: str) -> bool:
 
 def user_asked_for_map(text: str) -> bool:
     return is_map_open_phrase(text)
+
+
+_CAMERA_ON_ANNOUNCE = re.compile(
+    r"\b(?:activ(?:e|a|ando)|encend(?:[ií]|iendo)|prend(?:[ií]|iendo))\s+"
+    r"(?:la\s+)?c[aá]mara\b|"
+    r"\bc[aá]mara\s+(?:est[aá]\s+)?(?:activa|encendida|prendida|lista|abierta)\b",
+    re.I,
+)
+
+
+def is_camera_on_announcement(text: str) -> bool:
+    """True si la frase anuncia que la cámara ya está o se está encendiendo."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if re.search(r"(?i)\bno\s+est[aá]\s+(?:activa|encendida)\b", t):
+        return False
+    return bool(_CAMERA_ON_ANNOUNCE.search(t))
+
+
+def silence_camera_status_speech(text: str, user_id: str = "") -> bool:
+    """Silencio: CED no puede decir que la cámara está on si este turno no es la orden."""
+    if not is_camera_on_announcement(text):
+        return False
+    from app.services.voice_client_session import voice_is_held
+
+    heard = last_heard_line(user_id) if user_id else current_turn_text()
+    if voice_is_held(user_id) or is_stop_utterance(heard):
+        return True
+    return not is_camera_open_phrase(heard)

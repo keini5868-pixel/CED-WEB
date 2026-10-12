@@ -105,7 +105,7 @@ export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: REQUEST_CAMERA_ACTIVATION,
     description:
-      "Enciende la cámara SOLO si dijo «CED enciende la cámara». Nunca por GRABAR, stop, mira esto, activa, abre o qué ves. Tras activar: 'Cámara activa.'",
+      "Enciende la cámara SOLO si dijo «CED enciende la cámara». Nunca por GRABAR, stop, stopo, mira esto, activa, abre o qué ves. No anuncies que está encendida.",
     parameters: {
       type: Type.OBJECT,
       properties: {

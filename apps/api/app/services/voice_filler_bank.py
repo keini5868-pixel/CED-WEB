@@ -32,11 +32,11 @@ _MODULE_FILLERS: dict[str, tuple[str, ...]] = {
         "Verifico su balance ahora, señor.",
     ),
     "camera": (
-        "Active la cámara, señor, un instante.",
-        "Analizo lo que veo, señor.",
-        "Un momento, reviso con visión, señor.",
-        "Permítame observar eso, señor.",
-        "Consulto la imagen ahora, señor.",
+        "Un momento, señor.",
+        "Permítame un instante, señor.",
+        "Ya le digo, señor.",
+        "Un segundo, señor.",
+        "Deme un instante, señor.",
     ),
     "map": (
         "Abro el mapa, señor.",

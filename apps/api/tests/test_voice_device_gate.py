@@ -115,6 +115,27 @@ def test_grabar_does_not_open_the_camera():
     assert "request_camera_activation" not in device_tools_for_turn("GRABAR")
 
 
+def test_camera_on_announcement_is_silenced_after_stopo():
+    from app.services.voice_device_gate import (
+        is_camera_on_announcement,
+        silence_camera_status_speech,
+    )
+
+    assert is_camera_on_announcement("Cámara encendida")
+    assert is_camera_on_announcement("Cámara activa, señor.")
+    assert is_camera_on_announcement("Active la cámara, señor, un instante.")
+    uid = "gate-announce"
+    vcs.note_heard_line(uid, "stopo")
+    vcs.set_voice_held(uid, True)
+    assert silence_camera_status_speech("Cámara encendida", uid) is True
+    assert silence_camera_status_speech("Cámara activa, señor.", uid) is True
+    vcs.set_voice_held("gate-open-cam", False)
+    vcs.note_heard_line("gate-open-cam", "CED enciende la cámara")
+    assert (
+        silence_camera_status_speech("Cámara activa, señor.", "gate-open-cam") is False
+    )
+
+
 def test_stopo_drops_queued_camera_and_stays_silent():
     uid = "gate-stopo"
     vcs.note_heard_line(uid, "CED enciende la cámara")

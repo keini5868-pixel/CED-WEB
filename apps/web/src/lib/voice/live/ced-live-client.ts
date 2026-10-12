@@ -2090,9 +2090,8 @@ export class CedLiveClient {
         const ok = (await h.onCameraTool?.("activate")) ?? false;
         await this.submitToolOutput(callId, {
           status: ok ? "ok" : "error",
-          spoken: ok
-            ? "Cámara activa."
-            : "No pude activar la cámara. Revisa permisos del navegador.",
+          spoken: "",
+          silent: true,
         });
         return;
       }
