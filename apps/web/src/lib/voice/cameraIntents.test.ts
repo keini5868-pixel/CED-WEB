@@ -1,25 +1,27 @@
 import { describe, expect, it } from "vitest";
 
-import { parseCameraIntent } from "./cameraIntents";
+import { isCameraOpenUtterance, parseCameraIntent } from "./cameraIntents";
 
 describe("parseCameraIntent", () => {
-  it("opens only on an explicit camera phrase", () => {
-    expect(parseCameraIntent("activa la cámara")).toBe("activate");
-    expect(parseCameraIntent("mira esto")).toBe("activate");
+  it("opens only on CED enciende la cámara", () => {
+    expect(parseCameraIntent("CED enciende la cámara")).toBe("activate");
+    expect(parseCameraIntent("ok ced enciende la camara")).toBe("activate");
+    expect(parseCameraIntent("okay set enciende la cámara")).toBe("activate");
+    expect(isCameraOpenUtterance("CED enciende la cámara")).toBe(true);
   });
 
-  it("does not treat stop as camera", () => {
+  it("does not open on other phrases", () => {
     for (const phrase of [
+      "activa la cámara",
+      "abre la cámara",
+      "mira esto",
+      "qué ves",
       "stop",
       "estop",
-      "etop",
-      "esto",
-      "es todo",
-      "okay set stop",
-      "alto",
-      "cállate",
+      "GRABAR",
+      "enciende la cámara",
     ]) {
-      expect(parseCameraIntent(phrase)).toBeNull();
+      expect(parseCameraIntent(phrase)).not.toBe("activate");
     }
   });
 });

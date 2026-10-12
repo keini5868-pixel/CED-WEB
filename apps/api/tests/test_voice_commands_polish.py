@@ -17,4 +17,5 @@ def test_finance_voice_phrase_anchor():
 
 def test_camera_voice_command_detects_activation():
     assert is_camera_voice_command("activa la cámara")
-    assert resolve_camera_voice_request("activa la cámara") is not None
+    assert resolve_camera_voice_request("CED enciende la cámara") is not None
+    assert resolve_camera_voice_request("activa la cámara") is None

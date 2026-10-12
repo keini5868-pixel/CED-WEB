@@ -105,7 +105,7 @@ export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: REQUEST_CAMERA_ACTIVATION,
     description:
-      "Activa la cámara del usuario cuando pida visión o quiera mostrar algo. Tras activar confirma: 'Cámara activa.'",
+      "Enciende la cámara SOLO si dijo «CED enciende la cámara». Nunca por GRABAR, stop, mira esto, activa, abre o qué ves. Tras activar: 'Cámara activa.'",
     parameters: {
       type: Type.OBJECT,
       properties: {
@@ -121,7 +121,7 @@ export const LIVE_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: ANALIZAR_CAMARA,
     description:
-      "Analiza el frame actual de la cámara. Requiere cámara activa; invoca request_camera_activation si hace falta.",
+      "Analiza el frame solo si la cámara ya está encendida. No la enciendas. Encender es «CED enciende la cámara».",
     parameters: {
       type: Type.OBJECT,
       properties: {

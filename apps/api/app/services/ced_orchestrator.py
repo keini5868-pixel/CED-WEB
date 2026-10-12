@@ -88,7 +88,7 @@ DETECTION_PATTERNS: dict[str, tuple[str, ...]] = {
         r"\b(busca cerca|dónde hay|encuentra un)\b",
     ),
     "camera": (
-        r"\b(activa la cámara|enciende la cámara)\b",
+        r"\b(?:ced|set|sec|sed)\b.{0,24}\benciende(?:r)?\s+(?:la\s+)?c[aá]mara\b",
         r"\b(qué ves|qué me muestro|analiza esto)\b",
         r"\b(describe lo que|qué es esto)\b",
     ),

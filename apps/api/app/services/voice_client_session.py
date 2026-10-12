@@ -395,7 +395,8 @@ def push_client_action(user_id: str, action: str, payload: dict[str, Any] | None
     if action == "camera_activate":
         from app.services.voice_device_gate import camera_open_allowed
 
-        if not camera_open_allowed(user_id):
+        extra = str((payload or {}).get("heard") or "")
+        if not camera_open_allowed(user_id, extra):
             logger.info("[CAMERA] no abrir: stop u otra frase user=%s", user_id[:8])
             return 0
     session = _get(user_id)

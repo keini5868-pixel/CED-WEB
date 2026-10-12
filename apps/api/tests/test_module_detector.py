@@ -166,7 +166,7 @@ def test_pdf_priority_over_finance_soft():
 
 
 def test_user_phrase_camera_abre_y_analiza():
-    d1 = detect_intent("abre la cámara", classify=_never_action)
+    d1 = detect_intent("CED enciende la cámara", classify=_never_action)
     d2 = detect_intent("analiza esto", classify=_never_action)
     d3 = detect_intent("analiza lo que tengo en la mano", classify=_never_action)
     assert d1.module == "camera" and d1.activate

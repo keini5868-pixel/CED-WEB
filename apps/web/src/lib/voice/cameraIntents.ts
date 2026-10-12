@@ -1,20 +1,15 @@
-/** Detección de intents de cámara en transcripciones (español). */
+/** Encender cámara: solo «CED enciende la cámara». GRABAR y el resto no. */
 
 import { isStopUtterance } from "@/lib/voice/stopLatch";
 
 export type CameraIntent = "activate" | "deactivate" | null;
 
-const ACTIVATE_PATTERNS = [
-  /\bced[,]?\s*mira\b/i,
-  /\bmira\s+esto\b/i,
-  /\bmira\s+lo\s+que\s+tengo\b/i,
-  /\bmira\s+esta\s+imagen\b/i,
-  /\bven[,]?\s*mira\b/i,
-  /\bactiva(r)?\s+la\s+c[aá]mara\b/i,
-  /\bactivate\s+the\s+camera\b/i,
-  /\benciende\s+la\s+c[aá]mara\b/i,
-  /\bquiero\s+que\s+veas\b/i,
-];
+const CED_NAME = String.raw`(?:ced|set|sec|sed|c|ce|seth|said|seid|sit|cet)`;
+
+const ACTIVATE_PATTERN = new RegExp(
+  String.raw`\b(?:ok(?:ay|ey)?\s+|oye\s+)?${CED_NAME}\b.{0,24}\benciende(?:r|a)?\s+(?:la\s+)?c[aá]mara\b`,
+  "i",
+);
 
 const DEACTIVATE_PATTERNS = [
   /\bya\s+no\s+mires\b/i,
@@ -30,8 +25,11 @@ export function parseCameraIntent(transcript: string): CameraIntent {
   for (const pattern of DEACTIVATE_PATTERNS) {
     if (pattern.test(text)) return "deactivate";
   }
-  for (const pattern of ACTIVATE_PATTERNS) {
-    if (pattern.test(text)) return "activate";
-  }
+  if (ACTIVATE_PATTERN.test(text)) return "activate";
   return null;
+}
+
+/** Única frase de voz que puede encender el hardware. GRABAR no. */
+export function isCameraOpenUtterance(transcript: string): boolean {
+  return parseCameraIntent(transcript) === "activate";
 }

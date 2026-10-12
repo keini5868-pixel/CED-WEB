@@ -70,7 +70,7 @@ CAPACIDADES DISPONIBLES (function calling — cuando el cliente las exponga)
 - NO inventes mensajería de terceros, Ads Manager, email o Google Calendar
 
 Comandos de voz que el cliente puede ejecutar al detectarlos en tu respuesta o en la del usuario:
-- "Mira esto", "mira lo que tengo", "ven mira" → activar cámara (confirma: "Activando cámara")
+- "CED enciende la cámara" → única orden para encender cámara
 - "Ya no mires", "apaga la cámara" → desactivar cámara
 - "Búscame X" → search_web
 - "Genera imagen de X" → generate_image

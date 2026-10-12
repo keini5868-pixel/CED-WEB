@@ -177,9 +177,10 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "request_camera_activation",
         "description": (
-            "Activa la cámara del usuario cuando pida visión o quiera mostrar algo. "
-            "Usar si dice 'activa la cámara', 'mira esto', '¿qué ves?'. "
-            "Tras activar confirma breve: 'Cámara activa.' NO describes nada visual hasta analyze_camera_frame."
+            "Enciende la cámara SOLO si el usuario dijo «CED enciende la cámara» "
+            "(o okay set / ok ced enciende la cámara). "
+            "NUNCA con stop, GRABAR, mira esto, activa, abre o qué ves. "
+            "Tras activar: 'Cámara activa.' NO describes nada visual hasta analyze_camera_frame."
         ),
         "parameters": {
             "type": "object",
@@ -223,9 +224,10 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "analyze_camera_frame",
         "description": (
-            "OBLIGATORIO antes de describir algo visual. Captura y analiza el frame de cámara. "
-            "Si la cámara está apagada, invoca request_camera_activation primero. "
-            "Responde SOLO con el resultado de esta herramienta — PROHIBIDO inventar lo que ves."
+            "Analiza el frame SOLO si la cámara ya está encendida. "
+            "Si está apagada: no la enciendas; di que no está activa. "
+            "Encender es otra orden: «CED enciende la cámara». "
+            "Responde SOLO con el resultado — PROHIBIDO inventar lo que ves."
         ),
         "parameters": {
             "type": "object",
@@ -241,9 +243,9 @@ OPENAI_REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "buscar_lo_visible",
         "description": (
-            "Busca en internet información sobre lo que muestra la cámara. "
-            "Requiere cámara activa (request_camera_activation si hace falta). "
-            "OBLIGATORIO invocar esta tool — PROHIBIDO inventar resultados de búsqueda visual."
+            "Busca en internet lo que muestra la cámara SOLO si ya está encendida. "
+            "Si está apagada: no la enciendas. Encender es «CED enciende la cámara». "
+            "PROHIBIDO inventar resultados de búsqueda visual."
         ),
         "parameters": {
             "type": "object",

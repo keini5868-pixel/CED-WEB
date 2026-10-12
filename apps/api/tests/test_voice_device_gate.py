@@ -17,7 +17,9 @@ def test_stop_does_not_receive_the_camera_tool():
     assert "activar_modo_conducir" not in device_tools_for_turn("etop")
     assert "request_camera_activation" not in device_tools_for_turn("okay set stop")
     assert "request_camera_activation" not in device_tools_for_turn("hola, qué tal")
-    assert "request_camera_activation" in device_tools_for_turn("activa la cámara")
+    assert "request_camera_activation" not in device_tools_for_turn("activa la cámara")
+    assert "request_camera_activation" not in device_tools_for_turn("mira esto")
+    assert "request_camera_activation" in device_tools_for_turn("CED enciende la cámara")
     assert "activar_modo_conducir" in device_tools_for_turn("abre el mapa")
     assert "request_camera_activation" not in device_tools_for_turn("abre el mapa")
     for phrase in (
@@ -35,9 +37,10 @@ def test_stop_does_not_receive_the_camera_tool():
 
 
 def test_camera_phrase_does_not_open_the_map():
-    assert camera_open_allowed("gate-b", "activa la cámara") is True
-    assert map_open_allowed("gate-b", "activa la cámara") is False
-    assert camera_open_allowed("gate-b", "mira esto") is True
+    assert camera_open_allowed("gate-b", "CED enciende la cámara") is True
+    assert map_open_allowed("gate-b", "CED enciende la cámara") is False
+    assert camera_open_allowed("gate-b", "mira esto") is False
+    assert camera_open_allowed("gate-b", "activa la cámara") is False
 
 
 def test_map_phrase_does_not_open_the_camera():
@@ -89,5 +92,24 @@ def test_stop_is_not_a_camera_request():
 
     for phrase in ("stop", "estop", "etop", "esto", "es todo", "alto"):
         assert resolve_camera_voice_request(phrase) is None
-    assert resolve_camera_voice_request("activa la cámara") == "request_camera_activation"
+    assert resolve_camera_voice_request("activa la cámara") is None
+    assert resolve_camera_voice_request("CED enciende la cámara") == "request_camera_activation"
     assert resolve_camera_voice_request("mira esto") == "analyze_camera_frame"
+    assert resolve_camera_voice_request("GRABAR") is None
+
+
+def test_activa_phrase_does_not_open_via_tool():
+    uid = "gate-h"
+    vcs.note_heard_line(uid, "activa la cámara")
+    result = asyncio.run(execute_voice_tool("request_camera_activation", uid, {}))
+    assert result.get("skipped") == "not_camera"
+    action = (vcs.get_state(uid).get("client_action") or {})
+    assert action.get("action") != "camera_activate"
+
+
+def test_grabar_does_not_open_the_camera():
+    assert camera_open_allowed("gate-grabar", "GRABAR") is False
+    assert camera_open_allowed("gate-grabar", "grabar") is False
+    from app.services.voice_device_gate import device_tools_for_turn
+
+    assert "request_camera_activation" not in device_tools_for_turn("GRABAR")

@@ -105,7 +105,10 @@ import {
   cameraAnalyzeQuestion,
   isCameraAnalyzeIntent,
 } from "@/lib/voice/cameraAnalyzeIntent";
-import { parseCameraIntent } from "@/lib/voice/cameraIntents";
+import {
+  isCameraOpenUtterance,
+  parseCameraIntent,
+} from "@/lib/voice/cameraIntents";
 import { isStopUtterance } from "@/lib/voice/stopLatch";
 import {
   parseFacebookPublishMessage,
@@ -340,6 +343,7 @@ export function useCedVoiceSession(
     (opts?: {
       ackActionId?: number;
       showFeedback?: boolean;
+      heard?: string;
     }) => Promise<void>
   >(async () => undefined);
   const cameraIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -572,6 +576,7 @@ export function useCedVoiceSession(
         await activateCameraFromVoiceRef.current({
           ackActionId: action.id,
           showFeedback: false,
+          heard: String(action.payload.heard || lastHeardUserTextRef.current),
         });
         return;
       }
@@ -744,9 +749,10 @@ export function useCedVoiceSession(
             setHistoryOpen(true);
           }
           if (ev.type === "camera_activate") {
-            if (!isStopUtterance(lastHeardUserTextRef.current)) {
-              activateCameraFromVoiceRef.current({ showFeedback: false });
-            }
+            activateCameraFromVoiceRef.current({
+              showFeedback: false,
+              heard: String(ev.heard || lastHeardUserTextRef.current),
+            });
           }
           if (ev.type === "recharge_needed") {
             const resource = String(ev.resource || "");
@@ -932,7 +938,7 @@ export function useCedVoiceSession(
         wantsCameraImageForPublish(userText);
       if (useCamera) {
         if (!cameraStreamRef.current) {
-          await toggleCameraRef.current(true);
+          return {};
         }
         const frame = await waitForCameraFrame(CAMERA_FRAME_WARM_MS);
         if (frame) return { imageData: frame };
@@ -1238,8 +1244,9 @@ export function useCedVoiceSession(
   toggleCameraRef.current = toggleCamera;
 
   const activateCameraFromVoice = useCallback(
-    (opts?: { ackActionId?: number; showFeedback?: boolean }) => {
-      if (isStopUtterance(lastHeardUserTextRef.current)) {
+    (opts?: { ackActionId?: number; showFeedback?: boolean; heard?: string }) => {
+      const heard = (opts?.heard || lastHeardUserTextRef.current).trim();
+      if (isStopUtterance(heard) || !isCameraOpenUtterance(heard)) {
         if (opts?.ackActionId) {
           return ackVoiceClientAction(opts.ackActionId);
         }
@@ -2099,14 +2106,15 @@ export function useCedVoiceSession(
           try {
             const hadStream = !!cameraStreamRef.current;
             if (!hadStream) {
-              await toggleCameraRef.current(true);
+              client.sendNarrationBrief(
+                "La cámara no está activa. Diga CED enciende la cámara.",
+              );
+              return;
             }
-            const frame = await waitForCameraFrame(
-              hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
-            );
+            const frame = await waitForCameraFrame(CAMERA_FRAME_READY_MS);
             if (!frame) {
               client.sendNarrationBrief(
-                "active la cámara primero para buscar lo que veo.",
+                "La cámara no está activa. Diga CED enciende la cámara.",
               );
               return;
             }
@@ -2145,15 +2153,15 @@ export function useCedVoiceSession(
           try {
             const hadStream = !!cameraStreamRef.current;
             if (!hadStream) {
-              await toggleCameraRef.current(true);
+              client.sendNarrationBrief(
+                "La cámara no está activa. Diga CED enciende la cámara.",
+              );
+              return;
             }
-            const frame = await waitForCameraFrame(
-              hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
-              true,
-            );
+            const frame = await waitForCameraFrame(CAMERA_FRAME_READY_MS, true);
             if (!frame) {
               client.sendNarrationBrief(
-                "activa la cámara y muéstrame qué quieres que identifique.",
+                "La cámara no está activa. Diga CED enciende la cámara.",
               );
               return;
             }
@@ -2175,18 +2183,12 @@ export function useCedVoiceSession(
 
       const handleCameraActivate = (text: string) => {
         void (async () => {
-          const hadStream = !!cameraStreamRef.current?.active;
-          if (!hadStream) {
-            await toggleCameraRef.current(true, { announce: false });
-          }
+          await activateCameraFromVoiceRef.current({ showFeedback: true });
           if (isCameraAnalyzeIntent(text)) {
             runCameraAnalyze(text);
             return;
           }
           if (isVisualSearchIntent(text)) {
-            if (!hadStream) {
-              await new Promise((r) => window.setTimeout(r, 500));
-            }
             runVisualSearch(text);
             return;
           }
@@ -2870,14 +2872,14 @@ export function useCedVoiceSession(
           if (name === BUSCAR_LO_VISIBLE) {
             const hadStream = !!cameraStreamRef.current;
             if (!hadStream) {
-              await toggleCameraRef.current(true);
+              return {
+                spoken: "La cámara no está activa. Diga CED enciende la cámara.",
+              };
             }
-            const frame = await waitForCameraFrame(
-              hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
-            );
+            const frame = await waitForCameraFrame(CAMERA_FRAME_READY_MS);
             if (!frame) {
               return {
-                spoken: "active la cámara para buscar lo que veo.",
+                spoken: "La cámara no está activa. Diga CED enciende la cámara.",
               };
             }
             const pregunta = String(args.pregunta ?? args.question ?? "").trim();
@@ -2899,15 +2901,14 @@ export function useCedVoiceSession(
             }
             const hadStream = !!cameraStreamRef.current;
             if (!hadStream) {
-              await toggleCameraRef.current(true);
+              return {
+                spoken: "La cámara no está activa. Diga CED enciende la cámara.",
+              };
             }
-            const frame = await waitForCameraFrame(
-              hadStream ? CAMERA_FRAME_READY_MS : CAMERA_FRAME_WARM_MS,
-              true,
-            );
+            const frame = await waitForCameraFrame(CAMERA_FRAME_READY_MS, true);
             if (!frame) {
               return {
-                spoken: "no pude capturar la cámara. Actívala y vuelve a intentar.",
+                spoken: "La cámara no está activa. Diga CED enciende la cámara.",
               };
             }
             const pregunta = String(
@@ -3032,17 +3033,21 @@ export function useCedVoiceSession(
           }
         },
         onCameraIntent: (intent) => {
-          if (intent === "activate" && !client.userExplicitlyRequestedVision?.()) return;
-          void toggleCameraRef.current(intent === "activate");
+          if (intent === "activate") {
+            void activateCameraFromVoiceRef.current({ showFeedback: false });
+            return;
+          }
+          void toggleCameraRef.current(false);
         },
         onCameraTool: async (intent) => {
-          if (intent === "activate" && !client.getLastMeaningfulUserUtterance().trim()) {
-            return false;
-          }
+          const heard =
+            lastHeardUserTextRef.current ||
+            client.getLastMeaningfulUserUtterance();
           if (intent === "activate") {
-            if (!cameraStreamRef.current) {
-              await toggleCameraRef.current(true);
+            if (!isCameraOpenUtterance(heard)) {
+              return false;
             }
+            await activateCameraFromVoiceRef.current({ showFeedback: false });
             const stream = cameraStreamRef.current;
             if (stream) {
               await client.attachCameraStream(stream);

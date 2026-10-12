@@ -1,7 +1,7 @@
 """Cámara y mapa son órdenes distintas del silencio.
 
-El modelo no recibe esas herramientas si la frase no las pidió.
-«stop» no comparte lista con «abre la cámara» ni con «abre el mapa».
+Encender la cámara es UNA frase: «CED enciende la cámara».
+GRABAR, stop, mira esto, activa, abre o qué ves no la encienden.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from contextvars import ContextVar
 
 from app.services.cognitive_intents import is_camera_deactivation_intent
 from app.services.voice_client_session import last_heard_line
-from app.services.voice_cue import is_stop_utterance
+from app.services.voice_cue import is_stop_utterance, mentions_ced_name
 
 CAMERA_MODEL_TOOLS = frozenset(
     {
@@ -32,10 +32,8 @@ DEVICE_MODEL_TOOLS = CAMERA_MODEL_TOOLS | CAMERA_OFF_TOOLS | MAP_MODEL_TOOLS
 
 _turn_text: ContextVar[str] = ContextVar("ced_voice_turn_text", default="")
 
-_CAMERA_OPEN = re.compile(
-    r"\b(?:activa(?:r|me)?|activo|enciende(?:r)?|prende(?:r)?|abre(?:r)?)\b"
-    r".{0,30}\b(?:c[aá]mara|camara)\b|"
-    r"\b(?:c[aá]mara|camara)\b.{0,20}\b(?:activa|enciende|prende|abre)\b",
+_ENCIENDE_CAMARA = re.compile(
+    r"\benciende(?:r|a)?\s+(?:la\s+)?c[aá]mara\b",
     re.I,
 )
 _CAMERA_VISION = re.compile(
@@ -62,12 +60,15 @@ def current_turn_text() -> str:
 
 
 def is_camera_open_phrase(text: str) -> bool:
+    """Única orden que enciende la cámara: CED + enciende la cámara."""
     heard = (text or "").strip()
     if not heard or is_stop_utterance(heard):
         return False
     if is_camera_deactivation_intent(heard):
         return False
-    return bool(_CAMERA_OPEN.search(heard))
+    if not mentions_ced_name(heard):
+        return False
+    return bool(_ENCIENDE_CAMARA.search(heard))
 
 
 def is_camera_vision_phrase(text: str) -> bool:
@@ -89,8 +90,10 @@ def device_tools_for_turn(text: str) -> frozenset[str]:
     if is_stop_utterance(text):
         return frozenset()
     keep: set[str] = set()
-    if is_camera_open_phrase(text) or is_camera_vision_phrase(text):
-        keep.update(CAMERA_MODEL_TOOLS)
+    if is_camera_open_phrase(text):
+        keep.add("request_camera_activation")
+    if is_camera_vision_phrase(text):
+        keep.update({"analyze_camera_frame", "buscar_lo_visible"})
     if is_camera_deactivation_intent(text):
         keep.update(CAMERA_OFF_TOOLS)
     if is_map_open_phrase(text):
@@ -112,7 +115,7 @@ def camera_open_allowed(user_id: str, heard: str = "") -> bool:
     text = (latest or heard or current_turn_text()).strip()
     if not text or is_stop_utterance(text):
         return False
-    return is_camera_open_phrase(text) or is_camera_vision_phrase(text)
+    return is_camera_open_phrase(text)
 
 
 def map_open_allowed(user_id: str, heard: str = "") -> bool:
@@ -128,7 +131,7 @@ def map_open_allowed(user_id: str, heard: str = "") -> bool:
 
 
 def user_asked_for_camera(text: str) -> bool:
-    return is_camera_open_phrase(text) or is_camera_vision_phrase(text)
+    return is_camera_open_phrase(text)
 
 
 def user_asked_for_map(text: str) -> bool:

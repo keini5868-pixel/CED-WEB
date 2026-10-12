@@ -401,7 +401,8 @@ def build_base_voice_system(
                 base = (
                     f"{base}\n\n# ESTADO CÁMARA (backend)\n"
                     "Cámara APAGADA o sin stream confirmado. "
-                    "Invoca request_camera_activation y espera confirmación real antes de describir nada visual."
+                    "NO la enciendas. Solo «CED enciende la cámara» abre hardware. "
+                    "Si pide ver/analizar con ella apagada, di que no está activa."
                 )
         except Exception:  # noqa: BLE001
             pass

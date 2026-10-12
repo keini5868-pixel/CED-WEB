@@ -33,6 +33,7 @@ export type VoiceToolEvent = {
   thumbnail_url?: string;
   resource?: string;
   message?: string;
+  heard?: string;
 };
 
 export type VoiceLiveTranscript = {

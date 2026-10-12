@@ -96,9 +96,7 @@ MODULE_LABELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 STRICT_ANCHORS: dict[str, tuple[str, ...]] = {
     "camera": (
-        r"\babre\s+(?:la\s+)?c[áa]mara\b",
-        r"\benciende\s+(?:la\s+)?c[áa]mara\b",
-        r"\bactiva\s+(?:la\s+)?c[áa]mara\b",
+        r"\b(?:ced|set|sec|sed)\b.{0,24}\benciende(?:r)?\s+(?:la\s+)?c[áa]mara\b",
         r"\banaliza\s+esto\b",
         r"\banaliza\s+lo\s+que\s+(?:tengo|tienes|ves|veo|hay)\b",
         r"\banaliza\s+.*\ben\s+(?:la\s+)?mano\b",

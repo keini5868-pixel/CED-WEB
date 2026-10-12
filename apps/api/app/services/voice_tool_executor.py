@@ -326,13 +326,14 @@ async def handle_camera_activation(
     """Pide al cliente activar cámara; fast=True responde al instante sin bloquear."""
     from app.services.voice_device_gate import camera_open_allowed
 
-    if not camera_open_allowed(user_id, heard):
+    phrase = (heard or vcs.last_heard_line(user_id) or "").strip()
+    if not camera_open_allowed(user_id, phrase):
         logger.info("[CAMERA] bloqueada: la frase no pidió cámara user=%s", user_id[:8])
         return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
     if vcs.is_camera_active(user_id):
         return _spoken_ok("Cámara activa, señor. Lista para analizar.")
-    vcs.push_client_action(user_id, "camera_activate", {})
-    vcs.push_tool_event(user_id, {"type": "camera_activate"})
+    vcs.push_client_action(user_id, "camera_activate", {"heard": phrase})
+    vcs.push_tool_event(user_id, {"type": "camera_activate", "heard": phrase})
     if fast:
         return _spoken_ok("Cámara activa, señor. Lista para analizar.")
     active = await _wait_camera_ack(user_id, 8.0)

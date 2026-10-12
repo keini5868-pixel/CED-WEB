@@ -163,6 +163,11 @@ def _edit_distance(a: str, b: str) -> int:
     return prev[-1]
 
 
+def mentions_ced_name(text: str) -> bool:
+    """True si la frase nombra a CED, aunque el micrófono escriba SET/SEC."""
+    return any(_is_name(token) for token in _norm(text).split())
+
+
 def _is_name(token: str) -> bool:
     if token in _NAME_EXACT:
         return True

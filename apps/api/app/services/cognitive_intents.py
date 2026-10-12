@@ -556,40 +556,11 @@ def is_navigation_confirm(text: str) -> bool:
     return any(p.search(t) for p in _NAV_CONFIRM_PATTERNS)
 
 
-_CAMERA_ACTIVATION_PATTERNS = [
-    re.compile(
-        r"\b(activa|activar|enciende|encender|abre|abrir)\b.*\b(c[aá]mara|cam|video)\b",
-        re.I,
-    ),
-    re.compile(
-        r"\b(c[aá]mara)\b.*\b(activa|on|encender)\b",
-        re.I,
-    ),
-    re.compile(
-        r"\b(activa(r|me|do)?|activo|enciende|prende|abre)\s+(la\s+)?c[aá]mara\b",
-        re.I,
-    ),
-]
-
-
 def is_camera_activation_intent(text: str) -> bool:
-    """True cuando el usuario pide encender la cámara (no análisis ni apagado)."""
-    raw = (text or "").strip()
-    if not raw:
-        return False
-    from app.services.voice_cue import is_stop_utterance
+    """Única orden de encendido: «CED enciende la cámara»."""
+    from app.services.voice_device_gate import is_camera_open_phrase
 
-    if is_stop_utterance(raw):
-        return False
-    if is_camera_deactivation_intent(raw):
-        return False
-    t = normalize_text(raw)
-    if re.search(
-        r"\b(qu[eé]\s+ves|analiza|visi[oó]n|busca.*visible|mira esto|observas)\b",
-        t,
-    ):
-        return False
-    return any(p.search(t) for p in _CAMERA_ACTIVATION_PATTERNS)
+    return is_camera_open_phrase(text)
 
 
 _CAMERA_DEACTIVATION_PATTERNS = [
