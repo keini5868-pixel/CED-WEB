@@ -320,6 +320,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     last_answered_user_key = ""
     last_scheduled_user_key = ""
     generation_seq = 0
+    stop_interrupt_id = 0
     answered_response_ids: set[int] = set()
     meta_publish_guard: dict[str, float] = {}
     response_required_counts: dict[int, int] = {}
@@ -869,21 +870,23 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         set_turn_text(line)
 
     async def cut_agent_for_stop(line: str) -> None:
-        """Corta lo que CED está diciendo en cuanto se oye stop."""
-        nonlocal last_stop_cut_at, generation_seq, debounce_task
-        now = time.time()
-        if now - last_stop_cut_at < 1.2:
-            return
-        last_stop_cut_at = now
-        generation_seq += 1
-        if debounce_task and not debounce_task.done():
-            debounce_task.cancel()
+        """Corta lo que CED está diciendo en cuanto se oye stop. No dice nada."""
+        nonlocal last_stop_cut_at, generation_seq, debounce_task, stop_interrupt_id
         who = (user_id or "").strip()
         if who:
             vcs.set_voice_held(who, True)
+        generation_seq += 1
+        if debounce_task and not debounce_task.done():
+            debounce_task.cancel()
+        now = time.time()
+        if now - last_stop_cut_at < 0.4:
+            return
+        last_stop_cut_at = now
+        stop_interrupt_id += 1
         await websocket.send_json(
             {
                 "response_type": "agent_interrupt",
+                "interrupt_id": stop_interrupt_id,
                 "content": "",
                 "content_complete": True,
                 "end_call": False,
@@ -1391,6 +1394,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             def _can_deliver_turn(rid: int = scheduled_rid) -> bool:
                 if rid in answered_response_ids:
+                    return False
+                if my_generation != generation_seq:
+                    return False
+                who_held = (uid or user_id or "").strip()
+                if who_held and vcs.voice_is_held(who_held):
                     return False
                 latest = turn_latest_rid.get(_turn_slot(scheduled_key), rid)
                 return rid >= latest

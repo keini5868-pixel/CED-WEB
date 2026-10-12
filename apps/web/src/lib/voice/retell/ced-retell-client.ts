@@ -1,6 +1,7 @@
 import { RetellWebClient, type StartCallConfig } from "retell-client-js-sdk";
 
 import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
+import { isStopUtterance, isWakeUtterance } from "@/lib/voice/stopLatch";
 import {
   inferRetellTransport,
   mapRetellClientError,
@@ -97,6 +98,8 @@ export class CedRetellClient {
   private audioPlaybackStarted = false;
   private agentSpeaking = false;
   private agentMutedForBargeIn = false;
+  /** Stop real: el volumen se queda en cero hasta «ok CED». */
+  private voiceHeld = false;
   /** YouTube activo: mic mute + agent volume 0 (anti AGC/USB pump). */
   private youtubeMediaMode = false;
   private agentTurnSeq = 0;
@@ -161,6 +164,31 @@ export class CedRetellClient {
     if (!this.agentSpeaking) return;
     this.muteAgentPlayback();
     this.callbacks.onClearAgentPartial?.();
+  }
+
+  private holdVoice(): void {
+    this.voiceHeld = true;
+    this.muteAgentPlayback();
+    this.callbacks.onClearAgentPartial?.();
+  }
+
+  private releaseVoice(): void {
+    this.voiceHeld = false;
+    this.agentMutedForBargeIn = true;
+    this.restoreAgentPlayback();
+  }
+
+  /** Stop deja el audio en cero. El saludo solo vuelve con el aviso. */
+  private applyVoiceHold(userText: string): void {
+    const text = userText.trim();
+    if (!text) return;
+    if (isStopUtterance(text)) {
+      this.holdVoice();
+      return;
+    }
+    if (this.voiceHeld && isWakeUtterance(text)) {
+      this.releaseVoice();
+    }
   }
 
   private stopAudioRetry(): void {
@@ -304,6 +332,7 @@ export class CedRetellClient {
 
   private setupListeners(): void {
     this.client.on("call_started", () => {
+      this.voiceHeld = false;
       this.liveKitConnected = true;
       retellLog("call_started — media conectado");
       this.startAudioRetryLoop();
@@ -330,14 +359,15 @@ export class CedRetellClient {
     });
 
     this.client.on("agent_start_talking", () => {
-      this.restoreAgentPlayback();
+      if (this.voiceHeld) this.muteAgentPlayback();
+      else this.restoreAgentPlayback();
       this.agentSpeaking = true;
       this.callbacks.onAgentTalking?.(true);
     });
 
     this.client.on("agent_stop_talking", () => {
       this.agentSpeaking = false;
-      this.restoreAgentPlayback();
+      if (!this.voiceHeld) this.restoreAgentPlayback();
       this.callbacks.onAgentTalking?.(false);
       if (this.lastAgentLine && this.lastAgentLine !== this.lastPersistedAgentLine) {
         const line = this.lastAgentLine;
@@ -386,6 +416,7 @@ export class CedRetellClient {
       }
 
       const userText = this.latestLine(lines, "user");
+      if (userText) this.applyVoiceHold(userText);
       if (userText && userText !== this.pendingUserText) {
         if (update.turntaking === "user_turn") {
           this.maybeBargeIn();
