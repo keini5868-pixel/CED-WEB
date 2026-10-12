@@ -103,16 +103,24 @@ export function CedVoiceHub() {
   const [liveVoiceImages, setLiveVoiceImages] = useState<LiveVoiceImage[]>([]);
   const [imageGenerating, setImageGenerating] = useState(false);
 
-  const showVoiceGeneratingImage = useCallback((prompt?: string) => {
+  const showVoiceGeneratingImage = useCallback((prompt?: string, status?: string) => {
     setImageGenerating(true);
     setLiveVoiceImages((prev) => {
-      if (prev.some((item) => item.status === "generating")) return prev;
+      if (prev.some((item) => item.status === "generating")) {
+        if (!status && !prompt) return prev;
+        return prev.map((item) =>
+          item.status === "generating"
+            ? { ...item, prompt: prompt || item.prompt, label: status || item.label }
+            : item,
+        );
+      }
       return [
         ...prev,
         {
           streamKey: `img-wait-${Date.now()}`,
           prompt,
           status: "generating",
+          label: status,
         },
       ];
     });
@@ -341,8 +349,8 @@ export function CedVoiceHub() {
       upsertLiveVoiceTurn(text, role, options);
     },
     onClearAgentPartial: clearAgentPartial,
-    onGeneratingImage: (prompt) => {
-      showVoiceGeneratingImage(prompt);
+    onGeneratingImage: (prompt, status) => {
+      showVoiceGeneratingImage(prompt, status);
     },
     onImageGenerationFailed: () => {
       clearVoiceGeneratingImage();

@@ -137,8 +137,9 @@ export default function AdminSentinelPage() {
         ) : null}
         {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
         <p className="ced-hud-text-muted mt-4 text-xs">
-          Cuando una imagen o un PDF falla a medias, el siguiente motor lo retoma y
-          quien espera ve: Esperando y corrigiendo…
+          Con la guardia activa, si una imagen o un documento no coincide con lo
+          pedido, se rehace y quien espera ve: Corrigiendo datos para darlo con más
+          precisión…
         </p>
       </HudPanel>
 

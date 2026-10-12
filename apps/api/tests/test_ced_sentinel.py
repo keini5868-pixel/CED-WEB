@@ -7,7 +7,9 @@ import pytest
 from app.services import ced_sentinel
 from app.services.ced_sentinel import (
     CORRECTING_HINT,
+    anchored_brief,
     begin_correction,
+    brief_drifts_from_request,
     end_correction,
     note_error,
     public_status,
@@ -73,6 +75,27 @@ def test_sweep_records_a_level_change_once(monkeypatch):
     status = public_status()
     assert status["enabled"] is True
     assert len(status["checks"]) == 4
+
+
+def test_guard_corrects_only_while_it_stays_on():
+    asked = 'un cartel que diga "Prospección IA" sobre fondo negro'
+    produced = "Photorealistic poster on a black background"
+    assert brief_drifts_from_request(produced, asked) is False
+
+    set_enabled(True)
+    assert brief_drifts_from_request(produced, asked) is True
+    anchored = anchored_brief(produced, asked)
+    assert "Prospección IA" in anchored
+    assert brief_drifts_from_request(anchored, asked) is False
+
+    same_topic = (
+        "Un castillo rojo al amanecer sobre la colina, con luz cálida y cielo despejado."
+    )
+    other_topic = (
+        "Un retrato de una bailarina en un estudio oscuro, con cortinas y focos."
+    )
+    assert brief_drifts_from_request(other_topic, same_topic) is True
+    assert brief_drifts_from_request(same_topic, same_topic) is False
 
 
 def test_note_error_dedupes_while_enabled():

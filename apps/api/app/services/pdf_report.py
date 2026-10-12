@@ -211,6 +211,69 @@ def _compose_pdf_body_cloud_fallback(prompt: str, *, detail_level: str = "brief"
     return ""
 
 
+def _pdf_body_or_precision_retry(
+    cleaned: str,
+    *,
+    prompt: str,
+    requested: str,
+    user_id: str | None,
+    timeout: float,
+    max_tokens: int,
+) -> str:
+    """Con la guardia activa, reescribe una vez si el cuerpo no es lo pedido."""
+    from app.services.ced_sentinel import (
+        PRECISION_HINT,
+        brief_drifts_from_request,
+        correcting,
+    )
+
+    if not user_id or not brief_drifts_from_request(cleaned, requested):
+        return cleaned
+
+    def _call_again() -> str:
+        from google import genai
+        from google.genai import types
+
+        from app.config import get_settings
+
+        api_key = get_settings().google_api_key.strip()
+        if not api_key:
+            return ""
+        client = genai.Client(api_key=api_key)
+        stricter = (
+            f"{prompt}\n\n"
+            "CORRECCIÓN: el texto anterior no respetó la petición. "
+            "Vuelve a redactar usando solo lo que el usuario pidió, "
+            "sin cambiar el tema ni omitir datos concretos."
+        )
+        response = client.models.generate_content(
+            model=_PDF_COMPOSE_MODEL,
+            contents=stricter,
+            config=types.GenerateContentConfig(
+                temperature=0.3,
+                max_output_tokens=max_tokens,
+            ),
+        )
+        return (response.text or "").strip()
+
+    with correcting(
+        user_id,
+        area="pdf",
+        detail="El documento no coincidía con el pedido; se redacta de nuevo.",
+        hint=PRECISION_HINT,
+    ):
+        try:
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                again = pool.submit(_call_again).result(timeout=timeout)
+            if again and len(again) >= 80:
+                return _sanitize_pdf_composed_body(again)
+        except FuturesTimeoutError:
+            logger.warning("[PDF] precision retry timeout")
+        except Exception:  # noqa: BLE001
+            logger.exception("[PDF] precision retry failed")
+    return cleaned
+
+
 def compose_pdf_body(
     *,
     title: str,
@@ -265,7 +328,14 @@ def compose_pdf_body(
                     safe_title[:60],
                     level,
                 )
-                return cleaned
+                return _pdf_body_or_precision_retry(
+                    cleaned,
+                    prompt=prompt,
+                    requested=req,
+                    user_id=user_id,
+                    timeout=compose_timeout,
+                    max_tokens=max_tokens,
+                )
         except FuturesTimeoutError:
             logger.warning("[PDF] compose timeout title=%s", safe_title[:60])
         except Exception:  # noqa: BLE001

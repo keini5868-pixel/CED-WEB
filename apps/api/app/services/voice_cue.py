@@ -1,7 +1,8 @@
-"""Modo grabación: CED solo habla entre «Ok CED» y «Ok CED, stop».
+"""Modo grabación: CED solo habla entre el nombre y un stop.
 
-La llamada sigue abierta y el micrófono escucha. El resto del speech
-(la presentación, el video) no genera respuesta.
+La llamada sigue abierta. «Ok CED», «okay set» y los errores típicos del
+reconocedor lo despiertan. «Ok CED, stop», «okay set stop» o un «stop»
+suelto lo callan. El resto del speech no genera respuesta.
 """
 
 from __future__ import annotations
@@ -11,26 +12,106 @@ import unicodedata
 
 CUE_GREETING = "Señor, sí, dígame."
 
-# ok / okay / okey / oye + el nombre, con los errores típicos del reconocedor.
-_WAKE = re.compile(
-    r"^(?:okey|okay|ok|oye)\s+(?:ced|seid|set|sec|sed|ce|c)\b\s*",
-)
-_STOP = re.compile(
-    r"^(?:stop|alto|silencio|callate|parate|basta)(?:\s+(?:ya|ahora|por favor|ced|c))?$",
-)
-_FILLER = frozenset(
+_WAKE_LEAD = frozenset(
     {
-        "",
+        "ok",
+        "okay",
+        "okey",
+        "okei",
+        "okai",
+        "oquei",
+        "okaye",
+        "oye",
+        "hey",
+        "ey",
+        "oi",
+        "oki",
+    }
+)
+# CED / SET y lo que el reconocedor suele escribir en su lugar.
+_NAME_EXACT = frozenset(
+    {
+        "ced",
+        "set",
+        "sec",
+        "sed",
+        "seid",
+        "said",
+        "sit",
+        "cet",
+        "zed",
+        "zet",
+        "sede",
+        "cede",
+        "seed",
+        "sid",
+        "cid",
+        "ce",
+        "se",
+        "c",
+        "see",
+        "ched",
+        "ked",
+        "ted",
+        "sett",
+        "sep",
+        "cep",
+        "seth",
+        "seht",
+        "jed",
+        "cedd",
+        "sedd",
+        "cedo",
+        "seto",
+    }
+)
+_STOP_WORD = frozenset(
+    {
+        "stop",
+        "estop",
+        "istop",
+        "stopp",
+        "stap",
+        "alto",
+        "silencio",
+        "callate",
+        "calla",
+        "cayate",
+        "parate",
+        "basta",
+        "detente",
+        "deten",
+        "quieto",
+        "cierra",
+    }
+)
+_GLUE = frozenset(
+    {
         "si",
         "dime",
         "digame",
         "hola",
         "oye",
         "escucha",
-        "por favor",
+        "por",
+        "favor",
         "adelante",
+        "ya",
+        "ahora",
+        "entonces",
+        "y",
+        "e",
+        "un",
+        "el",
+        "la",
+        "me",
+        "please",
+        "and",
+        "then",
+        "ahi",
     }
 )
+_FILLER = frozenset({"", "si", "dime", "digame", "hola", "oye", "escucha", "por favor", "adelante"})
 
 
 def _norm(text: str) -> str:
@@ -40,11 +121,65 @@ def _norm(text: str) -> str:
     return " ".join(folded.split())
 
 
-def _tail(text: str) -> str:
-    parts = (text or "").strip().split()
-    if len(parts) <= 2:
+def _edit_distance(a: str, b: str) -> int:
+    if abs(len(a) - len(b)) > 1:
+        return 2
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(
+                min(
+                    prev[j] + 1,
+                    cur[-1] + 1,
+                    prev[j - 1] + (ca != cb),
+                )
+            )
+        prev = cur
+    return prev[-1]
+
+
+def _is_name(token: str) -> bool:
+    if token in _NAME_EXACT:
+        return True
+    if not 2 <= len(token) <= 5:
+        return False
+    return any(_edit_distance(token, base) <= 1 for base in ("ced", "set", "sec", "sed"))
+
+
+def _is_stop_command(tokens: list[str]) -> bool:
+    """True si la frase corta es un stop, con o sin el nombre."""
+    if not tokens or len(tokens) > 8:
+        return False
+    if not any(token in _STOP_WORD for token in tokens):
+        return False
+    allowed = _WAKE_LEAD | _NAME_EXACT | _STOP_WORD | _GLUE
+    return all(token in allowed or _is_name(token) for token in tokens)
+
+
+def _wake_index(tokens: list[str]) -> int:
+    for i, token in enumerate(tokens[:-1] if len(tokens) > 1 else []):
+        if token in _WAKE_LEAD and _is_name(tokens[i + 1]):
+            return i
+    if len(tokens) == 1 and _is_name(tokens[0]):
+        return 0
+    return -1
+
+
+def _question_after(raw: str, tokens: list[str], wake_at: int) -> str:
+    """Quita el aviso («ok ced») y deja la pregunta con su puntuación."""
+    skip = 1 if len(tokens) == 1 else 2
+    if wake_at:
+        skip += wake_at
+    parts = _norm(raw).split()
+    if len(parts) <= skip:
         return ""
-    return " ".join(parts[2:]).strip(" ,.;:¡!¿?")
+    tail = " ".join(parts[skip:])
+    raw_norm = _norm(raw)
+    idx = raw_norm.find(tail)
+    if idx < 0:
+        return tail
+    return (raw or "").strip()[idx:].strip(" ,.;:¡!¿?")
 
 
 def decide_cue(text: str, *, enabled: bool, listening: bool) -> tuple[str, str]:
@@ -55,16 +190,19 @@ def decide_cue(text: str, *, enabled: bool, listening: bool) -> tuple[str, str]:
     raw = (text or "").strip()
     if not enabled:
         return "off", raw
-    norm = _norm(raw)
-    wake = _WAKE.match(norm)
-    if wake:
-        rest = norm[wake.end() :].strip()
-        if _STOP.fullmatch(rest):
-            return "stop", ""
-        if rest in _FILLER:
+    tokens = _norm(raw).split()
+    if not tokens:
+        return "ignore", ""
+    if _is_stop_command(tokens):
+        return "stop", ""
+    wake_at = _wake_index(tokens)
+    if wake_at >= 0:
+        rest = tokens[wake_at + (1 if len(tokens) == 1 else 2) :]
+        rest_text = " ".join(rest)
+        if rest_text in _FILLER:
             return "greet", ""
-        question = _tail(raw)
-        return ("answer", question or raw)
+        question = _question_after(raw, tokens, wake_at)
+        return "answer", question or raw
     if listening:
         return "answer", raw
     return "ignore", ""

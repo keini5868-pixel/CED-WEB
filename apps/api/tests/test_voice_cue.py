@@ -4,7 +4,16 @@ from app.services.voice_cue import decide_cue
 
 
 def test_wake_alone_greets():
-    for phrase in ("Ok CED", "ok c", "okay ced", "oye ce", "Ok, SEC"):
+    for phrase in (
+        "Ok CED",
+        "ok c",
+        "okay ced",
+        "oye ce",
+        "Ok, SEC",
+        "okay set",
+        "okey seth",
+        "oye said",
+    ):
         action, text = decide_cue(phrase, enabled=True, listening=False)
         assert action == "greet", phrase
         assert text == ""
@@ -22,7 +31,18 @@ def test_wake_with_question_answers_without_the_name():
 
 
 def test_stop_closes_and_presentation_stays_silent():
-    action, _text = decide_cue("Ok CED, stop", enabled=True, listening=True)
+    for phrase in (
+        "Ok CED, stop",
+        "okay, set, stop",
+        "okay seth stop",
+        "ok sec alto",
+        "stop",
+        "alto",
+        "cállate",
+    ):
+        action, _text = decide_cue(phrase, enabled=True, listening=True)
+        assert action == "stop", phrase
+    action, _text = decide_cue("stop", enabled=True, listening=False)
     assert action == "stop"
     action, _text = decide_cue(
         "y por eso el marketing en redes vende más",
@@ -30,6 +50,13 @@ def test_stop_closes_and_presentation_stays_silent():
         listening=False,
     )
     assert action == "ignore"
+    action, text = decide_cue(
+        "hay que hacer un stop en la campaña de redes porque vende más",
+        enabled=True,
+        listening=True,
+    )
+    assert action == "answer"
+    assert "campaña" in text or "campana" in text.lower()
 
 
 def test_while_open_a_normal_question_is_answered():

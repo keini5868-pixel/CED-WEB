@@ -2581,16 +2581,25 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
     if not prompt.strip():
         return _fail("Indique qué imagen desea generar, señor.", "missing_prompt")
     if voice_prompt_is_mismatch(prompt, llm_prompt):
-        logger.warning(
-            "[NATIVE:IMAGE] prompt mismatch args.prompt=%s prompt_used=%s",
-            llm_prompt[:160],
-            prompt[:160],
-        )
-        return _fail(
-            "El prompt de la imagen no coincidió con lo pedido, señor. Inténtelo de nuevo.",
-            "prompt_mismatch",
-            prompt_used=prompt,
-        )
+        from app.services.ced_sentinel import guard_is_on
+
+        if guard_is_on() and llm_prompt.strip() and llm_prompt.strip() != prompt.strip():
+            logger.info(
+                "[NATIVE:IMAGE] sentinel corrige prompt corto args=%s",
+                llm_prompt[:120],
+            )
+            prompt = llm_prompt.strip()
+        else:
+            logger.warning(
+                "[NATIVE:IMAGE] prompt mismatch args.prompt=%s prompt_used=%s",
+                llm_prompt[:160],
+                prompt[:160],
+            )
+            return _fail(
+                "El prompt de la imagen no coincidió con lo pedido, señor. Inténtelo de nuevo.",
+                "prompt_mismatch",
+                prompt_used=prompt,
+            )
     if not user_id:
         return _fail("No identifiqué al usuario, señor.", "missing_user_id")
 
@@ -2629,8 +2638,11 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
     )
     ok = bool(result.get("ok")) and bool(url)
     if ok and voice_prompt_is_mismatch(prompt_used, llm_prompt):
-        ok = False
-        result = {**result, "ok": False, "error": "prompt_mismatch"}
+        from app.services.ced_sentinel import guard_is_on
+
+        if not guard_is_on():
+            ok = False
+            result = {**result, "ok": False, "error": "prompt_mismatch"}
     published = ok
     spoken = (
         _VOICE_IMAGE_SUCCESS

@@ -5,13 +5,15 @@ esté apagado. La bitácora se guarda en Supabase (migración 045) para
 sobrevivir un reinicio del servidor.
 
 No reinicia procesos. Observa voz, pagos, datos y modelos, anota errores
-del proceso y, cuando un motor de imagen o PDF falla, el siguiente retoma
-el trabajo mientras el usuario ve «Esperando y corrigiendo…».
+del proceso y, mientras la guardia sigue activa, corrige una imagen o un
+documento que no coincide con lo pedido. Quien espera ve «Corrigiendo datos
+para darlo con más precisión…».
 """
 
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from contextlib import contextmanager
@@ -25,7 +27,42 @@ PROBE_INTERVAL_SEC = 60
 LIVE_MODEL_EVERY = 15
 EVENT_LIMIT = 120
 ERROR_DEDUP_SEC = 300
-CORRECTING_HINT = "Esperando y corrigiendo…"
+CORRECTING_HINT = "Corrigiendo datos para darlo con más precisión…"
+PRECISION_HINT = CORRECTING_HINT
+_EN_BRIEF = re.compile(
+    r"(?i)\b(photorealistic|subject lock|keep these|no text|critical:|flat graphic)\b"
+)
+_SPANISH_MARKERS = {
+    "para",
+    "como",
+    "sobre",
+    "desde",
+    "hasta",
+    "donde",
+    "cuando",
+    "porque",
+    "tambien",
+    "también",
+    "una",
+    "con",
+    "del",
+    "las",
+    "los",
+    "por",
+    "que",
+}
+_EN_WORDS = {
+    "the",
+    "and",
+    "with",
+    "scene",
+    "background",
+    "poster",
+    "photorealistic",
+    "keep",
+    "text",
+    "image",
+}
 
 _lock = threading.Lock()
 _stop = threading.Event()
@@ -105,8 +142,11 @@ def begin_correction(
         depth = _hint_depth.get(uid, 0) + 1
         _hint_depth[uid] = depth
         _hints[uid] = hint or CORRECTING_HINT
+        shown = _hints[uid]
         first = depth == 1
         enabled = bool(_state["enabled"])
+    if first and area == "imagen":
+        _ping_waiting_screen(uid, shown)
     if first and enabled:
         _append_event(
             kind="correction",
@@ -143,6 +183,97 @@ def correcting(
         yield
     finally:
         end_correction(user_id)
+
+
+def guard_is_on() -> bool:
+    return _is_enabled()
+
+
+def _looks_spanish(text: str) -> bool:
+    sample = (text or "").strip()
+    if not sample or _EN_BRIEF.search(sample):
+        return False
+    if re.search(r"[áéíóúñü]", sample, re.IGNORECASE):
+        return True
+    words = re.findall(r"[a-záéíóúñ]{3,}", sample.casefold())
+    if not words:
+        return False
+    english = sum(1 for word in words if word in _EN_WORDS)
+    if english >= 2:
+        return False
+    markers = sum(1 for word in words if word in _SPANISH_MARKERS)
+    if markers >= 2:
+        return True
+    return english == 0 and len(words) >= 6
+
+
+def _folded(text: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^\wáéíóúñ ]", "", (text or "").casefold())).strip()
+
+
+def brief_drifts_from_request(produced: str, requested: str) -> bool:
+    """True solo con la guardia activa, cuando el texto no conserva lo pedido."""
+    if not _is_enabled():
+        return False
+    req = (requested or "").strip()
+    used = (produced or "").strip()
+    if len(req) < 12 or not used:
+        return False
+    from app.services.chat_image_generation import (
+        image_prompt_covers_request,
+        voice_prompt_is_mismatch,
+    )
+    from app.services.copy_quality import extract_literal_on_image_copy
+
+    folded = _folded(used)
+    long_literals = [
+        quote.strip()
+        for quote in extract_literal_on_image_copy(req)
+        if len(_folded(quote)) >= 8
+    ]
+    if long_literals:
+        return any(_folded(quote) not in folded for quote in long_literals)
+    if voice_prompt_is_mismatch(used, req):
+        return True
+    if _looks_spanish(used) and _looks_spanish(req) and not image_prompt_covers_request(used, req):
+        return True
+    return False
+
+
+def anchored_brief(produced: str, requested: str) -> str:
+    """Devuelve el brief otra vez, anclado a lo que el usuario pidió."""
+    req = (requested or "").strip()
+    used = (produced or "").strip()
+    from app.services.copy_quality import extract_literal_on_image_copy
+
+    folded = _folded(used)
+    missing = [
+        quote.strip()
+        for quote in extract_literal_on_image_copy(req)
+        if len(_folded(quote)) >= 8 and _folded(quote) not in folded
+    ]
+    if missing:
+        labels = "; ".join(missing[:5])
+        return f"{used}\n\nTEXTOS EXACTOS pedidos por el usuario, sin cambiarlos: {labels}."[:3800]
+    return f"Pedido exacto del usuario, no lo cambies: {req}\n\n{used}"[:3800]
+
+
+def _ping_waiting_screen(user_id: str, hint: str) -> None:
+    """Si hay una llamada de voz, el hilo muestra el mismo estado que el chat."""
+    try:
+        from app.services import voice_client_session as vcs
+
+        if user_id not in vcs._sessions:
+            return
+        vcs.push_tool_event(
+            user_id,
+            {
+                "type": "generating_image",
+                "status": hint or CORRECTING_HINT,
+            },
+        )
+    except Exception:  # noqa: BLE001
+        return
 
 
 def note_error(area: str, title: str, detail: str = "", *, quiet: bool = False) -> None:

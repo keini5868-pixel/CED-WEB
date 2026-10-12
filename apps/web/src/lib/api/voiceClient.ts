@@ -18,6 +18,7 @@ export type VoiceToolEvent = {
   module?: string;
   image_url?: string;
   prompt?: string;
+  status?: string;
   title?: string;
   file_id?: string;
   text?: string;

@@ -1037,11 +1037,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if uid and vcs.cue_enabled(uid):
             from app.services.voice_cue import CUE_GREETING, decide_cue
 
+            heard = merged_user_query(transcript)
             cue_action, cue_text = decide_cue(
-                merged_user_query(transcript),
+                heard,
                 enabled=True,
                 listening=vcs.cue_is_open(uid),
             )
+            logger.info("[CUE] %s call=%s text=%s", cue_action, call_id, heard[:80])
             if cue_action == "ignore":
                 await ack_empty_response(response_id=response_id, reason="cue_idle")
                 return

@@ -1070,68 +1070,93 @@ def run_chat_image_generation(
         len(overlay_lines),
     )
 
-    img_result: dict[str, Any]
+    img_result: dict[str, Any] = {}
     # Nunca reinyectar historial como context (fuga de temas / tipografía basura).
     history_ctx = ""
 
-    if wants_literal_text:
-        # Tipografía: GPT Image edits si hay referencia; si no, generations.
-        logger.info(
-            "[CHAT:IMG-GEN] literal-text path (GPT Image/Ideogram) user=%s labels=%s ref=%s",
-            user_id[:8],
-            len(overlay_lines),
-            bool(ref_payload),
-        )
-        img_result = generate_image(
-            user_id=user_id,
-            plan_id=plan_id,
-            prompt=model_prompt,
-            quality="auto",
-            context="",
-            display_label=display_label or None,
-            prefer_ideogram=True,
-            reference_image=ref_payload[0] if ref_payload else None,
-            reference_mime=ref_payload[1] if ref_payload else None,
-        )
-        if (not img_result.get("ok") or not img_result.get("url")) and ref_payload:
-            logger.warning(
-                "[CHAT:IMG-GEN] motor tipográfico falló; Gemini+referencia user=%s",
+    def _dispatch_image() -> None:
+        nonlocal img_result, ref_payload
+        if wants_literal_text:
+            # Tipografía: GPT Image edits si hay referencia; si no, generations.
+            logger.info(
+                "[CHAT:IMG-GEN] literal-text path (GPT Image/Ideogram) user=%s labels=%s ref=%s",
                 user_id[:8],
+                len(overlay_lines),
+                bool(ref_payload),
+            )
+            img_result = generate_image(
+                user_id=user_id,
+                plan_id=plan_id,
+                prompt=model_prompt,
+                quality="auto",
+                context="",
+                display_label=display_label or None,
+                prefer_ideogram=True,
+                reference_image=ref_payload[0] if ref_payload else None,
+                reference_mime=ref_payload[1] if ref_payload else None,
+            )
+            if (not img_result.get("ok") or not img_result.get("url")) and ref_payload:
+                logger.warning(
+                    "[CHAT:IMG-GEN] motor tipográfico falló; Gemini+referencia user=%s",
+                    user_id[:8],
+                )
+                img_result = generate_image_with_reference(
+                    user_id=user_id,
+                    prompt=model_prompt,
+                    reference_image=ref_payload[0],
+                    content_type=ref_payload[1],
+                    style_mode=style_mode if creation else "edit",
+                    quality="auto",
+                )
+        elif ref_payload:
+            ref_bytes, ref_mime = ref_payload
+            ref_prompt = model_prompt
+            logger.info(
+                "[CHAT:IMG-GEN] reference path user=%s bytes=%s conv=%s",
+                user_id[:8],
+                len(ref_bytes),
+                (conversation_id or "")[:8],
             )
             img_result = generate_image_with_reference(
                 user_id=user_id,
-                prompt=model_prompt,
-                reference_image=ref_payload[0],
-                content_type=ref_payload[1],
+                prompt=ref_prompt,
+                reference_image=ref_bytes,
+                content_type=ref_mime,
                 style_mode=style_mode if creation else "edit",
                 quality="auto",
             )
-    elif ref_payload:
-        ref_bytes, ref_mime = ref_payload
-        ref_prompt = model_prompt
-        logger.info(
-            "[CHAT:IMG-GEN] reference path user=%s bytes=%s conv=%s",
-            user_id[:8],
-            len(ref_bytes),
-            (conversation_id or "")[:8],
-        )
-        img_result = generate_image_with_reference(
-            user_id=user_id,
-            prompt=ref_prompt,
-            reference_image=ref_bytes,
-            content_type=ref_mime,
-            style_mode=style_mode if creation else "edit",
-            quality="auto",
-        )
-        if (not img_result.get("ok") or not img_result.get("url")) and not (
-            wants_image_reference_edit(user_text)
-            or parse_followup_image_prompt(user_text, history)
-        ):
-            logger.warning(
-                "[CHAT:IMG-GEN] reference failed; falling back to plain user=%s code=%s",
-                user_id[:8],
-                img_result.get("code"),
+            if (not img_result.get("ok") or not img_result.get("url")) and not (
+                wants_image_reference_edit(user_text)
+                or parse_followup_image_prompt(user_text, history)
+            ):
+                logger.warning(
+                    "[CHAT:IMG-GEN] reference failed; falling back to plain user=%s code=%s",
+                    user_id[:8],
+                    img_result.get("code"),
+                )
+                img_result = generate_image(
+                    user_id=user_id,
+                    plan_id=plan_id,
+                    prompt=model_prompt,
+                    quality="auto",
+                    context=history_ctx,
+                    display_label=display_label or None,
+                    prefer_ideogram=False,
+                )
+                ref_payload = None
+        elif creation:
+            logger.info("[CHAT:IMG-GEN] creative brief without bytes user=%s", user_id[:8])
+            img_result = generate_image(
+                user_id=user_id,
+                plan_id=plan_id,
+                prompt=model_prompt,
+                quality="auto",
+                context=history_ctx,
+                display_label=display_label,
+                prefer_ideogram=False,
             )
+        else:
+            logger.info("[CHAT:IMG-GEN] plain generate user=%s", user_id[:8])
             img_result = generate_image(
                 user_id=user_id,
                 plan_id=plan_id,
@@ -1141,29 +1166,25 @@ def run_chat_image_generation(
                 display_label=display_label or None,
                 prefer_ideogram=False,
             )
-            ref_payload = None
-    elif creation:
-        logger.info("[CHAT:IMG-GEN] creative brief without bytes user=%s", user_id[:8])
-        img_result = generate_image(
-            user_id=user_id,
-            plan_id=plan_id,
-            prompt=model_prompt,
-            quality="auto",
-            context=history_ctx,
-            display_label=display_label,
-            prefer_ideogram=False,
-        )
+
+    from app.services.ced_sentinel import (
+        PRECISION_HINT,
+        anchored_brief,
+        brief_drifts_from_request,
+        correcting,
+    )
+
+    if brief_drifts_from_request(model_prompt, user_text):
+        model_prompt = anchored_brief(model_prompt, user_text)
+        with correcting(
+            user_id,
+            area="imagen",
+            detail="El pedido no coincidía; se rehace con lo que pidió el usuario.",
+            hint=PRECISION_HINT,
+        ):
+            _dispatch_image()
     else:
-        logger.info("[CHAT:IMG-GEN] plain generate user=%s", user_id[:8])
-        img_result = generate_image(
-            user_id=user_id,
-            plan_id=plan_id,
-            prompt=model_prompt,
-            quality="auto",
-            context=history_ctx,
-            display_label=display_label or None,
-            prefer_ideogram=False,
-        )
+        _dispatch_image()
 
     if not img_result.get("ok") or not img_result.get("url"):
         err = _format_error(str(img_result.get("error") or "No pude generar la imagen."))

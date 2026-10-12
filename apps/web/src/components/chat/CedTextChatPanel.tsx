@@ -64,6 +64,7 @@ export type LiveVoiceImage = {
   streamKey: string;
   url?: string;
   prompt?: string;
+  label?: string;
   status?: "generating" | "ready";
 };
 
@@ -1353,7 +1354,7 @@ export function CedTextChatPanel({
     .map((img) => ({
       id: `${VOICE_LIVE_PREFIX}${img.streamKey}`,
       role: "model",
-      content: img.status === "generating" ? "Generando imagen…" : "",
+      content: img.status === "generating" ? img.label || "Generando imagen…" : "",
       created_at: new Date().toISOString(),
       image:
         img.status === "generating" || !img.url
@@ -1475,10 +1476,11 @@ export function CedTextChatPanel({
                     </span>
                     <ChatCopyButton text={displayContent} />
                   </div>
-                  {displayContent === "Generando imagen…" ? (
+                  {displayContent === "Generando imagen…" ||
+                  displayContent.startsWith("Corrigiendo datos") ? (
                     <div className="flex items-center gap-3 py-2">
                       <span className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-300" />
-                      <p className="animate-pulse text-sm text-cyan-200">Generando imagen…</p>
+                      <p className="animate-pulse text-sm text-cyan-200">{displayContent}</p>
                     </div>
                   ) : displayContent ? (
                     <p className={`whitespace-pre-wrap break-words ${msg.partial ? "opacity-90" : ""}`}>
