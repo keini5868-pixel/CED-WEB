@@ -71,6 +71,10 @@ class PresentationStopBody(BaseModel):
     heard: str = Field(default="", max_length=500)
 
 
+class PresentationWakeBody(BaseModel):
+    heard: str = Field(default="", max_length=500)
+
+
 class ChatImageBody(BaseModel):
     image_url: str | None = Field(default=None, max_length=4000)
     image_data: str | None = Field(default=None, max_length=15_000_000)
@@ -187,6 +191,22 @@ async def voice_presentation_stop(
         vcs.note_heard_line(user_id, heard)
     logger.info("[VOICE] presentation-stop user=%s heard=%s", user_id[:8], heard[:60])
     return {"ok": True, "voice_held": True}
+
+
+@router.post("/presentation-wake")
+async def voice_presentation_wake(
+    body: PresentationWakeBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    from app.services.voice_cue import CUE_GREETING, decide_cue
+
+    heard = (body.heard or "").strip()
+    action, _ = decide_cue(heard, enabled=True, listening=False)
+    if action != "greet":
+        return {"ok": True, "ignored": True, "voice_held": vcs.voice_is_held(user_id)}
+    vcs.set_voice_held(user_id, False)
+    logger.info("[VOICE] presentation-wake user=%s heard=%s", user_id[:8], heard[:60])
+    return {"ok": True, "voice_held": False, "greeting": CUE_GREETING}
 
 
 @router.post("/camera-status")

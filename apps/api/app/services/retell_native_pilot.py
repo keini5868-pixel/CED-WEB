@@ -23,7 +23,9 @@ NATIVE_PILOT_GREETING = "CED en línea, señor. Estoy listo para conversar."
 # Mantener solo reglas críticas (confirm flows, anti-stuck, YouTube silencio).
 READ_TOOLS_PROMPT = """
 Reglas de tools (schemas = nombre/params; no inventes tools):
-- Charla, gracias, check-ins: SIN tools. 1-4 oraciones.
+- OBLIGATORIO: invoca presentation_gate al inicio de CADA turno antes de hablar u otra tool.
+  SILENCIO = cero palabras, cero tools. WAKE = di solo el saludo indicado. OK = sigue normal.
+- Charla, gracias, check-ins: SIN tools (salvo presentation_gate). 1-4 oraciones.
 - Tras tool: di el resultado tal cual. No re-llames sin petición nueva.
 - Tools lentas (clima, PDF, búsqueda, cámara, avanzado): invoca YA.
   El filler habla al empezar; tú callas (no «voy a consultar» ni «deme un momento»).
@@ -211,6 +213,11 @@ CONSULT_ADVANCED_DESCRIPTION = (
 )
 DEACTIVATE_ADVANCED_DESCRIPTION = (
     "Sale del modo avanzado («modo normal» / «desactiva modo avanzado»)."
+)
+
+PRESENTATION_GATE_DESCRIPTION = (
+    "OBLIGATORIO al inicio de cada turno. Devuelve SILENCIO (stop activo), "
+    "WAKE (ok ced / okay set) u OK (puedes responder)."
 )
 
 GET_ENVIRONMENT_PARAMETERS: dict[str, Any] = {
@@ -526,6 +533,19 @@ def _build_custom_tool(
         "execution_message_description": filler,
         "timeout_ms": timeout_ms,
     }
+
+
+def build_presentation_gate_tool(*, api_public_url: str) -> dict[str, Any]:
+    tool = _build_custom_tool(
+        api_public_url=api_public_url,
+        name="presentation_gate",
+        description=PRESENTATION_GATE_DESCRIPTION,
+        parameters={"type": "object", "properties": {}},
+        filler="",
+        timeout_ms=4_000,
+    )
+    tool["speak_during_execution"] = False
+    return tool
 
 
 def build_get_environment_tool(*, api_public_url: str) -> dict[str, Any]:
@@ -938,6 +958,7 @@ def build_deactivate_advanced_mode_tool(*, api_public_url: str) -> dict[str, Any
 def build_native_pilot_states(*, api_public_url: str) -> tuple[list[dict[str, Any]], str]:
     """Retell States — tools restringidas por estado (general_tools vacío)."""
     general_tools: list[dict[str, Any]] = [
+        build_presentation_gate_tool(api_public_url=api_public_url),
         build_get_environment_tool(api_public_url=api_public_url),
         build_search_web_tool(api_public_url=api_public_url),
         build_play_youtube_video_tool(api_public_url=api_public_url),
@@ -1915,6 +1936,47 @@ def _blocked_silence_tool(
         "ok": True,
         "latency_ms": 0,
     }
+
+
+async def execute_presentation_gate_tool(
+    *,
+    user_id: str,
+    payload: dict[str, Any],
+    args: dict[str, Any],
+) -> dict[str, Any]:
+    from app.services.voice_cue import CUE_GREETING, decide_cue, is_stop_utterance, utterance_ends_with_silence
+
+    heard = _remember_payload_line(user_id, payload)
+    if user_id and (
+        is_stop_utterance(heard) or utterance_ends_with_silence(heard)
+    ):
+        from app.services import voice_client_session as vcs
+
+        vcs.set_voice_held(user_id, True)
+        vcs.mark_stop_heard(user_id)
+        return {
+            "result": "SILENCIO: El usuario pidió stop. No hables ni uses herramientas.",
+            "ok": True,
+            "latency_ms": 0,
+        }
+    if user_id:
+        from app.services import voice_client_session as vcs
+
+        if vcs.voice_is_held(user_id) or vcs.stop_heard_recently(user_id, window=120.0):
+            action, _ = decide_cue(heard or "", enabled=True, listening=False)
+            if action == "greet":
+                vcs.set_voice_held(user_id, False)
+                return {
+                    "result": f"WAKE: Di exactamente: {CUE_GREETING}",
+                    "ok": True,
+                    "latency_ms": 0,
+                }
+            return {
+                "result": "SILENCIO: Sigue en stop hasta ok CED. No hables ni uses herramientas.",
+                "ok": True,
+                "latency_ms": 0,
+            }
+    return {"result": "OK: Puedes responder con normalidad.", "ok": True, "latency_ms": 0}
 
 
 async def execute_activate_camera_tool(

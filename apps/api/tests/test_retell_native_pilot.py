@@ -133,6 +133,28 @@ def test_activate_camera_idempotent_when_already_active():
     assert mock_exec.await_args.args[0] == "request_camera_activation"
 
 
+def test_presentation_gate_silence_when_held():
+    import asyncio
+
+    from app.services import voice_client_session as vcs
+    from app.services.retell_native_pilot import execute_presentation_gate_tool
+
+    uid = "native-gate-held"
+    vcs.set_voice_held(uid, True)
+    payload = {
+        "call": {
+            "call_id": "c-gate",
+            "transcript_object": [{"role": "user", "content": "hola"}],
+        }
+    }
+
+    out = asyncio.run(
+        execute_presentation_gate_tool(user_id=uid, payload=payload, args={})
+    )
+    assert "SILENCIO" in str(out.get("result") or "")
+    vcs.set_voice_held(uid, False)
+
+
 def test_analyze_camera_frame_blocked_when_voice_held():
     import asyncio
 

@@ -98,6 +98,14 @@ export async function postVoicePresentationStop(heard = ""): Promise<void> {
   });
 }
 
+export async function postVoicePresentationWake(heard = ""): Promise<void> {
+  await proxyFetch("voice/presentation-wake", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ heard: heard.trim().slice(0, 500) }),
+  });
+}
+
 export async function postVoiceCameraStatus(
   active: boolean,
   streamPresent = active,

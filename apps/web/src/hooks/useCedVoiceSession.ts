@@ -25,6 +25,7 @@ import {
   fetchVoiceClientState,
   postVoiceCameraStatus,
   postVoicePresentationStop,
+  postVoicePresentationWake,
   postVoiceCameraPermission,
   postVoiceChatImage,
   postVoiceSessionEnd,
@@ -110,7 +111,7 @@ import {
   isCameraOpenUtterance,
   parseCameraIntent,
 } from "@/lib/voice/cameraIntents";
-import { isStopUtterance } from "@/lib/voice/stopLatch";
+import { isStopUtterance, isWakeUtterance } from "@/lib/voice/stopLatch";
 import {
   parseFacebookPublishMessage,
   parseDirectPublishContent,
@@ -714,9 +715,9 @@ export function useCedVoiceSession(
         }
         const state = await fetchVoiceClientState(false, { transcript: true });
         setCueOpen(cueModeRef.current && Boolean(state.cue_open));
-        if (typeof state.voice_held === "boolean") {
-          voicePresentationHeldRef.current = state.voice_held;
-          retellClientRef.current?.syncPresentationHeld(state.voice_held);
+        if (state.voice_held) {
+          voicePresentationHeldRef.current = true;
+          retellClientRef.current?.syncPresentationHeld(true);
         }
         const events = [...(state.tool_events ?? [])].sort(
           (a, b) => Number(a.id || 0) - Number(b.id || 0),
@@ -1497,9 +1498,14 @@ export function useCedVoiceSession(
           retellClientRef.current?.syncPresentationHeld(true);
           void postVoicePresentationStop(heard).catch(() => undefined);
         };
+        const latchPresentationWake = (heard: string) => {
+          voicePresentationHeldRef.current = false;
+          void postVoicePresentationWake(heard).catch(() => undefined);
+        };
 
         retell.setCallbacks({
           onPresentationStop: latchPresentationStop,
+          onPresentationWake: latchPresentationWake,
           onCallStarted: () => {
             if (isStale()) return;
             retellCallStartedAtRef.current = Date.now();
@@ -1585,6 +1591,13 @@ export function useCedVoiceSession(
               lastHeardUserTextRef.current = text;
               if (isStopUtterance(text)) {
                 latchPresentationStop(text);
+              } else if (
+                voicePresentationHeldRef.current &&
+                !isWakeUtterance(text)
+              ) {
+                retellClientRef.current?.syncPresentationHeld(true);
+              } else if (isWakeUtterance(text)) {
+                latchPresentationWake(text);
               }
               setHeardIndicator({
                 status: "heard",

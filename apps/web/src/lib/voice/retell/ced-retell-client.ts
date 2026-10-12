@@ -37,6 +37,7 @@ export interface CedRetellCallbacks {
   onAudioLevel?: (level: number) => void;
   /** Stop de presentación detectado en STT local (antes del poll al servidor). */
   onPresentationStop?: (heard: string) => void;
+  onPresentationWake?: (heard: string) => void;
 }
 
 type RetellUpdateEvent = {
@@ -212,6 +213,7 @@ export class CedRetellClient {
     }
     if (this.voiceHeld && isWakeUtterance(text)) {
       this.releaseVoice();
+      this.callbacks.onPresentationWake?.(text);
     }
   }
 
@@ -582,15 +584,15 @@ export class CedRetellClient {
     else this.client.unmute();
   }
 
-  /** Stop de presentación (servidor o STT). No mezclar con GRABAR ni cámara. */
+  /** Solo activar hold desde servidor — el despertar es local (ok CED). */
   syncPresentationHeld(held: boolean): void {
     if (held && !this.voiceHeld) {
       this.holdVoice();
-      return;
     }
-    if (!held && this.voiceHeld) {
-      this.releaseVoice();
-    }
+  }
+
+  isPresentationHeld(): boolean {
+    return this.voiceHeld;
   }
 
   /**

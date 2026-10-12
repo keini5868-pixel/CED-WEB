@@ -52,6 +52,7 @@ from app.services.retell_native_pilot import (
     execute_read_social_comments_tool,
     execute_open_drive_map_tool,
     execute_open_opportunities_tool,
+    execute_presentation_gate_tool,
     execute_send_to_trash_tool,
     execute_play_youtube_video_tool,
     execute_pause_youtube_video_tool,
@@ -418,6 +419,18 @@ async def register_retell_native_pilot_call(
         payload["conversation_id"] = conversation_id
 
     return payload
+
+
+@router.post("/tools/presentation_gate")
+async def retell_presentation_gate_tool(request: Request) -> JSONResponse:
+    payload = await _verify_retell_request(request)
+    user_id = _extract_user_id(payload)
+    result = await execute_presentation_gate_tool(
+        user_id=user_id,
+        payload=payload,
+        args=payload.get("args") or {},
+    )
+    return JSONResponse(status_code=200, content={"result": result["result"]})
 
 
 @router.post("/tools/get_environment")
