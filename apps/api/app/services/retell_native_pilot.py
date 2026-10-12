@@ -1758,6 +1758,9 @@ async def _execute_native_camera_tool(
                 user_id,
                 {},
             )
+            if result.get("silent"):
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                return {"result": "", "latency_ms": latency_ms, "ok": True}
         elif tool_name == "deactivate_camera":
             result = await execute_voice_tool(
                 "request_camera_deactivation",
@@ -1848,16 +1851,28 @@ async def _execute_native_camera_tool(
     return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
 
 
+def _remember_payload_line(user_id: str, payload: dict[str, Any]) -> str:
+    heard = _latest_user_utterance(payload)
+    if user_id and heard:
+        from app.services import voice_client_session as vcs
+        from app.services.voice_cue import utterance_ends_with_silence
+
+        vcs.note_heard_line(user_id, heard)
+        if utterance_ends_with_silence(heard):
+            vcs.mark_stop_heard(user_id)
+    return heard
+
+
 def _blocked_silence_tool(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """«stop» / «etop» no abre mapa ni cámara."""
-    from app.services.voice_cue import is_silence_command
+    """Stop solo calla. No es una orden de otro módulo."""
+    from app.services.voice_cue import utterance_ends_with_silence
 
     heard = _latest_user_utterance(payload)
-    if not is_silence_command(heard):
+    if not utterance_ends_with_silence(heard):
         return None
     logger.info("[CUE] blocked tool on silence text=%s", heard[:40])
     return {
-        "result": "The user said stop. Do not open the map or the camera. Say nothing.",
+        "result": "The user asked for silence. Say nothing and do not call tools.",
         "ok": True,
         "latency_ms": 0,
     }
@@ -1869,6 +1884,7 @@ async def execute_activate_camera_tool(
     payload: dict[str, Any],
     args: dict[str, Any],
 ) -> dict[str, Any]:
+    _remember_payload_line(user_id, payload)
     blocked = _blocked_silence_tool(payload)
     if blocked:
         return blocked
@@ -2267,6 +2283,10 @@ async def _execute_native_voice_alias_tool(
         record_tool_metric(call_id=call_id, tool_name=tool_name, latency_ms=latency_ms, ok=False)
         return {"result": "No identifiqué al usuario, señor.", "latency_ms": latency_ms, "ok": False}
     result = await execute_voice_tool(voice_tool_name, user_id, args or {})
+    if result.get("silent"):
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        record_tool_metric(call_id=call_id, tool_name=tool_name, latency_ms=latency_ms, ok=True)
+        return {"result": "", "latency_ms": latency_ms, "ok": True}
     spoken = str(result.get("spoken") or "").strip() or "Completado, señor."
     ok = bool(result.get("ok", True)) and not _spoken_indicates_failure(spoken)
     latency_ms = int((time.perf_counter() - started) * 1000)
@@ -2334,6 +2354,7 @@ async def execute_read_social_comments_tool(
 
 
 async def execute_open_drive_map_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    _remember_payload_line(user_id, payload)
     blocked = _blocked_silence_tool(payload)
     if blocked:
         return blocked

@@ -292,6 +292,8 @@ class GeminiVoiceLlm:
             if payload.get("fallback"):
                 self._web_search_fallback = True
             return spoken, payload
+        if tool_result.get("silent"):
+            return "", {"status": "success", "spoken": "", "silent": True}
         if tool_result.get("ok") is False:
             spoken = str(
                 tool_result.get("spoken") or "No pude completar la operación, señor."

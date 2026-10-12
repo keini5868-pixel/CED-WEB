@@ -857,6 +857,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
         return utterance_ends_with_silence(text)
 
+    def _remember_user_line(who: str, text: str) -> None:
+        line = (text or "").strip()
+        if not who or not line:
+            return
+        vcs.note_heard_line(who, line)
+        if _heard_stop(line):
+            vcs.mark_stop_heard(who)
+
     async def cut_agent_for_stop(line: str) -> None:
         """Corta lo que CED está diciendo en cuanto se oye stop."""
         nonlocal last_stop_cut_at, generation_seq
@@ -978,6 +986,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             if who:
                 publish_full_transcript(who, tx)
             user_line = latest_transcript_line(tx, "user")
+            _remember_user_line((uid or user_id or "").strip(), user_line)
             if user_line and _heard_stop(user_line):
                 await cut_agent_for_stop(user_line)
             if who:
@@ -1065,6 +1074,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         ]
 
         heard_now = latest_transcript_line(transcript_raw, "user")
+        _remember_user_line((uid or user_id or "").strip(), heard_now)
         if _heard_stop(heard_now):
             if uid:
                 vcs.set_cue_open(uid, False)

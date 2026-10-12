@@ -59,6 +59,9 @@ def _fresh_session() -> dict[str, Any]:
         "fitline_question_count": 0,
         "cue_mode": False,
         "cue_open": False,
+        "last_heard_line": "",
+        "last_heard_at": 0.0,
+        "stop_heard_at": 0.0,
         "fitline_closer_offered": False,
         "fitline_keep_learning": False,
         "fitline_questions_since_defer": 0,
@@ -150,6 +153,36 @@ def set_cue_open(user_id: str, open_: bool) -> None:
 
 def cue_is_open(user_id: str) -> bool:
     return bool(_get(user_id).get("cue_open"))
+
+
+def note_heard_line(user_id: str, text: str) -> None:
+    """Última frase del usuario. La cámara y el mapa la leen aparte del stop."""
+    line = (text or "").strip()[:500]
+    if not user_id.strip() or not line:
+        return
+    session = _get(user_id)
+    with _lock:
+        session["last_heard_line"] = line
+        session["last_heard_at"] = _now()
+        session["updated_at"] = _now()
+
+
+def last_heard_line(user_id: str) -> str:
+    return str(_get(user_id).get("last_heard_line") or "")
+
+
+def mark_stop_heard(user_id: str) -> None:
+    if not user_id.strip():
+        return
+    session = _get(user_id)
+    with _lock:
+        session["stop_heard_at"] = _now()
+        session["updated_at"] = _now()
+
+
+def stop_heard_recently(user_id: str, window: float = 8.0) -> bool:
+    heard_at = float(_get(user_id).get("stop_heard_at") or 0)
+    return heard_at > 0 and (_now() - heard_at) < window
 
 
 def set_map_search_results(user_id: str, places: list[dict[str, Any]] | None) -> None:

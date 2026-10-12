@@ -86,7 +86,6 @@ _STOP_WORD = frozenset(
         "detente",
         "deten",
         "quieto",
-        "cierra",
     }
 )
 _GLUE = frozenset(

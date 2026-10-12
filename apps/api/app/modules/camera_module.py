@@ -38,14 +38,23 @@ class CameraModule(BaseModule):
         user_text: str = "",
         utterances: list[Utterance] | None = None,
     ) -> ModuleResult:
+        if is_camera_deactivation_intent(user_text):
+            self._enter_active()
+            return await self._deactivate_camera(user_id)
+
+        camera_tool = resolve_camera_voice_request(user_text)
+        if not (
+            is_camera_activation_intent(user_text)
+            or is_brand_followup_question(user_text)
+            or camera_tool
+        ):
+            return self._idle()
+
         self._enter_active()
         vcs.set_active_mode(user_id, "camera")
 
-        if is_camera_deactivation_intent(user_text):
-            return await self._deactivate_camera(user_id)
-
         if is_camera_activation_intent(user_text):
-            return await self._activate_camera(user_id)
+            return await self._activate_camera(user_id, user_text)
 
         if is_brand_followup_question(user_text):
             return await self._brand_web_search(user_id, user_text)
@@ -54,10 +63,10 @@ class CameraModule(BaseModule):
         if camera_tool == "request_camera_deactivation":
             return await self._deactivate_camera(user_id)
         if camera_tool in ("analyze_camera_frame", "buscar_lo_visible"):
-            await self._ensure_camera(user_id)
+            await self._ensure_camera(user_id, user_text)
             return await self._run_vision(user_id, user_text, camera_tool)
 
-        return await self._activate_camera(user_id)
+        return self._idle()
 
     async def handle_command(
         self,
@@ -83,7 +92,7 @@ class CameraModule(BaseModule):
             return await self._run_vision(user_id, user_text, camera_tool)
 
         if is_camera_activation_intent(user_text):
-            return await self._activate_camera(user_id)
+            return await self._activate_camera(user_id, user_text)
 
         return self._idle()
 
@@ -109,7 +118,12 @@ class CameraModule(BaseModule):
             tool_events=[{"type": "camera_deactivate"}],
         )
 
-    async def _activate_camera(self, user_id: str) -> ModuleResult:
+    async def _activate_camera(self, user_id: str, user_text: str = "") -> ModuleResult:
+        from app.services.voice_device_gate import camera_open_allowed
+
+        if not camera_open_allowed(user_id, user_text):
+            logger.info("[CAMERA_MODULE] no abrir: la frase no pidió cámara")
+            return self._idle()
         vcs.push_client_action(user_id, "camera_activate", {})
         vcs.push_tool_event(user_id, {"type": "camera_activate"})
         return ModuleResult(
@@ -125,9 +139,14 @@ class CameraModule(BaseModule):
             ],
         )
 
-    async def _ensure_camera(self, user_id: str) -> None:
-        if not vcs.is_camera_active(user_id):
-            vcs.push_client_action(user_id, "camera_activate", {})
+    async def _ensure_camera(self, user_id: str, user_text: str = "") -> None:
+        if vcs.is_camera_active(user_id):
+            return
+        from app.services.voice_device_gate import camera_open_allowed
+
+        if not camera_open_allowed(user_id, user_text):
+            return
+        vcs.push_client_action(user_id, "camera_activate", {})
 
     async def _brand_web_search(self, user_id: str, user_text: str) -> ModuleResult:
         last_vision = vcs.get_last_vision_summary(user_id)

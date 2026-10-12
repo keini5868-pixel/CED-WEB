@@ -321,8 +321,14 @@ async def handle_camera_activation(
     user_id: str,
     *,
     fast: bool = False,
+    heard: str = "",
 ) -> dict[str, Any]:
     """Pide al cliente activar cámara; fast=True responde al instante sin bloquear."""
+    from app.services.voice_device_gate import camera_open_allowed
+
+    if not camera_open_allowed(user_id, heard):
+        logger.info("[CAMERA] bloqueada: la frase no pidió cámara user=%s", user_id[:8])
+        return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
     if vcs.is_camera_active(user_id):
         return _spoken_ok("Cámara activa, señor. Lista para analizar.")
     vcs.push_client_action(user_id, "camera_activate", {})
@@ -369,6 +375,14 @@ async def _run_camera_capture(
         question[:80],
     )
     if not vcs.is_camera_active(user_id):
+        from app.services.voice_device_gate import camera_open_allowed
+
+        if not camera_open_allowed(user_id):
+            logger.info("[CAMERA] auto_activate bloqueado user=%s", user_id[:8])
+            return _spoken_err(
+                "La cámara no está activa, señor.",
+                error="camera_not_requested",
+            )
         logger.info("[CAMERA] auto_activate user=%s", user_id[:8])
         vcs.push_client_action(user_id, "camera_activate", {})
         ack = await _wait_camera_ack(user_id, 8.0)
@@ -561,6 +575,20 @@ async def execute_voice_tool(
     params = args or {}
     if not user_id:
         return _spoken_err("No identifiqué al usuario, señor.", error="missing_user_id")
+
+    heard = str(params.get("_user_request") or params.get("user_request") or "").strip()
+    if name == "request_camera_activation":
+        from app.services.voice_device_gate import camera_open_allowed
+
+        if not camera_open_allowed(user_id, heard):
+            logger.info("[DEVICE] cámara no pedida user=%s", user_id[:8])
+            return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
+    elif name == "activar_modo_conducir":
+        from app.services.voice_device_gate import map_open_allowed
+
+        if not map_open_allowed(user_id, heard):
+            logger.info("[DEVICE] mapa no pedido user=%s", user_id[:8])
+            return {"ok": True, "spoken": "", "silent": True, "skipped": "not_map"}
 
     from app.services.voice_tool_async import tool_timeout_sec
 
@@ -1132,7 +1160,8 @@ async def _execute_voice_tool_body(
                 vcs.set_last_vision_summary(user_id, "")
                 return _spoken_ok("Cámara desactivada, señor.")
             fast = bool(params.get("fast"))
-            return await handle_camera_activation(user_id, fast=fast)
+            heard = str(params.get("_user_request") or params.get("user_request") or "").strip()
+            return await handle_camera_activation(user_id, fast=fast, heard=heard)
 
         if name == "analyze_uploaded_image":
             from app.services.chat_multimedia import analyze_chat_image
