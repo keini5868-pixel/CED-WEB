@@ -136,11 +136,19 @@ def get_active_mode(user_id: str) -> str | None:
 
 
 def set_cue_mode(user_id: str, enabled: bool) -> None:
-    """Modo grabación. Al activarlo CED queda en espera hasta «Ok CED»."""
+    """Modo grabación (GRABAR). Con ON, CED escucha al usuario; stop lo calla."""
     session = _get(user_id)
     with _lock:
         session["cue_mode"] = bool(enabled)
-        session["cue_open"] = False
+        session["cue_open"] = bool(enabled)
+        if enabled:
+            session["voice_held"] = False
+            session["stop_heard_at"] = 0.0
+            line = str(session.get("last_heard_line") or "")
+            from app.services.voice_cue import is_stop_utterance
+
+            if is_stop_utterance(line):
+                session["last_heard_line"] = ""
         session["updated_at"] = _now()
 
 

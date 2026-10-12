@@ -31,15 +31,22 @@ type Props = {
   indicator: VoiceHeardIndicator;
   micOn: boolean;
   paused: boolean;
+  cueMode?: boolean;
 };
 
 /** Badge fijo: confirma que Gemini transcribió al usuario, con o sin audio de respuesta. */
-export function CedVoiceHeardBadge({ indicator, micOn, paused }: Props) {
+export function CedVoiceHeardBadge({ indicator, micOn, paused, cueMode }: Props) {
   if (!micOn || paused || indicator.status === "hidden") {
     return null;
   }
 
-  const copy = STATUS_COPY[indicator.status];
+  const copy = { ...STATUS_COPY[indicator.status] };
+  if (cueMode && indicator.status === "heard") {
+    copy.hint = "Modo GRABAR: procesando… (di «stop» si quieres callarlo).";
+  }
+  if (cueMode && indicator.status === "listening") {
+    copy.hint = "Modo GRABAR: habla con CED. «Stop» lo calla hasta «Ok CED».";
+  }
   const showCheck =
     indicator.status === "heard" ||
     indicator.status === "responding" ||

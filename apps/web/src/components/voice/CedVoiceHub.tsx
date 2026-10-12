@@ -608,8 +608,8 @@ export function CedVoiceHub() {
   const imageStage = (imageLive || imageGenerating) && !cameraLive;
   const readyLabel = voice.cueMode && voice.micOn
     ? voice.cueOpen
-      ? "CED activo — di Ok CED, stop para callarlo"
-      : "En espera — di Ok CED"
+      ? "Modo GRABAR — CED te escucha (stop para callar)"
+      : "Modo GRABAR — di Ok CED o stop"
     : workspace === "advanced"
     ? "Modo avanzado"
     : workspace === "finance"
@@ -662,6 +662,7 @@ export function CedVoiceHub() {
           indicator={voice.heardIndicator}
           micOn={voice.micOn}
           paused={voice.paused}
+          cueMode={voice.cueMode}
         />
       </div>
       {voice.errorMessage ? (

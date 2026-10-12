@@ -191,10 +191,15 @@ export function isStopUtterance(text: string): boolean {
   return tokens.length <= 4 && SHORT_STOP.has(folded);
 }
 
+const GREET_LEAD = new Set(["hola", "buenas", "buenos", "saludos", "dime"]);
+
 export function isWakeUtterance(text: string): boolean {
   const tokens = norm(text).split(" ").filter(Boolean);
   if (tokens.length === 1) return isName(tokens[0] ?? "");
-  return tokens.some(
-    (token, index) => WAKE_LEAD.has(token) && isName(tokens[index + 1] ?? ""),
-  );
+  return tokens.some((token, index) => {
+    const next = tokens[index + 1] ?? "";
+    if (WAKE_LEAD.has(token) && isName(next)) return true;
+    if (GREET_LEAD.has(token) && isName(next)) return true;
+    return false;
+  });
 }

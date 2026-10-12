@@ -337,6 +337,7 @@ export function useCedVoiceSession(
   const cameraActivateInFlightRef = useRef<Promise<void> | null>(null);
   const lastHeardUserTextRef = useRef("");
   const voicePresentationHeldRef = useRef(false);
+  const cueResponseWaitRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const cameraPermissionGrantedRef = useRef(false);
   const sessionMediaPreauthRef = useRef<Promise<void> | null>(null);
   const activateCameraFromVoiceRef = useRef<
@@ -718,6 +719,9 @@ export function useCedVoiceSession(
         if (state.voice_held) {
           voicePresentationHeldRef.current = true;
           retellClientRef.current?.syncPresentationHeld(true);
+        } else if (voicePresentationHeldRef.current) {
+          voicePresentationHeldRef.current = false;
+          retellClientRef.current?.releasePresentationHold();
         }
         const events = [...(state.tool_events ?? [])].sort(
           (a, b) => Number(a.id || 0) - Number(b.id || 0),
@@ -1510,8 +1514,18 @@ export function useCedVoiceSession(
             if (isStale()) return;
             retellCallStartedAtRef.current = Date.now();
             lastVoiceActionIdRef.current = null;
+            voicePresentationHeldRef.current = false;
+            retellClientRef.current?.releasePresentationHold();
+            if (cueResponseWaitRef.current) {
+              clearTimeout(cueResponseWaitRef.current);
+              cueResponseWaitRef.current = null;
+            }
             setOrbState("listening");
-            setStatusLabel(ORB_STATE_LABELS.listening);
+            setStatusLabel(
+              cueModeRef.current
+                ? "Modo GRABAR — di «Ok CED»"
+                : ORB_STATE_LABELS.listening,
+            );
             setRetellPollActive(true);
           },
           onCallEnded: () => {
@@ -1575,10 +1589,21 @@ export function useCedVoiceSession(
           onAgentTalking: (talking) => {
             if (isStale()) return;
             modelSpeakingRef.current = talking;
+            if (talking && cueResponseWaitRef.current) {
+              clearTimeout(cueResponseWaitRef.current);
+              cueResponseWaitRef.current = null;
+            }
             setOrbState(talking ? "speaking" : "listening");
             setStatusLabel(
               talking ? ORB_STATE_LABELS.speaking : ORB_STATE_LABELS.listening,
             );
+            if (talking) {
+              setHeardIndicator((prev) =>
+                prev.status === "hidden"
+                  ? prev
+                  : { ...prev, status: "responding" },
+              );
+            }
           },
           onTranscript: (text, role, options) => {
             if (isStale()) return;
@@ -1606,6 +1631,28 @@ export function useCedVoiceSession(
               });
               if (!options?.partial) {
                 openFitlineOppsIfRequested(text);
+                if (cueResponseWaitRef.current) {
+                  clearTimeout(cueResponseWaitRef.current);
+                  cueResponseWaitRef.current = null;
+                }
+                if (
+                  cueModeRef.current &&
+                  !isWakeUtterance(text) &&
+                  !isStopUtterance(text) &&
+                  !mayBeStopHint(text)
+                ) {
+                  cueResponseWaitRef.current = setTimeout(() => {
+                    cueResponseWaitRef.current = null;
+                    if (isStale() || modelSpeakingRef.current) return;
+                    setHeardIndicator({
+                      status: "listening",
+                      userText: null,
+                      heardAt: null,
+                    });
+                    setOrbState("listening");
+                    setStatusLabel("Modo GRABAR — di «Ok CED»");
+                  }, 2200);
+                }
               }
               if (cameraStreamRef.current?.active) {
                 void postVoiceCameraStatus(true, true).catch(() => undefined);
@@ -3407,7 +3454,15 @@ export function useCedVoiceSession(
     const next = !cueModeRef.current;
     cueModeRef.current = next;
     setCueMode(next);
-    if (!next) setCueOpen(false);
+    if (!next) {
+      setCueOpen(false);
+    } else {
+      setCueOpen(true);
+      voicePresentationHeldRef.current = false;
+      retellClientRef.current?.releasePresentationHold();
+      setStatusLabel("Modo GRABAR — CED te escucha");
+      setHeardIndicator({ status: "listening", userText: null, heardAt: null });
+    }
     try {
       sessionStorage.setItem("ced-cue-mode", next ? "1" : "0");
     } catch {

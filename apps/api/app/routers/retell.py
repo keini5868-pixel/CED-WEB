@@ -215,6 +215,8 @@ async def set_voice_cue_mode(
 
     user_id = normalize_user_id(user["id"])
     vcs.set_cue_mode(user_id, body.enabled)
+    # GRABAR ≠ stop de presentación — no heredar voice_held de pruebas anteriores.
+    vcs.set_voice_held(user_id, False)
     return {"ok": True, "enabled": vcs.cue_enabled(user_id), "open": vcs.cue_is_open(user_id)}
 
 
@@ -253,6 +255,7 @@ async def register_retell_call(
     from app.services import voice_client_session as vcs_cue
 
     vcs_cue.set_cue_mode(user_id, bool(body and body.cue_mode))
+    vcs_cue.set_voice_held(user_id, False)
 
     try:
         await asyncio.to_thread(ensure_retell_agent, agent_id=agent_id)
@@ -268,8 +271,9 @@ async def register_retell_call(
                 set_active_conversation(user_id, conversation_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[RETELL] create_conversation en register-call falló: %s", exc)
-    call_vars: dict[str, str] = {"user_id": user_id}
-    call_meta: dict[str, str] = {"user_id": user_id}
+    cue_on = bool(body and body.cue_mode)
+    call_vars: dict[str, str] = {"user_id": user_id, "cue_mode": "true" if cue_on else "false"}
+    call_meta: dict[str, str] = {"user_id": user_id, "cue_mode": "true" if cue_on else "false"}
     if conversation_id:
         call_vars["conversation_id"] = conversation_id
         call_meta["conversation_id"] = conversation_id
@@ -397,6 +401,7 @@ async def register_retell_native_pilot_call(
         bind_call_user(str(call_id), user_id, conversation_id=conversation_id)
         from app.services import voice_client_session as vcs
 
+        vcs.set_voice_held(user_id, False)
         vcs.begin_voice_publish_session(user_id, str(call_id))
         if conversation_id:
             try:

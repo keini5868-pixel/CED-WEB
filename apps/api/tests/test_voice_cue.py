@@ -13,6 +13,9 @@ def test_wake_alone_greets():
         "okay set",
         "okey seth",
         "oye said",
+        "hola ced",
+        "hola set",
+        "dime ced",
     ):
         action, text = decide_cue(phrase, enabled=True, listening=False)
         assert action == "greet", phrase

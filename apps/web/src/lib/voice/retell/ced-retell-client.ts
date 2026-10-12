@@ -387,6 +387,13 @@ export class CedRetellClient {
     });
 
     this.client.on("agent_start_talking", () => {
+      if (
+        this.voiceHeld &&
+        this.lastUserLine.trim() &&
+        isWakeUtterance(this.lastUserLine)
+      ) {
+        this.releaseVoice();
+      }
       if (this.voiceHeld) {
         this.muteAgentPlayback();
         this.agentSpeaking = true;
@@ -606,6 +613,12 @@ export class CedRetellClient {
 
   isPresentationHeld(): boolean {
     return this.voiceHeld;
+  }
+
+  releasePresentationHold(): void {
+    if (this.voiceHeld) {
+      this.releaseVoice();
+    }
   }
 
   /**

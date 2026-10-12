@@ -250,9 +250,15 @@ def _is_stop_command(tokens: list[str]) -> bool:
     )
 
 
+_GREET_LEAD = frozenset({"hola", "buenas", "buenos", "saludos", "dime"})
+
+
 def _wake_index(tokens: list[str]) -> int:
     for i, token in enumerate(tokens[:-1] if len(tokens) > 1 else []):
-        if token in _WAKE_LEAD and _is_name(tokens[i + 1]):
+        nxt = tokens[i + 1]
+        if token in _WAKE_LEAD and _is_name(nxt):
+            return i
+        if token in _GREET_LEAD and _is_name(nxt):
             return i
     if len(tokens) == 1 and _is_name(tokens[0]):
         return 0

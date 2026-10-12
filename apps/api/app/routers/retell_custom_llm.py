@@ -648,16 +648,11 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     greeting_fallback_task = asyncio.create_task(greeting_fallback())
 
     def _must_stay_silent() -> bool:
+        """Silencio solo mientras presentation stop sigue activo (voice_held)."""
         who = (user_id or "").strip()
         if not who:
             return False
-        if vcs.voice_is_held(who):
-            return True
-        if vcs.stop_heard_recently(who, window=15.0):
-            return True
-        from app.services.voice_cue import is_stop_utterance
-
-        return is_stop_utterance(vcs.last_heard_line(who))
+        return vcs.voice_is_held(who)
 
     async def send_voice_partial(
         *,
@@ -1056,6 +1051,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         if interaction == "call_details":
+            if uid:
+                meta = request_json.get("metadata") or {}
+                if isinstance(meta, dict):
+                    cue_flag = str(meta.get("cue_mode") or "").strip().lower()
+                    if cue_flag in ("true", "1", "yes") and not vcs.cue_enabled(uid):
+                        vcs.set_cue_mode(uid, True)
             if greeting_fallback_task and not greeting_fallback_task.done():
                 greeting_fallback_task.cancel()
             if has_greeting_been_sent(call_id):
@@ -1194,8 +1195,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         ):
             from app.services.voice_cue import decide_cue
 
-            latch_action, _ = decide_cue(heard_now or "", enabled=True, listening=False)
-            if latch_action != "greet":
+            latch_listening = vcs.cue_enabled(uid) and vcs.cue_is_open(uid)
+            latch_action, _ = decide_cue(
+                heard_now or "",
+                enabled=True,
+                listening=latch_listening,
+            )
+            if latch_action not in ("greet", "answer"):
                 await ack_empty_response(
                     response_id=response_id,
                     reason="stop_recent_latch",
@@ -1206,7 +1212,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         if uid and vcs.voice_is_held(uid):
             from app.services.voice_cue import CUE_GREETING, decide_cue
 
-            action, cue_text = decide_cue(heard_now, enabled=True, listening=False)
+            held_listening = vcs.cue_enabled(uid) and vcs.cue_is_open(uid)
+            action, cue_text = decide_cue(
+                heard_now,
+                enabled=True,
+                listening=held_listening,
+            )
             logger.info(
                 "[PRESENTATION] held %s call=%s text=%s",
                 action,
@@ -1225,12 +1236,18 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         generation=None,
                     )
                 return
-            if action == "stop":
+            if action == "answer":
+                vcs.set_voice_held(uid, False)
+                if vcs.cue_enabled(uid):
+                    vcs.set_cue_open(uid, True)
+                cue_override = cue_text or None
+            elif action == "stop":
                 await cut_agent_for_stop(heard_now, who=uid)
                 await ack_empty_response(response_id=response_id, reason="voice_held")
                 return
-            await ack_empty_response(response_id=response_id, reason="voice_held")
-            return
+            else:
+                await ack_empty_response(response_id=response_id, reason="voice_held")
+                return
         if uid and vcs.cue_enabled(uid):
             from app.services.voice_cue import CUE_GREETING, decide_cue
 
@@ -1657,11 +1674,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 vcs.voice_is_held(uid)
                 or vcs.stop_heard_recently(uid, window=15.0)
             ):
-                await ack_empty_response(
-                    response_id=scheduled_rid,
-                    reason="stop_latched_debounce",
+                from app.services.voice_cue import decide_cue
+
+                debounce_cue = vcs.cue_enabled(uid)
+                deb_action, _ = decide_cue(
+                    user_text or "",
+                    enabled=True,
+                    listening=debounce_cue and vcs.cue_is_open(uid),
                 )
-                return
+                if deb_action not in ("greet", "answer"):
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason="stop_latched_debounce",
+                    )
+                    return
 
             if is_gemini_standalone_voice_test():
                 skip_standalone = False
