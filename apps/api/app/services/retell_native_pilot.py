@@ -33,7 +33,9 @@ Reglas de tools (schemas = nombre/params; no inventes tools):
 - FitLine/PM/Restorate/Activize: Oportunidades YA. «PM»=PM-International AG (FitLine).
   PROHIBIDO search_web e «investigando». Enlace/OPPS→open_opportunities (verifica patrocinador).
 - Borrar finanzas/historial → send_to_trash. Un aviso y un «sí».
-- Cámara: activate una vez; visión solo analyze_camera_frame / search_visible_product. NUNCA inventar lo visible.
+- STOP / silencio / «para» / «alto»: CERO tools, CERO speech. No analyze_camera_frame ni activate.
+  Tras stop solo despierta con «ok CED» / «okay set» (saludo breve); no mezcles cámara en el mismo turno.
+- Cámara: activate solo con «CED enciende la cámara»; visión solo analyze_camera_frame / search_visible_product. NUNCA inventar lo visible.
 - YouTube: play/pause/resume/close. Reproduce ya. NUNCA confirmes play sin éxito.
   SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla. Esta regla NO aplica al resto.
 - Imagen: generate_image (pedido, fondo o escrito). prompt = palabras del usuario. Corregir = misma pieza.
@@ -874,25 +876,30 @@ def build_deactivate_camera_tool(*, api_public_url: str) -> dict[str, Any]:
 
 
 def build_analyze_camera_frame_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
+    # Sin filler: Retell lo dice ANTES del webhook — stop no debe oír «analizando…».
+    tool = _build_custom_tool(
         api_public_url=api_public_url,
         name="analyze_camera_frame",
         description=ANALYZE_CAMERA_FRAME_DESCRIPTION,
         parameters=ANALYZE_CAMERA_PARAMETERS,
-        filler="Un momento, analizando lo que me muestra, señor.",
+        filler="",
         timeout_ms=45_000,
     )
+    tool["speak_during_execution"] = False
+    return tool
 
 
 def build_search_visible_product_tool(*, api_public_url: str) -> dict[str, Any]:
-    return _build_custom_tool(
+    tool = _build_custom_tool(
         api_public_url=api_public_url,
         name="search_visible_product",
         description=SEARCH_VISIBLE_PRODUCT_DESCRIPTION,
         parameters=SEARCH_VISIBLE_PARAMETERS,
-        filler="Un momento, buscando información sobre lo que veo, señor.",
+        filler="",
         timeout_ms=45_000,
     )
+    tool["speak_during_execution"] = False
+    return tool
 
 
 def build_activate_advanced_mode_tool(*, api_public_url: str) -> dict[str, Any]:
@@ -1738,6 +1745,10 @@ async def _execute_native_camera_tool(
     call_id = _extract_call_id(payload)
     question = _camera_question_from_args(payload, args)
 
+    blocked = _blocked_silence_tool(payload, user_id=user_id)
+    if blocked:
+        return blocked
+
     if not user_id:
         latency_ms = int((time.perf_counter() - started) * 1000)
         record_tool_metric(
@@ -1858,24 +1869,49 @@ def _remember_payload_line(user_id: str, payload: dict[str, Any]) -> str:
     heard = _latest_user_utterance(payload)
     if user_id and heard:
         from app.services import voice_client_session as vcs
-        from app.services.voice_cue import utterance_ends_with_silence
+        from app.services.voice_cue import is_stop_utterance, utterance_ends_with_silence
 
         vcs.note_heard_line(user_id, heard)
-        if utterance_ends_with_silence(heard):
+        if is_stop_utterance(heard) or utterance_ends_with_silence(heard):
+            vcs.set_voice_held(user_id, True)
             vcs.mark_stop_heard(user_id)
     return heard
 
 
-def _blocked_silence_tool(payload: dict[str, Any]) -> dict[str, Any] | None:
-    """Stop solo calla. No es una orden de otro módulo."""
-    from app.services.voice_cue import is_stop_utterance
+def _native_tool_preamble(
+    user_id: str,
+    payload: dict[str, Any],
+) -> dict[str, Any] | None:
+    _remember_payload_line(user_id, payload)
+    return _blocked_silence_tool(payload, user_id=user_id)
 
+
+def _blocked_silence_tool(
+    payload: dict[str, Any],
+    *,
+    user_id: str = "",
+) -> dict[str, Any] | None:
+    """Stop solo calla. No es una orden de otro módulo."""
+    from app.services import voice_client_session as vcs
+    from app.services.voice_cue import is_stop_utterance, utterance_ends_with_silence
+
+    uid = (user_id or "").strip()
     heard = _latest_user_utterance(payload)
-    if not is_stop_utterance(heard):
+    if uid and (vcs.voice_is_held(uid) or vcs.stop_heard_recently(uid, window=15.0)):
+        logger.info("[CUE] blocked tool voice_held user=%s tool_ctx=%s", uid[:8], heard[:40])
+        return {
+            "result": "El usuario pidió silencio. No digas nada ni invoques herramientas.",
+            "ok": True,
+            "latency_ms": 0,
+        }
+    if not is_stop_utterance(heard) and not utterance_ends_with_silence(heard):
         return None
+    if uid:
+        vcs.set_voice_held(uid, True)
+        vcs.mark_stop_heard(uid)
     logger.info("[CUE] blocked tool on silence text=%s", heard[:40])
     return {
-        "result": "The user asked for silence. Say nothing and do not call tools.",
+        "result": "El usuario pidió silencio. No digas nada ni invoques herramientas.",
         "ok": True,
         "latency_ms": 0,
     }
@@ -1887,8 +1923,7 @@ async def execute_activate_camera_tool(
     payload: dict[str, Any],
     args: dict[str, Any],
 ) -> dict[str, Any]:
-    _remember_payload_line(user_id, payload)
-    blocked = _blocked_silence_tool(payload)
+    blocked = _native_tool_preamble(user_id, payload)
     if blocked:
         return blocked
     return await _execute_native_camera_tool(
@@ -1919,6 +1954,9 @@ async def execute_analyze_camera_frame_tool(
     payload: dict[str, Any],
     args: dict[str, Any],
 ) -> dict[str, Any]:
+    blocked = _native_tool_preamble(user_id, payload)
+    if blocked:
+        return blocked
     return await _execute_native_camera_tool(
         tool_name="analyze_camera_frame",
         user_id=user_id,
@@ -1933,6 +1971,9 @@ async def execute_search_visible_product_tool(
     payload: dict[str, Any],
     args: dict[str, Any],
 ) -> dict[str, Any]:
+    blocked = _native_tool_preamble(user_id, payload)
+    if blocked:
+        return blocked
     return await _execute_native_camera_tool(
         tool_name="search_visible_product",
         user_id=user_id,
@@ -2361,8 +2402,7 @@ async def execute_read_social_comments_tool(
 
 
 async def execute_open_drive_map_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
-    _remember_payload_line(user_id, payload)
-    blocked = _blocked_silence_tool(payload)
+    blocked = _native_tool_preamble(user_id, payload)
     if blocked:
         return blocked
     return await _execute_native_voice_alias_tool(

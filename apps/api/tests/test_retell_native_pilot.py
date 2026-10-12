@@ -98,11 +98,13 @@ def test_camera_tools_have_fillers_and_timeouts():
     assert activate["timeout_ms"] == 12_000
 
     analyze = build_analyze_camera_frame_tool(api_public_url="https://api.example.com")
-    assert "analizando" in analyze["execution_message_description"].lower()
+    assert analyze["execution_message_description"] == ""
+    assert analyze["speak_during_execution"] is False
     assert analyze["timeout_ms"] == 45_000
 
     search = build_search_visible_product_tool(api_public_url="https://api.example.com")
-    assert "buscando información" in search["execution_message_description"].lower()
+    assert search["execution_message_description"] == ""
+    assert search["speak_during_execution"] is False
     assert search["timeout_ms"] == 45_000
 
 
@@ -129,6 +131,34 @@ def test_activate_camera_idempotent_when_already_active():
     assert "activando" not in out["result"].lower()
     mock_exec.assert_awaited_once()
     assert mock_exec.await_args.args[0] == "request_camera_activation"
+
+
+def test_analyze_camera_frame_blocked_when_voice_held():
+    import asyncio
+
+    from app.services import voice_client_session as vcs
+    from app.services.retell_native_pilot import execute_analyze_camera_frame_tool
+
+    uid = "native-stop-cam"
+    vcs.set_voice_held(uid, True)
+    payload = {
+        "call": {
+            "call_id": "call-test",
+            "transcript_object": [{"role": "user", "content": "CED enciende la cámara"}],
+        }
+    }
+
+    async def run():
+        return await execute_analyze_camera_frame_tool(
+            user_id=uid,
+            payload=payload,
+            args={},
+        )
+
+    out = asyncio.run(run())
+    assert out.get("ok") is True
+    assert "silencio" in str(out.get("result") or "").lower()
+    vcs.set_voice_held(uid, False)
 
 
 def test_analyze_camera_frame_calls_vision_executor():
