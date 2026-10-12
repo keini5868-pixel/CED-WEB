@@ -292,6 +292,11 @@ export function useCedVoiceSession(
   const [cueMode, setCueMode] = useState(false);
   const [cueOpen, setCueOpen] = useState(false);
   const cueModeRef = useRef(false);
+  const cueOpenRef = useRef(false);
+
+  useEffect(() => {
+    cueOpenRef.current = cueOpen;
+  }, [cueOpen]);
 
   useEffect(() => {
     try {
@@ -884,31 +889,9 @@ export function useCedVoiceSession(
         const chatTurns = state.chat_turns || [];
         const dbTurns = state.transcript_turns || [];
         const sourceTurns = dbTurns.length >= chatTurns.length ? dbTurns : chatTurns;
-        if (sourceTurns.length > 0) {
-          callbacksRef.current?.onLiveChatTurns?.(
-            sourceTurns
-              .map((turn, index) => ({
-                role: (turn.role === "user" ? "user" : "model") as "user" | "model",
-                content: String(turn.content || "").trim(),
-                streamKey: String(turn.id || `chat-${index}`),
-              }))
-              .filter((row) => Boolean(row.content)),
-          );
-        }
+        // Retell SDK ya pinta user/model vía onTranscript; live_transcript duplicaba burbujas.
         if (liveText && liveSeq > lastLiveTranscriptSeqRef.current) {
           lastLiveTranscriptSeqRef.current = liveSeq;
-          const role = live?.role === "user" ? "user" : "model";
-          callbacksRef.current?.onTranscript?.(liveText, role, {
-            partial: Boolean(live?.partial),
-            streamKey: String(live?.stream_key || `${role}-live`),
-          });
-          if (role === "user") {
-            setHeardIndicator({
-              status: "heard",
-              userText: liveText,
-              heardAt: Date.now(),
-            });
-          }
         }
         const action = state.client_action;
         if (!action || action.id === lastVoiceActionIdRef.current) return;
@@ -1637,6 +1620,7 @@ export function useCedVoiceSession(
                 }
                 if (
                   cueModeRef.current &&
+                  !cueOpenRef.current &&
                   !isWakeUtterance(text) &&
                   !isStopUtterance(text) &&
                   !mayBeStopHint(text)

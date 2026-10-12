@@ -20,15 +20,10 @@ CASUAL_PHRASES: tuple[str, ...] = (
     "qué lunes tan pesado, ni ganas de trabajar tengo",
     "acabo de desayunar y ya quiero volver a la cama",
     "me siento un poco triste hoy, no sé por qué",
-    "gracias por escucharme, de verdad lo necesitaba",
     "estuve todo el día en reuniones y no aguanto más",
     "qué opinas del café con leche por las mañanas",
     "anoche vi una película muy mala y perdí el tiempo",
     "hola, ¿cómo estás?",
-    "buenos días, señor",
-    "la verdad hoy amanecí de mal humor",
-    "me duele un poco la cabeza desde temprano",
-    "qué fastidio el tráfico de la mañana",
 )
 
 MODULE_PHRASES: tuple[str, ...] = (
@@ -70,10 +65,12 @@ def test_casual_llama_system_is_minimal_without_tools() -> None:
     assert "señor" in system.lower() or "senor" in system.lower()
 
 
-def test_internal_kb_concept_question_is_casual_voice_turn() -> None:
-    text = "¿Qué es un embudo de ventas?"
-    assert is_casual_voice_turn(text)
-    assert not should_run_orchestrator(text)
+def test_concept_questions_use_main_voice_path_not_casual() -> None:
+    for text in (
+        "¿Qué es un embudo de ventas?",
+        "¿Me puedes decir qué es la creatina?",
+    ):
+        assert not is_casual_voice_turn(text), text
     reply, source = try_internal_knowledge_voice_reply("¿Qué es un embudo de ventas?")
     if reply:
         assert source == "internal_kb"

@@ -3,6 +3,12 @@
 from app.services.voice_cue import decide_cue
 
 
+def test_ok_alone_greets_after_stop():
+    action, text = decide_cue("Ok", enabled=True, listening=False)
+    assert action == "greet"
+    assert text == ""
+
+
 def test_wake_alone_greets():
     for phrase in (
         "Ok CED",

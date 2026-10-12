@@ -7,6 +7,7 @@ import re
 
 from app.services.retell_custom_llm import (
     _is_concept_question,
+    _is_task_or_info_query,
     _needs_internet_lookup,
     is_casual_conversation,
     is_meta_publish_intent,
@@ -200,8 +201,12 @@ def is_casual_voice_turn(text: str, transcript: list[Utterance] | None = None) -
     if is_personal_vent_intent(text):
         return True
     if _is_concept_question(text):
-        return True
-    return True
+        return False
+    if _is_task_or_info_query(text):
+        return False
+    if internal_kb:
+        return False
+    return False
 
 
 def try_internal_knowledge_voice_reply(user_text: str) -> tuple[str | None, str]:

@@ -188,6 +188,8 @@ def set_voice_held(user_id: str, held: bool) -> None:
                 session["active_mode"] = None
         else:
             session["stop_heard_at"] = 0.0
+            if session.get("cue_mode"):
+                session["cue_open"] = True
         session["updated_at"] = _now()
 
 

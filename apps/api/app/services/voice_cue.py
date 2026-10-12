@@ -128,7 +128,27 @@ _GLUE = frozenset(
     }
 )
 _ADDRESS = frozenset({"senor", "senora", "don", "dona"})
-_FILLER = frozenset({"", "si", "dime", "digame", "hola", "oye", "escucha", "por favor", "adelante"})
+_FILLER = frozenset(
+    {
+        "",
+        "si",
+        "sí",
+        "ok",
+        "okay",
+        "okey",
+        "dime",
+        "digame",
+        "hola",
+        "hola si",
+        "hola sí",
+        "oye",
+        "escucha",
+        "por favor",
+        "adelante",
+        "listo",
+        "bueno",
+    }
+)
 # «estop» suele llegar como «esto», «es todo» o «es top». Solo la frase corta.
 _SHORT_STOP = frozenset(
     {
@@ -262,6 +282,8 @@ def _wake_index(tokens: list[str]) -> int:
             return i
     if len(tokens) == 1 and _is_name(tokens[0]):
         return 0
+    if len(tokens) == 1 and tokens[0] in _WAKE_LEAD:
+        return 0
     return -1
 
 
@@ -296,7 +318,10 @@ def decide_cue(text: str, *, enabled: bool, listening: bool) -> tuple[str, str]:
         return "stop", ""
     wake_at = _wake_index(tokens)
     if wake_at >= 0:
-        rest = tokens[wake_at + (1 if len(tokens) == 1 else 2) :]
+        skip = 1 if len(tokens) == 1 else 2
+        if wake_at:
+            skip += wake_at
+        rest = tokens[skip:]
         rest_text = " ".join(rest)
         if rest_text in _FILLER:
             return "greet", ""
