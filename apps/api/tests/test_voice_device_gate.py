@@ -191,6 +191,20 @@ def test_should_run_orchestrator_false_while_held():
     vcs.set_voice_held(uid, False)
 
 
+def test_presentation_stop_endpoint_latches_hold():
+    from app.routers.voice_client import voice_presentation_stop
+    from app.routers.voice_client import PresentationStopBody
+
+    uid = "gate-pres-stop"
+    vcs.set_voice_held(uid, False)
+    out = asyncio.run(
+        voice_presentation_stop(PresentationStopBody(heard="stop"), user_id=uid)
+    )
+    assert out.get("voice_held") is True
+    assert vcs.voice_is_held(uid) is True
+    vcs.set_voice_held(uid, False)
+
+
 def test_stopo_drops_queued_camera_and_stays_silent():
     uid = "gate-stopo"
     vcs.note_heard_line(uid, "CED enciende la cámara")

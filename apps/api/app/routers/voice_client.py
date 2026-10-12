@@ -67,6 +67,10 @@ class AckActionBody(BaseModel):
     action_id: int
 
 
+class PresentationStopBody(BaseModel):
+    heard: str = Field(default="", max_length=500)
+
+
 class ChatImageBody(BaseModel):
     image_url: str | None = Field(default=None, max_length=4000)
     image_data: str | None = Field(default=None, max_length=15_000_000)
@@ -162,6 +166,27 @@ async def _recent_messages_cached(
                 _transcript_cache.pop(key, None)
                 _transcript_locks.pop(key, None)
         return messages or [], found
+
+
+@router.post("/presentation-stop")
+async def voice_presentation_stop(
+    body: PresentationStopBody,
+    user_id: str = Depends(require_user_id),
+) -> dict[str, Any]:
+    """Cliente detectó stop en STT — latch inmediato (no esperar al WS Retell)."""
+    from app.services.voice_cue import is_stop_utterance, utterance_ends_with_silence
+
+    heard = (body.heard or "").strip()
+    if heard and not (
+        is_stop_utterance(heard) or utterance_ends_with_silence(heard)
+    ):
+        return {"ok": True, "ignored": True}
+    vcs.set_voice_held(user_id, True)
+    vcs.mark_stop_heard(user_id)
+    if heard:
+        vcs.note_heard_line(user_id, heard)
+    logger.info("[VOICE] presentation-stop user=%s heard=%s", user_id[:8], heard[:60])
+    return {"ok": True, "voice_held": True}
 
 
 @router.post("/camera-status")

@@ -35,6 +35,8 @@ export interface CedRetellCallbacks {
   onClearAgentPartial?: () => void;
   onError?: (message: string) => void;
   onAudioLevel?: (level: number) => void;
+  /** Stop de presentación detectado en STT local (antes del poll al servidor). */
+  onPresentationStop?: (heard: string) => void;
 }
 
 type RetellUpdateEvent = {
@@ -205,6 +207,7 @@ export class CedRetellClient {
     if (!text) return;
     if (isStopUtterance(text)) {
       this.holdVoice();
+      this.callbacks.onPresentationStop?.(text);
       return;
     }
     if (this.voiceHeld && isWakeUtterance(text)) {

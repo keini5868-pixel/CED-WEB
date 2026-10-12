@@ -91,6 +91,11 @@ _STOP_WORD = frozenset(
         "detente",
         "deten",
         "quieto",
+        "para",
+        "parar",
+        "detener",
+        "cancela",
+        "cancelar",
     }
 )
 # stop / estop + vocal que el micrófono pega: stopo, estopo, stoppo.

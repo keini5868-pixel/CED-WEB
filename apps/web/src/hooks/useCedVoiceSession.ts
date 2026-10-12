@@ -24,6 +24,7 @@ import {
   ackVoiceClientAction,
   fetchVoiceClientState,
   postVoiceCameraStatus,
+  postVoicePresentationStop,
   postVoiceCameraPermission,
   postVoiceChatImage,
   postVoiceSessionEnd,
@@ -1491,7 +1492,14 @@ export function useCedVoiceSession(
         if (startRetell && registration.ok) {
         const retell = new CedRetellClient();
         retellClientRef.current = retell;
+        const latchPresentationStop = (heard: string) => {
+          voicePresentationHeldRef.current = true;
+          retellClientRef.current?.syncPresentationHeld(true);
+          void postVoicePresentationStop(heard).catch(() => undefined);
+        };
+
         retell.setCallbacks({
+          onPresentationStop: latchPresentationStop,
           onCallStarted: () => {
             if (isStale()) return;
             retellCallStartedAtRef.current = Date.now();
@@ -1575,6 +1583,9 @@ export function useCedVoiceSession(
             );
             if (role === "user") {
               lastHeardUserTextRef.current = text;
+              if (isStopUtterance(text)) {
+                latchPresentationStop(text);
+              }
               setHeardIndicator({
                 status: "heard",
                 userText: text,

@@ -1189,6 +1189,19 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             await ack_empty_response(response_id=response_id, reason="silence_command")
             return
 
+        if uid and vcs.stop_heard_recently(uid, window=15.0) and not _heard_stop(
+            heard_now or ""
+        ):
+            from app.services.voice_cue import decide_cue
+
+            latch_action, _ = decide_cue(heard_now or "", enabled=True, listening=False)
+            if latch_action != "greet":
+                await ack_empty_response(
+                    response_id=response_id,
+                    reason="stop_recent_latch",
+                )
+                return
+
         cue_override: str | None = None
         if uid and vcs.voice_is_held(uid):
             from app.services.voice_cue import CUE_GREETING, decide_cue

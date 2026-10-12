@@ -25,6 +25,11 @@ const STOP_WORDS = new Set([
   "detente",
   "deten",
   "quieto",
+  "para",
+  "parar",
+  "detener",
+  "cancela",
+  "cancelar",
 ]);
 const STOP_SHAPE = /^(e+)?s+t+o+p+[aeiou]*$/;
 const STOP_ECHO = new Set(["o", "oh", "a", "ah", "e", "eh", "p", "u"]);

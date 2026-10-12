@@ -90,6 +90,14 @@ export async function fetchVoiceClientState(
   return parseApiJson<VoiceClientState>(res);
 }
 
+export async function postVoicePresentationStop(heard = ""): Promise<void> {
+  await proxyFetch("voice/presentation-stop", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ heard: heard.trim().slice(0, 500) }),
+  });
+}
+
 export async function postVoiceCameraStatus(
   active: boolean,
   streamPresent = active,
