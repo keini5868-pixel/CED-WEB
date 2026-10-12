@@ -15,7 +15,7 @@ EXECUTION_MESSAGES: dict[str, str] = {
     "recall_memory": "Consultando memoria, señor",
     "recall_previous_conversations": "Consultando conversaciones, señor",
     "save_to_long_term_memory": "Un momento, señor",
-    "request_camera_activation": "Activando cámara, señor",
+    "request_camera_activation": "",
     "request_camera_deactivation": "Desactivando cámara, señor",
     "analyze_camera_frame": "Analizando, señor",
     "buscar_lo_visible": "Consultando, señor",
@@ -82,6 +82,7 @@ def _tool_base_url() -> str:
 def openai_tool_to_retell(tool: dict[str, Any]) -> dict[str, Any]:
     name = str(tool.get("name") or "")
     params = tool.get("parameters") or {"type": "object", "properties": {}, "required": []}
+    camera_open = name == "request_camera_activation"
     return {
         "type": "custom",
         "name": name,
@@ -89,9 +90,11 @@ def openai_tool_to_retell(tool: dict[str, Any]) -> dict[str, Any]:
         "url": f"{_tool_base_url()}/v1/retell/tools/{name}",
         "method": "POST",
         "parameters": params,
-        "speak_during_execution": True,
+        "speak_during_execution": not camera_open,
         "speak_after_execution": True,
-        "execution_message_description": EXECUTION_MESSAGES.get(name, "Un momento, señor"),
+        "execution_message_description": (
+            "" if camera_open else EXECUTION_MESSAGES.get(name, "Un momento, señor")
+        ),
         "timeout_ms": TIMEOUT_MS.get(name, 10_000),
     }
 

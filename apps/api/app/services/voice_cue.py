@@ -68,7 +68,11 @@ _NAME_EXACT = frozenset(
 _STOP_WORD = frozenset(
     {
         "stop",
+        "stopo",
+        "stopa",
+        "stoppo",
         "estop",
+        "estopo",
         "istop",
         "etop",
         "eetop",
@@ -76,6 +80,7 @@ _STOP_WORD = frozenset(
         "stopp",
         "sstop",
         "stap",
+        "stpo",
         "alto",
         "silencio",
         "callate",
@@ -88,6 +93,9 @@ _STOP_WORD = frozenset(
         "quieto",
     }
 )
+# stop / estop + vocal que el micrófono pega: stopo, estopo, stoppo.
+_STOP_SHAPE = re.compile(r"^(e+)?s+t+o+p+[aeiou]*$")
+_STOP_ECHO = frozenset({"o", "oh", "a", "ah", "e", "eh", "p", "u"})
 _GLUE = frozenset(
     {
         "si",
@@ -179,9 +187,11 @@ def _is_name(token: str) -> bool:
 def _is_stop_word(token: str) -> bool:
     if token in _STOP_WORD:
         return True
-    if not 3 <= len(token) <= 5:
-        return False
-    return _edit_distance(token, "stop") <= 1
+    if _STOP_SHAPE.match(token):
+        return True
+    if 3 <= len(token) <= 6 and _edit_distance(token, "stop") <= 1:
+        return True
+    return False
 
 
 def _without_address(tokens: list[str]) -> list[str]:
@@ -225,10 +235,14 @@ def _is_stop_command(tokens: list[str]) -> bool:
     """True si la frase corta es un stop, con o sin el nombre."""
     if not tokens or len(tokens) > 8:
         return False
+    if len(tokens) <= 4 and _STOP_SHAPE.match("".join(tokens)):
+        return True
     if not any(_is_stop_word(token) for token in tokens):
         return False
-    allowed = _WAKE_LEAD | _NAME_EXACT | _STOP_WORD | _GLUE
-    return all(token in allowed or _is_name(token) or _is_stop_word(token) for token in tokens)
+    allowed = _WAKE_LEAD | _NAME_EXACT | _STOP_WORD | _GLUE | _STOP_ECHO
+    return all(
+        token in allowed or _is_name(token) or _is_stop_word(token) for token in tokens
+    )
 
 
 def _wake_index(tokens: list[str]) -> int:

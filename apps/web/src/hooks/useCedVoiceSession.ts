@@ -1245,8 +1245,15 @@ export function useCedVoiceSession(
 
   const activateCameraFromVoice = useCallback(
     (opts?: { ackActionId?: number; showFeedback?: boolean; heard?: string }) => {
-      const heard = (opts?.heard || lastHeardUserTextRef.current).trim();
-      if (isStopUtterance(heard) || !isCameraOpenUtterance(heard)) {
+      const latest = lastHeardUserTextRef.current.trim();
+      if (isStopUtterance(latest)) {
+        if (opts?.ackActionId) {
+          return ackVoiceClientAction(opts.ackActionId);
+        }
+        return Promise.resolve();
+      }
+      const heard = (latest || opts?.heard || "").trim();
+      if (!isCameraOpenUtterance(heard)) {
         if (opts?.ackActionId) {
           return ackVoiceClientAction(opts.ackActionId);
         }
@@ -1286,6 +1293,10 @@ export function useCedVoiceSession(
       const task = (async () => {
         try {
           await startCameraWithFacing(cameraFacingRef.current);
+          if (isStopUtterance(lastHeardUserTextRef.current)) {
+            releaseCameraStream();
+            return;
+          }
           bindHudCameraFeed(cameraStreamRef.current!);
           if (opts?.showFeedback !== false) {
             announceCameraPrivacy(true);
@@ -1312,6 +1323,7 @@ export function useCedVoiceSession(
       applyCameraStreamFromVoice,
       startCameraWithFacing,
       announceCameraPrivacy,
+      releaseCameraStream,
       callbacks,
     ],
   );
@@ -2183,16 +2195,21 @@ export function useCedVoiceSession(
 
       const handleCameraActivate = (text: string) => {
         void (async () => {
-          await activateCameraFromVoiceRef.current({ showFeedback: true });
+          if (isStopUtterance(text) || isStopUtterance(lastHeardUserTextRef.current)) {
+            return;
+          }
+          await activateCameraFromVoiceRef.current({
+            showFeedback: true,
+            heard: text,
+          });
+          if (isStopUtterance(lastHeardUserTextRef.current)) return;
           if (isCameraAnalyzeIntent(text)) {
             runCameraAnalyze(text);
             return;
           }
           if (isVisualSearchIntent(text)) {
             runVisualSearch(text);
-            return;
           }
-          client.sendNarrationBrief(CAMERA_PRIVACY_SPOKEN);
         })();
       };
 
@@ -2622,7 +2639,7 @@ export function useCedVoiceSession(
             [LEER_COMENTARIOS_REDES]: "Leyendo comentarios…",
             [BUSCAR_LO_VISIBLE]: "Buscando lo que veo…",
             [ANALIZAR_CAMARA]: "Analizando cámara…",
-            request_camera_activation: "Activando cámara…",
+            request_camera_activation: "",
             request_camera_deactivation: "Apagando cámara…",
             generate_image: "Un momento…",
             generate_image_with_reference: "Generando variación con referencia…",

@@ -103,8 +103,9 @@ Una sola frase. Luego espera.
 
 # CÁMARA
 
-- "Activa cámara" → confirma breve: "Cámara activa."
-- "Apaga cámara" → desactiva.
+- Encender: SOLO «CED enciende la cámara». Entonces sí, una frase: "Cámara activa."
+- Stop, stopo, estop, alto: silencio. NO digas cámara.
+- "Apaga cámara" → desactiva. No enciendas por activa/abre/mira esto.
 
 # CONVERSACIÓN NORMAL
 

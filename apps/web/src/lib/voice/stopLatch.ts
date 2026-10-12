@@ -2,7 +2,11 @@
 
 const STOP_WORDS = new Set([
   "stop",
+  "stopo",
+  "stopa",
+  "stoppo",
   "estop",
+  "estopo",
   "istop",
   "etop",
   "eetop",
@@ -10,6 +14,7 @@ const STOP_WORDS = new Set([
   "stopp",
   "sstop",
   "stap",
+  "stpo",
   "alto",
   "silencio",
   "callate",
@@ -21,6 +26,8 @@ const STOP_WORDS = new Set([
   "deten",
   "quieto",
 ]);
+const STOP_SHAPE = /^(e+)?s+t+o+p+[aeiou]*$/;
+const STOP_ECHO = new Set(["o", "oh", "a", "ah", "e", "eh", "p", "u"]);
 
 const SHORT_STOP = new Set([
   "esto",
@@ -102,18 +109,23 @@ function isName(token: string): boolean {
 
 function isStopWord(token: string): boolean {
   if (STOP_WORDS.has(token)) return true;
-  if (token.length < 3 || token.length > 5) return false;
-  return editDistance(token, "stop") <= 1;
+  if (STOP_SHAPE.test(token)) return true;
+  if (token.length >= 3 && token.length <= 6 && editDistance(token, "stop") <= 1) {
+    return true;
+  }
+  return false;
 }
 
 function isStopCommand(tokens: string[]): boolean {
   if (!tokens.length || tokens.length > 8) return false;
+  if (tokens.length <= 4 && STOP_SHAPE.test(tokens.join(""))) return true;
   if (!tokens.some(isStopWord)) return false;
   return tokens.every(
     (token) =>
       WAKE_LEAD.has(token) ||
       GLUE.has(token) ||
       ADDRESS.has(token) ||
+      STOP_ECHO.has(token) ||
       isName(token) ||
       isStopWord(token),
   );

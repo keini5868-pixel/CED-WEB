@@ -7,7 +7,7 @@ MODULE_ACKS: dict[str, str] = {
     "web_search": "Consultando, señor.",
     "publish": "Un momento, señor.",
     "map": "Abriendo el mapa, señor.",
-    "camera": "Activando cámara, señor.",
+    "camera": "",
     "image_gen": "Va.",
     "pdf": "Preparando el documento, señor.",
     "prospection": "Activando prospección, señor.",

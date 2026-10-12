@@ -159,6 +159,12 @@ def cue_is_open(user_id: str) -> bool:
     return bool(_get(user_id).get("cue_open"))
 
 
+def _drop_queued_camera_open(session: dict[str, Any]) -> None:
+    action = session.get("client_action") or {}
+    if action.get("action") == "camera_activate":
+        session["client_action"] = None
+
+
 def set_voice_held(user_id: str, held: bool) -> None:
     """Stop de verdad: se queda callado hasta el siguiente «ok CED»."""
     if not user_id.strip():
@@ -169,6 +175,7 @@ def set_voice_held(user_id: str, held: bool) -> None:
         if held:
             session["cue_open"] = False
             session["last_heard_line"] = "stop"
+            _drop_queued_camera_open(session)
         session["updated_at"] = _now()
 
 
@@ -198,6 +205,7 @@ def mark_stop_heard(user_id: str) -> None:
     session = _get(user_id)
     with _lock:
         session["stop_heard_at"] = _now()
+        _drop_queued_camera_open(session)
         session["updated_at"] = _now()
 
 

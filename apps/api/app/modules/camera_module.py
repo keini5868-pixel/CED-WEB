@@ -125,6 +125,8 @@ class CameraModule(BaseModule):
             return self._idle()
         vcs.push_client_action(user_id, "camera_activate", {"heard": user_text})
         vcs.push_tool_event(user_id, {"type": "camera_activate", "heard": user_text})
+        if vcs.voice_is_held(user_id):
+            return self._idle()
         return ModuleResult(
             ok=True,
             spoken=(

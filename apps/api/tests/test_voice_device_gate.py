@@ -113,3 +113,19 @@ def test_grabar_does_not_open_the_camera():
     from app.services.voice_device_gate import device_tools_for_turn
 
     assert "request_camera_activation" not in device_tools_for_turn("GRABAR")
+
+
+def test_stopo_drops_queued_camera_and_stays_silent():
+    uid = "gate-stopo"
+    vcs.note_heard_line(uid, "CED enciende la cámara")
+    vcs.push_client_action(uid, "camera_activate", {"heard": "CED enciende la cámara"})
+    vcs.note_heard_line(uid, "stopo")
+    vcs.mark_stop_heard(uid)
+    vcs.set_voice_held(uid, True)
+    assert camera_open_allowed(uid, "stopo") is False
+    action = vcs.get_state(uid).get("client_action") or {}
+    assert action.get("action") != "camera_activate"
+    result = asyncio.run(execute_voice_tool("request_camera_activation", uid, {}))
+    assert result.get("silent") is True
+    assert "cámara" not in (result.get("spoken") or "").lower()
+    assert "camara" not in (result.get("spoken") or "").lower()

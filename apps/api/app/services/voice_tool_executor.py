@@ -335,8 +335,13 @@ async def handle_camera_activation(
     vcs.push_client_action(user_id, "camera_activate", {"heard": phrase})
     vcs.push_tool_event(user_id, {"type": "camera_activate", "heard": phrase})
     if fast:
+        if vcs.voice_is_held(user_id) or not camera_open_allowed(user_id):
+            return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
         return _spoken_ok("Cámara activa, señor. Lista para analizar.")
     active = await _wait_camera_ack(user_id, 8.0)
+    if vcs.voice_is_held(user_id) or not camera_open_allowed(user_id):
+        logger.info("[CAMERA] stop durante la espera user=%s", user_id[:8])
+        return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
     if active or vcs.is_camera_active(user_id):
         return _spoken_ok("Cámara activa, señor. Lista para analizar.")
     return _spoken_err(
@@ -2195,6 +2200,8 @@ async def _execute_voice_tool_body(
             "buscar_lo_visible",
         }
         if name in camera_tools and vcs.is_camera_active(user_id):
+            from app.services.voice_cue import is_stop_utterance
+
             logger.info(
                 "[CAMERA] recovered after exception user=%s tool=%s stream=live",
                 user_id[:8],
@@ -2202,5 +2209,7 @@ async def _execute_voice_tool_body(
             )
             if name == "request_camera_deactivation":
                 return _spoken_ok("Cámara desactivada, señor.")
+            if vcs.voice_is_held(user_id) or is_stop_utterance(vcs.last_heard_line(user_id)):
+                return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
             return _spoken_ok("Cámara activa, señor. ¿Qué desea que analice?")
         return _spoken_err("Lamentablemente hubo un error, señor.", error=str(exc))

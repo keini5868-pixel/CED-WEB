@@ -17,6 +17,8 @@ describe("parseCameraIntent", () => {
       "mira esto",
       "qué ves",
       "stop",
+      "stopo",
+      "stop o",
       "estop",
       "GRABAR",
       "enciende la cámara",
