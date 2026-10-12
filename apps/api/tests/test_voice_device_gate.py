@@ -10,7 +10,16 @@ from app.services.voice_device_gate import camera_open_allowed, map_open_allowed
 from app.services.voice_tool_executor import execute_voice_tool
 
 
-def test_stop_is_not_a_camera_or_map_command():
+def test_stop_does_not_receive_the_camera_tool():
+    from app.services.voice_device_gate import device_tools_for_turn
+
+    assert "request_camera_activation" not in device_tools_for_turn("stop")
+    assert "activar_modo_conducir" not in device_tools_for_turn("etop")
+    assert "request_camera_activation" not in device_tools_for_turn("okay set stop")
+    assert "request_camera_activation" not in device_tools_for_turn("hola, qué tal")
+    assert "request_camera_activation" in device_tools_for_turn("activa la cámara")
+    assert "activar_modo_conducir" in device_tools_for_turn("abre el mapa")
+    assert "request_camera_activation" not in device_tools_for_turn("abre el mapa")
     for phrase in ("stop", "etop", "e top", "okay set stop", "ok ced stop"):
         assert camera_open_allowed("gate-a", phrase) is False
         assert map_open_allowed("gate-a", phrase) is False

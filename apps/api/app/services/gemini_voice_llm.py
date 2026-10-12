@@ -20,7 +20,10 @@ from app.services.deliverable_replies import (
     merge_deliverable_continuation,
 )
 from app.services.internal_kb_guard import VOICE_KB_LEAK_OVERLAY, contains_internal_kb_leak
-from app.services.gemini_voice_tools import build_gemini_voice_tools
+from app.services.gemini_voice_tools import (
+    build_gemini_voice_tools,
+    build_gemini_voice_tools_for_turn,
+)
 from app.services.retell_custom_llm import (
     _needs_internet_lookup,
     format_web_delivery,
@@ -728,7 +731,7 @@ class GeminiVoiceLlm:
         config = self._generate_content_config(
             system=system,
             cache_name=cache_name,
-            tools=[self.tools] if with_tools else None,
+            tools=[build_gemini_voice_tools_for_turn(user_text)] if with_tools else None,
             temperature=temperature,
             max_output_tokens=max_tokens,
         )
@@ -1352,7 +1355,7 @@ class GeminiVoiceLlm:
         config = self._generate_content_config(
             system=system,
             cache_name=cache_name,
-            tools=None if fitline_internal else [self.tools],
+            tools=None if fitline_internal else [build_gemini_voice_tools_for_turn(user_text)],
             temperature=0.4,
             max_output_tokens=max_tokens,
         )

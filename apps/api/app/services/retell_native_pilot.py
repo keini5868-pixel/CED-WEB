@@ -1756,7 +1756,7 @@ async def _execute_native_camera_tool(
             result = await execute_voice_tool(
                 "request_camera_activation",
                 user_id,
-                {},
+                {"_user_request": _latest_user_utterance(payload)},
             )
             if result.get("silent"):
                 latency_ms = int((time.perf_counter() - started) * 1000)
@@ -2282,7 +2282,11 @@ async def _execute_native_voice_alias_tool(
         latency_ms = int((time.perf_counter() - started) * 1000)
         record_tool_metric(call_id=call_id, tool_name=tool_name, latency_ms=latency_ms, ok=False)
         return {"result": "No identifiqué al usuario, señor.", "latency_ms": latency_ms, "ok": False}
-    result = await execute_voice_tool(voice_tool_name, user_id, args or {})
+    tool_args = dict(args or {})
+    heard = _latest_user_utterance(payload)
+    if heard and "_user_request" not in tool_args:
+        tool_args["_user_request"] = heard
+    result = await execute_voice_tool(voice_tool_name, user_id, tool_args)
     if result.get("silent"):
         latency_ms = int((time.perf_counter() - started) * 1000)
         record_tool_metric(call_id=call_id, tool_name=tool_name, latency_ms=latency_ms, ok=True)

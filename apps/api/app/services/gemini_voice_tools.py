@@ -60,3 +60,20 @@ def build_gemini_voice_tools() -> types.Tool:
         if tool.get("name")
     ]
     return types.Tool(function_declarations=declarations)
+
+
+def build_gemini_voice_tools_for_turn(user_text: str) -> types.Tool:
+    """Quita cámara y mapa salvo que esta frase los pida. Stop no los ve."""
+    from app.services.voice_device_gate import DEVICE_MODEL_TOOLS, device_tools_for_turn
+
+    allowed = device_tools_for_turn(user_text)
+    declarations = [
+        openai_tool_to_gemini_declaration(tool)
+        for tool in OPENAI_REALTIME_TOOLS
+        if tool.get("name")
+        and (
+            str(tool.get("name")) not in DEVICE_MODEL_TOOLS
+            or str(tool.get("name")) in allowed
+        )
+    ]
+    return types.Tool(function_declarations=declarations)

@@ -864,6 +864,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         vcs.note_heard_line(who, line)
         if _heard_stop(line):
             vcs.mark_stop_heard(who)
+        from app.services.voice_device_gate import set_turn_text
+
+        set_turn_text(line)
 
     async def cut_agent_for_stop(line: str) -> None:
         """Corta lo que CED está diciendo en cuanto se oye stop."""
@@ -1131,6 +1134,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         user_text = cue_override or merged_user_query(transcript)
+        from app.services.voice_device_gate import set_turn_text
+
+        set_turn_text(user_text)
         from app.services.voice_cue import is_silence_command
 
         if is_silence_command(user_text):
@@ -2000,7 +2006,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     user_text[:60],
                 )
             if uid and run_orchestrator:
-                mod_hint = forced_module or orch.active_module
+                mod_hint = forced_module
                 if mod_hint:
                     await fire_latency_filler("module", module=mod_hint)
                 clear_pending_advanced_topic(call_id)
