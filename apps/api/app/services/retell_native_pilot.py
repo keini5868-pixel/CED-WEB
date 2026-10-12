@@ -1865,10 +1865,10 @@ def _remember_payload_line(user_id: str, payload: dict[str, Any]) -> str:
 
 def _blocked_silence_tool(payload: dict[str, Any]) -> dict[str, Any] | None:
     """Stop solo calla. No es una orden de otro módulo."""
-    from app.services.voice_cue import utterance_ends_with_silence
+    from app.services.voice_cue import is_stop_utterance
 
     heard = _latest_user_utterance(payload)
-    if not utterance_ends_with_silence(heard):
+    if not is_stop_utterance(heard):
         return None
     logger.info("[CUE] blocked tool on silence text=%s", heard[:40])
     return {

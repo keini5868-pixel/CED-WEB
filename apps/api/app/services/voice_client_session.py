@@ -59,6 +59,7 @@ def _fresh_session() -> dict[str, Any]:
         "fitline_question_count": 0,
         "cue_mode": False,
         "cue_open": False,
+        "voice_held": False,
         "last_heard_line": "",
         "last_heard_at": 0.0,
         "stop_heard_at": 0.0,
@@ -153,6 +154,22 @@ def set_cue_open(user_id: str, open_: bool) -> None:
 
 def cue_is_open(user_id: str) -> bool:
     return bool(_get(user_id).get("cue_open"))
+
+
+def set_voice_held(user_id: str, held: bool) -> None:
+    """Stop de verdad: se queda callado hasta el siguiente «ok CED»."""
+    if not user_id.strip():
+        return
+    session = _get(user_id)
+    with _lock:
+        session["voice_held"] = bool(held)
+        if held:
+            session["cue_open"] = False
+        session["updated_at"] = _now()
+
+
+def voice_is_held(user_id: str) -> bool:
+    return bool(_get(user_id).get("voice_held"))
 
 
 def note_heard_line(user_id: str, text: str) -> None:

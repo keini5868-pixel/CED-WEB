@@ -853,9 +853,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     last_stop_cut_at = 0.0
 
     def _heard_stop(text: str) -> bool:
-        from app.services.voice_cue import utterance_ends_with_silence
+        from app.services.voice_cue import is_stop_utterance
 
-        return utterance_ends_with_silence(text)
+        return is_stop_utterance(text)
 
     def _remember_user_line(who: str, text: str) -> None:
         line = (text or "").strip()
@@ -870,15 +870,17 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
     async def cut_agent_for_stop(line: str) -> None:
         """Corta lo que CED está diciendo en cuanto se oye stop."""
-        nonlocal last_stop_cut_at, generation_seq
+        nonlocal last_stop_cut_at, generation_seq, debounce_task
         now = time.time()
         if now - last_stop_cut_at < 1.2:
             return
         last_stop_cut_at = now
         generation_seq += 1
+        if debounce_task and not debounce_task.done():
+            debounce_task.cancel()
         who = (user_id or "").strip()
         if who:
-            vcs.set_cue_open(who, False)
+            vcs.set_voice_held(who, True)
         await websocket.send_json(
             {
                 "response_type": "agent_interrupt",
@@ -1080,10 +1082,34 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         _remember_user_line((uid or user_id or "").strip(), heard_now)
         if _heard_stop(heard_now):
             if uid:
-                vcs.set_cue_open(uid, False)
+                vcs.set_voice_held(uid, True)
             await cut_agent_for_stop(heard_now)
             await ack_empty_response(response_id=response_id, reason="silence_command")
             return
+
+        if uid and vcs.voice_is_held(uid):
+            from app.services.voice_cue import CUE_GREETING, decide_cue
+
+            action, cue_text = decide_cue(heard_now, enabled=True, listening=False)
+            logger.info("[CUE] held %s call=%s text=%s", action, call_id, (heard_now or "")[:80])
+            if action == "greet":
+                vcs.set_voice_held(uid, False)
+                vcs.set_cue_open(uid, True)
+                async with response_lock:
+                    if response_id < active_response_id:
+                        return
+                    await send_voice_response(
+                        response_id=response_id,
+                        content=CUE_GREETING,
+                        user_key="cue-greet",
+                        generation=None,
+                    )
+                return
+            if action != "answer":
+                await ack_empty_response(response_id=response_id, reason="voice_held")
+                return
+            vcs.set_voice_held(uid, False)
+            vcs.set_cue_open(uid, True)
 
         cue_override: str | None = None
         if uid and vcs.cue_enabled(uid):
@@ -1100,8 +1126,9 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 await ack_empty_response(response_id=response_id, reason="cue_idle")
                 return
             if cue_action == "stop":
-                vcs.set_cue_open(uid, False)
+                vcs.set_voice_held(uid, True)
                 logger.info("[CUE] stop call=%s", call_id)
+                await cut_agent_for_stop(heard)
                 await ack_empty_response(response_id=response_id, reason="cue_stop")
                 return
             if cue_action == "greet":

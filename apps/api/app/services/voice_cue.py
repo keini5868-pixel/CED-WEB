@@ -114,7 +114,28 @@ _GLUE = frozenset(
         "ahi",
     }
 )
+_ADDRESS = frozenset({"senor", "senora", "don", "dona"})
 _FILLER = frozenset({"", "si", "dime", "digame", "hola", "oye", "escucha", "por favor", "adelante"})
+# «estop» suele llegar como «esto», «es todo» o «es top». Solo la frase corta.
+_SHORT_STOP = frozenset(
+    {
+        "esto",
+        "esta",
+        "estoy",
+        "es todo",
+        "es top",
+        "es stop",
+        "e stop",
+        "e top",
+        "est op",
+        "esstop",
+        "s top",
+        "es to",
+        "esto p",
+        "el esto",
+        "un esto",
+    }
+)
 
 
 def _norm(text: str) -> str:
@@ -156,6 +177,25 @@ def _is_stop_word(token: str) -> bool:
     if not 3 <= len(token) <= 5:
         return False
     return _edit_distance(token, "stop") <= 1
+
+
+def _without_address(tokens: list[str]) -> list[str]:
+    while tokens and tokens[-1] in _ADDRESS:
+        tokens = tokens[:-1]
+    return tokens
+
+
+def is_stop_utterance(text: str) -> bool:
+    """Stop real, incluido lo que el micrófono escribe en vez de «estop»."""
+    tokens = _without_address(_norm(text).split())
+    if not tokens:
+        return False
+    folded = " ".join(tokens)
+    if utterance_ends_with_silence(folded) or is_silence_command(folded):
+        return True
+    if len(tokens) > 4:
+        return False
+    return folded in _SHORT_STOP
 
 
 def is_silence_command(text: str) -> bool:
@@ -222,7 +262,7 @@ def decide_cue(text: str, *, enabled: bool, listening: bool) -> tuple[str, str]:
     tokens = _norm(raw).split()
     if not tokens:
         return "ignore", ""
-    if utterance_ends_with_silence(raw):
+    if is_stop_utterance(raw):
         return "stop", ""
     wake_at = _wake_index(tokens)
     if wake_at >= 0:

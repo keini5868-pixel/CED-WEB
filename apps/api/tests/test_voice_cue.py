@@ -38,7 +38,12 @@ def test_stop_closes_and_presentation_stays_silent():
         "ok sec alto",
         "stop",
         "etop",
+        "estop",
         "e top",
+        "es top",
+        "es todo",
+        "esto",
+        "es top señor",
         "alto",
         "cállate",
     ):
@@ -59,6 +64,9 @@ def test_stop_closes_and_presentation_stays_silent():
     )
     assert action == "answer"
     assert "campaña" in text or "campana" in text.lower()
+    action, text = decide_cue("explicame esto", enabled=True, listening=True)
+    assert action == "answer"
+    assert "explicame" in text
 
 
 def test_while_open_a_normal_question_is_answered():

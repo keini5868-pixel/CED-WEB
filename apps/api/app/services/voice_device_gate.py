@@ -11,7 +11,7 @@ from contextvars import ContextVar
 
 from app.services.cognitive_intents import is_camera_deactivation_intent
 from app.services.voice_client_session import last_heard_line
-from app.services.voice_cue import utterance_ends_with_silence
+from app.services.voice_cue import is_stop_utterance
 
 CAMERA_MODEL_TOOLS = frozenset(
     {
@@ -63,7 +63,7 @@ def current_turn_text() -> str:
 
 def is_camera_open_phrase(text: str) -> bool:
     heard = (text or "").strip()
-    if not heard or utterance_ends_with_silence(heard):
+    if not heard or is_stop_utterance(heard):
         return False
     if is_camera_deactivation_intent(heard):
         return False
@@ -72,21 +72,21 @@ def is_camera_open_phrase(text: str) -> bool:
 
 def is_camera_vision_phrase(text: str) -> bool:
     heard = (text or "").strip()
-    if not heard or utterance_ends_with_silence(heard):
+    if not heard or is_stop_utterance(heard):
         return False
     return bool(_CAMERA_VISION.search(heard))
 
 
 def is_map_open_phrase(text: str) -> bool:
     heard = (text or "").strip()
-    if not heard or utterance_ends_with_silence(heard):
+    if not heard or is_stop_utterance(heard):
         return False
     return bool(_MAP_OPEN.search(heard))
 
 
 def device_tools_for_turn(text: str) -> frozenset[str]:
     """Herramientas de dispositivo que este turno puede usar. El resto se quita."""
-    if utterance_ends_with_silence(text):
+    if is_stop_utterance(text):
         return frozenset()
     keep: set[str] = set()
     if is_camera_open_phrase(text) or is_camera_vision_phrase(text):
@@ -100,7 +100,7 @@ def device_tools_for_turn(text: str) -> frozenset[str]:
 
 def _blocked_by_stop(user_id: str) -> bool:
     latest = last_heard_line(user_id).strip()
-    return bool(latest and utterance_ends_with_silence(latest))
+    return bool(latest and is_stop_utterance(latest))
 
 
 def camera_open_allowed(user_id: str, heard: str = "") -> bool:
