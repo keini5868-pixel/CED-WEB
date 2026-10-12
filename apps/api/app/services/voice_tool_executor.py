@@ -375,18 +375,11 @@ async def _run_camera_capture(
         question[:80],
     )
     if not vcs.is_camera_active(user_id):
-        from app.services.voice_device_gate import camera_open_allowed
-
-        if not camera_open_allowed(user_id):
-            logger.info("[CAMERA] auto_activate bloqueado user=%s", user_id[:8])
-            return _spoken_err(
-                "La cámara no está activa, señor.",
-                error="camera_not_requested",
-            )
-        logger.info("[CAMERA] auto_activate user=%s", user_id[:8])
-        vcs.push_client_action(user_id, "camera_activate", {})
-        ack = await _wait_camera_ack(user_id, 8.0)
-        logger.info("[CAMERA] auto_activate_ack user=%s ok=%s", user_id[:8], ack)
+        logger.info("[CAMERA] captura sin cámara abierta user=%s", user_id[:8])
+        return _spoken_err(
+            "La cámara no está activa, señor.",
+            error="camera_not_requested",
+        )
 
     vcs.push_client_action(
         user_id,
@@ -577,10 +570,18 @@ async def execute_voice_tool(
         return _spoken_err("No identifiqué al usuario, señor.", error="missing_user_id")
 
     heard = str(params.get("_user_request") or params.get("user_request") or "").strip()
-    if name == "request_camera_activation":
+    if name in (
+        "request_camera_activation",
+        "analyze_camera_frame",
+        "buscar_lo_visible",
+    ):
         from app.services.voice_device_gate import camera_open_allowed
+        from app.services.voice_cue import is_stop_utterance
 
-        if not camera_open_allowed(user_id, heard):
+        if is_stop_utterance(heard) or is_stop_utterance(vcs.last_heard_line(user_id)):
+            logger.info("[DEVICE] stop no toca la cámara user=%s tool=%s", user_id[:8], name)
+            return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
+        if name == "request_camera_activation" and not camera_open_allowed(user_id, heard):
             logger.info("[DEVICE] cámara no pedida user=%s", user_id[:8])
             return {"ok": True, "spoken": "", "silent": True, "skipped": "not_camera"}
     elif name == "activar_modo_conducir":

@@ -587,24 +587,26 @@ def promised_voice_search_without_result(text: str, *, user_text: str = "") -> b
 
 
 def resolve_camera_voice_request(user_text: str) -> str | None:
-    """Tool de cámara a ejecutar, o None. Stop no es cámara."""
+    """Solo frases de cámara. Stop, silencio u otra orden no entran aquí."""
     last = (user_text or "").strip()
+    from app.services.cognitive_intents import is_camera_deactivation_intent
     from app.services.voice_cue import is_stop_utterance
+    from app.services.voice_device_gate import (
+        is_camera_open_phrase,
+        is_camera_vision_phrase,
+    )
 
-    if not last or is_stop_utterance(last) or not is_camera_voice_command(last):
+    if not last or is_stop_utterance(last):
         return None
-    norm = _normalize(last)
-    if re.search(r"\b(apaga|desactiva|cierra|deja de mirar)\b", norm):
+    if is_camera_deactivation_intent(last):
         return "request_camera_deactivation"
-    if re.search(
-        r"\b(qu[eé]\s+ves|qu[eé] veo|mira|analiza|visi[oó]n|busca.*visible|mostrando|"
-        r"ves\?|dime qu[eé] ves|cu[eé]ntame qu[eé] ves|observas)\b",
-        norm,
-    ):
-        if re.search(r"\bbusca|internet|google|web\b", norm):
+    if is_camera_vision_phrase(last):
+        if re.search(r"\bbusca|internet|google|web\b", _normalize(last)):
             return "buscar_lo_visible"
         return "analyze_camera_frame"
-    return "request_camera_activation"
+    if is_camera_open_phrase(last):
+        return "request_camera_activation"
+    return None
 
 
 def _current_turn_wants_script(user_text: str) -> bool:

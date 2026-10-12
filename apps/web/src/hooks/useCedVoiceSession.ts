@@ -644,8 +644,12 @@ export function useCedVoiceSession(
             .getVideoTracks()
             .some((t) => t.readyState === "live" && t.enabled);
         if (!hadStream) {
-          await toggleCameraRef.current(true);
-          await waitForCameraStream();
+          await postVoiceVisionResult(
+            requestId,
+            "La cámara no está activa, señor.",
+          );
+          await ackVoiceClientAction(action.id);
+          return;
         }
         const streamLive = cameraStreamLive();
         await postVoiceCameraStatus(streamLive, streamLive);

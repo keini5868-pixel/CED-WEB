@@ -69,3 +69,25 @@ def test_tool_call_alone_does_not_open_the_camera():
     result = asyncio.run(execute_voice_tool("activar_modo_conducir", uid, {}))
     assert result.get("skipped") == "not_map"
     assert vcs.get_active_mode(uid) != "map"
+
+
+def test_stop_analyze_does_not_open_the_camera():
+    uid = "gate-g"
+    vcs.note_heard_line(uid, "stop")
+    vcs.mark_stop_heard(uid)
+    vcs.set_camera_active(uid, False)
+    result = asyncio.run(execute_voice_tool("analyze_camera_frame", uid, {}))
+    assert result.get("skipped") == "not_camera"
+    assert vcs.is_camera_active(uid) is False
+    state = vcs.get_state(uid)
+    action = state.get("client_action") or {}
+    assert action.get("action") != "camera_activate"
+
+
+def test_stop_is_not_a_camera_request():
+    from app.services.retell_custom_llm import resolve_camera_voice_request
+
+    for phrase in ("stop", "estop", "etop", "esto", "es todo", "alto"):
+        assert resolve_camera_voice_request(phrase) is None
+    assert resolve_camera_voice_request("activa la cámara") == "request_camera_activation"
+    assert resolve_camera_voice_request("mira esto") == "analyze_camera_frame"
