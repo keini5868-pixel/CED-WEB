@@ -136,6 +136,16 @@ def test_camera_on_announcement_is_silenced_after_stopo():
     )
 
 
+def test_buenos_dias_after_stop_cannot_overwrite_the_stop():
+    uid = "gate-buenos"
+    vcs.note_heard_line(uid, "stop")
+    vcs.mark_stop_heard(uid)
+    vcs.set_voice_held(uid, True)
+    vcs.note_heard_line(uid, "buenos días")
+    assert vcs.last_heard_line(uid) == "stop"
+    assert vcs.voice_is_held(uid) is True
+
+
 def test_stopo_drops_queued_camera_and_stays_silent():
     uid = "gate-stopo"
     vcs.note_heard_line(uid, "CED enciende la cámara")

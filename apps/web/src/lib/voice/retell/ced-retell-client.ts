@@ -100,6 +100,7 @@ export class CedRetellClient {
   private agentMutedForBargeIn = false;
   /** Stop real: el volumen se queda en cero hasta «ok CED». */
   private voiceHeld = false;
+  private holdMuteTimer: number | null = null;
   /** YouTube activo: mic mute + agent volume 0 (anti AGC/USB pump). */
   private youtubeMediaMode = false;
   private agentTurnSeq = 0;
@@ -166,14 +167,34 @@ export class CedRetellClient {
     this.callbacks.onClearAgentPartial?.();
   }
 
+  private startHoldMuteWatch(): void {
+    this.stopHoldMuteWatch();
+    this.holdMuteTimer = window.setInterval(() => {
+      if (!this.voiceHeld) {
+        this.stopHoldMuteWatch();
+        return;
+      }
+      this.setAgentTrackVolume(0);
+    }, 200);
+  }
+
+  private stopHoldMuteWatch(): void {
+    if (this.holdMuteTimer != null) {
+      window.clearInterval(this.holdMuteTimer);
+      this.holdMuteTimer = null;
+    }
+  }
+
   private holdVoice(): void {
     this.voiceHeld = true;
     this.muteAgentPlayback();
+    this.startHoldMuteWatch();
     this.callbacks.onClearAgentPartial?.();
   }
 
   private releaseVoice(): void {
     this.voiceHeld = false;
+    this.stopHoldMuteWatch();
     this.agentMutedForBargeIn = true;
     this.restoreAgentPlayback();
   }
@@ -333,6 +354,7 @@ export class CedRetellClient {
   private setupListeners(): void {
     this.client.on("call_started", () => {
       this.voiceHeld = false;
+      this.stopHoldMuteWatch();
       this.liveKitConnected = true;
       retellLog("call_started — media conectado");
       this.startAudioRetryLoop();
@@ -359,8 +381,13 @@ export class CedRetellClient {
     });
 
     this.client.on("agent_start_talking", () => {
-      if (this.voiceHeld) this.muteAgentPlayback();
-      else this.restoreAgentPlayback();
+      if (this.voiceHeld) {
+        this.muteAgentPlayback();
+        this.agentSpeaking = true;
+        this.callbacks.onAgentTalking?.(true);
+        return;
+      }
+      this.restoreAgentPlayback();
       this.agentSpeaking = true;
       this.callbacks.onAgentTalking?.(true);
     });
@@ -409,6 +436,7 @@ export class CedRetellClient {
         }
       }
       if (turntaking === "user_turn") {
+        this.muteAgentPlayback();
         this.maybeBargeIn();
       }
       if (turntaking) {
@@ -530,6 +558,8 @@ export class CedRetellClient {
   }
 
   async stopCall(): Promise<void> {
+    this.voiceHeld = false;
+    this.stopHoldMuteWatch();
     this.stopAudioRetry();
     this.clearUserDebounce();
     this.stopLevelLoop();

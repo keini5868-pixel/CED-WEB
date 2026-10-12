@@ -647,6 +647,16 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
     greeting_fallback_task = asyncio.create_task(greeting_fallback())
 
+    def _must_stay_silent() -> bool:
+        who = (user_id or "").strip()
+        if not who:
+            return False
+        if vcs.voice_is_held(who) or vcs.stop_heard_recently(who, 12.0):
+            return True
+        from app.services.voice_cue import is_stop_utterance
+
+        return is_stop_utterance(vcs.last_heard_line(who))
+
     async def send_voice_partial(
         *,
         response_id: int,
@@ -656,6 +666,20 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     ) -> bool:
         if generation is not None and generation != generation_seq:
             return False
+        if _must_stay_silent():
+            logger.info("[CUE] drop partial tras stop call=%s rid=%s", call_id, response_id)
+            if not content_complete:
+                return False
+            await websocket.send_json(
+                {
+                    "response_type": "response",
+                    "response_id": response_id,
+                    "content": "",
+                    "content_complete": True,
+                    "end_call": False,
+                }
+            )
+            return True
         from app.services.voice_device_gate import silence_camera_status_speech
 
         if silence_camera_status_speech(content, user_id or ""):
@@ -735,6 +759,19 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 call_id,
             )
             return False
+        if _must_stay_silent():
+            logger.info("[CUE] drop outbound tras stop call=%s rid=%s", call_id, response_id)
+            await websocket.send_json(
+                {
+                    "response_type": "response",
+                    "response_id": response_id,
+                    "content": "",
+                    "content_complete": True,
+                    "end_call": False,
+                }
+            )
+            answered_response_ids.add(response_id)
+            return True
         from app.services.stream_delta import strip_prefix_overlap
 
         body = strip_prefix_overlap(skip_prefix, content) if skip_prefix else content
@@ -1479,6 +1516,12 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             async def anti_silence_if_unanswered(*, reason: str) -> None:
                 """Nunca dejar response_required sin respuesta audible."""
                 if scheduled_rid in answered_response_ids:
+                    return
+                if _must_stay_silent():
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason=f"{reason}_stop",
+                    )
                     return
                 if _turn_rid_stale():
                     await ack_empty_response(

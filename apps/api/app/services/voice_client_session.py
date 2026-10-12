@@ -178,6 +178,8 @@ def set_voice_held(user_id: str, held: bool) -> None:
             _drop_queued_camera_open(session)
             if session.get("active_mode") == "camera":
                 session["active_mode"] = None
+        else:
+            session["stop_heard_at"] = 0.0
         session["updated_at"] = _now()
 
 
@@ -190,8 +192,18 @@ def note_heard_line(user_id: str, text: str) -> None:
     line = (text or "").strip()[:500]
     if not user_id.strip() or not line:
         return
+    from app.services.voice_cue import is_stop_utterance
+
     session = _get(user_id)
     with _lock:
+        if not is_stop_utterance(line):
+            heard_at = float(session.get("stop_heard_at") or 0)
+            if heard_at > 0 and (_now() - heard_at) < 12.0:
+                from app.services.voice_cue import decide_cue
+
+                action, _ = decide_cue(line, enabled=True, listening=False)
+                if action not in ("greet", "answer"):
+                    return
         session["last_heard_line"] = line
         session["last_heard_at"] = _now()
         session["updated_at"] = _now()
