@@ -1398,6 +1398,18 @@ class GeminiVoiceLlm:
             )
             return
 
+        from app.services.voice_cue import is_silence_command
+
+        if is_silence_command(user_text):
+            logger.info("[RETELL-GEMINI] silence command, no tools text=%s", user_text[:40])
+            yield ResponseResponse(
+                response_id=request.response_id,
+                content="",
+                content_complete=True,
+                end_call=False,
+            )
+            return
+
         function_calls = _extract_function_calls(response)
         if function_calls:
             if not response.candidates:

@@ -1082,6 +1082,14 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
 
         user_text = cue_override or merged_user_query(transcript)
+        from app.services.voice_cue import is_silence_command
+
+        if is_silence_command(user_text):
+            if uid and vcs.cue_enabled(uid):
+                vcs.set_cue_open(uid, False)
+            logger.info("[CUE] silence call=%s text=%s", call_id, user_text[:40])
+            await ack_empty_response(response_id=response_id, reason="silence_command")
+            return
         if is_inaudible_or_noise(user_text):
             logger.info("[RETELL-GEMINI] skip inaudible/noise call=%s text=%s", call_id, user_text[:40])
             if interaction == "response_required":

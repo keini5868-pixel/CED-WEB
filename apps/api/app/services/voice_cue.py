@@ -70,7 +70,11 @@ _STOP_WORD = frozenset(
         "stop",
         "estop",
         "istop",
+        "etop",
+        "eetop",
+        "top",
         "stopp",
+        "sstop",
         "stap",
         "alto",
         "silencio",
@@ -147,14 +151,27 @@ def _is_name(token: str) -> bool:
     return any(_edit_distance(token, base) <= 1 for base in ("ced", "set", "sec", "sed"))
 
 
+def _is_stop_word(token: str) -> bool:
+    if token in _STOP_WORD:
+        return True
+    if not 3 <= len(token) <= 5:
+        return False
+    return _edit_distance(token, "stop") <= 1
+
+
+def is_silence_command(text: str) -> bool:
+    """True si la frase es solo un stop, aunque el reconocedor lo escriba mal."""
+    return _is_stop_command(_norm(text).split())
+
+
 def _is_stop_command(tokens: list[str]) -> bool:
     """True si la frase corta es un stop, con o sin el nombre."""
     if not tokens or len(tokens) > 8:
         return False
-    if not any(token in _STOP_WORD for token in tokens):
+    if not any(_is_stop_word(token) for token in tokens):
         return False
     allowed = _WAKE_LEAD | _NAME_EXACT | _STOP_WORD | _GLUE
-    return all(token in allowed or _is_name(token) for token in tokens)
+    return all(token in allowed or _is_name(token) or _is_stop_word(token) for token in tokens)
 
 
 def _wake_index(tokens: list[str]) -> int:

@@ -1848,12 +1848,30 @@ async def _execute_native_camera_tool(
     return {"result": spoken, "latency_ms": latency_ms, "ok": ok}
 
 
+def _blocked_silence_tool(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """«stop» / «etop» no abre mapa ni cámara."""
+    from app.services.voice_cue import is_silence_command
+
+    heard = _latest_user_utterance(payload)
+    if not is_silence_command(heard):
+        return None
+    logger.info("[CUE] blocked tool on silence text=%s", heard[:40])
+    return {
+        "result": "The user said stop. Do not open the map or the camera. Say nothing.",
+        "ok": True,
+        "latency_ms": 0,
+    }
+
+
 async def execute_activate_camera_tool(
     *,
     user_id: str,
     payload: dict[str, Any],
     args: dict[str, Any],
 ) -> dict[str, Any]:
+    blocked = _blocked_silence_tool(payload)
+    if blocked:
+        return blocked
     return await _execute_native_camera_tool(
         tool_name="activate_camera",
         user_id=user_id,
@@ -2316,6 +2334,9 @@ async def execute_read_social_comments_tool(
 
 
 async def execute_open_drive_map_tool(*, user_id: str, payload: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    blocked = _blocked_silence_tool(payload)
+    if blocked:
+        return blocked
     return await _execute_native_voice_alias_tool(
         tool_name="open_drive_map",
         voice_tool_name="activar_modo_conducir",

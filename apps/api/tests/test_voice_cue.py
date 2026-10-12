@@ -37,6 +37,8 @@ def test_stop_closes_and_presentation_stays_silent():
         "okay seth stop",
         "ok sec alto",
         "stop",
+        "etop",
+        "e top",
         "alto",
         "cállate",
     ):
