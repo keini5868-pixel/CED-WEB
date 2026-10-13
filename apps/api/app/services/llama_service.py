@@ -116,10 +116,11 @@ def use_llama() -> bool:
     provider = (get_settings().llm_provider or "").strip().lower()
     if provider == "llama":
         return True
-    if provider == "gemini":
+    if provider in ("gemini", "claude", "anthropic", "openai", "haiku"):
         return False
-    # retell_llm_provider como alias para voz si llm_provider no está explícito
-    return (get_settings().retell_llm_provider or "").strip().lower() == "llama"
+    from app.services.voice_retell_provider import resolve_retell_voice_provider
+
+    return resolve_retell_voice_provider() == "llama"
 
 
 def llama_health_diagnostics() -> dict[str, Any]:

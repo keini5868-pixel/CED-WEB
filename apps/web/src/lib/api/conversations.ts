@@ -47,7 +47,8 @@ let memList: ConversationRow[] | null = null;
 const memMsgs = new Map<string, ConversationMessage[]>();
 
 function stripMessages(row: ConversationRow): ConversationRow {
-  const { messages: _ignored, ...rest } = row;
+  const rest = { ...row };
+  delete rest.messages;
   return rest;
 }
 

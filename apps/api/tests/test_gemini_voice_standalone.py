@@ -67,8 +67,7 @@ def test_factory_skips_standalone_in_production(monkeypatch: pytest.MonkeyPatch)
     from app.services.gemini_voice_standalone import GeminiStandaloneVoiceLlm
     from app.services.voice_llm_factory import build_voice_llm
 
-    with patch("app.services.voice_llm_factory.use_llama", return_value=False):
-        llm = build_voice_llm()
+    llm = build_voice_llm()
     assert isinstance(llm, GeminiVoiceLlm)
     assert not isinstance(llm, GeminiStandaloneVoiceLlm)
 

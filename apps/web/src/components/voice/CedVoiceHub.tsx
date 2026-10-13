@@ -205,10 +205,12 @@ export function CedVoiceHub() {
             Boolean(prev[lastModelIdx]) &&
             !prev[lastModelIdx]?.partial;
           if (lastUserIdx >= 0 && !modelAfterUser) {
+            const prior = prev[lastUserIdx];
+            if (!prior) return [...prev, row];
             const next = [...prev];
             next[lastUserIdx] = {
               ...row,
-              streamKey: prev[lastUserIdx].streamKey,
+              streamKey: prior.streamKey,
               partial: Boolean(options?.partial),
             };
             return next;
