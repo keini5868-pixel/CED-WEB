@@ -24,7 +24,7 @@ def normalize_retell_voice_provider(raw: str) -> str:
 
 
 def resolve_retell_voice_provider() -> str:
-    """RETELL_LLM_PROVIDER gana; si vacío, LLM_PROVIDER; default gemini (voz prod histórica)."""
+    """RETELL_LLM_PROVIDER gana; si vacío, LLM_PROVIDER; default claude (Haiku cerebro voz)."""
     settings = get_settings()
     explicit = normalize_retell_voice_provider(settings.retell_llm_provider or "")
     if explicit:
@@ -32,4 +32,4 @@ def resolve_retell_voice_provider() -> str:
     from_llm = normalize_retell_voice_provider(settings.llm_provider or "")
     if from_llm:
         return from_llm
-    return "gemini"
+    return "claude"
