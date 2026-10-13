@@ -38,6 +38,13 @@ _TOOL_EMBEDDED = re.compile(
     re.IGNORECASE,
 )
 
+_IMAGE_PIPELINE_LEAK = re.compile(
+    r"(?i)"
+    r"(?:FULL FRAME|SAFE AREA|prompt_used=|ok=true\s+published=true|"
+    r"Photorealistic|SPELLING:|TEXTOS EXACTOS|Include the requested labels|"
+    r"No text, letters, titles)"
+)
+
 
 def contains_code_leak(text: str) -> bool:
     cleaned = (text or "").strip()
@@ -53,6 +60,8 @@ def contains_tool_leak(text: str) -> bool:
         return False
     if _XML_TOOL_LEAK.search(raw) or _XML_TOOL_LEAK.search(cleaned):
         return True
+    if contains_image_pipeline_leak(cleaned):
+        return True
     return bool(
         _TOOL_NAMED_ARG.search(cleaned)
         or _TOOL_SNAKE_CALL.search(cleaned)
@@ -60,6 +69,13 @@ def contains_tool_leak(text: str) -> bool:
         or _TOOL_PARTIAL.search(cleaned)
         or _TOOL_EMBEDDED.search(cleaned)
     )
+
+
+def contains_image_pipeline_leak(text: str) -> bool:
+    cleaned = (text or "").strip()
+    if len(cleaned) < 40:
+        return False
+    return bool(_IMAGE_PIPELINE_LEAK.search(cleaned))
 
 
 _INFRA_ALWAYS = re.compile(

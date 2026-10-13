@@ -7,6 +7,11 @@ export function normalizeCedMediaUrl(url: string): string {
   if (trimmed.startsWith("/api/ced/")) return trimmed;
   if (trimmed.startsWith("data:")) return trimmed;
 
+  const relative = trimmed.match(/^\/?(?:v1\/)?media\/publish\/([^/?#]+)/i);
+  if (relative?.[1]) {
+    return cedApiPath(`media/publish/${decodeURIComponent(relative[1])}`);
+  }
+
   try {
     const parsed = new URL(trimmed, "https://ced.local");
     const match = parsed.pathname.match(/\/(?:v1\/)?media\/publish\/([^/?#]+)/i);

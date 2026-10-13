@@ -99,17 +99,17 @@ def test_generate_image_prefers_gpt_image_over_ideogram_when_openai_configured()
     assert mock_insert.call_args.kwargs["quality"] == "text"
 
 
-def test_generate_image_falls_back_to_ideogram_when_gpt_fails():
+def test_generate_image_falls_back_to_gemini_when_gpt_fails():
     from app.services import gemini_images
 
-    ideogram_ok = {
+    gemini_ok = {
         "ok": True,
-        "raw_bytes": b"IDEOGRAM-BYTES",
+        "raw_bytes": b"GEMINI-BYTES",
         "mime_type": "image/png",
-        "model": "ideogram-v4-turbo",
-        "quality": "text",
-        "provider": "ideogram",
-        "estimated_cost_usd": 0.03,
+        "model": "gemini-2.5-flash-image",
+        "quality": "standard",
+        "provider": "gemini",
+        "estimated_cost_usd": 0.01,
     }
     with (
         patch("app.services.gemini_images.supabase_db.get_profile", return_value={}),
@@ -125,12 +125,14 @@ def test_generate_image_falls_back_to_ideogram_when_gpt_fails():
         ),
         patch(
             "app.services.ideogram_images.generate_image_ideogram",
-            return_value=ideogram_ok,
         ) as mock_ideogram,
-        patch("app.services.gemini_images.generate_image_gemini") as mock_gemini,
+        patch(
+            "app.services.gemini_images.generate_image_gemini",
+            return_value=gemini_ok,
+        ) as mock_gemini,
         patch(
             "app.services.publish_media.store_publish_image_for_client",
-            return_value="https://cdn.example.com/ideo.png",
+            return_value="https://cdn.example.com/gem.png",
         ),
         patch("app.services.supabase_db.insert_generated_image"),
         patch(
@@ -150,9 +152,9 @@ def test_generate_image_falls_back_to_ideogram_when_gpt_fails():
             prefer_ideogram=True,
         )
 
-    assert result["provider"] == "ideogram"
-    mock_ideogram.assert_called_once()
-    mock_gemini.assert_not_called()
+    assert result["provider"] == "gemini"
+    mock_ideogram.assert_not_called()
+    mock_gemini.assert_called_once()
 
 
 def test_generate_image_falls_back_to_openai_when_gemini_fails():

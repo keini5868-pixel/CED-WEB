@@ -43,6 +43,7 @@ import { CedStudioSidebar } from "@/components/hud/CedStudioSidebar";
 import { HudUsageBar } from "@/components/hud/HudUsageBar";
 import {
   CED_FITLINE_GUIDE_START_EVENT,
+  CED_CLOSE_HISTORY_EVENT,
   CED_OPEN_HISTORY_EVENT,
   CED_OPEN_SETTINGS_EVENT,
   FITLINE_GUIDE_SEED,
@@ -140,7 +141,10 @@ export function CedVoiceHub() {
 
   const showVoiceGeneratedImage = useCallback((url: string, prompt?: string) => {
     const normalized = normalizeCedMediaUrl(url);
-    if (!normalized) return;
+    if (!normalized) {
+      clearVoiceGeneratingImage();
+      return;
+    }
     setImageGenerating(false);
     setLiveVoiceImages((prev) => {
       if (prev.some((item) => item.url === normalized)) {
@@ -160,7 +164,7 @@ export function CedVoiceHub() {
     pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
     setVoiceImagePreview({ url: normalized, prompt, at: Date.now() });
     setChatSeedImage(null);
-  }, [pushVoiceImage]);
+  }, [pushVoiceImage, clearVoiceGeneratingImage]);
   const onConversationId = useCallback((id: string | null) => {
     chatThreadIdRef.current = id;
   }, []);
@@ -560,8 +564,13 @@ export function CedVoiceHub() {
 
   useEffect(() => {
     const onHistory = () => voice.setHistoryOpen(true);
+    const onCloseHistory = () => voice.setHistoryOpen(false);
     window.addEventListener(CED_OPEN_HISTORY_EVENT, onHistory);
-    return () => window.removeEventListener(CED_OPEN_HISTORY_EVENT, onHistory);
+    window.addEventListener(CED_CLOSE_HISTORY_EVENT, onCloseHistory);
+    return () => {
+      window.removeEventListener(CED_OPEN_HISTORY_EVENT, onHistory);
+      window.removeEventListener(CED_CLOSE_HISTORY_EVENT, onCloseHistory);
+    };
   }, [voice.setHistoryOpen]);
 
   useEffect(() => {

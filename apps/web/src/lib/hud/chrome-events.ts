@@ -2,6 +2,7 @@
 
 export const CED_OPEN_SETTINGS_EVENT = "ced-open-settings";
 export const CED_OPEN_HISTORY_EVENT = "ced-open-history";
+export const CED_CLOSE_HISTORY_EVENT = "ced-close-history";
 export const CED_OPEN_CHAT_EVENT = "ced-open-chat";
 export const CED_OPEN_ADVANCED_EVENT = "ced-open-advanced";
 export const CED_OPEN_FINANCE_EVENT = "ced-open-finance";
@@ -14,6 +15,15 @@ export function dispatchCedOpenSettings(): void {
 export function dispatchCedOpenHistory(): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(new Event(CED_OPEN_HISTORY_EVENT));
+}
+
+export function dismissDashboardOverlays(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event("ced-close-module"));
+  window.dispatchEvent(new Event(CED_CLOSE_HISTORY_EVENT));
+  window.dispatchEvent(new Event("ced-close-map"));
+  window.dispatchEvent(new Event("ced-close-hud-menus"));
+  window.dispatchEvent(new Event("ced-close-settings"));
 }
 
 export function dispatchCedOpenModule(

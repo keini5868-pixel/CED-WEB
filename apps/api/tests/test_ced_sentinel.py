@@ -62,6 +62,9 @@ def test_sweep_records_a_level_change_once(monkeypatch):
     monkeypatch.setattr(ced_sentinel, "_check_payments", lambda: _check("ok", "Pagos operativos"))
     monkeypatch.setattr(ced_sentinel, "_check_data", lambda: _check("ok", "Datos operativos"))
     monkeypatch.setattr(ced_sentinel, "_check_models", lambda: _check("watch", "Modelos incompletos"))
+    monkeypatch.setattr(ced_sentinel, "_check_piloto", lambda: _check("ok", "Piloto OK"))
+    monkeypatch.setattr(ced_sentinel, "_check_herramientas", lambda: _check("ok", "Tools OK"))
+    monkeypatch.setattr(ced_sentinel, "_check_runtime_voz", lambda: _check("ok", "Runtime OK"))
 
     assert sweep() == []
     set_enabled(True)
@@ -69,12 +72,22 @@ def test_sweep_records_a_level_change_once(monkeypatch):
     sweep()
 
     changes = [event for event in public_status()["events"] if event["kind"] == "change"]
-    assert len(changes) == 4
+    assert len(changes) == 7
     areas = {event["area"] for event in changes}
-    assert areas == {"voz", "pagos", "datos", "modelos"}
+    assert areas == {
+        "voz",
+        "pagos",
+        "datos",
+        "modelos",
+        "piloto",
+        "herramientas",
+        "runtime_voz",
+    }
     status = public_status()
     assert status["enabled"] is True
-    assert len(status["checks"]) == 4
+    assert len(status["checks"]) == 7
+    assert status.get("voice_stack")
+    assert status.get("expectations")
 
 
 def test_guard_corrects_only_while_it_stays_on():

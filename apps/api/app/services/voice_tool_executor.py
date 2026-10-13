@@ -611,6 +611,24 @@ async def execute_voice_tool(
         )
     except asyncio.TimeoutError:
         logger.warning("[VOICE_TOOL] timeout name=%s user=%s", name, user_id[:8])
+        if name == "generate_image":
+            try:
+                from app.services import voice_client_session as vcs
+
+                vcs.push_tool_event(
+                    user_id,
+                    {
+                        "type": "image_generation_failed",
+                        "message": "timeout",
+                        "prompt": str(
+                            (params or {}).get("prompt")
+                            or (params or {}).get("_user_request")
+                            or ""
+                        )[:160],
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                pass
         return _spoken_err(
             "Señor, la operación tardó demasiado. ¿Intento de nuevo?",
             error="tool_timeout",
@@ -973,12 +991,19 @@ async def _execute_voice_tool_body(
                             "El prompt de la imagen no coincidió con lo pedido, señor.",
                             error="prompt_mismatch",
                         )
+                from app.services.chat_image_generation import user_visible_image_prompt
+
+                hud_prompt = user_visible_image_prompt(
+                    user_text=raw_user or prompt,
+                    result=result,
+                    fallback=prompt,
+                )
                 vcs.push_tool_event(
                     user_id,
                     {
                         "type": "generated_image",
                         "image_url": url,
-                        "prompt": prompt_used,
+                        "prompt": hud_prompt,
                     },
                 )
                 spoken = "Listo, señor. Ya puede verla en pantalla."

@@ -844,8 +844,12 @@ def get_profile(user_id: str) -> dict[str, Any] | None:
         )
         rows = result.data or []
         return rows[0] if rows else None
-    except Exception:
-        logger.exception("[DB] get_profile failed user=%s", (user_id or "")[:8])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[DB] get_profile failed user=%s detail=%s",
+            (user_id or "")[:8],
+            str(exc)[:180],
+        )
         return None
 
 

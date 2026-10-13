@@ -24,4 +24,10 @@ describe("hud transcript filter", () => {
     expect(shouldHideHudTranscript("Listo. Aquí está tu imagen generada.")).toBe(false);
     expect(looksLikeImageToolDump("Listo. Aquí está tu imagen generada.")).toBe(false);
   });
+
+  it("hides internal image pipeline briefs", () => {
+    const brief =
+      "fondo oscuro FULL FRAME / SAFE AREA: keep the entire composition and ALL on-image text fully inside the canvas. No text, letters, titles, captions, subtitles, or watermarks anywhere in the image.";
+    expect(shouldHideHudTranscript(brief)).toBe(true);
+  });
 });

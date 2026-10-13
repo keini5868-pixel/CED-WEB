@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { fetchAdminSupportUnreadCount } from "@/lib/api/support";
@@ -20,7 +20,13 @@ const LINKS = [
 
 export function AdminNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const [unread, setUnread] = useState(0);
+
+  function go(href: string) {
+    if (pathname === href) return;
+    router.push(href);
+  }
 
   useEffect(() => {
     if (!SUPPORT_CHAT_ENABLED) return;
@@ -45,6 +51,10 @@ export function AdminNav() {
           <Link
             key={link.href}
             href={link.href}
+            onClick={(ev) => {
+              ev.preventDefault();
+              go(link.href);
+            }}
             className={`relative rounded px-3 py-1.5 font-[family-name:var(--font-orbitron)] text-[10px] font-semibold uppercase tracking-[0.14em] transition ${
               active
                 ? "border border-[var(--ced-cyan)]/70 bg-[var(--ced-cyan)]/15 text-[var(--ced-cyan)] shadow-[0_0_12px_var(--ced-cyan-glow)]"

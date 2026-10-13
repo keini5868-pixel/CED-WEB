@@ -12,7 +12,7 @@ from app.services.voice_tool_executor import execute_voice_tool
 
 def test_image_and_pdf_tool_timeouts():
     assert tool_timeout_sec("generate_image") == IMAGE_TOOL_TIMEOUT_SEC
-    assert tool_timeout_sec("generate_image") == 60.0
+    assert tool_timeout_sec("generate_image") == 120.0
     assert tool_timeout_sec("generar_pdf") == 35.0
 
 

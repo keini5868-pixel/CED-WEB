@@ -1,0 +1,25 @@
+---
+description: Centinela CED — autoridad de auditoría del sistema (voz, tools, modelos)
+alwaysApply: false
+---
+
+# Centinela (Sentinel) — autoridad de revisión
+
+Cuando el usuario pide revisar salud del sistema, voz, tools o "activar centinela":
+
+1. **Fuente de verdad operativa:** `apps/api/app/services/ced_sentinel_expectations.py` (`SYSTEM_EXPECTATIONS`, `voice_stack_report`, `audit_voice_tools_parity`, `audit_voice_pilot_config`).
+
+2. **Runtime:** `ced_sentinel.py` — guardia en `/admin/sentinel` (super admin). Con guardia ON: pasada cada 60 s sobre voz, pagos, datos, modelos, piloto, herramientas, runtime_voz; captura ERROR y WARNING de loggers retell/voice/native.
+
+3. **Voz prod (default):** Retell **Native Pilot** — LLM del panel Retell + tools HTTP a `API_PUBLIC_URL/v1/retell/tools/*`. **No** asumir Custom LLM salvo `?voicePilot=custom`.
+
+4. **Claude vs Gemini:**
+   - Voz (native): modelo del **LLM Retell** (bootstrap API ref: `retell_native_pilot_model`, default código Claude Haiku).
+   - Voz (custom opt-in): Claude vía `retell_llm_provider`.
+   - Chat texto: **Gemini** (`gemini_voice_model`).
+   - Modo avanzado: **Claude**.
+   - Imágenes: **Gemini**.
+
+5. **Verificación mínima antes de decir "OK":** `pytest apps/api/tests/test_retell_native_pilot.py::test_native_pilot_tools_have_http_routes`, suite `test_ced_sentinel.py`, y revisar `voice_stack` en GET admin sentinel.
+
+6. **No inventar** estado de prod: usar health web (`/api/ced/health`), env Railway, bitácora Centinela.

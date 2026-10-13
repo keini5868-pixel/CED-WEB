@@ -329,6 +329,12 @@ export type SentinelEvent = {
   latency_ms?: number | null;
 };
 
+export type SentinelExpectation = {
+  id: string;
+  title: string;
+  body: string;
+};
+
 export type SentinelStatus = {
   enabled: boolean;
   running: boolean;
@@ -337,6 +343,8 @@ export type SentinelStatus = {
   checked_at: string | null;
   checks: SentinelCheck[];
   events: SentinelEvent[];
+  expectations?: SentinelExpectation[];
+  voice_stack?: Record<string, string>;
 };
 
 export async function fetchAdminSentinel(): Promise<SentinelStatus> {

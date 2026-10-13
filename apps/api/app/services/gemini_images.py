@@ -844,7 +844,7 @@ def _maybe_generate_with_ideogram(
     reference_image: bytes | None = None,
     reference_mime: str | None = None,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Motor tipografía: GPT Image (edit si hay ref) → Ideogram → Gemini.
+    """Motor tipografía: GPT Image (edit si hay ref) → Gemini. Ideogram desactivado.
 
     ``prefer_ideogram`` = pedido con texto literal (nombre histórico del flag).
     Con ``reference_image`` usa /v1/images/edits para conservar la foto y agregar texto.
@@ -857,8 +857,7 @@ def _maybe_generate_with_ideogram(
 
     settings = get_settings()
     openai_key = settings.openai_api_key.strip()
-    ideogram_key = settings.ideogram_api_key.strip()
-    if not openai_key and not ideogram_key:
+    if not openai_key:
         return None, "not_configured"
 
     within_quota = text_used < text_cap
@@ -896,45 +895,16 @@ def _maybe_generate_with_ideogram(
             )
             return gpt_result, None
         logger.info(
-            "[IMAGE:ROUTER] %s failed, trying Ideogram/Gemini user=%s error=%s",
+            "[IMAGE:ROUTER] %s failed, fallback Gemini user=%s error=%s",
             provider_name,
             user_id[:8],
             str(gpt_result.get("error"))[:120],
         )
 
-    # 2) Ideogram — fallback tipográfico si GPT Image no está o falló.
-    if not ideogram_key:
-        return None, "gpt_image_failed" if openai_key else "not_configured"
-
-    from app.services.ideogram_images import generate_image_ideogram
-
+    # Sin Ideogram: GPT Image → Gemini (pedido de producto).
     if openai_key:
-        from app.services.ced_sentinel import correcting
-
-        with correcting(
-            user_id,
-            area="imagen",
-            detail="El primer motor de imagen falló; otro retoma el pedido.",
-        ):
-            result = generate_image_ideogram(prompt=topic)
-    else:
-        result = generate_image_ideogram(prompt=topic)
-    if not result.get("ok"):
-        logger.info(
-            "[IMAGE:ROUTER] ideogram failed, fallback a Gemini user=%s error=%s",
-            user_id[:8],
-            str(result.get("error"))[:120],
-        )
-        return None, "ideogram_failed"
-
-    _charge_text_image_if_needed(
-        user_id=user_id,
-        within_quota=within_quota,
-        admin_bypass=admin_bypass,
-        provider="ideogram",
-        result=result,
-    )
-    return result, None
+        return None, "gpt_image_failed"
+    return None, "not_configured"
 
 
 def generate_image(

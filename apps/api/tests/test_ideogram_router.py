@@ -1,9 +1,9 @@
-"""Tests — router Gemini vs GPT Image/Ideogram en `generate_image()`.
+"""Tests — router Gemini vs GPT Image en `generate_image()`.
 
 Diseño (2026-08-16):
-- Escena pura (foto/ilustración sin copy) → Nano Banana 2.
+- Escena pura (foto/ilustración sin copy) → Gemini.
 - Texto crítico (comillas, «que diga», flyer/banner/cartel/letrero/infografía)
-  → GPT Image (fallback Ideogram). Nano Banana 2 no garantiza ortografía.
+  → GPT Image (fallback Gemini). Ideogram desactivado.
 - Pedidos «sin texto» se quedan en Nano Banana.
 - Básico gratis: cuota 0 de image_text (sin fallback de monedero para ese recurso).
 """
@@ -248,10 +248,11 @@ def test_generate_image_uses_ideogram_when_preferred_and_within_free_quota():
         )
 
     assert result["ok"] is True
-    assert result["provider"] == "ideogram"
-    mock_ideogram.assert_called_once()
-    mock_gemini.assert_not_called()
-    assert mock_insert.call_args.kwargs["quality"] == "text"
+    assert result["provider"] == "gemini"
+    mock_ideogram.assert_not_called()
+    mock_gemini.assert_called_once()
+    assert result.get("ideogram_declined_reason") == "not_configured"
+    assert mock_insert.call_args.kwargs["quality"] == "standard"
 
 
 def test_generate_image_never_touches_ideogram_when_not_preferred():
@@ -307,7 +308,7 @@ def test_generate_image_falls_back_to_gemini_when_ideogram_api_fails():
 
     assert result["ok"] is True
     assert result["provider"] == "gemini"
-    assert result["ideogram_declined_reason"] == "ideogram_failed"
+    assert result["ideogram_declined_reason"] == "not_configured"
     mock_gemini.assert_called_once()
 
 
@@ -320,6 +321,15 @@ def test_generate_image_skips_ideogram_when_quota_and_balance_both_exhausted():
         mocks[4] as mock_ideogram,
         mocks[5],
         mocks[6], mocks[7], mocks[8],
+        patch(
+            "app.services.gemini_images.get_settings",
+            return_value=MagicMock(
+                google_api_key="g-key",
+                ideogram_api_key="ik-key",
+                openai_api_key="sk-test",
+                openai_model_image="gpt-image-1.5",
+            ),
+        ),
         patch("app.services.wallet.can_afford", return_value=False),
     ):
         result = gemini_images.generate_image(
@@ -337,6 +347,15 @@ def test_generate_image_skips_ideogram_when_quota_and_balance_both_exhausted():
 def test_generate_image_charges_wallet_when_ideogram_used_beyond_daily_quota():
     from app.services import gemini_images
 
+    gpt_ok = {
+        "ok": True,
+        "raw_bytes": b"GPT-BYTES",
+        "mime_type": "image/png",
+        "model": "gpt-image-1.5",
+        "quality": "text",
+        "provider": "gpt_image",
+        "estimated_cost_usd": 0.04,
+    }
     spent: list[tuple[str, float]] = []
     mocks = _router_mocks(limits=_limits(text_cap=5), day_counts=(0, 0, 5))
     with (
@@ -345,6 +364,16 @@ def test_generate_image_charges_wallet_when_ideogram_used_beyond_daily_quota():
         mocks[5],
         mocks[6], mocks[7], mocks[8],
         patch("app.services.wallet.can_afford", return_value=True),
+        patch("app.services.gpt_images.generate_image_gpt", return_value=gpt_ok),
+        patch(
+            "app.services.gemini_images.get_settings",
+            return_value=MagicMock(
+                google_api_key="g-key",
+                ideogram_api_key="ik-key",
+                openai_api_key="sk-test",
+                openai_model_image="gpt-image-1.5",
+            ),
+        ),
         patch(
             "app.services.wallet.try_spend",
             side_effect=lambda uid, resource, units=1.0: spent.append((resource, units))
@@ -358,20 +387,39 @@ def test_generate_image_charges_wallet_when_ideogram_used_beyond_daily_quota():
             prefer_ideogram=True,
         )
 
-    assert result["provider"] == "ideogram"
-    mock_ideogram.assert_called_once()
+    assert result["provider"] == "gpt_image"
+    mock_ideogram.assert_not_called()
     assert spent == [("image_text", 1.0)]
 
 
 def test_generate_image_no_wallet_charge_within_free_daily_quota():
     from app.services import gemini_images
 
+    gpt_ok = {
+        "ok": True,
+        "raw_bytes": b"GPT-BYTES",
+        "mime_type": "image/png",
+        "model": "gpt-image-1.5",
+        "quality": "text",
+        "provider": "gpt_image",
+        "estimated_cost_usd": 0.04,
+    }
     mocks = _router_mocks(limits=_limits(text_cap=5), day_counts=(0, 0, 0))
     with (
         mocks[0], mocks[1], mocks[2], mocks[3],
         mocks[4],
         mocks[5],
         mocks[6], mocks[7], mocks[8],
+        patch("app.services.gpt_images.generate_image_gpt", return_value=gpt_ok),
+        patch(
+            "app.services.gemini_images.get_settings",
+            return_value=MagicMock(
+                google_api_key="g-key",
+                ideogram_api_key="ik-key",
+                openai_api_key="sk-test",
+                openai_model_image="gpt-image-1.5",
+            ),
+        ),
         patch("app.services.wallet.try_spend") as mock_spend,
     ):
         result = gemini_images.generate_image(
@@ -381,5 +429,5 @@ def test_generate_image_no_wallet_charge_within_free_daily_quota():
             prefer_ideogram=True,
         )
 
-    assert result["provider"] == "ideogram"
+    assert result["provider"] == "gpt_image"
     mock_spend.assert_not_called()

@@ -27,6 +27,8 @@ PROBE_INTERVAL_SEC = 60
 LIVE_MODEL_EVERY = 15
 EVENT_LIMIT = 120
 ERROR_DEDUP_SEC = 300
+WARN_DEDUP_SEC = 120
+_WARN_LOGGER_MARKERS = ("retell", "voice", "native", "voice_tool", "ced.retell")
 CORRECTING_HINT = "Corrigiendo datos para darlo con más precisión…"
 PRECISION_HINT = CORRECTING_HINT
 _EN_BRIEF = re.compile(
@@ -280,7 +282,7 @@ def note_error(area: str, title: str, detail: str = "", *, quiet: bool = False) 
     if not _is_enabled():
         return
     clean_title = " ".join((title or "").split())[:180] or "Error del proceso"
-    key = (area, clean_title)
+    key = ("error", area, clean_title)
     now = time.monotonic()
     with _lock:
         seen = _error_seen.get(key)
@@ -297,23 +299,48 @@ def note_error(area: str, title: str, detail: str = "", *, quiet: bool = False) 
     )
 
 
+def note_warning(area: str, title: str, detail: str = "", *, quiet: bool = False) -> None:
+    """Anomalías menores (WARNING en logs de voz, tools lentas, etc.)."""
+    if not _is_enabled():
+        return
+    clean_title = " ".join((title or "").split())[:180] or "Aviso"
+    key = ("warn", area, clean_title)
+    now = time.monotonic()
+    with _lock:
+        seen = _error_seen.get(key)
+        if seen is not None and now - seen < WARN_DEDUP_SEC:
+            return
+        _error_seen[key] = now
+    _append_event(
+        kind="warn",
+        area=area,
+        level="watch",
+        title=clean_title,
+        detail=(detail or "")[:400],
+        quiet=quiet,
+    )
+
+
 class _SentinelLogHandler(logging.Handler):
-    """Anota ERROR del proceso en la bitácora. No vuelve a loguear."""
+    """Anota ERROR/WARNING de voz y del proceso en la bitácora."""
 
     def emit(self, record: logging.LogRecord) -> None:
-        if record.levelno < logging.ERROR:
-            return
         if record.name.startswith("ced.sentinel"):
             return
+        area = _area_for_logger(record.name)
         try:
-            note_error(
-                _area_for_logger(record.name),
-                record.getMessage(),
-                record.name,
-                quiet=True,
-            )
+            if record.levelno >= logging.ERROR:
+                note_error(area, record.getMessage(), record.name, quiet=True)
+                return
+            if record.levelno >= logging.WARNING and _logger_is_voice_scope(record.name):
+                note_warning(area, record.getMessage(), record.name, quiet=True)
         except Exception:  # noqa: BLE001
             return
+
+
+def _logger_is_voice_scope(name: str) -> bool:
+    lowered = (name or "").lower()
+    return any(marker in lowered for marker in _WARN_LOGGER_MARKERS)
 
 
 def _area_for_logger(name: str) -> str:
@@ -333,7 +360,7 @@ def _install_handler() -> None:
     global _handler_installed
     if _handler_installed:
         return
-    handler = _SentinelLogHandler(level=logging.ERROR)
+    handler = _SentinelLogHandler(level=logging.WARNING)
     logging.getLogger().addHandler(handler)
     _handler_installed = True
 
@@ -605,26 +632,88 @@ def _live_model_report() -> dict[str, Any] | None:
 
 def _check_models() -> dict[str, Any]:
     from app.config import get_settings
+    from app.services.ced_sentinel_expectations import voice_stack_report
 
     live = _live_model_report()
+    stack = voice_stack_report()
+    voice_line = stack.get("voz_conversacion") or ""
     if live is not None:
+        live = dict(live)
+        live["detail"] = f"{live.get('detail', '')} · {voice_line}"[:400]
         return live
     settings = get_settings()
     missing = []
     if not settings.google_api_key.strip():
         missing.append("Gemini")
+    if not settings.anthropic_api_key.strip():
+        missing.append("Claude")
     if not settings.openai_api_key.strip():
         missing.append("OpenAI")
     if missing:
         return {
             "level": "watch",
             "title": "Modelos incompletos",
-            "detail": "Falta clave: " + ", ".join(missing),
+            "detail": ("Falta clave: " + ", ".join(missing) + f" · {voice_line}")[:400],
         }
     return {
         "level": "ok",
         "title": "Modelos configurados",
-        "detail": "Claves presentes. La prueba en vivo corre cada 15 min.",
+        "detail": (
+            "Claves presentes; sonda Gemini+Claude cada 15 min. " + voice_line
+        )[:400],
+    }
+
+
+def _check_piloto() -> dict[str, Any]:
+    from app.services.ced_sentinel_expectations import audit_voice_pilot_config
+
+    return audit_voice_pilot_config()
+
+
+def _check_herramientas() -> dict[str, Any]:
+    from app.services.ced_sentinel_expectations import audit_voice_tools_parity
+
+    audit = audit_voice_tools_parity()
+    if audit.get("ok"):
+        return {
+            "level": "ok",
+            "title": "Tools de voz cableadas",
+            "detail": f"{audit['tool_count']} tools = {audit['route_count']} rutas HTTP.",
+        }
+    missing = audit.get("missing_routes") or []
+    extra = audit.get("extra_routes") or []
+    bits = []
+    if missing:
+        bits.append("sin ruta: " + ", ".join(missing[:6]))
+    if extra:
+        bits.append("ruta huérfana: " + ", ".join(extra[:6]))
+    return {
+        "level": "error",
+        "title": "Tools de voz desalineadas",
+        "detail": " · ".join(bits)[:400],
+    }
+
+
+def _check_runtime_voz() -> dict[str, Any]:
+    from app.services.retell_native_pilot import recent_native_tool_failures
+
+    fails = recent_native_tool_failures(window_sec=3600.0, limit=6)
+    if not fails:
+        return {
+            "level": "ok",
+            "title": "Runtime voz limpio",
+            "detail": "Sin fallos de tools nativas en la última hora.",
+        }
+    names = sorted({str(f.get("tool") or "?") for f in fails})
+    sample = fails[0]
+    preview = str(sample.get("query_preview") or "")[:80]
+    return {
+        "level": "watch",
+        "title": "Tools fallaron en voz",
+        "detail": (
+            f"{len(fails)} fallo(s) reciente(s): {', '.join(names)}. "
+            f"Ej.: {preview or 'sin preview'}"
+        )[:400],
     }
 
 
@@ -645,6 +734,9 @@ def sweep() -> list[dict[str, Any]]:
         _timed("pagos", _check_payments),
         _timed("datos", _check_data),
         _timed("modelos", _check_models),
+        _timed("piloto", _check_piloto),
+        _timed("herramientas", _check_herramientas),
+        _timed("runtime_voz", _check_runtime_voz),
     ]
     with _lock:
         _state["checks"] = checks
@@ -695,6 +787,8 @@ def _start_thread() -> None:
 
 
 def public_status() -> dict[str, Any]:
+    from app.services.ced_sentinel_expectations import SYSTEM_EXPECTATIONS, voice_stack_report
+
     with _lock:
         running = bool(_state["enabled"] and _thread is not None and _thread.is_alive())
         _state["running"] = running
@@ -706,6 +800,8 @@ def public_status() -> dict[str, Any]:
             "checked_at": _state.get("checked_at"),
             "checks": list(_state.get("checks") or []),
             "events": list(reversed(_events)),
+            "expectations": list(SYSTEM_EXPECTATIONS),
+            "voice_stack": voice_stack_report(),
         }
 
 

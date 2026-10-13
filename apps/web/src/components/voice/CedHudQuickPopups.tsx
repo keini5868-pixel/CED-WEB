@@ -13,7 +13,7 @@ import { useHudLifeData } from "@/hooks/useHudLifeData";
 export type HudQuickPopupId = "weather" | "events" | null;
 
 const popupShell =
-  "fixed bottom-3 left-3 right-[7rem] z-[1000] min-w-0 max-w-none rounded-lg border border-cyan-400/40 bg-black/95 p-4 text-xs text-[#00ffff] shadow-[0_0_24px_rgba(0,255,255,0.15)] sm:right-[8.5rem] lg:bottom-8 lg:left-1/2 lg:right-auto lg:min-w-[260px] lg:max-w-[320px] lg:-translate-x-1/2";
+  "fixed bottom-3 left-3 right-[7rem] z-[460] min-w-0 max-w-none rounded-lg border border-cyan-400/40 bg-black/95 p-4 text-xs text-[#00ffff] shadow-[0_0_24px_rgba(0,255,255,0.15)] sm:right-[8.5rem] lg:bottom-8 lg:left-1/2 lg:right-auto lg:min-w-[260px] lg:max-w-[320px] lg:-translate-x-1/2";
 
 const hudInput =
   "mt-1 w-full rounded border border-cyan-400/30 bg-cyan-400/5 px-2.5 py-1.5 text-xs text-[#00ffff] outline-none focus:border-cyan-400/60";
@@ -101,7 +101,7 @@ export function CedHudQuickPopups({
 
   return (
     <>
-      <button type="button" className="fixed inset-0 z-[999]" aria-label="Cerrar popup" onClick={onClose} />
+      <button type="button" className="fixed inset-0 z-[450]" aria-label="Cerrar popup" onClick={onClose} />
       <div className={popupShell} onClick={(e) => e.stopPropagation()}>
         {active === "weather" ? (
           <>

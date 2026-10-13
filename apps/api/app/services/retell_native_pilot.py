@@ -1291,6 +1291,19 @@ def record_tool_metric(
             bucket["tools"].append(entry)
 
 
+def recent_native_tool_failures(*, window_sec: float = 3600.0, limit: int = 8) -> list[dict[str, Any]]:
+    """Fallos recientes de tools nativas (Centinela / admin)."""
+    cutoff = time.time() - max(60.0, window_sec)
+    with _lock:
+        rows = [
+            dict(t)
+            for t in _tool_metrics
+            if not t.get("ok") and float(t.get("ts") or 0) >= cutoff
+        ]
+    rows.sort(key=lambda r: float(r.get("ts") or 0), reverse=True)
+    return rows[:limit]
+
+
 def get_pilot_metrics_snapshot() -> dict[str, Any]:
     with _lock:
         tools = list(_tool_metrics)

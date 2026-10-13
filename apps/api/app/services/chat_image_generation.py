@@ -688,6 +688,28 @@ def pick_voice_image_source_prompt(
     return args or heard_s
 
 
+def user_visible_image_prompt(
+    *,
+    user_text: str = "",
+    result: dict | None = None,
+    fallback: str = "",
+) -> str:
+    """Etiqueta corta para HUD/voz — nunca el brief técnico en inglés."""
+    result = result or {}
+    for key in ("display_label", "caption"):
+        label = str(result.get(key) or "").strip()
+        if label and len(label) <= 220 and "FULL FRAME" not in label:
+            return label
+    used = str(result.get("prompt_used") or "").strip()
+    if used and len(used) <= 220 and "FULL FRAME" not in used and "SAFE AREA" not in used:
+        return used
+    for candidate in (user_text, fallback):
+        text = str(candidate or "").strip()
+        if text and "FULL FRAME" not in text:
+            return text[:220]
+    return "Imagen generada"
+
+
 def voice_prompt_is_mismatch(prompt_used: str, args_prompt: str) -> bool:
     """Falso éxito: se usó un fragmento STT en vez del args.prompt completo."""
     args = (args_prompt or "").strip()
@@ -1079,7 +1101,7 @@ def run_chat_image_generation(
         if wants_literal_text:
             # Tipografía: GPT Image edits si hay referencia; si no, generations.
             logger.info(
-                "[CHAT:IMG-GEN] literal-text path (GPT Image/Ideogram) user=%s labels=%s ref=%s",
+                "[CHAT:IMG-GEN] literal-text path (GPT Image → Gemini) user=%s labels=%s ref=%s",
                 user_id[:8],
                 len(overlay_lines),
                 bool(ref_payload),

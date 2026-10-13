@@ -139,9 +139,38 @@ export default function AdminSentinelPage() {
         <p className="ced-hud-text-muted mt-4 text-xs">
           Con la guardia activa, si una imagen o un documento no coincide con lo
           pedido, se rehace y quien espera ve: Corrigiendo datos para darlo con más
-          precisión…
+          precisión… También audita piloto nativo, paridad de 37 tools, WARNING/ERROR
+          de voz y fallos recientes de herramientas.
         </p>
       </HudPanel>
+
+      {data?.voice_stack ? (
+        <HudPanel title="MOTORES (AHORA)">
+          <ul className="space-y-2 text-sm">
+            {Object.entries(data.voice_stack).map(([key, value]) => (
+              <li key={key} className="rounded border border-cyan-500/15 p-3">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-cyan-300/90">
+                  {key.replaceAll("_", " ")}
+                </p>
+                <p className="ced-hud-text-muted mt-1 text-xs leading-relaxed">{value}</p>
+              </li>
+            ))}
+          </ul>
+        </HudPanel>
+      ) : null}
+
+      {data?.expectations && data.expectations.length > 0 ? (
+        <HudPanel title="CÓMO DEBE FUNCIONAR CED">
+          <ul className="space-y-3">
+            {data.expectations.map((item) => (
+              <li key={item.id} className="rounded border border-cyan-500/15 p-3">
+                <p className="text-sm font-medium">{item.title}</p>
+                <p className="ced-hud-text-muted mt-1 text-xs leading-relaxed">{item.body}</p>
+              </li>
+            ))}
+          </ul>
+        </HudPanel>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <HudPanel title="A REVISAR">
