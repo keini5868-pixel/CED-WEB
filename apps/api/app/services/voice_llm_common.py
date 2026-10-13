@@ -965,6 +965,8 @@ def is_near_duplicate_user_turn(previous: str, incoming: str) -> bool:
     b = " ".join(_key(incoming).split())
     if not a or not b:
         return False
+    if len(b) >= 24 and len(b) > len(a) + 8 and a not in b and b not in a:
+        return False
     if a == b:
         return True
     if len(a) >= 10 and len(b) >= 10 and (a in b or b in a):

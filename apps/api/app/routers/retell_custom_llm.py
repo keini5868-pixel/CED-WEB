@@ -1346,15 +1346,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             return
         persist_who = (uid or user_id or "").strip()
         if persist_who and user_text.strip():
+            # Snapshot en vivo (sin DB): la línea final se persiste al procesar el turno.
             publish_live_transcript(
                 "user",
                 user_text,
-                stream_key=f"user-{response_id}",
-                partial=False,
+                stream_key="user-live",
+                partial=True,
                 who=persist_who,
-            )
-            asyncio.create_task(
-                persist_voice_history("user", user_text, who=persist_who)
             )
         if (
             pending_web
@@ -1590,382 +1588,712 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             except asyncio.CancelledError:
                 return
 
-            if my_generation != generation_seq and scheduled_key != last_scheduled_user_key:
-                logger.info(
-                    "[RETELL-TURN] rid=%s superseded=gen seq=%s current=%s gpt_calls=0 call=%s",
-                    scheduled_rid,
-                    my_generation,
-                    generation_seq,
-                    call_id,
-                )
-                await ack_superseded_turn(reason="gen_superseded")
-                return
+            try:
+                if my_generation != generation_seq and scheduled_key != last_scheduled_user_key:
+                    logger.info(
+                        "[RETELL-TURN] rid=%s superseded=gen seq=%s current=%s gpt_calls=0 call=%s",
+                        scheduled_rid,
+                        my_generation,
+                        generation_seq,
+                        call_id,
+                    )
+                    await ack_superseded_turn(reason="gen_superseded")
+                    return
 
-            if scheduled_key != last_scheduled_user_key:
-                logger.info("[RETELL-TURN] rid=%s superseded=debounce gpt_calls=0 call=%s", scheduled_rid, call_id)
-                await ack_superseded_turn(reason="debounce_superseded")
-                return
+                if scheduled_key != last_scheduled_user_key:
+                    logger.info("[RETELL-TURN] rid=%s superseded=debounce gpt_calls=0 call=%s", scheduled_rid, call_id)
+                    await ack_superseded_turn(reason="debounce_superseded")
+                    return
 
-            if scheduled_rid in answered_response_ids:
-                logger.info(
-                    "[RETELL-TURN] rid=%s superseded=answered gpt_calls=0 call=%s",
-                    scheduled_rid,
-                    call_id,
-                )
-                return
-
-            if uid and (
-                vcs.voice_is_held(uid)
-                or vcs.stop_heard_recently(uid, window=15.0)
-            ):
-                from app.services.voice_cue import decide_cue
-
-                deb_action, _ = decide_cue(
-                    user_text or "",
-                    enabled=True,
-                    listening=False,
-                )
-                if deb_action not in ("greet", "answer"):
-                    await ack_empty_response(
-                        response_id=scheduled_rid,
-                        reason="stop_latched_debounce",
+                if scheduled_rid in answered_response_ids:
+                    logger.info(
+                        "[RETELL-TURN] rid=%s superseded=answered gpt_calls=0 call=%s",
+                        scheduled_rid,
+                        call_id,
                     )
                     return
 
-            if is_gemini_standalone_voice_test():
-                skip_standalone = False
-                async with response_lock:
-                    superseded, latest_rid = _is_superseded_turn_rid(
-                        scheduled_rid,
-                        scheduled_key,
-                        turn_latest_rid,
+                persist_who = (uid or user_id or "").strip()
+                if persist_who and user_text.strip():
+                    publish_live_transcript(
+                        "user",
+                        user_text,
+                        stream_key=f"user-{scheduled_rid}",
+                        partial=False,
+                        who=persist_who,
                     )
-                    if superseded:
-                        logger.info(
-                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=standalone",
-                            scheduled_rid,
-                            latest_rid,
-                            call_id,
+                    asyncio.create_task(
+                        persist_voice_history("user", user_text, who=persist_who)
+                    )
+
+                if uid and (
+                    vcs.voice_is_held(uid)
+                    or vcs.stop_heard_recently(uid, window=15.0)
+                ):
+                    from app.services.voice_cue import decide_cue
+
+                    deb_action, _ = decide_cue(
+                        user_text or "",
+                        enabled=True,
+                        listening=False,
+                    )
+                    if deb_action not in ("greet", "answer"):
+                        await ack_empty_response(
+                            response_id=scheduled_rid,
+                            reason="stop_latched_debounce",
                         )
-                        skip_standalone = True
-                    elif scheduled_key and scheduled_key == last_answered_user_key:
-                        logger.info(
-                            "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s path=standalone",
+                        return
+
+                if is_gemini_standalone_voice_test():
+                    skip_standalone = False
+                    async with response_lock:
+                        superseded, latest_rid = _is_superseded_turn_rid(
                             scheduled_rid,
-                            call_id,
+                            scheduled_key,
+                            turn_latest_rid,
                         )
-                        skip_standalone = True
-                    elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
-                        latest_for_key = turn_latest_rid.get(
-                            _turn_slot(scheduled_key),
-                            scheduled_rid,
-                        )
-                        if scheduled_rid < latest_for_key:
+                        if superseded:
                             logger.info(
-                                "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s path=standalone",
+                                "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=standalone",
+                                scheduled_rid,
+                                latest_rid,
+                                call_id,
+                            )
+                            skip_standalone = True
+                        elif scheduled_key and scheduled_key == last_answered_user_key:
+                            logger.info(
+                                "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s path=standalone",
                                 scheduled_rid,
                                 call_id,
                             )
                             skip_standalone = True
-                    else:
-                        turn_draft_in_progress = True
-                        turn_draft_user_key = scheduled_key
-                if skip_standalone:
-                    await ack_superseded_turn(reason="standalone_superseded")
-                    return
-                try:
-                    async with standalone_exec_lock:
-                        if (
-                            scheduled_key
-                            and last_standalone_module_answered_key
-                            and not standalone_user_keys_overlap(
+                        elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
+                            latest_for_key = turn_latest_rid.get(
+                                _turn_slot(scheduled_key),
+                                scheduled_rid,
+                            )
+                            if scheduled_rid < latest_for_key:
+                                logger.info(
+                                    "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s path=standalone",
+                                    scheduled_rid,
+                                    call_id,
+                                )
+                                skip_standalone = True
+                        else:
+                            turn_draft_in_progress = True
+                            turn_draft_user_key = scheduled_key
+                    if skip_standalone:
+                        await ack_superseded_turn(reason="standalone_superseded")
+                        return
+                    try:
+                        async with standalone_exec_lock:
+                            if (
+                                scheduled_key
+                                and last_standalone_module_answered_key
+                                and not standalone_user_keys_overlap(
+                                    scheduled_key,
+                                    last_standalone_module_answered_key,
+                                )
+                            ):
+                                last_standalone_module_answered_key = ""
+
+                            if scheduled_rid in answered_response_ids:
+                                logger.info(
+                                    "[VOICE-TEST-GEMINI] skip rid=%s reason=already_answered call=%s",
+                                    scheduled_rid,
+                                    call_id,
+                                )
+                                return
+                            if scheduled_key and scheduled_key == last_answered_user_key:
+                                logger.info(
+                                    "[VOICE-TEST-GEMINI] skip rid=%s reason=answered_key call=%s",
+                                    scheduled_rid,
+                                    call_id,
+                                )
+                                await ack_superseded_turn(reason="standalone_answered_key")
+                                return
+                            if last_standalone_module_answered_key and standalone_user_keys_overlap(
                                 scheduled_key,
                                 last_standalone_module_answered_key,
-                            )
-                        ):
-                            last_standalone_module_answered_key = ""
+                            ):
+                                logger.info(
+                                    "[VOICE-TEST-GEMINI] skip rid=%s reason=module_answered "
+                                    "call=%s key=%s module_key=%s",
+                                    scheduled_rid,
+                                    call_id,
+                                    scheduled_key[:48],
+                                    last_standalone_module_answered_key[:48],
+                                )
+                                await ack_superseded_turn(reason="standalone_module_answered")
+                                return
+                            if _turn_rid_stale() or my_generation != generation_seq:
+                                await ack_superseded_turn(reason="standalone_stale_in_lock")
+                                return
 
-                        if scheduled_rid in answered_response_ids:
-                            logger.info(
-                                "[VOICE-TEST-GEMINI] skip rid=%s reason=already_answered call=%s",
-                                scheduled_rid,
-                                call_id,
-                            )
-                            return
-                        if scheduled_key and scheduled_key == last_answered_user_key:
-                            logger.info(
-                                "[VOICE-TEST-GEMINI] skip rid=%s reason=answered_key call=%s",
-                                scheduled_rid,
-                                call_id,
-                            )
-                            await ack_superseded_turn(reason="standalone_answered_key")
-                            return
-                        if last_standalone_module_answered_key and standalone_user_keys_overlap(
-                            scheduled_key,
-                            last_standalone_module_answered_key,
-                        ):
-                            logger.info(
-                                "[VOICE-TEST-GEMINI] skip rid=%s reason=module_answered "
-                                "call=%s key=%s module_key=%s",
-                                scheduled_rid,
-                                call_id,
-                                scheduled_key[:48],
-                                last_standalone_module_answered_key[:48],
-                            )
-                            await ack_superseded_turn(reason="standalone_module_answered")
-                            return
-                        if _turn_rid_stale() or my_generation != generation_seq:
-                            await ack_superseded_turn(reason="standalone_stale_in_lock")
-                            return
-
-                        forced_module = None
-                        if uid and voice_standalone_modules():
-                            forced_module = resolve_standalone_forced_module(
-                                user_text,
-                                transcript,
-                                call_id=call_id,
-                                user_id=uid,
-                            )
-
-                        if forced_module and uid:
-                            orch = get_orchestrator(call_id)
-                            orch_user_text = user_text
-                            if forced_module == "environment":
-                                orch_user_text = standalone_environment_query(
+                            forced_module = None
+                            if uid and voice_standalone_modules():
+                                forced_module = resolve_standalone_forced_module(
                                     user_text,
                                     transcript,
+                                    call_id=call_id,
+                                    user_id=uid,
                                 )
-                            logger.info(
-                                "[RETELL-ORCH] standalone forced module=%s call=%s rid=%s text=%s",
-                                forced_module,
-                                call_id,
-                                scheduled_rid,
-                                orch_user_text[:60],
-                            )
-                            orch_result = await orch.process(
-                                user_text=orch_user_text,
-                                transcript=transcript,
-                                call_id=call_id,
-                                user_id=uid,
-                            )
-                            if _turn_rid_stale() or my_generation != generation_seq:
-                                await ack_superseded_turn(reason="standalone_orch_stale")
-                                return
-                            if orch_result.handles_response:
-                                spoken = (orch_result.spoken or "").strip()
-                                if spoken and await deliver_voice(
-                                    spoken,
-                                    generation=my_generation,
-                                ):
-                                    last_standalone_module_answered_key = scheduled_key
-                                    if uid and forced_module == "environment":
-                                        await get_orchestrator(call_id).deactivate_current(
-                                            user_id=uid,
+
+                            if forced_module and uid:
+                                orch = get_orchestrator(call_id)
+                                orch_user_text = user_text
+                                if forced_module == "environment":
+                                    orch_user_text = standalone_environment_query(
+                                        user_text,
+                                        transcript,
+                                    )
+                                logger.info(
+                                    "[RETELL-ORCH] standalone forced module=%s call=%s rid=%s text=%s",
+                                    forced_module,
+                                    call_id,
+                                    scheduled_rid,
+                                    orch_user_text[:60],
+                                )
+                                orch_result = await orch.process(
+                                    user_text=orch_user_text,
+                                    transcript=transcript,
+                                    call_id=call_id,
+                                    user_id=uid,
+                                )
+                                if _turn_rid_stale() or my_generation != generation_seq:
+                                    await ack_superseded_turn(reason="standalone_orch_stale")
+                                    return
+                                if orch_result.handles_response:
+                                    spoken = (orch_result.spoken or "").strip()
+                                    if spoken and await deliver_voice(
+                                        spoken,
+                                        generation=my_generation,
+                                    ):
+                                        last_standalone_module_answered_key = scheduled_key
+                                        if uid and forced_module == "environment":
+                                            await get_orchestrator(call_id).deactivate_current(
+                                                user_id=uid,
+                                            )
+                                        logger.info(
+                                            "[RETELL-ORCH] standalone module=%s call=%s rid=%s "
+                                            "delivered=true chars=%s",
+                                            orch.active_module or forced_module,
+                                            call_id,
+                                            scheduled_rid,
+                                            len(spoken),
                                         )
-                                    logger.info(
-                                        "[RETELL-ORCH] standalone module=%s call=%s rid=%s "
-                                        "delivered=true chars=%s",
-                                        orch.active_module or forced_module,
-                                        call_id,
-                                        scheduled_rid,
-                                        len(spoken),
+                                        return
+                                    await anti_silence_if_unanswered(
+                                        reason="standalone_orch_empty",
                                     )
                                     return
-                                await anti_silence_if_unanswered(
-                                    reason="standalone_orch_empty",
+
+                            if last_standalone_module_answered_key and standalone_user_keys_overlap(
+                                scheduled_key,
+                                last_standalone_module_answered_key,
+                            ):
+                                logger.info(
+                                    "[VOICE-TEST-GEMINI] skip rid=%s reason=module_answered_post_orch "
+                                    "call=%s",
+                                    scheduled_rid,
+                                    call_id,
                                 )
+                                await ack_superseded_turn(reason="standalone_module_answered_late")
                                 return
 
-                        if last_standalone_module_answered_key and standalone_user_keys_overlap(
-                            scheduled_key,
-                            last_standalone_module_answered_key,
-                        ):
+                            conv_request = ResponseRequiredRequest(
+                                interaction_type="response_required",
+                                response_id=scheduled_rid,
+                                transcript=transcript,
+                            )
+                            llm.set_latency_context(call_id, scheduled_rid)
                             logger.info(
-                                "[VOICE-TEST-GEMINI] skip rid=%s reason=module_answered_post_orch "
-                                "call=%s",
+                                "[VOICE-TEST-GEMINI] gemini start rid=%s call=%s text=%s",
                                 scheduled_rid,
                                 call_id,
+                                user_text[:60],
                             )
-                            await ack_superseded_turn(reason="standalone_module_answered_late")
+                            reply = await llm.draft_conversational_response(conv_request)
+                            if _turn_rid_stale() or my_generation != generation_seq:
+                                await ack_superseded_turn(reason="standalone_stale_after_llm")
+                                return
+                            if reply and await deliver_voice(reply, generation=my_generation):
+                                logger.info(
+                                    "[VOICE-TEST-GEMINI] delivered rid=%s call=%s chars=%s",
+                                    scheduled_rid,
+                                    call_id,
+                                    len(reply),
+                                )
+                                return
+                            await anti_silence_if_unanswered(reason="standalone_gemini_empty")
                             return
-
-                        conv_request = ResponseRequiredRequest(
-                            interaction_type="response_required",
-                            response_id=scheduled_rid,
-                            transcript=transcript,
-                        )
-                        llm.set_latency_context(call_id, scheduled_rid)
-                        logger.info(
-                            "[VOICE-TEST-GEMINI] gemini start rid=%s call=%s text=%s",
-                            scheduled_rid,
-                            call_id,
-                            user_text[:60],
-                        )
-                        reply = await llm.draft_conversational_response(conv_request)
-                        if _turn_rid_stale() or my_generation != generation_seq:
-                            await ack_superseded_turn(reason="standalone_stale_after_llm")
-                            return
-                        if reply and await deliver_voice(reply, generation=my_generation):
-                            logger.info(
-                                "[VOICE-TEST-GEMINI] delivered rid=%s call=%s chars=%s",
-                                scheduled_rid,
-                                call_id,
-                                len(reply),
-                            )
-                            return
-                        await anti_silence_if_unanswered(reason="standalone_gemini_empty")
-                        return
-                except asyncio.CancelledError:
-                    raise
-                finally:
-                    turn_draft_in_progress = False
-                    turn_draft_user_key = ""
-                return
-
-            from app.services.system_clock import try_instant_datetime_reply
-
-            # Fast-path imagen: utterance crudo → adaptador mínimo (misma pipeline que chat).
-            # Evita que el LLM de voz reformule/mezcle el pedido antes de Nano Banana.
-            voice_image_history = _transcript_as_chat_history(transcript)
-            if uid and needs_overlay_readback(user_text, voice_image_history):
-                overlay_reply = build_overlay_readback_reply(user_text, voice_image_history)
-                if overlay_reply and await deliver_voice(overlay_reply):
-                    logger.info(
-                        "[RETELL-GEMINI] overlay lock readback call=%s text=%s",
-                        call_id,
-                        user_text[:80],
-                    )
+                    except asyncio.CancelledError:
+                        raise
+                    finally:
+                        turn_draft_in_progress = False
+                        turn_draft_user_key = ""
                     return
-                await anti_silence_if_unanswered(reason="overlay_lock_undelivered")
-                return
-            if (
-                uid
-                and should_take_direct_image_path(user_text, voice_image_history)
-                and not is_pdf_intent(user_text)
-            ):
-                await fire_latency_filler("module", module="image_gen")
-                try:
-                    tool_result = await asyncio.wait_for(
-                        execute_voice_tool(
-                            "generate_image",
-                            uid,
-                            {
-                                "prompt": user_text,
-                                "_user_request": user_text,
-                                "_history": voice_image_history,
-                                "call_id": call_id,
-                            },
-                        ),
-                        timeout=IMAGE_TOOL_TIMEOUT_SEC + 5.0,
-                    )
-                    spoken = str(tool_result.get("spoken") or "").strip()
-                    if spoken and await deliver_voice(spoken):
+
+                from app.services.system_clock import try_instant_datetime_reply
+
+                # Fast-path imagen: utterance crudo → adaptador mínimo (misma pipeline que chat).
+                # Evita que el LLM de voz reformule/mezcle el pedido antes de Nano Banana.
+                voice_image_history = _transcript_as_chat_history(transcript)
+                if uid and needs_overlay_readback(user_text, voice_image_history):
+                    overlay_reply = build_overlay_readback_reply(user_text, voice_image_history)
+                    if overlay_reply and await deliver_voice(overlay_reply):
                         logger.info(
-                            "[RETELL-GEMINI] fast-path generate_image call=%s text=%s",
+                            "[RETELL-GEMINI] overlay lock readback call=%s text=%s",
                             call_id,
                             user_text[:80],
                         )
                         return
-                    if spoken:
-                        await anti_silence_if_unanswered(reason="image_fast_path_undelivered")
-                        return
-                except asyncio.TimeoutError:
-                    logger.warning(
-                        "[RETELL-GEMINI] fast-path generate_image timeout call=%s",
-                        call_id,
-                    )
-                    if await deliver_voice(
-                        "La generación de imagen tardó demasiado, señor. "
-                        "¿Desea que lo intente de nuevo?"
-                    ):
-                        return
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "[RETELL-GEMINI] fast-path generate_image failed call=%s",
-                        call_id,
-                    )
-                await anti_silence_if_unanswered(reason="image_fast_path_failed")
-                return
+                    await anti_silence_if_unanswered(reason="overlay_lock_undelivered")
+                    return
+                if (
+                    uid
+                    and should_take_direct_image_path(user_text, voice_image_history)
+                    and not is_pdf_intent(user_text)
+                ):
+                    await fire_latency_filler("module", module="image_gen")
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "generate_image",
+                                uid,
+                                {
+                                    "prompt": user_text,
+                                    "_user_request": user_text,
+                                    "_history": voice_image_history,
+                                    "call_id": call_id,
+                                },
+                            ),
+                            timeout=IMAGE_TOOL_TIMEOUT_SEC + 5.0,
+                        )
+                        spoken = str(tool_result.get("spoken") or "").strip()
+                        if spoken and await deliver_voice(spoken):
+                            logger.info(
+                                "[RETELL-GEMINI] fast-path generate_image call=%s text=%s",
+                                call_id,
+                                user_text[:80],
+                            )
+                            return
+                        if spoken:
+                            await anti_silence_if_unanswered(reason="image_fast_path_undelivered")
+                            return
+                    except asyncio.TimeoutError:
+                        logger.warning(
+                            "[RETELL-GEMINI] fast-path generate_image timeout call=%s",
+                            call_id,
+                        )
+                        if await deliver_voice(
+                            "La generación de imagen tardó demasiado, señor. "
+                            "¿Desea que lo intente de nuevo?"
+                        ):
+                            return
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "[RETELL-GEMINI] fast-path generate_image failed call=%s",
+                            call_id,
+                        )
+                    await anti_silence_if_unanswered(reason="image_fast_path_failed")
+                    return
 
-            from app.services.opportunities_pilot.fitline_enroll import (
-                wants_fitline_enroll_link,
-            )
+                from app.services.opportunities_pilot.fitline_enroll import (
+                    wants_fitline_enroll_link,
+                )
 
-            voice_hist = [
-                {"role": getattr(u, "role", "user"), "content": str(getattr(u, "content", "") or "")}
-                for u in (transcript or [])
-            ]
-            if uid and wants_fitline_enroll_link(user_text, voice_hist):
-                try:
-                    tool_result = await asyncio.wait_for(
-                        execute_voice_tool(
-                            "abrir_oportunidades_fitline",
-                            uid,
-                            {},
-                        ),
-                        timeout=8.0,
-                    )
-                    spoken = str(tool_result.get("spoken") or "").strip()
-                    if spoken and await deliver_voice(spoken):
+                voice_hist = [
+                    {"role": getattr(u, "role", "user"), "content": str(getattr(u, "content", "") or "")}
+                    for u in (transcript or [])
+                ]
+                if uid and wants_fitline_enroll_link(user_text, voice_hist):
+                    try:
+                        tool_result = await asyncio.wait_for(
+                            execute_voice_tool(
+                                "abrir_oportunidades_fitline",
+                                uid,
+                                {},
+                            ),
+                            timeout=8.0,
+                        )
+                        spoken = str(tool_result.get("spoken") or "").strip()
+                        if spoken and await deliver_voice(spoken):
+                            logger.info(
+                                "[RETELL-GEMINI] fast-path abrir_oportunidades call=%s",
+                                call_id,
+                            )
+                            return
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "[RETELL-GEMINI] fast-path abrir_oportunidades failed call=%s",
+                            call_id,
+                        )
+
+                from app.services.user_trash import try_trash_turn
+
+                if uid:
+                    trash_turn = try_trash_turn(uid, user_text)
+                    if trash_turn:
+                        spoken = str(trash_turn.get("spoken") or "").strip()
+                        if spoken and await deliver_voice(spoken):
+                            logger.info("[RETELL-GEMINI] trash confirm call=%s", call_id)
+                            return
+
+                from app.services.retell_custom_llm import (
+                    _is_concept_question,
+                    _is_task_or_info_query,
+                )
+                from app.services.voice_casual import try_internal_knowledge_voice_reply
+
+                if _is_concept_question(user_text) or _is_task_or_info_query(user_text):
+                    try:
+                        kb_reply, kb_src = try_internal_knowledge_voice_reply(user_text)
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "[RETELL-GEMINI] internal_kb fast failed call=%s text=%s",
+                            call_id,
+                            user_text[:80],
+                        )
+                        kb_reply, kb_src = None, ""
+                    if kb_reply and await deliver_voice(kb_reply):
                         logger.info(
-                            "[RETELL-GEMINI] fast-path abrir_oportunidades call=%s",
+                            "[RETELL-GEMINI] internal_kb fast call=%s src=%s text=%s",
+                            call_id,
+                            kb_src,
+                            user_text[:80],
+                        )
+                        return
+
+                conversational_turn = is_casual_voice_turn(user_text, transcript)
+
+                clock_reply = try_instant_datetime_reply(
+                    user_text,
+                    transcript=transcript,
+                    for_voice=True,
+                )
+                if clock_reply:
+                    if await deliver_voice(clock_reply):
+                        logger.info(
+                            "[RETELL-GEMINI] instant datetime call=%s: %s",
+                            call_id,
+                            clock_reply[:80],
+                        )
+                        return
+                    await anti_silence_if_unanswered(reason="datetime_deliver_failed")
+                    return
+
+                # Charla casual — antes del orquestador: KB interno o Llama, sin tools ni filler.
+                if conversational_turn:
+                    skip_conversational = False
+                    async with response_lock:
+                        superseded, latest_rid = _is_superseded_turn_rid(
+                            scheduled_rid,
+                            scheduled_key,
+                            turn_latest_rid,
+                        )
+                        if superseded:
+                            logger.info(
+                                "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=conversational",
+                                scheduled_rid,
+                                latest_rid,
+                                call_id,
+                            )
+                            skip_conversational = True
+                        elif scheduled_key and scheduled_key == last_answered_user_key:
+                            logger.info(
+                                "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
+                                scheduled_rid,
+                                call_id,
+                            )
+                            skip_conversational = True
+                        elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
+                            latest_for_key = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
+                            if scheduled_rid < latest_for_key:
+                                logger.info(
+                                    "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s",
+                                    scheduled_rid,
+                                    call_id,
+                                )
+                                skip_conversational = True
+                        else:
+                            turn_draft_in_progress = True
+                            turn_draft_user_key = scheduled_key
+                    if skip_conversational:
+                        await ack_superseded_turn(reason="conversational_superseded")
+                        return
+                    try:
+                        conv_request = ResponseRequiredRequest(
+                            interaction_type=interaction,
+                            response_id=scheduled_rid,
+                            transcript=transcript,
+                        )
+                        gpt_calls += 1
+                        reply = await llm.draft_conversational_response(conv_request)
+                    finally:
+                        turn_draft_in_progress = False
+                        turn_draft_user_key = ""
+                    if reply and promised_voice_search_without_result(reply, user_text=user_text):
+                        logger.warning(
+                            "[RETELL-OPENAI] conversational search promise without tool — "
+                            "escalating call=%s text=%s",
+                            call_id,
+                            user_text[:80],
+                        )
+                        reply = None
+                    if not reply:
+                        from app.services.voice_casual import try_casual_empathy_fallback
+
+                        reply = try_casual_empathy_fallback(user_text)
+                    if reply:
+                        if await deliver_voice(reply):
+                            logger.info(
+                                "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=conversational",
+                                scheduled_rid,
+                                turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
+                                gpt_calls,
+                                call_id,
+                            )
+                            logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
+                            return
+                        await anti_silence_if_unanswered(reason="conversational_deliver_failed")
+                        return
+                    logger.warning(
+                        "[RETELL-GEMINI] conversational miss — fallthrough draft_response call=%s",
+                        call_id,
+                    )
+                    if await deliver_voice(FALLBACK_REPLY):
+                        return
+                    await anti_silence_if_unanswered(reason="conversational_miss")
+                    return
+
+                from app.services.voice_intent_gate import detect_local_module_hints
+
+                module_hints = detect_local_module_hints(user_text)
+                if "advanced" in module_hints and uid and not get_orchestrator(call_id).active_module:
+                    set_pending_advanced_topic(call_id, user_text)
+                    advanced_reply = (
+                        "Señor, el modo avanzado con Claude funciona en el chat de texto. "
+                        "Abra el panel Avanzado para continuar su consulta con análisis profundo."
+                    )
+                    if await deliver_voice(advanced_reply):
+                        logger.info(
+                            "[RETELL-ORCH] advanced mode delegated to text call=%s",
                             call_id,
                         )
                         return
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "[RETELL-GEMINI] fast-path abrir_oportunidades failed call=%s",
-                        call_id,
-                    )
+                    await anti_silence_if_unanswered(reason="advanced_delegate_failed")
+                    return
 
-            from app.services.user_trash import try_trash_turn
+                if pending_web and uid and not conversational_turn:
+                    kind = str(pending_web.get("kind") or "general")
+                    query = str(pending_web.get("query") or user_text).strip()
+                    if query:
+                        from app.services.opportunities_pilot.fitline_knowledge import (
+                            prefers_fitline_over_web,
+                        )
 
-            if uid:
-                trash_turn = try_trash_turn(uid, user_text)
-                if trash_turn:
-                    spoken = str(trash_turn.get("spoken") or "").strip()
-                    if spoken and await deliver_voice(spoken):
-                        logger.info("[RETELL-GEMINI] trash confirm call=%s", call_id)
+                        # FitLine/PM: no filler ni Tavily — deja que el LLM use Oportunidades.
+                        if prefers_fitline_over_web(query) or prefers_fitline_over_web(user_text):
+                            pending_web = None
+                            logger.info(
+                                "[RETELL-ORCH] FitLine/PM cancela web fast-path call=%s",
+                                call_id,
+                            )
+                        else:
+                            await fire_latency_filler("web_search")
+                            try:
+                                tool_result = await asyncio.wait_for(
+                                    execute_voice_tool(
+                                        "search_web",
+                                        uid,
+                                        {"query": query, "kind": kind},
+                                    ),
+                                    timeout=SEARCH_WEB_TIMEOUT_SEC + 2.0,
+                                )
+                                if tool_result.get("redirect_fitline"):
+                                    pending_web = None
+                                    logger.info(
+                                        "[RETELL-ORCH] search_web redirect FitLine call=%s",
+                                        call_id,
+                                    )
+                                else:
+                                    spoken = str(tool_result.get("spoken") or "").strip()
+                                    if tool_result.get("status") == "success" and spoken:
+                                        web_content = format_web_delivery(kind, spoken)
+                                    else:
+                                        web_content = WEB_SEARCH_VOICE_FALLBACK
+                                    if await deliver_voice(web_content):
+                                        logger.info(
+                                            "[RETELL-GEMINI] fast-path web search call=%s kind=%s",
+                                            call_id,
+                                            kind,
+                                        )
+                                        return
+                                    await anti_silence_if_unanswered(reason="web_fast_path_failed")
+                                    return
+                            except asyncio.TimeoutError:
+                                logger.warning(
+                                    "[RETELL-GEMINI] fast-path search_web timeout call=%s query=%s",
+                                    call_id,
+                                    query[:80],
+                                )
+                                web_content = WEB_SEARCH_VOICE_FALLBACK
+                                if await deliver_voice(web_content):
+                                    return
+                                await anti_silence_if_unanswered(reason="web_fast_path_failed")
+                                return
+                            except Exception:  # noqa: BLE001
+                                logger.exception(
+                                    "[RETELL-GEMINI] fast-path search_web failed call=%s",
+                                    call_id,
+                                )
+                                web_content = WEB_SEARCH_VOICE_FALLBACK
+                                if await deliver_voice(web_content):
+                                    return
+                                await anti_silence_if_unanswered(reason="web_fast_path_failed")
+                                return
+
+                if uid and is_camera_deactivation_intent(user_text):
+                    if not turn_already_handled(call_id, scheduled_rid):
+                        mark_turn_handled(call_id, scheduled_rid)
+                        orch = get_orchestrator(call_id)
+                        await execute_voice_tool("request_camera_deactivation", uid, {})
+                        if orch.active_module:
+                            await orch.deactivate_current(user_id=uid)
+                        delivered = await complete_partial_or_deliver(
+                            "Cámara desactivada, señor."
+                        )
+                        if not delivered:
+                            await anti_silence_if_unanswered(
+                                reason="camera_deactivate_deliver_failed"
+                            )
                         return
 
-            from app.services.retell_custom_llm import (
-                _is_concept_question,
-                _is_task_or_info_query,
-            )
-            from app.services.voice_casual import try_internal_knowledge_voice_reply
-
-            if _is_concept_question(user_text) or _is_task_or_info_query(user_text):
-                kb_reply, kb_src = try_internal_knowledge_voice_reply(user_text)
-                if kb_reply and await deliver_voice(kb_reply):
+                orch = get_orchestrator(call_id)
+                orch_result = None
+                forced_module = detect_strict_intent_v2(user_text)
+                run_orchestrator = should_run_orchestrator(
+                    user_text,
+                    active_module=orch.active_module,
+                    forced_module=forced_module,
+                    user_id=uid or "",
+                )
+                if run_orchestrator and not forced_module and has_explicit_module_signal(user_text):
+                    forced_module = detect_voice_module_intent(
+                        user_text, transcript, user_id=uid or ""
+                    )
+                if forced_module:
                     logger.info(
-                        "[RETELL-GEMINI] internal_kb fast call=%s src=%s text=%s",
+                        "[RETELL-ORCH] forced module=%s call=%s text=%s",
+                        forced_module,
                         call_id,
-                        kb_src,
-                        user_text[:80],
+                        user_text[:60],
+                    )
+                if uid and run_orchestrator:
+                    mod_hint = forced_module
+                    if mod_hint and mod_hint != "camera":
+                        await fire_latency_filler("module", module=mod_hint)
+                    clear_pending_advanced_topic(call_id)
+                    orch_result = await orch.process(
+                        user_text=user_text,
+                        transcript=transcript,
+                        call_id=call_id,
+                        user_id=uid,
+                    )
+                    llm.set_module_overlay(orch_result.context_overlay or "")
+                    if orch_result.handles_response:
+                        if orch_result.send_filler:
+                            async with response_lock:
+                                if not _turn_stale():
+                                    await fire_latency_filler(
+                                        "module",
+                                        module=orch.active_module or forced_module,
+                                    )
+                        if turn_already_handled(call_id, scheduled_rid) and orch.active_module == "camera":
+                            await ack_empty_response(
+                                response_id=scheduled_rid,
+                                reason="orch_camera_handled",
+                            )
+                            return
+                        if _turn_rid_stale():
+                            await ack_superseded_turn(reason="orch_stale")
+                            return
+                        spoken = (orch_result.spoken or "").strip()
+                        if spoken:
+                            if orch.active_module in ("camera", "publish"):
+                                mark_turn_handled(call_id, scheduled_rid)
+                            delivered = await complete_partial_or_deliver(spoken)
+                            if not delivered:
+                                await anti_silence_if_unanswered(reason="orch_deliver_failed")
+                            logger.info(
+                                "[RETELL-ORCH] module=%s call=%s delivered=%s",
+                                orch.active_module,
+                                call_id,
+                                delivered,
+                            )
+                        else:
+                            if _must_stay_silent():
+                                await ack_empty_response(
+                                    response_id=scheduled_rid,
+                                    reason="orch_empty_stop",
+                                )
+                            else:
+                                await anti_silence_if_unanswered(reason="orch_empty_spoken")
+                        return
+                    if mod_hint == "youtube" and has_explicit_module_signal(user_text):
+                        # Señal YouTube explícita (dijo "YouTube") pero ni play/control/
+                        # confirm resolvieron nada (ASR entrecortado/ruido de carretera).
+                        # JAMÁS caer al LLM conversacional aquí: inventaría un "éxito"
+                        # falso ("excelente elección") sin haber tocado la tool real.
+                        clarify = (
+                            "Disculpe, señor, no entendí bien qué desea ver en "
+                            "YouTube. ¿Puede repetir el nombre?"
+                        )
+                        if not await complete_partial_or_deliver(clarify):
+                            await anti_silence_if_unanswered(
+                                reason="youtube_unresolved_deliver_failed"
+                            )
+                        logger.info(
+                            "[RETELL-ORCH] youtube signal sin resolver — clarify call=%s text=%s",
+                            call_id,
+                            user_text[:60],
+                        )
+                        return
+                elif uid:
+                    llm.set_module_overlay(
+                        get_context_overlay(get_orchestrator(call_id).active_module) or ""
+                    )
+
+                superseded, latest_rid = _is_superseded_turn_rid(
+                    scheduled_rid,
+                    scheduled_key,
+                    turn_latest_rid,
+                )
+                if superseded:
+                    logger.info(
+                        "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s",
+                        scheduled_rid,
+                        latest_rid,
+                        call_id,
+                    )
+                    await ack_superseded_turn(reason="turn_superseded")
+                    return
+
+                if turn_already_handled(call_id, scheduled_rid):
+                    await ack_empty_response(
+                        response_id=scheduled_rid,
+                        reason="turn_already_handled",
                     )
                     return
 
-            conversational_turn = is_casual_voice_turn(user_text, transcript)
+                request = ResponseRequiredRequest(
+                    interaction_type=interaction,  # type: ignore[arg-type]
+                    response_id=scheduled_rid,
+                    transcript=transcript,
+                )
 
-            clock_reply = try_instant_datetime_reply(
-                user_text,
-                transcript=transcript,
-                for_voice=True,
-            )
-            if clock_reply:
-                if await deliver_voice(clock_reply):
-                    logger.info(
-                        "[RETELL-GEMINI] instant datetime call=%s: %s",
-                        call_id,
-                        clock_reply[:80],
-                    )
-                    return
-                await anti_silence_if_unanswered(reason="datetime_deliver_failed")
-                return
-
-            # Charla casual — antes del orquestador: KB interno o Llama, sin tools ni filler.
-            if conversational_turn:
-                skip_conversational = False
+                skip_draft = False
                 async with response_lock:
                     superseded, latest_rid = _is_superseded_turn_rid(
                         scheduled_rid,
@@ -1974,19 +2302,19 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     )
                     if superseded:
                         logger.info(
-                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=conversational",
+                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=draft",
                             scheduled_rid,
                             latest_rid,
                             call_id,
                         )
-                        skip_conversational = True
-                    elif scheduled_key and scheduled_key == last_answered_user_key:
+                        skip_draft = True
+                    elif scheduled_key and scheduled_key == last_answered_user_key and not pending_web:
                         logger.info(
                             "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
                             scheduled_rid,
                             call_id,
                         )
-                        skip_conversational = True
+                        skip_draft = True
                     elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
                         latest_for_key = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
                         if scheduled_rid < latest_for_key:
@@ -1995,547 +2323,269 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                                 scheduled_rid,
                                 call_id,
                             )
-                            skip_conversational = True
+                            skip_draft = True
                     else:
                         turn_draft_in_progress = True
                         turn_draft_user_key = scheduled_key
-                if skip_conversational:
-                    await ack_superseded_turn(reason="conversational_superseded")
+
+                if skip_draft:
+                    await ack_superseded_turn(reason="draft_superseded_prelock")
                     return
+
                 try:
-                    conv_request = ResponseRequiredRequest(
-                        interaction_type=interaction,
-                        response_id=scheduled_rid,
-                        transcript=transcript,
-                    )
                     gpt_calls += 1
-                    reply = await llm.draft_conversational_response(conv_request)
-                finally:
-                    turn_draft_in_progress = False
-                    turn_draft_user_key = ""
-                if reply and promised_voice_search_without_result(reply, user_text=user_text):
-                    logger.warning(
-                        "[RETELL-OPENAI] conversational search promise without tool — "
-                        "escalating call=%s text=%s",
-                        call_id,
-                        user_text[:80],
-                    )
-                    reply = None
-                if not reply:
-                    from app.services.voice_casual import try_casual_empathy_fallback
-
-                    reply = try_casual_empathy_fallback(user_text)
-                if reply:
-                    if await deliver_voice(reply):
-                        logger.info(
-                            "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=conversational",
-                            scheduled_rid,
-                            turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
-                            gpt_calls,
-                            call_id,
-                        )
-                        logger.info("[RETELL-GEMINI] conversational call=%s: %s", call_id, reply[:80])
-                        return
-                    await anti_silence_if_unanswered(reason="conversational_deliver_failed")
-                    return
-                logger.warning(
-                    "[RETELL-GEMINI] conversational miss — fallthrough draft_response call=%s",
-                    call_id,
-                )
-                if await deliver_voice(FALLBACK_REPLY):
-                    return
-                await anti_silence_if_unanswered(reason="conversational_miss")
-                return
-
-            from app.services.voice_intent_gate import detect_local_module_hints
-
-            module_hints = detect_local_module_hints(user_text)
-            if "advanced" in module_hints and uid and not get_orchestrator(call_id).active_module:
-                set_pending_advanced_topic(call_id, user_text)
-                advanced_reply = (
-                    "Señor, el modo avanzado con Claude funciona en el chat de texto. "
-                    "Abra el panel Avanzado para continuar su consulta con análisis profundo."
-                )
-                if await deliver_voice(advanced_reply):
-                    logger.info(
-                        "[RETELL-ORCH] advanced mode delegated to text call=%s",
-                        call_id,
-                    )
-                    return
-                await anti_silence_if_unanswered(reason="advanced_delegate_failed")
-                return
-
-            if pending_web and uid and not conversational_turn:
-                kind = str(pending_web.get("kind") or "general")
-                query = str(pending_web.get("query") or user_text).strip()
-                if query:
-                    from app.services.opportunities_pilot.fitline_knowledge import (
-                        prefers_fitline_over_web,
-                    )
-
-                    # FitLine/PM: no filler ni Tavily — deja que el LLM use Oportunidades.
-                    if prefers_fitline_over_web(query) or prefers_fitline_over_web(user_text):
-                        pending_web = None
-                        logger.info(
-                            "[RETELL-ORCH] FitLine/PM cancela web fast-path call=%s",
-                            call_id,
-                        )
-                    else:
-                        await fire_latency_filler("web_search")
-                        try:
-                            tool_result = await asyncio.wait_for(
-                                execute_voice_tool(
-                                    "search_web",
-                                    uid,
-                                    {"query": query, "kind": kind},
-                                ),
-                                timeout=SEARCH_WEB_TIMEOUT_SEC + 2.0,
-                            )
-                            if tool_result.get("redirect_fitline"):
-                                pending_web = None
-                                logger.info(
-                                    "[RETELL-ORCH] search_web redirect FitLine call=%s",
-                                    call_id,
-                                )
-                            else:
-                                spoken = str(tool_result.get("spoken") or "").strip()
-                                if tool_result.get("status") == "success" and spoken:
-                                    web_content = format_web_delivery(kind, spoken)
-                                else:
-                                    web_content = WEB_SEARCH_VOICE_FALLBACK
-                                if await deliver_voice(web_content):
-                                    logger.info(
-                                        "[RETELL-GEMINI] fast-path web search call=%s kind=%s",
-                                        call_id,
-                                        kind,
-                                    )
-                                    return
-                                await anti_silence_if_unanswered(reason="web_fast_path_failed")
-                                return
-                        except asyncio.TimeoutError:
-                            logger.warning(
-                                "[RETELL-GEMINI] fast-path search_web timeout call=%s query=%s",
-                                call_id,
-                                query[:80],
-                            )
-                            web_content = WEB_SEARCH_VOICE_FALLBACK
-                            if await deliver_voice(web_content):
-                                return
-                            await anti_silence_if_unanswered(reason="web_fast_path_failed")
-                            return
-                        except Exception:  # noqa: BLE001
-                            logger.exception(
-                                "[RETELL-GEMINI] fast-path search_web failed call=%s",
-                                call_id,
-                            )
-                            web_content = WEB_SEARCH_VOICE_FALLBACK
-                            if await deliver_voice(web_content):
-                                return
-                            await anti_silence_if_unanswered(reason="web_fast_path_failed")
-                            return
-
-            if uid and is_camera_deactivation_intent(user_text):
-                if not turn_already_handled(call_id, scheduled_rid):
-                    mark_turn_handled(call_id, scheduled_rid)
-                    orch = get_orchestrator(call_id)
-                    await execute_voice_tool("request_camera_deactivation", uid, {})
-                    if orch.active_module:
-                        await orch.deactivate_current(user_id=uid)
-                    delivered = await complete_partial_or_deliver(
-                        "Cámara desactivada, señor."
-                    )
-                    if not delivered:
-                        await anti_silence_if_unanswered(
-                            reason="camera_deactivate_deliver_failed"
-                        )
-                    return
-
-            orch = get_orchestrator(call_id)
-            orch_result = None
-            forced_module = detect_strict_intent_v2(user_text)
-            run_orchestrator = should_run_orchestrator(
-                user_text,
-                active_module=orch.active_module,
-                forced_module=forced_module,
-                user_id=uid or "",
-            )
-            if run_orchestrator and not forced_module and has_explicit_module_signal(user_text):
-                forced_module = detect_voice_module_intent(
-                    user_text, transcript, user_id=uid or ""
-                )
-            if forced_module:
-                logger.info(
-                    "[RETELL-ORCH] forced module=%s call=%s text=%s",
-                    forced_module,
-                    call_id,
-                    user_text[:60],
-                )
-            if uid and run_orchestrator:
-                mod_hint = forced_module
-                if mod_hint and mod_hint != "camera":
-                    await fire_latency_filler("module", module=mod_hint)
-                clear_pending_advanced_topic(call_id)
-                orch_result = await orch.process(
-                    user_text=user_text,
-                    transcript=transcript,
-                    call_id=call_id,
-                    user_id=uid,
-                )
-                llm.set_module_overlay(orch_result.context_overlay or "")
-                if orch_result.handles_response:
-                    if orch_result.send_filler:
-                        async with response_lock:
-                            if not _turn_stale():
-                                await fire_latency_filler(
-                                    "module",
-                                    module=orch.active_module or forced_module,
-                                )
-                    if turn_already_handled(call_id, scheduled_rid) and orch.active_module == "camera":
-                        await ack_empty_response(
-                            response_id=scheduled_rid,
-                            reason="orch_camera_handled",
-                        )
-                        return
-                    if _turn_rid_stale():
-                        await ack_superseded_turn(reason="orch_stale")
-                        return
-                    spoken = (orch_result.spoken or "").strip()
-                    if spoken:
-                        if orch.active_module in ("camera", "publish"):
-                            mark_turn_handled(call_id, scheduled_rid)
-                        delivered = await complete_partial_or_deliver(spoken)
-                        if not delivered:
-                            await anti_silence_if_unanswered(reason="orch_deliver_failed")
-                        logger.info(
-                            "[RETELL-ORCH] module=%s call=%s delivered=%s",
-                            orch.active_module,
-                            call_id,
-                            delivered,
-                        )
-                    else:
-                        if _must_stay_silent():
-                            await ack_empty_response(
-                                response_id=scheduled_rid,
-                                reason="orch_empty_stop",
-                            )
-                        else:
-                            await anti_silence_if_unanswered(reason="orch_empty_spoken")
-                    return
-                if mod_hint == "youtube" and has_explicit_module_signal(user_text):
-                    # Señal YouTube explícita (dijo "YouTube") pero ni play/control/
-                    # confirm resolvieron nada (ASR entrecortado/ruido de carretera).
-                    # JAMÁS caer al LLM conversacional aquí: inventaría un "éxito"
-                    # falso ("excelente elección") sin haber tocado la tool real.
-                    clarify = (
-                        "Disculpe, señor, no entendí bien qué desea ver en "
-                        "YouTube. ¿Puede repetir el nombre?"
-                    )
-                    if not await complete_partial_or_deliver(clarify):
-                        await anti_silence_if_unanswered(
-                            reason="youtube_unresolved_deliver_failed"
-                        )
-                    logger.info(
-                        "[RETELL-ORCH] youtube signal sin resolver — clarify call=%s text=%s",
-                        call_id,
-                        user_text[:60],
-                    )
-                    return
-            elif uid:
-                llm.set_module_overlay(
-                    get_context_overlay(get_orchestrator(call_id).active_module) or ""
-                )
-
-            superseded, latest_rid = _is_superseded_turn_rid(
-                scheduled_rid,
-                scheduled_key,
-                turn_latest_rid,
-            )
-            if superseded:
-                logger.info(
-                    "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s",
-                    scheduled_rid,
-                    latest_rid,
-                    call_id,
-                )
-                await ack_superseded_turn(reason="turn_superseded")
-                return
-
-            if turn_already_handled(call_id, scheduled_rid):
-                await ack_empty_response(
-                    response_id=scheduled_rid,
-                    reason="turn_already_handled",
-                )
-                return
-
-            request = ResponseRequiredRequest(
-                interaction_type=interaction,  # type: ignore[arg-type]
-                response_id=scheduled_rid,
-                transcript=transcript,
-            )
-
-            skip_draft = False
-            async with response_lock:
-                superseded, latest_rid = _is_superseded_turn_rid(
-                    scheduled_rid,
-                    scheduled_key,
-                    turn_latest_rid,
-                )
-                if superseded:
-                    logger.info(
-                        "[RETELL-TURN] rid=%s superseded=%s gpt_calls=0 call=%s path=draft",
+                    superseded_now, latest_now = _is_superseded_turn_rid(
                         scheduled_rid,
-                        latest_rid,
-                        call_id,
+                        scheduled_key,
+                        turn_latest_rid,
                     )
-                    skip_draft = True
-                elif scheduled_key and scheduled_key == last_answered_user_key and not pending_web:
-                    logger.info(
-                        "[RETELL-TURN] rid=%s superseded=answered_key gpt_calls=0 call=%s",
-                        scheduled_rid,
-                        call_id,
-                    )
-                    skip_draft = True
-                elif turn_draft_in_progress and scheduled_key == turn_draft_user_key:
-                    latest_for_key = turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid)
-                    if scheduled_rid < latest_for_key:
-                        logger.info(
-                            "[RETELL-TURN] rid=%s superseded=draft_busy gpt_calls=0 call=%s",
-                            scheduled_rid,
-                            call_id,
-                        )
-                        skip_draft = True
-                else:
-                    turn_draft_in_progress = True
-                    turn_draft_user_key = scheduled_key
+                    if superseded_now:
+                        await ack_superseded_turn(reason="draft_superseded")
+                        return
 
-            if skip_draft:
-                await ack_superseded_turn(reason="draft_superseded_prelock")
-                return
-
-            try:
-                gpt_calls += 1
-                superseded_now, latest_now = _is_superseded_turn_rid(
-                    scheduled_rid,
-                    scheduled_key,
-                    turn_latest_rid,
-                )
-                if superseded_now:
-                    await ack_superseded_turn(reason="draft_superseded")
-                    return
-
-                try:
-                    draft_events: list[Any] = []
-                    voice_streamed = False
-                    streamed_text = ""
-                    await fire_latency_filler("general")
-                    async for event in llm.draft_response(request):
-                        stale, _ = _is_superseded_turn_rid(
-                            scheduled_rid,
-                            scheduled_key,
-                            turn_latest_rid,
-                        )
-                        if stale:
-                            logger.info(
-                                "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft_abort",
+                    try:
+                        draft_events: list[Any] = []
+                        voice_streamed = False
+                        streamed_text = ""
+                        await fire_latency_filler("general")
+                        async for event in llm.draft_response(request):
+                            stale, _ = _is_superseded_turn_rid(
                                 scheduled_rid,
-                                turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
-                                gpt_calls,
-                                call_id,
+                                scheduled_key,
+                                turn_latest_rid,
                             )
-                            break
-                        draft_events.append(event)
-                        piece = (event.content or "").strip()
-                        if piece:
-                            from app.services.voice_device_gate import (
-                                silence_camera_chatter_while_held,
-                                silence_camera_status_speech,
-                            )
-
-                            if silence_camera_status_speech(
-                                streamed_text + piece, uid or ""
-                            ) or silence_camera_chatter_while_held(
-                                streamed_text + piece, uid or ""
-                            ):
-                                await cut_agent_for_stop(
-                                    vcs.last_heard_line(uid or ""),
-                                    who=(uid or user_id or "").strip(),
+                            if stale:
+                                logger.info(
+                                    "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft_abort",
+                                    scheduled_rid,
+                                    turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
+                                    gpt_calls,
+                                    call_id,
                                 )
                                 break
-                            await ensure_filler_hold()
-                            async with response_lock:
-                                if _turn_stale():
-                                    break
-                                sent = await send_voice_partial(
-                                    response_id=scheduled_rid,
-                                    content=piece,
-                                    content_complete=False,
-                                    generation=my_generation,
+                            draft_events.append(event)
+                            piece = (event.content or "").strip()
+                            if piece:
+                                from app.services.voice_device_gate import (
+                                    silence_camera_chatter_while_held,
+                                    silence_camera_status_speech,
                                 )
-                            if sent:
-                                voice_streamed = True
-                                streamed_text += piece
-                        if event.content_complete:
-                            async with response_lock:
-                                if not _turn_stale():
-                                    await send_voice_partial(
+
+                                if silence_camera_status_speech(
+                                    streamed_text + piece, uid or ""
+                                ) or silence_camera_chatter_while_held(
+                                    streamed_text + piece, uid or ""
+                                ):
+                                    await cut_agent_for_stop(
+                                        vcs.last_heard_line(uid or ""),
+                                        who=(uid or user_id or "").strip(),
+                                    )
+                                    break
+                                await ensure_filler_hold()
+                                async with response_lock:
+                                    if _turn_stale():
+                                        break
+                                    sent = await send_voice_partial(
                                         response_id=scheduled_rid,
-                                        content="",
-                                        content_complete=True,
+                                        content=piece,
+                                        content_complete=False,
                                         generation=my_generation,
                                     )
-                            voice_streamed = True
-                            answered_response_ids.add(scheduled_rid)
-                            if scheduled_key:
-                                last_answered_user_key = scheduled_key
-                            break
+                                if sent:
+                                    voice_streamed = True
+                                    streamed_text += piece
+                            if event.content_complete:
+                                async with response_lock:
+                                    if not _turn_stale():
+                                        await send_voice_partial(
+                                            response_id=scheduled_rid,
+                                            content="",
+                                            content_complete=True,
+                                            generation=my_generation,
+                                        )
+                                voice_streamed = True
+                                answered_response_ids.add(scheduled_rid)
+                                if scheduled_key:
+                                    last_answered_user_key = scheduled_key
+                                break
 
-                    deferred_batch = llm.take_deferred_batch()
-                    if deferred_batch is not None and draft_events:
-                        mark_turn_handled(call_id, scheduled_rid)
+                        deferred_batch = llm.take_deferred_batch()
+                        if deferred_batch is not None and draft_events:
+                            mark_turn_handled(call_id, scheduled_rid)
 
-                        async def deliver_tool_spoken(text: str) -> bool:
-                            if _turn_stale():
-                                return False
-                            body = text
-                            if any(
-                                c.name in ("analyze_camera_frame", "buscar_lo_visible")
-                                for c in deferred_batch.calls
-                            ):
-                                body = format_vision_response(text) or text
-                            delivery = finalize_voice_delivery_text(body)
-                            return await deliver_voice(delivery)
+                            async def deliver_tool_spoken(text: str) -> bool:
+                                if _turn_stale():
+                                    return False
+                                body = text
+                                if any(
+                                    c.name in ("analyze_camera_frame", "buscar_lo_visible")
+                                    for c in deferred_batch.calls
+                                ):
+                                    body = format_vision_response(text) or text
+                                delivery = finalize_voice_delivery_text(body)
+                                return await deliver_voice(delivery)
 
-                        async def run_deferred_tools() -> None:
-                            try:
-                                results = await execute_deferred_tool_batch(
-                                    deferred_batch,
-                                    user_id=uid,
-                                    deliver=deliver_tool_spoken,
-                                    is_stale=_turn_stale,
-                                    build_tool_payload=llm.build_async_tool_payload,
-                                )
-                                if results and not _turn_stale():
-                                    await llm.apply_deferred_results(
+                            async def run_deferred_tools() -> None:
+                                try:
+                                    results = await execute_deferred_tool_batch(
                                         deferred_batch,
-                                        results=results,
+                                        user_id=uid,
+                                        deliver=deliver_tool_spoken,
+                                        is_stale=_turn_stale,
+                                        build_tool_payload=llm.build_async_tool_payload,
                                     )
-                            except Exception:
-                                logger.exception(
-                                    "[RETELL-GEMINI] deferred tools failed call=%s rid=%s",
-                                    call_id,
-                                    scheduled_rid,
-                                )
-                                if not _turn_stale():
-                                    await deliver_voice(
-                                        "Disculpe señor, hubo un inconveniente."
+                                    if results and not _turn_stale():
+                                        await llm.apply_deferred_results(
+                                            deferred_batch,
+                                            results=results,
+                                        )
+                                except Exception:
+                                    logger.exception(
+                                        "[RETELL-GEMINI] deferred tools failed call=%s rid=%s",
+                                        call_id,
+                                        scheduled_rid,
                                     )
+                                    if not _turn_stale():
+                                        await deliver_voice(
+                                            "Disculpe señor, hubo un inconveniente."
+                                        )
 
-                        asyncio.create_task(run_deferred_tools())
-                        deferred_tools_pending = True
-                        logger.info(
-                            "[RETELL-GEMINI] deferred tools scheduled call=%s rid=%s count=%s",
-                            call_id,
-                            scheduled_rid,
-                            len(deferred_batch.calls),
-                        )
-                        return
-
-                    if voice_streamed and streamed_text.strip():
-                        last_delivered_voice_content = normalize_voice_delivery_text(
-                            streamed_text
-                        )
-                        last_delivered_at = time.time()
-                        logger.info(
-                            "[RETELL-DELIVERY] streamed call=%s rid=%s chars=%s",
-                            call_id,
-                            scheduled_rid,
-                            len(streamed_text),
-                        )
-                        return
-
-                    final_event = draft_events[-1] if draft_events else None
-                    if final_event is not None:
-                        content = (final_event.content or "").strip() or FALLBACK_REPLY
-                        if pending_web and (
-                            not content
-                            or content == FALLBACK_REPLY
-                            or is_unwanted_voice_reply(content, user_text=user_text)
-                        ):
-                            content = WEB_SEARCH_VOICE_FALLBACK
-                        if is_unwanted_voice_reply(content, user_text=user_text):
-                            logger.warning(
-                                "[RETELL-GEMINI] bloqueado relleno chatbot call=%s text=%s reply=%s",
+                            asyncio.create_task(run_deferred_tools())
+                            deferred_tools_pending = True
+                            logger.info(
+                                "[RETELL-GEMINI] deferred tools scheduled call=%s rid=%s count=%s",
                                 call_id,
-                                user_text[:60],
-                                content[:80],
+                                scheduled_rid,
+                                len(deferred_batch.calls),
                             )
-                            if _is_concept_question(user_text):
-                                regen = await llm.generate_natural_reply(
-                                    transcript=transcript,
-                                    user_text=user_text,
-                                    overlay=(
-                                        "Responde de forma natural y breve usando tu conocimiento. "
-                                        "NUNCA cites 'Conocimiento interno CED' ni etiquetas [Marketing digital]."
-                                    ),
-                                    path="concept_kb_regen",
-                                    max_tokens=640,
+                            return
+
+                        if voice_streamed and streamed_text.strip():
+                            last_delivered_voice_content = normalize_voice_delivery_text(
+                                streamed_text
+                            )
+                            last_delivered_at = time.time()
+                            logger.info(
+                                "[RETELL-DELIVERY] streamed call=%s rid=%s chars=%s",
+                                call_id,
+                                scheduled_rid,
+                                len(streamed_text),
+                            )
+                            return
+
+                        final_event = draft_events[-1] if draft_events else None
+                        if final_event is not None:
+                            content = (final_event.content or "").strip() or FALLBACK_REPLY
+                            if pending_web and (
+                                not content
+                                or content == FALLBACK_REPLY
+                                or is_unwanted_voice_reply(content, user_text=user_text)
+                            ):
+                                content = WEB_SEARCH_VOICE_FALLBACK
+                            if is_unwanted_voice_reply(content, user_text=user_text):
+                                logger.warning(
+                                    "[RETELL-GEMINI] bloqueado relleno chatbot call=%s text=%s reply=%s",
+                                    call_id,
+                                    user_text[:60],
+                                    content[:80],
                                 )
-                                content = regen or FALLBACK_REPLY
-                            elif is_casual_conversation(user_text):
-                                reformed = await llm.generate_empathetic_reformulation(
-                                    user_text,
-                                    transcript=transcript,
-                                    bad_reply=content,
-                                )
-                                if reformed:
-                                    content = reformed
+                                if _is_concept_question(user_text):
+                                    regen = await llm.generate_natural_reply(
+                                        transcript=transcript,
+                                        user_text=user_text,
+                                        overlay=(
+                                            "Responde de forma natural y breve usando tu conocimiento. "
+                                            "NUNCA cites 'Conocimiento interno CED' ni etiquetas [Marketing digital]."
+                                        ),
+                                        path="concept_kb_regen",
+                                        max_tokens=640,
+                                    )
+                                    content = regen or FALLBACK_REPLY
+                                elif is_casual_conversation(user_text):
+                                    reformed = await llm.generate_empathetic_reformulation(
+                                        user_text,
+                                        transcript=transcript,
+                                        bad_reply=content,
+                                    )
+                                    if reformed:
+                                        content = reformed
+                                    else:
+                                        conv = await llm.draft_conversational_response(request)
+                                        if conv:
+                                            content = conv
                                 else:
-                                    conv = await llm.draft_conversational_response(request)
-                                    if conv:
-                                        content = conv
-                            else:
-                                content = FALLBACK_REPLY
-                        await deliver_voice(content)
-                    elif not superseded_now:
-                        logger.warning(
-                            "[RETELL-GEMINI] empty draft_response call=%s rid=%s text=%s",
+                                    content = FALLBACK_REPLY
+                            await deliver_voice(content)
+                        elif not superseded_now:
+                            logger.warning(
+                                "[RETELL-GEMINI] empty draft_response call=%s rid=%s text=%s",
+                                call_id,
+                                scheduled_rid,
+                                user_text[:80],
+                            )
+                            await deliver_voice(
+                                WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
+                            )
+                    except Exception:  # noqa: BLE001
+                        logger.exception(
+                            "[RETELL-GEMINI] draft_response error call=%s last=%s",
                             call_id,
-                            scheduled_rid,
                             user_text[:80],
                         )
                         await deliver_voice(
                             WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
                         )
-                except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "[RETELL-GEMINI] draft_response error call=%s last=%s",
+                finally:
+                    turn_draft_in_progress = False
+                    turn_draft_user_key = ""
+                    if not deferred_tools_pending:
+                        await anti_silence_if_unanswered(reason="draft_finally")
+                    logger.info(
+                        "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft",
+                        scheduled_rid,
+                        turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
+                        gpt_calls,
                         call_id,
-                        user_text[:80],
                     )
-                    await deliver_voice(
+
+                if partial_sent and scheduled_rid not in answered_response_ids:
+                    await complete_partial_or_deliver(
                         WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
                     )
-            finally:
-                turn_draft_in_progress = False
-                turn_draft_user_key = ""
-                if not deferred_tools_pending:
-                    await anti_silence_if_unanswered(reason="draft_finally")
-                logger.info(
-                    "[RETELL-TURN] rid=%s superseded=%s gpt_calls=%s call=%s path=draft",
-                    scheduled_rid,
-                    turn_latest_rid.get(_turn_slot(scheduled_key), scheduled_rid),
-                    gpt_calls,
+
+                await anti_silence_if_unanswered(reason="run_debounced_tail")
+
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "[RETELL-TURN] run_debounced failed call=%s rid=%s text=%s",
                     call_id,
+                    scheduled_rid,
+                    user_text[:80],
                 )
+                try:
+                    await anti_silence_if_unanswered(reason="run_debounced_exception")
+                except Exception:  # noqa: BLE001
+                    logger.exception(
+                        "[RETELL-TURN] anti-silence after crash call=%s",
+                        call_id,
+                    )
 
-            if partial_sent and scheduled_rid not in answered_response_ids:
-                await complete_partial_or_deliver(
-                    WEB_SEARCH_VOICE_FALLBACK if pending_web else FALLBACK_REPLY
+        def _debounce_task_done(task: asyncio.Task[None]) -> None:
+            if task.cancelled():
+                return
+            err = task.exception()
+            if err is not None:
+                logger.error(
+                    "[RETELL-TURN] run_debounced task crashed call=%s: %s",
+                    call_id,
+                    err,
+                    exc_info=err,
                 )
-
-            await anti_silence_if_unanswered(reason="run_debounced_tail")
 
         debounce_task = asyncio.create_task(run_debounced())
+        debounce_task.add_done_callback(_debounce_task_done)
 
     async def message_worker() -> None:
         while True:

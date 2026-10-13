@@ -62,6 +62,13 @@ import { sanitizeHudTranscript } from "@/lib/voice/hud-transcript-filter";
 import { PanelLeft } from "lucide-react";
 
 /** El poll de voz repite el mismo transcript: sin esto el panel re-renderiza ~2/s. */
+function lastTurnIndex(turns: LiveVoiceTurn[], role: "user" | "model"): number {
+  for (let i = turns.length - 1; i >= 0; i -= 1) {
+    if (turns[i]?.role === role) return i;
+  }
+  return -1;
+}
+
 function sameVoiceTurns(a: LiveVoiceTurn[], b: LiveVoiceTurn[]): boolean {
   if (a.length !== b.length) return false;
   return a.every((turn, i) => {
@@ -189,6 +196,23 @@ export function CedVoiceHub() {
           const next = [...prev];
           next[idx] = row;
           return next;
+        }
+        if (role === "user") {
+          const lastUserIdx = lastTurnIndex(prev, "user");
+          const lastModelIdx = lastTurnIndex(prev, "model");
+          const modelAfterUser =
+            lastModelIdx > lastUserIdx &&
+            Boolean(prev[lastModelIdx]) &&
+            !prev[lastModelIdx]?.partial;
+          if (lastUserIdx >= 0 && !modelAfterUser) {
+            const next = [...prev];
+            next[lastUserIdx] = {
+              ...row,
+              streamKey: prev[lastUserIdx].streamKey,
+              partial: Boolean(options?.partial),
+            };
+            return next;
+          }
         }
         if (last && last.role === role) {
           const next = [...prev];

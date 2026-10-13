@@ -8,6 +8,8 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+_standalone_prod_warned = False
+
 GEMINI_STANDALONE_MODE = "gemini_standalone"
 
 GEMINI_STANDALONE_SYSTEM = """
@@ -43,11 +45,13 @@ def is_gemini_standalone_voice_test() -> bool:
         return False
     settings = get_settings()
     if settings.is_production() and not bool(settings.voice_standalone_allow_prod):
-        logger.error(
-            "[VOICE] VOICE_TEST_MODE=gemini_standalone IGNORADO en production "
-            "(deja la voz sin tools). Quite VOICE_TEST_MODE o ponga "
-            "VOICE_STANDALONE_ALLOW_PROD=true solo para staging deliberado."
-        )
+        global _standalone_prod_warned
+        if not _standalone_prod_warned:
+            _standalone_prod_warned = True
+            logger.warning(
+                "[VOICE] VOICE_TEST_MODE=gemini_standalone ignorado en production "
+                "(use Gemini con tools). Quite VOICE_TEST_MODE en Railway."
+            )
         return False
     return True
 

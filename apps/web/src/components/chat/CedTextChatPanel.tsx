@@ -114,6 +114,11 @@ function isStickyWelcome(msg: ChatMessage): boolean {
   return msg.role === "model" && isStickyWelcomeContent(msg.content);
 }
 
+function isVoiceContinuityGreeting(content: string): boolean {
+  const text = content.trim();
+  return /^Hola de nuevo[.!]?/i.test(text) && text.length < 120;
+}
+
 const VOICE_LIVE_PREFIX = "voice-live:";
 
 function isVoiceLiveMessage(msg: ChatMessage): boolean {
@@ -782,6 +787,8 @@ export function CedTextChatPanel({
 
   useEffect(() => {
     if (!open || !voiceSessionActive) return;
+    // El hub ya pinta liveVoiceTurns desde Retell; este poll duplicaba burbujas.
+    if (liveVoiceTurns.length > 0) return;
     let cancelled = false;
     let lastSeq = 0;
     let lastHistoryPull = 0;
@@ -829,7 +836,7 @@ export function CedTextChatPanel({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [open, voiceSessionActive, bindVoiceConversationId, conversationId]);
+  }, [open, voiceSessionActive, bindVoiceConversationId, conversationId, liveVoiceTurns.length]);
 
   useEffect(() => {
     if (!conversationId) return;
@@ -1339,9 +1346,18 @@ export function CedTextChatPanel({
   if (!open) return null;
 
   const pinnedMessages = messages.filter((m) => !isVoiceLiveMessage(m));
+  const pinnedHasMemoryWelcome = pinnedMessages.some((m) => isStickyWelcome(m));
   const liveDisplay: ChatMessage[] = liveVoiceTurns
     .filter((item) => Boolean(item.content?.trim()))
     .filter((item) => !looksLikeImageToolDump(item.content) && !shouldHideHudTranscript(item.content))
+    .filter(
+      (item) =>
+        !(
+          item.role === "model" &&
+          pinnedHasMemoryWelcome &&
+          isVoiceContinuityGreeting(item.content)
+        ),
+    )
     .map((item) => ({
       id: `${VOICE_LIVE_PREFIX}${item.streamKey}`,
       role: item.role === "user" ? "user" : "model",
@@ -1371,7 +1387,9 @@ export function CedTextChatPanel({
     liveWithImages.length > 0
       ? liveWithImages
       : voiceSessionActive
-        ? cleanedPinned.filter((m) => isStickyWelcome(m)).slice(-1)
+        ? cleanedPinned.filter(
+            (m) => isStickyWelcome(m) && !isVoiceContinuityGreeting(m.content),
+          ).slice(-1)
         : cleanedPinned;
 
   const shell = (

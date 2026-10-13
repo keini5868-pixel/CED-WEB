@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Protocol
 
-from app.services.llama_service import use_llama
+from app.services.llama_service import llama_voice_model_ready, use_llama
 from app.services.voice_test_mode import is_gemini_standalone_voice_test
+
+logger = logging.getLogger(__name__)
 
 
 class VoiceLlmProtocol(Protocol):
@@ -34,10 +37,14 @@ def build_voice_llm() -> VoiceLlmProtocol:
         from app.services.gemini_voice_standalone import GeminiStandaloneVoiceLlm
 
         return GeminiStandaloneVoiceLlm()
-    if use_llama():
+    if use_llama() and llama_voice_model_ready():
         from app.services.llama_voice_llm import LlamaVoiceLlm
 
         return LlamaVoiceLlm()
+    if use_llama() and not llama_voice_model_ready():
+        logger.warning(
+            "[VOICE] Ollama no tiene modelo de voz — fallback a Gemini con tools"
+        )
     from app.services.gemini_voice_llm import GeminiVoiceLlm
 
     return GeminiVoiceLlm()
