@@ -138,9 +138,26 @@ MAX_SILENCE_PINGS = 1
 SILENCE_PING_MIN_GAP_S = 14.0
 
 
-def _pick_anti_silence_fallback(last_spoken: str, *, web: bool) -> str:
+_SCRIPT_ANTI_SILENCE = (
+    "Perfecto, señor. ¿Esos videos son de venta, educativos o marca personal? "
+    "Le armo el guion en uno de los diez formatos."
+)
+
+
+def _pick_anti_silence_fallback(
+    last_spoken: str,
+    *,
+    web: bool,
+    user_text: str = "",
+) -> str:
     if web:
         return WEB_SEARCH_VOICE_FALLBACK
+    from app.domain.ced_script_blueprints import wants_script_blueprints
+    from app.services.cognitive_intents import is_script_demo_request
+
+    if is_script_demo_request(user_text) or wants_script_blueprints(user_text):
+        if not is_duplicate_voice_delivery(last_spoken, _SCRIPT_ANTI_SILENCE):
+            return _SCRIPT_ANTI_SILENCE
     for phrase in _ANTI_SILENCE_FALLBACKS:
         if not is_duplicate_voice_delivery(last_spoken, phrase):
             return phrase
@@ -1553,6 +1570,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                 fallback_content = _pick_anti_silence_fallback(
                     last_delivered_voice_content,
                     web=bool(pending_web),
+                    user_text=user_text,
                 )
                 logger.warning(
                     "[RETELL-VOICE] anti-silence rid=%s reason=%s call=%s text=%s",
@@ -2176,6 +2194,13 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                             )
                         return
 
+                from app.domain.ced_script_blueprints import wants_script_blueprints
+                from app.services.cognitive_intents import is_script_demo_request
+
+                script_voice_turn = is_script_demo_request(
+                    user_text
+                ) or wants_script_blueprints(user_text)
+
                 orch = get_orchestrator(call_id)
                 orch_result = None
                 forced_module = detect_strict_intent_v2(user_text)
@@ -2185,6 +2210,8 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                     forced_module=forced_module,
                     user_id=uid or "",
                 )
+                if script_voice_turn and not orch.active_module and not forced_module:
+                    run_orchestrator = False
                 if run_orchestrator and not forced_module and has_explicit_module_signal(user_text):
                     forced_module = detect_voice_module_intent(
                         user_text, transcript, user_id=uid or ""

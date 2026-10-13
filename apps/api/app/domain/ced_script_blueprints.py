@@ -426,7 +426,7 @@ _STRUCTURE_WORD = re.compile(
     r"(?is)\b(?:estrutura|estructura|plantilla|formato|esqueleto)\b"
 )
 _VIDEO_WORD = re.compile(
-    r"(?is)\b(?:reels?|v[ií]deo|tiktok|instagram|ig|serie|contenido|capitul\w*)\b"
+    r"(?is)\b(?:reels?|v[ií]deos?|tiktok|instagram|ig|serie|contenido|capitul\w*)\b"
 )
 _DURATION_RE = re.compile(
     r"(?is)(?:(\d{1,3})\s*(?:s|seg|segs|segundos?)\b"
@@ -486,6 +486,13 @@ def wants_script_blueprints(text: str) -> bool:
     if kind and (asks_script or asks_structure or _VIDEO_WORD.search(t)):
         return True
     if asks_script and _VIDEO_WORD.search(t):
+        return True
+    if asks_script and re.search(
+        r"(?is)\b(?:preparar|hacer|crear|armar|necesito|quiero|ayud)\b",
+        t,
+    ):
+        return True
+    if asks_script:
         return True
     return asks_script and asks_structure
 
