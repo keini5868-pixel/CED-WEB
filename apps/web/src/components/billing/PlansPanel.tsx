@@ -57,7 +57,13 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
   const paid = PUBLIC_PLANS.filter((p) => p.id !== "free_basic");
 
   return (
-    <div className={compact ? "space-y-4" : "mx-auto max-w-5xl space-y-6 px-4 py-6"}>
+    <div
+      className={
+        compact
+          ? "max-h-[min(70dvh,calc(100dvh-8rem))] space-y-4 overflow-y-auto overscroll-y-contain pr-1 [-webkit-overflow-scrolling:touch]"
+          : "mx-auto max-w-5xl space-y-6 px-4 py-6"
+      }
+    >
       <div>
         <h1 className="font-[family-name:var(--font-orbitron)] text-lg tracking-wide text-cyan-200 sm:text-xl">
           Planes CED
