@@ -19,6 +19,10 @@ def test_task_query_not_instant():
     assert try_instant_small_talk_voice_reply("llévame a Charlotte") is None
 
 
+def test_concept_question_not_instant_small_talk():
+    assert try_instant_small_talk_voice_reply("¿Qué es la creatina?") is None
+
+
 def test_pm_link_request_not_instant_small_talk():
     assert (
         try_instant_small_talk_voice_reply(

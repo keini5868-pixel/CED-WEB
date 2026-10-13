@@ -5,7 +5,12 @@ from __future__ import annotations
 import random
 import re
 
-from app.services.retell_custom_llm import _normalize, is_small_talk
+from app.services.retell_custom_llm import (
+    _is_concept_question,
+    _is_task_or_info_query,
+    _normalize,
+    is_small_talk,
+)
 
 _HOW_ARE_YOU_REPLIES: tuple[str, ...] = (
     "Muy bien, señor, gracias por preguntar. ¿En qué puedo asistirle hoy?",
@@ -46,6 +51,8 @@ def try_instant_small_talk_voice_reply(text: str) -> str | None:
         pass
 
     norm = _normalize(cleaned)
+    if _is_concept_question(cleaned) or _is_task_or_info_query(cleaned):
+        return None
     # Nunca instantáneo en frases largas o con intención de tarea.
     if len(norm.split()) > 8:
         return None

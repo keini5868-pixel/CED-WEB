@@ -169,6 +169,15 @@ export function CedVoiceHub() {
       if (!content) return;
       const streamKey = options?.streamKey || `${role}-${Date.now()}`;
       setLiveVoiceTurns((prev) => {
+        const last = prev[prev.length - 1];
+        if (
+          !options?.partial &&
+          last &&
+          last.role === role &&
+          last.content.trim() === content
+        ) {
+          return prev;
+        }
         const idx = prev.findIndex((t) => t.streamKey === streamKey && t.role === role);
         const row: LiveVoiceTurn = {
           streamKey,
@@ -181,7 +190,6 @@ export function CedVoiceHub() {
           next[idx] = row;
           return next;
         }
-        const last = prev[prev.length - 1];
         if (last && last.role === role) {
           const next = [...prev];
           next[next.length - 1] = { ...row, streamKey: last.streamKey };

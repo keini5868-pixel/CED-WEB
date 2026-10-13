@@ -872,20 +872,6 @@ export function useCedVoiceSession(
         const live = state.live_transcript;
         const liveText = String(live?.text || "").trim();
         const liveSeq = Number(live?.seq || 0);
-        const chatTurns = state.chat_turns || [];
-        const dbTurns = state.transcript_turns || [];
-        const sourceTurns = dbTurns.length >= chatTurns.length ? dbTurns : chatTurns;
-        if (sourceTurns.length > 0) {
-          callbacksRef.current?.onLiveChatTurns?.(
-            sourceTurns
-              .map((turn, index) => ({
-                role: (turn.role === "user" ? "user" : "model") as "user" | "model",
-                content: String(turn.content || "").trim(),
-                streamKey: String(turn.id || `chat-${index}`),
-              }))
-              .filter((row) => Boolean(row.content)),
-          );
-        }
         if (liveText && liveSeq > lastLiveTranscriptSeqRef.current) {
           lastLiveTranscriptSeqRef.current = liveSeq;
         }

@@ -1928,6 +1928,23 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         logger.info("[RETELL-GEMINI] trash confirm call=%s", call_id)
                         return
 
+            from app.services.retell_custom_llm import (
+                _is_concept_question,
+                _is_task_or_info_query,
+            )
+            from app.services.voice_casual import try_internal_knowledge_voice_reply
+
+            if _is_concept_question(user_text) or _is_task_or_info_query(user_text):
+                kb_reply, kb_src = try_internal_knowledge_voice_reply(user_text)
+                if kb_reply and await deliver_voice(kb_reply):
+                    logger.info(
+                        "[RETELL-GEMINI] internal_kb fast call=%s src=%s text=%s",
+                        call_id,
+                        kb_src,
+                        user_text[:80],
+                    )
+                    return
+
             conversational_turn = is_casual_voice_turn(user_text, transcript)
 
             clock_reply = try_instant_datetime_reply(
