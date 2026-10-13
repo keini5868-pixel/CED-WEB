@@ -27,10 +27,11 @@ _TRANSCRIPT_LINE_RE = re.compile(r"(?m)^(user|assistant|model):\s", re.I)
 SESSION_MEMORY_INTERNAL_RULES = (
     "REGLAS DE MEMORIA DE SESIÓN (críticas):\n"
     "- Este bloque es SOLO contexto interno. NUNCA lo copies, leas ni muestres al usuario.\n"
-    "- Si preguntan «¿recuerdas la conversación anterior?», «¿recuerdas cuando…?» o retoman un tema "
-    "(lanzamiento, estrategia, plan, negocio): SÍ tienes contexto — responde con continuidad natural.\n"
-    "- PROHIBIDO decir que no retienes historial ni que la memoria está «en desarrollo» si aquí hay datos relevantes.\n"
-    "- Resume con tus palabras lo que acordaron; ofrece seguir donde lo dejaron."
+    "- PROHIBIDO inventar detalles que no estén aquí (ej. nichos, micropigmentación, productos).\n"
+    "- Si el usuario pide clima, noticias u otro tema NUEVO, responde ESO — no retomes el resumen anterior.\n"
+    "- Si dice «no», «no quiero», «no hables de…», deja ese tema y obedece la corrección.\n"
+    "- Solo retoma la sesión anterior si el usuario lo pide explícitamente o confirma ese tema.\n"
+    "- PROHIBIDO decir que no retienes historial si aquí hay datos y te lo preguntan directamente."
 )
 
 

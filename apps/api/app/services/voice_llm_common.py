@@ -448,7 +448,35 @@ def build_base_voice_system(
     return base
 
 
-def _append_legacy_global_memory(base: str, user_id: str) -> str:
+def _skip_session_memory_for_turn(user_text: str) -> bool:
+    """Clima, correcciones y temas nuevos — no arrastrar resumen de sesión anterior."""
+    t = (user_text or "").strip().lower()
+    if not t:
+        return False
+    try:
+        from app.services.cognitive_intents import is_weather_intent
+        from app.services.ced_orchestrator import detect_strict_intent_v2
+
+        if is_weather_intent(user_text) or detect_strict_intent_v2(user_text) == "environment":
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    if re.search(
+        r"\bno\b.*\b(?:quiero|hables|hable|sobre|micropigment|tema|eso)\b",
+        t,
+    ):
+        return True
+    if re.search(r"\b(?:cambiemos|otro tema|olvida|deja eso|no es eso)\b", t):
+        return True
+    return False
+
+
+def _append_legacy_global_memory(
+    base: str,
+    user_id: str,
+    *,
+    user_text: str = "",
+) -> str:
     """Memoria global legacy — se retirará al cablear memoria modular (Fase 3)."""
     uid = (user_id or "").strip()
     if not uid:
@@ -461,14 +489,15 @@ def _append_legacy_global_memory(base: str, user_id: str) -> str:
             base = f"{base}\n\n{ctx}"
     except Exception:  # noqa: BLE001
         pass
-    try:
-        from app.services.session_memory import get_session_memory_context
+    if not _skip_session_memory_for_turn(user_text):
+        try:
+            from app.services.session_memory import get_session_memory_context
 
-        mem_ctx = get_session_memory_context(uid)
-        if mem_ctx:
-            base = f"{base}\n\n{mem_ctx}"
-    except Exception:  # noqa: BLE001
-        pass
+            mem_ctx = get_session_memory_context(uid)
+            if mem_ctx:
+                base = f"{base}\n\n{mem_ctx}"
+        except Exception:  # noqa: BLE001
+            pass
     return base
 
 
@@ -514,7 +543,7 @@ def build_voice_system(
     query = (user_text or "").strip()
     recall = wants_text_chat_recall(query) if query else False
     if uid:
-        base = _append_legacy_global_memory(base, uid)
+        base = _append_legacy_global_memory(base, uid, user_text=query)
         studio = ""
         try:
             from app.services.voice_client_session import format_studio_chat_overlay

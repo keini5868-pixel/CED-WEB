@@ -158,6 +158,16 @@ def _pick_anti_silence_fallback(
     if is_script_demo_request(user_text) or wants_script_blueprints(user_text):
         if not is_duplicate_voice_delivery(last_spoken, _SCRIPT_ANTI_SILENCE):
             return _SCRIPT_ANTI_SILENCE
+    try:
+        from app.services.cognitive_intents import is_weather_intent
+        from app.services.ced_orchestrator import detect_strict_intent_v2
+
+        if is_weather_intent(user_text) or detect_strict_intent_v2(user_text) == "environment":
+            env_fb = "Un momento, señor, consulto el clima y se lo digo."
+            if not is_duplicate_voice_delivery(last_spoken, env_fb):
+                return env_fb
+    except Exception:  # noqa: BLE001
+        pass
     for phrase in _ANTI_SILENCE_FALLBACKS:
         if not is_duplicate_voice_delivery(last_spoken, phrase):
             return phrase
@@ -1410,6 +1420,15 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
         slot = _turn_slot(user_key)
         turn_latest_rid[slot] = max(turn_latest_rid.get(slot, 0), response_id)
 
+        if uid and re.search(
+            r"\bno\b.*\b(?:quiero|hables|hable|sobre)\b",
+            (user_text or "").lower(),
+        ):
+            llm.set_module_overlay(
+                "CORRECCIÓN: el usuario rechazó el tema anterior. "
+                "Obedece la negación; no insistas en guiones, micropigmentación ni memoria previa."
+            )
+
         if user_key != last_scheduled_user_key:
             generation_seq += 1
         my_generation = generation_seq
@@ -2108,6 +2127,57 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         return
                     await anti_silence_if_unanswered(reason="advanced_delegate_failed")
                     return
+
+                if uid:
+                    from app.modules.environment_module import (
+                        compose_environment_query,
+                        environment_awaiting_location_followup,
+                        handle_environment_query_sync,
+                        is_environment_location_followup,
+                        is_environment_topic,
+                    )
+                    from app.services.ced_orchestrator import detect_strict_intent_v2
+
+                    env_query = compose_environment_query(user_text, transcript)
+                    env_turn = (
+                        detect_strict_intent_v2(user_text) == "environment"
+                        or is_environment_topic(env_query)
+                        or (
+                            is_environment_location_followup(user_text)
+                            and environment_awaiting_location_followup(
+                                transcript,
+                                exclude=user_text,
+                            )
+                        )
+                    )
+                    if env_turn:
+                        await fire_latency_filler("module", module="environment")
+                        try:
+                            row = await asyncio.to_thread(
+                                handle_environment_query_sync,
+                                uid,
+                                env_query,
+                            )
+                            spoken = str(row.get("spoken") or "").strip()
+                            if spoken and await deliver_voice(spoken):
+                                logger.info(
+                                    "[RETELL-ENV] fast-path call=%s text=%s",
+                                    call_id,
+                                    env_query[:80],
+                                )
+                                return
+                        except Exception:  # noqa: BLE001
+                            logger.exception(
+                                "[RETELL-ENV] fast-path failed call=%s",
+                                call_id,
+                            )
+                        if await deliver_voice(
+                            "Señor, no pude consultar el clima ahora. "
+                            "¿Puede repetir la ciudad?"
+                        ):
+                            return
+                        await anti_silence_if_unanswered(reason="env_fast_path_failed")
+                        return
 
                 if pending_web and uid and not conversational_turn:
                     kind = str(pending_web.get("kind") or "general")

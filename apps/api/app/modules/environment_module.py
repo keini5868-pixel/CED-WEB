@@ -456,8 +456,11 @@ class EnvironmentModule(BaseModule):
         return self._idle()
 
     async def _run_query(self, user_id: str, text: str) -> ModuleResult:
+        import asyncio
+
         try:
-            spoken = _web_search_environment(user_id, text)
+            row = await asyncio.to_thread(handle_environment_query_sync, user_id, text)
+            spoken = str(row.get("spoken") or "").strip()
             ok = not spoken.startswith("No pude obtener")
             return ModuleResult(
                 ok=ok,
