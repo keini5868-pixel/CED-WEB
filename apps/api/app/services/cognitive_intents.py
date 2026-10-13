@@ -122,7 +122,11 @@ VOLATILE_PATTERNS = [
 
 SCRIPT_DEMO_PATTERNS = [
     r"\bguion\b",
+    r"\bguiones\b",
     r"\bgui[oó]n\b",
+    r"\bgui[oó]nes\b",
+    r"\bhacer(?:me)?\s+(?:unos?\s+)?guion",
+    r"\bhacer(?:me)?\s+(?:unos?\s+)?gui[oó]n",
     r"\bscript\b",
     r"\bvideo\b",
     r"\bdemo\b",

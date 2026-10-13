@@ -129,8 +129,22 @@ GREETING_COMPLETE_FALLBACK = "CED en línea, señor. Estoy listo para asistirle.
 WEB_SEARCH_FAST_PATH_TIMEOUT_SEC = 15.0
 GPS_INSTRUCTION_CHANNEL = "navigation_instruction"
 SILENCE_PING_PHRASE = "Señor, quedo a la espera."
+_ANTI_SILENCE_FALLBACKS: tuple[str, ...] = (
+    "Disculpe señor, ¿en qué le puedo ayudar?",
+    "Dígame, señor, ¿qué necesita?",
+    "Estoy atento, señor. ¿En qué lo asisto?",
+)
 MAX_SILENCE_PINGS = 1
 SILENCE_PING_MIN_GAP_S = 14.0
+
+
+def _pick_anti_silence_fallback(last_spoken: str, *, web: bool) -> str:
+    if web:
+        return WEB_SEARCH_VOICE_FALLBACK
+    for phrase in _ANTI_SILENCE_FALLBACKS:
+        if not is_duplicate_voice_delivery(last_spoken, phrase):
+            return phrase
+    return _ANTI_SILENCE_FALLBACKS[-1]
 
 _turn_filler_sent: dict[str, bool] = {}
 _turn_handled: dict[str, bool] = {}
@@ -1536,20 +1550,10 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         reason=f"{reason}_stale_rid",
                     )
                     return
-                fallback_content = (
-                    "Disculpe señor, ¿en qué le puedo ayudar?"
-                    if not pending_web
-                    else WEB_SEARCH_VOICE_FALLBACK
-                )
-                if is_duplicate_voice_delivery(
+                fallback_content = _pick_anti_silence_fallback(
                     last_delivered_voice_content,
-                    fallback_content,
-                ):
-                    await ack_empty_response(
-                        response_id=scheduled_rid,
-                        reason=f"{reason}_duplicate_fallback",
-                    )
-                    return
+                    web=bool(pending_web),
+                )
                 logger.warning(
                     "[RETELL-VOICE] anti-silence rid=%s reason=%s call=%s text=%s",
                     scheduled_rid,

@@ -100,21 +100,13 @@ def _pick_pool_index(user_id: str | None) -> int:
 
 
 def pick_jarvis_greeting(user_id: str | None = None) -> str:
-    """Elige saludo del pool v38 con continuidad, hora del día y sin repetir el último."""
+    """Saludo Jarvis corto en voz — sin el bloque «Bienvenido de nuevo» del chat."""
     if user_id and user_conversed_within_hours(user_id, hours=4.0):
         logger.info("[GREETING] pool=continuity user=%s", user_id[:8])
-        return CONTINUITY_GREETING
-
-    if user_id:
-        try:
-            from app.services.session_memory import build_memory_greeting
-
-            memory_greeting = build_memory_greeting(user_id)
-            if memory_greeting:
-                logger.info("[GREETING] pool=session_memory user=%s", user_id[:8])
-                return memory_greeting
-        except Exception:  # noqa: BLE001
-            pass
+        idx = _pick_pool_index(user_id)
+        short = JARVIS_GREETING_POOL[idx]
+        tz_name = get_user_timezone(user_id)
+        return _adapt_time_of_day(short, tz_name=tz_name)
 
     idx = _pick_pool_index(user_id)
     greeting = JARVIS_GREETING_POOL[idx]

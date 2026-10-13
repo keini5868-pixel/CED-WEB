@@ -811,7 +811,7 @@ def _is_task_or_info_query(text: str) -> bool:
     if bool(
         re.search(
             r"\b(publica|publicar|recuerda|memoria|carolina|imagen|genera|"
-            r"video|demo|mostrar|guion|guión|relevante|estrategia|secuencia|seq|"
+            r"video|demo|mostrar|guion(?:es)?|gui[oó]n(?:es)?|relevante|estrategia|secuencia|seq|"
             r"c[aá]mara|camara|mira|visi[oó]n)\b",
             norm,
         )

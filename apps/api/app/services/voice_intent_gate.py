@@ -76,6 +76,18 @@ _MODULE_SIGNAL_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
         ),
     ),
     (
+        "script",
+        re.compile(
+            r"\b("
+            r"guion(?:es)?|gui[oó]n(?:es)?|script(?:s)?|"
+            r"hacer(?:me)?\s+(?:unos?\s+)?guion(?:es)?|"
+            r"hacer(?:me)?\s+(?:unos?\s+)?gui[oó]n(?:es)?|"
+            r"demo\s+(?:de\s+)?(?:video|ced)|mostrar.*sistema"
+            r")\b",
+            re.I,
+        ),
+    ),
+    (
         "youtube",
         re.compile(
             r"\b("

@@ -149,7 +149,7 @@ class Settings(BaseSettings):
     retell_webhook_secret: str = ""
     retell_auto_bootstrap: bool = False
     retell_bootstrap_secret: str = ""
-    retell_llm_provider: str = "claude"
+    retell_llm_provider: str = "gemini"
     # Prueba aislada de voz: gemini_standalone = Retell → Gemini directo, sin orquestador.
     # En production se IGNORA salvo voice_standalone_allow_prod=true (deja la voz sin tools).
     voice_test_mode: str = ""
