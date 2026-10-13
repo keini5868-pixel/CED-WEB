@@ -18,15 +18,22 @@ from app.domain.plans import (
 )
 from app.services import supabase_db
 from app.services.integrations import check_stripe, check_supabase
+from app.domain.sentinel_privacy_plans import (
+    STRIPE_SENTINEL_CHECKOUT_PLANS,
+    normalize_sentinel_plan_id,
+)
 from app.services.stripe_billing import (
     confirm_checkout_session,
     create_portal_session,
     create_recharge_checkout,
+    create_sentinel_privacy_checkout,
     create_subscription_checkout,
+    ensure_all_sentinel_stripe_prices,
     ensure_stripe_plan_price,
     founding_slots_available,
     handle_stripe_event,
     recharge_catalog,
+    sentinel_plans_catalog,
     verify_webhook,
 )
 
@@ -39,6 +46,13 @@ class SubscriptionCheckoutBody(BaseModel):
     plan_id: str = Field(..., description="cierre | starter | pro | elite | founding")
 
 
+class SentinelPrivacyCheckoutBody(BaseModel):
+    plan_id: str = Field(
+        ...,
+        description="sentinel_solo | sentinel_pro | sentinel_business",
+    )
+
+
 class RechargeCheckoutBody(BaseModel):
     amount_usd: float = Field(..., ge=RECHARGE_MIN_USD, le=RECHARGE_MAX_USD)
 
@@ -49,6 +63,18 @@ class FreeBasicBody(BaseModel):
 
 class ConfirmCheckoutBody(BaseModel):
     session_id: str = Field(..., min_length=8, max_length=200)
+
+
+@router.get("/sentinel-plans")
+def list_sentinel_plans() -> dict:
+    return {"plans": sentinel_plans_catalog(), "product": "sentinel_privacy"}
+
+
+@router.get("/sentinel-subscription")
+def get_sentinel_subscription(user_id: str = Depends(require_user_id)) -> dict:
+    row = supabase_db.get_sentinel_privacy_subscription(user_id)
+    ent = supabase_db.sentinel_privacy_entitlement(user_id)
+    return {"subscription": row, "entitlement": ent}
 
 
 @router.get("/plans")
@@ -117,6 +143,30 @@ def billing_readiness(
     }
 
 
+@router.post("/ensure-sentinel-products")
+def ensure_sentinel_products(
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Crea o reutiliza los 3 precios Stripe de Sentinel Privacy ($12 / $29 / $79)."""
+    try:
+        prices = ensure_all_sentinel_stripe_prices()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[BILLING] ensure sentinel products failed")
+        raise HTTPException(
+            status_code=503, detail="No se pudieron crear productos Sentinel en Stripe."
+        ) from exc
+    return {
+        "ok": True,
+        "product_line": "sentinel_privacy",
+        "prices": prices,
+        "hint": (
+            "Opcional: copia price_... a STRIPE_PRICE_SENTINEL_SOLO, _PRO, _BUSINESS en Railway."
+        ),
+    }
+
+
 @router.post("/ensure-cierre-product")
 def ensure_cierre_product(
     _admin_id: str = Depends(require_super_admin),
@@ -137,6 +187,25 @@ def ensure_cierre_product(
         "price_id": price_id,
         "hint": "Copia price_id a Railway STRIPE_PRICE_CIERRE (opcional si ya se auto-crea).",
     }
+
+
+@router.post("/checkout/sentinel-privacy")
+def checkout_sentinel_privacy(
+    body: SentinelPrivacyCheckoutBody,
+    user_id: str = Depends(require_user_id),
+) -> dict:
+    plan_id = normalize_sentinel_plan_id(body.plan_id.strip())
+    if plan_id not in STRIPE_SENTINEL_CHECKOUT_PLANS:
+        raise HTTPException(status_code=400, detail="Plan Sentinel no válido.")
+    profile = supabase_db.get_profile(user_id) or {}
+    email = str(profile.get("email") or "")
+    try:
+        return create_sentinel_privacy_checkout(user_id, email, plan_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("[BILLING] sentinel privacy checkout failed")
+        raise HTTPException(status_code=503, detail="No se pudo iniciar el pago.") from exc
 
 
 @router.post("/checkout/subscription")

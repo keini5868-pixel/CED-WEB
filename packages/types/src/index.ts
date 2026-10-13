@@ -215,6 +215,63 @@ export const PUBLIC_PLANS = [
   },
 ] as const;
 
+/** Producto aparte: sellos verificables (Midnight / CED Shield). No incluye voz Jarvis. */
+export type SentinelPrivacyPlanId =
+  | "sentinel_solo"
+  | "sentinel_pro"
+  | "sentinel_business";
+
+export const SENTINEL_PRIVACY_PLAN_PRICES_USD: Record<SentinelPrivacyPlanId, number> = {
+  sentinel_solo: 12,
+  sentinel_pro: 29,
+  sentinel_business: 79,
+};
+
+export const SENTINEL_PRIVACY_SEALS_PER_MONTH: Record<SentinelPrivacyPlanId, number> = {
+  sentinel_solo: 10,
+  sentinel_pro: 40,
+  sentinel_business: 150,
+};
+
+export const SENTINEL_PUBLIC_PLANS = [
+  {
+    id: "sentinel_solo" as const,
+    label: "Sentinel Privacy Solo",
+    priceUsd: 12,
+    sealsPerMonth: 10,
+    highlights: [
+      "Sellos verificables (hash + tiempo)",
+      "Contenido sensible fuera de la cadena",
+      "Ideal para personas y freelancers",
+      "Misma cuenta CED; producto de facturación aparte",
+    ],
+  },
+  {
+    id: "sentinel_pro" as const,
+    label: "Sentinel Privacy Pro",
+    priceUsd: 29,
+    sealsPerMonth: 40,
+    highlights: [
+      "Todo lo de Solo",
+      "Más sellos para equipos pequeños",
+      "PDFs y entregables generados en CED",
+      "Prioridad en funciones de privacidad selectiva",
+    ],
+  },
+  {
+    id: "sentinel_business" as const,
+    label: "Sentinel Privacy Business",
+    priceUsd: 79,
+    sealsPerMonth: 150,
+    highlights: [
+      "Todo lo de Pro",
+      "Volumen para negocios y agencias",
+      "Facturación empresarial vía Stripe",
+      "Roadmap: políticas DLP y despliegue dedicado",
+    ],
+  },
+] as const;
+
 /** Estados del orbe central JARVIS (Fase 2) */
 export type OrbState =
   | "idle"

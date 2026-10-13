@@ -59,6 +59,10 @@ export function LegalPageShell({
             Privacidad
           </Link>
           {" · "}
+          <Link href="/sentinel-privacy" className="text-cyan-400 hover:text-cyan-200">
+            Sentinel Privacy
+          </Link>
+          {" · "}
           <Link href="/terms" className="text-cyan-400 hover:text-cyan-200">
             Términos
           </Link>

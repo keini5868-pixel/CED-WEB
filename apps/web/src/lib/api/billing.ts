@@ -13,6 +13,19 @@ function billingErrorMessage(status: number, detail?: string): string {
   return detail || "No se pudo iniciar el pago.";
 }
 
+export async function startSentinelPrivacyCheckout(planId: string): Promise<string | null> {
+  const res = await proxyFetch("billing/checkout/sentinel-privacy", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ plan_id: planId }),
+  });
+  const data = await parseApiJson<{ url?: string; detail?: string }>(res);
+  if (!res.ok) {
+    throw new Error(billingErrorMessage(res.status, data.detail));
+  }
+  return data.url ?? null;
+}
+
 export async function startSubscriptionCheckout(planId: string): Promise<string | null> {
   const res = await proxyFetch("billing/checkout/subscription", {
     method: "POST",

@@ -24,6 +24,15 @@ from app.domain.plans import (
     plan_minutes_daily,
     quote_recharge,
 )
+from app.domain.sentinel_privacy_plans import (
+    SENTINEL_PLAN_LABELS,
+    SENTINEL_PLAN_PRICES_USD,
+    SENTINEL_SEALS_PER_MONTH,
+    STRIPE_SENTINEL_CHECKOUT_PLANS,
+    is_sentinel_privacy_plan,
+    normalize_sentinel_plan_id,
+    public_sentinel_plans_catalog,
+)
 from app.domain.video_edit_economy import quote_video_edit_pack
 from app.services import supabase_db
 
@@ -191,6 +200,157 @@ def create_subscription_checkout(user_id: str, email: str, plan_id: str) -> dict
         "client_reference_id": user_id,
         "metadata": {"user_id": user_id, "plan_id": pid, "checkout_type": "subscription"},
         "subscription_data": {"metadata": {"user_id": user_id, "plan_id": pid}},
+    }
+    if customer_id:
+        params["customer"] = customer_id
+    elif email:
+        params["customer_email"] = email
+    _apply_wallet_checkout_params(params)
+
+    session = stripe.checkout.Session.create(**params)
+    if not session.url:
+        raise ValueError("Stripe no devolvió URL de checkout.")
+    return {"url": session.url, "session_id": session.id}
+
+
+def price_id_for_sentinel_plan(plan_id: str, settings: Settings | None = None) -> str | None:
+    s = settings or get_settings()
+    pid = normalize_sentinel_plan_id(plan_id)
+    mapping = {
+        "sentinel_solo": s.stripe_price_sentinel_solo.strip(),
+        "sentinel_pro": s.stripe_price_sentinel_pro.strip(),
+        "sentinel_business": s.stripe_price_sentinel_business.strip(),
+    }
+    return mapping.get(pid) or None
+
+
+def ensure_stripe_sentinel_plan_price(plan_id: str, settings: Settings | None = None) -> str:
+    """Crea o reutiliza Product+Price mensual de Sentinel Privacy en Stripe."""
+    s = settings or get_settings()
+    pid = normalize_sentinel_plan_id(plan_id)
+    if pid not in STRIPE_SENTINEL_CHECKOUT_PLANS:
+        raise ValueError(f"Plan Sentinel no válido: {plan_id}")
+    existing = price_id_for_sentinel_plan(pid, s)
+    if existing:
+        return existing
+    if not _stripe_enabled(s):
+        raise ValueError("Stripe no configurado (STRIPE_SECRET_KEY).")
+
+    _configure_stripe(s)
+    amount = int(SENTINEL_PLAN_PRICES_USD[pid]) * 100
+    label = SENTINEL_PLAN_LABELS.get(pid, "Sentinel Privacy")
+    description = (
+        "Sellos verificables (hash + tiempo). Producto aparte de la suscripción CED."
+    )
+
+    for product in stripe.Product.list(limit=100, active=True).auto_paging_iter():
+        meta = product.metadata or {}
+        if meta.get("sentinel_plan_id") != pid:
+            continue
+        for price in stripe.Price.list(product=product.id, active=True, limit=20):
+            recurring = getattr(price, "recurring", None)
+            if (
+                recurring
+                and getattr(recurring, "interval", None) == "month"
+                and int(price.unit_amount or 0) == amount
+            ):
+                return str(price.id)
+        price = stripe.Price.create(
+            product=product.id,
+            unit_amount=amount,
+            currency="usd",
+            recurring={"interval": "month"},
+            metadata={"sentinel_plan_id": pid, "product_line": "sentinel_privacy"},
+            nickname=label,
+        )
+        return str(price.id)
+
+    product = stripe.Product.create(
+        name=label,
+        description=description,
+        metadata={"sentinel_plan_id": pid, "product_line": "sentinel_privacy"},
+    )
+    price = stripe.Price.create(
+        product=product.id,
+        unit_amount=amount,
+        currency="usd",
+        recurring={"interval": "month"},
+        metadata={"sentinel_plan_id": pid, "product_line": "sentinel_privacy"},
+        nickname=label,
+    )
+    logger.info(
+        "stripe sentinel product+price created plan=%s product=%s price=%s",
+        pid,
+        product.id,
+        price.id,
+    )
+    return str(price.id)
+
+
+def ensure_all_sentinel_stripe_prices(settings: Settings | None = None) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for pid in sorted(STRIPE_SENTINEL_CHECKOUT_PLANS):
+        out[pid] = ensure_stripe_sentinel_plan_price(pid, settings)
+    return out
+
+
+def create_sentinel_privacy_checkout(user_id: str, email: str, plan_id: str) -> dict[str, str]:
+    """Suscripción Sentinel Privacy — no modifica el plan CED (Jarvis/chat)."""
+    settings = get_settings()
+    if not _stripe_enabled(settings):
+        raise ValueError("Stripe no configurado (STRIPE_SECRET_KEY).")
+
+    pid = normalize_sentinel_plan_id(plan_id)
+    if pid not in STRIPE_SENTINEL_CHECKOUT_PLANS:
+        raise ValueError(f"Plan Sentinel no válido: {plan_id}")
+
+    paid_usd = int(SENTINEL_PLAN_PRICES_USD[pid])
+    label = SENTINEL_PLAN_LABELS.get(pid, "Sentinel Privacy")
+    _configure_stripe(settings)
+    web = settings.web_public_url.rstrip("/")
+    sub = supabase_db.get_subscription(user_id) or {}
+    customer_id = sub.get("stripe_customer_id")
+
+    try:
+        price_id = ensure_stripe_sentinel_plan_price(pid, settings)
+        line_items = [{"price": price_id, "quantity": 1}]
+    except ValueError:
+        line_items = [
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": paid_usd * 100,
+                    "recurring": {"interval": "month"},
+                    "product_data": {
+                        "name": label,
+                        "description": (
+                            "Sellos verificables (hash + tiempo). "
+                            "Producto aparte de la suscripción CED."
+                        ),
+                        "metadata": {"sentinel_plan_id": pid, "product_line": "sentinel_privacy"},
+                    },
+                },
+                "quantity": 1,
+            }
+        ]
+
+    meta = {
+        "user_id": user_id,
+        "plan_id": pid,
+        "checkout_type": "sentinel_privacy",
+        "product_line": "sentinel_privacy",
+    }
+    params: dict[str, Any] = {
+        "mode": "subscription",
+        "line_items": line_items,
+        "success_url": (
+            f"{web}/sentinel-privacy?billing=sentinel_success"
+            f"&plan={pid}&session_id={{CHECKOUT_SESSION_ID}}"
+        ),
+        "cancel_url": f"{web}/sentinel-privacy?billing=sentinel_cancelled",
+        "client_reference_id": user_id,
+        "metadata": meta,
+        "subscription_data": {"metadata": meta},
     }
     if customer_id:
         params["customer"] = customer_id
@@ -519,14 +679,20 @@ def confirm_checkout_session(session_id: str, user_id: str) -> dict[str, Any]:
     _handle_checkout_completed(sess, event_id)
     bal = supabase_db.get_recharge_balance_usd(uid)
     sub = supabase_db.get_subscription(uid) or {}
+    checkout_type = str((sess.get("metadata") or {}).get("checkout_type") or "")
+    sentinel = supabase_db.sentinel_privacy_entitlement(uid)
+    plan_out = sub.get("plan_id")
+    if checkout_type == "sentinel_privacy" or sentinel.get("active"):
+        plan_out = sentinel.get("plan_id") or (sess.get("metadata") or {}).get("plan_id")
     return {
         "ok": True,
         "credited": True,
         "payment_status": payment_status,
-        "checkout_type": (sess.get("metadata") or {}).get("checkout_type"),
+        "checkout_type": checkout_type,
         "recharge_balance_usd": round(bal, 2),
-        "plan_id": sub.get("plan_id"),
+        "plan_id": plan_out,
         "subscription_status": sub.get("status"),
+        "sentinel_privacy": sentinel,
     }
 
 
@@ -644,6 +810,24 @@ def _handle_checkout_completed(session: dict[str, Any], event_id: str) -> None:
             supabase_db.update_subscription_stripe_customer(user_id, str(customer_id))
         return
 
+    if checkout_type == "sentinel_privacy":
+        subscription_id = session.get("subscription")
+        plan_id = normalize_sentinel_plan_id(metadata.get("plan_id"))
+        if user_id and subscription_id:
+            if customer_id:
+                supabase_db.update_subscription_stripe_customer(user_id, str(customer_id))
+            _sync_sentinel_privacy_subscription(
+                user_id, str(subscription_id), plan_id_hint=plan_id
+            )
+            supabase_db.record_transaction(
+                user_id=user_id,
+                tx_type="sentinel_privacy",
+                amount_usd=float(SENTINEL_PLAN_PRICES_USD.get(plan_id, 0)),
+                stripe_event_id=event_id,
+                metadata={"checkout_session": session.get("id"), "plan_id": plan_id},
+            )
+        return
+
     subscription_id = session.get("subscription")
     plan_id = normalize_plan_id(metadata.get("plan_id"))
     if user_id and subscription_id:
@@ -673,6 +857,74 @@ def _plan_from_stripe_subscription(sub: dict[str, Any], hint: str | None) -> str
             if price_id_for_plan(pid, settings) == price_id:
                 return pid
     return PlanId.ELITE.value
+
+
+def _sentinel_plan_from_stripe_subscription(
+    sub: dict[str, Any], hint: str | None = None
+) -> str | None:
+    if hint and is_sentinel_privacy_plan(hint):
+        return normalize_sentinel_plan_id(hint)
+    meta = sub.get("metadata") or {}
+    raw = str(meta.get("plan_id") or "")
+    if is_sentinel_privacy_plan(raw):
+        return normalize_sentinel_plan_id(raw)
+    if str(meta.get("product_line") or "") == "sentinel_privacy" and raw:
+        return normalize_sentinel_plan_id(raw)
+    items = (sub.get("items") or {}).get("data") or []
+    if items:
+        price_id = ((items[0].get("price") or {}).get("id") or "").strip()
+        settings = get_settings()
+        for pid in STRIPE_SENTINEL_CHECKOUT_PLANS:
+            if price_id_for_sentinel_plan(pid, settings) == price_id:
+                return pid
+    return None
+
+
+def _period_start_iso(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    try:
+        ts = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+
+def _sync_sentinel_privacy_subscription(
+    user_id: str,
+    stripe_subscription_id: str,
+    *,
+    plan_id_hint: str | None = None,
+) -> None:
+    _configure_stripe()
+    sub = stripe.Subscription.retrieve(stripe_subscription_id)
+    sub_dict = sub.to_dict() if hasattr(sub, "to_dict") else dict(sub)
+    plan_id = _sentinel_plan_from_stripe_subscription(sub_dict, plan_id_hint)
+    if not plan_id:
+        plan_id = normalize_sentinel_plan_id(plan_id_hint)
+    status = str(sub_dict.get("status") or "active")
+    period_start = _period_start_iso(sub_dict.get("current_period_start"))
+    period_end = _period_end_iso(sub_dict.get("current_period_end"))
+    existing = supabase_db.get_sentinel_privacy_subscription(user_id) or {}
+    reset_usage = False
+    if period_start and existing.get("period_start") and period_start != existing.get(
+        "period_start"
+    ):
+        reset_usage = True
+    seals = int(SENTINEL_SEALS_PER_MONTH.get(plan_id, 10))
+    supabase_db.upsert_sentinel_privacy_subscription(
+        user_id=user_id,
+        plan_id=plan_id,
+        status=status,
+        stripe_subscription_id=stripe_subscription_id,
+        seals_per_month=seals,
+        period_start=period_start,
+        period_end=period_end,
+        reset_usage=reset_usage,
+    )
+    customer_id = sub_dict.get("customer")
+    if customer_id:
+        supabase_db.update_subscription_stripe_customer(user_id, str(customer_id))
 
 
 def _sync_stripe_subscription(
@@ -717,6 +969,26 @@ def _handle_subscription_updated(subscription: dict[str, Any], event_id: str) ->
         logger.warning("[STRIPE] subscription.updated sin user_id")
         return
 
+    sentinel_plan = _sentinel_plan_from_stripe_subscription(subscription, None)
+    if sentinel_plan:
+        _sync_sentinel_privacy_subscription(
+            str(user_id),
+            str(subscription.get("id") or ""),
+            plan_id_hint=sentinel_plan,
+        )
+        supabase_db.record_transaction(
+            user_id=str(user_id),
+            tx_type="sentinel_privacy",
+            amount_usd=float(SENTINEL_PLAN_PRICES_USD.get(sentinel_plan, 0)),
+            stripe_event_id=event_id,
+            metadata={
+                "subscription_id": subscription.get("id"),
+                "status": subscription.get("status"),
+                "plan_id": sentinel_plan,
+            },
+        )
+        return
+
     plan_id = _plan_from_stripe_subscription(subscription, None)
     status = str(subscription.get("status") or "inactive")
     is_founding = plan_id == PlanId.FOUNDING.value
@@ -741,11 +1013,27 @@ def _handle_subscription_updated(subscription: dict[str, Any], event_id: str) ->
 
 
 def _handle_subscription_deleted(subscription: dict[str, Any], event_id: str) -> None:
+    sub_id = str(subscription.get("id") or "")
+    sentinel_uid = supabase_db.get_sentinel_user_by_stripe_subscription(sub_id)
+    if sentinel_uid:
+        supabase_db.cancel_sentinel_privacy_subscription(sentinel_uid)
+        supabase_db.record_transaction(
+            user_id=sentinel_uid,
+            tx_type="sentinel_privacy",
+            amount_usd=0,
+            stripe_event_id=event_id,
+            metadata={"event": "sentinel_subscription_deleted", "subscription_id": sub_id},
+        )
+        return
+
     customer_id = subscription.get("customer")
     if not customer_id:
         return
     user_id = supabase_db.get_user_id_by_stripe_customer(str(customer_id))
     if not user_id:
+        return
+    main = supabase_db.get_subscription(str(user_id)) or {}
+    if sub_id and str(main.get("stripe_subscription_id") or "") != sub_id:
         return
     supabase_db.downgrade_to_free_basic(str(user_id))
     supabase_db.record_transaction(
@@ -761,6 +1049,28 @@ def _handle_payment_failed(invoice: dict[str, Any], event_id: str) -> None:
     customer_id = invoice.get("customer")
     if not customer_id:
         return
+    inv_sub = str(invoice.get("subscription") or "")
+    if inv_sub:
+        sentinel_uid = supabase_db.get_sentinel_user_by_stripe_subscription(inv_sub)
+        if sentinel_uid:
+            supabase_db.upsert_sentinel_privacy_subscription(
+                user_id=sentinel_uid,
+                plan_id=str(
+                    (supabase_db.get_sentinel_privacy_subscription(sentinel_uid) or {}).get(
+                        "plan_id"
+                    )
+                    or "sentinel_solo"
+                ),
+                status="past_due",
+                stripe_subscription_id=inv_sub,
+                seals_per_month=int(
+                    (
+                        supabase_db.get_sentinel_privacy_subscription(sentinel_uid) or {}
+                    ).get("seals_per_month")
+                    or 10
+                ),
+            )
+            return
     user_id = supabase_db.get_user_id_by_stripe_customer(str(customer_id))
     if not user_id:
         return
@@ -782,6 +1092,10 @@ def _handle_charge_refunded(charge: dict[str, Any], event_id: str) -> None:
             stripe_event_id=event_id,
             metadata={"charge_id": charge.get("id")},
         )
+
+
+def sentinel_plans_catalog() -> list[dict[str, Any]]:
+    return public_sentinel_plans_catalog()
 
 
 def recharge_catalog(settings: Settings | None = None) -> list[dict[str, Any]]:

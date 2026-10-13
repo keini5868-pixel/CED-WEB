@@ -21,6 +21,23 @@ def _clean_store():
     reset_for_tests()
 
 
+@pytest.fixture(autouse=True)
+def _sentinel_subscription_active(monkeypatch):
+    """Sellos requieren Sentinel Privacy cuando Shield está ON."""
+    monkeypatch.setattr(
+        "app.services.ced_shield.service.supabase_db.sentinel_privacy_entitlement",
+        lambda _uid: {
+            "active": True,
+            "seals_remaining": 99,
+            "seals_used_in_period": 0,
+        },
+    )
+    monkeypatch.setattr(
+        "app.services.ced_shield.service.supabase_db.consume_sentinel_seal_credit",
+        lambda _uid: {"ok": True},
+    )
+
+
 def test_kill_switch_off_by_default():
     assert ced_shield_enabled() is False
     with pytest.raises(HTTPException) as exc:

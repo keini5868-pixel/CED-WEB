@@ -2309,3 +2309,155 @@ def get_video_edit_job(job_id: str, user_id: str | None = None) -> dict | None:
     except Exception:  # noqa: BLE001
         logger.exception("[DB] get_video_edit_job failed")
         return None
+
+
+_ACTIVE_SENTINEL_STATUSES = frozenset({"active", "trialing", "past_due"})
+
+
+def get_sentinel_privacy_subscription(user_id: str) -> dict[str, Any] | None:
+    try:
+        client = _client()
+        result = (
+            client.table("sentinel_privacy_subscriptions")
+            .select("*")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        return rows[0] if rows else None
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] get_sentinel_privacy_subscription failed user=%s", user_id)
+        return None
+
+
+def get_sentinel_user_by_stripe_subscription(stripe_subscription_id: str) -> str | None:
+    sid = (stripe_subscription_id or "").strip()
+    if not sid:
+        return None
+    try:
+        client = _client()
+        result = (
+            client.table("sentinel_privacy_subscriptions")
+            .select("user_id")
+            .eq("stripe_subscription_id", sid)
+            .limit(1)
+            .execute()
+        )
+        rows = result.data or []
+        if not rows:
+            return None
+        return str(rows[0].get("user_id") or "") or None
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] get_sentinel_user_by_stripe_subscription failed")
+        return None
+
+
+def upsert_sentinel_privacy_subscription(
+    *,
+    user_id: str,
+    plan_id: str,
+    status: str,
+    stripe_subscription_id: str | None = None,
+    seals_per_month: int,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    reset_usage: bool = False,
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    existing = get_sentinel_privacy_subscription(user_id) or {}
+    used = int(existing.get("seals_used_in_period") or 0)
+    if reset_usage:
+        used = 0
+    row: dict[str, Any] = {
+        "user_id": user_id,
+        "plan_id": plan_id,
+        "status": status,
+        "seals_per_month": seals_per_month,
+        "seals_used_in_period": used,
+        "updated_at": now,
+    }
+    if stripe_subscription_id:
+        row["stripe_subscription_id"] = stripe_subscription_id
+    if period_start:
+        row["period_start"] = period_start
+    if period_end:
+        row["period_end"] = period_end
+    try:
+        client = _client()
+        client.table("sentinel_privacy_subscriptions").upsert(
+            row, on_conflict="user_id"
+        ).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "[DB] upsert_sentinel_privacy_subscription failed user=%s", user_id
+        )
+
+
+def cancel_sentinel_privacy_subscription(user_id: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        client = _client()
+        client.table("sentinel_privacy_subscriptions").update(
+            {
+                "status": "canceled",
+                "updated_at": now,
+            }
+        ).eq("user_id", user_id).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "[DB] cancel_sentinel_privacy_subscription failed user=%s", user_id
+        )
+
+
+def sentinel_privacy_entitlement(user_id: str) -> dict[str, Any]:
+    """Estado de suscripción Sentinel Privacy (sellos/mes)."""
+    row = get_sentinel_privacy_subscription(user_id)
+    if not row:
+        return {
+            "active": False,
+            "plan_id": None,
+            "seals_remaining": 0,
+            "seals_per_month": 0,
+        }
+    status = str(row.get("status") or "")
+    active = status in _ACTIVE_SENTINEL_STATUSES
+    cap = int(row.get("seals_per_month") or 0)
+    used = int(row.get("seals_used_in_period") or 0)
+    remaining = max(0, cap - used) if active else 0
+    return {
+        "active": active,
+        "plan_id": row.get("plan_id"),
+        "status": status,
+        "seals_per_month": cap,
+        "seals_used_in_period": used,
+        "seals_remaining": remaining,
+        "period_end": row.get("period_end"),
+    }
+
+
+def consume_sentinel_seal_credit(user_id: str) -> dict[str, Any]:
+    ent = sentinel_privacy_entitlement(user_id)
+    if not ent.get("active"):
+        return {
+            "ok": False,
+            "code": "sentinel_subscription_required",
+            "error": "Activa Sentinel Privacy para sellar documentos.",
+        }
+    if int(ent.get("seals_remaining") or 0) <= 0:
+        return {
+            "ok": False,
+            "code": "sentinel_quota_exceeded",
+            "error": "Agotaste los sellos de este periodo. Mejora el plan o espera la renovación.",
+        }
+    now = datetime.now(timezone.utc).isoformat()
+    new_used = int(ent.get("seals_used_in_period") or 0) + 1
+    try:
+        client = _client()
+        client.table("sentinel_privacy_subscriptions").update(
+            {"seals_used_in_period": new_used, "updated_at": now}
+        ).eq("user_id", user_id).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] consume_sentinel_seal_credit failed user=%s", user_id)
+        return {"ok": False, "code": "db_error", "error": "No pude registrar el sello."}
+    return {"ok": True, "seals_used_in_period": new_used}

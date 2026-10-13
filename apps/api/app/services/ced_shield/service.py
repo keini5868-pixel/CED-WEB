@@ -20,6 +20,7 @@ from app.services.ced_shield.store import (
     utc_now_iso,
 )
 from app.services.ced_shield.writer import submit_commitment
+from app.services import supabase_db
 
 _WALLET_RE = re.compile(r"^[A-Za-z0-9:_-]{8,128}$")
 _ALLOWED_KINDS = frozenset({"pdf", "session"})
@@ -33,6 +34,8 @@ DEMO_PATH = "/shield"
 def status_payload() -> dict[str, Any]:
     return {
         "enabled": ced_shield_enabled(),
+        "billing_product": "sentinel_privacy",
+        "pricing_path": "/sentinel-privacy",
         "module": "ced_shield",
         "on_chain": "hash+timestamp+wallet only",
         "never_on_chain": ["audio", "transcript", "pdf_bytes", "prompts"],
@@ -69,6 +72,20 @@ def seal_artifact(
     """Crea el sello. Fallo de Midnight no afecta voz ni chat."""
     if not ced_shield_enabled():
         return {"ok": False, "code": "disabled", "error": "CED Shield está apagado."}
+
+    ent = supabase_db.sentinel_privacy_entitlement(user_id)
+    if not ent.get("active"):
+        return {
+            "ok": False,
+            "code": "sentinel_subscription_required",
+            "error": "Activa Sentinel Privacy en /sentinel-privacy para sellar.",
+        }
+    if int(ent.get("seals_remaining") or 0) <= 0:
+        return {
+            "ok": False,
+            "code": "sentinel_quota_exceeded",
+            "error": "Agotaste los sellos de este mes. Sube de plan o espera la renovación.",
+        }
 
     kind_norm = (kind or "").strip().lower()
     if kind_norm not in _ALLOWED_KINDS:
@@ -133,6 +150,7 @@ def seal_artifact(
     if write.get("error"):
         record["write_error"] = str(write["error"])
     add_seal(user_id, record)
+    supabase_db.consume_sentinel_seal_credit(user_id)
     spoken = (
         "Sello creado. En la cadena solo va el hash y la fecha, no el contenido."
         if write.get("ok")

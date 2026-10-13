@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     # Legacy aliases
     stripe_price_elite_founding: str = ""
     stripe_price_elite_regular: str = ""
+    stripe_price_sentinel_solo: str = ""
+    stripe_price_sentinel_pro: str = ""
+    stripe_price_sentinel_business: str = ""
 
     redis_url: str = "redis://localhost:6379/0"
 
