@@ -298,6 +298,7 @@ export function useCedVoiceSession(
   const voiceSessionActiveRef = useRef(false);
   const sessionStartedAtRef = useRef(0);
   const replayVoiceImagesRef = useRef(false);
+  const lastLatestImageIdRef = useRef("");
   const [cameraOn, setCameraOn] = useState(false);
   const [muted, setMuted] = useState(false);
   const [paused, setPaused] = useState(false);
@@ -717,7 +718,6 @@ export function useCedVoiceSession(
         const events = [...(state.tool_events ?? [])].sort(
           (a, b) => Number(a.id || 0) - Number(b.id || 0),
         );
-        const allowVoiceImages = replayVoiceImagesRef.current;
         const sessionStartedAt = sessionStartedAtRef.current;
         for (const ev of events) {
           const id = Number(ev.id || 0);
@@ -734,12 +734,9 @@ export function useCedVoiceSession(
             }
           }
           if (ev.type === "generated_image" && ev.image_url) {
-            const eventAtMs = Number(ev.at || 0) * 1000;
-            const fromThisSession =
-              sessionStartedAt > 0 && eventAtMs >= sessionStartedAt - 2000;
             if (!voiceSessionActiveRef.current) continue;
-            if (!allowVoiceImages && !fromThisSession) continue;
             const normalized = normalizeCedMediaUrl(ev.image_url);
+            if (!normalized) continue;
             lastPublishableImageRef.current = normalized;
             callbacksRef.current?.onGeneratedImage?.(normalized, ev.prompt);
           }
@@ -845,20 +842,20 @@ export function useCedVoiceSession(
         replayVoiceImagesRef.current = true;
         const latest = state.latest_generated_image;
         const latestUrl = String(latest?.image_url || "").trim();
-        if (
-          latestUrl &&
-          voiceSessionActiveRef.current &&
-          sessionStartedAt > 0
-        ) {
+        const latestId = String(latest?.id || "").trim();
+        if (latestUrl && voiceSessionActiveRef.current) {
           const createdMs = Date.parse(String(latest?.created_at || ""));
           const fromThisSession =
-            Number.isFinite(createdMs) && createdMs >= sessionStartedAt - 2000;
+            sessionStartedAt <= 0 ||
+            (Number.isFinite(createdMs) && createdMs >= sessionStartedAt - 5000);
           const normalized = normalizeCedMediaUrl(latestUrl);
+          const idIsNew = Boolean(latestId) && latestId !== lastLatestImageIdRef.current;
           if (
             fromThisSession &&
             normalized &&
-            normalized !== lastPublishableImageRef.current
+            (idIsNew || normalized !== lastPublishableImageRef.current)
           ) {
+            if (latestId) lastLatestImageIdRef.current = latestId;
             lastPublishableImageRef.current = normalized;
             callbacksRef.current?.onGeneratedImage?.(
               normalized,
@@ -1421,6 +1418,7 @@ export function useCedVoiceSession(
         isRetellSessionRef.current = true;
         lastLiveTranscriptSeqRef.current = 0;
         lastPublishableImageRef.current = null;
+        lastLatestImageIdRef.current = "";
         sessionStartedAtRef.current = Date.now();
         replayVoiceImagesRef.current = false;
         try {

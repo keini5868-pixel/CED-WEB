@@ -427,7 +427,7 @@ export function CedVoiceHub() {
 
   useEffect(() => {
     if (!imageGenerating) return undefined;
-    const timer = window.setTimeout(() => clearVoiceGeneratingImage(), 90_000);
+    const timer = window.setTimeout(() => clearVoiceGeneratingImage(), 180_000);
     return () => window.clearTimeout(timer);
   }, [imageGenerating, clearVoiceGeneratingImage]);
 

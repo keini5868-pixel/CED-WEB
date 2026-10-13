@@ -770,6 +770,7 @@ def run_chat_image_generation(
     *,
     plan_id: str | None = None,
     allow_reference: bool = True,
+    voice_channel: bool = False,
 ) -> dict[str, Any]:
     """
     Ejecuta generación de imagen para chat. Nunca devuelve ok=True sin url.
@@ -1212,42 +1213,89 @@ def run_chat_image_generation(
         else:
             _dispatch_image()
 
+    def _voice_progress(status: str) -> None:
+        if not voice_channel:
+            return
+        try:
+            from app.services import voice_client_session as vcs
+
+            vcs.push_tool_event(
+                user_id,
+                {
+                    "type": "generating_image",
+                    "prompt": user_text[:160],
+                    "status": status,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            return
+
     _run_image_dispatch(correcting_pass=image_brief_needs_correction(model_prompt, user_text))
 
-    if (
-        img_result.get("ok")
-        and img_result.get("url")
-        and image_brief_needs_correction(model_prompt, user_text)
-    ):
-        logger.info(
-            "[CHAT:IMG-GEN] sentinel retry user=%s — brief no refleja el pedido",
-            user_id[:8],
-        )
-        model_prompt = build_image_sentinel_brief(model_prompt, user_text)
-        _run_image_dispatch(correcting_pass=True)
+    from app.services.ced_sentinel_image_vision import (
+        audit_generated_image_against_request,
+        should_vision_audit_request,
+        vision_retry_brief_suffix,
+    )
 
-    if img_result.get("ok") and img_result.get("url"):
-        from app.services.ced_sentinel_image_vision import (
-            audit_generated_image_against_request,
-            should_vision_audit_request,
-            vision_retry_brief_suffix,
+    if voice_channel:
+        needs_brief_fix = bool(
+            img_result.get("ok")
+            and img_result.get("url")
+            and image_brief_needs_correction(model_prompt, user_text)
         )
-
-        if should_vision_audit_request(user_text):
+        needs_vision_fix = False
+        vision_detail = ""
+        if img_result.get("ok") and img_result.get("url") and should_vision_audit_request(
+            user_text
+        ):
             needs_vision_fix, vision_detail = audit_generated_image_against_request(
                 str(img_result["url"]),
                 user_text,
             )
+        if needs_brief_fix or needs_vision_fix:
+            logger.info(
+                "[CHAT:IMG-GEN] sentinel voice retry user=%s brief=%s vision=%s",
+                user_id[:8],
+                needs_brief_fix,
+                needs_vision_fix,
+            )
+            _voice_progress("Centinela ajusta la imagen al pedido…")
+            model_prompt = build_image_sentinel_brief(model_prompt, user_text)
             if needs_vision_fix:
-                logger.info(
-                    "[CHAT:IMG-GEN] sentinel vision retry user=%s detail=%s",
-                    user_id[:8],
-                    vision_detail[:120],
+                model_prompt = f"{model_prompt}\n\n{vision_retry_brief_suffix(vision_detail)}"[
+                    :3800
+                ]
+            _run_image_dispatch(correcting_pass=False)
+    else:
+        if (
+            img_result.get("ok")
+            and img_result.get("url")
+            and image_brief_needs_correction(model_prompt, user_text)
+        ):
+            logger.info(
+                "[CHAT:IMG-GEN] sentinel retry user=%s — brief no refleja el pedido",
+                user_id[:8],
+            )
+            model_prompt = build_image_sentinel_brief(model_prompt, user_text)
+            _run_image_dispatch(correcting_pass=True)
+
+        if img_result.get("ok") and img_result.get("url"):
+            if should_vision_audit_request(user_text):
+                needs_vision_fix, vision_detail = audit_generated_image_against_request(
+                    str(img_result["url"]),
+                    user_text,
                 )
-                model_prompt = build_image_sentinel_brief(model_prompt, user_text)
-                suffix = vision_retry_brief_suffix(vision_detail)
-                model_prompt = f"{model_prompt}\n\n{suffix}"[:3800]
-                _run_image_dispatch(correcting_pass=True)
+                if needs_vision_fix:
+                    logger.info(
+                        "[CHAT:IMG-GEN] sentinel vision retry user=%s detail=%s",
+                        user_id[:8],
+                        vision_detail[:120],
+                    )
+                    model_prompt = build_image_sentinel_brief(model_prompt, user_text)
+                    suffix = vision_retry_brief_suffix(vision_detail)
+                    model_prompt = f"{model_prompt}\n\n{suffix}"[:3800]
+                    _run_image_dispatch(correcting_pass=True)
 
     if not img_result.get("ok") or not img_result.get("url"):
         err = _format_error(str(img_result.get("error") or "No pude generar la imagen."))
@@ -1267,7 +1315,9 @@ def run_chat_image_generation(
             "prompt_used": str(effective or user_text),
         }
 
-    url = str(img_result["url"])
+    from app.services.publish_media import as_client_media_url
+
+    url = as_client_media_url(str(img_result["url"]))
     # Siempre registrar para publicar (aunque conversation_id aún no exista).
     register_text_chat_image_url(
         user_id,

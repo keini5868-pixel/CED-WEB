@@ -88,6 +88,21 @@ def client_media_url(file_name: str) -> str:
     return f"/api/ced/media/publish/{file_name}"
 
 
+def as_client_media_url(url: str) -> str:
+    """URL BFF same-origin para `<img>` y voz (cookies de sesión)."""
+    raw = (url or "").strip()
+    if not raw:
+        return raw
+    if raw.startswith("/api/ced/media/publish/"):
+        return raw
+    match = _PUBLISH_FILE.search(raw)
+    if match:
+        return client_media_url(match.group(1))
+    if raw.startswith("/v1/media/publish/"):
+        return client_media_url(raw.rsplit("/", 1)[-1])
+    return raw
+
+
 _PUBLISH_FILE = re.compile(
     r"(?:/api/ced/media/publish/|/v1/media/publish/)([A-Za-z0-9_.-]+)",
 )

@@ -2803,44 +2803,6 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
         bool(url),
     )
     ok = bool(result.get("ok")) and bool(url)
-    full_request = heard or llm_prompt or prompt
-    from app.services.ced_sentinel import (
-        build_image_sentinel_brief,
-        image_brief_needs_correction,
-    )
-
-    if ok and (
-        voice_prompt_is_mismatch(prompt_used, llm_prompt)
-        or image_brief_needs_correction(prompt_used, full_request)
-    ):
-        retry_prompt = build_image_sentinel_brief(prompt_used, full_request)
-        logger.info(
-            "[NATIVE:IMAGE] sentinel retry prompt_used=%s",
-            prompt_used[:120],
-        )
-        if _try_begin_image_job(user_id):
-            try:
-                result = await execute_voice_tool(
-                    "generate_image",
-                    user_id,
-                    {
-                        "prompt": retry_prompt,
-                        "quality": quality,
-                        "call_id": call_id,
-                        "_user_request": heard or retry_prompt,
-                        "_history": history,
-                        "_skip_overlay_readback": True,
-                    },
-                )
-            finally:
-                _end_image_job(user_id)
-        url = str(result.get("url") or result.get("image_url") or "").strip()
-        prompt_used = str(
-            result.get("prompt_used") or result.get("prompt") or retry_prompt
-        ).strip()
-        ok = bool(result.get("ok")) and bool(url)
-        if not ok:
-            result = {**result, "ok": False, "error": "prompt_mismatch"}
     published = ok
     spoken = (
         _VOICE_IMAGE_SUCCESS

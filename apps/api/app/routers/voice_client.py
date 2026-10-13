@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from app.deps.auth import require_user_id
 from app.services import supabase_db
 from app.services import voice_client_session as vcs
-from app.services.publish_media import client_media_url, decode_image_data
+from app.services.publish_media import as_client_media_url, client_media_url, decode_image_data
 
 router = APIRouter(prefix="/v1/voice", tags=["voice-client"])
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ async def _load_latest_generated_image(user_id: str) -> dict[str, Any] | None:
         return None
     return {
         "id": str(row.get("id") or ""),
-        "image_url": url,
+        "image_url": as_client_media_url(url),
         "prompt": str(row.get("prompt") or ""),
         "created_at": str(row.get("created_at") or ""),
     }

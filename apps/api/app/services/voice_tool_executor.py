@@ -939,6 +939,7 @@ async def _execute_voice_tool_body(
                     history or None,
                     plan_id=str(balance.get("plan_id") or "") or None,
                     allow_reference=True,
+                    voice_channel=True,
                 )
 
             if correcting_brief and guard_is_on():
@@ -961,55 +962,25 @@ async def _execute_voice_tool_body(
                     llm_prompt[:120],
                     prompt_used[:120],
                 )
-                from app.services.ced_sentinel import image_brief_needs_correction
-
-                full_request = llm_prompt.strip() or raw_user.strip() or prompt_used
-                needs_fix = voice_prompt_is_mismatch(
-                    prompt_used, llm_prompt
-                ) or image_brief_needs_correction(prompt_used, full_request)
-                if needs_fix and full_request.strip():
-                    _push_image_progress(
-                        {
-                            "type": "generating_image",
-                            "prompt": full_request[:160],
-                            "status": PRECISION_HINT if guard_is_on() else "Ajustando imagen al pedido…",
-                        }
-                    )
-                    retry_prompt = build_image_sentinel_brief(prompt_used, full_request)
-                    if guard_is_on():
-                        with correcting(
-                            user_id,
-                            area="imagen",
-                            detail="Centinela rehace la imagen según lo pedido.",
-                            hint=PRECISION_HINT,
-                        ):
-                            retried = await _generate_voice_image(retry_prompt)
-                    else:
-                        retried = await _generate_voice_image(retry_prompt)
-                    if retried.get("ok") and retried.get("url"):
-                        result = retried
-                        url = str(result.get("url") or "")
-                        prompt_used = str(result.get("prompt_used") or retry_prompt)
-                    else:
-                        _push_image_progress(
-                            {"type": "image_generation_failed", "prompt": prompt_used[:160]}
-                        )
-                        return _spoken_err(
-                            "No pude ajustar la imagen al pedido, señor. ¿Lo intento de nuevo?",
-                            error="prompt_mismatch",
-                        )
                 from app.services.chat_image_generation import user_visible_image_prompt
+                from app.services.publish_media import as_client_media_url
 
                 hud_prompt = user_visible_image_prompt(
                     user_text=raw_user or prompt,
                     result=result,
                     fallback=prompt,
                 )
+                hud_url = as_client_media_url(url)
+                vcs.set_last_publishable_image(
+                    user_id,
+                    image_url=hud_url,
+                    source="voice_generate",
+                )
                 vcs.push_tool_event(
                     user_id,
                     {
                         "type": "generated_image",
-                        "image_url": url,
+                        "image_url": hud_url,
                         "prompt": hud_prompt,
                     },
                 )
