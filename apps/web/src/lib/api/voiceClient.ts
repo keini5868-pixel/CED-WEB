@@ -20,6 +20,9 @@ export type VoiceToolEvent = {
   prompt?: string;
   status?: string;
   title?: string;
+  /** Subtítulo Centinela en HUD de imagen (voz). */
+  detail?: string;
+  phase?: "generating" | "correcting" | string;
   file_id?: string;
   text?: string;
   query?: string;
