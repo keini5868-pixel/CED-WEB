@@ -11,6 +11,7 @@ from app.services.ced_sentinel import (
     begin_correction,
     brief_drifts_from_request,
     end_correction,
+    image_brief_needs_correction,
     note_error,
     public_status,
     set_enabled,
@@ -88,6 +89,20 @@ def test_sweep_records_a_level_change_once(monkeypatch):
     assert len(status["checks"]) == 7
     assert status.get("voice_stack")
     assert status.get("expectations")
+
+
+def test_image_sentinel_always_checks_brief_without_guard():
+    asked = (
+        "fondo oscuro con letras blancas y borde azul cian claro "
+        'que diga "EL TIEMPO VA A PASAR"'
+    )
+    produced = "White background poster with purple outline text"
+    assert image_brief_needs_correction(produced, asked) is True
+    from app.services.ced_sentinel import build_image_sentinel_brief
+
+    fixed = build_image_sentinel_brief(produced, asked)
+    low = fixed.casefold()
+    assert "cian" in low or "cyan" in low or "pedido exacto" in low
 
 
 def test_guard_corrects_only_while_it_stays_on():

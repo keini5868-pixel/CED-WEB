@@ -50,9 +50,10 @@ SYSTEM_EXPECTATIONS: list[dict[str, str]] = [
         "id": "sentinel_role",
         "title": "Rol del Centinela",
         "body": (
-            "Con guardia ON: sonda cada 60 s (voz, pagos, datos, modelos, piloto, tools, "
-            "runtime), captura ERROR/WARNING de voz-Retell, deduplica, persiste en Supabase, "
-            "y corrige imagen/PDF si el brief no coincide con lo pedido."
+            "Imagen: Centinela revisa SIEMPRE el brief vs el pedido y, si hay fondo/colores/"
+            "copy literal, hace QA visual con Gemini Flash tras generar; un reintento si falla. "
+            "Sin guardia admin para imagen. Con guardia ON: sondas, bitácora, PDF, "
+            "«Corrigiendo datos…» en pantalla."
         ),
     },
 ]

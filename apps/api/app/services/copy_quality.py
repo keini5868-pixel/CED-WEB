@@ -702,6 +702,18 @@ def literal_typography_locks(text: str) -> str:
         parts.append(
             "Letter fill is cyan-blue. If a white shadow was requested, the shadow stays white."
         )
+    if re.search(r"(?i)(?:letras?|texto).{0,40}blanc", t) and re.search(
+        r"(?i)borde.{0,30}(?:cian|cyan|azul\s+cian)", t
+    ):
+        parts.append(
+            "Typography: white letter fill with light cyan-blue outline/border only. "
+            "NOT purple, NOT lavender, NOT pink glow. Keep background dark if user asked dark."
+        )
+    elif re.search(r"(?i)borde.{0,30}(?:cian|cyan|azul\s+cian)", t):
+        parts.append(
+            "Use a light cyan-blue outline/border on the letters exactly as requested. "
+            "NOT purple or lavender."
+        )
     if is_text_only_flyer_request(t):
         parts.append(
             "sin personas ni otros elementos salvo los indicados. "
@@ -1422,6 +1434,44 @@ _FLAT_COLOR_FIELD = re.compile(
     r"sin\s+(?:pared|velas?|reloj|objetos|escena|habitaci)"
     r")\b"
 )
+
+
+def extract_image_visual_constraints(text: str) -> list[str]:
+    """Tokens de estilo que Centinela exige en el brief (fondo, color de texto)."""
+    t = normalize_image_request_typos(text or "").casefold()
+    if not t:
+        return []
+    out: list[str] = []
+    if re.search(r"fondo\s+(?:oscuro|negro|dark|muy\s+oscuro|#0)", t):
+        out.append("dark_background")
+    if re.search(r"fondo\s+(?:blanc|claro|light)", t):
+        out.append("light_background")
+    if re.search(r"(?:letras?|texto|frase).{0,40}blanc|blanc.{0,25}(?:letras?|texto)", t):
+        out.append("white_text")
+    if re.search(r"borde.{0,35}(?:cian|cyan|azul\s+cian)|(?:cian|cyan).{0,20}borde", t):
+        out.append("cyan_outline")
+    return out
+
+
+def prompt_honors_visual_constraints(prompt: str, constraints: list[str]) -> bool:
+    p = (prompt or "").casefold()
+    if not constraints:
+        return True
+    for key in constraints:
+        if key == "dark_background" and not re.search(
+            r"dark|black|negro|oscuro|#0[0-3]", p
+        ):
+            return False
+        if key == "light_background" and re.search(r"dark|black|negro|oscuro", p):
+            if not re.search(r"white|blanc|clar|light", p):
+                return False
+        if key == "white_text" and not re.search(r"white|blanc", p):
+            return False
+        if key == "cyan_outline" and not re.search(
+            r"cyan|cian|outline|borde|stroke", p
+        ):
+            return False
+    return True
 
 
 def user_requests_background_change(text: str) -> bool:

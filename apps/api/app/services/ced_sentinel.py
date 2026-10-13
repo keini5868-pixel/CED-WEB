@@ -213,19 +213,24 @@ def _folded(text: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"[^\wáéíóúñ ]", "", (text or "").casefold())).strip()
 
 
-def brief_drifts_from_request(produced: str, requested: str) -> bool:
-    """True solo con la guardia activa, cuando el texto no conserva lo pedido."""
-    if not _is_enabled():
-        return False
+def _image_brief_drift_core(produced: str, requested: str) -> bool:
     req = (requested or "").strip()
     used = (produced or "").strip()
-    if len(req) < 12 or not used:
+    if len(req) < 8 or not used:
         return False
     from app.services.chat_image_generation import (
         image_prompt_covers_request,
         voice_prompt_is_mismatch,
     )
-    from app.services.copy_quality import extract_literal_on_image_copy
+    from app.services.copy_quality import (
+        extract_image_visual_constraints,
+        extract_literal_on_image_copy,
+        prompt_honors_visual_constraints,
+    )
+
+    constraints = extract_image_visual_constraints(req)
+    if constraints and not prompt_honors_visual_constraints(used, constraints):
+        return True
 
     folded = _folded(used)
     long_literals = [
@@ -240,6 +245,29 @@ def brief_drifts_from_request(produced: str, requested: str) -> bool:
     if _looks_spanish(used) and _looks_spanish(req) and not image_prompt_covers_request(used, req):
         return True
     return False
+
+
+def image_brief_needs_correction(produced: str, requested: str) -> bool:
+    """Centinela imagen — siempre activo en el pipeline (no requiere guardia admin)."""
+    return _image_brief_drift_core(produced, requested)
+
+
+def brief_drifts_from_request(produced: str, requested: str) -> bool:
+    """True con la guardia activa (PDF/imagen en chat con sentinel UI)."""
+    if not _is_enabled():
+        return False
+    return _image_brief_drift_core(produced, requested)
+
+
+def build_image_sentinel_brief(produced: str, requested: str) -> str:
+    """Re-brief anclado al pedido + reglas tipográficas y de color."""
+    from app.services.copy_quality import literal_typography_locks
+
+    base = anchored_brief(produced, requested)
+    locks = literal_typography_locks(requested)
+    if locks and locks not in base:
+        return f"{base}\n\n{locks}"[:3800]
+    return base
 
 
 def anchored_brief(produced: str, requested: str) -> str:
