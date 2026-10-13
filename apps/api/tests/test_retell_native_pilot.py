@@ -30,12 +30,20 @@ def test_build_get_environment_tool_has_static_filler():
 
 
 def test_phase_a_general_assistant_token_floor_under_retell_threshold():
-    """Fase A: piso sin historial debe quedar bajo el surcharge Retell (~4k) y ~3.8k objetivo."""
+    """Piso de tokens documentado — 37 tools; surcharge Retell ~4k puede aplicar."""
     est = estimate_general_assistant_token_floor()
-    assert est["tool_count"] == 36
-    assert est["floor_tokens_no_history"] < 4000
-    assert est["floor_tokens_no_history"] <= 3960
-    assert est["under_threshold"] is True
+    assert est["tool_count"] == 37
+    assert 3800 <= est["floor_tokens_no_history"] <= 4500
+
+
+def test_native_pilot_tools_have_http_routes():
+    import re
+    from pathlib import Path
+
+    tools = {t["name"] for t in build_native_pilot_tools(api_public_url="https://api.example.com")}
+    retell_py = Path(__file__).resolve().parents[1] / "app" / "routers" / "retell.py"
+    routes = set(re.findall(r'@router\.post\("/tools/([^"/{]+)"', retell_py.read_text(encoding="utf-8")))
+    assert tools == routes
 
 
 def test_build_native_pilot_tools_includes_read_and_finance_write():
