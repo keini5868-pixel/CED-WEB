@@ -358,6 +358,46 @@ export async function fetchAdminSentinel(): Promise<SentinelStatus> {
   return data;
 }
 
+export type AdminSentinelPrivacyOverview = {
+  product: string;
+  public_path: string;
+  shield_enabled: boolean;
+  plans: Array<{
+    id: string;
+    label: string;
+    price_usd: number;
+    seals_per_month: number;
+    highlights: string[];
+  }>;
+  subscriptions: Array<Record<string, unknown>>;
+  subscription_count: number;
+};
+
+export async function fetchAdminSentinelPrivacy(): Promise<AdminSentinelPrivacyOverview> {
+  const res = await proxyFetch("admin/sentinel-privacy");
+  const data = await parseApiJson<AdminSentinelPrivacyOverview & { detail?: string }>(res);
+  if (!res.ok) {
+    throw new Error(
+      typeof data.detail === "string" ? data.detail : "No se pudo leer Sentinel Privacy.",
+    );
+  }
+  return data;
+}
+
+export async function ensureSentinelPrivacyStripeProducts(): Promise<{
+  ok: boolean;
+  prices: Record<string, string>;
+}> {
+  const res = await proxyFetch("billing/ensure-sentinel-products", { method: "POST" });
+  const data = await parseApiJson<{ ok?: boolean; prices?: Record<string, string>; detail?: string }>(
+    res,
+  );
+  if (!res.ok) {
+    throw new Error(typeof data.detail === "string" ? data.detail : "Stripe Sentinel falló.");
+  }
+  return { ok: Boolean(data.ok), prices: data.prices ?? {} };
+}
+
 export async function setAdminSentinelEnabled(enabled: boolean): Promise<SentinelStatus> {
   const res = await proxyFetch("admin/sentinel", {
     method: "POST",

@@ -2314,6 +2314,23 @@ def get_video_edit_job(job_id: str, user_id: str | None = None) -> dict | None:
 _ACTIVE_SENTINEL_STATUSES = frozenset({"active", "trialing", "past_due"})
 
 
+def list_sentinel_privacy_subscriptions(*, limit: int = 50) -> list[dict[str, Any]]:
+    cap = max(1, min(int(limit), 200))
+    try:
+        client = _client()
+        result = (
+            client.table("sentinel_privacy_subscriptions")
+            .select("*")
+            .order("updated_at", desc=True)
+            .limit(cap)
+            .execute()
+        )
+        return result.data or []
+    except Exception:  # noqa: BLE001
+        logger.exception("[DB] list_sentinel_privacy_subscriptions failed")
+        return []
+
+
 def get_sentinel_privacy_subscription(user_id: str) -> dict[str, Any] | None:
     try:
         client = _client()

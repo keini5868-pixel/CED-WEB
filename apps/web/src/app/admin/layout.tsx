@@ -35,7 +35,9 @@ export default async function AdminLayout({
         MODO ADMINISTRADOR
       </div>
       <AdminNav />
-      {children}
+      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-y-contain pb-[max(5rem,env(safe-area-inset-bottom))]">
+        {children}
+      </div>
     </HudShell>
   );
 }

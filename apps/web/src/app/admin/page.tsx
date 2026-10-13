@@ -12,14 +12,24 @@ export default function AdminPage() {
 
   return (
     <div className="space-y-6 p-4">
-      <button
-        type="button"
-        onClick={() => router.push("/admin/sentinel")}
-        className="flex w-full items-center justify-between gap-3 rounded border-2 border-cyan-400 bg-cyan-400/15 px-4 py-3 text-left font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-[0.16em] text-cyan-100 shadow-[0_0_16px_var(--ced-cyan-glow)] transition hover:bg-cyan-400/25"
-      >
-        <span>CENTINELA</span>
-        <span className="text-[10px] text-cyan-200/80">ABRIR GUARDIA</span>
-      </button>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={() => router.push("/admin/sentinel")}
+          className="flex w-full items-center justify-between gap-3 rounded border-2 border-cyan-400 bg-cyan-400/15 px-4 py-3 text-left font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-[0.16em] text-cyan-100 shadow-[0_0_16px_var(--ced-cyan-glow)] transition hover:bg-cyan-400/25"
+        >
+          <span>CENTINELA OPS</span>
+          <span className="text-[10px] text-cyan-200/80">GUARDIA</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => router.push("/admin/sentinel-privacy")}
+          className="flex w-full items-center justify-between gap-3 rounded border-2 border-violet-400/70 bg-violet-500/15 px-4 py-3 text-left font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-[0.16em] text-violet-100 shadow-[0_0_16px_rgba(120,80,255,0.35)] transition hover:bg-violet-500/25"
+        >
+          <span>SENTINEL PRIVACY</span>
+          <span className="text-[10px] text-violet-200/80">COBROS</span>
+        </button>
+      </div>
       <HudPanel title="USUARIOS REGISTRADOS" className="col-span-full">
         <AdminUsersPanel />
       </HudPanel>

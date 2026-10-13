@@ -264,3 +264,23 @@ def admin_sentinel_toggle(
     from app.services.ced_sentinel import set_enabled
 
     return set_enabled(body.enabled)
+
+
+@router.get("/sentinel-privacy")
+def admin_sentinel_privacy_overview(
+    limit: int = Query(50, ge=1, le=200),
+    _admin_id: str = Depends(require_super_admin),
+) -> dict:
+    """Producto comercial Sentinel Privacy (sellos) — no confundir con Centinela Ops."""
+    from app.domain.sentinel_privacy_plans import public_sentinel_plans_catalog
+    from app.services.ced_shield.gate import ced_shield_enabled
+
+    rows = supabase_db.list_sentinel_privacy_subscriptions(limit=limit)
+    return {
+        "product": "sentinel_privacy",
+        "public_path": "/sentinel-privacy",
+        "shield_enabled": ced_shield_enabled(),
+        "plans": public_sentinel_plans_catalog(),
+        "subscriptions": rows,
+        "subscription_count": len(rows),
+    }
