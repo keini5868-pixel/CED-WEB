@@ -40,8 +40,11 @@ Reglas de tools (schemas = nombre/params; no inventes tools):
 - Cámara: activate solo con «CED enciende la cámara»; visión solo analyze_camera_frame / search_visible_product. NUNCA inventar lo visible.
 - YouTube: play/pause/resume/close. Reproduce ya. NUNCA confirmes play sin éxito.
   SILENCIO DURANTE LA MÚSICA: UNA frase breve y calla. Esta regla NO aplica al resto.
-- Imagen: generate_image (pedido, fondo o escrito). prompt = palabras del usuario. Corregir = misma pieza.
-  NUNCA describas la foto. NUNCA confirmes lista sin ok=true published=true. Una a la vez. PDF: generar_pdf.
+- Imagen: generate_image (pedido, fondo o escrito). prompt = palabras del usuario.
+  Editar/corregir/cambiar letras, colores o fondo de la imagen anterior: OBLIGATORIO generate_image
+  con el cambio exacto — PROHIBIDO decir «listo» o «lo edito» sin invocar la tool.
+  Corregir = misma pieza (no imagen nueva distinta). NUNCA describas la foto.
+  NUNCA confirmes éxito sin ok=true published=true. Una a la vez. PDF: generar_pdf.
 - Avanzado: «activa modo avanzado»→activate; análisis→consult_advanced; salida→deactivate.
 - IG sin imagen: «ya subí la imagen»→meta_prepare_publish otra vez (HUD, no solo cámara).
 """.strip()
@@ -51,7 +54,8 @@ Estado general — hub de tools. Charla sin tools; acciones vía schemas.
 - Escritura: prepare → transition_to_*_confirm_pending → confirm. Si hay borrador y dice «sí», confirm_* ya.
 - Tras confirm OK: transition_to_general_assistant en el mismo turno (anti sesión pegada).
 - Clima→get_environment. Noticias→search_web. FitLine/PM→SIN search_web. OPPS→open_opportunities. Borrar→send_to_trash. YouTube: con música, UNA frase y SILENCIO.
-- Imagen/PDF: generate_image (fondo/escrito/pantalla) / generar_pdf. NUNCA confirmes sin ok=true published=true. Corregir escrito = misma pieza.
+- Imagen/PDF: generate_image / generar_pdf. Ajuste sobre la imagen ya generada = generate_image ya.
+  NUNCA confirmes sin ok=true published=true. Corregir escrito = misma pieza.
 - «activa modo avanzado»→activate + transition_to_advanced_mode_active; análisis→consult_advanced; «modo normal»→deactivate.
 """.strip()
 
@@ -1377,7 +1381,10 @@ _FAILURE_SPOKEN_MARKERS = (
     "permisos",
 )
 
-_VOICE_IMAGE_SUCCESS = "Listo, señor. Ya puede verla en pantalla."
+_VOICE_IMAGE_SUCCESS = (
+    "Ya envié la imagen a su pantalla, señor. "
+    "Tómese un segundo en verla; cuando la tenga, me dice si quiere algún ajuste."
+)
 
 _TRUNCATED_IMAGE_UTTERANCE = re.compile(
     r"(?is)"
@@ -1431,6 +1438,8 @@ def format_native_image_tool_result(
             f"{status}{url_bit}{extra}. Speak exactly: {line} "
             "Do not describe how the image looks. Do not read the URL. "
             "Do not claim a display error. "
+            "Do NOT ask if they like the image or want corrections in this same turn — "
+            "wait until the user speaks again after viewing. "
             "Do not call generate_image again unless the user asks a new change."
         )
     err = (error or "failed").strip()
@@ -2730,7 +2739,9 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
     has_tool_prompt = bool(llm_prompt.strip())
     if not has_tool_prompt and (
         not user_text
-        or not should_generate_image_from_voice_turn(user_text, llm_prompt, history)
+        or not should_generate_image_from_voice_turn(
+            user_text, llm_prompt, history, user_id=user_id or None
+        )
     ):
         return _fail(
             "No pidió generar una imagen, señor. ¿En qué más le ayudo?",
@@ -2776,6 +2787,17 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
         )
 
     quality = str(args.get("quality") or "auto").strip() or "auto"
+    if user_id:
+        from app.services import voice_client_session as vcs
+
+        vcs.push_tool_event(
+            user_id,
+            {
+                "type": "generating_image",
+                "prompt": (heard or llm_prompt or prompt)[:160],
+                "status": "Generando imagen…",
+            },
+        )
     try:
         result = await execute_voice_tool(
             "generate_image",

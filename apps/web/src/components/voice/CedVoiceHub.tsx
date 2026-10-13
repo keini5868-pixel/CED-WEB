@@ -145,25 +145,32 @@ export function CedVoiceHub() {
       clearVoiceGeneratingImage();
       return;
     }
-    setImageGenerating(false);
-    setLiveVoiceImages((prev) => {
-      if (prev.some((item) => item.url === normalized)) {
-        return prev.filter((item) => item.status !== "generating");
-      }
-      const withoutWait = prev.filter((item) => item.status !== "generating");
-      return [
-        ...withoutWait,
-        {
-          streamKey: `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          url: normalized,
-          prompt,
-          status: "ready",
-        },
-      ];
-    });
-    pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
-    setVoiceImagePreview({ url: normalized, prompt, at: Date.now() });
-    setChatSeedImage(null);
+    const commitImage = () => {
+      setImageGenerating(false);
+      setLiveVoiceImages((prev) => {
+        if (prev.some((item) => item.url === normalized)) {
+          return prev.filter((item) => item.status !== "generating");
+        }
+        const withoutWait = prev.filter((item) => item.status !== "generating");
+        return [
+          ...withoutWait,
+          {
+            streamKey: `img-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            url: normalized,
+            prompt,
+            status: "ready",
+          },
+        ];
+      });
+      pushVoiceImage(normalized, { prompt, role: "model", status: "ready" });
+      setVoiceImagePreview({ url: normalized, prompt, at: Date.now() });
+      setChatSeedImage(null);
+    };
+    setImageGenerating(true);
+    const probe = new window.Image();
+    probe.onload = () => commitImage();
+    probe.onerror = () => commitImage();
+    probe.src = normalized;
   }, [pushVoiceImage, clearVoiceGeneratingImage]);
   const onConversationId = useCallback((id: string | null) => {
     chatThreadIdRef.current = id;

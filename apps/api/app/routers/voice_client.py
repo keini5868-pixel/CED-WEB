@@ -50,6 +50,10 @@ def clear_transcript_cache() -> None:
     _latest_image_locks.clear()
 
 
+def invalidate_latest_image_cache(user_id: str) -> None:
+    _latest_image_cache.pop((user_id or "").strip(), None)
+
+
 class CameraStatusBody(BaseModel):
     active: bool
     stream_present: bool = Field(default=True, alias="streamPresent")

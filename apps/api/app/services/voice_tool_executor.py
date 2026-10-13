@@ -821,7 +821,7 @@ async def _execute_voice_tool_body(
             # Retell ya invocó generate_image: si trae prompt, generar aunque el
             # utterance no diga literalmente «genera una imagen».
             if not llm_prompt and not should_generate_image_from_voice_turn(
-                raw_user, llm_prompt, history
+                raw_user, llm_prompt, history, user_id=user_id
             ):
                 logger.info(
                     "[VOICE:IMAGE] reject user=%s reason=image_not_requested raw=%s",
@@ -984,7 +984,16 @@ async def _execute_voice_tool_body(
                         "prompt": hud_prompt,
                     },
                 )
-                spoken = "Listo, señor. Ya puede verla en pantalla."
+                try:
+                    from app.routers.voice_client import invalidate_latest_image_cache
+
+                    invalidate_latest_image_cache(user_id)
+                except Exception:  # noqa: BLE001
+                    pass
+                spoken = (
+                    "Ya envié la imagen a su pantalla, señor. "
+                    "Tómese un segundo en verla; cuando la tenga, me dice si quiere algún ajuste."
+                )
                 return {
                     "ok": True,
                     "spoken": spoken,

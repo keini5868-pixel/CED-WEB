@@ -505,14 +505,45 @@ def looks_like_visual_image_prompt(prompt: str) -> bool:
     )
 
 
+def voice_edit_turn_with_recent_image(
+    user_id: str,
+    user_text: str,
+    history: list[dict[str, str]] | None = None,
+    *,
+    max_age_sec: float = 1200.0,
+) -> bool:
+    """Edición sobre la última imagen generada/subida (voz), aunque el STT no diga «genera»."""
+    from app.services.publish_image_context import get_last_uploaded_image_for_session
+
+    t = (user_text or "").strip()
+    if not t or not (user_id or "").strip():
+        return False
+    if not (
+        wants_image_reference_edit(t)
+        or parse_followup_image_prompt(t, history)
+        or (
+            history_has_active_image_thread(history)
+            and (is_simple_photo_edit_request(t) or user_requests_image_edit(t))
+        )
+    ):
+        return False
+    return bool(
+        get_last_uploaded_image_for_session(user_id, None, max_age_sec=max_age_sec)
+    )
+
+
 def should_generate_image_from_voice_turn(
     user_text: str,
     llm_prompt: str = "",
     history: list[dict[str, str]] | None = None,
+    *,
+    user_id: str | None = None,
 ) -> bool:
     """Voz: pedido explícito, o confirmación de una frase ya propuesta para la imagen."""
     t = (user_text or "").strip()
     if should_take_direct_image_path(t, history):
+        return True
+    if user_id and voice_edit_turn_with_recent_image(user_id, t, history):
         return True
     if is_image_choice_confirmation(t) and assistant_offered_image_act(history) and (
         looks_like_visual_image_prompt(llm_prompt)
