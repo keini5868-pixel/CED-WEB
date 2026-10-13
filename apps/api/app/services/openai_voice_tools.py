@@ -792,3 +792,29 @@ def build_openai_chat_tools() -> list[dict[str, Any]]:
         )
     return out
 
+
+def build_openai_chat_tools_for_turn(user_text: str) -> list[dict[str, Any]]:
+    """Subset de tools por frase — menos tokens y latencia (igual que Gemini voz)."""
+    from app.services.voice_device_gate import DEVICE_MODEL_TOOLS, device_tools_for_turn
+
+    allowed = device_tools_for_turn(user_text)
+    out: list[dict[str, Any]] = []
+    for tool in OPENAI_REALTIME_TOOLS:
+        name = str(tool.get("name") or "").strip()
+        if not name:
+            continue
+        if name in DEVICE_MODEL_TOOLS and name not in allowed:
+            continue
+        out.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": str(tool.get("description") or ""),
+                    "parameters": tool.get("parameters")
+                    or {"type": "object", "properties": {}},
+                },
+            }
+        )
+    return out
+

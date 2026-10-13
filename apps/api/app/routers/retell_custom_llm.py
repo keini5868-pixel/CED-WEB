@@ -277,7 +277,7 @@ def _debounce_wait_s(user_text: str) -> float:
     """Espera extra solo si el STT cortó a media idea. Retell ya espera ~1 s."""
     stripped = (user_text or "").strip()
     if looks_incomplete_user_utterance(stripped):
-        return 1.10
+        return 0.65
     words = len(stripped.split())
     closed = bool(re.search(r"[.!?…]$", stripped))
     if closed:
@@ -307,6 +307,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
     logger.info("[RETELL-GEMINI] WebSocket conectado call_id=%s", call_id)
 
     llm = build_voice_llm()
+    logger.info("[RETELL-VOICE] brain=%s call=%s", type(llm).__name__, call_id)
     if is_gemini_standalone_voice_test():
         logger.warning(
             "[VOICE-TEST-GEMINI] *** STANDALONE MODE — Gemini directo, sin orquestador/tools *** call=%s",
@@ -1572,7 +1573,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
 
             try:
                 try:
-                    await asyncio.wait_for(post_greeting_ready.wait(), timeout=8.0)
+                    await asyncio.wait_for(post_greeting_ready.wait(), timeout=2.5)
                 except asyncio.TimeoutError:
                     logger.warning(
                         "[RETELL-GEMINI] post-greeting wait timeout rid=%s call=%s",
@@ -2347,7 +2348,6 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
                         draft_events: list[Any] = []
                         voice_streamed = False
                         streamed_text = ""
-                        await fire_latency_filler("general")
                         async for event in llm.draft_response(request):
                             stale, _ = _is_superseded_turn_rid(
                                 scheduled_rid,

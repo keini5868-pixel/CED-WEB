@@ -5,7 +5,7 @@ from __future__ import annotations
 import random
 from typing import Final
 
-FILLER_MIN_HOLD_S: Final[float] = 1.6
+FILLER_MIN_HOLD_S: Final[float] = 0.45
 
 _GENERAL_FILLERS: tuple[str, ...] = (
     "Déjeme pensar bien eso, señor.",

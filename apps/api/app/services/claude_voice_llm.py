@@ -32,6 +32,28 @@ def _api_key() -> str:
     return key
 
 
+def _sanitize_json_schema(schema: Any) -> dict[str, Any]:
+    if not isinstance(schema, dict):
+        return {"type": "object", "properties": {}}
+    cleaned: dict[str, Any] = {}
+    for key, val in schema.items():
+        if key in ("$schema", "additionalProperties", "default", "examples"):
+            continue
+        if key == "properties" and isinstance(val, dict):
+            cleaned[key] = {
+                str(k): _sanitize_json_schema(v) for k, v in val.items()
+            }
+        elif key == "items" and isinstance(val, dict):
+            cleaned[key] = _sanitize_json_schema(val)
+        else:
+            cleaned[key] = val
+    if "type" not in cleaned:
+        cleaned["type"] = "object"
+    if cleaned.get("type") == "object" and "properties" not in cleaned:
+        cleaned["properties"] = {}
+    return cleaned
+
+
 def _openai_tools_to_anthropic(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for tool in tools:
@@ -39,13 +61,12 @@ def _openai_tools_to_anthropic(tools: list[dict[str, Any]]) -> list[dict[str, An
         name = str((fn or {}).get("name") or tool.get("name") or "").strip()
         if not name:
             continue
+        raw_schema = (fn or {}).get("parameters") or tool.get("input_schema") or {}
         out.append(
             {
                 "name": name,
                 "description": str((fn or {}).get("description") or tool.get("description") or ""),
-                "input_schema": (fn or {}).get("parameters")
-                or tool.get("input_schema")
-                or {"type": "object", "properties": {}},
+                "input_schema": _sanitize_json_schema(raw_schema),
             }
         )
     return out
@@ -202,6 +223,17 @@ class ClaudeVoiceLlm(OpenAIVoiceLlm):
                 res.status_code,
                 res.text[:400],
             )
+            if tools and res.status_code in (400, 422):
+                logger.info("[RETELL-CLAUDE] retry sin tools path=%s", path)
+                return await self._chat_completion(
+                    messages=messages,
+                    system=system,
+                    path=f"{path}_no_tools",
+                    timeout_sec=timeout_sec,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    tools=None,
+                )
             res.raise_for_status()
         data = res.json()
         if turn:

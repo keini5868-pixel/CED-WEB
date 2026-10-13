@@ -44,7 +44,7 @@ def test_retell_turn_taking_lifts_stale_env():
 
 
 def test_debounce_wait_lets_user_finish():
-    assert _debounce_wait_s("necesito que") == 1.10
+    assert _debounce_wait_s("necesito que") == 0.65
     assert _debounce_wait_s("hola") == 0.30
     assert _debounce_wait_s("cómo estás hoy") == 0.30
     assert _debounce_wait_s("¿Cómo estás?") == 0.20

@@ -14,7 +14,10 @@ from app.config import get_settings
 from app.services.cognitive_intents import is_web_research_intent
 from app.services.http_clients import get_openai_async_client
 from app.services.openai_key_utils import sanitize_openai_api_key
-from app.services.openai_voice_tools import build_openai_chat_tools
+from app.services.openai_voice_tools import (
+    build_openai_chat_tools,
+    build_openai_chat_tools_for_turn,
+)
 from app.services.retell_custom_llm import merged_user_query, _needs_internet_lookup
 from app.services.retell_llm_types import ResponseRequiredRequest, ResponseResponse, Utterance
 from app.services.voice_llm_common import (
@@ -48,7 +51,7 @@ from app.services.voice_tool_executor import execute_voice_tool
 logger = logging.getLogger(__name__)
 
 OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
-CONVERSATIONAL_TIMEOUT_SEC = 18.0
+CONVERSATIONAL_TIMEOUT_SEC = 14.0
 GREETING_TIMEOUT_SEC = 12.0
 TOOL_TIMEOUT_SEC = 25.0
 IMAGE_TOOL_TIMEOUT_SEC = 60.0
@@ -100,6 +103,9 @@ class OpenAIVoiceLlm:
         self._web_search_fallback: bool = False
         self._latency_call_id: str = ""
         self._latency_response_id: int = 0
+
+    def _tools_for_turn(self, user_text: str) -> list[dict[str, Any]]:
+        return build_openai_chat_tools_for_turn(user_text)
 
     def set_latency_context(self, call_id: str, response_id: int) -> None:
         self._latency_call_id = call_id
@@ -697,7 +703,7 @@ class OpenAIVoiceLlm:
                     timeout_sec=timeout_sec,
                     max_tokens=max_tokens,
                     temperature=0.35,
-                    tools=self.tools,
+                    tools=self._tools_for_turn(user_text),
                 )
                 message = self._message_from_response(data)
                 tool_calls = message.get("tool_calls") or []
