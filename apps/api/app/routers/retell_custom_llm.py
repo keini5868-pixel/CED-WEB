@@ -1402,6 +1402,7 @@ async def retell_llm_websocket(websocket: WebSocket, call_id: str) -> None:
             nonlocal active_response_id, last_answered_user_key, turn_draft_in_progress, turn_draft_user_key
             nonlocal last_standalone_module_answered_key
             nonlocal last_delivered_voice_content, last_delivered_at
+            nonlocal pending_web
             scheduled_key = user_key
             scheduled_rid = response_id
             gpt_calls = 0
