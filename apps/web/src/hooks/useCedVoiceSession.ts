@@ -1373,8 +1373,8 @@ export function useCedVoiceSession(
       setStatusLabel(
         retellActive()
           ? isRetellNativePilot()
-            ? "Piloto nativo — conectando…"
-            : "Conectando con CED…"
+            ? "Conectando con CED…"
+            : "Conectando (Custom LLM)…"
           : ORB_STATE_LABELS.processing,
       );
 
