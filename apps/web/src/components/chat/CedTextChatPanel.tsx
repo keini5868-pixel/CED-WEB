@@ -17,6 +17,7 @@ import {
 import { DictationWaveform } from "@/components/chat/DictationWaveform";
 import { ChatCopyButton } from "@/components/chat/ChatCopyButton";
 import { MicButton } from "@/components/chat/MicButton";
+import { VoiceImageGeneratingBlock } from "@/components/voice/VoiceImageGeneratingBlock";
 import { fetchGenerateImageWithReference } from "@/lib/api/openai";
 import {
   endChatConversation,
@@ -65,6 +66,8 @@ export type LiveVoiceImage = {
   url?: string;
   prompt?: string;
   label?: string;
+  title?: string;
+  detail?: string;
   status?: "generating" | "ready";
 };
 
@@ -1370,7 +1373,12 @@ export function CedTextChatPanel({
     .map((img) => ({
       id: `${VOICE_LIVE_PREFIX}${img.streamKey}`,
       role: "model",
-      content: img.status === "generating" ? img.label || "Generando imagen…" : "",
+      content:
+        img.status === "generating"
+          ? img.title || img.label || "Generando imagen…"
+          : "",
+      image_generating_detail:
+        img.status === "generating" ? img.detail || undefined : undefined,
       created_at: new Date().toISOString(),
       image:
         img.status === "generating" || !img.url
@@ -1495,11 +1503,12 @@ export function CedTextChatPanel({
                     <ChatCopyButton text={displayContent} />
                   </div>
                   {displayContent === "Generando imagen…" ||
-                  displayContent.startsWith("Corrigiendo datos") ? (
-                    <div className="flex items-center gap-3 py-2">
-                      <span className="h-6 w-6 shrink-0 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-300" />
-                      <p className="animate-pulse text-sm text-cyan-200">{displayContent}</p>
-                    </div>
+                  displayContent.startsWith("Corrigiendo datos") ||
+                  msg.image_generating_detail ? (
+                    <VoiceImageGeneratingBlock
+                      title={displayContent || "Generando imagen…"}
+                      detail={msg.image_generating_detail || undefined}
+                    />
                   ) : displayContent ? (
                     <p className={`whitespace-pre-wrap break-words ${msg.partial ? "opacity-90" : ""}`}>
                       {displayContent}

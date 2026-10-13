@@ -61,6 +61,8 @@ export type ChatMessage = {
   recharge_needed?: ChatRechargeNeeded | null;
   /** Turno de voz aún en curso (se reescribe en vivo). */
   partial?: boolean;
+  /** Subtítulo Centinela mientras genera imagen (voz). */
+  image_generating_detail?: string | null;
 };
 
 export type ChatStatus = {

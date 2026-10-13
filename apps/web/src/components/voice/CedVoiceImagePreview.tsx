@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
 
 import { ImageLightbox } from "@/components/ui/ImageLightbox";
+import { VoiceImageGeneratingBlock } from "@/components/voice/VoiceImageGeneratingBlock";
 import { normalizeCedMediaUrl } from "@/lib/api/media-url";
 
 type Props = {
@@ -15,6 +16,7 @@ type Props = {
   /** Superpone la imagen al lienzo central. */
   overlay?: boolean;
   generating?: boolean;
+  generatingDetail?: string;
 };
 
 /** Vista previa de imagen — en overlay cubre el núcleo; si no, queda bajo el orbe. */
@@ -25,6 +27,7 @@ export function CedVoiceImagePreview({
   onDismiss,
   overlay = false,
   generating = false,
+  generatingDetail,
 }: Props) {
   const src = url ? normalizeCedMediaUrl(url) : null;
   const frameKey = src ? `${src}#${shownAt ?? 0}` : generating ? "generating" : "empty";
@@ -36,14 +39,15 @@ export function CedVoiceImagePreview({
       <div
         className={
           overlay
-            ? "absolute inset-0 z-[4] flex flex-col items-center justify-center overflow-hidden rounded-xl border border-cyan-400/50 bg-black/85"
-            : "mt-4 flex w-full max-w-sm flex-col items-center justify-center rounded-xl border border-cyan-400/50 bg-black/70 px-4 py-8"
+            ? "absolute inset-0 z-[4] flex flex-col items-center justify-center overflow-hidden rounded-xl border border-cyan-400/50 bg-black/85 px-3"
+            : "mt-4 flex w-full max-w-sm flex-col items-center justify-center rounded-xl border border-cyan-400/50 bg-black/70 px-4 py-6"
         }
       >
-        <span className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-300" />
-        <p className="mt-2 text-center font-[family-name:var(--font-orbitron)] text-[8px] tracking-widest text-cyan-200 lg:text-[10px]">
-          GENERANDO IMAGEN
-        </p>
+        <VoiceImageGeneratingBlock
+          compact={overlay}
+          title="Generando imagen…"
+          detail={generatingDetail}
+        />
       </div>
     );
   }
@@ -85,11 +89,12 @@ export function CedVoiceImagePreview({
               }}
             />
             {generating ? (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/45">
-                <span className="h-8 w-8 animate-spin rounded-full border-2 border-cyan-300/30 border-t-cyan-300" />
-                <p className="mt-2 font-[family-name:var(--font-orbitron)] text-[8px] tracking-widest text-cyan-200 lg:text-[10px]">
-                  GENERANDO IMAGEN
-                </p>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/55 px-3">
+                <VoiceImageGeneratingBlock
+                  compact
+                  title="Generando imagen…"
+                  detail={generatingDetail}
+                />
               </div>
             ) : null}
             </div>

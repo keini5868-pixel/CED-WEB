@@ -110,32 +110,46 @@ export function CedVoiceHub() {
   const [liveVoiceTurns, setLiveVoiceTurns] = useState<LiveVoiceTurn[]>([]);
   const [liveVoiceImages, setLiveVoiceImages] = useState<LiveVoiceImage[]>([]);
   const [imageGenerating, setImageGenerating] = useState(false);
+  const [imageGeneratingDetail, setImageGeneratingDetail] = useState<string | undefined>();
 
-  const showVoiceGeneratingImage = useCallback((prompt?: string, status?: string) => {
-    setImageGenerating(true);
-    setLiveVoiceImages((prev) => {
-      if (prev.some((item) => item.status === "generating")) {
-        if (!status && !prompt) return prev;
-        return prev.map((item) =>
-          item.status === "generating"
-            ? { ...item, prompt: prompt || item.prompt, label: status || item.label }
-            : item,
-        );
-      }
-      return [
-        ...prev,
-        {
-          streamKey: `img-wait-${Date.now()}`,
-          prompt,
-          status: "generating",
-          label: status,
-        },
-      ];
-    });
-  }, []);
+  const showVoiceGeneratingImage = useCallback(
+    (prompt?: string, title?: string, detail?: string) => {
+      setImageGenerating(true);
+      setImageGeneratingDetail(detail);
+      setLiveVoiceImages((prev) => {
+        if (prev.some((item) => item.status === "generating")) {
+          if (!title && !detail && !prompt) return prev;
+          return prev.map((item) =>
+            item.status === "generating"
+              ? {
+                  ...item,
+                  prompt: prompt || item.prompt,
+                  title: title || item.title || item.label,
+                  label: title || item.label,
+                  detail: detail ?? item.detail,
+                }
+              : item,
+          );
+        }
+        return [
+          ...prev,
+          {
+            streamKey: `img-wait-${Date.now()}`,
+            prompt,
+            status: "generating",
+            title: title || "Generando imagen…",
+            label: title,
+            detail,
+          },
+        ];
+      });
+    },
+    [],
+  );
 
   const clearVoiceGeneratingImage = useCallback(() => {
     setImageGenerating(false);
+    setImageGeneratingDetail(undefined);
     setLiveVoiceImages((prev) => prev.filter((item) => item.status !== "generating"));
   }, []);
 
@@ -394,8 +408,8 @@ export function CedVoiceHub() {
       upsertLiveVoiceTurn(text, role, options);
     },
     onClearAgentPartial: clearAgentPartial,
-    onGeneratingImage: (prompt, status) => {
-      showVoiceGeneratingImage(prompt, status);
+    onGeneratingImage: (prompt, title, detail) => {
+      showVoiceGeneratingImage(prompt, title, detail);
     },
     onImageGenerationFailed: () => {
       clearVoiceGeneratingImage();
@@ -682,6 +696,7 @@ export function CedVoiceHub() {
           <CedVoiceImagePreview
             overlay
             generating={imageGenerating}
+            generatingDetail={imageGeneratingDetail}
             url={imageLive ? voiceImagePreview?.url ?? null : null}
             prompt={voiceImagePreview?.prompt}
             shownAt={voiceImagePreview?.at}

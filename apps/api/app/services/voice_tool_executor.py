@@ -922,12 +922,12 @@ async def _execute_voice_tool_body(
 
             from app.services.ced_sentinel import PRECISION_HINT, correcting
 
-            _push_image_progress(
-                {
-                    "type": "generating_image",
-                    "prompt": pipeline_text[:160],
-                    **({"status": PRECISION_HINT} if correcting_brief else {}),
-                }
+            from app.services.ced_sentinel import push_voice_image_hud
+
+            push_voice_image_hud(
+                user_id,
+                phase="correcting" if correcting_brief else "generating",
+                prompt=pipeline_text,
             )
 
             async def _generate_voice_image(text_for_image: str) -> dict[str, Any]:

@@ -2788,15 +2788,12 @@ async def execute_generate_image_tool(*, user_id: str, payload: dict[str, Any], 
 
     quality = str(args.get("quality") or "auto").strip() or "auto"
     if user_id:
-        from app.services import voice_client_session as vcs
+        from app.services.ced_sentinel import push_voice_image_hud
 
-        vcs.push_tool_event(
+        push_voice_image_hud(
             user_id,
-            {
-                "type": "generating_image",
-                "prompt": (heard or llm_prompt or prompt)[:160],
-                "status": "Generando imagen…",
-            },
+            phase="generating",
+            prompt=heard or llm_prompt or prompt,
         )
     try:
         result = await execute_voice_tool(

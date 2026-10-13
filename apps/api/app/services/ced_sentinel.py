@@ -31,6 +31,13 @@ WARN_DEDUP_SEC = 120
 _WARN_LOGGER_MARKERS = ("retell", "voice", "native", "voice_tool", "ced.retell")
 CORRECTING_HINT = "Corrigiendo datos para darlo con más precisión…"
 PRECISION_HINT = CORRECTING_HINT
+VOICE_IMAGE_HUD_TITLE = "Generando imagen…"
+VOICE_IMAGE_HUD_CORRECTING_DETAIL = (
+    "Centinela ajusta colores, texto y composición para que coincida con su pedido."
+)
+VOICE_IMAGE_HUD_GENERATING_DETAIL = (
+    "Preparando la imagen con precisión según lo que indicó."
+)
 _EN_BRIEF = re.compile(
     r"(?i)\b(photorealistic|subject lock|keep these|no text|critical:|flat graphic)\b"
 )
@@ -148,7 +155,7 @@ def begin_correction(
         first = depth == 1
         enabled = bool(_state["enabled"])
     if first and area == "imagen":
-        _ping_waiting_screen(uid, shown)
+        push_voice_image_hud(uid, phase="correcting")
     if first and enabled:
         _append_event(
             kind="correction",
@@ -263,11 +270,19 @@ def build_image_sentinel_brief(produced: str, requested: str) -> str:
     """Re-brief anclado al pedido + reglas tipográficas y de color."""
     from app.services.copy_quality import literal_typography_locks
 
+    req = (requested or "").strip()
     base = anchored_brief(produced, requested)
+    focus = (
+        f"PRIORIDAD ABSOLUTA — pedido del usuario (no desviarse): {req[:900]}"
+        if len(req) >= 12
+        else ""
+    )
     locks = literal_typography_locks(requested)
+    chunks = [focus] if focus else []
+    chunks.append(base)
     if locks and locks not in base:
-        return f"{base}\n\n{locks}"[:3800]
-    return base
+        chunks.append(locks)
+    return "\n\n".join(chunks)[:3800]
 
 
 def anchored_brief(produced: str, requested: str) -> str:
@@ -288,22 +303,44 @@ def anchored_brief(produced: str, requested: str) -> str:
     return f"Pedido exacto del usuario, no lo cambies: {req}\n\n{used}"[:3800]
 
 
-def _ping_waiting_screen(user_id: str, hint: str) -> None:
-    """Si hay una llamada de voz, el hilo muestra el mismo estado que el chat."""
+def push_voice_image_hud(
+    user_id: str,
+    *,
+    phase: str = "generating",
+    prompt: str = "",
+) -> None:
+    """HUD voz/chat embebido: título grande + detalle Centinela en pequeño."""
+    uid = (user_id or "").strip()
+    if not uid:
+        return
     try:
         from app.services import voice_client_session as vcs
 
-        if user_id not in vcs._sessions:
-            return
+        correcting = phase == "correcting"
+        detail = (
+            VOICE_IMAGE_HUD_CORRECTING_DETAIL
+            if correcting
+            else VOICE_IMAGE_HUD_GENERATING_DETAIL
+        )
         vcs.push_tool_event(
-            user_id,
+            uid,
             {
                 "type": "generating_image",
-                "status": hint or CORRECTING_HINT,
+                "title": VOICE_IMAGE_HUD_TITLE,
+                "status": VOICE_IMAGE_HUD_TITLE,
+                "detail": detail,
+                "phase": "correcting" if correcting else "generating",
+                "prompt": (prompt or "")[:160],
             },
         )
     except Exception:  # noqa: BLE001
         return
+
+
+def _ping_waiting_screen(user_id: str, hint: str) -> None:
+    """Si hay una llamada de voz, el hilo muestra el mismo estado que el chat."""
+    _ = hint
+    push_voice_image_hud(user_id, phase="correcting")
 
 
 def note_error(area: str, title: str, detail: str = "", *, quiet: bool = False) -> None:

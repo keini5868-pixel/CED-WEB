@@ -1244,22 +1244,21 @@ def run_chat_image_generation(
         else:
             _dispatch_image()
 
-    def _voice_progress(status: str) -> None:
+    def _voice_progress(*, correcting: bool) -> None:
         if not voice_channel:
             return
-        try:
-            from app.services import voice_client_session as vcs
+        from app.services.ced_sentinel import push_voice_image_hud
 
-            vcs.push_tool_event(
-                user_id,
-                {
-                    "type": "generating_image",
-                    "prompt": user_text[:160],
-                    "status": status,
-                },
-            )
-        except Exception:  # noqa: BLE001
-            return
+        push_voice_image_hud(
+            user_id,
+            phase="correcting" if correcting else "generating",
+            prompt=user_text,
+        )
+
+    if voice_channel:
+        _voice_progress(
+            correcting=image_brief_needs_correction(model_prompt, user_text),
+        )
 
     _run_image_dispatch(correcting_pass=image_brief_needs_correction(model_prompt, user_text))
 
@@ -1291,7 +1290,7 @@ def run_chat_image_generation(
                 needs_brief_fix,
                 needs_vision_fix,
             )
-            _voice_progress("Centinela ajusta la imagen al pedido…")
+            _voice_progress(correcting=True)
             model_prompt = build_image_sentinel_brief(model_prompt, user_text)
             if needs_vision_fix:
                 model_prompt = f"{model_prompt}\n\n{vision_retry_brief_suffix(vision_detail)}"[
