@@ -1,4 +1,5 @@
 import { cedApiPath } from "@/lib/api/ced-proxy";
+import { proxyFetchAuthed } from "@/lib/api/ced-proxy";
 import { parseApiJson } from "@/lib/api/http";
 
 const proxyFetch = (path: string, init?: RequestInit) =>
@@ -6,6 +7,9 @@ const proxyFetch = (path: string, init?: RequestInit) =>
 
 function billingErrorMessage(status: number, detail?: string): string {
   if (status === 401) return "Debes iniciar sesión para pagar.";
+  if (status === 405) {
+    return "Abre ced-castillo.com/sentinel-privacy y pulsa SUSCRIBIR (no abras la URL de la API en el navegador).";
+  }
   if (status === 400 && detail) return detail;
   if (status === 503) {
     return detail || "Pagos no disponibles en este momento.";
@@ -14,7 +18,7 @@ function billingErrorMessage(status: number, detail?: string): string {
 }
 
 export async function startSentinelPrivacyCheckout(planId: string): Promise<string | null> {
-  const res = await proxyFetch("billing/checkout/sentinel-privacy", {
+  const res = await proxyFetchAuthed("billing/checkout/sentinel-privacy", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ plan_id: planId }),

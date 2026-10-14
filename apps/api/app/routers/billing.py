@@ -189,6 +189,17 @@ def ensure_cierre_product(
     }
 
 
+@router.get("/checkout/sentinel-privacy")
+def checkout_sentinel_privacy_get() -> None:
+    raise HTTPException(
+        status_code=405,
+        detail=(
+            "Este enlace es solo para la app (POST). "
+            "Ve a https://ced-castillo.com/sentinel-privacy e inicia sesión → SUSCRIBIR SENTINEL."
+        ),
+    )
+
+
 @router.post("/checkout/sentinel-privacy")
 def checkout_sentinel_privacy(
     body: SentinelPrivacyCheckoutBody,
