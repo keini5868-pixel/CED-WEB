@@ -15,13 +15,13 @@ class SentinelPlanId(StrEnum):
 SENTINEL_PLAN_PRICES_USD: dict[str, int] = {
     SentinelPlanId.SOLO.value: 12,
     SentinelPlanId.PRO.value: 29,
-    SentinelPlanId.BUSINESS.value: 149,
+    SentinelPlanId.BUSINESS.value: 200,
 }
 
 SENTINEL_SEALS_PER_MONTH: dict[str, int] = {
     SentinelPlanId.SOLO.value: 10,
     SentinelPlanId.PRO.value: 40,
-    SentinelPlanId.BUSINESS.value: 150,
+    SentinelPlanId.BUSINESS.value: 200,
 }
 
 SENTINEL_PLAN_LABELS: dict[str, str] = {

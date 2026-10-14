@@ -61,6 +61,12 @@ const PLAN_STYLES: Record<
     badge: "LIMITED · 50 CUPOS",
     badgeClass: "bg-amber-500/20 text-amber-300",
   },
+  sentinel_business: {
+    border: "border-violet-400/55",
+    glow: "hover:border-violet-300/80 hover:shadow-[0_0_28px_rgba(139,92,246,0.22)]",
+    badge: SENTINEL_PRIVACY_PRODUCT.homeBadge,
+    badgeClass: "bg-violet-500/30 text-violet-100 shadow-[0_0_12px_rgba(139,92,246,0.4)]",
+  },
 };
 
 export default function HomePage() {
@@ -143,7 +149,7 @@ export default function HomePage() {
         <h2 className="mb-6 text-center font-[family-name:var(--font-orbitron)] text-sm tracking-[0.2em] text-cyan-400">
           Planes
         </h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
           {PUBLIC_PLANS.filter((p) => p.id !== "free_basic").map((plan) => {
             const style = PLAN_STYLES[plan.id] ?? PLAN_STYLES.starter!;
             const isFounding = plan.id === "founding";
@@ -198,41 +204,49 @@ export default function HomePage() {
               </div>
             );
           })}
+          {(() => {
+            const sp = SENTINEL_PRIVACY_PRODUCT;
+            const style = PLAN_STYLES.sentinel_business!;
+            return (
+              <div
+                className={`relative flex flex-col rounded-lg border bg-gradient-to-b from-violet-950/40 to-black/50 p-5 transition duration-300 ${style.border} ${style.glow} ring-1 ring-violet-400/25`}
+              >
+                {style.badge && (
+                  <span
+                    className={`absolute -top-2.5 left-4 rounded px-2 py-0.5 font-[family-name:var(--font-orbitron)] text-[9px] font-bold tracking-wider ${style.badgeClass}`}
+                  >
+                    {style.badge}
+                  </span>
+                )}
+                <p className="font-[family-name:var(--font-orbitron)] text-[10px] tracking-[0.2em] text-violet-400">
+                  🛡️ PRIVACIDAD ZK
+                </p>
+                <h3 className="mt-1 font-[family-name:var(--font-orbitron)] text-lg text-violet-50">
+                  {sp.label}
+                </h3>
+                <p className="mt-1 text-[10px] leading-snug text-violet-200/75">{sp.homeSubtitle}</p>
+                <p className="mt-2 font-[family-name:var(--font-orbitron)] text-3xl text-violet-200">
+                  ${sp.priceUsd}
+                  <span className="text-sm text-violet-500">/mes</span>
+                </p>
+                <p className="mt-1 text-[10px] text-cyan-400/90">
+                  {sp.sealsPerMonth} sellos · Stripe aparte de CED
+                </p>
+                <ul className="mt-4 flex-1 space-y-1.5 text-xs text-cyan-100/80">
+                  {sp.highlights.map((h) => (
+                    <li key={h}>· {h}</li>
+                  ))}
+                </ul>
+                <Link
+                  href={`/sentinel-privacy?plan=${sp.id}`}
+                  className="mt-5 block rounded border border-violet-400/80 py-2.5 text-center font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-violet-100 transition hover:bg-violet-500/15"
+                >
+                  SUSCRIBIR SENTINEL
+                </Link>
+              </div>
+            );
+          })()}
         </div>
-
-        <section
-          aria-label={SENTINEL_PRIVACY_PRODUCT.label}
-          className="mt-10 rounded-xl border border-violet-500/40 bg-gradient-to-br from-violet-950/50 to-black/60 p-6 sm:p-8"
-        >
-          <p className="font-[family-name:var(--font-orbitron)] text-[10px] tracking-[0.28em] text-violet-300">
-            PRODUCTO APARTE · NO ES PLAN CED
-          </p>
-          <h3 className="mt-2 font-[family-name:var(--font-orbitron)] text-xl text-white">
-            {SENTINEL_PRIVACY_PRODUCT.label}
-          </h3>
-          <p className="mt-1 text-xs text-violet-200/80">{SENTINEL_PRIVACY_PRODUCT.tagline}</p>
-          <p className="mt-3 font-[family-name:var(--font-orbitron)] text-3xl text-violet-200">
-            ${SENTINEL_PRIVACY_PRODUCT.priceUsd}
-            <span className="text-sm text-violet-500">/mes</span>
-            <span className="ml-2 text-xs font-normal text-cyan-500">
-              · {SENTINEL_PRIVACY_PRODUCT.sealsPerMonth} sellos/mes
-            </span>
-          </p>
-          <ul className="mt-4 space-y-1.5 text-xs text-cyan-100/80">
-            {SENTINEL_PRIVACY_PRODUCT.highlights.map((h) => (
-              <li key={h}>· {h}</li>
-            ))}
-          </ul>
-          <p className="mt-3 text-[11px] text-amber-200/90">
-            {SENTINEL_PRIVACY_PRODUCT.notIncluded.join(" · ")}
-          </p>
-          <Link
-            href="/sentinel-privacy"
-            className="mt-5 inline-block rounded border border-violet-400 px-6 py-2.5 font-[family-name:var(--font-orbitron)] text-[10px] font-bold tracking-wider text-violet-100 hover:bg-violet-500/15"
-          >
-            VER ESPECIFICACIONES Y SUSCRIBIR
-          </Link>
-        </section>
 
         <p className="mt-8 text-center text-[11px] text-cyan-700">
           Al llegar al límite puedes recargar desde $10 — crédito proporcional, no expira.

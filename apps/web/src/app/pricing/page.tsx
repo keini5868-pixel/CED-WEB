@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 
-import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS } from "@ced/types";
+import { FOUNDING_MEMBER_MAX_SLOTS, PUBLIC_PLANS, SENTINEL_PRIVACY_PRODUCT } from "@ced/types";
 
-import { startSubscriptionCheckout } from "@/lib/api/billing";
+import { startSentinelPrivacyCheckout, startSubscriptionCheckout } from "@/lib/api/billing";
 import { PublicHeaderLink, PublicSiteHeader } from "@/components/layout/PublicSiteHeader";
 import { createClient } from "@/lib/supabase/client";
 import { isSupabaseConfigured } from "@/lib/env";
@@ -65,12 +65,43 @@ function PricingContent() {
     [router],
   );
 
+  const subscribeSentinel = useCallback(async () => {
+    const planId = SENTINEL_PRIVACY_PRODUCT.id;
+    setBusy(planId);
+    setError(null);
+    try {
+      if (!isSupabaseConfigured()) {
+        setError("Supabase no configurado.");
+        return;
+      }
+      const supabase = createClient();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        router.push(`/login?next=${encodeURIComponent(`/sentinel-privacy?plan=${planId}`)}`);
+        return;
+      }
+      const url = await startSentinelPrivacyCheckout(planId);
+      if (url) window.location.href = url;
+      else setError("Stripe no devolvió la página de pago.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error al iniciar pago.");
+    } finally {
+      setBusy(null);
+    }
+  }, [router]);
+
   useEffect(() => {
     if (!pendingPlan || loggedIn !== true || busy) return;
+    if (pendingPlan === SENTINEL_PRIVACY_PRODUCT.id) {
+      void subscribeSentinel();
+      return;
+    }
     const valid = PUBLIC_PLANS.some((p) => p.id === pendingPlan && p.id !== "free_basic");
     if (!valid) return;
     void subscribe(pendingPlan);
-  }, [pendingPlan, loggedIn, busy, subscribe]);
+  }, [pendingPlan, loggedIn, busy, subscribe, subscribeSentinel]);
 
   return (
     <main className="ced-page-glow relative min-h-screen overflow-x-hidden text-[var(--ced-text)]">
@@ -190,6 +221,34 @@ function PricingContent() {
               )}
             </div>
           ))}
+          <div className="relative rounded border border-violet-400/55 bg-gradient-to-br from-violet-950/40 to-black/50 p-6 md:col-span-2">
+            <span className="absolute -top-2.5 left-4 rounded bg-violet-500/30 px-2 py-0.5 font-[family-name:var(--font-orbitron)] text-[9px] font-bold tracking-wider text-violet-100">
+              {SENTINEL_PRIVACY_PRODUCT.homeBadge}
+            </span>
+            <h3 className="font-[family-name:var(--font-orbitron)] text-lg text-violet-50">
+              {SENTINEL_PRIVACY_PRODUCT.label}
+            </h3>
+            <p className="mt-1 text-xs text-violet-200/80">{SENTINEL_PRIVACY_PRODUCT.homeSubtitle}</p>
+            <p className="mt-2 font-[family-name:var(--font-orbitron)] text-3xl text-violet-200">
+              ${SENTINEL_PRIVACY_PRODUCT.priceUsd}
+              <span className="text-sm text-violet-500">/mes</span>
+            </p>
+            <ul className="mt-4 space-y-1 text-sm text-cyan-100/75">
+              {SENTINEL_PRIVACY_PRODUCT.highlights.map((h) => (
+                <li key={h}>· {h}</li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              disabled={busy !== null}
+              onClick={() => void subscribeSentinel()}
+              className="mt-6 w-full rounded border border-violet-400 py-3 font-[family-name:var(--font-orbitron)] text-xs font-bold tracking-wider text-violet-100 hover:bg-violet-500/15 disabled:opacity-50"
+            >
+              {busy === SENTINEL_PRIVACY_PRODUCT.id
+                ? "REDIRIGIENDO A STRIPE…"
+                : "SUSCRIBIR SENTINEL PRIVACY"}
+            </button>
+          </div>
         </div>
 
         {error && <p className="mt-6 text-center text-sm text-red-400">{error}</p>}

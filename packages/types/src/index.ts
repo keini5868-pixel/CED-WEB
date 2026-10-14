@@ -224,33 +224,34 @@ export type SentinelPrivacyPlanId =
 export const SENTINEL_PRIVACY_PLAN_PRICES_USD: Record<SentinelPrivacyPlanId, number> = {
   sentinel_solo: 12,
   sentinel_pro: 29,
-  sentinel_business: 149,
+  sentinel_business: 200,
 };
 
 export const SENTINEL_PRIVACY_SEALS_PER_MONTH: Record<SentinelPrivacyPlanId, number> = {
   sentinel_solo: 10,
   sentinel_pro: 40,
-  sentinel_business: 150,
+  sentinel_business: 200,
 };
 
 /** SKU público — línea aparte de CED (misma cuenta, otra suscripción Stripe). */
 export const SENTINEL_PRIVACY_PRODUCT = {
   id: "sentinel_business" as const,
   label: "Sentinel Privacy",
-  priceUsd: 149,
-  sealsPerMonth: 150,
-  tagline: "Privacidad verificable · producto aparte del plan CED",
+  priceUsd: 200,
+  sealsPerMonth: 200,
+  homeBadge: "INCREÍBLE",
+  homeSubtitle: "Módulo de privacidad verificable — aparte del plan CED",
+  tagline: "Sellos criptográficos sin exponer el contenido sensible",
   notIncluded: [
     "No incluye voz Jarvis ni minutos CED",
     "No incluye chat, imágenes ni PDF del asistente",
-    "No reemplaza Élite ($99) ni Founding ($149) — es otra factura",
+    "Factura Stripe aparte (puedes tener Founding + Sentinel)",
   ],
   highlights: [
-    "150 sellos verificables al mes (hash SHA-256 + tiempo en cadena)",
-    "El documento sensible no se publica: solo el compromiso criptográfico",
-    "Pensado para contratos, acuerdos y entregables confidenciales",
-    "Wallet Lace + red Midnight (demo técnica en /shield)",
-    "Suscripción Stripe separada — puedes tener CED básico y Sentinel a la vez",
+    "200 sellos/mes: hash SHA-256 + tiempo en cadena (Midnight/Lace)",
+    "PDF y acuerdos no se suben — solo prueba verificable",
+    "Para negocios, legal y entregables confidenciales",
+    "Complementa Élite/Founding; no los reemplaza",
   ],
 } as const;
 

@@ -16,11 +16,23 @@ function SentinelPrivacyContent() {
   const searchParams = useSearchParams();
   const billing = searchParams.get("billing");
   const sessionId = searchParams.get("session_id");
+  const pendingPlan = searchParams.get("plan");
   const product = SENTINEL_PRIVACY_PRODUCT;
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      setLoggedIn(false);
+      return;
+    }
+    void createClient()
+      .auth.getUser()
+      .then(({ data }) => setLoggedIn(Boolean(data.user)));
+  }, []);
 
   useEffect(() => {
     if (billing !== "sentinel_success" || !sessionId) return;
@@ -58,6 +70,11 @@ function SentinelPrivacyContent() {
       setBusy(false);
     }
   }, [router, product.id]);
+
+  useEffect(() => {
+    if (pendingPlan !== product.id || loggedIn !== true || busy) return;
+    void subscribe();
+  }, [pendingPlan, loggedIn, busy, subscribe, product.id]);
 
   return (
     <main className="ced-page-glow relative min-h-screen overflow-x-hidden text-[var(--ced-text)]">
