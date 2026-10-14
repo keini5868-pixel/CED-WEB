@@ -129,8 +129,11 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
         </div>
       </section>
 
+      <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
+        SUSCRIPCIONES CED
+      </h2>
       <div
-        className={`grid gap-4 ${compact ? "sm:grid-cols-1" : "sm:grid-cols-2"}`}
+        className={`grid gap-4 ${compact ? "sm:grid-cols-1" : "sm:grid-cols-2 lg:grid-cols-3"}`}
       >
         {paid.map((plan) => (
           <div
@@ -174,7 +177,17 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
             </button>
           </div>
         ))}
-        <div className="relative rounded border border-violet-400/55 bg-gradient-to-br from-violet-950/45 to-black/50 p-4 ring-1 ring-violet-400/20">
+      </div>
+
+      <section id="sentinel-privacy-plan" className="scroll-mt-24 space-y-3">
+        <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-violet-300">
+          SENTINEL PRIVACY · PRODUCTO APARTE
+        </h2>
+        <p className="text-[11px] text-cyan-100/60">
+          No sustituye tu plan CED. Factura Stripe separada; puedes tener Founding
+          + Sentinel.
+        </p>
+        <div className="relative rounded border border-violet-400/55 bg-gradient-to-br from-violet-950/45 to-black/50 p-4 ring-1 ring-violet-400/20 lg:max-w-xl">
           <span className="absolute -top-2.5 left-3 rounded bg-violet-500/35 px-2 py-0.5 font-[family-name:var(--font-orbitron)] text-[8px] font-bold tracking-wider text-violet-100">
             {sentinel.homeBadge}
           </span>
@@ -212,7 +225,7 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
             {busy === sentinel.id ? "REDIRIGIENDO A STRIPE…" : "SUSCRIBIR SENTINEL"}
           </button>
         </div>
-      </div>
+      </section>
 
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
 
