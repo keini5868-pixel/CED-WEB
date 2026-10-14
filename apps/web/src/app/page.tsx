@@ -229,9 +229,6 @@ export default function HomePage() {
                   ${sp.priceUsd}
                   <span className="text-sm text-violet-500">/mes</span>
                 </p>
-                <p className="mt-1 text-[10px] text-cyan-400/90">
-                  {sp.sealsPerMonth} sellos · Stripe aparte de CED
-                </p>
                 <ul className="mt-4 flex-1 space-y-1.5 text-xs text-cyan-100/80">
                   {sp.highlights.map((h) => (
                     <li key={h}>· {h}</li>

@@ -38,7 +38,7 @@ SENTINEL_PUBLIC_FLAGSHIP_ID = SentinelPlanId.BUSINESS.value
 SENTINEL_PRODUCT_SPEC = (
     "Sellos verificables: solo hash SHA-256 + marca de tiempo en cadena (Midnight/Lace).",
     "El PDF, audio o acuerdo NO se sube a la blockchain ni a servidores públicos.",
-    "Facturación Stripe separada: no sustituye ni mezcla tu plan CED (voz, chat, imágenes).",
+    "Opcional: amplía volumen aparte del plan CED (voz, chat, imágenes).",
     "Requiere wallet Lace en red Midnight para anclar el sello (demo en /shield).",
     "Ideal para contratos, entregables sensibles y cumplimiento sin exponer contenido.",
 )

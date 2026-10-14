@@ -68,6 +68,22 @@ RESOURCE_UNIT_COSTS_USD: dict[str, float] = {
 # Minutos diarios Founding (cap margen — Retell+Gemini ≤ precio − $10).
 FOUNDING_VOICE_CAP_MINUTES = 18
 
+# Sellos privacidad/mes incluidos en suscripción CED (interno; UI solo menciona privacidad).
+CED_INCLUDED_PRIVACY_SEALS_PER_MONTH: dict[str, int] = {
+    PlanId.CIERRE.value: 5,
+    PlanId.STARTER.value: 5,
+    PlanId.PRO.value: 15,
+    PlanId.ELITE.value: 30,
+    PlanId.FOUNDING.value: 200,
+    PlanId.ELITE_FOUNDING.value: 200,
+    PlanId.FREE_BASIC.value: 0,
+}
+
+
+def ced_included_privacy_seals_per_month(plan_id: str | None) -> int:
+    pid = normalize_plan_id(plan_id)
+    return int(CED_INCLUDED_PRIVACY_SEALS_PER_MONTH.get(pid, 0))
+
 # COGS provider para planificar margen mínimo $10 (cupo agotado 30 días).
 # Voz: Retell + Cartesia Jarvis + Gemini 2.5 Flash (con context cache FitLine).
 PROVIDER_COGS_VOICE_PER_MIN_USD = 0.081

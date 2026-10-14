@@ -1187,6 +1187,14 @@ def upsert_paid_subscription(
         row["current_period_end"] = current_period_end
     try:
         client = _client()
+        existing = get_subscription(user_id) or {}
+        old_period = existing.get("current_period_end")
+        if (
+            current_period_end
+            and old_period
+            and str(current_period_end) != str(old_period)
+        ):
+            row["privacy_seals_used_in_period"] = 0
         client.table("subscriptions").upsert(row, on_conflict="user_id").execute()
         if minutes_daily is not None:
             client.table("usage_limits").upsert(
@@ -2386,6 +2394,7 @@ def upsert_sentinel_privacy_subscription(
     used = int(existing.get("seals_used_in_period") or 0)
     if reset_usage:
         used = 0
+        reset_subscription_privacy_seals_used(user_id)
     row: dict[str, Any] = {
         "user_id": user_id,
         "plan_id": plan_id,
@@ -2427,30 +2436,39 @@ def cancel_sentinel_privacy_subscription(user_id: str) -> None:
         )
 
 
+def reset_subscription_privacy_seals_used(user_id: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        client = _client()
+        client.table("subscriptions").update(
+            {"privacy_seals_used_in_period": 0, "updated_at": now}
+        ).eq("user_id", user_id).execute()
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "[DB] reset_subscription_privacy_seals_used failed user=%s", user_id
+        )
+
+
 def sentinel_privacy_entitlement(user_id: str) -> dict[str, Any]:
-    """Solo suscripción Sentinel Privacy (SKU aparte de CED)."""
-    row = get_sentinel_privacy_subscription(user_id)
-    if not row:
-        return {
-            "active": False,
-            "plan_id": None,
-            "seals_remaining": 0,
-            "seals_per_month": 0,
-        }
-    status = str(row.get("status") or "")
-    active = status in _ACTIVE_SENTINEL_STATUSES
-    cap = int(row.get("seals_per_month") or 0)
-    used = int(row.get("seals_used_in_period") or 0)
-    remaining = max(0, cap - used) if active else 0
-    return {
-        "active": active,
-        "plan_id": row.get("plan_id"),
-        "status": status,
-        "seals_per_month": cap,
-        "seals_used_in_period": used,
-        "seals_remaining": remaining,
-        "period_end": row.get("period_end"),
-    }
+    """Cupos unificados: incluidos en plan CED + opcional Sentinel volumen (max)."""
+    from app.deps.auth import is_super_admin
+    from app.domain.privacy_seal_entitlement import resolve_privacy_seal_entitlement
+    from app.services.admin_users import get_user_access
+
+    profile = get_profile(user_id) or {}
+    admin = is_super_admin(profile.get("email"), profile.get("role"))
+    allowed, reason, _ = get_user_access(user_id)
+    sub = get_subscription(user_id) or {}
+    sentinel_row = get_sentinel_privacy_subscription(user_id)
+    used = int(sub.get("privacy_seals_used_in_period") or 0)
+    return resolve_privacy_seal_entitlement(
+        allowed=allowed,
+        reason=reason,
+        ced_plan_id=str(sub.get("plan_id") or ""),
+        sentinel_row=sentinel_row,
+        privacy_seals_used=used,
+        is_super_admin=admin,
+    )
 
 
 def consume_sentinel_seal_credit(user_id: str) -> dict[str, Any]:
@@ -2459,20 +2477,26 @@ def consume_sentinel_seal_credit(user_id: str) -> dict[str, Any]:
         return {
             "ok": False,
             "code": "sentinel_subscription_required",
-            "error": "Activa Sentinel Privacy en /sentinel-privacy (producto aparte de CED).",
+            "error": (
+                "Necesitas un plan CED de pago (incluye privacidad base) "
+                "o Sentinel Privacy en /sentinel-privacy para más volumen."
+            ),
         }
     if int(ent.get("seals_remaining") or 0) <= 0:
         return {
             "ok": False,
             "code": "sentinel_quota_exceeded",
-            "error": "Agotaste los sellos de este periodo. Mejora el plan o espera la renovación.",
+            "error": (
+                "Agotaste los sellos de este periodo. Sube de plan CED, "
+                "añade Sentinel Privacy o espera la renovación."
+            ),
         }
     now = datetime.now(timezone.utc).isoformat()
     new_used = int(ent.get("seals_used_in_period") or 0) + 1
     try:
         client = _client()
-        client.table("sentinel_privacy_subscriptions").update(
-            {"seals_used_in_period": new_used, "updated_at": now}
+        client.table("subscriptions").update(
+            {"privacy_seals_used_in_period": new_used, "updated_at": now}
         ).eq("user_id", user_id).execute()
     except Exception:  # noqa: BLE001
         logger.exception("[DB] consume_sentinel_seal_credit failed user=%s", user_id)

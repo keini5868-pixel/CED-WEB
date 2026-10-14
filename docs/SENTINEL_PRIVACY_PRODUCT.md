@@ -8,11 +8,13 @@
 
 ## Precios (USD/mes)
 
-| Plan ID | Precio | Sellos/mes |
-|---------|--------|------------|
+| Plan ID | Precio | Sellos/mes (volumen) |
+|---------|--------|----------------------|
 | `sentinel_solo` | $12 | 10 |
 | `sentinel_pro` | $29 | 40 |
-| `sentinel_business` | $79 | 150 |
+| `sentinel_business` | $200 | 200 |
+
+**CED:** cada plan de pago incluye cupo base de sellos (interno; UI: «Privacidad verificable incluida»). Founding incluye el techo (200/mes). Sentinel Business amplía volumen para quien no necesita Founding.
 
 Landing: `/sentinel-privacy`
 

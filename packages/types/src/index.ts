@@ -105,6 +105,10 @@ const COMMON_FREE_TOOLS = [
   "Memoria conversacional",
 ] as const;
 
+/** Copy en tarjetas CED — sin cifras de sellos (cupos solo en backend). */
+export const CED_PRIVACY_INCLUDED_HIGHLIGHT =
+  "Privacidad verificable incluida" as const;
+
 /**
  * Progresión acumulativa — cada plan incluye todo lo del anterior + lo nuevo.
  * Regla: NUNCA poner cantidades de minutos de voz aquí. Los cupos de voz
@@ -145,6 +149,7 @@ export const PUBLIC_PLANS = [
       "Conocimiento de productos y objeciones",
       "Prospección y redes sociales",
       "Búsquedas web",
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Chat de texto",
     ],
   },
@@ -157,6 +162,7 @@ export const PUBLIC_PLANS = [
       "Búsquedas web (15/día)",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Chat de texto",
     ],
   },
@@ -172,6 +178,7 @@ export const PUBLIC_PLANS = [
       "Asistente de voz CED",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Chat de texto",
     ],
   },
@@ -190,6 +197,7 @@ export const PUBLIC_PLANS = [
       "Asistente de voz CED",
       "Creación de imágenes",
       ...COMMON_FREE_TOOLS,
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Chat de texto",
     ],
   },
@@ -200,6 +208,7 @@ export const PUBLIC_PLANS = [
     highlights: [
       "Precio bloqueado por 6 meses",
       "Cupos limitados",
+      CED_PRIVACY_INCLUDED_HIGHLIGHT,
       "Modo avanzado (análisis profundo con Claude)",
       "Modo de prospección",
       "Mapa y navegación",
@@ -240,18 +249,19 @@ export const SENTINEL_PRIVACY_PRODUCT = {
   priceUsd: 200,
   sealsPerMonth: 200,
   homeBadge: "INCREÍBLE",
-  homeSubtitle: "Módulo de privacidad verificable — aparte del plan CED",
-  tagline: "Sellos criptográficos sin exponer el contenido sensible",
+  homeSubtitle:
+    "Amplía sellos verificables · ideal para legal y entregables · compatible con tu plan CED",
+  tagline: "Más capacidad de privacidad verificable sin cambiar tu plan CED",
   notIncluded: [
     "No incluye voz Jarvis ni minutos CED",
     "No incluye chat, imágenes ni PDF del asistente",
-    "Factura Stripe aparte (puedes tener Founding + Sentinel)",
+    "Suscripción Stripe aparte del plan CED (opcional)",
   ],
   highlights: [
-    "200 sellos/mes: hash SHA-256 + tiempo en cadena (Midnight/Lace)",
-    "PDF y acuerdos no se suben — solo prueba verificable",
-    "Para negocios, legal y entregables confidenciales",
-    "Complementa Élite/Founding; no los reemplaza",
+    "Más sellos verificables al mes (hash + tiempo, sin subir el PDF)",
+    "Ideal para legal, agencias y entregables confidenciales",
+    "Compatible con cualquier plan CED de pago",
+    "Complementa la privacidad base incluida en tu plan",
   ],
 } as const;
 

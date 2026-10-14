@@ -183,10 +183,7 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
         <h2 className="font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-violet-300">
           SENTINEL PRIVACY · PRODUCTO APARTE
         </h2>
-        <p className="text-[11px] text-cyan-100/60">
-          No sustituye tu plan CED. Factura Stripe separada; puedes tener Founding
-          + Sentinel.
-        </p>
+        <p className="text-[11px] text-cyan-100/60">{sentinel.homeSubtitle}</p>
         <div className="relative rounded border border-violet-400/55 bg-gradient-to-br from-violet-950/45 to-black/50 p-4 ring-1 ring-violet-400/20 lg:max-w-xl">
           <span className="absolute -top-2.5 left-3 rounded bg-violet-500/35 px-2 py-0.5 font-[family-name:var(--font-orbitron)] text-[8px] font-bold tracking-wider text-violet-100">
             {sentinel.homeBadge}
@@ -207,9 +204,6 @@ export function PlansPanel({ compact = false }: PlansPanelProps) {
           </div>
           <p className="mt-1 text-[11px] leading-snug text-violet-200/75">
             {sentinel.homeSubtitle}
-          </p>
-          <p className="mt-1 text-[10px] text-cyan-500">
-            {sentinel.sealsPerMonth} sellos · factura Stripe separada de CED
           </p>
           <ul className="mt-3 space-y-1 text-xs text-cyan-100/75">
             {sentinel.highlights.slice(0, compact ? 3 : 5).map((h) => (

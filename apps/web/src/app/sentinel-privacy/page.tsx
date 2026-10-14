@@ -102,9 +102,7 @@ function SentinelPrivacyContent() {
             ${product.priceUsd}
             <span className="text-base text-violet-500">/mes</span>
           </p>
-          <p className="mt-1 text-sm text-cyan-400">
-            {product.sealsPerMonth} sellos verificables por mes
-          </p>
+          <p className="mt-2 text-sm text-violet-200/85">{product.homeSubtitle}</p>
 
           <h2 className="mt-6 font-[family-name:var(--font-orbitron)] text-xs tracking-wider text-cyan-400">
             QUÉ ES
